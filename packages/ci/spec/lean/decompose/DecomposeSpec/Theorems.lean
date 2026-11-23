@@ -242,14 +242,14 @@ theorem EndsOpen.dropOne {tokens : List Token} (endsOpen : EndsOpen tokens) :
       exact Or.inr ⟨last, by simpa [List.getLast?_cons_cons] using isLast, dangling⟩
 
 /-- Inside an `if`, the end of the tokens is never the end of a list. -/
-theorem readList_nil_inside (fuel : Nat) (conditional : Bool) (joint : Joint) (out : List Command) :
-    readList fuel true conditional joint [] out = none := by
+theorem readList_nil_inside (fuel remaining : Nat) (conditional : Bool) (joint : Joint) (out : List Command) :
+    readList fuel remaining true conditional joint [] out = none := by
   cases fuel <;> simp [readList]
 
 /-- With nothing after `&&`, `||` or `|`, there is no list. -/
-theorem readList_nil_dangling (fuel : Nat) (stops conditional : Bool) (operator : Operator)
+theorem readList_nil_dangling (fuel remaining : Nat) (stops conditional : Bool) (operator : Operator)
     (out : List Command) (dangling : operator.dangles = true) :
-    readList fuel stops conditional (jointOf operator) [] out = none := by
+    readList fuel remaining stops conditional (jointOf operator) [] out = none := by
   cases fuel with
   | zero => simp [readList]
   | succ fuel => cases operator <;> simp_all [readList, jointOf, Joint.complete, Operator.dangles]
@@ -257,21 +257,21 @@ theorem readList_nil_dangling (fuel : Nat) (stops conditional : Bool) (operator 
 /-- Neither a list nor an `if` takes a trailing `&&`, `||` or `|`: whatever is read, the tokens left over still
 end with it. -/
 theorem endsOpen_left (fuel : Nat) :
-    (∀ stops conditional joint tokens out rest read, EndsOpen tokens →
-      readList fuel stops conditional joint tokens out = some (rest, read) → EndsOpen rest) ∧
-    (∀ conditional tokens out isOpen certain rest read, EndsOpen tokens →
-      readIf fuel conditional tokens out isOpen certain = some (rest, read) → EndsOpen rest) := by
+    (∀ remaining stops conditional joint tokens out rest read, EndsOpen tokens →
+      readList fuel remaining stops conditional joint tokens out = some (rest, read) → EndsOpen rest) ∧
+    (∀ remaining conditional tokens out isOpen certain rest read, EndsOpen tokens →
+      readIf fuel remaining conditional tokens out isOpen certain = some (rest, read) → EndsOpen rest) := by
   induction fuel with
   | zero =>
     constructor
-    · intro stops conditional joint tokens out rest read _ result
+    · intro remaining stops conditional joint tokens out rest read _ result
       simp [readList] at result
-    · intro conditional tokens out isOpen certain rest read _ result
+    · intro remaining conditional tokens out isOpen certain rest read _ result
       simp [readIf] at result
   | succ fuel ih =>
     obtain ⟨list, branch⟩ := ih
     constructor
-    · intro stops conditional joint tokens out rest read endsOpen result
+    · intro remaining stops conditional joint tokens out rest read endsOpen result
       have dropped := endsOpen.dropSemis
       simp only [readList] at result
       split at result
@@ -293,11 +293,11 @@ theorem endsOpen_left (fuel : Nat) :
               · split at result
                 · cases result
                 · rename_i after afterOut inner
-                  have afterOpen := branch _ _ _ _ _ _ _ dropped inner
+                  have afterOpen := branch _ _ _ _ _ _ _ _ dropped inner
                   split at result
                   · exact absurd afterOpen EndsOpen.not_nil
                   · split at result
-                    · exact list _ _ _ _ _ _ _ afterOpen result
+                    · exact list _ _ _ _ _ _ _ _ afterOpen result
                     · cases result
             · split at result
               · cases result
@@ -308,14 +308,14 @@ theorem endsOpen_left (fuel : Nat) :
                   obtain ⟨last, isLast, dangling⟩ := simpleOpen
                   simp only [List.getLast?_singleton, Option.some.injEq] at isLast
                   subst isLast
-                  rw [readList_nil_dangling fuel stops conditional operator _ dangling] at result
+                  rw [readList_nil_dangling fuel remaining stops conditional operator _ dangling] at result
                   cases result
                 | cons next others =>
                   obtain ⟨last, isLast, dangling⟩ := simpleOpen
-                  exact list _ _ _ _ _ _ _ ⟨last, by simpa [List.getLast?_cons_cons] using isLast, dangling⟩ result
+                  exact list _ _ _ _ _ _ _ _ ⟨last, by simpa [List.getLast?_cons_cons] using isLast, dangling⟩ result
               · rename_i command after _ simple
-                exact list _ _ _ _ _ _ _ (dropped.readSimple simple) result
-    · intro conditional tokens out isOpen certain rest read endsOpen result
+                exact list _ _ _ _ _ _ _ _ (dropped.readSimple simple) result
+    · intro remaining conditional tokens out isOpen certain rest read endsOpen result
       simp only [readIf] at result
       split at result
       · cases result
@@ -325,7 +325,7 @@ theorem endsOpen_left (fuel : Nat) :
           | inl nothing =>
             rw [nothing, readList_nil_inside] at readCondition
             cases readCondition
-          | inr stillOpen => exact list _ _ _ _ _ _ _ stillOpen readCondition
+          | inr stillOpen => exact list _ _ _ _ _ _ _ _ stillOpen readCondition
         split at result
         · cases result
         · rename_i isThen
@@ -334,9 +334,9 @@ theorem endsOpen_left (fuel : Nat) :
           split at result
           · cases result
           · rename_i afterBody body readBody
-            have bodyOpen : EndsOpen afterBody := list _ _ _ _ _ _ _ thenOpen readBody
+            have bodyOpen : EndsOpen afterBody := list _ _ _ _ _ _ _ _ thenOpen readBody
             split at result
-            · exact branch _ _ _ _ _ _ _ bodyOpen result
+            · exact branch _ _ _ _ _ _ _ _ bodyOpen result
             · split at result
               · cases result
               · rename_i afterElse elseOut otherwise
@@ -347,7 +347,7 @@ theorem endsOpen_left (fuel : Nat) :
                     · cases otherwise
                     · rename_i afterBranch branchOut readElse
                       cases otherwise
-                      exact list _ _ _ _ _ _ _ (bodyOpen.afterKeyword isElse) readElse
+                      exact list _ _ _ _ _ _ _ _ (bodyOpen.afterKeyword isElse) readElse
                   · cases otherwise
                     exact bodyOpen
                 split at result
@@ -363,7 +363,7 @@ theorem parse_trailing_operator (tokens : List Token) (operator : Operator) (dan
   unfold parse
   split
   · rename_i out result
-    exact absurd ((endsOpen_left _).1 _ _ _ _ _ _ _ endsOpen result) EndsOpen.not_nil
+    exact absurd ((endsOpen_left _).1 _ _ _ _ _ _ _ _ endsOpen result) EndsOpen.not_nil
   · rfl
 
 /-- A script whose last token is `&&`, `||` or `|` is refused. -/
@@ -377,7 +377,60 @@ theorem commands_deterministic (script : Str) (first second : Option (List Comma
     (readFirst : commands script = first) (readSecond : commands script = second) : first = second :=
   readFirst.symm.trans readSecond
 
+/-- CI expressions are refused before the shell reader considers quoting. -/
+theorem commands_ci_expression (script : Str) (expression : contains "${{".toList script = true) :
+    commands script = none := by simp only [commands, expression, if_true]
+
+/-- Once the nesting budget is spent, a further `if` cannot be read. -/
+theorem readList_if_at_limit (fuel : Nat) (stops conditional : Bool) (joint : Joint) (tokens : List Token)
+    (out : List Command) (isIf : bareWord (tokens.dropWhile isSemi).head? = some keywordIf) :
+    readList fuel 0 stops conditional joint tokens out = none := by
+  cases fuel with
+  | zero => rfl
+  | succ fuel =>
+    cases h : tokens.dropWhile isSemi with
+    | nil => simp [h, bareWord] at isIf
+    | cons token rest =>
+      simp only [h, List.head?_cons] at isIf
+      simp [readList, h, isIf, branchKeywords, refusedKeywords, keywordIf, keywordThen, keywordElif,
+        keywordElse, keywordFi]
+
 end Shell
+
+namespace Plan
+
+open Text
+
+/-- A non-`cd` command in the AND chain preserves the ambiguity of the subsequent OR arm. -/
+theorem directoryList_and_before_or (cwd : Str) (command fallback : Shell.Command) (rest : List Shell.Command)
+    (previousCd : Bool)
+    (andJoint : command.joint = .and) (notCd : command.words.head?.map (·.text) ≠ some "cd".toList)
+    (orJoint : fallback.joint = .or) :
+    directoryList (command :: fallback :: rest) cwd previousCd true = none := by
+  simp only [directoryList, separates, andJoint, notCd, orJoint]
+  simp
+
+/-- A non-`cd` command can fail, so another `cd` after it in the AND chain cannot fix the working directory. -/
+theorem directoryList_and_before_cd (cwd : Str) (command change : Shell.Command) (rest : List Shell.Command)
+    (andJoint : command.joint = .and) (notCd : command.words.head?.map (·.text) ≠ some "cd".toList)
+    (changeJoint : change.joint = .and) (isCd : change.words.head?.map (·.text) = some "cd".toList) :
+    directoryList (command :: change :: rest) cwd true true = none := by
+  simp only [directoryList, separates, andJoint, notCd, changeJoint, isCd]
+  cases change.words with
+  | nil => simp
+  | cons head tail =>
+    cases tail with
+    | nil => simp
+    | cons path tail => cases tail <;> simp
+
+/-- Even an extra glob that might later be dropped as covered forces a full read if it is unsupported. -/
+theorem inputsOf_unsupported (outside : List Str) (reaches : List Workspace.Reach) (globs : List Str)
+    (glob : Str) (present : glob ∈ globs) (unsupported : contractGlob glob = false) :
+    inputsOf outside reaches globs = [everything] := by
+  have invalid : globs.any (!contractGlob ·) = true := List.any_eq_true.mpr ⟨glob, present, by simp [unsupported]⟩
+  simp [inputsOf, invalid]
+
+end Plan
 
 /-! ## Workspace: wildcards -/
 

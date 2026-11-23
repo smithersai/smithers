@@ -5,6 +5,8 @@ import {
   join,
   managerOf,
   manifestMentions,
+  matchesDirectory,
+  matchesName,
   type Mentions,
   outsideGlobs,
   packageDirectories,
@@ -61,6 +63,7 @@ describe("managerOf", () => {
   it("takes the packageManager field, then the lockfile, then npm", () => {
     expect(managerOf({ packageManager: "pnpm@9.1.0+sha512.abc" }, new Set(["bun.lock"]))).toBe("pnpm")
     expect(managerOf({ packageManager: "deno@2" }, new Set(["yarn.lock"]))).toBe("yarn")
+    expect(managerOf({}, new Set(["bun.lock"]))).toBe("bun")
     expect(managerOf({ packageManager: 7 }, new Set(["bun.lockb"]))).toBe("bun")
     expect(managerOf({}, new Set(["pnpm-lock.yaml"]))).toBe("pnpm")
     expect(managerOf({}, new Set(["package-lock.json"]))).toBe("npm")
@@ -160,6 +163,78 @@ describe("packageDirectories", () => {
     for (const pattern of ["packages/{a,b}", "packages/[ab]", "packages/?", "../outside/*", "!packages/{a,b}"]) {
       expect(packageDirectories(["packages/*", pattern], files), pattern).toBeUndefined()
     }
+  })
+})
+
+describe("workspace wildcard matching", () => {
+  it("anchors both ends and matches nonoverlapping literal chunks in order", () => {
+    const long = "a".repeat(65_536)
+    expect(matchesName(`*${"a".repeat(32_768)}b`, long)).toBe(false)
+    expect(matchesName(`*${"a".repeat(32_768)}b*`, long)).toBe(false)
+    expect(matchesName("a**bc*d", "axbczd")).toBe(true)
+    expect(matchesName("a*ab*bc", "aabc")).toBe(false)
+    expect(matchesName("prefix*tail", "xprefix-tail")).toBe(false)
+    expect(matchesName("é*🦊", "é中🦊")).toBe(true)
+    expect(matchesName("*\uD83E*", "🦊 \uD83E")).toBe(true)
+    expect(matchesName("*\uD83E*", "🦊")).toBe(false)
+    expect(matchesName("*\uDD8A*", "🦊")).toBe(false)
+    expect(matchesName("\uD83E*", "🦊")).toBe(false)
+    expect(matchesName("*\uDD8A", "🦊")).toBe(false)
+  })
+
+  it("matches whole directory components around nested globstars", () => {
+    expect(matchesDirectory(["**", "**", "src"], "pre/src")).toBe(true)
+    expect(matchesDirectory(["**", "core", "src", "**", "test"], "pre/core/src/core/test")).toBe(true)
+    expect(matchesDirectory(["**", "core", "src", "**", "test"], "pre/core/src-test")).toBe(false)
+    expect(matchesDirectory(["**", "core", "src", "**", "src"], "pre/core/src")).toBe(false)
+    expect(matchesDirectory(["**", "core", "src", "**", "src"], "pre/core/src/src")).toBe(true)
+    expect(matchesDirectory(["**", "c*e", "src*", "**"], "pre/case/src-test")).toBe(true)
+    expect(matchesDirectory(["**", "c*e", "src*", "**"], "pre/case/test")).toBe(false)
+    expect(matchesDirectory(["**", "a/b", "**"], "a/b")).toBe(false)
+  })
+
+  it("keeps exact mixed-chunk matches through retries, including at the last offset", () => {
+    const segments = ["**", "src*", "unit", "**", "test"]
+    expect(matchesDirectory(segments, "src-old/integration/src-new/unit/test")).toBe(true)
+    expect(matchesDirectory(segments, "src-old/integration/src-new/unit")).toBe(false)
+    expect(matchesDirectory(segments, "src-old/integration/src-new/tests/unit/test")).toBe(false)
+    expect(packageDirectories(
+      [segments.join("/")],
+      new Set([
+        "src-old/integration/src-new/unit/test/package.json",
+        "src-old/integration/src-new/tests/unit/test/package.json"
+      ])
+    )).toEqual(["src-old/integration/src-new/unit/test"])
+  })
+
+  it("declines workspace selection when a mixed include or exclusion exhausts the comparison budget", () => {
+    const segments = ["**", "src*", ...Array<string>(254).fill("src"), "unit", "**"]
+    const directory = [...Array<string>(520).fill("src"), "unit"].join("/")
+    const files = new Set(["packages/a/package.json", `${directory}/package.json`])
+    // The exact matcher still finds the final offset. Discovery cannot safely
+    // return the packages it found so far or ignore an uncertain exclusion.
+    expect(matchesDirectory(segments, directory)).toBe(true)
+    expect(packageDirectories(["packages/*", segments.join("/")], files)).toBeUndefined()
+    expect(packageDirectories(["**", `!${segments.join("/")}`], files)).toBeUndefined()
+    expect(packageDirectories([segments.join("/").replace("src*", "src")], files)).toEqual([directory])
+  })
+})
+
+describe("shared root reach", () => {
+  it("includes followed package edges and records unknown root inputs", () => {
+    const workspace = workspaceOf({ "packages/a": manifest("a"), "packages/b": manifest("b") })
+    const files = new Set(["root.js", "tools/shared.js", "packages/a/index.js", "packages/b/index.js"])
+    const none: Mentions = { names: [], relative: [], rooted: [] }
+    const read = (file: string): Mentions =>
+      file === "root.js"
+        ? { ...none, relative: ["./tools/shared.js"] }
+        : file === "tools/shared.js"
+        ? { ...none, rooted: ["packages/a/index.js"], names: ["b"] }
+        : none
+    const built = graph(workspace, files, read, new Set(["tools/shared.js"]))
+    const reached = built.reachOf()
+    expect(reached).toEqual({ files: new Set(["**", "packages/a/index.js"]), packages: new Set(["packages/b"]) })
+    expect(built.reachOf()).toBe(reached)
   })
 })
 

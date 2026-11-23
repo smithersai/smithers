@@ -68,7 +68,7 @@ export interface Project {
   readonly zig?: string | undefined
   /** Arguments every `zig build` gets, such as `-Doptimize=ReleaseSafe`. They change what a step reads. */
   readonly args?: ReadonlyArray<string> | undefined
-  /** The cache directory to build in. `.zig-cache` beside `build.zig` when omitted. */
+  /** The cache directory to build in. `.zig-cache` beside `build.zig` when omitted. A probe uses a private subdirectory of an explicit cache. */
   readonly cache?: string | undefined
   /** Maximum bytes per Zig stdout response. */
   readonly outputLimit?: number
@@ -189,7 +189,16 @@ const build = (session: Session, ...first: ReadonlyArray<string>): ReadonlyArray
 effect function graph(session: Session): Graph.Graph!ZigClosureError!(ChildProcessSpawner | FileSystem.FileSystem) {
   const fs = try FileSystem.FileSystem
   return try scoped(effect {
-    const cache = fs.makeTempDirectoryScoped({ prefix: "smithers-ci-zig-" }) catch effect (error) => {
+    // Default to the checkout for jailed builds. An explicit cache can be writable even when the sources are read-only.
+    const privateCache = effect {
+      let directory = session.directory
+      if (session.project.cache !== undefined) {
+        directory = session.cache
+        try fs.makeDirectory(directory, { recursive: true })
+      }
+      return try fs.makeTempDirectoryScoped({ directory, prefix: ".smithers-ci-zig-" })
+    }
+    const cache = privateCache catch effect (error) => {
       throw new ZigClosureError({ code: "configure-failed", message: error.message })
     }
     return try configured({ ...session, cache })
@@ -427,6 +436,7 @@ export effect function ofFiles(
   const drafts: Array<Draft.Draft> = []
   for (const file of files) {
     const made = Draft.make(file)
+    Draft.admit(where, made, file, { prefix: "build-root", path: file, directory: false })
     const ran = try run(session, ["test", file.startsWith("-") ? `./${file}` : file, "-fno-emit-bin", "--listen=-", "--cache-dir", session.cache], Protocol.compileRequest)
     const reply = Protocol.decodeCompile(ran.out)
     if (reply.inputs === undefined) made.unresolved.push({ from: file, specifier: "the compiler reported no files" })

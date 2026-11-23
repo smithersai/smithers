@@ -155,6 +155,13 @@ describe("Draft.settle", () => {
     // A step that declares its inputs may leave no list.
     expect(settled("options", success, new Map()).unresolved).toEqual([])
   })
+
+  it("reports a successful compile whose manifest lists no files", () => {
+    const found = new Map([[digest, []]])
+    expect(settled("compile", success, found).unresolved).toEqual([
+      { from: "a compile step", specifier: "the compiler left no list of the files it read" }
+    ])
+  })
 })
 
 describe("Draft.listed", () => {

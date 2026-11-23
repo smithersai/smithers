@@ -57,6 +57,26 @@ describe("readConfig", () => {
       .toEqual([])
   })
 
+  it("canonicalizes plain global dependencies and retains positive patterns for the planner", () => {
+    expect(
+      config({
+        globalDependencies: [
+          "!ignored/**",
+          "./!shared/**",
+          "a/../b",
+          "./a//./nested.json",
+          "a/..",
+          "./nested/*",
+          "./nested/**",
+          "a/*/../b",
+          "*",
+          "**"
+        ],
+        tasks: {}
+      }).globalDependencies
+    ).toEqual(["!shared/**", "b", "a/nested.json", "a/..", "nested/*", "nested/**", "a/*/../b", "*", "**"])
+  })
+
   it("gives nothing when a file does not parse or has no tasks", () => {
     expect(readConfig(`{ "tasks": `, [])).toBeUndefined()
     expect(readConfig(`[]`, [])).toBeUndefined()
@@ -164,8 +184,11 @@ describe("walk", () => {
           inputs: [
             "$TURBO_DEFAULT$",
             "!**/*.test.ts",
+            "!../other/**",
             "src/**",
+            "$TURBO_ROOT$/*",
             "$TURBO_ROOT$/tools/build.ts",
+            "../shared/*",
             "../shared/**",
             "$TURBO_ROOT$/",
             "../../.."
@@ -173,7 +196,23 @@ describe("walk", () => {
         }
       }
     })
-    expect(walk(settings, workspace, named("core"), ["build"]).globs).toEqual(["packages/shared/**", "tools/build.ts"])
+    expect(walk(settings, workspace, named("core"), ["build"]).globs).toEqual([
+      "*",
+      "packages/shared/*",
+      "packages/shared/**",
+      "tools/build.ts"
+    ])
+  })
+
+  it("keeps wildcard syntax when joining a path could erase it", () => {
+    const settings = config({
+      tasks: { build: { inputs: ["$TURBO_ROOT$/packages/*/../shared.json", "*/../shared.json", "../shared/**"] } }
+    })
+    expect(walk(settings, workspace, named("core"), ["build"]).globs).toEqual([
+      "*/../shared.json",
+      "packages/*/../shared.json",
+      "packages/shared/**"
+    ])
   })
 
   it("notes when a task of the root package runs", () => {

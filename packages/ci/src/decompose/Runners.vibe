@@ -92,7 +92,7 @@ const optionAt = (words: ReadonlyArray<string>, at: number, options: Options): O
 
 // An argument that could name a file outside the package, which the splitter
 // could not account for.
-const leaves = (word: string): boolean => /(?:^|=)[/~]|(?:^|[=/])\.\.(?:\/|$)/.test(word)
+const leaves = (word: string): boolean => /\$\{\{|(?:^|=)[/~]|(?:^|[=/])\.\.(?:\/|$)/.test(word)
 
 const pattern = /^[A-Za-z0-9_@.~*/-]+$/
 

@@ -200,6 +200,8 @@ describe("understand", () => {
     }
     expect(directory("cd packages/app && pnpm run test")).toBe("packages/app")
     expect(directory("cd packages\ncd ./app; pnpm run test")).toBe("packages/app")
+    expect(directory("cd packages/app && true; echo ok || pnpm run test")).toBe("packages/app")
+    expect(directory("cd packages/app && true\necho ok || pnpm run test")).toBe("packages/app")
     expect(directory("cd .. && pnpm run test", "packages/app")).toBe("packages")
     expect(directory("pnpm run test", "./packages/lib/")).toBe("packages/lib")
     expect(directory("bash -c 'cd packages/app && pnpm run test'\npnpm --filter lib run build", "")).toBe(
@@ -209,6 +211,8 @@ describe("understand", () => {
       const command of [
         "cd \"$DIR\" && pnpm run test",
         "cd packages/app || pnpm run test",
+        "cd missing && true || pnpm run test",
+        "cd packages/app && echo ready && true || pnpm run test",
         "cd packages/app || echo failed\npnpm run test",
         "cd packages/app | pnpm run test",
         "cd packages/app &\npnpm run test",
@@ -237,6 +241,7 @@ describe("understand", () => {
   it("refuses a step whose directory or command still holds an expression, or leaves the repository", () => {
     expect(understand(step("pnpm run test", { cwd: "${{ matrix.dir }}" }), workspace)).toBeUndefined()
     expect(understand(step("pnpm --filter ${{ matrix.package }} run test"), workspace)).toBeUndefined()
+    expect(understand(step("pnpm -r run test -- '${{ inputs.test_path }}'"), workspace)).toBeUndefined()
     expect(understand(step("pnpm run test", { cwd: "../elsewhere" }), workspace)).toBeUndefined()
     expect(understand(step("pnpm run test", { cwd: "/abs" }), workspace)).toBeUndefined()
   })
@@ -362,6 +367,16 @@ describe("decide: pnpm, Bun and npm", () => {
     expect(plan(plain, "[ -n \"$SUB\" ] && cd packages/app; pnpm run test")).toEqual(whole)
     expect(plan(plain, "true || cd packages/app; pnpm run test")).toEqual(whole)
     expect(scoped(plan(plain, "cd packages && cd app && pnpm run test"))).toContain("packages/app/**")
+  })
+
+  it("keeps the step whole when a failed test can skip a second cd", () => {
+    const nested = {
+      files: {
+        "a/package.json": manifest("a", { test: "node --test" }),
+        "a/b/package.json": manifest("b", { test: "node --test" })
+      }
+    }
+    expect(plan(nested, "cd a && test x = y && cd b; pnpm test")).toEqual(whole)
   })
 
   it("keeps unmatched literal selectors and failing explicit npm sweeps whole", () => {
@@ -550,6 +565,61 @@ describe("decide: Turborepo", () => {
     expect(plan({ ...plain, turbo: { tasks: { "lib#test": {} } } }, "turbo run lone#test lib#test")).toEqual(whole)
   })
 
+  it("reads the whole tree for unsupported Turbo input globs", () => {
+    const command = "turbo run test --filter=app"
+    const files = { ...plain.files, "!shared/package.json": manifest("shared") }
+    for (
+      const config of [
+        { globalDependencies: ["assets/*.json"], tasks: { test: {} } },
+        { globalDependencies: ["assets/*/../shared.json"], tasks: { test: {} } },
+        { globalDependencies: ["assets/.."], tasks: { test: {} } },
+        { globalDependencies: ["../assets/*.json"], tasks: { test: {} } },
+        { globalDependencies: ["./!shared/**"], tasks: { test: {} } },
+        { globalDependencies: ["/**"], tasks: { test: {} } },
+        { tasks: { test: { inputs: ["$TURBO_ROOT$/assets/**/*.json"] } } },
+        { tasks: { test: { inputs: ["../docs/{a,b}.json"] } } },
+        { tasks: { test: { inputs: ["$TURBO_ROOT$/packages/*/../shared.json"] } } },
+        { tasks: { test: { inputs: ["$TURBO_ROOT$/packages/app/**/*.json"] } } },
+        { tasks: { test: { inputs: ["$TURBO_ROOT$/!shared/**"] } } }
+      ]
+    ) {
+      expect(scoped(plan({ files, turbo: config }, command)), JSON.stringify(config)).toEqual([everything])
+    }
+  })
+
+  it("includes supported positive global and task inputs alongside the package's default inputs", () => {
+    const command = "turbo run test --filter=app"
+    const inputs = ["$TURBO_ROOT$/*", "$TURBO_ROOT$/packages/docs/theme.json", "../lone/*", "!../lone/**", "src/**"]
+    const globals = [
+      "*",
+      "./packages/docs/config/../schema.json",
+      "./packages/docs/*",
+      "packages/lone/assets/**",
+      "!packages/docs/**"
+    ]
+    expect(
+      scoped(plan({
+        ...plain,
+        turbo: { globalDependencies: globals, tasks: { test: { inputs } } }
+      }, command))
+    ).toEqual([
+      ...outside,
+      "packages/app/**",
+      "packages/docs/*",
+      "packages/docs/schema.json",
+      "packages/docs/theme.json",
+      "packages/lib/**",
+      "packages/lone/*",
+      "packages/lone/assets/**"
+    ].sort())
+    expect(
+      scoped(plan({ ...plain, turbo: { globalDependencies: ["**"], tasks: { test: {} } } }, command))
+    ).toEqual([everything])
+    expect(
+      scoped(plan({ ...plain, turbo: { tasks: { test: { inputs: ["$TURBO_ROOT$/**"] } } } }, command))
+    ).toEqual([everything])
+  })
+
   it("splits through a root script, behind the package manager's runner", () => {
     expect(parts(plan(turbo, "pnpm test"))["lib"]?.command).toBe("pnpm exec turbo run test --filter=lib")
   })
@@ -734,14 +804,22 @@ describe("inputsOf", () => {
       packages: new Set(["packages/cloud", "packages/cloud/api"]),
       files: new Set(["packages/cloud/x.ts", "packages/b/y.ts"])
     }
-    expect(inputsOf(["*", "packages/*", "docs/**"], [reach], ["docs/guide.md", "extra/*.json"])).toEqual([
+    expect(inputsOf(["*", "packages/*", "docs/**"], [reach], ["docs/guide.md", "extra/*"])).toEqual([
       "*",
       "docs/**",
-      "extra/*.json",
+      "extra/*",
       "packages/*",
       "packages/b/y.ts",
       "packages/cloud/**"
     ])
+  })
+
+  it("accepts the five contract forms and collapses whole-repository input", () => {
+    expect(inputsOf([], [], ["*", "dir/*", "dir/**", "other/file"])).toEqual(["*", "dir/*", "dir/**", "other/file"])
+    expect(inputsOf(["*"], [], ["**", "docs/readme"])).toEqual([everything])
+    for (const glob of ["", "/**", "dir/***", "dir/foo*", "dir/*/file", "dir/[x]", "dir/../file", "dir//file"]) {
+      expect(inputsOf(["docs/**"], [], [glob]), glob).toEqual([everything])
+    }
   })
 
   it("reads everything when a path cannot be written as a glob", () => {

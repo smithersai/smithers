@@ -37,6 +37,22 @@ describe("commands", () => {
     expect(read(`echo "a\\\\b" "c\\$d" "e\\nf"`)).toEqual([["echo", "a\\b", "c$d", "e\\nf"]])
   })
 
+  it("refuses CI expressions even inside shell quotes", () => {
+    expect(commands("pnpm -r run test -- '${{ inputs.test_path }}'")).toBeUndefined()
+    expect(commands("# ${{ inputs.test_path }}\npnpm -r run test")).toBeUndefined()
+    expect(read("echo '${HOME}'")).toEqual([["echo", "${HOME}"]])
+  })
+
+  it("bounds nested ifs while allowing successive ifs and elifs", () => {
+    const nested = (depth: number) => "if test -n x; then ".repeat(depth) + "pnpm test; " + "fi; ".repeat(depth)
+    expect(read(nested(64))).toEqual([["pnpm", "test"]])
+    expect(commands(nested(65))).toBeUndefined()
+    expect(commands(nested(10_000))).toBeUndefined()
+    expect(read("if test -z x; then false; " + "elif test -z x; then false; ".repeat(65) + "else echo ok; fi"))
+      .toEqual([["echo", "ok"]])
+    expect(read("if test -n x; then echo ok; fi; ".repeat(65))).toHaveLength(65)
+  })
+
   it("joins a line continued with a backslash inside double quotes", () => {
     // The shell removes a backslash and the line break after it there too: `"pn\<line break>pm"` is `pnpm`.
     expect(read("\"pn\\\npm\" run \"te\\\nst\"")).toEqual([["pnpm", "run", "test"]])

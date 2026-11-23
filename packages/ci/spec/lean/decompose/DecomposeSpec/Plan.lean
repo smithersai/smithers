@@ -11,6 +11,12 @@ namespace DecomposeSpec
 open Text
 open Workspace (Package search unseenCount unseenCount_lt)
 
+/-- True when a literal path would be interpreted as glob syntax. -/
+def globMagic (path : Str) : Bool :=
+  path.any (fun char => "*?[]{}\\".toList.contains char) ||
+    ["@(", "+(", "!("].any (fun marker => contains marker.toList path) ||
+    path.head? = some '!' || path.head? = some '#'
+
 namespace Turbo
 
 /-- One task definition, reduced to what the splitter reads. -/
@@ -40,6 +46,20 @@ structure Walk where
   deriving DecidableEq, Repr
 
 def rootMarker : Str := "$TURBO_ROOT$/".toList
+
+/-- Rooted or escaping positive inputs widen the package's read set. Keep glob syntax before traversal so
+joining the path does not hide a wildcard the planner cannot represent. -/
+def extraInput (directory input : Str) : Option Str := do
+  if input.head? = some '!' then none else
+    let rooted := dropPrefix rootMarker input
+    let relative := rooted.getD input
+    let parent := (splitOn '/' relative).reverse.span (· ≠ "..".toList)
+    let glob ← match parent.2 with
+      | _ :: before =>
+        if globMagic (joinWith "/".toList before.reverse) then some relative
+        else Workspace.join (if rooted.isSome then [] else directory) relative
+      | [] => if rooted.isSome then Workspace.join [] relative else none
+    if glob.isEmpty then none else some glob
 
 /-- The definition Turborepo uses for one package's task: the package's own file, then the root's `package#task`,
 then the root's `task`. -/
@@ -115,12 +135,7 @@ def walk (config : Config) (packages : List Package) (start : Str) (tasks : List
     | some package, some definition => some (package, task, definition)
     | _, _ => none
   let running := defined.filter fun (package, task, _) => package.scripts.contains task
-  let globs := running.flatMap fun (package, _, definition) => definition.inputs.filterMap fun input =>
-    let glob :=
-      match dropPrefix rootMarker input with
-      | some rest => Workspace.join [] rest
-      | none => if (splitOn '/' input).contains "..".toList then Workspace.join package.directory input else none
-    glob.filter (· ≠ [])
+  let globs := running.flatMap fun (package, _, definition) => definition.inputs.filterMap (extraInput package.directory)
   {
     packages := distinct (running.map (·.1.name))
     scripts := running.map fun (package, task, _) => (package.name, task)
@@ -131,6 +146,53 @@ def walk (config : Config) (packages : List Package) (start : Str) (tasks : List
 end Turbo
 
 namespace Plan
+
+/-- The joint ends the preceding AND-OR chain. -/
+def separates : Shell.Joint → Bool
+  | .first | .semi => true
+  | _ => false
+
+/-- A directory change can be followed in a straight list or immediately after a `cd` in an AND chain. An
+OR arm after a `cd` may run either in the old or new directory. This tracks directories only. -/
+def directoryList : List Shell.Command → Str → Bool → Bool → Option (List (Shell.Command × Str))
+  | [], _, _, _ => some []
+  | command :: rest, cwd, previousCd, chainHasCd => do
+    if chainHasCd && command.joint = .or then none else
+      let separator := separates command.joint
+      if command.words.head?.map (·.text) = some "cd".toList then
+        match command.words with
+        | [head, path] =>
+          if (separator || (previousCd && command.joint = .and)) && head.literal && path.literal &&
+              !command.conditional && !command.piped && !command.background && command.joint ≠ .pipe &&
+              path.text.head? ≠ some '/' && path.text.head? ≠ some '~' && path.text ≠ ['-'] then
+            let next ← Workspace.join cwd path.text
+            directoryList rest next true true
+          else none
+        | _ => none
+      else ((command, cwd) :: ·) <$> directoryList rest cwd false (chainHasCd && !separator)
+
+def everything : Str := "**".toList
+
+def stripSuffix (suffix path : Str) : Option Str := (dropPrefix suffix.reverse path.reverse).map List.reverse
+
+/-- A contract glob is `*`, `**`, a literal repository path, or such a path with a final `/*` or `/**`. -/
+def contractGlob (glob : Str) : Bool :=
+  if glob = ['*'] || glob = everything then true else
+    let path := ((stripSuffix "/**".toList glob).orElse (fun _ => stripSuffix "/*".toList glob)).getD glob
+    !path.isEmpty && !globMagic path && Workspace.join [] path = some path
+
+/-- Combines the reached package directories, single files, and the extra globs with the inputs outside the
+workspace packages. An unrepresentable input widens the read set to the whole tree. -/
+def inputsOf (outside : List Str) (reaches : List Workspace.Reach) (globs : List Str) : List Str :=
+  let directories := reaches.flatMap (·.packages)
+  let files := reaches.flatMap (·.files)
+  if outside.contains everything || globs.contains everything || globs.any (!contractGlob ·) ||
+      (directories ++ files).any globMagic then [everything]
+  else
+    let whole := (outside.filter fun glob => (stripSuffix "/**".toList glob).isSome) ++
+      directories.map (· ++ "/**".toList)
+    let covered := fun path => whole.any fun glob => glob ≠ path && (glob.take (glob.length - 2)).isPrefixOf path
+    jsSort ((distinct (outside ++ whole ++ files ++ globs)).filter (!covered ·))
 
 /-- One CI job, by what the order is computed from. `tree` is the working tree it shares with the jobs that name
 the same one, or `none` for a job that gets a checkout of its own, as a GitHub Actions job does. -/

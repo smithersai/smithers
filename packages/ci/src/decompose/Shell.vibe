@@ -84,6 +84,7 @@ const refusedBare = new Set(["`", "(", ")", "{", "}", "*", "?", "~"])
 const brackets = new Set(["[", "]", "[[", "]]"])
 const branchKeywords = new Set(["then", "elif", "else", "fi"])
 const refusedKeywords = new Set(["for", "while", "until", "do", "done", "case", "esac", "function", "select", "time"])
+const maxIfDepth = 64
 
 // The end of `$NAME`, `${NAME}` or a one-character parameter. Any other text
 // after a dollar sign is an expansion this reader cannot follow.
@@ -293,16 +294,16 @@ const uncertain = (list: ReadonlyArray<Command>): ReadonlyArray<Command> =>
 // Reads from `if` to `fi`. A branch whose test is computed false is dropped;
 // one computed true ends the chain, and runs for certain when every test
 // before it was computed false.
-const readIf = (reader: Reader, conditional: boolean, out: Array<Command>): boolean => {
+const readIf = (reader: Reader, conditional: boolean, out: Array<Command>, depth: number): boolean => {
   let open = true
   let certain = true
   for (;;) {
     reader.at += 1
     const condition: Array<Command> = []
-    if (!readList(reader, branchKeywords, conditional, condition) || bareWord(reader) !== "then") return false
+    if (!readList(reader, branchKeywords, conditional, condition, depth) || bareWord(reader) !== "then") return false
     reader.at += 1
     const body: Array<Command> = []
-    if (!readList(reader, branchKeywords, conditional, body)) return false
+    if (!readList(reader, branchKeywords, conditional, body, depth)) return false
     const known = staticTest(condition)
     if (open && known === true) {
       out.push(...(certain ? body : uncertain(body)))
@@ -316,7 +317,7 @@ const readIf = (reader: Reader, conditional: boolean, out: Array<Command>): bool
   if (bareWord(reader) === "else") {
     reader.at += 1
     const otherwise: Array<Command> = []
-    if (!readList(reader, branchKeywords, conditional, otherwise)) return false
+    if (!readList(reader, branchKeywords, conditional, otherwise, depth)) return false
     if (open) out.push(...(certain ? otherwise : uncertain(otherwise)))
   }
   if (bareWord(reader) !== "fi") return false
@@ -326,7 +327,13 @@ const readIf = (reader: Reader, conditional: boolean, out: Array<Command>): bool
 
 // Reads commands until the tokens end or a keyword in `stops` is next. With
 // no `stops` the list must reach the end of the script.
-const readList = (reader: Reader, stops: ReadonlySet<string>, conditional: boolean, out: Array<Command>): boolean => {
+const readList = (
+  reader: Reader,
+  stops: ReadonlySet<string>,
+  conditional: boolean,
+  out: Array<Command>,
+  depth: number
+): boolean => {
   let joint: Joint = "first"
   for (;;) {
     while (((token) => token?.kind === "operator" && token.text === ";")(reader.tokens[reader.at])) reader.at += 1
@@ -339,7 +346,7 @@ const readList = (reader: Reader, stops: ReadonlySet<string>, conditional: boole
     if (keyword === "if") {
       // An `if` stands alone: nothing may join it to a neighbour but a separator.
       if (joint !== "first" && joint !== ";") return false
-      if (!readIf(reader, conditional, out)) return false
+      if (depth >= maxIfDepth || !readIf(reader, conditional, out, depth + 1)) return false
       const after = reader.tokens[reader.at]
       if (after !== undefined && !(after.kind === "operator" && after.text === ";")) {
         const stop = bareWord(reader)
@@ -374,10 +381,12 @@ const readList = (reader: Reader, stops: ReadonlySet<string>, conditional: boole
  * @since 0.1.0
  */
 export const commands = (script: string): ReadonlyArray<Command> | undefined => {
+  // The CI runner interpolates expressions before reading any shell quotes.
+  if (script.includes("${{")) return undefined
   const tokens = lex(script)
   if (tokens === undefined) return undefined
   const out: Array<Command> = []
-  return readList({ tokens, at: 0 }, new Set(), false, out) ? out : undefined
+  return readList({ tokens, at: 0 }, new Set(), false, out, 0) ? out : undefined
 }
 
 /**

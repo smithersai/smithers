@@ -149,6 +149,11 @@ describe("Protocol.decodeCompile", () => {
       inputs: undefined,
       problems: []
     })
+    expect(Protocol.decodeCompile(Protocol.join([message(6), message(1, words(0, 0))]))).toEqual({
+      completed: true,
+      inputs: undefined,
+      problems: []
+    })
   })
 
   it("ignores the final path terminator", () => {

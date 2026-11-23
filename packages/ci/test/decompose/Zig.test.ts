@@ -1,6 +1,11 @@
+import { Effect } from "effect"
 import { describe, expect, it } from "vitest"
-import type { Step } from "../../src/contract/Inventory.vibe"
+import { ci, type Step } from "../../src/contract/Inventory.vibe"
+import { splitWith } from "../../src/decompose/Split.vibe"
 import * as Zig from "../../src/decompose/Zig.ts"
+import { readWorkflow } from "../../src/inventory/GithubActions.vibe"
+import { readJustfile } from "../../src/inventory/Justfile.vibe"
+import { live, repository } from "../select/support.vibe"
 
 const step = (command: string, extra: Partial<Step> = {}): Step => ({
   id: "justfile:test:1",
@@ -97,15 +102,15 @@ describe("Zig.sole", () => {
 describe("Zig.split", () => {
   const groups = new Map([["test", ["test-core", "test cli"]], ["check", ["check-a"]], ["docs", []]])
 
-  it("makes one step per named step, each with the step's own variables, no inputs and leave to run beside the others", () => {
-    const parts = Zig.split(step("set -e\nzig build test", { name: "Test", env: { CI: "1" } }), groups)
+  it("makes one step per named step, each with no inputs and leave to run beside the others", () => {
+    const parts = Zig.split(step("set -e\nzig build test", { name: "Test" }), groups)
     expect(parts).toEqual([
       {
         id: "justfile:test:1:test-core",
         command: "zig build test-core",
         name: "Test (test-core)",
         cwd: "",
-        env: { CI: "1" },
+        env: {},
         secrets: [],
         from: "justfile:test:1",
         // One build ran the named steps at the same time, so the steps still may. They write Zig's two caches at
@@ -119,7 +124,7 @@ describe("Zig.split", () => {
         command: "zig build 'test cli'",
         name: "Test (test cli)",
         cwd: "",
-        env: { CI: "1" },
+        env: {},
         secrets: [],
         from: "justfile:test:1",
         // One build ran the named steps at the same time, so the steps still may. They write Zig's two caches at
@@ -147,6 +152,18 @@ describe("Zig.split", () => {
     expect(Zig.split(step("zig build test", { cwd: "." }), groups)?.length).toBe(2)
   })
 
+  it("keeps the command whole when the working directory is outside the root or chosen at runtime", () => {
+    for (const cwd of ["/outside", "~/checkout", "../sibling", "$BUILD_DIR"]) {
+      expect(Zig.split(step("zig build test", { cwd }), groups)).toBeUndefined()
+    }
+  })
+
+  it("keeps a step with custom environment whole even when that build name has groups", () => {
+    const custom = step("zig build test", { env: { ZIG_GLOBAL_CACHE_DIR: "custom" } })
+    expect(Zig.atRoot(custom)).toBe(false)
+    expect(Zig.split(custom, groups)).toBeUndefined()
+  })
+
   it("leaves the step alone when it is more than one build, or its build step groups fewer than two", () => {
     expect(Zig.split(step("zig build test || true"), groups)).toBeUndefined()
     expect(Zig.split(step("zig build docs"), groups)).toBeUndefined()
@@ -154,4 +171,58 @@ describe("Zig.split", () => {
     // One named step is the same work under another name.
     expect(Zig.split(step("zig build check"), groups)).toBeUndefined()
   })
+})
+
+it("skips probes and keeps Zig builds whole when a runner supplies environment at runtime", async () => {
+  const file = ".github/workflows/ci.yml"
+  const workflow = `
+on: push
+jobs:
+  dynamic:
+    runs-on: ubuntu-latest
+    steps:
+      - env:
+          BUILD_MODE: \${{ runner.temp }}
+        run: zig build check
+  inherited:
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          echo 'BUILD_MODE=fast' >> "$GITHUB_ENV"
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+      - run: zig build test
+`
+  const justfile = "ci:\n    zig build test\n"
+  const imported = readWorkflow(file, workflow).jobs
+  expect(imported.find((job) => job.id === "ci.yml:inherited")?.steps).toHaveLength(2)
+  const builds = imported.flatMap((job) => job.steps).filter((step) => step.command.startsWith("zig build "))
+  expect(builds.map(({ command, env, runner }) => ({ command, env, runner }))).toEqual([
+    { command: "zig build check", env: {}, runner: expect.any(String) },
+    { command: "zig build test", env: {}, runner: expect.any(String) }
+  ])
+  const plain = readJustfile("justfile", justfile).jobs
+  expect(plain.flatMap((job) => job.steps).map((step) => step.command)).toEqual(["zig build test"])
+
+  await Effect.runPromise(live(Effect.gen(function*() {
+    const { root, commits } = yield* repository([{ at: 0, files: { [file]: workflow, justfile } }])
+    const requested: Array<ReadonlyArray<string>> = []
+    const split = splitWith({
+      zigGroups: (_root, names) =>
+        Effect.sync(() => {
+          requested.push(names)
+          return [["test-core", "test-cli"]]
+        })
+    })
+    const inventory = { version: 1 as const, repository: "example/zig", commit: commits[0]!, toolchains: [] }
+    const importedOnly = yield* split(root, ci({ ...inventory, jobs: imported }))
+    expect(requested).toEqual([])
+    expect(importedOnly.jobs).toEqual(imported)
+    const groups = new Map([["test", ["test-core", "test-cli"]]])
+    expect(Zig.split(builds[1]!, groups)).toBeUndefined()
+
+    const plainOnly = yield* split(root, ci({ ...inventory, jobs: plain }))
+    expect(requested).toEqual([["test"]])
+    expect(plainOnly.jobs.flatMap((job) => job.steps.map((step) => step.command)))
+      .toEqual(["zig build test-core", "zig build test-cli"])
+  })))
 })

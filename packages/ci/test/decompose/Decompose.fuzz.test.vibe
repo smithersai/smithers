@@ -895,6 +895,7 @@ interface TurboCase {
   readonly layout: Layout
   readonly reordered: Layout
   readonly root: string
+  readonly globalGlobs: ReadonlyArray<string>
   readonly own: ReadonlyArray<readonly [name: string, text: string]>
   readonly start: number
   readonly tasks: ReadonlyArray<string>
@@ -917,11 +918,30 @@ const turboCase = (tape: Tape): TurboCase => {
   const tasks = (): string =>
     [...new Set(Array.from({ length: tape.next(5) + 1 }, () => tape.chance(5) ? `${tape.pick(layout.names)}#${tape.pick(taskNames)}` : tape.pick(taskNames)))]
       .map((name) => `${JSON.stringify(name)}:${task()}`).join(",")
-  const globals = Array.from({ length: tape.next(3) }, () => JSON.stringify(tape.pick(["tsconfig.json", "./.env", "!ignored", "/abs", "../up", "a/../b", "", "./"])))
+  const globalCases = [
+    ["tsconfig.json", "tsconfig.json"],
+    ["./.env", ".env"],
+    ["!ignored", null],
+    ["/abs", null],
+    ["../up", null],
+    ["a/../b", "b"],
+    ["a/..", "a/.."],
+    ["", null],
+    ["./", null],
+    ["a/*/../b", "a/*/../b"],
+    ["assets/**/*.json", "assets/**/*.json"],
+    ["./!shared/**", "!shared/**"],
+    ["*", "*"],
+    ["**", "**"],
+    ["./assets/*", "assets/*"],
+    ["./assets/**", "assets/**"]
+  ] as const
+  const globals = Array.from({ length: tape.next(3) }, () => tape.pick(globalCases))
   return {
     layout,
     reordered,
-    root: `{ // the root\n "${tape.pick(["tasks", "pipeline"])}":{${tasks()}}, "globalDependencies":[${globals.join(",")}], }`,
+    root: `{ // the root\n "${tape.pick(["tasks", "pipeline"])}":{${tasks()}}, "globalDependencies":${JSON.stringify(globals.map(([raw]) => raw))}, }`,
+    globalGlobs: globals.flatMap(([, glob]) => glob === null ? [] : [glob]),
     own: layout.names.filter(() => tape.chance(4)).map((name): readonly [string, string] => [name, tape.chance(5) ? "{\"tags\":[]}" : `{"extends":["//"],"tasks":{${tasks()}}}`]),
     start: tape.next(layout.names.length),
     tasks: Array.from({ length: tape.next(3) + 1 }, () => tape.pick(taskNames))
@@ -974,15 +994,17 @@ const turboProblems = (input: TurboCase): ReadonlyArray<string> => {
   const expected = [...reached].filter(defined).sort()
   const twin = Turbo.walk(config, other, other.packages.find((candidate) => candidate.name === start.name) as Workspace.Package, [...input.tasks].reverse())
   const each = input.tasks.flatMap((task) => Turbo.walk(config, workspace, start, [task]).scripts.map(([owner, script]) => keyOf(owner.name, script)))
+  const extra = [...config.globalDependencies, ...walked.globs]
   return [
     ...check(unique(ran), "a script runs twice"),
     ...check(same([...ran].sort(), expected), `walk runs ${[...ran].sort().join(" ")} where dependsOn reaches ${expected.join(" ")}`),
     ...check(same(walked.packages.map((owner) => owner.name).sort(), [...new Set(walked.scripts.map(([owner]) => owner.name))].sort()), "the packages are not the scripts' owners"),
-    ...check(sorted(walked.globs) && unique(walked.globs) && walked.globs.every((glob) => glob !== "" && !glob.split("/").includes("..")), "a glob leaves the repository or is listed twice"),
+    ...check(sorted(walked.globs) && unique(walked.globs) && walked.globs.every((glob) => glob !== ""), "task globs are not a sorted set of nonempty strings"),
     ...check(same(twin.scripts.map(([owner, script]) => keyOf(owner.name, script)).sort(), [...ran].sort()), "the walk depends on the order of the packages or the tasks"),
     ...check(same(twin.globs, walked.globs) && twin.root === walked.root, "the globs depend on the order of the packages or the tasks"),
     ...check(same([...new Set(each)].sort(), [...ran].sort()), "the tasks together run other scripts than each alone"),
-    ...check(config.globalDependencies.every((glob) => glob !== "" && !/^(?:!|\/|\.\/)/.test(glob) && !glob.split("/").includes("..")), "a global dependency leaves the repository"),
+    ...check(same(config.globalDependencies, input.globalGlobs), "global dependencies lost a positive glob or its canonical path, or kept an exclusion or outside path"),
+    ...check(!extra.some((glob) => glob.split("/").includes("..")) || same(Plan.inputsOf([], [], extra), [Plan.everything]), "traversal in an extra glob is scoped"),
     ...check([...config.tasks.values()].every((task) => !task.dependsOn.includes("$TURBO_EXTENDS$") && !task.inputs.includes("$TURBO_EXTENDS$")), "the extends marker is kept as an entry")
   ]
 }
@@ -1256,6 +1278,7 @@ describe("Shell.commands", () => {
       const head = `A=${quote(third)} `
       const body = `run ${words.map(quote).join(" ")}`
       const script = `${head}${body} > ${quote(second)}`
+      if (script.includes("${{")) return check(commands(script) === undefined, "a CI expression is read through quotes")
       const expected = [{
         assignments: [["A", { text: third, literal: true }]],
         words: ["run", ...words].map((text) => ({ text, literal: true })),
@@ -1321,7 +1344,9 @@ describe("Shell.commands", () => {
 describe("Shell.quote", () => {
   it.live("writes any word so that the reader gives it back", () =>
     assertHolds(Arbitrary.array(anyString, { minLength: 1, maxLength: 4 }), (words) => {
-      const read = commands(`echo ${words.map(quote).join(" ")}`)
+      const script = `echo ${words.map(quote).join(" ")}`
+      const read = commands(script)
+      if (script.includes("${{")) return check(read === undefined, "a CI expression is read through quotes")
       return check(same(read?.[0]?.words.slice(1), words.map((text) => ({ text, literal: true }))) && read?.length === 1, `read ${JSON.stringify(read)}`)
     }, { runs: 300, seed: 21 }))
 })

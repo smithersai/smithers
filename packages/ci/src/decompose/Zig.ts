@@ -129,14 +129,17 @@ const depth = (cwd: string): number | undefined => {
 }
 
 /**
- * True when the step starts in the repository's root, where its `build.zig`
- * is the one whose named steps are read.
+ * True when the step starts in the repository root and can use the groups
+ * discovered there. A runner can compute variables or load earlier writes
+ * to GITHUB_ENV and GITHUB_PATH. The probe cannot know that environment,
+ * which can change the Zig executable or the build graph.
  *
  * @throws {never}
  * @category reading
  * @since 0.1.0
  */
-export const atRoot = (step: Step): boolean => depth(step.cwd) === 0
+export const atRoot = (step: Step): boolean =>
+  depth(step.cwd) === 0 && Object.keys(step.env).length === 0 && step.runner === undefined
 
 /**
  * Where Zig keeps its two caches for a build in the repository's root, as
@@ -155,8 +158,8 @@ export const caches: ReadonlyArray<string> = [".zig-cache", "~/.cache/zig"]
  * `zig build <name>` per named step, with the flags the step gave, each
  * marked `atOnce`, as one build runs them, and each naming Zig's
  * {@link caches} as what they share. `undefined` when the command is more
- * than that, the step starts elsewhere, or the build step groups fewer than
- * two.
+ * than that, the step starts elsewhere, sets environment variables, runs
+ * through a runner, or the build step groups fewer than two.
  *
  * @param step - The CI step.
  * @param groups - The named steps each build step of the root's build groups.

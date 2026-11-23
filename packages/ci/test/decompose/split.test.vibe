@@ -329,7 +329,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, WebCrypto.layer))("split", (it) => {
         "packages/c/gone.ts": "import \"a\"",
         "packages/d/absolute.ts": ""
       })
-      try fs.symlink("../b/shared.json", path.join(root, "packages/a/linked.json"))
+      try fs.symlink("../b/shared.json", path.join(root, "packages/a/linked.png"))
       try fs.writeFileString(path.join(root, "packages/a/local.json"), "{}")
       try fs.symlink("local.json", path.join(root, "packages/a/inner.json"))
       try fs.remove(path.join(root, "packages/d/absolute.ts"))
@@ -366,6 +366,53 @@ it.layer(Layer.mergeAll(NodeServices.layer, WebCrypto.layer))("split", (it) => {
       }
     })
 
+  it.effect("widens when a reached file no longer resolves directly to a listed file", () => effect {
+    const fs = try FileSystem.FileSystem
+    const root = try repository({
+      "package.json": JSON.stringify({ workspaces: ["packages/*"] }),
+      "packages/a/package.json": manifest("a", { test: "test" }),
+      "packages/a/missing.ts": "",
+      "packages/b/package.json": manifest("b", { test: "test" }),
+      "packages/b/nested/file.ts": "",
+      "packages/c/package.json": manifest("c", { test: "test" }),
+      "packages/c/changed.ts": "",
+      "packages/d/package.json": manifest("d", { test: "test" }),
+      "packages/d/chain.ts": "",
+      "tools/target.ts": ""
+    })
+    try fs.remove(root + "/packages/a/missing.ts")
+    try fs.symlink("missing-target.ts", root + "/packages/a/missing.ts")
+    try fs.rename(root + "/packages/b/nested", root + "/tools/moved")
+    try fs.symlink("../../tools/moved", root + "/packages/b/nested")
+    try fs.remove(root + "/packages/c/changed.ts")
+    try fs.makeDirectory(root + "/packages/c/changed.ts")
+    try fs.remove(root + "/packages/d/chain.ts")
+    try fs.symlink("target.ts", root + "/tools/indirect.ts")
+    try fs.symlink("../../tools/indirect.ts", root + "/packages/d/chain.ts")
+    const after = stepsOf(try splitStatic(root, ci([step("s", "npm run test --workspaces")])))
+    expect(after.map((step) => [step.id, step.inputs])).toEqual(
+      ["a", "b", "c", "d"].map((name) => [`s:${name}`, ["**"]])
+    )
+  })
+
+  it.effect("keeps the step whole when a workspace manifest cannot be canonicalized", () => effect {
+    const fs = try FileSystem.FileSystem
+    const root = try repository(pnpmWorkspace)
+    const before = ci([step("s", "pnpm -r run test")])
+    const faulty = {
+      ...fs,
+      realPath: (file: string) => file === root + "/packages/ui/package.json"
+        ? fail(PlatformError.systemError({ _tag: "PermissionDenied", module: "FileSystem", method: "realPath" }))
+        : fs.realPath(file)
+    }
+    provide FileSystem.FileSystem = faulty {
+      expect(try splitStatic(root, before)).toEqual(before)
+    }
+    try fs.rename(root + "/packages/ui", root + "/tools/renamed")
+    try fs.symlink("../tools/renamed", root + "/packages/ui")
+    expect(try splitStatic(root, before)).toEqual(before)
+  })
+
   it.effect("returns the CI as it was when the repository has no workspace it can read", () =>
     effect {
       const before = ci([step("s", "pnpm -r run test"), step("t", "bunx turbo run build")])
@@ -392,6 +439,221 @@ it.layer(Layer.mergeAll(NodeServices.layer, WebCrypto.layer))("split", (it) => {
       }
     })
 
+  it.effect("matches package selection to the runner's workspace declaration", () => effect {
+    const files = {
+      "packages/a/package.json": manifest("a", { test: "node -e 0" }),
+      "packages/b/package.json": manifest("b", { test: "node -e 0" })
+    }
+    const scripts = separately([
+      step("pnpm", "pnpm -r run test"),
+      step("bun", "bun run --filter '*' test"),
+      step("yarn", "yarn workspace a test"),
+      step("npm", "npm run test --workspaces")
+    ])
+    const run = effect (patterns: ReadonlyArray<string>, pnpm: ReadonlyArray<string> | undefined) => {
+      const root = try repository({
+        ...files,
+        "package.json": JSON.stringify({ workspaces: patterns }),
+        ...(pnpm === undefined ? {} : { "pnpm-workspace.yaml": JSON.stringify({ packages: pnpm }) })
+      })
+      return stepsOf(try splitStatic(root, scripts)).map((step) => [step.id, step.from]).filter(([, from]) => from !== undefined)
+    }
+    expect(try run(["packages/*"], undefined)).toEqual([
+      ["bun:a", "bun"], ["bun:b", "bun"], ["yarn", "yarn"], ["npm:a", "npm"], ["npm:b", "npm"]
+    ])
+    expect(try run(["packages/a"], ["packages/*"])).toEqual([["pnpm:a", "pnpm"], ["pnpm:b", "pnpm"]])
+    expect(try run(["packages/a", "packages/b"], ["packages/*"])).toEqual([
+      ["pnpm:a", "pnpm"], ["pnpm:b", "pnpm"], ["bun:a", "bun"], ["bun:b", "bun"], ["yarn", "yarn"],
+      ["npm:a", "npm"], ["npm:b", "npm"]
+    ])
+  })
+
+  it.effect("follows shared root configs and reads only reached source files once", () => effect {
+    const fs = try FileSystem.FileSystem
+    const root = try repository({
+      ...pnpmWorkspace,
+      "eslint.config.js": "export { default } from './tooling/eslint.js'",
+      "tooling/eslint.js": "export { default } from '@org/eslint-config'",
+      "packages/eslint/package.json": manifest("@org/eslint-config"),
+      "packages/eslint/index.js": "export { default } from '../settings/shared.js'",
+      "packages/settings/package.json": manifest("settings"),
+      "packages/settings/shared.js": "export default []",
+      "packages/settings/unused.js": "",
+      "packages/ui/test.mjs": "",
+      "packages/x/unreached.mjs": "",
+      "tooling/unreached.mjs": ""
+    })
+    const reads: Array<string> = []
+    const observed = {
+      ...fs,
+      stream: (...[file, options]: Parameters<typeof fs.stream>) => {
+        reads.push(file.slice(root.length + 1))
+        return fs.stream(file, options)
+      }
+    }
+    const before = separately([
+      step("one", "pnpm --filter ui run test"),
+      step("two", "pnpm --filter ui run test")
+    ])
+    provide FileSystem.FileSystem = observed {
+      const after = stepsOf(try splitStatic(root, before))
+      expect(after.map((step) => step.inputs)).toEqual(after.map(() => [
+        ...pnpmOutside, "packages/eslint/**", "packages/settings/shared.js", "packages/ui/**", "tooling/**"
+      ].sort()))
+    }
+    expect(reads.filter((file) => /\.[cm]?js$/.test(file)).sort()).toEqual([
+      "eslint.config.js",
+      "packages/eslint/index.js",
+      "packages/settings/shared.js",
+      "packages/ui/test.mjs",
+      "tooling/eslint.js"
+    ])
+  })
+
+  it.effect("keeps exact root lockfiles shared without using their inventories as import edges", () => effect {
+    const fs = try FileSystem.FileSystem
+    const root = try repository({
+      "package.json": JSON.stringify({ workspaces: ["packages/*"] }),
+      "pnpm-lock.yaml": "lockfileVersion: '9.0'\nimporters:\n  packages/b: {}\n",
+      "package-lock.json": JSON.stringify({ lockfileVersion: 3, packages: { "packages/b": {} } }),
+      "npm-shrinkwrap.json": JSON.stringify({ lockfileVersion: 3, packages: { "packages/b": {} } }),
+      "bun.lock": JSON.stringify({ lockfileVersion: 1, workspaces: { "packages/b": {} } }),
+      "bun.lockb": "packages/b",
+      "yarn.lock": '"@org/b@workspace:packages/b":\n  version: 0.0.0\n',
+      "packages/a/package.json": manifest("a", { test: "node -e 0" }),
+      "packages/b/package.json": manifest("@org/b"),
+      "packages/b/setup.js": "",
+      "packages/c/package.json": manifest("@org/c"),
+      "packages/d/package.json": manifest("@org/d"),
+      "packages/a/package-lock.json": JSON.stringify({ link: "packages/c" }),
+      "backup-pnpm-lock.yaml": "fixture: packages/d\n"
+    })
+    const reads: Array<string> = []
+    const observed = {
+      ...fs,
+      stream: (...[file, options]: Parameters<typeof fs.stream>) => {
+        reads.push(file.slice(root.length + 1))
+        return fs.stream(file, options)
+      }
+    }
+    const before = ci([step("s", "bun run --filter 'a' test")])
+    provide FileSystem.FileSystem = observed {
+      const after = stepsOf(try splitStatic(root, before))
+      expect(after.map((step) => step.inputs)).toEqual([
+        ["*", "packages/*", "packages/a/**", "packages/c/**", "packages/d/**"]
+      ])
+    }
+    expect(reads.filter((file) => /lock|shrinkwrap/.test(file)).sort()).toEqual([
+      "backup-pnpm-lock.yaml",
+      "packages/a/package-lock.json"
+    ])
+    try fs.remove(root + "/bun.lock")
+    try fs.symlink("packages/b/setup.js", root + "/bun.lock")
+    const linked = byId(try splitStatic(root, before))
+    expect(linked["s"]?.inputs).toEqual([
+      "*", "packages/*", "packages/a/**", "packages/b/setup.js", "packages/c/**", "packages/d/**"
+    ])
+  })
+
+  it.effect("keeps package scope with oversized root lockfile inventories", () => effect {
+    const large = " ".repeat(1024 * 1024)
+    const root = try repository({
+      ...pnpmWorkspace,
+      "pnpm-lock.yaml": "lockfileVersion: '9.0'\nimporters:\n  packages/x: {}\n" + large,
+      "package-lock.json": JSON.stringify({ lockfileVersion: 3, packages: { "packages/x": {} } }) + large
+    })
+    const after = stepsOf(try splitStatic(root, ci([step("s", "pnpm --filter ui run test")])))
+    expect(after.map((step) => step.inputs)).toEqual([[...pnpmOutside, "packages/ui/**"].sort()])
+  })
+
+  it.effect("keeps the original step when mixed wildcard discovery of ignored manifests exhausts its budget", () => effect {
+    const pattern = ["**", "src*", ...Array<string>(254).fill("src"), "unit", "**"].join("/")
+    const directory = [...Array<string>(520).fill("src"), "unit"].join("/")
+    const root = try repository({
+      ".gitignore": "/src/\n",
+      "package.json": JSON.stringify({ workspaces: ["packages/*", pattern] }),
+      "packages/a/package.json": manifest("a", { test: "node -e 0" })
+    })
+    const before = ci([step("s", "npm run test --workspaces")])
+    const scoped = byId(try splitStatic(root, before))
+    expect(scoped["s"]?.inputs).toEqual(["*", "packages/*", "packages/a/**"])
+    const fs = try FileSystem.FileSystem
+    try fs.makeDirectory(root + "/" + directory, { recursive: true })
+    try fs.writeFileString(root + "/" + directory + "/package.json", manifest("unit"))
+    expect(try splitStatic(root, before)).toEqual(before)
+  })
+
+  it.effect("keeps a package-manager directory filter whole when its mixed wildcard exceeds the budget", () => effect {
+    const pattern = ["**", "src*", ...Array<string>(254).fill("src"), "unit", "**"].join("/")
+    const directory = [...Array<string>(520).fill("src"), "unit"].join("/")
+    const root = try repository({
+      "package.json": JSON.stringify({ workspaces: ["src/**"] }),
+      [directory + "/package.json"]: manifest("unit", { test: "node -e 0" })
+    })
+    const selects = ci([step("s", "bun run --filter 'unit' test")])
+    expect(byId(try splitStatic(root, selects))["s"]?.inputs).toContain(directory + "/**")
+    const before = ci([step("s", `bun run --filter './${pattern}' test`)])
+    expect(try splitStatic(root, before)).toEqual(before)
+  })
+
+  it.effect("reads through the byte limit and widens on larger or growing files", () => effect {
+    const fs = try FileSystem.FileSystem
+    const cap = 1024 * 1024
+    const ending = "\nimport '@org/settings'"
+    const boundary = "é".repeat(Math.floor((cap - ending.length) / 2)) + " ".repeat((cap - ending.length) % 2) + ending
+    const root = try repository({
+      "package.json": JSON.stringify({ workspaces: ["packages/*"] }),
+      "packages/a/package.json": manifest("a", { test: "node -e 0" }),
+      "packages/b/package.json": manifest("b", { test: "node -e 0" }),
+      "packages/c/package.json": manifest("c", { test: "node -e 0" }),
+      "packages/settings/package.json": manifest("@org/settings"),
+      "packages/a/test.js": boundary,
+      "packages/b/test.js": boundary + " ",
+      "packages/c/test.js": boundary + " "
+    })
+    const reads: Array<string> = []
+    const capInfo = try fs.lstat(root + "/packages/a/test.js")
+    const observed = {
+      ...fs,
+      lstat: (file: string) => file === root + "/packages/c/test.js" ? succeed(capInfo) : fs.lstat(file),
+      stream: (...[file, options]: Parameters<typeof fs.stream>) => {
+        if (file.endsWith("/test.js")) {
+          reads.push(file.slice(root.length + 1))
+          expect(options?.bytesToRead).toBe(cap + 1)
+        }
+        return fs.stream(file, options)
+      }
+    }
+    provide FileSystem.FileSystem = observed {
+      const before = ci([step("s", "npm run test --workspaces --if-present")])
+      const after = byId(try splitStatic(root, before))
+      expect(after["s:a"]?.inputs).toEqual(["*", "packages/*", "packages/a/**", "packages/settings/**"])
+      expect(after["s:b"]?.inputs).toEqual(["**"])
+      expect(after["s:c"]?.inputs).toEqual(["**"])
+    }
+    expect(reads.sort()).toEqual(["packages/a/test.js", "packages/c/test.js"])
+  })
+
+  it.effect("disables fsmonitor in every repository listing", () => effect {
+    const root = try repository(pnpmWorkspace)
+    const real = try ChildProcessSpawner
+    const seen: Array<ChildProcess.Command> = []
+    const observed = makeSpawner((command) => {
+      seen.push(command)
+      return real.spawn(command)
+    })
+    provide ChildProcessSpawner = observed {
+      try splitStatic(root, ci([step("s", "pnpm -r run test")]))
+    }
+    expect(seen).toHaveLength(3)
+    for (const command of seen) {
+      expect(command).toMatchObject({
+        command: "git",
+        args: expect.arrayContaining(["-c", "core.fsmonitor=false", "ls-files"])
+      })
+    }
+  })
+
   it.effect("leaves steps whole when a file it needs cannot be read", () =>
     effect {
       const fs = try FileSystem.FileSystem
@@ -415,10 +677,10 @@ it.layer(Layer.mergeAll(NodeServices.layer, WebCrypto.layer))("split", (it) => {
       ] as const) {
         const faulty = {
           ...fs,
-          readFileString: (file: string) =>
+          stream: (...[file, options]: Parameters<typeof fs.stream>) =>
             file.endsWith(`/${unreadable}`)
-              ? fail(PlatformError.systemError({ _tag: "PermissionDenied", module: "FileSystem", method: `readFileString ${file}` }))
-              : fs.readFileString(file)
+              ? Stream.fail(PlatformError.systemError({ _tag: "PermissionDenied", module: "FileSystem", method: `stream ${file}` }))
+              : fs.stream(file, options)
         }
         provide FileSystem.FileSystem = faulty {
           const after = try split(root, before)
@@ -661,6 +923,26 @@ it.layer(Layer.mergeAll(NodeServices.layer, WebCrypto.layer))("split", (it) => {
       try Effect.try(() => {
         expect(stepsOf(ungrouped).slice(0, 1).map((found) => [found.id, found.command, found.env])).toEqual(kept)
         expect(stepsOf(failed).slice(0, 1).map((found) => [found.id, found.command, found.env])).toEqual(kept)
+      })
+    })
+
+  it.effect("skips Zig group discovery and rewriting for steps with custom environment", () =>
+    effect {
+      const root = try repository({ "build.zig": "" })
+      const asked: Array<ReadonlyArray<string>> = []
+      const groups = (_root: string, names: ReadonlyArray<string>) => effect {
+        asked.push(names)
+        return names.map(() => ["test-a", "test-b"])
+      }
+      const env = { ZIG_GLOBAL_CACHE_DIR: "custom" }
+      const sameBuild = step("zig:custom:1", "zig build test", { env })
+      const otherBuild = step("zig:custom:2", "zig build check", { env })
+      const plainBuild = step("zig:plain:1", "zig build test")
+      const after = try splitWith({ zigGroups: groups })(root, separately([sameBuild, otherBuild, plainBuild]))
+      try Effect.try(() => {
+        expect(asked).toEqual([["test"]])
+        expect(stepsOf(after).slice(0, 2)).toEqual([sameBuild, otherBuild])
+        expect(stepsOf(after).slice(2).map((found) => found.command)).toEqual(["zig build test-a", "zig build test-b"])
       })
     })
 

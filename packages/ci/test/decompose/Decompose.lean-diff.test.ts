@@ -490,6 +490,8 @@ const shellCorpus = [
   "\"\\\"\\\\\\$\\`\"",
   "\"$\"",
   "\"${X}$Y$1$?$$$!$#\"",
+  "pnpm -r run test -- '${{ inputs.test_path }}'",
+  "echo '${HOME}'",
   "\"${}\"",
   "$",
   "$10",
@@ -534,6 +536,8 @@ const shellCorpus = [
   "a && if true; then b; fi",
   "a; if true; then b; fi | c",
   "if true; then if false; then a; fi; fi",
+  ...[63, 64, 65].map((depth) => "if test -n x; then ".repeat(depth) + "pnpm test; " + "fi; ".repeat(depth)),
+  "if test -z x; then a; " + "elif test -z x; then a; ".repeat(65) + "else b; fi",
   "if true; then if [ a = a ]; then a; else b; fi fi",
   "if then a; fi",
   "if true; then fi",
@@ -1373,6 +1377,14 @@ describe("Workspace against the Lean specification", () => {
         patterns: ["**/**/a"],
         files: ["a/package.json", "x/a/package.json", "x/y/z/a/package.json", "a/x/package.json"]
       },
+      {
+        patterns: ["**/src*/unit/**/test", "!**/src-old/unit/**"],
+        files: [
+          "src-old/integration/src-new/unit/test/package.json",
+          "src-old/unit/src-new/unit/test/package.json",
+          "src-new/tests/unit/test/package.json"
+        ]
+      },
       { patterns: ["*"], files: ["/package.json", "a/package.json", "a//package.json"] },
       { patterns: ["a/../b"], files: ["b/package.json"] },
       { patterns: [], files: ["b/package.json"] },
@@ -1448,8 +1460,11 @@ const turboTasks = (tape: Tape, names: ReadonlyArray<string>, own: boolean): str
     tape.pick([
       "src/**",
       "$TURBO_ROOT$/tsconfig.json",
+      "$TURBO_ROOT$/assets/**/*.json",
+      "$TURBO_ROOT$/packages/*/../shared.json",
       "$TURBO_ROOT$/",
       "../shared/**",
+      "!../shared/**",
       "./../shared/**",
       "$TURBO_ROOT$/shared/../assets",
       "../../x",
@@ -1582,6 +1597,53 @@ const jobProblems = async (jobs: ReadonlyArray<Job>): Promise<ReadonlyArray<stri
 }
 
 describe("Plan against the Lean specification", () => {
+  it.skipIf(!oracleReady)("tracks directory changes through AND-OR lists as the specification does", async () => {
+    await assertCorpus([
+      "cd missing && true || pnpm run test",
+      "cd a && echo ready && true || pnpm run test",
+      "cd a && true | tee out.log || pnpm run test",
+      "cd a && true && pnpm run test",
+      "cd a && cd b && pnpm run test",
+      "cd a && true && cd b && pnpm run test",
+      "cd a && test x = y && cd b; pnpm test",
+      "cd a && true; echo ready || pnpm run test",
+      "cd a && true\necho ready || pnpm run test",
+      "if test -n x; then cd a && true; fi; echo ready || pnpm run test",
+      "if test -n \"$X\"; then cd a && true; fi; echo ready || pnpm run test"
+    ], async (script) => {
+      const cwd = ""
+      const located = Plan.understand(stepOf(script, { cwd }), workspaceOf([]))?.runs.map(({ invocation }) =>
+        invocation.selection.kind === "directory" ? invocation.selection.directory : null
+      )
+      return differs(
+        "directories",
+        located ?? null,
+        await ask({ op: "plan.directories", script, cwd, program: "pnpm" })
+      )
+    })
+  })
+
+  it.skipIf(!oracleReady)("widens unsupported input globs as the specification does", async () => {
+    const outside = ["*", "packages/*", "docs/**"]
+    const reaches = [{ packages: ["packages/a"], files: ["packages/a/file", "packages/b/file"] }]
+    const view = reaches.map(({ packages, files }) => ({ packages: new Set(packages), files: new Set(files) }))
+    await assertCorpus(
+      [
+        ["*", "extras/*", "assets/**", "root.json", "docs/guide.md"],
+        ["**", "file"],
+        ...["", "/**", "!shared/**", "a/***", "a/*.json", "a/[a]", "a/{x,y}", "a/../b", "packages/a/**/*.json"].map((
+          glob
+        ) => [glob])
+      ],
+      async (globs) =>
+        differs(
+          "inputsOf",
+          Plan.inputsOf(outside, view, globs),
+          await ask({ op: "plan.inputsOf", outside, reaches, globs })
+        )
+    )
+  })
+
   it.skipIf(!oracleReady)("orders the jobs of each tree as the specification does", async () => {
     await assertHolds(built(jobsOf, 128), jobProblems, { runs: 500, seed: 41 })
   })

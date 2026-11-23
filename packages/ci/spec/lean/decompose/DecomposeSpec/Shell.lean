@@ -444,13 +444,15 @@ def staticTest (condition : List Command) : Option Bool :=
 /-- Commands an `if` may or may not run. -/
 def uncertain (list : List Command) : List Command := list.map ({ · with conditional := true })
 
+def maxIfDepth : Nat := 64
+
 mutual
 
 /-- Reads commands until the tokens end or, inside an `if` (`stops`), a branch keyword is next. Outside an `if`
 the list must reach the end of the script. Gives the tokens left and the commands read after `out`. -/
-def readList : Nat → Bool → Bool → Joint → List Token → List Command → Option (List Token × List Command)
-  | 0, _, _, _, _, _ => none
-  | fuel + 1, stops, conditional, joint, tokens, out =>
+def readList : Nat → Nat → Bool → Bool → Joint → List Token → List Command → Option (List Token × List Command)
+  | 0, _, _, _, _, _, _ => none
+  | fuel + 1, remaining, stops, conditional, joint, tokens, out =>
     match tokens.dropWhile isSemi with
     | [] => if !stops && joint.complete then some ([], out) else none
     | token :: rest =>
@@ -460,34 +462,34 @@ def readList : Nat → Bool → Bool → Joint → List Token → List Command �
       else if keyword.any (fun word => branchKeywords.contains word || refusedKeywords.contains word) then none
       else if keyword = some keywordIf then
         -- An `if` stands alone: nothing may join it to a neighbour but a separator.
-        if joint ≠ .first && joint ≠ .semi then none
+        if (joint ≠ .first && joint ≠ .semi) || remaining = 0 then none
         else
-          match readIf fuel conditional (token :: rest) out true true with
+          match readIf fuel (remaining - 1) conditional (token :: rest) out true true with
           | none => none
           | some (after, out) =>
             let separated := match after with
               | [] => true
               | next :: _ => isSemi next || (stops && (bareWord (some next)).any (branchKeywords.contains ·))
-            if separated then readList fuel stops conditional .semi after out else none
+            if separated then readList fuel remaining stops conditional .semi after out else none
       else
         match readSimple (token :: rest) joint conditional with
         | none => none
         | some (command, .op operator :: after) =>
-          readList fuel stops conditional (jointOf operator) after
+          readList fuel remaining stops conditional (jointOf operator) after
             (out ++ [{ command with piped := operator = .pipe, background := operator = .amp }])
-        | some (command, after) => readList fuel stops conditional .semi after (out ++ [command])
+        | some (command, after) => readList fuel remaining stops conditional .semi after (out ++ [command])
 
 /-- Reads from `if` or `elif` to `fi`. A branch whose test is computed false is dropped; one computed true ends
 the chain, and runs for certain when every test before it was computed false. -/
-def readIf : Nat → Bool → List Token → List Command → Bool → Bool → Option (List Token × List Command)
-  | 0, _, _, _, _, _ => none
-  | fuel + 1, conditional, tokens, out, isOpen, certain =>
-    match readList fuel true conditional .first (tokens.drop 1) [] with
+def readIf : Nat → Nat → Bool → List Token → List Command → Bool → Bool → Option (List Token × List Command)
+  | 0, _, _, _, _, _, _ => none
+  | fuel + 1, remaining, conditional, tokens, out, isOpen, certain =>
+    match readList fuel remaining true conditional .first (tokens.drop 1) [] with
     | none => none
     | some (afterCondition, condition) =>
       if !atKeyword keywordThen afterCondition then none
       else
-        match readList fuel true conditional .first (afterCondition.drop 1) [] with
+        match readList fuel remaining true conditional .first (afterCondition.drop 1) [] with
         | none => none
         | some (afterBody, body) =>
           let known := staticTest condition
@@ -499,11 +501,11 @@ def readIf : Nat → Bool → List Token → List Command → Bool → Bool → 
             else out
           let isOpen := isOpen && !taken
           let certain := certain && !unknown
-          if atKeyword keywordElif afterBody then readIf fuel conditional afterBody out isOpen certain
+          if atKeyword keywordElif afterBody then readIf fuel remaining conditional afterBody out isOpen certain
           else
             let otherwise : Option (List Token × List Command) :=
               if atKeyword keywordElse afterBody then
-                match readList fuel true conditional .first (afterBody.drop 1) [] with
+                match readList fuel remaining true conditional .first (afterBody.drop 1) [] with
                 | none => none
                 | some (afterElse, branch) =>
                   some (afterElse, if isOpen then out ++ (if certain then branch else uncertain branch) else out)
@@ -516,13 +518,14 @@ end
 
 /-- The commands a list of tokens can run, or `none` when they are not a script this reader understands. -/
 def parse (tokens : List Token) : Option (List Command) :=
-  match readList (2 * tokens.length + 4) false false .first tokens [] with
+  match readList (2 * tokens.length + 4) maxIfDepth false false .first tokens [] with
   | some ([], out) => some out
   | _ => none
 
 /-- The simple commands a script can run, in order, or `none` when the script holds anything this reader does not
 understand. -/
 def commands (script : Str) : Option (List Command) :=
+  if contains "${{".toList script then none else
   match lex script with
   | none => none
   | some tokens => parse tokens

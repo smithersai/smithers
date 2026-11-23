@@ -1,4 +1,5 @@
 import { describe, expect, it, layer } from "@effect/vitest"
+import { systemError } from "effect/PlatformError"
 import * as Zig from "../../../src/closure/zig/index.ts"
 import { isAffectedBy, isComplete } from "../../../src/contract/Closure.vibe"
 import { close, paths, sha256 } from "./helpers.ts"
@@ -178,13 +179,32 @@ layer(shared, { timeout: limit, excludeTestServices: true })("the closure of a Z
     }
   }, limit)
 
-  it.effect("builds in the cache directory it is given", effect () => {
-    const { project } = try Shared
+  it.effect("probes and builds with a writable cache and read-only sources", effect () => {
+    const project = try repository()
     const fs = try FileSystem.FileSystem
     const path = try Path.Path
-    const cache = try fs.makeTempDirectoryScoped({ prefix: "smithers-ci-zig-cache-" })
-    const [beta] = try Zig.ofSteps({ ...project, cache }, ["test-beta"])
-    expect(paths(beta!)).toEqual([...built, "project/src/beta.zig", "project/src/shared.zig"])
+    const source = try fs.realPath(path.join(project.root, "project"))
+    const cache = path.resolve(source, "../caches/zig")
+    const probes: Array<string> = []
+    const readOnly = {
+      ...fs,
+      makeTempDirectoryScoped: (options) => options?.directory === source
+        ? fail(systemError({ _tag: "PermissionDenied", module: "FileSystem", method: "makeTempDirectoryScoped", pathOrDescriptor: source }))
+        : tap(fs.makeTempDirectoryScoped(options), (probe) => sync(() => { probes.push(probe) }))
+    } satisfies FileSystem.FileSystem
+    try acquireRelease(fs.chmod(source, 0o555), () => fs.chmod(source, 0o755).pipe(orDie))
+    provide FileSystem.FileSystem = readOnly {
+      const custom = { ...project, cache: "../caches/zig" }
+      const [beta] = try Zig.ofSteps(custom, ["test-beta"])
+      expect(paths(beta!)).toEqual([...built, "project/src/beta.zig", "project/src/shared.zig"])
+      expect(try flip(Zig.groupsOf({ ...custom, args: ["-Dno-such-option=1"] }, ["test"]))).toMatchObject({
+        code: "configure-failed",
+        message: expect.stringContaining("no-such-option")
+      })
+    }
+    expect(probes.map((probe) => path.dirname(probe))).toEqual([cache, cache])
+    for (const probe of probes) expect(try fs.exists(probe)).toBe(false)
+    expect(try fs.exists(path.join(source, ".zig-cache"))).toBe(false)
     expect((try fs.readDirectory(path.join(cache, "h"))).length).toBeGreaterThan(0)
   }, limit)
 })
@@ -260,7 +280,28 @@ layer(shared, { timeout: limit, excludeTestServices: true })("the closure of a Z
     const { project } = try Shared
     provide instead("--listen=-", "head -c 16 > /dev/null") {
       const [beta] = try Zig.ofFiles(project, ["src/beta.zig"])
-      expect(beta).toMatchObject({ files: [], unresolved: [{ from: "src/beta.zig", specifier: "the compiler reported no files" }] })
+      expect(paths(beta!)).toEqual(["project/src/beta.zig"])
+      expect(beta!.unresolved).toEqual([{ from: "src/beta.zig", specifier: "the compiler reported no files" }])
+    }
+  }, limit)
+
+  it.effect("digests the requested entry and marks a successful compile with an empty input list unresolved", effect () => {
+    const { project } = try Shared
+    const fs = try FileSystem.FileSystem
+    const request = "src/alias-beta.zig"
+    const entry = "project/" + request
+    const target = "project/src/beta.zig"
+    const source = try fs.readFileString(project.root + "/" + target)
+    try fs.symlink("beta.zig", project.root + "/" + entry)
+    // An empty filesystem-input frame followed by a complete, empty error bundle.
+    const reply = "head -c 16 >/dev/null; printf '\\006\\000\\000\\000\\000\\000\\000\\000\\001\\000\\000\\000\\010\\000\\000\\000\\000\\000\\000\\000\\000\\000\\000\\000'"
+    provide instead("--listen=-", reply) {
+      const [beta] = try Zig.ofFiles(project, [request])
+      expect(beta!.files).toEqual([{ path: entry, digest: sha256(source) }, { path: target, digest: sha256(source) }])
+      expect(beta!.unresolved).toEqual([{ from: request, specifier: "the compiler reported no files" }])
+      expect(beta!.dynamic).toEqual([])
+      expect(isComplete(beta!)).toBe(false)
+      expect(isAffectedBy(beta!, ["project/NOTES.md"])).toBe(true)
     }
   }, limit)
 })
@@ -307,6 +348,29 @@ layer(shared, { timeout: limit, excludeTestServices: true })("the steps a Zig bu
       []
     ])
     expect(try Zig.groupsOf(project, [])).toEqual([])
+  }, limit)
+
+  it.effect("uses unique private probe caches inside the project and removes them", effect () => {
+    const { project } = try Shared
+    const fs = try FileSystem.FileSystem
+    const path = try Path.Path
+    const directory = try fs.realPath(path.join(project.root, "project"))
+    const caches: Array<string> = []
+    const recording = {
+      ...fs,
+      makeTempDirectoryScoped: (options) =>
+        tap(fs.makeTempDirectoryScoped(options), (cache) => sync(() => { caches.push(cache) }))
+    } satisfies FileSystem.FileSystem
+    provide FileSystem.FileSystem = recording {
+      const probe = Zig.groupsOf(project, ["test"])
+      const groups = try all([probe, probe], { concurrency: 2 })
+      expect(groups).toEqual([[["test-alpha", "test-beta", "test-gamma"]], [["test-alpha", "test-beta", "test-gamma"]]])
+    }
+    expect(new Set(caches).size).toBe(2)
+    for (const cache of caches) {
+      expect(path.dirname(cache)).toBe(directory)
+      expect(try fs.exists(cache)).toBe(false)
+    }
   }, limit)
 
   it.effect("answers for the repository's own build.zig, and fails as contract 10 says", effect () => {

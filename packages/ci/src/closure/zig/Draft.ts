@@ -211,11 +211,11 @@ export const settle = (
     report(into, step.name, result.problems)
     return
   }
-  const lists = result.outputs.map((output) => listed(manifests, output.path)).filter((list) => list !== undefined)
-  if (compiles(step) && lists.length === 0) {
+  const inputs = result.outputs.flatMap((output) => listed(manifests, output.path) ?? [])
+  if (compiles(step) && inputs.length === 0) {
     into.unresolved.push({ from: step.name, specifier: "the compiler left no list of the files it read" })
   }
-  for (const input of lists.flat()) admit(place, into, step.name, input)
+  for (const input of inputs) admit(place, into, step.name, input)
 }
 
 const order = (left: string, right: string): number => left < right ? -1 : left > right ? 1 : 0

@@ -74,6 +74,7 @@ describe("turbo", () => {
     const read = at("turbo run test --continue=always -- --coverage")
     expect(read?.args).toEqual(["--coverage"])
     expect(read?.render(["a"]).join(" ")).toBe("turbo run test --continue=always --filter=a -- --coverage")
+    expect(recognize(["turbo", "run", "test", "--", "--path=${{ inputs.test_path }}"], "")).toBeUndefined()
   })
 
   it("refuses a run it cannot limit soundly", () => {

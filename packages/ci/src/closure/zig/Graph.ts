@@ -164,6 +164,18 @@ export const read = (configuration: Zon.Zon): Graph | undefined => {
   return { steps, named }
 }
 
+const reachable = (graph: Graph, index: number): Set<number> => {
+  const seen = new Set<number>()
+  const queue = [index]
+  for (let next = queue.pop(); next !== undefined; next = queue.pop()) {
+    const found = graph.steps[next]
+    if (found === undefined || seen.has(next)) continue
+    seen.add(next)
+    for (const dep of found.deps) queue.push(dep)
+  }
+  return seen
+}
+
 /**
  * The step itself and every step it depends on, in index order.
  *
@@ -173,14 +185,7 @@ export const read = (configuration: Zon.Zon): Graph | undefined => {
  * @since 0.1.0
  */
 export const reach = (graph: Graph, index: number): ReadonlyArray<Step> => {
-  const seen = new Set<number>()
-  const queue = [index]
-  for (let next = queue.pop(); next !== undefined; next = queue.pop()) {
-    const found = graph.steps[next]
-    if (found === undefined || seen.has(next)) continue
-    seen.add(next)
-    queue.push(...found.deps)
-  }
+  const seen = reachable(graph, index)
   return graph.steps.filter((candidate) => seen.has(candidate.index))
 }
 
@@ -220,25 +225,28 @@ export const grouped = (graph: Graph, index: number): ReadonlyArray<string> => {
   const unclear = (step: Step) => step.open.some((reason) => reason !== "a command Zig reruns every time")
   if (reach(graph, index).some(unclear)) return []
   const names = new Map([...graph.named].map(([name, at]) => [at, name]))
-  const seen = new Set<number>()
-  const open = (at: number): ReadonlyArray<string> | undefined => {
+  const group = (at: number): ReadonlyArray<number> | undefined => {
     const found = graph.steps[at]
     if (found === undefined || found.kind !== "top_level" || !names.has(at) || found.deps.length === 0) return undefined
-    const inside: Array<string> = []
-    for (const dep of found.deps) {
-      const name = names.get(dep)
-      if (name === undefined) return undefined
-      if (seen.has(dep)) continue
-      seen.add(dep)
-      inside.push(...(open(dep) ?? [name]))
-    }
-    return inside
+    return found.deps.every((dep) => names.has(dep)) ? found.deps : undefined
   }
-  const inside = open(index) ?? []
+  const roots = group(index)
+  if (roots === undefined) return []
+  const pending = [...roots].reverse()
+  const seen = new Set([index])
+  const inside: Array<string> = []
+  for (let at = pending.pop(); at !== undefined; at = pending.pop()) {
+    if (seen.has(at)) continue
+    seen.add(at)
+    const deps = group(at)
+    if (deps === undefined) inside.push(names.get(at)!)
+    else for (let i = deps.length - 1; i >= 0; i--) pending.push(deps[i]!)
+  }
   if (inside.length < 2) return []
   const exclusive = new Set<number>()
   for (const name of inside) {
-    for (const step of reach(graph, graph.named.get(name)!)) {
+    for (const at of reachable(graph, graph.named.get(name)!)) {
+      const step = graph.steps[at]!
       if (step.kind !== "run" && step.kind !== "update_source_files") continue
       if (exclusive.has(step.index)) return []
       exclusive.add(step.index)

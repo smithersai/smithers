@@ -15,7 +15,7 @@ import { type Job, type Step, treeOrder } from "../contract/Inventory.vibe"
 import { executorOf, type Invocation, type Known, type Pattern, recognize, turbo } from "./Runners.vibe"
 import { type Command, commands, quote } from "./Shell.vibe"
 import { type Config, defines, rootRuns, walk } from "./Turbo.vibe"
-import { globMagic, join, matchesDirectory, matchesName, type Graph, type Package, type Reach, type Workspace } from "./Workspace.vibe"
+import { boundedDirectoryMatcher, globMagic, join, matchesDirectory, matchesName, type Graph, type Package, type Reach, type Workspace } from "./Workspace.vibe"
 
 /**
  * One script run found in a step.
@@ -76,9 +76,9 @@ export interface Part {
  * @category models
  * @since 0.1.0
  */
-export interface Facts {
+export interface Facts<A = Reach> {
   readonly workspace: Workspace
-  readonly graph: Graph
+  readonly graph: Graph<A>
   readonly turbo: Config | undefined
 }
 
@@ -201,13 +201,16 @@ const understandList = (
   out: { readonly runs: Array<Run>; readonly zig: Array<string> }
 ): boolean => {
   let cwd = start
-  let entered = false
+  let previousCd = false
+  let chainHasCd = false
   for (const command of list) {
     const words = command.words.map((word) => word.text)
-    // After `cd a || b`, `b` runs where the `cd` did not go.
-    if (entered && command.joint === "||") return false
-    const unconditional = command.joint === "first" || command.joint === ";" || (entered && command.joint === "&&")
-    entered = false
+    // An `||` arm of a chain with `cd` may run in either directory, even after an inert command.
+    if (chainHasCd && command.joint === "||") return false
+    const separator = command.joint === "first" || command.joint === ";"
+    const unconditional = separator || (previousCd && command.joint === "&&")
+    previousCd = false
+    if (separator) chainHasCd = false
     // A setting given as a variable can change which packages every later command runs in.
     const assigned = [...command.assignments.map(([name]) => name), ...(words[0] === "export" ? words.slice(1) : [])]
     if (assigned.some((name) => setting.test(name))) return false
@@ -218,7 +221,8 @@ const understandList = (
       const next = words.length === 2 && literal && plain && unconditional ? enter(cwd, words[1] as string) : undefined
       if (next === undefined) return false
       cwd = next
-      entered = true
+      previousCd = true
+      chainHasCd = true
       continue
     }
     const script = innerScript(command)
@@ -282,9 +286,12 @@ export const understand = (
   return out.runs.length + out.zig.length === 0 ? undefined : { runs: out.runs, zig: [...new Set(out.zig)].sort() }
 }
 
-const matches = (pattern: Pattern, candidate: Package): boolean =>
-  (pattern.name !== undefined && matchesName(pattern.name, candidate.name)) ||
-  (pattern.directory !== undefined && matchesDirectory(pattern.directory.split("/"), candidate.directory))
+const matching = (pattern: Pattern, matchDirectory: ReturnType<typeof boundedDirectoryMatcher>) => {
+  const segments = pattern.directory?.split("/")
+  return (name: string, directory: string): boolean | undefined =>
+    (pattern.name !== undefined && matchesName(pattern.name, name)) ||
+    (segments !== undefined && matchDirectory(segments, directory))
+}
 
 // Text in a script that reaches packages no name or path gives away: a
 // tool that works on the whole workspace or the history, a package manager
@@ -320,11 +327,11 @@ interface Entry {
   /** The packages the per-package command names. */
   readonly names: ReadonlyArray<string>
   readonly everything: boolean
-  readonly reaches: ReadonlyArray<Reach>
+  readonly starts: ReadonlyArray<Package | string>
   readonly globs: ReadonlyArray<string>
 }
 
-const selected = (workspace: Workspace, graph: Graph, invocation: Invocation): ReadonlyArray<Package> | undefined => {
+const selected = (workspace: Workspace, graph: Graph<unknown>, invocation: Invocation): ReadonlyArray<Package> | undefined => {
   const selection = invocation.selection
   if (selection.kind === "all") return workspace.packages
   if (selection.kind === "directory") {
@@ -332,16 +339,24 @@ const selected = (workspace: Workspace, graph: Graph, invocation: Invocation): R
     return owner?.directory === selection.directory ? [owner] : undefined
   }
   const found = new Set<Package>()
+  const matchDirectory = boundedDirectoryMatcher()
   for (const pattern of selection.patterns) {
-    const matched = workspace.packages.filter((candidate) => matches(pattern, candidate))
+    const matches = matching(pattern, matchDirectory)
+    let matched = false
+    for (const candidate of workspace.packages) {
+      const match = matches(candidate.name, candidate.directory)
+      if (match === undefined) return undefined
+      if (!match) continue
+      matched = true
+      found.add(candidate)
+    }
     // A selector that matches nothing may mean something this reader does not model.
-    if (matched.length === 0) return undefined
-    for (const candidate of matched) found.add(candidate)
+    if (!matched) return undefined
   }
   return workspace.packages.filter((candidate) => found.has(candidate))
 }
 
-const declaredClosure = (graph: Graph, start: Package): ReadonlySet<string> => {
+const declaredClosure = (graph: Graph<unknown>, start: Package): ReadonlySet<string> => {
   const seen = new Set<string>()
   const pending = [start]
   while (pending.length > 0) {
@@ -354,8 +369,10 @@ const declaredClosure = (graph: Graph, start: Package): ReadonlySet<string> => {
 }
 
 // The packages a run starts in, each with what its own command reads.
-const entriesOf = (facts: Facts, invocation: Invocation): ReadonlyArray<Entry> | undefined => {
+const entriesOf = (facts: Facts<unknown>, invocation: Invocation): ReadonlyArray<Entry> | undefined => {
   const { graph, workspace } = facts
+  const manager = invocation.runner === "turbo" ? workspace.manager : invocation.runner
+  if (manager === "pnpm" ? workspace.pnpmMissing : workspace.npmMismatch) return undefined
   const chosen = selected(workspace, graph, invocation)
   if (chosen === undefined) return undefined
   if (invocation.runner === "turbo") {
@@ -377,9 +394,7 @@ const entriesOf = (facts: Facts, invocation: Invocation): ReadonlyArray<Entry> |
         names: [owner.name],
         everything: walked.root || walked.scripts.some(([reached, script]) => reachesWide(reached, script)),
         // A wrapper is a file of some package: the step reads it and what it mentions.
-        reaches: [owner, ...walked.packages, ...(invocation.program === undefined ? [] : [invocation.program])].map((
-          reached
-        ) => graph.reachOf(reached)),
+        starts: [owner, ...walked.packages, ...(invocation.program === undefined ? [] : [invocation.program])],
         globs: [...config.globalDependencies, ...walked.globs]
       }]
     })
@@ -387,7 +402,6 @@ const entriesOf = (facts: Facts, invocation: Invocation): ReadonlyArray<Entry> |
   const script = invocation.tasks[0] as string
   // pnpm and npm read settings that change which packages a run selects.
   if ((invocation.runner === "pnpm" || invocation.runner === "npm") && workspace.orchestrated) return undefined
-  if (invocation.runner === "npm" && workspace.npmMismatch) return undefined
   const having = chosen.filter((candidate) => Object.hasOwn(candidate.scripts, script))
   if (invocation.strict && having.length !== chosen.length) return undefined
   const single = invocation.selection.kind === "directory"
@@ -397,7 +411,7 @@ const entriesOf = (facts: Facts, invocation: Invocation): ReadonlyArray<Entry> |
     (invocation.selection.kind === "all"
       ? invocation.runner === "bun"
       : invocation.selection.patterns.some((pattern) =>
-        matches(pattern, { name: workspace.rootName ?? "", directory: "", scripts: {}, dependencies: [] })
+        matching(pattern, matchesDirectory)(workspace.rootName ?? "", "")
       ))
   ) return undefined
   const runnable = new Set(having.map((candidate) => candidate.name))
@@ -411,16 +425,23 @@ const entriesOf = (facts: Facts, invocation: Invocation): ReadonlyArray<Entry> |
       owner,
       names,
       everything: names.some((name) => reachesWide(graph.named(name) as Package, script)),
-      reaches: [graph.reachOf(owner)],
+      starts: [owner],
       globs: []
     }
   })
 }
 
+// A contract glob is a literal repository path or has a final `*` or `**` component.
+const contractGlob = (glob: string): boolean => {
+  if (glob === "*") return true
+  const path = glob.replace(/\/\*\*?$/, "")
+  return path !== "" && !globMagic.test(path) && join("", path) === path
+}
+
 /**
  * The inputs of one or more reaches: the files outside every package, each
  * reached package's directory, each single file, and the extra globs. One
- * entry, `**`, when a path cannot be written as a glob.
+ * entry, `**`, when an input cannot be written in a contract glob form.
  *
  * @category planning
  * @since 0.1.0
@@ -430,7 +451,9 @@ export const inputsOf = (
   reaches: ReadonlyArray<Reach>,
   globs: ReadonlyArray<string>
 ): ReadonlyArray<string> => {
-  if (outside.includes(everything)) return [everything]
+  if (outside.includes(everything) || globs.includes(everything) || globs.some((glob) => !contractGlob(glob))) {
+    return [everything]
+  }
   const directories = new Set(reaches.flatMap((reach) => [...reach.packages]))
   const files = new Set(reaches.flatMap((reach) => [...reach.files]))
   if ([...directories, ...files].some((path) => globMagic.test(path))) return [everything]
@@ -510,7 +533,7 @@ export const keepCommand = (understood: Understood): Understood => ({
 })
 
 /**
- * Decides what a step becomes.
+ * Resolves the commands first, then names the reaches needed to finish the decision.
  *
  * - One script run over several packages, alone in the step, splits into
  *   one part per package that has work.
@@ -525,41 +548,65 @@ export const keepCommand = (understood: Understood): Understood => ({
  * @category planning
  * @since 0.1.0
  */
-export const decide = (
+export const prepare = (
   step: Step,
   understood: Understood,
-  facts: Facts | undefined
-): Decision => {
+  facts: Facts<unknown> | undefined
+): {
+  readonly starts: ReadonlySet<Package | string | undefined>
+  readonly finish: (reachOf: Graph["reachOf"]) => Exclude<Decision, { readonly kind: "whole" }>
+} | undefined => {
   // No run would mean the step reads nothing, which no step does.
-  if (facts === undefined || understood.zig.length > 0 || understood.runs.length === 0) return { kind: "whole" }
+  if (facts === undefined || understood.zig.length > 0 || understood.runs.length === 0) return undefined
   const resolved: Array<ReadonlyArray<Entry>> = []
   for (const run of understood.runs) {
     const entries = entriesOf(facts, run.invocation)
-    if (entries === undefined || entries.length === 0) return { kind: "whole" }
+    if (entries === undefined || entries.length === 0) return undefined
     resolved.push(entries)
   }
   const outside = facts.graph.outside
-  const inputs = (entries: ReadonlyArray<Entry>): ReadonlyArray<string> =>
-    entries.some((entry) => entry.everything)
-      ? [everything]
-      : inputsOf(outside, entries.flatMap((entry) => entry.reaches), entries.flatMap((entry) => entry.globs))
   // The step has a run, and each run resolved to its packages.
   const run = understood.runs[0] as Run
   const entries = resolved[0] as ReadonlyArray<Entry>
   const qualified = run.invocation.runner === "turbo" && run.invocation.tasks.some((task) => task.includes("#"))
-  if (understood.runs.length === 1 && run.replace !== undefined && entries.length > 1 && !qualified) {
-    const [start, end] = run.replace
-    return {
-      kind: "split",
-      parts: entries.map((entry) => ({
-        name: entry.owner.name,
-        command: `${step.command.slice(0, start)}${run.before}${
-          run.invocation.render(entry.names).map(quote).join(" ")
-        }${step.command.slice(end)}`,
-        inputs: inputs([entry])
-      }))
+  const replace = understood.runs.length === 1 && entries.length > 1 && !qualified ? run.replace : undefined
+  const groups = replace === undefined ? [resolved.flat()] : entries.map((entry) => [entry])
+  const wide = (group: ReadonlyArray<Entry>): boolean =>
+    outside.includes(everything) || group.some((entry) => entry.everything)
+  const starts = new Set<Package | string | undefined>()
+  for (const group of groups) {
+    if (wide(group)) continue
+    starts.add(undefined)
+    for (const entry of group) for (const start of entry.starts) starts.add(start)
+  }
+  return {
+    starts,
+    finish: (reachOf) => {
+      const inputs = (group: ReadonlyArray<Entry>): ReadonlyArray<string> =>
+        wide(group)
+          ? [everything]
+          : inputsOf(outside, [reachOf(), ...group.flatMap((entry) => entry.starts.map(reachOf))], group.flatMap((entry) => entry.globs))
+      if (replace !== undefined) {
+        const [start, end] = replace
+        return {
+          kind: "split",
+          parts: entries.map((entry) => ({
+            name: entry.owner.name,
+            command: `${step.command.slice(0, start)}${run.before}${
+              run.invocation.render(entry.names).map(quote).join(" ")
+            }${step.command.slice(end)}`,
+            inputs: inputs([entry])
+          }))
+        }
+      }
+      const read = inputs(groups[0]!)
+      return { kind: "scope", inputs: read.includes(everything) ? [everything] : [...new Set(read)].sort() }
     }
   }
-  const read = inputs(resolved.flat())
-  return { kind: "scope", inputs: read.includes(everything) ? [everything] : [...new Set(read)].sort() }
+}
+
+/** Decides what a step becomes using file facts already in memory. */
+export const decide = (step: Step, understood: Understood, facts: Facts | undefined): Decision => {
+  const planned = prepare(step, understood, facts)
+  return planned === undefined ? { kind: "whole" } : planned.finish(facts!.graph.reachOf)
 }

@@ -114,7 +114,7 @@ export interface BuildReply {
  */
 export interface CompileReply {
   readonly completed: boolean
-  /** The files the compilation read, or `undefined` when it never reported them. */
+  /** The files the compilation read, or `undefined` when it reported none. */
   readonly inputs: ReadonlyArray<Located> | undefined
   readonly problems: ReadonlyArray<Problem>
 }
@@ -231,7 +231,7 @@ export const decodeCompile = (bytes: Uint8Array): CompileReply => {
   const extraBytes = bundle === undefined ? 0 : 4 * word(bundle.body)(0)
   return {
     completed: framed && bundle !== undefined && bundle.body.length === 8 + extraBytes + word(bundle.body)(4),
-    inputs: inputs === undefined
+    inputs: inputs === undefined || inputs.body.length === 0
       ? undefined
       : splitZero(inputs.body).map((entry) => located(entry, 1)),
     problems: bundle === undefined

@@ -47,6 +47,7 @@ export interface Workspace {
   readonly rootScripts: Readonly<Record<string, string>>
   readonly packages: ReadonlyArray<Package>
   readonly orchestrated: boolean
+  readonly pnpmMissing?: boolean
   readonly npmMismatch?: boolean
 }
 
@@ -101,8 +102,12 @@ const lockfiles: ReadonlyArray<readonly [file: string, manager: Manager]> = [
   ["bun.lockb", "bun"],
   ["pnpm-lock.yaml", "pnpm"],
   ["yarn.lock", "yarn"],
-  ["package-lock.json", "npm"]
+  ["package-lock.json", "npm"],
+  ["npm-shrinkwrap.json", "npm"]
 ]
+
+/** Identifies package-manager inventories by their exact repository-root paths. */
+export const isRootLockfile = (file: string): boolean => lockfiles.some(([name]) => file === name)
 
 const managers: ReadonlySet<string> = new Set(["pnpm", "bun", "npm", "yarn"])
 
@@ -119,53 +124,114 @@ export const managerOf = (manifest: Readonly<Record<string, unknown>>, files: Re
   return lockfiles.find(([file]) => files.has(file))?.[1] ?? "npm"
 }
 
-// True when a pattern matches all of a subject. The token `star` matches any run of the subject's items, an empty
-// run too; any other token matches one item, when `matches` says so. It is one pass with one place to go back to,
-// the last star: the work is at most the product of the two lengths. A regular expression's work for a subject it
-// does not match grows many times over with each star: `a*a*a*a*a*a*a*z` took seven seconds for one directory.
-const wild = (
-  pattern: ReadonlyArray<string>,
-  subject: ReadonlyArray<string>,
-  star: string,
-  matches: (token: string, item: string) => boolean
-): boolean => {
-  let at = 0
-  let item = 0
-  let last = -1
-  let resume = 0
-  while (item < subject.length) {
-    if (pattern[at] === star) {
-      last = at
-      resume = item
-      at += 1
-    } else if (at < pattern.length && matches(pattern[at] as string, subject[item] as string)) {
-      at += 1
-      item += 1
-    } else if (last >= 0) {
-      // The last star takes one more item.
-      at = last + 1
-      resume += 1
-      item = resume
-    } else {
-      return false
-    }
-  }
-  return pattern.slice(at).every((token) => token === star)
-}
+// A star can consume whole Unicode code points. A UTF-16 search cannot split a surrogate pair.
+const boundary = (name: string, index: number): boolean =>
+  !/[\uD800-\uDBFF][\uDC00-\uDFFF]/.test(name.slice(Math.max(0, index - 1), index + 1))
 
 /** Matches literal name characters and stars. */
-export const matchesName = (pattern: string, name: string): boolean =>
-  wild([...pattern], [...name], "*", (left, right) => left === right)
+export const matchesName = (pattern: string, name: string): boolean => {
+  const first = pattern.indexOf("*")
+  if (first === -1) return name === pattern
+  const last = pattern.lastIndexOf("*")
+  const suffix = pattern.slice(last + 1)
+  const end = name.length - suffix.length
+  if (first > end || !name.startsWith(pattern.slice(0, first)) || !name.endsWith(suffix) ||
+    !boundary(name, first) || !boundary(name, end)) return false
+  let at = first
+  for (const literal of pattern.slice(first + 1, last).split("*")) {
+    if (literal === "") continue
+    let next = name.indexOf(literal, at)
+    while (next !== -1 && next + literal.length <= end) {
+      if (boundary(name, next) && boundary(name, next + literal.length)) break
+      next = name.indexOf(literal, next + 1)
+    }
+    if (next === -1 || next + literal.length > end) return false
+    at = next + literal.length
+  }
+  return true
+}
+
+const matchDirectory = (
+  segments: ReadonlyArray<string>,
+  directory: string,
+  spend: (comparisons: number) => boolean
+): boolean | undefined => {
+  const parts = directory.split("/")
+  const first = segments.indexOf("**")
+  const prefix = first === -1 ? segments : segments.slice(0, first)
+  if (first === -1 && prefix.length !== parts.length) return false
+  const last = segments.lastIndexOf("**")
+  const suffix = first === -1 ? [] : segments.slice(last + 1)
+  const end = parts.length - suffix.length
+  const matchesAt = (pattern: ReadonlyArray<string>, at: number): boolean =>
+    pattern.every((segment, index) => matchesName(segment, parts[at + index]!))
+  if (prefix.length > end || !matchesAt(prefix, 0) || !matchesAt(suffix, end)) return false
+  if (first === last) return true
+  const subject = `/${directory}/`
+  // Each offset points to the slash immediately before a component.
+  const offsets = [0]
+  for (const part of parts) offsets.push(offsets[offsets.length - 1]! + part.length + 1)
+  let at = prefix.length
+  let chunk: Array<string> = []
+  for (const segment of segments.slice(first + 1, last + 1)) {
+    if (segment !== "**") {
+      chunk.push(segment)
+      continue
+    }
+    if (chunk.length === 0) continue
+    if (chunk.every((segment) => !/[*\/]/.test(segment))) {
+      const literal = `/${chunk.join("/")}/`
+      const next = subject.indexOf(literal, offsets[at])
+      if (next === -1 || next + literal.length - 1 > offsets[end]!) return false
+      while (offsets[at]! < next) at += 1
+    } else {
+      while (at + chunk.length <= end) {
+        if (!spend(chunk.length)) return undefined
+        if (matchesAt(chunk, at)) break
+        at += 1
+      }
+      if (at + chunk.length > end) return false
+    }
+    at += chunk.length
+    chunk = []
+  }
+  return true
+}
 
 /** Matches directory components with globstars between components. */
 export const matchesDirectory = (segments: ReadonlyArray<string>, directory: string): boolean =>
-  wild(segments, directory.split("/"), "**", matchesName)
+  matchDirectory(segments, directory, () => true) === true
 
-const patternTest = (pattern: string): ((directory: string) => boolean) | undefined => {
+type DirectoryMatcher = (segments: ReadonlyArray<string>, directory: string) => boolean | undefined
+type DirectoryTest = (directory: string) => boolean | undefined
+
+/**
+ * Matches directories for one selection. A mixed chunk can compare its full
+ * length at each offset between globstars. Share a comparison budget across
+ * all candidates and patterns, returning `undefined` if it runs out.
+ */
+export const boundedDirectoryMatcher = (): DirectoryMatcher => {
+  let remaining = 65_536
+  const spend = (comparisons: number): boolean => {
+    remaining -= comparisons
+    return remaining >= 0
+  }
+  return (segments, directory) => matchDirectory(segments, directory, spend)
+}
+
+const patternTest = (pattern: string, match: DirectoryMatcher): DirectoryTest | undefined => {
   if (/[{}[\]?\\]/.test(pattern)) return undefined
   const segments = pattern.split("/").filter((segment) => segment !== "" && segment !== ".")
   if (segments.includes("..")) return undefined
-  return (directory) => matchesDirectory(segments, directory)
+  return (directory) => match(segments, directory)
+}
+
+const matchesAny = (tests: ReadonlyArray<DirectoryTest>, directory: string): boolean | undefined => {
+  for (const test of tests) {
+    const matched = test(directory)
+    if (matched !== false) return matched
+  }
+  return false
 }
 
 // Settings in `.npmrc` that change which packages a run selects.
@@ -210,8 +276,8 @@ export const readPatterns = (
 /**
  * The directories that are workspace packages: those holding a
  * `package.json` that a pattern includes and none excludes. `undefined` when
- * a pattern cannot be read, because the package manager may then see
- * packages this reader does not.
+ * a pattern cannot be read or the mixed-globstar comparison budget is
+ * exhausted. The caller keeps the original command in either case.
  *
  * @category reading
  * @since 0.1.0
@@ -220,10 +286,11 @@ export const packageDirectories = (
   patterns: ReadonlyArray<string>,
   files: ReadonlySet<string>
 ): ReadonlyArray<string> | undefined => {
-  const include: Array<(directory: string) => boolean> = []
-  const exclude: Array<(directory: string) => boolean> = []
+  const match = boundedDirectoryMatcher()
+  const include: Array<DirectoryTest> = []
+  const exclude: Array<DirectoryTest> = []
   for (const pattern of patterns) {
-    const test = patternTest(pattern.startsWith("!") ? pattern.slice(1) : pattern)
+    const test = patternTest(pattern.startsWith("!") ? pattern.slice(1) : pattern, match)
     if (test === undefined) return undefined
     ;(pattern.startsWith("!") ? exclude : include).push(test)
   }
@@ -231,7 +298,12 @@ export const packageDirectories = (
   for (const file of files) {
     if (!file.endsWith("/package.json") || file.split("/").includes("node_modules")) continue
     const directory = file.slice(0, -"/package.json".length)
-    if (include.some((test) => test(directory)) && !exclude.some((test) => test(directory))) found.push(directory)
+    const included = matchesAny(include, directory)
+    if (included === undefined) return undefined
+    if (!included) continue
+    const excluded = matchesAny(exclude, directory)
+    if (excluded === undefined) return undefined
+    if (!excluded) found.push(directory)
   }
   return found.sort()
 }
@@ -436,13 +508,13 @@ const directoryOf = (file: string): string => file.slice(0, Math.max(0, file.las
  * @category models
  * @since 0.1.0
  */
-export interface Graph {
+export interface Graph<A = Reach> {
   /** The deepest package whose directory holds a path. */
   readonly ownerOf: (path: string) => Package | undefined
   /** The package with a name. */
   readonly named: (name: string) => Package | undefined
-  /** Everything a package, or one file of a package, reaches, itself included. */
-  readonly reachOf: (start: Package | string) => Reach
+  /** Everything a package or file reaches. With no start, read the shared inputs at the repository root. */
+  readonly reachOf: (start?: Package | string) => A
   /** Globs for every file outside all packages. */
   readonly outside: ReadonlyArray<string>
 }
@@ -450,7 +522,12 @@ export interface Graph {
 interface Edges {
   readonly packages: ReadonlyArray<Package>
   readonly files: ReadonlyArray<string>
+  readonly incomplete: boolean
 }
+
+type FileMentions = Mentions & { readonly incomplete?: boolean }
+type Walk<A> = Generator<string, A, FileMentions | undefined>
+type Start = Package | string | undefined
 
 /**
  * Builds the reach graph of a workspace.
@@ -469,12 +546,11 @@ interface Edges {
  * @category closure
  * @since 0.1.0
  */
-export const graph = (
+const makeGraph = <A>(
   workspace: Workspace,
   files: ReadonlySet<string>,
-  mentioned: (file: string) => Mentions,
-  unknown: ReadonlySet<string> = new Set()
-): Graph => {
+  read: (walk: () => Walk<Reach>) => A
+): Graph<A> => {
   const byName = new Map(workspace.packages.map((candidate) => [candidate.name, candidate]))
   const byDirectory = new Map(workspace.packages.map((candidate) => [candidate.directory, candidate]))
 
@@ -492,10 +568,13 @@ export const graph = (
     if (owner !== undefined) (owned.get(owner.name) as Array<string>).push(file)
   }
 
+  const mentions = new Map<string, FileMentions | undefined>()
   // What one file adds. `whole` is true when the file's own package is
   // already reached whole, so paths that stay inside it add nothing.
-  const edgesOfFile = (file: string, owner: Package | undefined, whole: boolean): Edges => {
-    const found = mentioned(file)
+  function* edgesOfFile(file: string, owner: Package | undefined, whole: boolean): Walk<Edges> {
+    if (!mentions.has(file)) mentions.set(file, yield file)
+    const found = mentions.get(file)
+    if (found === undefined) return { packages: [], files: [], incomplete: true }
     const packages = found.names.map((name) => byName.get(name) as Package)
     const single: Array<string> = []
     const targets = found.rooted.map((path) => join("", path))
@@ -512,14 +591,15 @@ export const graph = (
       // A path that names no file may name anything in that package.
       else if (targetOwner !== undefined) packages.push(targetOwner)
     }
-    return { packages, files: single }
+    return { packages, files: single, incomplete: found.incomplete === true }
   }
 
   const packageEdges = new Map<string, Edges>()
-  const edgesOfPackage = (start: Package): Edges => {
+  function* edgesOfPackage(start: Package): Walk<Edges> {
     const known = packageEdges.get(start.name)
     if (known !== undefined) return known
-    const parts = (owned.get(start.name) as ReadonlyArray<string>).map((file) => edgesOfFile(file, start, true))
+    const parts: Array<Edges> = []
+    for (const file of owned.get(start.name)!) parts.push(yield* edgesOfFile(file, start, true))
     const edges: Edges = {
       packages: [
         ...new Set([
@@ -527,48 +607,83 @@ export const graph = (
           ...parts.flatMap((part) => part.packages)
         ])
       ],
-      files: [...new Set(parts.flatMap((part) => part.files))]
+      files: [...new Set(parts.flatMap((part) => part.files))],
+      incomplete: parts.some((part) => part.incomplete)
     }
     packageEdges.set(start.name, edges)
     return edges
   }
 
   const fileEdges = new Map<string, Edges>()
-  const edgesOfSingle = (file: string): Edges => {
+  function* edgesOfSingle(file: string): Walk<Edges> {
     const known = fileEdges.get(file)
     if (known !== undefined) return known
-    const edges = edgesOfFile(file, ownerOf(file), false)
+    const edges = yield* edgesOfFile(file, ownerOf(file), false)
     fileEdges.set(file, edges)
     return edges
   }
 
-  const reaches = new Map<Package | string, Reach>()
-  const reachOf = (start: Package | string): Reach => {
+  const reaches = new Map<Start, Reach>()
+  function* walk(start: Start): Walk<Reach> {
     const known = reaches.get(start)
     if (known !== undefined) return known
     const packages = new Set<Package>()
     const single = new Set<string>()
-    const pending: Array<Package | string> = [start]
+    const pending = start === undefined ? [...files].filter((file) => !file.includes("/")) : [start]
+    let incomplete = false
     while (pending.length > 0) {
       const next = pending.pop() as Package | string
       if (typeof next === "string" ? single.has(next) : packages.has(next)) continue
-      const edges = typeof next === "string" ? edgesOfSingle(next) : edgesOfPackage(next)
+      const edges = typeof next === "string" ? yield* edgesOfSingle(next) : yield* edgesOfPackage(next)
       if (typeof next === "string") single.add(next)
       else packages.add(next)
-      pending.push(...edges.packages, ...edges.files)
+      for (const nextPackage of edges.packages) pending.push(nextPackage)
+      for (const nextFile of edges.files) pending.push(nextFile)
+      incomplete ||= edges.incomplete
     }
-    const incomplete = [...single].some((file) => unknown.has(file)) ||
-      [...packages].some((owner) => owned.get(owner.name)!.some((file) => unknown.has(file)))
+    const reached = [...single].filter((file) => {
+      const owner = ownerOf(file)
+      // The outside globs already name all root inputs and other files outside packages.
+      return owner === undefined ? start !== undefined : !packages.has(owner)
+    })
     const reach = {
       packages: new Set([...packages].map((reached) => reached.directory)),
-      files: new Set([...single].filter((file) => !packages.has(ownerOf(file) as Package)).concat(incomplete ? ["**"] : []))
+      files: new Set(incomplete ? [...reached, "**"] : reached)
     }
     reaches.set(start, reach)
     return reach
   }
 
-  return { ownerOf, named: (name) => byName.get(name), reachOf, outside: outsideGlobs(workspace, files) }
+  return { ownerOf, named: (name) => byName.get(name), reachOf: (start) => read(() => walk(start)), outside: outsideGlobs(workspace, files) }
 }
+
+/** Builds a graph from file facts already in memory. */
+export const graph = (
+  workspace: Workspace,
+  files: ReadonlySet<string>,
+  mentioned: (file: string) => Mentions,
+  unknown: ReadonlySet<string> = new Set()
+): Graph => makeGraph(workspace, files, (makeWalk) => {
+  const walk = makeWalk()
+  let next = walk.next()
+  while (!next.done) {
+    const found = mentioned(next.value)
+    next = walk.next(unknown.has(next.value) ? { ...found, incomplete: true } : found)
+  }
+  return next.value
+})
+
+/** Builds a graph that reads a file only the first time a query reaches it. */
+export const lazyGraph = (
+  workspace: Workspace,
+  files: ReadonlySet<string>,
+  readFile: (file: string) => (Mentions | undefined)!!
+): Graph<Reach!!> => makeGraph(workspace, files, (makeWalk) => effect {
+  const walk = makeWalk()
+  let next = walk.next()
+  while (!next.done) next = walk.next(try readFile(next.value))
+  return next.value
+})
 
 /**
  * The directories that hold a package somewhere below them, the repository

@@ -15,7 +15,7 @@ open Text
 items, an empty run too; any other token matches one item, when `matches` says so.
 
 This is the meaning of a pattern, written as its definition: a star either matches nothing or takes one more item.
-The implementation computes the same answer in one pass with one place to go back to, the last star. -/
+The implementation anchors the prefix and suffix, then takes the earliest match for each chunk between stars. -/
 def wild (isStar : α → Bool) (matchesItem : α → β → Bool) : List α → List β → Bool
   | [], [] => true
   | [], _ :: _ => false
@@ -46,7 +46,8 @@ def packageFile : Str := "/package.json".toList
 def modulesDirectory : Str := "node_modules/".toList
 
 /-- The directories that are workspace packages: those holding a `package.json` that a pattern includes and none
-excludes (`!pattern`), sorted. `none` when a pattern cannot be read. -/
+excludes (`!pattern`), sorted. `none` when a pattern cannot be read. Production discovery may also decline to
+select packages when mixed chunks between globstars exceed its comparison budget. -/
 def packageDirectories (patterns files : List Str) : Option (List Str) :=
   let read : Str → Option (Bool × List Str) := fun pattern =>
     match pattern with
@@ -185,7 +186,8 @@ structure Mentions where
   rooted : List Str := []
   deriving DecidableEq, Repr
 
-/-- A workspace: its packages, the repository's files, and what each file mentions. -/
+/-- A workspace: its packages, the repository's files, and what each file mentions. The splitter supplies no
+mentions for the contents of regular root package-manager lockfiles. The root glob already includes those files. -/
 structure Facts where
   packages : List Package
   files : List Str
@@ -274,10 +276,8 @@ def domain (facts : Facts) (start : Node) : List Node :=
 def reached (facts : Facts) (start : Node) : List Node :=
   search (facts.domain start) facts.edges [start] []
 
-/-- Everything a package, or one file of a package, reaches: the directories of the packages reached whole, and
-each single file whose package is not. -/
-def reachOf (facts : Facts) (start : Node) : Reach :=
-  let nodes := facts.reached start
+/-- The directories of packages reached whole and the files still needed as individual inputs. -/
+def inputsOf (facts : Facts) (nodes : List Node) (outsideAlreadyIncluded : Bool) : Reach :=
   let packages := nodes.filterMap fun node =>
     match node with
     | .package name => facts.named name
@@ -287,12 +287,41 @@ def reachOf (facts : Facts) (start : Node) : Reach :=
     | .file path =>
       match facts.ownerOf path with
       | some owner => if packages.contains owner then none else some path
-      | none => some path
+      | none => if outsideAlreadyIncluded then none else some path
     | .package _ => none
   let incomplete := facts.unknown.any fun path =>
     nodes.contains (.file path) || (facts.files.contains path && (facts.ownerOf path).any packages.contains)
   { packages := jsSort (distinct (packages.map (·.directory))),
     files := jsSort (distinct (files ++ (if incomplete then ["**".toList] else []))) }
+
+/-- Everything a package or one file reaches, itself included. -/
+def reachOf (facts : Facts) (start : Node) : Reach :=
+  facts.inputsOf (facts.reached start) false
+
+/-- What the shared files at the repository root add to a package step's inputs. The outside globs already
+cover files outside packages. -/
+def rootReach (facts : Facts) : Reach :=
+  let roots := facts.files.filter (fun file => !file.contains '/')
+  let domain := facts.packages.map (Node.package ·.name) ++ facts.files.map Node.file
+  let nodes := search domain facts.edges (roots.map Node.file) []
+  facts.inputsOf nodes true
+
+#guard
+  let facts : Facts := {
+    packages := [{
+      name := "@org/eslint-config".toList
+      directory := "packages/eslint".toList
+      dependencies := []
+      scripts := []
+    }]
+    files := ["eslint.config.js".toList, "tools/eslint.js".toList, "packages/eslint/index.js".toList]
+    mentions := [
+      ("eslint.config.js".toList, { relative := ["./tools/eslint.js".toList] }),
+      ("tools/eslint.js".toList, { names := ["@org/eslint-config".toList] })]
+  }
+  decide (facts.rootReach = { packages := ["packages/eslint".toList], files := [] }) &&
+    decide ({ facts with unknown := ["tools/eslint.js".toList] }.rootReach =
+      { packages := ["packages/eslint".toList], files := ["**".toList] })
 
 end Facts
 

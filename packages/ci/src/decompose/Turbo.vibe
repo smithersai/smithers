@@ -12,7 +12,7 @@
 
 import { parse, type ParseError } from "jsonc-parser"
 import type { Package, Workspace } from "./Workspace.vibe"
-import { join } from "./Workspace.vibe"
+import { globMagic, join } from "./Workspace.vibe"
 
 /**
  * One task definition, reduced to what the splitter reads.
@@ -117,12 +117,16 @@ export const readConfig = (
   }
   return {
     tasks,
-    // A glob is written from the root; one that negates or leaves the repository names nothing to add.
+    // Only a leading `!` in the original spelling denotes an exclusion. A positive pattern
+    // keeps its glob syntax for the planner, which widens if the contract cannot express it.
     globalDependencies: strings(config["globalDependencies"]).flatMap((glob) => {
+      if (glob.startsWith("!")) return []
       const plain = glob.replace(/^\.\//, "")
-      return plain === "" || plain.startsWith("!") || plain.startsWith("/") || plain.split("/").includes("..")
-        ? []
-        : [plain]
+      if (globMagic.test(plain)) return [plain]
+      if (plain === "" || plain.startsWith("/")) return []
+      const path = join("", plain)
+      // A nonempty spelling that resolves to the root needs the planner's whole-tree fallback.
+      return path === undefined ? [] : [path || plain]
     }),
     packages: own
   }
@@ -198,11 +202,16 @@ export const walk = (
     if (runs) scripts.push([owner, task])
     // Only a task that runs reads its inputs.
     for (const input of runs ? definition.inputs : []) {
-      const glob = input.startsWith(rootMarker)
-        ? join("", input.slice(rootMarker.length))
-        : input.split("/").includes("..")
-        ? join(owner.directory, input)
-        : undefined
+      if (input.startsWith("!")) continue
+      const rooted = input.startsWith(rootMarker)
+      const relative = rooted ? input.slice(rootMarker.length) : input
+      const segments = relative.split("/")
+      const parent = segments.lastIndexOf("..")
+      if (!rooted && parent < 0) continue
+      // Keep glob syntax before traversal for the planner to reject. Joining could erase a wildcard.
+      const glob = parent >= 0 && globMagic.test(segments.slice(0, parent).join("/"))
+        ? relative
+        : join(rooted ? "" : owner.directory, relative)
       if (glob !== undefined && glob !== "") globs.add(glob)
     }
     for (const entry of [...definition.dependsOn, ...definition.companions]) {

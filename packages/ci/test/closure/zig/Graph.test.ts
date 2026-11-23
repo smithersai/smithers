@@ -223,6 +223,22 @@ describe("Graph.grouped", () => {
     expect(Graph.grouped(graph, 1)).toEqual([])
   })
 
+  it("opens 30,000 nested groups in dependency order and emits each leaf once", () => {
+    const depth = 30_000
+    const leaves = Array.from({ length: depth + 1 }, (_, index) => top(depth + index, []))
+    const groups = Array.from({ length: depth }, (_, index) => top(index, [index + 1, 2 * depth - index]))
+    groups[0] = top(0, [1, 2 * depth, depth])
+    const steps = [...groups, ...leaves]
+    const graph = { steps, named: new Map(steps.map((step) => [step.name, step.index])) }
+    expect(Graph.grouped(graph, 0)).toEqual(leaves.map((leaf) => leaf.name))
+  })
+
+  it("keeps a group with an unnamed dependency whole and still emits a shared named dependency", () => {
+    const steps = [top(0, [1, 2]), top(1, [2, 3]), top(2, []), run(3)]
+    const graph = { steps, named: new Map([["all", 0], ["a", 1], ["b", 2]]) }
+    expect(Graph.grouped(graph, 0)).toEqual(["a", "b"])
+  })
+
   it("refuses unknown steps in a proposed group", () => {
     const graph = {
       steps: [top(0, [1, 2]), top(1, []), { ...top(2, []), open: ["unknown"] }],

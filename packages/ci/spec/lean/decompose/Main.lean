@@ -155,6 +155,9 @@ def asConfig (value : Json) : Decode Turbo.Config := do
   let tasks := asList (asPair asText asTask)
   return { tasks := ← field tasks value "tasks", packages := ← field (asList (asPair asText tasks)) value "packages" }
 
+def asReach (value : Json) : Decode Workspace.Reach := do
+  return { packages := ← field (asList asText) value "packages", files := ← field (asList asText) value "files" }
+
 def asJob (value : Json) : Decode Plan.Job := do
   let github ← field (·.getBool?) value "github"
   let file ← field asText value "file"
@@ -223,6 +226,16 @@ def answer (request : Json) : Decode Json := do
     return list (order.map fun (tree, ids) => list [text tree, texts ids])
   | "plan.followed" => return places (Plan.followed (← field (asList asJob) request "jobs"))
   | "plan.preceded" => return places (Plan.preceded (← field (asList asJob) request "jobs"))
+  | "plan.directories" =>
+    let script ← field asText request "script"
+    let cwd ← field asText request "cwd"
+    let program ← field asText request "program"
+    let located := (Shell.commands script).bind fun commands => Plan.directoryList commands cwd false false
+    return orNull (fun located => texts (located.filterMap fun (command, directory) =>
+      if command.words.head?.map (·.text) = some program then some directory else none)) located
+  | "plan.inputsOf" =>
+    return texts (Plan.inputsOf (← field (asList asText) request "outside")
+      (← field (asList asReach) request "reaches") (← field (asList asText) request "globs"))
   | other => throw s!"unknown op {other}"
 
 partial def serve (input output : IO.FS.Stream) : IO Unit := do
