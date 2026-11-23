@@ -75,34 +75,43 @@ def isNodeWarning (line : Str) : Bool :=
 /-- `[a-z0-9+.-]` in either case: a character of a URL's scheme. -/
 def isSchemeUnit (c : Nat) : Bool := isAlpha c || isDigit c || c == 43 || c == 46 || c == 45
 
+/-- The most code units a scheme holds after its first letter, bounding the search on long words. -/
+def schemeTail : Nat := 31
+
 /--
-A match of `credential`, `/(\b[a-z][a-z0-9+.-]*:\/*)[^\s"]*@/gi`, at the start of `text`: how many units the
+A match of `credential`, `/([a-z][a-z0-9+.-]{0,31}:\/*)[^\s"]*@/gi`, at the start of `text`: how many units the
 replacement keeps (the scheme, its colon and slashes) and how many the match holds (through the last `@` before a
 space or a quote).
 -/
 def credentialAt (text : Str) : Option (Nat × Nat) :=
-  match text.dropWhile isSchemeUnit with
-  | 58 :: afterColon =>
-    let kept := (text.takeWhile isSchemeUnit).length + 1 + (afterColon.takeWhile (· == 47)).length
-    let run := (afterColon.dropWhile (· == 47)).takeWhile fun c => !isSpace c && c != 34
-    let throughAt := run.reverse.dropWhile (· != 64)
-    if throughAt.isEmpty then none else some (kept, kept + throughAt.length)
-  | _ => none
+  match text with
+  | c :: rest =>
+    let tail := rest.takeWhile isSchemeUnit
+    if isAlpha c && tail.length ≤ schemeTail then
+      match rest.dropWhile isSchemeUnit with
+      | 58 :: afterColon =>
+        let kept := tail.length + 2 + (afterColon.takeWhile (· == 47)).length
+        let run := (afterColon.dropWhile (· == 47)).takeWhile fun u => !isSpace u && u != 34
+        let throughAt := run.reverse.dropWhile (· != 64)
+        if throughAt.isEmpty then none else some (kept, kept + throughAt.length)
+      | _ => none
+    else none
+  | [] => none
 
 /--
-`text.replace(credential, "$1")`. `copy` units of a match are still to keep and then `skip` to drop; `afterWord`
-says the unit before was a word character, where no scheme starts.
+`text.replace(credential, "$1")`. `copy` units of a match are still to keep and then `skip` to drop. A match may
+start at any letter, whatever stands before it.
 -/
-def withoutCredentials : Bool → Nat → Nat → Str → Str
-  | _, _, _, [] => []
-  | _, copy + 1, skip, c :: rest => c :: withoutCredentials false copy skip rest
-  | _, 0, skip + 1, _ :: rest => withoutCredentials false 0 skip rest
-  | afterWord, 0, 0, c :: rest =>
-    if !afterWord && isAlpha c then
+def withoutCredentials : Nat → Nat → Str → Str
+  | _, _, [] => []
+  | copy + 1, skip, c :: rest => c :: withoutCredentials copy skip rest
+  | 0, skip + 1, _ :: rest => withoutCredentials 0 skip rest
+  | 0, 0, c :: rest =>
+    if isAlpha c then
       match credentialAt (c :: rest) with
-      | some (kept, total) => c :: withoutCredentials false (kept - 1) (total - kept) rest
-      | none => c :: withoutCredentials (isWord c) 0 0 rest
-    else c :: withoutCredentials (isWord c) 0 0 rest
+      | some (kept, total) => c :: withoutCredentials (kept - 1) (total - kept) rest
+      | none => c :: withoutCredentials 0 0 rest
+    else c :: withoutCredentials 0 0 rest
 
 /-- `text.replace(/\s+/g, " ")`. `inRun` says the unit before was white space. -/
 def collapse : Bool → Str → Str
@@ -116,7 +125,7 @@ def longest : Nat := 300
 
 /-- `errorLine` of a string: no credentials, one line, at most 300 characters and an ellipsis. -/
 def errorLine (text : Str) : Str :=
-  let line := trim (collapse false (withoutCredentials false 0 0 text))
+  let line := trim (collapse false (withoutCredentials 0 0 text))
   if longest < line.length then line.take longest ++ [0x2026] else line
 
 /-! ## `JSON.parse`, as far as a record's `message` -/

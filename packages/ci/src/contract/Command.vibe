@@ -341,8 +341,12 @@ export const errorText = (cause: unknown): string => {
   }
 }
 
-/** A URL's user name and password, wherever a text holds one. */
-const credential = /(\b[a-z][a-z0-9+.-]*:\/*)[^\s"]*@/gi
+/**
+ * A URL's user name and password, wherever a text holds one. The scheme may start at any letter, whatever stands
+ * before it: a colour sequence a tool prints ends in a letter (`\u001b[31mhttps://token@host`), and a word
+ * boundary there kept the token. A scheme is at most 32 characters, which keeps the search short on a long word.
+ */
+const credential = /([a-z][a-z0-9+.-]{0,31}:\/*)[^\s"]*@/gi
 
 /** The longest error a line quotes. */
 const longest = 300

@@ -1,0 +1,9 @@
+name = "report_replay"
+defaultTargets = ["ReportReplaySpec", "report-replay-spec"]
+
+[[lean_lib]]
+name = "ReportReplaySpec"
+
+[[lean_exe]]
+name = "report-replay-spec"
+root = "Main"
