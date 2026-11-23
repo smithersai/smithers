@@ -331,12 +331,23 @@ const one = (
       const drove = yield* Effect.gen(function*() {
         const runtime = yield* ControlRuntime.ControlRuntime
         const before = yield* runtime.getRun(runId)
-        if (all && terminal(before.status)) return { runId, status: before.status } satisfies Settled
-        yield* (yield* Control.Control).resume({
+        if (terminal(before.status)) {
+          if (all) return { runId, status: before.status } satisfies Settled
+          return yield* Effect.fail(
+            refused("user", "run_settled", `Run ${runId} is already ${before.status} and cannot be resumed to verify replay`)
+          )
+        }
+        const receipt = yield* (yield* Control.Control).resume({
           runId,
           idempotencyKey: `verify:${runId}`,
           allowCodeDrift: true
         })
+        if (receipt._tag === "Terminal") {
+          if (all) return { runId, status: receipt.status } satisfies Settled
+          return yield* Effect.fail(
+            refused("user", "run_settled", `Run ${runId} is already ${receipt.status} and cannot be resumed to verify replay`)
+          )
+        }
         yield* settled(runId, before.updatedAt).pipe(
           Effect.timeoutOrElse({
             duration: options.settleWithin ?? "10 minutes",
