@@ -223,4 +223,21 @@ describe("the records of reads in the content store", () => {
   it("is the cache directory's content store", () => {
     expect(RecordStore.contentStore("/w", ".smithers/cache")).toBe(Path.join("/w", ".smithers", "cache", "cas"))
   })
+
+  it("round-trips a record that holds directory link counts", async () => {
+    const cas = await Fs.mkdtemp(Path.join(Os.tmpdir(), "record-store-links-"))
+    try {
+      const base = {
+        reads: [["nl", "d"]] as const,
+        lists: [] as const,
+        links: [["nl", 3, ["own-dir"]]] as const
+      }
+      const record: ObservedReads.Record = { ...base, id: ObservedReads.idOf(base) }
+      const reference = await RecordStore.write(cas, record)
+      expect(reference.paths).toBe(2)
+      expect(await RecordStore.read(cas, reference)).toEqual(record)
+    } finally {
+      await Fs.rm(cas, { recursive: true, force: true })
+    }
+  })
 })

@@ -154,13 +154,23 @@ const probe = (root: string, way: string): number => {
 /** What a recorder made of a way: its verdict, and whether the run it recorded exited as the plain run did. */
 const recorded = (way: string, observer: Recorder): { readonly exit: number; readonly verdict: string } => {
   const root = repository()
+  const preRun = new Map<string, string>()
+  for (const [rel] of KernelProbe.files) {
+    const abs = Path.join(root, rel)
+    preRun.set(abs, ObservedReads.measure(abs))
+  }
   const trace = Path.join(base, `trace-${made}`)
   const startedMs = ObservedReads.markStart(Path.join(base, `mark-${made}`))
   // A ring given to the run is set up outside it: before the recorder starts.
   const [program, ...rest] = given(way, ObservedReads.commandFor(observer, trace, ["python3", "probe.py", way]))
   const exit = spawnSync(program!, rest, { cwd: root, stdio: "ignore", timeout: 120_000 }).status ?? -1
   const lines = NodeFs.readFileSync(trace, "utf8").split("\n")
-  const stored = ObservedReads.record(ObservedReads.read(() => lines, root), { root, ignore: [], startedMs })
+  const stored = ObservedReads.record(ObservedReads.read(() => lines, root), {
+    root,
+    ignore: [],
+    startedMs,
+    found: preRun
+  })
   if ("refusal" in stored) return { exit, verdict: `not stored: ${stored.refusal}` }
   // Reused while nothing changed: the run read nothing that it, or the probe's other runs, change.
   const before = ObservedReads.changed(stored, root)

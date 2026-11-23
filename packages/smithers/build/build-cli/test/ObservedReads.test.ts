@@ -605,7 +605,7 @@ describe("reading a trace", () => {
     ].join("\n"))
     expect(trace.refusals).toEqual([])
     expect(paths(trace.made)).toEqual(["/w/d1", "/w/h2", "/w/hard", "/w/ln", "/w/ln2", "/w/t2", "/w/to"])
-    expect([...trace.changed].sort()).toEqual([
+    expect([...new Set([...trace.changed, ...(trace.meta ?? [])])].sort()).toEqual([
       "/w/d1",
       "/w/d3",
       "/w/f2",
@@ -653,7 +653,9 @@ describe("reading a trace", () => {
       "100 fchmod(6<pipe:[77]>, 0644)         = 0"
     ].join("\n"))
     expect(trace.refusals).toEqual([])
-    expect([...trace.changed].sort()).toEqual("abcdefghijklm".split("").map((name) => `/w/${name}`))
+    expect([...new Set([...trace.changed, ...(trace.meta ?? [])])].sort()).toEqual(
+      "abcdefghijklm".split("").map((name) => `/w/${name}`)
+    )
     expect(paths(trace.missing)).toEqual(["/w/gone"])
     expect(paths(trace.found)).toEqual(["/w/kept"])
     expect(paths(trace.made)).toEqual([])
@@ -1752,19 +1754,34 @@ describe("recording what a run read", () => {
     // The next run finds the file as this one found it: nothing it reads changed.
     await Fs.writeFile(db, "as put back")
     expect(ObservedReads.changed(stored, root)).toBeUndefined()
-    // Or as this one left it, as before.
+    // A commit holding what the run left is not what this run read (u2): it must not reuse.
     await Fs.writeFile(db, "as the run left it")
-    expect(ObservedReads.changed(stored, root)).toBeUndefined()
+    expect(ObservedReads.changed(stored, root)).toBe("cache.db changed")
     await Fs.writeFile(db, "another")
     expect(ObservedReads.changed(stored, root)).toBe("cache.db changed")
-    // Measured as it is now, or not measured, or gone before the run: what the run left is all it is held to,
-    // and the row still marks a file the run changes, to be measured before the next run.
+    // When not measured before the run, or gone before it, the third state is `?` so nothing matches until
+    // the next run measures what it found before starting.
     await Fs.writeFile(db, "as the run left it")
     expect(observed(new Map([[db, left]])).reads[0]).toEqual(["cache.db", left, left])
-    expect(observed().reads[0]).toEqual(["cache.db", left, left])
-    expect(observed(new Map([[db, "-"]])).reads[0]).toEqual(["cache.db", left, left])
+    expect(observed().reads[0]).toEqual(["cache.db", left, "?"])
+    expect(ObservedReads.changed(observed(), root)).toBe("cache.db changed")
+    expect(observed(new Map([[db, "-"]])).reads[0]).toEqual(["cache.db", left, "?"])
     // A file the run only read is held as it is, whatever was measured.
     expect(observed(new Map([[`${root}/src/a.txt`, found]])).reads[1]).toHaveLength(2)
+  })
+
+  it("holds a non-listed directory's link count and misses when a subdirectory is added or removed (u3)", async () => {
+    const { record, root, rows } = await setup()
+    await Fs.mkdir(Path.join(root, "nl", "s1"), { recursive: true })
+    const stored = rows(record([`100 newfstatat(AT_FDCWD<${root}>, "nl", {st_mode=S_IFDIR|0755, st_nlink=3}, 0) = 0`]))
+    expect(stored.links).toEqual([["nl", 3, []]])
+    expect(ObservedReads.changed(stored, root)).toBeUndefined()
+    await Fs.mkdir(Path.join(root, "nl", "s2"))
+    expect(ObservedReads.changed(stored, root)).toBe("nl gained or lost a subdirectory")
+    await Fs.rm(Path.join(root, "nl", "s2"), { recursive: true })
+    expect(ObservedReads.changed(stored, root)).toBeUndefined()
+    await Fs.rm(Path.join(root, "nl", "s1"), { recursive: true })
+    expect(ObservedReads.changed(stored, root)).toBe("nl gained or lost a subdirectory")
   })
 
   it("takes a file the run moved into place for the run's own however the run spelled its directory", async () => {
@@ -1968,7 +1985,7 @@ describe("recording what a run read", () => {
     const rewritten = ObservedReads.measure(Path.join(root, "src", "b.txt"))
     expect(stored.reads).toEqual([
       ["src", "d"],
-      ["src/b.txt", rewritten, rewritten],
+      ["src/b.txt", rewritten, "?"],
       ["src/cache.json", cache, "-"]
     ])
     expect(stored.lists).toEqual([
@@ -1979,13 +1996,17 @@ describe("recording what a run read", () => {
         "scratch.tmp"
       ]]
     ])
-    // A fresh checkout, without what the run wrote, still matches.
+    // With what the run found before rewriting measured, a fresh checkout without what it made still matches.
+    const measuredStored = {
+      ...stored,
+      reads: stored.reads.map((row) => row[0] === "src/b.txt" ? [row[0], row[1], rewritten] as const : row)
+    }
     await Fs.rm(Path.join(root, "src", "cache.json"))
     await Fs.rm(Path.join(root, "src", "out.txt"))
     await Fs.rm(Path.join(root, "dist"), { recursive: true })
-    expect(ObservedReads.changed(stored, root)).toBeUndefined()
+    expect(ObservedReads.changed(measuredStored, root)).toBeUndefined()
     await Fs.writeFile(Path.join(root, "src", "cache.json"), "{\"other\":true}")
-    expect(ObservedReads.changed(stored, root)).toBe("src/cache.json changed")
+    expect(ObservedReads.changed(measuredStored, root)).toBe("src/cache.json changed")
   })
 
   it("keeps a path found missing that something else made", async () => {
@@ -2205,11 +2226,23 @@ describe("recording what a run read", () => {
 
     it("reads both names RENAME_EXCHANGE swaps, and counts both as written", async () => {
       const { record, root, rows } = await setup()
-      const stored = rows(record([
-        rename(root, "src/a.txt", "src/b.txt", "RENAME_EXCHANGE"),
-        open(root, "src/a.txt"),
-        rename(root, "src/a.txt", "src/b.txt", "RENAME_EXCHANGE")
-      ]))
+      const aBefore = ObservedReads.measure(Path.join(root, "src", "a.txt"))
+      const bBefore = ObservedReads.measure(Path.join(root, "src", "b.txt"))
+      const observed = ObservedReads.observe(
+        ObservedReads.read(() => [
+          rename(root, "src/a.txt", "src/b.txt", "RENAME_EXCHANGE"),
+          open(root, "src/a.txt"),
+          rename(root, "src/a.txt", "src/b.txt", "RENAME_EXCHANGE")
+        ], root),
+        {
+          root,
+          ignore: [],
+          startedMs: Date.now() + 60_000,
+          found: new Map([[Path.join(root, "src", "a.txt"), aBefore], [Path.join(root, "src", "b.txt"), bBefore]])
+        }
+      )
+      if ("refusal" in observed) throw new Error(observed.refusal)
+      const stored = observed.record
       expect(stored.reads.map((row) => row.slice(0, 1))).toEqual([["src/a.txt"], ["src/b.txt"]])
       // What the run read under a.txt was b.txt's.
       await Fs.writeFile(Path.join(root, "src", "b.txt"), "bad!")
@@ -2389,7 +2422,7 @@ describe("recording what a run read", () => {
     expect(remade.lists.map(([path, , own]) => [path, own])).toEqual([["src", []]])
     expect(record([open(root, "src/a.txt"), open(root, "src/a.txt", "O_RDWR")], [], Date.now() - 60_000))
       .toEqual({
-        reads: [["src/a.txt", ...Array(2).fill(ObservedReads.measure(Path.join(root, "src", "a.txt")))]],
+        reads: [["src/a.txt", ObservedReads.measure(Path.join(root, "src", "a.txt")), "?"]],
         lists: [],
         left: true
       })
@@ -2820,7 +2853,7 @@ describe("what a run left behind", () => {
         `100 openat(AT_FDCWD<${root}>, "out", O_WRONLY) = 3`
       ])
       // The link is the run's to read, and what it leads to is the process's own output, which nothing keeps.
-      expect(observed.record.reads).toEqual([["out", "l:/dev/stdout", "l:/dev/stdout"]])
+      expect(observed.record.reads).toEqual([["out", "l:/dev/stdout", "?"]])
       expect(observed.left).toEqual({ keep: ["out"], gone: [], outside: [] })
     }
   )

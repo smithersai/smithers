@@ -681,6 +681,8 @@ describe("an observed test", () => {
     const { logs, run } = await fixture({ check: marking })
     expect(await run()).toEqual({ check: "ran" })
     expect(logs.filter((line) => line.includes("not cached"))).toEqual([])
+    // The first run changed input.txt in place without a prior record; the second measures it before starting.
+    expect(await run()).toEqual({ check: "ran" })
     expect(await run()).toEqual({ check: "hit" })
   })
 
@@ -734,6 +736,38 @@ describe("an observed test", () => {
     await write("cache/db", "another entry\n")
     expect(await run()).toEqual({ check: "ran" })
     expect(reasons).toEqual(["cache/db changed"])
+  })
+
+  tracedIt("does not reuse a step that rewrote a file it read when a later run holds what it left (u2)", async () => {
+    const rewrite = [
+      "read -r line < data.txt",
+      "printf 'xx\\n' > data.txt",
+      "[ \"$line\" = ok ]"
+    ].join("\n")
+    const { run, write } = await fixture({ check: rewrite })
+    await write("data.txt", "ok\n")
+    expect(await run()).toEqual({ check: "ran" })
+    // data.txt now holds `xx` (what the step left): reusing it would be a stale pass.
+    expect(await run()).toEqual({ check: "failed" })
+    // Putting `ok` back lets the second successful run measure what it found; the next run with `ok` hits.
+    await write("data.txt", "ok\n")
+    expect(await run()).toEqual({ check: "ran" })
+    await write("data.txt", "ok\n")
+    expect(await run()).toEqual({ check: "hit" })
+    // Still fails when a later commit holds `xx`.
+    await write("data.txt", "xx\n")
+    expect(await run()).toEqual({ check: "failed" })
+  })
+
+  tracedIt("runs again when a directory a step only stated gains or loses a subdirectory (u3)", async () => {
+    const checkNlink = "python3 -c 'import os, sys; sys.exit(0 if os.stat(\"nl\").st_nlink == 3 else 1)'"
+    const { reasons, root, run } = await fixture({ check: checkNlink })
+    await Fs.mkdir(Path.join(root, "nl", "s1"), { recursive: true })
+    expect(await run()).toEqual({ check: "ran" })
+    expect(await run()).toEqual({ check: "hit" })
+    await Fs.mkdir(Path.join(root, "nl", "s2"))
+    expect(await run()).toEqual({ check: "failed" })
+    expect(reasons).toEqual(["nl gained or lost a subdirectory"])
   })
 
   tracedIt("ends when its command ends, and stops a process the command left running", async () => {
@@ -1843,6 +1877,10 @@ describe("a step that reaches a file by other rules than an open's", () => {
       const { change, logs, run } = await probe(way)
       const refused = () => logs.filter((line) => line.includes("not cached"))
       expect([recorder, await run(["check"], services), refused()]).toEqual([recorder, { check: "ran" }, []])
+      if (way === "exchange") {
+        // RENAME_EXCHANGE modifies data/ya.txt in place without a prior record; the second run measures it before starting.
+        expect([recorder, await run(["check"], services)]).toEqual([recorder, { check: "ran" }])
+      }
       expect([recorder, await run(["check"], services)]).toEqual([recorder, { check: "hit" }])
       await change()
       expect([recorder, await run(["check"], services)]).toEqual([recorder, { check: "failed" }])

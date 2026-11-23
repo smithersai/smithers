@@ -623,8 +623,27 @@ export const unmade = (
       lstat: (path) => {
         const found = find(path)
         if (found === undefined) throw missing(path)
-        // A directory or a link of a machine that is not made is there, and that is all a caller asks.
-        return io.lstat("at" in found ? found.at : kept)
+        const stats = io.lstat("at" in found ? found.at : kept)
+        if ("names" in found || ("at" in found && under(path, root) && held !== undefined && stats.isDirectory())) {
+          const entries = "names" in found
+            ? found.names
+            : io.readdir(found.at).filter((name) => find(`${path}/${name}`) !== undefined)
+          let subdirs = 0
+          for (const name of entries) {
+            const child = find(`${path}/${name}`)
+            if (child === undefined || "link" in child) continue
+            if ("names" in child) subdirs += 1
+            else {
+              try {
+                if (io.lstat(child.at).isDirectory()) subdirs += 1
+              } catch {
+                // Gone between readdir and lstat.
+              }
+            }
+          }
+          return Object.assign(Object.create(Object.getPrototypeOf(stats)), stats, { nlink: 2 + subdirs })
+        }
+        return stats
       },
       readdir: (path) => {
         const found = find(path)

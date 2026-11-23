@@ -221,7 +221,9 @@ describe("what a record holds of the names a run made", () => {
         `import subprocess\nsubprocess.run(["git", "config", "core.fsmonitor", "touch ${planted}"], check=True)\nos.mkdir("out")`
       )
       expect(stored.made).toEqual(["out"])
-      expect(ObservedReads.changed(stored, root)).toBeUndefined()
+      // git config rewrote .git/config in place; test heldByGit directly without letting .git/config short-circuit.
+      const withoutGit = { ...stored, reads: stored.reads.filter(([name]) => !name.startsWith(".git/")) }
+      expect(ObservedReads.changed(withoutGit, root)).toBeUndefined()
       expect([...ObservedReads.heldByGitOnce(root)(["step.py"])!]).toEqual(["step.py"])
       expect(NodeFs.existsSync(planted)).toBe(false)
     }

@@ -121,7 +121,7 @@ export const maximumPaths = 400_000
  * @since 1.0.0
  */
 export const pathsOf = (record: Record): number =>
-  record.reads.length + record.lists.length + (record.given?.length ?? 0)
+  record.reads.length + record.lists.length + (record.links?.length ?? 0) + (record.given?.length ?? 0)
 
 /** Symbolic links one path may pass through before resolving it fails. */
 const maximumLinks = 40
@@ -532,6 +532,8 @@ export interface Trace {
   readonly emptied: ReadonlyMap<string, number>
   /** Paths the run changed in place, removed or moved away. */
   readonly changed: ReadonlySet<string>
+  /** Paths whose non-measured metadata (timestamps, owner, xattrs, hard-link count) the run changed. */
+  readonly meta?: ReadonlySet<string> | undefined
   /** Programs the run started. */
   readonly started: ReadonlyMap<string, number>
   /** Paths the run removed or moved away. */
@@ -1251,6 +1253,7 @@ export const read = (
   const made = new Map<string, number>()
   const emptied = new Map<string, number>()
   const changed = new Set<string>()
+  const meta = new Set<string>()
   const started = new Map<string, number>()
   const refusals = new Set<string>()
   const outside = new Set<string>()
@@ -1606,7 +1609,7 @@ export const read = (
      */
     const wrote = (
       path: string | undefined,
-      how: "made" | "emptied" | "changed",
+      how: "made" | "emptied" | "changed" | "meta",
       creates = false,
       fresh = how === "made"
     ): void => {
@@ -1617,6 +1620,10 @@ export const read = (
         return
       }
       if (failed) return saw(path)
+      if (how === "meta") {
+        if (ok) meta.add(path)
+        return
+      }
       write(path)
       if (installing.has(pid) || installed.has(pid)) fetched.add(path)
       if (!ok) return
@@ -1833,7 +1840,7 @@ export const read = (
       }
       case "utimensat":
         // With no path, the descriptor itself is the file.
-        return wrote(args[1] === "NULL" ? baseOf(args[0]) : pathAt(row.dir, row.path), "changed")
+        return wrote(args[1] === "NULL" ? baseOf(args[0]) : pathAt(row.dir, row.path), "meta")
       case "rename":
       case "link":
       case "renameat":
@@ -1862,7 +1869,7 @@ export const read = (
         // A name there already stops the call: the run found it.
         if (flags.includes("RENAME_NOREPLACE") && errno === "EEXIST") return looked(to)
         if (linking) {
-          if (from !== undefined && ok) write(from)
+          if (from !== undefined && ok) meta.add(from)
         } else wrote(from, "changed")
         if (to !== undefined && ok) unbuilt(to)
         wrote(to, "made", false, linking || flags.includes("RENAME_NOREPLACE"))
@@ -1941,11 +1948,16 @@ export const read = (
           row.nofollow !== true && !/AT_SYMLINK_NOFOLLOW/.test(row.flags === undefined ? "" : args[row.flags] ?? "")
         )
       // A new mode, owner, time, size or attribute changes when the file last changed, as a write does.
+      // Calls that cannot alter file bytes or the execute bit only mark `meta`, suppressing `moved` without
+      // discarding what the run read.
       case "remove":
-      case "change":
         return wrote(pathAt(row.dir, row.path), "changed")
+      case "change": {
+        const altersMeasure = name === "chmod" || name === "fchmodat" || name === "fchmodat2" || name === "truncate"
+        return wrote(pathAt(row.dir, row.path), altersMeasure ? "changed" : "meta")
+      }
       case "changeFd":
-        return wrote(baseOf(args[0]), "changed")
+        return wrote(baseOf(args[0]), name === "fchmod" ? "changed" : "meta")
       case "mkdir":
         return madeDirectory(pathAt(row.dir, row.path))
       case "make":
@@ -2158,6 +2170,7 @@ export const read = (
     made,
     emptied,
     changed,
+    ...(meta.size === 0 ? {} : { meta }),
     started,
     removed,
     fetched,
@@ -2470,6 +2483,9 @@ const codeOf = (cause: unknown): string =>
 
 const absent = "-"
 
+/** Sentinel for a file the run found and changed whose prior bytes were not measured: never matches any real state. */
+const unmeasured = "?"
+
 /**
  * What is at a path, as one comparable text: `-` when nothing is, `d` for a
  * directory, `l:<target>` for a symbolic link, `f:<digest>` for a file (with
@@ -2511,6 +2527,31 @@ export const listing = (path: string, own: ReadonlyArray<string>, io: Io = defau
 }
 
 /**
+ * The link count of a directory excluding direct subdirectories in `own`;
+ * `undefined` when the path is not a directory that can be inspected.
+ *
+ * @category measuring
+ * @since 1.0.0
+ */
+export const dirLinks = (path: string, own: ReadonlyArray<string>, io: Io = defaultIo): number | undefined => {
+  try {
+    const stats = io.lstat(path)
+    if (!stats.isDirectory()) return undefined
+    let extra = 0
+    for (const name of new Set(own)) {
+      try {
+        if (io.lstat(path === "/" ? `/${name}` : `${path}/${name}`).isDirectory()) extra += 1
+      } catch {
+        // Not present now.
+      }
+    }
+    return stats.nlink - extra
+  } catch {
+    return undefined
+  }
+}
+
+/**
  * What one run read. A path inside the workspace is written from its root; a
  * path outside it is absolute.
  *
@@ -2532,6 +2573,14 @@ export interface Record {
   readonly lists: ReadonlyArray<
     | readonly [path: string, digest: string, own: ReadonlyArray<string>]
     | readonly [string, string, ReadonlyArray<string>, ReadonlyArray<readonly [name: string, from: number]>]
+  >
+  /**
+   * Each non-listed directory the run inspected (`stat`/`open`): its link count
+   * excluding direct subdirectories the run or a step in `from` wrote there.
+   */
+  readonly links?: ReadonlyArray<
+    | readonly [path: string, nlink: number, own: ReadonlyArray<string>]
+    | readonly [string, number, ReadonlyArray<string>, ReadonlyArray<readonly [name: string, from: number]>]
   >
   /** The steps the run depends on whose files it read: each one's label, and the id of the record its run stored. */
   readonly from?: ReadonlyArray<readonly [label: string, id: string]>
@@ -2655,6 +2704,7 @@ export const idOf = (record: Omit<Record, "id">): string =>
     .update(JSON.stringify([
       record.reads,
       record.lists,
+      ...(record.links === undefined ? [] : ["links", record.links]),
       record.from ?? [],
       record.given ?? [],
       record.left ?? false,
@@ -3128,6 +3178,11 @@ export const observe = (
      * reads and rewrites, is the same input each time, though never what the step left.
      */
     readonly found?: ReadonlyMap<string, string> | undefined
+    /**
+     * Measures what was at a workspace path before the run began when `found` does not name it
+     * (e.g. from an untouched checkout when the step ran in a disposable machine copy).
+     */
+    readonly before?: ((path: string) => string | undefined) | undefined
     /** Whether the run left a program running when its command ended ({@link Record.running}). */
     readonly running?: boolean | undefined
     /** The steps whose programs were running while it ran, with their records' ids ({@link Record.served}). */
@@ -3212,6 +3267,7 @@ export const observe = (
     readonly first: "found" | "missing" | "made"
     made: boolean
     changed: boolean
+    meta: boolean
     listed: boolean
   }
   const entries = new Map<string, Entry>()
@@ -3220,7 +3276,7 @@ export const observe = (
   const touch = (path: string, first: Entry["first"]): Entry => {
     const entry = entries.get(path)
     if (entry === undefined) {
-      const created: Entry = { first, made: first === "made", changed: false, listed: false }
+      const created: Entry = { first, made: first === "made", changed: false, meta: false, listed: false }
       entries.set(path, created)
       return created
     }
@@ -3541,13 +3597,26 @@ export const observe = (
       if (!trace.made.has(raw)) noteWritten(real, raw)
       else if (entry !== undefined) entry.changed = true
     }
-    // The names it wrote count only in a directory it listed: those are left out of the listing.
+    // The names it wrote count in any directory it listed or inspected: those are left out of its listing and link count.
     const slash = path.lastIndexOf("/")
     const parent = slash > 0 ? path.slice(0, slash) : NodePath.posix.dirname(path)
-    if (entries.get(parent)?.listed !== true) continue
+    const parentEntry = entries.get(parent)
+    if (parentEntry === undefined || (!parentEntry.listed && kindOf(parent)?.directory !== true)) continue
     let names = own.get(parent)
     if (names === undefined) own.set(parent, names = new Set())
     names.add(slash > 0 ? path.slice(slash + 1) : NodePath.posix.basename(path))
+  }
+  for (const raw of trace.meta ?? []) {
+    if (pseudo(raw) || tooLong(raw)) continue
+    const path = named(raw)
+    if (path === undefined) continue
+    const real = ownName(raw) ? path : resolve(raw) ?? path
+    const entry = entries.get(path)
+    if (entry !== undefined) entry.meta = true
+    if (real !== path) {
+      const target = entries.get(real)
+      if (target !== undefined) target.meta = true
+    }
   }
   // Two directories swapped swap all below them: a file read below one afterwards held what was below the other.
   // A name gone by the end may have been either.
@@ -3624,6 +3693,7 @@ export const observe = (
   const reads: Array<readonly [string, string] | readonly [string, string, string]> = []
   const given: Array<readonly [string, string, number]> = []
   const lists: Array<Record["lists"][number]> = []
+  const links: Array<NonNullable<Record["links"]>[number]> = []
   const temporary = options.temporary ?? []
   if (variables !== undefined && variableNames.length > 0) telling = toldBefore(variables)
   // What the run made is no input of it, so it is left out before the paths are put in order: an install makes
@@ -3649,17 +3719,41 @@ export const observe = (
     }
     if (!entry.changed) {
       if (state === absent) return { refusal: `${inside(path)} was removed while it ran` }
-      if (state !== "d" && moved(path)) return { refusal: `${inside(path)} changed while it ran` }
+      if (!entry.meta && state !== "d" && moved(path)) return { refusal: `${inside(path)} changed while it ran` }
     }
     const place = producers.length === 0 ? undefined : placeOf(path)
-    // A file the run found, changed and left is held as it left it or as it found it. Where what it found was not
-    // measured, the third state repeats the first: the row still says the run changes the file, so the next
-    // run measures it before it begins.
-    const before = entry.changed && state !== "d" && state !== absent ? options.found?.get(path) ?? state : undefined
+    // A file the run found, changed and left is held only as it found it, never as it left it. Where what it found
+    // was not measured, the third state is `?` (never matches): the row still marks a file the run changes, so the
+    // next run measures it before it begins.
+    const before = entry.changed && state !== "d" && state !== absent
+      ? options.found?.get(path) ?? options.before?.(path) ?? unmeasured
+      : undefined
     if (place !== undefined) given.push([inside(path), state, place])
     else if (before === undefined) reads.push([inside(path), state])
-    else reads.push([inside(path), state, before === absent ? state : before])
-    if (!entry.listed) continue
+    else reads.push([inside(path), state, before === absent ? unmeasured : before])
+    if (!entry.listed) {
+      if (
+        state === "d" && place === undefined && path !== "/" &&
+        (path === options.root || under(path, options.root) ||
+          (!under(options.root, path) && !temporary.some((dir) => under(dir, path))))
+      ) {
+        const ignoredHere = namesIn(path, io).filter((name) => !visible(path === "/" ? `/${name}` : `${path}/${name}`))
+        const names = [...new Set([...(own.get(path) ?? []), ...ignoredHere])].sort(byCodeUnit)
+        const added: Array<readonly [string, number]> = []
+        if (producers.length > 0) {
+          for (const name of namesIn(path, io)) {
+            if (names.includes(name)) continue
+            const writer = placeOf(path === "/" ? `/${name}` : `${path}/${name}`)
+            if (writer !== undefined) added.push([name, writer])
+          }
+        }
+        const count = dirLinks(path, [...names, ...added.map(([name]) => name)], io)
+        if (count !== undefined) {
+          links.push(added.length === 0 ? [inside(path), count, names] : [inside(path), count, names, added])
+        }
+      }
+      continue
+    }
     const names = [...(own.get(path) ?? [])].sort(byCodeUnit)
     // In a directory no step made, the names a step added are that step's: each is checked on its own.
     const added: Array<readonly [string, number]> = []
@@ -3674,7 +3768,9 @@ export const observe = (
     if (digest === undefined) continue
     // A directory the run itself removed, made or renamed changed because the run changed it, as a file it wrote
     // did: it is compared with what the run left there.
-    if (names.length === 0 && !entry.changed && moved(path)) return { refusal: `${inside(path)} changed while it ran` }
+    if (names.length === 0 && !entry.changed && !entry.meta && moved(path)) {
+      return { refusal: `${inside(path)} changed while it ran` }
+    }
     lists.push(added.length === 0 ? [inside(path), digest, names] : [inside(path), digest, names, added])
   }
   const survivors = [...touched].filter((path) => path !== options.root && there(path)).sort(byCodeUnit)
@@ -3771,6 +3867,7 @@ export const observe = (
   const body = {
     reads,
     lists,
+    ...(links.length === 0 ? {} : { links }),
     ...(from.length === 0 ? {} : { from, given }),
     ...(survivors.length > 0 ? { left: true as const } : {}),
     ...(madeAt === undefined || madeAt.length === 0 ? {} : { made: madeAt }),
@@ -4015,7 +4112,9 @@ export const changed = (
   const absolute = (path: string): string => path === "." ? root : path.startsWith("/") ? path : `${root}/${path}`
   for (const [path, state, other] of cheapestFirst(stored.reads, absolute, io, own)) {
     const now = measured(absolute(path))
-    if (now === state || now === other) continue
+    if (other === undefined ? now === state : other === absent ? now === state || now === absent : now === other) {
+      continue
+    }
     if (now === absent) return `${path} is gone`
     return state === absent ? `${path} now exists` : `${path} changed`
   }
@@ -4048,6 +4147,18 @@ export const changed = (
     if (now !== absent) return state === absent ? `${path} now exists` : `${left} changed`
     if (!again(place)) return `${left} is gone`
     pending.add(path)
+  }
+  for (const [path, count, ownNames, added = []] of stored.links ?? []) {
+    if (pending.has(path)) continue
+    const directory = absolute(path)
+    if (dirLinks(directory, [...ownNames, ...added.map(([name]) => name)], io) !== count) {
+      return `${path} gained or lost a subdirectory`
+    }
+    for (const [name, place] of added) {
+      if (!present(`${directory}/${name}`, io) && !again(place)) {
+        return `${path === "." ? "" : `${path}/`}${name} is gone`
+      }
+    }
   }
   for (const [path, digest, own, added = []] of stored.lists) {
     if (pending.has(path)) continue
@@ -4114,6 +4225,7 @@ export const anchored = (stored: Record, latest: (label: string) => string | und
   const body = {
     reads: stored.reads,
     lists: stored.lists,
+    ...(stored.links === undefined ? {} : { links: stored.links }),
     from,
     given: stored.given ?? [],
     ...(stored.left === true ? { left: true as const } : {}),
@@ -4312,7 +4424,7 @@ const isKept = (value: unknown): boolean => {
 
 const isRecord = (value: unknown): value is Record => {
   if (typeof value !== "object" || value === null) return false
-  const { from = [], given = [], id, kept, left, lists, made = [], reads, variables = [] } = value as {
+  const { from = [], given = [], id, kept, left, links = [], lists, made = [], reads, variables = [] } = value as {
     readonly [key in keyof Record]?: unknown
   }
   const text = (part: unknown): boolean => typeof part === "string"
@@ -4326,6 +4438,14 @@ const isRecord = (value: unknown): value is Record => {
     reads.every((row) => Array.isArray(row) && (row.length === 2 || row.length === 3) && row.every(text)) &&
     from.every((row) => Array.isArray(row) && row.length === 2 && row.every(text)) &&
     given.every((row) => Array.isArray(row) && row.length === 3 && text(row[0]) && text(row[1]) && place(row[2])) &&
+    Array.isArray(links) &&
+    links.every((row) =>
+      Array.isArray(row) && (row.length === 3 || row.length === 4) && text(row[0]) && Number.isInteger(row[1]) &&
+      Array.isArray(row[2]) && row[2].every(text) &&
+      (row[3] === undefined ||
+        (Array.isArray(row[3]) &&
+          row[3].every((added) => Array.isArray(added) && added.length === 2 && text(added[0]) && place(added[1]))))
+    ) &&
     lists.every((row) =>
       Array.isArray(row) && (row.length === 3 || row.length === 4) && text(row[0]) && text(row[1]) &&
       Array.isArray(row[2]) && row[2].every(text) &&

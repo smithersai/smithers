@@ -68,6 +68,7 @@ interface Head {
   readonly id: string
   readonly reads: number
   readonly lists: number
+  readonly links?: number
   readonly given?: number
   readonly from?: ObservedReads.Record["from"]
   readonly left?: true
@@ -84,11 +85,13 @@ const sorted = <A extends ReadonlyArray<unknown>>(rows: ReadonlyArray<A>): Reado
 /** The lines of a record: its head, then its reads, listed directories and given files, each sorted by path. */
 function* linesOf(record: ObservedReads.Record): Generator<string> {
   const given = record.given ?? []
+  const links = record.links ?? []
   const head: Head = {
     format: ObservedReads.format,
     id: record.id!,
     reads: record.reads.length,
     lists: record.lists.length,
+    ...(record.links === undefined ? {} : { links: links.length }),
     ...(record.given === undefined ? {} : { given: given.length }),
     ...(record.from === undefined ? {} : { from: record.from }),
     ...(record.left === undefined ? {} : { left: record.left }),
@@ -101,6 +104,7 @@ function* linesOf(record: ObservedReads.Record): Generator<string> {
   yield `${JSON.stringify(head)}\n`
   for (const row of sorted(record.reads)) yield `${JSON.stringify(row)}\n`
   for (const row of sorted(record.lists)) yield `${JSON.stringify(row)}\n`
+  for (const row of sorted(links)) yield `${JSON.stringify(row)}\n`
   for (const row of sorted(given)) yield `${JSON.stringify(row)}\n`
 }
 
@@ -193,6 +197,7 @@ export const read = async (cas: string, reference: Reference): Promise<ObservedR
   let head: Head | undefined
   const reads: Array<readonly [string, string] | readonly [string, string, string]> = []
   const lists: Array<ObservedReads.Record["lists"][number]> = []
+  const links: Array<NonNullable<ObservedReads.Record["links"]>[number]> = []
   const given: Array<NonNullable<ObservedReads.Record["given"]>[number]> = []
   try {
     for await (const line of lines) {
@@ -203,6 +208,7 @@ export const read = async (cas: string, reference: Reference): Promise<ObservedR
       }
       if (reads.length < head.reads) reads.push(value as (typeof reads)[number])
       else if (lists.length < head.lists) lists.push(value as (typeof lists)[number])
+      else if (links.length < (head.links ?? 0)) links.push(value as (typeof links)[number])
       else if (given.length < (head.given ?? 0)) given.push(value as (typeof given)[number])
       else return undefined
     }
@@ -214,10 +220,14 @@ export const read = async (cas: string, reference: Reference): Promise<ObservedR
   }
   if (head === undefined || hash.digest("hex") !== reference.digest || count.bytes !== reference.bytes) return undefined
   if (head.format !== ObservedReads.format || typeof head.id !== "string") return undefined
-  if (reads.length !== head.reads || lists.length !== head.lists || given.length !== (head.given ?? 0)) return undefined
+  if (
+    reads.length !== head.reads || lists.length !== head.lists ||
+    links.length !== (head.links ?? 0) || given.length !== (head.given ?? 0)
+  ) return undefined
   const record = ObservedReads.asRecord({
     reads,
     lists,
+    ...(head.links === undefined ? {} : { links }),
     ...(head.from === undefined ? {} : { from: head.from }),
     ...(head.given === undefined ? {} : { given }),
     ...(head.left === undefined ? {} : { left: head.left }),

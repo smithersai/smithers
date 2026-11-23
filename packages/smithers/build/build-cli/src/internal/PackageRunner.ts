@@ -3719,6 +3719,8 @@ const executeWith = (
       mounts: ReadonlyArray<readonly [string, string]>
     ) => {
       const before = dependenciesOf(node.label)
+      const realPlace = NodeFs.realpathSync(place)
+      const realRoot = machine === undefined ? undefined : NodeFs.realpathSync(root)
       return {
         variables: {
           values: observed.variables,
@@ -3727,7 +3729,7 @@ const executeWith = (
           readAsData: observed.readAsData,
           byValue: observed.byValue
         },
-        root: NodeFs.realpathSync(place),
+        root: realPlace,
         held: commitHolds,
         ignore: [
           ...ObservedReads.ignored(
@@ -3745,6 +3747,14 @@ const executeWith = (
         // since it was measured.
         outside: stateOf,
         found,
+        ...(realRoot === undefined
+          ? {}
+          : {
+            before: (path: string): string | undefined => {
+              if (!path.startsWith(`${realPlace}/`)) return undefined
+              return stateOf(NodePath.join(realRoot, path.slice(realPlace.length + 1)))
+            }
+          }),
         // What a run left in its machine's home or temporary directory is the machine's, wherever machines are kept:
         // it is kept with what the run left in the tree, and put back on the next machine.
         temporary: machine === undefined ? temporary() : [...temporary(), machine.home, machine.tmp],

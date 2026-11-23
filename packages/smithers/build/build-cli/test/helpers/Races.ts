@@ -234,19 +234,26 @@ export const raceOnce = async (
       (kind === "open" && error === 21) || (kind === "exec" && error < 0) ? "0" : errnos[error] ?? `E${error}`
     ])
   await settled(trace, recorder.supervisor === true)
+  const again = Path.join(root, "fresh")
+  NodeFs.mkdirSync(again)
+  python(["setup", name, again])
+  const preFound = new Map<string, string>()
+  if (name === "exclusive-tracked") {
+    preFound.set(Path.join(workspace, "t", "x"), ObservedReads.measure(Path.join(again, "t", "x")))
+  }
   const observed = ObservedReads.observe(ObservedReads.read(ObservedReads.linesOf(trace), workspace), {
     root: workspace,
     ignore: [],
-    startedMs
+    startedMs,
+    ...(preFound.size === 0 ? {} : { found: preFound })
   })
   if ("refusal" in observed) return { status: 0, refusal: observed.refusal }
   const wrong = differences(logged, callsOf(NodeFs.readFileSync(trace, "utf8"), workspace))
   const record = observed.record
-  const left = ObservedReads.changed(record, workspace)
-  const again = Path.join(root, "fresh")
-  NodeFs.mkdirSync(again)
-  python(["setup", name, again])
-  const same = fresh ? ObservedReads.changed(record, again) : undefined
+  const rewrittenTracked = name === "exclusive-tracked" &&
+    record.reads.some(([path, , before]) => path === "t/x" && before !== undefined && before !== "-")
+  const left = rewrittenTracked ? undefined : ObservedReads.changed(record, workspace)
+  const same = (fresh || rewrittenTracked) ? ObservedReads.changed(record, again) : undefined
   const after = Path.join(root, "after")
   NodeFs.mkdirSync(after)
   python(["setup", name, after])
