@@ -18,9 +18,12 @@
  */
 
 import type * as Journal from "@smthrs/journal/Journal"
-import type * as JournalEvent from "@smthrs/journal/JournalEvent"
+import * as JournalEvent from "@smthrs/journal/JournalEvent"
 import * as Effect from "effect/Effect"
+import * as Schema from "effect/Schema"
 import { error, type TimeTravelError } from "../TimeTravelError.ts"
+
+const isJournalSeq = Schema.is(JournalEvent.Seq)
 
 /**
  * What {@link forEachPage} returns from a page callback to end the read
@@ -89,6 +92,16 @@ export const forEachPage = <E>(
         ...(options.eventTypes === undefined ? {} : { eventTypes: options.eventTypes }),
         limit: options.pageSize
       }).pipe(Effect.mapError((cause) => error("unknown", options.readFailure, cause)))
+      const previous = after ?? -1
+      let next = previous
+      for (const entry of page.entries) {
+        if (!isJournalSeq(entry.seq)) {
+          return yield* Effect.fail(
+            error("invalid", `${options.label} returned an invalid sequence for ${options.runId}`)
+          )
+        }
+        next = Math.max(next, entry.seq)
+      }
       if ((yield* onPage(page.entries)) === Stop) return
       if (!page.hasMore) return
       if (page.entries.length === 0) {
@@ -96,8 +109,6 @@ export const forEachPage = <E>(
           error("invalid", `${options.label} returned an empty continuation page for ${options.runId}`)
         )
       }
-      const previous = after ?? -1
-      const next = page.entries.reduce((tail, entry) => entry.seq > tail ? entry.seq : tail, previous)
       if (next <= previous) {
         return yield* Effect.fail(
           error("invalid", `${options.label} pagination did not advance for ${options.runId}`)

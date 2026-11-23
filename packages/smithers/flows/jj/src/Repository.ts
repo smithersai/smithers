@@ -307,7 +307,7 @@ const OPERATION = /^[A-Za-z0-9._:/-]{1,128}$/
 /**
  * Whether `ref` is a ref name this API accepts: `refs/` and then segments of
  * letters, digits, `.`, `_` and `-`, none empty, none starting with `.` or
- * ending with `.lock`, with no `..`, at most 255 characters: a subset of git's
+ * ending with `.lock`, with no `..` or final period, at most 255 characters: a subset of git's
  * `check-ref-format`.
  *
  * @category predicates
@@ -315,6 +315,7 @@ const OPERATION = /^[A-Za-z0-9._:/-]{1,128}$/
  */
 export const isRefName = (ref: unknown): ref is string =>
   typeof ref === "string" && ref.length <= 255 && ref.startsWith("refs/") && !ref.includes("..") &&
+  !ref.endsWith(".") &&
   ref.split("/").length >= 3 &&
   ref.split("/").every((segment) => REF_SEGMENT.test(segment) && !segment.startsWith(".") && !segment.endsWith(".lock"))
 

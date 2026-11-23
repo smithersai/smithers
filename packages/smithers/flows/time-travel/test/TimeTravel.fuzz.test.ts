@@ -48,7 +48,6 @@ import * as EffectHandlerRegistry from "../src/internal/EffectHandlerRegistry.ts
 import * as ForkOperation from "../src/internal/Fork.ts"
 import * as HistoryLimit from "../src/internal/HistoryLimit.ts"
 import * as JournalPages from "../src/internal/JournalPages.ts"
-import * as Lease from "../src/internal/Lease.ts"
 import * as LineageTree from "../src/internal/LineageTree.ts"
 import * as Recovery from "../src/internal/Recovery.ts"
 import * as Replay from "../src/internal/Replay.ts"

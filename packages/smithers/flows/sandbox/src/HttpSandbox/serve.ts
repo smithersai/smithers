@@ -96,7 +96,8 @@ const runToEnd = (session: Session, command: string, options: RemoteOptions) =>
  */
 const appendScript = (path: string, part: string, offset: number, end: number) =>
   `f=${CommandLine.quote(path)}; p=${CommandLine.quote(part)}\n` +
-  `s=$(wc -c <"$f" 2>/dev/null) || s=absent\n` +
+  // BSD `wc` pads its count with spaces, which the arithmetic expansion drops.
+  `s=$(wc -c <"$f" 2>/dev/null) && s=$((s)) || s=absent\n` +
   `if [ "$s" = ${offset} ]; then cat "$p" >>"$f" || s=unwritable; fi\n` +
   `rm -f "$p"\n` +
   `if [ "$s" = ${offset} ] || [ "$s" = ${end} ]; then exit 0; fi\n` +

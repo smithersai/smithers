@@ -957,10 +957,13 @@ const operations = (spawn: Run, repositoryRoot?: string) => {
           "-T",
           "commit_id ++ \"\\n\" ++ change_id.short()"
         ])
-        const [commitId = "", changeId = ""] = output.split("\n").map((line) => line.trim())
+        const [commitId = "", changeId = "", extra] = output.trimEnd().split("\n", 3).map((line) => line.trim())
         // Template aliases can rewrite what these templates print. A value that
         // is not an id is refused here instead of being journaled as one.
-        if (!/^[0-9a-f]+$/.test(commitId) || !/^[k-z]+$/.test(changeId) || !/^[0-9a-f]+$/.test(operationId)) {
+        if (
+          extra !== undefined || !/^[0-9a-f]+$/.test(commitId) || !/^[k-z]+$/.test(changeId) ||
+          !/^[0-9a-f]+$/.test(operationId)
+        ) {
           return yield* Effect.fail(
             new JjError({
               code: "unknown",

@@ -148,6 +148,13 @@ const pollScript = (d: string, out: number, err: number, max: number) =>
   `tail -c +${err + 1} "$d/err" 2>/dev/null | head -c ${max} >&2\n` +
   `exit 0`
 
+/**
+ * Whether `text` is well-formed Unicode. An unpaired surrogate cannot cross a
+ * URL: `encodeURIComponent` throws on it, and a query replaces it with U+FFFD,
+ * which names another session.
+ */
+const wellFormed = (text: string): boolean => !/\p{Surrogate}/u.test(text)
+
 const wholeNumber = (name: string, value: number, least: number) => {
   if (!Number.isSafeInteger(value) || value < least) {
     throw new TypeError(`http-sandbox: ${name} must be a whole number from ${least}: ${value}`)
@@ -453,6 +460,14 @@ export const make = (options: HttpSandboxOptions): Provider => {
   return {
     acquire: (key) =>
       Effect.gen(function*() {
+        if (!wellFormed(key)) {
+          return yield* Effect.fail(
+            new ProviderError({
+              code: "unknown",
+              message: "http-sandbox: the session key holds an unpaired surrogate, so no URL can name its session"
+            })
+          )
+        }
         const info = yield* Effect.acquireRelease(
           send(
             `acquiring ${key}`,
@@ -463,6 +478,17 @@ export const make = (options: HttpSandboxOptions): Provider => {
               Effect.flatMap(
                 bodyOf(response),
                 (text) => Effect.mapError(decodeInfo(text), malformed(`acquiring ${key}`))
+              ).pipe(
+                // Refused before the release is registered: destroying it would need the URL it cannot have.
+                Effect.filterOrFail(
+                  (answered) => wellFormed(answered.id) && wellFormed(answered.remoteId),
+                  () =>
+                    new ProviderError({
+                      code: "unknown",
+                      message: `http-sandbox: acquiring ${key} answered a session no URL can name: ` +
+                        "its id holds an unpaired surrogate"
+                    })
+                )
               )
           ),
           (held) => finalizeWithin(Effect.ignore(destroy(held), { log: "Warn" }), `http sandbox ${held.remoteId}`)

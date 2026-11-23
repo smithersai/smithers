@@ -49,6 +49,16 @@ export class StoragePersistence extends Context.Service<StoragePersistence, Serv
 ) {}
 
 /**
+ * The name of what `persist()` rejected with. A browser rejects with a
+ * `DOMException`, but a promise may reject with anything, `undefined`
+ * included, and that has no name to record.
+ */
+const nameOf = (thrown: unknown): string => {
+  const name = (thrown as { readonly name?: unknown } | null | undefined)?.name
+  return typeof name === "string" ? name : "unknown"
+}
+
+/**
  * Builds the service over a storage manager, or none.
  *
  * @category constructors
@@ -61,7 +71,7 @@ export const make = (storage: StorageManagerLike | undefined): Service =>
       : Effect.tryPromise(() => storage.persist!()).pipe(
         Effect.catch((error) =>
           Effect.logWarning("browser.storage.persist").pipe(
-            Effect.annotateLogs({ outcome: "refused", "error.type": String((error.cause as Error).name) }),
+            Effect.annotateLogs({ outcome: "refused", "error.type": nameOf(error.cause) }),
             Effect.as(false)
           )
         )

@@ -284,6 +284,28 @@ export const make = (database: DatabaseService): {
               error("supersede_conflict", "both superseder and target notes must exist in the namespace")
             )
           }
+          // Supersession is a DAG. An edge whose target already supersedes
+          // its superseder, directly or through other notes, would close a
+          // cycle, and accepted notes on a cycle each hide the next, so none
+          // of them would be listed or recalled again. `UNION` ends the walk
+          // even over a cycle an older store let in.
+          const closing = yield* sql<{ readonly id: string }>`WITH RECURSIVE superseded(id) AS (
+              SELECT target_id FROM memory_note_supersedes
+              WHERE ${inNamespace(namespace)} AND superseder_id = ${input.targetId}
+              UNION
+              SELECT edges.target_id FROM memory_note_supersedes edges
+              JOIN superseded ON edges.superseder_id = superseded.id
+              WHERE edges.namespace_kind = ${namespace.kind} AND edges.namespace_id = ${namespace.id}
+            )
+            SELECT id FROM superseded WHERE id = ${input.supersederId} LIMIT 1`
+          if (closing.length > 0) {
+            return yield* Effect.fail(
+              error(
+                "supersede_conflict",
+                `note "${input.supersederId}" is already superseded by note "${input.targetId}"; the edge would close a supersession cycle`
+              )
+            )
+          }
           yield* sql`INSERT INTO memory_note_supersedes (
               namespace_kind, namespace_id, superseder_id, target_id, created_at_ms
             )
