@@ -3721,6 +3721,11 @@ const executeWith = (
       const before = dependenciesOf(node.label)
       const realPlace = NodeFs.realpathSync(place)
       const realRoot = machine === undefined ? undefined : NodeFs.realpathSync(root)
+      const realMachineHome = machine === undefined ? undefined : NodeFs.realpathSync(machine.home)
+      const homeTemplate = machine === undefined ? undefined : hostEnvironment[Machine.homeVariable]
+      const realHomeTemplate = homeTemplate !== undefined && homeTemplate !== "" && NodeFs.existsSync(homeTemplate)
+        ? NodeFs.realpathSync(homeTemplate)
+        : undefined
       return {
         variables: {
           values: observed.variables,
@@ -3751,8 +3756,16 @@ const executeWith = (
           ? {}
           : {
             before: (path: string): string | undefined => {
-              if (!path.startsWith(`${realPlace}/`)) return undefined
-              return stateOf(NodePath.join(realRoot, path.slice(realPlace.length + 1)))
+              if (path.startsWith(`${realPlace}/`)) {
+                return stateOf(NodePath.join(realRoot, path.slice(realPlace.length + 1)))
+              }
+              if (
+                realMachineHome !== undefined && realHomeTemplate !== undefined &&
+                path.startsWith(`${realMachineHome}/`)
+              ) {
+                return stateOf(NodePath.join(realHomeTemplate, path.slice(realMachineHome.length + 1)))
+              }
+              return undefined
             }
           }),
         // What a run left in its machine's home or temporary directory is the machine's, wherever machines are kept:
