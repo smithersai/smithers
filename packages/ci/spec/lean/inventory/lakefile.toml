@@ -1,0 +1,9 @@
+name = "inventory-spec"
+defaultTargets = ["InventorySpec", "inventory-spec"]
+
+[[lean_lib]]
+name = "InventorySpec"
+
+[[lean_exe]]
+name = "inventory-spec"
+root = "Main"

@@ -18,6 +18,9 @@ describe("regexOf", () => {
     ["file?.txt", ["file1.txt"], ["file.txt", "file12.txt", "file/.txt"]],
     ["lock[0-9].txt", ["lock3.txt"], ["lockx.txt"]],
     ["lock[!0-9].txt", ["lockx.txt"], ["lock3.txt"]],
+    // A negated set that ends in a range up to `-` keeps that range: `.` is outside `+` to `-`, and so is named.
+    ["lock[!+--].txt", ["lock..txt", "locka.txt"], ["lock+.txt", "lock,.txt", "lock-.txt", "lock/.txt"]],
+    ["lock[!a-].txt", ["lockb.txt"], ["locka.txt", "lock-.txt", "lock/.txt"]],
     ["a+b(1)|c{2}^$.txt", ["a+b(1)|c{2}^$.txt"], ["aab1c2.txt", "a+b(1)|c{2}^$xtxt"]],
     ["odd[name.txt", ["odd[name.txt"], ["oddn"]],
     ["odd]name.txt", ["odd]name.txt"], ["oddname.txt"]],

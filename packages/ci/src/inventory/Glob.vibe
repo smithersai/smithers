@@ -59,7 +59,8 @@ const characterClassOf = (body: string): string | "slash" | undefined => {
     }
   }
   if (negated) {
-    out = out.endsWith("-") ? `${out.slice(0, -1)}/-` : `${out}/`
+    // Only a `-` that stands for itself moves behind the `/`: one that ends a range (`+--`) would start another.
+    out = !lastWasRange && out.endsWith("-") ? `${out.slice(0, -1)}/-` : `${out}/`
   }
   return `[${out}]`
 }
