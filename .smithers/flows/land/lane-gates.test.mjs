@@ -1,7 +1,7 @@
 /** Regression fixtures for the shared pre-push gate. @since 0.1.0 */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { copyFileSync, mkdtempSync, writeFileSync, rmSync, mkdirSync, readFileSync, symlinkSync } from 'node:fs'
+import { copyFileSync, existsSync, mkdtempSync, writeFileSync, rmSync, mkdirSync, readFileSync, symlinkSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { spawnSync, execFileSync } from 'node:child_process'
@@ -93,7 +93,7 @@ test('a baseline failure in one package does not excuse the same name failing in
 mode=${mode}; log="$2/log"; baseline="$2/baseline"; allfails="$2/allfails"; newreds=()
 check tests:packages/${pkg} 'node --test "$FIXTURE/${pkg}/row.test.mjs"'
 [ $mode = baseline ] && write_baseline
-printf '%s\\n' "\${newreds[@]}"`, '_', script, dir], { encoding: 'utf8', env })
+[ \${#newreds[@]} -gt 0 ] && printf '%s\n' "\${newreds[@]}" || printf '\n'`, '_', script, dir], { encoding: 'utf8', env })
   assert.equal(run('baseline', 'a').status, 0)
   assert.equal(readFileSync(join(dir, 'baseline'), 'utf8'), formatLine + 'tests:packages/a: writes a row\n')
   assert.equal(run('gate', 'a').stdout, '\n')
@@ -234,3 +234,120 @@ test('changed paths under .smithers/flows select its tests; stale root flows/ pa
     '.smithers/flows\npackages/rpc\n')
 })
 
+
+test('non-colocated jj lane workspace resolves root, changed files, and prerequisites without .git (#4237)', t => {
+  const dir = fixture(t)
+  const remote = join(dir, 'remote'), seed = join(dir, 'seed'), primary = join(dir, 'primary'), ws = join(dir, 'ws'), home = join(dir, 'home'), bin = join(dir, 'bin')
+  for (const path of [join(seed, '.smithers/flows/land'), join(home, 'lanes'), bin]) mkdirSync(path, { recursive: true })
+  for (const file of ['lane-gates.sh', 'lane-prerequisites.sh']) copyFileSync(resolve(import.meta.dirname, file), join(seed, '.smithers/flows/land', file))
+  mkdirSync(join(seed, 'apps/mvp/ops/database'), { recursive: true })
+  for (const file of ['Probe.ts', 'Policy.ts']) copyFileSync(resolve(import.meta.dirname, '../../../apps/mvp/ops/database', file), join(seed, 'apps/mvp/ops/database', file))
+  writeFileSync(join(home, 'lanes/main-baseline-failures.txt'), 'some test\n')
+  writeFileSync(join(bin, 'bun'), '#!/bin/sh\nexit 0\n', { mode: 0o755 })
+  writeFileSync(join(bin, 'cargo'), `#!/bin/sh
+mkdir -p "$FIXTURE_REPO/target/release"
+printf '%s\\n' '#!/bin/sh' "echo '{\\"capabilities\\":[\\"trusted-process-binding/v1\\"]}'" > "$FIXTURE_REPO/target/release/smithers-jj-export"
+chmod +x "$FIXTURE_REPO/target/release/smithers-jj-export"
+`, { mode: 0o755 })
+  for (const tool of ['psql', 'pg_isready']) writeFileSync(join(bin, tool), '#!/bin/sh\nexit 1\n', { mode: 0o755 })
+  const git = (cwd, ...args) => execFileSync('git', args, { cwd, encoding: 'utf8' }).trim()
+  const jj = (cwd, ...args) => execFileSync('jj', ['--no-pager', ...args], { cwd, encoding: 'utf8' }).trim()
+  mkdirSync(remote, { recursive: true })
+  git(remote, 'init', '--bare', '-q', '-b', 'main')
+  git(seed, 'init', '-q', '-b', 'main')
+  git(seed, 'config', 'user.email', 'fixture@example.com')
+  git(seed, 'config', 'user.name', 'Fixture')
+  writeFileSync(join(seed, '.gitignore'), 'target/\n')
+  git(seed, 'add', '.')
+  git(seed, 'commit', '-qm', 'base')
+  git(seed, 'remote', 'add', 'origin', remote)
+  git(seed, 'push', '-q', 'origin', 'main')
+  jj(dir, 'git', 'clone', '--no-colocate', remote, primary)
+  jj(primary, 'config', 'set', '--repo', 'user.name', 'Fixture')
+  jj(primary, 'config', 'set', '--repo', 'user.email', 'fixture@example.com')
+  jj(primary, 'workspace', 'add', '-r', 'main@origin', ws, '--name', 'bb-docs')
+  assert.equal(existsSync(join(ws, '.git')), false, 'non-colocated jj workspace must have no .git')
+  writeFileSync(join(ws, 'README.md'), 'lane edit\n')
+  jj(ws, 'commit', '-m', 'docs edit')
+  const env = { ...process.env, HOME: home, PATH: `${bin}:${process.env.PATH}`, FIXTURE_REPO: ws, LANE: 'bb-docs' }
+  delete env.CARGO_TARGET_DIR; delete env.SMITHERS_TEST_DATABASE_URL
+  const result = spawnSync('bash', [join(ws, '.smithers/flows/land/lane-gates.sh')], { cwd: ws, encoding: 'utf8', env })
+  assert.equal(result.status, 1, result.stderr)
+  assert.doesNotMatch(result.stderr, /not a git repository/i)
+  assert.doesNotMatch(result.stdout, /test prerequisites failed/, result.stderr)
+  assert.match(result.stdout, /BLOCKED: no PostgreSQL/)
+})
+
+for (const behavior of ['drop', 'keep', 'allow-delete']) test(`non-colocated jj --integration ${behavior} (#4237)`, t => {
+  const dir = fixture(t)
+  const remote = join(dir, 'remote'), seed = join(dir, 'seed'), primary = join(dir, 'primary'), ws = join(dir, 'ws')
+  mkdirSync(remote, { recursive: true }); mkdirSync(seed, { recursive: true })
+  const git = (cwd, ...args) => execFileSync('git', args, { cwd, encoding: 'utf8' }).trim()
+  const jj = (cwd, ...args) => execFileSync('jj', ['--no-pager', ...args], { cwd, encoding: 'utf8' }).trim()
+  git(remote, 'init', '--bare', '-q', '-b', 'main')
+  git(seed, 'init', '-q', '-b', 'main')
+  git(seed, 'config', 'user.email', 'fixture@example.com')
+  git(seed, 'config', 'user.name', 'Fixture')
+  writeFileSync(join(seed, 'file.txt'), 'base\n')
+  git(seed, 'add', '.'); git(seed, 'commit', '-qm', 'base')
+  const base = git(seed, 'rev-parse', 'HEAD')
+  git(seed, 'remote', 'add', 'origin', remote)
+  git(seed, 'push', '-q', 'origin', 'main')
+  jj(dir, 'git', 'clone', '--no-colocate', remote, primary)
+  jj(primary, 'config', 'set', '--repo', 'user.name', 'Fixture')
+  jj(primary, 'config', 'set', '--repo', 'user.email', 'fixture@example.com')
+  jj(primary, 'workspace', 'add', '-r', 'main@origin', ws, '--name', 'int-ws')
+  assert.equal(existsSync(join(ws, '.git')), false)
+  // Advance origin/main with a new line on file.txt
+  writeFileSync(join(seed, 'file.txt'), 'base\nfrom-main\n')
+  git(seed, 'commit', '-qam', 'main adds line')
+  git(seed, 'push', '-q', 'origin', 'main')
+  jj(ws, 'git', 'fetch', '--remote', 'origin')
+  if (behavior === 'drop') writeFileSync(join(ws, 'file.txt'), 'base\nfrom-lane\n')
+  else if (behavior === 'keep') writeFileSync(join(ws, 'file.txt'), 'base\nfrom-main\nfrom-lane\n')
+  else rmSync(join(ws, 'file.txt'))
+  jj(ws, 'status')
+  const args = [script, '--integration', base, ...(behavior === 'allow-delete' ? ['--allow-deleted', 'file.txt'] : [])]
+  const res = spawnSync('bash', args, { cwd: ws, encoding: 'utf8' })
+  assert.equal(res.status, behavior === 'drop' ? 1 : 0, res.stdout + res.stderr)
+  assert.match(res.stdout, behavior === 'drop' ? /BLOCKED: 1 main-added lines absent/ : /INTEGRATION PASS/)
+})
+
+test('non-colocated jj --integration catches dropped main addition across rename and bracketed path from subdirectory (#4237)', t => {
+  const dir = fixture(t)
+  const remote = join(dir, 'remote'), seed = join(dir, 'seed'), primary = join(dir, 'primary'), ws = join(dir, 'ws')
+  mkdirSync(remote, { recursive: true }); mkdirSync(join(seed, 'routes/sub'), { recursive: true })
+  const git = (cwd, ...args) => execFileSync('git', args, { cwd, encoding: 'utf8' }).trim()
+  const jj = (cwd, ...args) => execFileSync('jj', ['--no-pager', ...args], { cwd, encoding: 'utf8' }).trim()
+  git(remote, 'init', '--bare', '-q', '-b', 'main')
+  git(seed, 'init', '-q', '-b', 'main')
+  git(seed, 'config', 'user.email', 'fixture@example.com')
+  git(seed, 'config', 'user.name', 'Fixture')
+  writeFileSync(join(seed, 'routes/[id].ts'), 'base\n')
+  writeFileSync(join(seed, 'routes/sub/keep.txt'), 'ok\n')
+  writeFileSync(join(seed, 'old.txt'), 'base\n')
+  git(seed, 'add', '.'); git(seed, 'commit', '-qm', 'base')
+  const base = git(seed, 'rev-parse', 'HEAD')
+  git(seed, 'remote', 'add', 'origin', remote)
+  git(seed, 'push', '-q', 'origin', 'main')
+  jj(dir, 'git', 'clone', '--no-colocate', remote, primary)
+  jj(primary, 'config', 'set', '--repo', 'user.name', 'Fixture')
+  jj(primary, 'config', 'set', '--repo', 'user.email', 'fixture@example.com')
+  jj(primary, 'workspace', 'add', '-r', 'main@origin', ws, '--name', 'edge-ws')
+  // Main adds lines to both routes/[id].ts and old.txt
+  writeFileSync(join(seed, 'routes/[id].ts'), 'base\nfrom-main-bracket\n')
+  writeFileSync(join(seed, 'old.txt'), 'base\nfrom-main-rename\n')
+  git(seed, 'commit', '-qam', 'main edits bracket and rename source')
+  git(seed, 'push', '-q', 'origin', 'main')
+  jj(ws, 'git', 'fetch', '--remote', 'origin')
+  // Lane drops main's addition in bracketed path and renames old.txt -> renamed.txt without main's addition
+  writeFileSync(join(ws, 'routes/[id].ts'), 'base\nfrom-lane\n')
+  rmSync(join(ws, 'old.txt'))
+  writeFileSync(join(ws, 'renamed.txt'), 'base\n')
+  jj(ws, 'status')
+  const res = spawnSync('bash', [script, '--integration', base], { cwd: join(ws, 'routes/sub'), encoding: 'utf8' })
+  assert.equal(res.status, 1, res.stdout + res.stderr)
+  assert.match(res.stdout, /routes\/\[id\]\.ts\t1/)
+  assert.match(res.stdout, /old\.txt\t1/)
+  assert.match(res.stdout, /BLOCKED: 2 main-added lines absent/)
+})

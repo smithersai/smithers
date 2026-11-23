@@ -110,7 +110,14 @@ if [ "${1:-}" = --integration ]; then
   node --input-type=module - "$@" <<'NODE'
 import { execFileSync } from 'node:child_process';
 import { matchesGlob } from 'node:path';
-const git = (...args) => execFileSync('git', args, { encoding: 'utf8', maxBuffer: 128 * 1024 * 1024 });
+const run = (bin, args) => execFileSync(bin, args, { encoding: 'utf8', maxBuffer: 128 * 1024 * 1024 });
+const tryRoot = (bin, args) => { try { return execFileSync(bin, args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim(); } catch { return ''; } };
+const gitRoot = tryRoot('git', ['rev-parse', '--show-toplevel']);
+const jjRoot = tryRoot('jj', ['--no-pager', 'workspace', 'root']);
+// Preserve committed-HEAD behavior in colocated checkouts; switch to jj when there is no .git at the workspace root.
+const useJj = Boolean(jjRoot) && jjRoot.length > gitRoot.length;
+const git = (...args) => run('git', args);
+const jj = (...args) => run('jj', ['--no-pager', '--color=never', ...args]);
 const [base, ...args] = process.argv.slice(2);
 if (!base) throw new Error('usage: --integration <merge-base> [--allow-deleted <path-glob>]');
 const allowances = [];
@@ -118,16 +125,37 @@ for (let i = 0; i < args.length; i += 2) {
   if (args[i] !== '--allow-deleted' || !args[i + 1]) throw new Error('expected --allow-deleted <path-glob>');
   allowances.push(args[i + 1]);
 }
-git('rev-parse', '--verify', base + '^{commit}');
-const changed = ref => new Set(git('diff', '--no-renames', '--name-only', '-z', base, ref).split('\0').filter(Boolean));
-const headFiles = new Set(git('ls-tree', '-r', '--name-only', '-z', 'HEAD').split('\0').filter(Boolean));
-const mainFiles = changed('origin/main');
+let headFiles, mainFiles, headChanged, readHeadFile, mainDiff;
+if (useJj) {
+  const resolveSingle = (rev, label) => {
+    const ids = jj('log', '--no-graph', '-r', rev, '-T', 'commit_id ++ "\n"').trim().split('\n').filter(Boolean);
+    if (ids.length !== 1) throw new Error(`expected exactly one commit for ${label}, got ${ids.length}`);
+    return ids[0];
+  };
+  const baseCommit = resolveSingle(base, `base (${base})`);
+  const mainCommit = resolveSingle('remote_bookmarks(exact:"main", exact:"origin")', 'main@origin');
+  const rootFile = file => `root-file:${JSON.stringify(file)}`;
+  const changed = ref => new Set(jj('diff', '--from', baseCommit, '--to', ref, '-T', 'source.path() ++ "\\0" ++ target.path() ++ "\\0"').split('\0').filter(Boolean));
+  headFiles = new Set(jj('file', 'list', '-r', '@', '-T', 'path ++ "\\0"').split('\0').filter(Boolean));
+  mainFiles = changed(mainCommit);
+  headChanged = changed('@');
+  readHeadFile = file => jj('file', 'show', '-r', '@', '--', rootFile(file));
+  mainDiff = file => jj('diff', '--git', '--context=0', '--from', baseCommit, '--to', mainCommit, '--', rootFile(file));
+} else {
+  git('rev-parse', '--verify', base + '^{commit}');
+  const changed = ref => new Set(git('diff', '--no-renames', '--name-only', '-z', base, ref).split('\0').filter(Boolean));
+  headFiles = new Set(git('ls-tree', '-r', '--name-only', '-z', 'HEAD').split('\0').filter(Boolean));
+  mainFiles = changed('origin/main');
+  headChanged = changed('HEAD');
+  readHeadFile = file => git('show', 'HEAD:' + file);
+  mainDiff = file => git('diff', '--no-renames', '--no-ext-diff', '--no-textconv', '--unified=0', base, 'origin/main', '--', file);
+}
 let total = 0;
-for (const file of changed('HEAD')) {
+for (const file of headChanged) {
   if (!mainFiles.has(file)) continue;
   if (!headFiles.has(file) && allowances.some(pattern => matchesGlob(file, pattern))) continue;
-  const lines = new Set(headFiles.has(file) ? git('show', 'HEAD:' + file).split('\n') : []);
-  const diff = git('diff', '--no-renames', '--no-ext-diff', '--no-textconv', '--unified=0', base, 'origin/main', '--', file);
+  const lines = new Set(headFiles.has(file) ? readHeadFile(file).split('\n') : []);
+  const diff = mainDiff(file);
   const added = [];
   let inHunk = false;
   for (const line of diff.split('\n')) {
@@ -145,17 +173,36 @@ fi
 mode=gate; [ "${1:-}" = "--baseline" ] && mode=baseline
 # Only ~/lanes/baseline-run.sh (LANE=fr-baseline-main) may write the shared baseline; a lane that writes it corrupts every host's gate.
 [ $mode = baseline ] && [ "${LANE:-}" != fr-baseline-main ] && { echo "REFUSED: only ~/lanes/baseline-run.sh writes the main baseline. Wait for it (see ~/lanes/fr-baseline.log); never run --baseline from a lane." >&2; exit 2; }
-root=$(git rev-parse --show-toplevel) || exit 2
+git_root=$(git rev-parse --show-toplevel 2>/dev/null || true)
+jj_root=$(jj --no-pager workspace root 2>/dev/null || true)
+if [ -n "$jj_root" ] && [ "${#jj_root}" -gt "${#git_root}" ]; then
+  root=$jj_root; vcs=jj
+elif [ -n "$git_root" ]; then
+  root=$git_root; vcs=git
+else
+  echo "fatal: not a jj workspace or git repository" >&2; exit 2
+fi
 cd "$root"
 lane=${LANE:-lane}
 log=$HOME/lanes/$lane.gates.log; : > "$log"
 baseline=$HOME/lanes/main-baseline-failures.txt
 if [ $mode = gate ]; then
-  git fetch -q origin main
-  [ -s "$baseline" ] || { echo "BLOCKED: $baseline is missing or empty; generate it with --baseline on main first" | tee -a "$log"; exit 1; }
-  changed=$(git diff --name-only origin/main...HEAD)
+  if [ "$vcs" = jj ]; then
+    jj --no-pager git fetch --remote origin >/dev/null 2>&1 || exit 2
+    [ -s "$baseline" ] || { echo "BLOCKED: $baseline is missing or empty; generate it with --baseline on main first" | tee -a "$log"; exit 1; }
+    jj_base=$(jj --no-pager log --no-graph -r 'heads(::remote_bookmarks(exact:"main", exact:"origin") & ::@)' -T 'commit_id ++ "\n"') || { echo "BLOCKED: cannot resolve merge-base with main@origin" | tee -a "$log"; exit 2; }
+    if [ "$(printf '%s\n' "$jj_base" | awk 'NF{n++} END{print n+0}')" -ne 1 ]; then
+      echo "BLOCKED: expected exactly one merge-base with main@origin" | tee -a "$log"; exit 2
+    fi
+    changed=$(jj --no-pager diff --from "$jj_base" --to @ --name-only) || { echo "BLOCKED: cannot list changed files against main@origin" | tee -a "$log"; exit 2; }
+  else
+    git fetch -q origin main || exit 2
+    [ -s "$baseline" ] || { echo "BLOCKED: $baseline is missing or empty; generate it with --baseline on main first" | tee -a "$log"; exit 1; }
+    changed=$(git diff --name-only origin/main...HEAD) || { echo "BLOCKED: cannot list changed files against origin/main" | tee -a "$log"; exit 2; }
+  fi
 else
-  changed=$(git ls-files)   # every file: the baseline covers all suites
+  if [ "$vcs" = jj ]; then changed=$(jj --no-pager file list -r @) || exit 2
+  else changed=$(git ls-files) || exit 2; fi   # every file: the baseline covers all suites
   allfails=$(mktemp)
 fi
 source "$root/.smithers/flows/land/lane-prerequisites.sh" || { echo "BLOCKED: test prerequisites failed" | tee -a "$log"; exit 1; }
@@ -182,7 +229,7 @@ else echo "SKIP drift: smthrs unavailable on this host" >> "$log"; fi
 #    and their transitive importers, bounded to the module. Baseline mode tests every module fully.
 gomap=$(printf '%s\n' "$changed" | grep -E '\.go$' | while read f; do d=$(dirname "$f"); [ -d "$d" ] || continue
   m=$d; while [ "$m" != . ] && [ ! -f "$m/go.mod" ]; do m=$(dirname "$m"); done; [ -f "$m/go.mod" ] && echo "$m $d"; done | sort -u)
-if [ $mode = baseline ]; then gomap=$(git ls-files '*go.mod' | xargs -r -n1 dirname | sort -u | sed 's/$/ ALL/'); fi
+if [ $mode = baseline ]; then gomap=$(if [ "$vcs" = jj ]; then jj --no-pager file list -r @ | grep -E '(^|/)go\.mod$' || true; else git ls-files '*go.mod'; fi | xargs -r -n1 dirname | sort -u | sed 's/$/ ALL/'); fi
 for mod in $(printf '%s\n' "$gomap" | awk 'NF{print $1}' | sort -u); do
   if [ $mode = baseline ]; then pkgs="./..."
   else pkgs=$(printf '%s\n' "$gomap" | awk -v m="$mod" '$1==m{print $2}' | while read d; do r=${d#"$mod"}; r=${r#/}; echo "./$r"; done | sed 's#^\./$#.#' | tr '\n' ' '); fi
@@ -222,7 +269,8 @@ for dir in $(printf '%s\n' "$changed" | changed_test_dirs); do
 done
 
 if [ $mode = baseline ]; then
-  write_baseline; echo "BASELINE $(wc -l < "$baseline") failing names at $(git rev-parse --short HEAD) -> $baseline" | tee -a "$log"; exit 0
+  head_short=$(if [ "$vcs" = jj ]; then jj --no-pager log -r @ --no-graph -T 'commit_id.short(12)'; else git rev-parse --short HEAD; fi)
+  write_baseline; echo "BASELINE $(wc -l < "$baseline") failing names at $head_short -> $baseline" | tee -a "$log"; exit 0
 fi
 if [ ${#newreds[@]} -gt 0 ]; then
   { echo "BLOCKED: new failures compared with main:"; printf '  %s\n' "${newreds[@]}"; } | tee -a "$log"; exit 1

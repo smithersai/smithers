@@ -108,7 +108,14 @@ try {
   let affectedReceipt, affectedGate
   if (push) {
     requireEngineeringGateHome(process.env)
-    affectedReceipt = await runAffectedGate(root)
+    try {
+      affectedReceipt = await runAffectedGate(root)
+    } catch (error) {
+      if (error?.status === "refused" && existsSync(join(root, ".jj"))) {
+        error.message = `${error.message} (checked the last snapshotted jj commit; if you saved a fix without running jj, run 'jj status' to snapshot it and rerun 'commit --push')`
+      }
+      throw error
+    }
   }
   releaseLanding = await acquireLock(process.env.SMITHERS_LAND_LOCK ?? join(homedir(), "smithers-builders/main-push.lock"))
   const gateEnvironment = engineeringGateEnvironment(process.env)

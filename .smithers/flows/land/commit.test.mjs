@@ -638,3 +638,58 @@ test("git: credential store refuses before tests, gates and push", () => {
     assert.doesNotMatch(result.stdout, /^LANDED /m)
   } finally { rmSync(directory, { recursive: true, force: true }) }
 })
+
+test("jj: refused affected gate after unsnapshotted fix instructs caller to snapshot and rerun (#4463)", () => {
+  const directory = mkdtempSync(join(tmpdir(), "smithers-commit-unsnapshotted-refusal-"))
+  const remote = join(directory, ".git/fixture-remote")
+  try {
+    ok(directory, "jj", ["git", "init", "."])
+    ok(directory, "jj", ["config", "set", "--repo", "user.name", "Commit test"])
+    ok(directory, "jj", ["config", "set", "--repo", "user.email", "test@example.com"])
+    copyHygiene(directory)
+    mkdirSync(join(directory, "pkg"), { recursive: true })
+    writeFileSync(join(directory, "pkg/state.txt"), "ok\n")
+    writeFileSync(join(directory, "pkg/PACKAGE.ts"), `import { Smithers as S } from "@smthrs/targets"
+export const Package = S.Package({ targets: {
+  unit: S.Shell.Test({ shell: "true", sandbox: "none", data: [S.file("//pkg/state.txt")] }),
+} })
+`)
+    ok(directory, "smthrs", ["target", "//:targetIndex", "--fix"])
+    ok(directory, "jj", ["commit", "-m", "initial"])
+    ok(directory, "jj", ["bookmark", "set", "main", "-r", "@-"])
+    ok(directory, "jj", ["git", "clone", directory, remote])
+    ok(directory, "jj", ["git", "remote", "add", "origin", remote])
+    ok(directory, "jj", ["git", "fetch"])
+    ok(directory, "jj", ["bookmark", "track", "main@origin"])
+    // Snapshot a broken edit, then fix it in the working tree without running jj.
+    writeFileSync(join(directory, "pkg/state.txt"), "broken\n")
+    ok(directory, "jj", ["status"])
+    writeFileSync(join(directory, "pkg/state.txt"), "fixed\n")
+    const fakeBox = join(directory, ".git/test-bin/fake-cfbox")
+    writeFileSync(fakeBox, `#!${process.execPath}
+const fs = require("node:fs")
+const path = require("node:path")
+const args = process.argv.slice(2)
+const source = args.find((arg) => !arg.startsWith("-") && fs.existsSync(path.join(arg, "pkg/state.txt")))
+const state = fs.readFileSync(path.join(source, "pkg/state.txt"), "utf8").trim()
+const payload = { targets: { results: [{ label: "//pkg:unit", status: state === "broken" ? "failed" : "ran" }] } }
+const line = "SMITHERS_AFFECTED " + Buffer.from(JSON.stringify(payload)).toString("base64") + "\\n"
+process.stdout.write(args[0] === "parallel" ? "[1] " + line + "cfbox: [1] exit 0; command ok\\n" : line)
+`, { mode: 0o755 })
+    const before = ok(remote, "jj", ["log", "-r", "main", "--no-graph", "-T", "commit_id"])
+    const refused = command(directory, process.execPath, [script, "--push", "--no-test", "regression"], { SMITHERS_CFBOX: fakeBox })
+    assert.notEqual(refused.status, 0, refused.stdout + refused.stderr)
+    assert.match(refused.stderr, /NOT LANDED:/)
+    assert.match(refused.stderr, /checked the last snapshotted jj commit/)
+    assert.match(refused.stderr, /jj status/)
+    assert.equal(ok(remote, "jj", ["log", "-r", "main", "--no-graph", "-T", "commit_id"]), before)
+    // After snapshotting the saved fix, commit --push passes the affected gate and lands.
+    ok(directory, "jj", ["status"])
+    const fixed = command(directory, process.execPath, [script, "--push", "--no-test", "regression"], { SMITHERS_CFBOX: fakeBox })
+    assert.equal(fixed.status, 0, fixed.stdout + fixed.stderr)
+    assert.match(fixed.stdout, /^LANDED [a-f0-9]{40}$/m)
+    const after = ok(remote, "jj", ["log", "-r", "main", "--no-graph", "-T", "commit_id"])
+    assert.notEqual(after, before)
+    assert.equal(ok(remote, "jj", ["file", "show", "-r", "main", "pkg/state.txt"]), "fixed")
+  } finally { rmSync(directory, { recursive: true, force: true }) }
+})
