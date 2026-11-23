@@ -36,12 +36,22 @@ directory, whatever it holds. That one was there is all the run learned of it.
 -/
 def nameOnly : String := String.ofList ['*']
 
+/-- A resolved regular file whose preexisting bytes a truncation discarded. -/
+def regularOnly : String := "f:*"
+
+theorem measure_ne_unmeasured (fs : Node) (path : String) : measure fs path ≠ unmeasured := by
+  intro equal
+  have chars := congrArg String.toList equal
+  unfold measure at chars
+  cases h : measureState fs path <;> simp [h, State.render, unmeasured] at chars
+
 /-- What a record is held against. -/
 structure World where
   /-- The file system now. -/
   fs : Node
   /-- The workspace root. -/
   root : String
+  mounts : Mounts := []
   /-- The host's variables now. -/
   values : String → Option String
   /-- For a step the run read files from: the ids of the records it is answered from, none once it ran. -/
@@ -111,7 +121,8 @@ def readHolds (u2 : Bool) (now state : String) (other : Option String) : Bool :=
     | some before =>
       if before = absent then same now state || now = absent
       else if before = nameOnly then namePresent now
-      else same now before
+      else if before = regularOnly then now.startsWith "f:"
+      else before != unmeasured && same now before
   else
     same now state ||
       match other with
@@ -127,9 +138,39 @@ def readMessage (path now state : String) (other : Option String) : String :=
   else if state = absent ∧ other = none then path ++ " now exists"
   else path ++ " changed"
 
-def readVerdict (rules : Rules) (world : World) (row : ReadRow) : Option String :=
+/-- Where the checkout supplies a relative name observed missing before the run wrote it. -/
+def heldCreated (world : World) (record : Record) (path : String) : Option Bool :=
+  if path.startsWith "/" then none else
+    let created := (record.reads.filter fun row => row.other == some absent && !row.path.startsWith "/").map (·.path)
+    (world.holds created).map (·.contains path)
+
+/-- A leftover output can satisfy an absence only when the run left it and the checkout did not supply it. -/
+def leftover (world : World) (record : Record) (path : String) : Bool :=
+  record.left && (path.startsWith "/" || heldCreated world record path == some false)
+
+/-- Applies the provenance condition only to an absence now occupied by a possible leftover. -/
+def absenceHolds (rules : Rules) (world : World) (record : Record) (row : ReadRow) : Bool :=
+  !rules.u2 || row.other != some absent || measure world.fs (absolute world.root row.path) == absent ||
+    leftover world record row.path
+
+theorem absenceHolds_of_provenance (rules : Rules) (world : World) (record : Record) (row : ReadRow)
+    (provenance : rules.u2 = true → row.other = some absent →
+      measure world.fs (absolute world.root row.path) ≠ absent → leftover world record row.path = true) :
+    absenceHolds rules world record row = true := by
+  by_cases current : rules.u2 = true
+  · by_cases missing : row.other = some absent
+    · by_cases gone : measure world.fs (absolute world.root row.path) = absent
+      · simp [absenceHolds, gone]
+      · simp [absenceHolds, provenance current missing gone]
+    · simp [absenceHolds, missing]
+  · simp [absenceHolds, Bool.eq_false_iff.mpr current]
+
+def readVerdict (rules : Rules) (world : World) (record : Record) (row : ReadRow) : Option String :=
   let now := measure world.fs (absolute world.root row.path)
-  if readHolds rules.u2 now row.state row.other then none
+  if readHolds rules.u2 now row.state row.other && absenceHolds rules world record row then none
+  else if now ≠ absent && row.other == some absent && (record.made.getD []).contains row.path &&
+      heldCreated world record row.path == some true then
+    some (row.path ++ ", which the run made, is in the commit now")
   else some (readMessage row.path now row.state row.other)
 
 /-- The group a read is held in: the commit's own files, the rest of the workspace, what is outside it. -/
@@ -163,7 +204,7 @@ theorem mem_cheapestFirst {world : World} {reads : List ReadRow} {row : ReadRow}
     · exact .inr ⟨held, two⟩
 
 def readsVerdict (rules : Rules) (world : World) (record : Record) : Option String :=
-  (cheapestFirst world record.reads).findSome? (readVerdict rules world)
+  (cheapestFirst world record.reads).findSome? (readVerdict rules world record)
 
 /-! ## Programs, variables, made names and steps before the run -/
 
@@ -208,23 +249,29 @@ def again (world : World) (record : Record) (place : Nat) : Bool :=
 
 def labelAt (record : Record) (place : Nat) : String := (((record.from.getD [])[place]?).map (·.1)).getD ""
 
+/-- A consumer that changed an input holds the producer's preimage. A name-only input needs no bytes. -/
+def GivenRow.matches (row : GivenRow) (now : String) : Bool :=
+  let expected := row.prior.getD row.state
+  if row.prior = some nameOnly then namePresent now
+  else if row.prior = some regularOnly then now.startsWith "f:"
+  else expected != unmeasured && same now expected
+
 def givenVerdict (world : World) (record : Record) : Option String :=
-  (record.given.getD []).findSome? fun (path, state, place) =>
-    let now := measure world.fs (absolute world.root path)
-    let left := path ++ ", which " ++ labelAt record place ++ " left,"
-    if same now state then none
-    else if now ≠ absent then some (if state = absent then path ++ " now exists" else left ++ " changed")
-    else if again world record place then none
+  (record.given.getD []).findSome? fun row =>
+    let now := measure world.fs (absolute world.root row.path)
+    let left := row.path ++ ", which " ++ labelAt record row.place ++ " left,"
+    if row.matches now then none
+    else if row.prior = some unmeasured then some (left ++ " changed")
+    else if now ≠ absent then some (if row.prior.getD row.state = absent then row.path ++ " now exists" else left ++ " changed")
+    else if again world record row.place then none
     else some (left ++ " is gone")
 
-/--
-The paths a step before the run wrote that are missing now, where that step is answered from the same record:
-it writes them again as they were, so what the run listed there is not held yet.
--/
+/-- A missing input of a producer that will restore it can defer a directory check. -/
 def pending (world : World) (record : Record) : List String :=
-  (record.given.getD []).filterMap fun (path, state, place) =>
-    let now := measure world.fs (absolute world.root path)
-    if now ≠ state ∧ now = absent ∧ again world record place then some path else none
+  (record.given.getD []).filterMap fun row =>
+    let now := measure world.fs (absolute world.root row.path)
+    if !row.matches now && row.prior != some unmeasured && now = absent && again world record row.place then some row.path
+    else none
 
 /-! ## Directories -/
 
@@ -240,7 +287,7 @@ def listVerdict (world : World) (record : Record) (row : ListRow) : Option Strin
   if row.path ∈ pending world record then none
   else
     let added := row.added.getD []
-    if listing world.fs (absolute world.root row.path) (row.own ++ added.map (·.1)) = some row.digest then
+    if listing world.fs (absolute world.root row.path) (row.own ++ added.map (·.1)) world.mounts = some row.digest then
       addedVerdict world record row.path (absolute world.root row.path) added
     else some (row.path ++ " gained or lost an entry")
 
@@ -287,8 +334,30 @@ theorem reads_hold_of_unchanged {rules : Rules} {world : World} {record : Record
   have each := List.findSome?_eq_none_iff.mp quiet row (mem_cheapestFirst.mpr held)
   simp only [readVerdict] at each
   split at each
-  · assumption
-  · cases each
+  · rename_i yes
+    exact (Bool.and_eq_true_iff.mp yes).1
+  · split at each <;> contradiction
+
+/-- A committed path never satisfies a row which originally observed absence and then created the path. -/
+theorem changed_of_occupied_absence (u3 : Bool) (world : World) (record : Record) (row : ReadRow)
+    (held : row ∈ record.reads) (missing : row.other = some absent)
+    (occupied : measure world.fs (absolute world.root row.path) ≠ absent)
+    (foreign_ : leftover world record row.path = false) :
+    changed ⟨true, u3⟩ world record ≠ none := by
+  intro holds
+  have quiet := first_eq_none.mp holds (readsVerdict ⟨true, u3⟩ world record) (by simp)
+  have each := List.findSome?_eq_none_iff.mp quiet row (mem_cheapestFirst.mpr held)
+  simp [readVerdict, absenceHolds, missing, occupied, foreign_] at each
+  split at each <;> contradiction
+
+/-- No producer can restore an unmeasured input of a consumer that changed it. -/
+theorem changed_of_unmeasured_given (rules : Rules) (world : World) (record : Record) (row : GivenRow)
+    (held : row ∈ record.given.getD []) (unknown : row.prior = some unmeasured) :
+    changed rules world record ≠ none := by
+  intro holds
+  have quiet := first_eq_none.mp holds (givenVerdict world record) (by simp)
+  have each := List.findSome?_eq_none_iff.mp quiet row held
+  simp [GivenRow.matches, unknown, unmeasured, nameOnly, regularOnly] at each
 
 /--
 **Theorem 2 (no stale hit on a read).** A record that holds `[path, state]` does not hold on a file system
@@ -322,7 +391,7 @@ that the step writes again (`pending`).
 -/
 theorem changed_of_listing_mutated (rules : Rules) (world : World) (record : Record) (row : ListRow)
     (held : row ∈ record.lists) (due : row.path ∉ pending world record)
-    (mutated : listing world.fs (absolute world.root row.path) (row.own ++ (row.added.getD []).map (·.1)) ≠
+    (mutated : listing world.fs (absolute world.root row.path) (row.own ++ (row.added.getD []).map (·.1)) world.mounts ≠
       some row.digest) :
     changed rules world record ≠ none := by
   intro holds
@@ -333,7 +402,7 @@ theorem changed_of_listing_mutated (rules : Rules) (world : World) (record : Rec
 /-- Theorem 3 for a record of a run that read no file of a step before it: no directory is exempt. -/
 theorem changed_of_listing_mutated_alone (rules : Rules) (world : World) (record : Record) (row : ListRow)
     (held : row ∈ record.lists) (alone : record.given = none) (plain : row.added = none)
-    (mutated : listing world.fs (absolute world.root row.path) row.own ≠ some row.digest) :
+    (mutated : listing world.fs (absolute world.root row.path) row.own world.mounts ≠ some row.digest) :
     changed rules world record ≠ none := by
   apply changed_of_listing_mutated rules world record row held
   · simp [pending, alone]
@@ -357,13 +426,13 @@ not hold on a file system where the file is as the run left it, when that is not
 -/
 theorem changed_of_modified_left (u3 : Bool) (world : World) (record : Record) (row : ReadRow) (before : String)
     (held : row ∈ record.reads) (modified : row.other = some before) (found : before ≠ absent)
-    (measured : before ≠ nameOnly) (rewritten : before ≠ row.state)
+    (measured : before ≠ nameOnly) (bytes : before ≠ regularOnly) (rewritten : before ≠ row.state)
     (left : measure world.fs (absolute world.root row.path) = row.state) :
     changed ⟨true, u3⟩ world record ≠ none := by
   intro holds
   have each := reads_hold_of_unchanged holds row held
-  simp [readHolds, same, modified, found, measured, left] at each
-  exact rewritten each.1.symm
+  simp [readHolds, same, modified, found, measured, bytes, left] at each
+  exact rewritten each.2.1.symm
 
 /--
 **Theorem 5b (`u2`, a removed input).** Under `u2`, a record that holds `[path, left, before]` for a path its
@@ -380,8 +449,10 @@ theorem changed_of_removed_left (u3 : Bool) (world : World) (record : Record) (r
   by_cases unseen : before = nameOnly
   · subst unseen
     simp [readHolds, modified, found, namePresent, gone] at each
-  · simp [readHolds, same, modified, found, unseen, gone] at each
-    exact found each.1.symm
+  · by_cases truncated : before = regularOnly
+    · simp [readHolds, modified, truncated, regularOnly, nameOnly, gone, absent, State.render] at each
+    · simp [readHolds, same, modified, found, unseen, truncated, gone] at each
+      exact found each.2.1.symm
 
 /--
 Why `u2` is needed: before it, the same record held on the file system the run left, whatever the run had
@@ -400,7 +471,7 @@ theorem legacy_holds_as_left (u3 : Bool) (world : World) (row : ReadRow) (readab
     intro other inside
     have same : other = row := by simpa using mem_cheapestFirst.mp inside
     subst same
-    simp [readVerdict, readHolds, same, left, readable]
+    simp [readVerdict, absenceHolds, readHolds, same, left, readable]
   · simp [madeVerdict]
   · simp [fromVerdict]
   · simp [givenVerdict]

@@ -914,7 +914,12 @@ describe("recorders and threads that change the same names at once", () => {
             const raced = await Races.raceOnce(name, fresh, recorder!, base)
             expect(raced.status, raced.stderr).toBe(0)
             if (raced.refusal !== undefined) {
-              expect(unknowable.some((reason) => reason.test(raced.refusal!)), raced.refusal).toBe(true)
+              // Strace can see the exclusive-open path being replaced before it can be measured.
+              const exclusiveLinkReplaced = label === "strace" && name === "exclusive" &&
+                raced.refusal.startsWith(Path.join(base, "exclusive-")) &&
+                raced.refusal.endsWith("/ws/s was replaced while it was used")
+              expect(exclusiveLinkReplaced || unknowable.some((reason) => reason.test(raced.refusal!)), raced.refusal)
+                .toBe(true)
               continue
             }
             expect(raced).toEqual({ status: 0 })
@@ -1174,7 +1179,7 @@ console.log(port)
             .toBe(true)
           expect(binds.filter((line) => line.includes("htons(0)"))).toEqual([])
           const read = ObservedReads.read(() => lines, base)
-          expect(read.bound?.has(`port:${port}`)).toBe(true)
+          expect(read.bound?.has(`${field === "sin_port" ? "inet" : "inet6"}:${port}:${host}`)).toBe(true)
           // Its own port is the run's; the other one is a program outside it, and the run is refused for it alone.
           expect(read.refusals).toEqual([`it reached a program outside the run on local port ${outside}`])
           expect(read.outside).toEqual([`it reached a program outside the run on local port ${outside}`])
@@ -1691,25 +1696,38 @@ describe("smthrs-observe and the id of a command that has ended", () => {
   reused("seals a step once, though a process it left ends under the command's id (--keep)", async () => {
     const root = await Fs.realpath(await Fs.mkdtemp(Path.join(Os.tmpdir(), "observe-keep-reused-")))
     temporary.push(root)
-    expect(spawnSync("mkfifo", [Path.join(root, "go")]).status).toBe(0)
-    // What the command leaves waits to be told, then leaves a process of its own that ends with 7 after it has.
-    const left = `(read told < "$0/go"; (sleep 0.3; exit 7) & exit 0) > /dev/null 2>&1 &`
+    const fifos = ["go", "child-ready", "parent-done", "finish"].map((name) => Path.join(root, name))
+    expect(spawnSync("mkfifo", fifos).status).toBe(0)
+    // The reused child makes a recorded call while its parent is still alive, so the recorder can attribute the
+    // fork. Then it waits until the namespace's init process confirms that its parent has ended.
+    const left = [
+      `read told < "$0/go"`,
+      `(echo > "$0/child-ready"; read finish < "$0/finish"; exit 7) &`,
+      `read ready < "$0/child-ready"`,
+      `echo > "$0/parent-done"`,
+      "exit 0"
+    ].join("\n")
     const script = [
-      `"$1" --keep "$2/trace" -- sh -c 'echo $$ > "$0/command"; ${left} exit 0' "$2" &`,
+      `"$1" --keep "$2/trace" -- sh -c 'echo $$ > "$0/command"; (${left}) > /dev/null 2>&1 & echo "$!" > "$0/parent"; exit 0' "$2" &`,
       "recorder=$!",
       `while [ ! -s "$2/trace.status" ]; do sleep 0.01; done`,
       `read command < "$2/command"`,
+      `read parent < "$2/parent"`,
       `cp "$2/trace" "$2/sealed"`,
       `cp "$2/trace.status" "$2/sealed.status"`,
       // The next process made, by what the command left, takes the command's id; nothing here makes one before.
       "echo $((command - 1)) > /proc/sys/kernel/ns_last_pid",
       `echo > "$2/go"`,
+      // This read uses no pid before the child has taken the command's.
+      `read done < "$2/parent-done"`,
+      "while kill -0 \"$parent\" 2> /dev/null; do sleep 0.01; done",
+      `echo > "$2/finish"`,
       "wait $recorder",
-      "echo \"$? $command\""
+      "echo \"$? $command $parent\""
     ].join("\n")
     const run = inNamespace(script, root)
     expect(run.status, run.stderr).toBe(0)
-    const [status, command] = run.stdout.trim().split(" ")
+    const [status, command, parent] = run.stdout.trim().split(" ")
     // The recorder answers the command's exit, and the step's trace and status are as they were sealed.
     expect(status).toBe("0")
     const sealed = NodeFs.readFileSync(Path.join(root, "sealed"), "utf8")
@@ -1719,6 +1737,6 @@ describe("smthrs-observe and the id of a command that has ended", () => {
     )
     // What the command left did make a process with the command's id, and its lines are with those of what was left.
     const kept = NodeFs.readFileSync(Path.join(root, "trace.kept"), "utf8")
-    expect(kept).toMatch(new RegExp(`^\\d+ clone\\(child_stack=NULL, flags=SIGCHLD\\) = ${command}$`, "m"))
+    expect(kept.split("\n")).toContain(`${parent} clone(child_stack=NULL, flags=SIGCHLD) = ${command}`)
   })
 })

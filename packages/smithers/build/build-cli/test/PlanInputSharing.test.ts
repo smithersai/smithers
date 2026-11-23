@@ -60,7 +60,7 @@ const suite = (count: number): Record<string, string> => {
     targets.push(`c${index}: S.Shell.Test({
   summary: "One case.",
   shell: "true",
-  data: [S.file("cases/helper.mjs"), S.glob("cases/*.mjs"), S.glob("cases/c${index}/**")],
+  data: [S.file("cases/helper.mjs"), S.glob("cases/**/*.mjs"), S.glob("cases/c${index}/**")],
   sandbox: "none"
 })`)
   }
@@ -100,11 +100,12 @@ describe("one plan reads a shared declared input once", () => {
   it.skipIf(process.platform === "win32")("walks a glob's tree once however many targets declare it", async () => {
     const few = await directoryOpens(await workspace(suite(40)), ["//:c0", "//:c1"])
     const many = await directoryOpens(await workspace(suite(40)), ["//..."])
-    // `cases/*.mjs` starts at `cases`, so its walk opens every case directory.
+    // `cases/**/*.mjs` starts at `cases`, so its walk opens every case directory.
     // Case 20's own glob reuses that listing: planning all 40 targets opens
     // no directory that planning two did not.
-    expect(many.get("cases/c20")).toBe(few.get("cases/c20"))
-    expect(Math.max(...many.values())).toBe(Math.max(...few.values()))
+    expect(few.get("cases/c20")).toBe(1)
+    expect(many).toEqual(few)
+    expect(Math.max(...many.values())).toBe(1)
   })
 
   it("gives every target that shares a glob the rows the glob names", async () => {

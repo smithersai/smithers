@@ -5,6 +5,7 @@
  * its digest, its number of paths and its size, so it stays small however
  * many paths a run read. Real files in a temporary directory throughout.
  */
+import { execFileSync } from "node:child_process"
 import { createHash } from "node:crypto"
 import * as NodeFs from "node:fs"
 import * as Fs from "node:fs/promises"
@@ -31,7 +32,7 @@ const full: ObservedReads.Record = {
   reads: [["src/b.ts", "f:00"], ["node_modules/a.js", "-", "f:01"], ["src/a.ts", "f:02"]],
   lists: [["src", "00", ["a.ts"], [["made-by-a-step", 0]]], [".", "01", []]],
   from: [["//:install", "i1"]],
-  given: [["node_modules/z.js", "f:03", 0], ["node_modules/y.js", "f:04", 0]],
+  given: [["node_modules/z.js", "f:03", 0, "f:05"], ["node_modules/y.js", "f:04", 0]],
   left: true,
   // It made `dist` where the commit held nothing.
   made: ["dist"],
@@ -49,7 +50,7 @@ const sorted: ObservedReads.Record = {
   ...full,
   reads: [["node_modules/a.js", "-", "f:01"], ["src/a.ts", "f:02"], ["src/b.ts", "f:00"]],
   lists: [[".", "01", []], ["src", "00", ["a.ts"], [["made-by-a-step", 0]]]],
-  given: [["node_modules/y.js", "f:04", 0], ["node_modules/z.js", "f:03", 0]]
+  given: [["node_modules/y.js", "f:04", 0], ["node_modules/z.js", "f:03", 0, "f:05"]]
 }
 
 const lines = (file: string): ReadonlyArray<string> =>
@@ -192,6 +193,34 @@ describe("the records of reads in the content store", () => {
       .toEqual({ records: [], unread: ["changed"] })
   })
 
+  it.skipIf(process.platform === "win32")(
+    "opens only regular CAS objects, even when a FIFO has no writer",
+    async () => {
+      const cas = await store()
+      const reference = await RecordStore.write(cas, full)
+      const file = Path.join(cas, reference.digest)
+      await Fs.rename(file, file + ".saved")
+      await Fs.symlink(file + ".saved", file)
+      expect(await RecordStore.read(cas, reference)).toBeUndefined()
+
+      await Fs.unlink(file)
+      execFileSync("mkfifo", [file])
+      // Release a blocking reader on regression so the test can fail and the worker can still exit.
+      let rescued = false
+      const unblock = setTimeout(() => {
+        rescued = true
+        const fd = NodeFs.openSync(file, NodeFs.constants.O_RDWR | NodeFs.constants.O_NONBLOCK)
+        NodeFs.closeSync(fd)
+      }, 2000)
+      try {
+        expect(await RecordStore.read(cas, reference)).toBeUndefined()
+        expect(rescued).toBe(false)
+      } finally {
+        clearTimeout(unblock)
+      }
+    }
+  )
+
   it("gives up on a record that unpacks to more than a record holds, before it holds it", async () => {
     const cas = await store()
     /** A stored file of these lines, named by its digest, as an entry would name it. */
@@ -210,6 +239,22 @@ describe("the records of reads in the content store", () => {
     expect(await RecordStore.read(cas, good, { bytes: 40, line: 1024 })).toBeUndefined()
     expect(await RecordStore.read(cas, good, { bytes: 4096, line: 8 })).toBeUndefined()
     expect(await RecordStore.read(cas, good, { bytes: 4096, line: 1024 })).toBeDefined()
+    // Split UTF-8 code points across gunzip chunks and count their bytes, including an unterminated last row.
+    const name = "€".repeat(20_000)
+    const longRow = row(name)
+    const lineBytes = Buffer.byteLength(longRow)
+    for (const ending of ["", "\n"]) {
+      const utf8 = await stored(`${head({ reads: 1, lists: 0 })}\n${longRow}${ending}`, 1)
+      expect((await RecordStore.read(cas, utf8, { bytes: lineBytes + 1024, line: lineBytes }))?.reads)
+        .toEqual([[name, "f:00"]])
+      expect(await RecordStore.read(cas, utf8, { bytes: lineBytes + 1024, line: lineBytes - 1 })).toBeUndefined()
+    }
+    for (const ending of ["", "\n"]) {
+      const extra = await stored(`${head({ reads: 0, lists: 0 })}\n${longRow}${ending}`, 0)
+      expect(await RecordStore.read(cas, extra)).toBeUndefined()
+    }
+    const incomplete = await stored(`${head({ reads: 2, lists: 0 })}\n${row("a")}\n`, 2)
+    expect(await RecordStore.read(cas, incomplete)).toBeUndefined()
     // A few kilobytes that unpack to megabytes of one line, with its digest right.
     const bomb = await stored(`${head({ reads: 1, lists: 0 })}\n["${"a".repeat(8 * 1024 * 1024)}`, 1)
     expect(bomb.bytes).toBeLessThan(64 * 1024)
@@ -271,6 +316,18 @@ describe("the records of reads in the content store", () => {
       expect(RecordStore.references(other)).toEqual([])
       expect(await RecordStore.load(cas, other)).toEqual([])
     }
+  })
+
+  it("bounds history before reading and loads each digest once, including missing digests", async () => {
+    const cas = await store()
+    const entry = await RecordStore.save(cas, ObservedReads.store(full, [plain])!)
+    const [first, second] = entry.records
+    const missing = { ...first!, digest: "0".repeat(64) }
+    expect(await RecordStore.loadAll(cas, { ...entry, records: [first, missing, first, missing] }))
+      .toEqual({ records: [sorted], unread: ["missing"] })
+    const longHistory = { ...entry, records: Array(ObservedReads.maximumRecords + 1).fill(second) }
+    expect(RecordStore.references(longHistory)).toEqual([])
+    expect(await RecordStore.loadAll(cas, longHistory)).toEqual({ records: [], unread: [] })
   })
 
   it("says which records an entry names that could not be read, and why", async () => {

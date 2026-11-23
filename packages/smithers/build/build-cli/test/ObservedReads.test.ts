@@ -2574,6 +2574,252 @@ describe("a path a record cannot hold as the run found it", () => {
   const open = (root: string, name: string, flags = "O_RDONLY"): string =>
     `100 openat(AT_FDCWD<${root}>, ${JSON.stringify(name)}, ${flags}) = 3`
 
+  it("keeps the preimage read by a constrained open before unlink", async () => {
+    const { recorded, root } = await fixture()
+    const path = Path.join(root, "src/a.txt")
+    const before = ObservedReads.measure(path)
+    await Fs.unlink(path)
+    const lines = [
+      `100 openat2(3<${root}/src>, "a.txt", {flags=O_RDONLY, resolve=RESOLVE_BENEATH}, 24) = 4<${path}>`,
+      `100 unlink("${path}") = 0`
+    ]
+    const known = recorded(lines, { found: new Map([[path, before]]) })
+    const unknown = recorded(lines)
+    expect(known.reads).toContainEqual(["src/a.txt", "-", before])
+    expect(unknown.reads).toContainEqual(["src/a.txt", "-", "?"])
+    await Fs.writeFile(path, "a")
+    expect(ObservedReads.changed(known, root)).toBeUndefined()
+    expect(ObservedReads.changed(unknown, root)).toBe("src/a.txt changed")
+    await Fs.writeFile(path, "different")
+    expect(ObservedReads.changed(known, root)).toBe("src/a.txt changed")
+  })
+
+  it("requires an existing file for truncation without creation and rename over a tracked file", async () => {
+    const { recorded, root } = await fixture()
+    const name = "src/a.txt"
+    const path = Path.join(root, name)
+    const held = (names: ReadonlyArray<string>) => new Set(names.filter((path) => path === name || path === "src"))
+    const post = ObservedReads.measure(path)
+    const truncated = recorded([open(root, name, "O_WRONLY|O_TRUNC")], { held })
+    const created = recorded([open(root, name, "O_WRONLY|O_TRUNC|O_CREAT, 0666")], { held })
+    expect(truncated.reads).toContainEqual([name, post, "f:*"])
+    expect(created.reads).toEqual([])
+    const renamed = recorded([
+      open(root, "scratch", "O_WRONLY|O_CREAT|O_EXCL, 0666"),
+      `100 rename("${root}/scratch", "${path}") = 0`
+    ], { held })
+    expect(renamed.reads).toContainEqual([name, post, "*"])
+    await Fs.writeFile(path, "different")
+    for (const record of [renamed, truncated]) expect(ObservedReads.changed(record, root)).toBeUndefined()
+    await Fs.unlink(path)
+    for (const record of [renamed, truncated]) expect(ObservedReads.changed(record, root)).toBe(`${name} is gone`)
+    expect(ObservedReads.changed(created, root)).toBeUndefined()
+    await Fs.mkdir(path)
+    for (const record of [renamed, truncated]) expect(ObservedReads.changed(record, root)).toBe(`${name} changed`)
+    await Fs.rmdir(path)
+    for (const target of ["missing", "."]) {
+      await Fs.symlink(target, path)
+      expect(ObservedReads.changed(truncated, root)).toBe("src/a.txt changed")
+      await Fs.unlink(path)
+    }
+  })
+
+  it("distinguishes leftover output from an identical incoming checkout after an ENOENT probe", async () => {
+    const { recorded, root } = await fixture()
+    const name = "output"
+    const path = Path.join(root, name)
+    await Fs.writeFile(path, "output")
+    const record = recorded([
+      `100 stat("${path}", 0x7fff) = -1 ENOENT (No such file or directory)`,
+      open(root, name, "O_WRONLY|O_CREAT|O_EXCL, 0666")
+    ])
+    expect(record.reads).toContainEqual([name, ObservedReads.measure(path), "-"])
+    const changed = (incoming: ReadonlySet<string> | undefined, value = record) =>
+      ObservedReads.changed(
+        value,
+        root,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        () => incoming
+      )
+    expect(changed(new Set())).toBeUndefined()
+    expect(changed(new Set([name]))).toBe("output changed")
+    expect(changed(undefined)).toBe("output changed")
+    const { left: _left, ...withoutOutput } = record
+    expect(changed(new Set(), withoutOutput)).toBe("output changed")
+    await Fs.unlink(path)
+    expect(changed(new Set())).toBeUndefined()
+  })
+
+  it("validates a producer's bytes before a consumer overwrites or deletes them", async () => {
+    const { recorded, root } = await fixture()
+    const name = "src/a.txt"
+    const path = Path.join(root, name)
+    const start = ObservedReads.measure(path)
+    const producers = [{ label: "//:generate", id: "generated", made: new Set([path]), touched: new Set([path]) }]
+    const found = new Map([[path, start]])
+    for (const remove of [false, true]) {
+      if (remove) await Fs.unlink(path)
+      else await Fs.writeFile(path, "overwritten")
+      const lines = [open(root, name), remove ? `100 unlink("${path}") = 0` : open(root, name, "O_WRONLY|O_TRUNC")]
+      const record = recorded(lines, { producers, found })
+      // A pristine checkout cannot supply a preimage for a file the producer changed.
+      const unknown = recorded(lines, { producers, before: () => "f:checkout" })
+      expect(record.given).toEqual([[name, ObservedReads.measure(path), 0, start]])
+      expect(unknown.given?.[0]?.[3]).toBe("?")
+      expect(await roundTrip(ObservedReads.store(record, []))).toEqual([inStoredOrder(record)])
+      expect(ObservedReads.changed(record, root)).toContain("//:generate left")
+      await Fs.writeFile(path, "a")
+      expect(ObservedReads.changed(record, root)).toBeUndefined()
+      expect(ObservedReads.changed(unknown, root, undefined, undefined, () => new Set(["generated"])))
+        .toBe("src/a.txt, which //:generate left, changed")
+    }
+  })
+
+  it("misses when a directory was listed, moved away and recreated", async () => {
+    const { recorded, root } = await fixture()
+    const src = Path.join(root, "src")
+    await Fs.rename(src, Path.join(root, "saved"))
+    await Fs.mkdir(src)
+    const record = recorded([
+      `100 getdents64(3<${src}>, 0x55 /* 4 entries */, 32768) = 100`,
+      `100 rename("${src}", "${root}/saved") = 0`,
+      `100 mkdir("${src}", 0755) = 0`
+    ], { before: () => "d" })
+    expect(record.reads).toContainEqual(["src", "d", "?"])
+    expect(ObservedReads.changed(record, root)).toBe("src changed")
+  })
+
+  it("refuses an ephemeral symlink traversed by a read, listing or constrained walk", async () => {
+    const { observe, root } = await fixture()
+    const alias = Path.join(root, "alias")
+    const created = `100 symlinkat("src", AT_FDCWD<${root}>, "alias") = 0`
+    const removed = `100 unlink("${alias}") = 0`
+    for (
+      const read of [
+        open(root, "alias/a.txt"),
+        `100 getdents64(3<${alias}>, 0x55 /* 4 entries */, 32768) = 100`,
+        `100 openat2(3<${root}>, "alias/a.txt", {flags=O_RDONLY, resolve=RESOLVE_BENEATH}, 24) = 4<${root}/src/a.txt>`
+      ]
+    ) expect(observe([created, read, removed])).toEqual({ refusal: `${alias} was replaced while it was used` })
+    // A similar spelling is a different component.
+    await Fs.mkdir(Path.join(root, "aliases"))
+    expect(observe([created, open(root, "aliases"), removed])).toHaveProperty("record")
+  })
+
+  it("rejects a replaced final link preimage and an observed fd that resolves elsewhere", async () => {
+    const { observe, recorded, root } = await fixture()
+    const name = "alias"
+    const path = Path.join(root, name)
+    await Fs.writeFile(path, "replaced")
+    const record = recorded([
+      open(root, name),
+      `100 unlink("${path}") = 0`,
+      open(root, name, "O_WRONLY|O_CREAT|O_EXCL, 0666")
+    ], { found: new Map([[path, "l:src/a.txt"]]) })
+    expect(record.reads).toContainEqual([name, ObservedReads.measure(path), "?"])
+    await Fs.unlink(path)
+    await Fs.symlink("src/a.txt", path)
+    expect(ObservedReads.changed(record, root)).toBe("alias changed")
+    expect(observe([`100 openat(AT_FDCWD<${root}>, "alias", O_RDONLY) = 3<${root}/src/b.txt>`]))
+      .toHaveProperty("refusal")
+  })
+
+  it("holds the file types returned by a directory listing", async () => {
+    const { recorded, root } = await fixture()
+    const src = Path.join(root, "src")
+    const entry = Path.join(src, "a.txt")
+    const record = recorded([`100 getdents64(3<${src}>, 0x55 /* 4 entries */, 32768) = 100`])
+    await Fs.writeFile(entry, "different contents")
+    expect(ObservedReads.changed(record, root)).toBeUndefined()
+    await Fs.unlink(entry)
+    await Fs.symlink("b.txt", entry)
+    expect(ObservedReads.changed(record, root)).toBe("src gained or lost an entry")
+    await Fs.unlink(entry)
+    await Fs.mkdir(entry)
+    expect(ObservedReads.changed(record, root)).toBe("src gained or lost an entry")
+  })
+
+  it("holds the visible mount names in a private tmp listing across made and unmade machines", async () => {
+    const { base, recorded, root } = await fixture()
+    const tmp = Path.join(base, "private")
+    const stub = Path.join(tmp, "mounted")
+    const source = Path.join(base, "source")
+    await Fs.mkdir(tmp)
+    await Fs.mkdir(stub)
+    await Fs.mkdir(source)
+    const mounts = [["/tmp/mounted", source], ["/tmp", tmp]] as const
+    const record = recorded(["100 getdents64(3</tmp>, 0x55 /* 3 entries */, 32768) = 80"], { mounts })
+    const changed = (active: ReadonlyArray<readonly [string, string]>) =>
+      ObservedReads.changed(
+        record,
+        root,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        active
+      )
+    expect(changed(mounts)).toBeUndefined()
+    // Removing a mount also invalidates when the old physical stub still exists with the same name and type.
+    expect(changed([["/tmp", tmp]])).toContain("gained or lost an entry")
+    await Fs.rmdir(stub)
+    expect(changed(mounts)).toBeUndefined()
+    expect(changed([["/tmp/new", source], ...mounts])).toContain("gained or lost an entry")
+    const link = Path.join(base, "bound-link")
+    await Fs.symlink("bound-target", link)
+    const target = Path.join(base, "bound-target")
+    await Fs.writeFile(target, "file")
+    const linked = [["/tmp/mounted", link], ["/tmp", tmp]] as const
+    const fromLink = recorded(["100 getdents64(3</tmp>, 0x55 /* 3 entries */, 32768) = 80"], { mounts: linked })
+    const checkLink = () =>
+      ObservedReads.changed(
+        fromLink,
+        root,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        linked
+      )
+    expect(checkLink()).toBeUndefined()
+    await Fs.unlink(target)
+    await Fs.mkdir(target)
+    expect(checkLink()).toContain("gained or lost an entry")
+  })
+
+  it("holds the backing of a listed directory when a mount changes with no visible child stubs", async () => {
+    const { base, recorded, root } = await fixture()
+    const visible = Path.join(base, "view")
+    const old = Path.join(base, "old")
+    const replacement = Path.join(base, "replacement")
+    for (const path of [visible, old, replacement]) await Fs.mkdir(Path.join(path, "sub"), { recursive: true })
+    type Mounts = ReadonlyArray<readonly [string, string]>
+    const mounted: Mounts = [[visible, old]]
+    const read = (path: string, mounts: Mounts) =>
+      recorded([`100 getdents64(3<${path}>, 0x55 /* entries */, 32768) = 80`], { mounts })
+    const hold = (row: ObservedReads.Record, active: Mounts) =>
+      ObservedReads.changed(row, root, undefined, { ...ObservedReads.defaultIo, mounts: () => active })
+
+    const underMount = read(visible, mounted)
+    expect(hold(underMount, mounted)).toBeUndefined()
+    expect(hold(underMount, [])).toContain("gained or lost an entry")
+    expect(hold(underMount, [[visible, replacement]])).toContain("gained or lost an entry")
+    expect(hold(read(visible, []), mounted)).toContain("gained or lost an entry")
+    const sub = Path.join(visible, "sub")
+    expect(hold(read(sub, mounted), [[sub, replacement], ...mounted])).toContain("gained or lost an entry")
+  })
+
   it("digests a file of any size a block at a time, and a caller's reads as the caller gives them", async () => {
     const base = await directory()
     const large = Path.join(base, "large.bin")
@@ -2662,7 +2908,7 @@ describe("a path a record cannot hold as the run found it", () => {
     expect(ObservedReads.changed(removed, root)).toBeUndefined()
     await Fs.writeFile(Path.join(root, "src", "a.txt"), "other")
     expect(ObservedReads.changed(removed, root)).toBe("src/a.txt changed")
-    // A directory it only gave a mode, or listed, emptied and made again, was a directory all along: held as left.
+    // A mode change preserves the directory, while removal and recreation loses its original listing.
     expect(recorded([`100 chmod("${root}/src", 0755) = 0`]).reads).toEqual([["src", "d"]])
     expect(
       recorded([
@@ -2670,7 +2916,7 @@ describe("a path a record cannot hold as the run found it", () => {
         `100 rmdir("${root}/src") = 0`,
         `100 mkdir("${root}/src", 0777) = 0`
       ]).reads
-    ).toEqual([["src", "d"]])
+    ).toEqual([["src", "d", "?"]])
     // Replaced by a directory: held as the file it was.
     await Fs.rm(Path.join(root, "src", "a.txt"))
     await Fs.mkdir(Path.join(root, "src", "a.txt"))
@@ -2849,9 +3095,9 @@ describe("what the programs a job left running did while a later step ran", () =
     expect(paths(served.unfollowed ?? new Map())).toEqual(["/w/link", "/w/stale.pid"])
     expect((served.walks ?? []).map((walk) => walk.path)).toEqual(["walked"])
     expect([...served.unlinked ?? []]).toEqual(["/w/stale.pid"])
-    // What the step itself wrote stays the step's, whoever wrote it again.
+    // An overwrite is also a write by the continuation, even when the step first emptied the file.
     expect(paths(served.emptied)).toEqual(["/w/state.db"])
-    expect([...served.changed].sort()).toEqual(["/w/stale.pid", "/w/state.db"])
+    expect([...served.changed].sort()).toEqual(["/w/own.log", "/w/stale.pid", "/w/state.db"])
     expect([...served.removed]).toEqual(["/w/stale.pid"])
     expect(served.refusals).toEqual(["it reached a file in a way the recorder cannot follow: mount"])
   })
@@ -2868,7 +3114,7 @@ describe("what the programs a job left running did while a later step ran", () =
     expect((joined.walks ?? []).map((walk) => [walk.path, walk.at > 2])).toEqual([["walked", true]])
     // The run read `state.db` before the program wrote it: found first, then changed, never the program's own.
     expect(joined.found.get("/w/state.db")! < joined.emptied.get("/w/state.db")!).toBe(true)
-    expect([...joined.changed].sort()).toEqual(["/w/stale.pid", "/w/state.db"])
+    expect([...joined.changed].sort()).toEqual(["/w/own.log", "/w/stale.pid", "/w/state.db"])
     expect([...joined.removed]).toEqual(["/w/stale.pid"])
     expect([...joined.unlinked ?? []]).toEqual(["/w/stale.pid"])
     // A name the run itself had looked at is no name taken away unseen.
@@ -2940,10 +3186,11 @@ describe("what a run read that an earlier step wrote", () => {
         )
       )
     }
-    await write("bin/cargo", "tool")
-    await write("bin/make", "tool")
+    const bin = await directory()
+    await Fs.writeFile(Path.join(bin, "cargo"), "tool")
+    await Fs.writeFile(Path.join(bin, "make"), "tool")
     const reads = (program: string) => [
-      `100 execve("${root}/bin/${program}", ["${program}", "test"], 0x7ffc /* 9 vars */) = 0`,
+      `100 execve("${bin}/${program}", ["${program}", "test"], 0x7ffc /* 9 vars */) = 0`,
       `100 openat(AT_FDCWD<${root}>, "home/.cargo/.global-cache", O_RDONLY) = 3`,
       `100 openat(AT_FDCWD<${root}>, "target/.rustc_info.json", O_RDONLY) = 3`,
       `100 openat(AT_FDCWD<${root}>, "target/debug/liba.rlib", O_RDONLY) = 3`
@@ -3037,8 +3284,9 @@ describe("what a run read that an earlier step wrote", () => {
       "100 mkdir(\"/dev/shm/smithers-observed\", 0777) = 0",
       `100 unlink("${root}/out/removed.txt") = 0`
     ], [])
-    expect([...wrote.made]).toEqual([Path.join(root, "out")])
+    expect([...wrote.made].sort()).toEqual(["/dev/shm/smithers-observed", Path.join(root, "out")].sort())
     expect([...wrote.touched].sort()).toEqual([
+      "/dev/shm/smithers-observed",
       Path.join(root, "out"),
       Path.join(root, "out/built.txt"),
       Path.join(root, "out/removed.txt"),
@@ -3172,12 +3420,12 @@ describe("what a run read that an earlier step wrote", () => {
         0
       ]]]
     ])
-    expect(again.given).toEqual([["stamp.txt", "-", 0]])
+    expect(again.given).toEqual([["stamp.txt", "-", 0, "?"]])
     expect(again.reads).toEqual([["src", "d"]])
-    expect(ObservedReads.changed(again, root)).toBeUndefined()
+    expect(ObservedReads.changed(again, root)).toBe("stamp.txt, which //:build left, changed")
     // The build ran again and wrote the file the run had removed: the run would find it again.
     await write("stamp.txt", "stamp")
-    expect(ObservedReads.changed(again, root)).toBe("stamp.txt now exists")
+    expect(ObservedReads.changed(again, root)).toBe("stamp.txt, which //:build left, changed")
     expect(state("src/own.txt")).toMatch(/^f:/)
   })
 })
@@ -3304,21 +3552,22 @@ describe("what a run left behind", () => {
       expect(observed.record.reads.map(([path]) => path)).toEqual(["cache/index.js", "packages/core/package.json"])
     })
 
-    it("reads where a link it made leads at the end, after it pointed the link elsewhere", async () => {
+    it("refuses when it read through a link and then pointed it elsewhere", async () => {
       const { made, observe, root, write } = await places()
       await write(Path.join(root, "a.txt"), "a")
       await write(Path.join(root, "b.txt"), "b")
       await Fs.mkdir(Path.join(root, "out"))
       await Fs.symlink("../b.txt", Path.join(root, "out/current"))
-      const observed = observe([
-        made(`${root}/out`),
-        link(root, "../a.txt", "out/current"),
-        reads(root, "out/current"),
-        `100 unlink("${root}/out/current") = 0`,
-        link(root, "../b.txt", "out/current"),
-        reads(root, "out/current")
-      ])
-      expect(observed.record.reads.map(([path]) => path)).toEqual(["b.txt"])
+      expect(() =>
+        observe([
+          made(`${root}/out`),
+          link(root, "../a.txt", "out/current"),
+          reads(root, "out/current"),
+          `100 unlink("${root}/out/current") = 0`,
+          link(root, "../b.txt", "out/current"),
+          reads(root, "out/current")
+        ])
+      ).toThrow(`${root}/out/current was replaced while it was used`)
     })
 
     it("reads what a link it made there leads to outside the workspace", async () => {
@@ -3397,6 +3646,7 @@ describe("what a run left behind", () => {
   // restores that cache from another run's save would find the entry changed at every commit.
   it("leaves out of what it read the cache a locked install writes outside the workspace", async () => {
     const { home, observe, root, temp, write } = await places()
+    const npm = await write(Path.join(Path.dirname(home), "bin/npm"), "tool")
     const index = await write(Path.join(home, ".npm/_cacache/index-v5/03/af/entry"), "old")
     // A machine's home can lie in a temporary directory: the cache there is the install's own as well.
     const machine = await write(Path.join(temp, "machine/home/.npm/_cacache/index-v5/23/91/entry"), "old")
@@ -3408,7 +3658,7 @@ describe("what a run left behind", () => {
     const reads = (pid: number, file: string): string =>
       `${pid} openat(AT_FDCWD<${root}>, "${file}", O_RDONLY) = 3<${file}>`
     const install = observe([
-      "100 execve(\"/bin/sh\", [\"npm\", \"ci\"], 0x7ffc /* 9 vars */) = 0",
+      `100 execve("${npm}", ["npm", "ci"], 0x7ffc /* 9 vars */) = 0`,
       reads(100, setting),
       reads(100, blob),
       rewrites(100, index),
@@ -3424,7 +3674,7 @@ describe("what a run left behind", () => {
     expect(read(install)).toEqual([blob, setting, "package-lock.json"])
     // The same calls by a program that is no locked install: the entry is something the run read and changed.
     const other = observe([
-      "100 execve(\"/bin/sh\", [\"npm\", \"install\"], 0x7ffc /* 9 vars */) = 0",
+      `100 execve("${npm}", ["npm", "install"], 0x7ffc /* 9 vars */) = 0`,
       reads(100, setting),
       reads(100, blob),
       rewrites(100, index),
@@ -3437,6 +3687,7 @@ describe("what a run left behind", () => {
   it("is told apart by where it is: kept in the workspace and the temporary directory, checked anywhere else", async () => {
     const { filled, home, made, observe, root, temp, write } = await places()
     await write(Path.join(root, "node_modules/pkg/index.js"), "package")
+    const npm = await write(Path.join(Path.dirname(home), "bin/npm"), "tool")
     await write(Path.join(root, "node_modules/.bin/placeholder"))
     await Fs.symlink("../pkg/index.js", Path.join(root, "node_modules/.bin/pkg"))
     await Fs.symlink("/usr/bin/env", Path.join(root, "node_modules/.bin/env"))
@@ -3464,7 +3715,7 @@ describe("what a run left behind", () => {
       "100 unlink(\"/dev/shm/gone\") = 0",
       // A package manager that installs what a lockfile pins fills its own cache.
       `100 unlink("${root}/.flows/cache/old") = 0`,
-      "100 execve(\"/bin/sh\", [\"npm\", \"ci\"], 0x7ffc /* 9 vars */) = 0",
+      `100 execve("${npm}", ["npm", "ci"], 0x7ffc /* 9 vars */) = 0`,
       made(`${home}/.npm`),
       made(`${home}/.npm/_cacache`),
       filled(`${home}/.npm/_cacache/blob`),
@@ -3639,7 +3890,7 @@ describe("a package manager that installs what a lockfile pins", () => {
       "uv run --locked --group dev tox run",
       "uv run --frozen pytest",
       "pip install --require-hashes -r requirements.txt",
-      "python3 -m pip install --require-hashes -r requirements.txt",
+      "/usr/bin/pip install --require-hashes -r requirements.txt",
       "pip3 install -r requirements.txt --require-hashes",
       "go mod download",
       "cargo fetch --locked",
@@ -3663,6 +3914,10 @@ describe("a package manager that installs what a lockfile pins", () => {
       "uv pip install --locked x",
       "pip install -r requirements.txt",
       "python3 -m venv --require-hashes install",
+      "python3 -m pip install --require-hashes -r requirements.txt",
+      "node npm ci",
+      "env node pnpm.cjs install --frozen-lockfile",
+      "python uv sync --locked",
       "go test ./...",
       "go mod tidy",
       "cargo test --locked",
@@ -3717,6 +3972,8 @@ describe("a package manager that installs what a lockfile pins", () => {
   it("is no program the workspace itself holds, whatever its name", () => {
     const install = (argv: string, program?: string): boolean =>
       ObservedReads.lockedInstall(argv.split(" "), "/w", program)
+    expect(install("npm ci", "/usr/bin/sh")).toBe(false)
+    expect(install("node corepack npm ci")).toBe(false)
     expect(install("node scripts/npm.js ci")).toBe(false)
     expect(install("node ./tools/pnpm.cjs install --frozen-lockfile")).toBe(false)
     expect(install("node /w/scripts/npm.js ci")).toBe(false)
@@ -3770,7 +4027,7 @@ describe("a package manager that installs what a lockfile pins", () => {
       read([start(100, "npm", "ci"), start(100, "node", "/usr/lib/node_modules/npm/bin/npm-cli.js", "ci"), remote(100)]
         .join("\n")).refusals
     ).toEqual([])
-    // A thread that resolves a name, a script of a package, and what that script starts.
+    // The install's resolver thread may fetch. A lifecycle shell and its script read the network for themselves.
     expect(
       read([
         start(100, "npm", "ci"),
@@ -3783,7 +4040,13 @@ describe("a package manager that installs what a lockfile pins", () => {
         start(103, "node", "install.js"),
         remote(103)
       ].join("\n")).refusals
-    ).toEqual([])
+    ).toEqual(["it opened a network connection (node to 104.16.4.34 port 443)"])
+    for (const install of [start(100, "npm", "ci"), start(100, "pnpm", "install", "--frozen-lockfile")]) {
+      const spawn = "100 clone(child_stack=NULL, flags=SIGCHLD) = 102"
+      for (const hook of [start(102, "sh", "-c", "fetch"), start(102, "node", "postinstall.js")]) {
+        expect(read([install, spawn, hook, remote(102)].join("\n")).outside).toHaveLength(1)
+      }
+    }
     expect(read([start(100, "/usr/bin/env", "FOO=1", "npm", "ci"), remote(100)].join("\n")).refusals).toEqual([
       "it opened a network connection (env to 104.16.4.34 port 443)"
     ])
@@ -3934,6 +4197,7 @@ describe("a build tool that fetches what a lockfile pins", () => {
         "/home/u/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo doc --verbose",
         "cargo --locked check",
         "cargo metadata --format-version 1",
+        "cargo --config net.retry=3 test",
         "cargo fetch"
       ]
     ) expect([line, ObservedReads.lockedBuild(line.split(" "))]).toEqual([line, cargo])
@@ -3947,8 +4211,9 @@ describe("a build tool that fetches what a lockfile pins", () => {
         "cargo publish",
         "cargo package",
         "cargo generate-lockfile",
-        // A flag that takes a value: the value is read as the command, and it is none.
-        "cargo --config net.retry=3 test",
+        "go -C test run ./cmd",
+        "cargo --config test update",
+        "./cargo test",
         "cargo",
         "cargo --version",
         "go get example.com/x",
@@ -3961,6 +4226,8 @@ describe("a build tool that fetches what a lockfile pins", () => {
         ""
       ]
     ) expect([line, ObservedReads.lockedBuild(line.split(" "))]).toEqual([line, undefined])
+    expect(ObservedReads.lockedBuild(["go", "test"], "/w", "/w/tools/go")).toBeUndefined()
+    expect(ObservedReads.lockedBuild(["/w/bin/cargo", "test"], "/w")).toBeUndefined()
     expect(ObservedReads.lockedBuild([])).toBeUndefined()
   })
 
@@ -4270,6 +4537,18 @@ describe("the variables of the host a run could have used", () => {
     // Whatever the variables hold at the next run, the record answers.
     expect(ObservedReads.changed(record, root, undefined, undefined, undefined, { COMMIT: "another" })).toBeUndefined()
     expect(ObservedReads.changed(record, root)).toBeUndefined()
+  })
+
+  it("finds plain and two-byte variable names across digest blocks", async () => {
+    const { observe, open, write } = await places(false)
+    const size = 1024 * 1024
+    const data = Buffer.alloc(2 * size + 64, 0x23)
+    data.write("COMMIT", size - 3)
+    Buffer.from("ATTEMPT", "utf16le").copy(data, size * 2 - 5)
+    await write("input", data)
+    const stored = observe([open("input")])
+    expect(stored.variables).toEqual(held("ATTEMPT", "COMMIT"))
+    expect(stored.reads).toContainEqual(["input", `f:${createHash("sha256").update(data).digest("hex")}`])
   })
 
   it("holds a variable whose name is in the command's own text", async () => {
@@ -4742,7 +5021,7 @@ describe("the stored records", () => {
         null,
         "text",
         { kind: "shell-test" },
-        { ...stored, format: "smthrs-observed-reads/0" },
+        { ...stored, format: "smthrs-observed-reads/5" },
         { ...stored, records: "none" },
         { ...stored, records: [null] },
         { ...stored, records: ["text"] },
@@ -4769,6 +5048,8 @@ describe("the stored records", () => {
         { ...stored, records: [{ ...full, given: [["node_modules/a.js", "f:00", -1]] }] },
         { ...stored, records: [{ ...full, given: [["node_modules/a.js", "f:00", 0.5]] }] },
         { ...stored, records: [{ ...full, given: [[1, "f:00", 0]] }] },
+        { ...stored, records: [{ ...full, given: [["node_modules/a.js", "f:00", 0, 42]] }] },
+        { ...stored, records: [{ ...full, given: [["node_modules/a.js", "f:00", 0, "?", "extra"]] }] },
         { ...stored, records: [{ ...full, given: [["node_modules/a.js", 0, 0]] }] },
         { ...stored, records: [{ ...full, lists: [["d", "00", [], "x"]] }] },
         { ...stored, records: [{ ...full, lists: [["d", "00", [], [["x"]]]] }] },
@@ -4861,4 +5142,107 @@ describe("the lines of a trace file", () => {
     expect([...ObservedReads.linesOf(file)()]).toEqual(["one", "two"])
     expect(() => [...ObservedReads.linesOf(Path.join(root, "missing"))()]).toThrow()
   })
+})
+
+describe("trace evidence across recorder and process boundaries", () => {
+  const socket = (call: string, host: string, answer = "0") => {
+    const address = host.includes(":")
+      ? `{sa_family=AF_INET6, sin6_port=htons(40001), inet_pton(AF_INET6, "${host}", &sin6_addr)}`
+      : `{sa_family=AF_INET, sin_port=htons(40001), sin_addr=inet_addr("${host}")}`
+    return `100 ${call}(3, ${address}, 28) = ${answer}`
+  }
+
+  it("requires the local peer to match the bound family, address and port", () => {
+    for (
+      const [bind, connect, matches] of [
+        ["127.0.0.1", "127.0.0.2", false],
+        ["127.0.0.2", "127.0.0.2", true],
+        ["0.0.0.0", "127.0.0.2", true],
+        ["::", "::1", true],
+        ["0.0.0.0", "::1", false],
+        ["::", "127.0.0.1", false]
+      ] as const
+    ) {
+      const lines = [socket("bind", bind), socket("connect", connect)]
+      for (const calls of [lines, lines.toReversed()]) {
+        expect(read(calls.join("\n")).outside).toHaveLength(matches ? 0 : 1)
+      }
+    }
+    for (const errno of ["EINTR", "EALREADY", "EISCONN"]) {
+      expect(read(socket("connect", "127.0.0.1", `-1 ${errno}`)).outside).toHaveLength(1)
+    }
+  })
+
+  it("attributes repeated daemon removals and new programs after the consumer's last walk or lstat", () => {
+    const remove = "100 unlink(\"/w/state\") = 0"
+    const later = ObservedReads.servedBy(() => [remove], () => [
+      remove,
+      "100 execve(\"/usr/bin/helper\", [\"helper\"], 0x0) = 0"
+    ], "/w")
+    expect([...later.removed]).toEqual(["/w/state"])
+    expect([...later.changed]).toEqual(["/w/state"])
+    expect([...later.started.keys()]).toEqual(["/usr/bin/helper"])
+    for (
+      const last of [
+        "200 lstat(\"/w/link\", {st_mode=S_IFLNK}) = 0",
+        "200 openat2(AT_FDCWD</w>, \"walk\", {flags=O_RDONLY, resolve=RESOLVE_BENEATH}, 24) = 3</w/walk>"
+      ]
+    ) {
+      const own = read(["200 +++ smthrs-observe 1 +++", last, "200 +++ complete +++"].join("\n"))
+      expect(ObservedReads.withServed(own, [later]).started.get("/usr/bin/helper")).toBe(5)
+    }
+  })
+
+  it("reads acknowledged continuation bytes across blocks and refuses replacement, truncation or I/O failure", async () => {
+    const trace = Path.join(await directory(), "server")
+    const file = trace + ".kept"
+    await Fs.writeFile(trace, "100 +++ smthrs-observe 1 +++\n100 +++ complete +++\n")
+    const long = "100 access(\"/w/" + "a".repeat(65520) + "é\", F_OK) = 0"
+    await Fs.writeFile(file, long + "\n")
+    await Fs.writeFile(trace + ".answered", "9223372036854775807\n")
+    const kept = ObservedReads.keptStep("db", "id", "/w", trace, true)
+    expect(await kept.flush()).toBe(true)
+    await Fs.appendFile(file, "100 later\n")
+    expect([...kept.after()]).toEqual([long])
+    const inspect = () => ObservedReads.servedBy(kept.step, kept.after, "/w").refusals
+    await Fs.truncate(file, 0)
+    expect(inspect()).toContainEqual(expect.stringContaining("continuation could not be read"))
+    await Fs.rename(file, file + ".old")
+    await Fs.mkdir(file)
+    expect(inspect()).toContainEqual(expect.stringContaining("continuation could not be read"))
+    await Fs.rmdir(file)
+    expect(inspect()).toContainEqual(expect.stringContaining("continuation could not be read"))
+  })
+
+  it("decodes escaped descriptor results for resolved opens and descriptor-relative paths", () => {
+    const path = "/w/é<>\\x"
+    const encoded = String.raw`/w/\303\251\74\76\\x`
+    const trace = read([
+      `100 openat2(AT_FDCWD</w>, "${encoded}", {flags=O_RDONLY, resolve=RESOLVE_BENEATH}, 24) = 3<${encoded}>`,
+      `100 openat(AT_FDCWD</w>, "${encoded}", O_DIRECTORY|O_RDONLY) = 3<${encoded}>`,
+      `100 openat(AT_FDCWD</w>, "/proc/self/fd/3/x", O_RDONLY) = 4<${encoded}/x>`
+    ].join("\n"))
+    expect(trace.walks?.[0]?.opened).toBe(path)
+    expect(trace.reached).toContainEqual(["/proc/self/fd/3/x", path + "/x", path + "/x"])
+  })
+
+  it.skipIf(!NodeFs.existsSync("/dev/shm"))(
+    "invalidates shared-memory file inputs when their bytes change",
+    async () => {
+      const root = await directory()
+      const shm = await Fs.mkdtemp("/dev/shm/smthrs-observed-")
+      temporary.push(shm)
+      const path = Path.join(shm, "input")
+      await Fs.writeFile(path, "before")
+      const stored = ObservedReads.record(read(`100 openat(AT_FDCWD, "${path}", O_RDONLY) = 3`, root), {
+        root,
+        ignore: [],
+        startedMs: Date.now() + 60000
+      })
+      if ("refusal" in stored) throw new Error(stored.refusal)
+      expect(ObservedReads.changed(stored, root)).toBeUndefined()
+      await Fs.writeFile(path, "after")
+      expect(ObservedReads.changed(stored, root)).toBe(path + " changed")
+    }
+  )
 })

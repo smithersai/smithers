@@ -19,7 +19,6 @@ import * as Fs from "node:fs/promises"
 import * as NodePath from "node:path"
 import { pipeline as piped, Readable, Transform } from "node:stream"
 import { pipeline } from "node:stream/promises"
-import { StringDecoder } from "node:string_decoder"
 import * as Zlib from "node:zlib"
 import * as ObservedReads from "./ObservedReads.ts"
 import { byCodeUnit } from "./Text.ts"
@@ -168,7 +167,8 @@ export const references = (output: unknown): ReadonlyArray<Reference> => {
   if (typeof output !== "object" || output === null) return []
   const value = output as { readonly kind?: unknown; readonly format?: unknown; readonly records?: unknown }
   if (value.kind !== "observed" || value.format !== ObservedReads.format || !Array.isArray(value.records)) return []
-  const valid = value.records.every((reference: unknown) => {
+  if (value.records.length > ObservedReads.maximumRecords) return []
+  const valid = Array.from(value.records).every((reference: unknown) => {
     if (typeof reference !== "object" || reference === null) return false
     const { bytes, digest, paths } = reference as { readonly [key in keyof Reference]?: unknown }
     return typeof digest === "string" && hex.test(digest) && Number.isSafeInteger(paths) && (paths as number) >= 0 &&
@@ -222,81 +222,90 @@ export const read = async (
 ): Promise<ObservedReads.Record | undefined> => {
   const file = NodePath.join(cas, reference.digest)
   // Opened once: the file measured is the file read, whatever takes its name away meanwhile.
-  const handle = await Fs.open(file, "r").catch(() => undefined)
-  if (handle === undefined) return undefined
-  const stats = await handle.stat().catch(() => undefined)
-  if (stats === undefined || !stats.isFile() || stats.size !== reference.bytes) {
-    await handle.close().catch(() => undefined)
-    return undefined
-  }
-  const hash = createHash("sha256")
-  const count = { bytes: 0 }
-  // A failure of any part ends every part: the loop below then fails, and the record is none.
-  const unpacked = piped(handle.createReadStream(), tap(hash, count), Zlib.createGunzip(), () => undefined)
-  let head: Head | undefined
-  const reads: Array<readonly [string, string] | readonly [string, string, string]> = []
-  const lists: Array<ObservedReads.Record["lists"][number]> = []
-  const links: Array<NonNullable<ObservedReads.Record["links"]>[number]> = []
-  const given: Array<NonNullable<ObservedReads.Record["given"]>[number]> = []
-  /** Takes one line; `false` when it is no line of this record. */
-  const take = (line: string): boolean => {
-    const value: unknown = JSON.parse(line)
-    if (head === undefined) {
-      head = asHead(value, reference.paths)
-      return head !== undefined
-    }
-    if (reads.length < head.reads) reads.push(value as (typeof reads)[number])
-    else if (lists.length < head.lists) lists.push(value as (typeof lists)[number])
-    else if (links.length < (head.links ?? 0)) links.push(value as (typeof links)[number])
-    else if (given.length < (head.given ?? 0)) given.push(value as (typeof given)[number])
-    else return false
-    return true
-  }
-  const decoder = new StringDecoder("utf8")
-  let pending = ""
-  let unpackedBytes = 0
+  const { O_NOFOLLOW, O_NONBLOCK, O_RDONLY } = NodeFs.constants
   try {
-    for await (const chunk of unpacked as AsyncIterable<Buffer>) {
-      unpackedBytes += chunk.length
-      if (unpackedBytes > limits.bytes) return undefined
-      pending += decoder.write(chunk)
-      let from = 0
-      for (let end = pending.indexOf("\n", from); end >= 0; end = pending.indexOf("\n", from)) {
-        if (end - from > limits.line || !take(pending.slice(from, end))) return undefined
-        from = end + 1
+    await using handle = await Fs.open(file, O_RDONLY | O_NOFOLLOW | O_NONBLOCK)
+    const stats = await handle.stat()
+    if (!stats.isFile() || stats.size !== reference.bytes) return undefined
+    const hash = createHash("sha256")
+    const count = { bytes: 0 }
+    // A failure of any part ends every part: the loop below then fails, and the record is none.
+    const unpacked = piped(handle.createReadStream(), tap(hash, count), Zlib.createGunzip(), () => undefined)
+    let head: Head | undefined
+    const reads: Array<readonly [string, string] | readonly [string, string, string]> = []
+    const lists: Array<ObservedReads.Record["lists"][number]> = []
+    const links: Array<NonNullable<ObservedReads.Record["links"]>[number]> = []
+    const given: Array<NonNullable<ObservedReads.Record["given"]>[number]> = []
+    /** Takes one line; `false` when it is no line of this record. */
+    const take = (line: string): boolean => {
+      const value: unknown = JSON.parse(line)
+      if (head === undefined) {
+        head = asHead(value, reference.paths)
+        return head !== undefined
       }
-      pending = pending.slice(from)
-      // A line with no end yet is given up on once it is longer than any line of a record.
-      if (pending.length > limits.line) return undefined
+      if (reads.length < head.reads) reads.push(value as (typeof reads)[number])
+      else if (lists.length < head.lists) lists.push(value as (typeof lists)[number])
+      else if (links.length < (head.links ?? 0)) links.push(value as (typeof links)[number])
+      else if (given.length < (head.given ?? 0)) given.push(value as (typeof given)[number])
+      else return false
+      return true
     }
-    pending += decoder.end()
-    if (pending !== "" && !take(pending)) return undefined
+    const fragments: Array<Buffer> = []
+    let lineBytes = 0
+    let unpackedBytes = 0
+    try {
+      for await (const chunk of unpacked as AsyncIterable<Buffer>) {
+        unpackedBytes += chunk.length
+        if (unpackedBytes > limits.bytes) return undefined
+        let start = 0
+        while (start < chunk.length) {
+          const newline = chunk.indexOf(0x0a, start)
+          const end = newline < 0 ? chunk.length : newline
+          lineBytes += end - start
+          if (lineBytes > limits.line) return undefined
+          const part = chunk.subarray(start, end)
+          if (newline < 0) {
+            fragments.push(part)
+            break
+          }
+          if (fragments.length === 0) {
+            if (!take(part.toString("utf8"))) return undefined
+          } else {
+            fragments.push(part)
+            if (!take(Buffer.concat(fragments, lineBytes).toString("utf8"))) return undefined
+            fragments.length = 0
+          }
+          lineBytes = 0
+          start = newline + 1
+        }
+      }
+      if (lineBytes > 0 && !take(Buffer.concat(fragments, lineBytes).toString("utf8"))) return undefined
+    } finally {
+      unpacked.destroy()
+    }
+    if (head === undefined || hash.digest("hex") !== reference.digest || count.bytes !== reference.bytes) {
+      return undefined
+    }
+    // Each row is assigned to an unfilled bucket, whose total capacity equals reference.paths.
+    if (reads.length + lists.length + links.length + given.length !== reference.paths) return undefined
+    const record = ObservedReads.asRecord({
+      reads,
+      lists,
+      ...(head.links === undefined ? {} : { links }),
+      ...(head.from === undefined ? {} : { from: head.from }),
+      ...(head.given === undefined ? {} : { given }),
+      ...(head.left === undefined ? {} : { left: head.left }),
+      ...(head.made === undefined ? {} : { made: head.made }),
+      ...(head.kept === undefined ? {} : { kept: head.kept }),
+      ...(head.variables === undefined ? {} : { variables: head.variables }),
+      ...(head.running === undefined ? {} : { running: head.running }),
+      ...(head.served === undefined ? {} : { served: head.served }),
+      id: head.id
+    })
+    return record !== undefined && ObservedReads.pathsOf(record) === reference.paths ? record : undefined
   } catch {
     return undefined
-  } finally {
-    unpacked.destroy()
-    await handle.close().catch(() => undefined)
   }
-  if (head === undefined || hash.digest("hex") !== reference.digest || count.bytes !== reference.bytes) return undefined
-  if (
-    reads.length !== head.reads || lists.length !== head.lists ||
-    links.length !== (head.links ?? 0) || given.length !== (head.given ?? 0)
-  ) return undefined
-  const record = ObservedReads.asRecord({
-    reads,
-    lists,
-    ...(head.links === undefined ? {} : { links }),
-    ...(head.from === undefined ? {} : { from: head.from }),
-    ...(head.given === undefined ? {} : { given }),
-    ...(head.left === undefined ? {} : { left: head.left }),
-    ...(head.made === undefined ? {} : { made: head.made }),
-    ...(head.kept === undefined ? {} : { kept: head.kept }),
-    ...(head.variables === undefined ? {} : { variables: head.variables }),
-    ...(head.running === undefined ? {} : { running: head.running }),
-    ...(head.served === undefined ? {} : { served: head.served }),
-    id: head.id
-  })
-  return record !== undefined && ObservedReads.pathsOf(record) === reference.paths ? record : undefined
 }
 
 /**
@@ -317,7 +326,10 @@ export const loadAll = async (
 }> => {
   const records: Array<ObservedReads.Record> = []
   const unread: Array<"missing" | "changed"> = []
+  const seen = new Set<string>()
   for (const reference of references(output)) {
+    if (seen.has(reference.digest)) continue
+    seen.add(reference.digest)
     const record = await read(cas, reference)
     if (record !== undefined) records.push(record)
     else unread.push(NodeFs.existsSync(NodePath.join(cas, reference.digest)) ? "changed" : "missing")

@@ -108,7 +108,7 @@ import { byCodeUnit } from "./Text.ts"
  * @category constants
  * @since 1.0.0
  */
-export const format = "smthrs-observed-reads/5"
+export const format = "smthrs-observed-reads/6"
 
 /**
  * Records kept for one declaration. A fresh checkout and a tree a run has
@@ -161,8 +161,8 @@ const tracerFlags: ReadonlyArray<string> = [
   "-e",
   "signal=none",
   "-e",
-  // Beside the table's calls, the one that says which port the system chose for a socket bound to port 0.
-  `trace=${RecordedCalls.traced.join(",")},?getsockname`,
+  // Socket options and identity help tell a dual-stack listener from a separate IPv4 endpoint.
+  `trace=${RecordedCalls.traced.join(",")},?getsockname,?socket,?setsockopt`,
   "-e",
   "inject=io_uring_setup:error=ENOSYS",
   "-e",
@@ -335,7 +335,7 @@ export const recorderVariable = "SMTHRS_OBSERVE_WITH"
  * Where this package holds `smthrs-observe` for this host, built for Linux on
  * x86_64 and aarch64 (`native/out/linux-<arch>/smthrs-observe`), unless
  * `SMTHRS_OBSERVE_WITH=strace` asks for strace; `undefined` on any other host
- * or where the package holds none.
+ * or where the package holds none. Resolve the installation from `moduleUrl`.
  *
  * @category tracing
  * @since 1.0.0
@@ -343,12 +343,13 @@ export const recorderVariable = "SMTHRS_OBSERVE_WITH"
 export const supervisorPath = (
   platform: NodeJS.Platform = process.platform,
   arch: string = process.arch,
-  environment: { readonly [name: string]: string | undefined } = Environment.ambientEnvironment()
+  environment: { readonly [name: string]: string | undefined } = Environment.ambientEnvironment(),
+  moduleUrl = import.meta.url
 ): string | undefined => {
   if (platform !== "linux" || (arch !== "x64" && arch !== "arm64")) return undefined
   if (environment[recorderVariable] === "strace") return undefined
   // The installed `smthrs` is one file of another package, which has this one installed beside it.
-  for (const manifest of [packageOf("@smthrs/build-cli"), packageOf(import.meta.url)]) {
+  for (const manifest of [packageOf("@smthrs/build-cli", moduleUrl), packageOf(moduleUrl, moduleUrl)]) {
     if (manifest === undefined) continue
     const path = NodePath.join(NodePath.dirname(manifest), "native", "out", `linux-${arch}`, "smthrs-observe")
     if (NodeFs.existsSync(path)) return path
@@ -370,8 +371,10 @@ const reapers = new Map<string, string | undefined>()
  * @since 1.0.0
  */
 export const reaperPath = (
-  path: string | undefined = supervisorPath(process.platform, process.arch, {})
+  path?: string,
+  moduleUrl?: string
 ): string | undefined => {
+  path ??= supervisorPath(process.platform, process.arch, {}, moduleUrl)
   if (path === undefined) return undefined
   if (!reapers.has(path)) {
     const answered = spawnSync(path, ["--probe", "--reap"], { stdio: "ignore", timeout: 30_000 })
@@ -407,19 +410,20 @@ export const reaped = (
 export const unsupervised = (
   platform: NodeJS.Platform = process.platform,
   arch: string = process.arch,
-  environment: { readonly [name: string]: string | undefined } = Environment.ambientEnvironment()
+  environment: { readonly [name: string]: string | undefined } = Environment.ambientEnvironment(),
+  moduleUrl?: string
 ): string | undefined => {
   if (platform !== "linux" || (arch !== "x64" && arch !== "arm64")) return undefined
   if (environment[recorderVariable] === "strace") return `${recorderVariable}=strace asks for strace`
-  return supervisorPath(platform, arch, environment) === undefined
+  return supervisorPath(platform, arch, environment, moduleUrl) === undefined
     ? `this installation of @smthrs/build-cli holds no smthrs-observe for linux-${arch}`
     : undefined
 }
 
-/** The package.json a module specifier or URL belongs to, as Node resolves it from this module. */
-const packageOf = (specifier: string): string | undefined => {
+/** The package.json a module specifier or URL belongs to, as Node resolves it from the given module. */
+const packageOf = (specifier: string, moduleUrl: string): string | undefined => {
   try {
-    return findPackageJSON(specifier, import.meta.url)
+    return findPackageJSON(specifier, moduleUrl)
   } catch {
     return undefined
   }
@@ -548,6 +552,12 @@ export interface Trace {
   readonly made: ReadonlyMap<string, number>
   /** Files the run emptied before it wrote them, through any link in the path. */
   readonly emptied: ReadonlyMap<string, number>
+  /** Names made by calls that require absence, by their first successful call. */
+  readonly exclusive?: ReadonlyMap<string, number> | undefined
+  /** Targets that had to exist for a successful truncation without O_CREAT. */
+  readonly required?: ReadonlyMap<string, number> | undefined
+  /** Paths of links created or moved into place and later removed or overwritten. */
+  readonly transientLinks?: ReadonlySet<string> | undefined
   /** Paths the run changed in place, removed or moved away. */
   readonly changed: ReadonlySet<string>
   /** Paths whose non-measured metadata (timestamps, owner, xattrs, hard-link count) the run changed. */
@@ -561,6 +571,8 @@ export interface Trace {
    * looked at them nor written them before: all it learned of each is that such a name was there.
    */
   readonly unlinked?: ReadonlySet<string> | undefined
+  /** Directories successfully removed without first observing their entries. */
+  readonly removedEmpty?: ReadonlySet<string> | undefined
   /** Paths written by a package manager installing what a lockfile pins, or by a process it started. */
   readonly fetched: ReadonlySet<string>
   /** Why what the run read cannot all be known, when it cannot. */
@@ -576,6 +588,8 @@ export interface Trace {
    * call's own answer says it opened: the two are the same file only when the trace placed the descriptor right.
    */
   readonly reached?: ReadonlyArray<readonly [path: string, named: string, opened: string]> | undefined
+  /** Ordinary path opens for which strace named the result. */
+  readonly openedPaths?: ReadonlyArray<readonly [path: string, named: string, opened: string]> | undefined
   /** Files a run opened with `openat2` and `RESOLVE_*` flags, in the order the calls began: see {@link Walk}. */
   readonly walks?: ReadonlyArray<Walk> | undefined
   /**
@@ -586,7 +600,7 @@ export interface Trace {
   /** The programs `smthrs-observe` saw the run start whose file asks for rights the run did not have. */
   readonly rights?: ReadonlyArray<string> | undefined
   /**
-   * The Unix sockets (`unix:"<path>"`) and local ports (`port:<n>`) the run
+   * The Unix sockets and IP endpoints (family, port and address) the run
    * listened on. A program the run left running may still listen on them.
    */
   readonly bound?: ReadonlySet<string> | undefined
@@ -785,13 +799,14 @@ export const split = (text: string): ReadonlyArray<string> => {
  * The path a descriptor argument names (`3</tmp/x>`), or `undefined` when the tracer printed none. The tracer escapes
  * it as it does a quoted string, and `<` and `>` too: `</tmp/a\nb\74c\76>` is the directory `a`, newline, `b<c>`.
  */
-const descriptorPath = (argument: string): string | undefined => {
+const descriptorPath = (argument: string, keepDeleted = false): string | undefined => {
   const match = /^(?:\d+|AT_FDCWD)<(.*)>$/s.exec(argument)
   if (match === null) return undefined
   const raw = match[1]!
   // Nearly every path holds no escape, and is itself.
   const path = raw.includes("\\") ? unquote(`"${raw}"`) : raw
-  return path?.startsWith("/") === true ? path.replace(/ \(deleted\)$/, "") : undefined
+  if (path?.startsWith("/") !== true) return undefined
+  return keepDeleted ? path : path.replace(/ \(deleted\)$/, "")
 }
 
 /** The words of a command line a tracer printed as `["npm", "ci"]`; `undefined` when it is cut short. */
@@ -867,7 +882,7 @@ const flagsOf = (valued: string, plain: string): Flags => ({
   plain: new Set(plain.split(" "))
 })
 
-const managerFlags: ReadonlyMap<string, Flags> = new Map([
+const supportedManagers = [
   [
     "npm",
     flagsOf(
@@ -931,7 +946,12 @@ const managerFlags: ReadonlyMap<string, Flags> = new Map([
   ["go", flagsOf("-C", "")],
   ["cargo", flagsOf("--color --config -Z -C", "--locked --frozen --offline -q --quiet -v -vv --verbose")],
   ["deno", flagsOf("", "-q --quiet")]
-])
+] as const
+
+type Manager = (typeof supportedManagers)[number][0]
+const managers = new Map<string, { readonly name: Manager; readonly flags: Flags }>(
+  supportedManagers.map(([name, flags]) => [name, { name, flags }])
+)
 
 /**
  * The words of a package manager's command line from its command on, with where the command is among `rest`, the
@@ -964,8 +984,8 @@ const installedTool = /(?:^|\/)node_modules\//
  * found on the search path; a path is trusted where it is absolute and outside `workspace`, or in a tree of
  * installed packages.
  */
-const notOfWorkspace = (path: string, workspace: string | undefined): boolean =>
-  !path.includes("/") || installedTool.test(path) ||
+const notOfWorkspace = (path: string, workspace: string | undefined, searched = true): boolean =>
+  (searched && !path.includes("/")) || installedTool.test(NodePath.posix.normalize(path)) ||
   (path.startsWith("/") && (workspace === undefined || !under(NodePath.posix.normalize(path), workspace)))
 
 /**
@@ -979,12 +999,23 @@ const lockedKind = (
   program: string | undefined
 ): "install" | "run" | undefined => {
   const { at, names } = programOf(argv)
-  const name = names[at] === "yarnpkg" ? "yarn" : names[at] === "pip3" ? "pip" : names[at]
-  const flags = name === undefined ? undefined : managerFlags.get(name)
-  if (flags === undefined) return undefined
+  const requested = names[at]
+  const manager = requested === undefined ?
+    undefined
+    : managers.get(requested === "yarnpkg" ? "yarn" : requested === "pip3" ? "pip" : requested)
+  if (manager === undefined) return undefined
+  const { name, flags } = manager
   // The words name the program; the file that runs is the one that was started.
-  if (!notOfWorkspace(argv[at]!, workspace)) return undefined
-  if (at === 0 && program !== undefined && !notOfWorkspace(program, workspace)) return undefined
+  for (let i = 0; i <= at; i++) {
+    const searched = i === 0 || names[i - 1] === "env" || names[i - 1] === "corepack"
+    if (!notOfWorkspace(argv[i]!, workspace, searched)) return undefined
+  }
+  if (
+    program !== undefined &&
+    (!notOfWorkspace(program, workspace) || NodePath.posix.basename(program) !== NodePath.posix.basename(argv[0]!))
+  ) {
+    return undefined
+  }
   // cargo takes a toolchain before anything else (`cargo +nightly fetch`).
   const rest = argv.slice(at + 1 + (name === "cargo" && argv[at + 1]?.startsWith("+") === true ? 1 : 0))
   const command = commandOf(flags, rest)
@@ -1011,8 +1042,6 @@ const lockedKind = (
         return words[0] === "fetch" && has("--locked", "--frozen")
       case "deno":
         return words[0] === "install" && has("--frozen")
-      default:
-        return false
     }
   })()
   if (locked) return "install"
@@ -1097,8 +1126,7 @@ const lockedBuilds: ReadonlyMap<
  * test` and `go build` are such commands; `cargo install`, `cargo update`, `go
  * get` and `go run` choose versions and are not. A word before the command
  * that is no flag and no toolchain (`cargo +nightly test`) names another
- * command, so a flag that takes a value (`cargo --config x test`) is not
- * read past.
+ * command. Known flags and their values (`cargo --config x test`) are skipped together.
  *
  * `own`, when the tool has one, matches the paths the tool reads for its own
  * bookkeeping under these commands. What the tool itself reads there is no
@@ -1111,14 +1139,25 @@ const lockedBuilds: ReadonlyMap<
  * @since 1.0.0
  */
 export const lockedBuild = (
-  argv: ReadonlyArray<string>
+  argv: ReadonlyArray<string>,
+  workspace?: string,
+  program?: string
 ):
   | { readonly pins: ReadonlyArray<string>; readonly rewrites: ReadonlyArray<string>; readonly own?: RegExp }
   | undefined =>
 {
   const first = argv[0] ?? ""
-  const known = lockedBuilds.get(first.slice(first.lastIndexOf("/") + 1))
-  const command = argv.slice(1).find((word) => !word.startsWith("-") && !word.startsWith("+"))
+  const name = NodePath.posix.basename(first)
+  if (
+    !notOfWorkspace(first, workspace) || (program !== undefined &&
+      (!notOfWorkspace(program, workspace) || NodePath.posix.basename(program) !== name))
+  ) {
+    return undefined
+  }
+  const known = lockedBuilds.get(name)
+  const flags = managers.get(name)?.flags
+  const rest = argv.slice(name === "cargo" && argv[1]?.startsWith("+") ? 2 : 1)
+  const command = flags === undefined ? undefined : commandOf(flags, rest)?.words[0]
   return known !== undefined && command !== undefined && known.commands.includes(command)
     ? { pins: known.pins, rewrites: known.rewrites, ...(known.own === undefined ? {} : { own: known.own }) }
     : undefined
@@ -1168,6 +1207,17 @@ const loopback = (address: string): boolean =>
   /inet_pton\(AF_INET6, "(?:::1|::|::ffff:127\.[0-9.]+|::ffff:0\.0\.0\.0)"/.test(address)
 
 const portOf = (address: string): string | undefined => /sin6?_port=htons\((\d+)\)/.exec(address)?.[1]
+
+/** IPv4-mapped destinations use IPv4, even when the calling socket is AF_INET6. */
+const endpointOf = (address: string): { key: string; wildcard: string; port: string; ipv4: boolean } | undefined => {
+  const port = portOf(address)
+  if (port === undefined) return undefined
+  const v6 = /sa_family=AF_INET6,.*inet_pton\(AF_INET6, "([^"]+)"/.exec(address)?.[1]
+  const v4 = /sa_family=AF_INET,.*inet_addr\("([^"]+)"\)/.exec(address)?.[1] ??
+    /^::ffff:([0-9.]+)$/.exec(v6 ?? "")?.[1]
+  if (v4 !== undefined) return { key: `inet:${port}:${v4}`, wildcard: `inet:${port}:0.0.0.0`, port, ipv4: true }
+  return v6 === undefined ? undefined : { key: `inet6:${port}:${v6}`, wildcard: `inet6:${port}:::`, port, ipv4: false }
+}
 
 /**
  * Each address a send names, as the tracer prints it (`{sa_family=...}`), in the order it names them; a send whose
@@ -1358,13 +1408,17 @@ export const signalStorm = "signals arrive faster than a recorded call completes
  * @category recording
  * @since 1.0.0
  */
-export const markStart = (file: string, limitMs = 3000): number => {
+export const markStart = (
+  file: string,
+  limitMs = 3000,
+  changeTime: (path: string) => number = (path) => NodeFs.statSync(path).ctimeMs
+): number => {
   NodeFs.writeFileSync(file, "")
-  const first = NodeFs.statSync(file).ctimeMs
+  const first = changeTime(file)
   const pause = new Int32Array(new SharedArrayBuffer(4))
   for (let waited = 0; waited < limitMs; waited += 1) {
     NodeFs.writeFileSync(file, waited % 2 === 0 ? "\n" : "")
-    const now = NodeFs.statSync(file).ctimeMs
+    const now = changeTime(file)
     if (now > first) return now
     Atomics.wait(pause, 0, 0, 1)
   }
@@ -1407,8 +1461,7 @@ export const whole = (traceFile: string): boolean => {
  * starts, reads nothing the trace holds. What such a process writes is the
  * run's, as any write is.
  *
- * `inside` holds the Unix sockets (`unix:"<path>"`) and local ports
- * (`port:<n>`) programs of the run's job listen on that an earlier step of
+ * `inside` holds the Unix sockets and IP endpoints programs of the run's job listen on that an earlier step of
  * the job started ({@link Trace.bound}): talking to one is talking to the
  * job, not reaching outside the run.
  *
@@ -1420,13 +1473,28 @@ export const read = (
   cwd: string,
   quiet: ReadonlyArray<string> = [],
   inside: ReadonlySet<string> = new Set()
-): Trace => {
+): Trace => readTrace(lines, cwd, quiet, inside)
+
+const readTrace = (
+  lines: () => Iterable<string>,
+  cwd: string,
+  quiet: ReadonlyArray<string>,
+  inside: ReadonlySet<string>,
+  continuation?: { after: number; changed: Set<string>; removed: Set<string> }
+): Trace & {
+  readonly bound: ReadonlySet<string>
+  readonly exclusive: ReadonlyMap<string, number>
+  readonly outside: ReadonlyArray<string>
+  readonly required: ReadonlyMap<string, number>
+} => {
   const found = new Map<string, number>()
   const unfollowed = new Map<string, number>()
   const missing = new Map<string, number>()
   const listed = new Map<string, number>()
   const made = new Map<string, number>()
   const emptied = new Map<string, number>()
+  const required = new Map<string, number>()
+  const walkedReads = new Set<string>()
   const changed = new Set<string>()
   const meta = new Set<string>()
   const started = new Map<string, number>()
@@ -1444,6 +1512,7 @@ export const read = (
   const below = new Map<string, Set<string>>()
   const write = (path: string): void => {
     changed.add(path)
+    if (continuation !== undefined && at > continuation.after) continuation.changed.add(path)
     const parent = path.slice(0, path.lastIndexOf("/"))
     let paths = below.get(parent)
     if (paths === undefined) below.set(parent, paths = new Set())
@@ -1461,6 +1530,12 @@ export const read = (
       for (const path of [...(below.get(source) ?? [])]) {
         const moved = `${target}${path.slice(source.length)}`
         write(moved)
+        replaced(moved)
+        if (symlinks.has(path)) {
+          replaced(path)
+          symlinks.add(moved)
+          notPlain.add(moved)
+        }
         if (fetched.has(path)) fetched.add(moved)
         if (made.has(path)) first(made, moved, at)
         if (emptied.has(path)) first(emptied, moved, at)
@@ -1523,10 +1598,17 @@ export const read = (
   const removed = new Set<string>()
   /** Names the run took away with `unlink` before it had looked at them or written them ({@link Trace.unlinked}). */
   const unlinked = new Set<string>()
+  const removedEmpty = new Set<string>()
   /** The names the run made as a file or a directory and that are still those ({@link Trace.plainMade}). */
   const plainMade = new Set<string>()
   /** The names the run made as a link or moved something onto, until it takes them away: a call may go through them. */
   const notPlain = new Set<string>()
+  const symlinks = new Set<string>()
+  const transientLinks = new Set<string>()
+  const replaced = (path: string): void => {
+    notPlain.delete(path)
+    if (symlinks.delete(path)) transientLinks.add(path)
+  }
   const madePlain = (path: string): void => {
     if (!notPlain.has(path)) plainMade.add(path)
   }
@@ -1535,15 +1617,10 @@ export const read = (
   /** The program each process is running, by the name it was started under. */
   const programs = new Map<number, string>()
   let networked = false
-  /** Processes that are a locked install now, and the processes started under one. */
+  /** A locked install, its threads and verified fetch helpers, then children awaiting exec. */
   const installing = new Set<number>()
   const installed = new Set<number>()
-  /**
-   * Processes that are, or were started under, an install that goes on to run a command it was given
-   * (`uv run --locked pytest`). The command is no install: a process among these that starts a program is the
-   * install's only while that program is one a package manager fetches with ({@link fetchers}).
-   */
-  const commanded = new Set<number>()
+  const installingChildren = new Set<number>()
   /** What those processes wrote. */
   const fetched = new Set<string>()
   /** Processes started with a word of `quiet`, and the processes started under one: none of their reads is the run's. */
@@ -1595,13 +1672,34 @@ export const read = (
   /** Those the run itself listens on. */
   const listened = new Set<string>()
   /** The sockets and ports the run reached before anything of it listened there, with what reaching them says. */
-  const unbound: Array<readonly [key: string, how: string]> = []
+  const unbound: Array<
+    readonly [key: string, how: string, wildcard?: string, dual?: { port: string; socket: string } | undefined]
+  > = []
   /**
    * The sockets the run bound to port 0, where the system chooses the port, as strace names a socket
    * (`socket:[<inode>]`). The trace says which port that was only where the run asked (`getsockname`): a program
    * that tells anyone its port asked. `smthrs-observe` writes the chosen port in the bind's own line.
    */
   const chosen = new Set<string>()
+  /** A dual-stack alias needs positive evidence of TCP and an explicit IPV6_V6ONLY setting on the bound socket. */
+  const tcpSockets = new Set<string>()
+  const dualStack = new Set<string>()
+  const reusable = new Set<string>()
+  const dualPorts = new Map<string, string>()
+  const ipv4Binds = new Set<string>()
+  const opens: Array<readonly [path: string, named: string, opened: string]> = []
+  const addEndpoint = (key: string, address: string, socket: string | undefined): void => {
+    const port = portOf(address)
+    bound.add(key)
+    listened.add(key)
+    if (port === undefined) return
+    if (key.startsWith("inet:")) ipv4Binds.add(port)
+    if (key !== `inet6:${port}:::`) return
+    if (supervised && address.endsWith(" /* smthrs: tcp dual-stack */")) dualPorts.set(port, `bind:${at}`)
+    else if (socket !== undefined && tcpSockets.has(socket) && dualStack.has(socket) && !reusable.has(socket)) {
+      dualPorts.set(port, socket)
+    }
+  }
   const socketOf = (argument: string | undefined): string | undefined =>
     argument === undefined ? undefined : /<(socket:\[\d+\])>/.exec(argument)?.[1]
   let root: number | undefined
@@ -1691,7 +1789,7 @@ export const read = (
    * socket path or a loopback port the run listens on is its own. The kernel's own netlink end (`nl_pid` 0, no
    * group) answers with the machine's state, as `/proc` does, and is no program.
    */
-  const reachAddress = (pid: number, address: string): void => {
+  const reachAddress = (pid: number, address: string, socket?: string): void => {
     const family = /sa_family=([^,}]+)/.exec(address)?.[1]
     if (family === undefined || family === "AF_UNSPEC" || family === "0") return
     if (family === "AF_NETLINK") {
@@ -1723,11 +1821,25 @@ export const read = (
           )
         }
         networked = true
-      } else if (!bound.has(`port:${portOf(address)}`)) {
-        unbound.push([
-          `port:${portOf(address)}`,
-          `it reached a program outside the run on local port ${portOf(address)}`
-        ])
+      } else {
+        const endpoint = endpointOf(address)
+        const how = `it reached a program outside the run on local port ${portOf(address)}`
+        if (endpoint === undefined) reach(how)
+        else if (!bound.has(endpoint.key) && !bound.has(endpoint.wildcard)) {
+          const tcp = socket !== undefined
+            ? tcpSockets.has(socket)
+            : supervised && address.endsWith(" /* smthrs: tcp */")
+          const dual = endpoint.ipv4 && tcp ? dualPorts.get(endpoint.port) : undefined
+          unbound.push([
+            endpoint.key,
+            how,
+            endpoint.wildcard,
+            dual === undefined ? undefined : {
+              port: endpoint.port,
+              socket: dual
+            }
+          ])
+        }
       }
     } else if (family === "AF_PACKET") {
       // Frames on an interface reach whatever is on it, of the run or not.
@@ -1755,12 +1867,12 @@ export const read = (
     if (!supervised) {
       for (const argument of args) {
         const seen = decorated.exec(argument)
-        if (seen !== null) tableOf(pid).set(Number(seen[1]), seen[2]!)
+        if (seen !== null) tableOf(pid).set(Number(seen[1]), descriptorPath(argument, true) ?? seen[2]!)
       }
     }
     const answered = ok && !supervised && result !== undefined ? decorated.exec(result) : null
-    if (answered !== null) tableOf(pid).set(Number(answered[1]), answered[2]!)
-    const opened = answered === null ? undefined : answered[2]!
+    const opened = answered === null ? undefined : descriptorPath(result!, true)
+    if (answered !== null) tableOf(pid).set(Number(answered[1]), opened ?? answered[2]!)
 
     /** The absolute path an argument names from a directory, or `undefined` when it names none. */
     const pathOf = (argument: string | undefined, base: string | undefined): string | undefined => {
@@ -1842,32 +1954,34 @@ export const read = (
         return
       }
       write(path)
-      if (installing.has(pid) || installed.has(pid)) fetched.add(path)
+      if (installing.has(pid) || installed.has(pid) || installingChildren.has(pid)) fetched.add(path)
       if (!ok) return
+      if (fresh && !made.has(path)) first(began, path, entered)
       if (how !== "changed") first(how === "made" ? made : emptied, path, at)
       if (how === "made") madePlain(path)
       // A call that only succeeds where nothing was says so: the name was not there when it began.
-      if (fresh) first(began, path, entered)
       // A name the run found missing and then opened to write, making it if need be, is one the run made. So is
       // one it opens that way in a directory it made: the directory held nothing when it was made, so the run
       // wrote whatever is there. `go` writes an entry of a new cache so, with nothing asked about it first.
-      else if (
-        creates && how === "changed" && (missing.has(path) || built.has(NodePath.posix.dirname(path)))
+      if (
+        !fresh && creates && how === "changed" && (missing.has(path) || built.has(NodePath.posix.dirname(path)))
       ) {
         first(made, path, at)
         madePlain(path)
       }
       if (how === "changed" && removers.has(name)) {
         removed.add(path)
+        if (continuation !== undefined && at > continuation.after) continuation.removed.add(path)
         unbuilt(path)
         plainMade.delete(path)
-        notPlain.delete(path)
+        replaced(path)
       }
     }
     /** Notes a link the run made: a name that leads elsewhere. */
     const linked = (path: string | undefined): void => {
       wrote(path, "made", true)
-      if (path === undefined) return
+      if (path === undefined || !ok) return
+      symlinks.add(path)
       notPlain.add(path)
       plainMade.delete(path)
     }
@@ -1903,7 +2017,7 @@ export const read = (
         refusals.add(`its trace does not say which directory ${JSON.stringify(text)} was read from`)
         return
       }
-      const opened = ok ? decorated.exec(result)?.[2] : undefined
+      const opened = ok ? descriptorPath(result) : undefined
       if (ok && opened === undefined) {
         refusals.add(`its trace does not say which file ${JSON.stringify(text)} opened`)
         return
@@ -1927,7 +2041,12 @@ export const read = (
           opened: unnamed ? undefined : opened
         })
       }
-      if (writes && opened !== undefined) wrote(spelled(opened), how_ ?? "changed", creates)
+      if (reads && opened !== undefined && !hushed.has(pid)) walkedReads.add(spelled(opened))
+      if (writes && opened !== undefined) {
+        const target = spelled(opened)
+        if (how_ === "emptied" && !creates && !changed.has(target)) first(required, target, entered)
+        wrote(target, how_ ?? "changed", creates)
+      }
     }
 
     // A call strace has no name for: its number says which, and its arguments are numbers, so no path it named
@@ -1941,13 +2060,34 @@ export const read = (
       } else if (known !== undefined && known.kind !== "none") refusals.add(cannotFollow(known.name))
       return
     }
+    if (name === "socket") {
+      const socket = socketOf(result)
+      if (
+        ok && socket !== undefined && /^AF_INET6?$/.test(args[0] ?? "") &&
+        /^SOCK_STREAM(?:\||$)/.test(args[1] ?? "") && /^(?:IPPROTO_IP|IPPROTO_TCP|0)$/.test(args[2] ?? "")
+      ) {
+        tcpSockets.add(socket)
+      }
+      return
+    }
+    if (name === "setsockopt") {
+      const socket = socketOf(args[0])
+      if (ok && socket !== undefined) {
+        if (args[2] === "IPV6_V6ONLY" && (args[1] === "SOL_IPV6" || args[1] === "IPPROTO_IPV6")) {
+          if (args[3] === "[0]") dualStack.add(socket)
+          else dualStack.delete(socket)
+        }
+        if (args[1] === "SOL_SOCKET" && args[2] === "SO_REUSEPORT" && args[3] !== "[0]") reusable.add(socket)
+      }
+      return
+    }
     // The port the system chose for a socket the run bound to port 0: the run listens there.
     if (name === "getsockname") {
       const socket = socketOf(args[0])
-      const port = portOf(args[1] ?? "")
-      if (ok && socket !== undefined && chosen.has(socket) && port !== undefined && port !== "0") {
-        bound.add(`port:${port}`)
-        listened.add(`port:${port}`)
+      const address = args[1] ?? ""
+      const endpoint = endpointOf(address)
+      if (ok && socket !== undefined && chosen.has(socket) && endpoint !== undefined && portOf(address) !== "0") {
+        addEndpoint(endpoint.key, address, socket)
       }
       return
     }
@@ -1984,9 +2124,17 @@ export const read = (
         const path = pathAt(row.dir, row.path)
         const flags = name === "creat" ? "O_WRONLY|O_CREAT|O_TRUNC" : given ?? args[row.flags!] ?? ""
         const creates = /O_CREAT/.test(flags)
+        if (
+          ok && opened?.startsWith("/") && path !== undefined && !pseudo(path) && !hushed.has(pid) &&
+          !/O_WRONLY|O_TRUNC|O_TMPFILE|O_NOFOLLOW/.test(flags)
+        ) {
+          opens.push([path, path, spelled(opened)])
+        }
         if (creates && /O_EXCL/.test(flags)) wrote(path, "made", true)
-        else if (/O_TRUNC/.test(flags)) wrote(path, "emptied", creates)
-        // Opened to write without reading, and not emptied: what was there stays under what the run writes. Where
+        else if (/O_TRUNC/.test(flags)) {
+          if (!creates && ok && path !== undefined && !changed.has(path)) first(required, path, entered)
+          wrote(path, "emptied", creates)
+        } // Opened to write without reading, and not emptied: what was there stays under what the run writes. Where
         // the call could not have made the file, one was there, and the run found it. Where it could have, the
         // trace does not say which: `observe` asks the commit.
         else if (/O_WRONLY/.test(flags)) wrote(creates ? path : foundFirst(path), "changed", creates)
@@ -2043,22 +2191,23 @@ export const read = (
           const locked = words === undefined ? undefined : lockedKind(words, cwd, path)
           if (locked === undefined) {
             installing.delete(pid)
-            // The command an install was told to run, and what that starts, is not the install: a test run so
-            // that calls a service on the network read the network's answer, which no lockfile fixes.
-            if (commanded.has(pid) && !fetchers.test(path.slice(path.lastIndexOf("/") + 1))) {
-              commanded.delete(pid)
-              installed.delete(pid)
+            // Only a fetch helper inherits the waiver through exec. Lifecycle hooks and their children
+            // can read arbitrary services, even when the package manager itself is pinned.
+            installed.delete(pid)
+            if (
+              installingChildren.has(pid) && fetchers.test(NodePath.posix.basename(path)) && notOfWorkspace(path, cwd)
+            ) {
+              installed.add(pid)
             }
           } else {
             installing.add(pid)
-            if (locked === "run") commanded.add(pid)
-            else commanded.delete(pid)
           }
+          installingChildren.delete(pid)
           const kept = words === undefined ? undefined : bookkeeping(words)
           if (kept === undefined) noting.delete(pid)
           else noting.set(pid, kept)
           // A build tool finds its lockfile in the directory it starts in, or in one above it.
-          const build = words === undefined ? undefined : lockedBuild(words)
+          const build = words === undefined ? undefined : lockedBuild(words, cwd, path)
           if (build === undefined || cell.path === undefined) building.delete(pid)
           else {
             const beside = (names: ReadonlyArray<string>): ReadonlySet<string> => {
@@ -2094,18 +2243,23 @@ export const read = (
         const to = pathAt(row.dir2, row.path2)
         const flags = name === "renameat2" ? (args[4] ?? "0").split("|").map((flag) => flag.trim()) : []
         const linking = row.kind === "link"
+        const linkSource = from !== undefined && symlinks.has(from)
         looked(from)
         if (flags.includes("RENAME_EXCHANGE")) {
           // Each name now holds what the other held: both were read, both are written, and neither is gone.
           looked(to)
           if (!ok || from === undefined || to === undefined) return
+          const linkTarget = symlinks.has(to)
           // Neither name holds what the run made there any more.
           for (const path of [from, to]) {
             write(path)
             unbuilt(path)
+            replaced(path)
             notPlain.add(path)
             plainMade.delete(path)
           }
+          if (linkSource) symlinks.add(to)
+          if (linkTarget) symlinks.add(from)
           exchanged.push([from, to])
           return
         }
@@ -2116,7 +2270,11 @@ export const read = (
         } else wrote(from, "changed")
         if (to !== undefined && ok) unbuilt(to)
         wrote(to, "made", false, linking || flags.includes("RENAME_NOREPLACE"))
-        if (!linking && to !== undefined && ok) notPlain.add(to)
+        if (!linking && to !== undefined && ok) {
+          replaced(to)
+          notPlain.add(to)
+        }
+        if (ok && to !== undefined && linkSource) symlinks.add(to)
         if (!linking && to !== undefined) plainMade.delete(to)
         if (!linking && ok && from !== undefined && to !== undefined && from !== to) carry(from, to, at)
         return
@@ -2135,7 +2293,7 @@ export const read = (
         const key = family === "AF_UNIX"
           ? unix === undefined ? undefined : `unix:${unix}`
           : family === "AF_INET" || family === "AF_INET6"
-          ? `port:${portOf(address)}`
+          ? endpointOf(address)?.key
           : undefined
         // A socket's path is a name as any other: whether something is there decides what the call does.
         // One named from a working directory the trace does not know was named so before this was followed too.
@@ -2154,22 +2312,22 @@ export const read = (
           }
           // A port the system chose is the run's own once the trace says which it was. Until then no port is: a
           // bind to port 0 says nothing of the database or the daemon a later connection reaches on another port.
-          if (key === "port:0") {
+          if (!ok) return
+          if (key !== undefined && portOf(address) === "0") {
             const socket = socketOf(args[0])
             if (socket !== undefined) chosen.add(socket)
           } else if (key !== undefined) {
-            bound.add(key)
-            listened.add(key)
+            addEndpoint(key, address, socketOf(args[0]))
           }
           if (socket !== undefined) wrote(socket, "made", true)
           return
         }
         // A connection that was refused or found nothing read nothing but whether its path is there.
-        if (failed && errno !== "EINPROGRESS") {
+        if (failed && !["EINPROGRESS", "EINTR", "EALREADY", "EISCONN"].includes(errno!)) {
           if (errno === "ENOENT" || errno === "ECONNREFUSED") looked(socket)
           return
         }
-        return reachAddress(pid, address)
+        return reachAddress(pid, address, socketOf(args[0]))
       }
       case "unshare": {
         if (!ok) return
@@ -2201,10 +2359,13 @@ export const read = (
         const path = pathAt(row.dir, row.path)
         // The first the run has to do with the name: all it learns is that a name was there to take away.
         const unseen = ok && path !== undefined && !changed.has(path) && !found.has(path) &&
-          !unfollowed.has(path) && !missing.has(path)
+          !unfollowed.has(path) && !missing.has(path) && !walkedReads.has(path)
         foundFirst(path, false)
         const directory = name === "rmdir" || /AT_REMOVEDIR/.test(args[2] ?? "")
-        if (unseen && !directory && unfollowed.has(path)) unlinked.add(path)
+        if (unseen && unfollowed.has(path)) {
+          if (!directory) unlinked.add(path)
+          else if (!listed.has(path)) removedEmpty.add(path)
+        }
         return wrote(path, "changed")
       }
       case "change": {
@@ -2364,10 +2525,12 @@ export const read = (
       if (program !== undefined) programs.set(start.child, program)
       // A process id comes round again: a child is an install's only under an install.
       installing.delete(start.child)
-      if (installing.has(pid) || installed.has(pid)) installed.add(start.child)
-      else installed.delete(start.child)
-      if (commanded.has(pid)) commanded.add(start.child)
-      else commanded.delete(start.child)
+      installed.delete(start.child)
+      installingChildren.delete(start.child)
+      if (installing.has(pid) || installed.has(pid)) {
+        if (start.thread) installed.add(start.child)
+        else installingChildren.add(start.child)
+      }
       // A process id comes round again, so a child is quiet only under a quiet parent.
       if (hushed.has(pid)) hushed.add(start.child)
       else hushed.delete(start.child)
@@ -2413,7 +2576,14 @@ export const read = (
   for (const [pid, open] of pending) cutOff(pid, open)
   // A program of the run that listens on a socket or a port may bind it after the run first tries to reach it, as a
   // server started in the background is asked before it is ready: only one the run never listens on is outside it.
-  for (const [key, how] of unbound) if (!bound.has(key)) reach(how)
+  for (const [key, how, wildcard, dual] of unbound) {
+    if (bound.has(key) || (wildcard !== undefined && bound.has(wildcard))) continue
+    if (
+      dual !== undefined && !ipv4Binds.has(dual.port) && !reusable.has(dual.socket) &&
+      dualPorts.get(dual.port) === dual.socket
+    ) continue
+    reach(how)
+  }
   // A build tool that wrote its lockfile chose a version: the lockfile it read did not fix what it fetched.
   for (const [build, connection] of pinnedConnections) {
     const lock = [...build.rewrites].find((path) => changed.has(path))
@@ -2430,16 +2600,21 @@ export const read = (
     missing,
     listed,
     made,
+    exclusive: began,
+    required,
+    transientLinks,
     emptied,
     changed,
     ...(meta.size === 0 ? {} : { meta }),
     started,
     removed,
     ...(unlinked.size === 0 ? {} : { unlinked }),
+    ...(removedEmpty.size === 0 ? {} : { removedEmpty }),
     fetched,
     refusals: [...refusals],
     outside: [...outside],
     ...(reachedThrough.length === 0 ? {} : { reached: reachedThrough }),
+    ...(opens.length === 0 ? {} : { openedPaths: opens }),
     ...(walks.length === 0 ? {} : { walks }),
     ...(exchanged.length === 0 ? {} : { exchanged }),
     ...(supervised ? { rights: [...rights] } : {}),
@@ -2564,14 +2739,34 @@ export const keptStep = (
   traceFile: string,
   supervised: boolean,
   cut = 0
-): KeptStep => ({
-  label,
-  id,
-  cwd,
-  step: supervised ? wholeLinesOf(traceFile) : wholeLinesOf(traceFile, 0, cut),
-  after: supervised ? wholeLinesOf(`${traceFile}.kept`) : wholeLinesOf(traceFile, cut),
-  flush: supervised ? () => askFlush(traceFile) : () => Promise.resolve(true)
-})
+): KeptStep => {
+  const file = supervised ? `${traceFile}.kept` : traceFile
+  const from = supervised ? 0 : cut
+  let snapshot: { size: number; ino: number; dev: number } | undefined
+  let failed: unknown
+  return {
+    label,
+    id,
+    cwd,
+    step: () => rangeLines(traceFile, { to: supervised ? undefined : cut, required: true, complete: supervised }),
+    after: function*() {
+      if (failed !== undefined) throw failed
+      yield* rangeLines(file, { from, snapshot, required: true, complete: supervised })
+    },
+    flush: async () => {
+      if (supervised && !(await askFlush(traceFile))) return false
+      try {
+        // Both passes of the parser must see the same acknowledged bytes, even if the daemon writes again.
+        const { size, ino, dev } = NodeFs.statSync(file)
+        snapshot = { size, ino, dev }
+        failed = undefined
+      } catch (cause) {
+        failed = cause
+      }
+      return failed === undefined
+    }
+  }
+}
 
 /**
  * A step that left a program running and holds no record of its own: the
@@ -2626,38 +2821,55 @@ export const servedBy = (
 ): Trace & { readonly bound: ReadonlySet<string> } => {
   let count = 0
   let seal: string | undefined
+  let readError: string | undefined
   const first = function*(): Iterable<string> {
-    for (const line of step()) {
-      if (sealLine.test(line)) seal = line
-      else yield line
+    try {
+      for (const line of step()) {
+        if (sealLine.test(line)) seal = line
+        else yield line
+      }
+    } catch (cause) {
+      readError = `the recorder's step trace could not be read (${
+        cause instanceof TraceRangeError ? cause.message : codeOf(cause)
+      })`
     }
   }
   for (const _line of first()) count += 1
   // A sealed trace is sealed again after what followed it: the recorder wrote those lines whole too.
-  const whole = read(
+  const continuation = { after: count, changed: new Set<string>(), removed: new Set<string>() }
+  const whole = readTrace(
     function*() {
       yield* first()
-      yield* after()
+      try {
+        yield* after()
+      } catch (cause) {
+        readError = `the recorder's continuation could not be read (${
+          cause instanceof TraceRangeError ? cause.message : codeOf(cause)
+        })`
+      }
       if (seal !== undefined) yield seal
     },
     cwd,
-    quiet
+    quiet,
+    new Set(),
+    continuation
   )
-  const own = read(
+  const own = readTrace(
     function*() {
       yield* first()
       if (seal !== undefined) yield seal
     },
     cwd,
-    quiet
+    quiet,
+    new Set()
   )
   const later = (map: ReadonlyMap<string, number>): ReadonlyMap<string, number> =>
     new Map([...map].filter(([, at]) => at > count))
-  /** What only the lines since hold: a path the step itself wrote is the step's, whoever wrote it again. */
+  /** Set-valued attributes newly seen in the continuation. Repeated writes are tracked during parsing. */
   const since = (all: ReadonlySet<string> | undefined, first: ReadonlySet<string> | undefined): ReadonlySet<string> =>
     new Set([...all ?? []].filter((path) => first?.has(path) !== true))
   const before = new Set(own.refusals)
-  const earlier = new Set(own.outside ?? [])
+  const earlier = new Set(own.outside)
   const rights = new Set(own.rights ?? [])
   const unfollowed = later(whole.unfollowed ?? new Map())
   const meta = since(whole.meta, own.meta)
@@ -2665,6 +2877,7 @@ export const servedBy = (
   const walks = (whole.walks ?? []).filter((walk) => walk.at > count)
   // The step's lines come first in both readings, so what they gave comes first in both.
   const reached = (whole.reached ?? []).slice((own.reached ?? []).length)
+  const openedPaths = (whole.openedPaths ?? []).slice((own.openedPaths ?? []).length)
   const exchanged = (whole.exchanged ?? []).slice((own.exchanged ?? []).length)
   const asked = (whole.rights ?? []).filter((program) => !rights.has(program))
   return {
@@ -2674,20 +2887,27 @@ export const servedBy = (
     listed: later(whole.listed),
     // What the programs wrote while a later step ran is in that step's tree when it ends, as what it wrote is.
     made: later(whole.made),
+    exclusive: later(whole.exclusive),
+    required: later(whole.required),
+    transientLinks: whole.transientLinks,
     emptied: later(whole.emptied),
-    changed: since(whole.changed, own.changed),
+    changed: continuation.changed,
     ...(meta.size === 0 ? {} : { meta }),
-    started: new Map(),
-    removed: since(whole.removed, own.removed),
+    started: later(whole.started),
+    removed: continuation.removed,
     ...(unlinked.size === 0 ? {} : { unlinked }),
     fetched: since(whole.fetched, own.fetched),
-    refusals: whole.refusals.filter((refusal) => !before.has(refusal)),
-    outside: (whole.outside ?? []).filter((refusal) => !earlier.has(refusal)),
+    refusals: [
+      ...(readError === undefined ? [] : [readError]),
+      ...whole.refusals.filter((reason) => !before.has(reason))
+    ],
+    outside: whole.outside.filter((refusal) => !earlier.has(refusal)),
     ...(reached.length === 0 ? {} : { reached }),
+    ...(openedPaths.length === 0 ? {} : { openedPaths }),
     ...(walks.length === 0 ? {} : { walks }),
     ...(exchanged.length === 0 ? {} : { exchanged }),
     ...(asked.length === 0 ? {} : { rights: asked }),
-    bound: whole.bound ?? new Set()
+    bound: whole.bound
   }
 }
 
@@ -2704,7 +2924,10 @@ export const servedBy = (
  */
 export const withServed = (own: Trace, served: ReadonlyArray<Trace>): Trace => {
   let last = 0
-  for (const map of [own.found, own.missing, own.listed, own.made, own.emptied, own.started]) {
+  for (const walk of own.walks ?? []) last = Math.max(last, walk.at)
+  for (
+    const map of [own.found, own.unfollowed ?? new Map(), own.missing, own.listed, own.made, own.emptied, own.started]
+  ) {
     for (const at of map.values()) last = Math.max(last, at)
   }
   const joined = (pick: (trace: Trace) => ReadonlyMap<string, number>): ReadonlyMap<string, number> => {
@@ -2730,6 +2953,7 @@ export const withServed = (own: Trace, served: ReadonlyArray<Trace>): Trace => {
     )
   )
   const reached = listed((trace) => trace.reached)
+  const openedPaths = listed((trace) => trace.openedPaths)
   const exchanged = listed((trace) => trace.exchanged)
   // A walk is placed by its line, as a path is.
   const walks = [
@@ -2739,6 +2963,9 @@ export const withServed = (own: Trace, served: ReadonlyArray<Trace>): Trace => {
   const rights = [...new Set(listed((trace) => trace.rights))]
   return {
     ...own,
+    // A continuation does not preserve when its writes happened relative to the consumer's rmdir.
+    ...(served.length === 0 ? {} : { removedEmpty: undefined }),
+    started: joined((trace) => trace.started),
     found: joined((trace) => trace.found),
     ...(unfollowed.size === 0 ? {} : { unfollowed }),
     missing: joined((trace) => trace.missing),
@@ -2746,6 +2973,9 @@ export const withServed = (own: Trace, served: ReadonlyArray<Trace>): Trace => {
     // A name a program made, emptied, changed or removed while the run ran is changed in the run's tree: a file
     // the run read before the program wrote it is held as the run found it, and never as the program left it.
     made: joined((trace) => trace.made),
+    exclusive: joined((trace) => trace.exclusive ?? new Map()),
+    required: joined((trace) => trace.required ?? new Map()),
+    transientLinks: united((trace) => trace.transientLinks),
     emptied: joined((trace) => trace.emptied),
     changed: united((trace) => trace.changed),
     ...(meta.size === 0 ? {} : { meta }),
@@ -2755,6 +2985,7 @@ export const withServed = (own: Trace, served: ReadonlyArray<Trace>): Trace => {
     refusals: [...new Set([...own.refusals, ...served.flatMap((trace) => trace.refusals)])],
     outside: [...new Set([...own.outside ?? [], ...served.flatMap((trace) => trace.outside ?? [])])],
     ...(reached.length === 0 ? {} : { reached }),
+    ...(openedPaths.length === 0 ? {} : { openedPaths }),
     ...(walks.length === 0 ? {} : { walks }),
     ...(exchanged.length === 0 ? {} : { exchanged }),
     ...(own.rights === undefined && rights.length === 0 ? {} : { rights })
@@ -2768,6 +2999,8 @@ export const withServed = (own: Trace, served: ReadonlyArray<Trace>): Trace => {
  * @since 1.0.0
  */
 export interface Io {
+  /** Bind mounts visible in this filesystem view, in the same path space as its reads. */
+  readonly mounts?: (() => Mounts) | undefined
   readonly lstat: (path: string) => NodeFs.Stats
   readonly readlink: (path: string) => string
   readonly readdir: (path: string) => ReadonlyArray<string>
@@ -2807,14 +3040,16 @@ export const defaultIo: Io = {
 const block = Buffer.allocUnsafe(1024 * 1024)
 
 /** The SHA-256 of a host file's bytes, read a block at a time: a file of any size, and never held whole. */
-const streamed = (path: string): string => {
+const streamed = (path: string, scan?: (bytes: Buffer) => void): string => {
   const descriptor = NodeFs.openSync(path, "r")
   try {
     const hash = createHash("sha256")
     for (;;) {
       const got = NodeFs.readSync(descriptor, block, 0, block.length, null)
       if (got === 0) return hash.digest("hex")
-      hash.update(got === block.length ? block : block.subarray(0, got))
+      const bytes = block.subarray(0, got)
+      hash.update(bytes)
+      scan?.(bytes)
     }
   } finally {
     NodeFs.closeSync(descriptor)
@@ -2853,6 +3088,9 @@ const unmeasured = "?"
  */
 const nameOnly = "*"
 
+/** Truncation followed this path to a regular file. A new symlink could be dangling or lead to a directory. */
+const regularOnly = "f:*"
+
 /**
  * Whether a state says only that its path could not be read (`!<code>`). Such a state says nothing of what is
  * there: it is the same text for every content a file may hold, so it never holds a path.
@@ -2867,7 +3105,17 @@ const unread = (state: string): boolean => state.charCodeAt(0) === 33
  * and it is no directory now, so what the run listed there cannot be measured again.
  */
 const priorOf = (before: string, state: string, listed: boolean): string =>
-  before === absent || unread(before) || (state !== "d" && (before === "d" || listed)) ? unmeasured : before
+  before === absent || unread(before) || listed || (before === "d" && state !== "d") ||
+    (before.startsWith("l:") && before !== state) ?
+    unmeasured :
+    before
+
+const matchesPrior = (now: string, prior: string): boolean =>
+  prior === nameOnly ?
+    now !== absent && now !== "d" && !unread(now) :
+    prior === regularOnly
+    ? now.startsWith("f:")
+    : prior !== unmeasured && same(now, prior)
 
 /** Why a run that read a path that cannot be read now stores nothing. */
 const unreadable = (name: string, state: string): string =>
@@ -2903,18 +3151,82 @@ export const measure = (path: string, io: Io = defaultIo): string => {
   }
 }
 
+type Mounts = ReadonlyArray<readonly [at: string, from: string]>
+
+/** Mount order is the namespace order. A more specific bind can take precedence over its parent. */
+const placedBy = (path: string, mounts: Mounts): string => {
+  for (const [at, from] of mounts) {
+    if (under(path, at)) return from + path.slice(at.length)
+  }
+  return path
+}
+
+/** The visible directories backed by this path and the mounts that supply entries in those directories. */
+const mountView = (path: string, mounts: Mounts) => {
+  const origins = new Set<string>()
+  const children = new Map<string, string | undefined>()
+  for (const [at, from] of mounts) {
+    if (at === from || !under(path, from)) continue
+    const visible = at + path.slice(from.length)
+    if (placedBy(visible, mounts) !== path) continue
+    origins.add(at)
+    for (const [child, source] of mounts) {
+      if (child === visible || !under(child, visible)) continue
+      const suffix = child.slice(visible.length + 1)
+      const slash = suffix.indexOf("/")
+      if (slash < 0) children.set(suffix, source)
+      else if (!children.has(suffix.slice(0, slash))) children.set(suffix.slice(0, slash), undefined)
+    }
+  }
+  return { children, origins: [...origins].sort(byCodeUnit), covered: placedBy(path, mounts) !== path }
+}
+
+const entryType = (stat: NodeFs.Stats): string =>
+  stat.isFile() ? "f" : stat.isDirectory() ? "d" : stat.isSymbolicLink() ? "l" : "o"
+
+/** A bind mount exposes its source's referent, including when its last component is a symbolic link. */
+const mountedType = (source: string, io: Io): string | undefined => {
+  let path = source
+  for (let depth = 0; depth <= maximumLinks; depth++) {
+    const stat = io.lstat(path)
+    if (!stat.isSymbolicLink()) return entryType(stat)
+    const target = io.readlink(path)
+    path = target.startsWith("/") ? target : `${NodePath.posix.dirname(path)}/${target}`
+  }
+  return undefined
+}
+
 /**
- * The names in a directory apart from `own`, as one digest; `undefined` when
+ * The names and types in a directory apart from `own`, as one digest; `undefined` when
  * the path is not a directory that can be listed.
  *
  * @category measuring
  * @since 1.0.0
  */
-export const listing = (path: string, own: ReadonlyArray<string>, io: Io = defaultIo): string | undefined => {
+export const listing = (
+  path: string,
+  own: ReadonlyArray<string>,
+  io: Io = defaultIo,
+  mounts: Mounts = []
+): string | undefined => {
   try {
     const skipped = new Set(own)
-    const names = io.readdir(path).filter((name) => !skipped.has(name)).sort(byCodeUnit)
-    return createHash("sha256").update(JSON.stringify(names)).digest("hex")
+    const entries = new Map<string, string>()
+    const { children: mounted, covered, origins } = mountView(path, mounts)
+    for (const name of io.readdir(path)) {
+      if (skipped.has(name) || mounted.has(name)) continue
+      entries.set(name, entryType(io.lstat(path.endsWith("/") ? `${path}${name}` : `${path}/${name}`)))
+    }
+    for (const [name, source] of mounted) {
+      const type = source === undefined ? "d" : mountedType(source, io)
+      if (type === undefined) return undefined
+      entries.set(name, `m:${type}`)
+    }
+    const sorted = [...entries].sort(([a], [b]) => byCodeUnit(a, b))
+    // Name the view under which the entries were read. If its backing moves, the old backing
+    // directory can still exist with exactly the same entries, though the run no longer sees them.
+    const view = origins.length > 0 ? ["mounted", origins, sorted] : covered ? ["covered", sorted] : sorted
+    return createHash("sha256").update(JSON.stringify(view)).digest("hex")
   } catch {
     return undefined
   }
@@ -2962,7 +3274,8 @@ export interface Record {
    * must hold: `-` when the run found the path missing and made it, which holds missing or as it was left;
    * otherwise what the run found there before it changed, removed or replaced it, which alone holds; `?`,
    * which nothing matches, where that was not measured; or `*` for a name the run took away without looking at
-   * it, which holds while a name that is no directory is there.
+   * it, which holds while a name that is no directory is there. A successful truncation without creation holds
+   * a regular target (`f:*`), independent of the old bytes.
    */
   readonly reads: ReadonlyArray<readonly [path: string, state: string] | readonly [string, string, string]>
   /**
@@ -2984,8 +3297,8 @@ export interface Record {
   >
   /** The steps the run depends on whose files it read: each one's label, and the id of the record its run stored. */
   readonly from?: ReadonlyArray<readonly [label: string, id: string]>
-  /** Each path a step in `from` wrote that the run read: what was there, and that step's place in `from`. */
-  readonly given?: ReadonlyArray<readonly [path: string, state: string, from: number]>
+  /** A producer input, its final state and producer index, and its required preimage if this run changed it. */
+  readonly given?: ReadonlyArray<readonly [path: string, state: string, from: number, prior?: string]>
   /**
    * Set when the run left something behind: a file, a directory or a link it wrote, or the absence of a path it
    * found and removed where its files are kept. A step that only removes files leaves their absence.
@@ -3216,7 +3529,6 @@ const hexByte = (byte: number | undefined): boolean =>
  * lies, with no text made of it.
  */
 const bytesHoldValue = (data: Buffer, value: string): boolean => {
-  if (value.length < minimumValueLength) return false
   // A value outside ASCII is in most files as UTF-8, where each of its characters is two bytes or more.
   if (!ascii.test(value) && data.includes(Buffer.from(value, "utf8"))) return true
   const whole = bytesOf(value)
@@ -3544,7 +3856,7 @@ const plain = (path: string): boolean =>
   path.charCodeAt(0) === slash && !path.endsWith("/") && !path.includes("//") && !path.includes("/./") &&
   !path.includes("/../") && !path.endsWith("/.") && !path.endsWith("/..")
 
-const pseudo = (path: string): boolean => /^\/(?:proc|sys|dev)(?:\/|$)/.test(path)
+const pseudo = (path: string): boolean => /^\/(?:proc|sys|dev)(?:\/|$)/.test(path) && !under(path, "/dev/shm")
 
 const slash = 47
 
@@ -3640,6 +3952,8 @@ export const observe = (
   /** The files of the workspace the run read that hold each variable's name. */
   const naming = new Map<string, Array<string>>()
   const namesHeld = heldNames(variableNames)
+  // heldNames also matches names with a zero byte between characters.
+  const overlap = variableNames.reduce((length, name) => Math.max(length, 2 * name.length - 2), 0)
   const beyond = options.outside?.using?.(io) ?? options.outside ?? ((path: string): string => measure(path, io))
   /**
    * The files of the workspace whose names count, where they were found before the search: a name in a file git
@@ -3655,26 +3969,34 @@ export const observe = (
       ? measure(path, io)
       : measure(path, {
         ...io,
-        // The names are looked for in the bytes as they are read, so the file is read whole.
-        digest: undefined,
-        readFile: (file) => {
-          const data = io.readFile(file)
-          for (const name of namesHeld(data.toString("latin1"))) {
+        digest: (file) => {
+          const found = new Set<string>()
+          let tail = ""
+          const scan = (bytes: Buffer): void => {
+            const text = tail + bytes.toString("latin1")
+            for (const name of namesHeld(text)) found.add(name)
+            tail = overlap === 0 ? "" : text.slice(-overlap)
+          }
+          let digest: string
+          if (io.readFile === defaultIo.readFile) digest = streamed(file, scan)
+          else {
+            const data = io.readFile(file)
+            for (let start = 0; start < data.length; start += block.length) {
+              scan(data.subarray(start, start + block.length))
+            }
+            digest = createHash("sha256").update(data).digest("hex")
+          }
+          for (const name of found) {
             const files = naming.get(name)
             if (files === undefined) naming.set(name, [path])
             else files.push(path)
           }
-          return data
+          return digest
         }
       })
   const mounts = options.mounts ?? []
   /** Where on the host a path is that the run named: under a mounted directory, under where that really is. */
-  const placed = (path: string): string => {
-    for (const [at, from] of mounts) {
-      if (under(path, at)) return `${from}${path.slice(at.length)}`
-    }
-    return path
-  }
+  const placed = (path: string): string => placedBy(path, mounts)
   const kinds = new Map<string, { readonly link: string | undefined; readonly directory: boolean } | undefined>()
   const kindOf = (path: string): { readonly link: string | undefined; readonly directory: boolean } | undefined => {
     if (kinds.has(path)) return kinds.get(path)
@@ -3700,19 +4022,6 @@ export const observe = (
   }
   const entries = new Map<string, Entry>()
   const own = new Map<string, Set<string>>()
-  // When bubblewrap bind-mounts a private directory (such as a machine's tmp) at `/tmp` and then bind-mounts
-  // paths under `/tmp` on top of it, bubblewrap creates empty mountpoint stubs inside the backing directory.
-  // Those stubs are host-path artifacts absent on an unmade machine, so exclude them from directory checks.
-  for (const [mountAt, mountFrom] of mounts) {
-    if (mountAt === mountFrom) continue
-    for (const [otherAt] of mounts) {
-      if (!under(otherAt, mountAt)) continue
-      const stub = otherAt.slice(mountAt.length + 1).split("/")[0]!
-      let names = own.get(mountFrom)
-      if (names === undefined) own.set(mountFrom, names = new Set())
-      names.add(stub)
-    }
-  }
   let refusal: string | undefined
   const touch = (path: string, first: Entry["first"]): Entry => {
     const entry = entries.get(path)
@@ -3754,7 +4063,8 @@ export const observe = (
   const alone = new Map<string, string | undefined>()
   /** Whether the walk under way followed a link of a process, whose end depends on the names after the path. */
   let consulted = false
-  const resolve = (path: string, after: ReadonlyArray<string> = []): string | undefined => {
+  const resolve = (path: string, after: ReadonlyArray<string> = [], reading = false): string | undefined => {
+    if (reading && trace.transientLinks?.size) return walk(path, after, true)
     if (alone.has(path)) return alone.get(path)
     const asked = after.length === 0 ? path : `${path}\0${after.join("/")}`
     if (resolved.has(asked)) return resolved.get(asked)
@@ -3764,7 +4074,7 @@ export const observe = (
     else alone.set(path, result)
     return result
   }
-  const walk = (path: string, after: ReadonlyArray<string>): string | undefined => {
+  const walk = (path: string, after: ReadonlyArray<string>, checkLinks = false): string | undefined => {
     // The path as the run saw it, and where that is on the host: the two differ under a mounted directory.
     let shown = ""
     let current = ""
@@ -3776,7 +4086,7 @@ export const observe = (
     let remember: boolean
     // An absolute path in one spelling, whose directory was walked: only its last name is left to walk.
     const slash = path.lastIndexOf("/")
-    const asked = slash > 0 && plain(path) ? path.slice(1, slash) : undefined
+    const asked = !checkLinks && slash > 0 && plain(path) ? path.slice(1, slash) : undefined
     // Below a directory that is not there, a name is not there either, and resolves no further.
     const lost = asked === undefined ? undefined : missing.get(asked)
     if (lost !== undefined) return `${lost}/${path.slice(slash + 1)}`
@@ -3799,7 +4109,12 @@ export const observe = (
         shown = shown.slice(0, Math.max(0, shown.lastIndexOf("/")))
         current = placed(shown)
       } else {
-        const candidate = placed(`${shown}/${part}`)
+        const component = `${shown}/${part}`
+        if (checkLinks && trace.transientLinks!.has(component)) {
+          refusal ??= `${component} was replaced while it was used`
+          return undefined
+        }
+        const candidate = placed(component)
         const kind = kindOf(candidate)
         if (kind === undefined) {
           // Nothing is here, so nothing below it resolves any further.
@@ -3924,6 +4239,10 @@ export const observe = (
         continue
       }
       const candidate = current === "/" ? `/${part}` : `${current}/${part}`
+      if (trace.transientLinks?.has(candidate)) {
+        refusal ??= `${candidate} was replaced while it was used`
+        return undefined
+      }
       if (pseudo(candidate)) {
         refusal ??= cannotFollow(`openat2 with RESOLVE flags through ${candidate}`)
         return undefined
@@ -3956,8 +4275,35 @@ export const observe = (
     return current
   }
 
+  // A transient link's target can only be reconstructed while the link exists.
+  // Check every component, including one visited before a ".." in the path.
+  const transient = trace.transientLinks
+  if (transient !== undefined && transient.size > 0) {
+    const traversed = function*() {
+      yield* trace.found.keys()
+      yield* trace.listed.keys()
+      for (const walk of trace.walks ?? []) {
+        yield walk.path.startsWith("/") && !walk.resolve.includes("RESOLVE_IN_ROOT")
+          ? walk.path
+          : spelled(`${walk.start}/${walk.path}`)
+        if (walk.opened !== undefined) yield walk.opened
+      }
+    }
+    for (const raw of traversed()) {
+      for (let path = raw; path !== "/"; path = NodePath.posix.dirname(path)) {
+        if (transient.has(path)) return { refusal: `${path} was replaced while it was used` }
+      }
+    }
+  }
+  const truncated = new Set<string>()
+  const renamedOver = new Set<string>()
+  const contentWalks = new Set<string>()
   const events: Array<
-    readonly [at: number, kind: "found" | "name" | "missing" | "made" | "emptied" | "listed" | "walk", path: string]
+    readonly [
+      at: number,
+      kind: "found" | "name" | "missing" | "made" | "emptied" | "listed" | "walk" | "required",
+      path: string
+    ]
   > = []
   for (const [index, walk] of (trace.walks ?? []).entries()) events.push([walk.at, "walk", String(index)])
   // What the run found of its own after it made it is its own already.
@@ -3966,6 +4312,7 @@ export const observe = (
   }
   for (const [path, at] of trace.unfollowed ?? []) events.push([at, "name", path])
   for (const [path, at] of trace.missing) events.push([at, "missing", path])
+  for (const [path, at] of trace.required ?? []) events.push([at, "required", path])
   for (const [path, at] of trace.made) events.push([at, "made", path])
   // A name emptied when or after the run made it says nothing its making did not: an install opens each file it
   // writes with both, 480,000 times in eliza's.
@@ -3990,6 +4337,7 @@ export const observe = (
         continue
       }
       const ended = walkResolved(walk)
+      if (walk.reads && walk.opened !== undefined) contentWalks.add(placed(spelled(walk.opened)))
       // The kernel names the file the call opened: a walk that ended elsewhere did not see the run's file system.
       if (walk.opened !== undefined && (ended === undefined || placed(ended) !== placed(spelled(walk.opened)))) {
         refusal ??= `its trace does not say where ${walk.path} led`
@@ -4003,8 +4351,13 @@ export const observe = (
     }
     // What a run made, found missing or looked at without following is the name itself: a link put there since
     // leads somewhere the run never looked.
-    const path = kind === "made" || kind === "missing" || kind === "name" ? named(raw) : resolve(raw)
+    const path = kind === "made" || kind === "missing" || kind === "name" ? named(raw) : resolve(raw, [], true)
     if (path === undefined || !visible(path)) continue
+    if (kind === "required") {
+      if (!entries.has(path)) truncated.add(path)
+      touch(path, "found")
+      continue
+    }
     if (kind === "listed") {
       const entry = touch(path, "found")
       if (!entry.made) entry.listed = true
@@ -4021,16 +4374,20 @@ export const observe = (
     if (visible(written)) touched.add(written)
     if (trace.fetched.has(raw)) fetched.add(written)
   }
-  for (const raw of trace.changed) {
-    if (pseudo(raw)) continue
-    if (tooLong(raw)) {
-      refusal ??= cannotFollow(`a path longer than ${maximumPath} bytes`)
-      continue
+  function* writtenPaths(): Iterable<readonly [raw: string, path: string, real: string]> {
+    for (const raw of trace.changed) {
+      if (pseudo(raw)) continue
+      if (tooLong(raw)) {
+        refusal ??= cannotFollow(`a path longer than ${maximumPath} bytes`)
+        continue
+      }
+      // A write may touch both an alias named by the run and the file it led to.
+      const path = named(raw)
+      if (path === undefined) continue
+      yield [raw, path, ownName(raw) ? path : resolve(raw) ?? path]
     }
-    // Both the name the run wrote and the file a link under that name leads to are the run's to change.
-    const path = named(raw)
-    if (path === undefined) continue
-    const real = ownName(raw) ? path : resolve(raw) ?? path
+  }
+  for (const [raw, path, real] of writtenPaths()) {
     noteWritten(path, raw)
     // Making a name writes the name: a link the run made leads to a file the run may never have written.
     if (real !== path) {
@@ -4065,13 +4422,29 @@ export const observe = (
     const kinds = pair.map((path) => pseudo(path) ? undefined : kindOf(placed(path)))
     if (kinds.some((kind) => kind === undefined || kind.directory)) {
       refusal ??= cannotFollow("renameat2 with RENAME_EXCHANGE of a directory")
+    } else if (kinds.some((kind) => kind?.link !== undefined)) {
+      refusal ??= cannotFollow("renameat2 with RENAME_EXCHANGE of a symbolic link")
     }
   }
   // A file a call opened below a descriptor is the one its answer names, or the trace placed the descriptor wrong.
   for (const [path, named, opened] of trace.reached ?? []) {
-    if (refusal === undefined && resolve(named) !== resolve(opened)) {
+    if (refusal === undefined && resolve(named) !== placed(opened)) {
       refusal = `its trace does not say where ${path} led`
     }
+  }
+  // A workspace link ending at a process's own descriptor or executable cannot be resolved in this
+  // process. Its trace must independently account for opening or starting the same file.
+  for (const [path, named, opened] of trace.openedPaths ?? []) {
+    if (refusal !== undefined) break
+    const resolved = resolve(named)
+    const actual = placed(opened)
+    if (resolved === actual) continue
+    const link = resolved === undefined ? undefined : processLinkOf(resolved)
+    if (
+      link !== undefined && link !== "up" && typeof link.process !== "number" && link.thread === undefined &&
+      link.rest.length === 0 && (link.link === "fd" || link.link === "exe") && entries.get(actual)?.first === "found"
+    ) continue
+    refusal = `its trace does not say where ${path} led`
   }
   if (refusal !== undefined) return { refusal }
 
@@ -4093,6 +4466,34 @@ export const observe = (
       if (path !== undefined) paths.add(path)
     }
   }
+  // A successful first rmdir proves emptiness only when no descendant or ancestor write could hide an earlier
+  // entry. Alias rewrites, mount namespaces and another producer's outputs leave such a preimage unverified.
+  const emptyBefore = new Set<string>()
+  if (
+    trace.removedEmpty !== undefined && mounts.length === 0 && !trace.transientLinks?.size &&
+    (options.producers?.length ?? 0) === 0
+  ) {
+    for (const raw of trace.removedEmpty) {
+      if (
+        trace.built?.has(raw) !== true || entries.get(raw)?.listed !== false ||
+        !takenAway.has(raw) || named(raw) !== raw || resolve(raw) !== raw
+      ) continue
+      const measured = options.found?.get(raw)
+      if (measured !== undefined && measured !== "d") continue
+      let parent = NodePath.posix.dirname(raw)
+      for (; parent !== "/" && !touched.has(parent); parent = NodePath.posix.dirname(parent)) {}
+      if (parent === "/") emptyBefore.add(raw)
+    }
+  }
+  if (emptyBefore.size > 0) {
+    for (const [, path, real] of writtenPaths()) {
+      for (const child of [path, real]) {
+        for (let parent = NodePath.posix.dirname(child); parent !== "/"; parent = NodePath.posix.dirname(parent)) {
+          emptyBefore.delete(parent)
+        }
+      }
+    }
+  }
   // A name the run wrote without first looking at it, where no call says nothing was there: whether something was
   // there is not in the trace. Where the commit holds the name, something was. A file written so without being
   // emptied (opened to append, or to write part of it) keeps bytes the run did not write, so it is an input, held
@@ -4101,13 +4502,9 @@ export const observe = (
   {
     const blind: Array<string> = []
     const emptiedOver: Array<string> = []
-    for (const raw of trace.changed) {
-      if (pseudo(raw) || tooLong(raw)) continue
-      const path = named(raw)
-      if (path === undefined) continue
-      const real = ownName(raw) ? path : resolve(raw) ?? path
+    for (const [raw, path, real] of writtenPaths()) {
       for (const candidate of real !== path && !trace.made.has(raw) ? [path, real] : [path]) {
-        if (candidate === options.root || !under(candidate, options.root) || made.has(candidate)) continue
+        if (candidate === options.root || !under(candidate, options.root) || trace.exclusive?.has(raw)) continue
         const entry = entries.get(candidate)
         if (entry === undefined) blind.push(candidate)
         else if (entry.first === "made" && candidate === path) emptiedOver.push(candidate)
@@ -4124,6 +4521,10 @@ export const observe = (
         if (!commit.has(inside(path))) continue
         const slash = path.lastIndexOf("/")
         own.get(path.slice(0, slash))?.delete(path.slice(slash + 1))
+        if (made.has(path)) {
+          entries.set(path, { first: "found", changed: true, made: true, meta: false, listed: false })
+          renamedOver.add(path)
+        }
       }
     }
   }
@@ -4175,7 +4576,7 @@ export const observe = (
     return new Set(kept.filter((file) => !left.has(file)))
   }
   const reads: Array<readonly [string, string] | readonly [string, string, string]> = []
-  const given: Array<readonly [string, string, number]> = []
+  const given: Array<NonNullable<Record["given"]>[number]> = []
   const lists: Array<Record["lists"][number]> = []
   const links: Array<NonNullable<Record["links"]>[number]> = []
   const temporary = options.temporary ?? []
@@ -4216,32 +4617,50 @@ export const observe = (
     // the run read. Where what it found was not measured, the third state is `?` (never matches): the row still
     // marks a path the run changes, so the next run measures it before it begins.
     //
-    // A directory that is still one is held as the run left it where it was one all along: the run listed it, or
-    // never took its name away nor made it, so nothing else was ever at the name. Its names and its count of
+    // A directory that is still one is held as the run left it where the run never replaced its name.
+    // The entries and link count of the original directory can be measured there. Its names and its count of
     // directories are held by their own rows. A name the run took away unseen is held as any name that is no
     // directory: that one was there is all the run learned.
-    const steady = state === "d" && (entry.listed || !(entry.made || takenAway.has(path)))
+    const steady = state === "d" && !(entry.made || takenAway.has(path))
+    // The pristine checkout cannot stand in for bytes an earlier step produced.
+    const preimage = () => options.found?.get(path) ?? (place === undefined ? options.before?.(path) : undefined)
     const before = !entry.changed || steady
       ? undefined
-      : state === absent && unseen.has(path)
+      : truncated.has(path)
+      ? ((made.has(path) || takenAway.has(path) ? preimage() : state)?.startsWith("f:") ? regularOnly : unmeasured)
+      : renamedOver.has(path)
+      ? (state === "d" ? unmeasured : nameOnly)
+      : state === absent && unseen.has(path) && !contentWalks.has(path)
       ? nameOnly
-      : options.found?.get(path) ?? options.before?.(path) ?? unmeasured
-    if (place !== undefined) given.push([inside(path), state, place])
-    else if (before === undefined) reads.push([inside(path), state])
-    else reads.push([inside(path), state, priorOf(before, state, entry.listed)])
+      : preimage() ?? unmeasured
+    const emptyDigest = state === "d" && emptyBefore.has(path)
+      ? createHash("sha256").update("[]").digest("hex")
+      : undefined
+    const knownEmpty = emptyDigest !== undefined && listing(path, [], io, mounts) === emptyDigest
+    const prior = knownEmpty ? "d" : before === undefined ? undefined : priorOf(before, state, entry.listed)
+    if (place !== undefined) {
+      given.push(prior === undefined ? [inside(path), state, place] : [inside(path), state, place, prior])
+    } else reads.push(prior === undefined ? [inside(path), state] : [inside(path), state, prior])
+    if (knownEmpty) {
+      lists.push([inside(path), emptyDigest, []])
+      continue
+    }
     if (!entry.listed) {
       if (
         state === "d" && place === undefined && path !== "/" &&
         (path === options.root || under(path, options.root) ||
           (!under(options.root, path) && !temporary.some((dir) => under(dir, path))))
       ) {
-        const ignoredHere = namesIn(path, io).filter((name) => !visible(path === "/" ? `/${name}` : `${path}/${name}`))
-        const names = [...new Set([...(own.get(path) ?? []), ...ignoredHere])].sort(byCodeUnit)
+        const ignoredHere = namesIn(path, io).filter((name) => !visible(`${path}/${name}`))
+        const names = [
+          ...new Set([...(own.get(path) ?? []), ...ignoredHere, ...mountView(path, mounts).children.keys()])
+        ]
+          .sort(byCodeUnit)
         const added: Array<readonly [string, number]> = []
         if (producers.length > 0) {
           for (const name of namesIn(path, io)) {
             if (names.includes(name)) continue
-            const writer = placeOf(path === "/" ? `/${name}` : `${path}/${name}`)
+            const writer = placeOf(`${path}/${name}`)
             if (writer !== undefined) added.push([name, writer])
           }
         }
@@ -4262,7 +4681,7 @@ export const observe = (
         if (writer !== undefined) added.push([name, writer])
       }
     }
-    const digest = listing(path, [...names, ...added.map(([name]) => name)], io)
+    const digest = listing(path, [...names, ...added.map(([name]) => name)], io, mounts)
     if (digest === undefined) {
       // No directory now: the run removed it or put something else there, and its row holds it as nothing matches
       // ({@link priorOf}). A directory that cannot be listed now leaves what the run listed there unknown.
@@ -4271,7 +4690,9 @@ export const observe = (
     }
     // A directory the run itself removed, made or renamed changed because the run changed it, as a file it wrote
     // did: it is compared with what the run left there.
-    if (names.length === 0 && !entry.changed && !entry.meta && moved(path)) {
+    if (
+      names.length === 0 && !entry.changed && !entry.meta && moved(path) && mountView(path, mounts).children.size === 0
+    ) {
       return { refusal: `${inside(path)} changed while it ran` }
     }
     lists.push(added.length === 0 ? [inside(path), digest, names] : [inside(path), digest, names, added])
@@ -4614,7 +5035,8 @@ export const changed = (
   values: Variables["values"] = {},
   own: (path: string) => boolean = () => false,
   served: (label: string) => ReadonlySet<string> | undefined = answered,
-  holds: (names: ReadonlyArray<string>) => ReadonlySet<string> | undefined = heldByGit(root)
+  holds: (names: ReadonlyArray<string>) => ReadonlySet<string> | undefined = heldByGit(root),
+  mounts?: Mounts
 ): string | undefined => {
   // A program another step started answered this run: the run holds only with that step answered as it was then.
   for (const [label, id] of stored.served ?? []) {
@@ -4626,18 +5048,35 @@ export const changed = (
     if (heldAs(values[name]) !== held) return `the variable ${name} has another value`
   }
   const absolute = (path: string): string => path === "." ? root : path.startsWith("/") ? path : `${root}/${path}`
+  // A matching output can explain a former miss only when the incoming checkout did not supply it.
+  // Ask about all such workspace names together, and only if a present name needs that exception.
+  let committed: ReadonlySet<string> | undefined
+  let checked = false
+  const heldCreated = (path: string): boolean | undefined => {
+    if (path.startsWith("/")) return undefined
+    if (!checked) {
+      committed = holds(
+        stored.reads.filter(([name, , prior]) => prior === absent && !name.startsWith("/")).map(([name]) => name)
+      )
+      checked = true
+    }
+    return committed?.has(path)
+  }
+  const leftover = (path: string): boolean =>
+    stored.left === true && (path.startsWith("/") || heldCreated(path) === false)
   for (const [path, state, other] of cheapestFirst(stored.reads, absolute, io, own)) {
     const now = measured(absolute(path))
     if (
       other === undefined
         ? same(now, state)
         : other === absent
-        ? same(now, state) || now === absent
-        : other === nameOnly
-        ? now !== absent && now !== "d" && !unread(now)
-        : same(now, other)
+        ? now === absent || (same(now, state) && leftover(path))
+        : matchesPrior(now, other)
     ) continue
     if (now === absent) return `${path} is gone`
+    if (other === absent && stored.made?.includes(path) === true && heldCreated(path) === true) {
+      return `${path}, which the run made, is in the commit now`
+    }
     // A row with a third state is of a path the run wrote: one it left gone was there when the run found it.
     return state === absent && other === undefined ? `${path} now exists` : `${path} changed`
   }
@@ -4662,12 +5101,14 @@ export const changed = (
   }
   // A path a step wrote that is missing now is written again as it was when that step is answered from the same record.
   const pending = new Set<string>()
-  for (const [path, state, place] of stored.given ?? []) {
+  for (const [path, state, place, prior] of stored.given ?? []) {
     const now = measured(absolute(path))
-    if (same(now, state)) continue
+    const expected = prior ?? state
+    if (prior === undefined ? same(now, state) : matchesPrior(now, prior)) continue
     // A file a step before this one left is no file of the commit: the line names the step, which ran again.
     const left = `${path}, which ${stored.from![place]![0]} left,`
-    if (now !== absent) return state === absent ? `${path} now exists` : `${left} changed`
+    if (prior === unmeasured) return `${left} changed`
+    if (now !== absent) return expected === absent ? `${path} now exists` : `${left} changed`
     if (!again(place)) return `${left} is gone`
     pending.add(path)
   }
@@ -4686,7 +5127,8 @@ export const changed = (
   for (const [path, digest, own, added = []] of stored.lists) {
     if (pending.has(path)) continue
     const directory = absolute(path)
-    if (listing(directory, [...own, ...added.map(([name]) => name)], io) !== digest) {
+    mounts ??= io.mounts?.() ?? []
+    if (listing(directory, [...own, ...added.map(([name]) => name)], io, mounts) !== digest) {
       return `${path} gained or lost an entry`
     }
     for (const [name, place] of added) {
@@ -4976,7 +5418,10 @@ const isRecord = (value: unknown): value is Record => {
     Array.isArray(variables) && variables.every((row) => Array.isArray(row) && row.length === 2 && row.every(text)) &&
     reads.every((row) => Array.isArray(row) && (row.length === 2 || row.length === 3) && row.every(text)) &&
     from.every((row) => Array.isArray(row) && row.length === 2 && row.every(text)) &&
-    given.every((row) => Array.isArray(row) && row.length === 3 && text(row[0]) && text(row[1]) && place(row[2])) &&
+    given.every((row) =>
+      Array.isArray(row) && (row.length === 3 || (row.length === 4 && text(row[3]))) &&
+      text(row[0]) && text(row[1]) && place(row[2])
+    ) &&
     Array.isArray(links) &&
     links.every((row) =>
       Array.isArray(row) && (row.length === 3 || row.length === 4) && text(row[0]) && Number.isInteger(row[1]) &&
@@ -5067,19 +5512,60 @@ export const stepLength = (traceFile: string): number => {
  * @category tracing
  * @since 1.0.0
  */
-export const wholeLinesOf = (file: string, from = 0, to?: number): () => Iterable<string> =>
-  function*() {
-    let data: Buffer
-    try {
-      data = NodeFs.readFileSync(file)
-    } catch {
-      return
-    }
-    const end = Math.min(to ?? data.length, data.lastIndexOf(0x0a) + 1)
-    if (end <= from) return
-    const text = data.subarray(from, end - 1).toString("utf8")
-    yield* text.split("\n")
+export const wholeLinesOf = (file: string, from = 0, to?: number): () => Iterable<string> => () =>
+  rangeLines(file, { from, to })
+
+class TraceRangeError extends Error {}
+
+function* rangeLines(file: string, {
+  from = 0,
+  to,
+  required,
+  snapshot,
+  complete
+}: {
+  from?: number
+  to?: number | undefined
+  required?: boolean
+  snapshot?: { size: number; ino: number; dev: number } | undefined
+  complete?: boolean
+}): Iterable<string> {
+  let fd: number
+  try {
+    fd = NodeFs.openSync(file, NodeFs.constants.O_RDONLY | NodeFs.constants.O_NONBLOCK)
+  } catch (cause) {
+    if (!required && codeOf(cause) === "ENOENT") return
+    throw cause
   }
+  try {
+    const stat = NodeFs.fstatSync(fd)
+    const end = snapshot?.size ?? (required ? to ?? stat.size : Math.min(to ?? stat.size, stat.size))
+    if (!stat.isFile()) throw new TraceRangeError("trace is not a regular file")
+    if (end > stat.size || (required && from > stat.size)) throw new TraceRangeError("trace was truncated")
+    if (snapshot !== undefined && (stat.ino !== snapshot.ino || stat.dev !== snapshot.dev)) {
+      throw new TraceRangeError("trace file was replaced")
+    }
+    const block = Buffer.allocUnsafe(Math.min(64 * 1024, Math.max(0, end - from)))
+    let parts: Array<Buffer> = []
+    for (let offset = from; offset < end;) {
+      const got = NodeFs.readSync(fd, block, 0, Math.min(block.length, end - offset), offset)
+      if (got === 0) throw new TraceRangeError("trace was truncated during the read")
+      offset += got
+      const data = block.subarray(0, got)
+      let start = 0
+      for (let newline = data.indexOf(10); newline >= 0; newline = data.indexOf(10, start)) {
+        const last = data.subarray(start, newline)
+        yield (parts.length === 0 ? last : Buffer.concat([...parts, last])).toString("utf8")
+        parts = []
+        start = newline + 1
+      }
+      if (start < got) parts.push(Buffer.from(data.subarray(start)))
+    }
+    if (complete && parts.length > 0) throw new TraceRangeError("trace ends inside a line")
+  } finally {
+    NodeFs.closeSync(fd)
+  }
+}
 
 /**
  * The lines of a trace file, read a block at a time so a large trace is

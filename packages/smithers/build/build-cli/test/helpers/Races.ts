@@ -209,6 +209,7 @@ export const raceOnce = async (
   const workspace = Path.join(root, "ws")
   NodeFs.mkdirSync(workspace)
   python(["setup", name, workspace])
+  const checkout = new Set(NodeFs.readdirSync(workspace, { recursive: true, encoding: "utf8" }))
   // The run begins a tick of the file system's clock after the commit's files were written.
   await new Promise((resolve) => setTimeout(resolve, 30))
   const trace = Path.join(root, "trace")
@@ -252,7 +253,19 @@ export const raceOnce = async (
   const record = observed.record
   const rewrittenTracked = name === "exclusive-tracked" &&
     record.reads.some(([path, , before]) => path === "t/x" && before !== undefined && before !== "-")
-  const left = rewrittenTracked ? undefined : ObservedReads.changed(record, workspace)
+  // The fixture creates a checkout without repository metadata. Use its original paths to distinguish
+  // that checkout's files from matching outputs still present after the run.
+  const left = rewrittenTracked ? undefined : ObservedReads.changed(
+    record,
+    workspace,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    (paths) => new Set(paths.filter((path) => checkout.has(path)))
+  )
   const same = (fresh || rewrittenTracked) ? ObservedReads.changed(record, again) : undefined
   const after = Path.join(root, "after")
   NodeFs.mkdirSync(after)

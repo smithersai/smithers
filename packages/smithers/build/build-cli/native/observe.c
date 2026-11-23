@@ -2394,6 +2394,19 @@ static int listening(pid_t tid, unsigned port);
 static int setAnswer(uint64_t taking, long place, size_t at, const char *text);
 static const char *lateAnswer;
 
+/* Read socket identity and options from the copy already held for the recorded call. */
+static int socketOptionIs(int fd, int level, int option, int expected) {
+  int value = 0;
+  socklen_t size = sizeof value;
+  return fd >= 0 && getsockopt(fd, level, option, &value, &size) == 0 &&
+         size == sizeof value && value == expected;
+}
+
+static int tcpSocket(int fd) {
+  return socketOptionIs(fd, SOL_SOCKET, SO_TYPE, SOCK_STREAM) &&
+         socketOptionIs(fd, SOL_SOCKET, SO_PROTOCOL, IPPROTO_TCP);
+}
+
 static void refusedEnded(struct refused *r) {
   if (r->copy >= 0) {
     /* The socket says whether the call connected it. */
@@ -3759,7 +3772,6 @@ static void serve(const struct seccomp_notif *req) {
       begin(&t, tgid, c->name);
       printf_(&t, "%d, ", (int)req->data.args[0]);
       socketAddress(&t, &a, length, relative ? full : NULL);
-      printf_(&t, ", %u)", (unsigned)length);
       if (c->kind == K_CONNECT) {
         int error = 0;
         if (a.ss_family == AF_UNIX) {
@@ -3785,12 +3797,17 @@ static void serve(const struct seccomp_notif *req) {
           if (pidfd >= 0) close(pidfd);
           int flags = refusing->copy < 0 ? 0 : fcntl(refusing->copy, F_GETFL);
           refusing->inProgress = flags >= 0 && (flags & O_NONBLOCK) && a.ss_family != AF_UNIX;
-          refusing->at = t.length;
           refusing->predicted = error;
         }
+        if (refusing != NULL && a.ss_family != AF_UNIX && tcpSocket(refusing->copy)) {
+          puts_(&t, " /* smthrs: tcp */");
+        }
+        printf_(&t, ", %u)", (unsigned)length);
+        if (refusing != NULL) refusing->at = t.length;
         answer(&t, error);
         break;
       }
+      printf_(&t, ", %u)", (unsigned)length);
       /* Only a socket bound to a path or to a port is written: its copy says once it is bound. A bind of another
        * family (netlink, as the C library's getaddrinfo and getifaddrs make one each call; a packet socket) writes
        * no line, so it is given no copy: held to the end of the run, thousands of them took every descriptor this
@@ -4090,6 +4107,12 @@ static int saysBound(const struct binding *b, struct sockaddr_storage *now) { /*
  * other local port as one to a program outside the run; told only `htons(0)`, it could tell neither.
  */
 static void written(struct binding *b, const struct sockaddr_storage *now) {
+  int dual = now != NULL && now->ss_family == AF_INET6 && b->asked.ss_family == AF_INET6 &&
+            b->askedLength >= sizeof(struct sockaddr_in6) &&
+            IN6_IS_ADDR_UNSPECIFIED(&((const struct sockaddr_in6 *)now)->sin6_addr) &&
+            IN6_IS_ADDR_UNSPECIFIED(&((const struct sockaddr_in6 *)&b->asked)->sin6_addr) &&
+            tcpSocket(b->copy) && socketOptionIs(b->copy, IPPROTO_IPV6, IPV6_V6ONLY, 0) &&
+            socketOptionIs(b->copy, SOL_SOCKET, SO_REUSEPORT, 0);
   close(b->copy);
   if (now != NULL) {
     struct text t = {0};
@@ -4102,9 +4125,10 @@ static void written(struct binding *b, const struct sockaddr_storage *now) {
       ((struct sockaddr_in6 *)&shown)->sin6_port = ((const struct sockaddr_in6 *)now)->sin6_port;
       chosen = 1;
     }
-    if (chosen) {
+    if (chosen || dual) {
       printf_(&t, "%d bind(%d, ", b->tgid, b->fd);
       socketAddress(&t, &shown, b->askedLength, NULL);
+      if (dual) puts_(&t, " /* smthrs: tcp dual-stack */");
       printf_(&t, ", %u)", (unsigned)b->askedLength);
     } else {
       puts_(&t, b->line);

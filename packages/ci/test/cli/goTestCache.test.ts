@@ -154,11 +154,26 @@ const runner = (base: string, source: string) => {
       }
     })
     const record = JSON.parse(readFileSync(results, "utf8")) as {
-      readonly results: ReadonlyArray<{ readonly label: string; readonly status: string }>
+      readonly recorder?: { readonly name: string }
+      readonly results: ReadonlyArray<{
+        readonly label: string
+        readonly status: string
+        readonly notReused?: string
+        readonly notStored?: string
+      }>
     }
     return {
       code: ran.status,
       statuses: Object.fromEntries(record.results.map((result) => [result.label, result.status])),
+      cache: {
+        recorder: record.recorder?.name,
+        reasons: record.results.map(({ label, status, notReused, notStored }) => ({
+          label,
+          status,
+          notReused,
+          notStored
+        }))
+      },
       printed: `${ran.stdout}${ran.stderr}`
     }
   }
@@ -183,7 +198,18 @@ describe.skipIf(!hasGo)("a Go test that reads a file through a child process", (
     expect(report.mismatches).toBe(0)
     expect(report.commits.flatMap((replayed) => replayed.mismatches)).toEqual([])
     // Where the machine records what a step reads, the step was reused at the commit that changes none of them.
-    if (observes) expect(docs!.normal.counts).toMatchObject({ hit: 1, ran: 0 })
+    if (observes) {
+      expect(
+        docs!.normal.counts,
+        JSON.stringify(
+          docs!.normal.notReused?.map(({ step, reason, kept }) => ({
+            step,
+            reason,
+            kept
+          }))
+        )
+      ).toMatchObject({ hit: 1, ran: 0 })
+    }
   }, 540_000)
 
   it("fails in the CI `apply` writes, on a runner that restored the cache of the run before", async () => {
@@ -254,7 +280,7 @@ describe.skipIf(!hasGo)("a Go test that reads a file through a child process", (
       // home is empty until its files are put back: the test step finds `go`'s cache there, so it starts, and
       // `go` tests, and the test fails on the value.
       const second = run(after)
-      expect(second.statuses, second.printed).toEqual({ [vet]: "hit", [tests]: "failed" })
+      expect(second.statuses, JSON.stringify([first.cache, second.cache])).toEqual({ [vet]: "hit", [tests]: "failed" })
       expect(second.code).not.toBe(0)
       expect(second.printed).toContain("value is")
       expect(second.printed).not.toContain("(cached)")

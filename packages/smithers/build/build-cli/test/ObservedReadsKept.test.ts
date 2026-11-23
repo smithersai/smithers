@@ -69,7 +69,7 @@ describe("what a program a step left read while the steps after it ran", () => {
     const served = ObservedReads.servedBy(() => server(root), () => after, root)
     expect([...served.found.keys()]).toEqual([`${root}/site/x.txt`])
     expect([...served.missing.keys()]).toEqual([`${root}/site/gone.txt`])
-    expect([...served.bound]).toEqual(["port:8767"])
+    expect([...served.bound]).toEqual(["inet:8767:127.0.0.1"])
     expect(served.refusals).toEqual([])
     // A step that talks to it on its port reaches its job, not outside the run.
     const asked = ObservedReads.read(

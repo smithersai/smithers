@@ -7,11 +7,12 @@ import * as NodeFs from "node:fs"
 import * as Fs from "node:fs/promises"
 import * as Os from "node:os"
 import * as Path from "node:path"
-import { afterEach, describe, expect, it } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vitest"
 import * as Machine from "../src/internal/Machine.ts"
 import * as ObservedReads from "../src/internal/ObservedReads.ts"
 
 const posixIt = it.skipIf(process.platform === "win32")
+const linuxIt = it.skipIf(process.platform !== "linux")
 
 const temporary: Array<string> = []
 afterEach(async () => {
@@ -74,6 +75,32 @@ describe("where machines are kept", () => {
     // A relative XDG_STATE_HOME is ignored, as the XDG Base Directory Specification asks.
     expect(Path.dirname(Machine.holding("/work/repo", { XDG_STATE_HOME: "state", HOME: "/home/me" })))
       .toBe("/home/me/.local/state/smthrs/machines")
+  })
+
+  it("reads only absolute kept-machine destinations", () => {
+    const keep = (value?: string) => Machine.toKeep({ [Machine.keepVariable]: value })
+    const dest = Path.resolve("kept/example")
+    expect(keep()).toEqual(new Map())
+    expect(keep("")).toEqual(new Map())
+    expect(keep(JSON.stringify({ job: dest }))).toEqual(new Map([["job", dest]]))
+    for (const invalid of ["{", "null", "7", "[]", "{\"job\":7}", "{\"job\":\"relative\"}"]) {
+      expect(keep(invalid)).toMatchObject({ problem: expect.stringContaining(Machine.keepVariable) })
+    }
+  })
+
+  posixIt("replaces the kept checkout while preserving times and links", async () => {
+    const base = await directory("keep")
+    const machine = Machine.named(base, "/work/repo", "job")
+    const dest = Path.join(base, "exports", "job")
+    await write(machine.tree, "file", "kept")
+    await Fs.utimes(Path.join(machine.tree, "file"), 1000, 1000)
+    await Fs.symlink("file", Path.join(machine.tree, "link"))
+    await write(dest, "old", "old")
+    await Machine.keep(machine, dest)
+    expect(sorted(await Fs.readdir(dest))).toEqual(["file", "link"])
+    expect(await Fs.readFile(Path.join(dest, "file"), "utf8")).toBe("kept")
+    expect((await Fs.stat(Path.join(dest, "file"))).mtimeMs).toBe(1000_000)
+    expect(await Fs.readlink(Path.join(dest, "link"))).toBe("file")
   })
 
   it("names the part of a path under which a tool skips a project's own configuration", () => {
@@ -269,6 +296,17 @@ describe("where machines are kept when the environment names no home", () => {
     expect(Machine.holding("/work/repo", { HOME: "" })).toBe(kept)
     expect(Path.basename(kept)).toBe(Path.basename(Machine.holding("/work/repo", { HOME: "/home/me" })))
   })
+
+  posixIt("uses the temporary directory when the platform home is empty", () => {
+    vi.stubEnv("HOME", "")
+    try {
+      expect(Path.dirname(Machine.holding("/work/repo", {}))).toBe(
+        Path.join(Os.tmpdir(), ".local", "state", "smthrs", "machines")
+      )
+    } finally {
+      vi.unstubAllEnvs()
+    }
+  })
 })
 
 describe("the configuration of a machine's repository", () => {
@@ -342,8 +380,6 @@ describe("the configuration of a machine's repository", () => {
       "[http \"https://github.com/\"]",
       "\tsslVerify = true",
       "\tproxy = http://proxy.example:3128",
-      "[url \"ssh://git@github.com/\"]",
-      "\tinsteadOf = gh:",
       "[sendemail]",
       "\tsmtpServer = smtp.example.com",
       "[alias]",
@@ -360,11 +396,44 @@ describe("the configuration of a machine's repository", () => {
     expect(Machine.withoutCredentials(plain)).toBe(plain)
     expect(Machine.withoutCredentials("")).toBe("")
   })
+
+  it("preserves empty query parameters that carry no credentials", () => {
+    const config = "[remote \"origin\"]\nurl = https://example.invalid/path?&public=x"
+    expect(Machine.withoutCredentials(config)).toBe(config)
+  })
+
+  it("sanitizes URL subsections, query parameters and continued values", () => {
+    const input = [
+      "[http \"https://ci:private@host/?token=private\"] sslVerify = true",
+      "proxy = socks5://user:private@proxy:1080/?keep=value&access_token=private&other=1",
+      "url = custom+tls://user:pri\\",
+      "vate@host/repo?password=private&sig=private&%6bey=private&X-Amz-Signature=private",
+      "path = some\\\\",
+      "apiToken = private",
+      "long = three\\\\\\",
+      "continued",
+      "# ignored \\",
+      "refreshSecret = private",
+      "sslKeyPassphrase = private",
+      "[url \"socks5://proxy/\"] insteadOf = socks5://proxy/?token=private",
+      "insteadOf = private",
+      "[core] bare = false"
+    ]
+    expect(Machine.withoutCredentials(input.join("\n")).split("\n")).toEqual([
+      "[http \"https://host/\"] sslVerify = true",
+      "proxy = socks5://proxy:1080/?keep=value&other=1",
+      "url = custom+tls://host/repo",
+      "path = some\\\\",
+      "long = three\\\\\\",
+      "continued",
+      "# ignored \\",
+      "[core] bare = false"
+    ])
+  })
 })
 
 describe("the hold on a workspace's machines", () => {
   const unprivilegedIt = it.skipIf(process.platform === "win32" || process.getuid?.() === 0)
-  const linuxIt = it.skipIf(process.platform !== "linux")
   const never = (): void => {
     throw new Error("it never waits")
   }
@@ -461,6 +530,240 @@ describe("the hold on a workspace's machines", () => {
     }
   })
 
+  posixIt("recovers a dead file-system turn while preserving a live owner's marker", async () => {
+    const base = await directory("turn")
+    const path = Path.join(base, "lock")
+    const turn = `${path}.turn`
+    // A live owner may have been paused for longer than a stale file's lifetime.
+    const live = `${process.pid}-0000000000000001`
+    await write(turn, live, "")
+    await Fs.utimes(turn, 0, 0)
+    const stop = new AbortController()
+    const waiting = Machine.unstale(path, stop.signal, "darwin")
+    await expect.poll(async () => (await Fs.readdir(base)).length).toBe(2)
+    stop.abort(new Error("stopped"))
+    await expect(waiting).rejects.toThrow("stopped")
+    expect(await Fs.readdir(turn)).toEqual([live])
+    // Race multiple reapers over the same abandoned marker while the hold itself is live.
+    const other = await otherHold(path)
+    try {
+      const dead = await otherHold(Path.join(base, "other"))
+      await killed(dead)
+      await Fs.rename(Path.join(turn, live), Path.join(turn, `${dead.pid}-0000000000000002`))
+      await Promise.all(Array.from({ length: 12 }, () => Machine.unstale(path, undefined, "darwin")))
+      expect((await Fs.readdir(base)).sort()).toEqual(["lock", "other"])
+      // A pre-upgrade regular-file turn can be reaped concurrently too.
+      await Fs.writeFile(turn, "")
+      await Fs.utimes(turn, 0, 0)
+      await Promise.all(Array.from({ length: 8 }, () => Machine.unstale(path, undefined, "darwin")))
+      expect((await Fs.readdir(base)).sort()).toEqual(["lock", "other"])
+    } finally {
+      await killed(other)
+    }
+  })
+
+  posixIt("refuses an unrecognized file-system turn owner and leaves its marker", async () => {
+    const base = await directory("invalid-turn")
+    const path = Path.join(base, "lock")
+    const turn = `${path}.turn`
+    await write(turn, "unknown-owner", "")
+    await expect(Machine.unstale(path, undefined, "darwin")).rejects.toMatchObject({
+      _tag: "smithers-build/UnrecognizedTurnOwner"
+    })
+    expect(await Fs.readdir(base)).toEqual([Path.basename(turn)])
+    expect(await Fs.readdir(turn)).toEqual(["unknown-owner"])
+  })
+
+  unprivilegedIt("keeps a turn when the operating system denies checking its owner", async () => {
+    const base = await directory("denied-owner")
+    const path = Path.join(base, "lock")
+    const live = "1-0000000000000001"
+    const turn = `${path}.turn`
+    await write(turn, live, "")
+    await expect(Machine.unstale(path, AbortSignal.timeout(250), "darwin")).rejects.toMatchObject({
+      name: "TimeoutError"
+    })
+    expect(await Fs.readdir(turn)).toEqual([live])
+  })
+
+  linuxIt("propagates an invalid system PID and keeps its turn marker", async () => {
+    const base = await directory("invalid-pid")
+    const path = Path.join(base, "lock")
+    const turn = `${path}.turn`
+    const marker = "2147483648-0000000000000001"
+    await write(turn, marker, "")
+    await expect(Machine.unstale(path, undefined, "darwin")).rejects.toMatchObject({
+      code: "ERR_INVALID_ARG_TYPE"
+    })
+    expect(await Fs.readdir(base)).toEqual([Path.basename(turn)])
+    expect(await Fs.readdir(turn)).toEqual([marker])
+  })
+
+  posixIt("keeps an unexpected entry at the turn path", async () => {
+    const base = await directory("linked-turn")
+    const path = Path.join(base, "lock")
+    const turn = `${path}.turn`
+    const target = Path.join(base, "destination")
+    await Fs.mkdir(target)
+    await Fs.symlink(target, turn)
+    await expect(Machine.unstale(path, undefined, "darwin")).rejects.toMatchObject({ code: "ENOTDIR" })
+    expect(await Fs.readlink(turn)).toBe(target)
+  })
+
+  linuxIt("serializes concurrent checks of an abandoned machine hold", async () => {
+    const base = await directory("linux-turn")
+    const path = Path.join(base, "lock")
+    await killed(await otherHold(path))
+    await Promise.all(Array.from({ length: 12 }, () => Machine.unstale(path)))
+    expect(await Fs.readdir(base)).toEqual([])
+  })
+
+  unprivilegedIt("propagates a rename error and removes its staging directory", async () => {
+    const base = await directory("turn-rename")
+    const path = Path.join(base, "lock")
+    await expect(Machine.unstale(path, undefined, "darwin", {
+      ...Fs,
+      rename: async (from, to) => {
+        await Fs.chmod(base, 0o500)
+        try {
+          await Fs.rename(from, to)
+        } finally {
+          await Fs.chmod(base, 0o700)
+        }
+      }
+    })).rejects.toMatchObject({ code: "EACCES" })
+    expect(await Fs.readdir(base)).toEqual([])
+  })
+
+  posixIt("retries when the previous owner releases after a contested rename", async () => {
+    const base = await directory("turn-release")
+    const path = Path.join(base, "lock")
+    const turn = `${path}.turn`
+    const marker = `${process.pid}-0000000000000001`
+    await write(turn, marker, "")
+    await Machine.unstale(path, undefined, "darwin", {
+      ...Fs,
+      readdir: async (path) => {
+        await Fs.unlink(Path.join(turn, marker))
+        await Fs.rmdir(turn)
+        return Fs.readdir(path)
+      }
+    })
+    expect(await Fs.readdir(base)).toEqual([])
+  })
+
+  posixIt.each(["successor", "absent"] as const)(
+    "allows a portable turn directory to become %s during cleanup",
+    async (after) => {
+      const base = await directory("turn-successor")
+      const path = Path.join(base, "lock")
+      const turn = `${path}.turn`
+      const successor = Path.join(base, "successor")
+      const marker = `${process.pid}-0000000000000002`
+      await write(successor, marker, "")
+      await Machine.unstale(path, undefined, "darwin", {
+        ...Fs,
+        rmdir: async () => {
+          if (after === "successor") await Fs.rename(successor, turn)
+          else await Fs.rmdir(turn)
+          await Fs.rmdir(turn)
+        }
+      })
+      if (after === "successor") expect(await Fs.readdir(turn)).toEqual([marker])
+      else await expect(Fs.lstat(turn)).rejects.toMatchObject({ code: "ENOENT" })
+    }
+  )
+
+  posixIt("waits for a recent legacy turn and preserves it on cancellation", async () => {
+    const base = await directory("turn-recent")
+    const path = Path.join(base, "lock")
+    const turn = `${path}.turn`
+    await Fs.writeFile(turn, "legacy")
+    const stop = new AbortController()
+    const waiting = Machine.unstale(path, stop.signal, "darwin", {
+      ...Fs,
+      lstat: async (file) => {
+        const info = await Fs.lstat(file)
+        stop.abort()
+        return info
+      }
+    })
+    await expect(waiting).rejects.toMatchObject({ name: "AbortError" })
+    expect(await Fs.readFile(turn, "utf8")).toBe("legacy")
+    expect(await Fs.readdir(base)).toEqual([Path.basename(turn)])
+  })
+
+  posixIt.each(["absent", "directory", "replaced"] as const)(
+    "handles an expired legacy turn whose path becomes %s before unlink",
+    async (replacement) => {
+      const base = await directory("turn-legacy")
+      const path = Path.join(base, "lock")
+      const turn = `${path}.turn`
+      await Fs.writeFile(turn, "")
+      await Fs.utimes(turn, 0, 0)
+      const attempt = Machine.unstale(path, undefined, "darwin", {
+        ...Fs,
+        unlink: async (file) => {
+          if (file !== turn) return Fs.unlink(file)
+          await Fs.unlink(turn)
+          if (replacement !== "absent") await Fs.mkdir(turn)
+          try {
+            await Fs.unlink(turn)
+          } finally {
+            if (replacement === "replaced") {
+              await Fs.rmdir(turn)
+              await Fs.writeFile(turn, "another legacy owner")
+            }
+          }
+        }
+      })
+      if (replacement === "replaced") {
+        await expect(attempt).rejects.toMatchObject({ code: expect.stringMatching(/^(EISDIR|EPERM)$/) })
+        expect(await Fs.readFile(turn, "utf8")).toBe("another legacy owner")
+      } else {
+        await attempt
+        expect(await Fs.readdir(base)).toEqual([])
+      }
+    }
+  )
+
+  unprivilegedIt("propagates a denied legacy unlink and leaves the old turn", async () => {
+    const base = await directory("turn-unlink")
+    const path = Path.join(base, "lock")
+    const turn = `${path}.turn`
+    await Fs.writeFile(turn, "")
+    await Fs.utimes(turn, 0, 0)
+    await expect(Machine.unstale(path, undefined, "darwin", {
+      ...Fs,
+      unlink: async (file) => {
+        await Fs.chmod(base, 0o500)
+        try {
+          await Fs.unlink(file)
+        } finally {
+          await Fs.chmod(base, 0o700)
+        }
+      }
+    })).rejects.toMatchObject({ code: "EACCES" })
+    expect(await Fs.readdir(base)).toEqual([Path.basename(turn)])
+  })
+
+  posixIt("propagates a missing parent when acquiring a file-system turn", async () => {
+    const path = Path.join(await directory("missing-turn"), "missing", "lock")
+    await expect(Machine.unstale(path, undefined, "darwin")).rejects.toMatchObject({ code: "ENOENT" })
+  })
+
+  unprivilegedIt("propagates permission errors acquiring a file-system turn", async () => {
+    const base = await directory("denied-turn")
+    await Fs.chmod(base, 0o500)
+    try {
+      await expect(Machine.unstale(Path.join(base, "lock"), undefined, "darwin")).rejects.toMatchObject({
+        code: "EACCES"
+      })
+    } finally {
+      await Fs.chmod(base, 0o700)
+    }
+  })
+
   linuxIt("is named apart from the file system on Linux where machines are kept too deep for a socket", async () => {
     // A build run on a machine keeps its own machines under that machine's home.
     const base = Path.join(await directory("deep"), "d".repeat(100))
@@ -516,6 +819,18 @@ describe("a fresh checkout", () => {
     const held = await Machine.fresh(root, ".flows")
     expect(sorted(held!.files)).toEqual([".gitignore", "link", "new.txt", "src/a.txt", "src/b.txt"])
     expect(sorted(held!.directories)).toEqual(["src"])
+  })
+
+  posixIt("honors both repository-local and configured exclude files", async () => {
+    const root = await checkout()
+    const excludes = Path.join(await directory("excludes"), "ignore")
+    await Fs.writeFile(excludes, "global-only\nsrc/a.txt\n")
+    await Fs.appendFile(Path.join(root, ".git/config"), `\n[core]\n\texcludesFile = "${excludes}"\n`)
+    await write(root, ".git/info/exclude", "local-only\n")
+    await write(root, "local-only", "ignored")
+    await write(root, "global-only", "ignored")
+    const held = await Machine.fresh(root, ".flows")
+    expect(sorted(held!.files)).toEqual([".gitignore", "link", "src/a.txt", "tool.sh"])
   })
 
   posixIt("holds a submodule as an empty directory, and every directory on the way to a file", async () => {
@@ -675,6 +990,38 @@ describe("making a machine", () => {
       ...extra
     })
   }
+
+  posixIt("copies symlinked configuration and refs into private regular files", async () => {
+    const root = await checkout()
+    const outside = await directory("linked")
+    const common = Path.join(root, ".git")
+    const config = Path.join(outside, "config")
+    const refs = Path.join(outside, "refs")
+    await Fs.rename(Path.join(common, "config"), config)
+    await Fs.appendFile(config, "\n[http]\n\textraHeader = private\n")
+    const original = await Fs.readFile(config, "utf8")
+    await Fs.symlink(config, Path.join(common, "config"))
+    await Fs.rename(Path.join(common, "refs"), refs)
+    await Fs.symlink(refs, Path.join(common, "refs"))
+    await Fs.symlink("../heads/main", Path.join(refs, "tags/copy"))
+    const copy = Path.join((await made(root)).tree, ".git")
+    expect((await Fs.lstat(Path.join(copy, "config"))).isFile()).toBe(true)
+    expect(await Fs.readFile(Path.join(copy, "config"), "utf8")).not.toContain("private")
+    expect(await Fs.readFile(config, "utf8")).toBe(original)
+    expect((await Fs.lstat(Path.join(copy, "refs"))).isDirectory()).toBe(true)
+    expect((await Fs.lstat(Path.join(copy, "refs/tags/copy"))).isFile()).toBe(true)
+    const originalRef = await Fs.readFile(Path.join(refs, "heads/main"), "utf8")
+    await Fs.writeFile(Path.join(copy, "refs/heads/main"), "changed")
+    expect(await Fs.readFile(Path.join(refs, "heads/main"), "utf8")).toBe(originalRef)
+  })
+
+  posixIt("leaves configuration absent when the checkout has none", async () => {
+    const root = await checkout()
+    await Fs.unlink(Path.join(root, ".git", "config"))
+    const machine = await made(root)
+    await expect(Fs.lstat(Path.join(machine.tree, ".git", "config"))).rejects.toMatchObject({ code: "ENOENT" })
+    expect(await Fs.readFile(Path.join(machine.tree, ".git", "HEAD"), "utf8")).toBe("ref: refs/heads/main\n")
+  })
 
   posixIt("copies a fresh checkout: files with their modes, links as links, nothing ignored, no cache", async () => {
     const root = await checkout()
@@ -905,6 +1252,10 @@ describe("a target on a machine", () => {
     // The end of another directory's path is another directory.
     expect(moved("/home/runner/work/repo")).toBe("/home/runner/work/repo")
     expect(moved("/usr/bin:/home/runner/work:/work/bin")).toBe("/usr/bin:/home/runner/work:/m/w/work/bin")
+    expect(moved("src/work/main.ts")).toBe("src/work/main.ts")
+    expect(moved("@scope/work")).toBe("@scope/work")
+    expect(moved("cd /work && make")).toBe("cd /m/w/work && make")
+    expect(moved("cd '/work' && ls /work/.flows; (cd /work)")).toBe("cd '/m/w/work' && ls /work/.flows; (cd /m/w/work)")
     expect(moved("../work/src")).toBe("../work/src")
     // A path begins after a flag, an equals sign, a quote, a list's separator and the slashes of a URL.
     expect(moved("-I/work/include")).toBe("-I/m/w/work/include")
@@ -1029,6 +1380,97 @@ describe("the temporary directory of a machine as /tmp", () => {
     }
   )
 
+  it.skipIf(process.platform !== "linux")(
+    "validates recorded mount names on a fresh machine using the current build's PATH",
+    async () => {
+      const root = await directory("view-root")
+      const base = await directory("view")
+      const tools = Path.join(base, "bin")
+      // A distinct top-level /tmp child changes what the command sees, even if the test runner has a private TMPDIR.
+      const extra = await Fs.realpath(await Fs.mkdtemp("/tmp/smthrs-mount-path-"))
+      temporary.push(extra)
+      await Fs.mkdir(tools)
+      const host = await Machine.mounting(process.env, base)
+      if ("bwrap" in host) await Fs.symlink(host.bwrap, Path.join(tools, "bwrap"))
+      else await write(tools, "bwrap", "#!/bin/sh\nexit 0\n", 0o755)
+
+      const begin = async (path: string) => {
+        const environment = { PATH: path, [Machine.holdingVariable]: Path.join(base, "machines") }
+        const kept = await Machine.prepare(root, environment)
+        const start = { root, kept, held: undefined, cacheDirectory: ".flows" }
+        const machine = Machine.named(kept, root, "build")
+        const unmade = Machine.unmade(start)
+        const actual = Machine.actual(machine)
+        const changed = (record: ObservedReads.Record, made = false) =>
+          ObservedReads.changed(
+            record,
+            root,
+            (path) => (made ? ObservedReads.measure : unmade.measured)(actual(path)),
+            Machine.through(actual, made ? undefined : unmade.io)
+          )
+        return { start, machine, changed, environment, kept }
+      }
+
+      const path = [tools, "/usr/bin", "/bin"].join(":")
+      const first = await begin(path)
+      const machine = await Machine.make({ ...first.start, machine: first.machine })
+      const support = await Machine.mounting(first.environment, first.kept)
+      expect(support).toEqual({ bwrap: Path.join(tools, "bwrap") })
+      const prepared = await Machine.prepare(root, {
+        PATH: path,
+        [Machine.holdingVariable]: Path.join(base, "prepared")
+      })
+      const beforeStart = Machine.named(prepared, root, "build")
+      expect(Machine.through(Machine.actual(beforeStart)).mounts?.()).toEqual(
+        Machine.mountsOf(
+          `${Machine.anchor}/tmp`,
+          Machine.inSight([
+            root,
+            beforeStart.directory,
+            process.execPath,
+            ...path.split(":")
+          ])
+        )
+      )
+      await Machine.discard(prepared, () => {})
+      const sight = Machine.inSight([
+        root,
+        Path.join(root, ".flows"),
+        machine.directory,
+        process.execPath,
+        ...path.split(":")
+      ])
+      if ("bwrap" in host) {
+        const [command, ...args] = Machine.withOwnTmp(host.bwrap, machine, ["/bin/ls", "-A", "/tmp"], sight)
+        expect(execFileSync(command, args, { encoding: "utf8" }).trim().split("\n").sort())
+          .toEqual(sight.map((entry) => Path.basename(entry)).sort())
+      } else {
+        for (const entry of sight) await Fs.mkdir(Path.join(machine.tmp, Path.basename(entry)))
+      }
+      const observed = ObservedReads.observe(
+        ObservedReads.read(() => ["100 getdents64(3</tmp>, 0x55 /* entries */, 32768) = 80"], machine.tree),
+        { root: machine.tree, ignore: [], startedMs: Date.now() + 60_000, mounts: Machine.mountsOf(machine.tmp, sight) }
+      )
+      if ("refusal" in observed) throw new Error(observed.refusal)
+      const { record } = Machine.recorded(observed, machine)
+      expect(record.lists.map(([path]) => path)).toEqual([`${Machine.anchor}/tmp`])
+      expect(first.changed(record, true)).toBeUndefined()
+      await Machine.discard(first.kept, () => {})
+
+      const same = await begin(path)
+      expect(same.changed(record)).toBeUndefined()
+      await Machine.make({ ...same.start, machine: same.machine })
+      expect(same.changed(record, true)).toBeUndefined()
+      await Machine.discard(same.kept, () => {})
+
+      const more = await begin(`${path}:${extra}`)
+      expect(more.changed(record)).toBe(`${Machine.anchor}/tmp gained or lost an entry`)
+      await Machine.make({ ...more.start, machine: more.machine })
+      expect(more.changed(record, true)).toBe(`${Machine.anchor}/tmp gained or lost an entry`)
+      await Machine.discard(more.kept, () => {})
+    }
+  )
+
   posixIt("is asked of the host: a bubblewrap on PATH that starts, or the reason there is none", async () => {
     const base = await directory("mounting")
     // A bubblewrap that starts, one that the host refuses, and a directory that holds none.
@@ -1101,6 +1543,23 @@ describe("a record of a run on a machine", () => {
     expect(Machine.own("/smthrs-machine/tmp/a\0b")).toBe(false)
   })
 
+  it("reports no recorded mounts without a prepared view or without mount support", async () => {
+    expect(Machine.through((path) => path).mounts?.()).toEqual([])
+    const root = await directory("unsupported-view-root")
+    const base = await directory("unsupported-view")
+    const kept = await Machine.prepare(root, { [Machine.holdingVariable]: base, PATH: "" })
+    try {
+      expect(await Machine.mounting({}, kept)).toEqual({
+        reason: process.platform === "linux"
+          ? "bwrap is not on PATH (install the bubblewrap package)"
+          : "a private /tmp needs bubblewrap, which runs only on Linux"
+      })
+      expect(Machine.through(Machine.actual(Machine.named(kept, root, "job"))).mounts?.()).toEqual([])
+    } finally {
+      await Machine.discard(kept, () => {})
+    }
+  })
+
   posixIt("reads each path where it is placed", async () => {
     const real = await directory("placed")
     await write(real, "home/file", "content\n")
@@ -1134,7 +1593,7 @@ describe("a record of a run on a machine", () => {
       reads: [["src/a.txt", "f:1"], [home(".npmrc"), "-"], ["/usr/bin/node", "f:2:x"], [home(".seen"), "f:3", "-"]],
       lists: [[machine.home, "digest", [".seen"]], ["src", "digest", []]],
       links: [[home(".config"), 3, ["own"]], ["src", 2, []], [machine.tmp, 2, [], [["made", 0]]]],
-      given: [[home("bin/tool"), "f:4:x", 0]],
+      given: [[home("bin/tool"), "f:4:x", 0, "f:prior"]],
       from: [["//:install", "id"]]
     } as const
     const observation: ObservedReads.Observation = {
@@ -1158,7 +1617,7 @@ describe("a record of a run on a machine", () => {
       ["src", 2, []]
     ])
     expect(JSON.stringify(written.record)).not.toContain(machine.directory)
-    expect(written.record.given).toEqual([["/smthrs-machine/home/bin/tool", "f:4:x", 0]])
+    expect(written.record.given).toEqual([["/smthrs-machine/home/bin/tool", "f:4:x", 0, "f:prior"]])
     expect(written.record.from).toEqual(body.from)
     expect(written.left).toEqual({ keep: ["deps/a"], gone: [], outside: [["/smthrs-machine/home/bin/tool", "f:4:x"]] })
     // What the run left and removed in the machine's home and temporary directory is kept from the machine. A
@@ -1216,6 +1675,13 @@ describe("a record of a run on a machine", () => {
 })
 
 describe("holding a job's processes", () => {
+  linuxIt("accepts a bubblewrap that can start a process in its own namespace", async () => {
+    const base = await directory("keeping")
+    const support = await Machine.mounting(process.env, base)
+    if ("bwrap" in support) expect(await Machine.keeping(support.bwrap, base, process.env)).toBeUndefined()
+    else expect(support.reason).toContain("bwrap")
+  })
+
   it("is refused where no bubblewrap starts, and says which", async () => {
     const directory = await Fs.mkdtemp(Path.join(Os.tmpdir(), "machine-keeping-"))
     try {

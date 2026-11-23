@@ -928,7 +928,7 @@ describe("PackageRunner shard selection", () => {
       const [selection, status, bytes] of [
         ["1/3", "ran", "--shard=1/3|1\n"],
         ["3/3", "ran", "--shard=3/3|3\n"],
-        ["1/3", "hit", ""]
+        ["1/3", "hit", "--shard=1/3|1\n"]
       ] as const
     ) {
       output.length = 0

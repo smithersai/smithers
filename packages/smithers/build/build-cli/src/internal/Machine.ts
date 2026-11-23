@@ -255,6 +255,22 @@ const clear = async (kept: string): Promise<void> => {
   }
 }
 
+type MountSupport = { readonly bwrap: string } | { readonly reason: string }
+
+/** Mount setup belongs to the build holding this directory, from prepare through discard. */
+const mountViews = new Map<string, {
+  readonly path: string
+  readonly support: MountSupport
+  readonly root: string
+  cache?: string
+}>()
+
+/** Keep the same workspace and cache paths visible on a fresh machine and one that already ran. */
+const setViewCache = (start: Start): void => {
+  const view = mountViews.get(start.kept)
+  if (view !== undefined) view.cache = NodePath.join(start.root, ...start.cacheDirectory.split("/"))
+}
+
 /**
  * Makes the directory the machines of the workspace at `root` are kept in,
  * empty: what an earlier build left there, or in the place builds kept them
@@ -277,6 +293,9 @@ export const prepare = async (
   await Fs.mkdir(kept, { recursive: true })
   const real = await Fs.realpath(kept)
   refuseSkipped(real)
+  const path = environment["PATH"] ?? ""
+  const support = await probeMounts(environment, real, process.platform)
+  mountViews.set(real, { root, path, support })
   return real
 }
 
@@ -363,19 +382,56 @@ const closed = (connection: Net.Socket, signal: AbortSignal | undefined): Promis
   })
 
 /** Why nobody answered at a socket's path: its error's code. */
-const unanswered = (path: string): Promise<string | undefined> =>
+const unanswered = (path: string): Promise<NodeJS.ErrnoException | undefined> =>
   new Promise((resolve) => {
     const socket = Net.connect(path)
     socket.once("connect", () => {
       socket.destroy()
       resolve(undefined)
     })
-    socket.once("error", (error: NodeJS.ErrnoException) => resolve(error.code ?? "EIO"))
+    socket.once("error", (error: NodeJS.ErrnoException) => resolve(error))
   })
 
-/** How long a build waits before it asks again for the turn another build has, and when a turn left behind ends. */
 const turnPollMs = 5
-const turnStaleMs = 30_000
+const nextTurn = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, turnPollMs))
+
+/** A previous version used an empty file and left no owner to check when it died. */
+const oldTurnStaleMs = 30_000
+
+class UnrecognizedTurnOwner extends Data.TaggedError("smithers-build/UnrecognizedTurnOwner")<{
+  readonly message: string
+}> {}
+
+/**
+ * File-system operations used to acquire and recover a portable turn.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export type TurnFilesystem = Pick<typeof Fs, "mkdir" | "writeFile" | "rename" | "unlink" | "rmdir" | "rm"> & {
+  readonly lstat: (path: string) => Promise<NodeFs.Stats>
+  readonly readdir: (path: string) => Promise<Array<string>>
+}
+
+const occupiedTurnErrors = new Set<string | undefined>(["ENOTEMPTY", "EEXIST"])
+const directoryUnlinkErrors = new Set<string | undefined>(["EISDIR", "EPERM"])
+
+/** Reap by the dead owner's unique marker name. A successor's marker has a different name. */
+const reapTurn = async (turn: string, fs: TurnFilesystem): Promise<void> => {
+  const entries = await fs.readdir(turn).catch(gone)
+  for (const entry of entries ?? []) {
+    if (!/^[1-9]\d*-[0-9a-f]{16}$/.test(entry)) {
+      throw new UnrecognizedTurnOwner({ message: `unrecognized machine turn owner in ${turn}` })
+    }
+    try {
+      process.kill(Number(entry.split("-")[0]), 0)
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "EPERM") continue
+      if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error
+      await fs.unlink(NodePath.join(turn, entry)).catch(gone)
+    }
+  }
+}
 
 /**
  * Runs `body` while no other build takes or clears the hold at `path`: the two are one turn at a time. A build
@@ -383,20 +439,27 @@ const turnStaleMs = 30_000
  * hold, and two builds would then use the same machines.
  *
  * On Linux the turn is a socket named apart from the file system, which the system takes away when its build
- * ends, however it ends. Elsewhere it is a file made only where none is: a build killed inside its turn, which
- * takes milliseconds, leaves one, and it is taken away once it is older than {@link turnStaleMs}. A hold that is
+ * ends, however it ends. Elsewhere each contender renames a directory holding its unique marker onto the lock
+ * path. POSIX permits this only when the destination is absent or empty. A live owner keeps its marker for
+ * the whole turn. A crashed owner can be reaped by its exact marker name without touching a successor. A hold that is
  * itself named apart from the file system (a pipe, a socket of Linux's own names) leaves nothing behind to clear,
  * and needs no turn.
  */
-const inTurn = async <A>(path: string, body: () => Promise<A>, signal?: AbortSignal): Promise<A> => {
-  if (process.platform === "win32" || path.startsWith("\0")) return body()
-  if (process.platform === "linux") {
+const inTurn = async <A>(
+  path: string,
+  body: () => Promise<A>,
+  signal?: AbortSignal,
+  platform = process.platform,
+  fs: TurnFilesystem = Fs
+): Promise<A> => {
+  if (platform === "win32" || path.startsWith("\0")) return body()
+  if (platform === "linux") {
     const name = `\0smthrs-machines-turn-${createHash("sha256").update(path).digest("hex")}`
     for (;;) {
       signal?.throwIfAborted()
       const server = await listen(name)
       if (server === undefined) {
-        await new Promise((resolve) => setTimeout(resolve, turnPollMs))
+        await nextTurn()
         continue
       }
       try {
@@ -406,20 +469,51 @@ const inTurn = async <A>(path: string, body: () => Promise<A>, signal?: AbortSig
       }
     }
   }
-  const file = `${path}.turn`
-  for (;;) {
-    signal?.throwIfAborted()
-    const taken = await Fs.open(file, "wx").then((handle) => handle.close().then(() => true), () => false)
-    if (taken) {
+  const turn = `${path}.turn`
+  const owner = `${process.pid}-${randomBytes(8).toString("hex")}`
+  const ready = `${turn}-${owner}`
+  await fs.mkdir(ready)
+  let acquired = false
+  try {
+    await fs.writeFile(NodePath.join(ready, owner), "")
+    for (;;) {
+      signal?.throwIfAborted()
       try {
-        return await body()
-      } finally {
-        await Fs.rm(file, { force: true })
+        await fs.rename(ready, turn)
+        acquired = true
+        break
+      } catch (error) {
+        const code = (error as NodeJS.ErrnoException).code
+        if (code === "ENOTDIR") {
+          // A legacy file lock can only be unlinked as a file. A successor publishes a directory.
+          const old = await fs.lstat(turn).catch(gone)
+          if (old && !old.isFile() && !old.isDirectory()) throw error
+          if (old?.isFile() && Date.now() - old.mtimeMs > oldTurnStaleMs) {
+            await fs.unlink(turn).catch(async (error: NodeJS.ErrnoException) => {
+              if (error.code === "ENOENT") return
+              // POSIX permits either of these errors when a successor published its directory first.
+              if (
+                directoryUnlinkErrors.has(error.code) && (await fs.lstat(turn).catch(gone))?.isDirectory() !== false
+              ) {
+                return
+              }
+              throw error
+            })
+          }
+        } else if (occupiedTurnErrors.has(code)) await reapTurn(turn, fs)
+        else throw error
       }
+      await nextTurn()
     }
-    const age = await Fs.stat(file).then((stats) => Date.now() - stats.mtimeMs, () => 0)
-    if (age > turnStaleMs) await Fs.rm(file, { force: true })
-    else await new Promise((resolve) => setTimeout(resolve, turnPollMs))
+    return await body()
+  } finally {
+    if (acquired) {
+      await fs.unlink(NodePath.join(turn, owner))
+      // Another contender can replace the empty directory before this rmdir. Its nonempty turn stays put.
+      await fs.rmdir(turn).catch((error: NodeJS.ErrnoException) => {
+        if (!occupiedTurnErrors.has(error.code)) gone(error)
+      })
+    } else await fs.rm(ready, { recursive: true, force: true })
   }
 }
 
@@ -433,12 +527,25 @@ const inTurn = async <A>(path: string, body: () => Promise<A>, signal?: AbortSig
  * @category lifecycle
  * @since 1.0.0
  */
-export const unstale = async (path: string, signal?: AbortSignal): Promise<void> =>
-  inTurn(path, async () => {
-    // Refused: a socket file is there and nobody listens on it. Any other answer leaves it where it is: one that
-    // answers is held, one that is gone needs nothing, and a failure that says neither is asked about again.
-    if ((await unanswered(path)) === "ECONNREFUSED") await Fs.rm(path, { force: true })
-  }, signal)
+export const unstale = async (
+  path: string,
+  signal?: AbortSignal,
+  platform = process.platform,
+  fs: TurnFilesystem = Fs
+): Promise<void> => {
+  const reason = await inTurn(
+    path,
+    async () => {
+      const reason = await unanswered(path)
+      if (reason?.code === "ECONNREFUSED") await Fs.rm(path, { force: true })
+      return reason
+    },
+    signal,
+    platform,
+    fs
+  )
+  if (reason !== undefined && reason.code !== "ECONNREFUSED") await nextTurn()
+}
 
 /**
  * Holds the machines of the workspace at `root` for one build until it
@@ -535,7 +642,7 @@ const under = (path: string, directory: string): boolean => path === directory |
  * when the workspace is not the root of a git checkout.
  *
  * It is what git tracks, as the working tree has it now, and every other
- * file `.gitignore` does not leave out: what a commit made now would hold.
+ * file the standard Git excludes do not leave out: what a commit made now would hold.
  * An installed `node_modules` or a build's output is in no fresh checkout.
  * The cache directory is the build's own and never part of it.
  *
@@ -548,7 +655,7 @@ export const fresh = async (
   git: Git = PackageTree.runGit
 ): Promise<Fresh | undefined> => {
   if (!NodeFs.existsSync(NodePath.join(root, ".git"))) return undefined
-  const listed = await git(root, ["ls-files", "-z", "--cached", "--others", "--exclude-per-directory=.gitignore"])
+  const listed = await git(root, ["ls-files", "-z", "--cached", "--others", "--exclude-standard"])
   const files = new Set<string>()
   const directories = new Set<string>()
   for (const name of listed.split("\0")) {
@@ -634,6 +741,7 @@ export const unmade = (
   measured: (path: string) => string = ObservedReads.measure,
   io: ObservedReads.Io = ObservedReads.defaultIo
 ): { readonly measured: (path: string) => string; readonly io: ObservedReads.Io } => {
+  setViewCache(start)
   const { cacheDirectory, held, kept, root } = start
   const links = start.links ?? []
   const inWorkspace = (name: string): boolean =>
@@ -839,6 +947,7 @@ export const discard = async (
   start: typeof startApart = startApart,
   platform: NodeJS.Platform = process.platform
 ): Promise<void> => {
+  mountViews.delete(directory)
   if (platform === "win32") return remove(directory)
   const gone = `${directory}${setAside}${process.pid}-${randomBytes(4).toString("hex")}`
   try {
@@ -870,84 +979,81 @@ const copy = async (from: string, to: string): Promise<void> => {
 const copyIfThere = async (from: string, to: string): Promise<void> => {
   if (!NodeFs.existsSync(from)) return
   await Fs.mkdir(NodePath.dirname(to), { recursive: true })
-  await Fs.cp(from, to, { recursive: true, verbatimSymlinks: true })
+  await Fs.cp(from, to, { recursive: true, dereference: true })
+}
+
+/** Strip userinfo and credential query parameters while preserving the spelling of public URL components. */
+const publicUrls = (line: string): string =>
+  line.replace(/[a-z][a-z0-9+.-]*:\/\/[^\s"\\]+/gi, (url) => {
+    const clean = url.replace(/^([^:]+:\/\/)[^/?#]*@/, "$1")
+    return clean.replace(/\?([^#]*)/, (_query, value: string) => {
+      const keep = value.split("&").filter((parameter) => {
+        const key = new URLSearchParams(parameter).keys().next().value ?? ""
+        return !/(pass|token|secret|credential|authorization|signature|api[-_]?key|(?:^|[-_])(sig|key|auth)(?:$|[-_]))/i
+          .test(key)
+      })
+      return keep.length > 0 ? `?${keep.join("&")}` : ""
+    })
+  })
+
+const credentialSections = new Set(["credential", "include", "includeif"])
+const credentialKey = /pass|token|secret|^(extraheader|helper|sshcommand|cookiefile)$/i
+
+/** The quote state to carry onto the next physical line, or undefined when this logical value ends. */
+const continuation = (line: string, quoted: boolean): boolean | undefined => {
+  for (let at = 0; at < line.length; at++) {
+    const char = line[at]
+    if (char === "\\") {
+      if (++at === line.length) return quoted
+    } else if (char === "\"") quoted = !quoted
+    else if (!quoted && (char === "#" || char === ";")) break
+  }
+  return undefined
 }
 
 /**
- * The user and password of a URL fetched over HTTP: `https://name:token@host/` holds what lets its reader act
- * as `name`. The user of an SSH URL (`ssh://git@host/`) is no secret, and the URL does not work without it.
- */
-const userinfo = /((?:https?|ftps?):\/\/)[^/@\s"]*@/gi
-const holdsUser = /(?:https?|ftps?):\/\/[^/@\s"]*@/i
-
-/** The sections of a git configuration that hold or run what authenticates: all of each is left out. */
-const credentialSections = new Set(["credential", "include", "includeif"])
-
-/** The settings that hold a secret or name a program or a file that gives one, in any section. */
-const credentialKeys = new Set([
-  "extraheader",
-  "helper",
-  "askpass",
-  "sshcommand",
-  "cookiefile",
-  "smtppass",
-  "password",
-  "token"
-])
-
-/**
- * A repository's configuration without what authenticates its owner: the copy of a checkout a step runs in
- * reads this file, and checkout tooling writes tokens into it (`http.<url>.extraheader` holds the token of
- * `actions/checkout`). Left out are the credential helpers, every setting that holds a secret or names a program
- * or a file that gives one (an ask-pass program, an SSH command with its key, a cookie file), the files the
- * configuration includes, where `actions/checkout` 6 keeps its token, and each `url` section whose name or value
- * holds a user: a rewrite to an authenticated URL. A user and password inside any other URL (a remote's, a
- * proxy's) are taken out of it, and the URL stays.
+ * A repository's configuration without credential settings, includes or authenticated URL rewrites.
+ * Read continued values together so that split URL credentials are sanitized as Git would read them.
  *
  * @category lifecycle
  * @since 1.0.0
  */
 export const withoutCredentials = (config: string): string => {
   const kept: Array<string> = []
-  /** The lines of the section being read, and whether the whole of it is left out. */
-  let section: Array<string> = []
+  let sectionStart = 0
   let name = ""
   let dropped = false
-  /** Whether the line before ended with a backslash: this one goes on with its value, and shares its fate. */
-  let continued: "kept" | "left" | undefined
-  const close = (): void => {
-    if (!dropped) kept.push(...section)
-    section = []
-  }
-  for (const line of config.split("\n")) {
-    if (continued !== undefined) {
-      if (continued === "kept") section.push(line.replace(userinfo, "$1"))
-      if (!line.endsWith("\\")) continued = undefined
-      continue
+  const lines = config.split(/\r?\n/)
+  for (let at = 0; at < lines.length; at++) {
+    const first = at
+    let part = lines[at]!
+    let line = ""
+    let quoted = continuation(part, false)
+    while (quoted !== undefined && at + 1 < lines.length) {
+      line += part.slice(0, -1)
+      part = lines[++at]!
+      quoted = continuation(part, quoted)
     }
+    line += part
     const header = /^\s*\[\s*([A-Za-z0-9.-]+)(?:\s+"((?:[^"\\]|\\.)*)")?\s*\]/.exec(line)
     if (header !== null) {
-      close()
+      sectionStart = kept.length
       name = header[1]!.split(".")[0]!.toLowerCase()
-      dropped = credentialSections.has(name) || (name === "url" && holdsUser.test(header[2] ?? ""))
-      // A setting may follow its section's name on one line.
-      const rest = line.slice(header[0].length)
-      section.push(header[0])
-      if (rest.trim() === "") continue
-      const key = /^\s*([A-Za-z][A-Za-z0-9-]*)/.exec(rest)?.[1]?.toLowerCase()
-      const left = key !== undefined && credentialKeys.has(key)
-      if (!left) section[section.length - 1] = header[0] + rest.replace(userinfo, "$1")
-      if (line.endsWith("\\")) continued = left ? "left" : "kept"
-      continue
+      dropped = credentialSections.has(name)
     }
-    const key = /^\s*([A-Za-z][A-Za-z0-9-]*)/.exec(line)?.[1]?.toLowerCase()
-    const left = key !== undefined && credentialKeys.has(key)
-    // A rewrite of one URL to another that holds a user gives that user to every remote it matches.
-    if (name === "url" && !left && holdsUser.test(line)) dropped = true
-    if (!left) section.push(line.replace(userinfo, "$1"))
-    if (line.endsWith("\\")) continued = left ? "left" : "kept"
+    const clean = publicUrls(line)
+    if (name === "url" && clean !== line) {
+      kept.length = sectionStart
+      dropped = true
+    }
+    if (dropped) continue
+    const setting = line.slice(header?.[0].length ?? 0)
+    const key = /^\s*([A-Za-z][A-Za-z0-9-]*)/.exec(setting)?.[1]
+    if (key !== undefined && credentialKey.test(key)) {
+      if (header !== null) kept.push(publicUrls(header[0]))
+    } else if (clean !== line) kept.push(clean)
+    else for (let n = first; n <= at; n++) kept.push(lines[n]!)
   }
-  close()
   return kept.join("\n")
 }
 
@@ -966,7 +1072,7 @@ const repository = async (root: string, tree: string, git: Git): Promise<void> =
     await Fs.mkdir(NodePath.join(store, directory), { recursive: true })
   }
   await Fs.writeFile(NodePath.join(store, "objects", "info", "alternates"), `${NodePath.join(common, "objects")}\n`)
-  for (const name of ["config", "packed-refs", "shallow", "refs", "info"]) {
+  for (const name of ["packed-refs", "shallow", "refs", "info"]) {
     await copyIfThere(NodePath.join(common, name), NodePath.join(store, name))
   }
   for (const name of await Fs.readdir(own)) {
@@ -977,8 +1083,8 @@ const repository = async (root: string, tree: string, git: Git): Promise<void> =
   }
   // The copy's configuration holds nothing that lets a step act as the person whose checkout this is.
   const config = NodePath.join(store, "config")
-  const text = await Fs.readFile(config, "utf8").catch(() => undefined)
-  if (text !== undefined) await Fs.writeFile(config, withoutCredentials(text))
+  const text = await Fs.readFile(NodePath.join(common, "config"), "utf8").catch(gone)
+  if (text !== undefined) await Fs.writeFile(config, withoutCredentials(text), { flag: "wx" })
   // A submodule's store says where its working tree is. The copy's is where the copy is.
   await git(tree, ["config", "--unset", "core.worktree"]).catch(() => undefined)
 }
@@ -1004,6 +1110,7 @@ export const make = async (
     readonly git?: Git | undefined
   }
 ): Promise<Machine> => {
+  setViewCache(options)
   const { held, machine, root } = options
   await remove(machine.directory)
   await Fs.mkdir(machine.tree, { recursive: true })
@@ -1254,7 +1361,19 @@ export const mounting = async (
   environment: Readonly<Record<string, string | undefined>>,
   directory: string,
   platform: string = process.platform
-): Promise<{ readonly bwrap: string } | { readonly reason: string }> => {
+): Promise<MountSupport> => {
+  const prepared = mountViews.get(directory)
+  if (prepared !== undefined && platform === process.platform && prepared.path === (environment["PATH"] ?? "")) {
+    return Promise.resolve(prepared.support)
+  }
+  return probeMounts(environment, directory, platform)
+}
+
+const probeMounts = async (
+  environment: Readonly<Record<string, string | undefined>>,
+  directory: string,
+  platform: string
+): Promise<MountSupport> => {
   if (platform !== "linux") return { reason: `a private ${sharedTmp} needs bubblewrap, which runs only on Linux` }
   let bwrap: string | undefined
   for (const each of (environment["PATH"] ?? "").split(NodePath.delimiter)) {
@@ -1279,17 +1398,20 @@ export const mounting = async (
 /** The characters a path in a word or a list of paths begins after. */
 const beforePath = new Set([":", "=", " ", "\t", "\n", "\"", "'", ",", ";", "(", "<", ">", "|", "&"])
 
+const endsPath = (after: string | undefined): boolean =>
+  after === undefined || after === "/" || after === ")" || beforePath.has(after)
+
 /**
  * Whether the path at `at` in `value` begins there, and is not the end of a longer one: `/work` in
  * `/home/runner/work/repo` names another directory than `/work`, and so does it in `../work`. What comes
- * before it since the last character a path begins after is no part of a path then: it holds no slash and ends
- * with no dot, as the flag of `-I/work/include`, or is the two slashes of a URL (`file:///work`).
+ * before it since the last delimiter must be empty, a flag as in `-I/work/include`, or the two slashes of
+ * a URL (`file:///work`).
  */
 const startsPath = (value: string, at: number): boolean => {
   let from = at
   while (from > 0 && !beforePath.has(value[from - 1]!)) from -= 1
   const before = value.slice(from, at)
-  return (!before.includes("/") && !before.endsWith(".")) || before === "//"
+  return before === "" || before === "//" || /^--?[\w-]+$/.test(before)
 }
 
 /**
@@ -1318,10 +1440,8 @@ export const relocated = (
   let moved = ""
   let from = 0
   for (let at = value.indexOf(root); at !== -1; at = value.indexOf(root, from)) {
-    const after = value[at + root.length]
-    const whole = (after === undefined || after === "/" || after === ":") && startsPath(value, at)
-    const cache = value.startsWith(kept, at) && (value[at + kept.length] === undefined ||
-      value[at + kept.length] === "/" || value[at + kept.length] === ":")
+    const whole = endsPath(value[at + root.length]) && startsPath(value, at)
+    const cache = value.startsWith(kept, at) && endsPath(value[at + kept.length])
     moved += value.slice(from, at) + (whole && !cache ? tree : root)
     from = at + root.length
   }
@@ -1407,6 +1527,18 @@ export const through = (
   place: (path: string) => string,
   io: ObservedReads.Io = ObservedReads.defaultIo
 ): ObservedReads.Io => ({
+  mounts: () => {
+    const view = mountViews.get(place(holder))
+    if (view === undefined || !("bwrap" in view.support)) return []
+    const sight = inSight([
+      view.root,
+      view.cache ?? view.root,
+      place(anchor),
+      process.execPath,
+      ...view.path.split(NodePath.delimiter)
+    ])
+    return mountsOf(`${anchor}/tmp`, sight)
+  },
   lstat: (path) => io.lstat(place(path)),
   readlink: (path) => io.readlink(place(path)),
   readdir: (path) => io.readdir(place(path)),

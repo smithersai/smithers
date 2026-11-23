@@ -17,6 +17,7 @@ inductive Node where
   | regular (content : String) (exec : Bool)
   | dir (entries : List (String × Node))
   | symlink (target : String)
+  | other (kind : Nat)
   deriving Inhabited
 
 /-- Symbolic links one path may pass through before resolving it fails (`MAXSYMLINKS`). -/
@@ -149,6 +150,7 @@ inductive State where
   | link (target : String)
   | file (digest : String) (exec : Bool)
   | failed (code : String)
+  | other (kind : Nat)
   deriving DecidableEq
 
 /-- The five things `measure` tells apart, and a failure. -/
@@ -159,6 +161,7 @@ inductive Kind where
   | file
   | exec
   | failed
+  | other
   deriving DecidableEq, Repr
 
 def State.kind : State → Kind
@@ -168,6 +171,7 @@ def State.kind : State → Kind
   | .file _ false => .file
   | .file _ true => .exec
   | .failed _ => .failed
+  | .other _ => .other
 
 /--
 A state as one comparable text: `-` when nothing is there, `d` for a directory, `l:<target>` for a symbolic
@@ -179,6 +183,7 @@ def State.render : State → String
   | .link target => String.ofList ('l' :: ':' :: target.toList)
   | .file digest exec => String.ofList ('f' :: ':' :: digest.toList ++ if exec then [':', 'x'] else [])
   | .failed code => String.ofList ('!' :: code.toList)
+  | .other kind => String.ofList ('o' :: ':' :: (toString kind).toList)
 
 /-- `measure`, before it is written as text. -/
 def measureState (fs : Node) (path : String) : State :=
@@ -188,6 +193,7 @@ def measureState (fs : Node) (path : String) : State :=
   | .error code => .failed code.code
   | .ok (.symlink target) => .link target
   | .ok (.dir _) => .dir
+  | .ok (.other kind) => .other kind
   | .ok (.regular content exec) => .file (sha256Hex content) exec
 
 /-- `measure(path, io)`: what is at a path, as one comparable text. -/
@@ -198,19 +204,71 @@ def absent : String := State.absent.render
 
 /-! ## `listing` and `dirLinks` -/
 
-/-- `listing(path, own, io)`: a digest of the names in a directory apart from `own`; none when it cannot be listed. -/
-def listing (fs : Node) (path : String) (own : List String) : Option String :=
-  match readdir fs path with
-  | .error _ => none
-  | .ok names => some (sha256Hex (jsonStrings (sortByCodeUnit (names.filter (fun name => !own.contains name)))))
+/-- Joins a directory and a name as `dirLinks` and `changed` do. -/
+def joinPath (directory name : String) : String :=
+  if directory = "/" then "/" ++ name else directory ++ "/" ++ name
+
+/-- The directory entry type observed without following the entry. -/
+def Node.entryType : Node → String
+  | .regular .. => "f"
+  | .dir _ => "d"
+  | .symlink _ => "l"
+  | .other _ => "o"
+
+abbrev Mounts := List (String × String)
+
+/-- The first mount covering a visible path is the binding used to resolve it. -/
+def placedBy (path : String) (mounts : Mounts) : String :=
+  match mounts.find? (fun (target, _) => path = target || path.startsWith (target ++ "/")) with
+  | some (target, backing) => backing ++ (path.drop target.length).toString
+  | none => path
+
+/-- The bind roots and visible paths exposing a physical directory, excluding shadowed bindings. -/
+def visibleMounts (path : String) (mounts : Mounts) : List (String × String) :=
+  mounts.filterMap fun (target, backing) => do
+    guard (target != backing && (path == backing || path.startsWith (backing ++ "/")))
+    let name := target ++ (path.drop backing.length).toString
+    guard (placedBy name mounts == path)
+    return (target, name)
+
+/-- Include the directory's bind roots in its digest; a newly covered directory has a distinct digest. -/
+def listingText (path : String) (mounts bindings : Mounts) (entries : List String) : String :=
+  let origins := sortByCodeUnit ((bindings.map (·.1)).eraseDups)
+  let entries := jsonArray entries
+  if !origins.isEmpty then jsonArray [jsonString "mounted", jsonStrings origins, entries]
+  else if placedBy path mounts != path then jsonArray [jsonString "covered", entries]
+  else entries
+
+/-- Direct bind mounts appear with their source type. A mount farther below contributes a directory. -/
+def mountChildren (mounts bindings : Mounts) : List (String × Option String) := Id.run do
+  let mut visible := []
+  for (_, parent) in bindings do
+    for (child, source) in mounts do
+      if !child.startsWith (parent ++ "/") then continue
+      let parts := ((child.drop (parent.length + 1)).toString).splitOn "/"
+      match parts with
+      | [name] => visible := (name, some source) :: visible.filter (fun p => p.1 != name)
+      | name :: _ => if (visible.lookup name).isNone then visible := (name, none) :: visible
+      | [] => pure ()
+  return visible
+
+/-- Digest the sorted [name, type] pairs. Physical stubs are replaced with active mount entries. -/
+def listing (fs : Node) (path : String) (own : List String) (mounts : Mounts := []) : Option String := do
+  let names ← (readdir fs path).toOption
+  let bindings := visibleMounts path mounts
+  let mounted := mountChildren mounts bindings
+  let retained := names.filter (fun name => !own.contains name && (mounted.lookup name).isNone)
+  let entries ← (sortByCodeUnit (retained ++ mounted.map (·.1))).mapM fun name => do
+    let kind ← match mounted.lookup name with
+      | some (some source) => (stat fs source).toOption.map fun node => "m:" ++ node.entryType
+      | some none => some "m:d"
+      | none => (lstat fs (joinPath path name)).toOption.map Node.entryType
+    return jsonStrings [name, kind]
+  return sha256Hex (listingText path mounts bindings entries)
 
 /-- The link count of a directory: itself, its `.`, and the `..` of each directory in it. -/
 def linkCount (node : Node) : Nat :=
   2 + (node.names.filter (fun name => ((node.child? name).map Node.isDir).getD false)).length
-
-/-- Joins a directory and a name as `dirLinks` and `changed` do. -/
-def joinPath (directory name : String) : String :=
-  if directory = "/" then "/" ++ name else directory ++ "/" ++ name
 
 /--
 `dirLinks(path, own, io)`: the link count of a directory less the directories among `own` in it; none when the

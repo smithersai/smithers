@@ -33,7 +33,9 @@ partial def nodeOf (value : Json) : Node :=
   match field value "d", field value "l" with
   | some entries, _ => .dir ((members entries).map fun (name, child) => (name, nodeOf child))
   | none, some target => .symlink (textOf target)
-  | none, none => .regular (text value "f") (flag value "x")
+  | none, none => match field value "o" with
+    | some kind => .other (placeOf kind)
+    | none => .regular (text value "f") (flag value "x")
 
 def rulesOf (value : Json) : Rules :=
   let rules := (field value "rules").getD .null
@@ -52,9 +54,12 @@ def answersOf (value : Json) : String → Option (List String) :=
     | .null => none
     | ids => some (namesOf ids)
 
+def mountsOfJson (value : Json) : Mounts := (((field value "mounts").bind elements).getD []).map pairOf
+
 def worldOfJson (value : Json) : World where
   fs := nodeOf ((field value "fs").getD .null)
   root := text value "root"
+  mounts := mountsOfJson value
   values := valuesOf ((field value "values").getD .null)
   answered := answersOf ((field value "answered").getD .null)
   served := answersOf ((field value "served").getD .null)
@@ -75,12 +80,17 @@ def traceOf (value : Json) : Trace where
   listed := timedOf value "listed"
   made := timedOf value "made"
   emptied := timedOf value "emptied"
+  exclusive := timedOf value "exclusive"
+  required := timedOf value "required"
   changed := names value "changed"
   removed := names value "removed"
   unlinked := names value "unlinked"
+  removedEmpty := names value "removedEmpty"
+  built := names value "built"
 
 def optionsOf (value : Json) : Options where
   root := text value "root"
+  mounts := mountsOfJson value
   found := (((field value "found").bind elements).getD []).map pairOf
   values := valuesOf ((field value "values").getD .null)
   shown := names value "shown"
@@ -140,9 +150,10 @@ def answer (request : Json) : Except String Json :=
   | "lstat" => .ok (errnoJson (fun node => match node with
       | .regular content exec => Json.mkObj [("kind", "f"), ("size", toJson content.toUTF8.size), ("x", .bool exec)]
       | .dir entries => Json.mkObj [("kind", "d"), ("nlink", toJson (linkCount (.dir entries)))]
+      | .other _ => Json.mkObj [("kind", "o")]
       | .symlink target => Json.mkObj [("kind", "l"), ("target", .str target)]) (lstat fs path))
   | "readdir" => .ok (errnoJson (fun found => toJson (sortByCodeUnit found)) (readdir fs path))
-  | "listing" => .ok (orNull (listing fs path (names request "own")))
+  | "listing" => .ok (orNull (listing fs path (names request "own") (mountsOfJson request)))
   | "dirLinks" => .ok (orNull (dirLinks fs path (names request "own")))
   | "isRecord" => .ok (Json.mkObj [
       ("shape", .bool (isRecordShape rules value)),

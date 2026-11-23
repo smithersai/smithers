@@ -639,7 +639,7 @@ const fullRecord = (label: string, path: string) => {
     lists: [["dir", "digest", ["own"], [["entry", 0]]], ["other", "digest", []]],
     links: [["dir", 3, ["own"], [["entry", 0]]], ["other", 2, []]],
     from: [[label, "prior"]],
-    given: [[path, "state", 0]],
+    given: [[path, "state", 0], [path, "changed", 0, "prior"]],
     left: true,
     made: [path],
     served: [[label, "service"]],
@@ -740,11 +740,14 @@ describe("records read back from disk", () => {
       { ...base, reads: [["p"]] },
       { ...base, reads: [["p", "s", "o", "x"]] },
       { ...base, reads: [["p", 1]] },
+      { ...base, given: [["p", "s", 0, "?", "extra"]] },
+      { ...base, given: [["p", "s", 0, null]] },
       { ...base, lists: [["p", "d", [], [], []]] },
       { ...base, lists: [["p", "d", [], null]] },
       { ...base, lists: [["p", "d", [1]]] },
       ...[-1, 0, 0.5, 1, 1e21, -0, "0", null, true].flatMap((place) => [
         { ...base, given: [["p", "s", place]] },
+        { ...base, given: [["p", "s", place, "prior"]] },
         { ...base, lists: [["p", "d", [], [["n", place]]]] },
         { ...base, links: [["p", 1, [], [["n", place]]]] }
       ])
@@ -892,6 +895,57 @@ describe("measuring a file system", () => {
       }
     )
   )
+
+  check("includes entry types and visible direct and nested mounts in the listing", async () => {
+    const fs: Tree = {
+      d: {
+        private: { d: { leaf: { l: "elsewhere" }, hidden: { f: "stub", x: false } } },
+        sources: { d: { tool: { f: "tool", x: true }, alias: { l: "tool" }, dir: { d: {} } } }
+      }
+    }
+    const parent = ["/tmp", "/private"] as const
+    const direct = ["/tmp/hidden", "/sources/tool"] as const
+    const nested = ["/tmp/nested/path", "/sources/dir"] as const
+    const digests = new Set<string>()
+    for (const mounts of [[parent], [parent, direct], [parent, nested], [parent, direct, nested]]) {
+      const digest = Reads.listing("/private", [], memory(fs), mounts)
+      expect(digest).toBeDefined()
+      expect(await oracle.ask({ op: "listing", fs, path: "/private", own: [], mounts })).toBe(digest)
+      digests.add(digest!)
+      cases += 1
+    }
+    expect(digests.size).toBe(4)
+    const viaLink = [parent, ["/tmp/hidden", "/sources/alias"] as const]
+    const digest = Reads.listing("/private", [], memory(fs), viaLink)
+    expect(digest).toBe(Reads.listing("/private", [], memory(fs), [parent, direct]))
+    expect(await oracle.ask({ op: "listing", fs, path: "/private", own: [], mounts: viaLink })).toBe(digest)
+    cases += 1
+  })
+
+  check("holds a directory listing against the current outer mount, even without child mounts", async () => {
+    const tree: Tree = { d: { tmp: { d: {} }, original: { d: { sub: { d: {} } } }, replacement: { d: {} } } }
+    const io = memory(tree)
+    const original = [["/tmp", "/original"]] as const
+    const replacement = [["/tmp", "/replacement"]] as const
+    const shadowed = [["/tmp/sub", "/replacement"], ...original] as const
+    const casesOf = [
+      { path: "/original", before: original, after: original, changed: false },
+      { path: "/original", before: original, after: [], changed: true },
+      { path: "/original", before: original, after: replacement, changed: true },
+      { path: "/tmp", before: [], after: original, changed: true },
+      { path: "/original/sub", before: original, after: shadowed, changed: true }
+    ] as const
+    for (const { after, before, changed, path } of casesOf) {
+      const digest = Reads.listing(path, [], io, before)!
+      const record = { id: "", reads: [], lists: [[path, digest, []]] } as const
+      const measured = (name: string) => Reads.measure(name, io)
+      const actual = Reads.changed(record, "/", measured, { ...io, mounts: () => after }) ?? null
+      const expected = await oracle.ask({ op: "changed", rules, record, world: { fs: tree, root: "/", mounts: after } })
+      expect(actual).toBe(expected)
+      expect(actual !== null).toBe(changed)
+      cases += 1
+    }
+  })
 
   check("follows 40 symbolic links and no more, and ends on a cycle", async () => {
     for (const length of [1, 2, 39, 40, 41, 42, 60]) {
@@ -1055,7 +1109,16 @@ const changedCase = A.all({
   lists: A.array(directoryRow, { maxLength: 3 }),
   links: A.array(directoryRow, { maxLength: 3 }),
   from: A.array(A.all({ label, id: recordId }), { maxLength: 3 }),
-  given: A.array(A.all({ place: placeIn, state: stateChoice, from: int(3) }), { maxLength: 3 }),
+  given: A.array(
+    A.all({
+      place: placeIn,
+      state: stateChoice,
+      from: int(3),
+      prior: pick(["none", "none", "actual", "?", "*", "f:*", "-"])
+    }),
+    { maxLength: 3 }
+  ),
+  left: flag,
   answered: answers,
   programs: A.array(A.all({ label, id: recordId }), { maxLength: 2 }),
   served: answers,
@@ -1107,6 +1170,7 @@ describe("holding a record against a file system", () => {
       const made = input.made.map((place) => inside(at(place)))
       const record = {
         id: "record",
+        ...(input.left ? { left: true } : {}),
         reads: input.reads.map((row) => {
           const actual = measured(at(row.place))
           const state = free("reads") ? stateFrom(row.state, actual) : actual
@@ -1134,7 +1198,10 @@ describe("holding a record against a file system", () => {
             [
               inside(at(row.place)),
               free("given") ? stateFrom(row.state, measured(at(row.place))) : measured(at(row.place)),
-              row.from % places
+              row.from % places,
+              ...(free("given") && row.prior !== "none"
+                ? [row.prior === "actual" ? measured(at(row.place)) : row.prior]
+                : [])
             ] as const
           )
         }),
@@ -1196,10 +1263,37 @@ describe("holding a record against a file system", () => {
     const tree: Tree = { d: { w: { d: { f: { f: "left", x: false }, d: { d: { sub: { d: {} } } } } } } }
     const io = memory(tree)
     const left = Reads.measure("/w/f", io)
-    const ask = (record: object) =>
-      oracle.ask<string | null>({ op: "changed", rules, record, world: { fs: tree, root: workspace, values: {} } })
-    const hold = (record: object) =>
-      Reads.changed(record as Reads.Record, workspace, (path) => Reads.measure(path, io), io) ?? null
+    const ask = (record: object, holds?: ReadonlyArray<string>) =>
+      oracle.ask<string | null>({
+        op: "changed",
+        rules,
+        record,
+        world: { fs: tree, root: workspace, values: {}, holds }
+      })
+    const hold = (record: object, holds?: ReadonlyArray<string>) =>
+      Reads.changed(
+        record as Reads.Record,
+        workspace,
+        (path) => Reads.measure(path, io),
+        io,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        () => holds === undefined ? undefined : new Set(holds)
+      ) ?? null
+    const made = { id: "", reads: [["d", "d", "-"]], lists: [], made: ["d"], left: true } as const
+    for (
+      const [holds, expected] of [
+        [["d"], "d, which the run made, is in the commit now"],
+        [[], null],
+        [undefined, "d changed"]
+      ] as const
+    ) {
+      expect(hold(made, holds)).toBe(expected)
+      expect(await ask(made, holds)).toBe(expected)
+      cases += 1
+    }
     for (
       const record of [
         { id: "", reads: [["f", left]], lists: [] },
@@ -1209,6 +1303,8 @@ describe("holding a record against a file system", () => {
         { id: "", reads: [["f", `f:${"0".repeat(64)}`, left]], lists: [] },
         { id: "", reads: [["f", left, "?"]], lists: [] },
         { id: "", reads: [["f", left, "-"]], lists: [] },
+        { id: "", reads: [["f", left, "-"]], lists: [], left: true },
+        { id: "", reads: [["/w/f", left, "-"]], lists: [], left: true },
         { id: "", reads: [["gone", left, "-"]], lists: [] },
         { id: "", reads: [["gone", "-", left]], lists: [] },
         // A path the run found and removed, where something else is now: other, not new.
@@ -1225,6 +1321,15 @@ describe("holding a record against a file system", () => {
         { id: "", reads: [["gone", "!EIO", "-"]], lists: [] },
         { id: "", reads: [["gone", "!ENOENT"]], lists: [] },
         { id: "", reads: [], lists: [], from: [["//:a", "1"]], given: [["f", "!EIO", 0]] },
+        ...[left, "?", "*", "f:*", "-"].flatMap((prior) =>
+          ["f", "d", "gone"].map((path) => ({
+            id: "",
+            reads: [],
+            lists: [],
+            from: [["//:a", "1"]],
+            given: [[path, left, 0, prior]]
+          }))
+        ),
         // A directory made in a directory the run only looked at: a hit before `u3`, a miss under it.
         { id: "", reads: [["d", "d"]], lists: [], links: [["d", 3, []]] },
         { id: "", reads: [["d", "d"]], lists: [], links: [["d", 2, []]] },
@@ -1265,8 +1370,51 @@ describe("holding a record against a file system", () => {
     expect(hold(grown)).toBe(rules.u3 ? "d gained or lost a subdirectory" : null)
   })
 
+  check("records emptiness proved by rmdir before recreating a directory", async () => {
+    const tree: Tree = { d: { w: { d: { dir: { d: {} } } } } }
+    const io = memory(tree)
+    const options = { root: workspace, ignore: [], startedMs: Infinity, io, held: () => new Set<string>() }
+    const trace = Reads.read(() => [
+      "10 rmdir(\"dir\") = 0",
+      "10 mkdir(\"dir\", 0777) = 0"
+    ], workspace)
+    const actual = Reads.observe(trace, options)
+    expect(actual).toMatchObject({
+      record: { reads: [["dir", "d", "d"]], lists: [["dir", Reads.listing("/w/dir", [], io), []]] }
+    })
+    expect("refusal" in actual ? actual : { record: actual.record }).toEqual(
+      await oracle.ask({
+        op: "observe",
+        rules,
+        fs: tree,
+        trace: {
+          found: [...trace.unfollowed ?? []],
+          made: [...trace.made],
+          changed: [...trace.changed],
+          removed: [...trace.removed],
+          removedEmpty: [...trace.removedEmpty ?? []],
+          built: [...trace.built ?? []]
+        },
+        options: { root: workspace, held: [] }
+      })
+    )
+    cases += 1
+  })
+
   const event = A.all({
-    kind: pick(["found", "found", "found", "missing", "listed", "listed", "made", "emptied", "changed", "changed"]),
+    kind: pick([
+      "found",
+      "found",
+      "found",
+      "missing",
+      "listed",
+      "listed",
+      "made",
+      "emptied",
+      "required",
+      "changed",
+      "changed"
+    ]),
     at: int(40),
     tail: pick(["", "", "", "", "/new", "/..", "/../new", "/new/deep"]),
     tie: flag
@@ -1300,7 +1448,8 @@ describe("holding a record against a file system", () => {
         missing: new Map<string, number>(),
         listed: new Map<string, number>(),
         made: new Map<string, number>(),
-        emptied: new Map<string, number>()
+        emptied: new Map<string, number>(),
+        required: new Map<string, number>()
       }
       const changed = new Set<string>()
       let line = 0
@@ -1310,6 +1459,7 @@ describe("holding a record against a file system", () => {
         if (row.kind === "changed") changed.add(raw)
         else if (!maps[row.kind].has(raw)) maps[row.kind].set(raw, line)
       }
+      const exclusive = new Map([...maps.made].filter((_, i) => i % 2 === 0))
       // Every other path the run changed, it removed: what it found and left gone is part of what it left.
       const removed = new Set([...changed].filter((_, index) => index % 2 === 0))
       // Every other of those it took away unseen: such a name is held as any name that is no directory.
@@ -1339,7 +1489,7 @@ describe("holding a record against a file system", () => {
         variables: { values, text: "", shown: new Set(shown), ignored: () => new Set<string>() }
       }
       const observed = Reads.observe(
-        { ...maps, changed, started: new Map(), removed, unlinked, fetched: new Set(), refusals: [] },
+        { ...maps, exclusive, changed, started: new Map(), removed, unlinked, fetched: new Set(), refusals: [] },
         options
       )
       const expected = await oracle.ask<{ readonly refusal: string } | { readonly record: Reads.Record }>({
@@ -1352,6 +1502,8 @@ describe("holding a record against a file system", () => {
           listed: [...maps.listed],
           made: [...maps.made],
           emptied: [...maps.emptied],
+          required: [...maps.required],
+          exclusive: [...exclusive],
           changed: [...changed],
           removed: [...removed],
           unlinked: [...unlinked]
@@ -1376,12 +1528,12 @@ describe("holding a record against a file system", () => {
       // Theorem 1 of Observe.lean, on this run: the record holds on the file system it was made on, unless the run
       // changed a file it did not leave as it found it (`u2`), or found missing a path that is there and not its own.
       const record = observed.record
-      const settled = record.reads.every(([path, state, other]) =>
-        other === undefined
-          ? state !== "-" ||
-            Reads.measure(path === "." ? workspace : path.startsWith("/") ? path : `${workspace}/${path}`, io) === "-"
-          : !rules.u2 || other === "-" || other === state
-      )
+      const settled = record.reads.every(([path, state, other]) => {
+        const now = Reads.measure(path === "." ? workspace : path.startsWith("/") ? path : `${workspace}/${path}`, io)
+        if (other === undefined) return state !== "-" || now === "-"
+        if (!rules.u2 || other !== "-") return !rules.u2 || other === state
+        return now === "-" || (record.left && (path.startsWith("/") || options.held([path])?.has(path) === false))
+      })
       const held = Reads.changed(
         record,
         workspace,

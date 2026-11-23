@@ -502,7 +502,7 @@ describe("an observed test", () => {
 
   // A CI runner's script starts a job by removing the state an earlier run of the job left and making it again.
   // The directory changed while the step ran, and the step is what changed it.
-  tracedIt("is stored when it removed a directory an earlier run left and made it again", async () => {
+  tracedIt("runs again when it cannot verify a directory it listed before replacing it", async () => {
     const { logs, root, run, write } = await fixture({
       check: ["/bin/rm -rf left", "/bin/mkdir -p left/temp", "/bin/ls left/temp", "/bin/cat input.txt > /dev/null"]
         .join("\n")
@@ -511,9 +511,25 @@ describe("an observed test", () => {
     await Fs.mkdir(Path.join(root, "left", "temp"), { recursive: true })
     expect(await run()).toEqual({ check: "ran" })
     expect(logs.filter((line) => line.includes("changed while it ran"))).toEqual([])
-    expect(await run()).toEqual({ check: "hit" })
+    expect(await run(), logs.join("\n")).toEqual({ check: "ran" })
+    expect(logs).toContain("//:check  runs again: left changed")
+  })
+
+  tracedIt("reuses an empty directory it removed from an earlier run and recreated", async () => {
+    const { logs, root, run, write } = await fixture({
+      check: ["set -e", "/bin/rmdir left", "/bin/mkdir left", "/bin/ls left", "/bin/cat input.txt > /dev/null"].join(
+        "\n"
+      )
+    })
+    await Fs.mkdir(Path.join(root, "left"))
+    expect(await run()).toEqual({ check: "ran" })
+    expect(await run(), logs.join("\n")).toEqual({ check: "hit" })
     await write("input.txt", "pass, changed\n")
     expect(await run()).toEqual({ check: "ran" })
+    expect(logs).toContain("//:check  runs again: input.txt changed")
+    await write("left/regular.txt", "prevents rmdir\n")
+    expect(await run()).toEqual({ check: "failed" })
+    expect(logs).toContain("//:check  runs again: left gained or lost an entry")
   })
 
   tracedIt("is answered from the cache after a step it depends on ran again", async () => {
@@ -811,11 +827,11 @@ describe("an observed test", () => {
 
   // Linux connects the unspecified address, `::` or `0.0.0.0`, to this machine itself (measured on nyc-01: both reach
   // a server listening on `::`). A run that reaches its own server there reached nothing outside it.
-  tracedIt("is stored when it reaches its own server on :: through :: and 0.0.0.0", async () => {
+  tracedIt("is stored when it reaches its own dual-stack server through wildcard and loopback addresses", async () => {
     const serving = `${process.execPath} -e "` +
       "const net = require('net'); const server = net.createServer((s) => s.end('ok')).listen(0, '::', async () => {" +
       " const port = server.address().port;" +
-      " for (const host of ['::', '0.0.0.0']) await new Promise((done, fail) => net.connect(port, host)" +
+      " for (const host of ['::', '::1', '0.0.0.0', '127.0.0.1']) await new Promise((done, fail) => net.connect(port, host)" +
       ".on('data', done).on('error', fail));" +
       " server.close() })" +
       `"`
@@ -1718,27 +1734,52 @@ describe("a job of observed steps", () => {
     expect(open.reasons).toEqual({ install: `${other} changed` })
   })
 
-  tracedIt("stores an install that fetches what a lockfile pins, and no other step that connects", async () => {
+  tracedIt("allows the locked installer itself to connect while refusing an unlocked install", async () => {
     const server = Net.createServer((socket) => socket.end())
     await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve))
     try {
       const port = (server.address() as Net.AddressInfo).port
-      // A package manager that asks a registry for something on every start, as `npm ci` asks for an audit.
-      const fetching = `#!/bin/sh\n${process.execPath} -e "require('net').connect(${port}, '127.0.0.1')` +
-        `.on('connect', function () { this.end() })"\n/bin/mkdir -p deps\n/bin/cat lock.txt > deps/installed.txt\n`
+      const fetching = `#!${process.execPath}\n` +
+        "const fs = require('fs')\n" +
+        `require('net').connect(${port}, '127.0.0.1').on('connect', function () {\n` +
+        "  this.end()\n" +
+        "  fs.mkdirSync('deps', { recursive: true })\n" +
+        "  fs.writeFileSync('deps/installed.txt', fs.readFileSync('lock.txt'))\n" +
+        "})\n"
       const locked = await job({ install: "npm ci" })
       await locked.write(Path.join(locked.base, "tools", "npm"), fetching, 0o755)
       expect(await locked.run()).toEqual(all("ran"))
       expect(locked.unstored).toEqual({})
       await locked.checkout()
       expect(await locked.run()).toEqual(all("hit"))
-      // The same program asked for anything else is one more program that reached outside the run.
+
       const open = await job({ install: "npm install" })
       await open.write(Path.join(open.base, "tools", "npm"), fetching, 0o755)
       expect(await open.run()).toEqual(all("ran"))
       expect(open.unstored).toEqual({ install: `it reached a program outside the run on local port ${port}` })
       await open.checkout()
       expect(await open.run()).toEqual({ install: "ran", build: "hit", lint: "hit", test: "hit" })
+    } finally {
+      await new Promise((resolve) => server.close(resolve))
+    }
+  })
+
+  tracedIt("refuses an arbitrary program a package manager starts that connects outside the run", async () => {
+    const server = Net.createServer((socket) => socket.end())
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve))
+    try {
+      const port = (server.address() as Net.AddressInfo).port
+      // The package manager's lockfile does not determine which service its arbitrary subprocess contacts.
+      const fetching = `#!/bin/sh\n${process.execPath} -e "require('net').connect(${port}, '127.0.0.1')` +
+        `.on('connect', function () { this.end() })"\n/bin/mkdir -p deps\n/bin/cat lock.txt > deps/installed.txt\n`
+      for (const install of ["npm ci", "npm install"]) {
+        const fixture = await job({ install })
+        await fixture.write(Path.join(fixture.base, "tools", "npm"), fetching, 0o755)
+        expect(await fixture.run()).toEqual(all("ran"))
+        expect(fixture.unstored).toEqual({ install: `it reached a program outside the run on local port ${port}` })
+        await fixture.checkout()
+        expect(await fixture.run()).toEqual({ install: "ran", build: "hit", lint: "hit", test: "hit" })
+      }
     } finally {
       await new Promise((resolve) => server.close(resolve))
     }
@@ -1812,14 +1853,24 @@ describe("a job of observed steps", () => {
     await listing.write(".git/HEAD", commit("two"))
     expect(await listing.run()).toEqual(all("hit"))
     // `cargo package` writes the commit into what it packs: the same program, and the commit is what it read.
-    const packing = await job({ install: (home) => `cargo package --target-dir ${home}` })
-    await packing.write(Path.join(packing.base, "tools", "cargo"), tool, 0o755)
-    await packing.write(".git/HEAD", commit("one"))
-    expect(await packing.run()).toEqual(all("ran"))
-    await packing.checkout()
-    await packing.write(".git/HEAD", commit("two"))
-    expect((await packing.run())["install"]).toBe("ran")
-    expect(packing.reasons["install"]).toBe(".git/HEAD changed")
+    const pack = async () => {
+      const fixture = await job({ install: (home) => `cargo package --target-dir ${home}` })
+      await fixture.write(Path.join(fixture.base, "tools", "cargo"), tool, 0o755)
+      await fixture.write(".git/HEAD", commit("one"))
+      expect(await fixture.run()).toEqual(all("ran"))
+      await fixture.checkout()
+      return fixture
+    }
+    const dirty = await pack()
+    expect((await dirty.run())["install"]).toBe("ran")
+    expect(dirty.reasons["install"]).toBe("target/.rustc_info.json changed")
+
+    const fresh = await pack()
+    await Fs.rm(Path.join(fresh.root, "target"), { recursive: true })
+    await Fs.unlink(Path.join(fresh.outside, ".global-cache"))
+    await fresh.write(".git/HEAD", commit("two"))
+    expect((await fresh.run())["install"]).toBe("ran")
+    expect(fresh.reasons["install"]).toBe(".git/HEAD changed")
   })
 })
 
@@ -1874,12 +1925,17 @@ describe("a step that reaches a file by other rules than an open's", () => {
     "no-replace"
   ])("%s: is reused while what it read holds, and runs again when that changes", async (way) => {
     for (const [recorder, services] of recorders()) {
-      const { change, logs, run } = await probe(way)
+      const { change, logs, reasons, root, run } = await probe(way)
       const refused = () => logs.filter((line) => line.includes("not cached"))
       expect([recorder, await run(["check"], services), refused()]).toEqual([recorder, { check: "ran" }, []])
       if (way === "exchange") {
         // RENAME_EXCHANGE modifies data/ya.txt in place without a prior record; the second run measures it before starting.
         expect([recorder, await run(["check"], services)]).toEqual([recorder, { check: "ran" }])
+      }
+      if (way === "in-root-made-link") {
+        expect([recorder, await run(["check"], services)]).toEqual([recorder, { check: "ran" }])
+        expect(reasons).toEqual(["data/root/abs changed"])
+        await Fs.unlink(Path.join(root, "data/root/abs"))
       }
       expect([recorder, await run(["check"], services)]).toEqual([recorder, { check: "hit" }])
       await change()

@@ -151,6 +151,15 @@ const probe = (root: string, way: string): number => {
   return spawnSync(program!, rest, { cwd: root, stdio: "ignore", timeout: 60_000 }).status ?? -1
 }
 
+/** The probes that explicitly check whether a generated name already exists. */
+const checkedOutputs = new Map([
+  ["in-root-made-link", "data/root/abs"],
+  ["linkat-follow", "build/h"],
+  ["linkat-empty-path", "build/h"],
+  ["tmpfile-linkat", "build/named.txt"],
+  ["sendmmsg", "build/me"]
+])
+
 /** What a recorder made of a way: its verdict, and whether the run it recorded exited as the plain run did. */
 const recorded = (way: string, observer: Recorder): { readonly exit: number; readonly verdict: string } => {
   const root = repository()
@@ -172,7 +181,12 @@ const recorded = (way: string, observer: Recorder): { readonly exit: number; rea
     found: preRun
   })
   if ("refusal" in stored) return { exit, verdict: `not stored: ${stored.refusal}` }
-  // Reused while nothing changed: the run read nothing that it, or the probe's other runs, change.
+  const output = checkedOutputs.get(way)
+  if (output !== undefined) {
+    expect(ObservedReads.changed(stored, root)).toBe(`${output} changed`)
+    change(root, [output, undefined])
+  }
+  // Restore the input state, then change one input while keeping the output absent.
   const before = ObservedReads.changed(stored, root)
   if (before !== undefined) return { exit, verdict: `never reused: ${before}` }
   change(root, KernelProbe.ways[way]!.change)

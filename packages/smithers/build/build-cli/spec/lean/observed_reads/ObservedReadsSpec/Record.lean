@@ -15,7 +15,7 @@ namespace ObservedReadsSpec
 open Lean (Json)
 
 /-- The format tag of a stored set of records. -/
-def format : String := "smthrs-observed-reads/5"
+def format : String := "smthrs-observed-reads/6"
 
 /-- Records kept for one declaration. -/
 def maximumRecords : Nat := 4
@@ -54,6 +54,14 @@ structure LinkRow where
   added : Option (List (String × Nat))
   deriving Repr, DecidableEq
 
+/-- A path supplied by another step, optionally with its state before the consumer changed it. -/
+structure GivenRow where
+  path : String
+  state : String
+  place : Nat
+  prior : Option String
+  deriving Repr, DecidableEq
+
 /-- What one run read. -/
 structure Record where
   id : String
@@ -61,7 +69,7 @@ structure Record where
   lists : List ListRow
   links : Option (List LinkRow) := none
   «from» : Option (List (String × String)) := none
-  given : Option (List (String × String × Nat)) := none
+  given : Option (List GivenRow) := none
   left : Bool := false
   made : Option (List String) := none
   variables : Option (List (String × String)) := none
@@ -181,6 +189,7 @@ def isRecordShape (rules : Rules) (value : Json) : Bool :=
       origin.all (isTexts 2) &&
       given.all (fun row =>
         match elements row with
+        | some [path, state, place, prior] => isText path && isText state && isPlace origin.length place && isText prior
         | some [path, state, place] => isText path && isText state && isPlace origin.length place
         | _ => false) &&
       links.all (isDirectoryRow origin.length (fun count => (integer? count).isSome)) &&
@@ -246,10 +255,11 @@ def linkRowOf (row : Json) : LinkRow :=
   | some [path, count, own, added] => ⟨textOf path, (integer? count).getD 0, namesOf own, some (addedOf added)⟩
   | _ => ⟨"", 0, [], none⟩
 
-def givenRowOf (row : Json) : String × String × Nat :=
+def givenRowOf (row : Json) : GivenRow :=
   match elements row with
-  | some [path, state, place] => (textOf path, textOf state, placeOf place)
-  | _ => ("", "", 0)
+  | some [path, state, place] => ⟨textOf path, textOf state, placeOf place, none⟩
+  | some [path, state, place, prior] => ⟨textOf path, textOf state, placeOf place, some (textOf prior)⟩
+  | _ => ⟨"", "", 0, none⟩
 
 /-- The record a value of the right shape holds. -/
 def decode (rules : Rules) (value : Json) : Record where
@@ -296,8 +306,8 @@ def idText (record : Record) : String :=
       | none => []
       | some links => [jsonString "links", jsonArray (links.map LinkRow.json)]) ++
     [jsonArray ((record.from.getD []).map jsonPair),
-      jsonArray ((record.given.getD []).map fun (path, state, place) =>
-        jsonArray [jsonString path, jsonString state, toString place]),
+      jsonArray ((record.given.getD []).map fun row =>
+        jsonArray ([jsonString row.path, jsonString row.state, toString row.place] ++ (row.prior.map jsonString).toList)),
       jsonBool record.left] ++
     (match record.made with
       | none => []
