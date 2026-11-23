@@ -1,7 +1,7 @@
 import { expect, it } from "@effect/vitest"
 import { execFileSync } from "node:child_process"
 import { tmpdir } from "node:os"
-import { join } from "node:path"
+import { basename, dirname, join } from "node:path"
 
 it("resolves a separate coverage scratch directory in each coordinator process", () => {
   const config = new URL("../vitest.config.ts", import.meta.url).href
@@ -15,8 +15,12 @@ it("resolves a separate coverage scratch directory in each coordinator process",
   const first = inspect()
   const second = inspect()
   expect(first.pid).not.toBe(second.pid)
+  expect(first.directory).not.toBe(second.directory)
   for (const result of [first, second]) {
-    expect(result.directory).toBe(join(tmpdir(), `flows-sandbox-coverage-${result.pid}`))
+    expect(dirname(result.directory)).toBe(tmpdir())
+    expect(basename(result.directory)).toMatch(
+      /^flows-sandbox-coverage-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
+    )
   }
   expect(join(first.directory, ".tmp")).not.toBe(join(second.directory, ".tmp"))
 })

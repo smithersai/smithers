@@ -22,6 +22,7 @@ const packageIndex = () => opened ??= openPackageIndex({ workspace: root })
 const durableBrowser = "//packages/smithers/flows/platform-browser:browserTest"
 const browserProbes = new Map([
   ["//packages/smithers/ui:browserProbes", "generated-view.browser.test.ts"],
+  ["//packages/smithers/ui/repo-view:browserProbes", "html-preview.browser.test.tsx"],
   ["//packages/smithers/ui/terminal-frame:browserProbes", "terminal-frame.browser.test.ts"]
 ])
 
@@ -48,6 +49,7 @@ test("jobs selecting UI browser probes install the packages' pinned Chromium", (
   }
   const version = (cwd) => JSON.parse(readFileSync(join(root, cwd, "package.json"), "utf8")).devDependencies.playwright
   assert.equal(version("packages/smithers/ui"), version("packages/smithers/ui/terminal-frame"))
+  assert.equal(version("packages/smithers/ui"), version("packages/smithers/ui/repo-view"))
   assert.match(jobs["apps-e2e"].steps.find((step) => step.name === "Install system packages").run, /'tmux'/)
 })
 
@@ -111,7 +113,10 @@ const assertE2eRunner = (row) => {
     assert.equal(row.rule, "NodeTest")
     assert.equal(row.cwd, cwd)
     assert.deepEqual(row.runner, ["bun", "test", "browser"])
-    assert.ok(row.inputs.some((input) => input.pattern === `//${cwd}/browser/**/*.ts`), "the browser probes must be declared inputs")
+    assert.ok(
+      row.inputs.some((input) => input.pattern === `//${cwd}/browser/**/*.ts` || input.pattern === `//${cwd}/browser/**/*.tsx`),
+      "the browser probes must be declared inputs"
+    )
     const probe = readFileSync(join(root, cwd, "browser", browserProbes.get(label)), "utf8")
     assert.match(probe, /import \{[^}]*\bchromium\b[^}]*\} from "playwright"/)
     assert.match(probe, /chromium\.launch\(/)
@@ -376,11 +381,12 @@ test("required CI resolves package, app, script and evaluation suites to real ru
       assert.match(driver, /process\.env\.TMUX_BIN \?\? "tmux"/)
       assert.match(driver, /spawnSync\(binary\(\), \["-S", this\.socket/)
       assert.match(readFileSync(join(root, row.cwd, "e2e/tui.test.ts"), "utf8"),
-        /Tui\.start\(\{[^}]*command: `bun \$\{join\(app, "src", "main\.tsx"\)\}/)
+        /Tui\.start\(\{[^}]*command: `(?:bun|\$\{bunCommand\}) \$\{join\(app, "src", "main\.tsx"\)\}/)
     }
-    // Ambient helper/fixture/config/dependency/runtime/seed inputs are safe only
-    // while the general NodeTest/Vitest runners always execute fresh work.
-    if (["NodeTest", "Vitest"].includes(row.rule)) assert.equal(row.cacheable, false, `${row.label}: review all effective inputs before enabling result reuse`)
+    // General NodeTest/Vitest runners must never opt into unverified `cache: true`.
+    // On hosts with declared-input confinement (CacheEvidence), `cacheable` may be
+    // true because the runner stores a result only after proving no undeclared reads.
+    if (["NodeTest", "Vitest"].includes(row.rule)) assert.notEqual(row.declaredCache, true, `${row.label}: review all effective inputs before enabling result reuse`)
   }
   for (const app of ["bug-worker"]) {
     assert.match(readFileSync(join(root, `apps/${app}/PACKAGE.ts`), "utf8"), /Coverage policy: assertion-only/)

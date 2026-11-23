@@ -199,6 +199,26 @@ only.
 | `testing` | `inventories every static behavior in each targeted OpenCode source` | Set `FLOWS_OPENCODE_CORPUS` to an external corpus; a named but missing corpus fails. |
 | `smithers/flows/sandbox` | `retained Sandbox.job real microVM` | `describe.skipIf(!available)`: set `SMITHERS_REAL_SANDBOX_JOB=1` on a host with a usable hypervisor, runnable Microsandbox and cached `node:26-trixie` image. Proves host-death retention, reacquisition, one-time capture and destruction; the default gate does not run this proof. |
 | `smithers/flows/sandbox` | `a job runs a ${LONG_SECONDS}-second command past SandboxTools' 600 s to its result (SANDBOX_LONG_COMMAND_SECONDS)` | `it.runIf(LONG_SECONDS > 0)` |
+| `ci` | `on structured expressions over every kind of context, and on finishing what is left` | `it.skipIf(!oracleReady)` (Lean 4 `inventory-spec` reference oracle; requires `lake` or built binary) |
+| `ci` | `on expressions that stay unfinished, their variables, their verdict and every way they finish` | `it.skipIf(!oracleReady)` (Lean 4 `inventory-spec` reference oracle) |
+| `ci` | `on hostile text: token fragments, stray quotes, odd spaces and unfinished numbers` | `it.skipIf(!oracleReady)` (Lean 4 `inventory-spec` reference oracle) |
+| `ci` | `on what a value is as a number, as text and as a truth` | `it.skipIf(!oracleReady)` (Lean 4 `inventory-spec` reference oracle) |
+| `ci` | `on the functions: comparison without case, format, join and JSON both ways` | `it.skipIf(!oracleReady)` (Lean 4 `inventory-spec` reference oracle) |
+| `ci` | `on text with expressions in it: where each starts and ends, and what filling gives` | `it.skipIf(!oracleReady)` (Lean 4 `inventory-spec` reference oracle) |
+| `ci` | `on the runner's verdict for conditions put together by hand` | `it.skipIf(!oracleReady)` (Lean 4 `inventory-spec` reference oracle) |
+| `ci` | `on a corpus of corner cases` | `it.skipIf(!oracleReady)` (Lean 4 `inventory-spec` reference oracle; expressions, matrices, and globs) |
+| `ci` | `on generated matrices: lists, repeats, empty lists, exclude, and include that joins or stands alone` | `it.skipIf(!oracleReady)` (Lean 4 `inventory-spec` reference oracle) |
+| `ci` | `on matrices at the limit of 256 variants` | `it.skipIf(!oracleReady)` (Lean 4 `inventory-spec` reference oracle) |
+| `ci` | `on generated patterns: the regular expression itself, and which generated paths it names` | `it.skipIf(!oracleReady)` (Lean 4 `inventory-spec` reference oracle) |
+| `ci` | `on lists of patterns: comments, space, patterns that leave files out and ones that leave the repository` | `it.skipIf(!oracleReady)` (Lean 4 `inventory-spec` reference oracle) |
+| `ci` | `asked the reference about enough cases of each kind` | `it.skipIf(!oracleReady)` (Lean 4 `inventory-spec` reference oracle) |
+| `ci` | `costs at most 1.20 times its wall time and 1.30 times its CPU time when it reads 4,000 files a second of CPU` | `it.fails` (known overhead pin for file-read trace recording) |
+| `smithers/build/build-cli` | `refuses a successful unknown named call` | `it.fails` (known `ObservedReads` trace-parser gap) |
+| `smithers/build/build-cli` | `refuses a successful open whose trace omits the pathname` | `it.fails` (known `ObservedReads` trace-parser gap) |
+| `smithers/build/build-cli` | `rejects a resume for the wrong syscall on the same PID` | `it.fails` (known `ObservedReads` trace-parser gap) |
+| `smithers/build/build-cli` | `keeps an unescaped supplementary character beside an escape` | `it.fails` (known `ObservedReads` trace-parser gap) |
+| `smithers/build/build-cli` | `refuses or invalidates a read whose xattr value changes` | `it.fails` (known `ObservedReads` metadata gap; `Io` exposes only bytes/stat) |
+| `smithers/build/build-cli` | `refuses or invalidates stat after a %s-only change` | `it.fails.each(["mode", "nlink"])` (known `ObservedReads` stat-field gap) |
 | `smithers/flows/canonical` | `orders elements whose data lives only behind accessors` | `it.fails` |
 | `smithers/flows/flow` | `runs a child whose payload holds a set, under one id whatever the insertion order` | `it.effect.fails` |
 | `smithers/flows/flow` | `hands off a set in sorted order, so the next round's payload is its identity snapshot` | `it.effect.fails` |

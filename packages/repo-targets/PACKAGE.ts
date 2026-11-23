@@ -666,7 +666,8 @@ const ciInventory = Smithers.NodeTest({
     Smithers.file("//packages/repo-targets/contracts/ci-terminal-media.test.mjs")
   ]),
   srcs: [...contracts],
-  deps: []
+  deps: [],
+  cache: false
 })
 
 const securityReview = Smithers.SecurityReview({

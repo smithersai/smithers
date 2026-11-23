@@ -10,7 +10,7 @@ use std::path::Path;
 
 use flows_jj::abi;
 use flows_jj::ops;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use tempfile::TempDir;
 
 struct Rng(u64);
@@ -39,8 +39,7 @@ impl Rng {
         (0..len).map(|_| (self.next_u64() & 0xff) as u8).collect()
     }
     fn ascii_or_control(&mut self, max_len: usize) -> String {
-        let alphabet: &[u8] =
-            b"abcxyz0123456789/._-\\\"\n\r\t\x00\x07\x08\x0b\x0c\x1b\x7f ";
+        let alphabet: &[u8] = b"abcxyz0123456789/._-\\\"\n\r\t\x00\x07\x08\x0b\x0c\x1b\x7f ";
         let len = self.usize(max_len + 1);
         let mut out = String::with_capacity(len);
         for _ in 0..len {
@@ -70,7 +69,11 @@ fn assert_valid_abi_envelope(response_bytes: &[u8], context: &str) -> Value {
         panic!("invalid JSON from call_json ({context}): {e}");
     });
     let obj = val.as_object().expect("response must be a JSON object");
-    assert_eq!(obj.len(), 1, "response must have exactly one key ({context}): {val}");
+    assert_eq!(
+        obj.len(),
+        1,
+        "response must have exactly one key ({context}): {val}"
+    );
     assert!(
         obj.contains_key("ok") || obj.contains_key("err"),
         "response must be ok or err ({context}): {val}"
@@ -159,7 +162,13 @@ fn fuzz_stateful_jj_ops_sequences_preserve_invariants() {
 
         let mut snapshots: Vec<(String, String, BTreeMap<String, Vec<u8>>)> = Vec::new();
         let mut expected_files: BTreeMap<String, Vec<u8>> = BTreeMap::new();
-        let names = ["a.txt", "b.txt", "dir/c.txt", "dir/sub/d.bin", "space name.txt"];
+        let names = [
+            "a.txt",
+            "b.txt",
+            "dir/c.txt",
+            "dir/sub/d.bin",
+            "space name.txt",
+        ];
 
         for step in 0..16 {
             match rng.usize(6) {
@@ -207,7 +216,8 @@ fn fuzz_stateful_jj_ops_sequences_preserve_invariants() {
                         "root": root.to_str().unwrap(),
                     }))
                     .unwrap();
-                    let status_resp = assert_valid_abi_envelope(&abi::call_json(&status_req), "status");
+                    let status_resp =
+                        assert_valid_abi_envelope(&abi::call_json(&status_req), "status");
                     assert!(status_resp.get("ok").is_some());
 
                     if snapshots.len() >= 2 {
@@ -220,7 +230,8 @@ fn fuzz_stateful_jj_ops_sequences_preserve_invariants() {
                             "to": snapshots[b].0,
                         }))
                         .unwrap();
-                        let diff_resp = assert_valid_abi_envelope(&abi::call_json(&diff_req), "diff");
+                        let diff_resp =
+                            assert_valid_abi_envelope(&abi::call_json(&diff_req), "diff");
                         let diff_str = diff_resp["ok"]["diff"].as_str().expect("diff must succeed");
                         if snapshots[a].0 == snapshots[b].0 {
                             assert!(diff_str.is_empty(), "diff(x, x) must be empty");
@@ -238,7 +249,8 @@ fn fuzz_stateful_jj_ops_sequences_preserve_invariants() {
                             "changeId": commit_id,
                         }))
                         .unwrap();
-                        let resp = assert_valid_abi_envelope(&abi::call_json(&restore_req), "restore");
+                        let resp =
+                            assert_valid_abi_envelope(&abi::call_json(&restore_req), "restore");
                         assert!(resp.get("ok").is_some(), "restore failed: {resp}");
                         for name in names {
                             let full = root.join(name);
@@ -250,7 +262,10 @@ fn fuzz_stateful_jj_ops_sequences_preserve_invariants() {
                                     assert_eq!(&got, want, "restored file {name} content mismatch");
                                 }
                                 None => {
-                                    assert!(!Path::new(&full).exists(), "file {name} should be absent after restore");
+                                    assert!(
+                                        !Path::new(&full).exists(),
+                                        "file {name} should be absent after restore"
+                                    );
                                 }
                             }
                         }

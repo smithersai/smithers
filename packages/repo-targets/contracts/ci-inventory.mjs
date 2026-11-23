@@ -204,7 +204,7 @@ export async function resolveInventory() {
             config: attrs.config ?? attrs.tsconfig ?? null,
             inputs: selected.declaredInputs?.map((input) => input.declaration) ??
               [...(attrs.srcs ?? attrs.sources ?? []), ...(attrs.tests ?? []), ...(attrs.data ?? [])],
-            coverage: attrs.coverage ?? null, cacheable: selected.cacheable
+            coverage: attrs.coverage ?? null, cacheable: selected.cacheable, declaredCache: attrs.cache ?? null
           })
         }
       }

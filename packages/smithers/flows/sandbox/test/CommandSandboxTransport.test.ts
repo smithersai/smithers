@@ -148,7 +148,7 @@ describe("CommandSandbox stdin transport", () => {
         const error = yield* Effect.flip(
           CommandSandbox.make({
             spawner,
-            prefix: refusal === "denied" ? [ssh] : [ssh, "x".repeat(4097)],
+            prefix: refusal === "denied" ? [ssh] : [ssh, "x".repeat(GrantStore.maximumMetadataBytes)],
             workdir: join(root, refusal)
           }).acquire(`${basename(root)}-transport-${refusal}`)
         )

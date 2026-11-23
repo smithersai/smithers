@@ -99,12 +99,15 @@ describe("coverage conformance", () => {
       // package working tree: `join(tmpdir(), \`flows-<pkg>-coverage-${pid}\`)`.
       assert.match(
         source,
-        /reportsDirectory:\s*join\(\s*tmpdir\(\),\s*`flows-[a-z-]+-coverage-\$\{process\.pid\}`\s*\)/
+        /reportsDirectory:\s*join\(\s*tmpdir\(\),\s*`flows-[a-z-]+-coverage-\$\{(?:randomUUID\(\)|process\.pid)\}`\s*\)/
       )
-      // The derivation only isolates if the real node:os/node:path helpers
+      // The derivation only isolates if the real node:os/node:path (and node:crypto when using randomUUID) helpers
       // are in scope.
       assert.ok(source.includes(`import { tmpdir } from "node:os"`))
       assert.ok(source.includes(`import { join } from "node:path"`))
+      if (source.includes("${randomUUID()}")) {
+        assert.ok(source.includes(`import { randomUUID } from "node:crypto"`))
+      }
       // The slug is the package's own directory name. A nested package
       // (`flows/canonical`) is named by its path here, and a report directory
       // is one path segment.

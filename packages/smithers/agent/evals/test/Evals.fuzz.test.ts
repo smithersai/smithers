@@ -349,9 +349,7 @@ describe("@smthrs/evals comprehensive fuzz invariants", () => {
                   return Effect.die(new Error("exec defect"))
                 }
                 if (mode === "executorTimeout") {
-                  return Effect.sleep("200 millis").pipe(
-                    Effect.as({ output: c.input, stepKey: "s1", latencyMs: 200, target })
-                  )
+                  return Effect.never
                 }
                 const out = mode === "inlineScorerFail"
                   ? "fail-scorer"

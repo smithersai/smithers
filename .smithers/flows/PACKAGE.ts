@@ -1040,7 +1040,8 @@ const releaseSmoke = Smithers.NodeTest({
   timeout: "30m",
   runner: Smithers.entrypoint(Smithers.file("//.smithers/flows/release/smoke-release.mjs"), [packDirectory]),
   srcs: releaseSources,
-  deps: [releasePack]
+  deps: [releasePack],
+  cache: false
 })
 
 /**
@@ -1063,7 +1064,8 @@ const releaseSmoke = Smithers.NodeTest({
 const npmDedupe = Smithers.NodeTest({
   runner: Smithers.entrypoint(Smithers.file("//.smithers/flows/release/check-npm-dedupe.mjs")),
   srcs: releaseSources,
-  deps: []
+  deps: [],
+  cache: false
 })
 
 /**
