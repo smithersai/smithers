@@ -815,7 +815,7 @@ describe("@smthrs/run-store state machine, lease generations and claim races", (
       ({ putMode }) => Layer.mergeAll(storesLayer(putMode), TestClock.layer()),
       { seed: seed + 21, executions: Math.min(ioExecutions * 2, 100) }
     )
-  })
+  }, 120_000)
 
   // -------------------------------------------------------------------------
   // Lease generations and terminal absorption

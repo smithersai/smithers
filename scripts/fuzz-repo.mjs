@@ -193,7 +193,9 @@ async function runTsSuites(suites) {
   )
 
   const results = await runPool(suites, concurrency, async (suite) => {
-    const isTui = suite.pkg === "apps/tui"
+    const pkgJson = JSON.parse(readFileSync(join(suite.dir, "package.json"), "utf8"))
+    const hasVitest = Boolean(pkgJson.devDependencies?.vitest || pkgJson.dependencies?.vitest)
+    const usesBunTest = suite.pkg === "apps/tui" || (!hasVitest && String(pkgJson.scripts?.test ?? "").startsWith("bun test"))
     const isMvp = suite.pkg === "apps/mvp"
     const isCrossFuzz = suite.pkg === "fuzz"
     const covDir = tmpBase ? join(tmpBase, suite.pkg.replace(/[\\/]/g, "__")) : undefined
@@ -201,9 +203,19 @@ async function runTsSuites(suites) {
 
     let cmd = "pnpm"
     let cmdArgs
-    if (isTui) {
+    if (usesBunTest) {
       cmd = "bun"
-      cmdArgs = ["test", ...suite.files]
+      const bunfigPath = join(suite.dir, "bunfig.toml")
+      if (existsSync(bunfigPath)) {
+        const raw = readFileSync(bunfigPath, "utf8")
+        const stripped = raw.replace(/^\s*coverage[A-Za-z]*\s*=.*$/gm, "").trimEnd() + "\ncoverage = false\n"
+        const tmpBunfigDir = covDir ?? mkdtempSync(join(tmpdir(), "smithers-bunfig-"))
+        const tmpBunfig = join(tmpBunfigDir, "bunfig.fuzz.toml")
+        writeFileSync(tmpBunfig, stripped)
+        cmdArgs = [`--config=${tmpBunfig}`, "test", ...suite.files]
+      } else {
+        cmdArgs = ["test", ...suite.files]
+      }
     } else if (measureCoverage) {
       cmdArgs = [
         "exec",

@@ -2715,8 +2715,12 @@ describe("@smthrs/sync SyncServer fuzzing", () => {
             )
 
             if (mode === "oversize") {
+              const wsPage = yield* srv.read({ protocolVersion: 1, scope: { _tag: "Workspace" }, cursors: [], limit }).pipe(
+                Effect.provide(SyncPrincipal.layerWorkspace("w1"))
+              )
+              if (wsPage.entries.length !== 0 || !wsPage.done) return false
               const err = yield* Effect.flip(
-                srv.read({ protocolVersion: 1, scope: { _tag: "Workspace" }, cursors: [], limit }).pipe(
+                srv.read({ protocolVersion: 1, scope: { _tag: "Run", runId: runIds[0]! }, cursors: [], limit }).pipe(
                   Effect.provide(SyncPrincipal.layerWorkspace("w1"))
                 )
               )

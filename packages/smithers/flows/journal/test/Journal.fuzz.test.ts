@@ -31,6 +31,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { DatabaseSync } from "node:sqlite"
 import { describe, expect, it } from "vitest"
+import * as Leases from "./fixtures/leases.ts"
 import {
   Consensus,
   EngineEvent,
@@ -2488,9 +2489,11 @@ describe("@smthrs/journal SqlJournal fuzz invariants", () => {
             )
             const j = Context.get(jCtx, Journal.Journal)
 
+            const acOwner = { hostId: "ac-fuzz", pid: 1, nonce: "ac-nonce" }
+            yield* Leases.hold(sql, asRun("ac-run"), acOwner)
             const emitOne = (i: number) => {
               const inp = mkInput("ac-run", "s1", "ev", { i }, { sourceSeq: i })
-              return channel === "durable" ? j.emitDurableUnfenced(inp) : j.emitLossy(inp)
+              return channel === "durable" ? j.emitDurable(inp, acOwner) : j.emitLossy(inp)
             }
 
             if (captureMode === "timeout") {
@@ -2498,6 +2501,11 @@ describe("@smthrs/journal SqlJournal fuzz invariants", () => {
               const f = yield* Effect.gen(function*() {
                 for (let i = 0; i < threshold; i++) {
                   yield* emitOne(i)
+                }
+                if (channel === "lossy") {
+                  // #4555: lossy writes never compact; follow with a fenced owner write to trigger capture
+                  yield* j.flush
+                  yield* j.emitDurable(mkInput("ac-run", "s1", "ev", { i: threshold }, { sourceSeq: threshold }), acOwner)
                 }
                 yield* j.flush
               }).pipe(Effect.forkChild({ startImmediately: true }))
@@ -2513,6 +2521,15 @@ describe("@smthrs/journal SqlJournal fuzz invariants", () => {
                 yield* emitOne(i)
               }
               yield* j.flush
+              if (channel === "lossy") {
+                // #4555: lossy bursts never compact on their own
+                if (captures !== 0) return false
+                yield* j.emitDurable(
+                  mkInput("ac-run", "s1", "ev", { i: threshold + 1 }, { sourceSeq: threshold + 1 }),
+                  acOwner
+                )
+                yield* j.flush
+              }
               if (captureMode === "ok") {
                 const ckpt = yield* j.latestCheckpoint(asRun("ac-run"))
                 if (Option.isNone(ckpt) || ckpt.value.compactedAtMs === null) return false

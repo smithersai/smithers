@@ -138,8 +138,11 @@ export const declare = (prepare: Prepare): Declared => {
     // Captured, so the plan's identity holds across builds and leaders.
     body: Node.capture({ action: Run.name }, (input) => Run.call(input))
   })
-  const run = () =>
+  const run = (input: { readonly epoch: number }) =>
     Effect.gen(function*() {
+      if (input.epoch !== prepare.epoch) {
+        return yield* Effect.fail(new PrepareFailed({ error: "EpochMismatch" }))
+      }
       const connection = yield* SqlConnection
       return yield* prepare.run(database(connection, OWNER)).pipe(
         Effect.ensuring(connection.abandon(OWNER)),

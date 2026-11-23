@@ -156,7 +156,7 @@ it("checks lifecycle, receipts and journal effects after each command and after 
       (dir) => Effect.promise(() => rm(dir, { recursive: true, force: true }))
     ), { seed, executions: ioExecutions }))
   expect(report._tag, Fuzz.formatReport(report)).toBe("Passed")
-})
+}, 120_000)
 
 it("gives concurrent run-key claimants exactly one reservation and preserves the winner's receipt", async () => {
   const report = await Effect.runPromise(

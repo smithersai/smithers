@@ -284,6 +284,66 @@ describe("BrowserRuntime.run with prepare", () => {
       expect(yield* select(tab)).toEqual([{ epoch: 2 }])
       yield* Fiber.interrupt(next)
     }).pipe(Effect.scoped))
+  it.live("does not schedule retries for an interrupted preparation or run a new build against an older epoch", () =>
+    Effect.gen(function*() {
+      const name = Engines.name()
+      const ran: Array<number> = []
+      const entered = yield* Deferred.make<void>()
+      // Leader 1 (epoch 3) crashes mid-preparation.
+      const crashed = worker(
+        name,
+        preparation(3, ran, () => Deferred.succeed(entered, undefined).pipe(Effect.andThen(Effect.never)))
+      )
+      yield* Deferred.await(entered)
+      yield* Fiber.interrupt(crashed)
+
+      // Leader 2 (epoch 2) starts and fails permanently; epoch 3 must not re-fire against epoch 2.
+      const epoch2Ran: Array<number> = []
+      const failing2 = preparation(
+        2,
+        epoch2Ran,
+        () => Effect.fail(new BrowserRuntime.PrepareFailed({ error: "CorruptStore", permanent: true }))
+      )
+      const tab = yield* Engines.sharedTab(name)
+      const second = worker(name, failing2)
+      expect(yield* fenced(tab.execute("SELECT 1"))).toBe(true)
+      // Give any leaked retry clock (200ms + 400ms) time to fire if interruption mistakenly scheduled one.
+      yield* Effect.sleep("700 millis")
+      yield* Fiber.interrupt(second)
+      expect(epoch2Ran).toEqual([2, 2, 2])
+    }).pipe(Effect.scoped))
+
+  it.live("does not run a different build epoch when recovering a pending retry clock from an earlier epoch", () =>
+    Effect.gen(function*() {
+      const name = Engines.name()
+      const epoch3Ran: Array<number> = []
+      const failedOnce = yield* Deferred.make<void>()
+      // Leader 1 (epoch 3) fails attempt 1 transiently (arming a 200ms retry clock), then is interrupted mid-backoff.
+      const first = worker(
+        name,
+        preparation(3, epoch3Ran, () =>
+          Deferred.succeed(failedOnce, undefined).pipe(Effect.andThen(Effect.fail("transient-io"))))
+      )
+      yield* Deferred.await(failedOnce)
+      yield* Effect.sleep("30 millis")
+      yield* Fiber.interrupt(first)
+
+      // Leader 2 (epoch 2) starts while epoch 3 has a pending retry clock: epoch 2 prepares only epoch 2.
+      const epoch2Ran: Array<number> = []
+      const tab = yield* Engines.sharedTab(name)
+      const second = worker(name, preparation(2, epoch2Ran))
+      expect(yield* select(tab)).toEqual([{ epoch: 2 }])
+      yield* Effect.sleep("350 millis")
+      yield* Fiber.interrupt(second)
+      expect(epoch2Ran).toEqual([2])
+
+      // Returning to epoch 3 still prepares epoch 3 (not mistakenly marked prepared by epoch 2).
+      const epoch3After: Array<number> = []
+      const third = worker(name, preparation(3, epoch3After))
+      expect(yield* select(tab)).toEqual([{ epoch: 2 }, { epoch: 3 }])
+      yield* Fiber.interrupt(third)
+      expect(epoch3After).toEqual([3])
+    }).pipe(Effect.scoped))
 })
 
 describe("BrowserRuntime.run with a preparation that dies", () => {
