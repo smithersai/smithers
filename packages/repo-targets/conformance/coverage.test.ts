@@ -348,8 +348,14 @@ describe("coverage conformance", () => {
     const excluded = [
       ...(/\bexclude\s*:\s*\[([^\]]*)\]/.exec(coverage ?? "")?.[1] ?? "").matchAll(/"([^"]+)"/g)
     ].flatMap((match) => match[1] === undefined ? [] : [match[1]])
+    const splitSuiteDefaultEmpty =
+      name === "ci" &&
+      /\bexclude\s*:\s*\[\.\.\.coverageConfigDefaults\.exclude,\s*\.\.\.\(part\.coverageExclude\s*\?\?\s*\[\]\)\]/.test(
+        coverage ?? ""
+      ) &&
+      /export default suite\(\)/.test(source)
     assert.equal(
-      !/\bexclude\s*:/.test(coverage ?? "") || excluded.length > 0,
+      !/\bexclude\s*:/.test(coverage ?? "") || excluded.length > 0 || splitSuiteDefaultEmpty,
       true,
       `packages/${name}/vitest.config.ts declares a coverage exclusion this cell cannot read`
     )

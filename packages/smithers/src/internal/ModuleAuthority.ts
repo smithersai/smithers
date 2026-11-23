@@ -24,7 +24,7 @@ import * as Descriptor from "@smthrs/registry/Descriptor"
 import type * as Executable from "@smthrs/registry/Executable"
 import * as Registry from "@smthrs/registry/Registry"
 import { RunStore } from "@smthrs/run-store"
-import { Cause, Effect, Exit, Option, RcMap, Schema } from "effect"
+import { Cause, Deferred, Effect, Exit, Option, Queue, RcMap, Schema } from "effect"
 import { ModuleOwner } from "./ModuleOwner.ts"
 
 /**
@@ -47,6 +47,32 @@ export const make = (
 ) =>
   Effect.gen(function*() {
     const authorityContext = yield* Effect.context<never>()
+    // Host admission (ownership, approved plan, source verification and
+    // snapshot publication) must execute on an unattenuated host fiber forked
+    // at host startup, not under a flow's narrowed capability ceiling (#4531).
+    type AdmissionTask = {
+      readonly run: Effect.Effect<void>
+    }
+    const admissionQueue = yield* Queue.unbounded<AdmissionTask>()
+    yield* Effect.forkScoped(
+      Effect.forever(
+        Effect.gen(function*() {
+          const task = yield* Queue.take(admissionQueue)
+          yield* Effect.forkScoped(task.run)
+        })
+      )
+    )
+    const runOnHost = <A, E>(effect: Effect.Effect<A, E>): Effect.Effect<A, E> =>
+      Effect.gen(function*() {
+        const result = yield* Deferred.make<A, E>()
+        yield* Queue.offer(admissionQueue, {
+          run: Effect.exit(effect.pipe(Effect.updateContext<never, never>(() => authorityContext))).pipe(
+            Effect.flatMap((exit) => Deferred.done(result, exit)),
+            Effect.asVoid
+          )
+        })
+        return yield* Deferred.await(result)
+      })
     const engine = yield* FlowRuntime.FlowRuntime
     const state = yield* DurableEngineState.DurableEngineState
     const runs = yield* RunStore.RunStore
@@ -230,7 +256,7 @@ export const make = (
         // Ownership and pinned source verification are host admission work.
         // A module need not grant itself filesystem reads to let the host
         // verify its source; its handler retains the execution ceiling below.
-        Effect.updateContext<never, never>(() => authorityContext)
+        runOnHost
       )
 
     const parking = AgentSession.budgetParking(budgetHost.controlJournal, control)

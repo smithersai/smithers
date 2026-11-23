@@ -231,6 +231,23 @@ describe("child-process containment conformance", () => {
       + "stdio ignored), outside a durable flow host."
     ],
     [
+      "ci/src/cli/Restart.ts",
+      "CLI bootstrap environment scrubber: re-executes smithers-ci with a minimal environment and "
+      + "a bounded FIFO transfer helper before Effect runtime startup so replayed CI steps cannot "
+      + "read ambient user secrets from /proc/<pid>/environ. Runs outside any durable host."
+    ],
+    [
+      "ci/src/replay/Jail.ts",
+      "Synchronous Landlock ABI capability probe: runs one-shot `perl -e` syscall(444) detection "
+      + "to report whether the local Linux kernel supports Landlock replay scoping. Never executes "
+      + "user or workflow commands."
+    ],
+    [
+      "smithers/src/cli/McpRemote.ts",
+      "Interactive `smthrs mcp login` browser launcher: spawns the OS URL opener (`open`, `xdg-open`, "
+      + "`cmd /c start`) detached and unref'd during OAuth PKCE authorization outside any durable run."
+    ],
+    [
       "smithers/build/build-cli/src/internal/PackageRunner.ts",
       "Build-CLI job-keeper launcher: spawns `JobKeeper` inside bubblewrap with a piped stdin handle "
       + "so the job namespace terminates when the CLI exits."

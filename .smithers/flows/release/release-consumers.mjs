@@ -585,8 +585,13 @@ export const readQuickstart = (root = repoRoot) => {
   const fenced = (language) =>
     [...source.matchAll(new RegExp("^```" + language + "\\n([\\s\\S]*?)^```$", "gm"))].map(([, body]) => body.trimEnd())
   const [setup, run, ...extra] = fenced("bash")
-  const printed = fenced("text")
-  assert.ok(setup !== undefined && run !== undefined && extra.length === 0, "quickstart needs a set-up block and a run block")
+  assert.ok(setup !== undefined && run !== undefined && extra.length <= 1, "quickstart needs a set-up block and a run block")
+  if (extra.length === 1) {
+    assert.ok(extra[0].split("\n").includes(run), "quickstart replay block must rerun the quickstart command")
+  }
+  const runFence = "```bash\n" + run + "\n```"
+  const afterRun = source.slice(source.indexOf(runFence) + runFence.length)
+  const printed = [...afterRun.matchAll(/^```text\n([\s\S]*?)^```$/gm)].map(([, body]) => body.trimEnd())
   assert.equal(printed.length, 1, "quickstart must show the one line the program prints")
   const [enter, ...commands] = setup.split("\n")
   assert.match(enter, /^mkdir (\S+) && cd \1$/, "quickstart must start in a new, empty directory")

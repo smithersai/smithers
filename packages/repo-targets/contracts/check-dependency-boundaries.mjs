@@ -717,6 +717,17 @@ function main() {
         const packageName = packageNameForSpecifier(specifier)
         if (!packageName || packageName === pkg.name) continue
         if (allowed.has(packageName)) continue
+        // A published CLI bin shim that runs compiled `dist/` in tarballs and only
+        // loads `vibelang/register` inside a source checkout (`existsSync("../src/...")`)
+        // keeps `vibelang` in `devDependencies` so npm consumers never pull the compiler.
+        if (
+          specifier === "vibelang/register" &&
+          deps.dev.has("vibelang") &&
+          file.split(sep).includes("bin") &&
+          /\bif\s*\(\s*checkout\s*\)\s*await\s+import\s*\(\s*["']vibelang\/register["']\s*\)/.test(
+            readFileSync(join(repoRoot, file), "utf8")
+          )
+        ) continue
         violations.push({ file, specifier, packageName, section: expectedSection })
       }
     }
