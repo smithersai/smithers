@@ -5,7 +5,7 @@ import { sourceText } from "../../../packages/repo-targets/test-utils/source-rea
 
 test.each([
   "/", "/app", "/settings", "/flows", "/app/settings", "/app/flows/new", "/app/flows/code/example",
-  "/app/flows/drafts/id", "/app/views/id", "/app/runs/id", "/app/conversations", "/app/bugs/report", "/app/queue",
+  "/app/flows/drafts/id", "/app/views/id", "/app/runs/id", "/app/conversations", "/app/bugs/report", "/app/queue", "/app/fleet",
   "/roninjin10", "/octocat", "/smithersai",
   "/owner/repo", "/owner/repo/branches", "/owner/repo/tree/main", "/owner/repo/blob/main/src/file.ts",
   "/owner/repo/raw/main/file", "/owner/repo/docs/guide/page", "/owner/repo/issues", "/owner/repo/issues/new",

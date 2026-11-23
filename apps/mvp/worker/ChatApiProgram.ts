@@ -82,6 +82,8 @@ import * as RunContent from "./RunContent.ts"
 import * as RunnerAdmin from "./runners/Admin.ts"
 import * as RunnersApi from "./runners/Api.ts"
 import * as RunnerAudit from "./runners/Audit.ts"
+import * as DeploymentPolicy from "./DeploymentPolicy.vibe"
+import * as FleetShapes from "./fleet/FleetShapes.vibe"
 import * as FleetApi from "./runners/FleetApi.ts"
 import * as GitCredential from "./runners/GitCredential.ts"
 import * as SecretsApi from "./secrets/Api.ts"
@@ -350,7 +352,9 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
     const refreshIssue = Option.isSome(app) ? yield* IssueRead.make(app.value) : undefined
     const stack = yield* StackApi.make(database, roles, refreshIssue === undefined ? {} : { refreshIssue })
     // The fleet's shapes: a repository's agent runs and runner machines (docs/features/fleet.md#the-shapes).
+    const deploymentAdmins = yield* DeploymentPolicy.configuredAdmins().pipe(Effect.orElseSucceed(() => DeploymentPolicy.DEFAULT_ADMINS))
     const fleet = yield* FleetApi.make(roles)
+    const fleetShapes = yield* FleetShapes.make(deploymentAdmins)
     // A TODO's run, watched from its page (ruling TODO-3, docs/features/runs.md#a-run-on-cloudflare), and a repository's
     // (docs/features/actions.md): the engine's own read of it, from the engine's schema, and its row of the engine's
     // change feed through Electric. A Member steers a TODO's agent by admitting a message to the run's queue in the same
@@ -556,6 +560,7 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
               if (RunnersApi.handles(path)) {
                 return yield* runnersApi.fetch.pipe(Effect.provide(RunContent.transcriptsLayer(runContents)))
               }
+              if (FleetShapes.handles(path)) return yield* fleetShapes.fetch.pipe(Effect.provide(signedIn))
               if (FleetApi.handles(path)) return yield* fleet.fetch.pipe(Effect.provide(signedIn))
               if (RunnerAudit.handles(path)) return yield* runnerAudit.fetch.pipe(Effect.provide(signedIn))
               // Before the repository routes: `/api/repos/<owner>/<name>/runners/<name>`, `.../agents/<name>` and
@@ -620,7 +625,7 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
                       starter,
                       githubReadToken: mcpReadToken,
                       docsSource: docsSvc,
-                    })
+                    }).pipe(Effect.map((liveDeps): McpTools.McpToolDeps => ({ ...liveDeps, fleet: { database: database as Layer.Layer<SqlClient.SqlClient, unknown>, admins: deploymentAdmins } })))
                   }).pipe(
                     Effect.provide(Layer.merge(FetchHttpClient.layer, docsSource)),
                     Effect.flatMap(McpTools.makeMcpToolRegistry)

@@ -11,6 +11,7 @@
  */
 
 import * as AgentRunner from "@smthrs/agent/AgentRunner"
+import * as ModelPolicy from "@smthrs/agent/ModelPolicy"
 import { Effect, Schema } from "effect"
 import { createHash, randomBytes } from "node:crypto"
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
@@ -45,7 +46,8 @@ export const Profile = Schema.Struct({
   secretEnv: Schema.optional(Schema.Array(EnvName)),
   retryOn: Schema.optional(Schema.Array(Schema.Literals(["refusal", "exit", "error"]))),
   permission: Schema.optional(Schema.Literals(["allow", "reject"])),
-  steering: Schema.optional(Schema.Literals(["native", "prompt"]))
+  steering: Schema.optional(Schema.Literals(["native", "prompt"])),
+  modelPolicy: Schema.optional(ModelPolicy.ModelPolicy)
 })
 
 /**

@@ -1,0 +1,86 @@
+/**
+ * Vendor-neutral model selection policy enforced on an external agent session
+ * before any prompt turn is sent.
+ *
+ * A runner profile may pin a model identifier, restrict sessions to specific
+ * model prefixes, or deny specific model prefixes. Enforcement fails closed
+ * before any prompt reaches the agent.
+ *
+ * @since 1.0.0
+ */
+
+import { Fault } from "@smthrs/flow"
+
+/**
+ * Policy constraining which model an external agent session may use.
+ *
+ * @category schemas
+ * @since 1.0.0
+ */
+export schema ModelPolicy {
+  readonly model?: string
+  readonly allowedPrefixes?: ReadonlyArray<string>
+  readonly deniedPrefixes?: ReadonlyArray<string>
+}
+
+/**
+ * Why a session model was refused before sending a prompt.
+ *
+ * @category constants
+ * @since 1.0.0
+ */
+export const REFUSAL_REASONS = [
+  "missing_model",
+  "denied_prefix",
+  "not_allowed",
+  "mismatch"
+] as const
+
+/**
+ * Raised when an external agent session reports or requests a model forbidden
+ * by the profile policy.
+ *
+ * @category errors
+ * @since 1.0.0
+ */
+export schema error ModelPolicyRefused {
+  modelId: string
+  reason: "missing_model" | "denied_prefix" | "not_allowed" | "mismatch"
+}
+
+Fault.register("@smthrs/agent/ModelPolicy/ModelPolicyRefused", "user")
+
+/**
+ * Validates `modelId` against `policy`, failing closed before a prompt is sent.
+ *
+ * @category guards
+ * @since 1.0.0
+ */
+export effect function checkModel(
+  policy: ModelPolicy,
+  modelId: string | undefined
+): string!ModelPolicyRefused {
+  if (modelId === undefined || modelId.trim() === "") {
+    throw new ModelPolicyRefused({ modelId: "", reason: "missing_model" })
+  }
+  const normalized = modelId.trim().toLowerCase()
+  if (policy.deniedPrefixes !== undefined) {
+    for (const prefix of policy.deniedPrefixes) {
+      if (prefix.length > 0 && normalized.startsWith(prefix.toLowerCase())) {
+        throw new ModelPolicyRefused({ modelId, reason: "denied_prefix" })
+      }
+    }
+  }
+  if (policy.allowedPrefixes !== undefined && policy.allowedPrefixes.length > 0) {
+    const ok = policy.allowedPrefixes.some((prefix) =>
+      prefix.length > 0 && normalized.startsWith(prefix.toLowerCase())
+    )
+    if (!ok) {
+      throw new ModelPolicyRefused({ modelId, reason: "not_allowed" })
+    }
+  }
+  if (policy.model !== undefined && modelId !== policy.model) {
+    throw new ModelPolicyRefused({ modelId, reason: "mismatch" })
+  }
+  return modelId
+}

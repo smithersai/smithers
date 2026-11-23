@@ -52,6 +52,9 @@ describe("the host's facts", () => {
       "core/feed-items",
       "core/agent-runs",
       "core/machines",
+      "core/fleet-nodes",
+      "core/fleet-sessions",
+      "core/fleet-accounts",
     ])
   })
 

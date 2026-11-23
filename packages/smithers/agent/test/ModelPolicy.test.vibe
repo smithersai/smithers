@@ -1,0 +1,73 @@
+import { describe, expect, it } from "@effect/vitest"
+import * as Acp from "../src/Acp.ts"
+import * as ModelPolicy from "../src/ModelPolicy.vibe"
+
+describe("ModelPolicy", () => {
+  it.effect("accepts models matching allowedPrefixes and exact pin", () => effect {
+    const policy: ModelPolicy.ModelPolicy = {
+      model: "model-alpha-high",
+      allowedPrefixes: ["model-alpha-"],
+      deniedPrefixes: ["model-beta-"]
+    }
+    const ok = try ModelPolicy.checkModel(policy, "model-alpha-high")
+    try Effect.try(() => expect(ok).toBe("model-alpha-high"))
+  })
+
+  it.effect("refuses denied prefix, non-allowed prefix, mismatch, and missing model", () => effect {
+    const policy: ModelPolicy.ModelPolicy = {
+      allowedPrefixes: ["model-alpha-"],
+      deniedPrefixes: ["model-beta-"]
+    }
+    const denied = try exit(ModelPolicy.checkModel(policy, "model-beta-1"))
+    const notAllowed = try exit(ModelPolicy.checkModel(policy, "model-gamma-1"))
+    const missing = try exit(ModelPolicy.checkModel(policy, undefined))
+    const mismatch = try exit(ModelPolicy.checkModel({ model: "model-alpha-high" }, "model-alpha-low"))
+    try Effect.try(() => {
+      expect(Exit.isFailure(denied)).toBe(true)
+      expect(Exit.isFailure(notAllowed)).toBe(true)
+      expect(Exit.isFailure(missing)).toBe(true)
+      expect(Exit.isFailure(mismatch)).toBe(true)
+    })
+  })
+
+  it.effect("Acp.enforceModelPolicy sets model and fails closed before any prompt", () => effect {
+    const sent: Array<Record<string, unknown>> = []
+    const incoming = try Queue.unbounded<string>()
+    const transport: Acp.Transport = {
+      incoming: Stream.fromQueue(incoming),
+      send: (line) => effect {
+        const msg = try Effect.try(() => JSON.parse(line) as Record<string, unknown>)
+        sent.push(msg)
+        if (msg.method === "session/new") {
+          try Queue.offer(incoming, JSON.stringify({
+            jsonrpc: "2.0",
+            id: msg.id,
+            result: {
+              sessionId: "sess-1",
+              models: { currentModelId: "model-beta-1", availableModels: [{ modelId: "model-alpha-high" }] }
+            }
+          }))
+        } else if (msg.method === "session/set_model") {
+          try Queue.offer(incoming, JSON.stringify({ jsonrpc: "2.0", id: msg.id, result: {} }))
+        }
+      }
+    }
+    try scoped(effect {
+      const client = try Acp.make(transport, { onUpdate: () => Effect.void })
+      const sid = try client.newSession("/tmp")
+      // Denied default fails closed when no switch is requested
+      const refused = try exit(client.enforceModelPolicy(sid, { allowedPrefixes: ["model-alpha-"] }))
+      try Effect.try(() => expect(Exit.isFailure(refused)).toBe(true))
+      // Explicit allowed pin switches via session/set_model and passes
+      const pinned = try client.enforceModelPolicy(sid, {
+        model: "model-alpha-high",
+        allowedPrefixes: ["model-alpha-"],
+        deniedPrefixes: ["model-beta-"]
+      })
+      try Effect.try(() => {
+        expect(pinned).toBe("model-alpha-high")
+        expect(sent.some((m) => m.method === "session/set_model")).toBe(true)
+      })
+    })
+  })
+})

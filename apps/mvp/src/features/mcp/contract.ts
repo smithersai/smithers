@@ -59,7 +59,7 @@ export const MCP_SCOPES = ["mcp:read", "mcp:write"] as const
 export type McpScope = (typeof MCP_SCOPES)[number]
 
 /** Supported MCP client presets shown in the Connect Agent UI. */
-export const MCP_CLIENTS = ["claude", "codex", "cursor", "http", "stdio"] as const
+export const MCP_CLIENTS = ["claude", "codex", "agy", "cursor", "http", "stdio"] as const
 export type McpClientId = (typeof MCP_CLIENTS)[number]
 
 /** Actions that are strictly person-only and NEVER exposed via MCP, even for an Admin/Maintainer's own agent. */
@@ -137,6 +137,12 @@ export const mcpClientSnippet = (
         label: "Run once in your terminal",
         command: `codex mcp add ${slug} --url ${url}`,
         note: "Codex discovers OAuth 2.1 metadata automatically and stores the scoped token locally.",
+      }
+    case "agy":
+      return {
+        label: "Run once in your terminal (Google Gemini models only)",
+        command: `agy mcp add ${slug} --transport http ${url}`,
+        note: "Antigravity CLI connects over Streamable HTTP MCP with OAuth 2.1. Use Google Gemini models (gemini-*) only.",
       }
     case "cursor":
       return {

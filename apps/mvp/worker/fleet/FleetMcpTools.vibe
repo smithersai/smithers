@@ -1,0 +1,187 @@
+/**
+ * BYOA MCP-over-HTTP fleet tools (`fleet_heartbeat`, `fleet_sessions_report`,
+ * `fleet_accounts_report`, `fleet_overview`).
+ */
+
+import type { SqlClient } from "effect/sql"
+import * as DeploymentPolicy from "../DeploymentPolicy.vibe"
+import {
+  type McpContentBlock,
+  type McpPrincipal,
+  type McpToolContext,
+  type McpToolDescriptor,
+  McpToolError,
+} from "../mcp/Contract.ts"
+import * as FleetStore from "./FleetStore.vibe"
+
+export interface FleetToolResult {
+  readonly content: ReadonlyArray<McpContentBlock>
+  readonly isError?: boolean
+}
+
+export const FLEET_TOOL_NAMES = [
+  "fleet_heartbeat",
+  "fleet_sessions_report",
+  "fleet_accounts_report",
+  "fleet_overview",
+] as const
+
+export type FleetToolName = (typeof FLEET_TOOL_NAMES)[number]
+
+export function isFleetTool(name: string): name is FleetToolName {
+  return (FLEET_TOOL_NAMES as ReadonlyArray<string>).includes(name)
+}
+
+export const FLEET_TOOL_DESCRIPTORS: ReadonlyArray<McpToolDescriptor> = [
+  {
+    name: "fleet_heartbeat",
+    description: "Register or update a Smithers host node heartbeat (MacBook, Mac mini, bare-metal, Cloudflare).",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      required: ["nodeId", "name", "kind"],
+      properties: {
+        nodeId: { type: "string" },
+        name: { type: "string" },
+        kind: { type: "string" },
+        labels: { type: "array", items: { type: "string" } },
+        online: { type: "boolean" },
+        held: { type: ["string", "null"] },
+        load1: { type: ["number", "null"] },
+        cpuCores: { type: ["integer", "null"] },
+        memUsedGb: { type: ["number", "null"] },
+        memTotalGb: { type: ["number", "null"] },
+        diskFreeGb: { type: ["number", "null"] },
+        diskTotalGb: { type: ["number", "null"] },
+        activeSessions: { type: "integer" },
+        runnerCapacity: { type: "integer" },
+        version: { type: ["string", "null"] },
+      },
+    },
+  },
+  {
+    name: "fleet_sessions_report",
+    description: "Report observed or managed agent sessions running on a host node (Claude, Codex, AGY, Cloudflare).",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      required: ["nodeId", "sessions"],
+      properties: {
+        nodeId: { type: "string" },
+        replaceActive: { type: "boolean" },
+        sessions: { type: "array", items: { type: "object" } },
+      },
+    },
+  },
+  {
+    name: "fleet_accounts_report",
+    description: "Report redacted provider account usage, quotas, cooldowns, and grants (Claude, Codex, Google/AGY).",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      required: ["sourceNode", "accounts"],
+      properties: {
+        sourceNode: { type: "string" },
+        accounts: { type: "array", items: { type: "object" } },
+      },
+    },
+  },
+  {
+    name: "fleet_overview",
+    description: "Read deployment-wide hosts, active sessions across all machines, and monitored provider accounts.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        includeEnded: { type: "boolean" },
+      },
+    },
+  },
+]
+
+schema OverviewArgs {
+  includeEnded?: boolean
+}
+
+function jsonResult(value: unknown): FleetToolResult {
+  return { content: [{ type: "text", text: JSON.stringify(value) }] }
+}
+
+export function visibleDescriptors(
+  principal: Option.Option<McpPrincipal>,
+  admins: ReadonlySet<string> = DeploymentPolicy.DEFAULT_ADMINS
+): ReadonlyArray<McpToolDescriptor> {
+  if (Option.isNone(principal)) return []
+  const p = principal.value
+  if (!DeploymentPolicy.isDeploymentAdmin(p.login, admins)) return []
+  const hasWrite = p.scopes.includes("mcp:write")
+  const hasRead = p.scopes.includes("mcp:read")
+  return FLEET_TOOL_DESCRIPTORS.filter((d) =>
+    d.name === "fleet_overview" ? hasRead : hasWrite
+  )
+}
+
+effect function requireFleetAccess(
+  ctx: McpToolContext,
+  scope: "mcp:read" | "mcp:write",
+  admins: ReadonlySet<string>
+): McpPrincipal!McpToolError {
+  if (Option.isNone(ctx.principal)) {
+    throw new McpToolError({
+      code: "authentication",
+      message: "Authentication required for fleet MCP tools.",
+    })
+  }
+  const p = ctx.principal.value
+  if (!DeploymentPolicy.isDeploymentAdmin(p.login, admins)) {
+    throw new McpToolError({
+      code: "forbidden",
+      message: "Fleet tools are restricted to the deployment admin.",
+    })
+  }
+  if (!p.scopes.includes(scope)) {
+    throw new McpToolError({
+      code: "forbidden",
+      message: `Token lacks required scope ${scope}.`,
+    })
+  }
+  return p
+}
+
+effect function decodeOrFail<A>(schema: Schema.Decoder<A>, raw: unknown): A!McpToolError {
+  return Schema.decodeUnknownEffect(schema)(raw) catch effect () => {
+    throw new McpToolError({ code: "invalid_params", message: "Invalid fleet tool arguments." })
+  }
+}
+
+export effect function callFleetTool<E>(
+  name: FleetToolName,
+  rawArgs: unknown,
+  ctx: McpToolContext,
+  database: Layer.Layer<SqlClient.SqlClient, E>,
+  admins: ReadonlySet<string> = DeploymentPolicy.DEFAULT_ADMINS
+): FleetToolResult!McpToolError {
+  const runDb = <A>(prog: A!unknown!SqlClient.SqlClient) =>
+    Effect.provide(prog, database).pipe(
+      Effect.mapError(() => new McpToolError({ code: "unavailable", message: "Fleet database unavailable." }))
+    )
+
+  if (name === "fleet_heartbeat") {
+    try requireFleetAccess(ctx, "mcp:write", admins)
+    const args = try decodeOrFail(FleetStore.HostHeartbeatInput, rawArgs)
+    return jsonResult(try runDb(FleetStore.upsertHostNode(args)))
+  }
+  if (name === "fleet_sessions_report") {
+    try requireFleetAccess(ctx, "mcp:write", admins)
+    const args = try decodeOrFail(FleetStore.SessionsReportInput, rawArgs)
+    return jsonResult(try runDb(FleetStore.reportSessions(args)))
+  }
+  if (name === "fleet_accounts_report") {
+    try requireFleetAccess(ctx, "mcp:write", admins)
+    const args = try decodeOrFail(FleetStore.AccountsReportInput, rawArgs)
+    return jsonResult(try runDb(FleetStore.reportAccounts(args)))
+  }
+  try requireFleetAccess(ctx, "mcp:read", admins)
+  const args = try decodeOrFail(OverviewArgs, rawArgs ?? {})
+  return jsonResult(try runDb(FleetStore.readOverview(args.includeEnded === true)))
+}

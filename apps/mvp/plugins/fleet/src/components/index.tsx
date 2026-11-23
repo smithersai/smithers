@@ -1,3 +1,4 @@
-// The fleet's components, by the names its manifest's `component` renders name.
 export { Fleet } from "./Fleet"
+export { GlobalFleet } from "./GlobalFleet"
+export { NavButton } from "./NavButton"
 export { RepoTab } from "./RepoTab"

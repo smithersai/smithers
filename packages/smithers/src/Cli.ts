@@ -37,6 +37,7 @@ import * as DoctorCmd from "./commands/Doctor.ts"
 import * as GcCmd from "./commands/Gc.ts"
 import type * as Globals from "./commands/Globals.ts"
 import * as MigrateCmd from "./commands/Migrate.ts"
+import { createNodeCli } from "./commands/Node.ts"
 import * as OpenCmd from "./commands/Open.ts"
 import { createRunnerCli } from "./commands/Runner.ts"
 import * as TuiCmd from "./commands/Tui.ts"
@@ -273,6 +274,7 @@ export const makeCli = (
     .command(createCredentialsCli())
     .command(createTokenCli(config))
     .command(createRunnerCli(config))
+    .command(createNodeCli())
     .command(alerts)
     .command(createTriggersCli(config))
     .command(createIntegrationsCli())

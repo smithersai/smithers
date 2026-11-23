@@ -1,0 +1,341 @@
+/**
+ * Postgres persistence for deployment-wide fleet telemetry (`host_nodes`,
+ * `observed_sessions`, `provider_accounts`) backed by ElectricSQL replication.
+ *
+ * Defense in depth (OBS-5): titles and diagnostic fields are scrubbed before
+ * storage so credentials or tokens never enter Postgres or Electric shapes.
+ */
+
+import { SqlClient } from "effect/sql"
+import {
+  ACCOUNT_PROVIDERS,
+  ACCOUNT_STATUSES,
+  HOST_KINDS,
+  SESSION_HARNESSES,
+  SESSION_STATUSES,
+} from "../../src/features/fleet/globalContract.ts"
+
+const SECRET_PATTERN =
+  /(gh[pousr]_[A-Za-z0-9_]+|github_pat_[A-Za-z0-9_]+|sk-ant-[A-Za-z0-9_-]+|sk-[A-Za-z0-9_-]{16,}|sma_[0-9a-f]{32,}|xox[baprs]-[A-Za-z0-9-]+|AKIA[0-9A-Z]{16}|Bearer\s+[A-Za-z0-9._-]{12,}|(?:TOKEN|SECRET|PASSWORD|API_KEY)\s*=\s*\S+)/gi
+
+/** Scrubs accidental credential patterns and bounds text length. */
+export function scrubText(value: string | null | undefined, maxLen: number): string | null {
+  if (value === undefined || value === null) return null
+  const cleaned = value.replace(SECRET_PATTERN, "[redacted]").replace(/[\r\n\t]+/g, " ").trim()
+  return cleaned.length === 0 ? null : cleaned.slice(0, maxLen)
+}
+
+export const HostHeartbeatInput = Schema.Struct({
+  nodeId: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(128)),
+  name: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(128)),
+  kind: Schema.Literals(HOST_KINDS),
+  labels: Schema.optional(Schema.Array(Schema.String.check(Schema.isMaxLength(64)))),
+  online: Schema.optional(Schema.Boolean),
+  held: Schema.optional(Schema.NullOr(Schema.String.check(Schema.isMaxLength(120)))),
+  load1: Schema.optional(Schema.NullOr(Schema.Number.check(Schema.isGreaterThanOrEqualTo(0)))),
+  cpuCores: Schema.optional(Schema.NullOr(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)))),
+  memUsedGb: Schema.optional(Schema.NullOr(Schema.Number.check(Schema.isGreaterThanOrEqualTo(0)))),
+  memTotalGb: Schema.optional(Schema.NullOr(Schema.Number.check(Schema.isGreaterThanOrEqualTo(0)))),
+  diskFreeGb: Schema.optional(Schema.NullOr(Schema.Number.check(Schema.isGreaterThanOrEqualTo(0)))),
+  diskTotalGb: Schema.optional(Schema.NullOr(Schema.Number.check(Schema.isGreaterThanOrEqualTo(0)))),
+  activeSessions: Schema.optional(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))),
+  runnerCapacity: Schema.optional(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))),
+  version: Schema.optional(Schema.NullOr(Schema.String.check(Schema.isMaxLength(64)))),
+})
+export type HostHeartbeatInput = typeof HostHeartbeatInput.Type
+
+export const ObservedSessionInput = Schema.Struct({
+  sessionKey: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(256)),
+  managed: Schema.optional(Schema.Boolean),
+  harness: Schema.Literals(SESSION_HARNESSES),
+  model: Schema.optional(Schema.NullOr(Schema.String.check(Schema.isMaxLength(120)))),
+  accountLabel: Schema.optional(Schema.NullOr(Schema.String.check(Schema.isMaxLength(64)))),
+  repo: Schema.optional(Schema.NullOr(Schema.String.check(Schema.isMaxLength(160)))),
+  lane: Schema.optional(Schema.NullOr(Schema.String.check(Schema.isMaxLength(120)))),
+  title: Schema.optional(Schema.NullOr(Schema.String.check(Schema.isMaxLength(320)))),
+  status: Schema.Literals(SESSION_STATUSES),
+  pid: Schema.optional(Schema.NullOr(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)))),
+  cpuSeconds: Schema.optional(Schema.NullOr(Schema.Number.check(Schema.isGreaterThanOrEqualTo(0)))),
+  tokensUsed: Schema.optional(Schema.NullOr(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)))),
+  startedAt: Schema.optional(Schema.NullOr(Schema.String)),
+  lastActivityAt: Schema.optional(Schema.NullOr(Schema.String)),
+  endedAt: Schema.optional(Schema.NullOr(Schema.String)),
+})
+export type ObservedSessionInput = typeof ObservedSessionInput.Type
+
+export const SessionsReportInput = Schema.Struct({
+  nodeId: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(128)),
+  replaceActive: Schema.optional(Schema.Boolean),
+  sessions: Schema.Array(ObservedSessionInput),
+})
+export type SessionsReportInput = typeof SessionsReportInput.Type
+
+export const ProviderAccountInput = Schema.Struct({
+  accountKey: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(128)),
+  provider: Schema.Literals(ACCOUNT_PROVIDERS),
+  label: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(64)),
+  plan: Schema.optional(Schema.NullOr(Schema.String.check(Schema.isMaxLength(64)))),
+  status: Schema.Literals(ACCOUNT_STATUSES),
+  fiveHourPct: Schema.optional(Schema.NullOr(Schema.Number.check(Schema.isBetween({ minimum: 0, maximum: 200 })))),
+  weeklyPct: Schema.optional(Schema.NullOr(Schema.Number.check(Schema.isBetween({ minimum: 0, maximum: 200 })))),
+  scopedPct: Schema.optional(Schema.NullOr(Schema.Number.check(Schema.isBetween({ minimum: 0, maximum: 200 })))),
+  resetsAt: Schema.optional(Schema.NullOr(Schema.String)),
+  grantsJson: Schema.optional(Schema.NullOr(Schema.Record(Schema.String, Schema.Unknown))),
+  creditsBalance: Schema.optional(Schema.NullOr(Schema.Number.check(Schema.isGreaterThanOrEqualTo(0)))),
+  activeSessions: Schema.optional(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))),
+  pools: Schema.optional(Schema.Array(Schema.String.check(Schema.isMaxLength(64)))),
+  coolReason: Schema.optional(Schema.NullOr(Schema.String.check(Schema.isMaxLength(120)))),
+  coolUntil: Schema.optional(Schema.NullOr(Schema.String)),
+  checkedAt: Schema.optional(Schema.NullOr(Schema.String)),
+})
+export type ProviderAccountInput = typeof ProviderAccountInput.Type
+
+export const AccountsReportInput = Schema.Struct({
+  sourceNode: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(128)),
+  accounts: Schema.Array(ProviderAccountInput),
+})
+export type AccountsReportInput = typeof AccountsReportInput.Type
+
+export effect function upsertHostNode(input: HostHeartbeatInput) {
+  const sql = try SqlClient.SqlClient
+  const labels = [...(input.labels ?? [])]
+  const held = scrubText(input.held, 120)
+  const version = scrubText(input.version, 64)
+  try sql`
+    INSERT INTO host_nodes (
+      node_id, name, kind, labels, online, held,
+      load1, cpu_cores, mem_used_gb, mem_total_gb,
+      disk_free_gb, disk_total_gb, active_sessions, runner_capacity,
+      version, seen_at, updated_at
+    ) VALUES (
+      ${input.nodeId}, ${input.name}, ${input.kind}, ${labels}, ${input.online ?? true}, ${held},
+      ${input.load1 ?? null}, ${input.cpuCores ?? null}, ${input.memUsedGb ?? null}, ${input.memTotalGb ?? null},
+      ${input.diskFreeGb ?? null}, ${input.diskTotalGb ?? null}, ${input.activeSessions ?? 0}, ${input.runnerCapacity ?? 0},
+      ${version}, now(), now()
+    )
+    ON CONFLICT (node_id) DO UPDATE SET
+      name = EXCLUDED.name,
+      kind = EXCLUDED.kind,
+      labels = EXCLUDED.labels,
+      online = EXCLUDED.online,
+      held = EXCLUDED.held,
+      load1 = EXCLUDED.load1,
+      cpu_cores = EXCLUDED.cpu_cores,
+      mem_used_gb = EXCLUDED.mem_used_gb,
+      mem_total_gb = EXCLUDED.mem_total_gb,
+      disk_free_gb = EXCLUDED.disk_free_gb,
+      disk_total_gb = EXCLUDED.disk_total_gb,
+      active_sessions = EXCLUDED.active_sessions,
+      runner_capacity = EXCLUDED.runner_capacity,
+      version = EXCLUDED.version,
+      seen_at = now(),
+      updated_at = now()
+  `
+  return { nodeId: input.nodeId, ok: true }
+}
+
+export effect function reportSessions(input: SessionsReportInput) {
+  const sql = try SqlClient.SqlClient
+  const seenKeys: Array<string> = []
+  for (const s of input.sessions) {
+    seenKeys.push(s.sessionKey)
+    const title = scrubText(s.title, 160)
+    const lane = scrubText(s.lane, 120)
+    const repo = scrubText(s.repo, 160)
+    const model = scrubText(s.model, 120)
+    const accountLabel = scrubText(s.accountLabel, 64)
+    try sql`
+      INSERT INTO observed_sessions (
+        session_key, node_id, managed, harness, model, account_label,
+        repo, lane, title, status, pid, cpu_seconds, tokens_used,
+        started_at, last_activity_at, ended_at, updated_at
+      ) VALUES (
+        ${s.sessionKey}, ${input.nodeId}, ${s.managed ?? false}, ${s.harness}, ${model}, ${accountLabel},
+        ${repo}, ${lane}, ${title}, ${s.status}, ${s.pid ?? null}, ${s.cpuSeconds ?? null}, ${s.tokensUsed ?? null},
+        ${s.startedAt ?? null}::timestamptz, ${s.lastActivityAt ?? null}::timestamptz, ${s.endedAt ?? null}::timestamptz, now()
+      )
+      ON CONFLICT (session_key) DO UPDATE SET
+        node_id = EXCLUDED.node_id,
+        managed = EXCLUDED.managed,
+        harness = EXCLUDED.harness,
+        model = EXCLUDED.model,
+        account_label = EXCLUDED.account_label,
+        repo = EXCLUDED.repo,
+        lane = EXCLUDED.lane,
+        title = EXCLUDED.title,
+        status = EXCLUDED.status,
+        pid = EXCLUDED.pid,
+        cpu_seconds = EXCLUDED.cpu_seconds,
+        tokens_used = EXCLUDED.tokens_used,
+        started_at = COALESCE(EXCLUDED.started_at, observed_sessions.started_at),
+        last_activity_at = COALESCE(EXCLUDED.last_activity_at, observed_sessions.last_activity_at),
+        ended_at = EXCLUDED.ended_at,
+        updated_at = now()
+    `
+  }
+  if (input.replaceActive === true) {
+    if (seenKeys.length === 0) {
+      try sql`
+        UPDATE observed_sessions
+        SET status = 'ended', ended_at = COALESCE(ended_at, now()), updated_at = now()
+        WHERE node_id = ${input.nodeId} AND status <> 'ended'
+      `
+    } else {
+      try sql`
+        UPDATE observed_sessions
+        SET status = 'ended', ended_at = COALESCE(ended_at, now()), updated_at = now()
+        WHERE node_id = ${input.nodeId} AND status <> 'ended' AND NOT (session_key = ANY(${seenKeys}))
+      `
+    }
+  }
+  const activeCount = input.sessions.filter((s) => s.status !== "ended").length
+  try sql`
+    UPDATE host_nodes
+    SET active_sessions = ${activeCount}, seen_at = now(), updated_at = now()
+    WHERE node_id = ${input.nodeId}
+  `
+  return { nodeId: input.nodeId, reported: input.sessions.length, active: activeCount }
+}
+
+export effect function reportAccounts(input: AccountsReportInput) {
+  const sql = try SqlClient.SqlClient
+  for (const acct of input.accounts) {
+    const pools = [...(acct.pools ?? [])]
+    const coolReason = scrubText(acct.coolReason, 120)
+    const grantsText = acct.grantsJson === undefined || acct.grantsJson === null
+      ? null
+      : JSON.stringify(acct.grantsJson)
+    try sql`
+      INSERT INTO provider_accounts (
+        account_key, provider, label, plan, status,
+        five_hour_pct, weekly_pct, scoped_pct, resets_at,
+        grants_json, credits_balance, active_sessions, pools,
+        cool_reason, cool_until, source_node, checked_at, updated_at
+      ) VALUES (
+        ${acct.accountKey}, ${acct.provider}, ${acct.label}, ${acct.plan ?? null}, ${acct.status},
+        ${acct.fiveHourPct ?? null}, ${acct.weeklyPct ?? null}, ${acct.scopedPct ?? null},
+        ${acct.resetsAt ?? null}::timestamptz,
+        ${grantsText}::jsonb, ${acct.creditsBalance ?? null}, ${acct.activeSessions ?? 0}, ${pools},
+        ${coolReason}, ${acct.coolUntil ?? null}::timestamptz, ${input.sourceNode},
+        COALESCE(${acct.checkedAt ?? null}::timestamptz, now()), now()
+      )
+      ON CONFLICT (account_key) DO UPDATE SET
+        provider = EXCLUDED.provider,
+        label = EXCLUDED.label,
+        plan = EXCLUDED.plan,
+        status = EXCLUDED.status,
+        five_hour_pct = EXCLUDED.five_hour_pct,
+        weekly_pct = EXCLUDED.weekly_pct,
+        scoped_pct = EXCLUDED.scoped_pct,
+        resets_at = EXCLUDED.resets_at,
+        grants_json = EXCLUDED.grants_json,
+        credits_balance = EXCLUDED.credits_balance,
+        active_sessions = EXCLUDED.active_sessions,
+        pools = EXCLUDED.pools,
+        cool_reason = EXCLUDED.cool_reason,
+        cool_until = EXCLUDED.cool_until,
+        source_node = EXCLUDED.source_node,
+        checked_at = EXCLUDED.checked_at,
+        updated_at = now()
+    `
+  }
+  return { sourceNode: input.sourceNode, reported: input.accounts.length }
+}
+
+export effect function readOverview(includeEnded: boolean = false) {
+  const sql = try SqlClient.SqlClient
+  const nodes = try sql`
+    SELECT node_id AS "nodeId", name, kind, labels, online, held,
+      load1, cpu_cores AS "cpuCores", mem_used_gb AS "memUsedGb", mem_total_gb AS "memTotalGb",
+      disk_free_gb AS "diskFreeGb", disk_total_gb AS "diskTotalGb",
+      active_sessions AS "activeSessions", runner_capacity AS "runnerCapacity",
+      version, seen_at AS "seenAt"
+    FROM host_nodes
+    ORDER BY name ASC
+  `
+  const sessions = includeEnded
+    ? try sql`
+      SELECT session_key AS "sessionKey", node_id AS "nodeId", managed, harness, model,
+        account_label AS "accountLabel", repo, lane, title, status, pid,
+        cpu_seconds AS "cpuSeconds", tokens_used AS "tokensUsed",
+        started_at AS "startedAt", last_activity_at AS "lastActivityAt", ended_at AS "endedAt"
+      FROM observed_sessions
+      ORDER BY updated_at DESC
+      LIMIT 300
+    `
+    : try sql`
+      SELECT session_key AS "sessionKey", node_id AS "nodeId", managed, harness, model,
+        account_label AS "accountLabel", repo, lane, title, status, pid,
+        cpu_seconds AS "cpuSeconds", tokens_used AS "tokensUsed",
+        started_at AS "startedAt", last_activity_at AS "lastActivityAt", ended_at AS "endedAt"
+      FROM observed_sessions
+      WHERE status <> 'ended'
+      ORDER BY updated_at DESC
+      LIMIT 300
+    `
+  const accounts = try sql`
+    SELECT account_key AS "accountKey", provider, label, plan, status,
+      five_hour_pct AS "fiveHourPct", weekly_pct AS "weeklyPct", scoped_pct AS "scopedPct",
+      resets_at AS "resetsAt", grants_json AS "grantsJson", credits_balance AS "creditsBalance",
+      active_sessions AS "activeSessions", pools, cool_reason AS "coolReason",
+      cool_until AS "coolUntil", source_node AS "sourceNode", checked_at AS "checkedAt"
+    FROM provider_accounts
+    ORDER BY provider ASC, label ASC
+  `
+  const sandboxes = try sql`
+    SELECT id::text AS id, branch_id AS "branchId", generation, kind, instance,
+      started_at AS "startedAt", seen_at AS "seenAt", ended_at AS "endedAt"
+    FROM sandbox_generations
+    WHERE ended_at IS NULL
+    ORDER BY seen_at DESC
+    LIMIT 60
+  `
+  const cfSessions = sandboxes.map((row: Record<string, unknown>) => ({
+    sessionKey: `cloudflare-branch-sandbox:cf-sandbox:${String(row["id"] ?? "")}`,
+    nodeId: "cloudflare-branch-sandbox",
+    managed: true,
+    harness: "cf-sandbox",
+    model: null,
+    accountLabel: null,
+    repo: typeof row["branchId"] === "string" ? row["branchId"].split("#")[0] ?? null : null,
+    lane: typeof row["kind"] === "string" ? row["kind"] : null,
+    title: scrubText(
+      `BranchSandbox ${String(row["branchId"] ?? "")} (gen ${String(row["generation"] ?? "?")})`,
+      160
+    ),
+    status: "working",
+    pid: null,
+    cpuSeconds: null,
+    tokensUsed: null,
+    startedAt: row["startedAt"] ?? null,
+    lastActivityAt: row["seenAt"] ?? null,
+    endedAt: row["endedAt"] ?? null,
+  }))
+  const hasCfSandboxNode = nodes.some(
+    (n: Record<string, unknown>) => n["nodeId"] === "cloudflare-branch-sandbox"
+  )
+  const allNodes = cfSessions.length > 0 && !hasCfSandboxNode
+    ? [
+      ...nodes,
+      {
+        nodeId: "cloudflare-branch-sandbox",
+        name: "Cloudflare BranchSandbox (smithers.sh)",
+        kind: "cloudflare",
+        labels: ["cloudflare", "serverless", "branch-sandbox"],
+        online: true,
+        held: null,
+        load1: null,
+        cpuCores: null,
+        memUsedGb: null,
+        memTotalGb: null,
+        diskFreeGb: null,
+        diskTotalGb: null,
+        activeSessions: cfSessions.length,
+        runnerCapacity: 64,
+        version: "durable-object",
+        seenAt: new Date().toISOString(),
+      },
+    ]
+    : nodes
+  return { nodes: allNodes, sessions: [...sessions, ...cfSessions], accounts }
+}

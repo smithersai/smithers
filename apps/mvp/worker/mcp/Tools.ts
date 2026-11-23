@@ -1,9 +1,12 @@
 import { Uuid, WebCrypto } from "@smthrs/crypto"
-import { Effect, Metric, Option, Schema } from "effect"
+import { Effect, Layer, Metric, Option, Schema } from "effect"
 import { agentAttribution } from "../../src/features/issues/contract.ts"
 import { MAX_LABEL_LENGTH, MAX_REF_LENGTH, MAX_URL_LENGTH, WORK_LINK_KINDS, WORK_LINK_STATES, type WorkLinkKind, type WorkLinkState } from "../../src/features/issues/work.ts"
 import { MCP_BLOCKED_ACTS, mcpAgentLabel } from "../../src/features/mcp/contract.ts"
+import type { SqlClient } from "effect/sql"
 import { rankOf, type Role } from "../Actor.ts"
+import * as DeploymentPolicy from "../DeploymentPolicy.vibe"
+import * as FleetMcpTools from "../fleet/FleetMcpTools.vibe"
 import {
   McpAuthService,
   type McpContentBlock,
@@ -207,6 +210,10 @@ export interface WriteParams {
 
 /** Every external call an MCP tool makes. Each fails only with `McpToolError`. */
 export interface McpToolDeps {
+  readonly fleet?: {
+    readonly database: Layer.Layer<SqlClient.SqlClient, unknown>
+    readonly admins?: ReadonlySet<string>
+  }
   readonly readTree: (owner: string, name: string, ref?: string) => Effect.Effect<TreeListing, McpToolError>
   /** Fails `not_found` when the path or ref is missing. */
   readonly readFile: (owner: string, name: string, path: string, ref?: string) => Effect.Effect<FileContent, McpToolError>
@@ -1081,7 +1088,9 @@ export const makeMcpToolRegistry = (deps: McpToolDeps) =>
           const access = yield* roleFor(principal, defaultRepo)
           // An unknown role (no default repository) lists every tool the scopes allow; each call checks the live role.
           const role: Role | null = Option.match(access, { onNone: () => "admin" as const, onSome: (a) => a.role })
-          return TOOL_SPECS.filter((spec) => !isBlockedName(spec.name) && visible(spec, role, principal)).map(descriptorOf)
+          const base = TOOL_SPECS.filter((spec) => !isBlockedName(spec.name) && visible(spec, role, principal)).map(descriptorOf)
+          const fleetTools = deps.fleet === undefined ? [] : FleetMcpTools.visibleDescriptors(principal, deps.fleet.admins ?? DeploymentPolicy.DEFAULT_ADMINS)
+          return [...base, ...fleetTools]
         }),
 
       callTool: (name, args, ctx) => {
@@ -1091,6 +1100,13 @@ export const makeMcpToolRegistry = (deps: McpToolDeps) =>
             code: "person_only",
             message: `${name} is person-only and is never available to an agent. A person must do it on Smithers.`,
           }))))
+        }
+        if (deps.fleet !== undefined && FleetMcpTools.isFleetTool(name)) {
+          const admins = deps.fleet.admins ?? DeploymentPolicy.DEFAULT_ADMINS
+          return FleetMcpTools.callFleetTool(name, args, ctx, deps.fleet.database, admins).pipe(
+            Effect.tap(() => record(name, "admin", "ok")),
+            Effect.tapError((error) => record(name, null, error.code)),
+          )
         }
         const handler = Object.hasOwn(handlers, name) ? handlers[name] : undefined
         if (handler === undefined) {

@@ -154,8 +154,10 @@ describe("auth/RecheckRole", () => {
     expect(await member()).toBe(false)
   }, 60_000)
 
-  test("runs on the Node host: reads the role again and records when", async () => {
-    const s = await signedIn()
+  test("runs on the Node host: reads the role again and records when (deployment admin roninjin10)", async () => {
+    const github = scriptedGitHub()
+    github.person = { id: 101, login: "roninjin10" }
+    const s = await signedIn(github)
     await sql(`UPDATE sessions SET role_checked_at = now() - interval '2 hours'`)
     s.github.permission = "admin"
     const ran = await runFlow(RecheckRole.RecheckRole, { sessionId: s.id }, RecheckRole.registration(s.database, s.services))
@@ -164,7 +166,7 @@ describe("auth/RecheckRole", () => {
     const after = await session(s.id)
     expect(after.role).toBe("admin")
     expect(after.age).toBeLessThan(60)
-    expect(await s.h.session(s.cookies)).toEqual({ signedIn: true, homeConversationId: await homeConversation(runtime), personId: s.personId, login: "octocat", role: "admin", hostedModel: false, install: INSTALL, expiresAt: expect.any(Number), deadline: expect.any(Number), session: expect.stringMatching(/^[a-f0-9]{32}$/), serverNow: expect.any(Number) })
+    expect(await s.h.session(s.cookies)).toEqual({ signedIn: true, homeConversationId: await homeConversation(runtime), personId: s.personId, login: "roninjin10", role: "admin", hostedModel: false, install: INSTALL, expiresAt: expect.any(Number), deadline: expect.any(Number), session: expect.stringMatching(/^[a-f0-9]{32}$/), serverNow: expect.any(Number) })
   })
 
   test("a GitHub that fails once is retried by the step's retry policy", async () => {
@@ -198,12 +200,12 @@ describe("auth/RecheckRole", () => {
     expect(s.github.calls).toContain("refresh")
   })
 
-  test("a token that never expires is checked without a refresh", async () => {
+  test("a token that never expires is checked without a refresh (non-admin contributor clamped to member)", async () => {
     const github = scriptedGitHub()
     github.expiring = false
     const s = await signedIn(github)
     s.github.permission = "maintain"
-    expect(await checkOnce(s)).toEqual(Exit.succeed({ outcome: "checked", role: "maintainer" }))
+    expect(await checkOnce(s)).toEqual(Exit.succeed({ outcome: "checked", role: "member" }))
     expect(s.github.calls).not.toContain("refresh")
   })
 

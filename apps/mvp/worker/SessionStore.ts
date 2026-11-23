@@ -578,6 +578,7 @@ export interface Held {
   readonly refreshDigest: string | null
   readonly tokenGen: number
   readonly pairDigest: string | null
+  readonly login?: string | null
 }
 
 /** Session `id`'s GitHub tokens, or `None` when there is no such session. */
@@ -592,12 +593,14 @@ export const held = (id: string, verifiedKey?: string) =>
       readonly refreshDigest: string | null
       readonly tokenGen: number
       readonly pairDigest: string | null
+      readonly login: string | null
     }>`
-      SELECT ${yield* sessionLive(sql, sql`s`, undefined, verifiedKey)} AS live, github_access AS access,
-        (extract(epoch FROM github_access_expires_at) * 1000)::bigint::text AS "accessExpiresAt",
-        github_refresh AS refresh, github_refresh_digest AS "refreshDigest",
-        github_token_gen AS "tokenGen", github_pair_digest AS "pairDigest"
-      FROM sessions s WHERE id = ${id}`
+      SELECT ${yield* sessionLive(sql, sql`s`, undefined, verifiedKey)} AS live, s.github_access AS access,
+        (extract(epoch FROM s.github_access_expires_at) * 1000)::bigint::text AS "accessExpiresAt",
+        s.github_refresh AS refresh, s.github_refresh_digest AS "refreshDigest",
+        s.github_token_gen AS "tokenGen", s.github_pair_digest AS "pairDigest",
+        p.github_login AS login
+      FROM sessions s JOIN people p ON p.id = s.person_id WHERE s.id = ${id}`
     return Option.map(Option.fromNullishOr(row), (found): Held => ({
       live: found.live,
       access: sealedOrNull(found.access),
@@ -606,6 +609,7 @@ export const held = (id: string, verifiedKey?: string) =>
       refreshDigest: found.refreshDigest,
       tokenGen: found.tokenGen,
       pairDigest: found.pairDigest,
+      login: found.login,
     }))
   })
 
