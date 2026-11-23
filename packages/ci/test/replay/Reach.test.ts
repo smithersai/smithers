@@ -11,7 +11,7 @@ import * as ChildProcess from "effect/process/ChildProcess"
 import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 import { spawn, spawnSync, type SpawnSyncReturns } from "node:child_process"
 import { randomUUID } from "node:crypto"
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { createServer, type Server } from "node:net"
 import { homedir, tmpdir, userInfo } from "node:os"
 import { dirname, join } from "node:path"
@@ -72,8 +72,8 @@ const asStep = (argv: readonly [string, ...Array<string>], jailed: boolean) => {
   made.push(work)
   return Effect.runPromise(
     Effect.scoped(Effect.gen(function*() {
-      const asked = jailed ? () => found : () => ({ refusal: "no bubblewrap" })
-      // The tests' own files are in the repository the tests run from, which a replay puts back as the checkout.
+      const asked = jailed ? () => found : () => ({ refusal: "no bubblewrap", trustedRepository: true })
+      // The test checkout stays hidden, just as the user's live checkout does.
       const places = yield* confine(work, asked, () => Effect.void, [], false, undefined, repository)
       const [command, ...args] = held(places.normal, [], argv)
       return spawnSync(command, args, {
@@ -93,9 +93,15 @@ describe.skipIf(!jailable)("a command in the jail", () => {
     const outside = keys("look")
     if (planted) expect(outside).toBe("session: read")
     expect(outside).not.toBe("session: refused 38")
-    const seen = await inJail(["python3", keyring, "look"])
+    const seen = await inJail(["python3", "-c", readFileSync(keyring, "utf8"), "look"])
+    expect(seen.status, seen.stderr).toBe(0)
     // 38 is "not implemented": in the jail the kernel answers as one that has no keys at all.
     expect(seen.stdout.trim()).toBe("session: refused 38")
+  })
+
+  it("cannot open a file in the live checkout", async () => {
+    const seen = await inJail(["test", "!", "-e", keyring])
+    expect(seen.status, seen.stderr).toBe(0)
   })
 
   it("sees no process of the machine, and starts with no descriptor but its three", async () => {
@@ -340,12 +346,12 @@ describe.skipIf(process.platform !== "linux")("a command with no jail", () => {
 })
 
 describe("the filter of the jail", () => {
-  it("is a program of whole instructions that ends by allowing the call", () => {
+  it("is a program of whole instructions that refuses a call on an unknown architecture", () => {
     const filter = keyringFilter()
     expect(filter.length % 8).toBe(0)
     expect(filter.length / 8).toBe(36)
-    // The last instruction returns "allow"; the one before returns "not implemented" for the last processor's calls.
-    expect([...filter.slice(-8)]).toEqual([0x06, 0, 0, 0, 0x00, 0x00, 0xFF, 0x7F])
+    // Unknown ABIs and the last processor's key calls both return ENOSYS.
+    expect([...filter.slice(-8)]).toEqual([0x06, 0, 0, 0, 38, 0x00, 0x05, 0x00])
     expect([...filter.slice(-16, -8)]).toEqual([0x06, 0, 0, 0, 38, 0x00, 0x05, 0x00])
   })
 })

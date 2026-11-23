@@ -12,12 +12,12 @@
 
 import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 import { applyRefuses } from "../contract/Command.vibe"
-import { failsHere, needsLeftOut, type NotReplayed, stepTimeoutHours } from "../contract/Inventory.vibe"
+import { failsHere, type Inventory, needsLeftOut, type NotReplayed, stepTimeoutHours } from "../contract/Inventory.vibe"
 import type { Failure, ReplayParts, ReplayRequest, RunReplay } from "../contract/Parts.vibe"
 import type { FirstRun, NotReplayedCommit, ReplayCommit, ReplayReport } from "../contract/ReplayReport.vibe"
 import { type Recorder, RunRecord, type TargetResult } from "../contract/RunRecord.vibe"
 import { defaultSettings, type Row } from "../contract/Selection.vibe"
-import { type Confined, confine, held, jobHomes, reading, sourceDirectory, type Way } from "../replay/Confine.vibe"
+import { type Confined, confine, discard, held, jobHomes, reading, sourceDirectory, type Way } from "../replay/Confine.vibe"
 import { addTo, type Count, type CpuBucket, uncounted, usedBy } from "../replay/Cpu.ts"
 import { cpuWatch } from "../replay/CpuWatch.vibe"
 import {
@@ -28,12 +28,14 @@ import {
   searchPath,
   stepEnvironment
 } from "../replay/Environment.ts"
+import { type DiskWatch, diskWatch } from "../replay/Disk.vibe"
 import { probeWith } from "../replay/Jail.ts"
 import {
   failuresOf,
   type LastFailures,
   noJobPassed,
   noProgress,
+  reasonOf,
   nothingPassed,
   printedLimitOf,
   remember,
@@ -54,12 +56,14 @@ import {
   type Output,
   outputLimit,
   pastLimit,
+  planOutput,
   runStep,
   stdoutOf
 } from "../replay/Process.vibe"
+import { recordText } from "../replay/Record.ts"
 import { readableNames, readyHistory } from "../replay/History.vibe"
 import { printsNotes, readsListener } from "../replay/Reads.vibe"
-import { type Execute, Options, Progress, scoresOrReason, settle, WorkDirectory } from "../replay/Replay.vibe"
+import { type Execute, askModel, Options, Progress, settle, WorkDirectory } from "../replay/Replay.vibe"
 import { defaultStall, defaultStallMinutes, type StallLimit, tableFor, watchFor } from "../replay/Stall.vibe"
 import {
   choose,
@@ -95,9 +99,18 @@ import {
   smthrsBin
 } from "./Install.vibe"
 import { linesOf, noRecord, noRecordLabel, ranAgain, ranAgainLines, withReasons } from "./Results.vibe"
-import { chosenFor } from "./Targets.vibe"
+import { chosenFor, plansFor } from "./Targets.vibe"
 import { isGenerated } from "./Workspace.vibe"
 import { gitArguments } from "../replay/Git.vibe"
+
+// The per-verb and aggregate planners share roots but use different schemas for target details.
+const SelectionPlan = Schema.Struct({
+  roots: Schema.Array(Schema.String.check(Schema.isStartingWith("//"))),
+  targets: Schema.Array(Schema.Union([
+    Schema.Struct({ label: Schema.String, key: Schema.NonEmptyString }),
+    Schema.Struct({ label: Schema.String, keyPreview: Schema.NonEmptyString })
+  ]))
+})
 
 /** Why `--targets` cannot be honoured on a repository that has no targets of its own. */
 const noWorkspace =
@@ -179,12 +192,16 @@ export effect function installEach(
   const fs = try FileSystem.FileSystem
   const path = try Path.Path
   for (const directory of directories) {
-    const names = fs.readDirectory(path.join(checkout, directory)) catch (): ReadonlyArray<string> => []
+    const cwd = fs.realPath(path.join(checkout, directory)) catch () => undefined
+    if (cwd === undefined) continue
+    const root = fs.realPath(checkout) catch () => undefined
+    if (root === undefined || (cwd !== root && !cwd.startsWith(root + path.sep))) return `install directory outside checkout: ${directory}`
+    const names = fs.readDirectory(cwd) catch (): ReadonlyArray<string> => []
     const manager = names.includes("package.json") ? managerFor(names) : undefined
     if (manager === undefined) continue
     const [command, ...args] = held(place, [checkout], manager.command)
     const environment = stepEnvironment(place.daemon, place)
-    const ran = runStep(command, args, path.join(checkout, directory), environment, limit, stall, count)
+    const ran = runStep(command, args, cwd, environment, limit, stall, count)
       catch () => ({ timedOut: false, stalled: false, exitCode: 127 })
     if (ran.stalled) return commandStopped(manager.command, directory, noProgress(stall.minutes))
     if (ran.timedOut) return commandStopped(manager.command, directory, pastLimit(limit))
@@ -289,7 +306,33 @@ export const own = <R>(
     const path = try Path.Path
     const options = try Options
     const progress = try Progress
+    const work = try orFail(fs.makeTempDirectory({ prefix: "smithers-ci-own-" }), "could not make a directory")
+    try addFinalizer(() => discard(work, progress.say))
+    try (try WorkDirectory).at(work)
+    const disk = try diskWatch(work, path.join(work, "machines"), progress.say, options.diskTick)
+    try disk.admit(Effect.void)
+    return try ensuring(effect {
+      return try.race [replayIn(request, parts, workspaceFile, work, disk), disk.ended]
+    }, disk.release)
+  })
+
+/** Measurements in the disposable directory, interrupted when the disk guard ends. */
+const replayIn = <R>(
+  request: ReplayRequest,
+  parts: ReplayParts<R>,
+  workspaceFile: string,
+  work: string,
+  disk: DiskWatch
+): ReplayReport!Failure!(R | Host) =>
+  scoped(effect {
+    const fs = try FileSystem.FileSystem
+    const path = try Path.Path
+    const options = try Options
+    const progress = try Progress
     const stepLimit = options.stepTimeout ?? Duration.hours(stepTimeoutHours)
+    if (request.cache !== undefined && (options.environment ?? ambientEnvironment())["SMITHERS_CACHE_TOKEN"]) {
+      throw failure("unsupported", "native replay supports anonymous shared caches only: the repository supplies its own smthrs")
+    }
     const stall: StallLimit = {
       minutes: request.stallMinutes ?? defaultStallMinutes,
       table: options.processes ?? tableFor()
@@ -304,8 +347,6 @@ export const own = <R>(
       const ended = cpu.track(pid)
       return () => addTo(bucket, ended())
     }
-    const work = try orFail(fs.makeTempDirectoryScoped({ prefix: "smithers-ci-own-" }), "could not make a directory")
-    try (try WorkDirectory).at(work)
     const source = path.join(work, sourceDirectory)
     const root = path.resolve(request.root)
     // Each mode has a home of its own: none finds a cache another mode filled. The files this program runs from
@@ -320,7 +361,7 @@ export const own = <R>(
         options.environment,
         root
       ),
-      "could not make the homes of the runs"
+      "could not prepare replay confinement"
     )
     // A target of the repository's own gets its way's home and none of the variables that refuse a push.
     for (const place of Object.values(places)) {
@@ -332,7 +373,7 @@ export const own = <R>(
     // Where `smthrs` writes its run records: the one place it can write that an install cannot.
     const records = path.join(work, "records")
     try orFail(fs.makeDirectory(records), "could not make a directory")
-    try git(work, ["clone", "--quiet", "--no-checkout", root, source])
+    try git(work, ["clone", "--quiet", "--no-hardlinks", "--dissociate", "--no-checkout", root, source])
     const origin = try originOf(root)
     // And the repository's default branch: a copy's own `origin` is the replay's clone, at the person's branch.
     const defaultHead = try originHeadOf(root)
@@ -347,8 +388,8 @@ export const own = <R>(
      * A copy of the repository for one mode. It is named as the repository is and fetches from its remote, so what
      * reads the copy names the repository, not the copy. It can push nowhere.
      */
-    effect function copyOf(way: Way) {
-      const copy = path.join(work, way, path.basename(root))
+    effect function copyOf(way: Way, area: string = way) {
+      const copy = path.join(work, area, path.basename(root))
       try cloneCopy(work, source, copy, origin, defaultHead)
       // Every copy starts with a whole tree, so the first timed checkout is the same work in each mode.
       try git(copy, ["checkout", "--quiet", "--force", "--detach", "HEAD"], places[way])
@@ -375,9 +416,11 @@ export const own = <R>(
       const plan = ["ci", ...patterns, "--plan", "--format", "json", "--workspace", copy]
       const [command, ...args] = held(place, [copy], [smthrs, ...plan])
       const environment = stepEnvironment(place.daemon, place)
-      const planned = try exec(command, args, copy, environment, Number.POSITIVE_INFINITY, stdoutOf, true)
-      const inputs = Schema.decodeUnknownEffect(Schema.fromJsonString(PlannedInputs))(planned.text) catch () => undefined
-      const directories = inputs === undefined ? [] : readInstalls(inputsOf(inputs), installed)
+      const planned = planOutput(command, args, copy, environment, stepLimit, stall) catch () => undefined
+      if (planned === undefined) return []
+      const inputs = Schema.decodeUnknownEffect(Schema.fromJsonString(PlannedInputs))(planned) catch () => undefined
+      if (inputs === undefined) return []
+      const directories = readInstalls(inputsOf(inputs), installed)
       readAt.set(`${commit} ${patterns.join(" ")}`, directories)
       return directories
     }
@@ -406,6 +449,7 @@ export const own = <R>(
     }
 
     const normalCopy = try copyOf("normal")
+    const inspectionCopy = try copyOf("trial", "inventory")
     const spawner = try ChildProcessSpawner
     /**
      * Runs a part on the normal copy, which installs and targets write: every `git` the part starts there runs as
@@ -416,7 +460,46 @@ export const own = <R>(
         return try part
       }
     }
-    const inventory = try onNormalCopy(parts.read(normalCopy))
+    effect function inventoryAt() {
+      provide ChildProcessSpawner = reading(spawner, places.trial, inspectionCopy) {
+        return try parts.read(inspectionCopy)
+      }
+    }
+    effect function targetsAt(read: Inventory, file: string, patterns: ReadonlyArray<string>) {
+      if (request.targets !== undefined && request.targets.length > 0) return patterns
+      const commands = plansFor(read)
+      if (typeof commands === "string") throw failure("unsupported", commands)
+      if (commands.length === 0) return patterns
+      const installed = try install(inspectionCopy, file, places.trial, stepLimit, stall)
+      if (!installed.ok) throw failure("unsupported", installed.reason)
+      const planner = installed.smthrs
+      effect function selection(command: ReadonlyArray<string>) {
+        const [program, ...args] = held(places.trial, [inspectionCopy], [
+          planner, ...command, "--plan", "--format", "json", "--workspace", inspectionCopy
+        ])
+        const output = try planOutput(program, args, inspectionCopy, stepEnvironment(places.trial.daemon, places.trial), stepLimit, stall)
+        return Schema.decodeUnknownEffect(Schema.fromJsonString(SelectionPlan))(output) catch effect () => {
+          throw failure("command-failed", "the repository's smthrs printed no target selection plan")
+        }
+      }
+      // A generator can select different actions under build and lint even for the same exact label.
+      const roots = new Set<string>()
+      const actions = new Set<string>()
+      const actionOf = (target: typeof SelectionPlan.Type.targets[number]) => JSON.stringify([target.label, "key" in target ? target.key : target.keyPreview])
+      for (const command of commands) {
+        const plan = try selection(command)
+        for (const label of plan.roots) roots.add(label)
+        for (const target of plan.targets) actions.add(actionOf(target))
+      }
+      if (roots.size === 0) throw failure("unsupported", "the CI commands selected no targets at this commit")
+      const merged = try selection(["ci", ...roots])
+      const actual = new Set(merged.targets.map(actionOf))
+      if (actions.size !== actual.size || [...actions].some((action) => !actual.has(action))) {
+        throw failure("unsupported", "the CI verbs select different actions from the combined replay")
+      }
+      return [...roots]
+    }
+    const inventory = try inventoryAt()
     const chosen = chosenFor(inventory, request.targets)
     try progress.say(`replaying the repository's own targets (${workspaceFile}): ${chosen.patterns.join(" ")}`)
     const baselineCopy = try copyOf("baseline")
@@ -429,13 +512,13 @@ export const own = <R>(
     effect function ciAt(commit: string) {
       const file = (try committedWorkspace(source, commit)) ?? workspaceFile
       if (chosen.from === "request") return { patterns: chosen.patterns, workspaceFile: file } satisfies CommitCi
-      try checkoutAt(normalCopy, commit, places.normal)
-      const read = onNormalCopy(parts.read(normalCopy)) catch effect (cause) => {
+      try checkoutAt(inspectionCopy, commit, places.trial)
+      const read = inventoryAt() catch effect (cause) => {
         if (cause.code !== "unsupported" && cause.code !== "invalid-document") throw cause
         return { reason: cause.message }
       }
       if ("reason" in read) return read
-      return { patterns: chosenFor(read).patterns, workspaceFile: file } satisfies CommitCi
+      return { patterns: try targetsAt(read, file, chosenFor(read).patterns), workspaceFile: file } satisfies CommitCi
     }
 
     const reads = readsListener()
@@ -501,7 +584,7 @@ export const own = <R>(
       const watch = try watchFor(stall.minutes, stall.table)
       const output = try exec(command, args, copy, environment, printedLimitOf(selected.length), undefined, true, heard, watch, undefined, count)
       const record = effect {
-        const text = try fs.readFileString(file)
+        const text = try tryPromise(() => recordText(file))
         return try Schema.decodeUnknownEffect(Schema.fromJsonString(RunRecord))(text)
       } catch () => undefined
       recorder ??= record?.recorder
@@ -510,6 +593,7 @@ export const own = <R>(
         return stoppedResults(recorded, selected, watch.limitMs, noProgress(stall.minutes))
       }
       // A run with no record is a commit `smthrs` could not plan: a failed commit, not a failed replay.
+      if (output.exitCode !== 0 && recorded?.every((result) => result.status !== "failed")) return [noRecord(`smthrs ci exited ${output.exitCode}`)]
       return recorded ?? [noRecord(output.text)]
     }
 
@@ -523,9 +607,9 @@ export const own = <R>(
       const plan = ["ci", ...patterns, "--plan", "--format", "json", "--workspace", copy]
       const [command, ...args] = held(place, [copy], [smthrs, ...plan])
       const environment = { ...stepEnvironment(place.daemon, place), ...cacheEnv }
-      const planned = try exec(command, args, copy, environment, Number.POSITIVE_INFINITY, stdoutOf, true)
-      const printed = Schema.decodeUnknownEffect(Schema.fromJsonString(PrintedPlan))(planned.text) catch effect () => {
-        throw failure("command-failed", `smthrs ci --plan printed no plan: ${planned.text.slice(-outputLimit)}`)
+      const planned = try planOutput(command, args, copy, environment, stepLimit, stall)
+      const printed = Schema.decodeUnknownEffect(Schema.fromJsonString(PrintedPlan))(planned) catch effect () => {
+        throw failure("command-failed", `smthrs ci --plan printed no plan: ${reasonOf({ stdout: planned, stderr: "" })}`)
       }
       return planOfPrinted(printed)
     }
@@ -536,7 +620,7 @@ export const own = <R>(
     let covered: { readonly replayed: number; readonly total: number } | undefined = undefined
     const head = commits.at(-1) as string
     const oldest = commits[0] as string
-    const newestCi = { patterns: chosen.patterns, workspaceFile } satisfies CommitCi
+    const newestCi = { patterns: try targetsAt(inventory, workspaceFile, chosen.patterns), workspaceFile } satisfies CommitCi
     // How often a failed target runs again: what the person asked for, else what the host sets.
     const reruns = request.reruns ?? options.reruns
     // How often a target that fails the first run runs again before it is left out.
@@ -652,10 +736,11 @@ export const own = <R>(
       const { state, execute, first, wallMs } = try ensuring(timed, sync(() => {
         counted = undefined
       }))
-      const results = try settle(execute, first, times, first.length, last[way], tally)
+      const firstRuns = { ms: wallMs }
+      const results = try settle(execute, first, times, first.length, last[way], tally, firstRuns)
       remember(last[way], results)
-      for (const line of linesOf(at, results, wallMs)) try progress.say(line)
-      return { results, wallMs, state, cpuMs: usedBy(used) } satisfies Measured
+      for (const line of linesOf(at, results, firstRuns.ms)) try progress.say(line)
+      return { results, wallMs: firstRuns.ms, state, cpuMs: usedBy(used) } satisfies Measured
     }
 
     /**
@@ -757,12 +842,12 @@ export const own = <R>(
         const plan = planner === undefined ? undefined : try planOf(planner, ci.patterns)
         const rows = plan === undefined ? [] : try onNormalCopy(parts.rows(normalCopy, normalRecord, plan))
         try cleanCopy(normalCopy, [cacheDirectory], places.normal)
-        const scores = plan === undefined ? [] : try scoresOrReason(parts.score, rows)
-        if (typeof scores === "string") {
-          fastNotMeasured = scores
+        const answered = plan === undefined ? undefined : try askModel(parts, rows)
+        if (typeof answered === "string") {
+          fastNotMeasured = answered
           try progress.say(`${at} fast not measured`)
         } else {
-          const choice = choose(scores, request.settings ?? defaultSettings)
+          const choice = choose(answered?.scores ?? [], request.settings ?? defaultSettings)
           // Only a target the patterns select can be named to `smthrs ci`; what it depends on runs with it.
           const named = plan === undefined ? undefined : new Set(plan.roots)
           const labels = named === undefined
@@ -781,7 +866,9 @@ export const own = <R>(
             undefined,
             undefined,
             undefined,
-            fast.cpuMs
+            fast.cpuMs,
+            answered,
+            choice.skipped
           )
           fastPart = run.part
           fastMismatches = run.mismatches
@@ -811,6 +898,7 @@ export const own = <R>(
       fastFlaky,
       commitsLeft,
       fastNotMeasured,
+      diskHeldBytes: try disk.most,
       jobs: covered,
       trialMs,
       reruns: tally,
@@ -818,7 +906,7 @@ export const own = <R>(
       cold: started.cold,
       recorder
     })
-    return { ...report, targets: chosen.patterns }
+    return { ...report, targets: newestCi.patterns }
   })
 
 /**

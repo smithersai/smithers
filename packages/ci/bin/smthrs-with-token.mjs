@@ -13,18 +13,26 @@
 import { readFileSync } from "node:fs"
 import { pathToFileURL } from "node:url"
 
+const [program] = process.argv.splice(2, 1)
+if (!program || program.startsWith("-")) {
+  console.error("usage: smthrs-with-token <program> [args...]")
+  process.exit(2)
+}
 const name = "SMITHERS_CACHE_TOKEN"
+delete process.env[name]
 let token = readFileSync(0, "utf8")
 process.env = new Proxy(process.env, {
   get: (variables, key) => (key === name && token !== "" ? token : Reflect.get(variables, key)),
   has: (variables, key) => (key === name && token !== "") || Reflect.has(variables, key),
-  // A variable is set on the real environment, which takes a whole value and nothing less.
-  set: (variables, key, value) => Reflect.set(variables, key, value),
+  set: (variables, key, value) => {
+    if (key !== name) return Reflect.set(variables, key, value)
+    token = String(value)
+    return true
+  },
   deleteProperty: (variables, key) => {
     if (key === name) token = ""
     return Reflect.deleteProperty(variables, key)
   }
 })
-const [program] = process.argv.splice(2, 1)
 process.argv[1] = program
 await import(pathToFileURL(program).href)

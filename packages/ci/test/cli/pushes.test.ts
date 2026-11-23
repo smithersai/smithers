@@ -92,7 +92,7 @@ const program = async (root: string, refusal?: string) => {
   const noJail = Layer.effect(
     Options,
     Effect.gen(function*() {
-      return { ...(yield* Options), confine: () => ({ refusal: refusal as string }) }
+      return { ...(yield* Options), confine: () => ({ refusal: refusal as string, trustedRepository: true }) }
     })
   )
   const code = await Effect.runPromise(

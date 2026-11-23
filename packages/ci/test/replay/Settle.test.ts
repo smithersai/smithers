@@ -80,6 +80,14 @@ describe("settle", () => {
     expect(results.map((entry) => [entry.label, entry.status])).toEqual([["a", "ran"], ["b", "ran"]])
   })
 
+  it("keeps a target blocked when only an unrelated failure recovered", async () => {
+    const { calls, execute } = scripted({ a: ["ran"], b: ["failed"] })
+    const blocked = { ...result("c", "skipped"), blockedBy: "b" }
+    const results = await settled(execute, [result("a", "failed"), result("b", "failed"), blocked])
+    expect(calls.flat()).not.toContain("c")
+    expect(results[2]?.status).toBe("skipped")
+  })
+
   it("stops at its bound: with no round left, what waited on a flaky target stays skipped", async () => {
     const { calls, execute } = scripted({ a: ["ran"], b: ["ran"] })
     const results = await Effect.runPromise(
@@ -160,6 +168,24 @@ describe("a failure seen in the run before", () => {
     expect(failedAsBefore(last, failing("a", "boom"))).toBe(false)
     // A step that passes is never taken for a failure seen before.
     expect(failedAsBefore(last, { ...result("b", "ran"), error: "boom", exitCode: 1 })).toBe(false)
+  })
+
+  it("includes the first execution of a recovered step's dependants in measured time", async () => {
+    const firstRuns = { ms: 100 }
+    const tally = { count: 0, ms: 0 }
+    const first = [failing("a", "one"), { ...result("b", "skipped"), blockedBy: "a" }]
+    const execute: Execute<never> = (labels) =>
+      Effect.andThen(
+        Effect.sleep("20 millis"),
+        Effect.succeed(
+          (labels ?? []).map((label) => result(label, "ran"))
+        )
+      )
+    const results = await Effect.runPromise(settle(execute, first, 1, first.length, new Map(), tally, firstRuns))
+    expect(results.map((target) => target.status)).toEqual(["ran", "ran"])
+    expect(tally.count).toBe(1)
+    expect(tally.ms).toBeGreaterThanOrEqual(19)
+    expect(firstRuns.ms).toBeGreaterThanOrEqual(119)
   })
 
   it("counts what ran again and how long that took", async () => {

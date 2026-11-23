@@ -8,10 +8,11 @@
 // that directory is already there. Then `smithers-ci --commits <n> --json` runs in it. What each run printed is
 // kept in <directory>/out. Clone into a directory outside any repository.
 import { spawnSync } from "node:child_process"
-import { existsSync, mkdirSync, writeFileSync } from "node:fs"
+import { existsSync, mkdirSync, mkdtempSync, renameSync, rmSync, writeFileSync } from "node:fs"
 import { join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
-import { ciJobs, expand, hostOf } from "../src/contract/Inventory.ts"
+import "vibelang/register"
+const { ciJobs, expand, hostOf } = await import("../src/contract/Inventory.vibe")
 
 const repositories = [
   ["ky", "https://github.com/sindresorhus/ky.git", "3541888"],
@@ -40,18 +41,31 @@ const git = (cwd, ...rest) => spawnSync("git", ["-C", cwd, ...rest], { encoding:
 /** A clone with the named commit checked out and commits before it. */
 const clone = (name, url, commit) => {
   const root = join(directory, name)
-  if (existsSync(join(root, ".git"))) return root
-  mkdirSync(root, { recursive: true })
-  git(root, "init", "--quiet")
-  git(root, "remote", "add", "origin", url)
-  // A short commit id cannot be fetched by name, so the branch is fetched far enough back to hold it.
-  for (const depth of ["50", "500", "5000"]) {
-    git(root, "fetch", "--quiet", "--depth", depth, "origin", "HEAD")
-    if (git(root, "cat-file", "-e", `${commit}^{commit}`).status === 0) break
+  if (existsSync(join(root, ".git"))) {
+    const head = git(root, "rev-parse", "--verify", "HEAD")
+    const remote = git(root, "remote", "get-url", "origin")
+    if (head.status === 0 && head.stdout.trim().startsWith(commit) && remote.stdout.trim() === url) return root
+    throw new Error(`${name}: existing checkout does not match the pinned repository and commit`)
   }
-  const checkout = git(root, "checkout", "--quiet", "--detach", commit)
-  if (checkout.status !== 0) throw new Error(`${name}: ${commit} is not in the last 5000 commits of ${url}`)
-  return root
+  const stage = mkdtempSync(join(directory, `.${name}-`))
+  try {
+    if (git(stage, "init", "--quiet").status !== 0 || git(stage, "remote", "add", "origin", url).status !== 0) {
+      throw new Error(`${name}: could not initialize checkout`)
+    }
+    for (const depth of ["50", "500", "5000"]) {
+      if (git(stage, "fetch", "--quiet", "--depth", depth, "origin", "HEAD").status !== 0) {
+        throw new Error(`${name}: fetch failed`)
+      }
+      if (git(stage, "cat-file", "-e", `${commit}^{commit}`).status === 0) break
+    }
+    if (git(stage, "checkout", "--quiet", "--detach", commit).status !== 0) {
+      throw new Error(`${name}: ${commit} is not in the last 5000 commits of ${url}`)
+    }
+    renameSync(stage, root)
+    return root
+  } finally {
+    rmSync(stage, { recursive: true, force: true })
+  }
 }
 
 const run = (root, name, label, ...rest) => {

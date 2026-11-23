@@ -16,7 +16,12 @@ const listed = Object.keys(process.env).includes(name)
 // Smithers build changes variables it was started with, as it does `PATH`, and sets new ones.
 process.env.PATH = `${process.env.PATH}:/nowhere`
 process.env.SMITHERS_CI_TEST_SET = "set"
-const sets = process.env.PATH.endsWith(":/nowhere") && process.env.SMITHERS_CI_TEST_SET === "set"
+process.env[name] = "replacement"
+const childAfterSet = execFileSync(process.execPath, ["-e", `process.stdout.write(String(process.env.${name}))`], {
+  encoding: "utf8"
+})
+const sets = process.env.PATH.endsWith(":/nowhere") && process.env.SMITHERS_CI_TEST_SET === "set" &&
+  process.env[name] === "replacement" && childAfterSet === "undefined" && !Object.keys(process.env).includes(name)
 delete process.env[name]
 console.log(JSON.stringify({
   token,

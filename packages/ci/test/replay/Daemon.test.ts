@@ -207,7 +207,7 @@ describe("a step on a machine with no jail", () => {
 
     const { report, said } = await withPerson(
       { DOCKER_HOST: "unix:///var/run/docker.sock", PATH: path },
-      () => replay(root, () => ({ refusal }), false)
+      () => replay(root, () => ({ refusal, trustedRepository: true }), false)
     )
 
     const counts = { hit: 0, ran: 1, failed: 3, skipped: 0 }
@@ -236,7 +236,7 @@ describe("a step on a machine with no jail", () => {
 
     const { report, said } = await withPerson(
       { DOCKER_HOST: host, PATH: path },
-      () => replay(root, () => ({ refusal }), true)
+      () => replay(root, () => ({ refusal, trustedRepository: true }), true)
     )
 
     const counts = { hit: 0, ran: 2, failed: 0, skipped: 0 }

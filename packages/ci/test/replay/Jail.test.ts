@@ -309,7 +309,7 @@ describe("a step on a machine with no jail", () => {
     const refs = [git(other, "for-each-ref"), git(origin, "for-each-ref")]
     const refusal = "bwrap is not on PATH (install the bubblewrap package)"
 
-    const { report, said } = await replay(root, 1, () => ({ refusal }))
+    const { report, said } = await replay(root, 1, () => ({ refusal, trustedRepository: true }))
 
     const counts = { hit: 0, ran: passing.length, failed: failing.length, skipped: 0 }
     expect(report.commits.map((commit) => commit.baseline.counts)).toEqual([counts])
@@ -354,7 +354,7 @@ describe("a step no runner starts", () => {
       ]
       const root = repository(jobs, [{ "one.txt": "one\n" }, { "two.txt": "two\n" }], origin)
 
-      const { report } = await replay(root, 2, () => ({ refusal: "no bubblewrap" }))
+      const { report } = await replay(root, 2, () => ({ refusal: "no bubblewrap", trustedRepository: true }))
 
       const passed = { hit: 0, ran: 2, failed: 0, skipped: 0 }
       expect(report.commits.map((commit) => commit.baseline.counts)).toEqual([passed, passed])
@@ -370,7 +370,7 @@ describe("a step no runner starts", () => {
 describe.each(
   [
     { where: "in the jail", asked: () => found, runs: jailable },
-    { where: "with no jail", asked: () => ({ refusal: "no bubblewrap" }), runs: true }
+    { where: "with no jail", asked: () => ({ refusal: "no bubblewrap", trustedRepository: true }), runs: true }
   ] as const
 )("a tool that keeps a cache for its user, $where", ({ asked, runs }) => {
   it.skipIf(!runs)("is cold at every commit in the baseline, in normal mode and in fast mode", async () => {
@@ -436,7 +436,7 @@ describe("git a part starts in a copy a step wrote", () => {
   it.each(
     [
       { where: "in the jail", confined: () => found, runs: jailable },
-      { where: "with no jail", confined: () => ({ refusal: "no bubblewrap" }), runs: true }
+      { where: "with no jail", confined: () => ({ refusal: "no bubblewrap", trustedRepository: true }), runs: true }
     ] as const
   )("runs as a step does $where, and a command planted in .git/config with it", async ({ confined, runs, where }) => {
     if (!runs) return
@@ -472,7 +472,13 @@ describe("git a part starts in a copy a step wrote", () => {
     const work = directory("work")
     const seen = await live(Effect.gen(function*() {
       const real = yield* ChildProcessSpawner
-      const places = yield* confine(work, () => ({ refusal: "no bubblewrap" }), () => Effect.void, [], false)
+      const places = yield* confine(
+        work,
+        () => ({ refusal: "no bubblewrap", trustedRepository: true }),
+        () => Effect.void,
+        [],
+        false
+      )
       const held = reading(real, places.normal, copy)
       // What a part runs to read a commit, as `zig build` runs the commit's own build.zig: it sees a step's home,
       // the copy as its directory, the variable it was given, and no variable of the person's.
@@ -501,6 +507,25 @@ describe("git a part starts in a copy a step wrote", () => {
 describe("confine", () => {
   const scoped = <A>(work: Effect.Effect<A, unknown, unknown>) =>
     Effect.runPromise(Effect.scoped(work).pipe(Effect.provide(NodeServices.layer)) as Effect.Effect<A>)
+
+  it("requires a working jail unless the operator explicitly trusts the repository", async () => {
+    const probe = () => ({ refusal: "unavailable" })
+    await expect(scoped(confine(directory("default-jail"), probe, () => Effect.void, [], false, {}))).rejects.toThrow(
+      "SMITHERS_CI_ALLOW_UNCONFINED=1"
+    )
+    const places = await scoped(
+      confine(directory("trusted"), probe, () => Effect.void, [], false, { SMITHERS_CI_ALLOW_UNCONFINED: "1" })
+    )
+    expect(places.baseline.jail).toBeUndefined()
+  })
+
+  it("refuses before preparing the workload when the controller requires a jail", async () => {
+    const work = directory("required-jail")
+    await expect(scoped(confine(work, () => ({ refusal: "unavailable" }), () => Effect.void, [], false, {
+      SMITHERS_CI_REQUIRE_JAIL: "1"
+    }))).rejects.toThrow("the replay requires a jail: unavailable")
+    expect(existsSync(join(work, "home"))).toBe(false)
+  })
 
   it("makes each way a home with the hook, hides the person's home, and puts back only what a step has a use for", async () => {
     const owner = person()
@@ -581,7 +606,7 @@ describe("confine", () => {
           {
             path: owner.home,
             directory: true,
-            readable: [owner.tool, project, source, alone, checkout],
+            readable: [owner.tool, project, source, alone],
             links: [{ path: join(owner.home, "system"), target: "/usr/bin" }]
           },
           // A credential that is a link out of the home is hidden where it leads: a directory, and a file.
@@ -690,7 +715,9 @@ describe("confine", () => {
     const said: Array<string> = []
     const say = (line: string) => Effect.sync(() => void said.push(line))
     const work = directory("work")
-    const places = await scoped(confine(work, () => ({ refusal: "no bubblewrap" }), say, [], false))
+    const places = await scoped(
+      confine(work, () => ({ refusal: "no bubblewrap", trustedRepository: true }), say, [], false)
+    )
     expect(places).toEqual({
       baseline: placeIn(work, "baseline"),
       normal: placeIn(work, "normal"),
@@ -813,10 +840,11 @@ describe("the jail", () => {
       home: "/home/person",
       uid: 1234
     }
+    const runtime = [process.env["XDG_RUNTIME_DIR"]].filter((path): path is string => path?.startsWith("/") === true)
     const jail = {
       bwrap: "/usr/bin/bwrap",
       home: "/home/person",
-      hidden: ["/run/user/1234", ...elsewhere(starts)],
+      hidden: [...new Set(["/run/user/1234", ...runtime, ...elsewhere(starts)])],
       daemons: daemonSockets(1234, process.env),
       tmp: tmpdir(),
       caches: [join(tmpdir(), "tsx-1234"), join(tmpdir(), "vibelang-cache-1234")],
@@ -843,7 +871,7 @@ describe("the jail", () => {
       expect(found).toEqual({
         bwrap: facts.executable("bwrap"),
         home: homedir(),
-        hidden: [`/run/user/${facts.uid}`, ...elsewhere(facts)],
+        hidden: [...new Set([`/run/user/${facts.uid}`, ...runtime, ...elsewhere(facts)])],
         daemons: daemonSockets(facts.uid, process.env),
         tmp: tmpdir(),
         caches: [join(tmpdir(), `tsx-${facts.uid}`), join(tmpdir(), `vibelang-cache-${facts.uid}`)],
@@ -870,7 +898,7 @@ describe("the jail", () => {
   it("runs a command through a shell that closes every descriptor but its three, when there is none", () => {
     // The shell names a command that is not there before it tries to become it.
     const named = "command -v -- \"$1\" > /dev/null 2>&1 || { printf 'could not run %s\\n' \"$1\" >&2; exit 127; }"
-    const started = ["bash", "-c", `${closes}\n${named}\nexec "$@"`, "smithers-ci", ...argv]
+    const started = ["/bin/bash", "-c", `${closes}\n${named}\nexec "$@"`, "smithers-ci", ...argv]
     expect(jailed(undefined, ["/copy"], ["/home/hooks"], argv)).toEqual(started)
     expect(held({ ...place, jail: undefined }, ["/copy"], argv)).toEqual(started)
   })
@@ -895,7 +923,7 @@ describe("the jail", () => {
     }
     expect(held({ ...place, jail }, ["/copy"], argv)).toEqual([
       // A shell closes every descriptor but its three, opens the filter as 9 and becomes bubblewrap, which loads it.
-      "bash",
+      "/bin/bash",
       "-c",
       `${closes}\nexec "$@" 9< "$0"`,
       "/work/keyring-filter",

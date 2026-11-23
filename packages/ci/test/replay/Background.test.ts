@@ -127,6 +127,7 @@ jobs:
         "src.txt": "one\n"
       })
       const outcome = await spawnWith(bin, ["--commits", "1", "--no-apply-check", "--json", "--no-trial"], root, {
+        SMITHERS_CI_ALLOW_UNCONFINED: "1",
         PATH: `${tools}:${process.env["PATH"]}`
       })
       expect(outcome.code, outcome.stderr).toBe(0)

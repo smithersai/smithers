@@ -1,14 +1,17 @@
 import * as NodeServices from "@effect/platform-node/NodeServices"
 import * as Effect from "effect/Effect"
+import * as FileSystem from "effect/FileSystem"
 import * as Schema from "effect/Schema"
-import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs"
+import { existsSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
 import { dirname, join } from "node:path"
 import { afterAll, describe, expect, it } from "vitest"
 import {
   commandFailed,
+  commandStopped,
   inputsOf,
   install,
   installDirectories,
+  installEach,
   installLabel,
   managerFor,
   managers,
@@ -77,7 +80,11 @@ describe("the install rules", () => {
       "bun.lock",
       ".smithers/bun.lock",
       "packages/yarn.lock",
-      "notes/bun.lock.md"
+      "notes/bun.lock.md",
+      "../bun.lock",
+      "/site/bun.lock",
+      "C:/bun.lock",
+      "site\\\\tool/bun.lock"
     ]
     expect(readInstalls(inputs, [".smithers", ""])).toEqual(["docs/tools", "old", "packages/runtime", "site"])
     expect(readInstalls(inputs, [])).toEqual(["", ".smithers", "docs/tools", "old", "packages/runtime", "site"])
@@ -109,6 +116,7 @@ describe("the install rules", () => {
   })
 
   it("words a failed install without its output", () => {
+    expect(commandStopped(["bun", "install"], "", "timed out")).toBe("bun install in the repository root: timed out")
     expect(commandFailed(["npm", "ci"], "", 1)).toBe("npm ci exited 1 in the repository root")
     expect(commandFailed(["bun", "install"], ".smithers", 127)).toBe("bun install exited 127 in .smithers")
     expect(noSmthrs([".smithers", ""])).toBe(
@@ -137,6 +145,23 @@ describe("install", { timeout: 300_000 }, () => {
       ok: true,
       smthrs: join(root, ".smithers", smthrsBin)
     })
+  })
+
+  it("checks the resolved install directory before reading its manifests", async () => {
+    const root = checkout({})
+    const other = checkout({})
+    symlinkSync(other, join(root, "linked"))
+    expect(await onNode(installEach(root, ["linked"], place()))).toBe("install directory outside checkout: linked")
+    writeFileSync(join(root, "ordinary-file"), "fixture")
+    expect(await onNode(installEach(root, ["ordinary-file"], place()))).toBeUndefined()
+    const unresolved = Effect.gen(function*() {
+      const fs = yield* FileSystem.FileSystem
+      return yield* Effect.provideService(installEach(root, ["linked"], place()), FileSystem.FileSystem, {
+        ...fs,
+        realPath: (path) => fs.realPath(path === root ? join(root, "missing") : path)
+      })
+    })
+    expect(await onNode(unresolved)).toBe("install directory outside checkout: linked")
   })
 
   it("reports the command that failed, and where", async () => {

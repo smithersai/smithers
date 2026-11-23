@@ -12,7 +12,7 @@ import { Progress, run } from "../../src/replay/index.vibe"
 import { unavailable } from "../../src/select/Failure.vibe"
 import { asked, Score, score, Scoring } from "../../src/select/index.vibe"
 import { job, makeSmallRepository } from "./fixture.ts"
-import { files, modelFailingAfter, options, read, rowsOfEachCommit } from "./TestParts.vibe"
+import { files, generated, modelFailingAfter, options, read, rowsOfEachCommit, workspacePath } from "./TestParts.vibe"
 
 const created: Array<string> = []
 afterAll(() => {
@@ -61,6 +61,40 @@ const replayed = async (root: string, parts: ReplayParts<never>, answers: number
 
 const parts = { read, files, rows: rowsOfEachCommit, score } as unknown as ReplayParts<never>
 
+it("runs a step that depends on the shared repository filegroup in fast mode", async () => {
+  const root = makeSmallRepository([job("check", "true")])
+  created.push(root)
+  let sawFilegroup = false
+  const replayParts: ReplayParts<never> = {
+    ...parts,
+    files: (inventory) =>
+      Effect.succeed(
+        generated(inventory).map((file) =>
+          file.path !== workspacePath ? file : {
+            ...file,
+            content: file.content.replace(
+              "export const Workspace",
+              "const repository = S.Filegroup({ srcs: [S.file(\"//ci.json\")] })\nexport const Workspace"
+            )
+              .replace("deps: []", "deps: [repository]").replace("targets: { ", "targets: { repository, ")
+          }
+        )
+      ),
+    rows: (_root, record) => {
+      sawFilegroup = record.results.some((result) => result.label === "//:repository")
+      return Effect.succeed([])
+    },
+    score: () => Effect.succeed([])
+  }
+  const result = await Effect.runPromise(
+    run({ root, commits: 1, modes: ["fast"] }, replayParts)
+      .pipe(Effect.provide(Layer.provideMerge(options, NodeServices.layer))) as Effect.Effect<ReplayReport, Failure>
+  )
+  expect(sawFilegroup).toBe(true)
+  expect(result.commits[0]?.fast?.ok).toBe(true)
+  expect(result.mismatches).toBe(0)
+}, 300_000)
+
 describe("a model that stops answering at the second of three commits", () => {
   it(
     "still runs the baseline and normal mode for every commit, and the report says fast mode was not measured",
@@ -81,7 +115,8 @@ describe("a model that stops answering at the second of three commits", () => {
       expect(report.commits.every((commit) => !("fast" in commit))).toBe(true)
       expect(report.commits.every((commit) => !("skipped" in commit) && !("model" in commit))).toBe(true)
       expect(report).not.toHaveProperty("model")
-      expect(report.mismatches).toBe(0)
+      expect(report.mismatches).toBe(1)
+      expect(report.commits[0]?.mismatches[0]?.mode).toBe("fast")
       expect(report).not.toHaveProperty("fastWallMs")
       expect(report).not.toHaveProperty("selection")
 

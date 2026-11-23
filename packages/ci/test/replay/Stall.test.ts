@@ -112,7 +112,7 @@ describe("a step that stops making progress", () => {
       reruns: 0,
       prepare: (directory: string) => Effect.sync(() => linkTargets(directory)),
       confine: unconfined,
-      processes: { ...tableFor("linux"), read: Effect.succeed(undefined) }
+      processes: { ...tableFor("linux"), under: () => Effect.succeed(undefined), read: Effect.succeed(undefined) }
     })
     const root = track(makeSmallRepository([job("waits", "sleep 5")]))
     const [commit] = (await replay(root, 0.02, unreadable as never)).commits

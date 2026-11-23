@@ -13,7 +13,7 @@
  * baseline would then be faster than the CI it stands for.
  *
  * So each job has a view of the store: the entries the store held when the
- * run began and those of the jobs it waited for, as hard links. The job
+ * run began and those of the jobs it waited for, as independent files. The job
  * restores from its view and saves into it. When the run has ended, what the
  * views hold that the store does not is added to the store, the first job's
  * entry first, as the first job to save a key keeps it.
@@ -25,40 +25,62 @@
  * @since 0.1.0
  */
 
+import { openPinnedPath } from "./PinnedFile.ts"
+
+const pinned = <A, E, R>(source: string, directory: boolean, use: (path: string) => A!E!R) =>
+  acquireUseRelease(
+    tryPromise(() => openPinnedPath(source, directory)),
+    (file) => use(file.path),
+    (file) => ignore(tryPromise(() => file.close()))
+  )
+
 /** The file a save writes last: a directory that holds it is a finished entry. */
 const finished = "key"
 
 /**
  * Adds to `to` every finished entry under `from` that `to` does not hold, as
- * hard links. An entry keeps its time: a restore takes the newest entry a
+ * independent files. An entry keeps its time: a restore takes the newest entry a
  * prefix matches. A `from` that does not exist adds nothing.
  *
  * @category store
  * @since 0.1.0
  */
-export effect function addEntries(from: string, to: string) {
+export effect function addEntries(from: string, to: string): void!Error!(FileSystem.FileSystem | Path.Path) {
   const fs = try FileSystem.FileSystem
   const path = try Path.Path
-  if (!(try fs.exists(from))) return
-  for (const name of try fs.readDirectory(from)) {
-    const source = path.join(from, name)
-    const target = path.join(to, name)
-    const info = try fs.stat(source)
-    if (info.type !== "Directory") continue
-    const files = try fs.readDirectory(source)
-    if (!files.includes(finished)) {
-      try addEntries(source, target)
-      continue
+  if (!(try fs.exists(from)) || (try fs.lstat(from)).type !== "Directory") return
+  try pinned(from, true, (parent) => effect {
+    for (const name of try fs.readDirectory(parent)) {
+      const source = path.join(parent, name)
+      const target = path.join(to, name)
+      const info = try fs.lstat(source)
+      if (info.type !== "Directory") continue
+      try pinned(source, true, (entry) => effect {
+        const files = try fs.readDirectory(entry)
+        if (!files.includes(finished)) {
+          // The source name is relative to the pinned parent. The recursive open verifies it again.
+          try addEntries(source, target)
+          return
+        }
+        if (try fs.exists(target)) return
+        for (const file of files) {
+          if ((try fs.lstat(path.join(entry, file))).type !== "File") return
+        }
+        try fs.makeDirectory(to, { recursive: true })
+        try scoped(effect {
+          const staged = try fs.makeTempDirectoryScoped({ directory: to, prefix: ".partial-" })
+          for (const file of files) {
+            try pinned(path.join(entry, file), false, (input) => fs.copyFile(input, path.join(staged, file)))
+          }
+          const saved = Option.getOrUndefined(info.mtime)
+          if (saved !== undefined) try fs.utimes(staged, saved, saved)
+          fs.rename(staged, target) catch effect (error) => {
+            if (!(try fs.exists(path.join(target, finished)))) throw error
+          }
+        })
+      })
     }
-    if (try fs.exists(target)) continue
-    try fs.makeDirectory(target, { recursive: true })
-    // The key last: an entry counts as saved once it holds one.
-    for (const file of [...files.filter((file) => file !== finished), finished]) {
-      try fs.link(path.join(source, file), path.join(target, file))
-    }
-    const saved = Option.getOrUndefined(info.mtime)
-    if (saved !== undefined) try fs.utimes(target, saved, saved)
-  }
+  })
 }
 
 /**
@@ -86,33 +108,15 @@ export effect function keep(views: ReadonlyArray<string>, store: string) {
   for (const view of views) try addEntries(view, store)
 }
 
-/**
- * Every path under `directory`, from it: what a way keeps there now. A
- * commit that runs again starts from it ({@link backTo}).
- *
- * @category between commits
- * @since 0.1.0
- */
-export effect function pathsIn(directory: string) {
+/** Save the complete prior cache, including file contents and timestamps, outside the writable cache. */
+export effect function snapshot(directory: string, backup: string) {
   const fs = try FileSystem.FileSystem
-  return new Set(try fs.readDirectory(directory, { recursive: true }))
+  try fs.copy(directory, backup, { preserveTimestamps: true })
 }
 
-/**
- * Removes from `directory` every path that is not in `before`, which
- * {@link pathsIn} gave: a commit that runs again finds what the run before
- * it kept, and nothing its own first run added. Smithers build writes an
- * entry of its cache whole under its name, and {@link keep} adds an entry
- * only where none is, so a path that was there holds what it held. A path
- * under one removed is gone already.
- *
- * @category between commits
- * @since 0.1.0
- */
-export effect function backTo(directory: string, before: ReadonlySet<string>) {
+/** Restore the saved directory as a whole: missing, overwritten and newly created paths all revert. */
+export effect function backTo(directory: string, backup: string) {
   const fs = try FileSystem.FileSystem
-  const path = try Path.Path
-  for (const name of try fs.readDirectory(directory, { recursive: true })) {
-    if (!before.has(name)) try fs.remove(path.join(directory, name), { recursive: true, force: true })
-  }
+  try fs.remove(directory, { recursive: true, force: true })
+  try fs.rename(backup, directory)
 }

@@ -9,6 +9,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, expect, it } from "vitest"
 import { discard } from "../../src/replay/Confine.vibe"
+import { keptRemoving } from "./Dying.vibe"
 
 const roots: Array<string> = []
 afterEach(() => {
@@ -28,6 +29,20 @@ it("removes a work directory whole, with a directory a step left read-only in it
   chmodSync(locked, 0o500)
   await Effect.runPromise(discard(work).pipe(Effect.provide(NodeServices.layer)))
   expect(existsSync(work)).toBe(false)
+})
+
+it("preserves the result and reports a failed cleanup once when progress is available", async () => {
+  const root = mkdtempSync(join(tmpdir(), "smithers-ci-discard-"))
+  roots.push(root)
+  const work = join(root, "work")
+  const lines: Array<string> = []
+  const run = (say?: (line: string) => Effect.Effect<void>) =>
+    Effect.runPromise(
+      discard(work, say).pipe(Effect.provide(keptRemoving), Effect.provide(NodeServices.layer))
+    )
+  await run((line) => Effect.sync(() => void lines.push(line)))
+  await run()
+  expect(lines).toEqual([`smithers-ci: replay left a directory it could not remove: ${work}`])
 })
 
 it("says nothing and fails nothing where the directory is gone already", async () => {

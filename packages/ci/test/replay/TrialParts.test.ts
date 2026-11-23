@@ -165,8 +165,10 @@ describe("a run stopped for making no progress", () => {
     const short = { ...result("//:short", "failed", "broken"), exitCode: 2 }
     const long = { ...result("//:long", "failed", "killed"), durationMs: 600_000, exitCode: 137 }
     const passed = { ...result("//:ok", "ran"), durationMs: 700_000 }
-    expect(stoppedResults([short, long, passed], [], 600_000, reason)).toEqual([
+    const failed = { ...short, durationMs: 650_000 }
+    expect(stoppedResults([short, failed, long, passed], [], 600_000, reason)).toEqual([
       short,
+      failed,
       { ...result("//:long", "failed", reason), durationMs: 600_000 },
       passed
     ])

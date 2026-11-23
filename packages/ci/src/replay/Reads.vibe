@@ -59,9 +59,9 @@ export const readsListener = (): (chunk: string) => string | undefined => {
   let partial = ""
   let told = false
   return (chunk) => {
-    const lines = `${partial}${chunk}`.split("\n")
-    partial = lines.pop() as string
     if (told) return undefined
+    const lines = `${partial}${chunk}`.split("\n")
+    partial = (lines.pop() as string).slice(-8192)
     for (const line of lines) {
       const reason = unobserved.exec(line.trimEnd())?.[1]
       if (reason !== undefined) {

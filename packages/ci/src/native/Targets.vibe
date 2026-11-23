@@ -101,6 +101,7 @@ const operators = ";&|\n()<>"
  */
 const commandsOf = (script: string): ReadonlyArray<ReadonlyArray<string>> => {
   const commands: Array<Array<string>> = [[]]
+  const documents: Array<{ end: string; stripTabs: boolean }> = []
   let text: string | undefined = undefined
   const close = (): void => {
     if (text !== undefined) (commands.at(-1) as Array<string>).push(text)
@@ -126,9 +127,30 @@ const commandsOf = (script: string): ReadonlyArray<ReadonlyArray<string>> => {
     } else if (char === "#" && text === undefined) {
       const end = script.indexOf("\n", at)
       at = (end === -1 ? script.length : end) - 1
+    } else if (char === "<" && script.startsWith("<<<", at)) {
+      close()
+      at += 2
+    } else if (char === "<" && script.startsWith("<<", at)) {
+      close()
+      const marker = /^<<(-?)[ \t]*((?:[a-zA-Z0-9_./-]+|'[^'\n]*'|"[^"\n]*"|\\[^\n])+)/.exec(script.slice(at))
+      if (marker === null) break
+      const end = (marker[2] as string).replace(/'([^']*)'|"([^"]*)"|\\(.)/g, (_match, single, double, escaped) => single ?? double ?? escaped)
+      documents.push({ end, stripTabs: marker[1] === "-" })
+      at += marker[0].length - 1
     } else if (operators.includes(char)) {
       close()
       commands.push([])
+      if (char === "\n") {
+        for (const document of documents.splice(0)) {
+          while (at < script.length) {
+            const start = at + 1
+            const newline = script.indexOf("\n", start)
+            at = newline === -1 ? script.length : newline
+            const line = script.slice(start, at)
+            if ((document.stripTabs ? line.replace(/^\t+/, "") : line) === document.end) break
+          }
+        }
+      }
     } else if (char === " " || char === "\t") {
       close()
     } else {
@@ -145,19 +167,19 @@ const nameOf = (word: string | undefined): string => (word ?? "").replace(/^.*\/
 const isPattern = (word: string): boolean => word.startsWith("//") && !word.includes("$")
 
 /** The patterns one command gives Smithers build, or the patterns of the script it hands a shell. */
-const patternsOfCommand = (words: ReadonlyArray<string>): ReadonlyArray<string> => {
+const invocationsOf = (words: ReadonlyArray<string>): ReadonlyArray<ReadonlyArray<string>> => {
   const start = words.findIndex((word) => !assignment.test(word) && !prefixes.includes(word))
   const rest = start === -1 ? [] : words.slice(start)
   if (shells.includes(nameOf(rest[0]))) {
     const flag = rest.findIndex((word) => /^-[A-Za-z]*c$/.test(word))
-    return flag === -1 ? [] : patternsIn(rest[flag + 1] ?? "")
+    return flag === -1 ? [] : commandsOf(rest[flag + 1] ?? "").flatMap(invocationsOf)
   }
   if (!programs.includes(nameOf(rest[0]))) return []
   // Options, each with or without a value, may stand between the program and its verb.
   const verb = rest.findIndex((word, index) =>
     index > 0 && (verbs.includes(word) || !(word.startsWith("-") || (rest[index - 1] as string).startsWith("-")))
   )
-  return verb === -1 || !verbs.includes(rest[verb] as string) ? [] : rest.slice(verb + 1).filter(isPattern)
+  return verb === -1 || !verbs.includes(rest[verb] as string) ? [] : [rest.slice(verb)]
 }
 
 /**
@@ -171,14 +193,39 @@ const patternsOfCommand = (words: ReadonlyArray<string>): ReadonlyArray<string> 
  * @category accessors
  * @since 0.1.0
  */
-export const patternsIn = (script: string): ReadonlyArray<string> => commandsOf(script).flatMap(patternsOfCommand)
+export const patternsIn = (script: string): ReadonlyArray<string> => commandsOf(script).flatMap(invocationsOf).flatMap((call) => call.slice(1).filter(isPattern))
 
-const patternsOf = (job: Job): ReadonlyArray<string> => {
+const callsOf = (job: Job): ReadonlyArray<ReadonlyArray<string>> => {
   const variants: ReadonlyArray<Readonly<Record<string, string>>> = job.matrix.length === 0 ? [{}] : job.matrix
-  return variants.flatMap((variant) => job.steps.flatMap((step) => patternsIn(withVariant(step, variant).command)))
+  return variants.flatMap((variant) => job.steps.flatMap((step) => commandsOf(withVariant(step, variant).command).flatMap(invocationsOf)))
 }
 
 const unique = (values: ReadonlyArray<string>): ReadonlyArray<string> => [...new Set(values)]
+
+/** Selectors that the checkout's planner must expand using the original verb and flags. */
+export const plansFor = (inventory: Inventory): ReadonlyArray<ReadonlyArray<string>> | string => {
+  const plans: Array<ReadonlyArray<string>> = []
+  let custom = false
+  for (const job of ciJobs(inventory)) {
+    for (const call of callsOf(job)) {
+      const args = [call[0] as string]
+      for (let i = 1; i < call.length; i++) {
+        const word = call[i] as string
+        if (isPattern(word) || word === "--include-exclusive") args.push(word)
+        else if (word === "--ui" || word === "--jobs") i++
+        else if (word !== "--verbose") return `cannot reproduce the target selection in ${job.id}: use --targets to name its targets`
+      }
+      custom ||= args[0] !== "ci" || args.includes("--include-exclusive")
+      plans.push(args)
+    }
+  }
+  return custom ? plans : []
+}
+
+const patternsOf = (job: Job): ReadonlyArray<string> => callsOf(job).flatMap((call) => {
+  const patterns = call.slice(1).filter(isPattern)
+  return patterns.length === 0 && !call.some((word) => word.includes("$")) ? [everything] : patterns
+})
 
 /**
  * Whether every target `pattern` selects is selected by `asked`: the same

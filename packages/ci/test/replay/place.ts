@@ -13,7 +13,7 @@ export const watched = "the test reads what a step wrote outside its copy"
  *
  * @throws {never}
  */
-export const unconfined = () => ({ refusal: watched })
+export const unconfined = () => ({ refusal: watched, trustedRepository: true })
 
 /** The place of one way under `work`, made, with no jail: where the replay itself puts it. */
 export const placeIn = (work: string, way: Way = "normal"): Confined => {

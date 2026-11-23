@@ -39,7 +39,8 @@ const printedFloor = 8_000_000
  * @category accessors
  * @since 0.1.0
  */
-export const printedLimitOf = (targets: number): number => Math.max(printedFloor, targets * printedForOne)
+export const printedLimitOf = (targets: number): number =>
+  Math.min(64_000_000, Math.max(printedFloor, targets * printedForOne))
 
 const lineLimit = 200
 /** How much of a command or of a short text is read for a line. */
@@ -115,6 +116,16 @@ const endOf = (text: string, limit: number): string => {
   const firstBreak = end.indexOf("\n")
   return firstBreak === -1 ? "" : readable(end.slice(firstBreak + 1))
 }
+
+/**
+ * The bounded, redacted diagnostic of a controller that produced no result. Preserve independent error-code and message lines.
+ *
+ * @throws {never}
+ * @category accessors
+ * @since 0.1.0
+ */
+export const diagnosticTail = (text: string, limit: number): string =>
+  endOf(text, limit).split("\n").map((line) => line.replace(/\p{Cc}/gu, " ")).join("\n")
 
 /**
  * Words that report an error, as `error`, `failed`, `cannot`, `not found`
@@ -464,7 +475,10 @@ export const stoppedResults = (
   recorded === undefined
     ? asked.map((label) => ({ label, status: "failed", key: "", durationMs: limitMs, error: reason }))
     : recorded.map((result) => {
-      if (result.status !== "failed" || result.durationMs < limitMs) return result
+      if (
+        result.status !== "failed" || result.durationMs < limitMs ||
+        (result.exitCode !== undefined && result.exitCode !== 137 && result.exitCode !== -1)
+      ) return result
       const { exitCode: _exitCode, ...rest } = result
       return { ...rest, error: reason }
     })
@@ -576,7 +590,7 @@ const failedWith = (
   const signal = endedBySignal.exec(output.stderr)?.[1]
   // A command that was stopped or never started has no exit code; `smthrs` writes -1. One a signal ended has the
   // code a shell gives for the signal, as it has in the baseline.
-  const exitCode = signal === undefined ? output.exitCode : signalExit(signal)
+  const exitCode = signal === undefined || output.exitCode >= 0 ? output.exitCode : signalExit(signal)
   return {
     error: reasonOf({ ...output, stderr: output.stderr.replace(endedBySignal, "") }),
     command: commandLine(command),

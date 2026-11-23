@@ -1183,7 +1183,7 @@ describe("withoutFast", () => {
       changedFiles: 1,
       baseline: totals,
       normal: totals,
-      mismatches: [normal]
+      mismatches: [normal, fast]
     })
   })
 })
@@ -1246,6 +1246,25 @@ describe("fast mode's run of one commit", () => {
       { label: "//:c", skipReason: "predicted-safe", score: 0.01 }
     ])
     expect(run.part.model).toEqual(model)
+  })
+
+  it("accounts for recorded dependencies, model skips, and a selected target missing from the record", () => {
+    const run = fastRunOf(
+      normal,
+      [failed("//:c"), ran("//:dependency")],
+      "c",
+      10,
+      baseline,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      { scores: [], model: { ms: 0 } },
+      new Set(["//:a"])
+    )
+    expect(run.part.fast?.counts).toEqual({ hit: 0, ran: 1, failed: 1, skipped: 1 })
+    expect(run.part.skipped).toEqual([{ label: "//:a", skipReason: "predicted-safe" }])
+    expect(run.mismatches).toEqual([{ label: "//:b", mode: "fast", baseline: "pass", got: "skipped" }])
   })
 
   it("lists a skipped target the model gave no score with its label alone", () => {

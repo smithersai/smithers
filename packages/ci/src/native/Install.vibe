@@ -68,6 +68,7 @@ export const readInstalls = (
 ): ReadonlyArray<string> => {
   const lockfiles = managers.flatMap((manager) => manager.lockfiles)
   const found = inputs.flatMap((file) => {
+    if (file.includes("\\") || file.startsWith("/") || /^[A-Za-z]:/.test(file) || file.split("/").includes("..")) return []
     const slash = file.lastIndexOf("/")
     const directory = slash === -1 ? "" : file.slice(0, slash)
     return lockfiles.includes(file.slice(slash + 1)) && !installed.includes(directory) ? [directory] : []

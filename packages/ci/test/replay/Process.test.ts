@@ -1,14 +1,18 @@
 /** How a replay stops a command: a real process that ignores the signal to stop is killed. */
 import * as NodeServices from "@effect/platform-node/NodeServices"
+import type * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
 import * as Option from "effect/Option"
+import * as PlatformError from "effect/PlatformError"
+import { ChildProcessSpawner, make as makeSpawner } from "effect/process/ChildProcessSpawner"
+import * as Stream from "effect/Stream"
 import { execFileSync } from "node:child_process"
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterAll, describe, expect, it } from "vitest"
 import { reasonOf } from "../../src/replay/Failures.ts"
-import { cleanCopy, cloneCopy, exec, originHeadOf, originOf, runStep } from "../../src/replay/Process.vibe"
+import { cleanCopy, cloneCopy, exec, originHeadOf, originOf, planOutput, runStep } from "../../src/replay/Process.vibe"
 import { makePlace } from "./place.ts"
 
 const made: Array<string> = []
@@ -26,6 +30,82 @@ const stubborn = (file: string): ReadonlyArray<string> => ["-c", `trap "" TERM; 
 const environment = { PATH: process.env["PATH"] }
 
 const onNode = <A, E>(work: Effect.Effect<A, E, never>): Promise<A> => Effect.runPromise(work)
+
+it.each(
+  [
+    ["exit information unavailable", 128],
+    ["receipt of signal: 'SIGTERM' while waiting", 143]
+  ] as const
+)("maps the process wait diagnostic %s to its exit status", async (cause, expected) => {
+  const result = Effect.gen(function*() {
+    const real = yield* ChildProcessSpawner
+    const failed = PlatformError.systemError({ _tag: "Unknown", module: "test", method: "exitCode", cause })
+    const waiter = makeSpawner((cmd) =>
+      Effect.map(real.spawn(cmd), (child) => ({ ...child, exitCode: Effect.fail(failed) }))
+    )
+    return yield* Effect.provideService(
+      runStep("/bin/true", [], tmpdir(), {}, "10 seconds"),
+      ChildProcessSpawner,
+      waiter
+    )
+  })
+  expect((await onNode(result.pipe(Effect.provide(NodeServices.layer)))).exitCode).toBe(expected)
+})
+
+describe("planner output", () => {
+  const plan = (script: string, limit: Duration.Input = "30 seconds") =>
+    Effect.provide(
+      planOutput(process.execPath, ["-e", script], tmpdir(), {}, limit),
+      NodeServices.layer
+    )
+
+  it.each([0, 3])("retains only the last %s characters of a long process stream", async (limit) => {
+    const out = await onNode(
+      exec(process.execPath, ["-e", "process.stdout.write('0123456789')"], tmpdir(), {}, limit)
+        .pipe(Effect.provide(NodeServices.layer))
+    )
+    expect(out.text).toBe(limit === 0 ? "" : "789")
+  })
+
+  it("reads only complete stdout from a successful planner", async () => {
+    expect(await onNode(plan("console.error('note'); console.log('{}')"))).toBe("{}\n")
+    const failed = await onNode(Effect.flip(plan("console.log('{}'); process.exitCode = 2")))
+    expect(failed.message).toMatch(/exited 2/)
+  })
+
+  it("applies the stall limit to a planner and to an output stream that stays open after exit", async () => {
+    const idle = {
+      read: Effect.succeed(undefined),
+      under: (pid: number) => Effect.succeed([{ pid, parent: 0, cpuMs: 0 }]),
+      stop: () => Effect.void
+    }
+    const stalled = planOutput(process.execPath, ["-e", "setInterval(() => {}, 1000)"], tmpdir(), {}, "20 seconds", {
+      minutes: 0.005,
+      table: idle
+    })
+    expect((await onNode(Effect.flip(stalled).pipe(Effect.provide(NodeServices.layer)))).message).toContain(
+      "made no progress"
+    )
+    const eof = planOutput("/bin/true", [], tmpdir(), {}, "20 seconds", { minutes: 0.005, table: idle })
+    const held = Effect.gen(function*() {
+      const real = yield* ChildProcessSpawner
+      const open = makeSpawner((cmd) =>
+        Effect.map(real.spawn(cmd), (child) => ({ ...child, stdout: Stream.concat(child.stdout, Stream.never) }))
+      )
+      return yield* Effect.flip(Effect.provideService(eof, ChildProcessSpawner, open))
+    })
+    expect((await onNode(held.pipe(Effect.provide(NodeServices.layer)))).message).toContain(
+      "planner output did not close"
+    )
+  })
+
+  it("bounds a long plan and a planner that never finishes", async () => {
+    const large = await onNode(Effect.flip(plan("process.stdout.write('x'.repeat(17 * 1024 * 1024))")))
+    expect(large.message).toContain("size limit")
+    const late = await onNode(Effect.flip(plan("setInterval(() => {}, 5000)", "50 millis")))
+    expect(late.message).toContain("past the limit")
+  })
+})
 
 const isRunning = (pid: number): boolean => {
   try {

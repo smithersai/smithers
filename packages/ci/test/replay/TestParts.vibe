@@ -208,7 +208,7 @@ const denied = (method: string) =>
 /** The real file system, except that making a temporary directory is refused. */
 export const noTemporaryDirectories = Layer.effect(FileSystem.FileSystem, effect {
   const real = try FileSystem.FileSystem
-  return { ...real, makeTempDirectoryScoped: () => Effect.fail(denied("makeTempDirectoryScoped")) }
+  return { ...real, makeTempDirectory: () => Effect.fail(denied("makeTempDirectory")) }
 })
 
 /**
@@ -235,10 +235,11 @@ export const keepingWork = (kept: Array<string>) => Layer.effect(FileSystem.File
   const real = try FileSystem.FileSystem
   return {
     ...real,
-    makeTempDirectoryScoped: (options?: Parameters<FileSystem.FileSystem["makeTempDirectoryScoped"]>[0]) =>
+    makeTempDirectory: (options?: Parameters<FileSystem.FileSystem["makeTempDirectory"]>[0]) =>
       options?.prefix === "smithers-ci-replay-"
         ? tap(real.makeTempDirectory(options), (directory) => sync(() => { kept.push(directory) }))
-        : real.makeTempDirectoryScoped(options)
+        : real.makeTempDirectory(options),
+    remove: (path, options) => kept.includes(path) ? Effect.void : real.remove(path, options)
   }
 })
 

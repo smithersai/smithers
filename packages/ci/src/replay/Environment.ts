@@ -340,7 +340,30 @@ export const ambientEnvironment = (): Readonly<Record<string, string | undefined
  * @throws {never}
  * @since 0.1.0
  */
-export const searchPath = (): ReadonlyArray<string> => (process.env["PATH"] as string).split(":")
+export const searchPath = (): ReadonlyArray<string> =>
+  (process.env["PATH"] ?? "").split(":").filter((directory) => directory.startsWith("/"))
+
+/** The environment used to start controller-side replay helpers.
+ * @category environment
+ * @since 0.1.0
+ */
+export const launcherEnvironment = { PATH: "/usr/bin:/bin" } as const
+
+/** Apply the workload environment only when the last wrapper starts the workload.
+ * @category environment
+ * @since 0.1.0
+ * @throws {never}
+ */
+export const withEnvironment = (
+  environment: Readonly<Record<string, string | undefined>>,
+  argv: readonly [string, ...Array<string>]
+): readonly [string, ...Array<string>] => [
+  "/usr/bin/env",
+  "-i",
+  "--",
+  ...Object.entries(environment).flatMap(([name, value]) => value === undefined ? [] : [`${name}=${value}`]),
+  ...argv
+]
 
 /**
  * The Node this program runs on, which starts a job's keeper and each of

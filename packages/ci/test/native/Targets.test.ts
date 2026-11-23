@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest"
 import type { Inventory, Job } from "../../src/contract/Inventory.vibe"
 import { chosenFor, covers, everything, notSelected, notTargets, patternsIn } from "../../src/native/index.vibe"
 
+import { plansFor } from "../../src/native/Targets.vibe"
+
 const job = (id: string, commands: ReadonlyArray<string>, extra: Partial<Job> = {}): Job => ({
   id,
   source: "github-actions",
@@ -68,6 +70,16 @@ describe("patternsIn", () => {
     expect(patternsIn("smthrs ci //a#b:c")).toEqual(["//a#b:c"])
   })
 
+  it("ignores here-document input and resumes at the next command", () => {
+    expect(patternsIn("cat <<< 'smthrs ci //:sample'\nsmthrs ci //:next")).toEqual(["//:next"])
+    expect(patternsIn("smthrs ci //:first; cat <<")).toEqual(["//:first"])
+    expect(patternsIn("cat <<\"END\"\nsmthrs ci //:ignored\nEND")).toEqual([])
+    expect(patternsIn("cat <<\\END\nsmthrs ci //:ignored\nEND")).toEqual([])
+    expect(patternsIn("cat <<-'END'\n\tsmthrs ci //:sample\n\tEND\nsmthrs ci //:real")).toEqual(["//:real"])
+    expect(patternsIn("cat <<ONE <<TWO\nsmthrs ci //:first\nONE\nsmthrs ci //:second\nTWO")).toEqual([])
+    expect(patternsIn("cat <<EOF\nsmthrs ci //:ignored")).toEqual([])
+  })
+
   it("reads nothing from a comment or from the arguments of another program", () => {
     expect(patternsIn("# was: smthrs ci //legacy/...\nsmthrs ci //packages/...")).toEqual(["//packages/..."])
     expect(patternsIn("smthrs ci //a/... # TODO add //b/... once green")).toEqual(["//a/..."])
@@ -90,6 +102,14 @@ describe("patternsIn", () => {
 })
 
 describe("chosenFor", () => {
+  it("preserves selection verbs and flags, and recognizes a bare CI command", () => {
+    const read = inventory([job("test", ["smthrs test //a/... --include-exclusive", "smthrs ci --ui plain"])])
+    expect(plansFor(read)).toEqual([["test", "//a/...", "--include-exclusive"], ["ci"]])
+    expect(chosenFor(read).patterns).toEqual(["//a/...", "//..."])
+    expect(plansFor(inventory([job("ci", ["smthrs ci //x:* --jobs 2 --verbose"])]))).toEqual([])
+    expect(plansFor(inventory([job("ci", ["smthrs ci --unknown"])]))).toContain("cannot reproduce")
+  })
+
   const targets = job("ci.yml:targets", [
     "pnpm install",
     "pnpm exec smthrs ci '//a/...' '//b:*'",

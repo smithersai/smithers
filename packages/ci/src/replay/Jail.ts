@@ -10,7 +10,7 @@ import * as ExecSandbox from "@smthrs/targets/ExecSandbox"
 import { spawnSync } from "node:child_process"
 import { readdirSync, realpathSync, statSync } from "node:fs"
 import { tmpdir } from "node:os"
-import { dirname, join } from "node:path"
+import { dirname, isAbsolute, join } from "node:path"
 import { inPlainWords } from "./Reads.vibe"
 
 /**
@@ -104,7 +104,7 @@ export type Probe =
     readonly tools: Tools
     readonly scope?: string | undefined
   }
-  | { readonly refusal: string; readonly homes?: ReadonlyArray<Link> | undefined }
+  | { readonly refusal: string; readonly homes?: ReadonlyArray<Link> | undefined; readonly trustedRepository?: boolean }
 
 /**
  * A link: where it is and what it names.
@@ -285,7 +285,15 @@ const answer = (
   return {
     bwrap: facts.executable("bwrap") as string,
     home: facts.home as string,
-    hidden: [`/run/user/${facts.uid}`, ...elsewhere(facts)],
+    hidden: [
+      ...new Set([
+        `/run/user/${facts.uid}`,
+        ...[environment["XDG_RUNTIME_DIR"]].filter((entry): entry is string =>
+          entry !== undefined && isAbsolute(entry)
+        ),
+        ...elsewhere(facts)
+      ])
+    ],
     daemons: daemonSockets(facts.uid, environment),
     tmp: tmpdir(),
     caches: [join(tmpdir(), `tsx-${facts.uid}`), join(tmpdir(), `vibelang-cache-${facts.uid}`)],
@@ -441,7 +449,7 @@ export const keyringFilter = (): Uint8Array => {
       allow,
       notImplemented
     ]),
-    allow
+    notImplemented
   ]
   const bytes = new Uint8Array(program.length * 8)
   program.forEach((each, index) => bytes.set(each, index * 8))
@@ -552,8 +560,8 @@ export const jailed = (
   sealed: ReadonlyArray<string>,
   argv: readonly [string, ...Array<string>]
 ): readonly [string, ...Array<string>] =>
-  jail === undefined ? ["bash", "-c", bare, "smithers-ci", ...argv] : [
-    "bash",
+  jail === undefined ? ["/bin/bash", "-c", bare, "smithers-ci", ...argv] : [
+    "/bin/bash",
     "-c",
     withFilter,
     jail.filter,

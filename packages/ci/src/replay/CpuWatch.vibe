@@ -87,7 +87,7 @@ export effect function cpuWatch(table: Table, tick: Duration.Input = defaultCpuT
     if (entries === undefined) return
     for (const [meter, state] of meters) {
       observe(meter, entries)
-      state.read = true
+      state.read = meter.seen.size > 0
     }
   }
   effect function each(under: NonNullable<Table["under"]>) {
@@ -101,7 +101,7 @@ export effect function cpuWatch(table: Table, tick: Duration.Input = defaultCpuT
         return
       }
       observe(meter, entries)
-      state.read = true
+      state.read = meter.seen.size > 0
       state.last = now
     }
   }

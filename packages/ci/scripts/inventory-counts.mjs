@@ -7,6 +7,7 @@
 // the program after it, in its commit message: a job that falls out is explained there, or the change does not land.
 // Each repository is a checkout at the commit to read; nothing is fetched. The jobs kept and left are those the
 // program's own contract (`ci`, `notReplayed`) decides, so each program is read by its own rules.
+import { existsSync } from "node:fs"
 import { spawnSync } from "node:child_process"
 import { basename, dirname, join, resolve } from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
@@ -19,7 +20,10 @@ if (repositories.length === 0) {
   console.error("usage: node packages/ci/scripts/inventory-counts.mjs [--program <smithers-ci.mjs>] <repository>...")
   process.exit(2)
 }
-const contract = pathToFileURL(join(dirname(program), "..", "src", "contract", "Inventory.ts")).href
+const contractBase = join(dirname(program), "..", "src", "contract", "Inventory")
+const vibe = existsSync(`${contractBase}.vibe`)
+if (vibe) await import("vibelang/register")
+const contract = pathToFileURL(`${contractBase}.${vibe ? "vibe" : "ts"}`).href
 const { ci, notReplayed } = await import(contract)
 
 let failed = 0

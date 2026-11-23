@@ -57,6 +57,7 @@ import { withReasons } from "../native/Results.vibe"
 import {
   type Confined,
   confine,
+  discard,
   fresh,
   held,
   jobHomes,
@@ -71,6 +72,8 @@ import { cpuWatch } from "./CpuWatch.vibe"
 import { diskWatch } from "./Disk.vibe"
 import {
   ambientEnvironment,
+  launcherEnvironment,
+  withEnvironment,
   coreCount,
   leftEndsVariable,
   machinesVariable,
@@ -95,6 +98,7 @@ import {
   noProgress,
   nothingPassed,
   printedLimitOf,
+  diagnosticTail,
   reasonOf,
   remember,
   type RerunTally,
@@ -112,13 +116,15 @@ import {
   originOf,
   outputLimit,
   pastLimit,
+  planOutput,
   runStep,
   type StepRun,
   stdoutOf
 } from "./Process.vibe"
+import { recordText } from "./Record.ts"
 import { readableNames, readyHistory } from "./History.vibe"
 import { couldNotStart, fixesOf, homeOf, namedInStepHome, putOnPath } from "./HomeTools.vibe"
-import { backTo, keep, pathsIn, viewOf } from "./Kept.vibe"
+import { backTo, keep, snapshot, viewOf } from "./Kept.vibe"
 import { endLeftIn, keeperIn, keepsPrograms, processesBefore, reapedBy, reaperIn } from "./Job.vibe"
 import { client } from "@smthrs/targets/JobKeeper"
 import { printsNotes, readsListener, recorderStopped } from "./Reads.vibe"
@@ -384,7 +390,8 @@ export effect function settle<R>(
   reruns: number,
   rounds: number,
   last: ReadonlyMap<string, string> = new Map(),
-  tally: RerunTally = { count: 0, ms: 0 }
+  tally: RerunTally = { count: 0, ms: 0 },
+  firstRuns = { ms: 0 }
 ): ReadonlyArray<TargetResult>!Failure!R {
   let settled: ReadonlyArray<TargetResult> = first.map(firstAttempt)
   // A `while`, not `for (let rerun = 0; ...)`: V8's coverage gives the statements after a `for (let ...)` loop the
@@ -406,10 +413,15 @@ export effect function settle<R>(
     tally.ms += (try Clock.currentTimeMillis) - start
     settled = settled.map((result) => failing.has(result.label) ? addRerun(result, again.get(result.label)) : result)
   }
-  const waiting = settled.filter(isBlocked).map((result) => result.label)
+  const remaining = new Set(settled.filter((result) => result.status === "failed").map((result) => result.label))
+  const waiting = settled.filter((result) => isBlocked(result) && (remaining.size === 0 ||
+    (result.blockedBy !== undefined && !result.blockedBy.split(", ").some((label) => remaining.has(label))))).map((result) => result.label)
   if (rounds === 0 || waiting.length === 0 || !settled.some(recovered)) return settled
+  // These targets have not run before. Their first execution belongs to the measured CI time.
+  const start = try Clock.currentTimeMillis
   const ran = (try execute(waiting)).filter((result) => waiting.includes(result.label))
-  const next = new Map((try settle(execute, ran, reruns, rounds - 1, last, tally)).map((result) => [result.label, result]))
+  firstRuns.ms += (try Clock.currentTimeMillis) - start
+  const next = new Map((try settle(execute, ran, reruns, rounds - 1, last, tally, firstRuns)).map((result) => [result.label, result]))
   return settled.map((result) => next.get(result.label) ?? result)
 }
 
@@ -449,9 +461,10 @@ effect function measure<R>(
     },
     tidy
   )
-  const results = try ensuring(settle(execute, pass.first, reruns, pass.first.length, last, tally), tidy)
+  const firstRuns = { ms: pass.wallMs }
+  const results = try ensuring(settle(execute, pass.first, reruns, pass.first.length, last, tally, firstRuns), tidy)
   remember(last, results)
-  return { results, wallMs: pass.wallMs, cpuMs: usedBy(used), checkoutMs: checkedOut - start } satisfies Measured
+  return { results, wallMs: firstRuns.ms, cpuMs: usedBy(used), checkoutMs: checkedOut - start } satisfies Measured
 }
 
 /**
@@ -648,10 +661,13 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
     const path = try Path.Path
     const options = try Options
     const progress = try Progress
-    const work = try orFail(fs.makeTempDirectoryScoped({ prefix: "smithers-ci-replay-" }), "could not make a directory")
+    const work = try orFail(fs.makeTempDirectory({ prefix: "smithers-ci-replay-" }), "could not make a directory")
+    try addFinalizer(() => discard(work, progress.say))
     try (try WorkDirectory).at(work)
     // Every checkout of the replay is in this directory. Under one Biome skips, a lint the CI passes would fail here.
     const workPath = try orFail(fs.realPath(work), "could not read a directory")
+    const machines = path.join(workPath, "machines")
+    const disk = try diskWatch(workPath, machines, progress.say, options.diskTick)
     const skipped = skippedPart(workPath)
     if (skipped !== undefined) {
       throw failure(
@@ -680,7 +696,7 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
         person,
         root
       ),
-      "could not make the steps' homes"
+      "could not prepare replay confinement"
     )
     // Whether a job's programs live until its last step has ended here, as on a runner: in one jail per job.
     const keeps = try keepsPrograms(places.baseline)
@@ -698,7 +714,7 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
     // The run that only finds what passes here has a store of its own: it saves nothing a counted run restores.
     const keptTrial = path.join(work, "kept-trial")
     try orFail(fs.makeDirectory(keptTrial), "could not make a directory")
-    const cloned = try exec("git", gitArguments(["clone", "--quiet", "--no-checkout", root, source]), work, {}, outputLimit)
+    const cloned = try exec("git", gitArguments(["clone", "--quiet", "--no-hardlinks", "--dissociate", "--no-checkout", root, source]), work, {}, outputLimit)
     if (cloned.exitCode !== 0) throw failure("not-a-repository", `${root} is not a git repository`)
     const head = try exec("git", gitArguments(["rev-parse", "--verify", "--quiet", "HEAD"]), source, {}, outputLimit)
     if (head.exitCode !== 0) throw failure("not-a-repository", `${root} is a git repository with no commit to replay`)
@@ -746,10 +762,7 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
     // Every way keeps its jobs' machines in one directory and runs in one checkout, normal mode's. Smithers build
     // names a job's machine by both, so a job's home, checkout and temporary directory are at the same paths in the
     // baseline and in each mode, at every commit, as a runner's are (`machinePaths`).
-    const machines = path.join(try orFail(fs.realPath(work), "could not read a directory"), "machines")
     try orFail(fs.makeDirectory(machines), "could not make a directory")
-    // A job holds its machine on the disk that holds this folder: no job starts where it would fill that disk.
-    const disk = try diskWatch(workPath, machines, progress.say, options.diskTick)
     const checkoutPath = try orFail(fs.realPath(normalCopy), "could not read a directory")
 
     /**
@@ -804,6 +817,8 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
     const failedHere: Array<FailedHere> = []
     // What the runs of `smthrs` found started a program whose file asks for rights, and is not left out yet.
     const needingRights: Array<NeedsRights> = []
+    const trialRights = new Set<string>()
+    let rightsSite: Site | undefined = undefined
 
     /**
      * What the CI of the commit checked out in the normal copy gives the replay: read, split and generated from that
@@ -829,9 +844,12 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
       const inheritEnv = [...Object.keys(pushRefusal), ...Object.keys(places.normal.daemon)]
       // The notes name what `apply` leaves out: what this machine failed is no part of them.
       const left = notReplayed(keepingPrograms(allowed, keptOnRunner))
-      const generated = try parts.files(split, { cache: request.cache, inheritEnv, left })
+      const publishOptions = { cache: request.cache, left, ...(allowDocker ? { allowDocker } : {}) }
+      const generated = try parts.files(split, { ...publishOptions, inheritEnv })
+      // The operational declaration passes the replay's guards to its steps. The files apply writes do not.
+      const published = request.applied === true ? try parts.files(split, publishOptions) : generated
       // A commit can hold a link, or a file its owner wrote, where a generated file goes: nothing is written then.
-      const checked = check(normalCopy, generated) catch effect (cause) => {
+      const checked = check(normalCopy, published) catch effect (cause) => {
         throw failure("unsupported", cause.message)
       }
       const mapFile = generated.find((file) => file.path === targetMapPath)
@@ -853,8 +871,8 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
         inventory,
         declaration,
         former: checked.former,
-        generated: writtenFiles(generated),
-        applies: checked.changes.some((change) => change.change === "missing"),
+        generated: writtenFiles(published),
+        applies: checked.changes.length > 0,
         units: replayed.units,
         labels,
         splits: splitOf(replayed.units),
@@ -890,13 +908,13 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
     }
 
     /**
-     * What points Smithers build at a site: the copy is the workspace, and the generated workspace file and the
-     * cache directory are beside it. A copy as `apply` leaves it (`applied`) holds the workspace file itself.
+     * All runs use the operational declaration beside the checkout. An applied checkout also contains the
+     * published declaration, exactly as repository tools would see it after apply.
      */
-    const pointed = (site: Site, own: Prepared, applied = false): ReadonlyArray<string> => [
+    const pointed = (site: Site, own: Prepared): ReadonlyArray<string> => [
       "--workspace",
       site.copy,
-      ...(applied ? [] : ["--workspace-file", declarationAt(site, own.declaration)]),
+      "--workspace-file", declarationAt(site, own.declaration),
       "--cache-dir",
       site.cache
     ]
@@ -952,9 +970,9 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
     effect function planOf(site: Site, own: Prepared) {
       const plan = ["ci", ...own.labels, "--plan", "--format", "json", ...pointed(site, own)]
       const [command, ...args] = held(site.place, [site.copy, site.cache], [...options.smthrs, ...plan])
-      const planned = try exec(command, args, site.copy, startEnv(site), Number.POSITIVE_INFINITY, stdoutOf, true)
-      const printed = Schema.decodeUnknownEffect(Schema.fromJsonString(PrintedPlan))(planned.text) catch effect () => {
-        throw failure("command-failed", `smthrs ci --plan printed no plan: ${planned.text.slice(-outputLimit)}`)
+      const planned = try planOutput(command, args, site.copy, startEnv(site), stepLimit, stall)
+      const printed = Schema.decodeUnknownEffect(Schema.fromJsonString(PrintedPlan))(planned) catch effect () => {
+        throw failure("command-failed", `smthrs ci --plan printed no plan: ${reasonOf({ stdout: planned, stderr: "" })}`)
       }
       return planOfPrinted(printed)
     }
@@ -982,7 +1000,7 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
         ...(starter ?? options.smthrs),
         "ci",
         ...selected,
-        ...pointed(site, own, causes !== undefined),
+        ...pointed(site, own),
         "--results-file",
         file,
         "--ui",
@@ -1007,11 +1025,16 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
       )
       const stalled = try Ref.get(watch.stalled)
       const record = effect {
-        const text = try fs.readFileString(file)
+        const text = try tryPromise(() => recordText(file))
         return try Schema.decodeUnknownEffect(Schema.fromJsonString(RunRecord))(text)
       } catch () => undefined
-      if (record === undefined && !stalled) {
-        throw failure("command-failed", `smthrs ci wrote no run record: ${output.text.slice(-outputLimit)}`)
+      if (!stalled) {
+        if (record === undefined) {
+          throw failure("command-failed", `smthrs ci wrote no run record: ${diagnosticTail(output.text, outputLimit)}`)
+        }
+        if (output.exitCode !== 0 && record.results.every((result) => result.status !== "failed")) {
+          throw failure("command-failed", `smthrs ci exited ${output.exitCode} with a passing run record`)
+        }
       }
       // The first pass is the run a wall time covers: its parts are the ones kept.
       if (spent !== undefined && spent.parts === undefined) spent.parts = record?.parts
@@ -1055,10 +1078,10 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
       const paths = [...own.generated.map((file) => file.path), ...own.former]
       try git(copy, ["add", "--all", "--force", "--", ...paths], place)
       // Amending keeps the parents, the author and the author's date. Who committed, and when, are given.
-      const [name, email, date] = lines(try git(source, ["show", "--no-patch", "--format=%cn%n%ce%n%cI", commit]))
+      const [name, email, date] = (try git(source, ["show", "--no-patch", "--format=%cn%n%ce%n%cI", commit])).split("\n")
       const committer = {
-        GIT_COMMITTER_NAME: name as string,
-        GIT_COMMITTER_EMAIL: email as string,
+        GIT_COMMITTER_NAME: name || "Replay",
+        GIT_COMMITTER_EMAIL: email || "replay@localhost",
         GIT_COMMITTER_DATE: date as string
       }
       const amend = ["commit", "--amend", "--no-edit", "--cleanup=verbatim", "--quiet", "--no-verify", "--allow-empty"]
@@ -1202,7 +1225,8 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
           ),
           "could not start the keeper of a job"
         )
-        const counted = job === undefined ? undefined : try sync(() => count(job.pid))
+        if (keeps && job === undefined) throw failure("command-failed", "the keeper of a job ended before accepting steps")
+        if (job !== undefined) try Scope.addFinalizer(keeping, sync(count(job.pid)))
         const results: Array<TargetResult> = []
         let failed: string | undefined = undefined
         for (const step of stepsThrough(sequence, wanted)) {
@@ -1214,9 +1238,6 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
           // The job's temporary directory is its `/tmp` and, by its own path, its `TMPDIR`. The directory that holds
           // the checkout is the job's own and writable, as a runner's is: a step that makes a directory beside its
           // checkout, and a committed link that leads there, work as on the runner and as on a job's machine.
-          const [program, ...argv] = job === undefined
-            ? reapedBy(held(place, [directory, store, place.tmp], [...shell, step.command]), reaper)
-            : client(nodePath(), job.directory, [...shell, step.command])
           // Only a step whose text names the variable is given it: the text takes it away before the step's own
           // script starts, and a step with no such text would hand it on.
           const told = step.command.includes(stateVariable) ? { [stateVariable]: store } : {}
@@ -1232,22 +1253,25 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
             { ...temporary, ...onMachine, ...found, ...place.daemon, ...run, ...step.env, ...told },
             place
           )
+          const workload = withEnvironment(environment, [...shell, step.command])
+          const [program, ...argv] = job === undefined
+            ? reapedBy(held(place, [directory, store, place.tmp], workload), reaper)
+            : client(nodePath(), job.directory, workload)
           // Where nothing ends what the step leaves running (macOS), what it left in the job's directory ends with it.
           const before = try processesBefore(job, reaper)
           // A step that cannot start, for example because its directory does not exist at this commit, has failed.
-          const output = runStep(
+          const output = ensuring(runStep(
             program,
             argv,
             path.join(copy, step.cwd),
-            environment,
+            launcherEnvironment,
             stepLimit,
             stall,
             job === undefined ? count : uncounted,
             job?.pid
-          )
+          ), endLeftIn(before, directory))
             catch (cause) => ({ timedOut: false, stalled: false, exitCode: undefined, stderr: `could not start: ${describe(cause)}`, stdout: "" } satisfies StepRun)
           const durationMs = (try Clock.currentTimeMillis) - start
-          try endLeftIn(before, directory)
           if (output.exitCode === 0) {
             results.push({ label: step.label, status: "ran", key: "", durationMs })
             continue
@@ -1265,13 +1289,9 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
         }
         // The job has ended: every program its steps left running ends with it.
         try Scope.close(keeping, Exit.void)
-        if (counted !== undefined) try sync(counted)
         return wanted === undefined ? results : results.filter((result) => wanted.has(result.label))
       }, own)
-      const removal = effect {
-        try Scope.close(own, Exit.void)
-        try Deferred.succeed(removed, undefined)
-      }
+      const removal = ensuring(Scope.close(own, Exit.void), Deferred.succeed(removed, undefined))
       return try ensuring(steps, later === undefined ? removal : effect {
         fork.detached removal
       })
@@ -1287,32 +1307,33 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
       own: Prepared,
       place: Confined = places.baseline,
       later?: Array<Scope.Closeable>
-    ): Execute<Host> => (targets) => effect {
+    ): Execute<Host> => (targets) => scoped(effect {
       const wanted = targets === undefined ? undefined : new Set(targets)
       const chosen = stationsOf(own.units, wanted)
       const store = place === places.trial ? keptTrial : kept
       const limit = try Semaphore.make(own.jobs)
       const given = try givenAt(commit, place, own)
-      const plan: Array<Station & { readonly gate: Deferred.Deferred<boolean> }> = []
-      for (const station of chosen) plan.push({ ...station, gate: try Deferred.make<boolean>() })
+      const plan: Array<Station & { readonly gate: Deferred.Deferred<ReadonlyArray<string>> }> = []
+      for (const station of chosen) plan.push({ ...station, gate: try Deferred.make<ReadonlyArray<string>>() })
       const runs = plan.flatMap((station) => station.runs)
       const names = new Map(runNames(runs).map((name, index) => [runs[index] as ReadonlyArray<Unit>, name]))
       // The jobs of a run start together in CI, each on its own machine, and a cache is saved when its job ends. So
       // no job restores what a job beside it saves in the same run: each restores from, and saves into, a view of
       // the store that holds what earlier runs saved and what the jobs it waited for saved (`Kept.vibe`).
       const views = try orFail(fs.makeTempDirectory({ directory: work, prefix: "kept-run-" }), "could not make a directory")
+      try addFinalizer(() => ignore(fs.remove(views, { recursive: true, force: true })))
       const viewAt = (sequence: ReadonlyArray<Unit>): string => path.join(views, names.get(sequence) as string)
       const collected: Array<TargetResult> = []
       for concurrent (const station of plan) {
-        let needsPassed = true
+        const blockers = new Set<string>()
         const needed = plan.filter((other) => other.jobs.some((job) => station.needs.includes(job)))
         for (const need of needed) {
-          needsPassed = (try Deferred.await(need.gate)) && needsPassed
+          for (const label of try Deferred.await(need.gate)) blockers.add(label)
         }
         const waitedFor = needed.flatMap((need) => need.runs.map(viewAt))
         const results: Array<TargetResult> = []
         for concurrent (const sequence of station.runs) {
-          if (needsPassed) {
+          if (blockers.size === 0) {
             const view = viewAt(sequence)
             results.push(...(try limit.withPermits(1)(effect {
               // A job starts only where the disk has room for its machine, and ends when the disk would fill.
@@ -1330,19 +1351,21 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
             })))
           } else {
             const waiting = sequence.flatMap((unit) => labelsOf(unit, wanted))
-            results.push(...waiting.map((label) => blocked(label, station.needs.join(", "))))
+            results.push(...waiting.map((label) => blocked(label, [...blockers].join(", "))))
           }
         }
         collected.push(...results)
-        try Deferred.succeed(station.gate, needsPassed && results.every((result) => result.status === "ran"))
+        for (const result of results) {
+          if (result.status === "failed") blockers.add(result.label)
+        }
+        try Deferred.succeed(station.gate, [...blockers])
       }
       // What the jobs saved is there for the next run, the first job's entry first.
       try orFail(keep(runs.map(viewAt), store), "could not keep what the jobs saved")
-      try orFail(fs.remove(views, { recursive: true, force: true }), "could not remove a directory")
       // Jobs finish in any order; a report lists their steps in the order of the CI.
       const order = new Map(own.units.flatMap((unit) => unit.steps).map((step, index) => [step.label, index]))
       return try advised(collected.toSorted((a, b) => (order.get(a.label) as number) - (order.get(b.label) as number)))
-    }
+    })
 
     /**
      * An older commit's own CI, read from its own tree. A commit whose CI cannot be replayed, because it had none or
@@ -1399,9 +1422,23 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
         firstFailure = first
         // A job that ran once more failed at the newest commit too.
         const twice = failedTwice(results)
+        const tipLabels = new Set(newest.units.flatMap((unit) => unit.steps.map((step) => step.label)))
         const ranAgain = (entry: FailedHere): boolean =>
-          waiting.some((unit) => unitKey(unit) === unitKey(entry) && unit.steps.some((step) => twice.has(step.label)))
-        const named = found.failed.map((entry) => failedAt(entry, ranAgain(entry) ? [at, tip] : [at]))
+          waiting.some((unit) => unitKey(unit) === unitKey(entry) && unit.steps.some((step) => tipLabels.has(step.label) && twice.has(step.label)))
+        const rights = new Map<string, FailedHere>()
+        if (place.jail !== undefined) {
+          const failed = new Set(found.failed.map(unitKey))
+          const labels = targetsOf(waiting.filter((unit) => failed.has(unitKey(unit))))
+          rightsSite ??= try siteAt("trial", at)
+          try checkout(rightsSite.copy, at, rightsSite.place)
+          try equip(rightsSite, own)
+          const observed = try smithers(at, rightsSite, own)(labels)
+          for (const entry of leftForRights(rightsOf(own.units, observed))) {
+            rights.set(unitKey(entry), entry)
+            trialRights.add(entry.job)
+          }
+        }
+        const named = found.failed.map((entry) => rights.get(unitKey(entry)) ?? failedAt(entry, ranAgain(entry) ? [at, tip] : [at]))
         for (const entry of named) try progress.say(`fails here: ${entry.job}: ${entry.reason}`)
         // What to do about it, where the replay knows, each thing once.
         for (const fix of fixesOf(results)) try progress.say(fix)
@@ -1537,14 +1574,15 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
         diskHeldBytes: try disk.most,
         stopped: full,
         recorder,
-        runnerSteps: runnerStepsOf(newest.inventory, newest.units)
+        runnerSteps: runnerStepsOf(newest.inventory, newest.units),
+        stepsLeftOut: stepsLeftOutOf(newest.inventory, newest.units)
       })
     }
     const { started, trialMs } = begun.value
     // A speedup over less than half of a CI is not that CI's: the replay says what it left out, and stops. A job
     // that needs rights the jail takes away is left out after: it is no failure of this CI.
     const stayed = new Set(newest.units.map((unit) => unit.job))
-    const few = tooFewLeft(could.size, newest.left.filter((entry) => could.has(entry.job) && !stayed.has(entry.job)))
+    const few = tooFewLeft(could.size, newest.left.filter((entry) => could.has(entry.job) && !stayed.has(entry.job) && !trialRights.has(entry.job)))
     if (few !== undefined) throw failure("unsupported", few)
     // What the first run of each way found needs rights is left out before any commit is counted.
     try leftForRightsNow()
@@ -1563,7 +1601,8 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
     const keeping = [kept, normal.cache, ...(fast === undefined ? [] : [fast.cache])]
 
     // Where each way stood before the commit that runs, and what its steps last failed with.
-    let stood: Array<readonly [string, ReadonlySet<string>]> = []
+    const backups = path.join(work, "before-commit")
+    let stood: Array<readonly [string, string]> = []
     let lastBefore = { baseline: new Map(last.baseline), normal: new Map(last.normal), fast: new Map(last.fast) }
     let tallyBefore = { ...tally }
     /** Puts each way back where it stood before the commit that runs: that commit keeps nothing. */
@@ -1594,8 +1633,12 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
         }
         // Where each way stands before the commit runs, for a commit that runs again.
         stood = []
-        for (const directory of keeping) {
-          stood.push([directory, try orFail(pathsIn(directory), "could not read what a way keeps")])
+        try orFail(fs.remove(backups, { recursive: true, force: true }), "could not remove prior cache snapshots")
+        try orFail(fs.makeDirectory(backups), "could not make a snapshot directory")
+        for (const [index, directory] of keeping.entries()) {
+          const backup = path.join(backups, String(index))
+          try orFail(snapshot(directory, backup), "could not save what a way keeps")
+          stood.push([directory, backup])
         }
         lastBefore = { baseline: new Map(last.baseline), normal: new Map(last.normal), fast: new Map(last.fast) }
         tallyBefore = { ...tally }
@@ -1644,7 +1687,8 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
           } else {
             const { scores } = answered
             const choice = choose(scores, request.settings ?? defaultSettings)
-            const labels = ran.results.map((result) => result.label).filter((label) => !choice.skipped.has(label))
+            const steps = new Set(own.labels)
+            const labels = ran.results.map((result) => result.label).filter((label) => steps.has(label) && !choice.skipped.has(label))
             try progress.say(`${at} fast`)
             try orFail(renew(places.fast), "could not empty the home of fast mode")
             const sped = try atCheckout(fast, (site) =>
@@ -1669,7 +1713,8 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
               own.splits,
               undefined,
               sped.cpuMs,
-              answered
+              answered,
+              choice.skipped
             )
             fastPart = run.part
             fastMismatches = run.mismatches

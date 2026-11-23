@@ -67,7 +67,7 @@ export service DiskSpace {
     },
     // Reading a tree never fails: what cannot be read holds nothing.
     effect held(path: string) {
-      return try promise(() => heldUnder(path))
+      return try promise((signal) => heldUnder(path, signal))
     }
   })
 }
@@ -131,9 +131,8 @@ export const waitingLine = (free: number, floor: number): string => {
  * left, which is all of it once no job runs. `ended` ends when the replay must
  * stop now: free space fell under half the floor, or a job could not start.
  * It and `admit` then fail with the line the replay ends with, which
- * `stopped` gives. `most` is the most disk the replay held at once: how far
- * the free space fell below what it was when the replay started, or
- * `undefined` where the machine does not say how much is free.
+ * `stopped` gives. `most` is the largest sampled allocation under the replay
+ * directory, or `undefined` where the machine cannot report disk space.
  *
  * @category models
  * @since 0.1.0
@@ -169,33 +168,52 @@ export effect function diskWatch(
   let most = 0
   let running = 0
   let waiting = false
-  let stopped: string | undefined = undefined
+  let stoppedAt: number | undefined = undefined
   effect function read() {
     const now = try disk.space(folder)
     if (first === undefined || now === undefined) return
     free = now.free
-    most = Math.max(most, first.free - now.free)
+  }
+  effect function sampleHeld() {
+    const held = try disk.held(folder)
+    most = Math.max(most, held)
+    return held
   }
   // The first line stands: a job and the watch may both find the disk full.
   effect function stop() {
-    stopped ??= stoppedLine(folder, free, floor, try disk.held(folder), try disk.held(machines))
-    try Deferred.succeed(done, stopped)
+    if (stoppedAt !== undefined) return
+    stoppedAt = free
+    const [freeText, floorText] = apart(free, floor)
+    try Deferred.succeed(done, `the replay stopped before the disk filled: the disk that holds ${folder} has ${freeText} free, under the ${floorText} a replay leaves free`)
   }
   const ended = effect {
     throw failure("command-failed", try Deferred.await(done))
   }
+  // The report asks for sizes after active jobs have received the stop signal. All callers share the walk.
+  const details = try cached(effect {
+    return stoppedLine(folder, stoppedAt as number, floor, try sampleHeld(), try disk.held(machines))
+  })
   effect function watching() {
-    while (stopped === undefined) {
+    while (stoppedAt === undefined) {
       try sleep(tick)
       try read()
       if (free < floor / 2) try stop()
     }
   }
   fork.scoped watching()
+  // A large directory walk must never delay a free-space check or the emergency stop.
+  effect function sampling() {
+    while (first !== undefined && stoppedAt === undefined && free >= floor / 2) {
+      try sleep(tick)
+      if (stoppedAt === undefined && free >= floor / 2) try sampleHeld()
+    }
+  }
+  fork.scoped sampling()
   return {
     admit: (leftBehind) => effect {
-      while (stopped === undefined) {
+      while (stoppedAt === undefined) {
         try read()
+        if (stoppedAt !== undefined) break
         if (free >= floor) {
           waiting = false
           running += 1
@@ -204,6 +222,7 @@ export effect function diskWatch(
         if (running === 0) {
           try leftBehind
           try read()
+          if (stoppedAt !== undefined) break
           if (free >= floor) {
             running += 1
             return
@@ -221,7 +240,11 @@ export effect function diskWatch(
       running -= 1
     }),
     ended,
-    stopped: sync(() => stopped),
-    most: sync(() => first === undefined ? undefined : most)
+    stopped: suspend(() => stoppedAt === undefined ? succeed(undefined) : details),
+    most: effect {
+      if (first === undefined) return undefined
+      if (stoppedAt === undefined) try sampleHeld()
+      return most
+    }
   } satisfies DiskWatch
 }

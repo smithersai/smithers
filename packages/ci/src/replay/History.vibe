@@ -10,7 +10,7 @@
 
 import { notUtf8, unreadableName } from "./Names.ts"
 import { exec, git, lines, outputLimit, stdoutOf } from "./Process.vibe"
-import { failure, withoutCredentials } from "./Summary.vibe"
+import { failure, publicRemote } from "./Summary.vibe"
 import { gitArguments } from "./Git.vibe"
 
 /** "1 object", "2 objects". */
@@ -67,8 +67,11 @@ export const shallow = (held: number, asked: number, more: number): string =>
  * @since 0.1.0
  */
 export effect function missingIn(source: string, commits: ReadonlyArray<string>) {
-  const listed = try git(source, ["rev-list", "--objects", "--missing=print", "--no-walk", ...commits])
-  return lines(listed).filter((line) => line.startsWith("?")).map((line) => line.slice(1))
+  const missing: Array<string> = []
+  try git(source, ["rev-list", "--objects", "--missing=print", "--no-walk", ...commits], undefined, {}, (line) => {
+    if (line.startsWith("?")) missing.push(line.slice(1))
+  })
+  return missing
 }
 
 /** A configuration value of `root`, or nothing when it is not set. */
@@ -146,11 +149,17 @@ export effect function fetchMissing(
       `${missing.join("\n")}\n`
     )
     if (done.exitCode !== 0) {
-      const why = (done.text.trim().split(/\r?\n/)[0] as string).replaceAll(url, withoutCredentials(url))
+      const why = (done.text.trim().split(/\r?\n/)[0] as string).replaceAll(url, publicRemote(url))
+        .replace(/[a-z][a-z0-9+.-]*:\/\/[^\s\x27"<>]+/gi, publicRemote)
       throw failure("command-failed", cannotFetch(missing.length, remote, why))
     }
     // A fetched directory names the objects in it: a clone made with `--filter=tree:0` lacks those next.
-    missing = try missingIn(source, commits)
+    const next = try missingIn(source, commits)
+    const stillMissing = new Set(next)
+    if (missing.every((object) => stillMissing.has(object))) {
+      throw failure("command-failed", cannotFetch(missing.length, remote, "no requested object arrived"))
+    }
+    missing = next
   }
 }
 
@@ -208,7 +217,10 @@ export effect function readyHistory(
 export effect function readableNames(source: string, count: number) {
   const commits = lines(try git(source, ["rev-list", "--first-parent", `--max-count=${count + 1}`, "HEAD"]))
   for (const commit of commits) {
-    const shown = notUtf8(try git(source, ["-c", "core.quotePath=true", "ls-tree", "-r", "--name-only", commit]))
+    let shown: string | undefined = undefined
+    try git(source, ["-c", "core.quotePath=true", "ls-tree", "-r", "--name-only", commit], undefined, {}, (line) => {
+      shown ??= notUtf8(line)
+    })
     if (shown !== undefined) throw failure("unsupported", unreadableName(shown, commit))
   }
 }

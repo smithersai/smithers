@@ -20,6 +20,7 @@ import type { Failure, ReplayParts, ReplayRequest } from "../../src/contract/Par
 import type { ReplayCommit, ReplayReport, RunTotals } from "../../src/contract/ReplayReport.vibe"
 import type { TargetResult } from "../../src/contract/RunRecord.vibe"
 import { Options, Progress, run } from "../../src/replay/index.vibe"
+import { probe } from "../../src/replay/Jail.ts"
 import { leftForRights, rightsOf, rightsTaken, type Unit, type UnitStep } from "../../src/replay/Summary.vibe"
 import { inventoryWith, job, linkTargets, smthrs } from "./fixture.ts"
 import { unconfined } from "./place.ts"
@@ -87,10 +88,11 @@ const naming = (rights: Readonly<Record<string, ReadonlyArray<string>>>): string
     command,
     [
       "#!/bin/sh",
+      "real=$1; shift",
       "file=''",
       "previous=''",
       "for word in \"$@\"; do if [ \"$previous\" = --results-file ]; then file=$word; fi; previous=$word; done",
-      `${smthrs} "$@"`,
+      "\"$real\" \"$@\"",
       "code=$?",
       `if [ -n "$file" ] && [ -f "$file" ]; then ${process.execPath} ${stamp} "$file" ${listed} || exit 1; fi`,
       "exit $code",
@@ -112,16 +114,16 @@ const running = {
 const replay = async (
   root: string,
   request: Omit<ReplayRequest, "root">,
-  rights: Readonly<Record<string, ReadonlyArray<string>>>
+  rights: Readonly<Record<string, ReadonlyArray<string>>>,
+  confined = false
 ) => {
   const said: Array<string> = []
   const host = Layer.mergeAll(
     Layer.succeed(Options, {
-      smthrs: [naming(rights)] as const,
+      smthrs: [naming(rights), smthrs] as const,
       reruns: 1,
       prepare: (directory: string) => Effect.sync(() => linkTargets(directory)),
-      // The script reads its list outside every copy.
-      confine: unconfined
+      ...(confined ? {} : { confine: unconfined })
     }),
     Layer.succeed(Progress, { say: (line: string) => Effect.sync(() => void said.push(line)) })
   )
@@ -145,6 +147,20 @@ const ways = (
 ): ReadonlyArray<RunTotals> => [commit.baseline, commit.normal, ...(commit.fast === undefined ? [] : [commit.fast])]
 
 describe("a job whose step starts a program that asks for rights", () => {
+  it.skipIf("refusal" in probe())(
+    "attributes a trial failure using the confined recorder's rights evidence",
+    async () => {
+      const jobs = [job("p", "exit 1"), job("plain", "exit 0")]
+      const { root } = repository([{ jobs, files: {} }])
+      const { report, said } = await replay(root, { commits: 1, modes: ["normal"], trial: true }, {
+        "//:p0_0": ["/usr/bin/ping"]
+      }, true)
+      expect(report.notReplayed).toContainEqual({ job: "p", reasons: [{ feature: failsHere, detail: ping }] })
+      expect(said).toContain(`fails here: p: ${ping}`)
+    },
+    300_000
+  )
+
   it(
     "is left out from the first commit, which runs again without it in every way, from what each way kept before",
     async () => {

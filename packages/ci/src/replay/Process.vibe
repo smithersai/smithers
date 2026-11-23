@@ -12,7 +12,7 @@ import { type ChildProcessHandle, ChildProcessSpawner, ProcessId } from "effect/
 import { type Confined, held } from "./Confine.vibe"
 import { type Count, uncounted } from "./Cpu.ts"
 import { noPushUrl, stepEnvironment } from "./Environment.ts"
-import { reasonOutputLimit, signalExit, type StepOutput } from "./Failures.ts"
+import { noProgress, reasonOutputLimit, signalExit, type StepOutput } from "./Failures.ts"
 import {
   defaultStall,
   exitOrStall,
@@ -22,7 +22,7 @@ import {
   type Watch,
   watchFor
 } from "./Stall.vibe"
-import { failure, withoutCredentials } from "./Summary.vibe"
+import { failure, publicRemote } from "./Summary.vibe"
 import { gitArguments } from "./Git.vibe"
 
 /**
@@ -70,7 +70,7 @@ const timedOut = 124
 
 /** The signal that ended a process, from the cause its exit code is refused with. Empty for any other cause. */
 const signalOf = (error: PlatformError.PlatformError): string =>
-  String((error.reason as { readonly cause?: unknown }).cause).replace(/^.*?(?:receipt of signal: '(\w+)')?$/s, "$1")
+  /receipt of signal: '(\w+)'/.exec(String((error.reason as { readonly cause?: unknown }).cause))?.[1] ?? ""
 
 /**
  * The words for a cause a person reads.
@@ -86,7 +86,7 @@ export const describe = (cause: { readonly message: string }): string => cause.m
  * @category accessors
  * @since 0.1.0
  */
-export const stdoutOf = (handle: ChildProcessHandle) => handle.stdout
+export const stdoutOf = (handle: ChildProcessHandle) => Stream.merge(handle.stdout, Stream.drain(handle.stderr))
 
 /**
  * Why a command was stopped at the time limit.
@@ -117,15 +117,31 @@ export effect function orFail<A, E extends { readonly message: string }, S>(work
   }
 }
 
-/** Reads a process's output into `kept`. */
+/** Retain a bounded tail, compacting once per limit of new text. */
+const outputTail = (limit: number) => {
+  let chunks: Array<string> = []
+  let length = 0
+  const text = () => limit === 0 ? "" : chunks.join("").slice(-limit)
+  return {
+    text,
+    append: (chunk: string) => {
+      chunks.push(chunk)
+      length += chunk.length
+      if (length > 2 * limit) {
+        chunks = [text()]
+        length = limit
+      }
+    }
+  }
+}
+
 const keep = (
   stream: Stream.Stream<Uint8Array, PlatformError.PlatformError>,
-  kept: Ref.Ref<string>,
-  update: (text: string, chunk: string) => string,
+  tail: ReturnType<typeof outputTail>,
   heard: (chunk: string) => void!! = () => Effect.void
 ) =>
   stream |> Stream.decodeText(%) |> Stream.runForEach(%, effect (chunk: string) => {
-    try Ref.update(kept, (text) => update(text, chunk))
+    tail.append(chunk)
     try heard(chunk)
   })
 
@@ -148,7 +164,7 @@ export effect function exec(
   args: ReadonlyArray<string>,
   cwd: string,
   env: Readonly<Record<string, string | undefined>>,
-  limit: number,
+  limit: number | { readonly limit: number; readonly eofLimit: Duration.Input },
   output: (handle: ChildProcessHandle) => Stream.Stream<Uint8Array, PlatformError.PlatformError> = (handle) => handle.all,
   whole = false,
   heard: (chunk: string) => void!! = () => Effect.void,
@@ -169,17 +185,41 @@ export effect function exec(
     )
     const counted = count(Number(handle.pid))
     try addFinalizer(() => sync(counted))
-    const kept = try Ref.make("")
+    const kept = outputTail(typeof limit === "number" ? limit : limit.limit)
     const printed = watch === undefined ? output(handle) : touching(output(handle), watch)
-    const reader = fork keep(printed, kept, (text, chunk) => (text + chunk).slice(-limit), heard)
-    const exitCode = watch === undefined ? try handle.exitCode : try exitStoppingStalled(handle, watch)
-    // A process a step left running keeps the pipe open, so only complete output is waited for without a limit.
-    if (limit === Number.POSITIVE_INFINITY) try Fiber.join(reader)
+    const reader = fork keep(printed, kept, heard)
+    const exitCode = watch === undefined ? try handle.exitCode : typeof limit === "number"
+      ? try exitStoppingStalled(handle, watch) : try exitOrStall(handle, watch)
+    if (exitCode === "stalled") return { exitCode: timedOut, text: kept.text() }
+    // A planner needs a complete document, including buffered output after exit. Bound a pipe its child kept open.
+    if (typeof limit !== "number") {
+      if (Option.isNone(try timeoutOption(Fiber.join(reader), limit.eofLimit))) throw new Error("planner output did not close")
+    } else if (limit === Number.POSITIVE_INFINITY) try Fiber.join(reader)
     else try timeoutOption(Fiber.await(reader), "1 second")
-    return { exitCode: Number(exitCode), text: try Ref.get(kept) } satisfies Output
+    return { exitCode: exitCode === undefined ? timedOut : Number(exitCode), text: kept.text() } satisfies Output
   }) catch effect (cause) => {
     throw failure("command-failed", `could not run ${command}: ${describe(cause)}`)
   }
+}
+
+/** Read a complete plan within the step timeout and the controller's plan size limit. */
+export effect function planOutput(
+  command: string,
+  args: ReadonlyArray<string>,
+  cwd: string,
+  env: Readonly<Record<string, string | undefined>>,
+  limit: Duration.Input,
+  stall: StallLimit = defaultStall()
+) {
+  const max = 16 * 1024 * 1024
+  const watch = try watchFor(stall.minutes, stall.table)
+  const waited = try timeoutOption(exec(command, args, cwd, env, { limit: max + 1, eofLimit: Duration.millis(watch.limitMs) }, stdoutOf, true, undefined, watch), limit)
+  if (try Ref.get(watch.stalled)) throw failure("command-failed", `smthrs ci --plan: ${noProgress(stall.minutes)}`)
+  if (Option.isNone(waited)) throw failure("command-failed", `smthrs ci --plan: ${pastLimit(limit)}`)
+  const output = waited.value
+  if (output.exitCode !== 0) throw failure("command-failed", `smthrs ci --plan exited ${output.exitCode}`)
+  if (output.text.length > max) throw failure("command-failed", "smthrs ci --plan exceeded the plan size limit")
+  return output.text
 }
 
 /**
@@ -217,12 +257,12 @@ export effect function runStep(
     )
     const counted = count(Number(handle.pid))
     try addFinalizer(() => sync(counted))
-    const stderr = try Ref.make("")
-    const stdout = try Ref.make("")
+    const stderr = outputTail(reasonOutputLimit)
+    const stdout = outputTail(reasonOutputLimit)
     const watch = try watchFor(stall.minutes, stall.table)
     const readers = fork all([
-      keep(touching(handle.stderr, watch), stderr, (text, chunk) => (text + chunk).slice(-reasonOutputLimit)),
-      keep(touching(handle.stdout, watch), stdout, (text, chunk) => (text + chunk).slice(-reasonOutputLimit))
+      keep(touching(handle.stderr, watch), stderr),
+      keep(touching(handle.stdout, watch), stdout)
     ], { concurrency: "unbounded" })
     // A step a signal ended has the exit code a shell gives for the signal. What it printed says why it failed,
     // as for any other step: the words its exit is refused with hold its whole command.
@@ -231,14 +271,14 @@ export effect function runStep(
     const waited = timeoutOption(exitOrStall(watched, watch), limit) catch (cause) => Option.some(signalExit(signalOf(cause)))
     // Leaving the scope stops a step that is still running.
     if (Option.isNone(waited)) {
-      return { timedOut: true, stalled: false, exitCode: timedOut, stderr: try Ref.get(stderr), stdout: try Ref.get(stdout) } satisfies StepRun
+      return { timedOut: true, stalled: false, exitCode: timedOut, stderr: stderr.text(), stdout: stdout.text() } satisfies StepRun
     }
     if (waited.value === "stalled") {
-      return { timedOut: false, stalled: true, stderr: try Ref.get(stderr), stdout: try Ref.get(stdout) } satisfies StepRun
+      return { timedOut: false, stalled: true, stderr: stderr.text(), stdout: stdout.text() } satisfies StepRun
     }
     // A process a step left running keeps the pipes open, so its output is waited for only briefly.
     try timeoutOption(Fiber.await(readers), "1 second")
-    return { timedOut: false, stalled: false, exitCode: waited.value, stderr: try Ref.get(stderr), stdout: try Ref.get(stdout) } satisfies StepRun
+    return { timedOut: false, stalled: false, exitCode: waited.value, stderr: stderr.text(), stdout: stdout.text() } satisfies StepRun
   })
 }
 
@@ -270,13 +310,19 @@ export effect function git(
   cwd: string,
   args: ReadonlyArray<string>,
   place: Confined | undefined = undefined,
-  variables: Readonly<Record<string, string>> = {}
+  variables: Readonly<Record<string, string>> = {},
+  onLine?: (line: string) => void
 ) {
   const [command, ...rest] = place === undefined ? ["git", ...gitArguments(args)] : held(place, [cwd], ["git", ...gitArguments(args)])
   const errors = try Ref.make("")
+  const outputOf = (handle: ChildProcessHandle) => {
+    const stream = answered(errors)(handle)
+    return onLine === undefined ? stream :
+      stream |> Stream.decodeText(%) |> Stream.splitLines(%) |> Stream.tap(%, (line) => sync(() => onLine(line))) |> Stream.drain(%)
+  }
   const output = place === undefined
-    ? try exec(command, rest, cwd, variables, Number.POSITIVE_INFINITY, answered(errors))
-    : try exec(command, rest, cwd, stepEnvironment(variables, place), Number.POSITIVE_INFINITY, answered(errors), true)
+    ? try exec(command, rest, cwd, variables, Number.POSITIVE_INFINITY, outputOf)
+    : try exec(command, rest, cwd, stepEnvironment(variables, place), Number.POSITIVE_INFINITY, outputOf, true)
   if (output.exitCode !== 0) {
     throw failure("command-failed", `git ${args[0]} failed: ${try Ref.get(errors)}`)
   }
@@ -316,7 +362,7 @@ export const originHeadOf = (root: string) =>
 export effect function cloneCopy(work: string, source: string, copy: string, origin: Output, head: Output) {
   const noPush = ["--config", `remote.origin.pushurl=${noPushUrl}`]
   try git(work, ["clone", "--quiet", "--shared", "--no-checkout", ...noPush, source, copy])
-  if (origin.exitCode === 0) try git(copy, ["remote", "set-url", "origin", withoutCredentials(origin.text)])
+  if (origin.exitCode === 0) try git(copy, ["remote", "set-url", "origin", publicRemote(origin.text)])
   const named = head.text.trim()
   if (head.exitCode === 0 && named.startsWith("refs/remotes/origin/")) {
     try git(copy, ["symbolic-ref", "refs/remotes/origin/HEAD", named])

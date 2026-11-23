@@ -5,6 +5,7 @@
  */
 import * as NodeServices from "@effect/platform-node/NodeServices"
 import * as Effect from "effect/Effect"
+import * as FileSystem from "effect/FileSystem"
 import * as Layer from "effect/Layer"
 import * as PlatformError from "effect/PlatformError"
 import { ChildProcessSpawner, make as makeSpawner } from "effect/process/ChildProcessSpawner"
@@ -64,22 +65,51 @@ describe("a job's keeper where it cannot be had", () => {
     expect(existsSync(join(root, "jobs"))).toBe(false)
   })
 
+  it("reports the keeper directory when cleanup cannot remove it", async () => {
+    const root = work()
+    const jobs = join(root, "jobs")
+    const said: Array<string> = []
+    const locked = Layer.effect(
+      FileSystem.FileSystem,
+      Effect.gen(function*() {
+        const real = yield* FileSystem.FileSystem
+        return { ...real, remove: () => Effect.fail(denied) }
+      })
+    )
+    await onNode(
+      Effect.provide(
+        Effect.scoped(
+          keeperIn(jailedBy(root, "/bin/true"), [], jobs, (line) => Effect.sync(() => void said.push(line)))
+        ),
+        locked
+      )
+    )
+    expect(said).toEqual([
+      `smithers-ci: replay left a keeper directory it could not remove: ${join(jobs, readdirSync(jobs)[0]!)}`
+    ])
+  })
+
   it("keeps no program where the jail's probe cannot start at all", async () => {
     const root = work()
     const noPrograms = Layer.succeed(ChildProcessSpawner, makeSpawner(() => Effect.fail(denied)))
     expect(await onNode(keepsPrograms(jailedBy(root, "/bin/true")), noPrograms)).toBe(false)
+    expect(await onNode(keepsPrograms(jailedBy(work(), "/bin/false")))).toBe(false)
   })
 
-  it("gives up on a keeper that never listens after ten seconds, and leaves no directory of it", async () => {
+  it.each([
+    { state: "exited", command: "exit 0" },
+    { state: "live but unresponsive", command: "exec /bin/sleep 60" }
+  ])("cleans up a $state keeper, waiting for readiness only while it is live", async ({ state, command }) => {
     const root = work()
     // A bubblewrap that starts nothing: the keeper's socket never appears.
     const deaf = join(root, "bwrap")
-    writeFileSync(deaf, "#!/bin/sh\nexit 0\n")
+    writeFileSync(deaf, `#!/bin/sh\n${command}\n`)
     chmodSync(deaf, 0o755)
     const started = Date.now()
     expect(await onNode(keeperIn(jailedBy(root, deaf), [], join(root, "jobs"), quiet))).toBeUndefined()
     const waited = Date.now() - started
-    expect(waited).toBeGreaterThanOrEqual(10_000)
+    if (state === "exited") expect(waited).toBeLessThan(10_000)
+    else expect(waited).toBeGreaterThanOrEqual(10_000)
     expect(waited).toBeLessThan(60_000)
     expect(readdirSync(join(root, "jobs"))).toEqual([])
   })

@@ -643,7 +643,7 @@ describe("why a step failed", () => {
           !/\p{Cc}/u.test(`${read.error}${read.command}`) &&
           (read.exitCode === undefined || (Number.isInteger(read.exitCode) && read.exitCode >= 0)) &&
           // A structured failure gives its exit code as it is, and a signal the code a shell gives for it.
-          (!json || (signalled ? read.exitCode === signalExit("SIGKILL") : read.exitCode === (Number.isInteger(exit) && exit >= 0 ? exit : undefined))) &&
+          (!json || (signalled && exit < 0 ? read.exitCode === signalExit("SIGKILL") : read.exitCode === (Number.isInteger(exit) && exit >= 0 ? exit : undefined))) &&
           (!json || read.command === commandLine(command))
       },
       { runs: 400, seed: 31 }
@@ -670,16 +670,16 @@ describe("why a step failed", () => {
 
   it.live("calls stopped only what failed after the limit, and everything asked for when nothing was recorded", () =>
     assertProperty(
-      Arbitrary.all([Arbitrary.array(Arbitrary.all({ status: oneOf(["hit", "ran", "failed", "skipped"]), durationMs: int(0, 2000) }), { maxLength: 8 }), int(0, 2000), int(1, 90)]),
+      Arbitrary.all([Arbitrary.array(Arbitrary.all({ status: oneOf(["hit", "ran", "failed", "skipped"]), durationMs: int(0, 2000), exitCode: oneOf([1, 137, -1]) }), { maxLength: 8 }), int(0, 2000), int(1, 90)]),
       ([drawn, limitMs, minutes]) => {
-        const recorded = drawn.map((each, index): TargetResult => ({ label: `//:t${index}`, status: each.status, key: "", durationMs: each.durationMs, exitCode: 1 }))
+        const recorded = drawn.map((each, index): TargetResult => ({ label: `//:t${index}`, status: each.status, key: "", durationMs: each.durationMs, exitCode: each.exitCode }))
         const reason = noProgress(minutes)
         const stopped = stoppedResults(recorded, [], limitMs, reason)
         const asked = stoppedResults(undefined, ["//:a", "//:b"], limitMs, reason)
         return stopped.length === recorded.length && asked.length === 2 && asked.every((result) => madeNoProgress(result) && result.status === "failed") &&
           stopped.every((result, index) => {
             const was = recorded[index] as TargetResult
-            const late = was.status === "failed" && was.durationMs >= limitMs
+            const late = was.status === "failed" && was.durationMs >= limitMs && (was.exitCode === 137 || was.exitCode === -1)
             return late ? madeNoProgress(result) && result.exitCode === undefined : result === was
           }) &&
           reason === `it made no progress for ${minutes} ${minutes === 1 ? "minute" : "minutes"}`
@@ -690,7 +690,7 @@ describe("why a step failed", () => {
   it.live("keeps enough of what smthrs prints for the reason of every target asked for", () =>
     assertProperty(Arbitrary.all([int(0, 5000), int(0, 5000)]), ([one, other]) => {
       const [few, many] = one <= other ? [one, other] : [other, one]
-      return printedLimitOf(few) >= 8_000_000 && printedLimitOf(few) <= printedLimitOf(many) && printedLimitOf(many) >= many * 256_000 &&
+      return printedLimitOf(few) >= 8_000_000 && printedLimitOf(few) <= printedLimitOf(many) && printedLimitOf(many) === Math.min(64_000_000, Math.max(8_000_000, many * 256_000)) &&
         signalExit("SIGKILL") === 137 && signalExit("SIGNONE") === 128
     }, { runs: 100, seed: 34 }))
 
@@ -837,7 +837,7 @@ describe("what a replay reports", () => {
         (measured
           ? report.selection !== undefined && report.firstRun?.fastMs === 3
           : report.selection === undefined && report.fastWallMs === undefined && report.model === undefined && report.fastCpuMs === undefined &&
-            report.firstRun?.fastMs === undefined && report.commits.every((each) => each.fast === undefined && each.mismatches.every((found) => found.mode !== "fast")))
+            report.firstRun?.fastMs === undefined && report.commits.every((each, index) => each.fast === undefined && each.mismatches.length === commits[index]?.mismatches.length))
     }, { runs: 200, seed: 37 }))
 
   it.live("finds no mismatch between a run and itself, and one for every verdict a mode did not give", () =>

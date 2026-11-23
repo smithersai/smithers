@@ -142,7 +142,7 @@ describe("the CPU time of a running process", { timeout: 300_000 }, () => {
         return ended()
       })).pipe(Effect.provide(NodeServices.layer)) as Effect.Effect<number | undefined>
     )
-    expect(none).toBe(0)
+    expect(none).toBeUndefined()
   })
 
   it("reads nothing while it counts no process", async () => {

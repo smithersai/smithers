@@ -60,6 +60,13 @@ describe("the CPU time of a step", () => {
     expect(cpuMsOf(deep)).toBe(8600)
   })
 
+  it("counts a deep process tree after its descendants exit", () => {
+    const meter = meterOf(1)
+    observe(meter, Array.from({ length: 12_000 }, (_, index) => process(index + 1, index, 1)))
+    observe(meter, [])
+    expect(cpuMsOf(meter)).toBe(12_000)
+  })
+
   it("counts the children that came and went between two readings", () => {
     const meter = meterOf(10)
     observe(meter, [process(10, 1, 100)])

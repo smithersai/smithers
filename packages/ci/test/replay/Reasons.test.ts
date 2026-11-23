@@ -485,7 +485,7 @@ describe("how much of what smthrs prints a replay keeps", () => {
     expect(printedLimitOf(1)).toBe(8_000_000)
     expect(printedLimitOf(31)).toBe(8_000_000)
     expect(printedLimitOf(32)).toBe(8_192_000)
-    expect(printedLimitOf(1000)).toBe(256_000_000)
+    expect(printedLimitOf(1000)).toBe(64_000_000)
   })
 })
 

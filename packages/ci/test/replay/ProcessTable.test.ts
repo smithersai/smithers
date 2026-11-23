@@ -83,13 +83,26 @@ describe.each(["linux", "darwin"])("the table read the way %s reads it", (host) 
     const table = tableFor(host)
     const entries = await onNode(table.read)
     expect(entries?.find((entry) => entry.pid === child.pid)?.parent).toBe(process.pid)
-    await onNode(table.stop([child.pid as number]))
+    await onNode(table.stop([child.pid as number], process.pid))
     await ended
     expect(child.signalCode).toBe("SIGKILL")
   })
 
+  it("skips the root and a missing process at the final ancestry check", async () => {
+    const commands: Array<string> = []
+    const recorder = Layer.succeed(
+      ChildProcessSpawner,
+      makeSpawner((command) => {
+        if (command._tag === "StandardCommand") commands.push(command.command)
+        return Effect.fail(denied("spawn"))
+      })
+    )
+    await onNode(tableFor(host).stop([process.pid, 2_147_483_647], process.pid).pipe(Effect.provide(recorder)))
+    expect(commands).toEqual(host === "linux" ? [] : ["ps"])
+  })
+
   it("does nothing when asked to stop nothing", async () => {
-    await onNode(tableFor(host).stop([]))
+    await onNode(tableFor(host).stop([], process.pid))
   })
 })
 

@@ -12,7 +12,7 @@ namespace ReportReplaySpec
 
 /-- The result files a box may return, the only ones taken from it. -/
 def kept : List Str :=
-  [u!"box.txt", u!"setup.log", u!"install.log", u!"clone.log", u!"replay.json", u!"replay.log", u!"report.html",
+  [u!"box.txt", u!"setup.log", u!"install.log", u!"clone.log", u!"replay.json", u!"replay.log", u!"report.html.txt",
     u!"exit", u!"wall-seconds", u!"NOT-REPRODUCED.txt"]
 
 /-- The most bytes one result file may hold: 1 GiB. -/

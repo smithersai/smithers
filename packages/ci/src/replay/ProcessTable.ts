@@ -120,7 +120,11 @@ export const fromPs = (text: string): ReadonlyArray<ProcessEntry> =>
 export const treeOf = (entries: ReadonlyArray<ProcessEntry>, root: number): ProcessTree => {
   const byPid = new Map(entries.map((entry) => [entry.pid, entry]))
   const children = new Map<number, Array<number>>()
-  for (const entry of entries) children.set(entry.parent, [...(children.get(entry.parent) ?? []), entry.pid])
+  for (const entry of entries) {
+    const siblings = children.get(entry.parent)
+    if (siblings === undefined) children.set(entry.parent, [entry.pid])
+    else siblings.push(entry.pid)
+  }
   const pids: Array<number> = []
   const leaves: Array<number> = []
   let cpuMs = 0

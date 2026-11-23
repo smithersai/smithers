@@ -5,6 +5,8 @@
 import * as NodeServices from "@effect/platform-node/NodeServices"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
+import * as ChildProcess from "effect/process/ChildProcess"
+import { ChildProcessSpawner, make as makeSpawner } from "effect/process/ChildProcessSpawner"
 import { execFileSync } from "node:child_process"
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
@@ -243,6 +245,38 @@ describe("a replay of a shallow clone", () => {
 
 /** fetchMissing alone, for a list of commits the replay asks for. */
 describe("fetching what a clone lacks", () => {
+  it.each([0, 1])("ends after one fetch with status %s when the requested objects never arrive", async (status) => {
+    const clone = cloneOf(upstream(), "--filter=blob:none")
+    let fetches = 0
+    const transport = Layer.effect(
+      ChildProcessSpawner,
+      Effect.gen(function*() {
+        const real = yield* ChildProcessSpawner
+        return makeSpawner((command) => {
+          if (command._tag !== "StandardCommand" || !command.args.includes("--no-write-fetch-head")) {
+            return real.spawn(command)
+          }
+          fetches++
+          return real.spawn(
+            ChildProcess.make(process.execPath, [
+              "-e",
+              `console.error("unavailable https://user:secret@example.test/project?token=private"); process.exitCode = ${status}`
+            ])
+          )
+        })
+      })
+    )
+    const fail = await Effect.runPromise(
+      Effect.provide(
+        Effect.flip(readyHistory(clone, sourceOf(clone), 3, true, () => Effect.void)),
+        Layer.provideMerge(transport, NodeServices.layer)
+      )
+    )
+    expect(fetches).toBe(1)
+    expect(fail.message).toContain(status === 0 ? "no requested object arrived" : "https://example.test/project")
+    expect(fail.message).not.toMatch(/secret|token=private/)
+  })
+
   it("fetches nothing a checkout of the clone already brought", async () => {
     const clone = cloneOf(upstream(), "--filter=blob:none")
     const said: Array<string> = []

@@ -205,5 +205,6 @@ describe("a replay on a disk its jobs would fill", () => {
     expect(report.commits).toEqual([])
     expect(report.stopped).toMatch(stoppedHere)
     expect(report.stopped).toContain("has 2.0 GB free")
+    expect(report.diskHeldBytes).toBe(0)
   }, 600_000)
 })

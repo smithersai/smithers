@@ -110,15 +110,12 @@ describe("smithers-ci on a repository whose CI plants a command in .git/config",
     expect(existsSync(ran)).toBe(false)
   }, 1_800_000)
 
-  it("never runs the planted command on a machine with no jail: a job's checkout is the job's own", async () => {
+  it("refuses before any job runs on a machine with no jail", async () => {
     const { ran, root } = fixture()
     const outcome = await program(root, "bwrap is not on PATH (install the bubblewrap package)")
 
-    expect(outcome.code, outcome.stderr).toBe(0)
-    expect(outcome.stdout).toContain("2 commits · 0 mismatches")
-    // The step wrote the configuration of its own job's checkout, which is gone with the job. The copy the program
-    // asks at the second commit never held the command, so nothing started it. A copy that jobs do share, as the
-    // recipes of a Justfile share one, is asked through `reading`: `test/replay/Jail.test.ts`.
+    expect(outcome.code).toBe(4)
+    expect(outcome.stderr).toContain("the replay requires a jail")
     expect(existsSync(ran)).toBe(false)
   }, 1_800_000)
 })

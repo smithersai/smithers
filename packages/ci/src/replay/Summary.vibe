@@ -725,6 +725,12 @@ export const nothingToReplay = (left: ReadonlyArray<NotReplayed>): string => {
 export const withoutCredentials = (remote: string): string =>
   remote.trim().replace(/^([a-z][a-z0-9+.-]*:\/\/)[^/?#]*@/i, "$1")
 
+/** The public address a disposable clone can retain. Signed query parameters and fragments are private. */
+export const publicRemote = (remote: string): string => {
+  const address = withoutCredentials(remote)
+  return /^[a-z][a-z0-9+.-]*:\/\//i.test(address) ? address.replace(/[?#].*$/s, "") : address
+}
+
 /**
  * Every target the units' steps became.
  *
@@ -1283,8 +1289,7 @@ export interface Findings {
 export const withoutFast = (
   { fast: _fast, model: _model, skipped: _skipped, ...commit }: ReplayCommit
 ): ReplayCommit => ({
-  ...commit,
-  mismatches: commit.mismatches.filter((mismatch) => mismatch.mode !== "fast")
+  ...commit
 })
 
 /**
@@ -1483,14 +1488,21 @@ export const fastRunOf = (
   split: ReadonlyMap<string, ReadonlyArray<string>> = new Map(),
   causes: ReadonlyMap<string, string> = new Map(),
   cpuMs?: number | undefined,
-  asked?: { readonly scores: ReadonlyArray<Score>; readonly model: ModelUse } | undefined
+  asked?: { readonly scores: ReadonlyArray<Score>; readonly model: ModelUse } | undefined,
+  skippedLabels?: ReadonlySet<string>
 ): {
   readonly part: Pick<ReplayCommit, "fast" | "skipped" | "model">
   readonly mismatches: ReadonlyArray<Mismatch>
   readonly flaky: number
 } => {
   const byLabel = new Map(fast.map((result) => [result.label, result]))
-  const merged = normal.map((result) => byLabel.get(result.label) ?? predictedSafe(result.label))
+  const merged = normal.flatMap((result) => {
+    const observed = byLabel.get(result.label)
+    if (observed !== undefined) return [observed]
+    return skippedLabels === undefined || skippedLabels.has(result.label) ? [predictedSafe(result.label)] : []
+  })
+  const expected = new Set(normal.map((result) => result.label))
+  merged.push(...fast.filter((result) => !expected.has(result.label)))
   const record = recordOf(merged, commit, wallMs + (asked?.model.ms ?? 0), "fast")
   const scored = new Map((asked?.scores ?? []).map((score) => [score.target, score]))
   const skipped = merged.filter((result) => result.skipReason === "predicted-safe").map((result): PredictedSafe => {

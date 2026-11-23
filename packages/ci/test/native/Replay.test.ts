@@ -17,6 +17,7 @@ import {
   own,
   run
 } from "../../src/native/index.vibe"
+import { DiskSpace } from "../../src/replay/Disk.vibe"
 import { noPushUrl } from "../../src/replay/Environment.ts"
 import { Options, type Probe, Progress } from "../../src/replay/index.vibe"
 import { cannotRecord } from "../../src/replay/Reads.vibe"
@@ -28,6 +29,7 @@ import {
   makeOwnWith,
   type Own,
   ownFiles,
+  packageWithOpenTarget,
   packageWithUncached,
   smthrs
 } from "./own.ts"
@@ -90,6 +92,7 @@ describe("replaying six real commits of a repository's own targets", () => {
   let repo: Own
   let report: ReplayReport
 
+  // This setup runs all three modes at six commits with real installs and child-process coverage.
   beforeAll(async () => {
     repo = makeOwn()
     keep(repo.root)
@@ -99,7 +102,7 @@ describe("replaying six real commits of a repository's own targets", () => {
         partsFor(repo.commits[0]!)
       )
     )
-  }, 1_200_000)
+  }, 2_700_000)
 
   const commit = (index: number) => report.commits[index]!
   const normalMismatches = (index: number) => commit(index).mismatches.filter((entry) => entry.mode === "normal")
@@ -290,15 +293,15 @@ describe("replaying a repository's own targets", { timeout: 300_000 }, () => {
   it("replays the patterns asked for, and gives the shared cache --cache names to normal mode only", async () => {
     const recording = recordingSmthrs()
     const root = keep(makeOwnWith(recording.command))
-    const report = await withSecrets(() =>
-      onNode(
-        own(
-          request(root, { jobs: 2, cache: "https://cache.example.invalid", targets: ["//:c"] }),
-          partsFor("none"),
-          "WORKSPACE.ts"
-        )
-      )
-    )
+    const replay = () =>
+      onNode(own(
+        request(root, { jobs: 2, cache: "https://cache.example.invalid", targets: ["//:c"] }),
+        partsFor("none"),
+        "WORKSPACE.ts"
+      ))
+    const refused = await withSecrets(() => failureOf(replay()))
+    expect(refused.message).toContain("anonymous shared caches only")
+    const report = await replay()
     expect(report.targets).toEqual(["//:c"])
     expect(report.commits[0]?.baseline.counts).toEqual({ hit: 0, ran: 1, failed: 0, skipped: 0 })
     expect(report.commits[0]?.normal.counts).toEqual({ hit: 0, ran: 1, failed: 0, skipped: 0 })
@@ -338,9 +341,7 @@ describe("replaying a repository's own targets", { timeout: 300_000 }, () => {
     }
     Object.assign(process.env, planted)
     try {
-      const report = await onNode(
-        own(request(root, { cache: "https://cache.example.invalid" }), partsFor("none"), "WORKSPACE.ts")
-      )
+      const report = await onNode(own(request(root), partsFor("none"), "WORKSPACE.ts"))
       expect(report.commits[0]?.normal.counts).toEqual({ hit: 0, ran: 3, failed: 0, skipped: 0 })
     } finally {
       for (const name of Object.keys(planted)) delete process.env[name]
@@ -351,8 +352,7 @@ describe("replaying a repository's own targets", { timeout: 300_000 }, () => {
       expect(text("smthrs")).not.toContain(`${name}=`)
     }
     expect(text("install").split("\n")).toContain("PATH")
-    // The last run was normal mode's, which is told where the shared cache is.
-    expect(text("smthrs")).toContain("SMITHERS_CACHE_URL=https://cache.example.invalid\n")
+    expect(text("smthrs")).not.toContain("SMITHERS_CACHE_URL=")
     expect(text("fetch").trim()).toBe("https://example.invalid/acme/own.git")
     expect(text("push").trim()).toBe(noPushUrl)
   })
@@ -402,7 +402,9 @@ describe("replaying a repository's own targets", { timeout: 300_000 }, () => {
     const asked = request(root, { modes: ["fast"], targets: ["//:b"], settings: { scoreCutoff: 0.5, countCutoff: 0 } })
     const report = await onNode(own(asked, parts, "WORKSPACE.ts"))
     expect(report.commits[0]?.normal.counts).toEqual({ hit: 0, ran: 2, failed: 0, skipped: 0 })
-    expect(report.commits[0]?.fast?.counts).toEqual({ hit: 0, ran: 0, failed: 0, skipped: 2 })
+    // Only b was judged safe. Its dependency a had no selected root that needed it.
+    expect(report.commits[0]?.fast?.counts).toEqual({ hit: 0, ran: 0, failed: 0, skipped: 1 })
+    expect(report.commits[0]?.skipped?.map((entry) => entry.label)).toEqual(["//:b"])
     // The baseline and normal mode ran; fast mode had nothing to name. The plans are the one that finds what the
     // commit installs and the one fast mode scores.
     const commands = recording.log()
@@ -454,6 +456,53 @@ describe("replaying a repository's own targets", { timeout: 300_000 }, () => {
     })
   })
 
+  it("replays just the test roots of a native test command across a mixed package", async () => {
+    const workflow = ownFiles()[".github/workflows/ci.yml"]!.replace(
+      "ci '//:a' '//:b' '//:c'",
+      "test '//...' --include-exclusive"
+    )
+    const root = keep(
+      makeOwnWith(smthrs, { ".github/workflows/ci.yml": workflow, "PACKAGE.ts": packageWithOpenTarget })
+    )
+    const result = await onNode(own(request(root), partsFor("none"), "WORKSPACE.ts"))
+    expect(result.commits[0]?.baseline.counts.ran).toBe(1)
+    expect(result.commits[0]?.normal.counts.ran).toBe(1)
+    expect(result.mismatches).toBe(0)
+  })
+
+  it.each([
+    { flag: "--unknown-option", program: "true", reason: "cannot reproduce" },
+    { flag: "--include-exclusive", program: "true", reason: "no target selection plan" },
+    { flag: "--include-exclusive", program: "empty", reason: "selected no targets" },
+    { flag: "--include-exclusive", program: "uninstalled", reason: "exited" }
+  ])("reports a native selector that cannot be resolved ($reason)", async ({ flag, program, reason }) => {
+    const workflow = ownFiles()[".github/workflows/ci.yml"]!.replace("ci '//:a' '//:b' '//:c'", `test '//...' ${flag}`)
+    const empty = fakeSmthrs(`echo '{"verb":"test","pattern":"//...","roots":[],"targets":[]}'`)
+    const root = keep(makeOwnWith(program === "empty" ? empty : "true", {
+      ".github/workflows/ci.yml": workflow,
+      ...(program === "uninstalled" ? { "tools/install.mjs": "process.exit(1)" } : {})
+    }))
+    const failure = await failureOf(onNode(own(request(root), partsFor("none"), "WORKSPACE.ts")))
+    expect(failure.message).toContain(reason)
+  })
+
+  it.each(["other action", "extra action"])("refuses a combined plan with an %s", async (difference) => {
+    const workflow = ownFiles()[".github/workflows/ci.yml"]!.replace("ci '//:a' '//:b' '//:c'", "build '//...'")
+    const requested = { roots: ["//:a"], targets: [{ label: "//:a", key: "build" }] }
+    const combined = {
+      roots: requested.roots,
+      targets: difference === "other action"
+        ? [{ label: "//:a", keyPreview: "lint" }]
+        : [{ label: "//:a", keyPreview: "build" }, { label: "//:extra", keyPreview: "extra" }]
+    }
+    const planner = fakeSmthrs(
+      `case "$1" in build) echo '${JSON.stringify(requested)}';; ci) echo '${JSON.stringify(combined)}';; esac`
+    )
+    const root = keep(makeOwnWith(planner, { ".github/workflows/ci.yml": workflow }))
+    const failure = await failureOf(onNode(own(request(root), partsFor("none"), "WORKSPACE.ts")))
+    expect(failure.message).toContain("CI verbs select different actions")
+  })
+
   it("is unsupported when the patterns select no target", async () => {
     const none = fakeSmthrs(
       `echo '{"ok":true,"counts":{"hit":0,"ran":0,"failed":0,"skipped":0},"results":[]}' > "$results"`
@@ -472,6 +521,18 @@ describe("replaying a repository's own targets", { timeout: 300_000 }, () => {
       part: "replay",
       message: refusedAt(head(root).slice(0, 7), "(smthrs)", "no package at //:c")
     })
+  })
+
+  it("counts a nonzero native command with a passing record as a failure", async () => {
+    const record = {
+      ok: true,
+      counts: { hit: 0, ran: 1, failed: 0, skipped: 0 },
+      results: [{ label: "//:a", status: "ran", key: "a", durationMs: 1 }]
+    }
+    const command = fakeSmthrs(`echo '${JSON.stringify(record)}' > "$results"\nexit 19`)
+    const root = keep(makeOwnWith(command))
+    const failure = await failureOf(onNode(own(request(root), partsFor("none"), "WORKSPACE.ts")))
+    expect(failure.message).toContain("smthrs ci exited 19")
   })
 
   it("counts a run record that is not one as no run record", async () => {
@@ -501,7 +562,16 @@ describe("replaying a repository's own targets", { timeout: 300_000 }, () => {
     const root = keep(makeOwnWith(noPlan))
     const failure = await failureOf(onNode(own(request(root, { modes: ["fast"] }), partsFor("none"), "WORKSPACE.ts")))
     expect(failure.code).toBe("command-failed")
-    expect(failure.message).toBe("smthrs ci --plan printed no plan: no plan here\n")
+    expect(failure.message).toBe("smthrs ci --plan printed no plan: no plan here")
+  })
+
+  it("checks free space before cloning or installing", async () => {
+    const work = own(request(keep(temporary("empty"))), partsFor("none"), "WORKSPACE.ts")
+    const failed = await failureOf(onNode(Effect.provideService(work, DiskSpace, {
+      space: () => Effect.succeed({ total: 100_000_000_000, free: 0 }),
+      held: () => Effect.succeed(0)
+    })))
+    expect(failed.message).toContain("the replay stopped before the disk filled")
   })
 
   it("fails when it cannot make a directory to work in", async () => {

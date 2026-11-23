@@ -68,7 +68,11 @@ const ownOf = (entry: ProcessEntry): number => entry.ownMs ?? entry.cpuMs
 export const observe = (meter: CpuMeter, entries: ReadonlyArray<ProcessEntry>): void => {
   const byPid = new Map(entries.map((entry) => [entry.pid, entry]))
   const children = new Map<number, Array<ProcessEntry>>()
-  for (const entry of entries) children.set(entry.parent, [...(children.get(entry.parent) ?? []), entry])
+  for (const entry of entries) {
+    const siblings = children.get(entry.parent)
+    if (siblings === undefined) children.set(entry.parent, [entry])
+    else siblings.push(entry)
+  }
   const here = new Set<string>()
   const start = byPid.get(meter.root)
   const waiting: Array<readonly [ProcessEntry, string | undefined]> = start === undefined ? [] : [[start, undefined]]
@@ -114,23 +118,31 @@ export const cpuMsOf = (meter: CpuMeter): number => {
   const gone = new Map<string, Array<string>>()
   for (const [key, known] of meter.seen) {
     if (known.alive || known.parent === undefined) continue
-    gone.set(known.parent, [...(gone.get(known.parent) ?? []), key])
+    const siblings = gone.get(known.parent)
+    if (siblings === undefined) gone.set(known.parent, [key])
+    else siblings.push(key)
   }
-  // What is counted for a process alone, and for it with everything gone under it.
-  const alone = new Map<string, number>()
+  // Process descendants first without using a stack frame per generation.
+  // A provisional zero terminates a cycle in inconsistent readings.
   const whole = new Map<string, number>()
-  const count = (key: string): number => {
-    const known = meter.seen.get(key) as Seen
-    const under = (gone.get(key) ?? []).reduce((total, child) => total + count(child), 0)
-    const unseen = Math.max(0, known.waited - known.first - under)
-    alone.set(key, known.own + known.first + unseen)
-    whole.set(key, known.own + known.first + unseen + under)
-    return whole.get(key) as number
-  }
   let total = 0
   for (const key of meter.seen.keys()) {
-    if (!alone.has(key)) count(key)
-    total += alone.get(key) as number
+    const waiting: Array<{ key: string; finish: boolean }> = [{ key, finish: false }]
+    while (waiting.length > 0) {
+      const current = waiting.pop() as { key: string; finish: boolean }
+      const children = gone.get(current.key) ?? []
+      if (current.finish) {
+        const known = meter.seen.get(current.key) as Seen
+        const under = children.reduce((sum, child) => sum + (whole.get(child) as number), 0)
+        const own = known.own + known.first + Math.max(0, known.waited - known.first - under)
+        whole.set(current.key, own + under)
+        total += own
+      } else if (!whole.has(current.key)) {
+        whole.set(current.key, 0)
+        waiting.push({ key: current.key, finish: true })
+        for (const child of children) waiting.push({ key: child, finish: false })
+      }
+    }
   }
   return total
 }

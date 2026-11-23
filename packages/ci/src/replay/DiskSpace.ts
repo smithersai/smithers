@@ -7,6 +7,7 @@
 
 import * as NodeFs from "node:fs/promises"
 import * as NodePath from "node:path"
+import { openPinnedPath } from "./PinnedFile.ts"
 
 /**
  * One gigabyte, as a disk's size is written.
@@ -58,21 +59,32 @@ export const spaceOf = async (path: string): Promise<Space> => {
  * @category reading
  * @since 0.1.0
  */
-export const heldUnder = async (path: string): Promise<number> => {
+export const heldUnder = async (path: string, signal?: AbortSignal): Promise<number> => {
   const seen = new Set<string>()
   let held = 0
   const visit = async (at: string): Promise<void> => {
-    const info = await NodeFs.lstat(at, { bigint: true }).catch(() => undefined)
-    if (info === undefined) return
-    if (info.isDirectory()) {
-      const names = await NodeFs.readdir(at).catch(() => [])
-      for (const name of names) await visit(NodePath.join(at, name))
-      return
+    try {
+      const info = await NodeFs.lstat(at, { bigint: true })
+      const identity = `${info.dev}:${info.ino}`
+      if (seen.has(identity)) return
+      seen.add(identity)
+      if (info.isDirectory()) {
+        const directory = await openPinnedPath(at, true)
+        try {
+          const names = await NodeFs.readdir(directory.path)
+          for (const name of names) {
+            if (signal?.aborted) break
+            await visit(NodePath.join(directory.path, name))
+          }
+        } finally {
+          await directory.close()
+        }
+        return
+      }
+      held += Number(info.blocks) * 512
+    } catch {
+      // A directory may disappear or become unreadable while its job is running.
     }
-    const identity = `${info.dev}:${info.ino}`
-    if (seen.has(identity)) return
-    seen.add(identity)
-    held += Number(info.blocks) * 512
   }
   await visit(path)
   return held

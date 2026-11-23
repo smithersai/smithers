@@ -1,6 +1,6 @@
 /**
- * What the jobs of one baseline run keep, as jobs that start together see it: real directories and real hard
- * links, and the real `smithers-ci` on a repository whose jobs fail when they restore what a job beside them saved.
+ * What the jobs of one baseline run keep, as jobs that start together see it: real directories and independent cache
+ * copies, and the real `smithers-ci` on a repository whose jobs fail when they restore what a job beside them saved.
  */
 import * as NodeServices from "@effect/platform-node/NodeServices"
 import * as Effect from "effect/Effect"
@@ -10,12 +10,14 @@ import * as Option from "effect/Option"
 import type * as Path from "effect/Path"
 import {
   existsSync,
+  linkSync,
   mkdirSync,
   mkdtempSync,
   readdirSync,
   readFileSync,
   rmSync,
   statSync,
+  symlinkSync,
   utimesSync,
   writeFileSync
 } from "node:fs"
@@ -23,7 +25,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterAll, describe, expect, it } from "vitest"
 import type { ReplayReport } from "../../src/contract/ReplayReport.vibe"
-import { addEntries, backTo, keep, pathsIn, viewOf } from "../../src/replay/Kept.vibe"
+import { addEntries, backTo, keep, snapshot, viewOf } from "../../src/replay/Kept.vibe"
 import { bin, commit, git, spawn, temporary } from "../cli/repo.ts"
 
 const made: Array<string> = []
@@ -61,24 +63,29 @@ describe("what a way keeps, for a commit that runs again", () => {
     mkdirSync(join(kept, "cache", "ab"), { recursive: true })
     writeFileSync(join(kept, "cache", "ab", "entry"), "before")
     writeFileSync(join(kept, "record.json"), "{}")
-    const before = await run(pathsIn(kept))
-    expect([...before].sort()).toEqual(["cache", "cache/ab", "cache/ab/entry", "record.json"])
+    const before = join(scratch(), "backup")
+    await run(snapshot(kept, before))
+    writeFileSync(join(kept, "cache", "ab", "entry"), "overwritten")
+    rmSync(join(kept, "record.json"))
     // The run that is thrown away adds a file beside an old one, and a new directory with files under it.
     writeFileSync(join(kept, "cache", "ab", "other"), "new")
     mkdirSync(join(kept, "cache", "cd", "deep"), { recursive: true })
     writeFileSync(join(kept, "cache", "cd", "deep", "entry"), "new")
     mkdirSync(join(kept, "machine"))
     await run(backTo(kept, before))
-    expect([...(await run(pathsIn(kept)))].sort()).toEqual([...before].sort())
+    expect(readdirSync(kept, { recursive: true }).sort()).toEqual([
+      "cache",
+      "cache/ab",
+      "cache/ab/entry",
+      "record.json"
+    ])
     expect(readFileSync(join(kept, "cache", "ab", "entry"), "utf8")).toBe("before")
-    // Nothing added, nothing removed.
-    await run(backTo(kept, before))
-    expect([...(await run(pathsIn(kept)))].sort()).toEqual([...before].sort())
+    expect(readFileSync(join(kept, "record.json"), "utf8")).toBe("{}")
   })
 })
 
 describe("what a job sees of the store", () => {
-  it("is every finished entry the store holds, as hard links that keep the entry's time", async () => {
+  it("is every finished entry the store holds, as independent copies that keep the entry's time", async () => {
     const root = scratch()
     const store = join(root, "store")
     const saved = entry(store, "p1", "e1", "tool-1", 1_700_000_100)
@@ -90,8 +97,10 @@ describe("what a job sees of the store", () => {
     expect(entriesOf(view)).toEqual(["p1/e1"])
     const copy = join(view, "actions-cache", "p1", "e1")
     expect(readFileSync(join(copy, "key"), "utf8")).toBe("tool-1")
-    // The same file, not a copy of it, and the time the entry was saved at.
-    expect(statSync(join(copy, "work.tar")).ino).toBe(statSync(join(saved, "work.tar")).ino)
+    // Writes to the view leave the saved entry intact.
+    writeFileSync(join(copy, "work.tar"), "changed")
+    expect(readFileSync(join(saved, "work.tar"), "utf8")).toBe("files of e1")
+    expect(statSync(join(copy, "work.tar")).ino).not.toBe(statSync(join(saved, "work.tar")).ino)
     expect(statSync(copy).mtimeMs).toBe(1_700_000_100_000)
   })
 
@@ -113,6 +122,34 @@ describe("what a job sees of the store", () => {
     // A job that waited for the first sees what it saved; a view that was never made adds nothing.
     await run(viewOf(store, [one, join(root, "views", "never-ran")], after))
     expect(entriesOf(after)).toEqual(["p1/new", "p1/old"])
+  })
+
+  it("leaves linked directories and incomplete entries out of the view", async () => {
+    const root = scratch()
+    const store = join(root, "store")
+    const saved = entry(store, "tools", "v1", "tool")
+    const view = join(root, "view")
+    symlinkSync(saved, join(store, "shortcut"))
+    symlinkSync(join(saved, "key"), join(saved, "alias"))
+    await run(viewOf(store, [], view))
+    expect(readdirSync(view)).toEqual([])
+    const linkedStore = join(root, "linked-store")
+    symlinkSync(store, linkedStore)
+    await run(addEntries(linkedStore, view))
+    expect(readdirSync(view)).toEqual([])
+  })
+
+  it("refuses a multiply linked cache file before publishing its key", async () => {
+    const root = scratch()
+    const store = join(root, "store")
+    const saved = entry(store, "tools", "v1", "tool")
+    linkSync(join(saved, "work.tar"), join(root, "another-name"))
+    const view = join(root, "view")
+    await expect(run(viewOf(store, [], view))).rejects.toThrow()
+    expect(readdirSync(join(view, "actions-cache", "tools"))).toEqual([])
+    rmSync(join(root, "another-name"))
+    await run(viewOf(store, [], view))
+    expect(readFileSync(join(view, "actions-cache", "tools", "v1", "key"), "utf8")).toBe("tool")
   })
 
   it("is made for a store that holds nothing yet", async () => {
@@ -142,6 +179,36 @@ describe("what a run's jobs saved", () => {
     expect(readFileSync(join(store, "actions-cache", "p1", "old", "work.tar"), "utf8")).toBe("files of old")
   })
 
+  it.each(["finished", "blocked"])("handles a %s destination appearing before publication", async (kind) => {
+    const root = scratch()
+    const store = join(root, "store")
+    entry(store, "tools", "v1", "first")
+    const view = join(root, "view")
+    const concurrent = Layer.effect(
+      FileSystem.FileSystem,
+      Effect.gen(function*() {
+        const real = yield* FileSystem.FileSystem
+        return {
+          ...real,
+          rename: (source: string, destination: string) =>
+            Effect.gen(function*() {
+              yield* real.makeDirectory(destination)
+              yield* real.writeFileString(join(destination, kind === "finished" ? "key" : "other"), "concurrent")
+              yield* real.rename(source, destination)
+            })
+        }
+      })
+    )
+    const publish = Effect.runPromise(
+      Effect.provide(addEntries(store, view), Layer.provideMerge(concurrent, NodeServices.layer))
+    )
+    if (kind === "finished") {
+      await publish
+      expect(readFileSync(join(view, "actions-cache", "tools", "v1", "key"), "utf8")).toBe("concurrent")
+    } else await expect(publish).rejects.toThrow()
+    expect(readdirSync(join(view, "actions-cache", "tools"))).toEqual(["v1"])
+  })
+
   it("keeps an entry whose time the file system does not tell, with the time it is added at", async () => {
     const root = scratch()
     const from = join(root, "from")
@@ -153,7 +220,7 @@ describe("what a run's jobs saved", () => {
         const real = yield* FileSystem.FileSystem
         return {
           ...real,
-          stat: (path: string) => Effect.map(real.stat(path), (info) => ({ ...info, mtime: Option.none() }))
+          lstat: (path: string) => Effect.map(real.lstat(path), (info) => ({ ...info, mtime: Option.none() }))
         }
       })
     )

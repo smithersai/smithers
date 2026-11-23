@@ -16,7 +16,7 @@ export const unreadable = Layer.effect(FileSystem.FileSystem, effect {
 /** The real file system, except that making a temporary directory is refused. */
 export const noTemporaryDirectories = Layer.effect(FileSystem.FileSystem, effect {
   const real = try FileSystem.FileSystem
-  return { ...real, makeTempDirectoryScoped: () => Effect.fail(denied("makeTempDirectoryScoped")) }
+  return { ...real, makeTempDirectory: () => Effect.fail(denied("makeTempDirectory")) }
 })
 
 /** The real file system, except that it cannot say whether a file exists. */

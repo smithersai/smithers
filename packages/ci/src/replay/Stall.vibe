@@ -10,7 +10,7 @@
 import * as ChildProcess from "effect/process/ChildProcess"
 import { type ChildProcessHandle, ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 import type * as PlatformError from "effect/PlatformError"
-import { thisHost } from "./Environment.ts"
+import { launcherEnvironment, thisHost } from "./Environment.ts"
 import { fromPs, fromStat, type ProcessEntry, treeOf, workOver } from "./ProcessTable.ts"
 
 /**
@@ -35,7 +35,7 @@ export type TableHost = FileSystem.FileSystem | ChildProcessSpawner
  */
 export interface Table {
   readonly read: (ReadonlyArray<ProcessEntry> | undefined)!!TableHost
-  readonly stop: (pids: ReadonlyArray<number>) => void!!TableHost
+  readonly stop: (pids: ReadonlyArray<number>, root: number) => void!!TableHost
   readonly under?: (root: number) => (ReadonlyArray<ProcessEntry> | undefined)!!TableHost
 }
 
@@ -43,41 +43,28 @@ export interface Table {
 effect function outputOf(command: string, args: ReadonlyArray<string>) {
   const spawner = try ChildProcessSpawner
   return scoped(effect {
-    const handle = try spawner.spawn(ChildProcess.make(command, [...args], { stdin: "ignore", stderr: "ignore" }))
+    const handle = try spawner.spawn(ChildProcess.make(command, [...args], { stdin: "ignore", stderr: "ignore", env: launcherEnvironment, extendEnv: false }))
     const text = try (handle.stdout |> Stream.decodeText(%) |> Stream.mkString(%))
     return Number(try handle.exitCode) === 0 ? text : undefined
   }) catch () => undefined
 }
 
-/**
- * Every process, from `/proc`, read by one program in one go. Read file by
- * file, 2,500 processes cost the reader 700 ms of its own processor time,
- * and a replay reads them every two seconds for the CPU time its steps use.
- * `undefined` when no such program can be started or it prints nothing.
- */
-effect function readProcAtOnce() {
-  const text = try outputOf("sh", ["-c", "cat /proc/[0-9]*/stat 2>/dev/null; true"])
-  if (text === undefined || text === "") return undefined
-  return text.split("\n").flatMap((line) => {
-    const entry = fromStat(line)
-    return entry === undefined ? [] : [entry]
-  })
+/** Read the whole procfs record as one unit. Its command name can contain a newline. */
+effect function entryOf(pid: number) {
+  const fs = try FileSystem.FileSystem
+  const text = fs.readFileString(`/proc/${pid}/stat`) catch () => ""
+  const entry = fromStat(text)
+  return entry?.pid === pid ? entry : undefined
 }
 
-/** Every process, from `/proc`: in one go, or file by file where that cannot be done. */
+/** Read one record per numbered directory. A process can disappear during the walk. */
 effect function readProc() {
-  return (try readProcAtOnce()) ?? (try readProcByFile())
-}
-
-/** Every process, from `/proc`, file by file. A process that ends while it is read is left out. */
-effect function readProcByFile() {
   const fs = try FileSystem.FileSystem
   const names = fs.readDirectory("/proc") catch () => undefined
   if (names === undefined) return undefined
   const entries: Array<ProcessEntry> = []
   for concurrent(16) (const name of names.filter((entry) => /^\d+$/.test(entry))) {
-    const text = fs.readFileString(`/proc/${name}/stat`) catch () => ""
-    const entry = fromStat(text)
+    const entry = try entryOf(Number(name))
     if (entry !== undefined) entries.push(entry)
   }
   return entries
@@ -93,8 +80,7 @@ const walk = [
   "while [ $# -gt 0 ]; do",
   "  process=$1",
   "  shift",
-  "  IFS= read -r line < \"/proc/$process/stat\" || continue",
-  "  printf '%s\\n' \"$line\"",
+  "  printf '%s\\n' \"$process\"",
   "  for list in /proc/$process/task/*/children; do",
   "    started=",
   "    read -r started < \"$list\"",
@@ -107,16 +93,29 @@ const walk = [
 effect function readUnder(root: number) {
   const text = try outputOf("sh", ["-c", walk, "sh", String(root)])
   if (text === undefined) return undefined
-  return text.split("\n").flatMap((line) => {
-    const entry = fromStat(line)
-    return entry === undefined ? [] : [entry]
-  })
+  const entries: Array<ProcessEntry> = []
+  for (const pid of text.trim().split("\n").filter((name) => /^\d+$/.test(name))) {
+    const entry = try entryOf(Number(pid))
+    if (entry !== undefined) entries.push(entry)
+  }
+  return entries
 }
 
 /** Every process, from `ps`. */
 effect function readPs() {
   const text = try outputOf("ps", ["-axo", "pid=,ppid=,time="])
   return text === undefined ? undefined : fromPs(text)
+}
+
+/** Verify the live parent chain immediately before signaling one process. */
+effect function descendant(pid: number, root: number) {
+  const seen = new Set<number>()
+  let current = pid
+  while (current > 0 && current !== root && !seen.has(current)) {
+    seen.add(current)
+    current = (try entryOf(current))?.parent ?? 0
+  }
+  return pid !== root && current === root
 }
 
 /**
@@ -130,8 +129,11 @@ export const tableFor = (host: string = thisHost()): Table => ({
   read: host === "linux" ? readProc() : readPs(),
   // `ps` cannot be asked for one tree.
   ...(host === "linux" ? { under: readUnder } : {}),
-  stop: (pids) => effect {
-    if (pids.length > 0) try outputOf("kill", ["-KILL", ...pids.map(String)])
+  stop: (pids, root) => effect {
+    for (const pid of pids) {
+      const belongs = host === "linux" ? try descendant(pid, root) : pid !== root && treeOf((try readPs()) ?? [], root).pids.includes(pid)
+      if (belongs) try outputOf("kill", ["-KILL", String(pid)])
+    }
   }
 })
 
@@ -218,7 +220,7 @@ effect function untilStalled(root: number, limitMs: number, watch: Watch) {
   while (true) {
     try sleep(tick)
     const now = try Clock.currentTimeMillis
-    const entries = try watch.table.read
+    const entries = (try (watch.table.under?.(root) ?? succeed(undefined))) ?? (try watch.table.read)
     const tree = entries === undefined ? undefined : treeOf(entries, root)
     // What cannot be measured is never called a stall.
     if (tree === undefined || tree.pids.length === 0) {
@@ -278,10 +280,10 @@ export effect function exitStoppingStalled(
       try untilStalled(root, watch.limitMs, watch)
       try Ref.set(watch.stalled, true)
       for (let round = 0; round < stopRounds; round++) {
-        const entries = try watch.table.read
+        const entries = (try (watch.table.under?.(root) ?? succeed(undefined))) ?? (try watch.table.read)
         const leaves = entries === undefined ? [] : treeOf(entries, root).leaves.filter((pid) => pid !== root)
-        try watch.table.stop(leaves)
-        try untilStalled(root, Math.min(graceMs, watch.limitMs), watch)
+        try watch.table.stop(leaves, root)
+        try untilStalled(root, leaves.length === 0 ? Math.min(graceMs, watch.limitMs) : watch.limitMs, watch)
       }
       return undefined
     }

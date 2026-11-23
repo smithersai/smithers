@@ -173,7 +173,7 @@ describe("the links a step's home starts with", () => {
     const work = directory("work")
     const tool = join(directory("person"), ".vm")
     mkdirSync(tool)
-    const asked = () => ({ refusal: "no bubblewrap", homes: [{ path: ".vm", target: tool }] })
+    const asked = () => ({ refusal: "no bubblewrap", trustedRepository: true, homes: [{ path: ".vm", target: tool }] })
     const places = await Effect.runPromise(
       confine(work, asked, () => Effect.void, [], false).pipe(Effect.scoped, Effect.provide(NodeServices.layer))
     )

@@ -1,4 +1,5 @@
 /** The disk under a replay: the floor it leaves free, the watch that keeps jobs to it, and the real readers. */
+import * as Deferred from "effect/Deferred"
 import * as Effect from "effect/Effect"
 import * as Fiber from "effect/Fiber"
 import * as Ref from "effect/Ref"
@@ -77,6 +78,7 @@ describe("the disk as the machine says it is", () => {
     mkdirSync(join(root, "closed"))
     writeFileSync(join(root, "closed", "c"), "x".repeat(100_000))
     chmodSync(join(root, "closed"), 0o000)
+    expect(await heldUnder(root, AbortSignal.abort())).toBe(0)
     const held = await Effect.runPromise(Effect.gen(function*() {
       const disk = yield* DiskSpace
       return yield* disk.held(root)
@@ -89,6 +91,61 @@ describe("the disk as the machine says it is", () => {
 })
 
 describe("a watch of the disk", () => {
+  it("signals the emergency before reading sizes and shares one diagnostic across callers", async () => {
+    const walked: Array<string> = []
+    const result = await Effect.runPromise(
+      Effect.scoped(Effect.gen(function*() {
+        const watch = yield* diskWatch("/replay", "/replay/jobs", () => Effect.void, tick)
+        yield* Effect.flip(watch.ended)
+        expect(yield* watch.most).toBe(0)
+        expect(walked).toEqual([])
+        return yield* Effect.all([watch.stopped, watch.stopped], { concurrency: "unbounded" })
+      })).pipe(Effect.provideService(DiskSpace, {
+        space: () => Effect.succeed({ free: gb(1), total: gb(100) }),
+        held: (path) =>
+          Effect.sync(() => {
+            walked.push(path)
+            return gb(1)
+          })
+      }))
+    )
+    expect(result[0]).toBe(result[1])
+    expect(walked).toEqual(["/replay", "/replay/jobs"])
+  })
+
+  it.each(["admission", "cleanup", "watchdog"] as const)(
+    "shares the stop while %s is waiting for a disk read",
+    async (stage) => {
+      let reads = 0
+      await Effect.runPromise(Effect.gen(function*() {
+        const entered = yield* Deferred.make<void>()
+        const resume = yield* Deferred.make<void>()
+        const blockedRead = stage === "cleanup" ? 3 : 2
+        yield* Effect.scoped(Effect.gen(function*() {
+          const watch = yield* diskWatch("/replay", "/replay/jobs", () => Effect.void, "50 millis")
+          if (stage === "watchdog") yield* Deferred.await(entered)
+          const job = yield* Effect.forkChild(Effect.flip(watch.admit(Effect.void)))
+          yield* Deferred.await(entered)
+          const stopped = yield* Effect.flip(watch.ended)
+          yield* Deferred.succeed(resume, undefined)
+          expect(yield* Fiber.join(job)).toEqual(stopped)
+          yield* Effect.sleep("60 millis")
+        })).pipe(Effect.provideService(DiskSpace, {
+          space: () =>
+            Effect.gen(function*() {
+              const read = ++reads
+              if (read === blockedRead) {
+                yield* Deferred.succeed(entered, undefined)
+                yield* Deferred.await(resume)
+              }
+              return { total: gb(100), free: gb(read >= blockedRead ? 1 : 4) }
+            }),
+          held: () => Effect.succeed(0)
+        }))
+      }))
+    }
+  )
+
   it("lets every job start, and says no number, where the machine does not say what is free", async () => {
     const free = Effect.runSync(Ref.make<number | undefined>(undefined))
     const said: Array<string> = []
@@ -112,7 +169,7 @@ describe("a watch of the disk", () => {
         yield* watch.admit(Effect.void)
         return yield* watch.most
       }))
-    expect(most).toBe(0)
+    expect(most).toBe(gb(7))
   })
 
   it("holds a job while the disk is under the floor and another runs, and starts it when space comes back", async () => {
@@ -133,7 +190,8 @@ describe("a watch of the disk", () => {
       }))
     // Said once however long it waited.
     expect(said).toEqual([waitingLine(gb(4), gb(5))])
-    expect(most).toBe(gb(16))
+    // Another process can fill the disk. Only the replay directory's own allocation counts.
+    expect(most).toBe(gb(7))
   })
 
   it("removes what finished jobs left when none runs, and starts the job when that made room", async () => {
@@ -158,7 +216,7 @@ describe("a watch of the disk", () => {
         const ended = yield* Effect.flip(watch.ended)
         return { first, later, ended, stopped: yield* watch.stopped }
       }))
-    const failed = { code: "command-failed", message: line, part: "replay" }
+    const failed = { code: "command-failed", message: line.split(" (5 GB,")[0], part: "replay" }
     expect(outcome.first).toEqual(failed)
     expect(outcome.later).toEqual(failed)
     expect(outcome.ended).toEqual(failed)
@@ -199,7 +257,11 @@ describe("a watch of the disk", () => {
         return yield* Effect.flip(watch.ended)
       }))
     expect(ended).toEqual(
-      { code: "command-failed", message: stoppedLine("/replay", gb(2), gb(5), gb(7), gb(7)), part: "replay" }
+      {
+        code: "command-failed",
+        message: stoppedLine("/replay", gb(2), gb(5), gb(7), gb(7)).split(" (5 GB,")[0],
+        part: "replay"
+      }
     )
   })
 })
