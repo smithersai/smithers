@@ -207,10 +207,13 @@ describe("files", () => {
       (parseYaml(workflow) as { jobs: { ci: { steps: ReadonlyArray<Record<string, unknown>> } } }).jobs.ci.steps
     const runOf = (workflow: string) =>
       stepsOf(workflow).find((entry) => String(entry["run"]).includes("smthrs ci")) as { env: Record<string, string> }
-    // A pull request is given the read token or none; every other event the token that writes. Neither stands in
-    // for the other: an unset read token, which is the empty text, never lets a pull request go on to the next.
+    // A pull request, and a run for any branch but the default one, is given the read token or none; a run of another
+    // event for the default branch the token that writes. Neither stands in for the other: an unset read token, which
+    // is the empty text, never lets a pull request go on to the next.
     const token = "${{ github.event_name == 'pull_request' && secrets.SMITHERS_CACHE_READ_TOKEN || " +
-      "github.event_name != 'pull_request' && secrets.SMITHERS_CACHE_TOKEN || '' }}"
+      "github.ref_name != github.event.repository.default_branch && secrets.SMITHERS_CACHE_READ_TOKEN || " +
+      "github.event_name != 'pull_request' && github.ref_name == github.event.repository.default_branch && " +
+      "secrets.SMITHERS_CACHE_TOKEN || '' }}"
 
     // No URL given: the variable alone names the cache, and a run without it says so before the targets run.
     const plain = content(generate(document), workflowPath)

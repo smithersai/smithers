@@ -11,7 +11,7 @@ import type { Failure, GeneratedFile, GenerateOptions } from "../contract/Parts.
 import { reasonsSentence } from "../contract/Reasons.vibe"
 import { path as targetMapPath, type TargetMap } from "../contract/TargetMap.vibe"
 import { variantKey } from "./Expressions.vibe"
-import { keepValue, keepVariable, type KeptRun, keptRuns, keptSteps } from "./Kept.vibe"
+import { keepValue, keepVariable, keptNotes, type KeptRun, keptRuns, keptSteps } from "./Kept.vibe"
 import { type Leg, repositoryLabel, type StepPlan, type StepTarget, workflowPath } from "./Steps.vibe"
 import * as Yaml from "./Yaml.vibe"
 
@@ -592,17 +592,21 @@ export const machinesDirectory = "${{ runner.temp }}/smthrs-machines"
 
 // The shared cache's settings in a GitHub repository, as `docs/concepts/cache.md` names them: a variable for the URL
 // and secrets for the tokens. The URL given to `apply --cache` is used until the variable is set. A pull request
-// reads with the read token when the repository has one, so it reuses results and stores none. It is never given
-// the token that writes: a repository with no read token gives a pull request no token at all, where an unset
-// secret, which is the empty text, would otherwise let the expression go on to the next one. The two events
-// exclude each other, so neither token can stand in for the other.
+// reads with the read token when the repository has one, so it reuses results and stores none. So does a run for any
+// branch but the repository's default one: `on: [pull_request, push]` starts a `push` run for each push to a pull
+// request's branch in the same repository, and that run holds code nobody has reviewed. Neither is ever given the
+// token that writes: a repository with no read token gives them no token at all, where an unset secret, which is
+// the empty text, would otherwise let the expression go on to the next one. The two conditions exclude each other,
+// so neither token can stand in for the other.
 const cacheUrl = (cache: string | undefined): string =>
   cache === undefined
     ? "${{ vars.SMITHERS_CACHE_URL }}"
     : `\${{ vars.SMITHERS_CACHE_URL || '${cache.replaceAll("'", "''")}' }}`
 
 const cacheToken = "${{ github.event_name == 'pull_request' && secrets.SMITHERS_CACHE_READ_TOKEN || " +
-  "github.event_name != 'pull_request' && secrets.SMITHERS_CACHE_TOKEN || '' }}"
+  "github.ref_name != github.event.repository.default_branch && secrets.SMITHERS_CACHE_READ_TOKEN || " +
+  "github.event_name != 'pull_request' && github.ref_name == github.event.repository.default_branch && " +
+  "secrets.SMITHERS_CACHE_TOKEN || '' }}"
 
 /**
  * What a run prints when its repository names no shared cache.
@@ -799,7 +803,7 @@ const renderWorkflow = (
                   serial ? ["Targets that can write the same files run one at a time."] : []
                 ),
                 // Each step that sends a job's results out, as the repository wrote it, after the job's own steps.
-                ...results.flatMap((run) => keptSteps(run.step, run.place, run.index))
+                ...results.flatMap((run, order) => keptSteps(run.step, run.place, run.index, order))
               ])
             )
           ])
@@ -865,8 +869,10 @@ const renderNotes = (notes: ReadonlyArray<string>): string =>
  * A target declares its step's inputs and runs confined to them. A step that
  * names none declares the whole repository and is observed: it runs again
  * only when a file its last run read has changed. When the inputs make the
- * targets too large for the one file, every target is declared that way.
- * Fails when the targets still do not fit.
+ * targets too large for the one file, every target is declared that way, in
+ * the plan `wide` gives: a job that needed no machine because each of its
+ * steps was held to its inputs is no longer held to them, and has a machine
+ * of its own there. Fails when the targets still do not fit.
  *
  * @throws {never}
  * @category rendering
@@ -875,27 +881,39 @@ const renderNotes = (notes: ReadonlyArray<string>): string =>
 export const renderFiles = (
   inventory: Inventory,
   plan: StepPlan,
-  options?: GenerateOptions
+  options: GenerateOptions | undefined,
+  wide: () => Result.Result<StepPlan, Failure>
 ): Result.Result<ReadonlyArray<GeneratedFile>, Failure> => {
   const fits = (content: string): boolean => new TextEncoder().encode(content).length <= maximumPackageBytes
   const passed = options?.inheritEnv ?? []
   const narrowed = renderDeclaration(inventory, plan, true, passed)
-  const held = fits(narrowed)
-  const targets = held ? narrowed : renderDeclaration(inventory, plan, false, passed)
-  if (!fits(targets)) {
-    return Result.fail({
+  if (fits(narrowed)) return Result.succeed(filesOfPlan(inventory, plan, options, narrowed, true))
+  return Result.flatMap(wide(), (widened) => {
+    const targets = renderDeclaration(inventory, widened, false, passed)
+    return fits(targets) ? Result.succeed(filesOfPlan(inventory, widened, options, targets, false)) : Result.fail({
       code: "unsupported",
       message: `The generated targets exceed the ${maximumPackageBytes} bytes Smithers reads from ${workspacePath}.`,
       part: "generate"
     })
-  }
+  })
+}
+
+// The files of a plan whose targets are written as `targets`: held to their inputs or not, as `held` says.
+const filesOfPlan = (
+  inventory: Inventory,
+  plan: StepPlan,
+  options: GenerateOptions | undefined,
+  targets: string,
+  held: boolean
+): ReadonlyArray<GeneratedFile> => {
   const serial = collides(plan, held)
   // A job the inventory leaves out stays in the repository's own workflow: the notes say which, and why.
   const notes = [
     ...plan.notes,
+    ...keptNotes(inventory.jobs, plan),
     ...(options?.left ?? []).map((entry) => `${entry.job}: not in this workflow: ${reasonsSentence(entry.reasons)}`)
   ]
-  return Result.succeed([
+  return [
     {
       path: workflowPath,
       content: renderWorkflow(
@@ -915,5 +933,5 @@ export const renderFiles = (
     { path: targetMapPath, content: renderTargetMap(plan, serial), written: false },
     ...(plan.legs.length === 0 ? [] : [{ path: legsPath, content: renderLegs(plan.legs) }]),
     ...(notes.length === 0 ? [] : [{ path: notesPath, content: renderNotes(notes) }])
-  ])
+  ]
 }

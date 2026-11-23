@@ -58,11 +58,11 @@ const repository = (files: Readonly<Record<string, string>>): string => {
 }
 
 /**
- * A `smthrs` that refuses, as Smithers build does, a plan of the target `refused`: one that names it, and one of
- * every target (`//...`) while the generated workspace still holds it. It runs the real one otherwise. With
- * `everything`, it refuses every plan of every target.
+ * A `smthrs` that refuses, as Smithers build does, a plan that names the target `refused`, and runs the real one
+ * otherwise. With `together`, it refuses the first plan it is asked for, which is the plan of every target at once,
+ * whatever that names.
  */
-const refusing = (refused: string, everything = false): string => {
+const refusing = (refused: string, together = false): string => {
   const directory = mkdtempSync(join(tmpdir(), "apply-planned-smthrs-"))
   made.push(directory)
   const command = join(directory, "smthrs")
@@ -72,9 +72,7 @@ const refusing = (refused: string, everything = false): string => {
     [
       "#!/bin/sh",
       `case " $* " in *"${refused}"*) ${refuse};; esac`,
-      `case " $* " in *" //... "*) ${
-        everything ? refuse : `grep -qs "${refused}" .smithers/WORKSPACE.smithers && { ${refuse}; }`
-      };; esac`,
+      ...(together ? [`[ -e "${directory}/asked" ] || { : > "${directory}/asked"; ${refuse}; }`] : []),
       `exec ${process.execPath} ${smthrs} "$@"`,
       ""
     ].join("\n")
@@ -295,19 +293,25 @@ describe("apply, when Smithers build refuses", { timeout: 600_000 }, () => {
     expect(readFileSync(join(root, ".smithers/WORKSPACE.smithers"), "utf8")).toContain("ci.yml-good")
   })
 
-  it("writes nothing, and names each job, when Smithers build refuses every one", async () => {
-    // A stray PACKAGE.ts of another tool: Smithers build loads every PACKAGE.ts of the workspace, and refuses this one.
+  it("writes nothing, and runs nothing of the repository, when it holds a build file of its own", async () => {
+    // A PACKAGE.ts anywhere in the tree is a module Smithers build loads to plan: its code would run on this
+    // machine, in no jail. The real program, as a person starts it, for apply and for its check.
+    const ran = join(temporary("apply-planned-ran"), "ran")
+    made.push(join(ran, ".."))
     const root = repository({
       ".github/workflows/ci.yml": workflow([["build", "true"], ["test", "true", "build"]]),
-      "tools/PACKAGE.ts": "throw new Error(\"not a Smithers package\")\n"
+      "tools/PACKAGE.ts": `import { writeFileSync } from "node:fs"\nwriteFileSync(${JSON.stringify(ran)}, "ran")\n`
     })
-    const outcome = await spawnWith(bin, ["apply"], root, {})
-    expect(outcome.code, outcome.stderr).toBe(exitCodes.unsupported)
-    expect(outcome.stderr).toMatch(
-      /ci\.yml:build +is refused by Smithers build: module_import_failed: .*not a Smithers package/
-    )
-    expect(outcome.stderr).toContain("ci.yml:test")
-    expect(existsSync(join(root, ".smithers"))).toBe(false)
-    expect(git(root, "status", "--porcelain")).toBe("")
+    for (const args of [["apply"], ["apply", "--check"]]) {
+      const outcome = await spawnWith(bin, args, root, {})
+      expect(outcome.code, outcome.stderr).toBe(exitCodes.unsupported)
+      expect(outcome.stderr).toContain(
+        "smithers-ci: generate: tools/PACKAGE.ts is a build file smithers-ci did not write, and Smithers build "
+          + "would run it on this machine to plan the generated files"
+      )
+      expect(existsSync(ran)).toBe(false)
+      expect(existsSync(join(root, ".smithers"))).toBe(false)
+      expect(git(root, "status", "--porcelain")).toBe("")
+    }
   })
 })

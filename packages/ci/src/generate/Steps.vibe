@@ -440,10 +440,15 @@ const inDependencyOrder = (jobs: ReadonlyArray<Job>): ReadonlyArray<Job> | undef
  * CI is `Inventory.ci`'s rule and no longer decided here. Fails when the
  * document contradicts itself or holds nothing to run.
  *
+ * With `narrowed` false no target will be held to its inputs (the targets
+ * were too large written that way, `Render.renderFiles`), so every job of a
+ * workflow has a machine of its own: nothing else keeps one job from the
+ * files another left in the checkout.
+ *
  * @category planning
  * @since 0.1.0
  */
-export const planSteps = (inventory: Ci): Result.Result<StepPlan, Failure> => {
+export const planSteps = (inventory: Ci, narrowed = true): Result.Result<StepPlan, Failure> => {
   const problem = validate(inventory)
   if (problem !== undefined) return Result.fail(problem)
   const choice = chooseToolchains(inventory)
@@ -618,7 +623,8 @@ export const planSteps = (inventory: Ci): Result.Result<StepPlan, Failure> => {
       const variantTools = choice.toolsOf(job, variant)
       // A GitHub job starts on a runner of its own, so its targets run on a machine of their own.
       // A job with a step that sends its results out runs on a machine, whose checkout the build keeps for that step.
-      const machine = job.source === "github-actions" && (!heldThroughout(job) || (job.kept ?? []).length > 0)
+      const machine =
+        job.source === "github-actions" && (!narrowed || !heldThroughout(job) || (job.kept ?? []).length > 0)
         ? machineOf(job, variant)
         : undefined
       // Two jobs never share a `/tmp`. On Linux each machine has its own, by a mount. A macOS runner has no such

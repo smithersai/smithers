@@ -79,19 +79,29 @@ describe("a job that ends with steps that send its results out", () => {
     const steps = generated.jobs.ci.steps
     const last = steps.findIndex((step) => String(step["run"] ?? "").includes("smthrs ci"))
     const after = steps.slice(last + 1)
+    // A kept step runs on its job's machine, once the step before it has put the job's files there, and then as
+    // the repository's own condition says.
+    const restored = (condition: string): unknown =>
+      expect.stringMatching(
+        new RegExp(
+          `^\\$\\{\\{ matrix\\.os == '${here}' && steps\\.smthrs_files_\\d+\\.outcome == 'success' && \\(${
+            condition.replace(/[()]/g, "\\$&")
+          }\\) \\}\\}$`
+        )
+      )
     expect(after.filter((step) => step["uses"] === "codecov/codecov-action@v5")).toEqual([
       expect.objectContaining({
-        if: `\${{ matrix.os == '${here}' && (success()) }}`,
+        if: restored("success()"),
         with: { name: "one", files: "coverage-one.txt", token: "${{ secrets.CODECOV_TOKEN }}" }
       }),
       expect.objectContaining({
-        if: `\${{ matrix.os == '${here}' && (success()) }}`,
+        if: restored("success()"),
         with: { name: "two", files: "coverage-two.txt", token: "${{ secrets.CODECOV_TOKEN }}" }
       })
     ])
     expect(after.filter((step) => step["uses"] === "actions/upload-artifact@v4").map((step) => step["if"])).toEqual([
-      `\${{ matrix.os == '${here}' && (always()) }}`,
-      `\${{ matrix.os == '${here}' && (always()) }}`
+      restored("always()"),
+      restored("always()")
     ])
     // Each kept step follows the step that puts its job's checkout in the workspace.
     expect(after.filter((step) => String(step["name"]).startsWith("Files of ci.yml:main"))).toHaveLength(4)

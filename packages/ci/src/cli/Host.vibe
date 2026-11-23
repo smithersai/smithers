@@ -25,7 +25,8 @@ import type { Failure } from "../contract/Parts.vibe"
 import { environment as documented, name } from "../contract/Command.vibe"
 import { Options, Progress, WorkDirectory } from "../replay/index.vibe"
 import { Ledger, Repository, Score } from "../select/index.vibe"
-import { nodeProgram, smthrsCommand, smthrsWithToken } from "./Install.ts"
+import { shown } from "./Cli.vibe"
+import { checkoutOf, nodeProgram, smthrsCommand, smthrsWithToken } from "./Install.ts"
 import { machine, runtime } from "./Restart.ts"
 import { nothingTold, stageOf, type Told } from "./Stage.vibe"
 
@@ -146,7 +147,8 @@ export const replayProgress = (told: Ref.Ref<Told>) =>
       say: effect (line: string) => {
         const stage = stageOf(line)
         if (stage !== undefined) try Ref.update(told, (was) => ({ ...was, stage }))
-        try Console.error(`${name}: ${line}`)
+        // A line names jobs, whose ids a repository's workflow chooses.
+        try Console.error(shown(`${name}: ${line}`))
       }
     }),
     Layer.succeed(WorkDirectory, {
@@ -157,13 +159,24 @@ export const replayProgress = (told: Ref.Ref<Told>) =>
 /**
  * Every service the program and its parts may ask for, with the judge read
  * from `environment`. `told` is where a replay's stage and directory are
- * kept for whoever runs the program.
+ * kept for whoever runs the program. `directory` is where the program was
+ * started: no file of the checkout that holds it is the Node that runs
+ * `smthrs`.
  *
  * @category layers
  * @since 0.1.0
  */
-export const layer = (environment: Environment, told: Ref.Ref<Told> = Ref.makeUnsafe(nothingTold)) => {
-  const runtime = nodeProgram(environment["PATH"])
+export const layer = (
+  environment: Environment,
+  told: Ref.Ref<Told> = Ref.makeUnsafe(nothingTold),
+  directory: string | undefined = undefined
+) => {
+  const runtime = nodeProgram(
+    environment["PATH"],
+    undefined,
+    undefined,
+    directory === undefined ? undefined : checkoutOf(directory)
+  )
   return Layer.provideMerge(
     Layer.mergeAll(
       Ledger.layerMemory(),

@@ -13,6 +13,13 @@
  * `.smithers/WORKSPACE.ts` as the workspace, and refuses a repository that
  * declares either twice.
  *
+ * It reads more than the root: every `PACKAGE.ts` and `PACKAGE.vibe` of the
+ * tree is a package to it, and it loads each as a module, so the code in one
+ * runs on the machine that plans. `apply` asks Smithers build for a plan
+ * before it writes, on the person's own machine and in no jail, so a build
+ * file of the repository's own anywhere in the tree stops the plan before
+ * Smithers build is started (`declares`).
+ *
  * @since 0.1.0
  */
 
@@ -72,3 +79,57 @@ export const besideRefusal = (paths: ReadonlyArray<string>): string =>
   } not written by smithers-ci and Smithers build would read ${
     paths.length === 1 ? "it" : "them"
   } beside the generated files`
+
+/**
+ * The names of the files Smithers build reads as the declaration of a
+ * workspace, of a package or of a factory, in whatever directory they are.
+ * One it loads is a module whose code runs as it is read, and one it does not
+ * load it refuses the tree for.
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const declarationNames: ReadonlyArray<string> = [
+  "PACKAGE.ts",
+  "PACKAGE.vibe",
+  "PACKAGE.smithers",
+  "BUILD.ts",
+  "FACTORY.ts",
+  "WORKSPACE.ts",
+  "WORKSPACE.vibe",
+  "WORKSPACE.smithers"
+]
+
+/**
+ * True for a repository-relative path whose file is named as a declaration
+ * Smithers build reads ({@link declarationNames}), in any directory. The name
+ * is compared as it is written, as Smithers build compares it: `build.ts` is
+ * an ordinary file.
+ *
+ * @category accessors
+ * @since 0.1.0
+ */
+export const declares = (path: string): boolean => declarationNames.includes(path.slice(path.lastIndexOf("/") + 1))
+
+/** How many build files a refusal names before it counts the rest. */
+const named = 5
+
+/**
+ * Why Smithers build is not asked to plan the generated files: `paths` are
+ * build files the repository's owner wrote, and planning would run them on
+ * this machine. The first five are named.
+ *
+ * @category accessors
+ * @since 0.1.0
+ */
+export const declaredRefusal = (paths: ReadonlyArray<string>): string => {
+  const rest = paths.length - named
+  const list = `${paths.slice(0, named).join(", ")}${rest > 0 ? ` and ${rest} more` : ""}`
+  return `${list} ${
+    paths.length === 1 ? "is a build file" : "are build files"
+  } smithers-ci did not write, and Smithers build would run ${
+    paths.length === 1 ? "it" : "them"
+  } on this machine to plan the generated files: nothing of the repository is run to write its files, so remove ${
+    paths.length === 1 ? "it" : "them"
+  } to have apply write its files`
+}

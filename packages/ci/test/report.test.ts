@@ -879,8 +879,8 @@ describe("failed steps", () => {
     expect(html(withFix)).toContain("<br>Install docker, then run smithers-ci again.")
   })
 
-  it("lists a step once when the baseline and a mode took its reason from different lines of its output", () => {
-    // A step that writes no error output: the baseline reports the last line it printed, and a mode the first.
+  it("lists a step once for each reason it failed with, also when the exit code is the same", () => {
+    // Two ways that give another reason for one exit code are told apart: the difference is what a reader looks for.
     const quiet = { step: "build: test", exitCode: 6, command: "sh test.sh" }
     const silent = { step: "build: wait" }
     const twoLines: ReplayReport = {
@@ -900,14 +900,14 @@ describe("failed steps", () => {
       }]
     }
     const lines = text(twoLines).split("\n")
-    expect(lines.slice(lines.indexOf("failed steps"), lines.indexOf("failed steps") + 4)).toEqual([
+    expect(lines.slice(lines.indexOf("failed steps"), lines.indexOf("failed steps") + 5)).toEqual([
       "failed steps",
-      "ccccccc  baseline, normal  build: test  exit 6: two failed",
-      // With no exit code, another reason is another failure.
+      "ccccccc  baseline  build: test  exit 6: two failed",
       "ccccccc  baseline  build: wait  it made no progress for 10 minutes",
+      "ccccccc  normal  build: test  exit 6: one",
       "ccccccc  normal  build: wait  could not start: no such directory"
     ])
-    expect(html(twoLines).match(/build: test/g)).toHaveLength(1)
+    expect(html(twoLines).match(/build: test/g)).toHaveLength(2)
   })
 
   it("prints no speedup when normal mode gave another result than the CI, and says what to do", () => {

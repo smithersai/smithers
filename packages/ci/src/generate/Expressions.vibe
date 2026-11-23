@@ -68,14 +68,18 @@ const substitute = (
   text: string,
   resolve: (context: string, name: string) => string | undefined
 ): string | undefined => {
+  // Nothing after the last `}}` holds an expression. Left in, each `${{` there would be read to the end of the text
+  // for a `}}` that is not there: 320 KB of `${{ ` took six seconds.
+  const end = text.lastIndexOf("}}") + 2
+  if (end < 2) return text
   let complete = true
-  const result = text.replace(expression, (_match, inner: string) => {
+  const result = text.slice(0, end).replace(expression, (_match, inner: string) => {
     const dot = inner.indexOf(".")
     const value = reference.test(inner) ? resolve(inner.slice(0, dot), inner.slice(dot + 1)) : undefined
     if (value === undefined) complete = false
     return value ?? ""
   })
-  return complete ? result : undefined
+  return complete ? result + text.slice(end) : undefined
 }
 
 /**

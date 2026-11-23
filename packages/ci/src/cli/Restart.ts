@@ -15,11 +15,13 @@
  * it. Nothing is written to a file.
  *
  * The pipe's path reaches the new start in a variable, and anybody can set a
- * variable. So the new start believes it only when the process holds nothing
- * to withhold, which is what a start this program made looks like, and reads
- * only a pipe of its own making: one named as `hand` names it, in a directory
- * that is this user's and nobody else's to enter. Any other value is ignored,
- * its path is left alone, and the program starts again as if it were not set.
+ * variable. So the new start reads only a pipe of its own making: one named
+ * as `hand` names it, in a directory that is this user's and nobody else's to
+ * enter. A path named as `hand` names one marks a new start whatever is found
+ * there, and a new start never starts again: a system that adds a variable of
+ * its own to every process, as macOS does, would otherwise have each start
+ * begin another without end. Any other value is ignored, its path is left
+ * alone, and the program starts again as if it were not set.
  *
  * This file is TypeScript because the executable loads it before
  * `vibelang/register`: nothing is compiled while the process still holds the
@@ -115,6 +117,17 @@ export const runtime: ReadonlyArray<string> = [
 export const caches: ReadonlyArray<string> = ["NODE_COMPILE_CACHE", "VIBELANG_CACHE_DIR", "ZIG_GLOBAL_CACHE_DIR"]
 
 /**
+ * The variables a system gives every process it starts, whatever environment
+ * the start was given: macOS adds the user's text encoding. A new start holds
+ * them without having been handed them, so they are kept. None holds a
+ * credential.
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const system: ReadonlyArray<string> = ["__CF_USER_TEXT_ENCODING"]
+
+/**
  * The variable that tells a new start where the withheld variables wait. Its
  * value is the path of a pipe, never a variable's value.
  *
@@ -136,7 +149,7 @@ export const split = (
   environment: Environment,
   platform: string
 ): { readonly short: Record<string, string>; readonly withheld: Record<string, string> } => {
-  const names = new Set([...machine, ...runtime, ...caches])
+  const names = new Set([...machine, ...runtime, ...caches, ...system])
   const short: Record<string, string> = {}
   // An environment can contain any name, including an own "__proto__" entry.
   const withheld: Record<string, string> = Object.create(null)
@@ -243,10 +256,14 @@ const discard = (pipe: string): void => {
   rmdirSync(gone)
 }
 
+/** True for a path named as `hand` names a pipe, whatever is there. */
+const named = (pipe: string): boolean =>
+  basename(pipe) === pipeName && basename(dirname(pipe)).startsWith(directoryPrefix)
+
 /** True for a pipe `hand` made: named as it names one, this user's, in a directory only this user can enter. */
 const ours = (pipe: string): boolean => {
   const directory = dirname(pipe)
-  if (basename(pipe) !== pipeName || !basename(directory).startsWith(directoryPrefix)) return false
+  if (!named(pipe)) return false
   const user = userInfo().uid
   const above = lstatSync(directory)
   const at = lstatSync(pipe)
@@ -258,17 +275,39 @@ const ours = (pipe: string): boolean => {
 const idle = new Int32Array(new SharedArrayBuffer(4))
 
 /**
- * Everything the writer at `pipe` writes, or `undefined` when no writer came, or one stopped writing, for
- * `patience` milliseconds. The pipe is opened without waiting: a pipe nobody writes to would otherwise hold the
- * program at its first line for good.
+ * How much a hand-over may hold and how long reading it may take.
+ *
+ * `bytes` is the most the writer may write, 8 MiB when it is not given: more than any environment a system starts
+ * a process with (Linux gives arguments and environment 2 MiB together, macOS 1 MiB), written as JSON. `within` is
+ * the milliseconds from opening the pipe to its end, half a minute when it is not given, however steadily the writer
+ * writes.
+ *
+ * @category models
+ * @since 0.1.0
  */
-const drained = (pipe: string, patience: number): string | undefined => {
+export interface Bounds {
+  readonly bytes?: number | undefined
+  readonly within?: number | undefined
+}
+
+/**
+ * Everything the writer at `pipe` writes, or `undefined` when no writer came, or one stopped writing, for
+ * `patience` milliseconds, when it wrote more than `bounds.bytes`, or when it had not ended `bounds.within`
+ * milliseconds after the pipe was opened. The pipe is opened without waiting: a pipe nobody writes to would
+ * otherwise hold the program at its first line for good. A writer that never stops is held to the two bounds: one
+ * that wrote a little every few seconds would otherwise keep the program reading, and keeping what it read, for good.
+ */
+const drained = (pipe: string, patience: number, bounds: Bounds): string | undefined => {
   const descriptor = openSync(pipe, constants.O_RDONLY | constants.O_NONBLOCK)
   try {
     const chunks: Array<Buffer> = []
     const buffer = Buffer.alloc(65_536)
+    const most = bounds.bytes ?? 8 * 1024 * 1024
+    const end = Date.now() + (bounds.within ?? 30_000)
+    let held = 0
     let until = Date.now() + patience
     while (true) {
+      if (Date.now() >= end) return undefined
       // A read that would wait fails: the writer has the pipe open and has written nothing yet.
       let count = -1
       try {
@@ -277,6 +316,8 @@ const drained = (pipe: string, patience: number): string | undefined => {
         count = -1
       }
       if (count > 0) {
+        held += count
+        if (held > most) return undefined
         chunks.push(Buffer.from(buffer.subarray(0, count)))
         // A writer that is writing is waited for: the time runs from what it wrote last.
         until = Date.now() + patience
@@ -303,16 +344,21 @@ const variablesOf = (text: string): Readonly<Record<string, string>> | undefined
  * Reads the variables waiting at `pipe` and removes it, or gives `undefined`
  * when nothing can be read there: the path is no pipe of this program's
  * making, which is then left as it is, no writer came within `patience`
- * milliseconds, or what it wrote is not the variables.
+ * milliseconds, what it wrote is not the variables, or it wrote past
+ * `bounds`.
  *
  * @throws {never}
  * @category handing over
  * @since 0.1.0
  */
-export const received = (pipe: string, patience = 10_000): Readonly<Record<string, string>> | undefined => {
+export const received = (
+  pipe: string,
+  patience = 10_000,
+  bounds: Bounds = {}
+): Readonly<Record<string, string>> | undefined => {
   try {
     if (!ours(pipe)) return undefined
-    const text = drained(pipe, patience)
+    const text = drained(pipe, patience, bounds)
     discard(pipe)
     return text === undefined ? undefined : variablesOf(text)
   } catch {
@@ -391,12 +437,19 @@ export interface Program {
  * inherits them, and `say` is given `notHidden`: what the process was started
  * with stays readable.
  *
- * The pipe's variable is believed only in a process with nothing to
- * withhold. One that holds a variable to withhold was not started by this
- * program, whatever the variable says: it starts again as any other, and the
- * path the variable names is neither read nor removed. A new start that finds
- * nothing at its pipe says `notHandedOver` and runs with the short
- * environment alone.
+ * A process whose pipe variable names a path as `hand` names one is a new
+ * start, and never starts again, whatever else it holds. It reads the pipe
+ * when the pipe is of this program's making. A variable it still holds that
+ * the program withholds, one the system added to the start or one the pipe's
+ * variable was set beside, is removed from the process's environment. When it
+ * finds nothing at its pipe it says `notHandedOver` and runs with the short
+ * environment alone, and says `notHidden` too when it held a variable to
+ * withhold.
+ *
+ * A pipe variable that names any other path is not this program's: with
+ * nothing to withhold the program says `notHandedOver`, and with a variable
+ * to withhold it starts again as if the variable were not set. The path is
+ * neither read nor removed.
  *
  * @throws {never}
  * @category running
@@ -412,12 +465,15 @@ export const own = async (
   if (pipe !== undefined) delete program.env[handed]
   const whole = { ...program.env }
   const { short, withheld } = split(program.env, program.platform)
-  if (Object.keys(withheld).length === 0) {
-    if (pipe === undefined) return whole
+  const leftover = Object.keys(withheld)
+  if (pipe !== undefined && (leftover.length === 0 || named(pipe))) {
     const rest = received(pipe)
     if (rest === undefined) say(notHandedOver)
+    if (rest === undefined && leftover.length > 0) say(notHidden)
+    for (const name of leftover) delete program.env[name]
     return { ...whole, ...rest }
   }
+  if (leftover.length === 0) return whole
   if (program.platform !== "win32") {
     let handedOver = false
     if (program.execve !== undefined) {
@@ -440,6 +496,6 @@ export const own = async (
     }
     if (!handedOver) say(notHidden)
   }
-  for (const name of Object.keys(withheld)) delete program.env[name]
+  for (const name of leftover) delete program.env[name]
   return whole
 }

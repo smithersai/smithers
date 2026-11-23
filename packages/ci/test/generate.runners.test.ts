@@ -172,7 +172,11 @@ describe("an expression written over several lines", () => {
 
 describe("the cache's token in the workflow", () => {
   /** GitHub's value for the token's expression: `&&` and `||` give one of their operands, an unset secret is empty. */
-  const tokenFor = (event: string, secrets: { readonly read?: string; readonly write?: string }): string => {
+  const tokenFor = (
+    event: string,
+    secrets: { readonly read?: string; readonly write?: string },
+    branch: "default" | "other" = "default"
+  ): string => {
     const workflow = parseYaml(content(generate([job("a", "ubuntu-latest")]), workflowPath)) as {
       readonly jobs: { readonly ci: { readonly steps: ReadonlyArray<{ readonly env?: Record<string, string> }> } }
     }
@@ -181,6 +185,9 @@ describe("the cache's token in the workflow", () => {
     const value = (term: string): string | boolean => {
       const compared = /^github\.event_name (==|!=) '([^']*)'$/.exec(term)
       if (compared !== null) return (event === compared[2]) === (compared[1] === "==")
+      const onBranch = /^github\.ref_name (==|!=) github\.event\.repository\.default_branch$/.exec(term)
+      // A pull request's ref is its merge commit's, never the default branch.
+      if (onBranch !== null) return (event !== "pull_request" && branch === "default") === (onBranch[1] === "==")
       if (term === "secrets.SMITHERS_CACHE_READ_TOKEN") return secrets.read ?? ""
       if (term === "secrets.SMITHERS_CACHE_TOKEN") return secrets.write ?? ""
       expect(term).toBe("''")
@@ -201,10 +208,19 @@ describe("the cache's token in the workflow", () => {
     expect(tokenFor("pull_request", {})).toBe("")
   })
 
-  it("is the token that writes for every other event, and never the read token", () => {
-    for (const event of ["push", "merge_group", "workflow_dispatch"]) {
+  it("is the token that writes for every other event on the default branch, and never the read token", () => {
+    for (const event of ["push", "schedule", "workflow_dispatch"]) {
       expect(tokenFor(event, { read: "r", write: "w" })).toBe("w")
       expect(tokenFor(event, { read: "r" })).toBe("")
+    }
+  })
+
+  it("is the read token for a run of any other branch, and never the token that writes", () => {
+    // A push to a pull request's branch in the same repository runs code nobody has reviewed.
+    for (const event of ["push", "merge_group", "workflow_dispatch"]) {
+      expect(tokenFor(event, { read: "r", write: "w" }, "other")).toBe("r")
+      expect(tokenFor(event, { write: "w" }, "other")).toBe("")
+      expect(tokenFor(event, {}, "other")).toBe("")
     }
   })
 })

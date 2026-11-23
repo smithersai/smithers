@@ -531,7 +531,7 @@ describe("the speedup, on any report", () => {
       const claimed = linesOf(written).some((line) => headline.test(line)) || page.includes("class=\"hero\"") ||
         page.includes("class=\"bars\"")
       if (!none) return true
-      if (report.commits.length === 0) return !claimed && written.endsWith("0 commits")
+      if (report.commits.length === 0) return !claimed && linesOf(written).includes("0 commits")
       const why = Format.normalDiffers(report) ? Format.noSpeedupMismatch : Format.noSpeedup
       return !claimed && linesOf(written).includes(why) && page.includes(`<p class="alert" role="alert">${why}</p>`) &&
         Format.speedupCommits(report) === 0 && (!Format.normalDiffers(report) || Format.modelCost(report) === undefined)
@@ -806,7 +806,7 @@ describe("Format", () => {
         const ways = [["baseline", entry.baseline], ["normal", entry.normal], ["fast", entry.fast]] as const
         const keyOf = (
           failed: { readonly step: string; readonly exitCode?: number; readonly reason: string }
-        ): string => `${failed.step}\n${typeof failed.exitCode}\n${failed.exitCode ?? failed.reason}`
+        ): string => `${failed.step}\n${typeof failed.exitCode}\n${failed.exitCode}\n${failed.reason}`
         return new Set(steps.map((found) => keyOf(found.failure))).size === steps.length &&
           steps.every((found) => found.ways.length > 0 && new Set(found.ways).size === found.ways.length) &&
           ways.every(([way, run]) =>

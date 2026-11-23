@@ -5,9 +5,9 @@
  * @since 0.1.0
  */
 
-import { accessSync, constants, realpathSync, statSync } from "node:fs"
+import { accessSync, constants, existsSync, realpathSync, statSync } from "node:fs"
 import { createRequire } from "node:module"
-import { delimiter, dirname, isAbsolute, join } from "node:path"
+import { delimiter, dirname, isAbsolute, join, sep } from "node:path"
 
 /**
  * Finds a module's file from this package, as `require.resolve` does.
@@ -27,12 +27,43 @@ const directoryOf = (name: string, resolve: Resolve): string | undefined => {
   }
 }
 
-// True for a file this user may run that is not `self`. A file that cannot be run is no program: it would hide a
-// Node later on the path.
-const isProgram = (path: string, self: string): boolean => {
+/** A path's real location, or the path as given when it has none to resolve. */
+const realOf = (path: string): string => {
+  try {
+    return realpathSync(path)
+  } catch {
+    return path
+  }
+}
+
+/**
+ * The top directory of the checkout that holds `directory`: the nearest
+ * directory at or above it that holds a `.git`, or `directory` itself when
+ * none does.
+ *
+ * @throws {never}
+ * @category accessors
+ * @since 0.1.0
+ */
+export const checkoutOf = (directory: string): string => {
+  let at = directory
+  while (!existsSync(join(at, ".git"))) {
+    const above = dirname(at)
+    if (above === at) return directory
+    at = above
+  }
+  return at
+}
+
+// True for a file this user may run that is not `self` and whose real location is not inside `checkout`. A file that
+// cannot be run is no program: it would hide a Node later on the path. A file of a stranger's checkout is no Node of
+// this machine's, whatever directory of the path names it or links to it.
+const isProgram = (path: string, self: string, checkout: string | undefined): boolean => {
   try {
     accessSync(path, constants.X_OK)
-    return statSync(path).isFile() && realpathSync(path) !== self
+    const real = realpathSync(path)
+    const inside = checkout !== undefined && real.startsWith(realOf(checkout) + sep)
+    return statSync(path).isFile() && real !== self && !inside
   } catch {
     return false
   }
@@ -46,6 +77,9 @@ const isProgram = (path: string, self: string): boolean => {
  * An empty entry of the path means the working directory, which is a
  * stranger's checkout: it is skipped, so a `node` file of the repository is
  * never the program that runs `smthrs`. So is an entry that is not absolute.
+ * So is a `node` whose real location is inside `checkout`, the stranger's
+ * checkout the program runs in, when the path names a directory of it by its
+ * whole name or a link leads into it.
  *
  * @throws {never}
  * @category accessors
@@ -54,7 +88,8 @@ const isProgram = (path: string, self: string): boolean => {
 export const nodeProgram = (
   path: string | undefined,
   versions: Readonly<Record<string, string | undefined>> = process.versions,
-  self: string = process.execPath
+  self: string = process.execPath,
+  checkout: string | undefined = undefined
 ): string | undefined => {
   if (versions["bun"] === undefined) return self
   const bun = realpathSync(self)
@@ -62,7 +97,7 @@ export const nodeProgram = (
     .split(delimiter)
     .filter((directory) => isAbsolute(directory))
     .map((directory) => join(directory, "node"))
-    .find((node) => isProgram(node, bun))
+    .find((node) => isProgram(node, bun, checkout))
 }
 
 /**

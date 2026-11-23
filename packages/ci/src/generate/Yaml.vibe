@@ -247,7 +247,9 @@ const scalarLines = (head: string, value: string, indent: number): ReadonlyArray
 // A comment's lines at `indent`, wrapped at spaces to the width.
 const commentLines = (text: string, indent: number): ReadonlyArray<string> => {
   const pad = " ".repeat(indent)
-  const words = text.split(/\s+/).filter((word) => word !== "")
+  // A control character is a space here: a parser that ends a line at U+0085, U+2028 or U+2029 would read the rest
+  // of the comment as content.
+  const words = text.replace(/[\p{Cc}\u2028\u2029]/gu, " ").split(/\s+/).filter((word) => word !== "")
   if (words.length === 0) return [`${pad}#`]
   return fold(words.join(" "), width - indent - 2).map((line) => `${pad}# ${line}`)
 }

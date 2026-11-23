@@ -149,10 +149,27 @@ effect function render(renderer: RenderReport, report: ReplayReport) {
   })
 }
 
-const isHttpUrl = (value: string): boolean => URL.canParse(value) && /^https?:\/\//i.test(value)
+/**
+ * A `--cache` value as a URL parser reads it, or `undefined` when it is no http or https URL. It is parsed once, by
+ * the parser everything that later reads the value uses, so what is checked here is what is read there. A value with
+ * a space or a control character is none: a parser drops a tab or a line end from a URL, and the generated workflow
+ * holds the value as it was typed, where a line end would break the line it is written on.
+ *
+ * @category accessors
+ * @since 0.1.0
+ */
+export const cacheUrlOf = (value: string): URL | undefined => {
+  // Written with both slashes: a parser reads `https:/host` and `https:host` as the same URL, and no workflow should.
+  if (/[\s\p{Cc}]/u.test(value) || !/^https?:\/\//i.test(value) || !URL.canParse(value)) return undefined
+  // Its scheme is http or https: the test above reads the scheme as the parser does.
+  return new URL(value)
+}
 
-/** A URL's user name and password sit before the last `@` of its host part. */
-const hasCredential = (value: string): boolean => /^[a-z][a-z0-9+.-]*:\/\/[^/?#]*@/i.test(value)
+/** True for a `--cache` URL that names a user or a password, however its slashes are written. */
+const hasCredential = (value: string): boolean => {
+  const url = cacheUrlOf(value)
+  return url !== undefined && (url.username !== "" || url.password !== "")
+}
 
 /**
  * A usage error repeats the value it refuses, and a URL's user name and
@@ -163,8 +180,11 @@ const hasCredential = (value: string): boolean => /^[a-z][a-z0-9+.-]*:\/\/[^/?#]
  */
 const withoutCredential = (text: string): string => text.replace(/(\b[a-z][a-z0-9+.-]*:\/*)[^\s"]*@/gi, "$1")
 
-/** Parser and selector errors both echo arguments and are presented on one line. */
-const usageMessage = (message: string): string => withoutCredential(message.replace(/\s+/g, " ").trim())
+/**
+ * Parser and selector errors both echo arguments and are presented on one line. They name jobs, whose ids a
+ * repository's workflow chooses, so the line is printed as `shown` gives it.
+ */
+const usageMessage = (message: string): string => withoutCredential(shown(message).replace(/\s+/g, " ").trim())
 
 const atLeastOne = (): string => "1 or more"
 
@@ -192,7 +212,7 @@ const jobs = Flag.Int("jobs").pipe(
 )
 
 const cache = Flag.String("cache").pipe(
-  Flag.filter(isHttpUrl, () => "an http or https URL"),
+  Flag.filter((value) => cacheUrlOf(value) !== undefined, () => "an http or https URL"),
   Flag.filter(
     (value) => !hasCredential(value),
     () => "a URL with no user name or password; the cache's token is read from SMITHERS_CACHE_TOKEN"
@@ -443,15 +463,31 @@ effect function checkPaths(files: ReadonlyArray<GeneratedFile>) {
   return files
 }
 
-/** Writes one file, creating its directory. A host error becomes a `cli` failure. */
-effect function write(path: string, content: string) {
+/**
+ * Writes one file, creating its directory. A host error becomes a `cli` failure.
+ *
+ * The content is written to a new file beside the path, which then takes the path's place in one step. A file
+ * already there is never opened for writing: one that shares its content with a file elsewhere, as every file of a
+ * checkout copied with hard links does, would otherwise change in both places. With `within`, the directory the
+ * file goes into must really be that one: a directory that became a link since the paths were checked is refused.
+ */
+effect function write(path: string, content: string, within?: string) {
   const fs = try FileSystem.FileSystem
   const paths = try Path.Path
+  const directory = paths.dirname(path)
+  const staged = paths.join(directory, `.${paths.basename(path)}.${(try Random.nextInt).toString(36)}.smithers-ci`)
   const written = effect {
-    try fs.makeDirectory(paths.dirname(path), { recursive: true })
-    try fs.writeFileString(path, content)
+    try fs.makeDirectory(directory, { recursive: true })
+    const real = try fs.realPath(directory)
+    if (within !== undefined && real !== within) {
+      throw failed(`${directory} is now ${real}, and no generated file is written through a link`)
+    }
+    // A new file, never one that is there: `wx` fails for a name that exists, a link included.
+    try fs.writeFileString(staged, content, { flag: "wx" })
+    try fs.rename(staged, path)
   }
   written catch effect (error) => {
+    try ignore(fs.remove(staged, { force: true }))
     throw failed(`could not write ${path}: ${error.message}`)
   }
 }
@@ -543,6 +579,47 @@ function commandOf<R>(root: string, directory: string, parts: Parts<R>, status: 
     }
 
   /**
+   * Where the `--out` file `file` really is. `link` is the first link in its path below the repository's top
+   * directory, when there is one: the page is not written through it, wherever it leads, because a link in a
+   * stranger's repository names a file of the person's. `written` is the path from the repository's top directory
+   * when the file's real location is inside the repository and nothing refuses the write.
+   */
+  effect function placeOfOut(file: string) {
+    const fs = try FileSystem.FileSystem
+    const paths = try Path.Path
+    const below = insideOf(paths, paths.relative(root, file))
+    let link: string | undefined = undefined
+    if (below !== undefined) {
+      const segments = below.split(paths.sep)
+      for (const [index] of segments.entries()) {
+        const prefix = segments.slice(0, index + 1).join(paths.sep)
+        const leads = fs.readLink(paths.join(root, prefix)) catch () => undefined
+        if (leads !== undefined && link === undefined) link = prefix
+      }
+    }
+    // The real location: that of the nearest directory above the file that exists, and the names below it.
+    const realRoot = fs.realPath(root) catch () => root
+    let canonical = file
+    let at = file
+    const rest: Array<string> = []
+    for (const _ of file.split(paths.sep)) {
+      const real = fs.realPath(at) catch () => undefined
+      if (real !== undefined) {
+        canonical = paths.join(real, ...rest)
+        break
+      }
+      rest.unshift(paths.basename(at))
+      at = paths.dirname(at)
+    }
+    const written = link === undefined ? insideOf(paths, paths.relative(realRoot, canonical)) : undefined
+    return { link, written }
+  }
+
+  /** The failure for an `--out` file whose path holds the link `link`. */
+  const throughLink = (file: string, link: string): Failure =>
+    failed(`could not write ${file}: ${link} is a link, and the report is not written through a link in the repository`)
+
+  /**
    * Asks the model one small question when the replay will need it, so a model that cannot answer stops the
    * program before anything is copied or run.
    */
@@ -564,20 +641,33 @@ function commandOf<R>(root: string, directory: string, parts: Parts<R>, status: 
     read: Inventory,
     footer: (report: ReplayReport, written: string | undefined) => string
   ) {
+    const paths = try Path.Path
+    const target = Option.map(input.out, (out) => paths.resolve(directory, out))
+    // Refused before the replay, which can take hours, and again where the page is written.
+    if (Option.isSome(target)) {
+      const early = try placeOfOut(target.value)
+      if (early.link !== undefined) throw throughLink(target.value, early.link)
+    }
     try checkModel(input)
     if (read.unsupported?.some((entry) => entry.feature === uncommitted)) {
       try Console.error(`${Surface.name}: the working tree has changes that are not committed; a replay runs commits, so they are not replayed`)
     }
     const report = try parts.run(requestOf(root, input), replayParts)
     const document = try documentOf(ReplayReport, report, "replay")
-    const paths = try Path.Path
-    const target = Option.map(input.out, (out) => paths.resolve(directory, out))
-    // The page is written after the report is printed, so the footer says where it will be before it is there.
-    const written = Option.getOrUndefined(Option.map(target, (file) => insideOf(paths, paths.relative(root, file))))
+    // The page is written after the report is printed, so the footer says where it will be before it is there: its
+    // real location, whatever link the path the person gave goes through.
+    let place: { readonly link: string | undefined; readonly written: string | undefined } = {
+      link: undefined,
+      written: undefined
+    }
+    if (Option.isSome(target)) place = try placeOfOut(target.value)
+    const written = place.written
     // The report is printed first: a page that cannot be written, or rendered, then loses nothing of a replay that
     // took hours. The program still says so and fails.
     try Console.log(input.json ? document : `${try render(parts.text, report)}${footer(report, written)}`)
     if (Option.isSome(target)) {
+      // A link a step of the replay left in the path: the report is printed, and the page is not written.
+      if (place.link !== undefined) throw throughLink(target.value, place.link)
       try write(target.value, try render(parts.html, report))
       try Console.error(`${Surface.name}: wrote ${target.value}`)
     }
@@ -607,8 +697,11 @@ function commandOf<R>(root: string, directory: string, parts: Parts<R>, status: 
       return
     }
     const paths = try Path.Path
+    const fs = try FileSystem.FileSystem
+    const realRoot = fs.realPath(root) catch () => root
     for (const file of files) {
-      try write(paths.join(root, file.path), file.content)
+      // Each goes into the directory the check found for it, and takes the place of the file there in one step.
+      try write(paths.join(root, file.path), file.content, paths.join(realRoot, paths.dirname(file.path)))
       try Console.log(`wrote ${file.path}`)
     }
     // What an earlier smithers-ci wrote where the repository's own tools read it: its content is in the files above.
@@ -666,8 +759,10 @@ function commandOf<R>(root: string, directory: string, parts: Parts<R>, status: 
     }
     // A job that installs packages this machine already has is replayed, and `apply`, which writes the same files
     // on every machine, leaves it out. When that is every job, the replay still runs and `apply` has nothing to write.
-    const applies = refusal(read) === undefined
-    const installs = notReplayed(read).some((entry) => entry.reasons.some((reason) => reason.feature === changesMachine))
+    // `apply` writes a job on a Linux runner that leaves a program running (`generate`), so it is no reason here.
+    const applied = keepingPrograms(read, keptOnRunner)
+    const applies = refusal(applied) === undefined
+    const installs = notReplayed(applied).some((entry) => entry.reasons.some((reason) => reason.feature === changesMachine))
     const here = applies || !installs ? read : allowed(try replayParts.read(root), input.allowDocker)
     const { files } = try generate(here, input.cache, input.allowDocker)
     const wouldApply = applies

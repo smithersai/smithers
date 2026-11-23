@@ -122,9 +122,13 @@ def spaceWords : Str → Str → List Str
     if isSpace c then (if word.isEmpty then spaceWords [] rest else word.reverse :: spaceWords [] rest)
     else spaceWords (c :: word) rest
 
-/-- `commentLines`: a comment's lines at `indent`, wrapped at spaces to the width. -/
+/-- `[\p{Cc}\u2028\u2029]`: a control character, U+0085 among them, or a line or paragraph separator. -/
+def isControl (c : Nat) : Bool :=
+  decide (c < 32) || (decide (127 ≤ c) && decide (c ≤ 159)) || c == 0x2028 || c == 0x2029
+
+/-- `commentLines`: a comment's lines at `indent`, wrapped at spaces to the width. A control character is a space. -/
 def commentLines (text : Str) (indent : Nat) : List Str :=
-  let found := spaceWords [] text
+  let found := spaceWords [] (text.map (fun c => if isControl c then 32 else c))
   if found.isEmpty then [pad indent ++ [35]]
   else (fold (joinWith [32] found) (width - indent - 2)).map (pad indent ++ [35, 32] ++ ·)
 

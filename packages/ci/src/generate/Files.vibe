@@ -19,5 +19,5 @@ import { planSteps } from "./Steps.vibe"
  */
 export effect function files(inventory: Ci, options?: GenerateOptions): ReadonlyArray<GeneratedFile>!Failure {
   const plan = try fromResult(planSteps(inventory))
-  return try fromResult(renderFiles(inventory, plan, options))
+  return try fromResult(renderFiles(inventory, plan, options, () => planSteps(inventory, false)))
 }

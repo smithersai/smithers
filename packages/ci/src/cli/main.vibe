@@ -9,7 +9,7 @@ import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 import { exitCodes as codes, name } from "../contract/Command.vibe"
 import { recorderRefusal } from "../replay/Environment.ts"
 import { discard } from "../replay/index.vibe"
-import { cli, type Parts } from "./Cli.vibe"
+import { cli, type Parts, shown } from "./Cli.vibe"
 import { type Environment, type Host, layer } from "./Host.vibe"
 import { parts } from "./parts.vibe"
 import { deaf, exitCodes, idle, type Listen, type Signal, uncaught } from "./Signals.ts"
@@ -120,7 +120,7 @@ export async function run(
   }
   return await runPromise(effect {
     const told = try Ref.make<Told>(nothingTold)
-    provide layer(environment, told) {
+    provide layer(environment, told, directory) {
       const working = fork.detached program
       const first = try.race [
         map(Fiber.await(working), (exit) =>
@@ -138,7 +138,8 @@ export async function run(
         return first.code
       }
       const said = try Ref.get(told)
-      try Console.error(first._tag === "drained" ? unanswered(said) : broken(said, first.cause))
+      // An error can repeat a job's id or what a repository's program printed.
+      try Console.error(shown(first._tag === "drained" ? unanswered(said) : broken(said, first.cause)))
       try ended(working, told, listen)
       return stoppedCode
     }

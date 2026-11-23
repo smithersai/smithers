@@ -738,7 +738,9 @@ const yamlComments = [
   "x".repeat(100),
   "#",
   "é ü",
-  "\u00a0nbsp"
+  "\u00a0nbsp",
+  "nel\u0085next",
+  "a\u0000b\u2028c\u2029d\u007fe\u009ff"
 ] as const
 
 const scalarTree: Arbitrary.Arbitrary<Tree> = Arbitrary.map(

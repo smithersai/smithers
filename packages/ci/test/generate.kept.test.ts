@@ -55,11 +55,13 @@ describe("a kept step in the generated workflow", () => {
         with: { name: "${{ matrix.python }}", token: "${{ secrets.CODECOV_TOKEN }}" }
       },
       { job, variant: { python: "3.12" }, machine: "ci.yml:main 3.12", entry: "matrix.os == 'ubuntu-latest'" },
+      0,
       0
     ))
     expect(steps).toEqual([
       {
         name: "Files of ci.yml:main (python 3.12)",
+        id: "smthrs_files_0",
         if: "${{ matrix.os == 'ubuntu-latest' && (success()) }}",
         // A bash script on every runner, which reads the kept checkout's place from its environment.
         shell: "bash",
@@ -78,7 +80,8 @@ describe("a kept step in the generated workflow", () => {
       },
       {
         name: "codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5: ci.yml:main (python 3.12)",
-        if: "${{ matrix.os == 'ubuntu-latest' && (success()) }}",
+        // Only when the step before it put the job's files in the workspace.
+        if: "${{ matrix.os == 'ubuntu-latest' && steps.smthrs_files_0.outcome == 'success' && (success()) }}",
         uses: "codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5",
         with: { name: "3.12", token: "${{ secrets.CODECOV_TOKEN }}" }
       }
@@ -98,12 +101,13 @@ describe("a kept step in the generated workflow", () => {
         timeoutMinutes: "5"
       },
       { job, variant: { python: "3.12" }, machine: "m", entry: "matrix.leg == '2'" },
-      3
+      3,
+      0
     ))
     expect(step).toEqual({
       name: "Upload 3.12: ci.yml:main (python 3.12)",
       id: "up-3",
-      if: "${{ matrix.leg == '2' && (always() && '3.12' != 'it''s') }}",
+      if: "${{ matrix.leg == '2' && steps.smthrs_files_0.outcome == 'success' && (always() && '3.12' != 'it''s') }}",
       uses: "actions/upload-artifact@v4",
       with: { name: "cov-${{ format('{0}', '3.12') }}", path: "coverage.xml" },
       env: { WHO: "${{ '' }}x" },
@@ -116,11 +120,13 @@ describe("a kept step in the generated workflow", () => {
     const [, step] = read(keptSteps(
       { uses: "codecov/codecov-action@v5", if: "github.event_name == 'push'", continueOnError: "${{ matrix.x }}" },
       { job, variant: {}, machine: "m", entry: "matrix.os == 'ubuntu-latest'" },
-      1
+      1,
+      0
     ))
     expect(step).toEqual({
       name: "codecov/codecov-action@v5: ci.yml:main",
-      if: "${{ matrix.os == 'ubuntu-latest' && (github.event_name == 'push') }}",
+      if:
+        "${{ matrix.os == 'ubuntu-latest' && steps.smthrs_files_0.outcome == 'success' && (github.event_name == 'push') }}",
       uses: "codecov/codecov-action@v5",
       "continue-on-error": "${{ '' }}"
     })
@@ -131,6 +137,7 @@ describe("the step that puts a job's checkout in the workspace", () => {
   const [files] = read(keptSteps(
     { uses: "actions/upload-artifact@v4", if: "always()" },
     { job, variant: {}, machine: "m", entry: "matrix.os == 'ubuntu-latest'" },
+    0,
     0
   ))
   const restore = (kept: string, workspace: string) =>
@@ -186,9 +193,12 @@ describe("the step that puts a job's checkout in the workspace", () => {
     const [, step] = read(keptSteps(
       { uses: "codecov/codecov-action@v5", if: "always() && ${{ matrix.os == 'x' }} || ${{ failure() }}" },
       { job, variant: { os: "x" }, machine: "m", entry: "matrix.leg == '1'" },
+      0,
       0
     ))
-    expect(step?.["if"]).toBe("${{ matrix.leg == '1' && (always() && ('x' == 'x') || (failure())) }}")
+    expect(step?.["if"]).toBe(
+      "${{ matrix.leg == '1' && steps.smthrs_files_0.outcome == 'success' && (always() && ('x' == 'x') || (failure())) }}"
+    )
   })
 })
 

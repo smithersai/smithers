@@ -4,12 +4,25 @@
  *
  * It plans them in a copy of the repository at the commit `HEAD` names, made
  * with `git clone --shared`, that holds the generated files, with a home and
- * a cache of its own: nothing is written into the repository or the home. A job whose targets it refuses to plan, for
- * any reason, stays in the repository's own workflow and is named with
+ * a cache of its own: nothing is written into the repository or the home. A job whose targets it refuses to plan
+ * stays in the repository's own workflow and is named with
  * Smithers build's words, as every job left out is. So `apply` never writes a
  * job Smithers build will not run. When every target plans at once, no job is
  * planned alone; when they do not, each job is, to find the ones refused. A
  * refusal no job meets alone keeps every job in the repository's workflow.
+ *
+ * Smithers build runs here on the person's machine, in no jail, and it loads
+ * every build file of the tree it plans as a module. So the copy holds no
+ * build file but the generated ones before it is started: one the repository
+ * holds at `HEAD` and in the working tree stops the plan, and `apply` with it,
+ * and one the working tree no longer holds is removed from the copy
+ * (`Former.declares`). It is started with what a step gets of the machine and
+ * nothing else of the person's, and is given a time to answer in.
+ *
+ * A plan that fails for another reason than its targets, a full disk, a
+ * missing program, a plan that does not end, says nothing about a job. It
+ * fails `apply`, which then writes nothing: were the job left out for it, a
+ * fault of this machine would be written into the repository's CI.
  *
  * @since 0.1.0
  */
@@ -18,8 +31,11 @@ import { errorLine } from "../contract/Command.vibe"
 import type { NotReplayed } from "../contract/Inventory.vibe"
 import { type Failure, type GeneratedFile, writtenFiles } from "../contract/Parts.vibe"
 import { path as targetMapPath, TargetMap } from "../contract/TargetMap.vibe"
+import { inheritedEnvironmentNames } from "@smthrs/targets/Exec"
+import { ambientEnvironment } from "../replay/Environment.ts"
 import { exec, git } from "../replay/Process.vibe"
 import { check } from "./Check.vibe"
+import { declaredRefusal, declares } from "./Former.vibe"
 import { compiledCaches, Options } from "../replay/Replay.vibe"
 
 /**
@@ -96,6 +112,38 @@ export const refusalOf = (printed: string): string => {
   return messageIn(useful.join("\n")) ?? errorLine(useful.at(-1) ?? raw.at(-1) ?? "it printed nothing")
 }
 
+/**
+ * How long Smithers build may take over one plan of the generated files when
+ * nothing says otherwise: ten minutes. A plan reads declarations and runs no
+ * step, and ends in seconds.
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const planLimit: Duration.Input = "10 minutes"
+
+/**
+ * What a failed plan says when the failure is this machine's and no word
+ * about the targets: no room, no memory, no descriptor, no right to a file.
+ */
+const machineFault =
+  /\b(?:ENOSPC|EDQUOT|ENOMEM|EMFILE|ENFILE|EIO|EROFS|EACCES|EPERM|ETIMEDOUT)\b|no space left on device|out of memory|heap limit/i
+
+/**
+ * Smithers build's refusal of the targets it was asked to plan, in its own
+ * words, or `undefined` when what it printed is no such refusal: it printed
+ * no error of its own as JSON, as a program that could not start or was
+ * stopped does not, or its error is a fault of this machine.
+ *
+ * @category accessors
+ * @since 0.1.0
+ */
+export const refusedTargets = (printed: string): string | undefined => {
+  const useful = printed.replace(ansiControl, "").split("\n").filter((line) => !nodeWarning.test(line.trim()))
+  const message = messageIn(useful.join("\n"))
+  return message === undefined || machineFault.test(message) ? undefined : message
+}
+
 /** The labels of each job's targets, by job, in the order the target map names them. */
 const labelsByJob = (map: TargetMap): ReadonlyMap<string, ReadonlySet<string>> => {
   const jobs = new Map<string, Set<string>>()
@@ -110,13 +158,19 @@ const labelsByJob = (map: TargetMap): ReadonlyMap<string, ReadonlySet<string>> =
  * `apply` would remove from it. Nothing when it plans them all, or when the
  * files hold no target.
  *
+ * It fails `unsupported` when the copy holds a build file the generator did
+ * not write, before Smithers build is started, and `command-failed` when a
+ * plan does not end within `limit` or fails for a reason that is not its
+ * targets'.
+ *
  * @category checking
  * @since 0.1.0
  */
 export effect function refusals(
   smthrs: readonly [string, ...Array<string>],
   root: string,
-  files: ReadonlyArray<GeneratedFile>
+  files: ReadonlyArray<GeneratedFile>,
+  limit: Duration.Input = planLimit
 ) {
   const written = files.find((file) => file.path === targetMapPath)
   if (written === undefined) return []
@@ -139,9 +193,25 @@ export effect function refusals(
     const commit = (try git(root, ["rev-parse", "--verify", "HEAD"])).trim()
     try git(work, ["clone", "--quiet", "--shared", "--no-checkout", root, copy])
     try git(copy, ["checkout", "--quiet", "--detach", commit])
+    // Every build file of the commit, which Smithers build would read. One the working tree no longer holds, in
+    // any way, a link to nowhere included, goes from the copy: the plan is of the files the person has, and removing
+    // a build file is what a refusal below asks for.
+    const declared = (try git(copy, ["ls-files", "-z"])).split("\0").filter(declares)
+    const gone: Array<string> = []
+    for (const file of declared) {
+      const at = path.join(root, file)
+      const missing = fs.stat(at) catch (error) => error.reason._tag === "NotFound"
+      const link = fs.readLink(at) catch () => undefined
+      if (missing === true && link === undefined) gone.push(file)
+    }
+    if (gone.length > 0) try git(copy, ["rm", "--quiet", "-r", "--ignore-unmatch", "--", ...gone])
     // What an earlier smithers-ci wrote at this commit goes, as apply removes it.
     const former = (try check(copy, files)).former
     if (former.length > 0) try git(copy, ["rm", "--quiet", "-r", "--ignore-unmatch", "--", ...former])
+    // Smithers build loads every build file of the tree it plans, and nothing of the repository runs here.
+    const generated = new Set(writtenFiles(files).map((file) => file.path))
+    const stray = declared.filter((file) => !gone.includes(file) && !former.includes(file) && !generated.has(file))
+    if (stray.length > 0) throw { code: "unsupported", message: declaredRefusal(stray), part: "generate" } satisfies Failure
     // The copy holds the files apply would write, and Smithers build is given a home of its own beside it.
     const home = path.join(work, "home")
     const cache = path.join(work, "cache")
@@ -156,7 +226,14 @@ export effect function refusals(
     prepared catch effect (cause) => {
       throw failed("command-failed", `could not write the files apply writes into a copy: ${errorLine(cause)}`)
     }
+    // Its whole environment: what a step gets of the machine, a home of its own, and nothing else of the person's
+    // but where compiled code is kept.
+    const ambient = ambientEnvironment()
     const environment = {
+      ...Object.fromEntries(inheritedEnvironmentNames.map((name) => [name, ambient[name]])),
+      // Where VibeLang keeps compiled code, which holds no credential: without it every plan compiles Smithers
+      // build's own sources again.
+      VIBELANG_CACHE_DIR: ambient["VIBELANG_CACHE_DIR"],
       HOME: home,
       XDG_CACHE_HOME: path.join(home, ".cache"),
       XDG_CONFIG_HOME: path.join(home, ".config"),
@@ -165,24 +242,51 @@ export effect function refusals(
       ...compiledCaches(cache, false)
     }
     const [command, ...first] = smthrs
-    const plan = (labels: ReadonlyArray<string>) =>
-      exec(
-        command,
-        [...first, "ci", ...labels, "--plan", "--format", "json", "--workspace", copy, "--cache-dir", cache],
-        copy,
-        environment,
-        kept
-      )
-    const whole = try plan(["//..."])
-    if (whole.exitCode === 0) return []
+    /**
+     * Smithers build's refusal of `labels`, the targets of `whose`, or `undefined` when it plans them. A plan that
+     * does not end in time, or fails with no refusal of its targets, fails here.
+     */
+    const plan = (labels: ReadonlyArray<string>, whose: string) =>
+      effect {
+        const ran = try timeoutOption(
+          exec(
+            command,
+            [...first, "ci", ...labels, "--plan", "--format", "json", "--workspace", copy, "--cache-dir", cache],
+            copy,
+            environment,
+            kept,
+            undefined,
+            true
+          ),
+          limit
+        )
+        if (Option.isNone(ran)) {
+          throw failed(
+            "command-failed",
+            `Smithers build did not plan ${whose} within ${Duration.format(Duration.fromInputUnsafe(limit))}, so nothing is written`
+          )
+        }
+        if (ran.value.exitCode === 0) return undefined
+        const refusal = refusedTargets(ran.value.text)
+        if (refusal === undefined) {
+          throw failed(
+            "command-failed",
+            `Smithers build could not plan ${whose}, so nothing is written: ${refusalOf(ran.value.text)}`
+          )
+        }
+        return refusal
+      }
+    // The generated targets by name: `//...` would ask for whatever else the tree declares.
+    const whole = try plan([...jobs.values()].flatMap((labels) => [...labels]), "the generated files")
+    if (whole === undefined) return []
     const refused: Array<NotReplayed> = []
     for (const [job, labels] of jobs) {
-      const alone = try plan([...labels])
-      if (alone.exitCode !== 0) refused.push({ job, reasons: [{ feature: refusedByBuild, detail: refusalOf(alone.text) }] })
+      const alone = try plan([...labels], `the targets of ${job}`)
+      if (alone !== undefined) refused.push({ job, reasons: [{ feature: refusedByBuild, detail: alone }] })
     }
     if (refused.length > 0) return refused
-    const why = refusalOf(whole.text)
-    return [...jobs.keys()].map((job) => ({ job, reasons: [{ feature: refusedByBuild, detail: why }] }))
+    // A refusal no job meets alone is of the jobs together, and is kept in Smithers build's words for each.
+    return [...jobs.keys()].map((job) => ({ job, reasons: [{ feature: refusedByBuild, detail: whole }] }))
   })
 }
 

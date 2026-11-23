@@ -30,6 +30,7 @@ import {
   received,
   runtime,
   split,
+  system,
   taken,
   tools
 } from "../../src/cli/Restart.ts"
@@ -88,6 +89,14 @@ describe("the variables the program keeps", () => {
     }, "linux")
     expect(short).toEqual({ PATH: "/bin", HOME: "/home/me", TERM: "xterm" })
     expect(withheld).toEqual({ GITHUB_TOKEN: "t", SSH_AUTH_SOCK: "/tmp/agent" })
+  })
+
+  it("include the one macOS adds to every process, which a new start holds without being handed it", () => {
+    expect(system).toEqual(["__CF_USER_TEXT_ENCODING"])
+    expect(split({ PATH: "/bin", __CF_USER_TEXT_ENCODING: "0x1F5:0x0:0x0" }, "darwin")).toEqual({
+      short: { PATH: "/bin", __CF_USER_TEXT_ENCODING: "0x1F5:0x0:0x0" },
+      withheld: {}
+    })
   })
 
   it("are found whatever their case on Windows, and only there", () => {
@@ -190,6 +199,38 @@ describe("a pipe the program did not make", () => {
   })
 })
 
+describe("a writer that does not stop", () => {
+  /** A writer at a pipe of the program's making that runs `script` with the pipe open as descriptor 3. */
+  const writing = (script: string, ...args: ReadonlyArray<string>): string => {
+    const pipe = fifo(join(handDirectory(directory()), "pipe"))
+    spawn("/bin/sh", ["-c", `exec 3>"$1"; ${script}`, "sh", pipe, ...args], { stdio: "ignore" })
+    return pipe
+  }
+
+  it("is read no further than the most a hand-over may hold, and its pipe is removed", () => {
+    const pipe = writing("while printf %01000d 0 >&3; do :; done")
+    const started = Date.now()
+    expect(received(pipe, 30_000, { bytes: 4_000 })).toBeUndefined()
+    expect(Date.now() - started).toBeLessThan(20_000)
+    expect(existsSync(dirname(pipe))).toBe(false)
+    // At the bound the text is read whole.
+    const whole = JSON.stringify({ A: "a".repeat(3_000) })
+    expect(received(writing("printf %s \"$2\" >&3", whole), 30_000, { bytes: whole.length })).toEqual({
+      A: "a".repeat(3_000)
+    })
+  })
+
+  it("is given up on a fixed time after the pipe was opened, however steadily it writes", () => {
+    // It writes every 50 ms, so it is never idle for the 30 s of patience: only the time from the start ends it.
+    const pipe = writing("while printf x >&3; do sleep 0.05; done")
+    const started = Date.now()
+    expect(received(pipe, 30_000, { within: 600 })).toBeUndefined()
+    expect(Date.now() - started).toBeGreaterThanOrEqual(600)
+    expect(Date.now() - started).toBeLessThan(20_000)
+    expect(existsSync(dirname(pipe))).toBe(false)
+  })
+})
+
 describe("the variables waiting for a new start", () => {
   it("are let go, with their pipe, when no new start comes to read them", async () => {
     const here = { ...tools(), directory: directory(), seconds: 1 }
@@ -274,8 +315,8 @@ describe("the program's own environment", () => {
 })
 
 describe("the variable that names the pipe", () => {
-  it("is not believed in a process that holds a variable to withhold: the program starts again, and the path stays", async () => {
-    const foreign = fifo(join(handDirectory(directory()), "pipe"))
+  it("is not believed when it names no pipe of the program's, in a process with a variable to withhold: it starts again", async () => {
+    const foreign = fifo(join(handDirectory(directory()), "queue"))
     const env: Record<string, string | undefined> = {
       PATH: process.env["PATH"],
       HOME: "/home/me",
@@ -297,6 +338,67 @@ describe("the variable that names the pipe", () => {
     expect(existsSync(foreign)).toBe(true)
     expect(env).toEqual({ PATH: process.env["PATH"], HOME: "/home/me" })
     expect(said).toEqual([])
+  })
+
+  it("marks a new start, which reads its pipe and never starts again, whatever variable the system added", async () => {
+    // What macOS does to every process, with a name the program does not know: the new start holds a variable it
+    // withholds. Before, each such start began another, without end.
+    const env: Record<string, string | undefined> = {
+      PATH: "/bin",
+      __CF_USER_TEXT_ENCODING: "0x1F5:0x0:0x0",
+      ADDED_BY_THE_SYSTEM: "x",
+      [handed]: await hand(awkward)
+    }
+    const { execve, starts } = starting()
+    const said: Array<string> = []
+    const send = (): Promise<string> => Promise.reject(new Error("a new start must not hand over again"))
+    expect(await own(programWith(env, { execve }), send, (line) => said.push(line))).toEqual({
+      PATH: "/bin",
+      __CF_USER_TEXT_ENCODING: "0x1F5:0x0:0x0",
+      ADDED_BY_THE_SYSTEM: "x",
+      ...awkward
+    })
+    expect(starts).toEqual([])
+    expect(said).toEqual([])
+    // What it still held to withhold is gone from the process, and what the system gives every process stays.
+    expect(env).toEqual({ PATH: "/bin", __CF_USER_TEXT_ENCODING: "0x1F5:0x0:0x0" })
+  })
+
+  it("marks a new start that never starts again even when nothing waits at its pipe, and that start says so", async () => {
+    const gone = join(directory(), "smithers-ci-environment-gone", "pipe")
+    const env: Record<string, string | undefined> = { PATH: "/bin", [handed]: gone, ...awkward }
+    const { execve, starts } = starting()
+    const said: Array<string> = []
+    const send = (): Promise<string> => Promise.reject(new Error("a new start must not hand over again"))
+    expect(await own(programWith(env, { execve }), send, (line) => said.push(line))).toEqual({
+      PATH: "/bin",
+      ...awkward
+    })
+    expect(starts).toEqual([])
+    expect(said).toEqual([notHandedOver, notHidden])
+    expect(env).toEqual({ PATH: "/bin" })
+  })
+
+  it("ends in one restart when the system's own execve starts the program again", () => {
+    // The real call, in a real process: the program replaces itself once and the new start prints once. A start
+    // that began another without end would never print, and the time limit ends it.
+    const child = spawnSync(process.execPath, ["--no-warnings", second, "replay"], {
+      env: { PATH: process.env["PATH"], HOME: "/home/me", GITHUB_TOKEN: "secret value", ADDED: "x" },
+      encoding: "utf8",
+      timeout: 100_000
+    })
+    expect(child.status).toBe(0)
+    const lines = child.stdout.trim().split("\n")
+    expect(lines).toHaveLength(1)
+    const said = JSON.parse(lines[0] ?? "null") as {
+      readonly given: Record<string, string>
+      readonly holds: ReadonlyArray<string>
+      readonly startedWith: string
+    }
+    expect(said.given).toMatchObject({ HOME: "/home/me", GITHUB_TOKEN: "secret value", ADDED: "x" })
+    expect(said.holds).not.toContain("GITHUB_TOKEN")
+    expect(said.holds).not.toContain(handed)
+    expect(said.startedWith).not.toContain("secret value")
   })
 
   it("is forgotten, and the program says the variables did not come, when nothing waits where it points", async () => {

@@ -150,7 +150,15 @@ export const text: RenderReport = (report) => {
   if (found > 0) sections.push([`✗ ${mismatches(found)}`])
   if (report.fastNotMeasured !== undefined) sections.push([clean(fastNotMeasured(report.fastNotMeasured))])
   if (report.stopped !== undefined) sections.push([clean(stoppedEarly(report.stopped))])
-  if (report.commits.length === 0) return [...sections, [count(0, "commit")]].map(paragraph).join("\n\n")
+  const commitsLeft = report.notReplayedCommits ?? []
+  // Why each commit was left out is told also when none was replayed: it is then all there is to read.
+  const commitsLeftLines = commitsLeft.length === 0 ? [] : [[
+    "commits not replayed",
+    ...commitsLeft.map((entry) => `${clean(shortCommit(entry.commit))}  ${clean(firstLine(entry.reason))}`.trimEnd())
+  ]]
+  if (report.commits.length === 0) {
+    return [...sections, [count(0, "commit")], ...commitsLeftLines].map(paragraph).join("\n\n")
+  }
   const modes = [
     { name: "baseline", ms: report.baselineWallMs, ratio: undefined },
     { name: "normal", ms: report.normalWallMs, ratio: report.speedup },
@@ -177,7 +185,6 @@ export const text: RenderReport = (report) => {
   }
   const left = report.notReplayed ?? []
   const notRead = report.notRead ?? []
-  const commitsLeft = report.notReplayedCommits ?? []
   sections.push([
     `${count(report.commits.length, "commit")}${jobsCount(report)} · ${mismatches(found)}${flaky(report.flaky ?? 0)}${
       commitsLeftOut(commitsLeft.length)
@@ -242,12 +249,7 @@ export const text: RenderReport = (report) => {
       )
     ])
   }
-  if (commitsLeft.length > 0) {
-    sections.push([
-      "commits not replayed",
-      ...commitsLeft.map((entry) => `${clean(shortCommit(entry.commit))}  ${clean(firstLine(entry.reason))}`.trimEnd())
-    ])
-  }
+  sections.push(...commitsLeftLines)
   if (listed.length > 0) {
     // A mismatch over a file Smithers CI wrote says so on its own line, under the mismatch.
     sections.push(listed.flatMap((mismatch) => [

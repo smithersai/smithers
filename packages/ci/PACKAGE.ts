@@ -34,7 +34,7 @@ const toolCacheEnv = {
 // with and a confined run cannot download. Then each answers in under a second.
 const toolCaches = Smithers.Shell.Build({
   shell: [
-    "if command -v zig > /dev/null; then (cd \"$(mktemp -d)\" && zig build --print-configuration > /dev/null 2>&1); fi",
+    "if command -v zig > /dev/null; then (probe=\"$(mktemp -d)\" && trap 'rm -rf \"$probe\"' EXIT && cd \"$probe\" && zig build --print-configuration > /dev/null 2>&1); fi",
     "node packages/ci/bin/smithers-ci.mjs --help > /dev/null 2>&1",
     "node_modules/.bin/smthrs --help > /dev/null 2>&1",
     "(cd packages/ci && node_modules/.bin/dprint output-file-paths > /dev/null 2>&1)",

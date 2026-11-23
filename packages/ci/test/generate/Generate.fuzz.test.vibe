@@ -181,14 +181,15 @@ describe("generated targets and workflow data", () => {
       const place = { job: job("ci", []), variant: {}, machine: "ci", entry: "matrix.leg == '1'" }
       // `<<` is YAML 1.1's merge key: written plain, the parser merges its value and stops at one that is no mapping.
       const inputs = Object.fromEntries([[key, value], ["}", value], ["p".repeat(1025), value], ["on", value], ["<<", value]])
-      const items = keptSteps({ uses: "example/action@v1", with: inputs, env: inputs }, place, 0)
+      const items = keptSteps({ uses: "example/action@v1", with: inputs, env: inputs }, place, 0, 0)
       const source = Yaml.document(Yaml.mapping([Yaml.entry("steps", Yaml.sequence(items))]))
       const parsed = parseDocument(source, { version: "1.1" })
       expect(parsed.errors).toEqual([])
       const steps = (parsed.toJS() as { steps: Array<Record<string, unknown>> }).steps
       expect(steps).toHaveLength(2)
       expect(steps[1]).toEqual({
-        name: "example/action@v1: ci", if: "${{ matrix.leg == '1' && (success()) }}",
+        name: "example/action@v1: ci",
+        if: "${{ matrix.leg == '1' && steps.smthrs_files_0.outcome == 'success' && (success()) }}",
         uses: "example/action@v1", with: inputs, env: inputs
       })
     }))

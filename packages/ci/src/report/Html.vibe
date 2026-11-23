@@ -336,8 +336,11 @@ export const html: RenderReport = (report) => {
   if (report.stopped !== undefined) {
     body.push(`<p class="alert" role="alert">${escape(stoppedEarly(report.stopped))}</p>`)
   }
+  const commitsLeft = report.notReplayedCommits ?? []
   if (report.commits.length === 0) {
     body.push(`<p class="summary">${count(0, "commit")}</p>`)
+    // Why each commit was left out is told also when none was replayed: it is then all there is to read.
+    if (commitsLeft.length > 0) body.push(commitsLeftTable(commitsLeft))
   } else {
     const modes: Array<Mode> = [
       { name: "baseline", ms: report.baselineWallMs, ratio: undefined },
@@ -358,7 +361,6 @@ export const html: RenderReport = (report) => {
     }
     const left = report.notReplayed ?? []
     const notRead = report.notRead ?? []
-    const commitsLeft = report.notReplayedCommits ?? []
     body.push(
       `<p class="summary">${count(report.commits.length, "commit")}${jobsCount(report)} · ${mismatches(found)}${
         flaky(report.flaky ?? 0)
