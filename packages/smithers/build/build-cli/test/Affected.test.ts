@@ -739,3 +739,25 @@ it("explain mode selects what plain mode selects, and its sources and edges rebu
   // The generator reaches every case, so the property is not vacuous.
   expect(Object.values(tally).every((count) => count > 20), JSON.stringify(tally)).toBe(true)
 })
+
+it("expands Suite targets to only their affected members and never marks Suites uncacheable", () => {
+  const graph = fixture()
+  const { add } = graph
+  const a = add("pkg-a", "bench", S.Shell.Test({ shell: "true", data: [S.file("a.ts")] }))
+  const b = add("pkg-b", "bench", S.Shell.Test({ shell: "true", data: [S.file("b.ts")] }))
+  add("docs", "files", S.Filegroup({ srcs: [S.file("index.md")] }))
+  add("", "bench_all", S.Suite({ tests: [a, b] }))
+  const index = graph.index
+
+  expect(Affected.select(index, ["//..."], ["pkg-a/a.ts"]).targets.map((t) => t.label)).toEqual([
+    "//pkg-a:bench"
+  ])
+  expect(Affected.select(index, ["//:bench_all"], ["pkg-b/b.ts"]).targets.map((t) => t.label)).toEqual([
+    "//pkg-b:bench"
+  ])
+  expect(Affected.select(index, ["//:bench_all"], ["pkg-b/b.ts"], { explain: true }).targets.map((t) => t.label))
+    .toEqual([
+      "//pkg-b:bench"
+    ])
+  expect(Affected.select(index, ["//:bench_all"], ["docs/index.md"]).targets).toEqual([])
+})

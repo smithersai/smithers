@@ -9,7 +9,7 @@
  * @since 1.0.0
  */
 
-import { realpathSync } from "node:fs"
+import { readFileSync, realpathSync } from "node:fs"
 import { findPackageJSON } from "node:module"
 import { dirname } from "node:path"
 import { pathToFileURL } from "node:url"
@@ -18,6 +18,37 @@ import { PackageError } from "../PackageError.ts"
 import * as Fs from "./Fs.ts"
 
 const sharedPackages = ["effect", "@smthrs/targets", "@smthrs/plan", "@smthrs/core", "@smthrs/flow"] as const
+
+const majorVersionOf = (manifestPath: string): number | undefined => {
+  try {
+    const parsed: unknown = JSON.parse(readFileSync(manifestPath, "utf8"))
+    if (typeof parsed !== "object" || parsed === null || !("version" in parsed)) return undefined
+    const version = (parsed as { readonly version?: unknown }).version
+    if (typeof version !== "string") return undefined
+    const match = /^(\d+)\./.exec(version.trim())
+    return match === null ? undefined : Number(match[1])
+  } catch {
+    return undefined
+  }
+}
+
+const hasLocalSmithersTargets = (file: string): boolean => {
+  try {
+    return findPackageJSON("@smthrs/targets", pathToFileURL(file)) !== undefined
+  } catch {
+    return false
+  }
+}
+
+const declarationImportsEffect = (file: string): boolean => {
+  try {
+    const source = readFileSync(file, "utf8")
+    return /(?:from\s+|import\s*\(|require\s*\(|import\.meta\.resolve\s*\()\s*["']effect(?:\/[^"']*)?["']/.test(source)
+  } catch {
+    // If unreadable, conservatively assume it may import effect.
+    return true
+  }
+}
 
 /**
  * The code and message of the failure a refusal is standing in for.
@@ -47,11 +78,18 @@ export const assertDeclarationDependencies = (
   files: ReadonlyArray<string>,
   options: { readonly bootstrap: boolean }
 ): void => {
-  const directories = new Set<string>()
+  const checkedDirectories = new Map<string, { readonly skipConsumerEffect: boolean }>()
   for (const file of files) {
     const directory = dirname(file)
-    if (directories.has(directory)) continue
-    directories.add(directory)
+    const cached = checkedDirectories.get(directory)
+    if (cached !== undefined) {
+      if (cached.skipConsumerEffect && declarationImportsEffect(file)) {
+        // Re-check this file because it imports effect directly alongside a foreign effect install.
+      } else {
+        continue
+      }
+    }
+    let skipConsumerEffect = false
     for (const dependency of sharedPackages) {
       let expected: string
       let actual: string
@@ -83,6 +121,25 @@ export const assertDeclarationDependencies = (
         )
       }
       if (actual !== expected) {
+        // In bootstrap mode (no local @smthrs/targets install), a consumer repo
+        // may depend on a different major version of Effect (e.g. Effect v3) for
+        // its own application code while its PACKAGE.ts only imports @smthrs/targets.
+        // The CLI's ESM resolve hooks pin @smthrs/targets and its Effect v4 runtime
+        // to the CLI installation, so allow this when the declaration does not import
+        // effect directly and the consumer manifest parses cleanly as another major.
+        if (
+          options.bootstrap &&
+          dependency === "effect" &&
+          !hasLocalSmithersTargets(file) &&
+          !declarationImportsEffect(file)
+        ) {
+          const expectedMajor = majorVersionOf(expected)
+          const actualMajor = majorVersionOf(actual)
+          if (expectedMajor !== undefined && actualMajor !== undefined && actualMajor !== expectedMajor) {
+            skipConsumerEffect = true
+            continue
+          }
+        }
         throw new PackageError(
           "declaration_dependency_mismatch",
           `${dependency} resolves to ${actual}, but the CLI uses ${expected}; ` +
@@ -92,5 +149,6 @@ export const assertDeclarationDependencies = (
         )
       }
     }
+    checkedDirectories.set(directory, { skipConsumerEffect })
   }
 }

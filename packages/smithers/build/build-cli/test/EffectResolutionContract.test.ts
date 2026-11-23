@@ -175,6 +175,27 @@ describe("declaration dependency preflight", () => {
     }
   )
 
+  it("allows bootstrap declarations in a consumer package using another Effect major when not importing effect", async () => {
+    const directory = await fixture(false)
+    await Fs.mkdir(Path.join(directory, "node_modules/effect"), { recursive: true })
+    await Fs.writeFile(
+      Path.join(directory, "node_modules/effect/package.json"),
+      JSON.stringify({ name: "effect", version: "3.12.0" })
+    )
+    const pkgFile = Path.join(directory, "PACKAGE.ts")
+    await Fs.writeFile(
+      pkgFile,
+      `import { Smithers as S } from "@smthrs/targets"\nexport const Package = S.Package({ targets: {} })\n`
+    )
+    expect(() => assertDeclarationDependencies([pkgFile], { bootstrap: true })).not.toThrow()
+
+    // A declaration that imports effect directly next to the foreign Effect v3 install is still refused.
+    const directImportFile = Path.join(directory, "direct.ts")
+    await Fs.writeFile(directImportFile, `import * as Effect from "effect/Effect"\nexport const x = Effect\n`)
+    expect(() => assertDeclarationDependencies([pkgFile, directImportFile], { bootstrap: true }))
+      .toThrowError(expect.objectContaining({ code: "declaration_dependency_mismatch", path: directImportFile }))
+  })
+
   it("refuses a foreign installation even when its metadata cannot be parsed", async () => {
     const directory = await fixture(false)
     await Fs.mkdir(Path.join(directory, "node_modules/effect"), { recursive: true })

@@ -337,7 +337,9 @@ export function select(
     }))
   ].sort()
   const rows = index.targets()
-  const selected = [
+  type IndexRow = (typeof rows)[number]
+  const rowByTarget = new Map(rows.map((row) => [row.target, row]))
+  const initialSelected = [
     ...new Map(patterns.flatMap((pattern) => index.resolve(pattern)).map((row) => [row.label, row])).values()
   ]
   const reasons = new Map<string, Set<string>>()
@@ -487,6 +489,27 @@ export function select(
     entries.set(target, value)
     return value
   }
+  // Expand Suite targets into their concrete exported member targets using cached `entry()`
+  // metadata so `affected` selects only affected members rather than running the whole suite.
+  const selected = (() => {
+    const out = new Map<string, IndexRow>()
+    const visitedSuites = new Set<Target.AnyTarget>()
+    const visit = (row: IndexRow) => {
+      const metadata = entry(row.target).metadata
+      if (metadata.target === "Suite" && metadata.dependencies.length > 0) {
+        const memberRows = metadata.dependencies.map((dep) => rowByTarget.get(dep))
+        if (memberRows.every((member): member is IndexRow => member !== undefined)) {
+          if (visitedSuites.has(row.target)) return
+          visitedSuites.add(row.target)
+          for (const memberRow of memberRows) visit(memberRow)
+          return
+        }
+      }
+      out.set(row.label, row)
+    }
+    for (const row of initialSelected) visit(row)
+    return [...out.values()]
+  })()
   const implementationRoots = options.toolSources === false ?
     [] :
     productionSourceRoots().map((source) => Path.relative(index.root, source.directory).replaceAll("\\", "/"))
@@ -593,9 +616,12 @@ export function select(
       const indirect = [...metadata.inputs, ...viewInputs].filter((input) =>
         indirectInput(input, inputPackage(metadata, value.packagePath))
       )
+      // Pure composition rules (Suite, Alias) execute nothing of their own and
+      // have no undeclared inputs; they are affected strictly through dependencies.
+      const isCompositionRule = metadata.target === "Suite" || metadata.target === "Alias"
       // An uncacheable target makes no promise that its inputs are complete: it may import
       // undeclared packages or read files it never declared. Only running it is sound.
-      const uncacheable = RulePolicy.of(metadata.target).cache === undefined &&
+      const uncacheable = !isCompositionRule && RulePolicy.of(metadata.target).cache === undefined &&
         (!metadata.cacheable || views.some((view) => !view.cacheable))
       const everyChange = indirect.length > 0 || indirectDirectories.length > 0 || value.ambient ||
         viewInputs.some(ambientInput) || uncacheable
