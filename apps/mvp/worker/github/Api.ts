@@ -7,7 +7,7 @@ import { ShapeProxy } from "@smthrs/effect-electric"
 import { Core, GitHub } from "@smthrs/integrations"
 import { Context, Cause, Clock, Duration, Effect, type Layer, Metric, Option, Redacted, Ref, Result, Schema } from "effect"
 import { FetchHttpClient, HttpClient, HttpServerRequest, HttpServerResponse } from "effect/http"
-import type { SqlClient } from "effect/sql"
+import { SqlClient } from "effect/sql"
 import { LOCAL_ELECTRIC_URL } from "../../src/features/chat/contract.ts"
 import {
   applyExecutionId,
@@ -121,7 +121,7 @@ import { Write } from "./Write.ts"
 // The git loop's routes in ChatApi (decision 0012 §2 and §4, docs/features/issues.md#routes):
 // - `POST /api/github/webhook`: GitHub's webhook. Verified with `X-Hub-Signature-256` (`Core.Channel` from
 //   `@smthrs/integrations`), it starts `github/Apply` for the issue it names, one execution per delivery, and records
-//   the delivery; it never writes a row itself. A payload names a subject; it never sets state. With `REPO_FLOWS` on, a
+//   the delivery. Installation events update the repository's installation receipt. With `REPO_FLOWS` on, a
 //   push or a pull request also starts its `triggers/Dispatch` (worker/ci/Dispatch.ts), and a push to the default
 //   branch its `triggers/Sync` (worker/ci/Cron.ts).
 // - `POST /api/repos/<owner>/<name>/writes`: the one door every git write goes through. It checks sign-in, the App,
@@ -428,6 +428,49 @@ const subjectsOf = (event: string, payload: unknown): ReadonlyArray<NamedSubject
   ]
 }
 
+interface InstallationChanges {
+  readonly installationId: number
+  readonly added: ReadonlyArray<string>
+  readonly removed: ReadonlyArray<string>
+}
+
+const installationRepositoryIds = (repositories: unknown): ReadonlyArray<string> => {
+  if (!Array.isArray(repositories)) return []
+  const entries: ReadonlyArray<unknown> = repositories
+  const ids = new Set<string>()
+  for (const repository of entries) {
+    if (typeof repository !== "object" || repository === null || !("full_name" in repository) ||
+      typeof repository.full_name !== "string") continue
+    const [owner = "", name = "", extra] = repository.full_name.split("/")
+    if (extra === undefined && isRepository(owner, name)) ids.add(repoId(owner, name))
+  }
+  return [...ids]
+}
+
+/** The valid repository ids named by an installation event. The receiver applies its deployment's allowlist. */
+export const installationChangesOf = (event: string, payload: unknown): InstallationChanges | undefined => {
+  if (event !== "installation" && event !== "installation_repositories") return undefined
+  if (typeof payload !== "object" || payload === null || !("action" in payload) || !("installation" in payload)) return undefined
+  const { action, installation } = payload
+  if (typeof installation !== "object" || installation === null || !("id" in installation)) return undefined
+  const installationId = installation.id
+  if (typeof installationId !== "number" || !Number.isSafeInteger(installationId) || installationId <= 0) return undefined
+
+  if (event === "installation") {
+    const ids = installationRepositoryIds("repositories" in payload ? payload.repositories : undefined)
+    if (action === "created") return { installationId, added: ids, removed: [] }
+    if (action === "deleted" || action === "suspend") return { installationId, added: [], removed: ids }
+  } else {
+    if (action === "added") {
+      return { installationId, added: installationRepositoryIds("repositories_added" in payload ? payload.repositories_added : undefined), removed: [] }
+    }
+    if (action === "removed") {
+      return { installationId, added: [], removed: installationRepositoryIds("repositories_removed" in payload ? payload.repositories_removed : undefined) }
+    }
+  }
+  return undefined
+}
+
 /**
  * What the routes need besides Postgres: the deployment's own repository, the GitHub App when it is configured, and
  * who has which role on which repository.
@@ -577,15 +620,54 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
         if (decoded._tag === "Failure") return yield* answer(400, "invalid", "invalid")
         // `Core.Channel` checked the decoder's output as an `ExternalEvent`.
         const delivered = decoded.success as Core.ExternalEvent.ExternalEvent
-        const action = (delivered.payload as { readonly action?: unknown }).action
+        const payload = delivered.payload
+        const action = typeof payload === "object" && payload !== null && "action" in payload ? payload.action : undefined
+        const recordedAction = typeof action === "string" ? action.slice(0, 64) : null
+        const installation = installationChangesOf(event, payload)
+        if (installation !== undefined) {
+          // A failed update rolls back the receipt so redelivery can apply it. Repeated deliveries cannot revert newer changes.
+          const counts = yield* Effect.gen(function* () {
+            const sql = yield* SqlClient.SqlClient
+            return yield* sql.withTransaction(Effect.gen(function* () {
+              const first = yield* Store.recordDelivery({ deliveryId, event, action: recordedAction, repoId: null, subject: null })
+              if (!first) return undefined
+
+              const added = installation.added.filter(mayAct).sort()
+              for (const id of added) yield* Store.rememberInstallation(id, installation.installationId)
+
+              let uninstalled = 0
+              const removed = installation.removed.filter(mayAct)
+              const entireInstallation = event === "installation" && (action === "deleted" || action === "suspend")
+              if (entireInstallation || removed.length > 0) {
+                // GitHub can omit the repository list for deletion and suspension. Lock matching rows so a removal
+                // cannot forget a newer installation or race with another update to the same repository.
+                const linked = yield* sql<{ readonly repoId: string }>`
+                  SELECT repo_id AS "repoId" FROM github_repositories
+                  WHERE installation_id = ${installation.installationId}
+                    AND (${entireInstallation} OR repo_id = ANY(${removed}::text[]))
+                  ORDER BY repo_id COLLATE "C" FOR UPDATE`
+                for (const row of linked) {
+                  if (!mayAct(row.repoId)) continue
+                  yield* Store.forgetInstallation(row.repoId)
+                  uninstalled += 1
+                }
+              }
+              return { installed: added.length, uninstalled }
+            }))
+          }).pipe(Effect.provide(database))
+          fields.installed = counts?.installed ?? 0
+          fields.uninstalled = counts?.uninstalled ?? 0
+          yield* Effect.annotateCurrentSpan({ installed: fields.installed, uninstalled: fields.uninstalled })
+          return yield* answer(200, counts === undefined ? "duplicate" : counts.installed + counts.uninstalled > 0 ? "applied" : "ignored")
+        }
         // This event names no repository, so it runs before repository resolution. Redelivery is safe: it ends nothing twice.
         if (event === "github_app_authorization" && action === "revoked") {
-          const person = revokingPerson(delivered.payload)
+          const person = revokingPerson(payload)
           if (person !== undefined) yield* (yield* EndGitHubConnection)(person)
           fields.connection = person === undefined ? "unknown_sender" : "ended"
         }
         // Every issue the delivery names in a repository the deployment acts on (decision 0079, slice 1b).
-        let named = subjectsOf(event, delivered.payload).flatMap((found) => {
+        let named = subjectsOf(event, payload).flatMap((found) => {
           const [owner = "", name = ""] = found.repository.full_name.split("/")
           return isRepository(owner, name) && mayAct(repoId(owner, name))
             ? [{ ...found, target: repositoryOf(`${owner}/${name}`) }]
@@ -605,12 +687,11 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
         const first = yield* Store.recordDelivery({
           deliveryId,
           event,
-          action: typeof action === "string" ? action.slice(0, 64) : null,
+          action: recordedAction,
           repoId: firstNamed === undefined ? null : firstNamed.target.id,
           subject: firstNamed === undefined ? null : firstNamed.issue.number,
         }).pipe(Effect.provide(database))
-        // Only issue and pull request events of a repository the deployment acts on name a subject; the rest (ping,
-        // installation, repositories it doesn't act on) are recorded and answered.
+        // Only issue and pull request events of a repository the deployment acts on name a subject.
         for (const [index, subject] of named.entries()) {
           // A second side of a delivery runs as a parent's refresh does, named by the delivery and the issue.
           const refreshed = index === 0 ? deliveryId : `${deliveryId}:${itemId(subject.target.id, subject.issue.number)}`
@@ -634,14 +715,14 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
             })
           }
         }
-        const mirror = MirrorRefresh.pushRepository(event, delivered.payload)
+        const mirror = MirrorRefresh.pushRepository(event, payload)
         if (Option.isSome(mirror)) {
           yield* MirrorRefresh.request(mirror.value.owner, mirror.value.name, deliveryId)
           fields.mirror = "requested"
         }
         // A push or a pull request of any repository the App is installed on: its flows' triggers decide what runs
         // (docs/features/ci.md#triggers), on the delivery's own `triggers/Dispatch`.
-        const dispatch = options.repoFlows === true ? Dispatch.requestOf(event, deliveryId, delivered.payload) : Option.none()
+        const dispatch = options.repoFlows === true ? Dispatch.requestOf(event, deliveryId, payload) : Option.none()
         if (Option.isSome(dispatch)) {
           yield* (yield* FlowStarter).start(Dispatch.Dispatch, {
             executionId: Dispatch.dispatchExecutionId(deliveryId),
@@ -661,7 +742,7 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
         }
         // `main` moving and a new release reach everyone watching the repository (decision 0009 §8).
         const now = new Date(yield* Clock.currentTimeMillis)
-        const repoEvent = Notifications.repoEventOf(event, delivered.payload, repository, now)
+        const repoEvent = Notifications.repoEventOf(event, payload, repository, now)
         if (Option.isSome(repoEvent)) {
           fields.notified = yield* Notifications.recordRepoEvent(repoEvent.value, options.localPeople).pipe(
             Effect.provide(database),
