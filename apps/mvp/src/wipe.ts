@@ -1,5 +1,4 @@
 import type { Outbox } from "@smthrs/effect-tanstack-db"
-import { Effect, Semaphore } from "effect"
 import type { BrowserEngine } from "@smthrs/platform-browser"
 import type { Host } from "./boot"
 import type { Endpoint } from "./flows/tabPort"
@@ -306,15 +305,21 @@ export class WipeUnfinished extends Error {
 /** An outbox storage in memory: what a page whose wipe failed keeps its writes in, never the stale database. */
 export const memoryStorage = (): Outbox.Options<never>["storage"] => {
   const entries = new Map<string, string>()
-  const locks = new Map<string, { readonly permit: Semaphore.Semaphore; users: number }>()
+  const tails = new Map<string, Promise<void>>()
   return {
-    withLock: (name, action) => {
-      const lock = locks.get(name) ?? { permit: Semaphore.makeUnsafe(1), users: 0 }
-      locks.set(name, lock)
-      lock.users++
-      return Effect.runPromise(lock.permit.withPermit(Effect.promise(action))).finally(() => {
-        if (--lock.users === 0) locks.delete(name)
-      })
+    withLock: async (name, action) => {
+      const prev = tails.get(name) ?? Promise.resolve()
+      let release!: () => void
+      const gate = new Promise<void>((resolve) => { release = resolve })
+      const tail = prev.then(() => gate)
+      tails.set(name, tail)
+      await prev
+      try {
+        return await action()
+      } finally {
+        release()
+        if (tails.get(name) === tail) tails.delete(name)
+      }
     },
     get: async (key) => entries.get(key) ?? null,
     setMany: async (rows) => { for (const [key, value] of rows) entries.set(key, value) },

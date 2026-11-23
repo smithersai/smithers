@@ -2,8 +2,8 @@ import { expect, test } from "vitest"
 import { createElement } from "react"
 import { renderToStaticMarkup } from "react-dom/server"
 import { createMemoryHistory, createRootRoute, createRoute, createRouter, RouterProvider } from "@tanstack/react-router"
-import { router } from "../../router"
-import { FlowPendingScreen } from "./FlowPendingScreen"
+import { router } from "../src/router"
+import { FlowPendingScreen } from "../src/screens/flows/FlowPendingScreen"
 
 // A flow's editor routes wait on device storage and the engine in `beforeLoad`; without a pending screen a direct
 // visit painted a blank window for seconds (docs/work/ui-polish.md). Each keeps its frame while it waits.

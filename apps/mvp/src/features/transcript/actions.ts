@@ -1,5 +1,5 @@
 import { RetryPolicy } from "@smthrs/flow"
-import { Clock, Effect, FiberHandle, Metric, Option, Queue, Ref, Stream } from "effect"
+import { Clock, Duration, Effect, FiberHandle, Metric, Option, Queue, Ref, Stream } from "effect"
 import { HttpClient, HttpClientRequest } from "effect/http"
 import * as Socket from "effect/socket/Socket"
 import { GENESIS, transcriptRoute } from "./contract"
@@ -138,23 +138,35 @@ export const watch = (runId: string | null) =>
     yield* forget
     yield* setPanel({ ...IDLE, runId, phase: runId === null ? "idle" : "connecting", digest: GENESIS })
     if (runId === null) return
-    const follow: Effect.Effect<void, never, TranscriptStore | HttpClient.HttpClient> = session(runId).pipe(
-      Effect.catch((dropped: Dropped) =>
-        Effect.gen(function* () {
-          const refused = yield* refusalOf(runId)
-          if (refused === undefined) {
+    const attempt = (n: number, startedAt: number | undefined): Effect.Effect<void, Dropped, TranscriptStore | HttpClient.HttpClient | Socket.WebSocketConstructor> =>
+      session(runId).pipe(
+        Effect.catch((dropped: Dropped) =>
+          Effect.gen(function* () {
+            const refused = yield* refusalOf(runId)
+            if (refused !== undefined) {
+              yield* Metric.update(Metric.withAttributes(dials, { outcome: refused }), 1)
+              yield* Effect.logWarning("transcript.closed").pipe(Effect.annotateLogs({ outcome: refused }))
+              // A refusal ends what the panel shows too: the items it held go with the socket (Astra on 0c7b9f01).
+              yield* forget
+              yield* setPanel({ phase: "closed", closed: refused })
+              return
+            }
             yield* Metric.update(Metric.withAttributes(dials, { outcome: "dropped" }), 1)
             yield* setPanel({ phase: "offline" })
-            return yield* Effect.fail(dropped)
-          }
-          yield* Metric.update(Metric.withAttributes(dials, { outcome: refused }), 1)
-          yield* Effect.logWarning("transcript.closed").pipe(Effect.annotateLogs({ outcome: refused }))
-          // A refusal ends what the panel shows too: the items it held go with the socket (Astra on 0c7b9f01).
-          yield* forget
-          yield* setPanel({ phase: "closed", closed: refused })
-        })
-      ),
-      Effect.retry(RetryPolicy.schedule<Dropped>(store.redial)),
+            const now = yield* Clock.currentTimeMillis
+            const firstFailureAt = startedAt ?? now
+            const decision = yield* RetryPolicy.decideEffect(store.redial, {
+              attempt: n,
+              error: dropped,
+              elapsedMs: now - firstFailureAt,
+            })
+            if (decision._tag === "GiveUp") return yield* Effect.fail(dropped)
+            yield* Effect.sleep(Duration.millis(decision.delayMs))
+            return yield* attempt(n + 1, firstFailureAt)
+          })
+        ),
+      )
+    const follow: Effect.Effect<void, never, TranscriptStore | HttpClient.HttpClient> = attempt(1, undefined).pipe(
       Effect.catch((dropped) =>
         Effect.andThen(
           Effect.logWarning("transcript.closed").pipe(Effect.annotateLogs({ outcome: "failed", code: dropped.code })),

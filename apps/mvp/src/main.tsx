@@ -20,7 +20,7 @@ import { navigateTo } from "./features/navigation/router"
 import { AppErrorBoundary } from "./screens/root/AppErrorBoundary"
 import { activationGate, type Adoption, boundFetch, outboxPrincipal, DeviceIdentityRefused, IDENTITY_MESSAGE, readReceipt, type Receipt, reopenDue, VISITOR } from "./device/identity"
 import { DEVICE_ADOPTED_EVENT, NO_DEVICE_DATA, type SessionState } from "./features/auth/contract"
-import { failedWorker, memoryStorage, pageWipe, unwiped } from "./wipe"
+import { failedWorker, memoryStorage, pageWipe, SIGN_OUT_LOCK, unwiped } from "./wipe"
 import { claimEditorTabId } from "./device/editorTab"
 import { olderLeader, watchLeader } from "./device/olderLeader"
 import { deviceRegistry } from "./device/registry"
@@ -227,35 +227,102 @@ void activation.ready.then(() => markStage(performance, "activation"))
 // reopened.
 const REOPENED = "smithers-identity-reopened"
 const OLDER_LEADER_REOPENED = "smithers-older-leader-reopened"
-const pendingReopens = new Map<string, ReturnType<typeof setTimeout>>()
+interface PendingReopen {
+  readonly why: () => void
+  readonly reason: "identity_reopen" | "older_leader"
+  readonly mark: string
+  readonly within: number
+}
+const pendingReopens = new Map<string, PendingReopen>()
+const inFlightReopens = new Set<string>()
+const lockWaiters = new Set<string>()
+const reopenDeadlines = new Map<string, { cancelled: boolean }>()
+let stopReopenListeners: (() => void) | undefined
+const flushPendingReopens = () => {
+  for (const entry of [...pendingReopens.values()]) {
+    void reopen(entry.why, entry.reason, entry.mark, entry.within)
+  }
+}
+const watchReopenSignals = () => {
+  if (stopReopenListeners !== undefined) return
+  const onVisible = () => { if (document.visibilityState === "visible") flushPendingReopens() }
+  document.addEventListener("visibilitychange", onVisible)
+  window.addEventListener("focus", flushPendingReopens)
+  window.addEventListener("online", flushPendingReopens)
+  const unsubRoute = router.subscribe("onResolved", flushPendingReopens)
+  stopReopenListeners = () => {
+    document.removeEventListener("visibilitychange", onVisible)
+    window.removeEventListener("focus", flushPendingReopens)
+    window.removeEventListener("online", flushPendingReopens)
+    unsubRoute()
+    stopReopenListeners = undefined
+  }
+}
+const scheduleReopenDeadline = (mark: string, delay: number) => {
+  if (reopenDeadlines.has(mark)) return
+  const token = { cancelled: false }
+  reopenDeadlines.set(mark, token)
+  const signal = AbortSignal.timeout(Math.max(1, delay))
+  signal.addEventListener("abort", () => {
+    if (reopenDeadlines.get(mark) === token) reopenDeadlines.delete(mark)
+    if (token.cancelled) return
+    const entry = pendingReopens.get(mark)
+    if (entry !== undefined) void reopen(entry.why, entry.reason, entry.mark, entry.within)
+  }, { once: true })
+}
+const clearPendingReopen = (mark: string) => {
+  pendingReopens.delete(mark)
+  const token = reopenDeadlines.get(mark)
+  if (token !== undefined) token.cancelled = true
+  reopenDeadlines.delete(mark)
+  if (pendingReopens.size === 0) stopReopenListeners?.()
+}
 const reopen = async (
   why: () => void = () => console.info("auth.device_identity", { outcome: "reopened" }),
   reason: "identity_reopen" | "older_leader" = "identity_reopen",
   mark = REOPENED,
   within = 60_000,
 ) => {
+  if (inFlightReopens.has(mark)) return false
   // Read when used: a browser that blocks storage throws on reaching `sessionStorage`.
   const marks = { getItem: (key: string) => sessionStorage.getItem(key), setItem: (key: string, value: string) => sessionStorage.setItem(key, value) }
-  const retain = (delay: number) => {
-    // One pending request retains its deadline even while repeated failures ask for the same reopen.
-    if (!pendingReopens.has(mark)) pendingReopens.set(mark, setTimeout(() => {
-      pendingReopens.delete(mark)
-      void reopen(why, reason, mark, within)
-    }, delay))
+  const retain = (delay: number, awaitLock: boolean) => {
+    // One pending request retains its deadline and browser lifecycle wakeups, and waits on SIGN_OUT_LOCK when held.
+    if (!pendingReopens.has(mark)) {
+      pendingReopens.set(mark, { why, reason, mark, within })
+      watchReopenSignals()
+    }
+    if (awaitLock && navigator.locks !== undefined) {
+      if (!lockWaiters.has(mark)) {
+        lockWaiters.add(mark)
+        void navigator.locks.request(SIGN_OUT_LOCK, { mode: "shared" }, () => {
+          lockWaiters.delete(mark)
+          const entry = pendingReopens.get(mark)
+          if (entry !== undefined) void reopen(entry.why, entry.reason, entry.mark, entry.within)
+        }).catch(() => {
+          lockWaiters.delete(mark)
+        })
+      }
+    } else {
+      scheduleReopenDeadline(mark, delay)
+    }
     return false
   }
   if (!reopenDue(marks, mark, within, Date.now())) {
     let delay = within
     try { delay = Math.max(1, Number(marks.getItem(mark)) + within - Date.now()) } catch { /* expected: blocked storage skips the reopen throttle */ }
-    return retain(delay)
+    return retain(delay, false)
   }
-  if (!(await wipe.reopen(reason))) return retain(within)
-  const pending = pendingReopens.get(mark)
-  if (pending !== undefined) clearTimeout(pending)
-  pendingReopens.delete(mark)
-  try { marks.setItem(mark, String(Date.now())) } catch { /* expected: blocked storage cannot prevent an accepted reopen */ }
-  why()
-  return true
+  inFlightReopens.add(mark)
+  try {
+    if (!(await wipe.reopen(reason))) return retain(within, true)
+    clearPendingReopen(mark)
+    try { marks.setItem(mark, String(Date.now())) } catch { /* expected: blocked storage cannot prevent an accepted reopen */ }
+    why()
+    return true
+  } finally {
+    inFlightReopens.delete(mark)
+  }
 }
 // Adopting in place (decision 0023, "Adopting in place"): a page that opened the visitor's data asks its leader to
 // claim it for the person signed in now, instead of reopening every page, and waits for the receipt.

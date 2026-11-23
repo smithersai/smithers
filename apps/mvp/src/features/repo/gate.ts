@@ -1,5 +1,4 @@
 import { Collection, LiveQuery, Query } from "@smthrs/effect-tanstack-db"
-import type { Collection as TanStackCollection, LiveQueryCollectionUtils, NonSingleResult } from "@tanstack/db"
 import { Effect, Schema, type Stream } from "effect"
 import type { RepoRole, Session } from "../auth/schema"
 import { repoVisibility } from "./visibility"
@@ -30,6 +29,14 @@ const idOf = (row: Record<string, unknown>, by: By): unknown =>
 /** A condition true when any of `conditions` is: one alone, or their `or`. */
 export const anyOf = (conditions: ReadonlyArray<ReturnType<typeof Query.eq>>) =>
   conditions.length === 1 ? conditions[0]! : Query.or(...(conditions as [ReturnType<typeof Query.eq>, ReturnType<typeof Query.eq>]))
+
+type AnyUtils = Record<string, (...args: any) => any>
+type TanStackCollection<A extends object, K extends Collection.Key = any, U extends AnyUtils = any> =
+  Collection.Collection<A, K, U>["tanstack"]
+type LiveQueryCollectionUtils = LiveQuery.LiveQuery<LiveQuery.AnyQuery>["tanstack"] extends Collection.Collection<any, any, infer U>["tanstack"]
+  ? U
+  : AnyUtils
+type NonSingleResult = { singleResult?: never }
 
 /** Anything a live query reads from: a collection or another live query. */
 export interface Source<A extends object> {

@@ -977,10 +977,12 @@ export const steps = <E, R>(services: Services<E, R>) => {
       if (!ended) return yield* new TodoUnavailable({ step: "await" })
       const repository = repositoryOfRequest(request)
       const token = yield* tokenFor("await", request, "pulls")
-      const found = yield* GitHub.Pulls.findPullByHead(repository.owner, repository.name, {
+      const found = yield* GitHub.Once.pull(repository.owner, repository.name, {
         head: branch,
-        writeId: pullKeyOf(request.attemptId),
-      }).pipe(withToken(token, services.apiBaseUrl))
+        base: "",
+        title: "",
+        body: "",
+      }).find(pullKeyOf(request.attemptId)).pipe(withToken(token, services.apiBaseUrl))
       return Option.map(found, (pull) => ({ headSha: pull.head.sha, prNumber: pull.number }) satisfies Published)
     }).pipe(
       Effect.provideService(HttpClient.HttpClient, services.http),

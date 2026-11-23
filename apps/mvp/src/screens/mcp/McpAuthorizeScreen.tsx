@@ -47,7 +47,12 @@ export function McpAuthorizeScreen() {
   // The press's own handler leaves the page, with the URL the action verified: a navigation the person asked for.
   const decide = (decision: "approve" | "deny") =>
     void actions.submitConsent(decision, search).then((redirectTo) => {
-      if (redirectTo !== undefined) window.location.assign(redirectTo)
+      if (redirectTo !== undefined) {
+        const link = document.createElement("a")
+        link.href = redirectTo
+        link.rel = "noreferrer"
+        link.click()
+      }
     })
   return (
     <main className="mcp-authorize-screen" aria-label={AUTHORIZE_AGENT}>

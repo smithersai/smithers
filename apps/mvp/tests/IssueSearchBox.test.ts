@@ -3,13 +3,13 @@ import { act, createElement, type ReactNode } from "react"
 import { afterEach, expect, test, vi } from "vitest"
 import { Collection } from "@smthrs/effect-tanstack-db"
 import { Effect } from "effect"
-import { Searched } from "./schema"
-import { dom } from "../../../tests/fixtures/dom"
+import { Searched } from "../src/features/issues/schema"
+import { dom } from "./fixtures/dom"
 
 Object.assign(globalThis, { self: dom, customElements: dom.customElements, scrollTo: dom.scrollTo.bind(dom) })
 const { createRoot } = await import("react-dom/client")
-const { IssueSearchBox } = await import("./components/IssueSearchBox")
-const { IssuesProvider } = await import("./components/IssuesContext")
+const { IssueSearchBox } = await import("../src/features/issues/components/IssueSearchBox")
+const { IssuesProvider } = await import("../src/features/issues/components/IssuesContext")
 
 const host = dom.document.createElement("div")
 dom.document.body.appendChild(host)
@@ -62,7 +62,7 @@ test("a list's own box that goes focused, an abandoned pending screen and anothe
 // painted a loading state (e2e/fixtures.ts `watchForSpinners`). It shows the search box and the painted rows' slot only.
 test("the list's pending screen is no loading state: no aria-busy, progress bar or skeleton", async () => {
   const { createRoute, RouterProvider } = await import("@tanstack/react-router")
-  const { IssuesPendingScreen } = await import("../../screens/issues/IssuesPendingScreen")
+  const { IssuesPendingScreen } = await import("../src/screens/issues/IssuesPendingScreen")
   const top = createRootRoute()
   const list = createRoute({ getParentRoute: () => top, path: "/$owner/$repo/issues", component: IssuesPendingScreen })
   const pending = createRouter({ routeTree: top.addChildren([list]), history: createMemoryHistory({ initialEntries: ["/acme/widgets/issues"] }) })
@@ -75,8 +75,8 @@ test("the list's pending screen is no loading state: no aria-busy, progress bar 
 
 test("a cold issue waiting for its route and shapes paints no loading state", async () => {
   const { createRoute, RouterProvider } = await import("@tanstack/react-router")
-  const { IssuePendingScreen } = await import("../../screens/issues/IssuePendingScreen")
-  const { router } = await import("../../router")
+  const { IssuePendingScreen } = await import("../src/screens/issues/IssuePendingScreen")
+  const { router } = await import("../src/router")
   expect(router.routesById["/$owner/$repo/issues/$number"].options.pendingComponent).toBe(IssuePendingScreen)
   const top = createRootRoute()
   const issue = createRoute({ getParentRoute: () => top, path: "/$owner/$repo/issues/$number", component: IssuePendingScreen })

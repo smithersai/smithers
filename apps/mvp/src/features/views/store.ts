@@ -148,17 +148,18 @@ export class ViewsStore extends Context.Service<
           initialData: [{ id: OPENED, viewId: null, template: null, repo: null, returnTo: null }],
         })
         const home = yield* Collection.local<HomeConversation, string>({ id: "views-home", schema: HomeConversation, getKey: (row) => row.id })
-        const knowHome = (conversationId: string) => Effect.sync(() => {
+        const setHome = (conversationId: string) => {
           const held = home.tanstack.get(HOME)
           if (held === undefined) home.tanstack.insert({ id: HOME, conversationId })
           else if (held.conversationId !== conversationId) home.tanstack.update(HOME, (draft) => void (draft.conversationId = conversationId))
-        })
+        }
+        const knowHome = (conversationId: string) => Effect.sync(() => setHome(conversationId))
         // The home conversation's id comes from the session answer (auth `Session` `homeConversationId`): the person's own.
         const auth = yield* Effect.serviceOption(AuthStore)
         if (Option.isSome(auth)) {
           const decide = () => {
             const named = homeNamed(auth.value)
-            if (named !== undefined) Effect.runSync(knowHome(named))
+            if (named !== undefined) setHome(named)
           }
           for (const rows of [auth.value.session.tanstack, auth.value.confirmed.tanstack] as const) {
             yield* Effect.acquireRelease(

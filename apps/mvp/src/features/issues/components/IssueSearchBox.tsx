@@ -1,6 +1,6 @@
 import { Input } from "@smthrs/ui"
 import { useNavigate } from "@tanstack/react-router"
-import { useLayoutEffect, useRef } from "react"
+import { useCallback } from "react"
 
 /**
  * The caret of the pending screen's box, as that screen went with the box focused: the list's box mounting in the same
@@ -21,16 +21,15 @@ export function IssueSearchBox({ owner, repo, q, pending = false }: {
   readonly pending?: boolean
 }) {
   const navigate = useNavigate()
-  const input = useRef<HTMLInputElement>(null)
-  useLayoutEffect(() => {
-    const element = input.current
-    if (!pending && element !== null && carried !== undefined && carried.owner === owner && carried.repo === repo) {
+  const input = useCallback((element: HTMLInputElement | null) => {
+    if (element === null) return
+    if (!pending && carried !== undefined && carried.owner === owner && carried.repo === repo) {
       element.focus()
       element.setSelectionRange(carried.start, carried.end)
       carried = undefined
     }
     return () => {
-      if (pending && element !== null && element.ownerDocument.activeElement === element) {
+      if (pending && element.ownerDocument.activeElement === element) {
         const caret = { owner, repo, start: element.selectionStart, end: element.selectionEnd }
         carried = caret
         queueMicrotask(() => {

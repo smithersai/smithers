@@ -88,7 +88,7 @@ interface PublicGitHubReader {
   readonly listIssues: (owner: string, name: string, query: IssueQuery) => Effect.Effect<IssuePage, McpToolError>
   readonly getIssue: (owner: string, name: string, number: number) => Effect.Effect<IssueDetail, McpToolError>
   readonly listPulls: (owner: string, name: string, state: "open" | "closed" | "all") => Effect.Effect<ReadonlyArray<PullSummary>, McpToolError>
-  readonly getPull: (owner: string, name: string, number: number) => Effect.Effect<PullDetail, McpToolError>
+  readonly getPull: (owner: string, name: string, number: number) => Effect.Effect<PullDetail & { readonly headSha?: string | undefined }, McpToolError>
   readonly getPullFiles: (owner: string, name: string, number: number) => Effect.Effect<PullFilesListing, McpToolError>
 }
 
@@ -328,7 +328,7 @@ const makePublicGitHubReader = (
       })
     })
 
-  const getPull = (owner: string, name: string, number: number): Effect.Effect<PullDetail, McpToolError> =>
+  const getPull = (owner: string, name: string, number: number): Effect.Effect<PullDetail & { readonly headSha?: string | undefined }, McpToolError> =>
     Effect.gen(function* () {
       const rp = repoPath(owner, name)
       const raw = yield* getJson(`${rp}/pulls/${number}`, `pull request #${number}`)
@@ -336,15 +336,11 @@ const makePublicGitHubReader = (
       const user = p["user"] as { readonly login?: unknown } | null | undefined
       const head = p["head"] as { readonly ref?: unknown; readonly sha?: unknown } | null | undefined
       const base = p["base"] as { readonly ref?: unknown } | null | undefined
-      const headSha = typeof head?.sha === "string" ? head.sha : undefined
-      const [reviewsRaw, checksRaw] = yield* Effect.all([
-        getJson(`${rp}/pulls/${number}/reviews?per_page=100`, `reviews on #${number}`).pipe(Effect.orElseSucceed(() => [])),
-        headSha === undefined
-          ? Effect.succeed({ check_runs: [] })
-          : getJson(`${rp}/commits/${encodeURIComponent(headSha)}/check-runs?per_page=50`, `checks on #${number}`).pipe(
-              Effect.orElseSucceed(() => ({ check_runs: [] })),
-            ),
-      ])
+      // Pull request checks are Smithers flow runs, never GitHub Actions (ruling GH-1, github.no-actions).
+      // An unindexed public GitHub repository has no Smithers runs yet, so `checks` stays empty here.
+      const reviewsRaw = yield* getJson(`${rp}/pulls/${number}/reviews?per_page=100`, `reviews on #${number}`).pipe(
+        Effect.orElseSucceed(() => []),
+      )
       const reviews = Array.isArray(reviewsRaw)
         ? reviewsRaw.map((entry) => {
             const r = entry as Record<string, unknown>
@@ -356,17 +352,7 @@ const makePublicGitHubReader = (
             }
           })
         : []
-      const checkRuns = (checksRaw as { readonly check_runs?: unknown })?.check_runs
-      const checks = Array.isArray(checkRuns)
-        ? checkRuns.map((entry) => {
-            const c = entry as Record<string, unknown>
-            return {
-              name: typeof c["name"] === "string" ? c["name"] : "",
-              status: typeof c["status"] === "string" ? c["status"] : "",
-              conclusion: typeof c["conclusion"] === "string" ? c["conclusion"] : null,
-            }
-          })
-        : []
+      const checks: PullDetail["checks"] = []
       return {
         number: Number(p["number"] ?? number),
         title: typeof p["title"] === "string" ? p["title"] : "",
@@ -379,6 +365,7 @@ const makePublicGitHubReader = (
         body: typeof p["body"] === "string" ? p["body"] : "",
         reviews,
         checks,
+        headSha: typeof head?.sha === "string" ? head.sha : undefined,
       }
     })
 
@@ -732,9 +719,27 @@ export const makeLiveDeps = <R = never>(options: LiveDepsOptions<R>): Effect.Eff
             FROM pulls p
             JOIN items i ON i.id = p.item_id
             WHERE p.repo_id = ${id} AND p.number = ${number} AND i.deleted_at IS NULL`
+          const checksForSha = (headSha: string | undefined) =>
+            headSha === undefined
+              ? Effect.succeed([] as PullDetail["checks"])
+              : sql<{ readonly flow: string; readonly status: string }>`
+                  SELECT flow, status
+                  FROM runs
+                  WHERE repo_id = ${id} AND sha = ${headSha}
+                  ORDER BY created_at DESC
+                  LIMIT 50`.pipe(
+                  Effect.map((rows) =>
+                    rows.map((r) => ({
+                      name: r.flow,
+                      status: r.status,
+                      conclusion: r.status === "completed" ? "success" : r.status === "failed" ? "failure" : null,
+                    })),
+                  ),
+                )
           if (pull === undefined) {
             if (publicGitHub !== undefined && !(yield* hasSyncedIssues(owner, name))) {
-              return yield* publicGitHub.getPull(owner, name, number)
+              const { headSha, ...detail } = yield* publicGitHub.getPull(owner, name, number)
+              return { ...detail, checks: yield* checksForSha(headSha) }
             }
             return yield* new McpToolError({ code: "not_found", message: `Pull request #${number} not found` })
           }
@@ -748,15 +753,7 @@ export const makeLiveDeps = <R = never>(options: LiveDepsOptions<R>): Effect.Eff
             WHERE repo_id = ${id} AND item_id = ${pull.item_id}
             ORDER BY submitted_at ASC NULLS LAST, id ASC
             LIMIT 100`
-          const runs = yield* sql<{
-            readonly flow: string
-            readonly status: string
-          }>`
-            SELECT flow, status
-            FROM runs
-            WHERE repo_id = ${id} AND sha = ${pull.head_sha}
-            ORDER BY created_at DESC
-            LIMIT 50`
+          const checks = yield* checksForSha(pull.head_sha)
           return {
             number: pull.number,
             title: pull.title,
@@ -768,11 +765,7 @@ export const makeLiveDeps = <R = never>(options: LiveDepsOptions<R>): Effect.Eff
             updatedAt: pull.updated_at,
             body: pull.body,
             reviews: reviews.map((r) => ({ author: r.author_login, state: r.state, body: r.body })),
-            checks: runs.map((r) => ({
-              name: r.flow,
-              status: r.status,
-              conclusion: r.status === "completed" ? "success" : r.status === "failed" ? "failure" : null,
-            })),
+            checks,
           }
         }).pipe(
           Effect.provide(database),

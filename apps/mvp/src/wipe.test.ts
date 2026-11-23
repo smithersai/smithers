@@ -585,3 +585,35 @@ test.each(["session update", "confirmation restore", "confirmation read", "confi
     expect(page.records.filter((record) => record === "sign_out_released")).toHaveLength(1)
   })))
 })
+
+test("memoryStorage().withLock serializes concurrent callers FIFO and recovers after a failure", async () => {
+  const storage = memoryStorage()
+  const order: Array<string> = []
+  let releaseFirst!: () => void
+  const firstEntered = new Promise<void>((resolve) => {
+    void storage.withLock("k", async () => {
+      order.push("first:start")
+      resolve()
+      await new Promise<void>((done) => { releaseFirst = done })
+      order.push("first:end")
+      return "one"
+    })
+  })
+  await firstEntered
+  const second = storage.withLock("k", async () => {
+    order.push("second:throw")
+    throw new Error("boom")
+  })
+  const third = storage.withLock("k", async () => {
+    order.push("third:run")
+    return "three"
+  })
+  releaseFirst()
+  await expect(second).rejects.toThrow("boom")
+  expect(await third).toBe("three")
+  expect(order).toEqual(["first:start", "first:end", "second:throw", "third:run"])
+  await storage.setMany([["a", "1"], ["b", "2"]])
+  expect(await storage.keys()).toEqual(["a", "b"])
+  await storage.clear()
+  expect(await storage.keys()).toEqual([])
+})

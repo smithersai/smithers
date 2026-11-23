@@ -152,6 +152,9 @@ export const importRules: ReadonlyArray<ImportRule> = [
   },
   {
     kind: "rootImportsOnly",
+    // worker/AgentSandbox.ts binds @smthrs/harness/QuickJSWorkerd, which @smthrs/harness keeps off its root entry so
+    // browser and Node bundles never meet the workerd-only .wasm import.
+    files: ["*.{ts,tsx,vibe,mts,cts,js,mjs,cjs}", "!(worker)/**", "worker/!(AgentSandbox).{ts,vibe}", "worker/*/**"],
     packages: ["@smthrs/*"],
     because: "Import Smithers packages from their root entry only. See \"Use the Smithers SDK; extend it, never " +
       "hand-roll\" in apps/mvp/AGENTS.md and \"Use the Smithers libraries\" in the root AGENTS.md."
@@ -193,11 +196,24 @@ export const importRules: ReadonlyArray<ImportRule> = [
       "Schedule.spaced",
       "Schedule.fixed",
       "Schedule.recurs",
-      "Schedule.fibonacci",
-      "*.waitUntil"
+      "Schedule.fibonacci"
     ],
     because: "durable.no-hand-rolled-durability: retries, schedules, timers and background work come from the " +
       "@smthrs/flow engine, never app code. See \"Everything is a durable flow\" in the root AGENTS.md and " +
+      "apps/mvp/docs/rules.md."
+  },
+  {
+    kind: "forbidCalls",
+    // worker/RequestBackground.ts is the single Cloudflare WorkerExecutionContext adapter (injected by worker/ChatApiProgram.ts).
+    files: [
+      ...appSources.map((glob) =>
+        glob === "worker/!(*.test).{ts,vibe}" ? "worker/!(RequestBackground|*.test).{ts,vibe}" : glob
+      ),
+      "src/main.tsx"
+    ],
+    callees: ["*.waitUntil"],
+    because: "durable.no-hand-rolled-durability: background work runs through the @smthrs/flow engine, never bare " +
+      "waitUntil outside worker/RequestBackground.ts. See \"Everything is a durable flow\" in the root AGENTS.md and " +
       "apps/mvp/docs/rules.md."
   },
   {
@@ -279,17 +295,19 @@ export const importRules: ReadonlyArray<ImportRule> = [
     files: [
       "src/**",
       "db/**",
-      "worker/!(ChatApi|ChatApiProgram|DevChatApi|index|Executions|ExecutionHost|BranchSandboxes|BranchRooms|AuthBroker|AuthBrokerHost).{ts,vibe}",
-      "worker/*/**",
+      "worker/!(ChatApi|ChatApiProgram|DevChatApi|index|Executions|ExecutionHost|BranchSandboxes|BranchRooms|AuthBroker|AuthBrokerHost|RunContent|GitHubConnection|GitHubConnectionHost|*.test).{ts,vibe}",
+      "worker/!(test)/!(*.test).{ts,tsx,vibe,mts,cts,js,mjs,cjs}",
+      "worker/!(test)/!(test)/**/!(*.test).{ts,tsx,vibe,mts,cts,js,mjs,cjs}",
       "e2e/**",
       "bench/**"
     ],
     modules: ["alchemy", "alchemy/**", "cloudflare:*", "@cloudflare/**", "@smthrs/platform-cloudflare"],
     because: "sdk.host-agnostic-flows: the agent and every flow run on Cloudflare, in the native app or in a sandbox, " +
       "so Cloudflare reaches them only as injected layers wired in the Worker entries (worker/ChatApi.ts with the program it imports, worker/ChatApiProgram.ts, " +
-      "worker/DevChatApi.ts, worker/index.ts, worker/Executions.ts with worker/ExecutionHost.ts for remote flows, and " +
-      "worker/BranchSandboxes.ts for the branches' machines and worker/BranchRooms.ts for their rooms), " +
-      "alchemy.run.ts and " +
+      "worker/DevChatApi.ts, worker/index.ts, worker/Executions.ts with worker/ExecutionHost.ts for remote flows, " +
+      "worker/BranchSandboxes.ts for the branches' machines, worker/BranchRooms.ts for their rooms, " +
+      "worker/RunContent.ts for run transcripts, worker/AuthBroker.vibe with worker/AuthBrokerHost.vibe, and " +
+      "worker/GitHubConnection.vibe with worker/GitHubConnectionHost.vibe), alchemy.run.ts and " +
       "infra/. See apps/mvp/docs/rules.md."
   },
   {
