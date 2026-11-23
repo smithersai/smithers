@@ -53,6 +53,8 @@ import { WebProvider } from "./features/web/components/WebContext"
 import type { WebView } from "./features/web/web"
 import { PluginsProvider } from "./plugins/components/PluginsContext"
 import type { PluginsView } from "./plugins/ui"
+import { McpProvider } from "./features/mcp/components/McpContext"
+import type { McpView } from "./features/mcp/store"
 
 /** Every layer the page's React tree reads: what the boot program hands the page (src/boot.ts `render`). */
 export interface AppViews {
@@ -83,6 +85,7 @@ export interface AppViews {
   readonly domains: DomainsView
   readonly personalModel: PersonalModelView
   readonly firstRun: FirstRunView
+  readonly mcp?: McpView
 }
 
 /**
@@ -119,7 +122,9 @@ export function AppProviders({ views: app, children }: { readonly views: AppView
                                                       {/* The one toast stack reads the feed (decision 0009). */}
                                                       <AttentionProvider value={app.attention}>
                                                         {/* The plugin host: its slots in the shell, its views' routes (src/plugins/). */}
-                                                        <PluginsProvider value={app.plugins}>{children}</PluginsProvider>
+                                                        <PluginsProvider value={app.plugins}>
+                                                          {app.mcp === undefined ? children : <McpProvider value={app.mcp}>{children}</McpProvider>}
+                                                        </PluginsProvider>
                                                       </AttentionProvider>
                                                     </DocsProvider>
                                                   </HomeProvider>

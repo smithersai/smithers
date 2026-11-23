@@ -36,6 +36,7 @@ import { Docs } from "./features/docs/docs"
 import { Domains } from "./features/domains/domains"
 import { PersonalModel } from "./features/personal-model/personalModel"
 import { FirstRun } from "./features/first-run/firstRun"
+import { Mcp } from "./features/mcp/store"
 import { Pulls } from "./features/pulls/pulls"
 import { StoragePersistence } from "@smthrs/platform-browser"
 import { nodeDevice, openTab, openTestApp, TestChatApi } from "./test/chatApi"
@@ -127,6 +128,7 @@ test("renders the chat, sign-in, theme, repository, slash-command, views, web-pa
       Effect.service(Domains),
       Effect.service(PersonalModel),
       Effect.service(FirstRun),
+      Effect.service(Mcp),
     ]),
   )
   expect(views[0]).toHaveLength(layers.length)

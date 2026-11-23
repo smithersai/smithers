@@ -3,6 +3,7 @@ export const ROUTE_PATHS = {
   landing: "/",
   bug: "/bug",
   app: "/app",
+  mcpAuthorize: "/app/mcp/authorize",
   view: "/app/views/$viewId",
   flows: "/app/flows",
   flowsAlias: "/flows",

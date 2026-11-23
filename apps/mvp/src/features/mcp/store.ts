@@ -1,0 +1,393 @@
+import { Collection, LiveQuery } from "@smthrs/effect-tanstack-db"
+import { Context, Data, type Duration, Effect, Layer, Option, Schema, type Scope } from "effect"
+import { HttpClient, HttpClientRequest, type HttpClientResponse } from "effect/http"
+import { runners } from "../../boundary"
+import { ROLES } from "../auth/contract"
+import { MCP_CLIENTS, MCP_OAUTH_AUTHORIZE_ROUTE, MCP_SCOPES, MCP_TOKENS_ROUTE, type McpClientId } from "./contract"
+import { searchOf, verifiedRedirect } from "./view"
+
+// Bring Your Own Agent on this tab: three local-only TanStack DB collections of one row each, in memory and never kept
+// on the device (so none is in src/device/registry.ts): the Connect agent dialog, the person's connected agents as
+// ChatApi last listed them, and the OAuth consent request the browser is asked to decide. Components read them through
+// live queries and write through the plain actions of `Mcp` (AGENTS.md "State (flux)": no `useState`).
+//
+// ChatApi's routes are called through Effect's `HttpClient`, never raw `fetch` (rule effect.native-api-first). The
+// page's transport (src/device/identity.ts `boundFetch`) sets `DEVICE_PERSON_HEADER` on every `/api/` request from the
+// verified session, so no action takes a person id: a caller can't name the wrong person.
+
+/** One connected agent, as `GET /api/me/mcp-tokens` lists it (contract.ts `McpTokenSummary`). */
+export const TokenSummary = Schema.Struct({
+  id: Schema.String,
+  clientName: Schema.String,
+  repoScope: Schema.NullOr(Schema.String),
+  scopes: Schema.Array(Schema.Literals(MCP_SCOPES)),
+  createdAt: Schema.String,
+  expiresAt: Schema.String,
+  lastUsedAt: Schema.NullOr(Schema.String),
+  revokedAt: Schema.NullOr(Schema.String),
+})
+export type TokenSummary = typeof TokenSummary.Type
+
+/** An authorization request, as `GET /api/mcp/oauth/authorize` describes it (contract.ts `McpConsentDetails`). */
+export const ConsentDetails = Schema.Struct({
+  clientId: Schema.String,
+  clientName: Schema.String,
+  redirectUri: Schema.String,
+  repoScope: Schema.NullOr(Schema.String),
+  scopes: Schema.Array(Schema.Literals(MCP_SCOPES)),
+  state: Schema.NullOr(Schema.String),
+  codeChallenge: Schema.String,
+  codeChallengeMethod: Schema.Literal("S256"),
+  login: Schema.String,
+  effectiveRole: Schema.NullOr(Schema.Literals(ROLES)),
+})
+export type ConsentDetails = typeof ConsentDetails.Type
+
+/** The one `connect` row's key. */
+export const CONNECT = "connect"
+/** The Connect agent dialog: whether it is open, for which repository, and the client preset shown. */
+export const ConnectRow = Schema.Struct({
+  id: Schema.Literal(CONNECT),
+  open: Schema.Boolean,
+  client: Schema.Literals(MCP_CLIENTS),
+  owner: Schema.String,
+  name: Schema.String,
+})
+export type ConnectRow = typeof ConnectRow.Type
+
+/** The one `tokens` row's key. */
+export const TOKENS = "tokens"
+/**
+ * The person's connected agents: `idle` until asked for, `loading`, then `ready` with `tokens` or `failed` with the
+ * refusal's code in `error`. `revokingId` is the token a revoke is in flight for.
+ */
+export const TokensRow = Schema.Struct({
+  id: Schema.Literal(TOKENS),
+  status: Schema.Literals(["idle", "loading", "ready", "failed"]),
+  tokens: Schema.Array(TokenSummary),
+  revokingId: Schema.NullOr(Schema.String),
+  error: Schema.NullOr(Schema.String),
+})
+export type TokensRow = typeof TokensRow.Type
+
+/** What the person decides on the consent screen. */
+export const DECISIONS = ["approve", "deny"] as const
+export type Decision = (typeof DECISIONS)[number]
+
+/** The one `consent` row's key. */
+export const CONSENT = "consent"
+/**
+ * The authorization request this tab is asked to decide: `idle`, `loading`, `ready` with its `details`, `signed_out`
+ * when ChatApi says nobody is signed in, `failed` with a code, or `done` with the verified `redirectTo` the browser
+ * leaves for. `submitting` is the decision in flight.
+ */
+export const ConsentRow = Schema.Struct({
+  id: Schema.Literal(CONSENT),
+  status: Schema.Literals(["idle", "loading", "ready", "signed_out", "failed", "done"]),
+  details: Schema.NullOr(ConsentDetails),
+  submitting: Schema.NullOr(Schema.Literals(DECISIONS)),
+  error: Schema.NullOr(Schema.String),
+  redirectTo: Schema.NullOr(Schema.String),
+})
+export type ConsentRow = typeof ConsentRow.Type
+
+/** How long a route gets to answer. */
+export const MCP_WITHIN: Duration.Input = "15 seconds"
+
+/**
+ * ChatApi didn't take the request: no whole answer within the deadline or no network (`status` absent), or a refusal
+ * (`status`, with its `code` when the body named one).
+ */
+export class McpNotTaken extends Data.TaggedError("McpNotTaken")<{
+  readonly status?: number
+  readonly code?: string
+}> {}
+
+/** A refusal's body: ChatApi's `code`, or OAuth's `error`. */
+const Refusal = Schema.Struct({ code: Schema.optional(Schema.String), error: Schema.optional(Schema.String) })
+const decodeRefusal = Schema.decodeUnknownEffect(Refusal)
+/** The token list, bare or under `tokens`. */
+const decodeTokens = Schema.decodeUnknownEffect(
+  Schema.Union([Schema.Array(TokenSummary), Schema.Struct({ tokens: Schema.Array(TokenSummary) })]),
+)
+const decodeDetails = Schema.decodeUnknownEffect(ConsentDetails)
+const decodeDecided = Schema.decodeUnknownEffect(Schema.Struct({ redirectTo: Schema.String }))
+
+/** ChatApi's MCP routes for a signed-in person, as a service. A test of a route that fails provides a faulty one. */
+export class McpClient extends Context.Service<
+  McpClient,
+  {
+    /** `GET /api/me/mcp-tokens`: the person's connected agents. */
+    readonly tokens: Effect.Effect<ReadonlyArray<TokenSummary>, McpNotTaken>
+    /** `DELETE /api/me/mcp-tokens/<id>`: revoke one. */
+    readonly revoke: (tokenId: string) => Effect.Effect<void, McpNotTaken>
+    /** `GET /api/mcp/oauth/authorize<search>`: what the request asks for, and as whom. */
+    readonly consent: (search: string) => Effect.Effect<ConsentDetails, McpNotTaken>
+    /** `POST /api/mcp/oauth/authorize<search> { decision }`: where the browser goes next. */
+    readonly decide: (decision: Decision, search: string) => Effect.Effect<string, McpNotTaken>
+  }
+>()("@smthrs/mvp/mcp/McpClient") {
+  /** The real client: ChatApi at `origin`. */
+  static readonly layer = (options: { readonly origin: string; readonly within?: Duration.Input }) =>
+    Layer.effect(
+      McpClient,
+      Effect.map(HttpClient.HttpClient, (client) => {
+        const send = <A>(
+          request: HttpClientRequest.HttpClientRequest,
+          expected: ReadonlyArray<number>,
+          read: (response: HttpClientResponse.HttpClientResponse) => Effect.Effect<A, unknown>,
+        ) =>
+          Effect.gen(function* () {
+            const response = yield* client.execute(request).pipe(Effect.mapError(() => new McpNotTaken({})))
+            if (!expected.includes(response.status)) {
+              const refusal = yield* response.json.pipe(Effect.flatMap(decodeRefusal), Effect.option)
+              const code = Option.match(refusal, { onNone: () => undefined, onSome: (body) => body.code ?? body.error })
+              return yield* new McpNotTaken({ status: response.status, ...(code === undefined ? {} : { code }) })
+            }
+            return yield* read(response).pipe(Effect.mapError(() => new McpNotTaken({ status: response.status })))
+          }).pipe(
+            // Interrupting the request aborts its fetch, so a stalled body stops too.
+            Effect.timeoutOrElse({ duration: options.within ?? MCP_WITHIN, orElse: () => Effect.fail(new McpNotTaken({})) }),
+          )
+        const authorize = (search: string) => `${options.origin}${MCP_OAUTH_AUTHORIZE_ROUTE}${searchOf(search)}`
+        return McpClient.of({
+          tokens: send(HttpClientRequest.get(`${options.origin}${MCP_TOKENS_ROUTE}`), [200], (response) =>
+            response.json.pipe(
+              Effect.flatMap(decodeTokens),
+              Effect.map((body) => ("tokens" in body ? body.tokens : body)),
+            )),
+          revoke: (tokenId) =>
+            send(
+              HttpClientRequest.delete(`${options.origin}${MCP_TOKENS_ROUTE}/${encodeURIComponent(tokenId)}`),
+              [200, 202, 204],
+              () => Effect.void,
+            ),
+          consent: (search) =>
+            send(
+              HttpClientRequest.get(authorize(search)).pipe(HttpClientRequest.acceptJson),
+              [200],
+              (response) => Effect.flatMap(response.json, decodeDetails),
+            ),
+          decide: (decision, search) =>
+            send(
+              HttpClientRequest.post(authorize(search)).pipe(HttpClientRequest.bodyJsonUnsafe({ decision })),
+              [200],
+              (response) => response.json.pipe(Effect.flatMap(decodeDecided), Effect.map((body) => body.redirectTo)),
+            ),
+        })
+      }),
+    )
+}
+
+const connectQuery = (rows: Collection.Collection<ConnectRow, string>) =>
+  LiveQuery.make((q) => q.from({ row: rows.tanstack }).findOne())
+const tokensQuery = (rows: Collection.Collection<TokensRow, string>) =>
+  LiveQuery.make((q) => q.from({ row: rows.tanstack }).findOne())
+const consentQuery = (rows: Collection.Collection<ConsentRow, string>) =>
+  LiveQuery.make((q) => q.from({ row: rows.tanstack }).findOne())
+
+type Query<F extends (...args: never) => unknown> = Effect.Success<ReturnType<F>>
+
+/** This tab's MCP state: each collection and its live query, and the scope an action's request runs in. */
+export class McpStore extends Context.Service<
+  McpStore,
+  {
+    readonly connect: Collection.Collection<ConnectRow, string>
+    readonly connectState: Query<typeof connectQuery>
+    readonly tokens: Collection.Collection<TokensRow, string>
+    readonly tokensState: Query<typeof tokensQuery>
+    readonly consent: Collection.Collection<ConsentRow, string>
+    readonly consentState: Query<typeof consentQuery>
+    readonly scope: Scope.Scope
+  }
+>()("@smthrs/mvp/mcp/McpStore") {
+  /** The store; its collections cleaned up when the scope closes. */
+  static readonly layer = Layer.effect(
+    McpStore,
+    Effect.gen(function* () {
+      const scope = yield* Effect.scope
+      const connect = yield* Collection.local<ConnectRow, string>({
+        id: "mcp-connect",
+        schema: ConnectRow,
+        getKey: (row) => row.id,
+        initialData: [{ id: CONNECT, open: false, client: "claude", owner: "", name: "" }],
+      })
+      const tokens = yield* Collection.local<TokensRow, string>({
+        id: "mcp-tokens",
+        schema: TokensRow,
+        getKey: (row) => row.id,
+        initialData: [{ id: TOKENS, status: "idle", tokens: [], revokingId: null, error: null }],
+      })
+      const consent = yield* Collection.local<ConsentRow, string>({
+        id: "mcp-consent",
+        schema: ConsentRow,
+        getKey: (row) => row.id,
+        initialData: [{ id: CONSENT, status: "idle", details: null, submitting: null, error: null, redirectTo: null }],
+      })
+      return McpStore.of({
+        connect,
+        connectState: yield* connectQuery(connect),
+        tokens,
+        tokensState: yield* tokensQuery(tokens),
+        consent,
+        consentState: yield* consentQuery(consent),
+        scope,
+      })
+    }),
+  )
+}
+
+// A local collection refuses only a row its own schema rejects, which these never are: a bug, not a state.
+const setConnect = (change: Partial<Omit<ConnectRow, "id">>) =>
+  Effect.flatMap(McpStore, ({ connect }) => Effect.asVoid(Effect.orDie(connect.update(CONNECT, (draft) => void Object.assign(draft, change)))))
+const setTokens = (change: Partial<Omit<TokensRow, "id">>) =>
+  Effect.flatMap(McpStore, ({ tokens }) => Effect.asVoid(Effect.orDie(tokens.update(TOKENS, (draft) => void Object.assign(draft, change)))))
+const setConsent = (change: Partial<Omit<ConsentRow, "id">>) =>
+  Effect.flatMap(McpStore, ({ consent }) => Effect.asVoid(Effect.orDie(consent.update(CONSENT, (draft) => void Object.assign(draft, change)))))
+
+/** A refusal's code for the views: ChatApi's, else `authentication` for a `401`, else `unavailable`. */
+const codeOf = (refused: McpNotTaken): string => refused.code ?? (refused.status === 401 ? "authentication" : "unavailable")
+
+/** Opens the Connect agent dialog for `owner/name`, on the client last shown. */
+export const openConnect = (owner: string, name: string) => setConnect({ open: true, owner, name })
+
+/** Closes the dialog. */
+export const closeConnect = setConnect({ open: false })
+
+/** Shows `client`'s snippet. */
+export const selectClient = (client: McpClientId) => setConnect({ client })
+
+/** Asks ChatApi for the person's connected agents: `loading`, then `ready` with them or `failed` with why. */
+export const loadTokens = Effect.gen(function* () {
+  const client = yield* McpClient
+  yield* setTokens({ status: "loading", error: null })
+  yield* client.tokens.pipe(
+    Effect.matchEffect({
+      onSuccess: (tokens) => setTokens({ status: "ready", tokens: [...tokens] }),
+      onFailure: (refused) => setTokens({ status: "failed", error: codeOf(refused) }),
+    }),
+  )
+}).pipe(Effect.annotateLogs({ feature: "mcp" }))
+
+/**
+ * Revokes `tokenId`: marks it in flight, and once ChatApi took it, marks the row revoked as of `now`. A token ChatApi no
+ * longer has (`404`) is as revoked as one it just revoked. A refusal leaves the list as it was, with why.
+ */
+export const revokeToken = (tokenId: string, now: () => string = () => new Date().toISOString()) =>
+  Effect.gen(function* () {
+    const client = yield* McpClient
+    const { tokens } = yield* McpStore
+    yield* setTokens({ revokingId: tokenId, error: null })
+    const outcome = yield* client.revoke(tokenId).pipe(
+      Effect.as(undefined),
+      // expected: a refused revoke is a state the row's `error` shows, not a fault
+      Effect.catch((refused) => Effect.succeed(refused.status === 404 ? undefined : codeOf(refused))),
+    )
+    if (outcome !== undefined) return yield* setTokens({ revokingId: null, error: outcome })
+    const listed = Option.getOrThrow(yield* tokens.get(TOKENS)).tokens
+    yield* setTokens({
+      revokingId: null,
+      tokens: listed.map((token) => (token.id === tokenId && token.revokedAt === null ? { ...token, revokedAt: now() } : token)),
+    })
+  }).pipe(Effect.annotateLogs({ feature: "mcp" }))
+
+/**
+ * Asks ChatApi what the authorization request in `search` asks for: `ready` with its details, `signed_out` on a `401`,
+ * or `failed` with why. Nothing from an earlier request stays.
+ */
+export const loadConsent = (search: string) =>
+  Effect.gen(function* () {
+    const client = yield* McpClient
+    yield* setConsent({ status: "loading", details: null, submitting: null, error: null, redirectTo: null })
+    yield* client.consent(search).pipe(
+      Effect.matchEffect({
+        onSuccess: (details) => setConsent({ status: "ready", details }),
+        onFailure: (refused) =>
+          refused.status === 401 ? setConsent({ status: "signed_out" }) : setConsent({ status: "failed", error: codeOf(refused) }),
+      }),
+    )
+  }).pipe(Effect.annotateLogs({ feature: "mcp" }))
+
+/**
+ * Sends the person's `decision` on the request in `search`, and answers where the browser goes: ChatApi's `redirectTo`,
+ * only when it is the callback this request registered (view.ts `verifiedRedirect`). Anything else, or a refusal,
+ * answers nothing and leaves the screen up with why. One decision at a time, and only on a request that loaded.
+ */
+export const submitConsent = (decision: Decision, search: string) =>
+  Effect.gen(function* () {
+    const client = yield* McpClient
+    const { consent } = yield* McpStore
+    const row = Option.getOrThrow(yield* consent.get(CONSENT))
+    if (row.status !== "ready" || row.details === null || row.submitting !== null) return undefined
+    const { redirectUri } = row.details
+    yield* setConsent({ submitting: decision, error: null })
+    const answer = yield* client.decide(decision, search).pipe(Effect.result)
+    if (answer._tag === "Failure") {
+      yield* setConsent({ submitting: null, error: codeOf(answer.failure) })
+      return undefined
+    }
+    const redirectTo = verifiedRedirect(redirectUri, answer.success)
+    if (redirectTo === undefined) {
+      yield* setConsent({ submitting: null, error: "invalid_redirect" })
+      return undefined
+    }
+    yield* setConsent({ status: "done", submitting: null, redirectTo })
+    return redirectTo
+  }).pipe(Effect.annotateLogs({ feature: "mcp" }))
+
+type Store = McpStore["Service"]
+
+/** What a frontend reads live: each is one row. */
+export interface McpQueries {
+  readonly connect: Store["connectState"]["tanstack"]
+  readonly tokens: Store["tokensState"]["tanstack"]
+  readonly consent: Store["consentState"]["tanstack"]
+}
+
+/** What a person does, as plain functions with no Effect in sight. */
+export interface McpActions {
+  readonly openConnect: (owner: string, name: string) => void
+  readonly closeConnect: () => void
+  readonly selectClient: (client: McpClientId) => void
+  /** Resolves once the list is `ready` or `failed`: `/app/settings`' loader calls it, and Refresh. */
+  readonly loadTokens: () => Promise<void>
+  readonly revokeToken: (tokenId: string) => Promise<void>
+  /** Resolves once the request is `ready`, `signed_out` or `failed`: `/app/mcp/authorize`'s loader calls it. */
+  readonly loadConsent: (search: string) => Promise<void>
+  /** Resolves with the verified callback URL to leave for, or nothing when the screen stays. */
+  readonly submitConsent: (decision: Decision, search: string) => Promise<string | undefined>
+}
+
+/** MCP as a frontend sees it: live queries to read and plain functions to act. */
+export class Mcp extends Context.Service<Mcp, { readonly queries: McpQueries; readonly actions: McpActions }>()(
+  "@smthrs/mvp/mcp/Mcp",
+) {
+  /** Binds the store's queries and actions for frontends, over the `McpClient` this layer is given. */
+  static readonly layer = Layer.effect(
+    Mcp,
+    Effect.gen(function* () {
+      const store = yield* McpStore
+      const context = yield* Effect.context<McpStore | McpClient>()
+      const { runSync: run, runPromise: promise } = runners(context, "mcp")
+      return Mcp.of({
+        queries: { connect: store.connectState.tanstack, tokens: store.tokensState.tanstack, consent: store.consentState.tanstack },
+        actions: {
+          openConnect: (owner, name) => run(openConnect(owner, name)),
+          closeConnect: () => run(closeConnect),
+          selectClient: (client) => run(selectClient(client)),
+          loadTokens: () => promise(loadTokens),
+          revokeToken: (tokenId) => promise(revokeToken(tokenId)),
+          loadConsent: (search) => promise(loadConsent(search)),
+          submitConsent: (decision, search) => promise(submitConsent(decision, search)),
+        },
+      })
+    }),
+  ).pipe(Layer.provideMerge(McpStore.layer))
+
+  /** The same over ChatApi at `origin`; it needs the page's `HttpClient`. */
+  static readonly live = (options: { readonly origin: string; readonly within?: Duration.Input }) =>
+    Mcp.layer.pipe(Layer.provide(McpClient.layer(options)))
+}
+
+/** The MCP layer's value: what frontends get. */
+export type McpView = Mcp["Service"]

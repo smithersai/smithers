@@ -1,0 +1,22 @@
+import { Metric } from "effect"
+
+// MCP counters (docs/observability.md). Attributes carry only routes, methods, tool names, roles, steps, outcomes and
+// codes: never a token, an issue's text, a file's contents or a person's login (OBS-5).
+
+/** MCP HTTP requests, by `route` (`mcp`, `repo_mcp`, `oauth`) and `outcome`. */
+export const requests = Metric.counter("smithers_mcp_requests", {
+  description: "MCP HTTP requests by route and outcome",
+  incremental: true,
+})
+
+/** MCP tool calls, by `tool`, `role` and `outcome`. */
+export const toolCalls = Metric.counter("smithers_mcp_tool_calls", {
+  description: "MCP tool calls by tool, role, and outcome",
+  incremental: true,
+})
+
+/** MCP OAuth operations, by `step` and `outcome`. */
+export const oauthEvents = Metric.counter("smithers_mcp_oauth", {
+  description: "MCP OAuth operations by step and outcome",
+  incremental: true,
+})

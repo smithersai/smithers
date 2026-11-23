@@ -542,6 +542,7 @@ const render: BootOptions["render"] = (
   domains,
   personalModel,
   firstRun,
+  mcp,
 ) =>
   root.render(
     <StrictMode>
@@ -550,13 +551,13 @@ const render: BootOptions["render"] = (
         <AppProviders
           views={{
             chat, auth, theme, repo, commands, views, web, status, branch, terminal, transcript, issues, runs, flows, home,
-            spend, attention, todos, codeIntel, pulls, plugins, files, secrets, docs, domains, personalModel, firstRun,
+            spend, attention, todos, codeIntel, pulls, plugins, files, secrets, docs, domains, personalModel, firstRun, mcp,
           }}
         >
           {/* The routes' loaders open what they show through these (src/router.tsx). */}
           <RouterProvider
             router={router}
-            context={{ repo, home, docs, views, branch, terminal, issues, pulls, todos, runs, flows, plugins, domains, secrets }}
+            context={{ repo, home, docs, views, branch, terminal, issues, pulls, todos, runs, flows, plugins, domains, secrets, mcp }}
           />
         </AppProviders>
       </AppErrorBoundary>

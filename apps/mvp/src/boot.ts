@@ -106,6 +106,7 @@ import { Domains, type DomainsView } from "./features/domains/domains"
 import { PersonalModelClient } from "./features/personal-model/api"
 import { PersonalModel, type PersonalModelView } from "./features/personal-model/personalModel"
 import { PersonalModelStore } from "./features/personal-model/store"
+import { Mcp, type McpView } from "./features/mcp/store"
 import { FirstRun, type FirstRunView } from "./features/first-run/firstRun"
 import { type ThemeHost, ThemeStore } from "./features/theme/store"
 import { Theme, type ThemeView } from "./features/theme/theme"
@@ -307,6 +308,8 @@ export const appLayer = <S = never>(
       origin,
       ...(chat.confirmWithin === undefined ? {} : { confirmWithin: chat.confirmWithin }),
     }))),
+    // Bring Your Own Agent via MCP (docs/features/mcp.md): Connect Agent dialog, OAuth consent, and connected tokens.
+    Mcp.live({ origin, within: REQUEST_WITHIN }),
     tabIssues({ name: host.engineName }).pipe(Layer.provide(TabChannel.layer)),
     // TODOs and the stack (decision 0016): the stack pages, the drafts, and this tab's answers to the TODO steps it
     // started.
@@ -615,6 +618,7 @@ export interface BootOptions {
     domains: DomainsView,
     personalModel: PersonalModelView,
     firstRun: FirstRunView,
+    mcp: McpView,
   ) => void
 }
 
@@ -655,6 +659,7 @@ export const boot = (options: BootOptions & { readonly storage: StoragePersisten
     const domains = yield* Domains
     const personalModel = yield* PersonalModel
     const firstRun = yield* FirstRun
+    const mcp = yield* Mcp
     const store = yield* ChatStore
     // Summaries that can't be made say so, on the one stack (ruling FE-19).
     const { launches } = yield* AttentionStore
@@ -692,6 +697,7 @@ export const boot = (options: BootOptions & { readonly storage: StoragePersisten
         domains,
         personalModel,
         firstRun,
+        mcp,
       )
     )
     if (timeline !== undefined) {

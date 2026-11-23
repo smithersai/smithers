@@ -1,6 +1,12 @@
 // The site Worker serves origin-aware HTML, forwards API and docs requests, and sends an alias's or active custom
 // domain's `/` to its repository page.
 import { DOMAIN_RESOLVE_ROUTE } from "../src/features/domains/contract.ts"
+import {
+  MCP_OAUTH_AUTH_SERVER_ROUTE,
+  MCP_OAUTH_PROTECTED_RESOURCE_ROUTE,
+  parsePublicRepoMcpPath,
+  repoMcpRoute,
+} from "../src/features/mcp/contract.ts"
 import { DOCS_SITE_FOLDERS } from "../src/pwa.ts"
 import { aliasLocation } from "./aliases.ts"
 import { isAppRoute } from "./appRoute.ts"
@@ -35,6 +41,14 @@ export default {
   fetch: async (request, env) => {
     const url = new URL(request.url)
     if (url.pathname.startsWith("/api/")) return env.CHAT_API.fetch(request)
+    if (url.pathname === MCP_OAUTH_PROTECTED_RESOURCE_ROUTE || url.pathname === MCP_OAUTH_AUTH_SERVER_ROUTE) {
+      return env.CHAT_API.fetch(request)
+    }
+    const repository = parsePublicRepoMcpPath(url.pathname)
+    if (repository !== null) {
+      url.pathname = repoMcpRoute(repository.owner, repository.name)
+      return env.CHAT_API.fetch(new Request(url.toString(), request))
+    }
     const alias = aliasLocation(env.APP_ALIASES, url)
     if (alias !== undefined) return Response.redirect(alias, 302)
     const customDomain = await customDomainLocation(env, url)

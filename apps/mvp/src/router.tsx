@@ -17,6 +17,7 @@ import { canonicalRepoHref, lineSearch, staysInRepository } from "./features/rep
 import type { RepoView } from "./features/repo/repo"
 import type { RunsView } from "./features/runs/runs"
 import type { SecretsLayer } from "./features/secrets/secrets"
+import type { McpView } from "./features/mcp/store"
 import type { TerminalView } from "./features/terminal/terminal"
 import type { ViewsView } from "./features/views/views"
 import { AppScreen } from "./screens/app/AppScreen"
@@ -58,6 +59,7 @@ import { RunsScreen } from "./screens/runs/RunsScreen"
 import { SecretsScreen } from "./screens/secrets/SecretsScreen"
 import { RepoSettingsScreen } from "./screens/repo-settings/RepoSettingsScreen"
 import { SettingsScreen } from "./screens/settings/SettingsScreen"
+import { McpAuthorizeScreen } from "./screens/mcp/McpAuthorizeScreen"
 import { PluginScreen } from "./screens/plugin/PluginScreen"
 import { RepoPluginScreen } from "./screens/plugin/RepoPluginScreen"
 import type { PluginsView } from "./plugins/ui"
@@ -93,6 +95,7 @@ export interface RouterContext {
   readonly plugins: PluginsView
   readonly domains: DomainsView
   readonly secrets: SecretsLayer
+  readonly mcp?: McpView
 }
 
 /**
@@ -398,7 +401,20 @@ const repoPluginIndexRoute = repoPluginRoute(ROUTE_PATHS.repoPluginIndex)
 const repoPluginPathRoute = repoPluginRoute(ROUTE_PATHS.repoPluginPath)
 
 /** `/app/settings`: the deployment's settings, for an Admin; their rows sync to an Admin's devices. */
-const settingsRoute = createRoute({ getParentRoute: () => rootRoute, path: ROUTE_PATHS.settings, component: SettingsScreen })
+const settingsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: ROUTE_PATHS.settings,
+  component: SettingsScreen,
+  beforeLoad: (load) => enter(load, local, () => void load.context.mcp?.actions.loadTokens()),
+})
+
+/** `/app/mcp/authorize`: OAuth 2.1 consent screen for connecting a local agent via MCP (docs/features/mcp.md). */
+const mcpAuthorizeRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: ROUTE_PATHS.mcpAuthorize,
+  component: McpAuthorizeScreen,
+  beforeLoad: (load) => enter(load, local, () => void load.context.mcp?.actions.loadConsent(load.location.searchStr)),
+})
 
 /** `/app/runs/$runId`: one run's page, read from this device's engine. */
 const runRoute = createRoute({
@@ -849,6 +865,7 @@ const routeTree = rootRoute.addChildren([
   conversationsRoute,
   runRoute,
   settingsRoute,
+  mcpAuthorizeRoute,
   settingsAliasRoute,
   secretsAliasRoute,
   actionsAliasRoute,

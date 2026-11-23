@@ -1,0 +1,23 @@
+/* Layout only; components, colors and type come from @smthrs/ui. Everything wraps at phone width. */
+.connect-agent { display: grid; grid-template-columns: minmax(0, 1fr); gap: 1rem; min-width: 0; }
+.connect-agent-clients { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+.connect-agent-snippet { display: grid; gap: 0.5rem; min-width: 0; }
+.connect-agent-snippet p { margin: 0; overflow-wrap: anywhere; }
+.connect-agent-snippet [data-slot="snippet"] { min-width: 0; max-width: 100%; }
+.connect-agent-snippet [data-slot="snippet"] code { white-space: pre-wrap; overflow-wrap: anywhere; }
+.connect-agent-who { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; margin: 0; }
+.connect-agent-permissions { display: grid; grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr)); gap: 1rem; min-width: 0; }
+.connect-agent-permissions h3 { margin: 0 0 0.25rem; }
+.connect-agent-permissions ul { display: grid; gap: 0.25rem; margin: 0; padding: 0 0 0 1.25rem; }
+.connect-agent-permissions li { overflow-wrap: anywhere; }
+.connect-agent-guard { margin: 0; overflow-wrap: anywhere; }
+.connected-agents { display: flex; flex-direction: column; gap: 1rem; min-width: 0; }
+.connected-agents-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.5rem; }
+.connected-agents-head h2 { margin: 0; }
+.connected-agents p { margin: 0; overflow-wrap: anywhere; }
+.connected-agents p:empty { display: none; }
+.connected-agents-list { display: flex; flex-direction: column; gap: 0.75rem; min-width: 0; margin: 0; padding: 0; list-style: none; }
+.connected-agents-row { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 1rem; min-width: 0; }
+.connected-agents-row-what { display: grid; gap: 0.25rem; flex: 1 1 14rem; min-width: 0; }
+.connected-agents-row-name { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; font-weight: 600; overflow-wrap: anywhere; }
+.connected-agents-row-meta { display: flex; flex-wrap: wrap; gap: 0.25rem 0.75rem; overflow-wrap: anywhere; }

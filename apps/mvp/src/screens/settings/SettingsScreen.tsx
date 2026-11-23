@@ -5,6 +5,7 @@ import { HostedModelSettings } from "../../features/auth/components/HostedModelS
 import { SignInButton } from "../../features/auth/components/SignInButton"
 import { useAuth } from "../../features/auth/components/AuthContext"
 import { PersonalModelSettings } from "../../features/personal-model/components/PersonalModelSettings"
+import { ConnectedAgentsSettings } from "../../features/mcp/components/ConnectedAgentsSettings"
 import { canSave } from "../../features/personal-model/view"
 import { AlertSettings } from "../../features/spend/components/AlertSettings"
 import { SandboxLimitsSettings } from "../../features/spend/components/SandboxLimitsSettings"
@@ -33,12 +34,19 @@ export function SettingsScreen() {
           : null}
         {session?.status === "signed_in"
           ? (
-            <Card>
-              <CardContent className="settings-screen-section">
-                <PersonalModelSettings canSave={canSave(session)} />
-                <a href="/api/auth/connections">GitHub connections</a>
-              </CardContent>
-            </Card>
+            <>
+              <Card>
+                <CardContent className="settings-screen-section">
+                  <ConnectedAgentsSettings />
+                </CardContent>
+              </Card>
+              <Card>
+                <CardContent className="settings-screen-section">
+                  <PersonalModelSettings canSave={canSave(session)} />
+                  <a href="/api/auth/connections">GitHub connections</a>
+                </CardContent>
+              </Card>
+            </>
           )
           : null}
         {admin

@@ -18,6 +18,7 @@ import { aboutOf, headerOf } from "../view"
 import { Slot } from "../../../plugins/components/Slot"
 import { useRepo, useRepoAnswer } from "./RepoContext"
 import { RepoHeaderControls } from "./RepoHeaderControls"
+import { ConnectAgentButton } from "../../mcp/components/ConnectAgentButton"
 
 // Back to chat, which minimizes the repository's page into the chat (ruling FE-9, src/features/views/minimize.ts); the
 // repository's name, which opens its home or root, its Issues, its Stack, for a Member or above its Secrets and,
@@ -84,6 +85,7 @@ export function RepoHeader({ backTarget, notices = true }: { readonly backTarget
               </>
             )
             : null}
+          <ConnectAgentButton owner={view.owner} name={view.name} />
           <RepoHeaderControls />
         </>
       }

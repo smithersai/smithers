@@ -61,6 +61,11 @@ import * as GitHubConfig from "./github/Config.ts"
 import * as FirstPaint from "./github/FirstPaint.ts"
 import * as RepoRoles from "./github/RepoRoles.ts"
 import * as HomeApi from "./home/Api.ts"
+import * as McpApi from "./mcp/Api.ts"
+import * as McpAuth from "./mcp/Auth.ts"
+import { McpToolRegistry } from "./mcp/Contract.ts"
+import * as McpLiveDeps from "./mcp/LiveDeps.ts"
+import * as McpTools from "./mcp/Tools.ts"
 import { DEFAULT_CHAT_MODEL } from "./ModelRoles.ts"
 import * as PersonalApi from "./personal/Api.ts"
 import { PersonalModels } from "./personal/Models.ts"
@@ -382,6 +387,8 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
     // A repository's home (docs/features/home.md): who the asker is on it, by their role there (decision 0079), and
     // Smithers' curated home for it.
     const home = HomeApi.make({ roles, mayRead: github.mayRead, mayBrowse: github.mayBrowse, maySync: github.maySync })
+    // Bring Your Own Agent via MCP (docs/features/mcp.md): Streamable HTTP MCP + OAuth 2.1 + token management.
+    const mcpApi = McpApi.make()
     const repoCache = EdgeCache.layer({ name: "repo" }).pipe(Layer.orDie)
     const webCache = EdgeCache.layer({ name: "web" }).pipe(Layer.orDie)
     // A repository's docs (docs/features/docs.md): the index its home names, from what GitHub says of it (RepoApi's
@@ -583,6 +590,22 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
                 return yield* domainsApi.fetch.pipe(
                   Effect.provideService(Flows.FlowStarter, starter),
                   Effect.provideService(DomainProvider, domainProvider),
+                  Effect.provide(signedIn)
+                )
+              }
+              // Before the repository routes: Bring Your Own Agent MCP endpoints, RFC 9728/8414 metadata, OAuth 2.1,
+              // and `/api/me/mcp-tokens` (docs/features/mcp.md).
+              if (McpApi.handles(path)) {
+                const mcpAuth = McpAuth.McpAuthServiceLive({ database, roles })
+                const mcpTools = Layer.effect(
+                  McpToolRegistry,
+                  McpLiveDeps.makeLiveDeps({ database, reads: repos.reads, repoCache, starter }).pipe(
+                    Effect.flatMap(McpTools.makeMcpToolRegistry)
+                  )
+                ).pipe(Layer.provide(mcpAuth))
+                return yield* mcpApi.fetch.pipe(
+                  Effect.provide(mcpTools),
+                  Effect.provide(mcpAuth),
                   Effect.provide(signedIn)
                 )
               }

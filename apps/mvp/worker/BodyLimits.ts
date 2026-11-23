@@ -26,6 +26,7 @@ import { MAX_REPORT_BODY_BYTES } from "../src/features/bugs/contract.ts"
 import { MAX_INPUT_BYTES } from "../src/features/actions/contract.ts"
 import { MAX_STEER_BODY_BYTES } from "../src/features/runs/contract.ts"
 import { MAX_SUMMARY_BODY_BYTES } from "../src/features/timeline/contract.ts"
+import { MCP_MAX_REQUEST_BYTES, MCP_ROUTE } from "../src/features/mcp/contract.ts"
 import { TELEMETRY_LIMITS } from "../src/telemetry.ts"
 
 export const MAX_BODY_BYTES = 8 * 1024 * 1024
@@ -85,5 +86,7 @@ export const forRequest = (url: string) => Effect.gen(function* () {
   if (/^\/api\/repos\/[^/]+\/[^/]+\/runs$/.test(path)) return MAX_INPUT_BYTES * 2
   if (/^\/api\/remote-runs\/[^/]+\/steers$/.test(path)) return MAX_STEER_BODY_BYTES
   if (/^\/api\/remote-runs\/[^/]+\/stop$/.test(path)) return 0
+  if (path === MCP_ROUTE || /^\/api\/repos\/[^/]+\/[^/]+\/mcp$/.test(path)) return MCP_MAX_REQUEST_BYTES
+  if (path.startsWith("/api/mcp/oauth/")) return 16 * 1024
   return MAX_BODY_BYTES
 })

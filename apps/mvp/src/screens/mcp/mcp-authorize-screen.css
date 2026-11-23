@@ -1,0 +1,10 @@
+/* Page layout only; components and colors come from @smthrs/ui. */
+.mcp-authorize-screen { min-height: 100dvh; min-width: 0; }
+.mcp-authorize { display: grid; grid-template-columns: minmax(0, 1fr); gap: 1rem; min-width: 0; }
+.mcp-authorize h2, .mcp-authorize p { margin: 0; overflow-wrap: anywhere; }
+.mcp-authorize p:empty { display: none; }
+.mcp-authorize-facts { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 0.25rem 1rem; margin: 0; }
+.mcp-authorize-facts dt { font-weight: 600; }
+.mcp-authorize-facts dd { margin: 0; overflow-wrap: anywhere; }
+.mcp-authorize-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 0.5rem; }
+@media (max-width: 480px) { .mcp-authorize-facts { grid-template-columns: minmax(0, 1fr); } }

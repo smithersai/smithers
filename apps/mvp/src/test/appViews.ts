@@ -27,6 +27,7 @@ import { Transcript } from "../features/transcript/transcript"
 import { Views } from "../features/views/views"
 import { Web } from "../features/web/web"
 import { PluginsUi } from "../plugins/ui"
+import { Mcp } from "../features/mcp/store"
 
 /** Every view of a test app, as `AppProviders` takes them. */
 export const appViews = Effect.all({
@@ -57,4 +58,5 @@ export const appViews = Effect.all({
   domains: Effect.service(Domains),
   personalModel: Effect.service(PersonalModel),
   firstRun: Effect.service(FirstRun),
+  mcp: Effect.service(Mcp),
 }) satisfies Effect.Effect<AppViews, never, any>
