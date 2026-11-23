@@ -157,16 +157,20 @@ describe("@smthrs/patterns fuzz invariants & coverage", () => {
             for (let i = 0; i < count; i++) {
               const delay = delays[i] ?? 0
               const key = `m${i}`
-              members[key] = Effect.gen(function*() {
-                active++
-                if (active > peak) peak = active
-                yield* Effect.sleep(Duration.millis(delay))
-                yield* Effect.yieldNow
-                if (i === shouldFail) return yield* Effect.fail(`boom-${i}`)
-                return i * 3 + 1
-              }).pipe(Effect.ensuring(Effect.sync(() => {
-                active--
-              })))
+              members[key] = Effect.suspend(() => {
+                let entered = false
+                return Effect.gen(function*() {
+                  entered = true
+                  active++
+                  if (active > peak) peak = active
+                  yield* Effect.sleep(Duration.millis(delay))
+                  yield* Effect.yieldNow
+                  if (i === shouldFail) return yield* Effect.fail(`boom-${i}`)
+                  return i * 3 + 1
+                }).pipe(Effect.ensuring(Effect.sync(() => {
+                  if (entered) active--
+                })))
+              })
               script[key] = () => (i === shouldFail ? fail(`boom-${i}`) : i * 3 + 1)
             }
             const runExit = yield* Effect.exit(Bounded.run(members, { concurrency }))

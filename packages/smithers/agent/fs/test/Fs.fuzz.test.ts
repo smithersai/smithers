@@ -4,6 +4,7 @@ import { Fuzz } from "@smthrs/fuzz"
 import * as Descriptor from "@smthrs/registry/Descriptor"
 import { Arbitrary, Effect, Layer, Logger, Option, Result, Schema } from "effect"
 import { describe, expect, it } from "vitest"
+import * as Boundary from "../src/internal/Boundary.ts"
 import { Command, CommandTree, Directive, FileRouter, FlowInvoker, FsError, Incur, Route } from "../src/index.ts"
 import { hiddenRecordRoot, hiddenRuntimeRoot, routerRoot } from "./fixtureRoots.ts"
 import { invalidModule, recordedImports, recordedModule, refinedModule, visibleModule } from "./modules.ts"
@@ -466,5 +467,76 @@ describe("@smthrs/fs Command, FlowInvoker, FileRouter & Incur fuzz invariants", 
         }
       }).pipe(Effect.provide(platformLayer))
     )
+  })
+
+  it("Boundary.admitJson, admitDecoded, inspectRecord, inspectOption & stringArray refuse getters, NULs, surrogates & bounds violations", async () => {
+    const arb = Arbitrary.schema(
+      Schema.Struct({
+        kind: Schema.Literals(["plain", "getter", "nul", "surrogate", "sparse", "over_items", "option_some", "option_none", "not_option", "proxy"]),
+        items: Schema.Array(Schema.String.pipe(Schema.check(Schema.isMinLength(1), Schema.isMaxLength(16)))).pipe(
+          Schema.check(Schema.isMaxLength(4))
+        )
+      })
+    )
+    const report = await Effect.runPromise(
+      Fuzz.run(
+        arb,
+        ({ kind, items }) =>
+          Effect.sync(() => {
+            if (kind === "getter") {
+              let ran = false
+              const obj = Object.defineProperty({}, "a", {
+                enumerable: true,
+                get() {
+                  ran = true
+                  return 1
+                }
+              })
+              const res = Boundary.admitJson(obj)
+              return !res.ok && !ran
+            }
+            if (kind === "nul") {
+              const res = Boundary.stringArray(["ok", "bad" + String.fromCharCode(0) + "val"], { maxItems: 5, maxLength: 32 })
+              return !res.ok
+            }
+            if (kind === "surrogate") {
+              const res = Boundary.stringArray([String.fromCharCode(0xd800)], { maxItems: 5, maxLength: 32 })
+              return !res.ok
+            }
+            if (kind === "sparse") {
+              const arr: Array<string> = []
+              arr[2] = "x"
+              return !Boundary.stringArray(arr, { maxItems: 5, maxLength: 32 }).ok
+            }
+            if (kind === "over_items") {
+              return !Boundary.stringArray(["a", "b", "c"], { maxItems: 2, maxLength: 32 }).ok
+            }
+            if (kind === "option_some") {
+              const r = Boundary.inspectOption(Option.some("hi"))
+              return r.ok && Option.isSome(r.value) && r.value.value === "hi"
+            }
+            if (kind === "option_none") {
+              const r = Boundary.inspectOption(Option.none())
+              return r.ok && Option.isNone(r.value)
+            }
+            if (kind === "not_option") {
+              return !Boundary.inspectOption({ _tag: "Some", value: 1 }).ok
+            }
+            if (kind === "proxy") {
+              const p = new Proxy({}, { getOwnPropertyDescriptor() { throw new Error("trap") } })
+              return !Boundary.inspectRecord(p, ["a"]).ok
+            }
+            const clean = items.map((s) => Array.from(s, (ch) => { const c = ch.charCodeAt(0); return c === 0 || (c >= 0xd800 && c <= 0xdfff) ? "x" : ch; }).join("")).filter((s) => s.length > 0)
+            const r = Boundary.stringArray(clean, { maxItems: 4, maxLength: 32 })
+            if (!r.ok || r.value.length !== clean.length) return false
+            const j = Boundary.admitDecoded({ a: clean, n: 42 })
+            return j.ok
+          }),
+        { seed: seed + 11, executions: 120 }
+      )
+    )
+    const failure = Fuzz.formatReport(report)
+    if (failure !== undefined) throw new Error(failure)
+    expect(report._tag).toBe("Passed")
   })
 })

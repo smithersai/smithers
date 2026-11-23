@@ -202,3 +202,196 @@ describe("@smthrs/effect-code-storage comprehensive fuzz security invariants", (
     expect(report._tag).toBe("Passed")
   })
 })
+
+import * as NodeCrypto from "node:crypto"
+import { CodeStorage } from "../src/index.ts"
+
+const testPem = NodeCrypto.generateKeyPairSync("ec", { namedCurve: "P-256" })
+  .privateKey.export({ type: "pkcs8", format: "pem" })
+  .toString()
+
+describe("@smthrs/effect-code-storage CodeStorage ES256 client fuzz invariants", () => {
+  it("CodeStorage exercises createRepo, deleteRepo, pullUpstream, listFiles, readFile, streamFile, listCommits, listBranches, listTags, createBranch, gitRemote & error mapping", async () => {
+    const arb = Arbitrary.schema(
+      Schema.Struct({
+        op: Schema.Literals([
+          "createRepo",
+          "deleteRepo",
+          "pullUpstream",
+          "listFiles",
+          "readFile",
+          "streamFile",
+          "listCommits",
+          "listBranches",
+          "listTags",
+          "createBranch",
+          "gitRemote"
+        ]),
+        status: Schema.Literals([200, 201, 204, 400, 401, 403, 404, 409, 413, 429, 500, 503]),
+        retryAfter: Schema.Literals(["", "5", "Wed, 21 Oct 2099 07:28:00 GMT", "bad"]),
+        repo: Schema.Literals(["org/alpha", "org/beta"])
+      })
+    )
+    const report = await Effect.runPromise(
+      Fuzz.run(
+        arb,
+        ({ op, status, retryAfter, repo }) =>
+          Effect.gen(function*() {
+            let sawBearer = false
+            const fakeHttp = HttpClient.make((req) => {
+              const auth = req.headers["authorization"] ?? ""
+              if (auth.startsWith("Bearer ")) sawBearer = true
+              const headers: Record<string, string> = { "content-type": "application/json" }
+              if (retryAfter !== "") headers["retry-after"] = retryAfter
+              if (status >= 400) {
+                return Effect.succeed(
+                  HttpClientResponse.fromWeb(
+                    req,
+                    new Response(JSON.stringify({ code: "repository_not_found", error: "fail" }), { status, headers })
+                  )
+                )
+              }
+              if (op === "createRepo") {
+                return Effect.succeed(
+                  HttpClientResponse.fromWeb(req, new Response(JSON.stringify({ repo_name: repo }), { status: status === 204 ? 201 : status, headers }))
+                )
+              }
+              if (op === "deleteRepo" || op === "pullUpstream") {
+                return Effect.succeed(HttpClientResponse.fromWeb(req, new Response(null, { status: 204 })))
+              }
+              if (op === "listFiles") {
+                return Effect.succeed(
+                  HttpClientResponse.fromWeb(
+                    req,
+                    new Response(
+                      JSON.stringify({
+                        ref: "main",
+                        paths: ["README.md"],
+                        entries: [{ path: "README.md", type: "file", mode: "100644" }],
+                        has_more: false
+                      }),
+                      { status: 200, headers }
+                    )
+                  )
+                )
+              }
+              if (op === "readFile" || op === "streamFile") {
+                return Effect.succeed(
+                  HttpClientResponse.fromWeb(
+                    req,
+                    new Response("hello world", { status: 200, headers: { "x-git-blob-sha": "a".repeat(40) } })
+                  )
+                )
+              }
+              if (op === "listCommits") {
+                return Effect.succeed(
+                  HttpClientResponse.fromWeb(
+                    req,
+                    new Response(
+                      JSON.stringify({
+                        commits: [
+                          {
+                            sha: "a".repeat(40),
+                            parent_shas: [],
+                            message: "init",
+                            author_name: "a",
+                            author_email: "a@b.c",
+                            date: "2026-01-01T00:00:00Z"
+                          }
+                        ],
+                        has_more: false
+                      }),
+                      { status: 200, headers }
+                    )
+                  )
+                )
+              }
+              if (op === "listBranches") {
+                return Effect.succeed(
+                  HttpClientResponse.fromWeb(
+                    req,
+                    new Response(
+                      JSON.stringify({
+                        branches: [{ name: "main", head_sha: "a".repeat(40), created_at: "2026-01-01T00:00:00Z" }],
+                        has_more: false
+                      }),
+                      { status: 200, headers }
+                    )
+                  )
+                )
+              }
+              if (op === "listTags") {
+                return Effect.succeed(
+                  HttpClientResponse.fromWeb(
+                    req,
+                    new Response(
+                      JSON.stringify({
+                        tags: [{ name: "v1.0.0", sha: "a".repeat(40) }],
+                        has_more: false
+                      }),
+                      { status: 200, headers }
+                    )
+                  )
+                )
+              }
+              return Effect.succeed(
+                HttpClientResponse.fromWeb(
+                  req,
+                  new Response(JSON.stringify({ target_branch: "feat", commit_sha: "a".repeat(40) }), { status: 200, headers })
+                )
+              )
+            })
+
+            const layer = CodeStorage.CodeStorage.layer({
+              org: "acme",
+              key: Redacted.make(testPem),
+              apiUrl: "https://api.code.storage"
+            }).pipe(Layer.provide(Layer.succeed(HttpClient.HttpClient, fakeHttp)))
+
+            const program = Effect.gen(function*() {
+              const cs = yield* CodeStorage.CodeStorage
+              if (op === "gitRemote") {
+                const remote = yield* cs.gitRemote(repo)
+                return remote.url.includes("acme.code.storage") && remote.authorization !== undefined
+              }
+              const call: Effect.Effect<unknown, CodeStorage.CodeStorageError> =
+                op === "createRepo"
+                  ? cs.createRepo({ name: repo, defaultBranch: "main" })
+                  : op === "deleteRepo"
+                  ? cs.deleteRepo(repo)
+                  : op === "pullUpstream"
+                  ? cs.pullUpstream(repo)
+                  : op === "listFiles"
+                  ? cs.listFiles(repo, { ref: "main", recursive: true })
+                  : op === "readFile"
+                  ? cs.readFile(repo, { path: "README.md", maxBytes: 1024 })
+                  : op === "streamFile"
+                  ? cs.streamFile(repo, { path: "README.md" }).pipe(
+                      Effect.flatMap((s) => Stream.runDrain(s.stream))
+                    )
+                  : op === "listCommits"
+                  ? cs.listCommits(repo, { ref: "main", limit: 10 })
+                  : op === "listBranches"
+                  ? cs.listBranches(repo, { limit: 10 })
+                  : op === "listTags"
+                  ? cs.listTags(repo, { limit: 10 })
+                  : cs.createBranch(repo, { branch: "feat", from: "main" })
+
+              const res = yield* Effect.result(call)
+              if (!sawBearer) return false
+              if (status >= 400) {
+                return Result.isFailure(res) && res.failure._tag === "@smthrs/effect-code-storage/CodeStorageError"
+              }
+              return Result.isSuccess(res)
+            })
+
+            return yield* program.pipe(Effect.provide(Layer.merge(layer, silentLogger)))
+          }),
+        { seed: seed + 10, executions: Math.min(executions, 120) }
+      )
+    )
+    const failure = Fuzz.formatReport(report)
+    if (failure !== undefined) throw new Error(failure)
+    expect(report._tag).toBe("Passed")
+  })
+})

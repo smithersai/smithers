@@ -192,3 +192,81 @@ describe("@smthrs/capability comprehensive fuzz security invariants", () => {
     expect(report._tag).toBe("Passed")
   })
 })
+
+describe("@smthrs/capability PermissionRequired, GrantStoreError, PlatformError projection & metadata snapshot fuzz invariants", () => {
+  it("permissionRequired, permissionDenied, GrantStoreError, toPlatformError/fromPlatformError round-trip & freeze metadata safely", async () => {
+    const arb = Arbitrary.schema(
+      Schema.Struct({
+        action: Capability.Action,
+        resource: validResource,
+        requestId: Schema.String.pipe(Schema.check(Schema.isPattern(/^[a-z0-9_-]{1,20}$/))),
+        runId: Schema.OptionFromUndefinedOr(Schema.String.pipe(Schema.check(Schema.isPattern(/^[a-z0-9_-]{1,16}$/)))),
+        tier: Capability.EffectTier,
+        errKind: Schema.Literals(["required", "denied", "grantStore"]),
+        grantCode: Permission.GrantStoreErrorCode,
+        metaKey: Schema.String.pipe(Schema.check(Schema.isPattern(/^[a-z]{1,8}$/))),
+        metaVal: Schema.Union([
+          Schema.String.pipe(Schema.check(Schema.isMaxLength(24))),
+          Schema.Int,
+          Schema.Boolean,
+          Schema.Null,
+          Schema.Array(Schema.Int).pipe(Schema.check(Schema.isMaxLength(4)))
+        ]),
+        pathOrFd: Schema.Union([Schema.String.pipe(Schema.check(Schema.isMaxLength(32))), Schema.Int])
+      })
+    )
+    const report = await Effect.runPromise(
+      Fuzz.run(
+        arb,
+        ({ action, resource, requestId, runId, tier, errKind, grantCode, metaKey, metaVal, pathOrFd }) =>
+          Effect.sync(() => {
+            const cap = Capability.make(action, resource)
+            const rId = Option.isSome(runId) ? runId.value : undefined
+            let err: Permission.PermissionError
+            if (errKind === "required") {
+              const rawMeta: Record<string, unknown> = { [metaKey]: metaVal, nested: { ok: true } }
+              const req = Permission.permissionRequired({
+                requestId,
+                runId: rId,
+                capability: cap,
+                tier,
+                meta: rawMeta
+              })
+              // Mutating caller's rawMeta MUST NOT affect req.meta!
+              rawMeta[metaKey] = "MUTATED"
+              if (req.meta[metaKey] === "MUTATED" && metaVal !== "MUTATED") return false
+              if (!Object.isFrozen(req.meta)) return false
+              err = req
+            } else if (errKind === "denied") {
+              err = Permission.permissionDenied(cap, "denied_by_policy")
+            } else {
+              err = new Permission.GrantStoreError({ code: grantCode, message: "store fault" })
+            }
+
+            if (!Permission.isPermissionError(err)) return false
+            if (Permission.isPermissionError(null) || Permission.isPermissionError({})) return false
+            const formatted = Permission.formatError(err)
+            if (formatted.length === 0) return false
+            const decoded = decodePermissionError(err)
+            if (Option.isNone(decoded)) return false
+
+            // PlatformError projection round-trip
+            const plat = Permission.toPlatformError({
+              module: "FileSystem",
+              method: "readFile",
+              pathOrDescriptor: pathOrFd,
+              error: err
+            })
+            const back = Permission.fromPlatformError(plat)
+            if (Option.isNone(back)) return false
+            if (back.value.code !== err.code) return false
+            return true
+          }),
+        { seed: seed + 10, executions }
+      )
+    )
+    const failure = Fuzz.formatReport(report)
+    if (failure !== undefined) throw new Error(failure)
+    expect(report._tag).toBe("Passed")
+  })
+})

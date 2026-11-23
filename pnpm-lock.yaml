@@ -2751,6 +2751,9 @@ importers:
       '@smthrs/flows':
         specifier: 1.0.0-rc.18
         version: link:../../flows
+      '@smthrs/fuzz':
+        specifier: workspace:*
+        version: link:../../../fuzz
       '@smthrs/platform-bun':
         specifier: 1.0.0-rc.18
         version: link:../../flows/platform-bun
@@ -2918,6 +2921,9 @@ importers:
       '@eslint/js':
         specifier: 9.39.5
         version: 9.39.5
+      '@smthrs/fuzz':
+        specifier: workspace:*
+        version: link:../../../fuzz
       '@smthrs/platform-node':
         specifier: 1.0.0-rc.18
         version: link:../../flows/platform-node
@@ -3182,6 +3188,9 @@ importers:
       '@smthrs/engine-store':
         specifier: 1.0.0-rc.18
         version: link:../../flows/engine-store
+      '@smthrs/fuzz':
+        specifier: workspace:*
+        version: link:../../../fuzz
       '@smthrs/journal':
         specifier: 1.0.0-rc.18
         version: link:../../flows/journal
@@ -4452,6 +4461,9 @@ importers:
       '@smthrs/engine':
         specifier: 1.0.0-rc.18
         version: link:../engine
+      '@smthrs/fuzz':
+        specifier: workspace:*
+        version: link:../../../fuzz
       '@types/node':
         specifier: 26.4.1
         version: 26.4.1
@@ -4590,6 +4602,9 @@ importers:
       '@eslint/js':
         specifier: 9.39.5
         version: 9.39.5
+      '@smthrs/fuzz':
+        specifier: workspace:*
+        version: link:../../../fuzz
       '@types/bun':
         specifier: 1.4.4
         version: 1.4.4
@@ -4896,6 +4911,9 @@ importers:
       '@smthrs/engine':
         specifier: workspace:*
         version: link:../engine
+      '@smthrs/fuzz':
+        specifier: workspace:*
+        version: link:../../../fuzz
       '@types/node':
         specifier: 26.4.1
         version: 26.4.1
@@ -5601,6 +5619,9 @@ importers:
       '@eslint/js':
         specifier: 9.39.5
         version: 9.39.5
+      '@smthrs/fuzz':
+        specifier: workspace:*
+        version: link:../../../fuzz
       '@types/node':
         specifier: 26.4.1
         version: 26.4.1
@@ -6709,6 +6730,9 @@ importers:
       '@smthrs/flows':
         specifier: 1.0.0-rc.18
         version: link:../flows
+      '@smthrs/fuzz':
+        specifier: workspace:*
+        version: link:../../fuzz
       '@smthrs/kernel':
         specifier: 1.0.0-rc.18
         version: link:../flows/kernel
@@ -6815,6 +6839,9 @@ importers:
       '@smthrs/flows':
         specifier: 1.0.0-rc.18
         version: link:../flows
+      '@smthrs/fuzz':
+        specifier: workspace:*
+        version: link:../../fuzz
       '@smthrs/model':
         specifier: 1.0.0-rc.18
         version: link:../agent/model

@@ -277,3 +277,125 @@ describe("@smthrs/canonical comprehensive fuzz invariants", () => {
     expect(report._tag).toBe("Passed")
   })
 })
+
+describe("@smthrs/canonical deep sortCollections, ReadonlyMap & BoundedJson edge fuzz invariants", () => {
+  it("sortCollections deterministically orders heterogeneous Sets, Maps, nested arrays/objects, and handles cycles/special types", async () => {
+    const primArb = Schema.Union([
+      Schema.Null,
+      Schema.Boolean,
+      Schema.Int.pipe(Schema.check(Schema.isBetween({ minimum: -20, maximum: 20 }))),
+      Schema.String.pipe(Schema.check(Schema.isPattern(/^[a-z0-9_-]{0,8}$/)))
+    ])
+    const arb = Arbitrary.schema(
+      Schema.Struct({
+        vals: Schema.Array(primArb).pipe(Schema.check(Schema.isMaxLength(10))),
+        nestedPairs: Schema.Array(
+          Schema.Tuple([
+            Schema.Union([
+              primArb,
+              Schema.Struct({ k: Schema.Int.pipe(Schema.check(Schema.isBetween({ minimum: 0, maximum: 5 }))) }),
+              Schema.Array(Schema.Int.pipe(Schema.check(Schema.isBetween({ minimum: 0, maximum: 5 })))).pipe(
+                Schema.check(Schema.isMaxLength(3))
+              )
+            ]),
+            primArb
+          ])
+        ).pipe(Schema.check(Schema.isMaxLength(8))),
+        withUndef: Schema.Boolean,
+        withDate: Schema.Boolean,
+        withBigInt: Schema.Boolean
+      })
+    )
+    const report = await Effect.runPromise(
+      Fuzz.run(
+        arb,
+        ({ vals, nestedPairs, withUndef, withDate, withBigInt }) =>
+          Effect.sync(() => {
+            const extra: Array<unknown> = [...vals]
+            if (withUndef) extra.push(undefined)
+            if (withDate) extra.push(new Date(1_700_000_000_000), new Date(0))
+            if (withBigInt) extra.push(BigInt(1), BigInt(-1))
+
+            const s1 = sortCollections(new Set(extra))
+            const s2 = sortCollections(new Set([...extra].reverse()))
+            if (s1.size !== s2.size) return false
+
+            const m1 = sortCollections(new Map<unknown, unknown>(nestedPairs))
+            const m2 = sortCollections(new Map<unknown, unknown>([...nestedPairs].reverse()))
+            if (m1.size !== m2.size) return false
+
+            // Nested Map inside object inside Set inside Array
+            const complex = {
+              a: [new Set(vals), new Map(nestedPairs.map(([k, v]) => [JSON.stringify(k), v] as const))],
+              b: { inner: new Set([...vals].reverse()) }
+            }
+            const sorted = sortCollections(complex)
+            if (!(sorted.a[0] instanceof Set) || !(sorted.a[1] instanceof Map)) return false
+
+            // ReadonlyMap full protocol: size, get, has, keys, values, entries, forEach, iterator
+            const rm = ReadonlyMap.make(vals.map((v, i) => [`k${i}`, v] as const))
+            if (rm.size !== vals.length) return false
+            if ([...rm.keys()].length !== vals.length) return false
+            if ([...rm.values()].length !== vals.length) return false
+            if ([...rm.entries()].length !== vals.length) return false
+            if ([...rm].length !== vals.length) return false
+            let seenCount = 0
+            rm.forEach((_val, _key, self) => {
+              if (self === rm) seenCount++
+            })
+            if (seenCount !== vals.length) return false
+
+            // Circular structures inside sortCollections do not stack-overflow
+            const cyc: Record<string, unknown> = { items: new Set(vals) }
+            cyc["self"] = cyc
+            const sortedCyc = sortCollections(cyc)
+            return sortedCyc["self"] === sortedCyc
+          }),
+        { seed: seed + 10, executions }
+      )
+    )
+    const failure = Fuzz.formatReport(report)
+    if (failure !== undefined) throw new Error(failure)
+    expect(report._tag).toBe("Passed")
+  })
+
+  it("Canonical decode/encode refuses cycles, non-finite numbers, throwing toJSON & malformed JSON documents", async () => {
+    const arb = Arbitrary.schema(
+      Schema.Struct({
+        kind: Schema.Literals(["cycle", "nan", "inf", "neg_inf", "bigint", "symbol", "throwing_tojson", "unstringifiable_throw", "bad_json", "lone_surrogate"]),
+        key: Schema.Literals(["a", "b", "c"])
+      })
+    )
+    const report = await Effect.runPromise(
+      Fuzz.run(
+        arb,
+        ({ kind, key }) =>
+          Effect.sync(() => {
+            if (kind === "bad_json") {
+              const enc = Schema.encodeUnknownResult(Canonical)("{not valid json" as never)
+              return Result.isFailure(enc)
+            }
+            let input: unknown
+            if (kind === "cycle") {
+              const obj: Record<string, unknown> = {}
+              obj[key] = obj
+              input = obj
+            } else if (kind === "nan") input = { [key]: Number.NaN }
+            else if (kind === "inf") input = { [key]: Number.POSITIVE_INFINITY }
+            else if (kind === "neg_inf") input = { [key]: Number.NEGATIVE_INFINITY }
+            else if (kind === "bigint") input = { [key]: 123n }
+            else if (kind === "symbol") input = Symbol("x")
+            else if (kind === "throwing_tojson") input = { toJSON() { throw new Error("boom") } }
+            else if (kind === "unstringifiable_throw") input = { toJSON() { throw { toString() { throw new Error("no") } } } }
+            else input = { [key]: "\ud800" }
+            const dec = Schema.decodeUnknownResult(Canonical)(input)
+            return Result.isFailure(dec)
+          }),
+        { seed: seed + 10, executions: 120 }
+      )
+    )
+    const failure = Fuzz.formatReport(report)
+    if (failure !== undefined) throw new Error(failure)
+    expect(report._tag).toBe("Passed")
+  })
+})

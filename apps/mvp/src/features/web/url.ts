@@ -63,9 +63,12 @@ const parse = (input: string): URL | undefined => {
  * else its last two labels. Under a public suffix of two labels (`pages.dev`, `co.uk`) that is wider than the real
  * site, so `embed` refuses more than it must, never less.
  */
+const bareHost = (hostname: string): string => hostname.replace(/\.+$/, "")
+
 export const siteOf = (hostname: string): string => {
-  if (hostname.startsWith("[") || /^\d+(\.\d+){3}$/.test(hostname)) return hostname
-  return hostname.split(".").slice(-2).join(".")
+  const clean = bareHost(hostname)
+  if (clean.startsWith("[") || /^\d+(\.\d+){3}$/.test(clean)) return clean
+  return clean.split(".").slice(-2).join(".")
 }
 
 /** Whether `hostname` is `site` or one of its subdomains. */
@@ -85,8 +88,10 @@ export const checkUrl = (input: string, mode: WebMode, policy: Policy): Checked 
   if (app === undefined || (app.protocol !== "https:" && app.protocol !== "http:")) {
     return { ok: false, reason: "invalid" }
   }
-  if (url.host === app.host) return { ok: false, reason: "same_origin" }
-  if (mode === "embed" && within(url.hostname, siteOf(app.hostname))) {
+  const urlHost = bareHost(url.hostname)
+  const appHost = bareHost(app.hostname)
+  if (urlHost === appHost && url.port === app.port) return { ok: false, reason: "same_origin" }
+  if (mode === "embed" && within(urlHost, siteOf(appHost))) {
     return { ok: false, reason: "same_site" }
   }
   return { ok: true, page: { href: url.href, origin: url.origin } }

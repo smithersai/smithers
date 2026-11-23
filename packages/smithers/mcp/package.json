@@ -151,7 +151,9 @@
     "@smthrs/agent": "1.0.0-rc.18",
     "@smthrs/flow": "1.0.0-rc.18",
     "@smthrs/flows": "1.0.0-rc.18",
+    "@smthrs/fuzz": "workspace:*",
     "@smthrs/model": "1.0.0-rc.18",
+    "@smthrs/platform-node": "1.0.0-rc.18",
     "@smthrs/registry": "1.0.0-rc.18",
     "@types/node": "26.4.1",
     "@vitest/coverage-v8": "5.0.0",
@@ -168,8 +170,7 @@
     "typescript-eslint": "8.69.0",
     "vibelang": "0.0.13",
     "vibelang-vite": "0.0.13",
-    "vitest": "5.0.0",
-    "@smthrs/platform-node": "1.0.0-rc.18"
+    "vitest": "5.0.0"
   },
   "peerDependencies": {
     "effect": "4.1.1"

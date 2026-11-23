@@ -170,6 +170,8 @@ function readCoverageSummary(covDir) {
   }
 }
 
+const fmtPct = (v) => (typeof v === "number" ? v.toFixed(1) : "n/a")
+
 async function runTsSuites(suites) {
   const tmpBase = measureCoverage ? mkdtempSync(join(tmpdir(), "smithers-fuzz-cov-")) : undefined
   const baseEnv = {
@@ -233,7 +235,7 @@ async function runTsSuites(suites) {
     const cov = covDir ? readCoverageSummary(covDir) : undefined
     const status = res.code === 0 ? "PASS" : "FAIL"
     const covText = cov?.total
-      ? ` | stmts=${cov.total.statements.pct.toFixed(1)}% branch=${cov.total.branches.pct.toFixed(1)}% funcs=${cov.total.functions.pct.toFixed(1)}% lines=${cov.total.lines.pct.toFixed(1)}%`
+      ? ` | stmts=${(typeof cov.total.statements.pct === "number" ? fmtPct(cov.total.statements.pct) : "0.0")}% branch=${(typeof cov.total.branches.pct === "number" ? fmtPct(cov.total.branches.pct) : "0.0")}% funcs=${(typeof cov.total.functions.pct === "number" ? fmtPct(cov.total.functions.pct) : "0.0")}% lines=${(typeof cov.total.lines.pct === "number" ? fmtPct(cov.total.lines.pct) : "0.0")}%`
       : ""
     console.log(`  [${status}] ${suite.pkg} (${suite.files.length} file${suite.files.length === 1 ? "" : "s"}, ${res.ms}ms)${covText}`)
     if (res.code !== 0) {
@@ -267,10 +269,10 @@ async function runTsSuites(suites) {
       totFuncs += t.functions.total; covFuncs += t.functions.covered
       totLines += t.lines.total; covLines += t.lines.covered
       console.log(
-        `${r.suite.pkg} | ${t.statements.pct.toFixed(1)}% (${t.statements.covered}/${t.statements.total}) | ` +
-          `${t.branches.pct.toFixed(1)}% (${t.branches.covered}/${t.branches.total}) | ` +
-          `${t.functions.pct.toFixed(1)}% (${t.functions.covered}/${t.functions.total}) | ` +
-          `${t.lines.pct.toFixed(1)}% (${t.lines.covered}/${t.lines.total})`
+        `${r.suite.pkg} | ${fmtPct(t.statements.pct)}% (${t.statements.covered}/${t.statements.total}) | ` +
+          `${fmtPct(t.branches.pct)}% (${t.branches.covered}/${t.branches.total}) | ` +
+          `${fmtPct(t.functions.pct)}% (${t.functions.covered}/${t.functions.total}) | ` +
+          `${fmtPct(t.lines.pct)}% (${t.lines.covered}/${t.lines.total})`
       )
       if (perFile && r.cov.files.length > 0) {
         const worst = r.cov.files.filter((f) => f.totalLines > 0 && f.lines < 80).slice(0, 5)
