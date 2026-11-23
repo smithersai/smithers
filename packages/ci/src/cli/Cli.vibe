@@ -61,6 +61,13 @@ export interface Parts<R> {
    */
   readonly readHere?: ReadInventory<R> | undefined
   readonly decompose: Decompose<R>
+  /**
+   * The split that starts no program of the repository: it reads files and nothing else. `apply`, `apply --check`
+   * and `inventory` split with it, so that listing a stranger's repository, or checking its generated files, runs
+   * none of its code on this machine, and so that `apply` writes the same files on a machine with the
+   * repository's tools as on one without. A replay splits with `decompose`. Without it, every command does.
+   */
+  readonly decomposeStatic?: Decompose<R> | undefined
   readonly files: GenerateFiles<R>
   readonly run: RunReplay<R>
   readonly text: RenderReport
@@ -88,17 +95,36 @@ export function exitCodeOf(failure: Failure): number {
   return Surface.failureExitCodes[failure.code]
 }
 
+/** A terminal's control sequences: an escape with what it introduces, to the byte that ends it. */
+const controlSequence = /\u001b(?:\[[0-?]*[ -/]*[@-~]|\][^\u0007\u001b]*(?:\u0007|\u001b\\)?|[@-Z\\^_])/g
+
+/**
+ * Text of a repository, or of a program it ran, as the terminal may show it: a control sequence is taken out, and
+ * every other control character but newline and tab becomes U+FFFD. What a past commit printed can then neither
+ * move the cursor, clear the screen nor rename the window.
+ *
+ * @category exit codes
+ * @since 0.1.0
+ */
+export function shown(value: string): string {
+  return value.replace(controlSequence, "").replace(/[^\P{Cc}\n\t]/gu, "\uFFFD")
+}
+
 /**
  * The one line the program prints for a part's failure. A model that cannot
  * be reached is the person's to fix, so that line names no part of the program.
+ * A message can repeat what a repository's own program printed, so it is
+ * printed as `shown` gives it.
  *
  * @category exit codes
  * @since 0.1.0
  */
 export function lineOf(failure: Failure): string {
-  return failure.code === "model-unavailable"
-    ? `${Surface.name}: ${failure.message}`
-    : `${Surface.name}: ${failure.part}: ${failure.message}`
+  return shown(
+    failure.code === "model-unavailable"
+      ? `${Surface.name}: ${failure.message}`
+      : `${Surface.name}: ${failure.part}: ${failure.message}`
+  )
 }
 
 const failed = (message: string): Failure => ({ code: "command-failed", message, part: "cli" })
@@ -357,6 +383,20 @@ effect function documentOf<S extends Schema.Top>(schema: S, value: S["Type"], pa
 const clean = (value: string): string => value.replace(/[^\P{Cc}\n\t]/gu, "\uFFFD")
 
 /**
+ * `within`, the path from the repository's top directory to a file, when the file is inside the repository, or
+ * `undefined` when it is outside it. A name that only starts with two dots, as `..report.html` does, is inside; a
+ * path on another drive, which Windows gives back whole, is outside.
+ *
+ * @category accessors
+ * @since 0.1.0
+ */
+export const insideOf = (
+  paths: { readonly isAbsolute: (path: string) => boolean; readonly sep: string },
+  within: string
+): string | undefined =>
+  within === ".." || within.startsWith(`..${paths.sep}`) || paths.isAbsolute(within) ? undefined : within
+
+/**
  * A plain listing of an inventory for a person. A command's later lines are
  * indented under its first, and nothing from the repository reaches the
  * terminal as a control character.
@@ -458,6 +498,8 @@ function commandOf<R>(root: string, directory: string, parts: Parts<R>, status: 
     return true
   }
 
+  /** The split of the commands that only read the repository, or write its generated files. */
+  const still = parts.decomposeStatic ?? parts.decompose
   const replayParts = {
     read: parts.readHere ?? parts.read,
     decompose: parts.decompose,
@@ -477,7 +519,8 @@ function commandOf<R>(root: string, directory: string, parts: Parts<R>, status: 
       while (true) {
         const why = Native.refusal(inventory) ?? refusal(inventory)
         if (why !== undefined) throw { code: "unsupported", message: why, part: "inventory" } satisfies Failure
-        const split = try parts.decompose(root, ci(inventory))
+        // Nothing of the repository runs for its files to be written or checked: the split only reads.
+        const split = try still(root, ci(inventory))
         // The workflow's own check runs `apply` as it was run here.
         // A job left out stays in the repository's own workflow, and the notes name it with why.
         const options = {
@@ -527,24 +570,25 @@ function commandOf<R>(root: string, directory: string, parts: Parts<R>, status: 
     }
     const report = try parts.run(requestOf(root, input), replayParts)
     const document = try documentOf(ReplayReport, report, "replay")
-    let written: string | undefined
-    if (Option.isSome(input.out)) {
-      const paths = try Path.Path
-      const target = paths.resolve(directory, input.out.value)
-      try write(target, try render(parts.html, report))
-      try Console.error(`${Surface.name}: wrote ${target}`)
-      const within = paths.relative(root, target)
-      if (!within.startsWith("..")) written = within
-    }
+    const paths = try Path.Path
+    const target = Option.map(input.out, (out) => paths.resolve(directory, out))
+    // The page is written after the report is printed, so the footer says where it will be before it is there.
+    const written = Option.getOrUndefined(Option.map(target, (file) => insideOf(paths, paths.relative(root, file))))
+    // The report is printed first: a page that cannot be written, or rendered, then loses nothing of a replay that
+    // took hours. The program still says so and fails.
     try Console.log(input.json ? document : `${try render(parts.text, report)}${footer(report, written)}`)
+    if (Option.isSome(target)) {
+      try write(target.value, try render(parts.html, report))
+      try Console.error(`${Surface.name}: wrote ${target.value}`)
+    }
     // A replay the disk stopped is reported to the commit before, and is a failure of the program's own.
     if (report.stopped !== undefined) {
-      try Console.error(`${Surface.name}: ${report.stopped}`)
+      try Console.error(shown(`${Surface.name}: ${report.stopped}`))
       try settle(Surface.exitCodes.failed)
       return
     }
     if (report.fastNotMeasured !== undefined) {
-      try Console.error(`${Surface.name}: fast mode was not measured. ${report.fastNotMeasured}`)
+      try Console.error(shown(`${Surface.name}: fast mode was not measured. ${report.fastNotMeasured}`))
       try settle(Surface.exitCodes.failed)
       return
     }
@@ -582,7 +626,7 @@ function commandOf<R>(root: string, directory: string, parts: Parts<R>, status: 
   effect function withWholeScripts(read: Inventory) {
     const narrowed = ci(read)
     if (narrowed.jobs.length === 0) return read
-    const split = parts.decompose(root, narrowed) catch () => narrowed
+    const split = still(root, narrowed) catch () => narrowed
     const whys = new Map(split.jobs.flatMap((job) =>
       job.steps.flatMap((step) => step.whole === undefined ? [] : [[step.id, step.whole] as const])
     ))

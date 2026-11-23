@@ -41,7 +41,9 @@ export const variantsOf = (job: Job): ReadonlyArray<Variant> => {
   return unique.size === 0 ? [{}] : [...unique.keys()].sort(compare).map((key) => unique.get(key) as Variant)
 }
 
-const expression = /\$\{\{\s*(.*?)\s*\}\}/g
+// An expression may be written over several lines, so what it holds is any character, a line break too: one that
+// was left unread would reach the shell, or a variable's value, as the text `${{`.
+const expression = /\$\{\{\s*([\s\S]*?)\s*\}\}/g
 // `secrets` is not among them: a `Ci` never holds a step that receives a secret, and a target is given none.
 const reference = /^(matrix|env|github|runner)\.[A-Za-z_][A-Za-z0-9_-]*$/
 const variableName = /^[A-Za-z_][A-Za-z0-9_]*$/

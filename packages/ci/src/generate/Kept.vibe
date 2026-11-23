@@ -110,11 +110,22 @@ export const keptRuns = (
  * @category rendering
  * @since 0.1.0
  */
-export const keepValue = (runs: ReadonlyArray<KeptRun>): string =>
-  JSON.stringify(Object.fromEntries(runs.map((run) => [run.place.machine, keptDirectory(run.index)])))
+export const keepValue = (runs: ReadonlyArray<KeptRun>): string => {
+  const directories = new Map(runs.map((run) => [run.place.machine, run.index]))
+  // GitHub writes each directory as JSON text (`toJSON`), not this program: a Windows runner's temporary directory
+  // is `D:\a\_temp`, and a backslash written into a JSON string as it stands makes the whole value unreadable.
+  return `{${
+    [...directories].map(([machine, index]) =>
+      `${fenced(JSON.stringify(machine))}:\${{ toJSON(format('{0}/smthrs-kept/${index}', runner.temp)) }}`
+    ).join(",")
+  }}`
+}
 
 // A matrix value written into an expression as GitHub reads text.
 const literal = (value: string): string => `'${value.replaceAll("'", "''")}'`
+
+// Text GitHub leaves as it is: an expression it would read in the text is written as the string it stands for.
+const fenced = (text: string): string => text.replaceAll("${{", "${{ '${{' }}")
 
 // Every `matrix.<key>` an expression reads, outside its strings, becomes the variant's value. The generated
 // workflow's own matrix holds other keys.
@@ -136,12 +147,15 @@ const fillText = (text: string, variant: Variant): string => {
     rest
 }
 
-// A condition, written with or without `${{ }}`, as an expression.
+// A condition, written with or without `${{ }}`, as an expression. GitHub reads an `if` as one expression and
+// takes each `${{ }}` in it away, so each is written as the expression it holds, in brackets: an expression inside
+// an expression is one GitHub refuses the whole workflow for.
 const conditionOf = (text: string | undefined): string => {
   if (text === undefined) return "success()"
   const { pieces, rest } = split(text)
   const [only] = pieces
-  return pieces.length === 1 && only !== undefined && only[0] === "" && rest.trim() === "" ? only[1] : text
+  if (pieces.length === 1 && only !== undefined && only[0] === "" && rest.trim() === "") return only[1]
+  return pieces.map(([before, expression]) => `${before}(${expression})`).join("") + rest
 }
 
 const filled = (values: Readonly<Record<string, string>>, variant: Variant): ReadonlyArray<Yaml.Entry> =>
@@ -157,11 +171,36 @@ const variantName = (variant: Variant): string => {
   return values.length === 0 ? "" : ` (${values.join(", ")})`
 }
 
+// The variable the step before a kept one reads its job's kept checkout from.
+const keptVariable = "SMTHRS_KEPT"
+
+// What that step runs. Nothing is removed until the kept checkout is known to be there. The workspace's `.git`
+// stays, and the kept checkout's goes over it: Smithers build gives a job's checkout the commit, the index and the
+// refs, and has it read its objects from the workspace's store (`objects/info/alternates`). Removing that store
+// would leave the kept checkout a history it cannot read.
+const restore = [
+  `if [ ! -d "$${keptVariable}" ]; then`,
+  `  echo "::error::smithers-ci: this job's files were not kept:" \\`,
+  `    "smthrs ci ended before it left them." >&2`,
+  `  exit 1`,
+  `fi`,
+  `find "$GITHUB_WORKSPACE" -mindepth 1 -maxdepth 1 ! -name .git \\`,
+  `  -exec rm -rf {} +`,
+  `cp -a "$${keptVariable}/." "$GITHUB_WORKSPACE/"`,
+  ``
+].join("\n")
+
 /**
  * The two steps that run one kept step at one place: the one that puts the
  * job's checkout in the runner's workspace, then the kept step. Both run
  * only on the matrix entry that runs the job's targets, under the kept
  * step's own condition, so `if: always()` still runs after a failed step.
+ *
+ * The first step is a bash script on every runner, a Windows one too, and
+ * reads the kept directory from its environment: the runner's temporary
+ * directory is never part of the script's text, where a quote or a `$` in it
+ * would be read as shell. When the run ended before it kept the job's
+ * checkout, the step fails and leaves the workspace as it is.
  *
  * @category rendering
  * @since 0.1.0
@@ -175,10 +214,9 @@ export const keptSteps = (step: KeptStep, place: KeptPlace, index: number): Read
     Yaml.item(Yaml.mapping([
       Yaml.entry("name", `Files of ${where}`),
       Yaml.entry("if", condition),
-      Yaml.entry(
-        "run",
-        `find "$GITHUB_WORKSPACE" -mindepth 1 -maxdepth 1 -exec rm -rf {} +\ncp -a "${directory}/." "$GITHUB_WORKSPACE/"\n`
-      )
+      Yaml.entry("shell", "bash"),
+      Yaml.entry("run", restore),
+      Yaml.entry("env", Yaml.mapping([Yaml.entry(keptVariable, directory)]))
     ])),
     Yaml.item(Yaml.mapping([
       Yaml.entry("name", `${step.name === undefined ? step.uses : fillText(step.name, variant)}: ${where}`),

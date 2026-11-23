@@ -58,25 +58,38 @@ export const modelEnvironment = (environment: Environment): Environment =>
 /**
  * The judge `smthrs` binds, over the model transport `smthrs` builds from the
  * same environment. `@smthrs/cli` loads at the first judgment, so a command
- * that asks no judge starts without it.
+ * that asks no judge starts without it. The judge and its transport are built
+ * then, once, and every later judgment asks the same one: a transport built
+ * again for each question would open its connections again for each.
+ *
+ * `load` gives the module that holds the judge, by default `@smthrs/cli`'s.
+ *
+ * @category layers
+ * @since 0.1.0
  */
-const judge = (environment: Environment) => {
-  const seat = effect {
-    const NodeControl = try promise(() => import("@smthrs/cli/NodeControl"))
-    const transport = NodeControl.layerRebuildableRequestExecutor(NodeControl.environmentDispatcher(environment))
-    return NodeControl.layerSeatEvaluator(environment).pipe(Layer.provide(transport))
-  }
-  return Layer.succeed(Evaluator.Evaluator, Evaluator.Evaluator.of({
-    evaluate: (request) =>
-      effect {
-        const evaluate = effect {
-          const evaluator = try Evaluator.Evaluator
-          return try evaluator.evaluate(request)
+export const judge = (
+  environment: Environment,
+  load: () => Promise<typeof import("@smthrs/cli/NodeControl")> = () => import("@smthrs/cli/NodeControl")
+) =>
+  Layer.effect(Evaluator.Evaluator, effect {
+    // The judge lives as long as this layer does, whichever judgment built it.
+    const scope = try Effect.scope
+    const seat = try Effect.cached(effect {
+      const NodeControl = try promise(load)
+      const transport = NodeControl.layerRebuildableRequestExecutor(NodeControl.environmentDispatcher(environment))
+      return try Layer.buildWithScope(NodeControl.layerSeatEvaluator(environment).pipe(Layer.provide(transport)), scope)
+    })
+    return Evaluator.Evaluator.of({
+      evaluate: (request) =>
+        effect {
+          const evaluate = effect {
+            const evaluator = try Evaluator.Evaluator
+            return try evaluator.evaluate(request)
+          }
+          return try Effect.provide(evaluate, try seat)
         }
-        return try Effect.provide(evaluate, try seat)
-      }
-  }))
-}
+    })
+  })
 
 /**
  * How often a failed target runs again before its verdict is `fail`, when the command line does not say; a pass on a

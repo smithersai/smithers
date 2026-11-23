@@ -93,7 +93,7 @@ interface Settings {
 
 /**
  * The value GitHub gives a workflow expression made of contexts, strings,
- * `==`, `&&` and `||`, which is all the cache lines use. A context the
+ * `==`, `!=`, `&&` and `||`, which is all the cache lines use. A context the
  * repository does not set is an empty string; `&&` and `||` give one of
  * their operands, as GitHub's do.
  */
@@ -106,7 +106,7 @@ const evaluate = (text: string, settings: Settings): string => {
   }
   const expression = /^\$\{\{ (.*) \}\}$/.exec(text)
   if (expression === null) return text
-  const tokens = (expression[1] as string).match(/'(?:[^']|'')*'|\|\||&&|==|[\w.]+/g) ?? []
+  const tokens = (expression[1] as string).match(/'(?:[^']|'')*'|\|\||&&|==|!=|[\w.]+/g) ?? []
   let at = 0
   const operand = (): string => {
     const token = tokens[at++] as string
@@ -116,9 +116,10 @@ const evaluate = (text: string, settings: Settings): string => {
   }
   const equality = (): string | boolean => {
     const left = operand()
-    if (tokens[at] !== "==") return left
+    const sign = tokens[at]
+    if (sign !== "==" && sign !== "!=") return left
     at++
-    return left === operand()
+    return (left === operand()) === (sign === "==")
   }
   const truthy = (value: string | boolean): boolean => value !== "" && value !== false
   const both = (): string | boolean => {
@@ -283,9 +284,11 @@ describe.runIf(hostable && confines)("a cache you host yourself", () => {
       lint: "ran"
     })
 
-    // A repository with no read token gives a pull request the one token it has.
+    // A repository with no read token gives a pull request no token: never the one that writes. A push is given it.
     const tokenLine = stepsOf(a).find((entry) => entry.run?.includes("smthrs ci"))?.env?.["SMITHERS_CACHE_TOKEN"]
-    expect(evaluate(tokenLine as string, { token: writeToken, event: "pull_request" })).toBe(writeToken)
+    expect(evaluate(tokenLine as string, { token: writeToken, event: "pull_request" })).toBe("")
+    expect(evaluate(tokenLine as string, { token: writeToken, event: "push" })).toBe(writeToken)
+    expect(evaluate(tokenLine as string, { token: writeToken, readToken: "r", event: "push" })).toBe(writeToken)
   }, slow)
 
   it("refuses a wrong token: the run reuses nothing, stores nothing and still passes", async () => {

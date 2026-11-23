@@ -9,7 +9,8 @@ import GenerateApplySpec.Refusal
 Every theorem here is checked by Lean's kernel: no proof is left open and no axiom is added.
 
 * A generated path `placeOf` does not refuse for its name holds no NUL, no backslash, no drive, no leading slash and
-  no empty, `.` or `..` segment; a path it finds present has every prefix inside the repository's real location.
+  no empty, `.` or `..` segment; a path it finds present has every prefix inside the repository's real location,
+  and none of them is a link.
 * The labels of a batch of steps are distinct even without regard to case, are never `__proto__` or `_repository`,
   and fit Smithers build's limit as `//:label`.
 * A double-quoted YAML key holds no line break and no character that needs an escape, and the merge key `<<` is
@@ -231,6 +232,39 @@ theorem inspect_none {realRoot path pre : Str} {node : Node} (h : inspect realRo
     | false =>
       simp [inspect, hreal, hw] at h
 
+/-- A prefix the walk goes past is no link: `readLink` gave no target for it. -/
+theorem inspect_none_no_link {realRoot path pre : Str} {node : Node} (h : inspect realRoot path pre node = none) :
+    ∀ target, node.link ≠ .ok target := by
+  intro target hl
+  cases hreal : node.real with
+  | failed reason =>
+    unfold inspect at h
+    rw [hreal] at h
+    (repeat' split at h) <;> first | contradiction | cases h
+  | ok real =>
+    cases hw : withinRoot realRoot real with
+    | false => simp [inspect, hreal, hw] at h
+    | true => simp [inspect, hreal, hw, hl] at h
+
+theorem walk_present_no_link {disk : Disk} {realRoot path : Str} :
+    ∀ (prefixes : List Str), walk disk realRoot path prefixes = .present →
+      ∀ pre ∈ prefixes, ∀ target, (disk pre).link ≠ .ok target
+  | [], _, _, hm => by cases hm
+  | first :: rest, h, pre, hm => by
+    rw [walk] at h
+    cases hi : inspect realRoot path first (disk first) with
+    | some place =>
+      rw [hi] at h
+      dsimp only at h
+      rw [h] at hi
+      exact absurd hi (inspect_ne_present _ _ _ _)
+    | none =>
+      rw [hi] at h
+      dsimp only at h
+      rcases List.mem_cons.mp hm with rfl | hm
+      · exact inspect_none_no_link hi
+      · exact walk_present_no_link rest h pre hm
+
 theorem walk_present {disk : Disk} {realRoot path : Str} :
     ∀ (prefixes : List Str), walk disk realRoot path prefixes = .present →
       ∀ pre ∈ prefixes, ∃ real, (disk pre).real = .ok real ∧ withinRoot realRoot real = true
@@ -266,6 +300,17 @@ theorem placeOf_present_confined {disk : Disk} {realRoot path : Str} (h : placeO
   unfold placeOf at h
   split at h
   · next hp => exact ⟨hp, walk_present _ h⟩
+  · cases h
+
+/--
+No write through a link: a path `placeOf` finds present is no link, and no directory above it is one. A link inside
+the repository, as `.smithers` to `.git/hooks`, is refused like one that leaves it.
+-/
+theorem placeOf_present_no_link {disk : Disk} {realRoot path : Str} (h : placeOf disk realRoot path = .present) :
+    ∀ pre ∈ prefixesOf path, ∀ target, (disk pre).link ≠ .ok target := by
+  unfold placeOf at h
+  split at h
+  · exact walk_present_no_link _ h
   · cases h
 
 /-- Only a portable name is found absent, so only a portable name is ever written. -/

@@ -111,7 +111,14 @@ describe("a job that ends with steps that send its results out", () => {
       const workspace = temporary("result-actions-workspace")
       const home = temporary("result-actions-home")
       made.push(runnerTemp, workspace, home)
-      const filled = (text: string): string => text.replaceAll("${{ runner.temp }}", runnerTemp)
+      // GitHub writes a kept directory as JSON text where the workflow asks it to (`toJSON`), and as it is elsewhere.
+      const filled = (text: string): string =>
+        text
+          .replace(
+            /\$\{\{ toJSON\(format\('\{0\}([^']*)', runner\.temp\)\) \}\}/g,
+            (_whole, rest: string) => JSON.stringify(`${runnerTemp}${rest}`)
+          )
+          .replaceAll("${{ runner.temp }}", runnerTemp)
       const build = steps.find((step) => String(step["run"] ?? "").includes("smthrs ci")) as {
         readonly env: Readonly<Record<string, string>>
       }
@@ -143,9 +150,15 @@ describe("a job that ends with steps that send its results out", () => {
         // Each copy step, then what its kept step would read: the coverage its own variant wrote.
         return copies.map((step) => {
           mkdirSync(workspace, { recursive: true })
-          const copied = spawnSync("sh", ["-c", filled(String(step["run"]))], {
+          // The step is a bash script that reads the kept checkout's place from its own environment.
+          const given = Object.fromEntries(
+            Object.entries(step["env"] as Readonly<Record<string, string>>).map((
+              [name, value]
+            ) => [name, filled(value)])
+          )
+          const copied = spawnSync("bash", ["-c", String(step["run"])], {
             encoding: "utf8",
-            env: { ...process.env, GITHUB_WORKSPACE: workspace }
+            env: { ...process.env, ...given, GITHUB_WORKSPACE: workspace }
           })
           expect(copied.status, copied.stderr).toBe(0)
           const part = /\(part (\w+)\)$/.exec(String(step["name"]))?.[1] as string

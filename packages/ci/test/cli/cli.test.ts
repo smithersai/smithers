@@ -1,8 +1,9 @@
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
 import { existsSync, realpathSync, writeFileSync } from "node:fs"
-import { basename } from "node:path"
+import { basename, posix, win32 } from "node:path"
 import { afterAll, describe, expect, it } from "vitest"
+import { insideOf, lineOf, shown } from "../../src/cli/Cli.vibe"
 import { layer } from "../../src/cli/Host.vibe"
 import { main } from "../../src/cli/main.vibe"
 import { parts as onMain } from "../../src/cli/parts.vibe"
@@ -718,10 +719,76 @@ describe.concurrent("smithers-ci with a faulty part or host", () => {
     expect(outcome.stderr).not.toContain("into a copy")
   })
 
-  it("exits 4 when --out cannot be written", async () => {
-    const outcome = await runIn(["--out", "report.html"], repo(), parts, fullDisk)
+  it("exits 4 when --out cannot be written, after the report is printed", async () => {
+    const root = repo()
+    // No plan is asked for: Smithers build's plan writes into a copy first, and a full disk would stop it there.
+    const unplanned: Chosen = { ...parts, planned: undefined }
+    const printed = await runIn([], root, unplanned)
+    const target = `${scratch()}/report.html`
+    const outcome = await runIn(["--out", target], root, unplanned, fullDisk)
     expect(outcome.code).toBe(exitCodes.failed)
-    expect(outcome.stderr).toContain("could not write")
+    expect(outcome.stderr).toContain(`smithers-ci: cli: could not write ${target}`)
+    // A replay that ran is not lost with the page: the report is on standard output all the same.
+    expect(outcome.stdout).toBe(printed.stdout)
+    expect(outcome.stdout).toContain("This run wrote nothing to the repository.")
+  })
+
+  it("says a page was written to the repository by where it is, not by how its name starts", async () => {
+    const root = repo()
+    const dotted = await runIn(["--out", "..report.html"], root, parts)
+    expect(dotted.code, dotted.stderr).toBe(exitCodes.ok)
+    expect(dotted.stdout).toContain("This run wrote one file to the repository: ..report.html.")
+    const outside = await runIn(["--out", `${scratch()}/report.html`], root, parts)
+    expect(outside.stdout).toContain("This run wrote nothing to the repository.")
+    // The directory above, a path that leaves, and another drive, which Windows gives back whole, are outside.
+    expect(insideOf(posix, "..")).toBeUndefined()
+    expect(insideOf(posix, "../report.html")).toBeUndefined()
+    expect(insideOf(win32, "..\\report.html")).toBeUndefined()
+    expect(insideOf(win32, "D:\\report.html")).toBeUndefined()
+    expect(insideOf(win32, "..report.html")).toBe("..report.html")
+    expect(insideOf(posix, "out/report.html")).toBe("out/report.html")
+  })
+
+  it("prints no control sequence that a failure's message carries", async () => {
+    const message = "the plan printed \u001b[2J\u001b]0;title\u0007cleared\u001b\\ \u001bc\u0001 and\tmore"
+    const failing: Chosen = {
+      ...parts,
+      read: () => Effect.fail({ code: "command-failed", message, part: "inventory" })
+    }
+    const outcome = await runIn(["inventory"], repo(), failing)
+    expect(outcome.code).toBe(exitCodes.failed)
+    expect(outcome.stderr).toBe("smithers-ci: inventory: the plan printed cleared \uFFFDc\uFFFD and\tmore\n")
+    expect(lineOf({ code: "model-unavailable", message: "no \u001b[31mmodel", part: "select" })).toBe(
+      "smithers-ci: no model"
+    )
+    expect(shown("one\ntwo\u001b[1;31m red\u001b[0m \u009b")).toBe("one\ntwo red \uFFFD")
+  })
+
+  it("splits with the part that starts no program of the repository, but for a replay", async () => {
+    const asked: Array<string> = []
+    const chosen: Chosen = {
+      ...parts,
+      decompose: (at, given) => {
+        asked.push("decompose")
+        return parts.decompose(at, given)
+      },
+      decomposeStatic: (at, given) => {
+        asked.push("static")
+        return parts.decompose(at, given)
+      }
+    }
+    const root = repo()
+    expect((await runIn(["inventory"], root, chosen)).code).toBe(exitCodes.ok)
+    expect((await runIn(["apply", "--check"], root, chosen)).code).toBe(exitCodes.mismatch)
+    expect((await runIn(["apply"], root, chosen)).code).toBe(exitCodes.ok)
+    expect([...new Set(asked)]).toEqual(["static"])
+    // Without such a part, every command splits with the one it has.
+    asked.length = 0
+    expect((await runIn(["inventory"], root, { ...chosen, decomposeStatic: undefined })).code).toBe(exitCodes.ok)
+    expect([...new Set(asked)]).toEqual(["decompose"])
+    // The parts on main have one, and it is not the split that asks Zig for a build's steps.
+    expect(onMain.decomposeStatic).toBeDefined()
+    expect(onMain.decomposeStatic).not.toBe(onMain.decompose)
   })
 
   it("exits 4 when a renderer throws", async () => {
@@ -782,7 +849,7 @@ describe.concurrent("smithers-ci with a faulty part or host", () => {
     const read = (await runIn(["inventory"], root, parts)).stdout
     const unsplit = await runIn(["inventory"], root, {
       ...parts,
-      decompose: () => Effect.fail({ code: "not-a-repository", message: "no git", part: "decompose" })
+      decomposeStatic: () => Effect.fail({ code: "not-a-repository", message: "no git", part: "decompose" })
     })
     expect(unsplit).toEqual({ code: exitCodes.ok, stdout: read, stderr: "" })
     // A splitter is never asked about a repository with no job that runs on a change.
@@ -790,7 +857,7 @@ describe.concurrent("smithers-ci with a faulty part or host", () => {
     const none = await runIn(["inventory"], root, {
       ...parts,
       read: (at) => Effect.map(parts.read(at), (inventory) => ({ ...inventory, jobs: [] })),
-      decompose: (at, given) => {
+      decomposeStatic: (at, given) => {
         asked.push(at)
         return parts.decompose(at, given)
       }

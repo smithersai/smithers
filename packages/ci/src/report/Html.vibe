@@ -46,6 +46,9 @@ import {
   normalDiffers,
   noSpeedup,
   noSpeedupMismatch,
+  type NotReused,
+  notReused,
+  notReusedParts,
   ownTargets,
   ratio,
   reasons,
@@ -53,6 +56,7 @@ import {
   rerunTime,
   selectionRows,
   shortCommit,
+  type SkipGroup,
   skipGroups,
   skippedHeading,
   skippedLabels,
@@ -162,12 +166,29 @@ const selection = (report: ReplayReport): string => {
   ].join("")
 }
 
+/**
+ * Every step normal mode ran again, as the text report lists them: at how many of the commits, the step, its
+ * command when it is known, and why, with what would let it be reused. Each is the repository's text, so each
+ * is escaped.
+ */
+const notReusedTable = (entries: ReadonlyArray<NotReused>, commits: number): string =>
+  [
+    "<h2>Steps not reused</h2>",
+    "<div class=\"scroll\"><table>",
+    ...entries.map((entry) => notReusedParts(entry, commits)).map((parts) =>
+      `<tr><td class="num">${parts.commits}</td><th scope="row"><code>${escape(parts.step)}</code></th><td><code>${
+        escape(parts.command ?? "")
+      }</code></td><td class="sub">${escape(parts.why)}</td></tr>`
+    ),
+    "</table></div>"
+  ].join("\n")
+
 /** Every target fast mode skipped: its commit, how many, the model's reason, and the targets. */
-const skippedTable = (commits: ReadonlyArray<ReplayCommit>): string =>
+const skippedTable = (groups: ReadonlyArray<SkipGroup>): string =>
   [
     `<h2>${skippedHeading}</h2>`,
     "<div class=\"scroll\"><table>",
-    ...skipGroups(commits).map((group) =>
+    ...groups.map((group) =>
       `<tr><th scope="row"><code title="${escape(group.commit)}">${
         escape(shortCommit(group.commit))
       }</code></th><td class="num">${group.labels.length}</td><td class="sub">${escape(group.reason)}</td><td><code>${
@@ -359,7 +380,10 @@ export const html: RenderReport = (report) => {
     if (report.diskHeldBytes !== undefined) body.push(`<p class="summary">${diskHeld(report.diskHeldBytes)}</p>`)
     if (report.selection !== undefined) body.push(selection(report))
     body.push(commitTable(report.commits))
-    if (skipGroups(report.commits).length > 0) body.push(skippedTable(report.commits))
+    const again = notReused(report)
+    if (again.length > 0) body.push(notReusedTable(again, report.commits.length))
+    const skips = skipGroups(report.commits)
+    if (skips.length > 0) body.push(skippedTable(skips))
     if (commitsLeft.length > 0) body.push(commitsLeftTable(commitsLeft))
     if (left.length > 0) body.push(notReplayedTable(left))
     if (notRead.length > 0) body.push(notReadTable(notRead))

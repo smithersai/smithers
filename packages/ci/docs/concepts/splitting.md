@@ -321,6 +321,12 @@ groups named steps, it becomes one step per named step. Each has a record of
 its own, so a change runs again only the steps whose own run read it. Zig ran
 those named steps at the same time, and the steps still run at the same time.
 
+Finding what a build step groups means asking Zig, and Zig answers by running
+`build.zig`. A replay asks, in its own copy of each commit. `inventory`,
+`apply` and `apply --check` never ask: they start no program of the
+repository. So the files `apply` writes keep such a step whole, and are the
+same on a machine with Zig as on one without.
+
 A flag that only changes how the run is reported or how much runs at once is
 given to each of them: `zig build test --summary all` becomes
 `zig build test-core --summary all` and the others. Those flags are

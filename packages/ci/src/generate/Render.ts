@@ -528,13 +528,14 @@ const jailSteps = (
 // What the read sandbox needs on a GitHub runner, as Smithers' own workflow installs it. Linux targets are confined
 // by bubblewrap, which an Ubuntu runner lacks, and Ubuntu 24.04 lets it make its namespace only once AppArmor's
 // restriction is lifted. Without the step a confined target fails `sandbox_unenforceable`. macOS confines with
-// seatbelt, which every Mac has.
+// seatbelt, which every Mac has. A runner that has bubblewrap already asks its package index for nothing.
 const bubblewrapScript = script([
-  `if command -v apt-get >/dev/null 2>&1; then`,
+  `if ! command -v bwrap >/dev/null 2>&1 &&`,
+  `  command -v apt-get >/dev/null 2>&1; then`,
   `  sudo apt-get update -qq &&`,
   `    sudo apt-get install -y -qq --no-install-recommends bubblewrap`,
-  ...liftRestriction.map((line) => `  ${line}`),
-  `fi`
+  `fi`,
+  ...liftRestriction
 ])
 
 const sandboxSetup = jailSteps(
@@ -552,14 +553,7 @@ const sandboxSetup = jailSteps(
 const tokenSetup = (cache: string | undefined): ReadonlyArray<Yaml.Item> =>
   jailSteps(
     "Keep the cache's token from the steps",
-    script([
-      `if ! command -v bwrap >/dev/null 2>&1 &&`,
-      `  command -v apt-get >/dev/null 2>&1; then`,
-      `  sudo apt-get update -qq &&`,
-      `    sudo apt-get install -y -qq --no-install-recommends bubblewrap`,
-      `fi`,
-      ...liftRestriction
-    ]),
+    bubblewrapScript,
     "it keeps each step from the cache's token",
     [
       "With a shared cache, a step runs where it sees no other process and reads the cache's token from none. " +
@@ -570,7 +564,8 @@ const tokenSetup = (cache: string | undefined): ReadonlyArray<Yaml.Item> =>
 
 // What a job's own `/tmp` needs on a GitHub runner: the same bubblewrap, and the same restriction lifted. Smithers
 // build runs each job's targets with the job's temporary directory in place of `/tmp`, through a mount of its own.
-// A hosted runner has passwordless `sudo`, and Smithers' own workflow lifts the restriction the same way.
+// A hosted runner has passwordless `sudo`, and Smithers' own workflow lifts the restriction the same way. The same
+// bubblewrap keeps a step from the cache's token, so a workflow with this step has no step of `tokenSetup`.
 const ownTmpSetup = jailSteps(
   "Give each job its own /tmp",
   bubblewrapScript,
@@ -597,14 +592,17 @@ export const machinesDirectory = "${{ runner.temp }}/smthrs-machines"
 
 // The shared cache's settings in a GitHub repository, as `docs/concepts/cache.md` names them: a variable for the URL
 // and secrets for the tokens. The URL given to `apply --cache` is used until the variable is set. A pull request
-// reads with the read token when the repository has one, so it reuses results and stores none.
+// reads with the read token when the repository has one, so it reuses results and stores none. It is never given
+// the token that writes: a repository with no read token gives a pull request no token at all, where an unset
+// secret, which is the empty text, would otherwise let the expression go on to the next one. The two events
+// exclude each other, so neither token can stand in for the other.
 const cacheUrl = (cache: string | undefined): string =>
   cache === undefined
     ? "${{ vars.SMITHERS_CACHE_URL }}"
     : `\${{ vars.SMITHERS_CACHE_URL || '${cache.replaceAll("'", "''")}' }}`
 
-const cacheToken =
-  "${{ github.event_name == 'pull_request' && secrets.SMITHERS_CACHE_READ_TOKEN || secrets.SMITHERS_CACHE_TOKEN }}"
+const cacheToken = "${{ github.event_name == 'pull_request' && secrets.SMITHERS_CACHE_READ_TOKEN || " +
+  "github.event_name != 'pull_request' && secrets.SMITHERS_CACHE_TOKEN || '' }}"
 
 /**
  * What a run prints when its repository names no shared cache.
@@ -748,8 +746,8 @@ const renderWorkflow = (
                 upToDate(cache, allowDocker),
                 ...plan.toolchains.map((toolchain) => renderSetup(toolchain, varying, refs)),
                 // The read sandbox's step installs what keeps the token from a step, and what gives a job its own
-                // `/tmp`, too. With no target held to its inputs, each has a step of its own.
-                ...(confined ? sandboxSetup : [...(machines.size > 0 ? ownTmpSetup : []), ...tokenSetup(cache)]),
+                // `/tmp`, too. So does the step for a job's own `/tmp`: bubblewrap is set up once, by one step.
+                ...(confined ? sandboxSetup : machines.size > 0 ? ownTmpSetup : tokenSetup(cache)),
                 step(
                   [
                     Yaml.entry("uses", "actions/cache@v4"),

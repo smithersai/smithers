@@ -7,9 +7,13 @@
  *
  * Every generated path is checked before any is written, so a refusal leaves
  * the directory as it was. A path is refused when its real location is
- * outside the directory (a link in the path), when a file is where a
- * directory must go or a directory where the file must go, and when the file
- * there is one `smithers-ci` did not write. A build file of the repository's
+ * outside the directory (a link in the path), when the path or a directory
+ * above it is a link at all, when a file is where a directory must go or a
+ * directory where the file must go, and when the file there is one
+ * `smithers-ci` did not write. A link inside the repository is refused as
+ * one that leaves it is: `.smithers` linked to `.git/hooks` has its real
+ * location inside the repository, and a file written through it is a hook
+ * git runs. A build file of the repository's
  * own that Smithers build would read beside the generated ones is refused
  * the same way.
  *
@@ -103,6 +107,12 @@ effect function placeOf(root: string, realRoot: string, path: string) {
     if (real !== realRoot && !real.startsWith(belowRoot)) {
       return Place.Refused({ why: `${prefix} is a link to ${real}, outside the repository` })
     }
+    // A link that stays inside the repository is followed by a write too, to a place nobody checked: no generated
+    // file is written through one.
+    const inside = fs.readLink(at) catch (error) => error
+    if (typeof inside === "string") {
+      return Place.Refused({ why: `${prefix} is a link to ${inside}, and no generated file is written through a link` })
+    }
     const kind = fs.stat(at) catch () => undefined
     if (prefix !== path && kind?.type !== "Directory") {
       return Place.Refused({ why: `${prefix} is not a directory, so ${path} cannot be written` })
@@ -145,7 +155,8 @@ export effect function check(root: string, files: ReadonlyArray<GeneratedFile>) 
   const placed = writtenFiles(files)
   for (const file of placed) {
     const place = try placeOf(root, realRoot, file.path)
-    if (place._tag === "Refused") problems.push(place.why)
+    // A link above two generated files is named once.
+    if (place._tag === "Refused" && !problems.includes(place.why)) problems.push(place.why)
     if (place._tag === "Absent") changes.push({ path: file.path, change: "missing" })
     if (place._tag !== "Present") continue
     // A file that cannot be read is the owner's.

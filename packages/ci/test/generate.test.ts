@@ -207,8 +207,10 @@ describe("files", () => {
       (parseYaml(workflow) as { jobs: { ci: { steps: ReadonlyArray<Record<string, unknown>> } } }).jobs.ci.steps
     const runOf = (workflow: string) =>
       stepsOf(workflow).find((entry) => String(entry["run"]).includes("smthrs ci")) as { env: Record<string, string> }
-    const token =
-      "${{ github.event_name == 'pull_request' && secrets.SMITHERS_CACHE_READ_TOKEN || secrets.SMITHERS_CACHE_TOKEN }}"
+    // A pull request is given the read token or none; every other event the token that writes. Neither stands in
+    // for the other: an unset read token, which is the empty text, never lets a pull request go on to the next.
+    const token = "${{ github.event_name == 'pull_request' && secrets.SMITHERS_CACHE_READ_TOKEN || " +
+      "github.event_name != 'pull_request' && secrets.SMITHERS_CACHE_TOKEN || '' }}"
 
     // No URL given: the variable alone names the cache, and a run without it says so before the targets run.
     const plain = content(generate(document), workflowPath)
@@ -1416,12 +1418,28 @@ describe("matrix and systems", () => {
     const workflow = content(
       generate(inventory([
         job("a", [step("a:1", "t")], { runsOn: "self-hosted,linux,gpu" }),
+        job("b", [step("b:1", "u")], { runsOn: "self-hosted,linux,gpu" })
+      ])),
+      workflowPath
+    )
+    expect(parseYaml(workflow).jobs.ci.strategy.matrix.os).toEqual([["self-hosted", "linux", "gpu"]])
+    expect(workflow).toContain("key: smithers-ci-${{ join(matrix.os, '-') }}-${{ github.sha }}\n")
+    // Beside a hosted runner of its own system, each of the two runs its own job's targets and not the other's.
+    const beside = content(
+      generate(inventory([
+        job("a", [step("a:1", "t")], { runsOn: "self-hosted,linux,gpu" }),
         job("b", [step("b:1", "u")], { runsOn: "ubuntu-latest" })
       ])),
       workflowPath
     )
-    expect(parseYaml(workflow).jobs.ci.strategy.matrix.os).toEqual([["self-hosted", "linux", "gpu"], "ubuntu-latest"])
-    expect(workflow).toContain("key: smithers-ci-${{ join(matrix.os, '-') }}-${{ github.sha }}\n")
+    expect(parseYaml(beside).jobs.ci.strategy.matrix.include).toEqual([
+      { os: ["self-hosted", "linux", "gpu"], leg: 1, tools: "runner self-hosted,linux,gpu" },
+      { os: "ubuntu-latest", leg: 2, tools: "runner ubuntu-latest" }
+    ])
+    const cached = (parseYaml(beside).jobs.ci.steps as ReadonlyArray<Record<string, unknown>>).find((entry) =>
+      entry["uses"] === "actions/cache@v4"
+    ) as { readonly with: { readonly key: string } }
+    expect(cached.with.key).toBe("smithers-ci-${{ join(matrix.os, '-') }}-${{ matrix.leg }}-${{ github.sha }}")
   })
 
   it("waits only for needed work on the same system", () => {
@@ -1673,7 +1691,8 @@ describe("the workspace and workflow", () => {
   })
 
   it("installs what keeps the cache's token from a step on a Linux runner, when the repository names a cache", () => {
-    const steps = inventory([job("a", [step("a:1", "x")])])
+    // A job with no machine: one with a machine has bubblewrap from the step that gives it its own /tmp.
+    const steps = inventory([job("a", [step("a:1", "x")], { source: "justfile", file: "Justfile" })])
     const installs = [
       "        shell: bash",
       "        run: |",
@@ -1710,6 +1729,16 @@ describe("the workspace and workflow", () => {
     const held = inventory([job("a", [step("a:1", "x", { inputs: ["src/**"], from: "a:1" })])])
     expect(content(generate(held), workflowPath)).not.toContain("Keep the cache's token from the steps")
     expect(content(generate(held), workflowPath)).toContain("Install the read sandbox")
+    // So has one whose job runs on a machine of its own: bubblewrap is set up by one step, never by two.
+    const machine = content(generate(inventory([job("a", [step("a:1", "x")])])), workflowPath)
+    expect(machine).toContain("      - name: Give each job its own /tmp\n")
+    expect(machine).not.toContain("Keep the cache's token from the steps")
+    expect(machine.match(/--no-install-recommends bubblewrap/g)).toHaveLength(1)
+    expect(machine.match(/sysctl -w kernel.apparmor_restrict_unprivileged_userns=0/g)).toHaveLength(1)
+    // Each of the three steps asks the package index for nothing on a runner that has bubblewrap.
+    for (const workflow of [open, machine, content(generate(held), workflowPath)]) {
+      expect(workflow).toContain("          if ! command -v bwrap >/dev/null 2>&1 &&\n")
+    }
   })
 
   it("uses the repository's Node and defaults its triggers and runner", () => {

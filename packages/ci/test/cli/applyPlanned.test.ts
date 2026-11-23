@@ -11,7 +11,7 @@
  */
 import * as NodeServices from "@effect/platform-node/NodeServices"
 import * as Effect from "effect/Effect"
-import { chmodSync, existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs"
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -141,6 +141,28 @@ describe("the jobs Smithers build refuses", { timeout: 600_000 }, () => {
     expect(found).toEqual([])
     expect(git(root, "status", "--porcelain")).toBe("")
   })
+
+  it(
+    "are asked of a copy in a directory of its own, so a repository named home or cache plans as any other",
+    async () => {
+      // Smithers build's home and cache are beside the copy: a copy named as the repository would be one of them.
+      for (const name of ["home", "cache"]) {
+        const base = temporary("apply-planned-named")
+        made.push(base)
+        const root = join(base, name)
+        mkdirSync(root)
+        git(root, "init", "--quiet", "--initial-branch=main")
+        commit(root, "base", { ".github/workflows/ci.yml": workflow([["good", "true"]]) })
+        const found = await Effect.runPromise(
+          refusals([process.execPath, smthrs], root, await generated(root)).pipe(
+            Effect.provide(NodeServices.layer)
+          ) as Effect.Effect<ReadonlyArray<unknown>, Failure>
+        )
+        expect(found, name).toEqual([])
+      }
+    },
+    600_000
+  )
 
   it("are each job whose targets it refuses alone, with its words", async () => {
     const root = repository({ ".github/workflows/ci.yml": jobs })

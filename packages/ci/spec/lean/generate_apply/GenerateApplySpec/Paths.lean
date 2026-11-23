@@ -5,7 +5,8 @@ import GenerateApplySpec.Units
 
 `apply` writes each generated file at a repository-relative name. Before any is written, `placeOf` checks the whole
 name, then looks at the name and every directory above it, outermost first, and refuses a name whose real location
-is outside the repository.
+is outside the repository. It refuses a name that is a link, or is under one, wherever the link leads: a link that
+stays inside the repository is followed by a write too, as `.smithers` linked to `.git/hooks` is.
 
 The file system is the one part that is not a function of the name. It is a parameter here (`Disk`): what
 `realPath`, `readLink` and `stat` answer for each prefix of the name.
@@ -88,10 +89,15 @@ def inspect (realRoot path pre : Str) (node : Node) : Option Place :=
   | .ok real =>
     if withinRoot realRoot real = false then
       some (.refused (pre ++ lit " is a link to " ++ real ++ lit ", outside the repository"))
-    else if pre ≠ path ∧ node.kind ≠ .directory then
-      some (.refused (pre ++ lit " is not a directory, so " ++ path ++ lit " cannot be written"))
-    else if pre = path ∧ node.kind ≠ .file then some (.refused (path ++ lit " is not a file"))
-    else none
+    else
+      match node.link with
+      | .ok target =>
+        some (.refused (pre ++ lit " is a link to " ++ target ++ lit ", and no generated file is written through a link"))
+      | .failed _ =>
+        if pre ≠ path ∧ node.kind ≠ .directory then
+          some (.refused (pre ++ lit " is not a directory, so " ++ path ++ lit " cannot be written"))
+        else if pre = path ∧ node.kind ≠ .file then some (.refused (path ++ lit " is not a file"))
+        else none
 
 /-- The walk over the prefixes of `path`, outermost first. -/
 def walk (disk : Disk) (realRoot path : Str) : List Str → Place

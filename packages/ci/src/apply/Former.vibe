@@ -2,6 +2,12 @@
  * What an earlier `smithers-ci` wrote where the generated files no longer
  * go, and what Smithers build reads beside the generated files.
  *
+ * Two of the generated files are written only when there is something to
+ * say in them: which machine runs which target, and what of the original CI
+ * is not reproduced. One of them that an earlier `apply` wrote, and this one
+ * has no use for, is removed as a file of an earlier layout is: left in
+ * place, it would go on saying a job is not reproduced after it is.
+ *
  * The generated workspace declares the repository's root package. Smithers
  * build also reads a root `PACKAGE.ts` or `PACKAGE.vibe` as that package and
  * `.smithers/WORKSPACE.ts` as the workspace, and refuses a repository that
@@ -13,11 +19,24 @@
 import { path as targetMapPath } from "../contract/TargetMap.vibe"
 
 /**
+ * The generated files `apply` writes only when it has something to put in
+ * them: the legs, when targets run on more than one machine, and the notes,
+ * when something of the original CI is not reproduced. They are the paths
+ * the generate part names `legsPath` and `notesPath`.
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const optionalPaths: ReadonlyArray<string> = [".smithers/ci/legs.txt", ".smithers/ci/NOT-REPRODUCED.txt"]
+
+/**
  * Where an earlier `smithers-ci` wrote its files: the targets and the
  * workspace as TypeScript, which the repository's own type check, lint and
  * format read as theirs; the target map as JSON and the notes as Markdown,
  * which its formatter read. One of them that `smithers-ci` wrote is removed
  * when the files are written again: its content is in the files written now.
+ * With them, the two files `apply` writes only when it has something to put
+ * in them (`optionalPaths`): one that is written now is not removed.
  *
  * @category constants
  * @since 0.1.0
@@ -26,7 +45,8 @@ export const formerPaths: ReadonlyArray<string> = [
   "PACKAGE.ts",
   ".smithers/WORKSPACE.ts",
   targetMapPath,
-  ".smithers/ci/NOT-REPRODUCED.md"
+  ".smithers/ci/NOT-REPRODUCED.md",
+  ...optionalPaths
 ]
 
 /**

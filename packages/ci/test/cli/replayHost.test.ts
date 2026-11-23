@@ -1,4 +1,5 @@
 import * as NodeServices from "@effect/platform-node/NodeServices"
+import { Evaluator } from "@smthrs/model"
 import * as Console from "effect/Console"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
@@ -6,7 +7,7 @@ import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync
 import { tmpdir } from "node:os"
 import { delimiter, join } from "node:path"
 import { afterAll, describe, expect, it } from "vitest"
-import { layer, modelEnvironment, replayOptions } from "../../src/cli/Host.vibe"
+import { judge, layer, modelEnvironment, replayOptions } from "../../src/cli/Host.vibe"
 import { nodeProgram, smthrsCommand, smthrsWithToken } from "../../src/cli/Install.ts"
 import { Options, Progress } from "../../src/replay/index.vibe"
 import { recorder } from "./repo.ts"
@@ -86,6 +87,52 @@ describe("what fast mode's model is given", () => {
   })
 })
 
+describe("fast mode's judge", () => {
+  it("is built at the first judgment, once, with its transport, and asked at each", async () => {
+    const counts = { loads: 0, transports: 0, seats: 0, asked: 0 }
+    const seat = Layer.effect(
+      Evaluator.Evaluator,
+      Effect.sync(() => {
+        counts.seats += 1
+        return Evaluator.Evaluator.of({
+          evaluate: () => {
+            counts.asked += 1
+            return Effect.fail(
+              new Evaluator.EvaluatorError({ code: "unreachable", message: Evaluator.unreachableMessage })
+            )
+          }
+        })
+      })
+    )
+    const control = {
+      environmentDispatcher: (environment: unknown) => environment,
+      layerRebuildableRequestExecutor: () => {
+        counts.transports += 1
+        return Layer.empty
+      },
+      layerSeatEvaluator: () => seat
+    }
+    const load = () => {
+      counts.loads += 1
+      return Promise.resolve(control as never)
+    }
+    const program = Effect.gen(function*() {
+      const evaluator = yield* Evaluator.Evaluator
+      // A command that asks no judge loads and builds nothing.
+      const before = { ...counts }
+      const first = yield* Effect.flip(evaluator.evaluate({} as never))
+      yield* Effect.flip(evaluator.evaluate({} as never))
+      yield* Effect.flip(evaluator.evaluate({} as never))
+      return { before, code: first.code }
+    })
+    expect(await Effect.runPromise(Effect.provide(program, judge({}, load)))).toEqual({
+      before: { loads: 0, transports: 0, seats: 0, asked: 0 },
+      code: "unreachable"
+    })
+    expect(counts).toEqual({ loads: 1, transports: 1, seats: 1, asked: 3 })
+  })
+})
+
 describe("the Node that runs smthrs", () => {
   const bun = { bun: "1.4.2" }
 
@@ -113,6 +160,29 @@ describe("the Node that runs smthrs", () => {
     const real = withNode()
     expect(nodeProgram(shim, bun, self)).toBeUndefined()
     expect(nodeProgram(`${shim}${delimiter}${real}`, bun, self)).toBe(join(real, "node"))
+  })
+
+  it("is never a file of the working directory, nor one that cannot be run", () => {
+    const real = withNode()
+    // An empty entry of the path, and one that is not absolute, mean the directory the program was started in.
+    const here = process.cwd()
+    const checkout = withNode()
+    process.chdir(checkout)
+    try {
+      for (const entry of ["", ".", "bin"]) {
+        expect(nodeProgram(`${entry}${delimiter}${real}`, bun, process.execPath), JSON.stringify(entry))
+          .toBe(join(real, "node"))
+      }
+      expect(nodeProgram("", bun, process.execPath)).toBeUndefined()
+      expect(nodeProgram(`${delimiter}${delimiter}`, bun, process.execPath)).toBeUndefined()
+    } finally {
+      process.chdir(here)
+    }
+    // A file named node that cannot be run does not hide the Node after it.
+    const plain = directory()
+    writeFileSync(join(plain, "node"), "not a program\n", { mode: 0o644 })
+    expect(nodeProgram(plain, bun, process.execPath)).toBeUndefined()
+    expect(nodeProgram(`${plain}${delimiter}${real}`, bun, process.execPath)).toBe(join(real, "node"))
   })
 
   it("is missing when the path has none", () => {

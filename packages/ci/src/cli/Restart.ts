@@ -14,13 +14,34 @@
  * pipe and lives only in its memory, where the parts that need a token read
  * it. Nothing is written to a file.
  *
+ * The pipe's path reaches the new start in a variable, and anybody can set a
+ * variable. So the new start believes it only when the process holds nothing
+ * to withhold, which is what a start this program made looks like, and reads
+ * only a pipe of its own making: one named as `hand` names it, in a directory
+ * that is this user's and nobody else's to enter. Any other value is ignored,
+ * its path is left alone, and the program starts again as if it were not set.
+ *
+ * This file is TypeScript because the executable loads it before
+ * `vibelang/register`: nothing is compiled while the process still holds the
+ * whole environment.
+ *
  * @since 0.1.0
  */
 
 import { execFileSync, spawn } from "node:child_process"
-import { mkdtempSync, readFileSync, rmdirSync, rmSync, statSync } from "node:fs"
-import { tmpdir } from "node:os"
-import { dirname, join } from "node:path"
+import {
+  closeSync,
+  constants,
+  lstatSync,
+  mkdtempSync,
+  openSync,
+  readSync,
+  renameSync,
+  rmdirSync,
+  rmSync
+} from "node:fs"
+import { tmpdir, userInfo } from "node:os"
+import { basename, dirname, join } from "node:path"
 
 /**
  * An environment: names and values.
@@ -131,13 +152,34 @@ export const split = (
  * What the helper runs: it reads the variables from its standard input into
  * memory, leaves a writer behind that waits at the pipe for the new start,
  * and ends. The variables are in no environment and on no command line.
+ *
+ * The writer waits `$2` seconds and no longer. A new start that never comes
+ * to read, as when it ends before its first line, would otherwise leave a
+ * shell holding every variable for as long as the machine runs, beside a pipe
+ * any process of this user can open. After that time the writer is ended and
+ * the pipe and its directory are removed.
  */
-const writer = "v=$(cat); ( printf %s \"$v\" > \"$1\" & )"
+const writer = [
+  "v=$(cat)",
+  "(",
+  "  ( printf %s \"$v\" > \"$1\" ) &",
+  "  w=$!",
+  "  v=",
+  "  ( sleep \"$2\"; kill \"$w\" ) >/dev/null 2>&1 &",
+  "  t=$!",
+  "  if wait \"$w\"; then kill \"$t\"; else rm -f \"$1\"; rmdir \"${1%/*}\"; fi",
+  ") >/dev/null 2>&1 &"
+].join("\n")
+
+/** The name `hand` gives a pipe, and what the name of its directory starts with. */
+const pipeName = "pipe"
+const directoryPrefix = "smithers-ci-environment-"
 
 /**
  * The programs and the directory a hand-over uses: `mkfifo` makes the pipe,
  * the shell holds the variables until they are read, and the pipe is made in
- * a new directory under `directory`.
+ * a new directory under `directory`. The variables wait `seconds` at the
+ * pipe, a minute when it is not given, and are then let go.
  *
  * @category models
  * @since 0.1.0
@@ -146,6 +188,7 @@ export interface Tools {
   readonly mkfifo: string
   readonly shell: string
   readonly directory: string
+  readonly seconds?: number | undefined
 }
 
 /**
@@ -167,11 +210,11 @@ export const tools = (): Tools => ({ mkfifo: "mkfifo", shell: "/bin/sh", directo
  * @since 0.1.0
  */
 export const hand = async (withheld: Readonly<Record<string, string>>, using: Tools = tools()): Promise<string> => {
-  const pipe = join(mkdtempSync(join(using.directory, "smithers-ci-environment-")), "pipe")
+  const pipe = join(mkdtempSync(join(using.directory, directoryPrefix)), pipeName)
   try {
     execFileSync(using.mkfifo, ["-m", "600", pipe], { stdio: "ignore" })
     await new Promise<void>((resolve, reject) => {
-      const helper = spawn(using.shell, ["-c", writer, "smithers-ci", pipe], {
+      const helper = spawn(using.shell, ["-c", writer, "smithers-ci", pipe, String(using.seconds ?? 60)], {
         env: { PATH: "/usr/bin:/bin" },
         stdio: ["pipe", "ignore", "ignore"]
       })
@@ -187,9 +230,94 @@ export const hand = async (withheld: Readonly<Record<string, string>>, using: To
   return pipe
 }
 
+/**
+ * Removes a pipe and its directory. The directory is taken out of the way first, in one step: a writer that has
+ * not opened the pipe yet then finds no such path. Were the pipe removed first, a writer arriving in the moment
+ * before its directory goes would make a file of that name there, with the variables in it.
+ */
 const discard = (pipe: string): void => {
-  rmSync(pipe, { force: true })
-  rmdirSync(dirname(pipe))
+  const directory = dirname(pipe)
+  const gone = `${directory}.gone`
+  renameSync(directory, gone)
+  rmSync(join(gone, basename(pipe)), { force: true })
+  rmdirSync(gone)
+}
+
+/** True for a pipe `hand` made: named as it names one, this user's, in a directory only this user can enter. */
+const ours = (pipe: string): boolean => {
+  const directory = dirname(pipe)
+  if (basename(pipe) !== pipeName || !basename(directory).startsWith(directoryPrefix)) return false
+  const user = userInfo().uid
+  const above = lstatSync(directory)
+  const at = lstatSync(pipe)
+  // Each is read whatever the others say: none of them can fail once the two were found.
+  return [above.isDirectory(), above.uid === user, (above.mode & 0o077) === 0, at.isFIFO(), at.uid === user]
+    .every((holds) => holds)
+}
+
+const idle = new Int32Array(new SharedArrayBuffer(4))
+
+/**
+ * Everything the writer at `pipe` writes, or `undefined` when no writer came, or one stopped writing, for
+ * `patience` milliseconds. The pipe is opened without waiting: a pipe nobody writes to would otherwise hold the
+ * program at its first line for good.
+ */
+const drained = (pipe: string, patience: number): string | undefined => {
+  const descriptor = openSync(pipe, constants.O_RDONLY | constants.O_NONBLOCK)
+  try {
+    const chunks: Array<Buffer> = []
+    const buffer = Buffer.alloc(65_536)
+    let until = Date.now() + patience
+    while (true) {
+      // A read that would wait fails: the writer has the pipe open and has written nothing yet.
+      let count = -1
+      try {
+        count = readSync(descriptor, buffer, 0, buffer.length, null)
+      } catch {
+        count = -1
+      }
+      if (count > 0) {
+        chunks.push(Buffer.from(buffer.subarray(0, count)))
+        // A writer that is writing is waited for: the time runs from what it wrote last.
+        until = Date.now() + patience
+        continue
+      }
+      // The end, after something was read: the writer wrote everything and closed the pipe.
+      if (count === 0 && chunks.length > 0) return Buffer.concat(chunks).toString("utf8")
+      if (Date.now() >= until) return undefined
+      Atomics.wait(idle, 0, 0, 2)
+    }
+  } finally {
+    closeSync(descriptor)
+  }
+}
+
+/** The variables of a hand-over as they were written: an object of names and text values, or `undefined`. */
+const variablesOf = (text: string): Readonly<Record<string, string>> | undefined => {
+  const value: unknown = JSON.parse(text)
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined
+  return Object.values(value).every((held) => typeof held === "string") ? value as Record<string, string> : undefined
+}
+
+/**
+ * Reads the variables waiting at `pipe` and removes it, or gives `undefined`
+ * when nothing can be read there: the path is no pipe of this program's
+ * making, which is then left as it is, no writer came within `patience`
+ * milliseconds, or what it wrote is not the variables.
+ *
+ * @throws {never}
+ * @category handing over
+ * @since 0.1.0
+ */
+export const received = (pipe: string, patience = 10_000): Readonly<Record<string, string>> | undefined => {
+  try {
+    if (!ours(pipe)) return undefined
+    const text = drained(pipe, patience)
+    discard(pipe)
+    return text === undefined ? undefined : variablesOf(text)
+  } catch {
+    return undefined
+  }
 }
 
 /**
@@ -200,16 +328,40 @@ const discard = (pipe: string): void => {
  * @category handing over
  * @since 0.1.0
  */
-export const taken = (pipe: string): Readonly<Record<string, string>> => {
-  try {
-    if (!statSync(pipe).isFIFO()) return {}
-    const text = readFileSync(pipe, "utf8")
-    discard(pipe)
-    return JSON.parse(text) as Record<string, string>
-  } catch {
-    return {}
-  }
+export const taken = (pipe: string, patience?: number): Readonly<Record<string, string>> =>
+  received(pipe, patience) ?? {}
+
+/**
+ * What `own` says on standard error when it could not do what it is for.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export type Say = (line: string) => void
+
+const aloud: Say = (line) => {
+  process.stderr.write(`${line}\n`)
 }
+
+/**
+ * The line for a start that could not be made again with a short environment.
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const notHidden =
+  "smithers-ci: could not start again with a short environment. On a machine with no jail, a replayed step can " +
+  "read the variables this program was started with."
+
+/**
+ * The line for a new start that found nothing at the pipe it was given.
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const notHandedOver =
+  "smithers-ci: the variables this program was started with did not reach its new start, so it runs without " +
+  "them: no token of a shared cache or of a model is set. Run it again."
 
 /**
  * The slice of `process` a start touches. `execve` replaces the running
@@ -236,7 +388,15 @@ export interface Program {
  * environment and this call does not return: the new start finds the rest at
  * the pipe and returns it here. On a runtime that cannot start again, the
  * variables are removed from this process's environment, so nothing it starts
- * inherits them.
+ * inherits them, and `say` is given `notHidden`: what the process was started
+ * with stays readable.
+ *
+ * The pipe's variable is believed only in a process with nothing to
+ * withhold. One that holds a variable to withhold was not started by this
+ * program, whatever the variable says: it starts again as any other, and the
+ * path the variable names is neither read nor removed. A new start that finds
+ * nothing at its pipe says `notHandedOver` and runs with the short
+ * environment alone.
  *
  * @throws {never}
  * @category running
@@ -244,31 +404,41 @@ export interface Program {
  */
 export const own = async (
   program: Program,
-  send: (withheld: Readonly<Record<string, string>>) => Promise<string> = hand
+  send: (withheld: Readonly<Record<string, string>>) => Promise<string> = hand,
+  say: Say = aloud
 ): Promise<Environment> => {
   const pipe = program.env[handed]
-  if (pipe !== undefined) {
-    delete program.env[handed]
-    return { ...program.env, ...taken(pipe) }
-  }
+  // Never passed on, whoever set it: it names a path, and nothing this program starts has a use for one.
+  if (pipe !== undefined) delete program.env[handed]
   const whole = { ...program.env }
   const { short, withheld } = split(program.env, program.platform)
-  if (Object.keys(withheld).length === 0) return whole
-  if (program.execve !== undefined && program.platform !== "win32") {
-    try {
-      const waiting = await send(withheld)
+  if (Object.keys(withheld).length === 0) {
+    if (pipe === undefined) return whole
+    const rest = received(pipe)
+    if (rest === undefined) say(notHandedOver)
+    return { ...whole, ...rest }
+  }
+  if (program.platform !== "win32") {
+    let handedOver = false
+    if (program.execve !== undefined) {
       try {
-        program.execve(program.execPath, [program.execPath, ...program.execArgv, ...program.argv.slice(1)], {
-          ...short,
-          [handed]: waiting
-        })
-      } finally {
-        // Reached only when the program was not replaced: nothing will read the pipe, so its writer is let go.
-        taken(waiting)
+        const waiting = await send(withheld)
+        try {
+          program.execve(program.execPath, [program.execPath, ...program.execArgv, ...program.argv.slice(1)], {
+            ...short,
+            [handed]: waiting
+          })
+          // Only a stand-in for the system's call returns: the program it started read the pipe.
+          handedOver = true
+        } finally {
+          // Reached only when the program was not replaced: nothing will read the pipe, so its writer is let go.
+          taken(waiting, 0)
+        }
+      } catch {
+        // This machine cannot hand the variables over. They still leave this process's environment below.
       }
-    } catch {
-      // This machine cannot hand the variables over. They still leave this process's environment below.
     }
+    if (!handedOver) say(notHidden)
   }
   for (const name of Object.keys(withheld)) delete program.env[name]
   return whole

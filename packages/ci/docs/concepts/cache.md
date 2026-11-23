@@ -154,8 +154,8 @@ repository:
 | `SMITHERS_CACHE_READ_TOKEN` | Secret   | The read token. Optional. |
 
 With the read token set, a pull request reuses results and stores none.
-Without it, a pull request from a branch of the repository is given the write
-token and stores results too.
+Without it, a pull request is given no token. The write token is given only to
+a run that is not a pull request.
 
 ```sh
 gh variable set SMITHERS_CACHE_URL --body https://cache.example.com
@@ -208,8 +208,9 @@ So give each run the least it needs:
   fetch what your CI has stored.
 - The write token also stores results. A step that reads it can store a
   result that later runs reuse, a wrong one included.
-- Set `SMITHERS_CACHE_READ_TOKEN`. A pull request then never holds the write
-  token, on any runner.
+- Set `SMITHERS_CACHE_READ_TOKEN`. A pull request then reuses what your CI
+  has stored. A pull request never holds the write token, on any runner,
+  whether the read token is set or not.
 - A pull request from a fork is given no token.
 
 A token opens the cache and nothing else. It is not a GitHub token and reaches

@@ -3,13 +3,36 @@
  * restart that hands the rest over. Real pipes and real processes.
  */
 import { inheritedEnvironmentNames } from "@smthrs/targets/Exec"
-import { spawnSync } from "node:child_process"
-import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
+import { execFileSync, spawn, spawnSync } from "node:child_process"
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync
+} from "node:fs"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
-import { afterAll, describe, expect, it } from "vitest"
-import { hand, handed, machine, own, type Program, runtime, split, taken, tools } from "../../src/cli/Restart.ts"
+import { afterAll, describe, expect, it, vi } from "vitest"
+import {
+  hand,
+  handed,
+  machine,
+  notHandedOver,
+  notHidden,
+  own,
+  type Program,
+  received,
+  runtime,
+  split,
+  taken,
+  tools
+} from "../../src/cli/Restart.ts"
 
 const made: Array<string> = []
 const directory = (): string => {
@@ -100,6 +123,82 @@ describe("handing variables to the next start", () => {
   })
 })
 
+/** A pipe at `path`, as `hand` makes one. */
+const fifo = (path: string): string => {
+  execFileSync("mkfifo", ["-m", "600", path])
+  return path
+}
+
+/** A directory named as `hand` names one, under `base`, that only this user can enter. */
+const handDirectory = (base: string): string => mkdtempSync(join(base, "smithers-ci-environment-"))
+
+describe("a pipe the program did not make", () => {
+  it("is neither read nor removed: another name, another directory, a directory others can enter, a link", () => {
+    const base = directory()
+    const named = fifo(join(handDirectory(base), "queue"))
+    const plain = join(base, "plain")
+    mkdirSync(plain, { mode: 0o700 })
+    const elsewhere = fifo(join(plain, "pipe"))
+    const open = handDirectory(base)
+    chmodSync(open, 0o755)
+    const shared = fifo(join(open, "pipe"))
+    // A link to a directory of the right kind is not that directory.
+    const real = handDirectory(base)
+    fifo(join(real, "pipe"))
+    const link = join(base, "smithers-ci-environment-link")
+    symlinkSync(real, link)
+    for (const pipe of [named, elsewhere, shared, join(link, "pipe")]) {
+      expect(received(pipe, 50), pipe).toBeUndefined()
+      expect(taken(pipe, 50), pipe).toEqual({})
+      expect(existsSync(pipe), pipe).toBe(true)
+    }
+    // A file where the pipe would be is left as it is, and a path that is not there gives nothing.
+    const file = join(handDirectory(base), "pipe")
+    writeFileSync(file, JSON.stringify({ A: "1" }))
+    expect(received(file)).toBeUndefined()
+    expect(readFileSync(file, "utf8")).toBe("{\"A\":\"1\"}")
+    expect(received(join(base, "smithers-ci-environment-none", "pipe"))).toBeUndefined()
+  })
+
+  it("is given up on when nobody writes to it, and a pipe of its own making is then removed", () => {
+    const own = handDirectory(directory())
+    const pipe = fifo(join(own, "pipe"))
+    const started = Date.now()
+    expect(received(pipe, 60)).toBeUndefined()
+    expect(Date.now() - started).toBeLessThan(10_000)
+    expect(existsSync(own)).toBe(false)
+  })
+
+  it("waits for a writer that has written nothing yet, and gives nothing for what is not the variables", () => {
+    /** A writer that opens the pipe, waits `seconds`, and writes `text`. */
+    const writing = (text: string, seconds: string): string => {
+      const pipe = fifo(join(handDirectory(directory()), "pipe"))
+      spawn("/bin/sh", ["-c", "exec 3>\"$1\"; sleep \"$2\"; printf %s \"$3\" >&3", "sh", pipe, seconds, text], {
+        stdio: "ignore"
+      })
+      return pipe
+    }
+    expect(received(writing(JSON.stringify({ A: "1", B: "two words" }), "0.4"), 30_000)).toEqual({
+      A: "1",
+      B: "two words"
+    })
+    for (const text of ["[\"a\"]", "null", "7", "{\"A\":1}", "{"]) {
+      const pipe = writing(text, "0")
+      expect(received(pipe, 30_000), text).toBeUndefined()
+      expect(existsSync(pipe), text).toBe(false)
+    }
+  })
+})
+
+describe("the variables waiting for a new start", () => {
+  it("are let go, with their pipe, when no new start comes to read them", async () => {
+    const here = { ...tools(), directory: directory(), seconds: 1 }
+    const pipe = await hand(awkward, here)
+    expect(existsSync(pipe)).toBe(true)
+    await vi.waitFor(() => expect(readdirSync(here.directory)).toEqual([]), { timeout: 30_000, interval: 100 })
+  })
+})
+
 describe("the program's own environment", () => {
   it("is returned as it is when nothing needs withholding, and the program does not start again", async () => {
     const env = { PATH: "/bin", HOME: "/home/me" }
@@ -171,5 +270,63 @@ describe("the program's own environment", () => {
     const again: Record<string, string | undefined> = { PATH: "/bin", ...awkward }
     expect(await own(programWith(again, { execve: refused }), noPipe)).toEqual({ PATH: "/bin", ...awkward })
     expect(again).toEqual({ PATH: "/bin" })
+  })
+})
+
+describe("the variable that names the pipe", () => {
+  it("is not believed in a process that holds a variable to withhold: the program starts again, and the path stays", async () => {
+    const foreign = fifo(join(handDirectory(directory()), "pipe"))
+    const env: Record<string, string | undefined> = {
+      PATH: process.env["PATH"],
+      HOME: "/home/me",
+      [handed]: foreign,
+      ...awkward
+    }
+    const { execve, starts } = starting()
+    const said: Array<string> = []
+    expect(await own(programWith(env, { execve }), undefined, (line) => said.push(line))).toEqual({
+      PATH: process.env["PATH"],
+      HOME: "/home/me",
+      ...awkward
+    })
+    // The new start is given a pipe this start made, never the one the variable named.
+    expect(starts).toHaveLength(1)
+    expect(starts[0]?.env[handed]).not.toBe(foreign)
+    const given = (JSON.parse(starts[0]?.said ?? "null") as { readonly given: Record<string, string> }).given
+    expect(given).toMatchObject(awkward)
+    expect(existsSync(foreign)).toBe(true)
+    expect(env).toEqual({ PATH: process.env["PATH"], HOME: "/home/me" })
+    expect(said).toEqual([])
+  })
+
+  it("is forgotten, and the program says the variables did not come, when nothing waits where it points", async () => {
+    const said: Array<string> = []
+    const env: Record<string, string | undefined> = { PATH: "/bin", [handed]: "" }
+    expect(await own(programWith(env), undefined, (line) => said.push(line))).toEqual({ PATH: "/bin" })
+    expect(env).toEqual({ PATH: "/bin" })
+    expect(said).toEqual([notHandedOver])
+  })
+})
+
+describe("a start that cannot be made again", () => {
+  it("says the variables it was started with stay readable, where a machine could have hidden them", async () => {
+    const refused = (): void => {
+      throw new Error("E2BIG")
+    }
+    const { execve } = starting()
+    const saidBy = async (rest: Partial<Program>): Promise<ReadonlyArray<string>> => {
+      const said: Array<string> = []
+      const here = { ...tools(), directory: directory() }
+      await own(programWith({ PATH: "/bin", ...awkward }, rest), (withheld) => hand(withheld, here), (line) => {
+        said.push(line)
+      })
+      return said
+    }
+    expect(await saidBy({})).toEqual([notHidden])
+    expect(await saidBy({ execve: refused })).toEqual([notHidden])
+    // Windows has no such start, and the program says nothing there.
+    expect(await saidBy({ execve, platform: "win32" })).toEqual([])
+    expect(notHidden).toContain("smithers-ci: ")
+    expect(notHandedOver).toContain("smithers-ci: ")
   })
 })

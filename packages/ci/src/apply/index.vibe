@@ -6,4 +6,4 @@
  */
 
 export { type Change, check, type Checked } from "./Check.vibe"
-export { besidePaths, besideRefusal, formerPaths } from "./Former.vibe"
+export { besidePaths, besideRefusal, formerPaths, optionalPaths } from "./Former.vibe"

@@ -759,6 +759,35 @@ describe("steps not reused", () => {
     ].join("\n"))
   })
 
+  it("lists the same steps on the page, every part escaped, and has no such table when every step was reused", () => {
+    const hostile = {
+      step: "<b>build</b>",
+      reason: "a & b <script>alert(1)</script>",
+      kept: false,
+      command: "echo \"<x>\"",
+      fix: "commit <lock>"
+    }
+    const page = body(html({ ...reused, commits: [at("a", [hostile, changed]), at("b", [changed])] }))
+    expect(page).toContain("<h2>Steps not reused</h2>")
+    expect(page).toContain(
+      "<tr><td class=\"num\">1 of 2 commits</td><th scope=\"row\"><code>&lt;b&gt;build&lt;/b&gt;</code></th>" +
+        "<td><code>echo &quot;&lt;x&gt;&quot;</code></td><td class=\"sub\">never reused: a &amp; b " +
+        "&lt;script&gt;alert(1)&lt;/script&gt;; commit &lt;lock&gt;</td></tr>"
+    )
+    // A step whose command is not known has an empty cell for it.
+    expect(page).toContain(
+      "<tr><td class=\"num\">2 of 2 commits</td><th scope=\"row\"><code>test (node 22)</code></th>" +
+        "<td><code></code></td><td class=\"sub\">src/a.ts changed</td></tr>"
+    )
+    expect(page).not.toContain("<script>")
+    // The page lists what the text lists, in its order.
+    const listed = body(html(reused))
+    const order = ["install", "test (node 22)", "lint"].map((step) => listed.indexOf(`<code>${step}</code>`))
+    expect(order.every((index) => index > 0)).toBe(true)
+    expect([...order].sort((one, other) => one - other)).toEqual(order)
+    expect(body(html(normalOnly()))).not.toContain("Steps not reused")
+  })
+
   it("ends the line of a step that wants a lockfile with what a person does", () => {
     const fix = "commit Cargo.lock and this step and the 2 after it can be reused"
     const shown = text({ ...reused, commits: [at("a", [{ ...network, fix }, changed])] })

@@ -44,6 +44,12 @@
  * targets of its own leg, as it waits only for targets of its own system: a
  * dependency would run under the wrong versions.
  *
+ * A target runs on the runner its job names. A target itself says only which
+ * system it runs on, so when two runners of the CI are of one system, or one
+ * is of a system its label does not tell, each runner is a leg too
+ * (`exactRunners`): `ubuntu-22.04` and `ubuntu-24.04` each run their own
+ * job's targets and never the other's.
+ *
  * An inventory also lists work CI never runs on a change: release workflows,
  * and every recipe and script, such as `clean` or `start`. Only what runs on a
  * change becomes a target.
@@ -233,6 +239,8 @@ interface Tail {
 
 interface Draft extends Omit<StepTarget, "rule" | "script" | "job" | "also" | "keeps"> {
   readonly job: Job
+  /** The runner the job names, when its targets run on that runner alone (`exactRunners`). */
+  readonly runner: string | undefined
   readonly command: string
   readonly directory: string
   readonly also: Array<SameStep>
@@ -313,6 +321,29 @@ const heldThroughout = (job: Job): boolean => {
     first = false
   }
   return true
+}
+
+/**
+ * The runners whose targets run on them alone, of all the runners a CI names. A target says which system it runs
+ * on and nothing more of its runner, so one runner of each system needs no more than that. Two runners of one
+ * system do: each would run the other's targets. So does every runner once one of them has a label that names no
+ * system, as `self-hosted` alone does: its targets would run on every runner, and every runner's targets on it.
+ *
+ * @category planning
+ * @since 0.1.0
+ */
+export const exactRunners = (runners: Iterable<string>): ReadonlySet<string> => {
+  const all = [...new Set(runners)]
+  if (all.length < 2) return new Set()
+  if (all.some((runner) => hostOf(runner) === undefined)) return new Set(all)
+  return new Set(all.filter((runner) => all.some((other) => other !== runner && hostOf(other) === hostOf(runner))))
+}
+
+// The runner a variant of a job runs on, as the workflow file writes it with the variant's matrix values.
+// `undefined` when the job names none, or names one only GitHub Actions can fill in.
+const runsOnOf = (job: Job, variant: Variant): string | undefined => {
+  const runner = runnerOf(job, variant)
+  return runner === undefined ? undefined : forText(runner, variant)
 }
 
 // The versions a target runs under, as a person reads them.
@@ -484,7 +515,8 @@ export const planSteps = (inventory: Ci): Result.Result<StepPlan, Failure> => {
     installs: ReadonlyArray<Toolchain>,
     alone: boolean,
     machine: string | undefined,
-    versions: string
+    versions: string,
+    runner: string | undefined
   ): Draft | undefined => {
     // A step with runner text is run as that text. It fills in its own `${{ }}`, so only matrix values are written.
     const command = step.runner === undefined ? forShell(step.command, variant) : expand(script(step), variant)
@@ -547,6 +579,7 @@ export const planSteps = (inventory: Ci): Result.Result<StepPlan, Failure> => {
       shares: step.shares ?? [],
       machine,
       job,
+      runner,
       command,
       directory,
       installs,
@@ -555,6 +588,15 @@ export const planSteps = (inventory: Ci): Result.Result<StepPlan, Failure> => {
     if (own) sameWork.set(work, draft)
     return draft
   }
+
+  // The runners whose targets must run on them alone. Read before any target is planned: a runner's leg is part of
+  // the versions its targets run under, and so of what they wait for.
+  const exact = exactRunners(jobs.flatMap((job) =>
+    variantsOf(job).flatMap((variant) => {
+      const runsOn = unknownRunner(runnerOf(job, variant)) ? undefined : runsOnOf(job, variant)
+      return runsOn === undefined || hostOf(runsOn) === "win32" ? [] : [runsOn]
+    })
+  ))
 
   for (const job of jobs) {
     for (const feature of job.unsupported) notes.add(`${job.id}: ${feature.feature}: ${feature.detail}`)
@@ -567,8 +609,10 @@ export const planSteps = (inventory: Ci): Result.Result<StepPlan, Failure> => {
         notes.add(`${job.id}: a variant picks its runner from ${runner}, which the workflow file does not give.`)
         continue
       }
-      const runsOn = runner === undefined ? undefined : forText(runner, variant)
+      const runsOn = runsOnOf(job, variant)
       const host = hostOf(runsOn)
+      // The runner the targets are held to, when the system alone does not pick it.
+      const held = runsOn !== undefined && exact.has(runsOn) ? runsOn : undefined
       if (host === "win32") notes.add(`${job.id}: runs only on Windows, which generated targets do not support.`)
       else if (runsOn !== undefined) runners.add(runsOn)
       const variantTools = choice.toolsOf(job, variant)
@@ -581,9 +625,11 @@ export const planSteps = (inventory: Ci): Result.Result<StepPlan, Failure> => {
       // mount, so a job with a machine is a runner job of its own there: it is kept apart from every other job,
       // as targets that need other tool versions are, and waits for no job on another runner.
       const tools = versionsText(variantTools)
-      const versions = machine !== undefined && host === "darwin"
-        ? [tools, aloneOf(job, variant)].filter((part) => part !== "").join(", ")
-        : tools
+      const versions = [
+        tools,
+        held === undefined ? "" : `runner ${held}`,
+        machine !== undefined && host === "darwin" ? aloneOf(job, variant) : ""
+      ].filter((part) => part !== "").join(", ")
       const upstream = upstreamOf(job, host, versions)
       let previous = sorted(upstream.flatMap((tail) => tail.labels))
       let sharesTree = job.source !== "github-actions"
@@ -603,7 +649,20 @@ export const planSteps = (inventory: Ci): Result.Result<StepPlan, Failure> => {
           group[0]?.from === undefined
         for (const step of group) {
           const alone = !(sharesTree && previous.length > 0)
-          const draft = draftOf(job, step, variant, host, previous, scoped, own, variantTools, alone, machine, versions)
+          const draft = draftOf(
+            job,
+            step,
+            variant,
+            host,
+            previous,
+            scoped,
+            own,
+            variantTools,
+            alone,
+            machine,
+            versions,
+            held
+          )
           if (draft === undefined) continue
           drafts.set(draft.label, draft)
           made.push(draft)
@@ -640,7 +699,7 @@ export const planSteps = (inventory: Ci): Result.Result<StepPlan, Failure> => {
     apart ? `# Runs under ${versions.replace(/[\r\n\u2028\u2029]+/g, " ")}.\n${script}` : script
 
   const targets = [...drafts.values()].map(
-    ({ command, directory, installs: _installs, job, versions, ...draft }): StepTarget => {
+    ({ command, directory, installs: _installs, job, runner: _runner, versions, ...draft }): StepTarget => {
       const setup = reliedOn.has(draft.label)
       // A setup target declares what it reads only together with what it writes: the two let a later target stay
       // narrowed. A target nothing relies on has no use for its outputs.
@@ -661,9 +720,10 @@ export const planSteps = (inventory: Ci): Result.Result<StepPlan, Failure> => {
   const legs = !apart ? [] : machines
     .flatMap((runner) =>
       sorted(sets.keys()).flatMap((versions) => {
-        const labels = running
-          .filter((draft) => draft.versions === versions && (draft.host === undefined || draft.host === hostOf(runner)))
-          .map((draft) => draft.label)
+        // A target held to its runner runs there and nowhere else; any other runs on each runner of its system.
+        const here = (draft: Draft): boolean =>
+          draft.runner === undefined ? draft.host === undefined || draft.host === hostOf(runner) : draft.runner === runner
+        const labels = running.filter((draft) => draft.versions === versions && here(draft)).map((draft) => draft.label)
         return labels.length === 0
           ? []
           : [{ runner, name: versions, toolchains: sets.get(versions) as ReadonlyArray<Toolchain>, labels }]

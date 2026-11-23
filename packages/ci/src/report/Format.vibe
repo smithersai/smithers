@@ -570,7 +570,10 @@ export const skipGroups = (commits: ReadonlyArray<ReplayCommit>): ReadonlyArray<
     const byReason = new Map<string, Array<string>>()
     for (const skip of commit.skipped ?? []) {
       const reason = skip.reason ?? ""
-      byReason.set(reason, [...(byReason.get(reason) ?? []), skip.label])
+      // One list for a reason, added to in place: a copy for each target is a square of work on a large report.
+      const labels = byReason.get(reason)
+      if (labels === undefined) byReason.set(reason, [skip.label])
+      else labels.push(skip.label)
     }
     return [...byReason].map(([reason, labels]) => ({ commit: commit.commit, reason, labels }))
   })
@@ -698,13 +701,38 @@ export const notReused = (report: ReplayReport): ReadonlyArray<NotReused> => {
  * @category formatting
  * @since 0.1.0
  */
-export const notReusedText = (entry: NotReused, commits: number): string =>
-  [
-    `${entry.commits} of ${count(commits, "commit")}`,
-    entry.variants > 1 ? `${entry.variantOf ?? entry.step} (${entry.variants} variants)` : entry.step,
-    ...(entry.command === undefined ? [] : [entry.command]),
-    `${entry.kept ? "" : "never reused: "}${entry.reason}${entry.fix === undefined ? "" : `; ${entry.fix}`}`
-  ].join("  ")
+export const notReusedText = (entry: NotReused, commits: number): string => {
+  const parts = notReusedParts(entry, commits)
+  return [parts.commits, parts.step, ...(parts.command === undefined ? [] : [parts.command]), parts.why].join("  ")
+}
+
+/**
+ * What a report says of one step that was not reused, part by part: at how
+ * many of the commits, the step, its command when it is known, and why, with
+ * what would let it be reused. Both reports print these parts.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export interface NotReusedParts {
+  readonly commits: string
+  readonly step: string
+  readonly command: string | undefined
+  readonly why: string
+}
+
+/**
+ * The parts of one step that was not reused.
+ *
+ * @category formatting
+ * @since 0.1.0
+ */
+export const notReusedParts = (entry: NotReused, commits: number): NotReusedParts => ({
+  commits: `${entry.commits} of ${count(commits, "commit")}`,
+  step: entry.variants > 1 ? `${entry.variantOf ?? entry.step} (${entry.variants} variants)` : entry.step,
+  command: entry.command,
+  why: `${entry.kept ? "" : "never reused: "}${entry.reason}${entry.fix === undefined ? "" : `; ${entry.fix}`}`
+})
 
 /**
  * A failure's exit code and reason: `exit 127: docker is not installed`.

@@ -5,9 +5,9 @@
  * @since 0.1.0
  */
 
-import { realpathSync, statSync } from "node:fs"
+import { accessSync, constants, realpathSync, statSync } from "node:fs"
 import { createRequire } from "node:module"
-import { delimiter, dirname, join } from "node:path"
+import { delimiter, dirname, isAbsolute, join } from "node:path"
 
 /**
  * Finds a module's file from this package, as `require.resolve` does.
@@ -27,8 +27,11 @@ const directoryOf = (name: string, resolve: Resolve): string | undefined => {
   }
 }
 
+// True for a file this user may run that is not `self`. A file that cannot be run is no program: it would hide a
+// Node later on the path.
 const isProgram = (path: string, self: string): boolean => {
   try {
+    accessSync(path, constants.X_OK)
     return statSync(path).isFile() && realpathSync(path) !== self
   } catch {
     return false
@@ -39,6 +42,10 @@ const isProgram = (path: string, self: string): boolean => {
  * The Node that runs `smthrs`, which does not run on Bun. Under Node it is this
  * process. Under Bun it is the first `node` on the path that is not Bun itself:
  * `bunx` puts a `node` link to Bun on the path of a machine with no Node.
+ *
+ * An empty entry of the path means the working directory, which is a
+ * stranger's checkout: it is skipped, so a `node` file of the repository is
+ * never the program that runs `smthrs`. So is an entry that is not absolute.
  *
  * @throws {never}
  * @category accessors
@@ -51,7 +58,11 @@ export const nodeProgram = (
 ): string | undefined => {
   if (versions["bun"] === undefined) return self
   const bun = realpathSync(self)
-  return (path ?? "").split(delimiter).map((directory) => join(directory, "node")).find((node) => isProgram(node, bun))
+  return (path ?? "")
+    .split(delimiter)
+    .filter((directory) => isAbsolute(directory))
+    .map((directory) => join(directory, "node"))
+    .find((node) => isProgram(node, bun))
 }
 
 /**

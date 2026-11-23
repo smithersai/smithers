@@ -133,7 +133,9 @@ export effect function refusals(
     }
     // The copy goes when the plan is done; one that cannot be removed is left, and says nothing of the repository.
     try addFinalizer(() => ignore(fs.remove(work, { recursive: true, force: true })))
-    const copy = path.join(work, path.basename(root))
+    // The copy keeps the repository's name, which a build can read, in a directory of its own: a repository named
+    // `home` or `cache` is then never the directory Smithers build is given as its home or its cache.
+    const copy = path.join(work, "repository", path.basename(root))
     const commit = (try git(root, ["rev-parse", "--verify", "HEAD"])).trim()
     try git(work, ["clone", "--quiet", "--shared", "--no-checkout", root, copy])
     try git(copy, ["checkout", "--quiet", "--detach", commit])
