@@ -1,6 +1,6 @@
 import type { ImmutableCache } from "@smthrs/artifacts"
 import { digestSync } from "@smthrs/crypto"
-import { Clock, Duration, Effect, Layer, Option, Schema } from "effect"
+import { Clock, Duration, Effect, Layer, Option, Redacted, Schema } from "effect"
 import { HttpClient, HttpClientRequest } from "effect/http"
 import { SqlClient } from "effect/sql"
 import { agentAttribution, writeExecutionId } from "../../src/features/issues/contract.ts"
@@ -8,6 +8,7 @@ import { repoId, textOf } from "../../src/features/repo/contract.ts"
 import { TreeListing as RepoTreeListing } from "../../src/features/repo/schema.ts"
 import type { FlowStarter } from "../Flows.ts"
 import * as IssueList from "../github/IssueList.ts"
+import type * as ReadToken from "../github/ReadToken.ts"
 import * as Store from "../github/Store.ts"
 import * as WorkLinks from "../github/WorkLinks.ts"
 import { Write } from "../github/Write.ts"
@@ -87,22 +88,46 @@ interface PublicGitHubReader {
 }
 
 /**
- * Unauthenticated read-only GitHub fallback for public repositories that have not been cloned into Code Storage
- * or synced into Postgres yet. Sends zero credentials, so private repos always fail closed with 404.
+ * Read-only GitHub fallback for public repositories that have not been cloned into Code Storage or synced into
+ * Postgres yet. Uses the deployment read token (`worker/github/ReadToken.ts`, `metadata: read` on the deployment's
+ * own repo only, 5,000+ req/hr) when provided so Cloudflare Workers never exhaust GitHub's 60 req/hr shared-IP
+ * anonymous quota, while private repos still fail closed with 404.
  */
-const makePublicGitHubReader = (client: HttpClient.HttpClient, baseUrl = GITHUB_API): PublicGitHubReader => {
+const makePublicGitHubReader = (
+  client: HttpClient.HttpClient,
+  baseUrl = GITHUB_API,
+  readToken?: ReadToken.ReadToken,
+): PublicGitHubReader => {
   const base = baseUrl.replace(/\/+$/, "")
+
+  const sendGitHub = (pathAndQuery: string, accept: string, what: string, authToken?: string) => {
+    const baseReq = HttpClientRequest.get(`${base}${pathAndQuery}`).pipe(
+      HttpClientRequest.setHeader("user-agent", "smithers-mcp"),
+      HttpClientRequest.setHeader("accept", accept),
+    )
+    const request = authToken === undefined
+      ? baseReq
+      : HttpClientRequest.setHeader(baseReq, "authorization", `Bearer ${authToken}`)
+    return client.execute(request).pipe(
+      Effect.timeout(GITHUB_TIMEOUT),
+      Effect.mapError(() => new McpToolError({ code: "unavailable", message: `GitHub request timed out for ${what}` })),
+    )
+  }
+
+  const executeGitHub = (pathAndQuery: string, accept: string, what: string) =>
+    Effect.gen(function* () {
+      const tokenOpt = readToken === undefined ? Option.none<Redacted.Redacted<string>>() : yield* readToken
+      const authToken = Option.isSome(tokenOpt) ? Redacted.value(tokenOpt.value) : undefined
+      const first = yield* sendGitHub(pathAndQuery, accept, what, authToken)
+      if (authToken !== undefined && first.status === 403 && first.headers["x-ratelimit-remaining"] !== "0") {
+        return yield* sendGitHub(pathAndQuery, accept, what)
+      }
+      return first
+    })
 
   const getJson = (pathAndQuery: string, what: string): Effect.Effect<unknown, McpToolError> =>
     Effect.gen(function* () {
-      const request = HttpClientRequest.get(`${base}${pathAndQuery}`).pipe(
-        HttpClientRequest.setHeader("user-agent", "smithers-mcp"),
-        HttpClientRequest.setHeader("accept", "application/vnd.github+json"),
-      )
-      const response = yield* client.execute(request).pipe(
-        Effect.timeout(GITHUB_TIMEOUT),
-        Effect.mapError(() => new McpToolError({ code: "unavailable", message: `GitHub request timed out for ${what}` })),
-      )
+      const response = yield* executeGitHub(pathAndQuery, "application/vnd.github+json", what)
       if (response.status < 200 || response.status >= 300) {
         return yield* mapGitHubStatus(response.status, what)
       }
@@ -113,14 +138,7 @@ const makePublicGitHubReader = (client: HttpClient.HttpClient, baseUrl = GITHUB_
 
   const getRawBytes = (pathAndQuery: string, what: string): Effect.Effect<Uint8Array, McpToolError> =>
     Effect.gen(function* () {
-      const request = HttpClientRequest.get(`${base}${pathAndQuery}`).pipe(
-        HttpClientRequest.setHeader("user-agent", "smithers-mcp"),
-        HttpClientRequest.setHeader("accept", "application/vnd.github.raw+json"),
-      )
-      const response = yield* client.execute(request).pipe(
-        Effect.timeout(GITHUB_TIMEOUT),
-        Effect.mapError(() => new McpToolError({ code: "unavailable", message: `GitHub request timed out for ${what}` })),
-      )
+      const response = yield* executeGitHub(pathAndQuery, "application/vnd.github.raw+json", what)
       if (response.status < 200 || response.status >= 300) {
         return yield* mapGitHubStatus(response.status, what)
       }
@@ -367,9 +385,11 @@ export interface LiveDepsOptions<R = never> {
   readonly reads: Option.Option<ReturnType<typeof RepoReads.make<unknown, R>>>
   readonly repoCache: Layer.Layer<ImmutableCache.ImmutableCache>
   readonly starter: FlowStarter["Service"]
-  /** Optional HTTP client for unauthenticated public GitHub fallback when a repo is not yet cloned/synced. */
+  /** Optional HTTP client for public GitHub fallback when a repo is not yet cloned/synced. */
   readonly githubFallbackClient?: HttpClient.HttpClient
   readonly githubApiBaseUrl?: string
+  /** Optional deployment read token (`worker/github/ReadToken.ts`) to avoid GitHub's 60 req/hr shared-IP limit. */
+  readonly githubReadToken?: ReadToken.ReadToken
 }
 
 /**
@@ -386,7 +406,7 @@ export const makeLiveDeps = <R = never>(options: LiveDepsOptions<R>): Effect.Eff
     const fallbackClient = options.githubFallbackClient ?? Option.getOrUndefined(yield* Effect.serviceOption(HttpClient.HttpClient))
     const publicGitHub = fallbackClient === undefined
       ? undefined
-      : makePublicGitHubReader(fallbackClient, options.githubApiBaseUrl)
+      : makePublicGitHubReader(fallbackClient, options.githubApiBaseUrl, options.githubReadToken)
 
     const hasSyncedIssues = (owner: string, name: string): Effect.Effect<boolean> =>
       Effect.gen(function* () {

@@ -1,5 +1,5 @@
 import { ImmutableCache } from "@smthrs/artifacts"
-import { Effect, Layer, Option } from "effect"
+import { Effect, Layer, Option, Redacted } from "effect"
 import { HttpClient, HttpClientResponse } from "effect/http"
 import { SqlClient } from "effect/sql"
 import { describe, expect, test } from "vitest"
@@ -123,5 +123,73 @@ describe("LiveDeps public GitHub fallback", () => {
       expect(h["authorization"]).toBeUndefined()
       expect(h["user-agent"]).toBe("smithers-mcp")
     }
+  })
+})
+
+describe("LiveDeps public GitHub fallback with the deployment read token", () => {
+  test("sends the read token so Workers avoid the shared anonymous quota, and retries anonymously on a non-quota 403", async () => {
+    const authHeaders: Array<string | undefined> = []
+    const client = HttpClient.make((request) => {
+      const auth = request.headers["authorization"]
+      authHeaders.push(auth)
+      const url = new URL(request.url)
+      const json = (body: unknown, status = 200, headers: Record<string, string> = {}) =>
+        Effect.succeed(HttpClientResponse.fromWeb(request, new Response(JSON.stringify(body), { status, headers })))
+      if (url.pathname === "/repos/evmts/voltaire") return json({ default_branch: "main" })
+      if (url.pathname === "/repos/evmts/voltaire/git/ref/heads/main") {
+        return auth === undefined
+          ? json({ object: { sha: "a".repeat(40) } })
+          : json({ message: "Resource not accessible by integration" }, 403, { "x-ratelimit-remaining": "4999" })
+      }
+      if (url.pathname === "/repos/evmts/voltaire/branches") return json([{ name: "main" }])
+      if (url.pathname === "/repos/evmts/voltaire/tags") return json([])
+      return json({ message: "Not Found" }, 404)
+    })
+
+    const deps = await Effect.runPromise(
+      makeLiveDeps({
+        database: emptySql,
+        reads: Option.none(),
+        repoCache: emptyCache,
+        starter: stubStarter as never,
+        githubFallbackClient: client,
+        githubReadToken: Effect.succeed(Option.some(Redacted.make("ghs_test_read_token"))),
+      }),
+    )
+
+    const refs = await Effect.runPromise(deps.listRefs("evmts", "voltaire"))
+    expect(refs).toEqual({ defaultBranch: "main", head: "a".repeat(40), branches: ["main"], tags: [] })
+    expect(authHeaders[0]).toBe("Bearer ghs_test_read_token")
+    expect(authHeaders.filter((h) => h === undefined)).toHaveLength(1)
+  })
+
+  test("a quota-exhausted 403 with the read token surfaces rate_limited without an anonymous retry", async () => {
+    let calls = 0
+    const client = HttpClient.make((request) => {
+      calls++
+      return Effect.succeed(
+        HttpClientResponse.fromWeb(
+          request,
+          new Response(JSON.stringify({ message: "API rate limit exceeded" }), {
+            status: 403,
+            headers: { "x-ratelimit-remaining": "0" },
+          }),
+        ),
+      )
+    })
+    const deps = await Effect.runPromise(
+      makeLiveDeps({
+        database: emptySql,
+        reads: Option.none(),
+        repoCache: emptyCache,
+        starter: stubStarter as never,
+        githubFallbackClient: client,
+        githubReadToken: Effect.succeed(Option.some(Redacted.make("ghs_test_read_token"))),
+      }),
+    )
+    const result = await Effect.runPromise(deps.listRefs("evmts", "voltaire").pipe(Effect.result))
+    expect(result._tag).toBe("Failure")
+    if (result._tag === "Failure") expect(result.failure.code).toBe("rate_limited")
+    expect(calls).toBe(1)
   })
 })

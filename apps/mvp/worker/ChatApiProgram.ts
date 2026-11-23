@@ -59,6 +59,7 @@ import * as TodoSession from "./flows/TodoSession.ts"
 import * as GitHubApi from "./github/Api.ts"
 import * as GitHubConfig from "./github/Config.ts"
 import * as FirstPaint from "./github/FirstPaint.ts"
+import * as ReadToken from "./github/ReadToken.ts"
 import * as RepoRoles from "./github/RepoRoles.ts"
 import * as HomeApi from "./home/Api.ts"
 import * as McpApi from "./mcp/Api.ts"
@@ -389,6 +390,10 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
     const home = HomeApi.make({ roles, mayRead: github.mayRead, mayBrowse: github.mayBrowse, maySync: github.maySync })
     // Bring Your Own Agent via MCP (docs/features/mcp.md): Streamable HTTP MCP + OAuth 2.1 + token management.
     const mcpApi = McpApi.make()
+    const mcpReadToken = yield* ReadToken.fromConfig.pipe(
+      Effect.provide(FetchHttpClient.layer),
+      Effect.orDie
+    )
     const repoCache = EdgeCache.layer({ name: "repo" }).pipe(Layer.orDie)
     const webCache = EdgeCache.layer({ name: "web" }).pipe(Layer.orDie)
     // A repository's docs (docs/features/docs.md): the index its home names, from what GitHub says of it (RepoApi's
@@ -599,7 +604,7 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
                 const mcpAuth = McpAuth.McpAuthServiceLive({ database, roles })
                 const mcpTools = Layer.effect(
                   McpToolRegistry,
-                  McpLiveDeps.makeLiveDeps({ database, reads: repos.reads, repoCache, starter }).pipe(
+                  McpLiveDeps.makeLiveDeps({ database, reads: repos.reads, repoCache, starter, githubReadToken: mcpReadToken }).pipe(
                     Effect.provide(FetchHttpClient.layer),
                     Effect.flatMap(McpTools.makeMcpToolRegistry)
                   )

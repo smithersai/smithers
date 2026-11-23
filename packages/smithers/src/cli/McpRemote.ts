@@ -200,7 +200,7 @@ const discoverAuthServer = async (
     registration_endpoint: `${origin}/api/mcp/oauth/register`,
   }
   const res = await fetchImpl(`${origin}/.well-known/oauth-authorization-server`, {
-    headers: { accept: "application/json" },
+    headers: { accept: "application/json", "user-agent": "smithers-cli/1.0" },
   })
   if (!res.ok) return fallback
   const body = (await res.json()) as Partial<AuthServerMetadata>
@@ -303,7 +303,7 @@ export const loginMcpRemote = async (options: McpLoginOptions = {}): Promise<Mcp
     // Dynamic Client Registration (RFC 7591)
     const regRes = await fetchImpl(metadata.registration_endpoint, {
       method: "POST",
-      headers: { "content-type": "application/json", accept: "application/json" },
+      headers: { "content-type": "application/json", accept: "application/json", "user-agent": "smithers-cli/1.0" },
       body: JSON.stringify({
         client_name: clientName,
         redirect_uris: [redirectUri],
@@ -371,6 +371,7 @@ export const loginMcpRemote = async (options: McpLoginOptions = {}): Promise<Mcp
       headers: {
         "content-type": "application/x-www-form-urlencoded",
         accept: "application/json",
+        "user-agent": "smithers-cli/1.0",
       },
       body: form.toString(),
     })
@@ -474,6 +475,7 @@ export const serveMcpStdioBridge = async (options: McpServeOptions = {}): Promis
     const headers: Record<string, string> = {
       "content-type": "application/json",
       accept: "application/json",
+      "user-agent": "smithers-cli/1.0",
     }
     const token = resolveToken()
     if (token !== undefined) headers["authorization"] = `Bearer ${token}`

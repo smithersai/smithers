@@ -49,6 +49,13 @@ call. The catalog covers repository files and refs, docs, issues and pull reques
 role permits, the agent can open issues, comment, draft TODOs and post work links. Workflows the client fetches for
 local execution run on the client's machine.
 
+A public repository answers reads before anyone clones or syncs it on Smithers. When Code Storage or the GitHub
+projection has nothing yet, `worker/mcp/LiveDeps.ts` reads GitHub's REST API with the deployment read token
+(`worker/github/ReadToken.ts`: `GITHUB_TOKEN`, else the App's `metadata: read` installation token, else anonymous).
+Anonymous reads share GitHub's 60-per-hour limit across all of Cloudflare's egress addresses and run out within
+minutes, so the token is the default. A 403 that is not quota exhaustion is retried once anonymously, and a private
+repository still answers `not_found`. Quota exhaustion surfaces as the `rate_limited` tool error.
+
 ## Observability
 
 ChatApi records `mcp.request` logs and spans with the route, outcome and status. Its counters are
@@ -63,6 +70,8 @@ and tool payloads stay out of logs, traces and metrics.
 |---|---|
 | `worker/index.mcp.test.ts` | Both discovery requests reach ChatApi unchanged. The repository POST keeps its authorization header, query and JSON body through the rewrite. The consent and app run paths serve the app shell. |
 | `worker/index.test.ts` | Existing API, alias, custom domain, docs and asset routing. |
+| `worker/mcp/LiveDeps.test.ts` | The public GitHub fallback reads refs, tree, files, issues and pulls; it sends the deployment read token, retries a non-quota 403 anonymously and reports quota exhaustion as `rate_limited`. |
+| `packages/smithers/test/McpRemote.test.ts` | `smthrs mcp login` PKCE and token storage, and the `smthrs mcp serve` stdio bridge. |
 
 To test the full connection, run a real Streamable HTTP client through discovery, registration, consent, exchange,
 `tools/list` and `tools/call`. Check public and private reads, role and repository scope, revocation and the
