@@ -1,0 +1,205 @@
+import { describe, expect, it } from "@effect/vitest"
+import { label } from "@smthrs/targets/Reference"
+import * as Arbitrary from "effect/Arbitrary"
+import * as Effect from "effect/Effect"
+import * as Result from "effect/Result"
+import * as Schema from "effect/Schema"
+import ts from "typescript"
+import { parseDocument } from "yaml"
+import { ci, Inventory, type Job, type Step } from "../../src/contract/Inventory.vibe"
+import { path as mapPath, TargetMap } from "../../src/contract/TargetMap.vibe"
+import { variantKey, variantsOf } from "../../src/generate/Expressions.vibe"
+import { files } from "../../src/generate/index.vibe"
+import { keptSteps } from "../../src/generate/Kept.vibe"
+import { legsPath, workflowPath, workspacePath } from "../../src/generate/Render.ts"
+import { planSteps, repositoryLabel } from "../../src/generate/Steps.vibe"
+import * as Yaml from "../../src/generate/Yaml.vibe"
+import { wrote } from "../../src/native/Workspace.vibe"
+
+const property = <A>(arb: Arbitrary.Arbitrary<A>, seed: number, verify: (input: A) => void) => effect {
+  const result = try Arbitrary.checkEffect(arb, (input) => Effect.try(() => {
+    verify(input)
+    return true
+  }), { runs: 150, seed })
+  try Effect.try(() => {
+    if (result._tag !== "Passed") expect.fail(Arbitrary.formatCheckFailure(result))
+  })
+}
+
+const atom = Arbitrary.schema(Schema.Literals([
+  "a", "0", "-", "_", "/", "'", "\"", "`", "$", "{", "}", "*/", "\n", "\r", "\u2028", "\u2029", "\t", "\\",
+  " ", "#", ": ", "é", "e\u0301", "🚲"
+]))
+const words = Arbitrary.map(Arbitrary.array(atom, { maxLength: 10 }), (parts) => parts.join(""))
+const step = (id: string, extra: Partial<Step> = {}): Step => ({ id, cwd: "", env: {}, secrets: [], command: "true", ...extra })
+const job = (id: string, steps: ReadonlyArray<Step>, extra: Partial<Job> = {}): Job => ({
+  id, name: id, source: "github-actions", file: ".github/workflows/build.yml", steps,
+  matrix: [], unsupported: [], triggers: ["push"], needs: [], ...extra
+})
+const inventory = (jobs: ReadonlyArray<Job>, repository = "repo"): Inventory => ({
+  version: 1, repository, commit: "aaa", jobs, toolchains: []
+})
+
+const planned = (jobs: ReadonlyArray<Job>) => {
+  const result = planSteps(ci(inventory(jobs)))
+  return Result.getOrThrow(result)
+}
+
+// Preserve every node kind, identifier and child position. Literal text and comments may change freely.
+const syntax = (source: string) => {
+  const file = ts.createSourceFile("WORKSPACE.ts", source, ts.ScriptTarget.Latest, true)
+  // TypeScript stores its parser diagnostics on the returned SourceFile without exposing them in its public type.
+  expect(Reflect.get(file, "parseDiagnostics")).toEqual([])
+  const shape: Array<string> = []
+  const literals: Array<string> = []
+  const visit = (node: ts.Node): void => {
+    shape.push(ts.isIdentifier(node) ? node.text : String(node.kind))
+    if (ts.isStringLiteral(node)) literals.push(node.text)
+    ts.forEachChild(node, visit)
+    shape.push(")")
+  }
+  visit(file)
+  return { shape, literals }
+}
+
+const generate = (doc: Inventory) => Effect.runSync(files(ci(doc)))
+const declaration = (name: string, value: string, key: string) => inventory([
+  job("build", [step("test", {
+    name, command: "true # " + value, env: { [key]: value, UNAVAILABLE: "${{ secrets.UNAVAILABLE }}" }
+  })], { name }),
+  job("private", [step("restricted", { secrets: ["PRIVATE"], env: { PRIVATE: "private-fuzz-canary:" + value } })]),
+  job("dependent", [step("also-restricted")], { needs: ["private"] })
+], "repo/" + name)
+
+describe("generated targets and workflow data", () => {
+  it.live("allocates distinct portable labels across colliding steps and preserves their dependency chain", () =>
+    property(words, 1101, (suffix) => {
+      const ids = [...new Set(["Build", "build", "a-b", "a_b", "a/b", "a b", "_repository", "default", "class",
+        "constructor", "__proto__", "0", "λ", "🚲", "x".repeat(2048), suffix || "empty", "build/" + suffix, "build " + suffix])]
+      const targets = planned([job("ci", ids.map((id) => step(id)))]).targets
+      expect(targets.map((target) => target.step)).toEqual(ids)
+      expect(new Set([repositoryLabel, ...targets.map((target) => target.label.toLowerCase())]).size).toBe(ids.length + 1)
+      for (const [index, target] of targets.entries()) {
+        expect(label("//:" + target.label).label).toBe("//:" + target.label)
+        expect(target.label).not.toBe("__proto__")
+        expect(target.label).toMatch(/^[A-Za-z_][A-Za-z0-9._-]*$/)
+        expect(target.dependencies).toEqual(index === 0 ? [] : [targets[index - 1]!.label])
+      }
+      const labels = targets.map((target) => target.label)
+      expect(planned([job("ci", labels.map((id) => step(id)))]).targets.map((target) => target.label)).toEqual(labels)
+    }))
+
+  it.live("rejects empty schema identifiers and duplicate step identities and preserves own environment fields", () =>
+    property(words, 1106, (value) => {
+      const id = "step/" + value
+      expect(Schema.is(Inventory)(inventory([job("ci", [step("")])]))).toBe(false)
+      expect(Schema.is(Inventory)(inventory([job("", [step(id)])]))).toBe(false)
+      const duplicate = planSteps(ci(inventory([job("ci", [step(id), step(id)])])))
+      expect(duplicate).toMatchObject({ _tag: "Failure", failure: { code: "invalid-document", part: "generate" } })
+      const env = Object.fromEntries([["__proto__", value.replaceAll("${{", "$ { {")], ["constructor", "public"]])
+      const target = planned([job("ci", [step(id, { env })])]).targets[0]!
+      expect(Object.entries(target.env)).toEqual(Object.entries(env))
+    }))
+
+  it.live("matrix identity ignores insertion order and duplicate rows and distinguishes changed assignments", () =>
+    property(Arbitrary.all([words, words]), 1102, ([key, value]) => {
+      const a = Object.fromEntries([["axis", "0"], ["key/" + key, value]])
+      const b = Object.fromEntries(Object.entries(a).reverse())
+      const c = { ...a, axis: "1" }
+      expect(variantKey(a)).toBe(variantKey(b))
+      expect(variantKey(a)).not.toBe(variantKey(c))
+      const matrix = [c, a, b]
+      const build = job("build", [step("check")], { matrix, runsOn: "macos-latest" })
+      expect(variantsOf(build).map(variantKey)).toEqual([variantKey(a), variantKey(c)].sort())
+      const reordered = { ...build, matrix: [a, c, b, c] }
+      const unavailable = job("unresolved", [step("other")], { runsOn: "${{ vars.POOL }}" })
+      const plan = planned([build, unavailable])
+      expect(plan.notes).toEqual([expect.stringContaining("unresolved: a variant picks its runner")])
+      const first = plan.targets
+      expect(first.map((t) => [t.label, t.machine])).toEqual(planned([reordered]).targets.map((t) => [t.label, t.machine]))
+      expect(new Set(first.map((t) => t.label.toLowerCase())).size).toBe(2)
+      expect(new Set(first.map((t) => t.machine)).size).toBe(2)
+    }))
+
+  it.live("round-trips source literals, preserves declaration structure and emits identical files on repeat generation", () => {
+    const baseline = generate(declaration("neutral", "ordinary", "PUBLIC"))
+    const shape = syntax(baseline.find((f) => f.path === workspacePath)!.content).shape
+    return property(Arbitrary.all([words, words, words]), 1103, ([name, raw, key]) => {
+      // Double opening braces start a CI expression. Here the command and env value are literal text.
+      const value = raw.replaceAll("${{", "$ { {")
+      const envKey = "PUBLIC/" + key
+      const doc = declaration(name, value, envKey)
+      const generated = generate(doc)
+      expect(generate(doc)).toEqual(generated)
+      expect(generated.map((f) => f.path)).toEqual(baseline.map((f) => f.path))
+      const target = planned(doc.jobs).targets[0]!
+      expect(target.env).toEqual({ [envKey]: value })
+      const syntaxTree = syntax(generated.find((f) => f.path === workspacePath)!.content)
+      expect(syntaxTree.shape).toEqual(shape)
+      expect(syntaxTree.literals).toEqual(expect.arrayContaining([target.script, value, envKey, doc.repository]))
+      const map = generated.find((f) => f.path === mapPath)!
+      expect(map.written).toBe(false)
+      expect(Schema.decodeUnknownSync(Schema.fromJsonString(TargetMap))(map.content).targets).toEqual([
+        { label: "//:" + target.label, job: "build", step: "test", variant: {}, machine: "build" }
+      ])
+      for (const file of generated) {
+        expect(file.content).not.toContain("private-fuzz-canary:")
+        expect(file.content).not.toContain("secrets.UNAVAILABLE")
+        expect(wrote(file.path, file.content)).toBe(true)
+      }
+      expect(generated.find((f) => f.path === workflowPath)).toEqual(baseline.find((f) => f.path === workflowPath))
+    })
+  })
+
+  it.live("maps each matrix version to its own workflow leg, cache namespace and labels", () =>
+    property(words, 1107, (suffix) => {
+      const id = "check/" + suffix
+      const build = job("ci", [step(id)], { matrix: [{ node: "18" }, { node: "18" }, { node: "20" }] })
+      const doc = { ...inventory([build]), toolchains: [
+        { name: "node", source: build.file, job: build.id, version: "${{ matrix.node }}" }
+      ] }
+      const generated = generate(doc)
+      const get = (path: string) => generated.find((f) => f.path === path)!.content
+      const map = Schema.decodeUnknownSync(Schema.fromJsonString(TargetMap))(get(mapPath))
+      const workflow = parseDocument(get(workflowPath))
+      expect(workflow.errors).toEqual([])
+      const entries = (workflow.toJS() as { jobs: { ci: { strategy: { matrix: {
+        include: Array<{ leg: number; "version-node": number }>
+      } } } } }).jobs.ci.strategy.matrix.include
+      expect(entries.map((entry) => entry["version-node"])).toEqual([18, 20])
+      const selection = get(legsPath).trimEnd().split("\n").slice(1)
+      expect(selection).toEqual(entries.map((entry) => {
+        const target = map.targets.find((row) => row.step === id && row.variant["node"] === String(entry["version-node"]))
+        return String(entry.leg) + " " + target!.label
+      }))
+      expect(get(workflowPath)).toContain("key: smithers-ci-${{ matrix.os }}-${{ matrix.leg }}-${{ github.sha }}")
+      expect(generate({ ...doc, jobs: [{ ...build, matrix: [...build.matrix].reverse() }] })).toEqual(generated)
+    }))
+
+  it.live("kept action inputs and environment round-trip as single YAML mapping entries", () =>
+    property(Arbitrary.all([words, words]), 1104, ([key, value]) => {
+      const place = { job: job("ci", []), variant: {}, machine: "ci", entry: "matrix.leg == '1'" }
+      const inputs = Object.fromEntries([[key, value], ["}", value], ["p".repeat(1025), value], ["on", value]])
+      const items = keptSteps({ uses: "example/action@v1", with: inputs, env: inputs }, place, 0)
+      const source = Yaml.document(Yaml.mapping([Yaml.entry("steps", Yaml.sequence(items))]))
+      const parsed = parseDocument(source, { version: "1.1" })
+      expect(parsed.errors).toEqual([])
+      const steps = (parsed.toJS() as { steps: Array<Record<string, unknown>> }).steps
+      expect(steps).toHaveLength(2)
+      expect(steps[1]).toEqual({
+        name: "example/action@v1: ci", if: "${{ matrix.leg == '1' && (success()) }}",
+        uses: "example/action@v1", with: inputs, env: inputs
+      })
+    }))
+
+  it.live("YAML literals survive folding, indentation, comments and final newline chomping in both versions", () =>
+    property(Arbitrary.all([words, words]), 1105, ([value, comment]) => {
+      const values = [value, value + "\n\n", " ".repeat(2) + value, "fold ".repeat(26) + value]
+      const source = Yaml.document(Yaml.mapping([Yaml.entry("values", Yaml.list(values), [comment])]), [comment])
+      for (const version of ["1.1", "1.2"] as const) {
+        const parsed = parseDocument(source, { version })
+        expect(parsed.errors).toEqual([])
+        expect(parsed.toJS()).toEqual({ values })
+      }
+    }))
+})

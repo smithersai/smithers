@@ -51,6 +51,7 @@
  * @since 0.1.0
  */
 
+import { maximumLabelLength } from "@smthrs/targets/Reference"
 import * as Result from "effect/Result"
 import {
   type Ci,
@@ -432,7 +433,10 @@ export const planSteps = (inventory: Ci): Result.Result<StepPlan, Failure> => {
 
   // The labels taken so far, in lower case. Smithers build refuses a package with two labels that differ only by
   // case.
-  const taken = new Set<string>([repositoryLabel.toLowerCase()])
+  const taken = new Set<string>([repositoryLabel.toLowerCase(), "__proto__"])
+  // Leave room for the root-package prefix of an exact S.label reference. A literal __proto__
+  // property in the generated target map would set the prototype instead of declaring a target.
+  const maximumName = maximumLabelLength - "//:".length
 
   // A label another step took gets a suffix from this step's id, hashed. An id can be written to equal such a
   // label, so a suffixed label that is taken too is hashed again until one is free.
@@ -440,9 +444,10 @@ export const planSteps = (inventory: Ci): Result.Result<StepPlan, Failure> => {
     const base = `${slug(step.id)}${variantSuffix(variant)}`
     const identity = `${step.id}\n${variantKey(variant)}`
     let label = base
-    for (let attempt = 0; taken.has(label.toLowerCase()); attempt += 1) {
+    for (let attempt = 0; label.length > maximumName || taken.has(label.toLowerCase()); attempt += 1) {
       const hashed = shardOf(attempt === 0 ? identity : `${identity}\n${attempt}`, 0x1_0000_0000)
-      label = `${base}-${hashed.toString(16)}`
+      const suffix = `-${hashed.toString(16)}`
+      label = base.slice(0, maximumName - suffix.length) + suffix
     }
     taken.add(label.toLowerCase())
     return label
@@ -489,7 +494,7 @@ export const planSteps = (inventory: Ci): Result.Result<StepPlan, Failure> => {
       notes.add(`${step.id}: not generated, it uses a value only GitHub Actions can provide.`)
       return undefined
     }
-    const env: Record<string, string> = {}
+    const env: Record<string, string> = Object.create(null)
     for (const name of Object.keys(step.env).sort(compare)) {
       const value = forText(step.env[name] as string, variant)
       if (value === undefined) notes.add(`${step.id}: ${name} is not set, its value exists only on GitHub Actions.`)

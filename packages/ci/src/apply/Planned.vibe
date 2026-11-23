@@ -37,31 +37,61 @@ const failed = (code: Failure["code"], message: string): Failure => ({ code, mes
 /** The most of what Smithers build printed that is kept: its error is at the end. */
 const kept = 64 * 1024
 
+/** A Node runtime warning line that accompanies a command's own output. */
+const nodeWarning = /^\(node:\d+\)\s+\w*Warning:|^\(Use `node --trace-warnings /
+const ansiControl = /\u001b\[[0-?]*[ -/]*[@-~]/g
+
+// The last complete refusal, even if an earlier log line has an unmatched brace. A frame
+// parses just its own fields: each completed child is replaced with {} (or an invalid token).
+// This keeps deeply nested or malformed output linear instead of reparsing overlapping slices.
+const messageIn = (text: string): string | undefined => {
+  interface Frame {
+    start: number
+    unread: number
+    parts: Array<string>
+    previous: string | undefined
+  }
+  const open: Array<Frame> = []
+  let message: string | undefined
+  // A quoted JSON string occupies one token, including its escapes. Braces inside it are data.
+  for (const token of text.matchAll(/"(?:\\[^\r\n]|[^"\\\r\n])*"|[{}]/g)) {
+    if (token[0] === "{") {
+      open.push({ start: token.index, unread: token.index, parts: [], previous: message })
+    } else if (token[0] === "}") {
+      const frame = open.pop()
+      if (frame === undefined) continue
+      const end = token.index + 1
+      frame.parts.push(text.slice(frame.unread, end))
+      let replacement = "{}"
+      try {
+        const record = JSON.parse(frame.parts.join("")) as { readonly message?: unknown }
+        // A complete outer record owns the diagnostic. A message in its metadata is not a refusal.
+        const words = typeof record.message === "string" ? record.message.replace(ansiControl, "").trim() : ""
+        message = words === "" ? frame.previous : errorLine(words)
+      } catch {
+        replacement = "?"
+      }
+      const parent = open.at(-1)
+      if (parent !== undefined) {
+        parent.parts.push(text.slice(parent.unread, frame.start), replacement)
+        parent.unread = end
+      }
+    }
+  }
+  return message
+}
+
 /**
  * Smithers build's own words for a refusal, in one line: the message of the
- * error it printed as JSON, else the last line it printed.
+ * error it printed as JSON, else the last substantive line it printed.
  *
  * @category accessors
  * @since 0.1.0
  */
-/** A Node runtime warning line that accompanies a command's own output and is not a refusal. */
-const nodeWarning = /^\(node:\d+\)\s+\w*Warning:|^\(Use `node --trace-warnings /
-
 export const refusalOf = (printed: string): string => {
-  const start = printed.indexOf("{")
-  const end = printed.lastIndexOf("}")
-  try {
-    const candidate = start === -1 ? printed : end > start ? printed.slice(start, end + 1) : printed.slice(start)
-    const document = JSON.parse(candidate) as { readonly message?: unknown }
-    if (typeof document.message === "string" && document.message.trim() !== "") return errorLine(document.message)
-  } catch {
-    // Not a document: the last line it printed says why.
-  }
-  const raw = printed.trim().split("\n")
+  const raw = printed.replace(ansiControl, "").split("\n").filter((line) => line.trim() !== "")
   const useful = raw.filter((line) => !nodeWarning.test(line.trim()))
-  const lines = useful.length > 0 ? useful : raw
-  const last = lines[lines.length - 1] as string
-  return errorLine(last === "" ? "it printed nothing" : last)
+  return messageIn(useful.join("\n")) ?? errorLine(useful.at(-1) ?? raw.at(-1) ?? "it printed nothing")
 }
 
 /** The labels of each job's targets, by job, in the order the target map names them. */

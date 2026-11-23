@@ -262,10 +262,20 @@ const valueLines = (head: string, value: Value, indent: number): ReadonlyArray<s
   return value.items.length === 0 ? [`${head} []`] : [head, ...sequenceLines(value, indent)]
 }
 
+// Fixed workflow keys keep their usual spelling. Other keys, including action inputs supplied by
+// the repository, must also remain a single string key. YAML limits implicit keys to 1024 characters.
+const ordinaryKey = /^(?!(?:y|yes|n|no|on|off|true|false|null)$)[a-z_][a-z0-9_-]*$/i
+
+const mappingHead = (key: string, indent: number): string => {
+  const pad = " ".repeat(indent)
+  const name = (indent === 0 && key === "on") || ordinaryKey.test(key) || isPlain(key) ? key : doubleQuoted(key)
+  return name.length <= 1024 ? `${pad}${name}:` : `${pad}? ${name}\n${pad}:`
+}
+
 const mappingLines = (value: Mapping, indent: number): ReadonlyArray<string> =>
   value.entries.flatMap((one) => [
     ...one.comments.flatMap((text) => commentLines(text, indent)),
-    ...valueLines(`${" ".repeat(indent)}${one.key}:`, one.value, indent + 2)
+    ...valueLines(mappingHead(one.key, indent), one.value, indent + 2)
   ])
 
 // An item that is a collection starts on its dash's line: its first line loses the indentation the dash takes.

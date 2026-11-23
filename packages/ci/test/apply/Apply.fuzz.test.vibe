@@ -1,0 +1,163 @@
+import { describe, expect, it } from "@effect/vitest"
+import * as Arbitrary from "effect/Arbitrary"
+import * as ByteSize from "effect/ByteSize"
+import * as Effect from "effect/Effect"
+import * as FileSystem from "effect/FileSystem"
+import * as Option from "effect/Option"
+import * as Path from "effect/Path"
+import * as PlatformError from "effect/PlatformError"
+import * as Schema from "effect/Schema"
+import { besidePaths, check, formerPaths } from "../../src/apply/index.vibe"
+import { refusalOf } from "../../src/apply/Planned.vibe"
+import { errorLine } from "../../src/contract/Command.vibe"
+import type { GeneratedFile } from "../../src/contract/Parts.vibe"
+import { generatedMark } from "../../src/native/Workspace.vibe"
+
+const property = <A>(arb: Arbitrary.Arbitrary<A>, seed: number, verify: (input: A) => void) => effect {
+  const result = try Arbitrary.checkEffect(arb, (input) => Effect.try(() => {
+    verify(input)
+    return true
+  }), { runs: 200, seed })
+  try Effect.try(() => {
+    if (result._tag !== "Passed") expect.fail(Arbitrary.formatCheckFailure(result))
+  })
+}
+
+const warning = "(node:42) ExperimentalWarning: fixture {metadata}"
+const trace = "(Use `node --trace-warnings ...` to show where the warning was created)"
+const noise = Arbitrary.array(Arbitrary.schema(Schema.Literals([
+  warning, trace, "", "log {}", "trace {outer {inner}}", "truncated {", "}", "  ", "\u001b[33mnote\u001b[0m"
+])), { maxLength: 7 })
+const text = Arbitrary.schema(Schema.String)
+const empty = FileSystem.makeNoop({})
+const info = (type: FileSystem.File.Type): FileSystem.File.Info => ({
+  type, size: ByteSize.bytes(0), mode: 0, dev: 0n, uid: Option.none(), gid: Option.none(),
+  mtime: Option.none(), atime: Option.none(), birthtime: Option.none(), ino: Option.none(),
+  nlink: Option.none(), rdev: Option.none(), blksize: Option.none(), blocks: Option.none()
+})
+
+// A read-only view of a tree. Every absent path uses Effect's normal NotFound error.
+const inspect = (
+  disk: ReadonlyMap<string, string>,
+  files: ReadonlyArray<GeneratedFile>,
+  root = "/repo",
+  overrides: Partial<FileSystem.FileSystem> = {}
+) => {
+  const prefix = root.endsWith("/") ? root : root + "/"
+  const dirs = new Set([root])
+  for (const path of disk.keys()) {
+    const parts = path.split("/")
+    for (let i = 1; i < parts.length; i++) dirs.add(prefix + parts.slice(0, i).join("/"))
+  }
+  const read = (path: string) => disk.get(path.slice(prefix.length))
+  const fs = FileSystem.makeNoop({
+    realPath: (path) => dirs.has(path) || read(path) !== undefined ? Effect.succeed(path) : empty.realPath(path),
+    stat: (path) => Effect.succeed(info(dirs.has(path) ? "Directory" : "File")),
+    readFileString: (path) => Effect.succeed(read(path)!),
+    readFile: (path) => Effect.succeed(new TextEncoder().encode(read(path))),
+    ...overrides
+  })
+  return Effect.runSync(Effect.result(check(root, files)).pipe(
+    Effect.provideService(FileSystem.FileSystem, fs), Effect.provide(Path.layer)
+  ))
+}
+
+describe("apply diagnostics and read-only preflight", () => {
+  it.live("recovers the refusal document across braces in logs, colors and interleaved runtime warnings", () =>
+    property(Arbitrary.all([text, noise, noise]), 2101, ([fragment, before, after]) => {
+      const message = "refused: " + fragment + ' " { } \nend'
+      const json = JSON.stringify({ detail: { message: "inner" }, message: "\u001b[31m" + message + "\u001b[0m" }, undefined, 2)
+      const pretty = json.split("\n").join("\n" + warning + "\n")
+      for (const record of [JSON.stringify({ message }), pretty]) {
+        const output = [...before, "\u001b[31m" + record + "\u001b[0m", ...after].join("\n")
+        expect(refusalOf(output)).toBe(errorLine(message))
+      }
+    }))
+
+  it.live("keeps the last substantive fallback line and preserves the warnings-only diagnostic", () =>
+    property(text, 2102, (fragment) => {
+      const last = "reason " + fragment.replace(/[\r\n]/g, " ") + " https://user:fixture@example.org/path"
+      const output = ["truncated {", last, "", "\u001b[33m" + warning + "\u001b[0m", trace, ""].join("\n")
+      expect(refusalOf(output)).toBe(errorLine(last))
+      expect(refusalOf(JSON.stringify({ message: " ", detail: { message: "inner" } }) + "\nfallback")).toBe("fallback")
+      expect(refusalOf('{"message":"first"}\n{"message":"last"}')).toBe("last")
+      expect(refusalOf("real error\n\n" + warning)).toBe("real error")
+      expect(refusalOf(" \n\t")).toBe("it printed nothing")
+      expect(refusalOf(warning + "\n" + trace)).toBe(trace)
+    }))
+
+  it.live("refuses noncanonical generated paths even when the first directory is absent", () =>
+    property(Arbitrary.array(Arbitrary.schema(Schema.Literals(["a", "folder", "é", ".hidden"])), {
+      minLength: 1, maxLength: 5
+    }), 2103, (segments) => {
+      const dir = segments.join("/")
+      const paths = ["", ".", "..", "/" + dir, "C:/" + dir, "C:" + dir, dir + "\\child",
+        dir + "/../child", dir + "/./child", dir + "//child", dir + "\u0000", dir + "/", "\\\\" + dir]
+      const outcome = inspect(new Map(), paths.map((path) => ({ path, content: "" })))
+      expect(outcome).toMatchObject({ _tag: "Failure", failure: {
+        part: "generate", code: "unsupported",
+        message: paths.map((path) => JSON.stringify(path) + " is not a repository-relative file path").join("; ")
+      } })
+    }))
+
+  it.live("accepts a physical descendant at the volume root and refuses an uninspectable or outside path", () =>
+    property(text, 2106, (body) => {
+      const file = { path: "out", content: generatedMark + "\n" + body }
+      const disk = new Map([[file.path, file.content]])
+      expect(inspect(disk, [file], "/")).toMatchObject({ _tag: "Success", success: { changes: [] } })
+      for (const method of ["realPath", "readLink"] as const) {
+        const reason = PlatformError.systemError({ _tag: "PermissionDenied", method, module: "FileSystem" })
+        const checked = inspect(new Map(), [file], "/repo", {
+          [method]: (path: string) => path === "/repo/out" ? Effect.fail(reason) : empty[method](path)
+        })
+        expect(checked).toMatchObject({ _tag: "Failure", failure: { message: expect.stringContaining("PermissionDenied") } })
+      }
+      const dangling = inspect(new Map(), [file], "/repo", {
+        readLink: (path) => path === "/repo/out" ? Effect.succeed("gone") : empty.readLink(path)
+      })
+      expect(dangling).toMatchObject({ _tag: "Failure", failure: { message: "out is a link to gone, which does not exist" } })
+      const linked = inspect(disk, [file], "/repo", {
+        realPath: (path) => path === "/repo/out" ? Effect.succeed("/repo-other/out") : empty.realPath(path)
+      })
+      expect(linked).toMatchObject({ _tag: "Failure", failure: { message: expect.stringContaining("outside the repository") } })
+    }))
+
+  it.live("predicts ordered byte changes, ignores virtual outputs and reaches a fixed point after writing", () =>
+    property(Arbitrary.all([text, Arbitrary.array(Arbitrary.schema(Schema.Literals(["same", "changed", "absent"])),
+      { minLength: 1, maxLength: 8 }), Arbitrary.schema(Schema.Boolean)]), 2104, ([body, states, legacy]) => {
+      const disk = new Map<string, string>()
+      const files = states.map((state, i) => {
+        const path = "targets/" + i
+        const content = generatedMark + "\n" + body
+        if (state !== "absent") disk.set(path, state === "same" ? content : content + "\n")
+        return { path, content }
+      })
+      const former = legacy ? ["PACKAGE.ts", ".smithers/WORKSPACE.ts"] : []
+      for (const path of former) disk.set(path, generatedMark + "\nold")
+      const outputs: ReadonlyArray<GeneratedFile> = [...files, { path: "virtual", content: "internal", written: false }]
+      const changes = states.flatMap((state, i) => state === "same" ? [] : [{
+        path: files[i]!.path, change: state === "absent" ? "missing" : "differs"
+      }])
+      const before = inspect(disk, outputs)
+      expect(before).toMatchObject({ _tag: "Success", success: {
+        former, changes: [...changes, ...former.map((path) => ({ path, change: "unused" }))]
+      } })
+      expect(inspect(disk, outputs)).toEqual(before)
+      for (const path of former) disk.delete(path)
+      for (const { path, content } of files) disk.set(path, content)
+      expect(inspect(disk, outputs)).toMatchObject({ _tag: "Success", success: { former: [], changes: [] } })
+    }))
+
+  it.live("a displaced or damaged marker preserves owner files at current, former and beside paths", () =>
+    property(Arbitrary.all([text, Arbitrary.schema(Schema.Boolean)]), 2105, ([body, displaced]) => {
+      const content = (displaced ? "owner\n" + generatedMark : generatedMark.slice(0, -1) + "!") + "\n" + body
+      for (const path of formerPaths) {
+        const disk = new Map([[path, content]])
+        const checked = inspect(disk, [])
+        if (besidePaths.includes(path)) expect(checked).toMatchObject({ _tag: "Failure" })
+        else expect(checked).toMatchObject({ _tag: "Success", success: { former: [], changes: [] } })
+        expect(inspect(disk, [{ path, content: generatedMark }])).toMatchObject({ _tag: "Failure" })
+      }
+      expect(inspect(new Map([["PACKAGE.vibe", content]]), [])).toMatchObject({ _tag: "Failure" })
+    }))
+})

@@ -5,9 +5,9 @@ import { held, partWorkers, suite } from "./vitest.config.ts"
 
 export default suite({
   include: [...configDefaults.include, "test/**/*.test.vibe"],
-  exclude: Object.keys(held).map((part) => `test/${part}/**`),
+  exclude: [...Object.keys(held), "apply"].map((part) => `test/${part}/**`),
   coverage: ["src/**"],
   coverageExclude: Object.values(held).flat(),
   workers: partWorkers.rest,
-  part: { name: "testRest", cases: "test/, outside test/cli, test/replay and test/native" }
+  part: { name: "testRest", cases: "test/, outside test/apply, test/cli, test/replay and test/native" }
 })

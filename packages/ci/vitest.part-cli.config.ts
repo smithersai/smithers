@@ -2,8 +2,8 @@
 import { heldBy, partWorkers, suite } from "./vitest.config.ts"
 
 export default suite({
-  include: ["test/cli/**/*.test.{ts,vibe}"],
+  include: ["test/{cli,apply}/**/*.test.{ts,vibe}"],
   ...heldBy("cli"),
   workers: partWorkers.cli,
-  part: { name: "testCli", cases: "test/cli" }
+  part: { name: "testCli", cases: "test/cli and test/apply" }
 })

@@ -69,7 +69,7 @@ const refuse = (problems: ReadonlyArray<string>): Failure => ({
 
 /** A path and each directory above it, outermost first. */
 const prefixesOf = (path: string): ReadonlyArray<string> => {
-  const segments = path.split(/[\\/]/)
+  const segments = path.split("/")
   return segments.map((_, index) => segments.slice(0, index + 1).join("/"))
 }
 
@@ -81,17 +81,26 @@ const prefixesOf = (path: string): ReadonlyArray<string> => {
 effect function placeOf(root: string, realRoot: string, path: string) {
   const fs = try FileSystem.FileSystem
   const paths = try Path.Path
+  // GeneratedFile paths are portable, repository-relative names. Validate the entire name before
+  // looking for the first missing parent, using the same slash spelling as the writer.
+  if (/[\\\0]|^[A-Za-z]:|(?:^|\/)\.{0,2}(?:\/|$)/.test(path)) {
+    return Place.Refused({ why: `${JSON.stringify(path)} is not a repository-relative file path` })
+  }
   for (const prefix of prefixesOf(path)) {
     const at = paths.join(root, prefix)
-    const real = fs.realPath(at) catch () => undefined
-    if (real === undefined) {
-      // Nothing is there, so it can be made; unless it is a link, which a write would follow.
-      const link = fs.readLink(at) catch () => undefined
-      return link === undefined
+    const real = fs.realPath(at) catch (error) => error
+    if (typeof real !== "string") {
+      if (real.reason._tag !== "NotFound") {
+        return Place.Refused({ why: `${prefix} could not be resolved (${real.reason._tag})` })
+      }
+      const link = fs.readLink(at) catch (error) => error
+      if (typeof link === "string") return Place.Refused({ why: `${prefix} is a link to ${link}, which does not exist` })
+      return link.reason._tag === "NotFound"
         ? Place.Absent()
-        : Place.Refused({ why: `${prefix} is a link to ${link}, which does not exist` })
+        : Place.Refused({ why: `${prefix} could not be inspected (${link.reason._tag})` })
     }
-    if (real !== realRoot && !real.startsWith(`${realRoot}${paths.sep}`)) {
+    const belowRoot = realRoot.endsWith(paths.sep) ? realRoot : realRoot + paths.sep
+    if (real !== realRoot && !real.startsWith(belowRoot)) {
       return Place.Refused({ why: `${prefix} is a link to ${real}, outside the repository` })
     }
     const kind = fs.stat(at) catch () => undefined
