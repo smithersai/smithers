@@ -4,7 +4,7 @@
  */
 import { describe, expect, it } from "@effect/vitest"
 import { Action, Flow, FlowRuntime, Interpreter } from "@smthrs/flow"
-import { Context, Effect, Exit, Layer, Schema, SchemaIssue, SchemaTransformation } from "effect"
+import { Context, Effect, Exit, Layer, Redacted, Schema, SchemaIssue, SchemaTransformation } from "effect"
 import { withCrypto } from "./Crypto.ts"
 import { layerWired, makeInstance } from "./MemoryFlowRuntime.ts"
 
@@ -124,6 +124,21 @@ describe("Flow.payloadPreimage", () => {
       yield* preimage
       yield* snapshot
       expect(encoded).toBe(2)
+    }))
+
+  it.effect("encodes payloads containing Redacted values through their schema so distinct secrets do not collide", () =>
+    Effect.gen(function*() {
+      const Secret = Schema.Struct({
+        opaque: Schema.Redacted(Schema.String),
+        list: Schema.Array(Schema.Redacted(Schema.String))
+      })
+      const a = yield* Flow.payloadPreimage(Secret, { opaque: Redacted.make("alice"), list: [Redacted.make("a")] })
+      const b = yield* Flow.payloadPreimage(Secret, { opaque: Redacted.make("bob"), list: [Redacted.make("b")] })
+      expect(a).toEqual(["snapshot", { opaque: "alice", list: ["a"] }])
+      expect(a).not.toEqual(b)
+      const cyclic: { self?: unknown; items: Array<unknown> } = { items: [null, "plain"] }
+      cyclic.self = cyclic
+      expect(yield* Flow.payloadPreimage(Schema.Any, cyclic)).toBe(cyclic)
     }))
 })
 

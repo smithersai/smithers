@@ -19,7 +19,7 @@
  *   per run and handed only to that target. A guessed placeholder or a request
  *   for another origin cannot resolve it.
  * - **No value in key material.** The declaration carries a variable name.
- *   Keys record the name; they never record the value, and a cache entry
+ *   Keys record the declaration; they never record the value, and a cache entry
  *   therefore cannot carry a credential between machines.
  * - **Lazy, request-scoped resolution.** The host variable is read once when
  *   an authorized request needs it, not when PACKAGE.ts is evaluated or planned.
@@ -74,8 +74,8 @@ const wellFormedText = Schema.makeFilter((value: string) => value.isWellFormed()
 /**
  * Schema for one inert secret source.
  *
- * The declaration is the variable name and nothing else. A placeholder is not
- * part of it: placeholders are minted per run by the executor, so two runs of
+ * The declaration carries a variable name, an optional public fallback, and
+ * optional HTTP substitution permissions. Placeholders are minted per run, so two runs of
  * the same graph never reuse one and a declaration can be cached without ever
  * pinning a substitution token.
  *
@@ -90,7 +90,11 @@ export const Declaration = Schema.TaggedStruct("Secret", {
     wellFormedText
   ),
   /** Public fallback used only when the environment variable is absent. */
-  fallback: Schema.optional(Schema.NonEmptyString.check(Schema.isMaxLength(maximumFallbackLength), wellFormedText))
+  fallback: Schema.optional(Schema.NonEmptyString.check(Schema.isMaxLength(maximumFallbackLength), wellFormedText)),
+  /** Allows placeholders for this secret to resolve in HTTP paths and queries. */
+  allowInUrl: Schema.optional(Schema.Boolean),
+  /** Allows placeholders for this secret to resolve in textual HTTP request bodies. */
+  allowInBody: Schema.optional(Schema.Boolean)
 })
 
 /**
@@ -106,8 +110,20 @@ const ownData = (value: object, name: PropertyKey): unknown => {
   return descriptor !== undefined && "value" in descriptor && descriptor.enumerable ? descriptor.value : undefined
 }
 
+const optionNames = ["fallback", "allowInUrl", "allowInBody"] as const
+type SecretOptions = Pick<Secret, typeof optionNames[number]>
+
+const validSubstitutionFlag = (value: unknown): value is boolean | undefined =>
+  value === undefined || typeof value === "boolean"
+
 /**
  * Declares one secret source, read lazily at a host-owned request boundary.
+ *
+ * With {@link HttpSecret}, placeholders resolve in request headers by default.
+ * Set `allowInUrl: true` for paths and queries, or `allowInBody: true` for
+ * textual request bodies. Each permission applies independently and only at
+ * the exact origins declared by the binding. Enable it only when the origin
+ * requires the credential there.
  *
  * @example
  * ```ts
@@ -123,7 +139,7 @@ const ownData = (value: object, name: PropertyKey): unknown => {
  * @category constructors
  * @since 0.1.0
  */
-export const Secret = (env: string, options: { readonly fallback?: string | undefined } = {}): Secret => {
+export const Secret = (env: string, options: SecretOptions = {}): Secret => {
   if (typeof env !== "string") throw new TypeError("Secret name must be a string")
   if (env.length > maximumNameLength || !env.isWellFormed()) {
     throw new Error("Secret name must be bounded well-formed text")
@@ -140,16 +156,17 @@ export const Secret = (env: string, options: { readonly fallback?: string | unde
     throw new TypeError("Secret options must not contain symbol properties")
   }
   for (const key of Object.getOwnPropertyNames(options)) {
-    if (key !== "fallback") throw new TypeError(`Secret received unknown option ${JSON.stringify(key)}`)
+    if (key !== "fallback" && key !== "allowInUrl" && key !== "allowInBody") {
+      throw new TypeError(`Secret received unknown option ${JSON.stringify(key)}`)
+    }
+    const descriptor = Object.getOwnPropertyDescriptor(options, key)
+    if (descriptor === undefined || !("value" in descriptor) || descriptor.enumerable !== true) {
+      throw new TypeError(`Secret option ${key} must be an enumerable data property`)
+    }
   }
-  const fallbackDescriptor = Object.getOwnPropertyDescriptor(options, "fallback")
-  if (
-    fallbackDescriptor !== undefined &&
-    (!("value" in fallbackDescriptor) || fallbackDescriptor.enumerable !== true)
-  ) throw new TypeError("Secret option fallback must be an enumerable data property")
-  const fallback = fallbackDescriptor !== undefined && "value" in fallbackDescriptor
-    ? fallbackDescriptor.value
-    : undefined
+  const fallback = ownData(options, "fallback")
+  const allowInUrl = ownData(options, "allowInUrl")
+  const allowInBody = ownData(options, "allowInBody")
   if (
     fallback !== undefined &&
     (typeof fallback !== "string" || fallback === "" || fallback.length > maximumFallbackLength ||
@@ -157,7 +174,15 @@ export const Secret = (env: string, options: { readonly fallback?: string | unde
   ) {
     throw new TypeError("Secret fallback must be bounded non-empty well-formed text")
   }
-  return Object.freeze(Declaration.make({ env: trimmed, ...(fallback === undefined ? {} : { fallback }) }))
+  if (!validSubstitutionFlag(allowInUrl) || !validSubstitutionFlag(allowInBody)) {
+    throw new TypeError("Secret options allowInUrl and allowInBody must be booleans")
+  }
+  return Object.freeze(Declaration.make({
+    env: trimmed,
+    ...(fallback === undefined ? {} : { fallback }),
+    ...(allowInUrl === undefined ? {} : { allowInUrl }),
+    ...(allowInBody === undefined ? {} : { allowInBody })
+  }))
 }
 
 /**
@@ -172,23 +197,21 @@ export const isSecret = (value: unknown): value is Secret => {
   if (prototype !== Object.prototype && prototype !== null) return false
   const keys = Reflect.ownKeys(value)
   if (
-    keys.some((key) => typeof key !== "string" || !["_tag", "env", "fallback"].includes(key)) ||
+    keys.some((key) => typeof key !== "string" || !["_tag", "env", ...optionNames].includes(key)) ||
     !keys.includes("_tag") || !keys.includes("env")
   ) return false
   for (const key of keys) {
     const descriptor = Object.getOwnPropertyDescriptor(value, key)
     if (descriptor === undefined || !("value" in descriptor) || descriptor.enumerable !== true) return false
   }
-  const own = (name: "_tag" | "env" | "fallback"): unknown => {
-    return ownData(value, name)
-  }
-  const tag = own("_tag")
-  const env = own("env")
-  const fallback = own("fallback")
+  const tag = ownData(value, "_tag")
+  const env = ownData(value, "env")
+  const fallback = ownData(value, "fallback")
   return tag === "Secret" && typeof env === "string" && env.length <= maximumNameLength &&
     env.isWellFormed() && environmentName.test(env) &&
     (fallback === undefined || typeof fallback === "string" && fallback !== "" &&
-        fallback.length <= maximumFallbackLength && fallback.isWellFormed())
+        fallback.length <= maximumFallbackLength && fallback.isWellFormed()) &&
+    validSubstitutionFlag(ownData(value, "allowInUrl")) && validSubstitutionFlag(ownData(value, "allowInBody"))
 }
 
 const loopbackHost = (hostname: string): boolean =>
@@ -288,7 +311,8 @@ export const HttpSecret = (secret: Secret, audiences: ReadonlyArray<string>): Ht
     normalized.push(normalizeAudience(value))
   }
   if (new Set(normalized).size !== normalized.length) throw new TypeError("HttpSecret audiences contain a duplicate")
-  const source = Secret(secret.env, secret.fallback === undefined ? {} : { fallback: secret.fallback })
+  const { _tag, env, ...options } = secret
+  const source = Secret(env, options)
   const binding = HttpCredential.make({ secret: source, audiences: normalized as [string, ...Array<string>] })
   Object.freeze(binding.audiences)
   return Object.freeze(binding)

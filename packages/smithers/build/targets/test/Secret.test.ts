@@ -1,3 +1,4 @@
+import * as Schema from "effect/Schema"
 import * as NodeHttp from "node:http"
 import * as NodeNet from "node:net"
 import * as NodeTimers from "node:timers"
@@ -41,6 +42,8 @@ describe("Secret declarations", () => {
   it("recognises its own declarations and nothing else", () => {
     expect(Secret.isSecret(Secret.Secret("NPM_TOKEN"))).toBe(true)
     expect(Secret.isSecret({ _tag: "Secret", env: "NPM_TOKEN" })).toBe(true)
+    expect(Secret.isSecret(Object.assign(Object.create(null), { _tag: "Secret", env: "NPM_TOKEN" }))).toBe(true)
+    expect(Secret.isSecret(new Date())).toBe(false)
     expect(Secret.isSecret({ _tag: "Secret" })).toBe(false)
     expect(Secret.isSecret(null)).toBe(false)
     expect(Secret.isSecret("NPM_TOKEN")).toBe(false)
@@ -100,6 +103,32 @@ describe("Secret declarations", () => {
     expect(Secret.isHttpCredential(credential)).toBe(true)
   })
 
+  it("preserves independent permissions when decoding and rebinding a secret", () => {
+    const audience = "https://registry.npmjs.org"
+    const credential = Secret.HttpSecret(Secret.Secret("NPM_TOKEN", { allowInUrl: true, allowInBody: false }), [
+      audience
+    ])
+    const decoded = Schema.decodeUnknownSync(Secret.HttpCredential)(JSON.parse(JSON.stringify(credential)))
+    const rebound = Secret.HttpSecret(decoded.secret, [...decoded.audiences])
+    expect(rebound).toEqual(credential)
+    expect(rebound.secret).toMatchObject({ allowInUrl: true, allowInBody: false })
+  })
+
+  it.each(["allowInUrl", "allowInBody"] as const)("accepts only own boolean data for %s", (flag) => {
+    const source = Secret.Secret("NPM_TOKEN")
+    const invalid = { [flag]: "true" }
+    const accessor = Object.defineProperty({}, flag, {
+      enumerable: true,
+      get: () => {
+        throw new Error("must not read getter")
+      }
+    })
+    expect(() => Secret.Secret(source.env, invalid as never)).toThrow(/must be booleans/)
+    expect(() => Secret.Secret(source.env, accessor)).toThrow(/enumerable data property/)
+    expect(Secret.isSecret({ ...source, ...invalid })).toBe(false)
+    expect(() => Schema.decodeUnknownSync(Secret.Declaration)({ ...source, ...invalid })).toThrow()
+  })
+
   it("rejects ambiguous, insecure, duplicate, and malformed audiences", () => {
     const source = Secret.Secret("NPM_TOKEN")
     for (
@@ -150,9 +179,33 @@ describe("Secret declarations", () => {
     )).toBe(false)
     expect(calls).toBe(0)
   })
+
+  it("rejects malformed bindings before minting a capability", () => {
+    const credential = Secret.HttpSecret(Secret.Secret("NPM_TOKEN"), ["https://registry.npmjs.org"])
+    const withExtra = Object.assign([...credential.audiences], { extra: true })
+    const revoked = Proxy.revocable([...credential.audiences], {})
+    revoked.revoke()
+    expect(() => Secret.HttpSecret(credential.secret, withExtra)).toThrow(/dense array/)
+    for (
+      const invalid of [
+        new Date(),
+        { ...credential, _tag: "WrongTag" },
+        { ...credential, audiences: [] },
+        { ...credential, audiences: withExtra },
+        { ...credential, audiences: revoked.proxy }
+      ]
+    ) expect(Secret.isHttpCredential(invalid)).toBe(false)
+    expect(Secret.isHttpCredential(Object.assign(Object.create(null), credential))).toBe(true)
+  })
 })
 
 describe("Secret.normalizeAudience", () => {
+  it("refuses empty, overlong, and ill-formed origins before URL parsing", () => {
+    for (const value of ["", "a".repeat(Secret.maximumAudienceLength + 1), "\ud800", 7 as never]) {
+      expect(() => Secret.normalizeAudience(value)).toThrow(/bounded well-formed text/)
+    }
+  })
+
   it("never echoes a rejected audience, so embedded credentials stay out of the message", () => {
     const cases = [
       "https://api.example.test/?token=SYNTHETIC_TOKEN",
@@ -329,7 +382,7 @@ describe("SecretProxy vault", () => {
 
   it("redacts a resolved credential from every later request of the vault", () => {
     const vault = SecretProxy.makeVault({ read: () => "real value" })
-    const placeholder = vault.mint(token)
+    const placeholder = vault.mint(Secret.HttpSecret(Secret.Secret(token.secret.env, { allowInUrl: true }), [audience]))
     const seeded = vault.request(audience, [{ placeholder: "{seed}", value: "seeded-value" }])
     expect(seeded.substitutePath(`/${placeholder}`)).toBe("/real%20value")
     // A later request resolves nothing itself, and still must not return the
@@ -540,6 +593,19 @@ describe("SecretProxy server", () => {
     }
   })
 
+  it("refuses an unsupported absolute request scheme and an invalid destination declaration", async () => {
+    const proxy = await SecretProxy.startProxy(SecretProxy.makeVault())
+    try {
+      expect(await boundedProxyRequest(proxy.endpoint, "https://api.example.test/resource")).toEqual({
+        status: 400,
+        body: "proxy forwards http requests only"
+      })
+      expect(() => proxy.urlFor({ _tag: "Secret", env: "not a name" })).toThrow(/requires a secret declaration/)
+    } finally {
+      await proxy.close()
+    }
+  })
+
   it("turns a secret destination into a loopback capability and resolves it lazily", async () => {
     let requests = 0
     const upstream = NodeHttp.createServer((_request, response) => {
@@ -591,28 +657,51 @@ describe("SecretProxy server", () => {
     expect(result.responseBody).toBe("upstream-ok")
   })
 
-  it("replaces the placeholder in a text request body", async () => {
-    const vault = SecretProxy.makeVault({ read: () => "real-value" })
-    const result = await throughProxy(vault, (origin) => {
-      const placeholder = vault.mint(Secret.HttpSecret(token, [origin]))
-      return {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ token: placeholder })
+  it("leaves default URL and body placeholders untouched without reading the secret", async () => {
+    let reads = 0
+    let placeholder = ""
+    const vault = SecretProxy.makeVault({
+      read: () => {
+        reads++
+        return undefined
       }
     })
-    expect(JSON.parse(result.body)).toEqual({ token: "real-value" })
-    expect(result.headers["content-length"]).toBe(String(result.body.length))
-  })
-
-  it("replaces placeholders in the request path at the same origin", async () => {
-    const vault = SecretProxy.makeVault({ read: () => "real-value" })
     const result = await throughProxy(vault, (origin) => {
-      const placeholder = vault.mint(Secret.HttpSecret(token, [origin]))
-      return { method: "GET", headers: {}, path: `/target?token=${placeholder}` }
+      placeholder = vault.mint(Secret.HttpSecret(token, [origin]))
+      return {
+        method: "POST",
+        headers: { "content-type": "text/plain" },
+        body: placeholder,
+        path: `/target/${placeholder}?token=${placeholder}`
+      }
     })
     expect(result.status).toBe(200)
-    expect(result.path).toBe("/target?token=real-value")
+    expect(result.body).toBe(placeholder)
+    expect(result.path).toBe(`/target/${placeholder}?token=${placeholder}`)
+    expect(reads).toBe(0)
+  })
+
+  it("enforces independent, per-secret permissions within the same request", async () => {
+    const vault = SecretProxy.makeVault({ read: () => "real-value" })
+    let headerOnly = ""
+    let urlOnly = ""
+    let bodyOnly = ""
+    const result = await throughProxy(vault, (origin) => {
+      headerOnly = vault.mint(Secret.HttpSecret(token, [origin]))
+      urlOnly = vault.mint(Secret.HttpSecret(Secret.Secret(token.env, { allowInUrl: true }), [origin]))
+      bodyOnly = vault.mint(Secret.HttpSecret(Secret.Secret(token.env, { allowInBody: true }), [origin]))
+      return {
+        method: "POST",
+        headers: { authorization: `Bearer ${headerOnly}`, "content-type": "application/json" },
+        body: JSON.stringify([headerOnly, urlOnly, bodyOnly]),
+        path: `/target/${urlOnly}?tokens=${headerOnly},${urlOnly},${bodyOnly}`
+      }
+    })
+    expect(result.status).toBe(200)
+    expect(result.headers.authorization).toBe("Bearer real-value")
+    expect(result.path).toBe(`/target/real-value?tokens=${headerOnly},real-value,${bodyOnly}`)
+    expect(JSON.parse(result.body)).toEqual([headerOnly, urlOnly, "real-value"])
+    expect(result.headers["content-length"]).toBe(String(Buffer.byteLength(result.body)))
   })
 
   it("denies a credential sent to another origin before contacting it", async () => {
@@ -624,6 +713,17 @@ describe("SecretProxy server", () => {
     expect(result.status).toBe(403)
     expect(result.responseBody).toMatch(/not authorized/)
     expect(result.headers["authorization"]).toBeUndefined()
+  })
+
+  it("reports an invalid resolved value by declaration name at the request boundary", async () => {
+    const vault = SecretProxy.makeVault({ read: () => "private\nvalue" })
+    const result = await throughProxy(vault, (origin) => {
+      const allowed = Secret.Secret(token.env, { allowInBody: true })
+      const placeholder = vault.mint(Secret.HttpSecret(allowed, [origin]))
+      return { method: "POST", headers: {}, body: placeholder }
+    })
+    expect(result.status).toBe(502)
+    expect(result.responseBody).toBe("the declared secret PROXY_TEST_TOKEN is not bounded control-free text")
   })
 
   it("replaces a resolved credential echoed in response headers and body", async () => {
@@ -664,7 +764,7 @@ describe("SecretProxy server", () => {
     if (address === null || typeof address === "string") throw new Error("no upstream port")
     const origin = `http://127.0.0.1:${address.port}`
     const vault = SecretProxy.makeVault({ read: () => "real-value" })
-    const placeholder = vault.mint(Secret.HttpSecret(token, [origin]))
+    const placeholder = vault.mint(Secret.HttpSecret(Secret.Secret(token.env, { allowInBody: true }), [origin]))
     const proxy = await SecretProxy.startProxy(vault)
     const send = (
       via: string,
@@ -1296,7 +1396,7 @@ describe("SecretProxy brokered origins", () => {
       body: `see ${origin}/docs, token real-value`
     }))
     const vault = SecretProxy.makeVault({ read: () => "real-value" })
-    const placeholder = vault.mint(Secret.HttpSecret(token, [upstream.origin]))
+    const placeholder = vault.mint(Secret.HttpSecret(Secret.Secret(token.env, { allowInUrl: true }), [upstream.origin]))
     const proxy = await SecretProxy.startProxy(vault)
     try {
       const origin = await proxy.originFor(upstream.origin)

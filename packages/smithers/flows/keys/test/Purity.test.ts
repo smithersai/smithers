@@ -156,6 +156,7 @@ describe("source purity", () => {
       "deriveKey.ts -> @smthrs/canonical",
       "deriveKey.ts -> @smthrs/crypto",
       "deriveKey.ts -> effect/Effect",
+      "deriveKey.ts -> effect/Redacted",
       "deriveKey.ts -> effect/Schema",
       "deriveKey.ts -> effect/crypto/Digest",
       "digest.ts -> ./StoredKey.ts",

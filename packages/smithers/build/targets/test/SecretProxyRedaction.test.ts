@@ -241,7 +241,7 @@ const throughProxy = (
 
 describe("secret values a request target cannot carry verbatim", () => {
   const placeholderIn = (vault: SecretProxy.Vault, origin: string) =>
-    vault.mint(Secret.HttpSecret(Secret.Secret("PROXY_TEST_TOKEN"), [origin]))
+    vault.mint(Secret.HttpSecret(Secret.Secret("PROXY_TEST_TOKEN", { allowInUrl: true }), [origin]))
 
   it("percent-encodes a space-bearing secret into the path instead of throwing", async () => {
     let seenPath = ""
@@ -479,7 +479,7 @@ describe.each(["proxy", "destination", "origin"] as const)("%s response and uplo
       })
     })
     const vault = SecretProxy.makeVault({ read: () => `${upstream.origin}/upload` })
-    vault.mint(Secret.HttpSecret(Secret.Secret("UPLOAD_TOKEN"), [upstream.origin]))
+    vault.mint(Secret.HttpSecret(Secret.Secret("UPLOAD_TOKEN", { allowInBody: true }), [upstream.origin]))
     const proxy = await SecretProxy.startProxy(vault)
     try {
       const target = await requestRoute(proxy, upstream.origin)
@@ -492,7 +492,7 @@ describe.each(["proxy", "destination", "origin"] as const)("%s response and uplo
     }
   })
 
-  it("still substitutes placeholders in valid UTF-8 uploads and updates their length", async () => {
+  it("substitutes only opted-in placeholders in UTF-8 uploads and updates their length", async () => {
     const received: Array<Buffer> = []
     let length: string | undefined
     const upstream = await listen((request, response) => {
@@ -503,13 +503,17 @@ describe.each(["proxy", "destination", "origin"] as const)("%s response and uplo
     const vault = SecretProxy.makeVault({
       read: (name) => name === "UPLOAD_DESTINATION" ? `${upstream.origin}/upload` : "upload-token"
     })
-    const placeholder = vault.mint(Secret.HttpSecret(Secret.Secret("UPLOAD_TOKEN"), [upstream.origin]))
+    const optedIn = vault.mint(Secret.HttpSecret(
+      Secret.Secret("UPLOAD_TOKEN", { allowInBody: true }),
+      [upstream.origin]
+    ))
+    const headerOnly = vault.mint(Secret.HttpSecret(Secret.Secret("UPLOAD_TOKEN"), [upstream.origin]))
     const proxy = await SecretProxy.startProxy(vault)
     try {
       const target = await requestRoute(proxy, upstream.origin)
-      expect(await exchange(target.endpoint, target.path, "POST", Buffer.from(`héllo ${placeholder}`)))
+      expect(await exchange(target.endpoint, target.path, "POST", Buffer.from(`héllo ${optedIn} ${headerOnly}`)))
         .toMatchObject({ status: 200, body: "accepted" })
-      const expected = Buffer.from("héllo upload-token")
+      const expected = Buffer.from(`héllo upload-token ${headerOnly}`)
       expect(Buffer.concat(received)).toEqual(expected)
       expect(length).toBe(String(expected.byteLength))
     } finally {

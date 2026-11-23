@@ -13,8 +13,9 @@
  *    so far replaced, not only the ones this request resolved, so a value an
  *    audience stored from one request is not handed back by a later one.
  * 2. **Child request fields.** {@link startProxy} runs a local HTTP proxy a
- *    spawned tool is pointed at. Plain-HTTP request headers and bodies are
- *    rewritten. HTTPS `CONNECT` streams remain opaque because the boundary
+ *    spawned tool is pointed at. It substitutes in request headers by default.
+ *    Each secret can also opt in to substitution in paths and queries or in
+ *    textual bodies. HTTPS `CONNECT` streams remain opaque because the boundary
  *    does not terminate TLS, so a tunnel to a declared audience is refused
  *    before any connection reaches it. Tunnels to other hosts pass through,
  *    since a placeholder is worthless anywhere but this proxy. Nothing that
@@ -42,9 +43,8 @@
  *
  * Redaction is exact-match and covers what the proxy returns. It does not
  * cover a value an audience transforms before returning it, and it does not
- * cover an opaque `CONNECT` tunnel: a tool that sends a placeholder in a body
- * or request target to an audience that publishes what it receives can read
- * the value back through a tunnel to another host.
+ * cover an opaque `CONNECT` tunnel. An audience that publishes a resolved
+ * secret can expose it through another host.
  *
  * @since 0.1.0
  */
@@ -171,10 +171,12 @@ export const maximumSecretValueBytes = 16 * 1024
  * @since 0.1.0
  */
 export interface RequestBoundary {
-  /** Replaces authorized placeholders, resolving each declaration once. */
+  /** Replaces authorized placeholders in one header value. */
   readonly substitute: (text: string) => string
+  /** Replaces placeholders permitted in a textual request body. */
+  readonly substituteBody: (text: string) => string
   /**
-   * Replaces authorized placeholders in a request target, percent-encoding
+   * Replaces placeholders permitted in a request target, percent-encoding
    * each substituted value.
    *
    * A resolved value is arbitrary bounded text. Written into a request path
@@ -305,7 +307,9 @@ export const makeVault = (options: { readonly read?: Read | undefined } = {}): V
     const key = JSON.stringify([
       snapshot.secret.env,
       snapshot.secret.fallback ?? null,
-      snapshot.audiences
+      snapshot.audiences,
+      snapshot.secret.allowInUrl === true,
+      snapshot.secret.allowInBody === true
     ])
     const existing = byBinding.get(key)
     if (existing !== undefined) return existing
@@ -337,7 +341,7 @@ export const makeVault = (options: { readonly read?: Read | undefined } = {}): V
       // Seeds name this request's own destination, so they stay with it.
       const seededValues = new Map<string, string>()
       for (const entry of protect ?? []) protectValue(seededValues, entry.value, entry.placeholder)
-      const replaceIn = (text: string, render: (value: string) => string): string => {
+      const replaceIn = (text: string, permission?: "allowInUrl" | "allowInBody"): string => {
         if (byPlaceholder.size === 0 || !text.includes(placeholderPrefix)) return text
         return text.replace(placeholderPattern, (match) => {
           const credential = byPlaceholder.get(match)
@@ -345,6 +349,7 @@ export const makeVault = (options: { readonly read?: Read | undefined } = {}): V
           // keeps substitution a capability: a target cannot obtain a value
           // by spelling a placeholder it was never given.
           if (credential === undefined) return match
+          if (permission !== undefined && credential.secret[permission] !== true) return match
           if (!credential.audiences.includes(normalized)) {
             throw new SecretAudienceDenied({ env: credential.secret.env, audience: normalized })
           }
@@ -353,12 +358,12 @@ export const makeVault = (options: { readonly read?: Read | undefined } = {}): V
           if (previous === undefined) resolved.set(match, value)
           declarations.add(credential.secret.env)
           protectValue(resolvedValues, value, match)
-          const rendered = render(value)
+          const rendered = permission === "allowInUrl" ? encodeURIComponent(value) : value
           protectValue(resolvedValues, rendered, match)
           return rendered
         })
       }
-      const substitute = (text: string): string => replaceIn(text, (value) => value)
+      const substitute = (text: string): string => replaceIn(text)
       // Longest first, so a value that contains another is replaced whole
       // rather than leaving the remainder of it in the output. A seed wins
       // over a resolved credential that happens to spell the same text.
@@ -406,7 +411,8 @@ export const makeVault = (options: { readonly read?: Read | undefined } = {}): V
       }
       return {
         substitute,
-        substitutePath: (text) => replaceIn(text, encodeURIComponent),
+        substituteBody: (text) => replaceIn(text, "allowInBody"),
+        substitutePath: (text) => replaceIn(text, "allowInUrl"),
         resolvedDeclarations: () => [...declarations],
         substituteHeaders: (headers) => {
           const output: Record<string, string | Array<string>> = {}
@@ -560,7 +566,7 @@ const forward = (
       // Substituting a body only makes sense when it is text that survives
       // a round trip. Binary bodies are forwarded untouched.
       const substituted = Buffer.from(text, "utf8").equals(raw)
-        ? Buffer.from(boundary.substitute(text), "utf8")
+        ? Buffer.from(boundary.substituteBody(text), "utf8")
         : raw
       body = substituted
       if (body.byteLength !== raw.byteLength) headers["content-length"] = String(body.byteLength)
@@ -684,8 +690,9 @@ const audienceAt = (
  *
  * The proxy binds `127.0.0.1` on an ephemeral port so nothing outside the host
  * can reach it. Requests arrive in absolute form, as an HTTP proxy requires.
- * Request paths, headers, and textual bodies are substituted only after the
- * exact destination origin is known. Upstream bodies are bounded and buffered
+ * Header placeholders resolve only at their declared origins. Placeholders in
+ * paths, queries, and textual bodies also require the corresponding opt-in on
+ * the secret declaration. Upstream bodies are bounded and buffered
  * so every exact value the vault has resolved during the run can be replaced
  * before the job sees the response, whichever request resolved it.
  *

@@ -2,9 +2,10 @@ import * as Hex from "effect/encoding/Hex"
 // Deep reviewed and polished by a human on 2026-08-31.
 
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
-import { Cause, Deferred, Effect, Exit, Fiber, Layer, PlatformError, Schema, SchemaIssue } from "effect"
+import { Cause, Deferred, Effect, Exit, Fiber, Layer, PlatformError, Redacted, Schema, SchemaIssue } from "effect"
 import * as EffectDigest from "effect/crypto/Digest"
 import { inspect } from "node:util"
+import { runInNewContext } from "node:vm"
 import { describe, expect, it } from "vitest"
 import * as Keys from "../src/index.ts"
 
@@ -459,14 +460,117 @@ describe("key derivation", () => {
       expect(derive({ a: 1, b: undefined })).toBe(derive({ a: 1 }))
     })
 
-    it("collapses an undefined array element into null", () => {
-      expect(derive([undefined])).toBe(derive([null]))
-    })
-
     it("omits function- and symbol-valued members, as JSON does", () => {
       expect(derive({ a: 1, f: () => 1 })).toBe(derive({ a: 1 }))
       expect(derive({ a: 1, s: Symbol("s") })).toBe(derive({ a: 1 }))
     })
+  })
+
+  describe("unkeyable material", () => {
+    it.each(
+      [
+        ["a root Redacted", Redacted.make("alice-secret"), "redacted value cannot be keyed"],
+        ["a nested Redacted", { token: Redacted.make("bob-secret") }, "redacted value cannot be keyed"],
+        ["an invalid root date", new Date(NaN), "invalid date"],
+        ["a nested invalid date", { schedule: [new Date(NaN)] }, "invalid date"],
+        ["a date from another realm", runInNewContext("new Date(NaN)"), "invalid date"],
+        ["a root function", () => 1, "function cannot be keyed"],
+        ["an array function", [() => 1], "function cannot be keyed"],
+        ["a root symbol", Symbol("hidden"), "symbol cannot be keyed"],
+        ["an array symbol", [Symbol("hidden")], "symbol cannot be keyed"],
+        ["root undefined", undefined, "undefined cannot be keyed"],
+        ["array undefined", [undefined], "undefined cannot be keyed"],
+        ["an array hole", Array(1), "undefined cannot be keyed"],
+        ["NaN", { number: NaN }, "NaN cannot be keyed"],
+        ["boxed NaN", Object(NaN), "NaN cannot be keyed"],
+        ["Infinity", [Infinity], "Infinity cannot be keyed"],
+        ["negative Infinity", -Infinity, "-Infinity cannot be keyed"],
+        ["a getter's Redacted", {
+          get token() {
+            return Redacted.make("alice-secret")
+          }
+        }, "redacted value cannot be keyed"],
+        ["a toJSON result containing a Redacted", {
+          toJSON: () => Redacted.make("alice-secret")
+        }, "redacted value cannot be keyed"],
+        ["a toJSON result", [{
+          toJSON: () => undefined
+        }], "undefined cannot be keyed"]
+      ] as const
+    )("refuses %s with a safe reason at both public boundaries", (_name, input, message) => {
+      const failure = Effect.runSync(Effect.flip(provideCrypto(Keys.deriveKey(input))))
+      expect(failure).toBeInstanceOf(Keys.KeyDerivationError)
+      expect(failure).toMatchObject({ code: "canonicalization_failed", message })
+      const issue = Effect.runSync(Effect.flip(provideCrypto(Schema.decodeUnknownEffect(Keys.DerivedKey)(input))))
+      expect(issue.message).toContain(`[canonicalization_failed] ${message}`)
+      expect(JSON.stringify([failure, issue])).not.toMatch(/alice-secret|bob-secret|hidden/)
+    })
+
+    it("rejects a cycle and accepts repeated references and a null-prototype record", () => {
+      const record = Object.create(null) as Record<string, unknown>
+      record["value"] = 1
+      expect(derive([record, record])).toBe(derive([{ value: 1 }, { value: 1 }]))
+      record["self"] = record
+      const failure = Effect.runSync(Effect.flip(provideCrypto(Keys.deriveKey(record))))
+      expect(failure.code).toBe("canonicalization_failed")
+      expect(String(failure.cause)).toContain("canonical_circular")
+    })
+
+    it.each([new Map(), new Set(), new Uint8Array(0)])(
+      "refuses a collection even after its prototype changes",
+      (value) => {
+        Object.setPrototypeOf(value, Object.prototype)
+        const failure = Effect.runSync(Effect.flip(provideCrypto(Keys.deriveKey(value))))
+        expect(failure).toMatchObject({
+          code: "canonicalization_failed",
+          message: "unsupported collection cannot be keyed"
+        })
+      }
+    )
+
+    it("retains Canonical's refusal of ordinary collections", () => {
+      const failure = Effect.runSync(Effect.flip(provideCrypto(Keys.deriveKey(new Map([["member", 1]])))))
+      expect(failure.code).toBe("canonicalization_failed")
+      expect(String(failure.cause)).toContain("canonical_unsupported_value: Map")
+    })
+
+    it("checks the current validity of a repeated date", () => {
+      const date = new Date("2026-11-22T00:00:00.000Z")
+      const input = {
+        first: date,
+        get second() {
+          date.setTime(NaN)
+          return date
+        }
+      }
+      const failure = Effect.runSync(Effect.flip(provideCrypto(Keys.deriveKey(input))))
+      expect(failure).toMatchObject({ code: "canonicalization_failed", message: "invalid date" })
+    })
+  })
+
+  it("keeps the existing key bytes for frozen material, valid dates, boxed values and toJSON", () => {
+    const validDate = new Date("2026-11-22T00:00:00.000Z")
+    expect(derive(Object.freeze({
+      list: Object.freeze([validDate, Object(7), null, true]),
+      text: Object.freeze({
+        word: "stable",
+        toJSON(key: string) {
+          return `${key}:${this.word}`
+        }
+      })
+    }))).toBe("key1_9ac0dfe29549bb03003a90ac37949886e4bc40fd629fdebe9b0b636fd64419d6")
+  })
+
+  it("reads a boxed value's toJSON getter once before unboxing", () => {
+    let reads = 0
+    const boxed = Object.defineProperty(Object("text"), "toJSON", {
+      get() {
+        reads++
+        return reads === 1 ? undefined : () => undefined
+      }
+    })
+    expect(derive([boxed, Object(false)])).toBe(derive(["text", false]))
+    expect(reads).toBe(1)
   })
 
   describe("structural separation", () => {

@@ -13,7 +13,16 @@
 
 import { sortCollections } from "@smthrs/canonical"
 import * as Effect from "effect/Effect"
+import * as Redacted from "effect/Redacted"
 import * as Schema from "effect/Schema"
+
+const hasRedacted = (value: unknown, seen: Set<object>): boolean => {
+  if (Redacted.isRedacted(value)) return true
+  if (typeof value !== "object" || value === null || seen.has(value)) return false
+  seen.add(value)
+  if (Array.isArray(value)) return value.some((item) => hasRedacted(item, seen))
+  return Object.values(value).some((entry) => hasRedacted(entry, seen))
+}
 
 /**
  * The payload's identity snapshot: `sortCollections`, then the schema's JSON
@@ -62,7 +71,7 @@ export const payloadPreimage = <S extends Schema.Top>(
 ): Effect.Effect<unknown, Schema.SchemaError, S["EncodingServices"]> =>
   Effect.suspend(() => {
     const sorted = sortCollections(value)
-    return sorted === value
+    return sorted === value && !hasRedacted(value, new Set())
       ? Effect.succeed(value)
       : Effect.map(encodeSorted(schema, sorted), (snapshot) => ["snapshot", snapshot])
   })

@@ -10,6 +10,7 @@ import { Canonical } from "@smthrs/canonical"
 import { digest as sha256 } from "@smthrs/crypto"
 import type * as EffectDigest from "effect/crypto/Digest"
 import * as Effect from "effect/Effect"
+import * as Redacted from "effect/Redacted"
 import * as Schema from "effect/Schema"
 import { KeyDerivationError, type KeyDerivationErrorCode } from "./KeyDerivationError.ts"
 import type { KeyV1 } from "./KeyV1.ts"
@@ -19,6 +20,105 @@ const derivationFailure = (
   message: string,
   cause: unknown
 ): KeyDerivationError => KeyDerivationError.new({ code, message, cause })
+
+type Position = "root" | "member" | "element"
+
+const dateTime = (value: object): number | undefined => {
+  try {
+    return Date.prototype.getTime.call(value)
+  } catch {
+    return undefined // No Date internal slot.
+  }
+}
+
+// A changed prototype does not remove a collection's internal slots.
+const collectionSlotReaders = [Map.prototype.has, Set.prototype.has]
+const hasCollectionSlot = (value: object): boolean => {
+  for (const read of collectionSlotReaders) {
+    try {
+      Reflect.apply(read, value, [value])
+      return true
+    } catch {
+      // This intrinsic requires a Map or Set receiver.
+    }
+  }
+  return false
+}
+
+const unbox = (value: object): unknown => {
+  if (value instanceof Number) return Number.prototype.valueOf.call(value)
+  if (value instanceof String) return String.prototype.valueOf.call(value)
+  if (value instanceof Boolean) return Boolean.prototype.valueOf.call(value)
+  return value
+}
+
+// Validate the values Canonical actually reads, including getters and toJSON
+// results. A separate prewalk would run user code twice and could validate a
+// different value from the one that is hashed.
+const checkedMaterial = (input: unknown, refuse: (reason: string) => never): unknown => {
+  type View = { readonly value: object; position: Position; serializer: unknown }
+  const views = new WeakMap<object, View>()
+  const check = (value: unknown, position: Position): unknown => {
+    if (Redacted.isRedacted(value)) refuse("redacted value cannot be keyed")
+    if (typeof value === "number" && !Number.isFinite(value)) {
+      refuse(`${value} cannot be keyed`)
+    }
+    if (position !== "member" && (value === undefined || typeof value === "symbol")) {
+      refuse(`${typeof value} cannot be keyed`)
+    }
+    if (typeof value === "function" && position === "element") refuse("function cannot be keyed")
+    if (value === null || (typeof value !== "object" && typeof value !== "function")) return value
+    const array = Array.isArray(value)
+    const prototype = Reflect.getPrototypeOf(value)
+    const native = typeof value === "function" || (!array && prototype !== Object.prototype && prototype !== null)
+    if (native && Number.isNaN(dateTime(value))) refuse("invalid date")
+    const serializer: unknown = native ? Reflect.get(value, "toJSON") : undefined
+    if (native && typeof serializer !== "function") {
+      if (typeof value === "function") {
+        if (position === "root") refuse("function cannot be keyed")
+        return undefined
+      }
+      // Canonical unboxes these before visiting members. The view has no
+      // native slots, so forward the primitive after the one toJSON lookup.
+      const primitive = unbox(value)
+      if (primitive !== value) return check(primitive, position)
+    }
+
+    const existing = views.get(value)
+    if (existing !== undefined) {
+      existing.position = position
+      existing.serializer = serializer
+      return existing.value
+    }
+    const view: View = {
+      position,
+      serializer,
+      value: new Proxy(array ? [] : {}, {
+        get: (_target, key) => {
+          const member: unknown = native && key === "toJSON" ? view.serializer : Reflect.get(value, key)
+          if (key === "toJSON" && typeof member === "function") {
+            return (key: string) => check(Reflect.apply(member, value, [key]), view.position)
+          }
+          if (typeof key === "symbol" || (array && (key === "length" || key === "toJSON"))) return member
+          return check(member, array ? "element" : "member")
+        },
+        getPrototypeOf: () => prototype,
+        ...(array ? {} : {
+          ownKeys: () => {
+            // Canonical's own slot checks see the shadow. Check the source
+            // before allowing it to be serialized as a plain record.
+            if (ArrayBuffer.isView(value) || hasCollectionSlot(value)) refuse("unsupported collection cannot be keyed")
+            return Object.keys(value)
+          },
+          getOwnPropertyDescriptor: () => ({ enumerable: true, configurable: true })
+        })
+      })
+    }
+    views.set(value, view)
+    return view.value
+  }
+  return check(input, "root")
+}
 
 /**
  * Derives the current flow-key format from structured input.
@@ -33,7 +133,8 @@ const derivationFailure = (
  * Failures use `canonicalization_failed` for unsupported input and
  * `digest_failed` for a failed hash. Interruption is preserved.
  *
- * @param input - Material accepted by Canonical, including its JSON erasure rules.
+ * @param input - Canonical key material. Redacted values, invalid dates,
+ * non-finite numbers, and array elements that JSON would coerce to null are refused.
  * @returns An effect requiring Crypto that produces a validated version-one key
  * or fails with KeyDerivationError. A missing Crypto service is a defect.
  * @category derivation
@@ -43,13 +144,22 @@ export const deriveKey = (
   input: unknown
 ): Effect.Effect<KeyV1, KeyDerivationError, EffectDigest.Digest> =>
   Effect.gen(function*() {
-    const serialized = yield* Schema.decodeUnknownEffect(Canonical)(input, {
+    let reason = "Key input could not be canonicalized"
+    const material = yield* Effect.try({
+      try: () =>
+        checkedMaterial(input, (message) => {
+          reason = message
+          throw new TypeError(message)
+        }),
+      catch: (cause) => derivationFailure("canonicalization_failed", reason, cause)
+    })
+    const serialized = yield* Schema.decodeUnknownEffect(Canonical)(material, {
       reportInput: false
     }).pipe(
       Effect.mapError((cause) =>
         derivationFailure(
           "canonicalization_failed",
-          "Key input could not be canonicalized",
+          reason,
           cause
         )
       )
