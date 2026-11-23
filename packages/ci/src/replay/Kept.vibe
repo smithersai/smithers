@@ -27,9 +27,11 @@
 
 import { openPinnedPath } from "./PinnedFile.ts"
 
-const pinned = <A, E, R>(source: string, directory: boolean, use: (path: string) => A!E!R) =>
+error PinFailed {}
+
+const pinned = <A, E, R>(source: string, directory: boolean, use: (path: string) => A!E!R, expected?: { dev: bigint; ino: bigint }) =>
   acquireUseRelease(
-    tryPromise(() => openPinnedPath(source, directory)),
+    tryPromise({ try: () => openPinnedPath(source, directory, undefined, expected), catch: () => new PinFailed() }),
     (file) => use(file.path),
     (file) => ignore(tryPromise(() => file.close()))
   )
@@ -48,29 +50,30 @@ const finished = "key"
 export effect function addEntries(from: string, to: string): void!Error!(FileSystem.FileSystem | Path.Path) {
   const fs = try FileSystem.FileSystem
   const path = try Path.Path
-  if (!(try fs.exists(from)) || (try fs.lstat(from)).type !== "Directory") return
-  try pinned(from, true, (parent) => effect {
-    for (const name of try fs.readDirectory(parent)) {
+  effect function walk(parent: string, to: string, names: ReadonlyArray<string>, depth: number): void!Error!(FileSystem.FileSystem | Path.Path) {
+    for (const name of names) {
       const source = path.join(parent, name)
       const target = path.join(to, name)
-      const info = try fs.lstat(source)
-      if (info.type !== "Directory") continue
-      try pinned(source, true, (entry) => effect {
+      const info = fs.lstat(source) catch () => undefined
+      if (info?.type !== "Directory" || Option.isNone(info.ino)) continue
+      pinned(source, true, (entry) => effect {
         const files = try fs.readDirectory(entry)
         if (!files.includes(finished)) {
-          // The source name is relative to the pinned parent. The recursive open verifies it again.
-          try addEntries(source, target)
+          if (depth < 64) try walk(entry, target, files, depth + 1)
           return
         }
         if (try fs.exists(target)) return
+        const children: Array<{ file: string; dev: bigint; ino: bigint }> = []
         for (const file of files) {
-          if ((try fs.lstat(path.join(entry, file))).type !== "File") return
+          const child = fs.lstat(path.join(entry, file)) catch () => undefined
+          if (child?.type !== "File" || Option.isNone(child.ino)) return
+          children.push({ file, dev: child.dev, ino: child.ino.value })
         }
         try fs.makeDirectory(to, { recursive: true })
         try scoped(effect {
           const staged = try fs.makeTempDirectoryScoped({ directory: to, prefix: ".partial-" })
-          for (const file of files) {
-            try pinned(path.join(entry, file), false, (input) => fs.copyFile(input, path.join(staged, file)))
+          for (const child of children) {
+            try pinned(path.join(entry, child.file), false, (input) => fs.copyFile(input, path.join(staged, child.file)), child)
           }
           const saved = Option.getOrUndefined(info.mtime)
           if (saved !== undefined) try fs.utimes(staged, saved, saved)
@@ -78,9 +81,10 @@ export effect function addEntries(from: string, to: string): void!Error!(FileSys
             if (!(try fs.exists(path.join(target, finished)))) throw error
           }
         })
-      })
+      }, { dev: info.dev, ino: info.ino.value }) catch effect (error) => { if (!(error instanceof PinFailed)) throw error }
     }
-  })
+  }
+  pinned(from, true, (parent) => effect { try walk(parent, to, try fs.readDirectory(parent), 1) }) catch effect (error) => { if (!(error instanceof PinFailed)) throw error }
 }
 
 /**

@@ -5,6 +5,7 @@ import type { RunRecord, TargetResult } from "../../src/contract/RunRecord.vibe"
 import type { TargetMap } from "../../src/contract/TargetMap.vibe"
 import {
   addRerun,
+  appliedMismatches,
   blocked,
   choose,
   cycleIn,
@@ -1184,7 +1185,7 @@ describe("withoutFast", () => {
       changedFiles: 1,
       baseline: totals,
       normal: totals,
-      mismatches: [normal, fast]
+      mismatches: [normal]
     })
   })
 })
@@ -1352,4 +1353,40 @@ describe("errorLine in replay", () => {
   it("strips URL userinfo while keeping the host and path", () => {
     expect(errorLine("failed https://user:secret@example.test/repo")).toBe("failed https://example.test/repo")
   })
+})
+
+it("keeps punctuation in step and matrix identities unambiguous", () => {
+  expect(stepKey("j", { a: "1, b=2" })).not.toBe(stepKey("j", { a: "1", b: "2" }))
+  expect(stepKey("j (a=1)", {})).not.toBe(stepKey("j", { a: "1" }))
+  expect(stepKey("j", { b: "2", a: "1" })).toBe(stepKey("j", { a: "1", b: "2" }))
+})
+
+it("checks every selected label in the applied result", () => {
+  const results = [
+    { label: "ok", status: "hit", key: "", durationMs: 0 },
+    { label: "skip", status: "skipped", key: "", durationMs: 0 },
+    { label: "failed", status: "failed", key: "", durationMs: 0 },
+    { label: "diagnosed", status: "failed", key: "", durationMs: 0 },
+    {
+      label: "flaky",
+      status: "ran",
+      key: "",
+      durationMs: 0,
+      attempts: [{ passed: false, durationMs: 1 }, { passed: true, durationMs: 1 }]
+    }
+  ] as const
+  const differences = appliedMismatches(
+    ["ok", "skip", "missing", "flaky", "failed", "diagnosed"],
+    results,
+    new Map([["diagnosed", "step read generated files"]]),
+    ["PACKAGE.ts"]
+  )
+  expect(differences.map(({ label, got }) => [label, got])).toEqual([
+    ["skip", "skipped"],
+    ["missing", "skipped"],
+    ["failed", "fail"],
+    ["diagnosed", "fail"]
+  ])
+  expect(differences.slice(0, 3).every(({ cause }) => cause?.includes("PACKAGE.ts"))).toBe(true)
+  expect(differences[3]?.cause).toBe("step read generated files")
 })

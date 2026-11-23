@@ -71,7 +71,9 @@ const noReason = "no reason was given"
  * @since 0.1.0
  */
 export const firstLine = (text: string): string => {
-  const line = text.split("\n").map((entry) => entry.replace(/\p{Cc}/gu, " ").trim()).find((entry) => entry !== "")
+  const line = text.split("\n").map((entry) => entry.replace(/[\p{Cc}\p{Cf}]/gu, " ").trim()).find((entry) =>
+    entry !== ""
+  )
   return (line ?? "").slice(0, lineLimit).replace(/[\ud800-\udbff]$/, "").trimEnd()
 }
 
@@ -125,7 +127,7 @@ const endOf = (text: string, limit: number): string => {
  * @since 0.1.0
  */
 export const diagnosticTail = (text: string, limit: number): string =>
-  endOf(text, limit).split("\n").map((line) => line.replace(/\p{Cc}/gu, " ")).join("\n")
+  endOf(text, limit).split("\n").map((line) => line.replace(/[\p{Cc}\p{Cf}]/gu, " ")).join("\n")
 
 /**
  * Words that report an error, as `error`, `failed`, `cannot`, `not found`
@@ -291,7 +293,9 @@ const unwrapped = (lines: ReadonlyArray<string>): ReadonlyArray<string> => {
  * character, and a report miette prints is one line ({@link unwrapped}).
  */
 const shownLines = (text: string): ReadonlyArray<string> =>
-  unwrapped(text.split("\n").map((line) => (line.split("\r").at(-1) as string).replace(/\p{Cc}/gu, " ").trimEnd()))
+  unwrapped(
+    text.split("\n").map((line) => (line.split("\r").at(-1) as string).replace(/[\p{Cc}\p{Cf}]/gu, " ").trimEnd())
+  )
     .filter((line) => line !== "")
 
 /**
@@ -657,7 +661,7 @@ export const failuresOf = (
     const named = names.get(result.label)
     const command = commandLine(named?.command ?? result.command ?? "")
     return {
-      step: firstLine(named?.step ?? result.label) || result.label,
+      step: firstLine(named?.step ?? "") || firstLine(result.label) || "(unnamed step)",
       reason: firstLine(readable(result.error ?? "")) || noReason,
       ...(result.exitCode === undefined ? {} : { exitCode: result.exitCode }),
       ...(command === "" ? {} : { command }),
@@ -714,7 +718,7 @@ export const notReusedOf = (
     const command = commandLine(named?.command ?? "")
     const variantOf = firstLine(named?.variantOf ?? "")
     return [{
-      step: firstLine(named?.step ?? result.label) || result.label,
+      step: firstLine(named?.step ?? "") || firstLine(result.label) || "(unnamed step)",
       reason,
       kept: result.notStored === undefined,
       ...(fix === undefined ? {} : { fix }),

@@ -8,8 +8,8 @@ import * as ChildProcess from "effect/process/ChildProcess"
 import { ChildProcessSpawner, make as makeSpawner } from "effect/process/ChildProcessSpawner"
 import { spawn } from "node:child_process"
 import { existsSync } from "node:fs"
-import { describe, expect, it } from "vitest"
-import { fromPs, fromStat, treeOf, workOver } from "../../src/replay/ProcessTable.ts"
+import { describe, expect, it, vi } from "vitest"
+import { fromPs, fromStat, killProcess, treeOf, workOver } from "../../src/replay/ProcessTable.ts"
 import { tableFor } from "../../src/replay/Stall.vibe"
 
 const denied = (method: string) => PlatformError.systemError({ _tag: "PermissionDenied", module: "test", method })
@@ -101,9 +101,64 @@ describe.each(["linux", "darwin"])("the table read the way %s reads it", (host) 
     expect(commands).toEqual(host === "linux" ? [] : ["ps"])
   })
 
+  it("tolerates a process exiting before the signal", () => {
+    expect(() => killProcess(2_147_483_647)).not.toThrow()
+  })
+
   it("does nothing when asked to stop nothing", async () => {
     await onNode(tableFor(host).stop([], process.pid))
   })
+})
+
+it("rechecks sampled ancestors and the leaf before signaling", async () => {
+  const rows = [{ pid: 701, parent: 0, started: 1, cpuMs: 0 }, { pid: 702, parent: 701, started: 2, cpuMs: 0 }, {
+    pid: 703,
+    parent: 702,
+    started: 3,
+    cpuMs: 0
+  }]
+  const signal = vi.spyOn(process, "kill").mockReturnValue(true)
+  try {
+    for (
+      const kind of ["ok", "gone", "reused root", "gone leaf", "reused leaf", "moved", "cycle", "outside", "unsampled"]
+    ) {
+      const live = new Map(rows.map((row) => [row.pid, { ...row }]))
+      if (kind === "gone") live.delete(702)
+      if (kind === "gone leaf") live.delete(703)
+      if (kind === "reused root") live.get(701)!.started++
+      if (kind === "reused leaf") live.get(703)!.started++
+      if (kind === "moved") live.get(703)!.parent = 701
+      if (kind === "cycle") live.get(702)!.parent = 702
+      if (kind === "outside") live.get(702)!.parent = 0
+      const fs = FileSystem.layerNoop({
+        readFileString: (path: string) => {
+          const row = live.get(Number(path.split("/")[2]))
+          return Effect.succeed(
+            row === undefined ? "" : `${row.pid} (test) S ${row.parent} ${Array(17).fill("0").join(" ")} ${row.started}`
+          )
+        }
+      })
+      const sampled = kind === "unsampled" ? rows.filter((entry) => entry.pid !== 702) : rows
+      await onNode(tableFor("linux").stop([703], 701, sampled).pipe(Effect.provide(fs)))
+      expect(signal.mock.calls, kind).toEqual(kind === "ok" ? [[703, "SIGKILL"]] : [])
+      signal.mockClear()
+    }
+  } finally {
+    signal.mockRestore()
+  }
+})
+
+it("leaves a live child alone when its sampled start time differs", async () => {
+  const child = spawn("sleep", ["60"], { stdio: "ignore" })
+  const ended = new Promise((resolve) => child.once("exit", resolve))
+  try {
+    const pid = child.pid!
+    await onNode(tableFor("linux").stop([pid], process.pid, [{ pid, parent: process.pid, cpuMs: 0, started: -1 }]))
+    expect(process.kill(pid, 0)).toBe(true)
+  } finally {
+    child.kill()
+    await ended
+  }
 })
 
 describe("the table of Linux where no program reads it in one go", () => {

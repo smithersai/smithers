@@ -38,6 +38,8 @@ import { commit, git, refusedAt, repository, temporary } from "./repo.ts"
 const head = (root: string): string => git(root, "rev-parse", "HEAD").trim()
 import { cannotStart, noTemporaryDirectories, rows, scoreKeeping } from "./support.vibe"
 
+const validPlan = `case " $* " in *" --plan "*) echo '{"targets":[]}'; exit 0;; esac`
+
 const made: Array<string> = []
 const keep = (root: string): string => {
   made.push(root)
@@ -257,7 +259,7 @@ describe("replaying a repository's own targets", { timeout: 300_000 }, () => {
 
   it("says once when a run reports that reads cannot be recorded", async () => {
     const reporting = fakeSmthrs(
-      `echo "smthrs: reads are not observed on this host: no tracer; a target that asks for it is keyed by its declared inputs"\nexec $real "$@"`
+      `echo "smthrs: reads are not observed on this host: no tracer; a target that asks for it is keyed by its declared inputs" >&2\nexec $real "$@"`
     )
     const root = keep(makeOwnWith(reporting))
     said.length = 0
@@ -442,6 +444,7 @@ describe("replaying a repository's own targets", { timeout: 300_000 }, () => {
     const missing = `host binary "go" is declared in S.Host({ bins }) but is not present on PATH`
     const old = fakeSmthrs(
       [
+        validPlan,
         `echo '//:a  failed  1ms  ${missing}'`,
         `echo '{"ok":false,"counts":{"hit":0,"ran":0,"failed":1,"skipped":1},"results":[{"label":"//:a","status":"failed","key":"k","durationMs":1},{"label":"//:b","status":"skipped","key":"k","durationMs":0}]}' > "$results"`,
         "exit 1"
@@ -505,7 +508,7 @@ describe("replaying a repository's own targets", { timeout: 300_000 }, () => {
 
   it("is unsupported when the patterns select no target", async () => {
     const none = fakeSmthrs(
-      `echo '{"ok":true,"counts":{"hit":0,"ran":0,"failed":0,"skipped":0},"results":[]}' > "$results"`
+      `${validPlan}\necho '{"ok":true,"counts":{"hit":0,"ran":0,"failed":0,"skipped":0},"results":[]}' > "$results"`
     )
     const root = keep(makeOwnWith(none))
     const failure = await failureOf(onNode(own(request(root), partsFor("none"), "WORKSPACE.ts")))
@@ -514,7 +517,9 @@ describe("replaying a repository's own targets", { timeout: 300_000 }, () => {
   })
 
   it("is unsupported, with what smthrs printed, when it writes no run record at any commit", async () => {
-    const root = keep(makeOwnWith(fakeSmthrs(`echo "code: no_package"; echo "message: no package at //:c"; exit 1`)))
+    const root = keep(
+      makeOwnWith(fakeSmthrs(`${validPlan}\necho "code: no_package"; echo "message: no package at //:c"; exit 1`))
+    )
     const failure = await failureOf(onNode(own(request(root), partsFor("none"), "WORKSPACE.ts")))
     expect(failure).toEqual({
       code: "unsupported",
@@ -529,14 +534,14 @@ describe("replaying a repository's own targets", { timeout: 300_000 }, () => {
       counts: { hit: 0, ran: 1, failed: 0, skipped: 0 },
       results: [{ label: "//:a", status: "ran", key: "a", durationMs: 1 }]
     }
-    const command = fakeSmthrs(`echo '${JSON.stringify(record)}' > "$results"\nexit 19`)
+    const command = fakeSmthrs(`${validPlan}\necho '${JSON.stringify(record)}' > "$results"\nexit 19`)
     const root = keep(makeOwnWith(command))
     const failure = await failureOf(onNode(own(request(root), partsFor("none"), "WORKSPACE.ts")))
     expect(failure.message).toContain("smthrs ci exited 19")
   })
 
   it("counts a run record that is not one as no run record", async () => {
-    const root = keep(makeOwnWith(fakeSmthrs(`echo '{"ok":' > "$results"`)))
+    const root = keep(makeOwnWith(fakeSmthrs(`${validPlan}\necho '{"ok":' > "$results"`)))
     const failure = await failureOf(onNode(own(request(root), partsFor("none"), "WORKSPACE.ts")))
     expect(failure.code).toBe("unsupported")
     expect(failure.message).toContain("  step     (smthrs)\n  error    smthrs ci wrote no run record")
@@ -554,15 +559,136 @@ describe("replaying a repository's own targets", { timeout: 300_000 }, () => {
     expect(report.commits[1]?.baseline.counts).toEqual({ hit: 0, ran: 3, failed: 0, skipped: 0 })
     expect(report.commits[1]?.normal.counts).toEqual({ hit: 0, ran: 3, failed: 0, skipped: 0 })
     expect(report.mismatches).toBe(0)
-    expect(said.some((line) => /^1\/2 \w{7} baseline: \(smthrs\) failed: \S/.test(line))).toBe(true)
+    expect(said.some((line) => /^1\/2 \w{7} baseline: \(install\) failed: smthrs ci --plan exited/.test(line))).toBe(
+      true
+    )
   })
 
-  it("fails in fast mode when smthrs prints no plan", async () => {
+  it.each([
+    ["exit 37", "exited 37"],
+    ["exec sleep 60", "past the limit"]
+  ])("fails native preparation if the planner runs %s", async (body, diagnostic) => {
+    const root = keep(makeOwnWith(fakeSmthrs(body)))
+    const work = own(request(root), partsFor("none"), "WORKSPACE.ts").pipe(Effect.provideService(Options, {
+      smthrs: [smthrs],
+      reruns: 0,
+      prepare: () => Effect.void,
+      confine: unconfined,
+      stepTimeout: "20 seconds"
+    }))
+    const failure = await failureOf(onNode(work))
+    expect(failure.message).toContain("smthrs ci --plan")
+    expect(failure.message).toContain(diagnostic)
+  })
+
+  it("fails preparation when smthrs prints an undecodable install plan", async () => {
     const noPlan = fakeSmthrs(`case "$*" in *--plan*) echo "no plan here"; exit 0;; esac\nexec $real "$@"`)
     const root = keep(makeOwnWith(noPlan))
     const failure = await failureOf(onNode(own(request(root, { modes: ["fast"] }), partsFor("none"), "WORKSPACE.ts")))
-    expect(failure.code).toBe("command-failed")
-    expect(failure.message).toBe("smthrs ci --plan printed no plan: no plan here")
+    expect(failure.code).toBe("unsupported")
+    expect(failure.message).toContain("smthrs ci --plan printed no plan: no plan here")
+  })
+
+  it("uses the historical patterns when a post-trial selection plan cannot be read", async () => {
+    const results = ["//:a", "//:b", "//:c"].map((label) => ({ label, status: "ran", key: label, durationMs: 1 }))
+    const counted = { ok: true, counts: { ran: 3, hit: 0, failed: 0, skipped: 0 }, results }
+    const trial = {
+      ok: false,
+      counts: { ...counted.counts, ran: 2, failed: 1 },
+      results: [...results.slice(0, 2), { ...results[2], status: "failed", error: "unavailable" }]
+    }
+    const launcher = fakeSmthrs([
+      "case \"$PWD\" in */trial/*) trial=1;; *) trial=0;; esac",
+      "case \" $* \" in *\" --plan \"*)",
+      `if [ "$trial" = 1 ]; then echo '{"targets":[]}'; else echo 'invalid selection plan'; fi`,
+      "exit 0;; esac",
+      `if [ "$trial" = 1 ]; then echo '${JSON.stringify(trial)}'; else`,
+      "  case \" $* \" in *\" //:a //:b //:c \"*) ;; *) exit 43;; esac",
+      `  echo '${JSON.stringify(counted)}'; fi > "$results"`
+    ].join("\n"))
+    const root = keep(makeOwnWith(launcher))
+    const result = await onNode(own(request(root, { trial: true, reruns: 0 }), partsFor("none"), "WORKSPACE.ts"))
+    expect(result.notReplayed?.some((entry) => entry.job === "//:c")).toBe(true)
+    expect(result.commits[0]?.baseline.counts.ran).toBe(3)
+    expect(result.commits[0]?.normal.counts.ran).toBe(3)
+  })
+
+  it("reports a malformed fast-mode plan after successful install planning", async () => {
+    const seen = keep(temporary("plan-count"))
+    const noFastPlan = fakeSmthrs([
+      "case \" $* \" in *\" --plan \"*)",
+      `if [ -f "${seen}/planned" ]; then echo "invalid second plan"; else touch "${seen}/planned"; echo '{"targets":[]}'; fi`,
+      "exit 0;; esac",
+      `echo '{"ok":true,"counts":{"ran":1,"hit":0,"failed":0,"skipped":0},"results":[{"label":"//:a","status":"ran","key":"a","durationMs":1}]}' > "$results"`
+    ].join("\n"))
+    const root = keep(makeOwnWith(noFastPlan))
+    const failure = await failureOf(onNode(own(request(root, { modes: ["fast"] }), partsFor("none"), "WORKSPACE.ts")))
+    expect(failure).toMatchObject({
+      code: "command-failed",
+      message: "smthrs ci --plan printed no plan: invalid second plan"
+    })
+  })
+
+  it.each([1, 2])("preserves completed measurements when the disk fills during commit %i", async (stopAt) => {
+    const root = keep(
+      makeOwnWith(
+        fakeSmthrs(
+          `${validPlan}\necho '{"ok":true,"counts":{"ran":1,"hit":0,"failed":0,"skipped":0},"results":[{"label":"//:a","status":"ran","key":"a","durationMs":1}]}' > "$results"`
+        )
+      )
+    )
+    const first = head(root)
+    commit(root, "next", { "notes.txt": "next" })
+    let full = false
+    const progress = {
+      say: (line: string) => {
+        if (!line.startsWith(`${stopAt}/2 `) || !line.endsWith(" baseline")) return Effect.void
+        return Effect.flatMap(
+          Effect.sync(() => {
+            full = true
+          }),
+          () => Effect.never
+        )
+      }
+    }
+    const run = onNode(
+      own(request(root, { commits: 2 }), partsFor("none"), "WORKSPACE.ts").pipe(
+        Effect.provideService(Options, {
+          smthrs: [smthrs],
+          reruns: 0,
+          prepare: () => Effect.void,
+          confine: unconfined,
+          diskTick: "10 millis"
+        }),
+        Effect.provideService(Progress, progress),
+        Effect.provideService(DiskSpace, {
+          space: () => Effect.sync(() => ({ total: 100_000_000_000, free: full ? 0 : 90_000_000_000 })),
+          held: () => Effect.succeed(42)
+        })
+      )
+    )
+    if (stopAt === 1) {
+      expect((await failureOf(run)).message).toContain("the replay stopped before the disk filled")
+      return
+    }
+    const report = await run
+    expect(report.stopped).toContain("the replay stopped before the disk filled")
+    expect(report.commits.map((row) => row.commit)).toEqual([first])
+    expect(report.speedupCommits).toBe(1)
+    expect(report.diskHeldBytes).toBe(42)
+  })
+
+  it("starts cold when the warm parent's target selection is unsupported", async () => {
+    const files = ownFiles()
+    const ci = ".github/workflows/ci.yml"
+    const root = keep(
+      repository({ ...files, [ci]: files[ci]!.replace("smthrs ci", "smthrs --workspace elsewhere ci") })
+    )
+    commit(root, "restore CI selection", { [ci]: files[ci]! })
+    const report = await onNode(own(request(root, { warm: true }), partsFor("none"), "WORKSPACE.ts"))
+    expect(report.cold).toBeDefined()
+    expect(report.firstRun).toBeUndefined()
+    expect(report.commits[0]?.normal.ok).toBe(true)
   })
 
   it("checks free space before cloning or installing", async () => {

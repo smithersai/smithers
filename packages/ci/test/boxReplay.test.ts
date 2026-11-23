@@ -12,6 +12,7 @@ import {
   readFileSync,
   rmSync,
   symlinkSync,
+  truncateSync,
   writeFileSync
 } from "node:fs"
 import { tmpdir } from "node:os"
@@ -28,6 +29,12 @@ interface Taken {
 }
 
 const box: {
+  readonly verifyIdentity: (
+    path: string,
+    opened: { dev: bigint; ino: bigint },
+    named: { dev: bigint; ino: bigint }
+  ) => void
+  readonly tarballs: (source: string, to?: string, platform?: string) => ReadonlyArray<string>
   readonly main: (argv: ReadonlyArray<string>) => Promise<number>
   readonly collect: (out: string, cpu: string, code: number) => number
   readonly sift: (listing: string) => {
@@ -95,12 +102,26 @@ describe("box-replay dry run", () => {
     const out = join(temporary(), "result")
     const result = spawnSync(
       process.execPath,
-      [script, url, "A5A7DC0", "--packs", packs(), "--out", out, "--job-id", "t-1", "--dry-run", "--", "--jobs", "2"],
+      [
+        script,
+        url,
+        "A5A7DC0",
+        "--packs",
+        packs(),
+        "--out",
+        out,
+        "--job-id",
+        "test-box-1",
+        "--dry-run",
+        "--",
+        "--jobs",
+        "2"
+      ],
       { encoding: "utf8" }
     )
     expect(result.status).toBe(0)
     expect(result.stdout.trim()).toBe(
-      `cfbox run --cpu 4 --image node --job-id t-1 --artifact out --output ${out}/result.tgz ${out}/upload -- ` +
+      `cfbox run --cpu 4 --image node --job-id test-box-1 --artifact out --output ${out}/result.tgz ${out}/upload -- ` +
         `bash box-replay.sh ${url} a5a7dc0 4 --jobs 2`
     )
     expect(existsSync(out)).toBe(false)
@@ -174,10 +195,10 @@ describe("box-replay refuses", () => {
     await refused([url, "a5a7dc0", "--packs", temporary()], /has no manifest.json/)
   })
 
-  it("only its own refusals: another fault is thrown", async () => {
+  it("refuses an unreadable manifest", async () => {
     const unreadable = temporary()
     writeFileSync(join(unreadable, "manifest.json"), "not json")
-    await expect(box.main([url, "a5a7dc0", "--packs", unreadable])).rejects.toThrow(SyntaxError)
+    await refused([url, "a5a7dc0", "--packs", unreadable], /manifest is not valid JSON/)
   })
 })
 
@@ -185,7 +206,7 @@ describe("box-replay runs", () => {
   it("leaves nothing behind when the box cannot start", async () => {
     const out = join(temporary(), "result")
     process.env["CFBOX"] = join(temporary(), "no-cfbox")
-    const result = await run([url, "a5a7dc0", "--packs", packs(), "--out", out, "--job-id", "t-2"])
+    const result = await run([url, "a5a7dc0", "--packs", packs(), "--out", out, "--job-id", "test-box-2"])
     expect(result.code).toBe(125)
     expect(result.stderr).toMatch(/the box returned no results \(cfbox exit 125\)/)
     expect(readdirSync(out)).toEqual(["box.log"])
@@ -211,7 +232,7 @@ describe("box-replay with a box for each job", () => {
       "--out",
       out,
       "--job-id",
-      "t",
+      "test-box",
       "--job",
       "tests.yml:test",
       "--job",
@@ -220,9 +241,9 @@ describe("box-replay with a box for each job", () => {
     ])
     expect(result.code).toBe(0)
     expect(result.stdout.split("\n")).toEqual([
-      `cfbox run --cpu 4 --image node --job-id t-1 --artifact out --output ${out}/1/result.tgz ${out}/upload -- ` +
+      `cfbox run --cpu 4 --image node --job-id test-box-1 --artifact out --output ${out}/1/result.tgz ${out}/upload -- ` +
       `bash box-replay.sh ${url} a5a7dc0 4 --job tests.yml:test`,
-      `cfbox run --cpu 4 --image node --job-id t-2 --artifact out --output ${out}/2/result.tgz ${out}/upload -- ` +
+      `cfbox run --cpu 4 --image node --job-id test-box-2 --artifact out --output ${out}/2/result.tgz ${out}/upload -- ` +
       `bash box-replay.sh ${url} a5a7dc0 4 --job 'ci.yml:a b'`
     ])
   })
@@ -336,7 +357,7 @@ describe("box-replay results", () => {
       recorder: { name: "strace", why: "smthrs-observe cannot run here" },
       stopped: "the replay stopped before the disk filled"
     }
-    artifact({ "replay.json": JSON.stringify(report) }, out)
+    artifact({ "replay.json": JSON.stringify(report), exit: "0" }, out)
     const printed: Array<string> = []
     vi.spyOn(console, "log").mockImplementation((line: string) => void printed.push(line))
     vi.spyOn(console, "error").mockImplementation(() => undefined)
@@ -426,4 +447,218 @@ describe("box-replay results", () => {
     expect(run.status).toBe(2)
     expect(run.stderr).toContain("unknown flag --unknown-flag")
   })
+})
+
+describe("box replay collection boundaries", () => {
+  const input = [url, "a5a7dc0"]
+
+  it("uses verified named directories on Darwin and refuses replaced files", () => {
+    const directory = packs()
+    const staged = temporary()
+    expect(box.tarballs(directory, staged, "darwin")).toEqual(
+      expect.arrayContaining(["manifest.json", "smithers-ci-1.0.0.tgz"])
+    )
+    expect(readFileSync(join(staged, "smithers-ci-1.0.0.tgz"), "utf8")).toBe("tarball")
+    for (const stale of [{ dev: 0n, ino: 2n }, { dev: 1n, ino: 0n }]) {
+      expect(() => box.verifyIdentity(directory, { dev: 1n, ino: 2n }, stale)).toThrow("changed during open")
+    }
+    expect(() => box.tarballs(join(staged, "manifest.json"))).toThrow("must be a directory")
+    rmSync(join(staged, "manifest.json"))
+    symlinkSync(join(directory, "manifest.json"), join(staged, "manifest.json"))
+    expect(() => box.tarballs(staged)).toThrow("not a regular file")
+    for (const invalid of [null, [null], [{ filename: 1 }]]) {
+      writeFileSync(join(directory, "manifest.json"), JSON.stringify(invalid))
+      expect(() => box.tarballs(directory)).toThrow("must list tarball filenames")
+    }
+  })
+
+  it("limits job ids including per-job suffixes and refuses URL selectors", async () => {
+    const args = [...input, "--packs", packs(), "--dry-run"]
+    for (const id of ["1234567", "x".repeat(65)]) expect((await run([...args, "--job-id", id])).code).toBe(2)
+    expect((await run([...args, "--job-id", "12345678"])).code).toBe(0)
+    const longest = await run([...args, "--job-id", "x".repeat(64), "--job", "ci"])
+    expect(longest.stdout).toContain(`--job-id ${"x".repeat(62)}-1 `)
+    for (const suffix of ["?ref=one", "#two"]) {
+      expect((await run([url + suffix, ...args.slice(1)])).code).toBe(2)
+    }
+  })
+
+  it("collects a valid report and receipt despite an oversized optional log", () => {
+    const out = temporary()
+    const root = temporary()
+    writeFileSync(join(root, "exit"), "0")
+    writeFileSync(join(root, "replay.log"), "")
+    truncateSync(join(root, "replay.log"), 64 * 1024 * 1024 + 1)
+    const report = readFileSync(join(import.meta.dirname, "fixtures", "replay-report.example.json"))
+    writeFileSync(join(root, "replay.json"), report)
+    expect(spawnSync("tar", ["-czf", join(out, "result.tgz"), "-C", root, "."]).status).toBe(0)
+    expect(box.collect(out, "1", 0)).toBe(0)
+    expect(readdirSync(out).sort()).toEqual(["exit", "replay.json"])
+    const incomplete = temporary()
+    artifact({ "replay.json": report.toString() }, incomplete)
+    expect(box.collect(incomplete, "1", 0)).toBe(4)
+    const missing = temporary()
+    artifact({ exit: "0" }, missing)
+    expect(box.collect(missing, "1", 0)).toBe(4)
+  })
+
+  it("bounds the box-side log without closing the producer's pipe", () => {
+    const shell = readFileSync(join(import.meta.dirname, "../scripts/box-replay.sh"), "utf8")
+    const append = shell.slice(shell.indexOf("append_log()"), shell.indexOf("start=$(date"))
+    const out = temporary()
+    const fixture =
+      `set -eu -o pipefail\nout=$1\nlog_limit=7\n${append}\nprintf abc | append_log\nprintf defghijkl | append_log\nprintf xyz | append_log`
+    expect(spawnSync("bash", ["-c", fixture, "test", out]).status).toBe(0)
+    expect(readFileSync(join(out, "replay.log"), "utf8")).toBe("abcdefg")
+  })
+
+  it("maps host faults to collection failures at the executable entry", async () => {
+    const missing = join(temporary(), "absent")
+    const args = [...input, "--packs", missing]
+    expect((await run(args)).code).toBe(4)
+    const cli = spawnSync(process.execPath, [script, ...args], { encoding: "utf8" })
+    expect(cli.status).toBe(4)
+    expect(cli.stderr).toContain("box-replay:")
+  })
+
+  it("retains subsequent lines and text after unterminated terminal strings", async () => {
+    const dirty =
+      "\x01\x7f\x1b[31mone\x1b[0m\x1b]secret\x07\x9b1m\x9dhidden\x9c\x1bPmore\x1b\\\x1bZ\x1b]until newline\ntwo\u202e\x90" +
+      "a".repeat(4096) + "three"
+    const result = await run([...input, "--packs", packs(), "--dry-run", "--job", dirty])
+    expect(result.stdout).toContain("one\ntwothree")
+    expect(result.stdout).not.toMatch(/[\p{Cf}\x1b\x90-\x9f]/u)
+  })
+
+  it("reports unreadable metadata and waits for the remainder of a failed pool", async () => {
+    const directory = temporary()
+    writeFileSync(join(directory, "replay.json"), "")
+    truncateSync(join(directory, "replay.json"), 32 * 1024 * 1024 + 1)
+    expect(box.reportIn(directory)).toBeUndefined()
+    const seen: Array<string> = []
+    await expect(box.pool([async () => {
+      throw new Error("broken")
+    }, async () => {
+      seen.push("finished")
+    }], 2)).rejects.toThrow("broken")
+    expect(seen).toEqual(["finished"])
+  })
+})
+
+it("relays both transport streams and collects each job's report", async () => {
+  const directory = temporary()
+  const result = temporary()
+  const report = JSON.parse(readFileSync(join(import.meta.dirname, "fixtures", "replay-report.example.json"), "utf8"))
+  report.jobs = { replayed: 1, total: 2 }
+  const receipt = artifact({ "replay.json": JSON.stringify(report), exit: "0" }, directory)
+  const binary = join(directory, "cfbox")
+  writeFileSync(
+    binary,
+    [
+      "#!/bin/sh",
+      "echo progress",
+      "echo status >&2",
+      "[ \"$1\" != stop ] || exit 0",
+      "while [ \"$1\" != --output ]; do shift; done",
+      `cp "${receipt}" "$2"`
+    ].join("\n"),
+    { mode: 0o755 }
+  )
+  vi.stubEnv("PATH", `${directory}:${process.env["PATH"]}`)
+  vi.stubEnv("CFBOX_OWNER", "fixture")
+  let pause = true
+  const stdout = vi.spyOn(process.stdout, "write").mockImplementation(() => {
+    const writable = !pause
+    pause = false
+    if (!writable) queueMicrotask(() => process.stdout.emit("drain"))
+    return writable
+  })
+  const outcome = await run([url, "1234567", "--packs", packs(), "--out", result, "--job", "test"])
+  stdout.mockRestore()
+  vi.unstubAllEnvs()
+  expect(outcome.code).toBe(0)
+  expect(outcome.stdout).toContain("jobs replayed: 1 of 2")
+  expect(readFileSync(join(result, "1", "box.log"), "utf8")).toContain("progress")
+  expect(readFileSync(join(result, "jobs.txt"), "utf8")).toContain("68 of 80")
+})
+
+it.each(["SIGTERM", "SIGINT"] as const)("cancels running and queued jobs on %s", async (signal) => {
+  const before = process.listeners(signal)
+  const binary = join(temporary(), "cfbox")
+  writeFileSync(binary, "#!/bin/sh\n[ \"$1\" != stop ] || exit 0\nexec sleep 20\n", { mode: 0o755 })
+  process.env["CFBOX"] = binary
+  const running = run([
+    url,
+    "1234567",
+    "--packs",
+    packs(),
+    "--out",
+    temporary(),
+    ...["a", "b", "c", "d", "e"].flatMap((job) => ["--job", job])
+  ])
+  const listener = process.listeners(signal).find((each) => !before.includes(each))
+  expect(listener).toBeDefined()
+  listener!(signal)
+  expect((await running).code).toBe(signal === "SIGTERM" ? 143 : 130)
+  expect(process.listeners(signal)).toEqual(before)
+})
+
+it("stops the box and returns a collection failure when the host cannot relay output", async () => {
+  const directory = temporary()
+  const binary = join(directory, "cfbox")
+  const stopped = join(directory, "stopped")
+  writeFileSync(
+    binary,
+    `#!/bin/sh\nif [ "$1" = stop ]; then touch "${stopped}"; else echo progress; exec sleep 20; fi\n`,
+    { mode: 0o755 }
+  )
+  process.env["CFBOX"] = binary
+  vi.spyOn(process.stdout, "write").mockImplementationOnce(() => {
+    throw new Error("output unavailable")
+  })
+  const outcome = await run([url, "1234567", "--packs", packs(), "--out", temporary()])
+  expect(outcome.code).toBe(4)
+  expect(outcome.stderr).toContain("output unavailable")
+  expect(existsSync(stopped)).toBe(true)
+})
+
+it("preserves a signaled transport's status", async () => {
+  const binary = join(temporary(), "cfbox")
+  writeFileSync(binary, "#!/bin/sh\n[ \"$1\" != stop ] || exit 0\nkill -TERM \"$$\"\n", { mode: 0o755 })
+  process.env["CFBOX"] = binary
+  expect((await run([url, "1234567", "--packs", packs(), "--out", temporary()])).code).toBe(255)
+})
+
+it.each([0, 17])("keeps transport exit %s when report summary fields are malformed", (status) => {
+  const directory = temporary()
+  const report = JSON.parse(readFileSync(join(import.meta.dirname, "fixtures", "replay-report.example.json"), "utf8"))
+  report.commits[0].mismatches = null
+  artifact({ "replay.json": JSON.stringify(report), exit: "0" }, directory)
+  expect(box.collect(directory, "1", status)).toBe(status || 4)
+})
+
+it("reports missing tar tooling as a collection failure", () => {
+  const out = temporary()
+  artifact({ exit: "0" }, out)
+  vi.stubEnv("PATH", temporary())
+  try {
+    expect(box.collect(out, "1", 0)).toBe(4)
+  } finally {
+    vi.unstubAllEnvs()
+  }
+})
+
+it("runs the executable module when its real path is the process entry", async () => {
+  const argv = process.argv
+  const prior = process.exitCode
+  vi.spyOn(console, "error").mockImplementation(() => undefined)
+  try {
+    process.argv = [process.execPath, script]
+    vi.resetModules()
+    await import(script)
+    expect(process.exitCode).toBe(2)
+  } finally {
+    process.argv = argv
+    process.exitCode = prior
+  }
 })

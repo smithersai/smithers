@@ -212,6 +212,24 @@ export const failsApplied = (written: ReadonlyArray<string>): string =>
     written.join(", ")
   }.`
 
+/** Compare each passing target selected for the applied checkout with its actual second verdict. */
+export const appliedMismatches = (
+  selected: ReadonlyArray<string>,
+  results: ReadonlyArray<TargetResult>,
+  causes: ReadonlyMap<string, string>,
+  written: ReadonlyArray<string>
+): ReadonlyArray<Mismatch> => {
+  const found = new Map(results.map((result) => [result.label, verdictOf(result)]))
+  return selected.flatMap((label) => {
+    const got = found.get(label) ?? "skipped"
+    if (got === "pass" || got === "flaky") return []
+    const cause = got === "skipped"
+      ? `The applied checkout did not run this target after writing ${written.join(", ")}.`
+      : causes.get(label) ?? failsApplied(written)
+    return [{ label, mode: "normal", baseline: "pass", got, cause }]
+  })
+}
+
 /**
  * How many times a failed target reruns after its first run, where a replay's
  * host names no number.
@@ -299,9 +317,11 @@ export const failure = (code: Failure["code"], message: string): Failure => ({ c
 type Variant = Readonly<Record<string, string>>
 
 /** A variant as a person reads it: ` (os=macos-latest, node=22)`, or nothing for a job with no matrix. */
+const escapeKey = (text: string): string => text.replace(/[\\(),=]/g, "\\$&")
+
 const variantText = (variant: Variant): string => {
   const entries = Object.entries(variant).sort(([a], [b]) => (a < b ? -1 : 1))
-  return entries.length === 0 ? "" : ` (${entries.map(([name, value]) => `${name}=${value}`).join(", ")})`
+  return entries.length === 0 ? "" : ` (${entries.map(([name, value]) => `${escapeKey(name)}=${escapeKey(value)}`).join(", ")})`
 }
 
 /**
@@ -311,7 +331,7 @@ const variantText = (variant: Variant): string => {
  * @category baseline
  * @since 0.1.0
  */
-export const stepKey = (step: string, variant: Variant): string => `${step}${variantText(variant)}`
+export const stepKey = (step: string, variant: Variant): string => `${escapeKey(step)}${variantText(variant)}`
 
 /**
  * What of a CI the replay runs, and what it leaves out.
@@ -413,7 +433,7 @@ export const replayable = (inventory: Ci, map: TargetMap, host: string): Replaya
         })
         return {
           id: step.id,
-          name: stepKey(step.name === undefined ? step.id : `${job.id}: ${step.name}`, variant),
+          name: `${step.name === undefined ? step.id : `${job.id}: ${step.name}`}${variantText(variant)}`,
           label: targets.length > 1 ? stepKey(step.id, variant) : (targets[0] as string),
           targets,
           ...(parts.length === 0 ? {} : { parts: Object.fromEntries(parts) }),
@@ -1289,7 +1309,8 @@ export interface Findings {
 export const withoutFast = (
   { fast: _fast, model: _model, skipped: _skipped, ...commit }: ReplayCommit
 ): ReplayCommit => ({
-  ...commit
+  ...commit,
+  mismatches: commit.mismatches.filter((entry) => entry.mode !== "fast")
 })
 
 /**

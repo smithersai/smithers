@@ -155,3 +155,17 @@ const leastCpuMs = msPerTick
  * @since 0.1.0
  */
 export const workOver = (elapsedMs: number): number => Math.max(leastCpuMs, elapsedMs / 100)
+
+/**
+ * Signal a verified process without launching a separate kill program. The process may already have exited.
+ * @throws {never}
+ * @category running
+ * @since 0.1.0
+ */
+export const killProcess = (pid: number): void => {
+  try {
+    process.kill(pid, "SIGKILL")
+  } catch {
+    // The process disappeared or the kernel denied the signal.
+  }
+}

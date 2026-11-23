@@ -115,8 +115,8 @@ describe("a model that stops answering at the second of three commits", () => {
       expect(report.commits.every((commit) => !("fast" in commit))).toBe(true)
       expect(report.commits.every((commit) => !("skipped" in commit) && !("model" in commit))).toBe(true)
       expect(report).not.toHaveProperty("model")
-      expect(report.mismatches).toBe(1)
-      expect(report.commits[0]?.mismatches[0]?.mode).toBe("fast")
+      expect(report.mismatches).toBe(0)
+      expect(report.commits.every((commit) => commit.mismatches.length === 0)).toBe(true)
       expect(report).not.toHaveProperty("fastWallMs")
       expect(report).not.toHaveProperty("selection")
 

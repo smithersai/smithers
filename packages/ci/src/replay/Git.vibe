@@ -21,7 +21,7 @@
  * @category running
  * @since 0.1.0
  */
-export const noUpkeep: ReadonlyArray<string> = ["-c", "maintenance.auto=false", "-c", "gc.auto=0"]
+export const noUpkeep: ReadonlyArray<string> = ["-c", "maintenance.auto=false", "-c", "gc.auto=0", "-c", "core.fsmonitor=false"]
 
 /**
  * The arguments that run git with `args` and no upkeep of its own.

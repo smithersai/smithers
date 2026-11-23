@@ -118,6 +118,7 @@ describe("a baseline step", () => {
     const target = new Set([
       ...Object.keys(toolEnvironment({ SEEN: seen, MINE: "from the step" }, [])),
       ...Object.keys(placeEnvironment({ home: "", tmp: "", guard: "" })),
+      "GIT_CONFIG_VALUE_0",
       ...Object.keys(pushRefusal)
     ])
     expect(names.filter((name) => !["PWD", "SHLVL", "_", "OLDPWD"].includes(name)).sort()).toEqual([...target].sort())

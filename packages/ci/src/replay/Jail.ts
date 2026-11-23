@@ -390,6 +390,7 @@ export interface Jail {
   readonly masks: ReadonlyArray<Mask>
   readonly tmp: string
   readonly temporary: ReadonlyArray<string>
+  readonly runtime?: ReadonlyArray<readonly [string, string]> | undefined
   readonly visible: ReadonlyArray<string>
   readonly filter: string
   readonly scope?: string | undefined
@@ -593,6 +594,7 @@ export const jailed = (
       ...jail.temporary.map((directory) => ["--bind", jail.tmp, directory] as const),
       ...jail.visible.map((path) => ["--ro-bind", path, path] as const)
     ].sort(([, , left], [, , right]) => left.length - right.length).flat(),
+    ...(jail.runtime ?? []).flatMap(([source, target]) => ["--ro-bind", source, target]),
     ...writable.flatMap((path) => ["--bind", path, path]),
     ...sealed.flatMap((path) => ["--ro-bind", path, path]),
     "--new-session",

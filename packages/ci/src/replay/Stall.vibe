@@ -11,7 +11,7 @@ import * as ChildProcess from "effect/process/ChildProcess"
 import { type ChildProcessHandle, ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 import type * as PlatformError from "effect/PlatformError"
 import { launcherEnvironment, thisHost } from "./Environment.ts"
-import { fromPs, fromStat, type ProcessEntry, treeOf, workOver } from "./ProcessTable.ts"
+import { fromPs, fromStat, killProcess, type ProcessEntry, treeOf, workOver } from "./ProcessTable.ts"
 
 /**
  * What reading and stopping processes needs of the machine.
@@ -35,7 +35,7 @@ export type TableHost = FileSystem.FileSystem | ChildProcessSpawner
  */
 export interface Table {
   readonly read: (ReadonlyArray<ProcessEntry> | undefined)!!TableHost
-  readonly stop: (pids: ReadonlyArray<number>, root: number) => void!!TableHost
+  readonly stop: (pids: ReadonlyArray<number>, root: number, observed?: ReadonlyArray<ProcessEntry>) => void!!TableHost
   readonly under?: (root: number) => (ReadonlyArray<ProcessEntry> | undefined)!!TableHost
 }
 
@@ -108,14 +108,22 @@ effect function readPs() {
 }
 
 /** Verify the live parent chain immediately before signaling one process. */
-effect function descendant(pid: number, root: number) {
+effect function descendant(pid: number, root: number, observed: ReadonlyArray<ProcessEntry> | undefined) {
+  const entry = observed === undefined ? try entryOf(pid) : observed.find((row) => row.pid === pid)
+  if (entry?.started === undefined || pid === root) return false
   const seen = new Set<number>()
-  let current = pid
-  while (current > 0 && current !== root && !seen.has(current)) {
+  let current = entry.parent
+  while (current > 0 && !seen.has(current)) {
+    const parent = try entryOf(current)
+    if (parent === undefined || (observed !== undefined && observed.find((row) => row.pid === current)?.started !== parent.started)) return false
+    if (current === root) {
+      const live = try entryOf(pid)
+      return live?.started === entry.started && live.parent === entry.parent
+    }
     seen.add(current)
-    current = (try entryOf(current))?.parent ?? 0
+    current = parent.parent
   }
-  return pid !== root && current === root
+  return false
 }
 
 /**
@@ -129,10 +137,10 @@ export const tableFor = (host: string = thisHost()): Table => ({
   read: host === "linux" ? readProc() : readPs(),
   // `ps` cannot be asked for one tree.
   ...(host === "linux" ? { under: readUnder } : {}),
-  stop: (pids, root) => effect {
+  stop: (pids, root, observed) => effect {
     for (const pid of pids) {
-      const belongs = host === "linux" ? try descendant(pid, root) : pid !== root && treeOf((try readPs()) ?? [], root).pids.includes(pid)
-      if (belongs) try outputOf("kill", ["-KILL", String(pid)])
+      const belongs = host === "linux" ? try descendant(pid, root, observed) : pid !== root && treeOf((try readPs()) ?? [], root).pids.includes(pid)
+      if (belongs) killProcess(pid)
     }
   }
 })
@@ -282,7 +290,7 @@ export effect function exitStoppingStalled(
       for (let round = 0; round < stopRounds; round++) {
         const entries = (try (watch.table.under?.(root) ?? succeed(undefined))) ?? (try watch.table.read)
         const leaves = entries === undefined ? [] : treeOf(entries, root).leaves.filter((pid) => pid !== root)
-        try watch.table.stop(leaves, root)
+        try watch.table.stop(leaves, root, entries)
         try untilStalled(root, leaves.length === 0 ? Math.min(graceMs, watch.limitMs) : watch.limitMs, watch)
       }
       return undefined

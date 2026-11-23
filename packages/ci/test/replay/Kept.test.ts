@@ -26,6 +26,7 @@ import { join } from "node:path"
 import { afterAll, describe, expect, it } from "vitest"
 import type { ReplayReport } from "../../src/contract/ReplayReport.vibe"
 import { addEntries, backTo, keep, snapshot, viewOf } from "../../src/replay/Kept.vibe"
+import { openPinnedPath } from "../../src/replay/PinnedFile.ts"
 import { bin, commit, git, spawn, temporary } from "../cli/repo.ts"
 
 const made: Array<string> = []
@@ -145,7 +146,7 @@ describe("what a job sees of the store", () => {
     const saved = entry(store, "tools", "v1", "tool")
     linkSync(join(saved, "work.tar"), join(root, "another-name"))
     const view = join(root, "view")
-    await expect(run(viewOf(store, [], view))).rejects.toThrow()
+    await run(viewOf(store, [], view))
     expect(readdirSync(join(view, "actions-cache", "tools"))).toEqual([])
     rmSync(join(root, "another-name"))
     await run(viewOf(store, [], view))
@@ -208,6 +209,34 @@ describe("what a run's jobs saved", () => {
     } else await expect(publish).rejects.toThrow()
     expect(readdirSync(join(view, "actions-cache", "tools"))).toEqual(["v1"])
   })
+
+  it.each(["directory", "key", "unreadable directory", "unreadable key"])(
+    "skips an entry with an unavailable %s identity",
+    async (which) => {
+      const root = scratch()
+      const store = join(root, "store")
+      entry(store, "p1", "e1", "key")
+      const leaf = which.endsWith("key") ? "/key" : "/e1"
+      const partial = Layer.effect(
+        FileSystem.FileSystem,
+        Effect.gen(function*() {
+          const real = yield* FileSystem.FileSystem
+          return {
+            ...real,
+            lstat: (path: string) => {
+              if (!path.endsWith(leaf)) return real.lstat(path)
+              return which.startsWith("unreadable") ?
+                real.lstat(join(root, "missing"))
+                : Effect.map(real.lstat(path), (info) => ({ ...info, ino: Option.none() }))
+            }
+          }
+        })
+      )
+      const view = join(root, "view")
+      await Effect.runPromise(Effect.provide(viewOf(store, [], view), Layer.provideMerge(partial, NodeServices.layer)))
+      expect(readdirSync(view)).toEqual([])
+    }
+  )
 
   it("keeps an entry whose time the file system does not tell, with the time it is added at", async () => {
     const root = scratch()
@@ -309,4 +338,34 @@ describe("a replay of jobs that start together and keep the same cache", () => {
     expect(report.mismatches).toBe(0)
     expect(outcome.code).toBe(0)
   }, 600_000)
+})
+
+it("uses the verified directory name on Darwin and reads a regular file by descriptor", async () => {
+  const root = scratch()
+  writeFileSync(join(root, "key"), "key")
+  const dir = await openPinnedPath(root, true, "darwin")
+  const file = await openPinnedPath(join(root, "key"), false, "darwin")
+  try {
+    expect(readdirSync(dir.path)).toEqual(["key"])
+    expect(readFileSync(file.path, "utf8")).toBe("key")
+  } finally {
+    await file.close()
+    await dir.close()
+  }
+  const named = statSync(root, { bigint: true })
+  for (const stale of [{ dev: -1n, ino: named.ino }, { dev: named.dev, ino: -1n }]) {
+    await expect(openPinnedPath(root, true, "darwin", stale)).rejects.toThrow("path changed")
+  }
+  await expect(openPinnedPath(root, false)).rejects.toThrow("unexpected file type")
+})
+
+it("skips entries beyond the cache depth limit and still copies siblings", async () => {
+  const root = scratch()
+  const deep = join(root, ...new Array<string>(64).fill("d"))
+  mkdirSync(join(deep, "too-deep"), { recursive: true })
+  writeFileSync(join(deep, "too-deep", "key"), "deep")
+  entry(root, "siblings", "ok", "ok")
+  const view = scratch()
+  await run(viewOf(root, [], view))
+  expect(readdirSync(view)).toEqual(["actions-cache"])
 })

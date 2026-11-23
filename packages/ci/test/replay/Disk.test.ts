@@ -3,6 +3,7 @@ import * as Deferred from "effect/Deferred"
 import * as Effect from "effect/Effect"
 import * as Fiber from "effect/Fiber"
 import * as Ref from "effect/Ref"
+import { execFileSync } from "node:child_process"
 import { chmodSync, linkSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -69,6 +70,36 @@ describe("the disk as the machine says it is", () => {
       return yield* disk.space("/no/such/folder")
     }))
     expect(said).toBeUndefined()
+  })
+
+  it.skipIf(process.platform !== "linux")("counts files beyond the kernel pathname limit", async () => {
+    const root = scratch()
+    try {
+      execFileSync(process.execPath, [
+        "-e",
+        [
+          "const fs = require(\"node:fs\"), name = \"d\".repeat(100)",
+          "for (let i = 0; i < 45; i++) { fs.mkdirSync(name); process.chdir(name) }",
+          "fs.writeFileSync(\"data\", Buffer.alloc(65536))"
+        ].join("\n")
+      ], { cwd: root })
+      expect(await heldUnder(root)).toBeGreaterThanOrEqual(65536)
+    } finally {
+      // Node's recursive removal also takes full pathnames.
+      execFileSync("rm", ["-rf", join(root, "d".repeat(100))])
+    }
+  })
+
+  it("stops midway through directory entries on cancellation", async () => {
+    const root = scratch()
+    writeFileSync(join(root, "unfinished"), "data")
+    let reads = 0
+    const signal = {
+      get aborted() {
+        return ++reads > 1
+      }
+    } as AbortSignal
+    expect(await heldUnder(root, signal)).toBe(0)
   })
 
   it("counts each file under a folder once, and nothing it cannot read", async () => {

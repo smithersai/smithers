@@ -36,6 +36,7 @@ describe("replaying five real commits", () => {
   it("writes a report the contract decodes, oldest commit first", () => {
     expect(Schema.decodeUnknownSync(ReplayReport)(report)).toEqual(report)
     expect(report.repository).toBe("test/replay")
+    expect(report.stopped).toBeUndefined()
     expect(report.commits.map((entry) => entry.commit)).toEqual(repository.commits)
     expect(report.commits.map((entry) => entry.changedFiles)).toEqual([10, 1, 3, 3, 2])
   })

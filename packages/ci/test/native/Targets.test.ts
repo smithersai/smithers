@@ -56,8 +56,9 @@ describe("patternsIn", () => {
   it("finds smthrs behind a package manager, a variable and its own options", () => {
     expect(patternsIn("CI=1 env FOO=2 npx smthrs test //a:test")).toEqual(["//a:test"])
     expect(patternsIn("pnpm exec -- smthrs lint //a/...")).toEqual(["//a/..."])
-    expect(patternsIn("smthrs --silent ci //a/...")).toEqual(["//a/..."])
-    expect(patternsIn("pnpm exec smthrs --ui plain ci //a/...")).toEqual(["//a/..."])
+    expect(patternsIn("smthrs --silent ci //a/...")).toEqual([])
+    expect(patternsIn("pnpm exec smthrs --ui plain ci //a/...")).toEqual([])
+    expect(plansFor(inventory([job("ci", ["smthrs --ui plain ci //a/..."])]))).toContain("cannot reproduce")
   })
 
   it("unquotes as a shell does", () => {

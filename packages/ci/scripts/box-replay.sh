@@ -32,11 +32,19 @@ cd /home/runner/repo || exit 3
 branch=$(run git symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null); branch=${branch#origin/}
 run git checkout -q -B "${branch:-main}" "$commit" >> "$out/clone.log" 2>&1 || { say "no commit $commit"; exit 3; }
 say "replay of ${branch:-main} at $(run git rev-parse --short=12 HEAD), --commits $commits $*"
+# Consume the entire stream so reaching the cap never interrupts the replay.
+log_limit=$((64 * 1024 * 1024))
+append_log() {
+  local kept=0
+  if [ -f "$out/replay.log" ]; then kept=$(wc -c < "$out/replay.log"); fi
+  head -c "$((log_limit - kept))" >> "$out/replay.log"
+  cat > /dev/null
+}
 start=$(date +%s)
 run env SMITHERS_CI_REQUIRE_JAIL=1 /home/runner/inst/node_modules/.bin/smithers-ci replay --commits "$commits" --json --out /home/runner/report.html "$@" \
-  > "$out/replay.json" 2> >(tee "$out/replay.log" >&2)
+  > "$out/replay.json" 2> >(tee /dev/stderr | append_log)
 code=$?
-wait
+wait "$!"
 echo "$code" > "$out/exit"; echo "$(($(date +%s) - start))" > "$out/wall-seconds"
 say "replay exit $code after $(cat "$out/wall-seconds") s"
 # Only runner opens files produced by the repository. The parent owns all result names.
@@ -44,7 +52,9 @@ copy_result() {
   run sh -c 'test -f "$1" && ! test -L "$1" && cat -- "$1"' sh "$1" > "$out/$2" || rm -f "$out/$2"
 }
 copy_result /home/runner/report.html report.html.txt
-run /home/runner/inst/node_modules/.bin/smithers-ci apply >> "$out/replay.log" 2>&1 &&
+run /home/runner/inst/node_modules/.bin/smithers-ci apply 2>&1 | append_log
+if [ "${PIPESTATUS[0]}" -eq 0 ]; then
   copy_result .smithers/ci/NOT-REPRODUCED.txt NOT-REPRODUCED.txt
+fi
 say "results:"; ls -la "$out"
 exit "$code"

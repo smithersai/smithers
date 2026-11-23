@@ -723,7 +723,7 @@ describe("parse, on generated command lines", () => {
       if (url.protocol !== "https:" || url.username !== "" || url.password !== "") return false
       if (!/^[0-9a-f]{7,40}$/.test(options.commit)) return false
       if (!["1", "2", "4"].includes(options.cpu) || !/^[1-9]\d*$|^0+[1-9]\d*$/.test(options.commits)) return false
-      if (options.jobId !== undefined && !/^[A-Za-z0-9-]{1,64}$/.test(options.jobId)) return false
+      if (options.jobId !== undefined && !/^[A-Za-z0-9-]{8,64}$/.test(options.jobId)) return false
       // The replay in the box is not told to write outside it, to share a cache or to run other commits.
       if (options.replayFlags.some((flag) => (fixed as ReadonlyArray<string>).includes(flag.split("=")[0] as string))) {
         return false

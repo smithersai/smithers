@@ -27,7 +27,7 @@ export const placeIn = (work: string, way: Way = "normal"): Confined => {
     guard: join(work, "guard"),
     template: join(work, "home", "template"),
     links: [],
-    hooks: join(home, hooksDirectory),
+    hooks: join(work, hooksDirectory),
     daemon: {},
     jail: undefined
   }

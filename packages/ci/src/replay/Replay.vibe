@@ -65,6 +65,7 @@ import {
   reading,
   renew,
   sourceDirectory,
+  plannerRuntime,
   type Way
 } from "./Confine.vibe"
 import { addTo, type Count, type CpuBucket, uncounted, usedBy } from "./Cpu.ts"
@@ -135,7 +136,7 @@ import {
   choose,
   failedAt,
   failedTwice,
-  failsApplied,
+  appliedMismatches,
   failure,
   failureTexts,
   fastRunOf,
@@ -741,6 +742,19 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
       try checkout(copy, commit, place)
     }
 
+    const runtimeDir = path.join(work, "planner")
+    const runtime = places.normal.jail === undefined ? undefined : try orFail(plannerRuntime(
+      root, runtimeDir, [...options.smthrs, ...(options.smthrsWithToken ?? [])], effect () => {
+        try cloneAt(runtimeDir, "HEAD", places.normal)
+        return (try git(runtimeDir, ["ls-files", "-z", "--", ":(glob)**/package.json"], places.normal)).split("\0").filter(Boolean)
+      }
+    ), "could not stage the replay planner")
+    const plannerCommand = (place: Confined, writable: ReadonlyArray<string>, starter: readonly [string, ...Array<string>], args: ReadonlyArray<string>) => {
+      const resolved = (word: string) => runtime?.paths.get(word) ?? word
+      const jail = place.jail === undefined ? undefined : { ...place.jail, runtime: runtime?.mounts }
+      return held({ ...place, jail }, writable, [resolved(starter[0]), ...starter.slice(1).map(resolved), ...args])
+    }
+
     /**
      * Where a mode runs: its copy at `commit`, and beside it the two directories of the replay's own that
      * Smithers build is pointed at, so the copy holds the commit's files and nothing else.
@@ -840,7 +854,7 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
         : try onNormalCopy(parts.decompose(normalCopy, narrowed))
       // A target passes on what tells git to refuse a push, as the baseline's step is told, and with Docker allowed
       // where the person's container daemon is.
-      const inheritEnv = [...Object.keys(pushRefusal), ...Object.keys(places.normal.daemon)]
+      const inheritEnv = [...Object.keys(pushRefusal), "GIT_CONFIG_VALUE_0", ...Object.keys(places.normal.daemon)]
       // The notes name what `apply` leaves out: what this machine failed is no part of them.
       const left = notReplayed(keepingPrograms(allowed, keptOnRunner))
       const publishOptions = { cache: request.cache, left, ...(allowDocker ? { allowDocker } : {}) }
@@ -966,7 +980,7 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
 
     effect function planOf(site: Site, own: Prepared) {
       const plan = ["ci", ...own.labels, "--plan", "--format", "json", ...pointed(site, own)]
-      const [command, ...args] = held(site.place, [site.copy, site.cache], [...options.smthrs, ...plan])
+      const [command, ...args] = plannerCommand(site.place, [site.copy, site.cache], options.smthrs, plan)
       const planned = try planOutput(command, args, site.copy, startEnv(site), stepLimit, stall)
       const printed = Schema.decodeUnknownEffect(Schema.fromJsonString(PrintedPlan))(planned) catch effect () => {
         throw failure("command-failed", `smthrs ci --plan printed no plan: ${reasonOf({ stdout: planned, stderr: "" })}`)
@@ -993,8 +1007,7 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
       const file = path.join(records, `run-${runs}.json`)
       // With a token to give, Smithers build is started by the program that reads it from a pipe.
       const starter = token === undefined ? undefined : options.smthrsWithToken
-      const [command, ...args] = held(site.place, [site.copy, records, site.cache, machines], [
-        ...(starter ?? options.smthrs),
+      const [command, ...args] = plannerCommand(site.place, [site.copy, records, site.cache, machines], starter ?? options.smthrs, [
         "ci",
         ...selected,
         ...pointed(site, own),
@@ -1096,7 +1109,7 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
      * does not ask for the run, when no step passed, and at a commit that holds the files already: that one is as
      * `apply` leaves it.
      */
-    effect function asApplied(at: string, commit: string, own: Prepared, baseRecord: RunRecord, normalRecord: RunRecord) {
+    effect function asApplied(at: string, commit: string, own: Prepared, normalRecord: RunRecord) {
       // A run record also holds the group of files every step names, when the steps are many enough to share
       // one. It is no step: `smthrs ci` refuses it when it is asked for by name.
       const steps = new Set(own.labels)
@@ -1124,16 +1137,7 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
             { count: 0, ms: 0 }
           )
         )
-        const failed = new Map(second.results.flatMap((result) => result.status === "failed" ? [[result.label, result] as const] : []))
-        // A step that names none of the files still fails only beside them: the line says so and lists them.
-        const written = own.generated.map((file) => file.path)
-        for (const label of failed.keys()) {
-          if (!causes.has(label)) causes.set(label, failsApplied(written))
-        }
-        const results = normalRecord.results.map((result) => failed.get(result.label) ?? result)
-        // A step that this run failed carries its line; a mismatch normal mode already had carries none.
-        const mismatches = mismatchesOf("normal", baseRecord, { ...normalRecord, results }, own.splits, causes)
-          .filter((entry) => entry.cause !== undefined)
+        const mismatches = appliedMismatches(passed, second.results, causes, own.generated.map((file) => file.path))
         return { mismatches, ms: (try Clock.currentTimeMillis) - start }
       })
     }
@@ -1619,6 +1623,7 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
     // stopped in, and says why it stopped.
     const replayed = try exit(effect {
       while (index < commits.length) {
+        tallyBefore = { ...tally }
         const commit = commits[index] as string
         const at = `${index + 1}/${commits.length} ${commit.slice(0, 7)}`
         const own = index === commits.length - 1 ? newest : try preparedAt(commit)
@@ -1638,7 +1643,6 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
           stood.push([directory, backup])
         }
         lastBefore = { baseline: new Map(last.baseline), normal: new Map(last.normal), fast: new Map(last.fast) }
-        tallyBefore = { ...tally }
         const changed = lines(try git(source, ["show", "--format=", "--name-only", "--diff-merges=first-parent", commit]))
         try progress.say(`${at} baseline`)
         const left: Array<Scope.Closeable> = []
@@ -1722,7 +1726,7 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
         }
         // The newest commit is the one `apply` is run on.
         const applied = index === commits.length - 1
-          ? try asApplied(at, commit, own, baseRecord, normalRecord)
+          ? try asApplied(at, commit, own, normalRecord)
           : undefined
         // A job found to need rights is in this commit's times, which cannot be split by job: the commit runs again
         // without it, from where each way stood before, and no number of this run is kept.
@@ -1767,7 +1771,7 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
         if (own === undefined || commitsDone.length === 0) try failCause(cause)
         recorderGone = `the replay stopped at ${commit.slice(0, 7)} on an error of its own: ${own}`
       }
-      try putBack
+      Object.assign(tally, tallyBefore)
     }
     const stopped = (try disk.stopped) ?? recorderGone
     // One commit where nothing passes is a failed commit. When nothing passes at any, the CI does not run here. A

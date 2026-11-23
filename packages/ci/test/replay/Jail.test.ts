@@ -7,11 +7,13 @@
 import * as NodeServices from "@effect/platform-node/NodeServices"
 import * as ExecSandbox from "@smthrs/targets/ExecSandbox"
 import * as Effect from "effect/Effect"
+import * as FileSystem from "effect/FileSystem"
 import * as Layer from "effect/Layer"
+import * as PlatformError from "effect/PlatformError"
 import * as ChildProcess from "effect/process/ChildProcess"
-import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
+import { ChildProcessSpawner, make as makeSpawner } from "effect/process/ChildProcessSpawner"
 import * as Redacted from "effect/Redacted"
-import { execFileSync } from "node:child_process"
+import { execFileSync, spawnSync } from "node:child_process"
 import {
   accessSync,
   chmodSync,
@@ -34,7 +36,14 @@ import type { Failure, ReplayParts } from "../../src/contract/Parts.vibe"
 import type { ReplayReport } from "../../src/contract/ReplayReport.vibe"
 import type { Mode } from "../../src/contract/RunRecord.vibe"
 import { files } from "../../src/generate/index.vibe"
-import { confine, type Confined, held, machine as jobPlace, reading } from "../../src/replay/Confine.vibe"
+import {
+  confine,
+  type Confined,
+  held,
+  machine as jobPlace,
+  plannerRuntime,
+  reading
+} from "../../src/replay/Confine.vibe"
 import {
   containerPrograms,
   gitConfig,
@@ -528,6 +537,104 @@ describe("confine", () => {
     expect(existsSync(join(work, "home"))).toBe(false)
   })
 
+  it("runs a checkout-local planner against its isolated dependency layout", async () => {
+    const root = directory("local-install")
+    const stage = directory("runtime")
+    const bin = join(root, "bin", "plan.cjs")
+    mkdirSync(dirname(bin))
+    const dep = join(root, "node_modules", "fixture")
+    mkdirSync(dep, { recursive: true })
+    writeFileSync(join(dep, "index.js"), "module.exports = 17")
+    writeFileSync(bin, "console.log(require(\"fixture\"))")
+    const local = join(dep, "index.js")
+    const runtime = await scoped(
+      plannerRuntime(root, stage, ["node", process.execPath, bin, local], () => Effect.succeed(["tools/package.json"]))
+    )
+    const script = runtime.paths.get(bin)!
+    expect(script).toBe(join(stage, "bin", "plan.cjs"))
+    expect(runtime.mounts).toEqual([[bin, script], [join(root, "node_modules"), join(stage, "node_modules")]])
+    if (jailable) {
+      const confirmed = await scoped(
+        confine(directory("work"), () => found, () => Effect.void, [process.execPath], false, undefined, root)
+      )
+      const place = confirmed.normal
+      const [launcher, ...args] = held(
+        { ...place, jail: { ...place.jail!, visible: [...place.jail!.visible, stage], runtime: runtime.mounts } },
+        [],
+        [process.execPath, script]
+      )
+      const ran = spawnSync(launcher, args, { encoding: "utf8" })
+      expect(ran.status, ran.stderr).toBe(0)
+      expect(ran.stdout.trim()).toBe("17")
+    }
+    rmSync(dirname(script), { recursive: true })
+    symlinkSync(root, dirname(script))
+    await expect(scoped(plannerRuntime(root, stage, [bin], () => Effect.succeed([])))).rejects.toThrow(
+      "mount point is a symlink"
+    )
+  })
+
+  it("preserves the checkout mask when Git metadata cannot be resolved", async () => {
+    const root = directory("unreadable-git")
+    const denied = PlatformError.systemError({ _tag: "PermissionDenied", module: "test", method: "spawn" })
+    const place = await scoped(
+      confine(directory("work"), () => found, () => Effect.void, [], false, {}, root).pipe(
+        Effect.provideService(ChildProcessSpawner, makeSpawner(() => Effect.fail(denied)))
+      )
+    )
+    expect(place.normal.jail?.masks.some((mask) => mask.path === root)).toBe(true)
+  })
+
+  it("retains existing staged launcher files and reports unusable mount points", async () => {
+    const root = directory("controller")
+    const stage = directory("staged")
+    const launcher = join(root, "cli")
+    writeFileSync(launcher, "current")
+    writeFileSync(join(stage, "cli"), "committed")
+    const missing = join(directory("external"), "absent")
+    const external = await scoped(plannerRuntime(root, stage, [missing], () => Effect.die("unneeded stage")))
+    expect(external.mounts).toEqual([])
+    const staged = plannerRuntime(root, stage, [launcher, missing], () => Effect.succeed([]))
+    const runtime = await scoped(staged)
+    expect(runtime.paths.get(missing)).toBe(missing)
+    expect(readFileSync(join(stage, "cli"), "utf8")).toBe("committed")
+    const denied = PlatformError.systemError({ _tag: "PermissionDenied", module: "test", method: "lstat" })
+    const unreadable = Layer.effect(
+      FileSystem.FileSystem,
+      Effect.gen(function*() {
+        const real = yield* FileSystem.FileSystem
+        return { ...real, lstat: () => Effect.fail(denied) }
+      })
+    )
+    await expect(scoped(staged.pipe(Effect.provide(unreadable)))).rejects.toMatchObject({ _tag: "PlatformError" })
+  })
+
+  it("masks the separate metadata of a linked worktree", async () => {
+    const checkout = directory("linked")
+    const common = directory("metadata")
+    const admin = join(common, "worktrees", "linked")
+    mkdirSync(admin, { recursive: true })
+    mkdirSync(join(common, "refs"))
+    mkdirSync(join(common, "objects"))
+    writeFileSync(join(common, "HEAD"), "ref: refs/heads/main\n")
+    writeFileSync(join(admin, "HEAD"), "ref: refs/heads/main\n")
+    writeFileSync(join(admin, "commondir"), "../..\n")
+    writeFileSync(join(checkout, ".git"), `gitdir: ${admin}\n`)
+    const owner = person()
+    const probe = () => ({
+      bwrap: "bwrap",
+      home: owner.home,
+      hidden: [],
+      daemons: [],
+      tmp: "/tmp",
+      caches: [],
+      tools: toolsOf(owner)
+    })
+    const places = await scoped(confine(directory("work"), probe, () => Effect.void, [], false, undefined, checkout))
+    expect(places.normal.jail?.masks).toContainEqual({ path: common, directory: true })
+    expect(places.normal.jail?.masks).toContainEqual({ path: checkout, directory: true })
+  })
+
   it("makes each way a home with the hook, hides the person's home, and puts back only what a step has a use for", async () => {
     const owner = person()
     const work = directory("work")
@@ -581,22 +688,22 @@ describe("confine", () => {
       // Each way's home and temporary directory are its own.
       expect(place.home).toBe(join(work, "home", way))
       expect(place.tmp).toBe(join(work, "tmp", way))
-      expect(place.hooks).toBe(join(work, "home", way, hooksDirectory))
+      expect(place.hooks).toBe(join(work, hooksDirectory))
       // The stand-ins a step finds first on its `PATH`, and nothing of a container daemon in its variables.
       expect(place.guard).toBe(join(work, "guard"))
       expect(readdirSync(place.guard).sort()).toEqual([...guardedPrograms, ...containerPrograms].sort())
       expect(place.daemon).toEqual({})
       expect(readFileSync(join(place.hooks, "pre-push"), "utf8")).toBe(prePush)
       accessSync(join(place.hooks, "pre-push"), constants.X_OK)
-      expect(readFileSync(join(place.home, ".gitconfig"), "utf8")).toBe(gitConfig)
+      expect(readFileSync(join(place.home, ".gitconfig"), "utf8")).toBe(gitConfig(place.hooks))
       // Where a version manager looks for its versions, under the step's own home.
-      expect(readdirSync(place.home).sort()).toEqual([".gitconfig", ".smithers-ci", ".versions"])
+      expect(readdirSync(place.home).sort()).toEqual([".gitconfig", ".versions"])
       expect(readlinkSync(join(place.home, ".versions", "tool"))).toBe(owner.tool)
       expect(readdirSync(place.tmp)).toEqual([])
       // What every job's home starts as: the hook, the configuration, and where the version manager looks.
       expect(place.template).toBe(join(work, "home", "template"))
-      expect(readFileSync(join(place.template, hooksDirectory, "pre-push"), "utf8")).toBe(prePush)
-      expect(readFileSync(join(place.template, ".gitconfig"), "utf8")).toBe(gitConfig)
+      expect(existsSync(join(place.template, hooksDirectory))).toBe(false)
+      expect(readFileSync(join(place.template, ".gitconfig"), "utf8")).toBe(gitConfig(place.hooks))
       expect(readlinkSync(join(place.template, ".versions", "tool"))).toBe(owner.tool)
       expect(place.links).toEqual([{ path: ".versions/tool", target: owner.tool }])
       expect(place.jail).toEqual({
@@ -690,7 +797,7 @@ describe("confine", () => {
       { path: owner.cloud, directory: true },
       { path: join(owner.vault, "netrc"), directory: false }
     ])
-    expect(readdirSync(places.normal.home).sort()).toEqual([".gitconfig", ".smithers-ci"])
+    expect(readdirSync(places.normal.home).sort()).toEqual([".gitconfig"])
   })
 
   it("hides a home that lies in another hidden directory once, with that directory", async () => {

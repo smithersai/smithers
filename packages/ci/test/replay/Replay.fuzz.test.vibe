@@ -226,7 +226,7 @@ describe("what a replay starts and says", () => {
     assertProperty(Arbitrary.array(word, { maxLength: 6 }), (args) => {
       const all = gitArguments(args)
       return same(all.slice(0, noUpkeep.length), noUpkeep) && same(all.slice(noUpkeep.length), args) &&
-        same(noUpkeep, ["-c", "maintenance.auto=false", "-c", "gc.auto=0"])
+        same(noUpkeep, ["-c", "maintenance.auto=false", "-c", "gc.auto=0", "-c", "core.fsmonitor=false"])
     }, { runs: 150, seed: 5 }))
 
   it.live("runs a step's command under the reaper whole, after `--`", () =>
@@ -837,7 +837,7 @@ describe("what a replay reports", () => {
         (measured
           ? report.selection !== undefined && report.firstRun?.fastMs === 3
           : report.selection === undefined && report.fastWallMs === undefined && report.model === undefined && report.fastCpuMs === undefined &&
-            report.firstRun?.fastMs === undefined && report.commits.every((each, index) => each.fast === undefined && each.mismatches.length === commits[index]?.mismatches.length))
+            report.firstRun?.fastMs === undefined && report.commits.every((each, index) => each.fast === undefined && same(each.mismatches, commits[index]!.mismatches.filter((entry) => entry.mode !== "fast"))))
     }, { runs: 200, seed: 37 }))
 
   it.live("finds no mismatch between a run and itself, and one for every verdict a mode did not give", () =>

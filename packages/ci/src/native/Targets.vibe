@@ -179,7 +179,7 @@ const invocationsOf = (words: ReadonlyArray<string>): ReadonlyArray<ReadonlyArra
   const verb = rest.findIndex((word, index) =>
     index > 0 && (verbs.includes(word) || !(word.startsWith("-") || (rest[index - 1] as string).startsWith("-")))
   )
-  return verb === -1 || !verbs.includes(rest[verb] as string) ? [] : [rest.slice(verb)]
+  return verb === -1 || !verbs.includes(rest[verb] as string) ? [] : [rest.slice(1)]
 }
 
 /**
@@ -193,7 +193,7 @@ const invocationsOf = (words: ReadonlyArray<string>): ReadonlyArray<ReadonlyArra
  * @category accessors
  * @since 0.1.0
  */
-export const patternsIn = (script: string): ReadonlyArray<string> => commandsOf(script).flatMap(invocationsOf).flatMap((call) => call.slice(1).filter(isPattern))
+export const patternsIn = (script: string): ReadonlyArray<string> => commandsOf(script).flatMap(invocationsOf).flatMap((call) => verbs.includes(call[0] as string) ? call.slice(1).filter(isPattern) : [])
 
 const callsOf = (job: Job): ReadonlyArray<ReadonlyArray<string>> => {
   const variants: ReadonlyArray<Readonly<Record<string, string>>> = job.matrix.length === 0 ? [{}] : job.matrix
@@ -208,6 +208,7 @@ export const plansFor = (inventory: Inventory): ReadonlyArray<ReadonlyArray<stri
   let custom = false
   for (const job of ciJobs(inventory)) {
     for (const call of callsOf(job)) {
+      if (!verbs.includes(call[0] as string)) return `cannot reproduce the target selection in ${job.id}: use --targets to name its targets`
       const args = [call[0] as string]
       for (let i = 1; i < call.length; i++) {
         const word = call[i] as string

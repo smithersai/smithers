@@ -130,7 +130,7 @@ export const linesOf = (
     } skipped in ${Math.round(wallMs / 1000)} s`,
     ...failed.slice(0, failedLimit).flatMap(whyOf).map((why) => `${at}: ${why}`),
     ...(more > 0 ? [`${at}: and ${more} more failed`] : []),
-    ...flaky.slice(0, failedLimit).map((result) => `${at}: ${result.label} failed, then passed when run again`)
+    ...flaky.slice(0, failedLimit).map((result) => `${at}: ${firstLine(result.label)} failed, then passed when run again`)
   ]
 }
 
@@ -164,7 +164,7 @@ export const ranAgainLines = (at: string, labels: ReadonlyArray<string>): Readon
   const more = labels.length - failedLimit
   return [
     `${at}: ${labels.length} ran again though ${labels.length === 1 ? "its key" : "their keys"} did not change: ${
-      labels.slice(0, failedLimit).join(" ")
+      firstLine(labels.slice(0, failedLimit).join(" "))
     }${more > 0 ? ` +${more}` : ""}`
   ]
 }

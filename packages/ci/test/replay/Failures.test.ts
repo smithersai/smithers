@@ -89,6 +89,21 @@ const failureOf = (attempt: Promise<ReplayReport>): Promise<Failure> =>
 const passing = [job("a", "sh a.sh")]
 
 describe("a replay that cannot run", () => {
+  it.skipIf("refusal" in probe())("stages a checkout-local planner before masking its checkout", async () => {
+    const root = track(makeSmallRepository(passing))
+    // Only the explicitly selected launcher may be read from the uncommitted checkout.
+    const launcher = join(root, "local-plan.sh")
+    writeFileSync(launcher, "test ! -e \"$0.private\" || exit 9\necho \"local planner reached\" >&2\nexit 7\n")
+    writeFileSync(launcher + ".private", "private")
+    const local = Layer.succeed(Options, {
+      smthrs: ["/bin/sh", launcher],
+      reruns: 0,
+      prepare: () => Effect.void
+    })
+    const failure = await failureOf(replay(root, {}, {}, local as never))
+    expect(failure.message).toContain("local planner reached")
+  })
+
   it("refuses a directory that is not a repository", async () => {
     const failure = await failureOf(replay(track(makeEmptyDirectory())))
     expect(failure).toMatchObject({ code: "not-a-repository", part: "replay" })

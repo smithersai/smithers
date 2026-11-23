@@ -31,6 +31,7 @@ export interface Place {
   readonly home: string
   readonly tmp: string
   readonly guard: string
+  readonly hooks?: string
 }
 
 /**
@@ -164,12 +165,12 @@ export const guardedPath = (guard: string, path: string | undefined): string =>
   path === undefined || path === "" ? guard : `${guard}${delimiter}${path}`
 
 /**
- * Where the hook that refuses a push is, from a step's home.
+ * The directory under the controller's work directory that holds the sealed Git hooks.
  *
  * @category constants
  * @since 0.1.0
  */
-export const hooksDirectory = ".smithers-ci/hooks"
+export const hooksDirectory = "hooks"
 
 /**
  * What `git push` prints when a step tries it.
@@ -190,9 +191,7 @@ export const prePush = `#!/bin/sh\necho "${pushRefused}" >&2\nexit 1\n`
 /**
  * What every `git` a step starts is told through its environment, which a
  * repository's own configuration cannot undo: the hook that refuses a push,
- * no credential helper, and no question asked on the terminal. Every value is
- * the same on every machine and in every replay, so a target that passes
- * these on keeps its key. `~` is the step's home.
+ * no credential helper, and no question asked on the terminal. The step environment adds the absolute path of the controller's hook directory.
  *
  * @category constants
  * @since 0.1.0
@@ -200,7 +199,6 @@ export const prePush = `#!/bin/sh\necho "${pushRefused}" >&2\nexit 1\n`
 export const pushRefusal: Readonly<Record<string, string>> = {
   GIT_CONFIG_COUNT: "2",
   GIT_CONFIG_KEY_0: "core.hooksPath",
-  GIT_CONFIG_VALUE_0: `~/${hooksDirectory}`,
   GIT_CONFIG_KEY_1: "credential.helper",
   GIT_CONFIG_VALUE_1: "",
   GIT_TERMINAL_PROMPT: "0"
@@ -220,10 +218,12 @@ export const noPushUrl = "/dev/null/smithers-ci-replay-copies-do-not-push"
  * The `.gitconfig` of a step's home. It says what {@link pushRefusal} says to
  * a `git` whose environment a tool has emptied on the way.
  *
- * @category constants
+ * @throws {never}
+ * @category rendering
  * @since 0.1.0
  */
-export const gitConfig = `[core]\n\thooksPath = ~/${hooksDirectory}\n[credential]\n\thelper =\n`
+export const gitConfig = (hooks: string): string =>
+  `[core]\n\thooksPath = ${JSON.stringify(hooks)}\n[credential]\n\thelper =\n`
 
 /**
  * What the `.gitconfig` adds when a repository's own targets run. Smithers
@@ -302,6 +302,7 @@ export const stepEnvironment = (
     ...placeEnvironment(place),
     ...pushRefusal,
     ...declared,
+    GIT_CONFIG_VALUE_0: place.hooks ?? join(dirname(place.guard), hooksDirectory),
     ...(declared["PATH"] === undefined ? {} : { PATH: guardedPath(place.guard, declared["PATH"]) })
   }, [])
 })

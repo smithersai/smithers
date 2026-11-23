@@ -9,6 +9,7 @@
 
 import * as ChildProcess from "effect/process/ChildProcess"
 import { ChildProcessSpawner, make as makeSpawner } from "effect/process/ChildProcessSpawner"
+import { gitArguments } from "./Git.vibe"
 import {
   ambientEnvironment,
   launcherEnvironment,
@@ -55,7 +56,7 @@ export type Way = "baseline" | "normal" | "fast" | "trial"
  * @since 0.1.0
  */
 export interface Confined extends Place {
-  /** A home as every job's starts: the hook, the configuration that names it, `links`, and nothing else. Never written. */
+  /** A home as every job's starts: the configuration that names the sealed hook, `links`, and nothing else. Never written. */
   readonly template: string
   /** The links every home of a step starts with, from the home: where a version manager looks for its versions. */
   readonly links: ReadonlyArray<{ readonly path: string; readonly target: string }>
@@ -113,18 +114,14 @@ effect function unlockWork(work: string) {
 }
 
 /**
- * Makes `home` a home for steps: the hook that refuses a push, the configuration that names it, `links`, and
+ * Makes `home` a home for steps: the configuration pointing at the shared pre-push hook, `links`, and
  * nothing else. A version manager looks for its versions under the home, so each link leads to where they are.
  */
-effect function furnish(home: string, links: Confined["links"]) {
+effect function furnish(home: string, links: Confined["links"], hooks: string) {
   const fs = try FileSystem.FileSystem
   const path = try Path.Path
-  const hooks = path.join(home, hooksDirectory)
-  try fs.makeDirectory(hooks, { recursive: true })
-  const hook = path.join(hooks, "pre-push")
-  try fs.writeFileString(hook, prePush)
-  try fs.chmod(hook, 0o755)
-  try fs.writeFileString(path.join(home, ".gitconfig"), gitConfig)
+  try fs.makeDirectory(home, { recursive: true })
+  try fs.writeFileString(path.join(home, ".gitconfig"), gitConfig(hooks))
   for (const link of links) {
     try fs.makeDirectory(path.dirname(path.join(home, link.path)), { recursive: true })
     try fs.symlink(link.target, path.join(home, link.path))
@@ -134,8 +131,7 @@ effect function furnish(home: string, links: Confined["links"]) {
 /**
  * Makes a home and a temporary directory for each way under `work`, writes
  * the stand-ins beside them, where a jailed step can run them and not change
- * them, and asks the machine for a jail. Each home starts with the hook and
- * nothing else. A job never runs in a way's own home for long: a baseline job
+ * them, and asks the machine for a jail. Each home starts with its Git configuration and tool links. A job never runs in a way's own home for long: a baseline job
  * gets one of its own (`machine`), a mode's is emptied before each commit
  * (`renew`), and Smithers build gives the targets of each job a machine with a
  * home that starts as a copy of `template`. So a tool that keeps a cache for
@@ -205,6 +201,11 @@ export effect function confine(
       throw new Error(`${reason}. For a trusted repository only, the operator may set SMITHERS_CI_ALLOW_UNCONFINED=1`)
     }
   }
+  const hooks = path.join(work, hooksDirectory)
+  try fs.makeDirectory(hooks, { recursive: true })
+  const hook = path.join(hooks, "pre-push")
+  try fs.writeFileString(hook, prePush)
+  try fs.chmod(hook, 0o755)
   try fs.makeDirectory(homes)
   try fs.makeDirectory(tmps)
   try fs.makeDirectory(guard)
@@ -221,19 +222,19 @@ export effect function confine(
   const links = "refusal" in found ? found.homes ?? [] : found.tools.homes
   // What Smithers build starts the home of each job's machine from, in normal and fast mode.
   const template = path.join(homes, "template")
-  try furnish(template, links)
+  try furnish(template, links, hooks)
   effect function make(way: Way) {
     const home = path.join(homes, way)
     const tmp = path.join(tmps, way)
     try fs.makeDirectory(tmp)
-    try furnish(home, links)
+    try furnish(home, links, hooks)
     return {
       home,
       tmp,
       guard,
       template,
       links,
-      hooks: path.join(home, hooksDirectory),
+      hooks,
       daemon: daemonEnvironment(allowDocker, environment)
     }
   }
@@ -286,11 +287,20 @@ export effect function confine(
     if (real !== value) softwareLinks.push({ path: value, target: real })
   }
   // A broad tool prefix can itself contain the live checkout. Bind only disjoint tool paths.
-  const outsideCheckout = (entry: string) => repository === undefined ||
-    (entry !== repository && !within(repository, entry) && !within(entry, repository))
+  const metadata = repository === undefined ? [] : scoped(effect {
+    const command = ChildProcess.make("git", gitArguments(["rev-parse", "--path-format=absolute", "--git-common-dir", "--absolute-git-dir"]), {
+      cwd: repository, env: launcherEnvironment, extendEnv: false, stdin: "ignore", stderr: "ignore"
+    })
+    const child = try spawner.spawn(command)
+    const paths = try (child.stdout |> Stream.decodeText(%) |> Stream.mkString(%))
+    return Number(try child.exitCode) === 0 ? paths.trimEnd().split("\n") : []
+  }) catch (): Array<string> => []
+  const privatePaths = repository === undefined ? metadata : [repository, ...metadata]
+  const outsideCheckout = (entry: string) => privatePaths.every((root) => entry !== root && !within(root, entry) && !within(entry, root))
   const masks: Array<Mask> = []
   const hidden = [
     found.home,
+    ...metadata,
     ...credentials.map((name) => path.join(found.home, name)),
     ...found.hidden,
     ...(repository === undefined ? [] : [repository]),
@@ -359,6 +369,66 @@ export effect function confine(
     fast: { ...made.fast, jail: jailOf(made.fast.tmp), caches },
     trial: { ...made.trial, jail: jailOf(made.trial.tmp), caches }
   } satisfies Places
+}
+
+/**
+ * Resolve controller commands before hiding the checkout. A local launcher sees the clean committed tree at
+ * its own read-only location, with its installed dependencies and the explicitly selected program files.
+ * No part of the running checkout is mounted over its mask.
+ */
+export effect function plannerRuntime<E, R>(
+  root: string,
+  directory: string,
+  commands: ReadonlyArray<string>,
+  prepare: () => ReadonlyArray<string>!E!R
+) {
+  const fs = try FileSystem.FileSystem
+  const path = try Path.Path
+  const repository = try fs.realPath(root)
+  const paths = new Map<string, string>()
+  const mounts = new Map<string, string>()
+  for (const word of commands) {
+    if (!path.isAbsolute(word)) continue
+    const real = fs.realPath(word) catch () => word
+    if (real.startsWith(repository + path.sep)) {
+      const target = path.join(directory, path.relative(repository, real))
+      paths.set(word, target)
+      mounts.set(real, target)
+    } else paths.set(word, real)
+  }
+  if (mounts.size > 0) {
+    const packages = try prepare()
+    const folders = new Set<string>()
+    for (const pkg of ["package.json", ...packages]) {
+      const modules = path.join(path.dirname(pkg), "node_modules")
+      const source = path.join(repository, modules)
+      // A workspace dependency may be a relative link inside node_modules. Keeping the layout makes it
+      // resolve into the committed runtime tree. Never mount a directory selected through a live symlink.
+      const real = fs.realPath(source) catch () => undefined
+      if (real === source) folders.add(source)
+    }
+    // A file already supplied by a dependency mount needs no second mount.
+    for (const file of mounts.keys()) {
+      if ([...folders].some((folder) => file.startsWith(folder + path.sep))) mounts.delete(file)
+    }
+    for (const folder of folders) mounts.set(folder, path.join(directory, path.relative(repository, folder)))
+    for (const [source, target] of mounts) {
+      // The committed snapshot can contain links. Never create a mount point through one.
+      let parent = directory
+      for (const part of path.relative(directory, target).split(path.sep)) {
+        parent = path.join(parent, part)
+        const info = fs.lstat(parent) catch effect (error) => {
+          if (error.reason._tag !== "NotFound") throw error
+          return undefined
+        }
+        if (info?.type === "SymbolicLink") throw new Error("a replay launcher mount point is a symlink")
+        if (info !== undefined) continue
+        if (parent === target && !folders.has(source)) try fs.writeFileString(parent, "", { flag: "wx" })
+        else try fs.makeDirectory(parent)
+      }
+    }
+  }
+  return { paths, mounts: [...mounts] }
 }
 
 /**
@@ -452,16 +522,14 @@ export effect function discard(directory: string, say: (line: string) => void!! 
  * @since 0.1.0
  */
 export effect function machine(place: Confined, home: string, tmp: string, alone: boolean = false) {
-  const path = try Path.Path
   try fresh(home)
   try fresh(tmp)
-  try furnish(home, place.links)
+  try furnish(home, place.links, place.hooks)
   const own = alone ? place.caches ?? [] : []
   return {
     ...place,
     home,
     tmp,
-    hooks: path.join(home, hooksDirectory),
     jail: place.jail === undefined
       ? undefined
       : { ...place.jail, tmp, visible: place.jail.visible.filter((each) => !own.includes(each)) }
@@ -470,7 +538,7 @@ export effect function machine(place: Confined, home: string, tmp: string, alone
 
 /**
  * Empties the home and the temporary directory of `place`, the place of a
- * mode: the home holds the hook again and nothing else. A replay does this
+ * mode: the home starts with fresh Git configuration and tool links. A replay does this
  * before a mode runs a commit, as a CI runner starts every run with a home
  * nothing wrote to. What a mode keeps from one commit to the next is in its
  * copy's cache directory, which the generated workflow carries between runs.
@@ -484,7 +552,7 @@ export effect function renew(place: Confined) {
   try removeTree(place.home)
   try removeTree(place.tmp)
   try fs.makeDirectory(place.tmp)
-  try furnish(place.home, place.links)
+  try furnish(place.home, place.links, place.hooks)
 }
 
 /**

@@ -73,6 +73,7 @@ import {
   failure,
   fastRunOf,
   finishedReport,
+  type Gathered,
   flakyOf,
   mismatchesOf,
   noCiBefore,
@@ -311,8 +312,14 @@ export const own = <R>(
     try (try WorkDirectory).at(work)
     const disk = try diskWatch(work, path.join(work, "machines"), progress.say, options.diskTick)
     try disk.admit(Effect.void)
+    let partial: ((reason: string, held: number | undefined) => ReplayReport) | undefined
+    const measured = replayIn(request, parts, workspaceFile, work, disk, (report) => { partial = report })
     return try ensuring(effect {
-      return try.race [replayIn(request, parts, workspaceFile, work, disk), disk.ended]
+      const result = try exit(Effect.raceFirst(measured, disk.ended))
+      if (Exit.isSuccess(result)) return result.value
+      const reason = try disk.stopped
+      if (reason === undefined || partial === undefined) return try failCause(result.cause)
+      return partial(reason, try disk.most)
     }, disk.release)
   })
 
@@ -322,7 +329,8 @@ const replayIn = <R>(
   parts: ReplayParts<R>,
   workspaceFile: string,
   work: string,
-  disk: DiskWatch
+  disk: DiskWatch,
+  checkpoint: (report: (reason: string, held: number | undefined) => ReplayReport) => void
 ): ReplayReport!Failure!(R | Host) =>
   scoped(effect {
     const fs = try FileSystem.FileSystem
@@ -366,7 +374,7 @@ const replayIn = <R>(
     // A target of the repository's own gets its way's home and none of the variables that refuse a push.
     for (const place of Object.values(places)) {
       try orFail(
-        fs.writeFileString(path.join(place.home, ".gitconfig"), gitConfig + pushesGoNowhere),
+        fs.writeFileString(path.join(place.home, ".gitconfig"), gitConfig(place.hooks) + pushesGoNowhere),
         "could not make the homes of the runs"
       )
     }
@@ -401,7 +409,7 @@ const replayIn = <R>(
 
     /**
      * The directories whose lockfile a target `patterns` select names at `commit`, from the plan `smthrs` prints in
-     * `copy`. None when it prints no plan: the run then fails as the commit does.
+     * `copy`. A missing or invalid plan fails preparation with the planner's diagnostic.
      */
     effect function installsFor(
       commit: string,
@@ -416,10 +424,10 @@ const replayIn = <R>(
       const plan = ["ci", ...patterns, "--plan", "--format", "json", "--workspace", copy]
       const [command, ...args] = held(place, [copy], [smthrs, ...plan])
       const environment = stepEnvironment(place.daemon, place)
-      const planned = planOutput(command, args, copy, environment, stepLimit, stall) catch () => undefined
-      if (planned === undefined) return []
-      const inputs = Schema.decodeUnknownEffect(Schema.fromJsonString(PlannedInputs))(planned) catch () => undefined
-      if (inputs === undefined) return []
+      const planned = try planOutput(command, args, copy, environment, stepLimit, stall)
+      const inputs = Schema.decodeUnknownEffect(Schema.fromJsonString(PlannedInputs))(planned) catch effect () => {
+        throw failure("command-failed", `smthrs ci --plan printed no plan: ${reasonOf({ stdout: planned, stderr: "" })}`)
+      }
       const directories = readInstalls(inputsOf(inputs), installed)
       readAt.set(`${commit} ${patterns.join(" ")}`, directories)
       return directories
@@ -442,9 +450,9 @@ const replayIn = <R>(
       if (!state.ok) return { state, planMs: 0 }
       const planning = try Clock.currentTimeMillis
       const installed = installDirectories(ci.workspaceFile)
-      const more = try installsFor(commit, copy, state.smthrs, ci.patterns, place, installed)
+      const more = installsFor(commit, copy, state.smthrs, ci.patterns, place, installed) catch (error) => error.message
       const planMs = (try Clock.currentTimeMillis) - planning
-      const failed = try installEach(copy, more, place, stepLimit, stall, count)
+      const failed = typeof more === "string" ? more : try installEach(copy, more, place, stepLimit, stall, count)
       return { state: failed === undefined ? state : ({ ok: false, reason: failed } satisfies Installed), planMs }
     }
 
@@ -518,7 +526,8 @@ const replayIn = <R>(
         return { reason: cause.message }
       }
       if ("reason" in read) return read
-      return { patterns: try targetsAt(read, file, chosenFor(read).patterns), workspaceFile: file } satisfies CommitCi
+      const selected = targetsAt(read, file, chosenFor(read).patterns) catch (cause) => ({ reason: cause.message })
+      return "reason" in selected ? selected : { patterns: selected, workspaceFile: file } satisfies CommitCi
     }
 
     const reads = readsListener()
@@ -807,6 +816,27 @@ const replayIn = <R>(
     let fastFlaky = 0
     let fastNotMeasured: string | undefined = undefined
 
+    const gather = (): Gathered => ({
+      fastAsked: fastCopy !== undefined,
+      rows: allRows,
+      selected,
+      left,
+      flaky,
+      fastFlaky,
+      commitsLeft,
+      fastNotMeasured,
+      jobs: covered,
+      trialMs,
+      reruns: { ...tally },
+      firstRun: started.firstRun,
+      cold: started.cold,
+      recorder
+    })
+    const makeReport = (found: Gathered, stopped: string | undefined, diskHeldBytes: number | undefined): ReplayReport => ({
+      ...finishedReport(inventory, replayed, { ...found, stopped, diskHeldBytes }),
+      targets: newestCi.patterns
+    })
+
     for (const [index, commit] of commits.entries()) {
       const at = `${index + 1}/${commits.length} ${commit.slice(0, 7)}`
       const ci = index === commits.length - 1 ? newestCi : try ciAt(commit)
@@ -885,28 +915,13 @@ const replayIn = <R>(
         mismatches: [...mismatchesOf("normal", baseRecord, normalRecord), ...fastMismatches],
         ...fastPart
       })
+      const completed = gather()
+      checkpoint((reason, held) => makeReport(completed, reason, held))
     }
     // One commit where nothing passes is a failed commit. When nothing passes at any, the build does not run here.
     const nothing = nothingPassed(baselines)
     if (nothing !== undefined) throw failure("unsupported", nothing)
-    const report = finishedReport(inventory, replayed, {
-      fastAsked: fastCopy !== undefined,
-      rows: allRows,
-      selected,
-      left,
-      flaky,
-      fastFlaky,
-      commitsLeft,
-      fastNotMeasured,
-      diskHeldBytes: try disk.most,
-      jobs: covered,
-      trialMs,
-      reruns: tally,
-      firstRun: started.firstRun,
-      cold: started.cold,
-      recorder
-    })
-    return { ...report, targets: newestCi.patterns }
+    return makeReport(gather(), undefined, try disk.most)
   })
 
 /**

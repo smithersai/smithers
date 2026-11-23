@@ -13,6 +13,7 @@
 // and starts nothing. With `--job`, given once for each CI job, each job is replayed alone (the replay's `--job`) in
 // a box of its own, four boxes at once at most, its results in <out>/<n>; a table of the jobs follows.
 import { spawn, spawnSync } from "node:child_process"
+import { once } from "node:events"
 import {
   closeSync,
   constants,
@@ -105,8 +106,8 @@ export const parse = (argv) => {
   if (options.packs === undefined) throw new Refusal("--packs names the directory of release tarballs")
   if (!/^\d+$/.test(options.commits) || Number(options.commits) < 1) throw new Refusal("--commits is a whole number")
   if (!["1", "2", "4"].includes(options.cpu)) throw new Refusal("--cpu is 1, 2 or 4")
-  if (options.jobId !== undefined && !/^[A-Za-z0-9-]{1,64}$/.test(options.jobId)) {
-    throw new Refusal("--job-id is letters, digits and dashes")
+  if (options.jobId !== undefined && !/^[A-Za-z0-9-]{8,64}$/.test(options.jobId)) {
+    throw new Refusal("--job-id is letters, digits and dashes (8 to 64 characters)")
   }
   return { ...options, url: repositoryUrl(repository), commit: commitId(commit), replayFlags }
 }
@@ -139,12 +140,19 @@ const commitId = (text) => {
   return text.toLowerCase()
 }
 
+/** A pathname inspected for upload must still name the descriptor we opened. */
+export const verifyIdentity = (path, opened, named) => {
+  if (opened.dev !== named.dev || opened.ino !== named.ino) throw new Refusal(`${path} changed during open`)
+}
+
 /** Read a pack only through a verified regular-file descriptor. */
 const regular = (path, use) => {
-  if (!lstatSync(path).isFile()) throw new Refusal(`${path} is not a regular file`)
+  const named = lstatSync(path, { bigint: true })
+  if (!named.isFile()) throw new Refusal(`${path} is not a regular file`)
   const fd = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK)
   try {
-    if (!fstatSync(fd).isFile()) throw new Refusal(`${path} is not a regular file`)
+    const info = fstatSync(fd, { bigint: true })
+    verifyIdentity(path, info, named)
     return use(fd)
   } finally {
     closeSync(fd)
@@ -152,17 +160,23 @@ const regular = (path, use) => {
 }
 
 /** The tarballs of `packs`, as its manifest lists them; any other file there is refused. */
-export const tarballs = (packs, destination) => {
-  if (!lstatSync(packs).isDirectory()) throw new Refusal("packs must be a directory")
+export const tarballs = (packs, destination, platform = process.platform) => {
+  const named = lstatSync(packs, { bigint: true })
+  if (!named.isDirectory()) throw new Refusal("packs must be a directory")
   const directory = openSync(packs, constants.O_DIRECTORY | constants.O_NOFOLLOW)
   try {
-    return listedPacks(`/dev/fd/${directory}`, destination)
+    const info = fstatSync(directory, { bigint: true })
+    const path = platform === "linux" ? `/proc/self/fd/${directory}` : realpathSync(packs)
+    const resolved = statSync(path, { bigint: true })
+    verifyIdentity(packs, info, named)
+    verifyIdentity(packs, info, resolved)
+    return listedPacks(path, destination, platform)
   } finally {
     closeSync(directory)
   }
 }
 
-const listedPacks = (packs, destination) => {
+const listedPacks = (packs, destination, platform) => {
   const manifestPath = join(packs, "manifest.json")
   if (!existsSync(manifestPath)) throw new Refusal(`${packs} has no manifest.json: pack it with pack-release.mjs`)
   const manifest = regular(manifestPath, (fd) => readFileSync(fd, "utf8"))
@@ -170,7 +184,7 @@ const listedPacks = (packs, destination) => {
   try {
     entries = JSON.parse(manifest)
   } catch {
-    throw new SyntaxError("the release manifest is not valid JSON")
+    throw new Refusal("the release manifest is not valid JSON")
   }
   if (!Array.isArray(entries) || entries.some((entry) => typeof entry?.filename !== "string")) {
     throw new Refusal("the release manifest must list tarball filenames")
@@ -195,7 +209,7 @@ const listedPacks = (packs, destination) => {
   if (destination !== undefined) {
     writeFileSync(join(destination, "manifest.json"), manifest, { flag: "wx" })
     for (const name of names.filter((name) => name !== "manifest.json")) {
-      regular(join(packs, name), (fd) => copyFileSync(`/dev/fd/${fd}`, join(destination, name), constants.COPYFILE_EXCL))
+      regular(join(packs, name), (fd) => copyFileSync(`${platform === "linux" ? "/proc/self/fd" : "/dev/fd"}/${fd}`, join(destination, name), constants.COPYFILE_EXCL))
     }
   }
   return names
@@ -315,7 +329,7 @@ const bytesOfMember = "tar -xzOf \"$1\" -- \"$2\" | head -c \"$3\""
  */
 export const unpack = (artifact, out) => {
   try {
-    const listing = spawnSync("tar", ["-tvzf", artifact], { encoding: "utf8" })
+    const listing = spawnSync("tar", ["-tvzf", artifact], { encoding: "utf8", env: { ...process.env, LC_ALL: "C" } })
     if (listing.status !== 0) throw new Error(`could not list ${artifact}: ${plain(listing.stderr ?? "")}`)
     const { keep, drop } = sift(listing.stdout)
     // Tar's lookup also matches a rejected member with the same name.
@@ -329,15 +343,16 @@ export const unpack = (artifact, out) => {
       }
     }
     for (const entry of drop) console.error(plain(`box-replay: left in the artifact: ${entry.path} (${entry.why})`))
+    const eligible = keep.filter((entry) => entry.name !== "replay.log" || entry.bytes <= 64 * MiB)
     let total = 0
-    for (const entry of keep) {
+    for (const entry of eligible) {
       if (ambiguous.has(entry.name)) continue
       total += entry.bytes
       if (entry.bytes > (artifactLimits[entry.name] ?? 64 * MiB) || total > 256 * MiB) {
         throw new Error(`artifact exceeds the collection size limit at ${entry.name}`)
       }
     }
-    const taken = keep.filter((entry) => {
+    const taken = eligible.filter((entry) => {
       if (ambiguous.has(entry.name)) {
         console.error(`box-replay: left in the artifact: ${entry.name} (listed more than once)`)
         return false
@@ -369,31 +384,40 @@ export const unpack = (artifact, out) => {
 /** A terminal text filter for one stream, including control strings split between chunks. */
 const terminalFilter = () => {
   let state = "text"
+  let length = 0
   return (chunk) => {
     let text = ""
     for (const ch of chunk) {
       if (state === "string" || state === "stringEscape") {
-        if (ch === "\x07" || ch === "\x9c" || (state === "stringEscape" && ch === "\\")) state = "text"
+        length++
+        if (ch === "\n" || length >= 4096) {
+          state = "text"
+          length = 0
+          if (ch === "\n") text += ch
+        } else if (ch === "\x07" || ch === "\x9c" || (state === "stringEscape" && ch === "\\")) state = "text"
         else state = ch === "\x1b" ? "stringEscape" : "string"
       } else if (state === "escape") {
+        length = 0
         state = ch === "[" ? "csi" : "]PX^_".includes(ch) ? "string" : "text"
       } else if (state === "csi") {
         if (ch >= "@" && ch <= "~") state = "text"
       } else if (ch === "\x1b") state = "escape"
       else if (ch === "\x9b") state = "csi"
-      else if ("\x90\x98\x9d\x9e\x9f".includes(ch)) state = "string"
-      else if (ch === "\n" || ch === "\t" || (ch >= " " && !(ch >= "\x7f" && ch <= "\x9f"))) text += ch
+      else if ("\x90\x98\x9d\x9e\x9f".includes(ch)) {
+        state = "string"
+        length = 0
+      } else if (ch === "\n" || ch === "\t" || (ch >= " " && !(ch >= "\x7f" && ch <= "\x9f"))) text += ch
     }
-    return text
+    return text.replace(/\p{Cf}/gu, "")
   }
 }
 
 const plain = (text) => terminalFilter()(text)
 
 /** Runs cfbox with these arguments, its output to the console and to `log`. */
-const cfbox = (args, log, signal, timeout = 0) =>
-  new Promise((done) => {
-    const fd = log === undefined ? undefined : openSync(log, "wx")
+const cfbox = async (args, log, signal, timeout = 0) => {
+  const fd = log === undefined ? undefined : openSync(log, "wx")
+  try {
     const child = spawn(process.env.CFBOX ?? "cfbox", args, {
       signal,
       timeout,
@@ -401,30 +425,32 @@ const cfbox = (args, log, signal, timeout = 0) =>
       stdio: ["ignore", "pipe", "pipe"],
       env: { ...process.env, CFBOX_OWNER: process.env.CFBOX_OWNER ?? "box-replay" }
     })
-    const relay = (from, to) => {
+    let startError
+    child.once("error", (error) => { startError = error })
+    const closed = new Promise((resolve) => child.once("close", resolve))
+    const relay = async (from, to) => {
       const filter = terminalFilter()
-      from.setEncoding("utf8").on("data", (chunk) => {
+      for await (const chunk of from.setEncoding("utf8")) {
         const text = filter(chunk)
         if (fd !== undefined) writeSync(fd, text)
-        if (!to.write(text)) {
-          from.pause()
-          to.once("drain", () => from.resume())
-        }
-      })
+        if (!to.write(text)) await once(to, "drain")
+      }
     }
-    relay(child.stdout, process.stdout)
-    relay(child.stderr, process.stderr)
-    // A program that cannot start is cfbox failing before the command ran: 125, as cfbox says it.
-    let started = true
-    child.on("error", (error) => {
-      started = false
-      if (fd !== undefined) writeSync(fd, plain(`box-replay: could not start cfbox: ${error.message}\n`))
-    })
-    child.on("close", (code) => {
-      if (fd !== undefined) closeSync(fd)
-      done({ code: started ? code ?? 255 : 125 })
-    })
-  })
+    try {
+      await Promise.all([relay(child.stdout, process.stdout), relay(child.stderr, process.stderr)])
+    } catch (error) {
+      child.kill("SIGKILL")
+      await closed
+      throw error
+    }
+    const code = await closed
+    if (startError === undefined) return { code: code ?? 255 }
+    if (fd !== undefined) writeSync(fd, plain(`box-replay: could not start cfbox: ${startError.message}\n`))
+    return { code: 125 }
+  } finally {
+    if (fd !== undefined) closeSync(fd)
+  }
+}
 
 /** Runs `tasks` with at most `limit` of them under way at once; their results, in their order. */
 export const pool = async (tasks, limit) => {
@@ -545,26 +571,30 @@ const refusalIn = (file) => {
  * What a run brought back, in `out`: the named files taken from the artifact, the replay summed up, and the exit
  * status. Transport failures take precedence, and success or mismatch requires a usable report.
  */
-export const collect = (out, cpu, code, receiveReport) => {
+const collected = (out, cpu, code, receiveReport) => {
   if (!existsSync(join(out, "result.tgz"))) {
     console.error(`box-replay: the box returned no results (cfbox exit ${code})`)
     return code === 0 ? 4 : code
   }
-  let taken
-  try {
-    taken = unpack(join(out, "result.tgz"), out)
-  } catch (error) {
-    console.error(plain(`box-replay: could not collect the artifact: ${error.message}`))
-    return code || 4
-  }
+  const taken = unpack(join(out, "result.tgz"), out)
   console.error(`box-replay: took ${taken.map((entry) => `${entry.name} (${entry.bytes} bytes)`).join(", ")}`)
+  let status = code
+  if (status === 0) {
+    const receipt = taken.find((entry) => entry.name === "exit")
+    const wrote = receipt && receipt.bytes <= 16 ? readFileSync(join(out, "exit"), "utf8").trim() : ""
+    if (!/^\d{1,3}$/.test(wrote) || Number(wrote) > 255) {
+      console.error("box-replay: missing or invalid exit receipt")
+      return 4
+    }
+    status = Number(wrote)
+  }
   const report = reportIn(out)
   const valid = figuresOf(report) !== undefined
-  if (valid) receiveReport?.(report)
   const replay = join(out, "replay.json")
   if (valid) {
     try {
       for (const line of summary(report, cpu)) console.log(plain(line))
+      receiveReport?.(report)
     } catch {
       console.error("box-replay: replay.json is not a report")
       return code || 4
@@ -575,26 +605,23 @@ export const collect = (out, cpu, code, receiveReport) => {
     const said = refusalIn(join(out, "replay.log"))
     console.error(plain(`box-replay: the replay printed no report${said === undefined ? "" : `; it said: ${said}`}`))
   }
-  // What a program exits with is 0 to 255. A file that holds anything else, or nothing, as one the box was stopped
-  // while writing does, says no exit code: read as a number, nothing is 0, and the run would have passed.
-  const exit = join(out, "exit")
-  const wrote = existsSync(exit) && statSync(exit).size <= 16 ? readFileSync(exit, "utf8").trim() : ""
-  if (code !== 0) return code
-  const status = /^\d{1,3}$/.test(wrote) && Number(wrote) <= 255 ? Number(wrote) : (existsSync(exit) ? 4 : 0)
-  return status < 2 && !valid ? 4 : status
+  return code || (status < 2 && !valid ? 4 : status)
+}
+
+/** A collection fault preserves a failed transport's exit code. */
+export const collect = (out, cpu, code, receiveReport) => {
+  try {
+    return collected(out, cpu, code, receiveReport)
+  } catch (error) {
+    console.error(plain(`box-replay: could not collect the artifact: ${error.message}`))
+    return code || 4
+  }
 }
 
 /** The whole run for a command line; its exit code. */
-export const main = async (argv) => {
-  let options
-  try {
-    options = parse(argv)
-    tarballs(resolve(options.packs))
-  } catch (error) {
-    if (!(error instanceof Refusal)) throw error
-    console.error(plain(`box-replay: ${error.message}`))
-    return 2
-  }
+const run = async (argv) => {
+  const options = parse(argv)
+  tarballs(resolve(options.packs))
   const out = resolve(options.out ?? `box-replay-${options.commit}`)
   const upload = join(out, "upload")
   const jobId = options.jobId ?? `box-replay-${options.commit.slice(0, 12)}-${Date.now()}`
@@ -603,7 +630,8 @@ export const main = async (argv) => {
     ? [{ out, id: jobId, args: command(options, upload, jobId) }]
     : options.jobs.map((job, index) => {
       const each = join(out, String(index + 1))
-      const id = `${jobId}-${index + 1}`
+      const suffix = `-${index + 1}`
+      const id = jobId.slice(0, 64 - suffix.length) + suffix
       return { job, out: each, id, args: command(options, upload, id, join(each, "result.tgz"), job) }
     })
   if (options.dryRun) {
@@ -648,16 +676,8 @@ export const main = async (argv) => {
   if (options.jobs.length === 0) return collect(out, options.cpu, runs[0].code)
   const rows = boxes.map((box, index) => {
     console.log(plain(`${box.job}:`))
-    let exit
     let report
-    try {
-      exit = collect(box.out, options.cpu, runs[index].code, (value) => {
-        report = value
-      })
-    } catch (error) {
-      console.error(plain(error.message))
-      exit = runs[index].code || 4
-    }
+    const exit = collect(box.out, options.cpu, runs[index].code, (value) => { report = value })
     return { job: box.job, exit, report }
   })
   const lines = table(rows, options.cpu).map(plain)
@@ -666,14 +686,17 @@ export const main = async (argv) => {
   return Math.max(...rows.map((row) => row.exit))
 }
 
-const sameEntry = (arg) => {
+/** Exit codes distinguish invalid input from a host or collection failure. */
+export const main = async (argv) => {
   try {
-    return realpathSync(arg) === realpathSync(fileURLToPath(import.meta.url))
-  } catch {
-    return resolve(arg) === fileURLToPath(import.meta.url)
+    return await run(argv)
+  } catch (error) {
+    console.error(plain(`box-replay: ${error.message}`))
+    return error instanceof Refusal ? 2 : 4
   }
 }
 
-if (process.argv[1] !== undefined && sameEntry(process.argv[1])) {
+const entry = process.argv[1]
+if (entry && existsSync(entry) && realpathSync(entry) === fileURLToPath(import.meta.url)) {
   process.exitCode = await main(process.argv.slice(2))
 }

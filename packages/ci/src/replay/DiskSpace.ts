@@ -62,30 +62,61 @@ export const spaceOf = async (path: string): Promise<Space> => {
 export const heldUnder = async (path: string, signal?: AbortSignal): Promise<number> => {
   const seen = new Set<string>()
   let held = 0
-  const visit = async (at: string): Promise<void> => {
+  const inspect = (at: string) => NodeFs.lstat(at, { bigint: true })
+  type Directory = { at: string; info: Awaited<ReturnType<typeof inspect>>; parent?: Directory | undefined }
+  const pending: Array<Directory> = []
+  const openDirectory = async (next: Directory) => {
+    // Linux limits a single pathname to 4095 bytes. Reopen a long suffix one component at a time.
+    const suffix: Array<Directory> = []
+    let prefix = next
+    while (prefix.parent && Buffer.byteLength(prefix.at) >= 4096) {
+      suffix.push(prefix)
+      prefix = prefix.parent
+    }
+    let dir = await openPinnedPath(prefix.at, true, process.platform, prefix.info)
+    for (const child of suffix.reverse()) {
+      const previous = dir
+      try {
+        dir = await openPinnedPath(
+          NodePath.join(previous.path, NodePath.basename(child.at)),
+          true,
+          process.platform,
+          child.info
+        )
+      } finally {
+        await previous.close()
+      }
+    }
+    return dir
+  }
+  const collect = async (source: string, at: string, parent?: Directory) => {
     try {
-      const info = await NodeFs.lstat(at, { bigint: true })
+      const info = await inspect(source)
       const identity = `${info.dev}:${info.ino}`
       if (seen.has(identity)) return
       seen.add(identity)
-      if (info.isDirectory()) {
-        const directory = await openPinnedPath(at, true)
-        try {
-          const names = await NodeFs.readdir(directory.path)
-          for (const name of names) {
-            if (signal?.aborted) break
-            await visit(NodePath.join(directory.path, name))
-          }
-        } finally {
-          await directory.close()
-        }
-        return
-      }
-      held += Number(info.blocks) * 512
+      if (info.isDirectory()) pending.push({ at, info, parent })
+      else held += Number(info.blocks) * 512
     } catch {
-      // A directory may disappear or become unreadable while its job is running.
+      // A name can disappear after readdir.
     }
   }
-  await visit(path)
+  await collect(path, path)
+  while (pending.length > 0 && !signal?.aborted) {
+    const next = pending.pop()!
+    try {
+      const directory = await openDirectory(next)
+      try {
+        for (const name of await NodeFs.readdir(directory.path)) {
+          if (signal?.aborted) break
+          await collect(NodePath.join(directory.path, name), NodePath.join(next.at, name), next)
+        }
+      } finally {
+        await directory.close()
+      }
+    } catch {
+      // A queued directory was replaced or became unreadable.
+    }
+  }
   return held
 }

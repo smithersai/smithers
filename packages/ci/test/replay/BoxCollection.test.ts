@@ -59,8 +59,8 @@ it("reports a failed stop for its box and removes its upload", async () => {
   const result = temp()
   const diagnostic = vi.spyOn(console, "error").mockImplementation(() => undefined)
   expect(
-    await box.main(["https://example.com/repo", "1234567", "--packs", packs, "--out", result, "--job-id", "fixture"])
+    await box.main(["https://example.com/repo", "1234567", "--packs", packs, "--out", result, "--job-id", "fixture1"])
   ).toBe(17)
-  expect(diagnostic).toHaveBeenCalledWith(expect.stringContaining("could not stop fixture (cfbox exit 17)"))
+  expect(diagnostic).toHaveBeenCalledWith(expect.stringContaining("could not stop fixture1 (cfbox exit 17)"))
   expect(existsSync(join(result, "upload"))).toBe(false)
 })

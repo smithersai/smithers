@@ -220,7 +220,7 @@ describe("linesOf", () => {
 
   it("names a target that failed and then passed", () => {
     const flaky: TargetResult = {
-      ...result("//:flaky", "ran"),
+      ...result("//:flaky\u202e\x1b", "ran"),
       attempts: [{ passed: false, durationMs: 1 }, { passed: true, durationMs: 1 }]
     }
     expect(linesOf("3/3 abc1234 baseline", [flaky, result("//:a", "ran")], 1_000)).toEqual([
@@ -257,6 +257,10 @@ describe("a target that ran again with an unchanged key", () => {
     ]
     expect(ranAgain(passedWith, results)).toEqual(["//:a"])
     expect(ranAgain(new Map(), results)).toEqual([])
+  })
+
+  it("removes terminal controls from unchanged target labels", () => {
+    expect(ranAgainLines("run", ["a\u202eb\x1b"])[0]).toMatch(/: a b$/)
   })
 
   it("is named on one line, the first five and how many more", () => {

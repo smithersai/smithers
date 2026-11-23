@@ -25,6 +25,8 @@ describe("how smithers-ci starts git", () => {
       "maintenance.auto=false",
       "-c",
       "gc.auto=0",
+      "-c",
+      "core.fsmonitor=false",
       "commit",
       "--quiet"
     ])

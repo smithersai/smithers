@@ -5,6 +5,7 @@ import {
   commandLine,
   failuresOf,
   nothingPassed,
+  notReusedOf,
   printedFailure,
   printedLimitOf,
   reasonOf,
@@ -509,6 +510,12 @@ describe("the failures of a run", () => {
     expect(failuresOf([failed("//:a", { error: `leak ${token}` })], names)).toEqual([
       { step: "//:a", reason: "leak [withheld]" }
     ])
+  })
+
+  it("prints a fallback when a result label contains only format controls", () => {
+    const result = failed("\u202e", { error: "failed", notReused: "changed" })
+    expect(failuresOf([result])[0]?.step).toBe("(unnamed step)")
+    expect(notReusedOf([result])[0]?.step).toBe("(unnamed step)")
   })
 
   it("reads as one sentence, with its exit code when it has one", () => {
