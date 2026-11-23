@@ -242,6 +242,23 @@ const untilStatus = (
     return yield* untilStatus(store, runId, status, attempts - 1)
   })
 
+/** Waits for a run row to reach any of `statuses`, or gives up loudly. */
+const untilStatusIn = (
+  store: RunStore.Service,
+  runId: string,
+  statuses: ReadonlyArray<RunStore.RunRow["status"]>,
+  attempts = 400
+): Effect.Effect<void> =>
+  Effect.gen(function*() {
+    const row = yield* Effect.orDie(store.get(runId))
+    if (statuses.includes(row.status)) return
+    if (attempts <= 0) {
+      return yield* Effect.die(new Error(`run ${runId} never reached ${statuses.join(" or ")} (${row.status})`))
+    }
+    yield* Effect.sleep("10 millis")
+    return yield* untilStatusIn(store, runId, statuses, attempts - 1)
+  })
+
 /** Waits for a run row to reach `completed`, or gives up loudly. */
 const untilCompleted = (store: RunStore.Service, runId: string, attempts = 400): Effect.Effect<void> =>
   untilStatus(store, runId, "completed", attempts)
@@ -1158,7 +1175,7 @@ describe("EngineChildren.await", () => {
       expect(failure?.message).toContain("handed its lineage")
     })))
 
-  it("reports a cancelled child, an unknown child, and a child whose flow is unknown", () =>
+  it("reports a cancelled child, an unknown child, a child whose flow is unknown, and unreadable state", () =>
     run(Effect.gen(function*() {
       const runtime = yield* engine("children-await-refusals")
       const store = yield* RunStore.RunStore
@@ -1197,12 +1214,18 @@ describe("EngineChildren.await", () => {
         JSON.stringify({ version: 1, flowName: "agent/test/not-declared-here", payload: {} })
       )
 
+      // Valid JSON the store accepts, but no child state: it names no flow.
+      yield* store.create("unreadable-child", JSON.stringify({ version: 1, payload: {} }))
+
       const codes: Array<string | undefined> = []
       for (const child of ["cancelled-child", "no-such-child", "foreign-flow-child"]) {
         codes.push(childErrorOf(yield* Effect.exit(port.await({ child })))?.code)
       }
+      const unreadable = childErrorOf(yield* Effect.exit(port.await({ child: "unreadable-child" })))
 
       expect(codes).toEqual(["failed", "not_found", "not_found"])
+      expect(unreadable?.code).toBe("failed")
+      expect(unreadable?.message).toBe("The child run unreadable-child has unreadable state.")
     })))
 
   it("fails typed rather than guessing when the run store itself is broken", () =>
@@ -2043,5 +2066,252 @@ describe("EngineChildren ownership", () => {
       expect(answer).toContain(EngineChildren.childExecutionId("intruder-send-parent", "<label>"))
       // Refused before the control plane was asked, so nothing was admitted.
       expect(receipts).toEqual([])
+    })))
+})
+
+/**
+ * The control plane, with the tag of every cancel receipt it answers appended
+ * to `receipts`. The real `ControlLive` still decides each one.
+ */
+const observingCancels = (
+  receipts: Array<string>
+): Effect.Effect<ControlService.Service, never, ControlService.Control> =>
+  Effect.map(ControlService.Control, (control) =>
+    ControlService.make({
+      ...control,
+      cancel: (input) =>
+        control.cancel(input).pipe(
+          Effect.tap((receipt) => Effect.sync(() => receipts.push(receipt._tag)))
+        )
+    }))
+
+/** A cancel's answer, or its refusal's code and message, as one string. */
+const cancelled = (port: ChildFlows.Children, input: typeof ChildFlows.CancelInput.Type) =>
+  port.cancel!(input).pipe(
+    Effect.map((answer) => JSON.stringify(answer)),
+    Effect.catch((error) =>
+      Effect.succeed(`${(error as ChildFlows.ChildError).code} ${(error as ChildFlows.ChildError).message}`)
+    )
+  )
+
+describe("EngineChildren.cancel", () => {
+  it("cancels a parked child, which settles as cancelled", () =>
+    run(Effect.gen(function*() {
+      const runtime = yield* engine("children-cancel")
+      const store = yield* RunStore.RunStore
+      const receipts: Array<string> = []
+      const control = yield* observingCancels(receipts)
+      const port = yield* children().pipe(
+        Effect.provideService(FlowRuntime.FlowRuntime, runtime),
+        Effect.provideService(ControlService.Control, control)
+      )
+      yield* runtime.register(Steerable, () => DurableDeferred.await(gate))
+      yield* runtime.register(Parent, () =>
+        Effect.gen(function*() {
+          const spawned = yield* port.spawn({ flow: Steerable._tag, label: "doomed" })
+          yield* untilSuspended(store, spawned.child)
+          return yield* cancelled(port, { child: spawned.child, reason: "no longer needed" })
+        }).pipe(Effect.orDie))
+
+      const answer = yield* runtime.execute(Parent, { executionId: "cancel-parent", payload: {} })
+      const child = EngineChildren.childExecutionId("cancel-parent", "doomed")
+      yield* untilStatus(store, child, "cancelled")
+
+      expect(JSON.parse(answer)).toEqual({ child, cancelled: true, status: "cancelled" })
+      // The control plane interrupts a parked child to completion inside the
+      // cancel, so it answers with the run's new terminal status, not
+      // `Accepted`; the port still reports that this call did the cancelling.
+      expect(receipts).toEqual(["Terminal"])
+      // The collector sees the cancellation the parent asked for.
+      expect(childErrorOf(yield* Effect.exit(port.await({ child })))?.message).toBe(
+        `The child run ${child} was cancelled.`
+      )
+    })))
+
+  it("leaves a settled child as it is and reports its status", () =>
+    run(Effect.gen(function*() {
+      const runtime = yield* engine("children-cancel-settled")
+      const store = yield* RunStore.RunStore
+      const port = yield* children().pipe(Effect.provideService(FlowRuntime.FlowRuntime, runtime))
+      yield* registerChildren(runtime)
+      yield* runtime.register(Parent, () =>
+        Effect.gen(function*() {
+          const spawned = yield* port.spawn({ flow: Worker._tag, label: "finished" })
+          yield* port.await(spawned)
+          return yield* cancelled(port, { child: spawned.child })
+        }).pipe(Effect.orDie))
+
+      const answer = yield* runtime.execute(Parent, { executionId: "cancel-settled", payload: {} })
+      const child = EngineChildren.childExecutionId("cancel-settled", "finished")
+
+      expect(JSON.parse(answer)).toEqual({ child, cancelled: false, status: "completed" })
+      expect((yield* store.get(child)).status).toBe("completed")
+      expect((yield* port.await({ child })).output).toBe("worker finished")
+    })))
+
+  it("asks the control plane once when a re-driven round reaches the same cancel", () =>
+    run(Effect.gen(function*() {
+      const runtime = yield* engine("children-cancel-redrive")
+      const store = yield* RunStore.RunStore
+      const keys: Array<string> = []
+      const control = yield* ControlService.Control
+      const port = yield* children().pipe(
+        Effect.provideService(FlowRuntime.FlowRuntime, runtime),
+        Effect.provideService(
+          ControlService.Control,
+          ControlService.make({
+            ...control,
+            cancel: (input) => Effect.sync(() => keys.push(input.idempotencyKey)).pipe(Effect.andThen(control.cancel(input)))
+          })
+        )
+      )
+      const child = EngineChildren.childExecutionId("cancel-redrive", "redriven")
+      yield* runtime.register(Steerable, () => DurableDeferred.await(gate))
+      yield* runtime.register(Parent, () =>
+        Effect.gen(function*() {
+          const spawned = yield* port.spawn({ flow: Steerable._tag, label: "redriven" })
+          // The second drive re-runs this body after the first cancelled the
+          // child, so the child is parked on the first drive and already
+          // cancelled on the second.
+          yield* untilStatusIn(store, spawned.child, ["suspended", "cancelled"])
+          const answer = yield* cancelled(port, { child: spawned.child })
+          yield* DurableDeferred.await(parkGate)
+          return answer
+        }).pipe(Effect.orDie))
+
+      yield* runtime.execute(Parent, { executionId: "cancel-redrive", payload: {}, discard: true })
+      yield* runtime.poll(Parent, "cancel-redrive").pipe(
+        Effect.repeat({ until: Option.isSome, schedule: Schedule.spaced(10) }),
+        Effect.timeout(10_000)
+      )
+      yield* untilStatus(store, child, "cancelled")
+      yield* runtime.deferredDone(parkGate, {
+        flowName: Parent._tag,
+        executionId: "cancel-redrive",
+        deferredName: parkGate.name,
+        exit: Exit.succeed("carry on")
+      })
+      const answer = yield* runtime.execute(Parent, { executionId: "cancel-redrive", payload: {} })
+
+      // Both drives derived one key, so the second could not file a second request.
+      expect(keys).toHaveLength(2)
+      expect(keys[0]).toBe(keys[1])
+      expect(JSON.parse(answer)).toEqual({ child, cancelled: false, status: "cancelled" })
+    })))
+
+  it("collects and cancels from inside a step, scoped to that step's dispatch", () =>
+    run(Effect.gen(function*() {
+      const runtime = yield* engine("children-cancel-in-step")
+      const port = yield* children().pipe(Effect.provideService(FlowRuntime.FlowRuntime, runtime))
+      yield* registerChildren(runtime)
+      const child = EngineChildren.childExecutionId("cancel-in-step", "stepped")
+      // The engine hands a step its own invocation key, so `await` and
+      // `cancel` derive their keys under that dispatch rather than the run.
+      const Collect = Action.make({
+        name: "agent/test/children-collect-and-cancel",
+        tier: "sealed",
+        success: Schema.String,
+        execute: Effect.gen(function*() {
+          const collected = yield* port.await({ child })
+          const answer = yield* cancelled(port, { child })
+          return `${collected.output}\n${answer}`
+        }).pipe(Effect.orDie)
+      })
+      yield* runtime.register(Parent, () =>
+        Effect.gen(function*() {
+          yield* port.spawn({ flow: Worker._tag, label: "stepped" })
+          return yield* Collect
+        }).pipe(Effect.orDie))
+
+      const answer = yield* runtime.execute(Parent, { executionId: "cancel-in-step", payload: {} })
+
+      expect(answer.split("\n")).toEqual([
+        "worker finished",
+        JSON.stringify({ child, cancelled: false, status: "completed" })
+      ])
+    })))
+
+  it("refuses to cancel a run another parent started", () =>
+    run(Effect.gen(function*() {
+      const runtime = yield* engine("children-cancel-unowned")
+      const store = yield* RunStore.RunStore
+      const receipts: Array<string> = []
+      const control = yield* observingCancels(receipts)
+      const port = yield* children().pipe(
+        Effect.provideService(FlowRuntime.FlowRuntime, runtime),
+        Effect.provideService(ControlService.Control, control)
+      )
+      yield* runtime.register(Steerable, () => DurableDeferred.await(gate))
+      yield* runtime.register(Parent, () =>
+        port.spawn({ flow: Steerable._tag, label: "private" }).pipe(
+          Effect.map((spawned) => spawned.child),
+          Effect.orDie
+        ))
+      const victimChild = yield* runtime.execute(Parent, { executionId: "victim-cancel-parent", payload: {} })
+      yield* untilSuspended(store, victimChild)
+
+      yield* runtime.register(Intruder, () => cancelled(port, { child: victimChild }))
+      const answer = yield* runtime.execute(Intruder, { executionId: "intruder-cancel-parent", payload: {} })
+
+      expect(answer).toBe(
+        `not_found agent/cancel knows no child run ${victimChild}. A child of this run is named ` +
+          `${EngineChildren.childExecutionId("intruder-cancel-parent", "<label>")}, so that id belongs to another run.`
+      )
+      // Refused before the control plane was asked; the victim is still parked.
+      expect(receipts).toEqual([])
+      expect((yield* store.get(victimChild)).status).toBe("suspended")
+    })))
+
+  it("refuses a missing child and a call outside a running flow", () =>
+    run(Effect.gen(function*() {
+      const runtime = yield* engine("children-cancel-refusals")
+      const port = yield* children().pipe(Effect.provideService(FlowRuntime.FlowRuntime, runtime))
+      const child = EngineChildren.childExecutionId("cancel-refusals", "no-such-child")
+      yield* runtime.register(Parent, () => cancelled(port, { child }))
+
+      const inside = yield* runtime.execute(Parent, { executionId: "cancel-refusals", payload: {} })
+      const outside = yield* Effect.exit(port.cancel!({ child }))
+
+      expect(inside).toBe(`not_found agent/cancel knows no child run ${child}.`)
+      expect(childErrorOf(outside)?.code).toBe("unsupported")
+    })))
+
+  it("maps every control plane answer that is not a cancellation to a refusal", () =>
+    run(Effect.gen(function*() {
+      const runtime = yield* engine("children-cancel-receipts")
+      const store = yield* RunStore.RunStore
+      const control = yield* ControlService.Control
+      const child = EngineChildren.childExecutionId("cancel-receipts", "receipt")
+      const answering = (cancel: ControlService.Service["cancel"]) =>
+        children().pipe(
+          Effect.provideService(FlowRuntime.FlowRuntime, runtime),
+          Effect.provideService(ControlService.Control, ControlService.make({ ...control, cancel }))
+        )
+      const ports = [
+        yield* answering(() => Effect.succeed<Receipt>({ _tag: "Accepted", receiptId: "receipt-a" })),
+        yield* answering(() => Effect.succeed<Receipt>({ _tag: "AlreadyApplied", receiptId: "receipt-0" })),
+        yield* answering(() =>
+          Effect.succeed<Receipt>({ _tag: "Parked", receiptId: "receipt-1", planId: "plan-1", status: "waiting-approval" })
+        ),
+        yield* answering(() => Effect.succeed<Receipt>({ _tag: "Conflict", message: "different request" })),
+        yield* answering((input) => Effect.fail(new RunNotFound({ runId: input.runId }))),
+        yield* Effect.provide(children(), ControlService.layerNoop).pipe(
+          Effect.provideService(FlowRuntime.FlowRuntime, runtime)
+        )
+      ]
+      yield* store.create(child, JSON.stringify({ version: 1, flowName: Worker._tag, payload: {} }))
+      yield* runtime.register(Parent, () =>
+        Effect.forEach(ports, (port) => cancelled(port, { child })).pipe(Effect.map((answers) => answers.join("\n"))))
+
+      const answers = (yield* runtime.execute(Parent, { executionId: "cancel-receipts", payload: {} })).split("\n")
+
+      expect(answers).toEqual([
+        JSON.stringify({ child, cancelled: true, status: "cancelled" }),
+        JSON.stringify({ child, cancelled: true, status: "cancelled" }),
+        `failed agent/cancel could not cancel ${child}: the control plane answered Parked.`,
+        `failed agent/cancel could not cancel ${child}: the control plane answered Conflict.`,
+        `not_found agent/cancel knows no child run ${child}.`,
+        `failed agent/cancel could not cancel ${child}: /control/Unavailable`
+      ])
     })))
 })

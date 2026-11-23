@@ -209,6 +209,15 @@ export const cancel = (runId: string) =>
     (control) => control.cancel({ runId, idempotencyKey: `cli:cancel:${runId}` }).pipe(Effect.tap(reportTerminal))
   )
 /**
+ * Pause a running execution. Each request can pause a new running incarnation.
+ * @category constructors
+ * @since 1.0.0
+ */
+export const pause = (runId: string, reason?: string) =>
+  Effect.flatMap(ControlService.Control, (control) =>
+    control.pause({ runId, reason, idempotencyKey: `cli:pause:${randomUUID()}` }).pipe(Effect.tap(reportTerminal)))
+
+/**
  * Deliver a signal with a payload-specific mutation key.
  * @category constructors
  * @since 1.0.0

@@ -391,3 +391,193 @@ describe("ScanFixVerify", () => {
     })
   })
 })
+
+describe("ScanFixVerify.run", () => {
+  const options = {
+    maxRetries: 2,
+    concurrency: 1,
+    scan: ({ input }: { readonly input: string }) => Effect.succeed([input]),
+    fix: ({ issue }: { readonly issue: string }) => Effect.succeed(`fixed ${issue}`),
+    verify: () => Effect.succeed(false)
+  }
+
+  it.effect("stops on a clean first scan", () =>
+    Effect.gen(function*() {
+      expect(
+        yield* ScanFixVerify.run("repo", {
+          ...options,
+          scan: () => Effect.succeed([]),
+          fix: () => Effect.die("unexpected fix"),
+          verify: () => Effect.die("unexpected verification")
+        })
+      ).toEqual({ iterations: 1, remaining: [], resolved: true, verifications: [] })
+    }))
+
+  it.effect("resolves on a clean rescan and keeps the preceding verification", () =>
+    Effect.gen(function*() {
+      const seen: Array<unknown> = []
+      expect(
+        yield* ScanFixVerify.run("repo", {
+          ...options,
+          scan: ({ input, iteration }) =>
+            Effect.sync(() => {
+              seen.push({ input, iteration })
+              return iteration === 1 ? ["a"] : []
+            })
+        })
+      ).toEqual({ iterations: 2, remaining: [], resolved: true, verifications: [false] })
+      expect(seen).toEqual([{ input: "repo", iteration: 1 }, { input: "repo", iteration: 2 }])
+    }))
+
+  it.effect("stops on either resolved verdict and snapshots options before execution", () =>
+    Effect.gen(function*() {
+      for (const verdict of [true, { resolved: true }] as const) {
+        const config = {
+          ...options,
+          verify: () => Effect.succeed(verdict)
+        }
+        const run = ScanFixVerify.run("repo", config)
+        config.verify = () => Effect.die("replacement verify")
+        config.scan = () => Effect.die("replacement scan")
+        expect(yield* run).toEqual({ iterations: 1, remaining: [], resolved: true, verifications: [verdict] })
+      }
+    }))
+
+  it.effect("caps fixes per scan and reports every verdict and the last scan on exhaustion", () =>
+    Effect.gen(function*() {
+      const seen: Array<unknown> = []
+      const first = ["a", "b"]
+      const last = ["b", "c"]
+      const remaining = ["c"]
+      const result = yield* ScanFixVerify.run("repo", {
+        ...options,
+        maxIssues: 1,
+        scan: ({ iteration }) => Effect.succeed([first, last, remaining][iteration - 1]!),
+        fix: (request) =>
+          Effect.sync(() => {
+            seen.push(request)
+            return `fixed ${request.issue}`
+          }),
+        verify: (request) => Effect.succeed(request)
+      })
+      expect(seen).toEqual([
+        { issue: "a", index: 0, iteration: 1 },
+        { issue: "b", index: 0, iteration: 2 }
+      ])
+      expect(result).toEqual({
+        iterations: 2,
+        remaining,
+        resolved: false,
+        verifications: [
+          { input: "repo", issues: first, fixes: ["fixed a"], iteration: 1 },
+          { input: "repo", issues: last, fixes: ["fixed b"], iteration: 2 }
+        ]
+      })
+    }))
+
+  it.effect("accepts a clean confirming scan without another fix or verification", () =>
+    Effect.gen(function*() {
+      const result = yield* ScanFixVerify.run("repo", {
+        ...options,
+        maxRetries: 1,
+        scan: ({ iteration }) => Effect.succeed(iteration === 1 ? ["a"] : [])
+      })
+      expect(result).toEqual({ iterations: 1, remaining: [], resolved: true, verifications: [false] })
+    }))
+
+  it.effect("rejects a malformed confirming scan as a pattern error", () =>
+    Effect.gen(function*() {
+      const error = yield* Effect.flip(ScanFixVerify.run("repo", {
+        ...options,
+        maxRetries: 1,
+        scan: ({ iteration }) => Effect.succeed(iteration === 1 ? ["a"] : (null as unknown as ReadonlyArray<string>))
+      }))
+      expect(error).toMatchObject({
+        code: "invalid_input",
+        message: "ScanFixVerify scan at iteration 2 must return an array"
+      })
+    }))
+
+  it.effect("limits concurrent fixes and preserves scan order across out-of-order completions", () =>
+    Effect.gen(function*() {
+      const first = yield* Deferred.make<void>()
+      const second = yield* Deferred.make<void>()
+      const secondStarted = yield* Deferred.make<void>()
+      const thirdStarted = yield* Deferred.make<void>()
+      const seen: Array<string> = []
+      const fiber = yield* Effect.forkChild(ScanFixVerify.run("repo", {
+        ...options,
+        concurrency: 2,
+        maxRetries: 1,
+        scan: () => Effect.succeed(["a", "b", "c"]),
+        fix: ({ issue, index }) =>
+          Effect.gen(function*() {
+            seen.push(issue)
+            if (index === 0) yield* Deferred.await(first)
+            if (index === 1) {
+              yield* Deferred.succeed(secondStarted, undefined)
+              yield* Deferred.await(second)
+            }
+            if (index === 2) yield* Deferred.succeed(thirdStarted, undefined)
+            return `fixed ${issue}`
+          }),
+        verify: ({ fixes }) => Effect.succeed(fixes)
+      }))
+      yield* Deferred.await(secondStarted)
+      expect(seen).toEqual(["a", "b"])
+      expect(yield* Deferred.isDone(thirdStarted)).toBe(false)
+      yield* Deferred.succeed(second, undefined)
+      yield* Deferred.await(thirdStarted)
+      expect(seen).toEqual(["a", "b", "c"])
+      yield* Deferred.succeed(first, undefined)
+      expect(yield* Fiber.join(fiber)).toEqual({
+        iterations: 1,
+        remaining: ["a", "b", "c"],
+        resolved: false,
+        verifications: [["fixed a", "fixed b", "fixed c"]]
+      })
+    }))
+
+  it.effect("rejects invalid bounds before scanning", () =>
+    Effect.gen(function*() {
+      for (const value of [0, -1, 1.5, NaN, Infinity, Number.MAX_SAFE_INTEGER + 1]) {
+        for (const key of ["maxRetries", "maxIssues", "concurrency"]) {
+          const error = yield* Effect.flip(ScanFixVerify.run("repo", {
+            ...options,
+            scan: () => Effect.die("unexpected scan"),
+            [key]: value
+          }))
+          expect(error).toMatchObject({
+            code: "invalid_decorator",
+            message: "ScanFixVerify maxRetries, maxIssues, and concurrency must be positive safe integers"
+          })
+        }
+      }
+    }))
+
+  it.effect("propagates errors from every stage and skips stages that follow a failure", () =>
+    Effect.gen(function*() {
+      const error = { _tag: "StageError" } as const
+      for (
+        const stages of [
+          { scan: () => Effect.fail(error), fix: () => Effect.die("unexpected fix") },
+          { fix: () => Effect.fail(error) }
+        ]
+      ) {
+        expect(
+          yield* Effect.flip(ScanFixVerify.run("repo", {
+            ...options,
+            ...stages,
+            verify: () => Effect.die("unexpected verification")
+          }))
+        ).toBe(error)
+      }
+      expect(
+        yield* Effect.flip(ScanFixVerify.run("repo", {
+          ...options,
+          scan: ({ iteration }) => iteration === 1 ? Effect.succeed(["a"]) : Effect.die("unexpected rescan"),
+          verify: () => Effect.fail(error)
+        }))
+      ).toBe(error)
+    }))
+})

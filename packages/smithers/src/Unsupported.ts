@@ -47,14 +47,14 @@ export interface RemovedVerb {
 
 const timeTravel = "use `smthrs runs inspect|replay` for current execution history"
 const recovery = "the run driver's heartbeat sweep owns recovery"
-const uiHosting = "replaced by `smthrs serve`; the terminal monitor is deleted"
-const control = "not available; use `smthrs runs steer|signal|cancel|resume` and `smthrs approvals approve|deny`"
+const uiHosting = "use `smthrs serve` for hosting or `smthrs runs monitor` to check a run"
+const control = "use `smthrs runs steer|signal|cancel|pause|resume` or `smthrs approvals approve|deny`"
 const plugins = "moved to the plugins repository or deferred"
 const packs = "JSX pack tooling is gone; `smthrs migrate` replaces `upgrade`"
 const approvals = "approvals park the run; use `smthrs approvals list|approve|deny`"
 const nodeDetail = "use `smthrs runs output`, `smthrs runs logs --format json`, and the node-output projection"
 const jsx = "removed with the JSX inline workflow"
-const evaluation = "use `smthrs eval list|run|baseline|compare`; automatic optimization remains unavailable"
+const evaluation = "use `@smthrs/evals/Optimize` with a candidate proposer and evaluator"
 const reserved = "not an rc.0 verb"
 
 const removed = (group: string, reason: string, names: ReadonlyArray<string>): ReadonlyArray<RemovedVerb> =>
@@ -72,8 +72,8 @@ const removedGroup = (
  *
  * Only names the CLI no longer answers belong here. A 0.x spelling the
  * canonical tree reissued with a new meaning is not a removal: `smthrs graph`,
- * `eval`, `review`, `test`, `runs`, `show`, `diff`, `monitor`, and `exec` run today, so saying they
- * were removed would make every consumer of this table maintain the same
+ * `eval`, `review`, `test`, `runs`, `show`, `diff`, and `exec` run today. Calling
+ * them removed would make every consumer of this table maintain the same
  * exclusion list by hand. `test/Verb.test.ts` pins the two sets apart.
  *
  * @category constants
@@ -94,14 +94,14 @@ export const removedVerbs: ReadonlyArray<RemovedVerb> = [
     "timeline"
   ]),
   removedGroup("Time travel and checkpoints", timeTravel, "worktrees", ["list", "prune"]),
-  ...removed("Hijack and pause", control, ["hijack", "pause"]),
+  ...removed("Run control", control, ["hijack"]),
   // Bare `gateway` survives as the `serve` alias, so only the two subcommands
   // are removed. They are a group rather than plain verbs for exactly that
   // reason: the parent still runs.
   removedGroup("Old gateway and UI hosting", uiHosting, "gateway", ["status", "stop"]),
   ...removed("Old gateway and UI hosting", uiHosting, ["ui", "gui"]),
   ...removed("Supervision", recovery, ["supervise", "supervisor", "top"]),
-  ...removed("Evaluation and optimization", evaluation, ["optimize", "scores"]),
+  ...removed("Evaluation and optimization", evaluation, ["optimize"]),
   ...removed("Chat and narration", jsx, ["chat", "chat-create", "what", "ask"]),
   removedGroup("Accounts and providers", plugins, "agents", [
     "add",

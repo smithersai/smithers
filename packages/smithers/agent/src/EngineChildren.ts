@@ -1,9 +1,9 @@
 /**
  * The durable half of {@link ChildFlows}: detached children as real runs.
  *
- * `ChildFlows` declares `agent/spawn`, `agent/send`, and `agent/await` and
- * leaves the lifecycle behind the injected {@link ChildFlows.Children} port,
- * because nothing in a browser-safe package can honestly claim to persist a
+ * `ChildFlows` declares `agent/spawn`, `agent/send`, `agent/await`, and
+ * `agent/cancel` and leaves the lifecycle behind the injected
+ * {@link ChildFlows.Children} port, because nothing in a browser-safe package can honestly claim to persist a
  * detached run. This module is the implementation a host with a durable engine
  * supplies. Every operation is a durable one:
  *
@@ -17,6 +17,8 @@
  *   the one that spawned it.
  * - `send` steers the child through the control plane, which admits a durable
  *   `human-steer` message the child drains at its next turn boundary.
+ * - `cancel` stops the child through the same control plane, so the request
+ *   is durable and reaches a child another process is driving.
  *
  * **What it is allowed to touch.** Three services and no more: the flow
  * runtime that starts and polls executions, the run store that says whether a
@@ -27,7 +29,7 @@
  * runtime that satisfies those three contracts rather than over one engine
  * implementation.
  *
- * **Whose children it reaches.** `await` and `send` take the child id as a
+ * **Whose children it reaches.** `await`, `send`, and `cancel` take the child id as a
  * plain string a cell writes, so a call made inside a run is restricted to
  * that run's own child namespace — the ids `childExecutionId` derives from its
  * execution id. Without that, the string was a selector over every run the host
@@ -671,7 +673,72 @@ export const make = (
         }
       })
 
-    return ChildFlows.Children.of({ spawn, send, await: awaitChild })
+    const cancel: NonNullable<ChildFlows.Children["cancel"]> = (input) =>
+      Effect.gen(function*() {
+        const parent = yield* parentInstance("agent/cancel")
+        if (!ownsChild(parent.executionId, input.child)) {
+          return yield* Effect.fail(unowned("agent/cancel", parent.executionId, input.child))
+        }
+        const row = yield* rowOf(input.child)
+        if (Option.isNone(row)) {
+          return yield* Effect.fail(notFound(`agent/cancel knows no child run ${input.child}.`))
+        }
+        // The call site's step key, scoped like `send`'s, so a re-driven
+        // round that reaches this cancel again asks the control plane under
+        // the key it used the first time.
+        const dispatch = yield* Action.CurrentInvocationKey
+        const key = yield* Action.idempotencyKey(
+          "agent/cancel",
+          dispatch === undefined ? undefined : { parentScope: dispatch }
+        ).pipe(
+          Effect.provideService(FlowRuntime.FlowInstance, parent),
+          Effect.provideService(EffectDigest.Digest, crypto),
+          Effect.provideService(SecureRandom.SecureRandom, random)
+        )
+        // The control plane leaves the principal's clock out of its
+        // idempotency fingerprint, so a live reading here cannot turn a
+        // re-driven cancel into a `Conflict`.
+        const stampedAt = yield* Effect.clockWith((clock) => clock.currentTimeMillis)
+        const receipt = yield* control.cancel({
+          runId: input.child,
+          idempotencyKey: key,
+          // Omitted rather than `undefined`: the control plane decodes its
+          // input strictly and answers `InvalidInput` to an explicit
+          // `reason: undefined`, which refused every cancel without a reason.
+          ...(input.reason === undefined ? {} : { reason: input.reason }),
+          principal: { id: parent.executionId, kind: "flow", stampedAt }
+        }).pipe(
+          Effect.mapError((cause: ControlError.ControlError) =>
+            cause._tag === "/control/RunNotFound"
+              ? notFound(`agent/cancel knows no child run ${input.child}.`)
+              : failed(`agent/cancel could not cancel ${input.child}: ${cause._tag}`)
+          )
+        )
+        switch (receipt._tag) {
+          case "Accepted":
+          case "AlreadyApplied":
+            return { child: input.child, cancelled: true, status: "cancelled" }
+          case "Terminal":
+            // The control plane answers `Terminal` both for a child that had
+            // settled before this call and for one this call just finished
+            // cancelling: a cancel that interrupts the child to completion
+            // reports the run's new terminal status, not `Accepted`. The row
+            // read above tells them apart. A child this call
+            // read not yet cancelled and is `cancelled` now was stopped by
+            // this request.
+            return {
+              child: input.child,
+              cancelled: receipt.status === "cancelled" && row.value.status !== "cancelled",
+              status: receipt.status
+            }
+          default:
+            return yield* Effect.fail(
+              failed(`agent/cancel could not cancel ${input.child}: the control plane answered ${receipt._tag}.`)
+            )
+        }
+      })
+
+    return ChildFlows.Children.of({ spawn, send, await: awaitChild, cancel })
   })
 
 /**

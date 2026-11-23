@@ -87,6 +87,7 @@ describe("minting and verifying", () => {
       "Steer",
       "Signal",
       "Cancel",
+      "Pause",
       "Resume",
       "Run.Fork",
       "Run.Verify"

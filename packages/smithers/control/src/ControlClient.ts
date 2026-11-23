@@ -15,6 +15,7 @@ import {
   ApprovalInputSchema,
   CancelInputSchema,
   ListRequest,
+  PauseInputSchema,
   PlanInputSchema,
   ResumeInputSchema,
   RunInputSchema,
@@ -195,6 +196,7 @@ const approvalEncoder = encoder(ApprovalInputSchema)
 const steerEncoder = encoder(SteerInputSchema)
 const signalEncoder = encoder(SignalInputSchema)
 const cancelEncoder = encoder(CancelInputSchema)
+const pauseEncoder = encoder(PauseInputSchema)
 const resumeEncoder = encoder(ResumeInputSchema)
 const listEncoder = encoder(ListRequest)
 const watchEncoder = encoder(WatchFilter)
@@ -347,6 +349,7 @@ export function layer(config: ClientConfig) {
         cancel: Effect.fn("Control.cancel")((input) =>
           normalizeRequest(cancelEncoder, input, () => forwarded(input, () => unary.Cancel(input)))
         ),
+        pause: Effect.fn("Control.pause")((input) => normalizeRequest(pauseEncoder, input, () => unary.Pause(input))),
         resume: Effect.fn("Control.resume")((input) =>
           normalizeRequest(resumeEncoder, input, () => forwarded(input, () => unary.Resume(input)))
         ),

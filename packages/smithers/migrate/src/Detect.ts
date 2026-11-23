@@ -595,7 +595,7 @@ const scriptPatterns: ReadonlyArray<{ readonly kind: ScriptHit["kind"]; readonly
     // `up-to-date` in prose would read as `up`.
     kind: "cli-verb",
     pattern:
-      /\bsmithers\s+(up|workflow|init|gateway|serve|ps|logs|inspect|approve|deny|signal|cancel|pause|ui|gui|monitor|cron|eval|optimize|hijack|retry-task|rewind|fork|replay|timeline|snapshots|restore|revert|worktrees|human|ask-human|listeners|migrate|add|share|upgrade|docs|docs-full|graph|tree|diff|output|events|tail|down|bug|agents|memory|openapi|token|claude|supervise|gc)(?![\w-])/g
+      /\bsmithers\s+(up|workflow|init|gateway|serve|ps|logs|inspect|approve|deny|signal|cancel|pause|ui|gui|monitor|cron|eval|optimize|scores|hijack|retry-task|rewind|fork|replay|timeline|snapshots|restore|revert|worktrees|human|ask-human|listeners|migrate|add|share|upgrade|docs|docs-full|graph|tree|diff|output|events|tail|down|bug|agents|memory|openapi|token|claude|supervise|gc)(?![\w-])/g
   },
   { kind: "cli-entry", pattern: /apps\/cli\/src\/index\.js/g },
   { kind: "mcp", pattern: /--mcp\b/g },

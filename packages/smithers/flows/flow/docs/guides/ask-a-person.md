@@ -41,12 +41,26 @@ await one answer.
 
 ## Choose the shape of the answer
 
-| `kind`    | What the person supplies                | Other fields |
-| --------- | --------------------------------------- | ------------ |
-| `ask`     | Prose.                                  | none         |
-| `confirm` | A boolean.                              | none         |
-| `select`  | One of the strings in `options`.        | `options`    |
-| `json`    | A value the task's JSON Schema accepts. | `schema`     |
+| `kind`    | What the person supplies                                | Other fields |
+| --------- | ------------------------------------------------------- | ------------ |
+| `ask`     | Prose.                                                  | none         |
+| `confirm` | A boolean.                                              | none         |
+| `select`  | One of the strings in `options`.                        | `options`    |
+| `rank`    | An array naming every string in `options` exactly once. | `options`    |
+| `json`    | A value the task's JSON Schema accepts.                 | `schema`     |
+
+A `rank` question whose `options` repeat a string is refused as
+`request_invalid`, because no ranking could place the repeated option.
+
+## Narrow who may answer
+
+`allowedPrincipals` lists up to `HumanTask.maxAllowedPrincipals` (64) principal
+strings, such as `"local/operator"`. The list travels in the waiting
+annotation's `request` text. `HumanTask.answer` is never told who is calling, so
+the host enforces the list: it requires its own authorization and
+`HumanTask.isPrincipalAllowed(principal, question.allowedPrincipals)` before it
+records an answer. The list narrows the host's decision and never widens it. An
+empty list is refused as `request_invalid`, because nobody could ever answer.
 
 A `schema` supplied with any kind other than `json` is refused, because nothing
 would check it. The bounded schema subset is `type` (`object`, `array`, `string`,
@@ -152,11 +166,11 @@ so a restart between the park and the answer resumes on the same token.
 `HumanTask.HumanTaskFailed` carries `code`, `task`, `attempts`, the `rejections`
 it collected, and a message:
 
-| Code              | Meaning                                                                                                                                                                                                                                                                                                |
-| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `request_invalid` | The question was unanswerable before anyone was asked: a `select` with no options, an attempt budget below one or above `HumanTask.maxAttemptBudget`, a negative `timeoutMs` or one whose due time is above `Number.MAX_SAFE_INTEGER`, or a schema outside the subset or past its depth or node bound. |
-| `rejected`        | The attempt budget was spent on answers the task refused.                                                                                                                                                                                                                                              |
-| `timeout`         | The deadline passed with the question still open.                                                                                                                                                                                                                                                      |
+| Code              | Meaning                                                                                                                                                                                                                                                                                                                                                                       |
+| ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `request_invalid` | The question was unanswerable before anyone was asked: a `select` or `rank` with no options, a `rank` whose options repeat, an empty `allowedPrincipals`, an attempt budget below one or above `HumanTask.maxAttemptBudget`, a negative `timeoutMs` or one whose due time is above `Number.MAX_SAFE_INTEGER`, or a schema outside the subset or past its depth or node bound. |
+| `rejected`        | The attempt budget was spent on answers the task refused.                                                                                                                                                                                                                                                                                                                     |
+| `timeout`         | The deadline passed with the question still open.                                                                                                                                                                                                                                                                                                                             |
 
 `HumanTask.HumanAnswerInvalid` is the separate refusal an answer earns before it
 can consume durable storage, with `answer_invalid` for an answer outside the

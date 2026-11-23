@@ -1232,10 +1232,10 @@ The recoverable topology issues recorded during the build, such as a missing con
 
 ### `HumanTask.Kind`
 
-- **Type:** `"ask" | "confirm" | "select" | "json"` as a type, and `Schema.Literals(["ask", "confirm", "select", "json"])` as a schema
+- **Type:** `"ask" | "confirm" | "select" | "rank" | "json"` as a type, and `Schema.Literals(["ask", "confirm", "select", "rank", "json"])` as a schema
 - **Since:** `0.1.0`
 
-The shape a person is asked for. `ask` wants prose, `confirm` wants a boolean, `select` wants one of the options the task names, and `json` wants a value the task's JSON Schema accepts.
+The shape a person is asked for. `ask` wants prose, `confirm` wants a boolean, `select` wants one of the options the task names, `rank` wants every one of those options exactly once in the person's order, and `json` wants a value the task's JSON Schema accepts.
 
 ### `HumanTask.HumanTaskFailed`
 
@@ -1362,14 +1362,28 @@ The largest encoded prompt.
 - **Type:** `256`
 - **Since:** `1.0.0`
 
-The largest option list on one select question.
+The largest option list on one select or rank question.
 
 ### `HumanTask.maxOptionBytes`
 
 - **Type:** `4 * 1024`
 - **Since:** `1.0.0`
 
-The largest encoded select option.
+The largest encoded select or rank option, and the largest encoded principal.
+
+### `HumanTask.maxAllowedPrincipals`
+
+- **Type:** `64`
+- **Since:** `1.0.0`
+
+The most principals one question may narrow its answerers to.
+
+### `HumanTask.isPrincipalAllowed`
+
+- **Signature:** `isPrincipalAllowed(principal: string, allowedPrincipals?: ReadonlyArray<string>): boolean`
+- **Since:** `1.0.0`
+
+Whether a question's own allow-list lets `principal` answer it. Returns `true` when `allowedPrincipals` is `undefined`, and otherwise exact string membership. The check narrows and never widens: a host requires its own authorization and this check before it calls `HumanTask.answer`, which is never told who is calling and does not enforce the list.
 
 ### `HumanTask.maxAttemptBudget`
 

@@ -127,6 +127,24 @@ export const createEvalCli = (runtime: RuntimeConfig = {}) =>
         }, { next })
       }
     })
+    .command("scores", {
+      description: "Read recorded scores for a run",
+      mcp: false,
+      args: z.object({ run: z.string().min(1).describe("Run ID") }),
+      options: z.object(localOptions),
+      run: (context) =>
+        Presentation.guard(context, async () => {
+          const root = Project.localRoot(context.options, runtime.environment ?? process.env)
+          const runId = context.args.run
+          return { runId, scores: await Evaluation.scores(root, runId, runtime.signal) }
+        }, {
+          code: "eval_scores_failed",
+          next: [],
+          render: ({ scores }) => ({
+            human: scores.length === 0 ? "No recorded scores" : undefined
+          })
+        })
+    })
     .command("baseline", {
       description: "Write a committed baseline from a saved evaluation run",
       mcp: { annotations: { readOnlyHint: false } },

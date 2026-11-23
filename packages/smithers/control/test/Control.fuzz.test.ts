@@ -1289,6 +1289,7 @@ describe("@smthrs/control durable & full-stack fuzz invariants", () => {
                   return Effect.succeed({ _tag: "Accepted" as const, receiptId: "r-sig" })
                 },
                 cancel: () => Effect.die("unused"),
+                pause: () => Effect.die("unused"),
                 resume: () => Effect.die("unused"),
                 list: () => Effect.die("unused"),
                 watch: () => Stream.empty

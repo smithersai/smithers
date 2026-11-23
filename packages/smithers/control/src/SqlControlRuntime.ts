@@ -2287,6 +2287,13 @@ const makeRuntime = (
           )
         )
       }),
+      pause: Effect.fn("SqlControlRuntime.pause")(function*(runId: RunId) {
+        const row = yield* requireRow(runId)
+        const { waitingReason: _waitingReason, ...summary } = yield* summaryOf(row)
+        if (terminal(summary.status)) return summary
+        if (!ownedByUs(row)) return yield* new ClaimLost({ runId })
+        return yield* transition(runId, row.owner, summary, "parked")
+      }),
       codeDrift: Effect.fn("SqlControlRuntime.codeDrift")(function*(runId: RunId) {
         const summary = yield* recordedCode(yield* requireRow(runId))
         const pinned = summary.executionDigest === undefined || options.pinnedFlow === undefined

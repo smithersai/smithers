@@ -40,6 +40,13 @@ export * as CaseExecutor from "./CaseExecutor.ts"
  */
 export * as Runner from "./Runner.ts"
 /**
+ * Eval-driven prompt optimization.
+ *
+ * @since 0.1.0
+ * @category runners
+ */
+export * as Optimize from "./Optimize.ts"
+/**
  * Committed baselines: what a suite used to score.
  *
  * @since 0.1.0

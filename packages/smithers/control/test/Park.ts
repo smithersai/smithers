@@ -1,14 +1,11 @@
 /**
- * Parking a run the way an operator does, now that `pause` is gone.
+ * Parking a run at the runtime, without an executor.
  *
- * `Control.pause` used to be the one call that released a run's ownership
- * without settling it, and half the fence suites leaned on it to reach a
- * parked, unowned row. 1.0.0-rc.0 removes it (the release policy, "Attributed
- * pause"): it flipped the control row and parked no engine run, which is the
- * partial behavior the release scope forbids. The transition itself is not gone —
- * `ControlRuntime.writeStatus` performs it, and clears the owner for every
- * non-running status — so this is the same two lines the suites used to spell
- * with `pause`, in one place.
+ * The fence suites need a parked, unowned row and no engine. `Control.pause`
+ * parks the execution through `ControlExecutor.pause` first and fails
+ * `Unavailable` without one, so it is the wrong tool here.
+ * `ControlRuntime.writeStatus` performs the control transition alone, and
+ * clears the owner for every non-running status.
  */
 import { Effect } from "effect"
 import type { Service } from "../src/ControlRuntime.ts"

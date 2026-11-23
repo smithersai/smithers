@@ -4,14 +4,16 @@
  */
 
 import { approvalRevision } from "@smthrs/build-cli/Cli"
-import { Control, ControlFacts, type ControlSchema } from "@smthrs/control"
+import { Control, ControlFacts, type ControlSchema, Monitor } from "@smthrs/control"
 import * as DurableWriter from "@smthrs/database/DurableWriter"
 import * as RunDevTools from "@smthrs/gateway/RunDevTools"
 import * as RunTrace from "@smthrs/gateway/RunTrace"
+import * as Journal from "@smthrs/journal/Journal"
 import * as Redaction from "@smthrs/journal/Redaction"
 import { BudgetOnExceeded } from "@smthrs/registry/Descriptor"
 import { Clock, Effect, Option, Schema } from "effect"
 import { Cli, z } from "incur"
+import { randomUUID } from "node:crypto"
 import { existsSync } from "node:fs"
 import { readFile } from "node:fs/promises"
 import { dirname } from "node:path"
@@ -21,6 +23,7 @@ import * as FlowCatalog from "../commands/FlowCatalog.ts"
 import * as Globals from "../commands/Globals.ts"
 import * as Launch from "../commands/Launch.ts"
 import * as RunControl from "../commands/RunControl.ts"
+import * as RunReads from "../commands/RunReads.ts"
 import * as Forensics from "../Forensics.ts"
 import { defaultApprovalScope } from "../internal/ApprovalScope.ts"
 import * as BoundedEvents from "../internal/BoundedEvents.ts"
@@ -695,6 +698,66 @@ export const createRunsCli = (runtime: Bridge.Runtime = {}) =>
             ...runtime,
             ...await prepareHistoryRun(c.args.run, c.options, runtime)
           }))
+    })
+    .command("pause", {
+      description: "Pause a running durable run",
+      mcp: { annotations: { readOnlyHint: false } },
+      args: runArgs,
+      options: options.extend({ reason: z.string().optional().describe("Reason to record for the pause") }),
+      run: (c) =>
+        guard(c, async () =>
+          Bridge.query(
+            Effect.andThen(checks(c.options, runtime), RunControl.pause(c.args.run, c.options.reason)),
+            c.options,
+            { ...runtime, ...await prepareHistoryRun(c.args.run, c.options, runtime) }
+          ))
+    })
+    .command("monitor", {
+      description: "Check the health of a local durable run",
+      mcp: false,
+      args: runArgs,
+      options: options.extend({
+        interval: z.number().nonnegative().optional().describe("Milliseconds between checks"),
+        stallBeats: z.number().int().positive().optional().describe("Checks without progress before a stall"),
+        maxChecks: z.number().int().nonnegative().optional().describe("Maximum number of checks"),
+        autoHeal: z.boolean().default(false).describe("Resume or cancel unhealthy runs")
+      }),
+      run: (c) =>
+        guard(c, async () => {
+          if (Bridge.isRemote(c.options, runtime)) {
+            throw new CliError.UsageError({ message: "runs monitor requires the local run journal" })
+          }
+          if (!Bridge.hasRecords(c.options, runtime)) {
+            await Bridge.project(checks(c.options, runtime), c.options, runtime)
+            throw unknownRun(c.args.run)
+          }
+          const monitor = Effect.gen(function*() {
+            yield* checks(c.options, runtime)
+            const journal = yield* Effect.serviceOption(Journal.Journal)
+            if (Option.isNone(journal)) {
+              return yield* new CliError.UnsupportedError({ message: "The run journal is unavailable" })
+            }
+            const summary = yield* RunReads.summary(yield* Control.Control, c.args.run)
+            if (summary === undefined) return yield* unknownRun(c.args.run)
+            return yield* Monitor.run({
+              runId: c.args.run,
+              monitorId: randomUUID(),
+              intervalMs: c.options.interval,
+              stallBeats: c.options.stallBeats,
+              maxChecks: c.options.maxChecks,
+              autoHeal: c.options.autoHeal ? ["stalled", "wedged-node", "failing", "runaway-loop"] : []
+            }).pipe(Effect.provideService(Journal.Journal, journal.value))
+          })
+          if (!c.options.autoHeal) return Bridge.query(monitor, c.options, runtime)
+          return Bridge.launch(monitor, c.options, {
+            ...runtime,
+            ...await prepareHistoryRun(c.args.run, c.options, runtime)
+          })
+        }, {
+          render: (report) => ({
+            human: report.beats.map(Monitor.formatBeat).join("\n") || "No monitor checks ran"
+          })
+        })
     })
     .command("cancel-all", {
       description: "Cancel every nonterminal run in this project",

@@ -45,7 +45,9 @@ describe("package exports", () => {
       "contains",
       "diffSize",
       "exact",
+      "latency",
       "rubric",
+      "schemaAdherence",
       "testsPass",
       "touchedFiles"
     ])

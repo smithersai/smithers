@@ -128,8 +128,7 @@ describe("plan over a multi-workflow pack", () => {
       expect(report.units.length).toBeGreaterThan(3)
       expect(report.units[0]?.id).toBe("dependencies")
       expect(report.units.at(-1)?.id).toBe("project")
-      // A pack with a `<UI>` element and a worktree has constructs with no
-      // counterpart, and a plan says so rather than promising a rewrite.
+      // The plan reports unsupported constructs such as `<UI>`.
       expect(report.unsupported.length).toBeGreaterThan(0)
       expect(report.followUps.some((entry) => entry.severity === "must")).toBe(true)
       expect(changedOutside(before, hashTree(root), ".smithers-migrate")).toEqual([])

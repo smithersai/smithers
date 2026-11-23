@@ -36,28 +36,28 @@ The root entry point exports these namespaces; each is also importable from
 `@smthrs/control/<Module>`. Every export of every namespace, with its
 signature, is on the [API reference](https://github.com/smithersai/smithers/blob/main/packages/smithers/control/docs/api.md).
 
-| Namespace                                           | What it is                                                                                             |
-| --------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| `Control`                                           | The service: `plan`, `run`, `approve`, `deny`, `steer`, `signal`, `cancel`, `resume`, `list`, `watch`. |
-| `ControlSchema`                                     | The serializable values both halves of the wire decode, and the RPC request schemas.                   |
-| `ControlError`                                      | Every stable failure, as classes and as one membership schema.                                         |
-| `ControlLive`                                       | The in-process implementation over the runtime, the journal, the notification queue, and the registry. |
-| `ControlRuntime`                                    | The persistence port, plus `layerMemory`.                                                              |
-| `SqlControlRuntime`                                 | The durable persistence adapter over a SQL database and the fenced run store.                          |
-| `ControlExecutor`                                   | The execution port: launch, cancel, signal, resume, and the park settlement a cancel needs.            |
-| `DispatchReader`                                    | The trigger read port: registered triggers and the fire ledger `list` pages; `layerNone` refuses.      |
-| `ControlRpcs`, `ControlServer`, `ControlClient`     | The RPC contract, the HTTP and WebSocket mount, and the client projected back into `Control`.          |
-| `ScopedToken`                                       | Scoped, expiring tokens minted under a bearer credential and verified with it.                         |
-| `Lineage`, `Cancellation`, `Steering`               | Pure projections: how a run came to exist, who cancelled it, and when a steer was delivered.           |
-| `Monitor`                                           | Run health as a pure classification, and the beat loop that acts on it.                                |
-| `Health`                                            | Configurable Effect checks, bounded observation policies, provenance, and the shared status rollup.    |
-| `ControlFacts`                                      | The versioned control fact contract and durable producer helpers.                                      |
-| `JevSessionChecker`                                 | The registered `jev.session` checker: does this session's own output show it waiting on a person?      |
-| `Channels`, `WebhookChannel`                        | Verified ingress: an external request becomes a control mutation, once.                                |
-| `Credential`, `CredentialStore`, `CredentialCipher` | The credential boundary and its two ports.                                                             |
-| `SqlCredentialStore`, `WebCryptoCipher`             | Their durable and AES-256-GCM adapters.                                                                |
-| `Migrations`                                        | The package's namespaced migration set and the layer that runs it.                                     |
-| `SystemFlows`                                       | The reserved CLI verb to flow-id catalog.                                                              |
+| Namespace                                           | What it is                                                                                                      |
+| --------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| `Control`                                           | The service: `plan`, `run`, `approve`, `deny`, `steer`, `signal`, `cancel`, `pause`, `resume`, `list`, `watch`. |
+| `ControlSchema`                                     | The serializable values both halves of the wire decode, and the RPC request schemas.                            |
+| `ControlError`                                      | Every stable failure, as classes and as one membership schema.                                                  |
+| `ControlLive`                                       | The in-process implementation over the runtime, the journal, the notification queue, and the registry.          |
+| `ControlRuntime`                                    | The persistence port, plus `layerMemory`.                                                                       |
+| `SqlControlRuntime`                                 | The durable persistence adapter over a SQL database and the fenced run store.                                   |
+| `ControlExecutor`                                   | The execution port: launch, cancel, signal, resume, and the park settlement a cancel needs.                     |
+| `DispatchReader`                                    | The trigger read port: registered triggers and the fire ledger `list` pages; `layerNone` refuses.               |
+| `ControlRpcs`, `ControlServer`, `ControlClient`     | The RPC contract, the HTTP and WebSocket mount, and the client projected back into `Control`.                   |
+| `ScopedToken`                                       | Scoped, expiring tokens minted under a bearer credential and verified with it.                                  |
+| `Lineage`, `Cancellation`, `Steering`               | Pure projections: how a run came to exist, who cancelled it, and when a steer was delivered.                    |
+| `Monitor`                                           | Run health as a pure classification, and the beat loop that acts on it.                                         |
+| `Health`                                            | Configurable Effect checks, bounded observation policies, provenance, and the shared status rollup.             |
+| `ControlFacts`                                      | The versioned control fact contract and durable producer helpers.                                               |
+| `JevSessionChecker`                                 | The registered `jev.session` checker: does this session's own output show it waiting on a person?               |
+| `Channels`, `WebhookChannel`                        | Verified ingress: an external request becomes a control mutation, once.                                         |
+| `Credential`, `CredentialStore`, `CredentialCipher` | The credential boundary and its two ports.                                                                      |
+| `SqlCredentialStore`, `WebCryptoCipher`             | Their durable and AES-256-GCM adapters.                                                                         |
+| `Migrations`                                        | The package's namespaced migration set and the layer that runs it.                                              |
+| `SystemFlows`                                       | The reserved CLI verb to flow-id catalog.                                                                       |
 
 A host that binds `jev.session` supplies its existing evaluator through
 `Health.makeRegistry(config, kind, evaluator)`. Native hosts use a subscription
@@ -133,6 +133,7 @@ excluded credential header remains the same delivery.
 | `steer`                    | `Accepted`, `AlreadyApplied`, `Conflict`, `Terminal` | `RunNotFound`, `InvalidInput`, `PersistenceError`, `Unavailable`                                                                                           |
 | `signal`                   | `Accepted`, `AlreadyApplied`, `Conflict`, `Terminal` | `RunNotFound`, `NoMatchingWait`, `InvalidInput`, `PersistenceError`, `Unavailable`                                                                         |
 | `cancel`                   | `Accepted`, `Conflict`, `Terminal`                   | `RunNotFound`, `ClaimLost`, `InvalidInput`, `PersistenceError`, `Unavailable`                                                                              |
+| `pause`                    | `Accepted`, `AlreadyApplied`, `Conflict`, `Terminal` | `RunNotFound`, `ClaimLost`, `InvalidInput`, `PersistenceError`, `Unavailable`                                                                              |
 | `list`, `watch`            | a page or a stream                                   | every member of `ControlError`                                                                                                                             |
 
 `ControlError.ControlErrorSchema` is the single membership list for the union,

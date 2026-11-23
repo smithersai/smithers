@@ -933,6 +933,22 @@ export const ReasonedMutationInputSchema = Schema.Struct({
 export const CancelInputSchema = ReasonedMutationInputSchema
 
 /**
+ * The RPC request schema for pausing a running run.
+ *
+ * The reason is on the wire because the server records it on the
+ * `control.run.paused` journal entry. The principal is absent because the
+ * authenticated server stamps it.
+ *
+ * @since 1.0.0
+ * @category models
+ */
+export const PauseInputSchema = Schema.Struct({
+  runId: RunId,
+  idempotencyKey: IdempotencyKey,
+  reason: Schema.optional(Schema.String)
+})
+
+/**
  * The RPC request schema for resume: a reasoned mutation that may accept a
  * changed flow.
  *

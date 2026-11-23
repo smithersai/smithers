@@ -420,10 +420,13 @@ describe("Detect.scan over command scripts", () => {
       const root = mkdtempSync(join(tmpdir(), "migrate-detect-verbs-"))
       try {
         writeFileSync(join(root, "package.json"), "{\"name\":\"verbs\"}\n")
-        writeFileSync(join(root, "run.sh"), "smithers docs-full\necho smithers up-to-date\nsmithers docs\n")
+        writeFileSync(
+          join(root, "run.sh"),
+          "smithers docs-full\necho smithers up-to-date\nsmithers docs\nsmithers scores\n"
+        )
         const detection = yield* detect(root)
         expect(detection.scripts.filter((hit) => hit.kind === "cli-verb").map((hit) => `${hit.line}:${hit.text}`))
-          .toEqual(["1:smithers docs-full", "3:smithers docs"])
+          .toEqual(["1:smithers docs-full", "3:smithers docs", "4:smithers scores"])
       } finally {
         rmSync(root, { recursive: true, force: true })
       }

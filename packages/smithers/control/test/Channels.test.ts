@@ -60,6 +60,7 @@ const recordingControl = (calls: Array<string>) => {
         return Effect.succeed(accepted)
       },
       cancel: () => Effect.die("unused"),
+      pause: () => Effect.die("unused"),
       resume: () => Effect.die("unused"),
       list: () => Effect.die("unused"),
       watch: () => Stream.empty
@@ -206,6 +207,7 @@ describe("Channels", () => {
             return accepted
           }),
         cancel: () => Effect.die("unused"),
+        pause: () => Effect.die("unused"),
         resume: () => Effect.die("unused"),
         list: () => Effect.die("unused"),
         watch: () => Stream.empty
@@ -507,6 +509,7 @@ describe("Channels", () => {
               : Effect.succeed(accepted)
           }),
         cancel: () => Effect.die("unused"),
+        pause: () => Effect.die("unused"),
         resume: () => Effect.die("unused"),
         list: () => Effect.die("unused"),
         watch: () => Stream.empty

@@ -18,6 +18,7 @@ import {
   type ApprovalInput,
   Control,
   type ListInput,
+  type PauseInput,
   type RunMutationInput,
   type Service,
   type SignalInput,
@@ -37,6 +38,7 @@ import {
   type PlanDigestMismatch,
   type PlanNotFound,
   RunNotFound,
+  type TransportError,
   Unauthorized,
   Unavailable
 } from "./ControlError.ts"
@@ -62,6 +64,7 @@ import {
   defaultPageSize,
   ListRequest,
   maxPageSize,
+  PauseInputSchema,
   Principal,
   ReasonedMutationInputSchema,
   ResumeInputSchema,
@@ -196,12 +199,51 @@ const declaredTrigger = (decodedInput: unknown): Record<string, unknown> | undef
 
 const invalid = (issue: string): InvalidInput => new InvalidInput({ issue })
 
+type PauseFailure =
+  | RunNotFound
+  | ClaimLost
+  | InvalidInput
+  | PersistenceError
+  | Unavailable
+  | TransportError
+  | Unauthorized
+
+const pauseFailureTags: ReadonlySet<string> = new Set<PauseFailure["_tag"]>([
+  "/control/RunNotFound",
+  "/control/ClaimLost",
+  "/control/InvalidInput",
+  "/control/PersistenceError",
+  "/control/Unavailable",
+  "/control/TransportError",
+  "/control/Unauthorized"
+])
+
+/**
+ * An executor's refusal to park a run, as `Control.pause` declares it.
+ *
+ * The port admits every control error. The ones `pause` already answers pass
+ * through unchanged, and any other becomes the persistence failure it is: the
+ * engine park was not written.
+ */
+const pauseFailure = (cause: ControlError): PauseFailure =>
+  pauseFailureTags.has(cause._tag)
+    ? cause as PauseFailure
+    : new PersistenceError({
+      operation: "pause",
+      message: `The executor could not park the run (${cause._tag})`,
+      cause
+    })
+
 const AttributedApprovalInput = Schema.Struct({
   ...ApprovalInputSchema.fields,
   principal: Schema.optional(Principal)
 })
 const AttributedReasonedMutationInput = Schema.Struct({
   ...ReasonedMutationInputSchema.fields,
+  principal: Schema.optional(Principal)
+})
+const AttributedPauseInput = Schema.Struct({
+  ...PauseInputSchema.fields,
   principal: Schema.optional(Principal)
 })
 const AttributedResumeInput = Schema.Struct({
@@ -266,6 +308,8 @@ const snapshotApproval = (operation: string, input: unknown) =>
   snapshotMutation(operation, Schema.decodeUnknownEffect(AttributedApprovalInput), input)
 const snapshotReasonedMutation = (operation: string, input: unknown) =>
   snapshotMutation(operation, Schema.decodeUnknownEffect(AttributedReasonedMutationInput), input)
+const snapshotPause = (input: unknown) =>
+  snapshotMutation("pause", Schema.decodeUnknownEffect(AttributedPauseInput), input)
 const snapshotResume = (input: unknown) =>
   snapshotMutation("resume", Schema.decodeUnknownEffect(AttributedResumeInput), input)
 const snapshotRun = (input: unknown) => snapshotMutation("run", Schema.decodeUnknownEffect(AttributedRunInput), input)
@@ -2371,6 +2415,70 @@ export const layer: Layer.Layer<
                   )
                 ))
           )
+        )
+      ),
+      pause: Effect.fn("Control.pause")((submitted: PauseInput) =>
+        confined(
+          submitted,
+          Effect.gen(function*() {
+            const input = yield* snapshotPause(submitted)
+            const principal = yield* runtime.stampPrincipal(input.principal)
+            const pauseFingerprint = fingerprint("pause", principal, input)
+            // `replay: false`, and the replay is answered below instead: the
+            // run's own terminality is read first, as `cancel` and `resume`
+            // read it, so a retried key names what happened to the run rather
+            // than what the earlier call did.
+            return yield* mutate(
+              "pause",
+              input.idempotencyKey,
+              principal,
+              pauseFingerprint,
+              Effect.gen(function*() {
+                const current = yield* getRun(input.runId)
+                if (terminal(current.status)) {
+                  return { _tag: "Terminal", runId: current.runId, status: current.status }
+                }
+                const prior = yield* runtime.lookupMutation(
+                  mutationKey("pause", input.idempotencyKey, principal),
+                  pauseFingerprint
+                )
+                if (prior !== undefined) return alreadyApplied(input.idempotencyKey, prior)
+                if (!live(current.status)) {
+                  return yield* invalid(
+                    `pause: run ${input.runId} is ${current.status}, and only a running run can be paused`
+                  )
+                }
+                // A control row that reads `parked` over an execution nobody
+                // stopped is the pause 1.0.0-rc.0 removed, so a composition
+                // that cannot park the engine run refuses before it writes.
+                const park = Option.isSome(executor) ? executor.value.pause : undefined
+                if (park === undefined) return yield* unavailable("pause")
+                // Ownership is asked before the engine is touched: a run a
+                // peer holds answers `ClaimLost` with nothing parked.
+                yield* runtime.claimFence(input.runId)
+                yield* Effect.mapError(park(input.runId, input.reason), pauseFailure)
+                const run = yield* runtime.pause(input.runId)
+                // Who paused the run and why, then the lifecycle fact every
+                // projection already folds.
+                yield* emit(
+                  input.runId,
+                  "control.run.paused",
+                  json({
+                    runId: input.runId,
+                    principal,
+                    ...(input.reason === undefined ? {} : { reason: input.reason })
+                  })
+                )
+                yield* emit(
+                  input.runId,
+                  "control.run.parked",
+                  { runId: input.runId, status: run.status, ...ControlFacts.runFact(run) } as ControlEvent["payload"]
+                )
+                return accepted(input.idempotencyKey, input.runId)
+              }),
+              false
+            )
+          })
         )
       ),
       resume: Effect.fn("Control.resume")((input) => confined(input, runMutation(input))),

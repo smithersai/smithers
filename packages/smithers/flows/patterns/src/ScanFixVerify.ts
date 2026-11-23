@@ -19,6 +19,7 @@
 import * as Flow from "@smthrs/flow/Flow"
 import * as Node from "@smthrs/plan/Node"
 import type * as Planned from "@smthrs/plan/Planned"
+import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
 import * as Compose from "./internal/Compose.ts"
 import * as Failure from "./internal/Failure.ts"
@@ -90,6 +91,12 @@ interface Scanned {
 const scanned = (issues: unknown): Scanned =>
   Array.isArray(issues) ? { issues, invalid: false } : { issues: [], invalid: true }
 
+const invalidScan = (iteration: number): PatternError =>
+  new PatternError({
+    code: "invalid_input",
+    message: `ScanFixVerify scan at iteration ${iteration} must return an array`
+  })
+
 const issueCount = (issues: ReadonlyArray<unknown>): number => issues.length
 
 const positive = (value: number): boolean => Number.isSafeInteger(value) && value >= 1
@@ -152,13 +159,7 @@ export const make = <R = never>(options: MakeOptions<R>): ScanFixVerifyFlow<R> =
         ),
         {
           if: Node.capture({ ...captures, iteration, invalid: true }, (state: Scanned) => state.invalid),
-          then: () =>
-            Node.fail(
-              new PatternError({
-                code: "invalid_input",
-                message: `ScanFixVerify scan at iteration ${iteration} must return an array`
-              })
-            ),
+          then: () => Node.fail(invalidScan(iteration)),
           else: (state: Planned.Planned<Scanned>) =>
             Node.branch(Node.succeed(state.issues), {
               if: clean,
@@ -266,5 +267,86 @@ export const make = <R = never>(options: MakeOptions<R>): ScanFixVerifyFlow<R> =
     // own `PatternError`, and whatever a member it called failed with.
     error: Failure.schemaFor([PatternError], [stages.scan, stages.fix, stages.verify]) as typeof Schema.Unknown,
     body: Node.capture(captures, body)
+  })
+}
+
+/**
+ * Operational callbacks and bounds for {@link run}.
+ *
+ * When provided, `maxIssues` caps how many issues receive fixes per scan.
+ * The verifier sees the full scan and the fixes for its first issues.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export interface RuntimeOptions<I, Issue, Fix, Verification, E, R, E2 = E, R2 = R, E3 = E, R3 = R> {
+  readonly scan: (input: {
+    readonly input: I
+    readonly iteration: number
+  }) => Effect.Effect<ReadonlyArray<Issue>, E, R>
+  readonly fix: (input: {
+    readonly issue: Issue
+    readonly index: number
+    readonly iteration: number
+  }) => Effect.Effect<Fix, E2, R2>
+  readonly verify: (input: {
+    readonly input: I
+    readonly issues: ReadonlyArray<Issue>
+    readonly fixes: ReadonlyArray<Fix>
+    readonly iteration: number
+  }) => Effect.Effect<Verification, E3, R3>
+  readonly maxRetries: number
+  readonly maxIssues?: number | undefined
+  readonly concurrency: number
+}
+
+/**
+ * The loop outcome, with all completed verifications in iteration order.
+ * An exhausted loop reports the issues from its final scan.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export interface RunResult<Issue, Verification> {
+  readonly iterations: number
+  readonly remaining: ReadonlyArray<Issue>
+  readonly resolved: boolean
+  readonly verifications: ReadonlyArray<Verification>
+}
+
+/**
+ * Runs bounded scans, fixing issues concurrently before each verification.
+ * A clean scan or a resolved verification ends the loop immediately.
+ * If the fix budget runs out, one confirming scan reports the remaining issues.
+ *
+ * @category combinators
+ * @since 1.0.0
+ */
+export const run = <I, Issue, Fix, Verification, E, R, E2 = E, R2 = R, E3 = E, R3 = R>(
+  input: I,
+  options: RuntimeOptions<I, Issue, Fix, Verification, E, R, E2, R2, E3, R3>
+): Effect.Effect<RunResult<Issue, Verification>, E | E2 | E3 | PatternError, R | R2 | R3> => {
+  const invalid = validate(options)
+  if (invalid !== undefined) return Effect.fail(invalid)
+  const { scan, fix, verify, maxRetries, maxIssues, concurrency } = options
+  return Effect.gen(function*() {
+    const verifications: Array<Verification> = []
+    let iteration = 1
+    while (true) {
+      const issues = yield* scan({ input, iteration })
+      if (!Array.isArray(issues)) return yield* Effect.fail(invalidScan(iteration))
+      if (issues.length === 0 || iteration > maxRetries) {
+        return { iterations: Math.min(iteration, maxRetries), remaining: issues, resolved: issues.length === 0, verifications }
+      }
+      const fixes = yield* Effect.forEach(
+        issues.slice(0, maxIssues),
+        (issue, index) => fix({ issue, index, iteration }),
+        { concurrency }
+      )
+      const verification = yield* verify({ input, issues, fixes, iteration })
+      verifications.push(verification)
+      if (resolved(verification)) return { iterations: iteration, remaining: [], resolved: true, verifications }
+      iteration += 1
+    }
   })
 }

@@ -7,7 +7,7 @@ Every categorized member reachable through the root namespaces, in source
 order. Signatures, bounds, and the reasoning behind each rule are on the
 [API reference](./api.md).
 
-12 namespaces, 105 documented members.
+12 namespaces, 109 documented members.
 
 | Export                               | Kind      | Category     | Summary                                                                                       |
 | ------------------------------------ | --------- | ------------ | --------------------------------------------------------------------------------------------- |
@@ -110,6 +110,10 @@ order. Signatures, bounds, and the reasoning behind each rule are on the
 | `Rubric.agreement`                   | const     | calibration  | Counts judge agreement with human labels.                                                     |
 | `Scorers.exact`                      | const     | scorers      | Normalized text equality: trims edges and collapses whitespace.                               |
 | `Scorers.contains`                   | const     | scorers      | Case-sensitive containment of ground-truth text.                                              |
+| `Scorers.LatencyOptions`             | interface | models       | Latency thresholds in milliseconds.                                                           |
+| `Scorers.latency`                    | const     | scorers      | Grades latency measured in the scorer context.                                                |
+| `Scorers.SchemaAdherenceOptions`     | interface | models       | Identity and name overrides for schema adherence.                                             |
+| `Scorers.schemaAdherence`            | const     | scorers      | Grades whether output decodes with an Effect schema.                                          |
 | `Scorers.rubric`                     | const     | scorers      | The existing model-agnostic 1 to 5 rubric scorer.                                             |
 | `Scorers.TestsPassOptions`           | interface | models       | A declared command and already acquired sandbox session.                                      |
 | `Scorers.testsPass`                  | const     | scorers      | Grades sandbox command exit; launch and transport failure stay inconclusive.                  |

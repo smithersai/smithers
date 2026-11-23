@@ -229,6 +229,37 @@ describe("persisted card decoding units", () => {
   })
 })
 
+test("a HumanTask rank question renders on an approval card and an inbox row", () => {
+  const question = { kind: "rank", prompt: "Order the fixes", options: ["cache", "retry", "log"] }
+  expect(
+    CardSchema.safeParse({ ...base, kind: "approval", payload: { capability: "human", question } }).success
+  ).toBe(true)
+  expect(
+    CardSchema.safeParse({
+      ...base,
+      kind: "approvals-inbox",
+      payload: {
+        repo: "smithersai/smithers",
+        approvals: [{
+          runId: "run-1",
+          requestId: "gate-1",
+          title: "Rank",
+          approval: { _tag: "ApprovalTarget.Node", node: "rank-1" },
+          requestedAt: 1,
+          question
+        }]
+      }
+    }).success
+  ).toBe(true)
+  expect(
+    CardSchema.safeParse({
+      ...base,
+      kind: "approval",
+      payload: { capability: "human", question: { ...question, kind: "sort" } }
+    }).success
+  ).toBe(false)
+})
+
 test("a write-only form rejects values in either persisted input map", () => {
   const payload = {
     flow: "model.credential.enroll",

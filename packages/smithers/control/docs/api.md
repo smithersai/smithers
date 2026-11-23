@@ -1,6 +1,6 @@
 ---
 title: "API reference"
-description: "Every public export of @smthrs/control, module by module: the Control service and its ten operations, the wire schemas, the typed failures, the three ports, the RPC boundary, the projections, and the credential surface."
+description: "Every public export of @smthrs/control, module by module: the Control service and its eleven operations, the wire schemas, the typed failures, the three ports, the RPC boundary, the projections, and the credential surface."
 ---
 
 Every module is importable from the root entry point as a namespace and from
@@ -49,27 +49,35 @@ and authentication failures.
 | Export      | Kind      | Signature                                                                                                                                              |
 | ----------- | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `Control`   | class     | `Context.Service<Control, Service>` at key `/control/Control`                                                                                          |
-| `Service`   | interface | The ten operations in the following table                                                                                                              |
+| `Service`   | interface | The eleven operations in the following table                                                                                                           |
 | `make`      | function  | `(implementation: Service) => Service`                                                                                                                 |
 | `layerNoop` | layer     | `Layer<Control>`. Every operation fails `Unavailable`, naming the verb as `feature` and the constant `control-runtime-engine-integration` as `ticket`. |
 
 ### Service
 
-| Operation | Signature                                                                                                                                                                                                                                                  | Returns                                                                                                       |
-| --------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| `plan`    | `(input: PlanInput) => Effect<PlanCard, FlowNotFound \| InvalidInput \| PersistenceError \| Unavailable \| TransportError \| Unauthorized>`                                                                                                                | The reviewable card, whether or not this call created it.                                                     |
-| `run`     | `(input: RunInput) => Effect<Receipt, RunNotFound \| PlanNotFound \| PlanDenied \| PlanDigestMismatch \| EnvelopeMismatch \| ClaimLost \| CodeDrift \| InvalidInput \| LaunchFailed \| PersistenceError \| Unavailable \| TransportError \| Unauthorized>` | `Accepted`, `AlreadyApplied`, `Conflict`, or `Parked` for a plan; a resume answers as `resume` does.          |
-| `approve` | `(input: ApprovalInput) => Effect<Receipt, PlanDigestMismatch \| EnvelopeMismatch \| AlreadyResolved \| PlanNotFound \| RunNotFound \| CodeDrift \| InvalidInput \| PersistenceError \| Unavailable \| TransportError \| Unauthorized>`                    | `Accepted`, `AlreadyApplied`, `Conflict`, or `Terminal`.                                                      |
-| `deny`    | same as `approve`                                                                                                                                                                                                                                          | same as `approve`.                                                                                            |
-| `steer`   | `(input: SteerInput) => Effect<Receipt, NotificationError \| RunNotFound \| InvalidInput \| PersistenceError \| Unavailable \| TransportError \| Unauthorized>`                                                                                            | `Accepted`, `AlreadyApplied`, `Conflict`, or `Terminal`.                                                      |
-| `signal`  | `(input: SignalInput) => Effect<Receipt, RunNotFound \| NoMatchingWait \| InvalidInput \| PersistenceError \| Unavailable \| TransportError \| Unauthorized>`                                                                                              | `Accepted`, `AlreadyApplied`, `Conflict`, or `Terminal`.                                                      |
-| `cancel`  | `(input: RunMutationInput) => Effect<Receipt, RunNotFound \| ClaimLost \| InvalidInput \| PersistenceError \| Unavailable \| TransportError \| Unauthorized>`                                                                                              | `Accepted`, `Conflict`, or `Terminal`. Re-executes matching requests; preserves recorded conflicts.           |
-| `resume`  | `(input: RunMutationInput) => Effect<Receipt, RunNotFound \| ClaimLost \| CodeDrift \| InvalidInput \| PersistenceError \| Unavailable \| TransportError \| Unauthorized>`                                                                                 | `Accepted`, `AlreadyApplied`, `Conflict`, or `Terminal`.                                                      |
-| `list`    | `(input: ListRequest) => Effect<ListResponse, ControlError>`                                                                                                                                                                                               | A bounded page of flows, runs, triggers, or trigger fires, or exact run-scoped native execution observations. |
-| `watch`   | `(filter: WatchFilter) => Stream<ControlEvent, ControlError>`                                                                                                                                                                                              | Committed journal entries, plus the deltas the plane derives.                                                 |
+| Operation | Signature                                                                                                                                                                                                                                                  | Returns                                                                                                        |
+| --------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| `plan`    | `(input: PlanInput) => Effect<PlanCard, FlowNotFound \| InvalidInput \| PersistenceError \| Unavailable \| TransportError \| Unauthorized>`                                                                                                                | The reviewable card, whether or not this call created it.                                                      |
+| `run`     | `(input: RunInput) => Effect<Receipt, RunNotFound \| PlanNotFound \| PlanDenied \| PlanDigestMismatch \| EnvelopeMismatch \| ClaimLost \| CodeDrift \| InvalidInput \| LaunchFailed \| PersistenceError \| Unavailable \| TransportError \| Unauthorized>` | `Accepted`, `AlreadyApplied`, `Conflict`, or `Parked` for a plan; a resume answers as `resume` does.           |
+| `approve` | `(input: ApprovalInput) => Effect<Receipt, PlanDigestMismatch \| EnvelopeMismatch \| AlreadyResolved \| PlanNotFound \| RunNotFound \| CodeDrift \| InvalidInput \| PersistenceError \| Unavailable \| TransportError \| Unauthorized>`                    | `Accepted`, `AlreadyApplied`, `Conflict`, or `Terminal`.                                                       |
+| `deny`    | same as `approve`                                                                                                                                                                                                                                          | same as `approve`.                                                                                             |
+| `steer`   | `(input: SteerInput) => Effect<Receipt, NotificationError \| RunNotFound \| InvalidInput \| PersistenceError \| Unavailable \| TransportError \| Unauthorized>`                                                                                            | `Accepted`, `AlreadyApplied`, `Conflict`, or `Terminal`.                                                       |
+| `signal`  | `(input: SignalInput) => Effect<Receipt, RunNotFound \| NoMatchingWait \| InvalidInput \| PersistenceError \| Unavailable \| TransportError \| Unauthorized>`                                                                                              | `Accepted`, `AlreadyApplied`, `Conflict`, or `Terminal`.                                                       |
+| `cancel`  | `(input: RunMutationInput) => Effect<Receipt, RunNotFound \| ClaimLost \| InvalidInput \| PersistenceError \| Unavailable \| TransportError \| Unauthorized>`                                                                                              | `Accepted`, `Conflict`, or `Terminal`. Re-executes matching requests; preserves recorded conflicts.            |
+| `pause`   | `(input: PauseInput) => Effect<Receipt, RunNotFound \| ClaimLost \| InvalidInput \| PersistenceError \| Unavailable \| TransportError \| Unauthorized>`                                                                                                    | `Accepted`, `AlreadyApplied`, `Conflict`, or `Terminal`. Parks a running run without cancelling or failing it. |
+| `resume`  | `(input: RunMutationInput) => Effect<Receipt, RunNotFound \| ClaimLost \| CodeDrift \| InvalidInput \| PersistenceError \| Unavailable \| TransportError \| Unauthorized>`                                                                                 | `Accepted`, `AlreadyApplied`, `Conflict`, or `Terminal`.                                                       |
+| `list`    | `(input: ListRequest) => Effect<ListResponse, ControlError>`                                                                                                                                                                                               | A bounded page of flows, runs, triggers, or trigger fires, or exact run-scoped native execution observations.  |
+| `watch`   | `(filter: WatchFilter) => Stream<ControlEvent, ControlError>`                                                                                                                                                                                              | Committed journal entries, plus the deltas the plane derives.                                                  |
 
-There is no `pause`. An operator park is written through
-`ControlRuntime.writeStatus(runId, fence, "parked")`.
+`pause` parks a run this process is running. The executor parks the execution
+first, then the control row moves to `parked` with no `waitingReason` and the
+journal records `control.run.paused` (the stamped principal and the reason)
+followed by `control.run.parked`. `resume` restarts the run. A run that is
+already parked or waiting fails `InvalidInput`, a run another process holds
+fails `ClaimLost`, and a composition with no executor, or one whose executor
+has no `pause`, fails `Unavailable`. A refused pause changes nothing. A repeat
+of the same key and intent answers `AlreadyApplied`, and a settled run answers
+`Terminal` first.
 
 ### Inputs
 
@@ -81,6 +89,7 @@ There is no `pause`. An operator park is written through
 | `SteerInput`       | `{ runId: RunId; message: SteerMessage; idempotencyKey: IdempotencyKey }`.                                                                                                                                    |
 | `SignalInput`      | `{ runId: RunId; signal: SignalPayload; idempotencyKey: IdempotencyKey; principal?: Principal }`.                                                                                                             |
 | `RunMutationInput` | `{ runId: RunId; idempotencyKey: IdempotencyKey; reason?: string; principal?: Principal; allowCodeDrift?: boolean; reader?: Principal }`. `reason` is recorded on the journal entry the mutation writes.      |
+| `PauseInput`       | `{ runId: RunId; idempotencyKey: IdempotencyKey; reason?: string; principal?: Principal }`. `reason` is recorded on the `control.run.paused` journal entry.                                                   |
 
 `ApprovalTarget` is re-exported from `ControlSchema` for convenience.
 
@@ -260,7 +269,8 @@ grant fact may replace that target; matching decisions still close the wait.
 
 `PlanInputSchema`, `RunInputSchema`, `ApprovalInputSchema`,
 `SteerInputSchema`, `SignalInputSchema`, `RunMutationInputSchema`,
-`ReasonedMutationInputSchema`, and `CancelInputSchema` are the wire forms.
+`ReasonedMutationInputSchema`, `CancelInputSchema`, and `PauseInputSchema` are
+the wire forms.
 `PlanInputSchema` takes `Schema.Json` where the local contract takes `unknown`.
 `ReasonedMutationInputSchema` adds `reason` and omits `principal`, because the
 server stamps the identity it authenticated. `CancelInputSchema` is a named
@@ -375,15 +385,15 @@ terminal transition, and translates conflicts into typed failures.
 
 ### Service
 
-| Group             | Members                                                                                                                                                                         |
-| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Plans             | `plan(input: PlanInput) => Effect<PlanOutcome, FlowNotFound \| InvalidInput \| PersistenceError>`, `getPlan(planId)`, `listPlanIds`                                             |
-| Approvals         | `authorizeApproval(request)`, `lookupApproval(target)`, `registerApproval(nodeTarget)`, `resolveApproval(token, decision, principal, scope?)`                                   |
-| Runs              | `launch(planId, digest, envelope) => Effect<LaunchResult, ...>`, `getRun(runId)`, `queryRuns({ filters?, cursor?, limit })`, `listRuns`, `listFlows`                            |
-| Signal history    | `deliveredSignals(runId)`                                                                                                                                                       |
-| Resume delegation | `requestResume(runId) => Effect<number, ...>`, `pendingResumes`, `clearResume(runId, sequence)`                                                                                 |
-| Ownership         | `registerFiber(runId, fiber)`, `interrupt(runId, settle?)`, `resume(runId, options?)`, `claimFence(runId)`, `releasePending(runId, fence)`, `writeStatus(runId, fence, status)` |
-| Identity          | `stampPrincipal(submitted?)`, `lookupMutation(key, fingerprint)`, `recordMutation(key, fingerprint, receipt)`                                                                   |
+| Group             | Members                                                                                                                                                                                         |
+| ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Plans             | `plan(input: PlanInput) => Effect<PlanOutcome, FlowNotFound \| InvalidInput \| PersistenceError>`, `getPlan(planId)`, `listPlanIds`                                                             |
+| Approvals         | `authorizeApproval(request)`, `lookupApproval(target)`, `registerApproval(nodeTarget)`, `resolveApproval(token, decision, principal, scope?)`                                                   |
+| Runs              | `launch(planId, digest, envelope) => Effect<LaunchResult, ...>`, `getRun(runId)`, `queryRuns({ filters?, cursor?, limit })`, `listRuns`, `listFlows`                                            |
+| Signal history    | `deliveredSignals(runId)`                                                                                                                                                                       |
+| Resume delegation | `requestResume(runId) => Effect<number, ...>`, `pendingResumes`, `clearResume(runId, sequence)`                                                                                                 |
+| Ownership         | `registerFiber(runId, fiber)`, `interrupt(runId, settle?)`, `pause(runId)`, `resume(runId, options?)`, `claimFence(runId)`, `releasePending(runId, fence)`, `writeStatus(runId, fence, status)` |
+| Identity          | `stampPrincipal(submitted?)`, `lookupMutation(key, fingerprint)`, `recordMutation(key, fingerprint, receipt)`                                                                                   |
 
 `queryRuns` accepts `RunQuery`: optional `flowId`, `status`, `terminal`,
 `parentRunId`, `lineageId`, `since` (inclusive creation epoch ms), `until`
@@ -559,6 +569,7 @@ engine observations. Mutation methods remain refused.
 | `requestCancel`       | `(input: CancelRequest) => Effect<CancelRecord, PersistenceError>`                                                                                            |
 | `deliverSignal`       | `(input: Signal) => Effect<SignalDelivery, PersistenceError>`                                                                                                 |
 | `resumeRun`           | `(input: ResumeRequest) => Effect<ResumeUptake, PersistenceError>`                                                                                            |
+| `pause`               | Optional `(runId: RunId, reason?: string) => Effect<void, ControlError>`. Parks an active execution without cancelling or failing it. Since 1.0.0.            |
 | `settleCancelledPark` | `(input: CancelRequest) => Effect<void, PersistenceError>`                                                                                                    |
 
 ### Models
@@ -625,22 +636,22 @@ than the page needs. `TriggersRequest` and `FiresRequest` are the two
 
 The schema-backed RPC projection of the service.
 
-| Export                | Kind      | Meaning                                                                                                                                                           |
-| --------------------- | --------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `ControlRpcs`         | group     | Ten procedures: `Plan`, `Run`, `Approve`, `Deny`, `Steer`, `Signal`, `Cancel`, `Resume`, `List`, and the streaming `Watch`. Carries the `ControlAuth` middleware. |
-| `ControlPrincipal`    | class     | The authenticated principal, provided to every handler. Key `/control/ControlPrincipal`.                                                                          |
-| `ControlAuth`         | class     | The middleware boundary. Key `/control/ControlAuth`, error `Unauthorized`.                                                                                        |
-| `Call`                | interface | `{ rpc: string; payload: unknown }`: the frame a boundary is authenticating, absent at a transport edge.                                                          |
-| `Authenticator`       | interface | `{ authenticate: (headers: Record<string, string>, call?: Call) => Effect<Principal, Unauthorized> }`                                                             |
-| `BearerAuthOptions`   | interface | `{ token: string; principal: Omit<Principal, "stampedAt">; now?: () => number }`                                                                                  |
-| `bearerCredential`    | function  | `(headers) => string \| undefined`. The bearer a request carries, or nothing.                                                                                     |
-| `bearerAuthenticator` | function  | `(options: BearerAuthOptions) => Authenticator`. Constant-time comparison; missing, malformed, empty, and incorrect credentials all fail closed identically.      |
-| `anyAuthenticator`    | function  | `(authenticators: ReadonlyArray<Authenticator>) => Authenticator`. The first to accept answers; none accepting fails with the last refusal.                       |
-| `layerAuth`           | layer     | `(authenticator: Authenticator) => Layer<ControlAuth>`                                                                                                            |
-| `layerBearerAuth`     | layer     | `(options: BearerAuthOptions) => Layer<ControlAuth>`                                                                                                              |
-| `layerNoopAuth`       | layer     | `(principal?: Principal) => Layer<ControlAuth>`. Authenticates nothing.                                                                                           |
-| `ControlDefect`       | schema    | The defect schema of every procedure. Encodes every defect as `{ name: "Error", message: defectMessage }`; decodes like `Schema.Defect()`.                        |
-| `defectMessage`       | constant  | `"Something went wrong on our side. Not your fault."`                                                                                                             |
+| Export                | Kind      | Meaning                                                                                                                                                                       |
+| --------------------- | --------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ControlRpcs`         | group     | Eleven procedures: `Plan`, `Run`, `Approve`, `Deny`, `Steer`, `Signal`, `Cancel`, `Pause`, `Resume`, `List`, and the streaming `Watch`. Carries the `ControlAuth` middleware. |
+| `ControlPrincipal`    | class     | The authenticated principal, provided to every handler. Key `/control/ControlPrincipal`.                                                                                      |
+| `ControlAuth`         | class     | The middleware boundary. Key `/control/ControlAuth`, error `Unauthorized`.                                                                                                    |
+| `Call`                | interface | `{ rpc: string; payload: unknown }`: the frame a boundary is authenticating, absent at a transport edge.                                                                      |
+| `Authenticator`       | interface | `{ authenticate: (headers: Record<string, string>, call?: Call) => Effect<Principal, Unauthorized> }`                                                                         |
+| `BearerAuthOptions`   | interface | `{ token: string; principal: Omit<Principal, "stampedAt">; now?: () => number }`                                                                                              |
+| `bearerCredential`    | function  | `(headers) => string \| undefined`. The bearer a request carries, or nothing.                                                                                                 |
+| `bearerAuthenticator` | function  | `(options: BearerAuthOptions) => Authenticator`. Constant-time comparison; missing, malformed, empty, and incorrect credentials all fail closed identically.                  |
+| `anyAuthenticator`    | function  | `(authenticators: ReadonlyArray<Authenticator>) => Authenticator`. The first to accept answers; none accepting fails with the last refusal.                                   |
+| `layerAuth`           | layer     | `(authenticator: Authenticator) => Layer<ControlAuth>`                                                                                                                        |
+| `layerBearerAuth`     | layer     | `(options: BearerAuthOptions) => Layer<ControlAuth>`                                                                                                                          |
+| `layerNoopAuth`       | layer     | `(principal?: Principal) => Layer<ControlAuth>`. Authenticates nothing.                                                                                                       |
+| `ControlDefect`       | schema    | The defect schema of every procedure. Encodes every defect as `{ name: "Error", message: defectMessage }`; decodes like `Schema.Defect()`.                                    |
+| `defectMessage`       | constant  | `"Something went wrong on our side. Not your fault."`                                                                                                                         |
 
 `List` and `Watch` declare the whole `ControlError` union rather than restating
 its members.

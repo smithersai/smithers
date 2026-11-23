@@ -342,3 +342,182 @@ describe("Optimizer", () => {
     })
   })
 })
+
+describe("Optimizer.run", () => {
+  const stages = {
+    generate: ({ input, iteration }: { readonly input: string; readonly iteration: number }) =>
+      Effect.succeed(`${input}-${iteration}`),
+    evaluate: ({ iteration }: { readonly iteration: number }) => Effect.succeed({ score: iteration })
+  }
+
+  it.effect("passes the immediately previous attempt and converges on the target at the bound", () =>
+    Effect.gen(function*() {
+      const scores = [2, 1, 3]
+      const attempts = scores.map((score, index) => ({
+        candidate: `prompt-${index + 1}`,
+        score,
+        feedback: { score },
+        iteration: index + 1
+      }))
+      const seen: Array<unknown> = []
+      const search = Optimizer.run("prompt", {
+        maxIterations: 3,
+        targetScore: 3,
+        onMaxReached: "fail",
+        generate: (request) =>
+          Effect.sync(() => {
+            seen.push(request)
+            return `${request.input}-${request.iteration}`
+          }),
+        evaluate: ({ value, iteration }) =>
+          Effect.sync(() => {
+            expect(value).toBe(attempts[iteration - 1]!.candidate)
+            return { score: scores[iteration - 1]!, feedback: attempts[iteration - 1]!.feedback }
+          })
+      })
+      expect(seen).toEqual([])
+      expect(yield* search).toEqual({ _tag: "Converged", best: attempts[2], attempts })
+      expect(seen).toEqual([
+        { input: "prompt", iteration: 1, previous: undefined },
+        { input: "prompt", iteration: 2, previous: attempts[0] },
+        { input: "prompt", iteration: 3, previous: attempts[1] }
+      ])
+    }))
+
+  it.effect("stops early, accepts a zero target, and snapshots callbacks and bounds", () =>
+    Effect.gen(function*() {
+      const seen: Array<number> = []
+      const options = {
+        ...stages,
+        targetScore: 0,
+        maxIterations: 3,
+        evaluate: ({ iteration }: { readonly iteration: number }) =>
+          Effect.sync(() => {
+            seen.push(iteration)
+            return { score: 0 }
+          })
+      }
+      const search = Optimizer.run("p", options)
+      options.targetScore = 9
+      options.evaluate = stages.evaluate
+      expect(yield* search).toEqual({
+        _tag: "Converged",
+        best: { candidate: "p-1", score: 0, iteration: 1 },
+        attempts: [{ candidate: "p-1", score: 0, iteration: 1 }]
+      })
+      expect(seen).toEqual([1])
+    }))
+
+  it.effect("returns the earliest best across ties after a target-free search", () =>
+    Effect.gen(function*() {
+      const result = yield* Optimizer.run("p", {
+        ...stages,
+        maxIterations: 3,
+        evaluate: ({ iteration }) => Effect.succeed({ score: iteration === 3 ? -2 : -1 })
+      })
+      expect(result._tag).toBe("Exhausted")
+      expect(result.attempts.map(({ candidate, score }) => [candidate, score]))
+        .toEqual([["p-1", -1], ["p-2", -1], ["p-3", -2]])
+      expect(result.best).toBe(result.attempts[0])
+    }))
+
+  it.effect("fails below target at the single-iteration bound under the fail policy", () =>
+    Effect.gen(function*() {
+      const error = yield* Effect.flip(Optimizer.run("p", {
+        ...stages,
+        targetScore: 2,
+        maxIterations: 1,
+        onMaxReached: "fail"
+      }))
+      expect(error).toEqual(
+        new PatternError({
+          code: "exhausted",
+          message: "Optimizer reached its bound of 1 iterations below 2"
+        })
+      )
+    }))
+
+  it.effect("shares the declaration's highest accepted bound", () =>
+    Effect.gen(function*() {
+      expect(
+        yield* Optimizer.run("p", {
+          ...stages,
+          maxIterations: 332,
+          targetScore: 1
+        })
+      ).toMatchObject({ _tag: "Converged", attempts: [{ iteration: 1 }] })
+
+      expect(
+        yield* Effect.flip(Optimizer.run("p", {
+          ...stages,
+          maxIterations: 333,
+          generate: () => Effect.die("unexpected generation")
+        }))
+      ).toMatchObject({
+        code: "invalid_decorator",
+        message: "Optimizer maxIterations must be at most 332 to stay inside the plan depth limit, received 333"
+      })
+    }))
+
+  it.effect("rejects invalid options before generating", () =>
+    Effect.gen(function*() {
+      const invalidOptions = [
+        ...[0, -1, 1.5, NaN, Infinity, Number.MAX_SAFE_INTEGER + 1].map((maxIterations) => ({ maxIterations })),
+        ...[NaN, Infinity, -Infinity].map((targetScore) => ({ targetScore })),
+        { onMaxReached: "fail" as const }
+      ]
+      for (const options of invalidOptions) {
+        const error = yield* Effect.flip(Optimizer.run("p", {
+          ...stages,
+          generate: () => Effect.die("unexpected generation"),
+          maxIterations: 1,
+          ...options
+        }))
+        expect(error).toMatchObject({ code: "invalid_decorator" })
+      }
+    }))
+
+  it.effect("fails immediately on each non-finite evaluation score", () =>
+    Effect.gen(function*() {
+      for (const score of [NaN, Infinity, -Infinity]) {
+        const seen: Array<number> = []
+        const error = yield* Effect.flip(Optimizer.run("p", {
+          ...stages,
+          maxIterations: 3,
+          generate: (request) =>
+            Effect.sync(() => {
+              seen.push(request.iteration)
+              return request.input
+            }),
+          evaluate: ({ iteration }) => Effect.succeed({ score: iteration === 1 ? 0 : score })
+        }))
+        expect(error).toMatchObject({
+          code: "invalid_input",
+          message: `Optimizer evaluation score at iteration 2 must be a finite number, received ${score}`
+        })
+        expect(seen).toEqual([1, 2])
+      }
+    }))
+
+  it.effect("propagates generation and evaluation errors without calling later stages", () =>
+    Effect.gen(function*() {
+      const generationError = { _tag: "GenerationError" } as const
+      const evaluationError = { _tag: "EvaluationError" } as const
+      expect(
+        yield* Effect.flip(Optimizer.run("p", {
+          maxIterations: 2,
+          generate: () => Effect.fail(generationError),
+          evaluate: () => Effect.die("unexpected evaluation")
+        }))
+      ).toBe(generationError)
+
+      expect(
+        yield* Effect.flip(Optimizer.run("p", {
+          maxIterations: 2,
+          generate: ({ iteration }) =>
+            iteration === 1 ? Effect.succeed("candidate") : Effect.die("unexpected generation"),
+          evaluate: () => Effect.fail(evaluationError)
+        }))
+      ).toBe(evaluationError)
+    }))
+})

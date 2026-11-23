@@ -21,6 +21,7 @@ import * as Flow from "@smthrs/flow/Flow"
 import * as Node from "@smthrs/plan/Node"
 import type * as Planned from "@smthrs/plan/Planned"
 import type * as Repetition from "@smthrs/plan/Repetition"
+import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
 import * as Compose from "./internal/Compose.ts"
 import * as Failure from "./internal/Failure.ts"
@@ -112,7 +113,8 @@ const validate = (options: {
       message: "Optimizer maxIterations must be a positive safe integer"
     })
   }
-  return undefined
+  // Each declared iteration nests the generate bind, the evaluate bind, and the branch.
+  return Compose.sequencedBoundRefusal("Optimizer", "maxIterations", options.maxIterations, 3)
 }
 
 /**
@@ -194,9 +196,6 @@ export const make = <R = never>(options: MakeOptions<R>): OptimizerFlow<R> => {
   const maxIterations = options.maxIterations
   const targetScore = options.targetScore
   const onMaxReached = options.onMaxReached ?? defaultOnMaxReached
-  // Each iteration nests the generate bind, the evaluate bind, and the branch.
-  const tooDeep = Compose.sequencedBoundRefusal("Optimizer", "maxIterations", maxIterations, 3)
-  if (tooDeep !== undefined) throw tooDeep
   const captures = {
     ...targetScore === undefined ? {} : { targetScore },
     maxIterations,
@@ -281,5 +280,72 @@ export const make = <R = never>(options: MakeOptions<R>): OptimizerFlow<R> => {
     // own `PatternError`, and whatever a member it called failed with.
     error: Failure.schemaFor([PatternError], [stages.generate, stages.evaluate]) as typeof Schema.Unknown,
     body: Node.capture(captures, body)
+  })
+}
+
+/**
+ * Operational callbacks and bounds for {@link run}.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export interface RuntimeOptions<I, C, E, R, E2 = E, R2 = R> {
+  readonly generate: (input: {
+    readonly input: I
+    readonly previous?: Attempt<C> | undefined
+    readonly iteration: number
+  }) => Effect.Effect<C, E, R>
+  readonly evaluate: (input: {
+    readonly value: C
+    readonly iteration: number
+  }) => Effect.Effect<Evaluation, E2, R2>
+  readonly targetScore?: number | undefined
+  readonly maxIterations: number
+  readonly onMaxReached?: OnMaxReached | undefined
+}
+
+/**
+ * The best attempt and the chronological history of a completed search.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export type RunResult<C> =
+  | { readonly _tag: "Converged"; readonly best: Attempt<C>; readonly attempts: ReadonlyArray<Attempt<C>> }
+  | { readonly _tag: "Exhausted"; readonly best: Attempt<C>; readonly attempts: ReadonlyArray<Attempt<C>> }
+
+/**
+ * Runs the search until an evaluation reaches the target or the iteration
+ * bound is spent. The default exhaustion policy returns the best attempt.
+ *
+ * @category combinators
+ * @since 1.0.0
+ */
+export const run = <I, C, E, R, E2 = E, R2 = R>(
+  input: I,
+  options: RuntimeOptions<I, C, E, R, E2, R2>
+): Effect.Effect<RunResult<C>, E | E2 | PatternError, R | R2> => {
+  const invalid = validate(options)
+  if (invalid !== undefined) return Effect.fail(invalid)
+  const { generate, evaluate, targetScore, maxIterations, onMaxReached = defaultOnMaxReached } = options
+  return Effect.gen(function*() {
+    const attempts: Array<Attempt<C>> = []
+    let best: Attempt<C> | undefined
+    let iteration = 1
+    while (true) {
+      const candidate = yield* generate({ input, previous: attempts.at(-1), iteration })
+      const { score, feedback } = yield* evaluate({ value: candidate, iteration })
+      const attempt = { candidate, score, feedback, iteration }
+      const state = ledger(attempt, best, targetScore)
+      if (state.invalid !== undefined) return yield* Effect.fail(state.invalid)
+      attempts.push(attempt)
+      best = state.best
+      if (state.converged) return { _tag: "Converged", best, attempts } as const
+      if (iteration === maxIterations) {
+        if (onMaxReached === "fail") return yield* Effect.fail(exhausted(maxIterations, targetScore))
+        return { _tag: "Exhausted", best, attempts } as const
+      }
+      iteration += 1
+    }
   })
 }

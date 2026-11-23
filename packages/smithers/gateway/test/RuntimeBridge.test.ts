@@ -53,6 +53,7 @@ const service = (overrides: Partial<Control.Service> = {}): Control.Service =>
     steer: () => Effect.succeed(accepted),
     cancel: () => Effect.succeed(accepted),
     resume: () => Effect.succeed(accepted),
+    pause: () => Effect.succeed(accepted),
     list: () => Effect.succeed({ _tag: "runs", items: [summary] }),
     watch: () =>
       Stream.make({

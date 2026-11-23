@@ -26,11 +26,13 @@ import * as Intervene from "../src/Intervene.vibe"
 import * as Kanban from "../src/Kanban.vibe"
 import * as MapReduce from "../src/MapReduce.vibe"
 import * as MergeQueue from "../src/MergeQueue.vibe"
+import * as Optimizer from "../src/Optimizer.ts"
 import * as Panel from "../src/Panel.vibe"
 import * as Quarantine from "../src/Quarantine.vibe"
 import * as ReviewLoop from "../src/ReviewLoop.vibe"
 import * as Runbook from "../src/Runbook.vibe"
 import * as Saga from "../src/Saga.vibe"
+import * as ScanFixVerify from "../src/ScanFixVerify.ts"
 import * as Sidecar from "../src/Sidecar.vibe"
 import * as Supervisor from "../src/Supervisor.vibe"
 import * as Trellis from "../src/Trellis.vibe"
@@ -332,6 +334,65 @@ const reviewLoop: Pattern<{ readonly maxRounds: number }> = {
       ordered: true
     }
   ]
+}
+
+const optimizer: Pattern<{ readonly targetScore: number }> = {
+  make: (m, options) => Optimizer.make({ generate: m.generate!, evaluate: m.evaluate!, maxIterations: 3, ...options }),
+  run: (e, input, options) =>
+    Effect.map(
+      Optimizer.run(input, {
+        generate: e.generate!,
+        evaluate: e.evaluate!,
+        maxIterations: 3,
+        ...options
+      }),
+      (result) => ({
+        best: result.best,
+        iterations: result.attempts.length,
+        converged: result._tag === "Converged"
+      })
+    ),
+  cases: [2, 3].map((targetScore) => ({
+    name: `optimizer-target-${targetScore}`,
+    input: "prompt",
+    options: { targetScore },
+    script: {
+      generate: ({ iteration }: { readonly iteration: number }) => `candidate-${iteration}`,
+      evaluate: ({ iteration }: { readonly iteration: number }) => ({
+        score: iteration === 2 ? 2 : 1,
+        feedback: `feedback-${iteration}`
+      })
+    },
+    expected: {
+      best: { candidate: "candidate-2", score: 2, feedback: "feedback-2", iteration: 2 },
+      iterations: targetScore === 2 ? 2 : 3,
+      converged: targetScore === 2
+    },
+    ordered: true
+  }))
+}
+
+const repairBounds = { maxRetries: 2, maxIssues: 1, concurrency: 1 }
+const scanFixVerify: Pattern<{ readonly cleanRescan: boolean }> = {
+  make: (m) => ScanFixVerify.make({ scan: m.scan!, fix: m.fix!, verify: m.verify!, ...repairBounds }),
+  run: (e, input) => ScanFixVerify.run(input, { scan: e.scan!, fix: e.fix!, verify: e.verify!, ...repairBounds }),
+  cases: [true, false].map((cleanRescan) => ({
+    name: `scanfixverify-clean-rescan-${cleanRescan}`,
+    input: "repo",
+    options: { cleanRescan },
+    script: {
+      scan: ({ iteration }: { readonly iteration: number }) => cleanRescan && iteration === 2 ? [] : ["a", "b"],
+      fix: ({ issue }: { readonly issue: string }) => `fixed ${issue}`,
+      verify: ({ fixes }: { readonly fixes: ReadonlyArray<string> }) => ({ fixes, resolved: false })
+    },
+    expected: {
+      iterations: 2,
+      remaining: cleanRescan ? [] : ["a", "b"],
+      resolved: cleanRescan,
+      verifications: Array.from({ length: cleanRescan ? 1 : 2 }, () => ({ fixes: ["fixed a"], resolved: false }))
+    },
+    ordered: true
+  }))
 }
 
 interface EscalationCase {
@@ -898,11 +959,13 @@ const table: Readonly<Record<string, Pattern<any>>> = {
   Kanban: kanban,
   MapReduce: mapReduce,
   MergeQueue: mergeQueue,
+  Optimizer: optimizer,
   Panel: panel,
   Quarantine: quarantine,
   ReviewLoop: reviewLoop,
   Runbook: runbook,
   Saga: saga,
+  ScanFixVerify: scanFixVerify,
   Sidecar: sidecar,
   Supervisor: supervisor,
   Trellis: trellis

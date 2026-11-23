@@ -249,10 +249,10 @@ describe("Scan.scan over a barrel of factory bindings", () => {
 
 describe("Scan.scan reads a destructured factory key by the property it names", () => {
   // `{ "Worktree": W }` binds exactly the component `{ Worktree: W }` does, so
-  // every spelling of the key has to reach the same unsafe finding.
+  // every spelling of the key has to reach the same guided mapping.
   const keys = ["Worktree", "\"Worktree\"", "'Worktree'", "\\u0057orktree", "[\"Worktree\"]", "[`Worktree`]"]
 
-  it.effect.each(keys)("inventories and blocks a directly destructured %s", (key) =>
+  it.effect.each(keys)("guides a directly destructured %s to a jj workspace", (key) =>
     Effect.gen(function*() {
       const root = copyFixture("jsx-single")
       mkdirSync(join(root, ".smithers", "workflows"), { recursive: true })
@@ -266,13 +266,17 @@ describe("Scan.scan reads a destructured factory key by the property it names", 
       const result = yield* Scan.scan(root)
       const report = Scan.toReport(result, "apply", generatedAt)
 
-      expect(result.units.find((unit) => unit.id === "workflow:lane")?.unsafe).toEqual(["Worktree"])
-      expect(report.unsupported.map((entry) => entry.construct)).toContain("Worktree")
-      expect(report.exitCode).toBe(3)
+      expect(result.units.find((unit) => unit.id === "workflow:lane")?.unsafe).toEqual([])
+      expect(report.mapping.find((entry) => entry.construct === "Worktree")).toMatchObject({
+        class: "guided",
+        target: "JjWorkspaceSandbox.make"
+      })
+      expect(report.unsupported.map((entry) => entry.construct)).not.toContain("Worktree")
+      expect(report.exitCode).toBe(0)
     }).pipe(Effect.provide(nodeLayer)))
 
   it.effect.each(keys)(
-    "inventories and blocks %s re-exported through a factory module",
+    "guides %s re-exported through a factory module to a jj workspace",
     (key) =>
       Effect.gen(function*() {
         const root = copyFixture("jsx-single")
@@ -289,7 +293,12 @@ describe("Scan.scan reads a destructured factory key by the property it names", 
 
         const result = yield* Scan.scan(root)
 
-        expect(result.units.find((unit) => unit.id === "workflow:lane")?.unsafe).toEqual(["Worktree"])
+        const unit = result.units.find((entry) => entry.id === "workflow:lane")
+        expect(unit?.unsafe).toEqual([])
+        expect(unit?.mapping.find((entry) => entry.construct === "Worktree")).toMatchObject({
+          class: "guided",
+          target: "JjWorkspaceSandbox.make"
+        })
       }).pipe(Effect.provide(nodeLayer))
   )
 

@@ -5525,6 +5525,21 @@ export const make = (
           ) :
           takeUpOfferedResume(input.runId, input.delegationSequence)
       ),
+      // A pause is a release, not a cancel: no request is written on the
+      // engine row, so the interrupted round finds none and the engine
+      // releases the execution for `resumeRun` to claim again, exactly as a
+      // shutdown leaves it. `Control.pause` calls this inside its mutation's
+      // transaction, and the release writes through the same writer, so the
+      // interrupt is delivered and not awaited.
+      pause: Effect.fn("AgentSession.pause")((runId) =>
+        Effect.suspend(() => {
+          const drive = launchedDrives.get(runId)
+          const fiber = (drive === undefined ? undefined : driveFibers.get(drive)) ?? activeBodies.get(runId)
+          return fiber === undefined
+            ? Effect.void
+            : Effect.asVoid(Effect.forkDetach(Fiber.interrupt(fiber), { startImmediately: true }))
+        })
+      ),
       settleCancelledPark: Effect.fn("AgentSession.settleCancelledPark")((input) => settleCancelledPark(input.runId))
     })
   })

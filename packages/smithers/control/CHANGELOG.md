@@ -4,6 +4,16 @@
 
 ### Added
 
+- `Control.pause` parks a running run without cancelling or failing it, and
+  `Control.resume` restarts it. It is served as the `Pause` RPC under the
+  `write:runs` scope, takes `PauseInput` (`ControlSchema.PauseInputSchema` on
+  the wire), and journals `control.run.paused` then `control.run.parked`. The
+  optional `ControlExecutor.Service.pause` parks the execution first; without
+  it `Control.pause` fails `Unavailable` and changes nothing, so the control
+  row never reads `parked` over an execution that is still running, which is
+  why 1.0.0-rc.0 removed the earlier pause. Custom `Control` and
+  `ControlRuntime` implementations must provide `pause`.
+
 - `ControlExecutor.Service.requestComplete` optionally closes a retained run
   after its last native module completes, through the host executor.
 

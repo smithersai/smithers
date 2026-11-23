@@ -1,7 +1,8 @@
 import { ProviderError } from "@smthrs/sandbox/RemoteChildProcessSpawner"
 import type { Session } from "@smthrs/sandbox/Sandbox"
-import { Cause, Deferred, Effect, Exit, Fiber, Stream } from "effect"
+import { Cause, Deferred, Effect, Exit, Fiber, Schema, SchemaGetter, Stream } from "effect"
 import { describe, expect, it } from "vitest"
+import { ScorerError } from "../src/ScorerError.ts"
 import * as Scorers from "../src/Scorers.ts"
 import * as ScoreStore from "../src/ScoreStore.ts"
 import * as Scoring from "../src/Scoring.ts"
@@ -166,6 +167,165 @@ describe("built-in scorers", () => {
           .toMatchObject({ code: "inconclusive" })
       }
     }
+  })
+})
+
+describe("latency", () => {
+  it("passes up to an inclusive maximum when there is no earlier warning threshold", async () => {
+    const scorer = Scorers.latency({ maxMs: 100 })
+    expect(await Effect.runPromise(scorer.score({ ...input(null), context: 0 }))).toEqual({
+      score: 1,
+      reason: "Latency 0 ms is within the 100 ms threshold",
+      meta: { latencyMs: 0, maxMs: 100 }
+    })
+    expect(await Effect.runPromise(scorer.score({ ...input(null), context: { latencyMs: 100 } }))).toEqual({
+      score: 1,
+      reason: "Latency 100 ms is within the 100 ms threshold",
+      meta: { latencyMs: 100, maxMs: 100 }
+    })
+    expect(await Effect.runPromise(scorer.score({ ...input(null), context: 100.5 }))).toEqual({
+      score: 0,
+      reason: "Latency 100.5 ms exceeds the 100 ms maximum",
+      meta: { latencyMs: 100.5, maxMs: 100 }
+    })
+    expect(Scorers.latency({ maxMs: 100, warnMs: 100 }).scorerKey).toBe(scorer.scorerKey)
+    expect(Scorers.latency({ maxMs: 101 }).scorerKey).not.toBe(scorer.scorerKey)
+  })
+
+  it("interpolates from the warning threshold to the maximum", async () => {
+    const scorer = Scorers.latency({ maxMs: 200, warnMs: 100 })
+    const score = (latencyMs: number) => Effect.runPromise(scorer.score({ ...input(null), context: { latencyMs } }))
+
+    for (const [latencyMs, expected] of [[50, 1], [100, 1], [125, 0.75], [200, 0], [201, 0]] as const) {
+      expect(await score(latencyMs)).toMatchObject({
+        score: expected,
+        meta: { latencyMs, maxMs: 200 }
+      })
+    }
+    expect((await score(125)).reason).toContain("above the 100 ms warning threshold")
+    expect(Scorers.latency({ warnMs: 100, maxMs: 200 }).scorerKey).toBe(scorer.scorerKey)
+    expect(Scorers.latency({ maxMs: 200, warnMs: 101 }).scorerKey).not.toBe(scorer.scorerKey)
+  })
+
+  it("accepts a zero warning threshold and fractional maximum", async () => {
+    const scorer = Scorers.latency({ maxMs: 0.5, warnMs: 0 })
+    expect(await Effect.runPromise(scorer.score({ ...input(null), context: 0.25 }))).toMatchObject({ score: 0.5 })
+  })
+
+  it("rejects invalid limits at declaration", () => {
+    for (const maxMs of [0, -1, NaN, Infinity, -Infinity]) {
+      expect(() => Scorers.latency({ maxMs })).toThrow(ScorerError)
+      expect(() => Scorers.latency({ maxMs })).toThrow(expect.objectContaining({
+        code: "invalid_declaration",
+        message: expect.stringContaining("maxMs")
+      }))
+    }
+    for (const warnMs of [-1, 101, NaN, Infinity, -Infinity]) {
+      expect(() => Scorers.latency({ maxMs: 100, warnMs })).toThrow(expect.objectContaining({
+        code: "invalid_declaration",
+        message: expect.stringContaining("warnMs")
+      }))
+    }
+  })
+
+  it("keeps missing, malformed and non-finite context data inconclusive", async () => {
+    const scorer = Scorers.latency({ maxMs: 100 })
+    const otherFields = { input: { latencyMs: 25 }, output: 25, latencyMs: 25 }
+    const contexts = [undefined, null, {}, { latencyMs: "20" }, { latencyMs: NaN }, Infinity, -Infinity, -1, "20"]
+    for (const context of contexts) {
+      const failure = await Effect.runPromise(Effect.flip(scorer.score({ ...otherFields, context })))
+      expect(failure).toBeInstanceOf(ScorerError)
+      expect(failure.code).toBe("inconclusive")
+    }
+  })
+})
+
+describe("schemaAdherence", () => {
+  it("scores nested valid output and explains a schema mismatch without echoing the value", async () => {
+    const scorer = Scorers.schemaAdherence(Schema.Struct({ result: Schema.Struct({ count: Schema.Number }) }))
+    expect(await Effect.runPromise(scorer.score(input({ result: { count: 1 } })))).toEqual({
+      score: 1,
+      reason: "Output matches schema"
+    })
+    const bad = await Effect.runPromise(scorer.score(input({ result: { count: "private value" } })))
+    expect(bad).toEqual({
+      score: 0,
+      reason: "Output does not match schema: Expected number at [\"result\"][\"count\"]"
+    })
+    expect(await Effect.runPromise(scorer.score(input({ result: {} })))).toMatchObject({
+      score: 0,
+      reason: expect.stringContaining("Missing key")
+    })
+  })
+
+  it("awaits a decoder and checks the decoded value against its refinements", async () => {
+    const schema = Schema.String.pipe(
+      Schema.decodeTo(Schema.Finite, {
+        decode: SchemaGetter.transformEffect((value) => Effect.as(Effect.yieldNow, Number(value))),
+        encode: SchemaGetter.transform(String)
+      })
+    )
+    const scorer = Scorers.schemaAdherence(schema)
+    expect(await Effect.runPromise(scorer.score(input("42")))).toMatchObject({ score: 1 })
+    expect(await Effect.runPromise(scorer.score(input(42)))).toMatchObject({ score: 0 })
+    expect(await Effect.runPromise(scorer.score(input("invalid number")))).toMatchObject({
+      score: 0,
+      reason: expect.stringContaining("finite")
+    })
+  })
+
+  it("bounds a long issue reason on a UTF-8 boundary", async () => {
+    const field = "🎯".repeat(100)
+    const scorer = Scorers.schemaAdherence(Schema.Struct({ [field]: Schema.String }))
+    const result = await Effect.runPromise(scorer.score(input({})))
+    expect(result.score).toBe(0)
+    expect(result.reason).toMatch(/^Output does not match schema: Missing key/)
+    expect(result.reason).not.toContain("�")
+    expect(new TextEncoder().encode(result.reason).length).toBeLessThanOrEqual(256)
+    expect(result.reason).not.toContain(field)
+  })
+
+  it("keys the schema and the caller's identity options", () => {
+    const schema = Schema.Struct({ count: Schema.Number })
+    const scorer = Scorers.schemaAdherence(schema)
+    expect(scorer.name).toBe("schemaAdherence")
+    expect(scorer.scorerKey).toBe(Scorers.schemaAdherence(Schema.Struct({ count: Schema.Number })).scorerKey)
+    expect(scorer.scorerKey).not.toBe(Scorers.schemaAdherence(Schema.Struct({ count: Schema.String })).scorerKey)
+    expect(Scorers.schemaAdherence(Schema.NumberFromString).scorerKey).not.toBe(
+      Scorers.schemaAdherence(Schema.NumberFromString.check(Schema.isFinite())).scorerKey
+    )
+    const options = { id: "example/count", name: "count", version: "2" }
+    const named = Scorers.schemaAdherence(schema, options)
+    expect(named.name).toBe("count")
+    expect(named.scorerKey).toBe(Scorers.schemaAdherence(Schema.Struct({ count: Schema.Number }), options).scorerKey)
+    for (const change of [{ id: "example/other" }, { name: "other" }, { version: "3" }]) {
+      expect(named.scorerKey).not.toBe(Scorers.schemaAdherence(schema, { ...options, ...change }).scorerKey)
+    }
+    expect(Scorers.schemaAdherence(schema, { name: "schemaAdherence" }).scorerKey).not.toBe(scorer.scorerKey)
+    expect(Scorers.schemaAdherence(schema, { id: "smithers/scorers/schema-adherence" }).scorerKey).not.toBe(
+      scorer.scorerKey
+    )
+  })
+
+  it("scores custom filters and non-JSON schema types", async () => {
+    const custom = () =>
+      Schema.String.check(Schema.makeFilter((value) => value.startsWith("ok"), { expected: "an ok-prefixed string" }))
+    const filtered = Scorers.schemaAdherence(custom())
+    expect(filtered.scorerKey).toBe(Scorers.schemaAdherence(custom()).scorerKey)
+    expect(filtered.scorerKey).not.toBe(Scorers.schemaAdherence(Schema.String).scorerKey)
+    expect(await Effect.runPromise(filtered.score(input("ok-value")))).toMatchObject({ score: 1 })
+    expect(await Effect.runPromise(filtered.score(input("bad")))).toMatchObject({
+      score: 0,
+      reason: "Output does not match schema: Expected an ok-prefixed string"
+    })
+
+    const key = Symbol("measure")
+    const schema = Schema.Struct({ [key]: Schema.Literal(1n) })
+    const scorer = Scorers.schemaAdherence(schema)
+    expect(scorer.scorerKey).toBe(Scorers.schemaAdherence(Schema.Struct({ [key]: Schema.Literal(1n) })).scorerKey)
+    expect(scorer.scorerKey).not.toBe(Scorers.schemaAdherence(Schema.Struct({ [key]: Schema.Literal(2n) })).scorerKey)
+    expect(await Effect.runPromise(scorer.score(input({ [key]: 1n })))).toMatchObject({ score: 1 })
+    expect(await Effect.runPromise(scorer.score(input({ [key]: 2n })))).toMatchObject({ score: 0 })
   })
 })
 

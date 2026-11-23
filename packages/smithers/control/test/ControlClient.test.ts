@@ -160,6 +160,7 @@ const calls = (control: Control["Service"]): Record<keyof Control["Service"], Ef
     }),
     signal: control.signal({ ...mutation, signal: { name: "continue", payload: null } }),
     cancel: control.cancel(mutation),
+    pause: control.pause(mutation),
     resume: control.resume(mutation),
     list: control.list({ _tag: "flows" }),
     watch: Stream.runCollect(control.watch({ follow: false }))
@@ -183,11 +184,12 @@ describe("ControlClient", () => {
       steer: true,
       signal: true,
       cancel: true,
+      pause: true,
       resume: true,
       list: true,
       watch: true
     }
-    expect(Object.values(boundaryErrors)).toEqual(Array(10).fill(true))
+    expect(Object.values(boundaryErrors)).toEqual(Array(11).fill(true))
   })
 
   it("authenticates watch with the RPC guide's client composition", async () => {

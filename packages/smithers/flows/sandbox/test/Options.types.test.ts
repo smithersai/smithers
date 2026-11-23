@@ -13,6 +13,7 @@ import * as CloudflareSandbox from "../src/CloudflareSandbox/index.ts"
 import * as ContainerSandbox from "../src/ContainerSandbox/index.ts"
 import * as DaytonaSandbox from "../src/DaytonaSandbox/index.ts"
 import * as DirectorySandbox from "../src/DirectorySandbox/index.ts"
+import * as JjWorkspaceSandbox from "../src/JjWorkspaceSandbox/index.ts"
 import * as JustBashSandbox from "../src/JustBashSandbox/index.ts"
 import * as KubernetesSandbox from "../src/KubernetesSandbox/index.ts"
 import * as MicrosandboxSandbox from "../src/MicrosandboxSandbox/index.ts"
@@ -49,6 +50,8 @@ expectTypeOf<Parameters<typeof DaytonaSandbox.make>[0]>()
   .toEqualTypeOf<DaytonaSandbox.DaytonaSandboxOptions>()
 expectTypeOf<Parameters<typeof DirectorySandbox.make>[0]>()
   .toEqualTypeOf<DirectorySandbox.DirectorySandboxOptions>()
+expectTypeOf<Parameters<typeof JjWorkspaceSandbox.make>[0]>()
+  .toEqualTypeOf<JjWorkspaceSandbox.JjWorkspaceSandboxOptions>()
 expectTypeOf<Parameters<typeof JustBashSandbox.make>[0]>()
   .toEqualTypeOf<JustBashSandbox.JustBashSandboxOptions>()
 expectTypeOf<Parameters<typeof KubernetesSandbox.make>[0]>()
@@ -66,6 +69,8 @@ expectTypeOf<ContainerSandbox.ContainerSandboxOptions["network"]>()
   .toEqualTypeOf<Sandbox.NetworkPolicy | string | undefined>()
 expectTypeOf<DaytonaSandbox.DaytonaSandboxOptions["network"]>().toEqualTypeOf<Sandbox.NetworkPolicy | undefined>()
 expectTypeOf<DirectorySandbox.DirectorySandboxOptions["network"]>().toEqualTypeOf<Sandbox.NetworkPolicy | undefined>()
+expectTypeOf<JjWorkspaceSandbox.JjWorkspaceSandboxOptions["network"]>()
+  .toEqualTypeOf<Sandbox.NetworkPolicy | undefined>()
 expectTypeOf<JustBashSandbox.JustBashSandboxOptions["network"]>().toEqualTypeOf<Sandbox.NetworkPolicy | undefined>()
 expectTypeOf<KubernetesSandbox.KubernetesSandboxOptions["network"]>()
   .toEqualTypeOf<Sandbox.NetworkPolicy | undefined>()
@@ -79,6 +84,7 @@ expectTypeOf<CloudflareSandbox.CloudflareSandboxOptions<Binding>["limits"]>().to
 expectTypeOf<ContainerSandbox.ContainerSandboxOptions["limits"]>().toEqualTypeOf<Limits>()
 expectTypeOf<DaytonaSandbox.DaytonaSandboxOptions["limits"]>().toEqualTypeOf<Limits>()
 expectTypeOf<DirectorySandbox.DirectorySandboxOptions["limits"]>().toEqualTypeOf<Limits>()
+expectTypeOf<JjWorkspaceSandbox.JjWorkspaceSandboxOptions["limits"]>().toEqualTypeOf<Limits>()
 expectTypeOf<JustBashSandbox.JustBashSandboxOptions["limits"]>().toEqualTypeOf<Limits>()
 expectTypeOf<KubernetesSandbox.KubernetesSandboxOptions["limits"]>().toEqualTypeOf<Limits>()
 expectTypeOf<MicrosandboxSandbox.MicrosandboxSandboxOptions["limits"]>().toEqualTypeOf<Limits>()
@@ -101,6 +107,7 @@ it("exports every options-bearing constructor through its namespace", () => {
   expect(typeof ContainerSandbox.make).toBe("function")
   expect(typeof DaytonaSandbox.make).toBe("function")
   expect(typeof DirectorySandbox.make).toBe("function")
+  expect(typeof JjWorkspaceSandbox.make).toBe("function")
   expect(typeof JustBashSandbox.make).toBe("function")
   expect(typeof KubernetesSandbox.make).toBe("function")
   expect(typeof MicrosandboxSandbox.make).toBe("function")

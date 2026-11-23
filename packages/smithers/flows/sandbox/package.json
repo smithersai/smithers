@@ -41,6 +41,8 @@
     "./ContainerSandbox/*": null,
     "./DirectorySandbox": "./src/DirectorySandbox/index.ts",
     "./DirectorySandbox/*": null,
+    "./JjWorkspaceSandbox": "./src/JjWorkspaceSandbox/index.ts",
+    "./JjWorkspaceSandbox/*": null,
     "./ProviderConformance": "./src/ProviderConformance/index.ts",
     "./ProviderConformance/*": null,
     "./RemoteChildProcessSpawner": "./src/RemoteChildProcessSpawner/index.ts",
@@ -146,6 +148,17 @@
         }
       },
       "./DirectorySandbox/*": null,
+      "./JjWorkspaceSandbox": {
+        "import": {
+          "types": "./dist/esm/JjWorkspaceSandbox/index.d.ts",
+          "default": "./dist/esm/JjWorkspaceSandbox/index.js"
+        },
+        "require": {
+          "types": "./dist/cjs/JjWorkspaceSandbox/index.d.ts",
+          "default": "./dist/cjs/JjWorkspaceSandbox/index.js"
+        }
+      },
+      "./JjWorkspaceSandbox/*": null,
       "./ProviderConformance": {
         "import": {
           "types": "./dist/esm/ProviderConformance/index.d.ts",

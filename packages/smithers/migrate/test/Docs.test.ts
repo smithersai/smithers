@@ -14,6 +14,7 @@ import { readFileSync } from "node:fs"
 import { fileURLToPath } from "node:url"
 import * as Constructs from "../src/Constructs.ts"
 import * as Mapping from "../src/Mapping.ts"
+import * as RunState from "../src/RunState.ts"
 
 const read = (relative: string): string => readFileSync(fileURLToPath(new URL(relative, import.meta.url)), "utf8")
 
@@ -114,6 +115,13 @@ describe("reference page", () => {
     const missing = Constructs.constructs.filter((construct) => !table.includes(`\`${construct.name}\``))
 
     expect(missing.map((construct) => construct.name)).toEqual([])
+  })
+
+  it("documents the legacy database instruction and the fresh Postgres configuration", () => {
+    const guide = unwrapped(read("../docs/guides/clear-run-state.md"))
+    expect(unwrapped(reference)).toContain(RunState.instructionText.backend)
+    expect(guide).toContain("`SMITHERS_BACKEND=postgres` and `SMITHERS_POSTGRES_URL`")
+    expect(guide).toContain("`PostgresDatabase` from `@smthrs/database`")
   })
 
   it("states the product rule the tool is built around, in the barrel header", () => {

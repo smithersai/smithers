@@ -194,7 +194,7 @@ describe("Mapping.rows", () => {
     }
     // Loop state and worktree lanes are the two `ctx` families that are not.
     expect(generated("ctx.iterationCount").class).toBe("guided")
-    expect(generated("ctx.worktreePath").class).toBe("unsafe")
+    expect(generated("ctx.worktreePath")).toMatchObject({ class: "guided", target: "Sandbox.Session.workdir" })
     // The pragma goes away with the JSX; direct store access must not survive.
     expect([generated("@jsxImportSource smthrs").class, generated("db.<member>").class])
       .toEqual(["automatic", "unsafe"])
@@ -241,6 +241,82 @@ describe("Mapping.rows", () => {
       expect(Mapping.byImport(name)?.construct, name).toMatch(/^smthrs\//)
     }
   })
+
+  it.each([
+    ["createSmithersPostgres", "PostgresDatabase or SMITHERS_BACKEND=postgres", "@smthrs/database"],
+    ["createSmithersCloudflare", "CloudflareRuntime.layer and ExecutionObject", "@smthrs/platform-cloudflare"],
+    ["Monitor", "Monitor.classify, Monitor.run, or Monitor.attach", "@smthrs/control/Monitor"],
+    ["Poller", "Poll.make", "@smthrs/flow/Poll"],
+    ["CheckSuite", "CheckSuite.make or CheckSuite.run", "@smthrs/patterns/CheckSuite"],
+    ["ScanFixVerify", "ScanFixVerify.make or ScanFixVerify.run", "@smthrs/patterns/ScanFixVerify"],
+    ["Worktree", "JjWorkspaceSandbox.make", "@smthrs/sandbox/JjWorkspaceSandbox"],
+    ["createOpenApiTools", "OpenApi.fromSpec", "@smthrs/integrations/OpenApi"],
+    ["openApiToolDuration", "The kernel's telemetry and the OTLP layer", "@smthrs/kernel, @smthrs/observability"],
+    ["latencyScorer", "Scorers.latency", "@smthrs/scorers/Scorers"],
+    ["schemaAdherenceScorer", "Scorers.schemaAdherence", "@smthrs/scorers/Scorers"],
+    ["smthrs/aws", "AwsSandbox", "@smthrs/sandbox"],
+    ["smthrs/cloudflare", "CloudflareSandbox", "@smthrs/sandbox"],
+    ["smthrs/daytona", "DaytonaSandbox", "@smthrs/sandbox"],
+    ["smthrs/microsandbox", "MicrosandboxSandbox", "@smthrs/sandbox"],
+    ["smthrs/vercel", "VercelSandbox", "@smthrs/sandbox"],
+    ["smthrs/telegram", "@smthrs/notifications/Channels", "@smthrs/notifications/Channels"],
+    ["smthrs/browser", "@smthrs/platform-browser", "@smthrs/platform-browser"],
+    ["smthrs/openapi", "@smthrs/integrations/OpenApi", "@smthrs/integrations/OpenApi"]
+  ])("guides %s to %s", (construct, target, targetModule) => {
+    expect(Mapping.byImport(construct)).toMatchObject({ class: "guided", target, targetModule })
+  })
+
+  it.each(
+    [
+      ["Saga", ["Saga.make", "Saga.run", "CompensationHandlers"]],
+      ["SagaStep", ["Saga.make", "Saga.run", "CompensationHandlers"]],
+      ["Optimizer", ["Optimizer.make", "Optimizer.run", "Optimize.run"]],
+      ["Subflow", ["ChildFlows", "agent/spawn", "agent/send", "agent/await", "agent/cancel"]],
+      ["WaitForEvent", ["Control.signal", "smthrs runs signal"]],
+      ["Signal", ["Control.signal", "smthrs runs signal"]],
+      ["signalRun", ["Control.signal", "smthrs runs signal"]]
+    ] as const
+  )("documents the replacement APIs for %s", (construct, apis) => {
+    const mapping = Mapping.byConstruct(construct)
+    for (const api of apis) expect(mapping?.rule).toContain(`\`${api}\``)
+  })
+
+  it.each([
+    ["inspect", "runs inspect"],
+    ["replay", "runs replay"],
+    ["fork", "runs fork"],
+    ["rewind", "runs rewind"],
+    ["approve", "approvals approve"],
+    ["deny", "approvals deny"],
+    ["signal", "runs signal"],
+    ["monitor", "runs monitor"],
+    ["cron", "triggers"],
+    ["eval", "eval run"],
+    ["pause", "runs pause"],
+    ["scores", "eval scores"]
+  ])("maps smithers %s to smthrs %s for a guided rewrite", (legacy, replacement) => {
+    const construct = `smithers ${legacy}`
+    expect(Constructs.byName(construct)?.kind).toBe("cli")
+    expect(Mapping.byConstruct(construct)).toMatchObject({
+      class: "guided",
+      target: `smthrs ${replacement}`,
+      targetModule: "@smthrs/cli"
+    })
+    expect(Mapping.snippet(hit(construct, [], { command: `${construct} run-1` }))).toBeUndefined()
+  })
+
+  it("guides the legacy optimize verb to the eval optimization API", () => {
+    expect(Mapping.byConstruct("smithers optimize")).toMatchObject({
+      class: "guided",
+      target: "Optimize.run",
+      targetModule: "@smthrs/evals/Optimize"
+    })
+    expect(Mapping.snippet(hit("smithers optimize"))).toBeUndefined()
+  })
+
+  it("names the control API for a programmatic pause", () => {
+    expect(Mapping.byConstruct("smithers pause")?.rule).toContain("`Control.pause`")
+  })
 })
 
 describe("Mapping covers every old import in the fixtures", () => {
@@ -282,19 +358,23 @@ describe("Mapping.classify", () => {
     expect(Mapping.classify(hit("Parallel", [], { childConstructs: "Task:one,Task:two", childPayloads: payloads })))
       .toBe("automatic")
     expect(Mapping.classify(hit("Loop", ["until"]))).toBe("guided")
-    expect(Mapping.classify(hit("Worktree"))).toBe("unsafe")
+    expect(Mapping.classify(hit("Worktree"))).toBe("guided")
   })
 
-  it("raises Parallel to guided when it bounds concurrency", () => {
-    const raised = Mapping.classifyWithReason(
-      hit("Parallel", ["maxConcurrency"], {
-        childConstructs: "Task:one,Task:two",
-        childPayloads: "{\"one\":{},\"two\":{}}"
-      })
-    )
-
-    expect(raised.class).toBe("guided")
-    expect(raised.reason).toContain("concurrency")
+  it.each([
+    ["maxConcurrency", "Bounded.all"],
+    ["subtreeConcurrency", "Bounded.all"],
+    ["priority", "Node.priority"],
+    ["failurePolicy", "Quarantine"],
+    ["continueOnFail", "Quarantine"],
+    ["skipIf", "Node.branch"]
+  ])("guides Parallel with %s instead of emitting a bare Node.all", (prop, api) => {
+    const entry = hit("Parallel", [prop], {
+      childConstructs: "Task:one,Task:two",
+      childPayloads: "{\"one\":{},\"two\":{}}"
+    })
+    expect(Mapping.classifyWithReason(entry)).toMatchObject({ class: "guided", reason: expect.stringContaining(api) })
+    expect(Mapping.snippet(entry)).toBeUndefined()
   })
 
   it("raises Parallel to guided when it skips the whole group", () => {
@@ -398,9 +478,15 @@ describe("Mapping.classify", () => {
     expect(transpiles(conditional)).toBe(true)
   })
 
-  it("raises a select approval to guided", () => {
+  it.each(["select", "rank"])("guides a %s approval with its own answer schema", (mode) => {
     expect(Mapping.classify(hit("Approval", ["request"], { request: "ship it" }))).toBe("automatic")
-    expect(Mapping.classify(hit("Approval", ["mode", "options"], { mode: "select" }))).toBe("guided")
+    const entry = hit("Approval", ["request", "mode", "options"], { request: "ship it", mode })
+    expect(Mapping.classifyWithReason(entry)).toMatchObject({
+      class: "guided",
+      reason: expect.stringContaining("answer schema")
+    })
+    expect(Mapping.snippet(entry)).toBeUndefined()
+    expect(Mapping.byConstruct("Approval")?.rule).toContain(`\`${mode}\``)
   })
 
   it.each([
@@ -417,7 +503,7 @@ describe("Mapping.classify", () => {
       expect(raised.class).toBe("guided")
       for (const prop of props) expect(raised.reason).toContain(prop)
       expect(raised.reason).toContain("operator")
-      expect(raised.reason).toContain("approval flow")
+      expect(raised.reason).toContain("allowedPrincipals")
       expect(Mapping.snippet(entry)).toBeUndefined()
     }
   })
@@ -497,13 +583,40 @@ describe("Mapping.snippet keeps the TypeScript it generates valid", () => {
     }))).toContain("Second.call")
   })
 
-  it("emits a numeric timer as milliseconds, a duration phrase as a string, and refuses an expression", () => {
-    expect(Mapping.snippet(hit("Timer", ["duration"], { duration: "1000" })))
-      .toBe("Sleep.action.call({ name: \"wait\", duration: 1000 })")
-    expect(Mapping.snippet(hit("Timer", ["duration", "id"], { duration: "1 hour", id: "nap" })))
-      .toBe("Sleep.action.call({ name: \"nap\", duration: \"1 hour\" })")
-    expect(Mapping.snippet(hit("Timer", ["duration"], { duration: "config.waitMs" }))).toBeUndefined()
-    expect(Mapping.snippet(hit("Timer", ["duration"], { duration: "1000 * 60" }))).toBeUndefined()
+  it.each([
+    ["duration", "1000", "millis: 1000"],
+    ["duration", "1 hour", "millis: 3600000"],
+    ["duration", "2.5MS", "millis: 2.5"],
+    ["until", "1770000000000", "until: 1770000000000"],
+    ["until", "-1", "until: -1"]
+  ])("rewrites a literal Timer %s of %s to Sleep.action", (prop, value, payload) => {
+    const entry = hit("Timer", [prop, "id"], { [prop]: value, id: "nap" })
+    expect(Mapping.classify(entry)).toBe("automatic")
+    expect(Mapping.snippet(entry)).toBe(`Sleep.action.call({ ${payload} })`)
+  })
+
+  it.each([
+    hit("Timer", ["duration"]),
+    hit("Timer", ["duration"], { duration: "config.waitMs" }),
+    hit("Timer", ["duration"], { duration: "1000 * 60" }),
+    hit("Timer", ["duration"], { duration: "2 fortnights" }),
+    hit("Timer", ["duration"], { duration: "-1" }),
+    hit("Timer", ["duration"], { duration: "9".repeat(310) }),
+    hit("Timer", ["until"], { until: "2 hours" }),
+    hit("Timer", ["until"], { until: "deadline" }),
+    hit("Timer", ["duration", "until"], { duration: "1000", until: "1770000000000" })
+  ])("guides a Timer with an ambiguous or unsupported literal %#", (entry) => {
+    expect(Mapping.classify(entry)).toBe("guided")
+    expect(Mapping.snippet(entry)).toBeUndefined()
+  })
+
+  it("guides recurring timers to triggers", () => {
+    const entry = hit("Timer", ["every", "duration"], { every: "1 hour", duration: "1000" })
+    expect(Mapping.classifyWithReason(entry)).toMatchObject({
+      class: "guided",
+      reason: expect.stringContaining("@smthrs/triggers")
+    })
+    expect(Mapping.snippet(entry)).toBeUndefined()
   })
 })
 
@@ -592,7 +705,7 @@ describe("Mapping.snippet", () => {
     }
   })
 
-  it("gives no snippet for a construct with no safe translation", () => {
+  it("gives no snippet for a guided Worktree or Monitor", () => {
     expect(Mapping.snippet(hit("Worktree"))).toBeUndefined()
     expect(Mapping.snippet(hit("Monitor"))).toBeUndefined()
   })

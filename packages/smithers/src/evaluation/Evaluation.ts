@@ -289,13 +289,15 @@ export const runOf = (artifact: RunArtifact): Runner.RunResult => ({
   ...(artifact.trials === undefined ? {} : { trials: artifact.trials, k: artifact.k })
 })
 
+const artifactRunId = /^[a-zA-Z0-9][a-zA-Z0-9._-]*$/
+
 /**
  * A caller-supplied identity cannot escape the artifact directory.
  * @category constructors
  * @since 1.0.0
  */
 export const runPath = (root: string, runId: string): string => {
-  if (!/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/.test(runId)) {
+  if (!artifactRunId.test(runId)) {
     throw new CliError.UsageError({ message: "Run IDs must contain only letters, digits, '.', '_' or '-'" })
   }
   return join(Project.stateDirectory(root), "evals", "runs", `${runId}.json`)
@@ -389,6 +391,43 @@ export const writeJson = (
   signal?: AbortSignal
 ): Promise<void> => Effect.runPromise(publishJson(file, source, overwrite, signal))
 
+const scoreStore = (filename: string) =>
+  SqlScoreStore.layer.pipe(
+    Layer.provide(DurableWriter.layer().pipe(Layer.provideMerge(NodeDatabase.layer({ filename }))))
+  )
+
+/**
+ * Read the scores attributed to an evaluation run or stored under a run ID.
+ * @category constructors
+ * @since 1.0.0
+ */
+export const scores = async (root: string, runId: string, signal?: AbortSignal) => {
+  // An evaluation's step keys are supplied by its executor and can recur
+  // across runs. The saved result preserves the run's exact observations.
+  const artifact = artifactRunId.test(runId)
+    ? await readRunFile(runPath(root, runId)).catch((cause: unknown) => {
+      if ((cause as NodeJS.ErrnoException)?.code === "ENOENT") return undefined
+      throw cause
+    })
+    : undefined
+  if (artifact !== undefined) return artifact.observations
+
+  const filename = executionDatabasePath(root)
+  if (!DatabaseLocation.exists(filename)) return []
+  return Effect.runPromise(
+    Effect.gen(function*() {
+      const store = yield* ScoreStore.ScoreStore
+      const observations: Array<ScoreStore.Observation> = []
+      while (true) {
+        const page = yield* store.observations(runId, undefined, { offset: observations.length })
+        observations.push(...page)
+        if (page.length < ScoreStore.maxObservations) return observations
+      }
+    }).pipe(Effect.provide(scoreStore(filename))),
+    { signal }
+  )
+}
+
 const batchScoring = Layer.effect(Runner.Runner)(Effect.gen(function*() {
   const store = yield* ScoreStore.ScoreStore
   return {
@@ -412,10 +451,7 @@ const batchScoring = Layer.effect(Runner.Runner)(Effect.gen(function*() {
 export const scoring = (root: string): Layer.Layer<Runner.Runner, ScorerError> => {
   const filename = executionDatabasePath(root)
   if (!DatabaseLocation.exists(filename)) return Runner.layerInline
-  return batchScoring.pipe(
-    Layer.provide(SqlScoreStore.layer),
-    Layer.provide(DurableWriter.layer().pipe(Layer.provideMerge(NodeDatabase.layer({ filename }))))
-  )
+  return batchScoring.pipe(Layer.provide(scoreStore(filename)))
 }
 
 const EvaluationInputs = Schema.Struct({
@@ -632,6 +668,12 @@ export const readRun = async (root: string, selector: string): Promise<RunArtifa
       message: `No saved evaluation run at ${file}; run the suite first`
     })
   }
+  return parseRun(file, source)
+}
+
+const readRunFile = async (file: string) => parseRun(file, await readFile(file, "utf8"))
+
+const parseRun = (file: string, source: string): RunArtifact => {
   let value: unknown
   try {
     value = JSON.parse(source)

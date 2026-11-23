@@ -36,6 +36,7 @@ Every namespace below is also its own import subpath.
 | `SandboxConformance`        | `@smthrs/sandbox/SandboxConformance`        | The conformance suite a sandbox session provider must pass.                   |
 | `SandboxMerge`              | `@smthrs/sandbox/SandboxMerge`              | Lands a session's captured work in a host jj repository as one change.        |
 | `DirectorySandbox`          | `@smthrs/sandbox/DirectorySandbox`          | The scratch-directory sandbox provider.                                       |
+| `JjWorkspaceSandbox`        | `@smthrs/sandbox/JjWorkspaceSandbox`        | The Jujutsu-workspace sandbox provider, over an injected `Jj` service.        |
 | `CommandSandbox`            | `@smthrs/sandbox/CommandSandbox`            | The argv-prefix sandbox provider, over `ssh`, `docker exec`, or this machine. |
 | `ContainerSandbox`          | `@smthrs/sandbox/ContainerSandbox`          | The container-lifecycle provider, and sessions over containers others run.    |
 | `KubernetesSandbox`         | `@smthrs/sandbox/KubernetesSandbox`         | The Pod-per-session sandbox provider, over `kubectl`.                         |

@@ -697,6 +697,7 @@ const layerLocal = (applicationConfig: LocalConfig, modules?: ModuleRegistration
     const control = layerControlLocal(config, registry, engine, modules)
     return Layer.mergeAll(
       control,
+      engine.journal,
       native.layerGatewayHost(engine, control),
       layerOutput,
       NodeServices.layer,

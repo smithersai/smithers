@@ -14,7 +14,7 @@ import * as Schema from "effect/Schema"
  * on the code routes the failure to the right owner:
  *
  * - `invalid_suite`: the suite declaration is wrong. Fix the suite.
- * - `invalid_run_options`: `Runner.run`'s own options are wrong, not the suite.
+ * - `invalid_run_options`: evaluation run or optimization options are invalid.
  * - `invalid_baseline`: the committed baseline is unreadable, belongs to
  *   another suite, or holds a record the schema rejects. Regenerate it.
  * - `invalid_tolerance`: the caller passed a tolerance that is not a finite
@@ -32,6 +32,8 @@ import * as Schema from "effect/Schema"
  * - `scorer_unavailable`: no batch runner was available to score with, or
  *   a correlated runner reported a failed durable observation write.
  *   Unavailable scoring becomes inconclusive; a failed write fails the run.
+ * - `no_scores`: a prompt candidate produced no scored observations.
+ * - `target_not_reached`: optimization exhausted its budget below the target.
  *
  * @category models
  * @since 0.1.0
@@ -45,7 +47,9 @@ export const EvalErrorCode = Schema.Literals([
   "executor",
   "ambiguous_score_job",
   "scorer_protocol",
-  "scorer_unavailable"
+  "scorer_unavailable",
+  "no_scores",
+  "target_not_reached"
 ])
 
 /**

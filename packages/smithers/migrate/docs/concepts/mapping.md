@@ -57,12 +57,15 @@ The class belongs to the occurrence, not only to the construct.
 `Mapping.classifyWithReason(hit)` adds why:
 
 - `<Parallel>` is `automatic`.
-- `<Parallel maxConcurrency>` is `guided`.
+- `<Parallel maxConcurrency>` is `guided`. Use `Bounded.all` for bounded
+  scheduling, `Node.priority` for individual nodes, and `Quarantine` to collect
+  outcomes from siblings that continue after a failure.
 - `<Task hijack>` is `unsafe`.
-- `<Approval allowedUsers>` or `<Approval allowedScopes>` is `guided`, including
-  when both restrictions are present. The decorator has no equivalent fields.
-  The operator must supply an approval flow that preserves the original user
-  and scope restrictions; no automatic snippet is emitted.
+- `<Approval allowedUsers>` or `<Approval allowedScopes>` is `guided`. Map users
+  to `HumanTask`'s `allowedPrincipals` and preserve scope restrictions in the
+  host approval policy. Choose the answer schema for the migrated kind, which
+  can be `ask`, `confirm`, `select`, `rank`, or `json`.
+- `<Timer every>` is `guided`. Move the schedule to `@smthrs/triggers`.
 - `<Loop maxIterations={Infinity}>` is `guided`, with the reason attached:
   bounded recursion needs a bound, and the migration has to choose one.
 
@@ -80,9 +83,9 @@ the rule instead.
 Compilable is meant literally. A step id that would start with a digit is
 prefixed, so `1st` becomes `Step1st`. Every key, tag, and seat is quoted. A
 step group whose ids would fold to one identifier, such as `a-b` and `a_b`, is
-refused rather than silently collapsed. A `Timer` duration is emitted as a
-number of milliseconds or a duration string, and refused when it is an
-expression.
+refused rather than silently collapsed. A literal `Timer` duration becomes
+`Sleep.action.call({ millis })`. A literal epoch deadline becomes
+`Sleep.action.call({ until })`. Timer expressions require a guided rewrite.
 
 ## Schemas and prompts
 

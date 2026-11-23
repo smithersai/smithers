@@ -718,6 +718,7 @@ describe("@smthrs/triggers comprehensive fuzz invariants", () => {
                 })
               },
               cancel: () => Effect.succeed({ _tag: "Accepted" as const, receiptId: "rcpt-cancel" }),
+              pause: () => Effect.die("unused"),
               resume: () => Effect.die("unused"),
               list: () => Effect.succeed({ _tag: "runs" as const, items: [] }),
               watch: () => Stream.empty

@@ -1,6 +1,6 @@
 /**
  * GitHub and Telegram adapters over
- * the Smithers control plane.
+ * the Smithers control plane, and OpenAPI operation bindings.
  *
  * Import a provider through its own subpath (`@smthrs/integrations/github`)
  * when you only need one. This entry point is the aggregate.
@@ -19,6 +19,12 @@ export * as Core from "./core.ts"
  * @since 1.0.0
  */
 export * as GitHub from "./github.ts"
+
+/**
+ * @category constructors
+ * @since 1.0.0
+ */
+export * as OpenApi from "./OpenApi.ts"
 
 /**
  * @category constructors

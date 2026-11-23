@@ -125,6 +125,11 @@ export const layer = ControlRpcs.toLayer(
           const principal = yield* ControlPrincipal
           return yield* control.cancel({ ...input, principal, ...yield* reader })
         }), logged),
+      Pause: Effect.fn("Control.pause")((input) =>
+        Effect.gen(function*() {
+          const principal = yield* ControlPrincipal
+          return yield* control.pause({ ...input, principal, ...yield* reader })
+        }), logged),
       Resume: Effect.fn("Control.resume")((input) =>
         Effect.gen(function*() {
           const principal = yield* ControlPrincipal

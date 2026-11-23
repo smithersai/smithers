@@ -982,6 +982,7 @@ const controlFixture = (
             return { _tag: "Accepted" as const, receiptId: "cancelled" }
           }),
         resume: () => Effect.die("unused"),
+        pause: () => Effect.die("unused"),
         list: (request) =>
           Effect.sync(() => {
             calls.push("list")

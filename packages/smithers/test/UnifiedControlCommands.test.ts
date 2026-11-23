@@ -228,3 +228,79 @@ describe("unified commands over a real local transport", () => {
     )
   })
 })
+
+describe("run pause and monitor", () => {
+  it("pauses a real running run with the reason and monitors it from the local journal", async () => {
+    const root = await waitingProject()
+    roots.push(root)
+    await Effect.runPromise(
+      Effect.gen(function*() {
+        const control = yield* Control.Control
+        const remote = remoteAddress(yield* HttpServer.HttpServer)
+        const at = ["--remote", remote, "--json"]
+        const card = yield* control.plan({ flowId: "wait", input: { message: "hold" } })
+        yield* control.approve({ ...card.approval, scope: "run" })
+        const receipt = yield* control.run({
+          _tag: "Plan",
+          planId: card.planId,
+          digest: card.digest,
+          envelope: card.envelope,
+          idempotencyKey: "pause-monitor"
+        })
+        if (receipt._tag !== "Accepted" || receipt.runId === undefined) {
+          throw new Error(`Run was not accepted: ${receipt._tag}`)
+        }
+        const runId = receipt.runId
+        yield* Effect.promise(() => waitFor(() => existsSync(join(root, "wait.log")), "real action admission", 15_000))
+        const args = ["runs", "monitor", runId, "--interval", "0", "--stall-beats", "1", "--max-checks", "2"]
+        const json = value(yield* Effect.promise(() => invoke([...args, "--root", root, "--json"])))
+        expect(json).toMatchObject({ runId, beats: [{ beat: 0 }, { beat: 1 }] })
+        expect(json.beats).toHaveLength(2)
+        let terminal = ""
+        const human = yield* Effect.promise(() =>
+          invoke([...args, "--root", root, "--audience", "human", "--silent"], {
+            stdout: {
+              isTTY: true,
+              columns: 80,
+              write: (text) => {
+                terminal += text
+              }
+            }
+          })
+        )
+        expect(human.codes, terminal + human.stderr).not.toContain(1)
+        expect(terminal).toContain(`run=${runId} beat=1 health=${json.beats[1].health}`)
+        const refused = yield* Effect.promise(() => invoke([...args, ...at]))
+        expect(refused.codes).toContain(2)
+        expect(refused.stdout + refused.stderr).toContain("runs monitor requires the local run journal")
+        const paused = value(
+          yield* Effect.promise(() => invoke(["runs", "pause", runId, "--reason", "operator review", ...at]))
+        )
+        expect(paused).toMatchObject({ runId })
+        const events = value(yield* Effect.promise(() => invoke(["runs", "logs", runId, ...at])))
+        expect(JSON.stringify(events)).toContain("operator review")
+        value(yield* Effect.promise(() => invoke(["runs", "cancel", runId, ...at])))
+      }).pipe(Effect.provide(serverLayer(root)), Effect.scoped)
+    )
+  }, 120_000)
+
+  it("stops monitoring a completed local run after one healthy beat", async () => {
+    const root = await fixture()
+    const at = ["--root", root, "--json"]
+    const card = value(await invoke(["flow", "plan", "echo", "message=done", ...at]))
+    const file = join(root, "approval.json")
+    await writeFile(file, JSON.stringify(card.approval))
+    value(await invoke(["approvals", "approve", `@${file}`, "--scope", "run", ...at]))
+    const receipt = value(await invoke(["flow", "execute", `@${file}`, ...at]))
+    value(await invoke(["runs", "wait", receipt.runId, ...at]))
+    const report = value(
+      await invoke(["runs", "monitor", receipt.runId, "--interval", "0", "--max-checks", "5", "--auto-heal", ...at])
+    )
+    expect(report).toMatchObject({ runId: receipt.runId, health: "healthy" })
+    expect(report.beats).toHaveLength(1)
+    expect(report.beats[0].healed ?? "none").toBe("none")
+    const missing = await invoke(["runs", "monitor", "absent", "--max-checks", "1", ...at])
+    expect(missing.codes).toContain(1)
+    expect(missing.stdout).toContain("absent")
+  }, 120_000)
+})

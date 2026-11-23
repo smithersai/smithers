@@ -11,8 +11,9 @@
  *
  * Four things are added to a bare wait:
  *
- * - a **kind**, so the four shapes a person is asked for (`ask`, `confirm`,
- *   `select`, `json`) are stated rather than reconstructed from a schema;
+ * - a **kind**, so the five shapes a person is asked for (`ask`, `confirm`,
+ *   `select`, `rank`, `json`) are stated rather than reconstructed from a
+ *   schema;
  * - **validation**, so an answer that does not fit is refused where it arrives
  *   instead of failing three steps later as a decode error;
  * - **re-asking**, so a refused answer parks again on a NEW wait point rather
@@ -61,8 +62,8 @@ import * as WaitFor from "./WaitFor.ts"
  * The shape a person is asked for.
  *
  * `ask` wants prose, `confirm` wants yes or no, `select` wants one of the
- * options the task names, and `json` wants a value the task's JSON Schema
- * accepts. The kind is what an interface renders and what {@link validate}
+ * options the task names, `rank` wants every one of those options in the
+ * person's order, and `json` wants a value the task's JSON Schema accepts. The kind is what an interface renders and what {@link validate}
  * checks; it is stated rather than inferred, because a text box and a two-
  * button confirmation are different questions even when both answers happen to
  * be strings.
@@ -70,7 +71,7 @@ import * as WaitFor from "./WaitFor.ts"
  * @category models
  * @since 0.1.0
  */
-export type Kind = "ask" | "confirm" | "select" | "json"
+export type Kind = "ask" | "confirm" | "select" | "rank" | "json"
 
 /**
  * The schema the `kind` payload field is declared with.
@@ -78,18 +79,20 @@ export type Kind = "ask" | "confirm" | "select" | "json"
  * @category schemas
  * @since 0.1.0
  */
-export const Kind: Schema.Literals<readonly ["ask", "confirm", "select", "json"]> = Schema.Literals([
+export const Kind: Schema.Literals<readonly ["ask", "confirm", "select", "rank", "json"]> = Schema.Literals([
   "ask",
   "confirm",
   "select",
+  "rank",
   "json"
 ])
 
 /**
  * A question that ended without an answer the task could accept.
  *
- * `request_invalid` is the author's mistake — a `select` with no options, an
- * attempt budget below one, a deadline that is not a length of time, a JSON
+ * `request_invalid` is the author's mistake — a `select` with no options, a
+ * `rank` that repeats one, an allow-list naming nobody, an attempt budget below
+ * one, a deadline that is not a length of time, a JSON
  * Schema outside the supported subset — and is refused before anyone is asked
  * anything. `rejected` means every attempt was
  * spent on answers the task refused, and `timeout` means the deadline passed
@@ -249,7 +252,7 @@ export const maxTaskNameBytes = 1_024
 export const maxPromptBytes = 64 * 1024
 
 /**
- * The largest option list on one select question.
+ * The largest option list on one select or rank question.
  *
  * @category constructors
  * @since 1.0.0
@@ -257,12 +260,20 @@ export const maxPromptBytes = 64 * 1024
 export const maxOptions = 256
 
 /**
- * The largest encoded select option.
+ * The largest encoded select or rank option, and the largest encoded principal.
  *
  * @category constructors
  * @since 1.0.0
  */
 export const maxOptionBytes = 4 * 1024
+
+/**
+ * The most principals one question may narrow its answerers to.
+ *
+ * @category constructors
+ * @since 1.0.0
+ */
+export const maxAllowedPrincipals = 64
 
 /**
  * The largest attempt budget one human task may declare.
@@ -400,7 +411,7 @@ type Settled = typeof Settled.Type
  */
 export interface Request {
   readonly kind: Kind
-  /** Ignored for `json`: an option list alone constrains no JSON value. */
+  /** Read by `select` and `rank`; an option list alone constrains no other kind. */
   readonly options?: ReadonlyArray<string> | undefined
   readonly schema?: unknown
 }
@@ -429,6 +440,62 @@ export const validateSchema = (
   path: ReadonlyArray<string> = []
 ): string | undefined => JsonSchemaSubset.validateSchema(schema, path)
 
+/** The option list as one diagnostic, cut at the exported diagnostic bound. */
+const renderOptions = (options: ReadonlyArray<string>): string =>
+  JsonSchemaSubset.truncateDiagnostic(options.join(", "))
+
+/** Why an option list cannot be offered at all, for `select` and `rank` alike. */
+const optionsComplaint = (options: ReadonlyArray<string>): string | undefined => {
+  if (options.length === 0) return "The question declares no options to choose from."
+  return options.length > maxOptions ||
+      options.some((option) => typeof option !== "string" || !BoundedJson.textFits(option, maxOptionBytes))
+    ? `The question's options exceed the ${maxOptions}-member or ${maxOptionBytes}-byte limits.`
+    : undefined
+}
+
+/**
+ * Names the first option a `rank` question lists twice.
+ *
+ * A ranking places every option exactly once, so a repeated option has no
+ * single place to go: no answer could ever be accepted.
+ */
+const duplicateOptionComplaint = (options: ReadonlyArray<string>): string | undefined => {
+  const seen = new Set<string>()
+  for (const option of options) {
+    if (seen.has(option)) {
+      return `The question lists the option ${JsonSchemaSubset.renderDiagnostic(option)} more than once, ` +
+        "so no ranking can place it."
+    }
+    seen.add(option)
+  }
+  return undefined
+}
+
+/**
+ * Why `value` is not a ranking of `options`: an array of the same length that
+ * names every option exactly once.
+ *
+ * The length is compared before any entry is read, so the walk is bounded by
+ * the option list rather than by whatever arrived. Equal length, no unknown
+ * entry, and no repeated entry together leave no option missing.
+ */
+const rankingComplaint = (value: unknown, options: ReadonlyArray<string>): string | undefined => {
+  if (!Array.isArray(value)) return "The answer must be an array that ranks every option."
+  if (value.length !== options.length) {
+    return `The ranking must list each of the ${options.length} options exactly once, and it lists ${value.length}.`
+  }
+  const unplaced = new Set(options)
+  for (const entry of value as ReadonlyArray<unknown>) {
+    if (typeof entry !== "string" || !options.includes(entry)) {
+      return `The ranking entry ${JsonSchemaSubset.renderDiagnostic(entry)} is not one of ${renderOptions(options)}.`
+    }
+    if (!unplaced.delete(entry)) {
+      return `The ranking lists ${JsonSchemaSubset.renderDiagnostic(entry)} more than once.`
+    }
+  }
+  return undefined
+}
+
 /**
  * Checks one answer against the question that was asked.
  *
@@ -455,20 +522,15 @@ export const validate = (value: unknown, request: Request): string | undefined =
     case "confirm":
       return typeof value === "boolean" ? undefined : "The answer must be a boolean."
     case "select": {
-      if (request.options === undefined || request.options.length === 0) {
-        return "The question declares no options to choose from."
-      }
-      if (
-        request.options.length > maxOptions ||
-        request.options.some((option) => typeof option !== "string" || !BoundedJson.textFits(option, maxOptionBytes))
-      ) {
-        return `The question's options exceed the ${maxOptions}-member or ${maxOptionBytes}-byte limits.`
-      }
-      return request.options.some((option) => option === value)
-        ? undefined
-        : `The answer ${JsonSchemaSubset.renderDiagnostic(value)} is not one of ${
-          JsonSchemaSubset.truncateDiagnostic(request.options.join(", "))
-        }.`
+      const options = request.options ?? []
+      return optionsComplaint(options) ??
+        (options.some((option) => option === value)
+          ? undefined
+          : `The answer ${JsonSchemaSubset.renderDiagnostic(value)} is not one of ${renderOptions(options)}.`)
+    }
+    case "rank": {
+      const options = request.options ?? []
+      return optionsComplaint(options) ?? duplicateOptionComplaint(options) ?? rankingComplaint(value, options)
     }
     default: {
       if (request.schema !== undefined) return JsonSchemaSubset.check(value, request.schema)
@@ -505,6 +567,8 @@ const boundedSchema = Schema.Json.check(
 
 const option = boundedText("option", maxOptionBytes)
 
+const principal = boundedText("principal", maxOptionBytes).check(Schema.isMinLength(1))
+
 const payloadFields = {
   name: boundedText("task name", maxTaskNameBytes),
   kind: Kind,
@@ -513,6 +577,9 @@ const payloadFields = {
     Schema.Array(option).check(Schema.isMaxLength(maxOptions))
   ),
   schema: Schema.optional(boundedSchema),
+  allowedPrincipals: Schema.optional(
+    Schema.Array(principal).check(Schema.isMaxLength(maxAllowedPrincipals))
+  ),
   // Finite, because a recorded plan is canonical JSON and JSON has no `NaN`
   // or `Infinity`: a payload carrying one could not be planned, so the
   // declaration refuses it, naming the field.
@@ -571,9 +638,12 @@ type Payload = typeof action.payloadSchema.Type
  * It is the payload's own fields, narrowed to what an interface needs to
  * render an answer box and refuse a bad answer before a person sends it: the
  * kind picks the control, the prompt is the question, `options` fills a
- * select, `schema` validates a JSON answer, and the two attempt numbers say
- * how much of the budget is left. The answer VALUE never appears here — this
- * describes the question, not what anybody said.
+ * select or a ranking, `schema` validates a JSON answer, and the two attempt
+ * numbers say how much of the budget is left. `allowedPrincipals`, when the
+ * question names any, travels too, so the host that authorizes an answer can
+ * intersect it with its own decision; see {@link isPrincipalAllowed}. The
+ * answer VALUE never appears here — this describes the question, not what
+ * anybody said.
  *
  * @private
  */
@@ -590,7 +660,8 @@ const declaredQuestion = (
     attempt,
     maxAttempts,
     ...(payload.options === undefined ? {} : { options: [...payload.options] }),
-    ...(payload.schema === undefined ? {} : { schema: payload.schema })
+    ...(payload.schema === undefined ? {} : { schema: payload.schema }),
+    ...(payload.allowedPrincipals === undefined ? {} : { allowedPrincipals: [...payload.allowedPrincipals] })
   })
 
 /** Builds the failure a task settles with, with the reasons it refused. */
@@ -712,13 +783,14 @@ const deadlineOf = (payload: Payload): Effect.Effect<Duration.Duration | undefin
 /**
  * Refuses a question nobody could answer correctly, before anyone is asked.
  *
- * A `select` with no options and a schema outside the supported subset are
+ * A `select` or `rank` with no options, a `rank` that lists an option twice,
+ * an allow-list that names nobody, and a schema outside the supported subset are
  * authoring mistakes whose only symptom at answer time would be a person being
  * refused for something they did not do, so {@link validateSchema} walks the
  * whole schema tree before the first park rather than waiting for an answer to
  * reach the keyword nobody can enforce.
  *
- * An `options` list on a `json` question is ignored because it constrains
+ * An `options` list on any other kind is ignored because it constrains
  * nothing; JSON constraints come only from `schema`.
  *
  * @private
@@ -740,10 +812,33 @@ const requestOf = (payload: Payload): Effect.Effect<Request, HumanTaskFailed> =>
       )
     )
   }
-  if (payload.kind === "select" && (payload.options === undefined || payload.options.length === 0)) {
+  if (payload.allowedPrincipals !== undefined && payload.allowedPrincipals.length === 0) {
     return Effect.fail(
-      failed(payload, "request_invalid", 0, [], `${tag} was called as a select with no options to choose from.`)
+      failed(
+        payload,
+        "request_invalid",
+        0,
+        [],
+        `${tag} was called with an empty allowedPrincipals list, so nobody could ever answer. ` +
+          "Omit the field to leave the choice to the host."
+      )
     )
+  }
+  if (payload.kind === "select" || payload.kind === "rank") {
+    const options = payload.options ?? []
+    if (options.length === 0) {
+      return Effect.fail(
+        failed(
+          payload,
+          "request_invalid",
+          0,
+          [],
+          `${tag} was called as a ${payload.kind} with no options to choose from.`
+        )
+      )
+    }
+    const duplicate = payload.kind === "rank" ? duplicateOptionComplaint(options) : undefined
+    if (duplicate !== undefined) return Effect.fail(failed(payload, "request_invalid", 0, [], duplicate))
   }
   if (payload.kind === "json" && payload.schema !== undefined) {
     const complaint = validateSchema(payload.schema)
@@ -751,6 +846,35 @@ const requestOf = (payload: Payload): Effect.Effect<Request, HumanTaskFailed> =>
   }
   return Effect.succeed(request)
 }
+
+/**
+ * Whether a question's own allow-list lets `principal` answer it.
+ *
+ * A question that names no `allowedPrincipals` restricts nobody, so the answer
+ * is `true`; otherwise the principal must be one of the listed strings,
+ * compared exactly, with no trimming, case folding, or pattern matching.
+ *
+ * This NARROWS and never widens. `true` means only that the question does not
+ * object: the host still decides who may answer at all, and must require its
+ * own authorization AND this check before it calls {@link answer}. The list is
+ * the flow author's request, published in the waiting annotation's `request`
+ * text, and is not enforced by {@link answer} itself, which is never told who
+ * is calling.
+ *
+ * ```ts
+ * const question = JSON.parse(waiting.request)
+ * if (hostAllows(principal) && HumanTask.isPrincipalAllowed(principal, question.allowedPrincipals)) {
+ *   yield* HumanTask.answer({ token: waiting.token, value })
+ * }
+ * ```
+ *
+ * @category combinators
+ * @since 1.0.0
+ */
+export const isPrincipalAllowed = (
+  principal: string,
+  allowedPrincipals?: ReadonlyArray<string>
+): boolean => allowedPrincipals === undefined || allowedPrincipals.includes(principal)
 
 /**
  * Awaits one attempt, racing the answer against the task's deadline.
@@ -913,7 +1037,8 @@ export const layer: Layer.Layer<never, never, (EffectDigest.Digest | SecureRando
  *
  * The token is not a credential: anyone who knows or derives the address of
  * the open attempt can answer it. The host decides who may answer, and must
- * authorize the caller before calling `answer`.
+ * authorize the caller before calling `answer`, further narrowed by the
+ * question's `allowedPrincipals` through {@link isPrincipalAllowed}.
  *
  * ```ts
  * if (waiting.token !== null) {

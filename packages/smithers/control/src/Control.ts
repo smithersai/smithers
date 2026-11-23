@@ -219,6 +219,34 @@ export interface RunMutationInput {
 }
 
 /**
+ * Pause arguments.
+ *
+ * The local contract includes the runtime-stamped principal.
+ * `ControlSchema.PauseInputSchema` carries only the caller's reason over RPC.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export interface PauseInput {
+  readonly runId: RunId
+  readonly idempotencyKey: IdempotencyKey
+  /** Why the run is being paused. Recorded on the `control.run.paused` journal entry. */
+  readonly reason?: string | undefined
+  /**
+   * Who is asking. Stamped by the runtime, which supplies its own principal
+   * when the caller names none.
+   */
+  readonly principal?: Principal | undefined
+  /**
+   * Set by the server to the authenticated principal unless its
+   * `RunVisibility` lets that principal see every run. A run the reader may
+   * not see fails `RunNotFound`, exactly as a missing run does. Not on the
+   * wire; an in-process caller that names no reader mutates any run.
+   */
+  readonly reader?: Principal | undefined
+}
+
+/**
  * Transport-independent control operations.
  *
  * Every operation admits transport and authentication failures so the same
@@ -302,6 +330,20 @@ export interface Service {
     Receipt,
     RunNotFound | ClaimLost | InvalidInput | PersistenceError | Unavailable | TransportError | Unauthorized
   >
+  /**
+   * Parks a running run without cancelling or failing it.
+   *
+   * The executor parks the engine run and the control row moves to `parked`
+   * with no waiting reason, which is how an operator park reads back and what
+   * `resume` restarts. A composition whose executor cannot park an engine run
+   * fails `Unavailable` and changes nothing.
+   */
+  readonly pause: (
+    input: PauseInput
+  ) => Effect.Effect<
+    Receipt,
+    RunNotFound | ClaimLost | InvalidInput | PersistenceError | Unavailable | TransportError | Unauthorized
+  >
   readonly resume: (
     input: RunMutationInput
   ) => Effect.Effect<
@@ -348,6 +390,7 @@ export const layerNoop: Layer.Layer<Control> = Layer.succeed(
     steer: Effect.fn("Control.steer")(() => Effect.fail(unavailable("steer"))),
     signal: Effect.fn("Control.signal")(() => Effect.fail(unavailable("signal"))),
     cancel: Effect.fn("Control.cancel")(() => Effect.fail(unavailable("cancel"))),
+    pause: Effect.fn("Control.pause")(() => Effect.fail(unavailable("pause"))),
     resume: Effect.fn("Control.resume")(() => Effect.fail(unavailable("resume"))),
     list: Effect.fn("Control.list")(() => Effect.fail(unavailable("list"))),
     watch: () => Stream.fail(unavailable("watch"))

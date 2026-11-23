@@ -56,7 +56,11 @@ prints the same texts on stderr when it refuses:
 | Live runs          | Finish or cancel them with the 0.x CLI you already have (`smithers cancel <run-id>` or `smithers down`), then rerun the scan.                    |
 | Parked runs        | Cancel them, or accept the loss: the 1.0 runtime cannot resume them.                                                                             |
 | Finished history   | Archive the database: `mkdir -p .smithers-migrate/archive && mv .smithers/smithers.db* .smithers-migrate/archive/`. 1.0 does not import history. |
-| Postgres or PGlite | The 1.0 release candidate supports SQLite only. Export what you need with the 0.x CLI, then remove the backend setting.                          |
+| Postgres or PGlite | Export any 0.x history you need with the old CLI. Configure a fresh 1.x database separately.                                                     |
+
+For a fresh Postgres database, set `SMITHERS_BACKEND=postgres` and
+`SMITHERS_POSTGRES_URL` in the 1.x CLI environment or use `PostgresDatabase`
+from `@smthrs/database` in a custom host.
 
 ## What the refusal looks like
 

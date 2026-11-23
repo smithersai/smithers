@@ -667,6 +667,16 @@ export interface Service {
     ) => Effect.Effect<RunSummary, RunNotFound | ClaimLost | PersistenceError>
   ) => Effect.Effect<RunSummary, RunNotFound | ClaimLost | PersistenceError>
   /**
+   * Parks a run this process owns: status `parked`, no waiting reason, owner
+   * released, and the spent fence kept as `parkedBy`.
+   *
+   * A park with no waiting reason is how an operator pause reads back, and
+   * `resume` claims it again. A terminal run is answered as it stands. A run
+   * this process does not own is `ClaimLost`. No fiber is interrupted:
+   * stopping the execution is the executor's half of `Control.pause`.
+   */
+  readonly pause: (runId: RunId) => Effect.Effect<RunSummary, RunNotFound | ClaimLost | PersistenceError>
+  /**
    * Joins an owned run or claims a suspended run or expired dead-owner run.
    *
    * `scope: "launched"` restricts claims to runs this plane launched, including
@@ -1554,6 +1564,24 @@ export const layerMemory = (options: MemoryOptions = {}): Layer.Layer<ControlRun
             run.localFence = undefined
             return updateSummary(run, { status: "cancelled", ownerId: undefined, parkedBy: undefined })
           }))
+        }),
+        pause: Effect.fn("ControlRuntime.pause")(function*(runId) {
+          const run = yield* requireRun(runId)
+          if (
+            run.summary.status === "cancelled" ||
+            run.summary.status === "completed" ||
+            run.summary.status === "failed"
+          ) return snapshot(run.summary)
+          if (run.localFence === undefined) return yield* new ClaimLost({ runId })
+          const fence = run.localFence
+          run.fence = undefined
+          run.localFence = undefined
+          return updateSummary(run, {
+            status: "parked",
+            waitingReason: undefined,
+            ownerId: undefined,
+            parkedBy: fence
+          })
         }),
         codeDrift: Effect.fn("ControlRuntime.codeDrift")(function*(runId) {
           const run = yield* requireRun(runId)

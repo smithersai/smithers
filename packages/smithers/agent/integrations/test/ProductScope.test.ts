@@ -20,8 +20,8 @@ const removedTelegram = [
 ]
 
 describe("integration product scope", () => {
-  it("exports GitHub, Telegram receiving, and the shared primitives", () => {
-    expect(Object.keys(Integrations).sort()).toEqual(["Core", "GitHub", "Telegram"])
+  it("exports GitHub, OpenApi, Telegram receiving, and the shared primitives", () => {
+    expect(Object.keys(Integrations).sort()).toEqual(["Core", "GitHub", "OpenApi", "Telegram"])
     expect(Object.keys(Integrations.Telegram).sort()).toEqual(["Payload", "Source"])
     expect(Object.keys(Integrations.GitHub).sort()).toEqual([
       "Actions",

@@ -32,6 +32,7 @@ import {
   ControlEvent,
   ListRequest,
   ListResponse,
+  PauseInputSchema,
   PlanCard,
   PlanInputSchema,
   type Principal,
@@ -233,6 +234,7 @@ export const ControlRpcs = RpcGroup.make(
     ])
   }),
   Rpc.make("Cancel", { defect: ControlDefect, payload: CancelInputSchema, success: Receipt, error: mutationErrors }),
+  Rpc.make("Pause", { defect: ControlDefect, payload: PauseInputSchema, success: Receipt, error: mutationErrors }),
   Rpc.make("Resume", {
     defect: ControlDefect,
     payload: ResumeInputSchema,

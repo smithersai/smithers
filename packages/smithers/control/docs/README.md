@@ -4,8 +4,8 @@ description: "The control plane for durable agent runs: plan work, approve it, s
 ---
 
 `@smthrs/control` is the control plane for durable agent runs. It is one
-TypeScript service, `Control`, with ten operations: `plan`, `run`, `approve`,
-`deny`, `steer`, `signal`, `cancel`, `resume`, `list`, and `watch`. A command
+TypeScript service, `Control`, with eleven operations: `plan`, `run`, `approve`,
+`deny`, `steer`, `signal`, `cancel`, `pause`, `resume`, `list`, and `watch`. A command
 line, a gateway, an MCP server, or a dashboard calls those operations when a
 person or another agent asks for something to start, stop, or change.
 
@@ -134,7 +134,7 @@ The root entry point exports these namespaces, and each is also importable from
 
 | Namespace                               | What it is                                                                                                                                |
 | --------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| `Control`                               | The service: `plan`, `run`, `approve`, `deny`, `steer`, `signal`, `cancel`, `resume`, `list`, `watch`.                                    |
+| `Control`                               | The service: `plan`, `run`, `approve`, `deny`, `steer`, `signal`, `cancel`, `pause`, `resume`, `list`, `watch`.                           |
 | `ControlSchema`                         | The serializable values both halves of the wire decode: `PlanCard`, `RunSummary`, `Receipt`, `SteerMessage`, and the RPC request schemas. |
 | `ControlError`                          | Every stable failure the plane emits, as classes and as one membership schema.                                                            |
 | `ControlLive`                           | The in-process implementation over `ControlRuntime`, the journal, the notification queue, and the registry.                               |

@@ -17,6 +17,7 @@ describe("@smthrs/sandbox barrel", () => {
       "DaytonaSandbox",
       "DirectorySandbox",
       "HttpSandbox",
+      "JjWorkspaceSandbox",
       "JustBashSandbox",
       "KubernetesSandbox",
       "MicrosandboxSandbox",

@@ -1544,7 +1544,7 @@ ctx.done(done.output)`
         flows: [ChildFlows.source(ChildFlows.makeNoop())],
         cells: [
           `const caught = []
-for (const call of [["agent/spawn", { flow: "review" }], ["agent/send", { child: "c", message: "hi" }], ["agent/await", { child: "c" }]]) {
+for (const call of [["agent/spawn", { flow: "review" }], ["agent/send", { child: "c", message: "hi" }], ["agent/await", { child: "c" }], ["agent/cancel", { child: "c" }]]) {
   const result = await ctx.call(call[0], call[1])
   if (result.ok === false) caught.push(result.error.message)
 }
@@ -1555,12 +1555,41 @@ ctx.done(caught.join("|"))`
 
     expect(outcome._tag).toBe("completed")
     const settled = settledCalls(eventsOf(outcome))
-    expect(settled.map((event) => event.flowName)).toEqual(["agent/spawn", "agent/send", "agent/await"])
+    expect(settled.map((event) => event.flowName)).toEqual(["agent/spawn", "agent/send", "agent/await", "agent/cancel"])
     expect(settled.every((event) => event.result.outcome === "failure")).toBe(true)
     expect(settled.map((event) => event.result.message)).toEqual([
       "Flow agent/spawn failed: This host runs no detached children, so agent/spawn is unavailable.",
       "Flow agent/send failed: This host runs no detached children, so agent/send is unavailable.",
-      "Flow agent/await failed: This host runs no detached children, so agent/await is unavailable."
+      "Flow agent/await failed: This host runs no detached children, so agent/await is unavailable.",
+      "Flow agent/cancel failed: This host runs no detached children, so agent/cancel is unavailable."
+    ])
+  })
+
+  it("binds agent/cancel to the port's cancel and refuses it on a port written without one", async () => {
+    const cancelled: Array<string> = []
+    const withCancel = ChildFlows.makeNoop({
+      cancel: (input) =>
+        Effect.sync(() => {
+          cancelled.push(`${input.child}:${input.reason}`)
+          return { child: input.child, cancelled: true, status: "cancelled" }
+        })
+    })
+    // A port spelled out by hand, as a host written before agent/cancel did.
+    const withoutCancel: ChildFlows.Children = {
+      spawn: () => Effect.succeed({ child: "c" }),
+      send: () => Effect.succeed({ delivered: true }),
+      await: (input) => Effect.succeed({ child: input.child, output: "" })
+    }
+    const cell = `const result = await ctx.call("agent/cancel", { child: "c-1", reason: "no longer needed" })
+ctx.done(result.ok === false ? result.error.message : JSON.stringify(result))`
+
+    const bound = await drive(collect({ flows: [ChildFlows.source(withCancel)], cells: [cell] }))
+    const refused = await drive(collect({ flows: [ChildFlows.source(withoutCancel)], cells: [cell] }))
+
+    expect(cancelled).toEqual(["c-1:no longer needed"])
+    expect(settledCalls(eventsOf(bound)).map((event) => event.result.outcome)).toEqual(["success"])
+    expect(settledCalls(eventsOf(refused)).map((event) => event.result.message)).toEqual([
+      "Flow agent/cancel failed: This host runs no detached children, so agent/cancel is unavailable."
     ])
   })
 

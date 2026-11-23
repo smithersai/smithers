@@ -328,6 +328,54 @@ describe("HumanTask as a declaration", () => {
       })
     ).toThrow(/well-formed text/)
   })
+
+  it("bounds the allow-list and each principal in the payload schema", () => {
+    const decode = Schema.decodeUnknownSync(HumanTask.action.payloadSchema)
+    const question = { name: "release", kind: "confirm", prompt: "Ship it?" }
+    const atLimit = Array.from({ length: HumanTask.maxAllowedPrincipals }, (_, index) => `team/${index}`)
+    expect(HumanTask.maxAllowedPrincipals).toBe(64)
+    expect(decode({ ...question, allowedPrincipals: atLimit }).allowedPrincipals).toEqual(atLimit)
+    expect(decode(question).allowedPrincipals).toBeUndefined()
+    expect(() => decode({ ...question, allowedPrincipals: [...atLimit, "team/extra"] })).toThrow(/length/)
+    expect(() => decode({ ...question, allowedPrincipals: [""] })).toThrow(/length/)
+    expect(() => decode({ ...question, allowedPrincipals: ["x".repeat(HumanTask.maxOptionBytes)] }))
+      .toThrow(/principal/)
+    expect(() => decode({ ...question, allowedPrincipals: [7] })).toThrow(/string/)
+    expect(() => decode({ ...question, allowedPrincipals: "local/operator" })).toThrow(/array/)
+  })
+})
+
+describe("HumanTask.isPrincipalAllowed", () => {
+  it("lets anyone through a question that names no allow-list", () => {
+    expect(HumanTask.isPrincipalAllowed("local/operator")).toBe(true)
+    expect(HumanTask.isPrincipalAllowed("", undefined)).toBe(true)
+  })
+
+  it("admits only exact members of the allow-list", () => {
+    const allowed = ["local/operator", "team/release"]
+    expect(HumanTask.isPrincipalAllowed("local/operator", allowed)).toBe(true)
+    expect(HumanTask.isPrincipalAllowed("team/release", allowed)).toBe(true)
+    expect(HumanTask.isPrincipalAllowed("local/intern", allowed)).toBe(false)
+    // Exact string membership: no trimming, case folding, prefixes, or patterns.
+    expect(HumanTask.isPrincipalAllowed("Local/Operator", allowed)).toBe(false)
+    expect(HumanTask.isPrincipalAllowed("local/operator ", allowed)).toBe(false)
+    expect(HumanTask.isPrincipalAllowed("local", allowed)).toBe(false)
+    expect(HumanTask.isPrincipalAllowed("local/operator", ["*"])).toBe(false)
+    expect(HumanTask.isPrincipalAllowed("local/operator", [])).toBe(false)
+  })
+
+  it("only narrows the host's own decision, never widens it", () => {
+    const hostAllows = (principal: string) => principal === "local/operator" || principal === "local/intern"
+    const mayAnswer = (principal: string, allowed?: ReadonlyArray<string>) =>
+      hostAllows(principal) && HumanTask.isPrincipalAllowed(principal, allowed)
+    // Naming a principal the host refuses grants that principal nothing.
+    expect(mayAnswer("outside/attacker", ["outside/attacker"])).toBe(false)
+    expect(mayAnswer("outside/attacker")).toBe(false)
+    // Naming one of the host's principals shuts the others out.
+    expect(mayAnswer("local/operator", ["local/operator"])).toBe(true)
+    expect(mayAnswer("local/intern", ["local/operator"])).toBe(false)
+    expect(mayAnswer("local/intern")).toBe(true)
+  })
 })
 
 describe("HumanTask.validate", () => {
@@ -359,6 +407,99 @@ describe("HumanTask.validate", () => {
       options: ["x".repeat(HumanTask.maxOptionBytes)]
     })).toContain("limits")
     expect(HumanTask.validate("ship", { kind: "select", options: [1 as never] })).toContain("limits")
+  })
+
+  it("accepts every permutation of the options for rank", () => {
+    const request = { kind: "rank", options: ["speed", "cost", "safety"] } as const
+    for (
+      const ranking of [
+        ["speed", "cost", "safety"],
+        ["speed", "safety", "cost"],
+        ["cost", "speed", "safety"],
+        ["cost", "safety", "speed"],
+        ["safety", "speed", "cost"],
+        ["safety", "cost", "speed"]
+      ]
+    ) {
+      expect(HumanTask.validate(ranking, request)).toBeUndefined()
+    }
+    expect(HumanTask.validate(["only"], { kind: "rank", options: ["only"] })).toBeUndefined()
+    const widest = Array.from({ length: HumanTask.maxOptions }, (_, index) => `option-${index}`)
+    expect(HumanTask.validate([...widest].reverse(), { kind: "rank", options: widest })).toBeUndefined()
+  })
+
+  it("refuses a rank answer that is not an array", () => {
+    const request = { kind: "rank", options: ["speed", "cost"] } as const
+    for (const value of ["speed", 2, true, null, undefined, { 0: "speed", 1: "cost", length: 2 }]) {
+      expect(HumanTask.validate(value, request)).toBe("The answer must be an array that ranks every option.")
+    }
+  })
+
+  it("refuses a ranking of the wrong length before reading its entries", () => {
+    const request = { kind: "rank", options: ["speed", "cost", "safety"] } as const
+    expect(HumanTask.validate([], request))
+      .toBe("The ranking must list each of the 3 options exactly once, and it lists 0.")
+    expect(HumanTask.validate(["speed", "cost"], request))
+      .toBe("The ranking must list each of the 3 options exactly once, and it lists 2.")
+    expect(HumanTask.validate(["speed", "cost", "safety", "speed"], request))
+      .toBe("The ranking must list each of the 3 options exactly once, and it lists 4.")
+    // An oversized answer is refused on its length alone: no entry is read.
+    const oversized = new Proxy(new Array<string>(1_000_000), {
+      get: (target, key, receiver) => {
+        if (key === "length") return Reflect.get(target, key, receiver)
+        throw new Error(`read entry ${String(key)}`)
+      }
+    })
+    expect(HumanTask.validate(oversized, request)).toContain("it lists 1000000")
+  })
+
+  it("refuses a ranking that repeats an option, which also leaves one missing", () => {
+    const request = { kind: "rank", options: ["speed", "cost", "safety"] } as const
+    expect(HumanTask.validate(["speed", "cost", "speed"], request))
+      .toBe("The ranking lists \"speed\" more than once.")
+    expect(HumanTask.validate(["cost", "cost", "cost"], request))
+      .toBe("The ranking lists \"cost\" more than once.")
+  })
+
+  it("refuses a ranking entry the question never offered", () => {
+    const request = { kind: "rank", options: ["speed", "cost"] } as const
+    expect(HumanTask.validate(["speed", "price"], request))
+      .toBe("The ranking entry \"price\" is not one of speed, cost.")
+    expect(HumanTask.validate(["speed", 2], request)).toBe("The ranking entry 2 is not one of speed, cost.")
+    expect(HumanTask.validate([["speed"], "cost"], request)).toContain("is not one of speed, cost.")
+    expect(HumanTask.validate(["Speed", "cost"], request)).toContain("\"Speed\"")
+  })
+
+  it("keeps rank diagnostics within the exported bound", () => {
+    const options = Array.from({ length: HumanTask.maxOptions }, (_, index) => `${index}-${"o".repeat(64)}`)
+    const ranking = [...options]
+    ranking[0] = "x".repeat(HumanTask.maxOptionBytes)
+    const unknown = HumanTask.validate(ranking, { kind: "rank", options })!
+    expect(unknown).toContain("is not one of 0-ooo")
+    expect(unknown.length).toBeLessThan(2 * HumanTask.maxDiagnosticChars + 128)
+
+    const long = "y".repeat(HumanTask.maxOptionBytes - 2)
+    const repeated = HumanTask.validate([long, long], { kind: "rank", options: [long, "short"] })!
+    expect(repeated).toContain("more than once")
+    expect(repeated.length).toBeLessThan(HumanTask.maxDiagnosticChars + 128)
+    const duplicated = HumanTask.validate([long, long], { kind: "rank", options: [long, long] })!
+    expect(duplicated).toContain("so no ranking can place it")
+    expect(duplicated.length).toBeLessThan(HumanTask.maxDiagnosticChars + 128)
+  })
+
+  it("refuses a rank question whose options cannot be ranked", () => {
+    expect(HumanTask.validate([], { kind: "rank" })).toBe("The question declares no options to choose from.")
+    expect(HumanTask.validate([], { kind: "rank", options: [] }))
+      .toBe("The question declares no options to choose from.")
+    expect(HumanTask.validate(["speed", "cost", "speed"], { kind: "rank", options: ["speed", "cost", "speed"] }))
+      .toBe("The question lists the option \"speed\" more than once, so no ranking can place it.")
+    expect(HumanTask.validate([], {
+      kind: "rank",
+      options: Array.from({ length: HumanTask.maxOptions + 1 }, (_, index) => `option-${index}`)
+    })).toContain("limits")
+    expect(HumanTask.validate(["x"], { kind: "rank", options: ["x".repeat(HumanTask.maxOptionBytes)] }))
+      .toContain("limits")
+    expect(HumanTask.validate([1], { kind: "rank", options: [1 as never] })).toContain("limits")
   })
 
   it("accepts any JSON when a json task names no schema", () => {
@@ -730,6 +871,100 @@ describe("HumanTask parks", () => {
         })
       }),
       instance
+    )
+  })
+
+  effect("publishes a rank question's options and the allow-list with the park", () => {
+    const instance = makeInstance(Host, "human-rank-park")
+    return Effect.gen(function*() {
+      const result = yield* Flow.intoResult(
+        Interpreter.interpret(
+          HumanTask.action.call({
+            name: "priorities",
+            kind: "rank",
+            prompt: "Order these.",
+            options: ["speed", "cost", "safety"],
+            allowedPrincipals: ["local/operator", "team/release"]
+          })
+        )
+      )
+      expect(result._tag).toBe("Suspended")
+      expect(instance.waiting?.reason).toBe("approval")
+      const question = JSON.parse(instance.waiting!.request!)
+      expect(question).toEqual({
+        task: "human",
+        name: "priorities",
+        kind: "rank",
+        prompt: "Order these.",
+        attempt: 1,
+        maxAttempts: HumanTask.defaultMaxAttempts,
+        options: ["speed", "cost", "safety"],
+        // The question's own narrowing, for the host that authorizes answers.
+        allowedPrincipals: ["local/operator", "team/release"]
+      })
+      expect(HumanTask.isPrincipalAllowed("team/release", question.allowedPrincipals)).toBe(true)
+      expect(HumanTask.isPrincipalAllowed("local/intern", question.allowedPrincipals)).toBe(false)
+    }).pipe(
+      Effect.provideService(FlowRuntime.FlowInstance, instance),
+      Effect.provide(wired())
+    )
+  })
+
+  effect("re-asks a refused ranking, keeping the allow-list on every attempt", () => {
+    const durable = makeMemoryState()
+    const instance = makeInstance(Host, "human-rank-reask")
+    const payload = {
+      name: "priorities",
+      kind: "rank",
+      prompt: "Order these.",
+      options: ["speed", "cost", "safety"],
+      allowedPrincipals: ["local/operator"]
+    } as const
+    return Effect.gen(function*() {
+      yield* submitAnswers("human-rank-reask", payload, [
+        "speed",
+        ["speed", "cost"],
+        ["speed", "cost", "speed"],
+        ["speed", "cost", "price"]
+      ])
+
+      const parked = yield* Flow.intoResult(Interpreter.interpret(HumanTask.action.call(payload)))
+      expect(parked._tag).toBe("Suspended")
+      expect(instance.waiting?.token).toBe(
+        DurableDeferred.tokenFromExecutionId(HumanTask.deferred("priorities", 5), {
+          flow: Host,
+          executionId: "human-rank-reask"
+        })
+      )
+      expect(JSON.parse(instance.waiting!.request!)).toMatchObject({
+        kind: "rank",
+        attempt: 5,
+        options: ["speed", "cost", "safety"],
+        allowedPrincipals: ["local/operator"]
+      })
+      expect(rejectionsRecorded(durable)).toEqual([
+        { task: "priorities", attempt: 1, reason: "The answer must be an array that ranks every option." },
+        {
+          task: "priorities",
+          attempt: 2,
+          reason: "The ranking must list each of the 3 options exactly once, and it lists 2."
+        },
+        { task: "priorities", attempt: 3, reason: "The ranking lists \"speed\" more than once." },
+        {
+          task: "priorities",
+          attempt: 4,
+          reason: "The ranking entry \"price\" is not one of speed, cost, safety."
+        }
+      ])
+
+      yield* record("human-rank-reask", "priorities", 5, ["safety", "speed", "cost"])
+      const interpretation = yield* Interpreter.interpret(HumanTask.action.call(payload))
+      expect(interpretation.value).toEqual(["safety", "speed", "cost"])
+      expect(instance.suspended).toBe(false)
+    }).pipe(
+      Effect.provideService(FlowRuntime.FlowInstance, instance),
+      Effect.provide(wiredOver(durable)),
+      withCrypto
     )
   })
 
@@ -1121,6 +1356,79 @@ describe("HumanTask gives up", () => {
             error: { _tag: "@smthrs/flow/HumanTaskFailed", code: "timeout", task: "release", attempts: 1 }
           })
         }
+      }),
+      instance
+    )
+  })
+
+  effect("refuses an unrankable or unanswerable question before it parks", () => {
+    const refused = (
+      executionId: string,
+      fields: Partial<typeof HumanTask.action.payloadSchema.Type>,
+      message: string
+    ) => {
+      const instance = makeInstance(Host, executionId)
+      return drive(
+        Effect.gen(function*() {
+          const exit = yield* Effect.exit(
+            Interpreter.interpret(
+              HumanTask.action.call({ name: "priorities", kind: "rank", prompt: "Order these.", ...fields })
+            )
+          )
+
+          expect(Exit.isFailure(exit)).toBe(true)
+          if (Exit.isFailure(exit)) {
+            expect(exit.cause.reasons[0]).toMatchObject({
+              error: {
+                _tag: "@smthrs/flow/HumanTaskFailed",
+                code: "request_invalid",
+                task: "priorities",
+                attempts: 0,
+                rejections: [],
+                message
+              }
+            })
+          }
+          expect(instance.suspended).toBe(false)
+          expect(instance.waiting).toBeUndefined()
+        }),
+        instance
+      )
+    }
+    return Effect.all([
+      refused("human-rank-absent", {}, "system/human-task was called as a rank with no options to choose from."),
+      refused(
+        "human-rank-empty",
+        { options: [] },
+        "system/human-task was called as a rank with no options to choose from."
+      ),
+      refused(
+        "human-rank-duplicate",
+        { options: ["speed", "cost", "speed"] },
+        "The question lists the option \"speed\" more than once, so no ranking can place it."
+      ),
+      refused(
+        "human-nobody-allowed",
+        { options: ["speed", "cost"], allowedPrincipals: [] },
+        "system/human-task was called with an empty allowedPrincipals list, so nobody could ever answer. " +
+          "Omit the field to leave the choice to the host."
+      ),
+      refused(
+        "human-nobody-allowed-confirm",
+        { kind: "confirm", allowedPrincipals: [] },
+        expect.stringContaining("nobody could ever answer") as never
+      )
+    ], { discard: true })
+  })
+
+  effect("still offers a select whose options repeat", () => {
+    const instance = makeInstance(Host, "human-select-duplicate")
+    const payload = { name: "release", kind: "select", prompt: "Which?", options: ["ship", "ship"] } as const
+    return drive(
+      Effect.gen(function*() {
+        yield* submitAnswers("human-select-duplicate", payload, ["ship"])
+        const interpretation = yield* Interpreter.interpret(HumanTask.action.call(payload))
+        expect(interpretation.value).toBe("ship")
       }),
       instance
     )

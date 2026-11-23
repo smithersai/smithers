@@ -19,7 +19,8 @@
 
 import { Journal, JournalEvent } from "@smthrs/journal"
 import { NotificationEvent } from "@smthrs/notifications"
-import { Duration, Effect, Random, Stream } from "effect"
+import type { Scope } from "effect"
+import { Duration, Effect, Fiber, Random, Stream } from "effect"
 import { Control } from "./Control.ts"
 import type { ControlError } from "./ControlError.ts"
 import { InvalidInput, PersistenceError } from "./ControlError.ts"
@@ -248,6 +249,12 @@ export interface Beat {
   readonly healed?: Remedy | undefined
   /** The receipt the remedy returned, absent when none was applied. */
   readonly receipt?: Receipt | undefined
+  /** The run the beat observed. Set on every beat {@link run} takes. */
+  readonly runId?: RunId | undefined
+  /** Consecutive beats without progress, as this beat classified them. */
+  readonly beatsWithoutProgress?: number | undefined
+  /** The remedy this beat decided on, absent when it decided on none. */
+  readonly remedy?: Exclude<Remedy, "none"> | undefined
 }
 
 /**
@@ -358,7 +365,10 @@ const terminal = (summary: RunSummary | undefined): boolean =>
  */
 export const run = (
   options: Options
-): Effect.Effect<Report, ControlError, Control | Journal.Journal> =>
+): Effect.Effect<Report, ControlError, Control | Journal.Journal> => beatLoop(options, undefined, true)
+
+/** The bounds a monitor beats under, or `InvalidInput` naming the one it cannot honour. */
+const settings = (options: Options) =>
   Effect.gen(function*() {
     const intervalMs = options.intervalMs ?? options.healthCheck?.policy.intervalMs ?? 1_000
     const maxChecks = options.maxChecks ?? 10
@@ -378,6 +388,16 @@ export const run = (
       ? "retainBeats must be a positive integer"
       : undefined
     if (refused !== undefined) return yield* new InvalidInput({ issue: `Monitor.run: ${refused}` })
+    return { intervalMs, maxChecks, stallBeats }
+  })
+
+const beatLoop = (
+  options: Options,
+  onBeat: ((beat: Beat) => Effect.Effect<void>) | undefined,
+  stopOnTerminal: boolean
+): Effect.Effect<Report, ControlError, Control | Journal.Journal> =>
+  Effect.gen(function*() {
+    const { intervalMs, maxChecks, stallBeats } = yield* settings(options)
     const control = yield* Control
     const journal = yield* Journal.Journal
     let consecutiveProbeFailures = 0
@@ -557,11 +577,18 @@ export const run = (
       }
       // Checker output is observational and never participates in remedy authorization.
       const remedy = autoHeal.includes(health) ? remedyFor(health) : "none"
-      const observed: Beat = { beat, health, sequence }
+      const observed: Beat = {
+        beat,
+        health,
+        sequence,
+        runId: options.runId,
+        beatsWithoutProgress,
+        ...(remedy === "none" ? {} : { remedy })
+      }
       if (options.recordBeats !== false) yield* record(observed, remedy)
-      if (remedy === "none") {
-        beats.push(observed)
-      } else {
+      let reported = observed
+      let settled = false
+      if (remedy !== "none") {
         const receipt = yield* heal({ runId: options.runId, health, remedy, beat }).pipe(
           // A remedy that fails must not abort the run of beats: the monitor
           // is an unattended loop, and one failing heal leaves every other
@@ -576,12 +603,10 @@ export const run = (
             ).pipe(Effect.as(undefined))
           )
         )
-        if (receipt === undefined) {
-          // The stall evidence stands: nothing provably moved the run, so the
-          // next beat compares against the same progress mark and the remedy
-          // is retried with the beat's own idempotency key.
-          beats.push(observed)
-        } else {
+        // When `receipt` is undefined the stall evidence stands: nothing
+        // provably moved the run, so the next beat compares against the same
+        // progress mark and the remedy is retried with the beat's own key.
+        if (receipt !== undefined) {
           // A remedy that returned is not a remedy that was applied. `Conflict`
           // says the key belonged to another mutation, so this monitor's remedy
           // never ran, and `Terminal` says the run settled on its own, with one
@@ -603,19 +628,19 @@ export const run = (
             // again would heal a second time for the same stall.
             beatsWithoutProgress = 0
           }
-          beats.push(applied ? { ...observed, healed: remedy, receipt } : { ...observed, receipt })
+          reported = applied ? { ...observed, healed: remedy, receipt } : { ...observed, receipt }
           // A remedy that answered `Terminal` observed the run settle. The loop
           // ends on the same evidence a terminal summary ends it on, rather than
           // beating against a run nothing can move.
-          if (receipt._tag === "Terminal") break
+          settled = receipt._tag === "Terminal"
         }
       }
+      beats.push(reported)
       if (options.retainBeats !== undefined && beats.length > options.retainBeats) {
         beats.splice(0, beats.length - options.retainBeats)
       }
-      if (terminal(summary)) {
-        break
-      }
+      if (onBeat !== undefined) yield* onBeat(reported)
+      if (stopOnTerminal && (settled || terminal(summary))) break
     }
     return {
       runId: options.runId,
@@ -632,3 +657,101 @@ export const isBookkeepingEvent = (kind: string): boolean =>
   kind.startsWith("control.monitor.") || kind.startsWith("control.status.") ||
   kind.startsWith("flows.alerts.") || kind === NotificationEvent.AdmittedEventType ||
   kind === NotificationEvent.PromotedEventType
+
+/**
+ * How an attached monitor beats.
+ *
+ * Every {@link Options} field except `runId`, which {@link attach} takes as
+ * its own argument. Two defaults differ from {@link run}, because an attached
+ * monitor is meant to live as long as the run it watches: `maxChecks` defaults
+ * to unbounded, and `retainBeats` defaults to 64 so a long-lived fiber does
+ * not grow its report without limit.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export interface AttachOptions extends Omit<Options, "runId"> {
+  /** Called with every beat once it is final: after its remedy, if any, returned. */
+  readonly onBeat?: ((beat: Beat) => Effect.Effect<void>) | undefined
+  /**
+   * Stop once the watched run is `completed`, `failed` or `cancelled`, or a
+   * remedy answers `Terminal`. Defaults to `true`.
+   */
+  readonly stopOnTerminal?: boolean | undefined
+}
+
+/**
+ * A monitor running in the background of a scope.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export interface Attached {
+  /** The fiber taking the beats. Interrupted when the enclosing scope closes. */
+  readonly fiber: Fiber.Fiber<Report, ControlError>
+  /** Waits for the monitor to stop and returns what it found. */
+  readonly await: Effect.Effect<Report, ControlError>
+}
+
+const attachedRetainBeats = 64
+
+/**
+ * Watches one run from a background fiber owned by the caller's scope.
+ *
+ * The fiber runs the same beat loop as {@link run} and ends on its own when
+ * the watched run reaches a terminal status. Closing the enclosing `Scope`
+ * interrupts it wherever it is — asleep between beats, or mid-remedy — so an
+ * attached monitor never outlives the work that attached it.
+ *
+ * The options are validated before the fiber is forked: an attach that cannot
+ * beat fails here with `InvalidInput` rather than in a fiber nobody joined.
+ *
+ * @param watchedRunId the run to watch
+ * @param options how to beat, what to heal, and who to tell
+ * @category constructors
+ * @since 1.0.0
+ */
+export const attach = (
+  watchedRunId: RunId,
+  options: AttachOptions
+): Effect.Effect<Attached, ControlError, Control | Journal.Journal | Scope.Scope> =>
+  Effect.gen(function*() {
+    const { onBeat, stopOnTerminal, ...rest } = options
+    const monitor: Options = {
+      ...rest,
+      runId: watchedRunId,
+      maxChecks: rest.maxChecks ?? Number.POSITIVE_INFINITY,
+      retainBeats: rest.retainBeats ?? attachedRetainBeats
+    }
+    yield* settings(monitor)
+    const fiber = yield* Effect.forkScoped(beatLoop(monitor, onBeat, stopOnTerminal ?? true))
+    return { fiber, await: Fiber.join(fiber) }
+  })
+
+/** Run ids are printed bare when they are one printable token, quoted otherwise. */
+const token = (value: string): string => /^[\x21-\x7e]+$/.test(value) ? value : JSON.stringify(value)
+
+/**
+ * Renders one beat as a single log line.
+ *
+ * Content-free: the line names the run, the beat, its health, the stall count,
+ * and any remedy, but nothing from the run's input or journal payloads.
+ *
+ * @example
+ * formatBeat({ beat: 3, health: "stalled", sequence: 9, runId: "run-1", beatsWithoutProgress: 3, remedy: "resume", healed: "resume" })
+ * // "run=run-1 beat=3 health=stalled beatsWithoutProgress=3 remedy=resume healed=resume"
+ *
+ * @param beat the beat to render
+ * @category formatting
+ * @since 1.0.0
+ */
+export const formatBeat = (beat: Beat): string =>
+  [
+    ...(beat.runId === undefined ? [] : [`run=${token(beat.runId)}`]),
+    `beat=${beat.beat}`,
+    `health=${beat.health}`,
+    ...(beat.beatsWithoutProgress === undefined ? [] : [`beatsWithoutProgress=${beat.beatsWithoutProgress}`]),
+    ...(beat.remedy === undefined ? [] : [`remedy=${beat.remedy}`]),
+    ...(beat.healed === undefined ? [] : [`healed=${beat.healed}`]),
+    ...(beat.receipt === undefined ? [] : [`receipt=${beat.receipt._tag}`])
+  ].join(" ")

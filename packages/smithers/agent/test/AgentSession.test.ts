@@ -2024,6 +2024,68 @@ ctx.done(JSON.stringify(decision))`
     expect(notes).toEqual([])
   })
 
+  it("parks a driver blocked in a tool on pause, records no cancellation, and resumes it", async () => {
+    const notes: Array<string> = []
+    const observed = await Effect.runPromise(
+      Effect.gen(function*() {
+        const gate = yield* Deferred.make<void>()
+        const toolStarted = yield* Deferred.make<void>()
+        return yield* Effect.gen(function*() {
+          const control = yield* Control.Control
+          const runtime = yield* ControlRuntime.ControlRuntime
+          const runs = yield* RunStore.RunStore
+          const card = yield* control.plan({ flowId: "agents/notes", input: {} })
+          yield* control.approve(card.approval)
+          const receipt = yield* control.run({
+            _tag: "Plan",
+            planId: card.planId,
+            digest: card.digest,
+            envelope: card.envelope,
+            idempotencyKey: "run:paused-tool"
+          })
+          if (receipt._tag !== "Accepted" || receipt.runId === undefined) {
+            return yield* Effect.die("expected an accepted run")
+          }
+          const runId = receipt.runId
+          yield* Deferred.await(toolStarted)
+          const paused = yield* control.pause({ runId, idempotencyKey: "pause:blocked-tool", reason: "lunch" })
+          const afterPause = yield* runtime.getRun(runId)
+          // Released after the pause: the interrupted round never reaches the
+          // tool's side effect, so nothing is saved until the resume.
+          yield* Deferred.succeed(gate, void 0)
+          // The engine releases the interrupted round for reclaim, as it
+          // releases one at shutdown: suspended, unowned, no cancel request.
+          let engineRow = yield* runs.get(runId)
+          for (let attempt = 0; attempt < 2_000 && engineRow.owner !== null; attempt++) {
+            yield* Effect.sleep("1 millis")
+            engineRow = yield* runs.get(runId)
+          }
+          const notesWhileParked = [...notes]
+          yield* control.resume({ runId, idempotencyKey: "resume:blocked-tool" })
+          // The resumed round re-runs frame zero's tool and reaches frame
+          // one's ask: the execution moved on from where the pause stopped it.
+          yield* awaitStatus(runtime, runId, "waiting-approval")
+          return {
+            paused: paused._tag,
+            afterPause: afterPause.status,
+            engine: { status: engineRow.status, owner: engineRow.owner },
+            cancelRequested: engineRow.cancelRequestedAtMs,
+            notesWhileParked,
+            final: (yield* runtime.getRun(runId)).status
+          }
+        }).pipe(Effect.provide(stack({ resolve: seat(capturing([])), notes, gate, toolStarted })))
+      }).pipe(Effect.scoped)
+    )
+
+    expect(observed.paused).toBe("Accepted")
+    expect(observed.afterPause).toBe("parked")
+    expect(observed.engine).toEqual({ status: "suspended", owner: null })
+    expect(observed.cancelRequested).toBeNull()
+    expect(observed.notesWhileParked).toEqual([])
+    expect(observed.final).toBe("waiting-approval")
+    expect(notes).toEqual(["frame zero note"])
+  })
+
   it("refuses a prompt flow that declares no seat, instead of leaving the run accepted", async () => {
     const result = await Effect.runPromise(
       Effect.gen(function*() {

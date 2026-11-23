@@ -41,6 +41,7 @@
     "./CaseExecutor": "./src/CaseExecutor.ts",
     "./EvalError": "./src/EvalError.ts",
     "./Gate": "./src/Gate.ts",
+    "./Optimize": "./src/Optimize.ts",
     "./Regression": "./src/Regression.ts",
     "./Report": "./src/Report.ts",
     "./Runner": "./src/Runner.ts",
@@ -116,6 +117,16 @@
         "require": {
           "types": "./dist/cjs/Gate.d.ts",
           "default": "./dist/cjs/Gate.js"
+        }
+      },
+      "./Optimize": {
+        "import": {
+          "types": "./dist/esm/Optimize.d.ts",
+          "default": "./dist/esm/Optimize.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Optimize.d.ts",
+          "default": "./dist/cjs/Optimize.js"
         }
       },
       "./Regression": {

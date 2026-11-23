@@ -14,7 +14,7 @@
  *   the cell identity. That is the common case, and it needed no new API.
  * - **Detached children** — spawn now, collect later — need lifecycle
  *   operations, and those are ordinary flow *names*: `agent/spawn`,
- *   `agent/send`, `agent/await`. They are bound here through the same
+ *   `agent/send`, `agent/await`, `agent/cancel`. They are bound here through the same
  *   {@link FlowBinding} contract as a filesystem read, so they get the same
  *   `CellCallStarted` / `CellCallSettled` trail and the same replay identity.
  *
@@ -101,6 +101,32 @@ export const AwaitOutput = Schema.Struct({
   output: Schema.String
 })
 
+/**
+ * Input for `agent/cancel`.
+ *
+ * @category schemas
+ * @since 1.0.0-rc.17
+ */
+export const CancelInput = Schema.Struct({
+  child: Schema.String,
+  reason: Schema.optional(Schema.String).annotate({ description: "Why the child is being cancelled" })
+})
+
+/**
+ * Output for `agent/cancel`.
+ *
+ * `cancelled` is true when this call stopped the child, and false when the
+ * child had already settled; `status` is the child's status either way.
+ *
+ * @category schemas
+ * @since 1.0.0-rc.17
+ */
+export const CancelOutput = Schema.Struct({
+  child: Schema.String,
+  cancelled: Schema.Boolean,
+  status: Schema.String
+})
+
 const lifecycle = { reads: [], writes: [], mode: "expected", onConflict: "serialize", tier: "irreversible" } as const
 
 /**
@@ -151,6 +177,22 @@ export const awaitFlow = {
 } as const
 
 /**
+ * The `agent/cancel` declaration.
+ *
+ * @category flows
+ * @since 1.0.0-rc.17
+ */
+export const cancelFlow = {
+  capabilities: [],
+  name: "agent/cancel",
+  description:
+    "Cancel a running child agent. A child that already settled is left as it is and reported with its status.",
+  input: CancelInput,
+  output: CancelOutput,
+  effects: lifecycle
+} as const
+
+/**
  * A child lifecycle refusal the agent can see and route around.
  *
  * Separate from `HarnessError` on purpose: an unsupported operation or a child
@@ -196,6 +238,15 @@ export interface Children {
   readonly await: (
     input: typeof AwaitInput.Type
   ) => Effect.Effect<typeof AwaitOutput.Type, HarnessError | ChildError>
+  /**
+   * Optional so a port written before `agent/cancel` existed still compiles;
+   * {@link source} refuses the flow as unsupported when it is absent.
+   *
+   * @since 1.0.0-rc.17
+   */
+  readonly cancel?: (
+    input: typeof CancelInput.Type
+  ) => Effect.Effect<typeof CancelOutput.Type, HarnessError | ChildError>
 }
 
 /**
@@ -214,6 +265,8 @@ const unavailable = (operation: string): ChildError =>
     message: `This host runs no detached children, so ${operation} is unavailable.`
   })
 
+const refuseCancel: NonNullable<Children["cancel"]> = () => Effect.fail(unavailable("agent/cancel"))
+
 /**
  * Constructs a child port that refuses every operation.
  *
@@ -225,6 +278,7 @@ export const makeNoop = (overrides: Partial<Children> = {}): Children =>
     spawn: () => Effect.fail(unavailable("agent/spawn")),
     send: () => Effect.fail(unavailable("agent/send")),
     await: () => Effect.fail(unavailable("agent/await")),
+    cancel: refuseCancel,
     ...overrides
   })
 
@@ -237,7 +291,7 @@ export const makeNoop = (overrides: Partial<Children> = {}): Children =>
 export const sourceName = "agent/children"
 
 /**
- * Detached child lifecycle, as three ordinary flows.
+ * Detached child lifecycle, as four ordinary flows.
  *
  * @category constructors
  * @since 0.1.0
@@ -255,5 +309,10 @@ export const source = (children: Children): FlowBinding.Source =>
         error._tag === "@smthrs/agent/ChildFlows/ChildError" && error.code === "still_running"
           ? { limitMillis: error.limitMillis }
           : undefined
+    }),
+    FlowBinding.make({
+      flow: cancelFlow,
+      handler: children.cancel ?? refuseCancel,
+      publicError: (error) => error.message
     })
   ])

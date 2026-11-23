@@ -1,10 +1,14 @@
 /**
- * Built-in deterministic scorers over text, unified diffs and sandbox commands.
+ * Built-in deterministic scorers for outputs, latency, diffs and sandbox commands.
  * @since 0.1.0
  */
 
 import type { Session } from "@smthrs/sandbox/Sandbox"
 import { Effect, Stream } from "effect"
+import * as Schema from "effect/Schema"
+import * as SchemaIssue from "effect/SchemaIssue"
+import * as SchemaRepresentation from "effect/SchemaRepresentation"
+import * as Text from "./internal/text.ts"
 import * as Rubric from "./Rubric.ts"
 import * as Scorer from "./Scorer.ts"
 import { ScorerError } from "./ScorerError.ts"
@@ -50,6 +54,124 @@ export const contains = () =>
         return { score: actual.includes(expected) ? 1 : 0 }
       })
   })
+
+/**
+ * Latency limits in milliseconds. The warning threshold defaults to the maximum.
+ * @category models
+ * @since 0.1.0
+ */
+export interface LatencyOptions {
+  readonly maxMs: number
+  readonly warnMs?: number
+}
+
+/**
+ * Grades finite nonnegative latency from numeric `context` or `context.latencyMs`.
+ * The score drops linearly between distinct warning and maximum thresholds.
+ *
+ * @category scorers
+ * @since 0.1.0
+ */
+export const latency = (options: LatencyOptions) => {
+  const { maxMs, warnMs } = options
+  if (!Number.isFinite(maxMs) || maxMs <= 0) {
+    throw invalid("latency requires a finite positive maxMs")
+  }
+  if (warnMs !== undefined && (!Number.isFinite(warnMs) || warnMs < 0 || warnMs > maxMs)) {
+    throw invalid("latency requires warnMs between zero and maxMs")
+  }
+  const fullScoreMs = warnMs ?? maxMs
+  return Scorer.make({
+    id: "smithers/scorers/latency",
+    version: "1",
+    name: "latency",
+    config: { maxMs, warnMs: fullScoreMs },
+    score: ({ context }) =>
+      Effect.gen(function*() {
+        const latencyMs = typeof context === "object" && context !== null
+          ? (context as { readonly latencyMs?: unknown }).latencyMs
+          : context
+        if (typeof latencyMs !== "number" || !Number.isFinite(latencyMs) || latencyMs < 0) {
+          return yield* inconclusive("Latency context must supply a finite nonnegative number in milliseconds")
+        }
+        const meta = { latencyMs, maxMs }
+        if (latencyMs <= fullScoreMs) {
+          return { score: 1, reason: `Latency ${latencyMs} ms is within the ${fullScoreMs} ms threshold`, meta }
+        }
+        if (latencyMs > maxMs) {
+          return { score: 0, reason: `Latency ${latencyMs} ms exceeds the ${maxMs} ms maximum`, meta }
+        }
+        return {
+          score: (maxMs - latencyMs) / (maxMs - fullScoreMs),
+          reason: `Latency ${latencyMs} ms is above the ${fullScoreMs} ms warning threshold (maximum ${maxMs} ms)`,
+          meta
+        }
+      })
+  })
+}
+
+/**
+ * Identity and name overrides for a schema adherence scorer.
+ * @category models
+ * @since 0.1.0
+ */
+export interface SchemaAdherenceOptions {
+  readonly id?: string
+  readonly name?: string
+  readonly version?: string
+}
+
+const schemaRepresentation = (schema: Schema.Constraint): Schema.Json => {
+  const document = Schema.toRepresentation(schema)
+  try {
+    return SchemaRepresentation.toJson(document)
+  } catch {
+    // Opaque checks still have a structural representation, but Effect cannot persist them.
+    return JSON.parse(JSON.stringify(document, (key, value: unknown) => {
+      if (key === "annotations") return undefined
+      if (typeof value === "symbol" || typeof value === "bigint") return { [typeof value]: String(value) }
+      return value
+    })) as Schema.Json
+  }
+}
+
+const formatSchemaIssue = SchemaIssue.makeFormatterDefault()
+
+/**
+ * Scores whether the output decodes with the supplied Effect schema.
+ * Change the id or version to distinguish custom decoder behavior that shares a structural representation.
+ *
+ * @category scorers
+ * @since 0.1.0
+ */
+export const schemaAdherence = (schema: Schema.ConstraintDecoder<unknown>, options: SchemaAdherenceOptions = {}) => {
+  const { id, name, version } = options
+  const decode = Schema.decodeUnknownEffect(schema, { reportInput: false })
+  return Scorer.make({
+    id: id ?? "smithers/scorers/schema-adherence",
+    version: version ?? "1",
+    name: name ?? "schemaAdherence",
+    config: {
+      encoded: schemaRepresentation(schema),
+      decoded: schemaRepresentation(Schema.toType(schema)),
+      ...(id === undefined ? {} : { id }),
+      ...(name === undefined ? {} : { name })
+    },
+    score: ({ output }) =>
+      decode(output).pipe(
+        Effect.match({
+          onSuccess: () => ({ score: 1, reason: "Output matches schema" }),
+          onFailure: (error) => ({
+            score: 0,
+            reason: Text.truncate(
+              `Output does not match schema: ${formatSchemaIssue(error.issue).replace(/\n\s*/g, " ")}`,
+              256
+            )
+          })
+        })
+      )
+  })
+}
 
 /**
  * Existing model-agnostic 1 to 5 rubric scorer.

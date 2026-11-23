@@ -70,6 +70,7 @@
     "./github/Repository": "./src/github/Repository.ts",
     "./github/Sync": "./src/github/Sync.ts",
     "./index": "./src/index.ts",
+    "./OpenApi": "./src/OpenApi.ts",
     "./core/migrations/0001_integration_cursors": null,
     "./github/Webhook": null,
     "./github/ListenerRegistry": null,
@@ -416,6 +417,16 @@
         "require": {
           "types": "./dist/cjs/index.d.ts",
           "default": "./dist/cjs/index.js"
+        }
+      },
+      "./OpenApi": {
+        "import": {
+          "types": "./dist/esm/OpenApi.d.ts",
+          "default": "./dist/esm/OpenApi.js"
+        },
+        "require": {
+          "types": "./dist/cjs/OpenApi.d.ts",
+          "default": "./dist/cjs/OpenApi.js"
         }
       },
       "./core/migrations/0001_integration_cursors": null,

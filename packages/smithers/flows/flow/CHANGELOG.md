@@ -11,7 +11,13 @@
 - `FlowRuntime.StoreUnavailable` is the typed infrastructure failure returned
   when a durable engine cannot record a step. It carries `executionId` and
   code `store_unavailable`; flow and engine execute contracts declare it.
-
+- `HumanTask` asks for a ranking with `kind: "rank"`: the answer is an array
+  naming every one of `options` exactly once. A `rank` question with no
+  options or a repeated option is refused as `request_invalid`.
+- `HumanTask` accepts `allowedPrincipals`, published in the waiting
+  annotation's `request` text. `HumanTask.isPrincipalAllowed` is the check a
+  host combines with its own authorization; the list narrows who may answer
+  and never widens it. An empty list is refused as `request_invalid`.
 - `Action.CurrentRedispatch` is `true` while an action body re-runs an
   attempt an earlier execution started and never settled, so a body that
   cannot repeat its effect silently can count or reconcile the repeat.

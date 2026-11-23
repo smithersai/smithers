@@ -47,6 +47,9 @@ export * as SandboxConformance from "./SandboxConformance/index.ts"
 /** The scratch-directory sandbox provider. */
 export * as DirectorySandbox from "./DirectorySandbox/index.ts"
 
+/** The Jujutsu-workspace sandbox provider. */
+export * as JjWorkspaceSandbox from "./JjWorkspaceSandbox/index.ts"
+
 /** The container-lifecycle sandbox provider, over a Docker-compatible CLI. */
 export * as ContainerSandbox from "./ContainerSandbox/index.ts"
 

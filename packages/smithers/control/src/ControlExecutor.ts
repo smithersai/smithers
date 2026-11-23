@@ -10,7 +10,7 @@ import * as Sha256 from "@smthrs/crypto/Sha256"
 import * as DurableDeferred from "@smthrs/flow/DurableDeferred"
 import type { ExecutionFact } from "@smthrs/journal"
 import { Context, Effect, Layer, Option, Schema } from "effect"
-import type { LaunchFailed, PersistenceError } from "./ControlError.ts"
+import type { ControlError, LaunchFailed, PersistenceError } from "./ControlError.ts"
 import type { StoredPlan } from "./ControlRuntime.ts"
 import type {
   ApprovalTarget,
@@ -391,6 +391,22 @@ export interface Service {
    */
   readonly retryStep?: ((input: RetryRequest) => Effect.Effect<RetryStep, PersistenceError>) | undefined
   /**
+   * Parks an active execution without cancelling or failing it.
+   *
+   * The engine row stops being driven and keeps no waiting reason, which is
+   * how an operator park reads back, and `resumeRun` restarts it. Optional so
+   * an executor written before pause existed still satisfies the port:
+   * `Control.pause` fails `Unavailable` over an executor without it, because
+   * a control row that reads `parked` over an execution still running is the
+   * half-working pause 1.0.0-rc.0 removed.
+   *
+   * Called inside the pause mutation and before its control write, so a
+   * refusal leaves the control row, the journal and the receipt untouched.
+   *
+   * @since 1.0.0
+   */
+  readonly pause?: ((runId: RunId, reason?: string) => Effect.Effect<void, ControlError>) | undefined
+  /**
    * Finishes a PARKED execution whose cancellation is already durable.
    *
    * A park has no owner — that is what makes it resumable — so nothing is
@@ -446,6 +462,9 @@ export const makeNoop = (overrides: Partial<Service> = {}): Service =>
     requestCancel: Effect.fn("ControlExecutor.requestCancel")(() => Effect.succeed("unknown" as const)),
     deliverSignal: Effect.fn("ControlExecutor.deliverSignal")(() => Effect.succeed("unknown" as const)),
     resumeRun: Effect.fn("ControlExecutor.resumeRun")(() => Effect.succeed("unknown" as const)),
+    // Nothing was started, so there is no execution to park and the control
+    // row is the whole pause.
+    pause: Effect.fn("ControlExecutor.pause")(() => Effect.void),
     settleCancelledPark: Effect.fn("ControlExecutor.settleCancelledPark")(() => Effect.void),
     ...overrides
   })

@@ -174,6 +174,9 @@ describe("evaluation scoring over the project's engine store", () => {
     const two = await serve(root, ["run", "exact", "--run-id", "two", "--at", second])
     expect(two.code, two.output).toBe(0)
     const artifact = await Evaluation.readRun(root, "two")
+    const scores = await serve(root, ["scores", "two"])
+    expect(scores.code, scores.output).toBe(0)
+    expect(JSON.parse(scores.output)).toEqual({ runId: "two", scores: artifact.observations })
     const observations = await stored(root)
     expect(observations).toEqual([
       {
@@ -195,6 +198,27 @@ describe("evaluation scoring over the project's engine store", () => {
     ])
     // The engine still opens its store after the score migrations ran in it.
     await withEngineStore(root)
+  })
+
+  it("lists stored scores by run key and returns an empty result for a missing run", async () => {
+    const root = await fixture()
+    const empty = await serve(root, ["scores", "missing"])
+    expect(empty.code).toBe(0)
+    expect(JSON.parse(empty.output)).toEqual({ runId: "missing", scores: [] })
+
+    await withEngineStore(root)
+    const observation = { kind: "score", targetStepKey: "run-1", scorerKey: "exact", score: 0.75, at: 1 } as const
+    await Effect.runPromise(
+      Effect.flatMap(ScoreStore.ScoreStore, (store) => store.record(observation)).pipe(
+        Effect.provide(SqlScoreStore.layer),
+        Effect.provide(
+          DurableWriter.layer().pipe(Layer.provideMerge(NodeDatabase.layer({ filename: engineDatabase(root) })))
+        )
+      )
+    )
+    const found = await serve(root, ["scores", "run-1"])
+    expect(found.code, found.output).toBe(0)
+    expect(JSON.parse(found.output)).toEqual({ runId: "run-1", scores: [observation] })
   })
 
   it("records a repeated run identity once and still returns its observations", async () => {

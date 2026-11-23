@@ -152,7 +152,7 @@ describe("build target approvals", { timeout: 60_000 }, () => {
 
   it("refuses a control plane that answers a plan listing with another listing", async () => {
     const other = Control.make({
-      ...({} as Control.Service),
+      ...await Effect.runPromise(Control.Control.pipe(Effect.provide(Control.layerNoop))),
       list: () => Effect.succeed({ _tag: "runs", items: [] })
     })
     const refused = await Effect.runPromise(

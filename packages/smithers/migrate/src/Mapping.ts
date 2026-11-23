@@ -18,6 +18,8 @@
  * @since 1.0.0-rc.0
  */
 
+import * as Duration from "effect/Duration"
+import * as Option from "effect/Option"
 import * as Constructs from "./Constructs.ts"
 import * as CliScripts from "./internal/CliScripts.ts"
 import * as FlowNames from "./internal/FlowNames.ts"
@@ -85,6 +87,21 @@ const row = (
   mappingClass: MappingClass
 ): MappingRow => ({ construct, target, targetModule, rule, class: mappingClass })
 
+const worktreePath = row(
+  "resolveWorktreePath",
+  "Sandbox.Session.workdir",
+  "@smthrs/sandbox",
+  "Read the working directory from the active `JjWorkspaceSandbox` session.",
+  "guided"
+)
+
+const openApiRule =
+  "Build operation flows with `OpenApi.fromSpec` and register their `OpenApi.toBindings` descriptors in the host catalog. Review the operation filters and credential configuration."
+
+const parallelOptions = ["maxConcurrency", "subtreeConcurrency", "priority", "failurePolicy", "continueOnFail"]
+const approvalRestrictions = ["allowedUsers", "allowedScopes"]
+const approvalKinds = ["mode", "options"]
+
 const table: ReadonlyArray<MappingRow> = [
   row(
     "createSmithers",
@@ -119,7 +136,7 @@ const table: ReadonlyArray<MappingRow> = [
     "Parallel",
     "Node.all({ ... })",
     "@smthrs/plan/Node",
-    "Sibling calls become a keyed record. `maxConcurrency`, `subtreeConcurrency`, and `priority` have no plan-level target; a data-driven fan-out becomes `Effect.forEach(..., { concurrency })` inside one action, and priority is dropped and recorded.",
+    "Sibling calls become a keyed record. Use `Bounded.all` from `@smthrs/patterns/Bounded` for `maxConcurrency` and group `priority`, and `Node.priority` for individual nodes. For continue-on-fail, collect outcomes with `Quarantine.all` from `@smthrs/patterns/Quarantine` and use `Quarantine.settle` when the group should fail after its siblings finish. Preserve `subtreeConcurrency` with explicit nested scheduling. For data-driven fan-out, use `Effect.forEach(..., { concurrency })` inside an action.",
     "automatic"
   ),
   row(
@@ -160,36 +177,36 @@ const table: ReadonlyArray<MappingRow> = [
   row(
     "Timer",
     "Sleep.action",
-    "@smthrs/flow/Sleep",
-    "`duration` becomes `Sleep.action.call({ name, duration })`. `until` needs `DurableClock.make`, and `every` is a `Cron` trigger, not a flow node.",
+    "@smthrs/flow/Sleep, @smthrs/triggers",
+    "Call `Sleep.action` with either relative `millis` or an absolute `until` in epoch milliseconds. Convert `duration` to milliseconds. Move `every` to a recurring schedule in `@smthrs/triggers`.",
     "automatic"
   ),
   row(
     "WaitForEvent",
     "WaitFor.action over DurableDeferred",
     "@smthrs/flow/WaitFor",
-    "A literal `event` or `correlationId` becomes the wait name. A wait named by an expression or by both, or with a payload schema, `timeoutMs` or `onTimeout`, is guided: decode the payload, and race the wait against a `Sleep` with `DurableDeferred.raceAll`. The sender side is guided until the signal bridge lands.",
+    "A literal `event` or `correlationId` becomes the wait name. A wait named by an expression or by both, or with a payload schema, `timeoutMs` or `onTimeout`, is guided: decode the payload, and race the wait against a `Sleep` with `DurableDeferred.raceAll`. Send the matching name and JSON payload with `Control.signal` or `smthrs runs signal`.",
     "automatic"
   ),
   row(
     "Signal",
     "WaitFor.action over DurableDeferred",
     "@smthrs/flow/WaitFor",
-    "Same as `WaitForEvent`; the declaration side is mechanical, the sender side is not.",
+    "Use a named wait as for `WaitForEvent`. Send the matching name and JSON payload with `Control.signal` or `smthrs runs signal`.",
     "automatic"
   ),
   row(
     "Subflow",
     "flow.child(payload) or flow.call(payload)",
     "@smthrs/flow/Flow",
-    "A subflow with its own output becomes `.child()`, one node in the caller's plan and a real child execution. `mode: \"detached\"` becomes a `ChildFlows` binding. Child cancellation is not available yet and is recorded.",
+    "A subflow with its own output becomes `.child()`, one node in the caller's plan and a real child execution. For `mode: \"detached\"`, bind `ChildFlows` from `@smthrs/agent/ChildFlows` to use `agent/spawn`, `agent/send`, `agent/await`, and `agent/cancel`.",
     "guided"
   ),
   row(
     "Approval",
     "HumanTask.action (kind: confirm) with Node.branch",
     "@smthrs/flow, @smthrs/plan/Node",
-    "`request` becomes the human task prompt. Branch on the confirmed answer before calling the gated flow. `mode: \"select\"` and `mode: \"rank\"` need a separate answer schema and are recorded. `allowedUsers` or `allowedScopes` requires a guided decision: the operator must supply an approval flow that preserves the restrictions.",
+    "`request` becomes the human task prompt. `HumanTask` supports `ask`, `confirm`, `select`, `rank`, and `json`. Decode the answer for the chosen kind and branch before calling the gated flow. Use `allowedPrincipals` to narrow the host approval policy to `allowedUsers` and preserve `allowedScopes` in that policy with the operator's guidance.",
     "automatic"
   ),
   row(
@@ -208,16 +225,16 @@ const table: ReadonlyArray<MappingRow> = [
   ),
   row(
     "Saga",
-    "Node.catch plus CompensationHandlers",
-    "@smthrs/plan/Node, @smthrs/time-travel/CompensationHandlers",
-    "Compensations become `compensable`-tier handlers.",
+    "Saga.make or Saga.run with CompensationHandlers",
+    "@smthrs/patterns/Saga, @smthrs/time-travel/CompensationHandlers",
+    "Declare ordered steps and their reverse-order compensations with `Saga.make` or `Saga.run`. Register `CompensationHandlers` for `compensable` actions that also need to support rewind.",
     "guided"
   ),
   row(
     "SagaStep",
-    "Node.catch plus CompensationHandlers",
-    "@smthrs/plan/Node, @smthrs/time-travel/CompensationHandlers",
-    "`compensation` becomes the step's compensation handler.",
+    "Saga.make or Saga.run with CompensationHandlers",
+    "@smthrs/patterns/Saga, @smthrs/time-travel/CompensationHandlers",
+    "Map `compensation` to the corresponding step in `Saga.make` or `Saga.run`. Register a `CompensationHandlers` entry for a `compensable` action when rewind needs it.",
     "guided"
   ),
   row(
@@ -243,17 +260,17 @@ const table: ReadonlyArray<MappingRow> = [
   ),
   row(
     "Poller",
-    "Recursion.recurse around Sleep.action",
-    "@smthrs/patterns/Recursion, @smthrs/flow/Sleep",
-    "The poll interval becomes a durable sleep inside a bounded recursion.",
+    "Poll.make",
+    "@smthrs/flow/Poll",
+    "Map the check, interval, maximum attempts, and backoff to the durable polling flow.",
     "guided"
   ),
   row(
     "Monitor",
-    null,
-    null,
-    "An application pattern with no counterpart. The closest composition is a `ReviewLoop` on a trigger.",
-    "unsafe"
+    "Monitor.classify, Monitor.run, or Monitor.attach",
+    "@smthrs/control/Monitor",
+    "Use `Monitor.classify` for a run snapshot, `Monitor.run` for a monitor loop, or `Monitor.attach` to watch one run until it settles or the caller's scope closes.",
+    "guided"
   ),
   row(
     "Supervisor",
@@ -271,9 +288,9 @@ const table: ReadonlyArray<MappingRow> = [
   ),
   row(
     "Optimizer",
-    "Optimizer.make",
-    "@smthrs/patterns/Optimizer",
-    "Map candidates and evaluation to the optimizer pattern.",
+    "Optimizer.make, Optimizer.run, or Optimize.run",
+    "@smthrs/patterns/Optimizer, @smthrs/evals/Optimize",
+    "Map candidates and evaluation to `Optimizer.make` or `Optimizer.run`. Use `Optimize.run` for prompt optimization driven by an eval suite.",
     "guided"
   ),
   row("SuperSmithers", null, null, "An application pattern with no counterpart.", "unsafe"),
@@ -321,10 +338,10 @@ const table: ReadonlyArray<MappingRow> = [
   ),
   row(
     "Worktree",
-    null,
-    null,
-    "Worktree lanes are deferred. `Checkpoints` in `@smthrs/std` pins trees, not lanes.",
-    "unsafe"
+    "JjWorkspaceSandbox.make",
+    "@smthrs/sandbox/JjWorkspaceSandbox",
+    "Map the workspace root and base revision to the provider. Bind the session with `Sandbox.layerHost` and apply reviewed changes with `SandboxMerge.Apply` from `@smthrs/sandbox`.",
+    "guided"
   ),
   row(
     "MergeQueue",
@@ -378,10 +395,10 @@ const table: ReadonlyArray<MappingRow> = [
   ),
   row(
     "CheckSuite",
-    "MapReduce.make({ map, reduce })",
-    "@smthrs/patterns/MapReduce",
-    "Each check is a shard and the verdict is the reducer.",
-    "automatic"
+    "CheckSuite.make or CheckSuite.run",
+    "@smthrs/patterns/CheckSuite",
+    "Key the checks by id and carry over the verdict strategy and concurrency bound.",
+    "guided"
   ),
   row("ClassifyAndRoute", "Node.branch", "@smthrs/plan/Node", "Generalized by the core combinators.", "automatic"),
   row("DecisionTable", "Node.branch", "@smthrs/plan/Node", "Each rule becomes a branch predicate.", "automatic"),
@@ -402,9 +419,9 @@ const table: ReadonlyArray<MappingRow> = [
   ),
   row(
     "ScanFixVerify",
-    "ReviewLoop.run",
-    "@smthrs/patterns/ReviewLoop",
-    "Scan is produce, fix is revise, verify is review.",
+    "ScanFixVerify.make or ScanFixVerify.run",
+    "@smthrs/patterns/ScanFixVerify",
+    "Map the scanner, fixer, and verifier to the pattern's scan, fix, and verify steps with explicit retry, issue, and concurrency bounds.",
     "guided"
   ),
   row(
@@ -418,7 +435,7 @@ const table: ReadonlyArray<MappingRow> = [
     "signalRun",
     "Control.signal",
     "@smthrs/control/Control",
-    "The sender side is recorded as unresolved until the signal bridge lands.",
+    "Send the matching wait name and JSON payload through `Control.signal` with a stable idempotency key. From a shell, use `smthrs runs signal`.",
     "guided"
   ),
   row(
@@ -483,8 +500,20 @@ const table: ReadonlyArray<MappingRow> = [
   row("usePatched", null, null, "There is no workflow versioning shim.", "unsafe"),
   row("createExternalSmithers", null, null, "There is no HostNode JSON tree API.", "unsafe"),
   row("createExternalSmithersEngine", null, null, "There is no HostNode JSON tree API.", "unsafe"),
-  row("createSmithersPostgres", null, null, "The 1.0 release candidate supports SQLite only.", "unsafe"),
-  row("createSmithersCloudflare", null, null, "There is no Cloudflare backend in the release candidate.", "unsafe"),
+  row(
+    "createSmithersPostgres",
+    "PostgresDatabase or SMITHERS_BACKEND=postgres",
+    "@smthrs/database",
+    "Provide the `PostgresDatabase` driver in a custom host or set `SMITHERS_BACKEND=postgres` and `SMITHERS_POSTGRES_URL` for the CLI. Start with a fresh 1.x database.",
+    "guided"
+  ),
+  row(
+    "createSmithersCloudflare",
+    "CloudflareRuntime.layer and ExecutionObject",
+    "@smthrs/platform-cloudflare",
+    "Compose the flow runtime in the Worker with `CloudflareRuntime.layer` and host each execution with `ExecutionObject`.",
+    "guided"
+  ),
   row(
     "mdxPlugin",
     null,
@@ -495,7 +524,7 @@ const table: ReadonlyArray<MappingRow> = [
   row("renderMdx", null, null, "There is no MDX renderer; a prompt is a string.", "automatic"),
   row("markdownComponents", null, null, "There is no MDX renderer.", "automatic"),
   row("zodSchemaToJsonExample", null, null, "`AgentAction` renders the output schema itself.", "automatic"),
-  row("resolveWorktreePath", null, null, "Worktree lanes are deferred.", "unsafe"),
+  worktreePath,
   row(
     "useCtx",
     "The flow body payload",
@@ -561,6 +590,20 @@ const table: ReadonlyArray<MappingRow> = [
     "@smthrs/model/Pricing",
     "Costs come from the backend rate card; pass a seat's own rates as `Budget` `prices`. Budget usage records carry `costUsd` and `costSource`.",
     "guided"
+  ),
+  row(
+    "latencyScorer",
+    "Scorers.latency",
+    "@smthrs/scorers/Scorers",
+    "Set the latency budget and provide `latencyMs` in the scorer context.",
+    "guided"
+  ),
+  row(
+    "schemaAdherenceScorer",
+    "Scorers.schemaAdherence",
+    "@smthrs/scorers/Scorers",
+    "Pass the Effect schema used to validate the scorer's output value.",
+    "guided"
   )
 ]
 
@@ -572,7 +615,7 @@ const familyRow = (construct: Constructs.Construct): MappingRow => {
         return row(construct.name, null, null, "A loop-state accessor. Rewrite the loop with explicit state.", "guided")
       }
       if (construct.name === "ctx.worktreePath" || construct.name === "ctx.resolveWorktreePath") {
-        return row(construct.name, null, null, "Worktree lanes are deferred.", "unsafe")
+        return { ...worktreePath, construct: construct.name }
       }
       return row(
         construct.name,
@@ -641,13 +684,38 @@ const familyRow = (construct: Constructs.Construct): MappingRow => {
         "automatic"
       )
     case "cli": {
+      if (construct.name === "smithers optimize") {
+        return row(
+          construct.name,
+          "Optimize.run",
+          "@smthrs/evals/Optimize",
+          "Move prompt optimization to a flow that calls `Optimize.run` with an eval suite.",
+          "guided"
+        )
+      }
       const mapped: Record<string, string> = {
         "smithers up": "smthrs flow start <flow> --data <json> [--detached]",
         "smithers workflow": "smthrs flow start <flow> --data <json> [--detached]",
         "smithers ps": "smthrs runs list",
-        "smithers cancel": "smthrs runs cancel <run>"
+        "smithers cancel": "smthrs runs cancel <run>",
+        "smithers inspect": "smthrs runs inspect",
+        "smithers replay": "smthrs runs replay",
+        "smithers fork": "smthrs runs fork",
+        "smithers rewind": "smthrs runs rewind",
+        "smithers approve": "smthrs approvals approve",
+        "smithers deny": "smthrs approvals deny",
+        "smithers signal": "smthrs runs signal",
+        "smithers monitor": "smthrs runs monitor",
+        "smithers cron": "smthrs triggers",
+        "smithers eval": "smthrs eval run",
+        "smithers pause": "smthrs runs pause",
+        "smithers scores": "smthrs eval scores"
       }
       const target = mapped[construct.name]
+      const startsFlow = construct.name === "smithers up" || construct.name === "smithers workflow"
+      const cliRule = startsFlow
+        ? "Use the canonical command tree. Preserve input and detach semantics; unsupported scripts require manual mapping."
+        : "Map the invocation to the 1.x command, translating its arguments and flags against the new command's help."
       return target === undefined
         ? row(
           construct.name,
@@ -660,23 +728,17 @@ const familyRow = (construct: Constructs.Construct): MappingRow => {
           construct.name,
           target,
           "@smthrs/cli",
-          "Use the canonical command tree. Preserve input and detach semantics; unsupported scripts require manual mapping.",
-          construct.name === "smithers up" || construct.name === "smithers workflow" ? "automatic" : "guided"
+          construct.name === "smithers pause"
+            ? "Pause a running run with `smthrs runs pause` or `Control.pause`. Carry over the operator's reason."
+            : cliRule,
+          startsFlow ? "automatic" : "guided"
         )
     }
     case "subpath": {
       const integrations = [
-        "smthrs/aws",
         "smthrs/gcp",
-        "smthrs/vercel",
-        "smthrs/cloudflare",
-        "smthrs/daytona",
-        "smthrs/microsandbox",
-        "smthrs/telegram",
-        "smthrs/openapi",
         "smthrs/xstate",
         "smthrs/control-plane",
-        "smthrs/browser",
         "smthrs/gateway-client",
         "smthrs/gateway-react",
         "smthrs/gateway-ui",
@@ -695,11 +757,37 @@ const familyRow = (construct: Constructs.Construct): MappingRow => {
       if (construct.name === "smthrs/jsx-runtime" || construct.name === "smthrs/jsx-dev-runtime") {
         return row(construct.name, null, null, "There is no JSX runtime.", "automatic")
       }
+      const sandboxProviders: Record<string, string> = {
+        "smthrs/aws": "AwsSandbox",
+        "smthrs/cloudflare": "CloudflareSandbox",
+        "smthrs/daytona": "DaytonaSandbox",
+        "smthrs/microsandbox": "MicrosandboxSandbox",
+        "smthrs/vercel": "VercelSandbox"
+      }
+      const provider = sandboxProviders[construct.name]
+      if (provider !== undefined) {
+        return row(
+          construct.name,
+          provider,
+          "@smthrs/sandbox",
+          `Configure \`${provider}.make\` for the host and bind it with \`Sandbox.layerHost\`.`,
+          "guided"
+        )
+      }
       const targets: Record<string, [string, string]> = {
-        "smthrs/evals": ["@smthrs/evals", "Suite, Runner, Baseline, Regression, and Gate replace the eval helpers."],
+        "smthrs/browser": ["@smthrs/platform-browser", "Host browser flows with `BrowserRuntime`."],
+        "smthrs/evals": [
+          "@smthrs/evals",
+          "Suite, Runner, Baseline, Regression, and Gate replace the eval helpers. Use `Optimize.run` from `@smthrs/evals/Optimize` to optimize prompts against a suite."
+        ],
         "smthrs/memory": ["@smthrs/memory", "The memory store and its flows replace the memory helpers."],
+        "smthrs/openapi": ["@smthrs/integrations/OpenApi", openApiRule],
         "smthrs/sandbox": ["@smthrs/sandbox", "A custom provider becomes a `ChildProcessSpawner` implementation."],
-        "smthrs/scorers": ["@smthrs/scorers", "Scorer, Binding, and Runner replace the scorer helpers."],
+        "smthrs/scorers": [
+          "@smthrs/scorers",
+          "Scorer, Binding, and Runner replace the scorer helpers. Use `Scorers.latency` and `Scorers.schemaAdherence` for latency and schema checks."
+        ],
+        "smthrs/telegram": ["@smthrs/notifications/Channels", "Configure Telegram delivery with `Channels.layer`."],
         "smthrs/testing": ["@smthrs/testing", "The scripted-seat harness replaces the coverage harness."],
         "smthrs/tools": ["@smthrs/std", "Tools move to the host catalog."]
       }
@@ -765,6 +853,7 @@ const familyRow = (construct: Constructs.Construct): MappingRow => {
       )
     }
     case "value": {
+      const source = construct.name.startsWith("openApiTool") ? "@smthrs/observability" : construct.source
       const families: ReadonlyArray<readonly [string, string, string, string, MappingClass]> = [
         [
           "@smthrs/observability",
@@ -789,9 +878,9 @@ const familyRow = (construct: Constructs.Construct): MappingRow => {
         ],
         [
           "@smthrs/openapi",
-          "The std flows bound through StandardFlows",
-          "@smthrs/std, @smthrs/agent/StandardFlows",
-          "An OpenAPI tool becomes a flow in the host catalog.",
+          "OpenApi.fromSpec",
+          "@smthrs/integrations/OpenApi",
+          openApiRule,
           "guided"
         ],
         [
@@ -816,7 +905,7 @@ const familyRow = (construct: Constructs.Construct): MappingRow => {
           "guided"
         ]
       ]
-      const found = families.find(([prefix]) => construct.source.startsWith(prefix))
+      const found = families.find(([prefix]) => source.startsWith(prefix))
       if (found !== undefined) return row(construct.name, found[1], found[2], found[3], found[4])
       return row(
         construct.name,
@@ -956,7 +1045,8 @@ const escalations: ReadonlyArray<{
     construct: "Task",
     props: ["fork", "bind", "async", "priority", "failurePolicy", "continueOnFail", "repair", "depsOptional"],
     to: "guided",
-    reason: "graph-level scheduling and failure policy have no plan-level counterpart"
+    reason:
+      "map priority to `Node.priority` and continue-on-fail to `Quarantine`; review the remaining scheduling behavior"
   },
   {
     construct: "Task",
@@ -967,9 +1057,10 @@ const escalations: ReadonlyArray<{
   },
   {
     construct: "Parallel",
-    props: ["maxConcurrency", "subtreeConcurrency", "priority", "failurePolicy"],
+    props: parallelOptions,
     to: "guided",
-    reason: "bounded dynamic concurrency and priority have no plan-level target"
+    reason:
+      "map concurrency and group priority to `Bounded.all`, node priority to `Node.priority`, and continue-on-fail to `Quarantine`"
   },
   {
     construct: "Parallel",
@@ -1006,23 +1097,22 @@ const escalations: ReadonlyArray<{
   },
   {
     construct: "Approval",
-    props: ["allowedUsers", "allowedScopes"],
+    props: approvalRestrictions,
     to: "guided",
     reason:
-      "allowedUsers and allowedScopes need a policy; the operator must supply an approval flow that preserves the restrictions"
+      "the operator must map allowedUsers to `allowedPrincipals` and preserve allowedScopes in the host approval policy"
   },
   {
     construct: "Approval",
-    props: ["mode", "options"],
+    props: approvalKinds,
     to: "guided",
-    reason: "select and rank approvals need a separate human task answer schema",
-    when: (hit) => hit.detail?.["mode"] !== undefined || hit.props.includes("options")
+    reason: "choose the matching `HumanTask` kind, options, and answer schema"
   },
   {
     construct: "Timer",
-    props: ["until", "every"],
+    props: ["every"],
     to: "guided",
-    reason: "`until` needs a durable clock and `every` is a trigger, not a flow node"
+    reason: "move `every` to a recurring schedule in `@smthrs/triggers`"
   }
 ]
 
@@ -1095,6 +1185,24 @@ export const classify = (hit: InventoryEntry, parse: typeof Ts.parse = Ts.parse)
 
 /** The wait props `WaitFor.action` has no place for. */
 const waitExtras = ["onTimeout", "output", "outputSchema", "schema", "timeoutMs"]
+
+const durationUnits: Readonly<Record<string, Duration.Unit>> = {
+  ms: "millis",
+  millisecond: "millis",
+  milliseconds: "millis",
+  s: "seconds",
+  m: "minutes",
+  h: "hours",
+  d: "days",
+  w: "weeks"
+}
+
+/** Convert a captured relative timer literal to a finite number of milliseconds. */
+const timerMillis = (count: string, unit: string): number | undefined => {
+  if (unit === "") return Number(count)
+  const duration = Duration.fromInput(`${count} ${durationUnits[unit] ?? unit}` as Duration.Input)
+  return Option.isSome(duration) ? Duration.toMillis(duration.value) : undefined
+}
 
 const identifier = (value: string | undefined, fallback: string): string => {
   const cleaned = (value ?? fallback).replace(/[^A-Za-z0-9]+/g, " ").trim()
@@ -1453,6 +1561,7 @@ export const snippet = (hit: InventoryEntry, parse: typeof Ts.parse = Ts.parse):
       return sequenced(children, childPayloads(hit))
     }
     case "Parallel": {
+      if (parallelOptions.some((prop) => hit.props.includes(prop)) || hit.props.includes("skipIf")) return undefined
       const children = namedChildren(hit)
       if (children === undefined || children.length === 0) return undefined
       const payloads = childPayloads(hit)
@@ -1496,20 +1605,18 @@ export const snippet = (hit: InventoryEntry, parse: typeof Ts.parse = Ts.parse):
       return lines.join("\n")
     }
     case "Timer": {
-      // The attribute text is a string literal's content or an expression's
-      // source, and the two are told apart by what they are: a number is a
-      // count of milliseconds, a duration phrase is one Effect reads, and
-      // anything else names a value only the source knows.
-      const duration = detail["duration"]
-      if (duration === undefined) return undefined
-      const literal = /^\d+(?:\.\d+)?$/.test(duration.trim())
-        ? duration.trim()
-        : /^\d+(?:\.\d+)?\s*(?:nanos?|micros?|millis?|milliseconds?|seconds?|minutes?|hours?|days?|weeks?|ms|s|m|h|d|w)$/i
-            .test(duration.trim())
-        ? JSON.stringify(duration.trim())
-        : undefined
-      if (literal === undefined) return undefined
-      return `Sleep.action.call({ name: ${JSON.stringify(detail["id"] ?? "wait")}, duration: ${literal} })`
+      const absolute = hit.props.includes("until")
+      if (hit.props.includes("every") || (absolute && hit.props.includes("duration"))) return undefined
+      const value = detail[absolute ? "until" : "duration"]
+      if (value === undefined) return undefined
+      const match = /^(-?\d+(?:\.\d+)?)\s*([a-z]*)$/i.exec(value.trim())
+      if (match === null) return undefined
+      const count = match[1]!
+      const suffix = match[2]!
+      if (absolute && suffix !== "") return undefined
+      const millis = timerMillis(count, suffix.toLowerCase())
+      if (millis === undefined || !Number.isFinite(millis) || (!absolute && millis < 0)) return undefined
+      return `Sleep.action.call({ ${absolute ? "until" : "millis"}: ${millis} })`
     }
     case "WaitForEvent":
     case "Signal": {
@@ -1523,7 +1630,9 @@ export const snippet = (hit: InventoryEntry, parse: typeof Ts.parse = Ts.parse):
     }
     case "Approval":
     case "ApprovalGate": {
-      if (hit.props.includes("allowedUsers") || hit.props.includes("allowedScopes")) return undefined
+      if (hit.props.some((prop) => approvalRestrictions.includes(prop) || approvalKinds.includes(prop))) {
+        return undefined
+      }
       const reason = detail["request"] ?? detail["reason"]
       if (reason === undefined) return undefined
       const prompt = JSON.stringify(reason)

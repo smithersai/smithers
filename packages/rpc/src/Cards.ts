@@ -1025,7 +1025,7 @@ const CurrentCardSchema = z.discriminatedUnion("kind", [
        * gate, which is decided and not answered.
        */
       question: z.object({
-        kind: z.enum(["ask", "confirm", "select", "json"]),
+        kind: z.enum(["ask", "confirm", "select", "rank", "json"]),
         prompt: z.string(),
         name: z.string().optional(),
         options: z.array(z.string()).optional(),
@@ -1439,7 +1439,7 @@ const CurrentCardSchema = z.discriminatedUnion("kind", [
            * capability gate, which is decided and not answered.
            */
           question: z.object({
-            kind: z.enum(["ask", "confirm", "select", "json"]),
+            kind: z.enum(["ask", "confirm", "select", "rank", "json"]),
             prompt: z.string(),
             name: z.string().optional(),
             options: z.array(z.string()).optional(),
