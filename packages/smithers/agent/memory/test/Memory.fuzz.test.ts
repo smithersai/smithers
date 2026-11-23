@@ -199,10 +199,15 @@ describe("@smthrs/memory SQLite MemoryStore facts, notes, threads & recall fuzz 
           Effect.gen(function*() {
             const store = yield* MemoryStore.MemoryStore
             const factModel = new Map<string, number>()
-            const noteModel = new Map<string, { text: string; status: MemoryStore.NoteStatus; ns: string }>()
+            const noteModel = new Map<
+              string,
+              { text: string; status: MemoryStore.NoteStatus; ns: "flow:alpha" | "agent:beta" }
+            >()
             const msgModel = new Map<string, Map<string, { at: number; text: string }>>()
             const toNs = (ns: "flow:alpha" | "agent:beta"): Namespace.Namespace =>
               ns === "flow:alpha" ? { kind: "flow", id: "alpha" } : { kind: "agent", id: "beta" }
+            const threadNs = (thread: "th1" | "th2"): Namespace.Namespace =>
+              toNs(thread === "th1" ? "flow:alpha" : "agent:beta")
 
             // Create both threads upfront
             yield* store.createThread({ id: "th1", namespace: toNs("flow:alpha"), title: "T1", metadata: { a: 1 } })
@@ -224,7 +229,8 @@ describe("@smthrs/memory SQLite MemoryStore facts, notes, threads & recall fuzz 
                 yield* store.deleteFact({ namespace: toNs(op.ns), key: op.key })
                 factModel.delete(`${op.ns}\0${op.key}`)
               } else if (op._tag === "putNote") {
-                const existing = noteModel.get(op.id)
+                const noteKey = `${op.ns} ${op.id}`
+                const existing = noteModel.get(noteKey)
                 const res = yield* Effect.result(
                   store.putNote({
                     namespace: toNs(op.ns),
@@ -237,15 +243,16 @@ describe("@smthrs/memory SQLite MemoryStore facts, notes, threads & recall fuzz 
                 )
                 if (existing === undefined) {
                   if (Result.isFailure(res)) return false
-                  noteModel.set(op.id, { text: op.text, status: op.status, ns: op.ns })
+                  noteModel.set(noteKey, { text: op.text, status: op.status, ns: op.ns })
                 } else {
-                  // Same id with differing payload fails with supersede_conflict
-                  if (Result.isSuccess(res) && (existing.text !== op.text || existing.ns !== op.ns)) return false
+                  // Same (namespace, id) with differing payload fails with supersede_conflict
+                  if (Result.isSuccess(res) && existing.text !== op.text) return false
                 }
               } else if (op._tag === "setNoteStatus") {
-                const existing = noteModel.get(op.id)
+                const existing = noteModel.get(`flow:alpha ${op.id}`) ?? noteModel.get(`agent:beta ${op.id}`)
                 const res = yield* Effect.result(
                   store.setNoteStatus({
+                    namespace: toNs(existing?.ns ?? "flow:alpha"),
                     id: op.id,
                     status: op.status,
                     ...(op.status === "accepted" ? { acceptedTodo: "todo-1" } : {})
@@ -263,6 +270,7 @@ describe("@smthrs/memory SQLite MemoryStore facts, notes, threads & recall fuzz 
                   // Idempotent appendMessageOnce keeps first stored row on matching text, rejects conflicting text
                   const onceRes = yield* Effect.result(
                     store.appendMessageOnce({
+                      namespace: threadNs(op.thread),
                       threadId: op.thread,
                       id: op.msgId,
                       role: "user",
@@ -276,6 +284,7 @@ describe("@smthrs/memory SQLite MemoryStore facts, notes, threads & recall fuzz 
                   }
                 } else {
                   yield* store.appendMessage({
+                    namespace: threadNs(op.thread),
                     threadId: op.thread,
                     id: op.msgId,
                     role: "user",
@@ -297,8 +306,9 @@ describe("@smthrs/memory SQLite MemoryStore facts, notes, threads & recall fuzz 
             if (allFacts.length !== factModel.size) return false
 
             // Verify note queries (getNote, listNotes with status/tagGroups)
-            for (const [id, expected] of noteModel.entries()) {
-              const got = yield* store.getNote({ id })
+            for (const [noteKey, expected] of noteModel.entries()) {
+              const id = noteKey.slice(noteKey.indexOf(" ") + 1)
+              const got = yield* store.getNote({ namespace: toNs(expected.ns), id })
               if (got === undefined || got.status !== expected.status) return false
             }
             const listedAccepted = yield* store.listNotes({
@@ -311,15 +321,16 @@ describe("@smthrs/memory SQLite MemoryStore facts, notes, threads & recall fuzz 
             // Verify thread messages, pagination, counts, stats
             const threads = yield* store.listThreads({ namespace: toNs("flow:alpha") })
             if (threads.length !== 1 || threads[0]!.id !== "th1") return false
-            const th1 = yield* store.getThread({ threadId: "th1" })
+            const th1 = yield* store.getThread({ namespace: threadNs("th1"), threadId: "th1" })
             if (th1 === undefined) return false
-            const th1Count = yield* store.countMessages({ threadId: "th1" })
+            const th1Count = yield* store.countMessages({ namespace: threadNs("th1"), threadId: "th1" })
             if (th1Count !== msgModel.get("th1")!.size) return false
-            const stats = yield* store.messageStats({ threadId: "th1" })
+            const stats = yield* store.messageStats({ namespace: threadNs("th1"), threadId: "th1" })
             if (stats.messages !== th1Count) return false
-            const page1 = yield* store.listMessages({ threadId: "th1", limit: 1 })
+            const page1 = yield* store.listMessages({ namespace: threadNs("th1"), threadId: "th1", limit: 1 })
             if (page1.length === 1 && th1Count > 1) {
               const page2 = yield* store.listMessages({
+                namespace: threadNs("th1"),
                 threadId: "th1",
                 limit: 10,
                 cursor: { at: page1[0]!.at, id: page1[0]!.id }
@@ -354,8 +365,8 @@ describe("@smthrs/memory SQLite MemoryStore facts, notes, threads & recall fuzz 
             if (ftsAfter.some((r) => r.bank !== "flow-alpha")) return false
 
             // Delete thread cleanly
-            yield* store.deleteThread({ threadId: "th2" })
-            const gone = yield* store.getThread({ threadId: "th2" })
+            yield* store.deleteThread({ namespace: threadNs("th2"), threadId: "th2" })
+            const gone = yield* store.getThread({ namespace: threadNs("th2"), threadId: "th2" })
             return gone === undefined
           }).pipe(Effect.provide(testMemoryLayer)),
         { seed: seed + 1, executions: dbExecutions }
@@ -370,21 +381,21 @@ describe("@smthrs/memory SQLite MemoryStore facts, notes, threads & recall fuzz 
         const ns: Namespace.Namespace = { kind: "flow", id: "sup" }
         yield* store.putNote({ namespace: ns, id: "old-n", text: "old", tags: [], provenance: {} })
         yield* store.putNote({ namespace: ns, id: "new-n", text: "new", tags: [], provenance: {} })
-        yield* store.supersede({ supersederId: "new-n", targetId: "old-n" })
+        yield* store.supersede({ namespace: ns, supersederId: "new-n", targetId: "old-n" })
         const visible = yield* store.listNotes({ namespace: ns })
         expect(visible.map((n) => n.id)).toEqual(["new-n"])
 
         const autoTh = yield* store.createThread({ namespace: ns })
         expect(autoTh.id.length).toBeGreaterThan(0)
-        yield* store.appendMessage({ threadId: autoTh.id, id: "m1", role: "user", text: "hi", at: 1 })
-        expect(yield* store.deleteMessages({ threadId: autoTh.id, ids: ["m1"] })).toBe(1)
+        yield* store.appendMessage({ namespace: ns, threadId: autoTh.id, id: "m1", role: "user", text: "hi", at: 1 })
+        expect(yield* store.deleteMessages({ namespace: ns, threadId: autoTh.id, ids: ["m1"] })).toBe(1)
 
         // makeNoop / layerNoop
         const noop = MemoryStore.makeNoop()
         expect(Result.isFailure(yield* Effect.result(noop.getFact({ namespace: ns, key: "k" })))).toBe(true)
         expect(Result.isFailure(yield* Effect.result(noop.listAllFacts))).toBe(true)
         expect(Result.isFailure(yield* Effect.result(noop.deleteExpiredFacts))).toBe(true)
-        expect(Result.isFailure(yield* Effect.result(noop.listThreadIds))).toBe(true)
+        expect(Result.isFailure(yield* Effect.result(noop.listThreads({ namespace: ns })))).toBe(true)
         expect(Result.isFailure(yield* Effect.result(noop.enableFts("flow")))).toBe(true)
       }).pipe(Effect.provide(testMemoryLayer))
     )
@@ -969,10 +980,12 @@ describe("@smthrs/memory Flows, WithMemory, MemoryTrellis & Maintenance fuzz inv
           expect(gc.deletedFacts).toBeGreaterThanOrEqual(0)
           yield* Layer.build(Maintenance.layerTtlGc({ interval: "1 hour" }))
 
-          const thAscii = yield* store.createThread({ id: "m-ascii", namespace: { kind: "flow", id: "m" } })
-          const thUtf8 = yield* store.createThread({ id: "m-utf8", namespace: { kind: "flow", id: "m" } })
+          const maintNs: Namespace.Namespace = { kind: "flow", id: "m" }
+          const thAscii = yield* store.createThread({ id: "m-ascii", namespace: maintNs })
+          const thUtf8 = yield* store.createThread({ id: "m-utf8", namespace: maintNs })
           for (let i = 1; i <= 5; i++) {
             yield* store.appendMessage({
+              namespace: maintNs,
               threadId: thAscii.id,
               id: `a${i}`,
               role: "user",
@@ -980,6 +993,7 @@ describe("@smthrs/memory Flows, WithMemory, MemoryTrellis & Maintenance fuzz inv
               at: i
             })
             yield* store.appendMessage({
+              namespace: maintNs,
               threadId: thUtf8.id,
               id: `u${i}`,
               role: "user",
@@ -994,9 +1008,10 @@ describe("@smthrs/memory Flows, WithMemory, MemoryTrellis & Maintenance fuzz inv
           expect(limited.deletedMessages).toBeGreaterThan(0)
 
           // Multi-window compaction
-          const thComp = yield* store.createThread({ id: "m-comp", namespace: { kind: "flow", id: "m" } })
+          const thComp = yield* store.createThread({ id: "m-comp", namespace: maintNs })
           for (let i = 1; i <= 5; i++) {
             yield* store.appendMessage({
+              namespace: maintNs,
               threadId: thComp.id,
               id: `c${i}`,
               role: "user",
@@ -1019,7 +1034,7 @@ describe("@smthrs/memory Flows, WithMemory, MemoryTrellis & Maintenance fuzz inv
             )
           ).toBe(true)
           const compacted = yield* Maintenance.compact({
-            threadId: thComp.id,
+            thread: { namespace: maintNs, threadId: thComp.id },
             keepRecent: 1,
             maxMessagesPerSummary: 2,
             summarizer: { summarize: ({ rendered }) => Effect.succeed(`sum(${rendered.split("\n").length})`) }

@@ -29,7 +29,7 @@ async function type(name: string, value: string) {
   });
 }
 async function submit() { await act(async () => container!.querySelector("form")!.requestSubmit()); }
-const question = (request: HumanTask.Request = { kind: "ask" }, token = "wait-one"): HumanTaskWait => ({
+const question = (request: HumanTaskWait["request"] = { kind: "ask" }, token = "wait-one"): HumanTaskWait => ({
   token, request, state: "requested", revision: 0, canAnswer: true,
   validate: value => HumanTask.validate(value, request)
 });
