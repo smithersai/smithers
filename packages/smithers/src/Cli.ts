@@ -23,6 +23,7 @@ import { createEnvironmentCli } from "./cli/EnvironmentCommands.ts"
 import * as Generate from "./cli/Generate.ts"
 import { createGenerateCli, initialize } from "./cli/Generate.ts"
 import { appendHistoryCommands } from "./cli/HistoryCommands.ts"
+import * as McpRemote from "./cli/McpRemote.ts"
 import * as McpStdio from "./cli/McpStdio.ts"
 import * as Presentation from "./cli/Presentation.ts"
 import { appendRunTiming } from "./cli/RunTimingCommand.ts"
@@ -127,6 +128,43 @@ export const makeCli = (
             throw new CliError.UnsupportedError({ message: "Could not register the MCP server" })
           }
           return wired
+        })
+    }).command("login", {
+      description: "Sign in to a remote Smithers MCP server via OAuth 2.1 + PKCE",
+      mcp: false,
+      options: options.extend({
+        origin: z.string().default("https://smithers.sh").describe("Smithers origin URL (default https://smithers.sh)"),
+        repo: z.string().optional().describe("Optional repository scope (owner/name, e.g. evmts/voltaire)"),
+        scope: z.string().default("mcp:read mcp:write").describe("OAuth scopes to request"),
+        noOpen: z.boolean().default(false).describe("Print the authorize URL instead of opening a browser")
+      }),
+      run: (c) =>
+        Presentation.guard(c, () =>
+          McpRemote.loginMcpRemote({
+            origin: c.options.origin,
+            repo: c.options.repo,
+            scope: c.options.scope,
+            noOpen: c.options.noOpen,
+            env: environment,
+            stderr: config.stderr ?? process.stderr
+          })
+        )
+    }).command("serve", {
+      description: "Bridge stdio MCP clients to a remote Smithers Streamable HTTP MCP endpoint",
+      mcp: false,
+      options: options.extend({
+        origin: z.string().default("https://smithers.sh").describe("Smithers origin URL (default https://smithers.sh)"),
+        repo: z.string().optional().describe("Optional repository endpoint (owner/name, e.g. evmts/voltaire)")
+      }),
+      run: (c) =>
+        Presentation.guard(c, async () => {
+          await McpRemote.serveMcpStdioBridge({
+            origin: c.options.origin,
+            repo: c.options.repo,
+            env: environment,
+            stderr: config.stderr ?? process.stderr
+          })
+          return { status: "closed" as const }
         })
     })
     Positionals.guard(mcp, mcpGlobals)

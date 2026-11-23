@@ -129,7 +129,7 @@ export const make = () => {
         case "Rejected":
           if (authenticated.status === 401) {
             outcome = authenticated.code
-            return Protocol.unauthorized(origin, authenticated.code, "invalid_token")
+            return Protocol.unauthorized(origin, authenticated.code, "invalid_token", defaultRepo)
           }
           return refuse(authenticated.status, authenticated.code)
         case "Authenticated":

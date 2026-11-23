@@ -11,7 +11,9 @@ const unexpected = (name: string): Fetcher => binding(async () => {
 
 test.each([
   "/.well-known/oauth-protected-resource",
+  "/.well-known/oauth-protected-resource/evmts/voltaire/mcp",
   "/.well-known/oauth-authorization-server",
+  "/.well-known/oauth-authorization-server/evmts/voltaire/mcp",
 ])("GET %s forwards the original request to ChatApi", async (path) => {
   const request = new Request(`https://smithers.test${path}?client=test`)
   const metadata = Response.json({ issuer: "https://smithers.test" })

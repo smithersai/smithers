@@ -46,18 +46,30 @@ type Id = string | number | null
 const noStore = { "cache-control": "no-store" }
 
 /** RFC 9728 `WWW-Authenticate` value that makes Claude Code and Codex start OAuth discovery. */
-export const wwwAuthenticate = (origin: string, error?: string): string => {
-  const metadata = `${origin.replace(/\/+$/, "")}${MCP_OAUTH_PROTECTED_RESOURCE_ROUTE}`
+export const wwwAuthenticate = (
+  origin: string,
+  error?: string,
+  defaultRepo?: { readonly owner: string; readonly name: string },
+): string => {
+  const suffix = defaultRepo === undefined
+    ? ""
+    : `/${encodeURIComponent(defaultRepo.owner)}/${encodeURIComponent(defaultRepo.name)}/mcp`
+  const metadata = `${origin.replace(/\/+$/, "")}${MCP_OAUTH_PROTECTED_RESOURCE_ROUTE}${suffix}`
   return error === undefined
     ? `Bearer resource_metadata="${metadata}"`
     : `Bearer error="${error}", resource_metadata="${metadata}"`
 }
 
 /** A 401 asking the client to authorize, with the RFC 9728 challenge. */
-export const unauthorized = (origin: string, code: string, error?: string) =>
+export const unauthorized = (
+  origin: string,
+  code: string,
+  error?: string,
+  defaultRepo?: { readonly owner: string; readonly name: string },
+) =>
   HttpServerResponse.jsonUnsafe({ code }, {
     status: 401,
-    headers: { ...noStore, "www-authenticate": wwwAuthenticate(origin, error) },
+    headers: { ...noStore, "www-authenticate": wwwAuthenticate(origin, error, defaultRepo) },
   })
 
 const result = (id: Id, value: unknown) =>
@@ -143,7 +155,7 @@ const callTool = (
     yield* Effect.annotateCurrentSpan({ "mcp.tool.error": error.code })
     // Unauthenticated: a 401 with the RFC 9728 challenge, so the client starts OAuth instead of showing an error.
     if (error.code === "authentication" && Option.isNone(message.principal)) {
-      return unauthorized(origin, "authentication")
+      return unauthorized(origin, "authentication", undefined, defaultRepo)
     }
     return result(id, toolErrorResult(error))
   })

@@ -217,12 +217,23 @@ describe("tools", () => {
   })
 
   test("an anonymous call a tool refuses for authentication answers 401 with the RFC 9728 challenge", async () => {
-    const { rpc } = open({
+    const { rpc, post } = open({
       tool: () => Effect.fail(new McpToolError({ code: "authentication", message: "Sign in" })),
     })
     const response = await rpc("tools/call", { name: "issue_comment", arguments: {} })
     expect(response.status).toBe(401)
     expect(response.headers.get("www-authenticate")).toBe(CHALLENGE)
+
+    const scoped = await post(repoMcpRoute("evmts", "voltaire"), {
+      jsonrpc: "2.0",
+      id: 9,
+      method: "tools/call",
+      params: { name: "issue_comment", arguments: {} },
+    })
+    expect(scoped.status).toBe(401)
+    expect(scoped.headers.get("www-authenticate")).toBe(
+      `Bearer resource_metadata="${ORIGIN}${MCP_OAUTH_PROTECTED_RESOURCE_ROUTE}/evmts/voltaire/mcp"`,
+    )
   })
 
   test("invalid name or arguments answer -32602 and never reach the registry", async () => {

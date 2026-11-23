@@ -600,6 +600,7 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
                 const mcpTools = Layer.effect(
                   McpToolRegistry,
                   McpLiveDeps.makeLiveDeps({ database, reads: repos.reads, repoCache, starter }).pipe(
+                    Effect.provide(FetchHttpClient.layer),
                     Effect.flatMap(McpTools.makeMcpToolRegistry)
                   )
                 ).pipe(Layer.provide(mcpAuth))

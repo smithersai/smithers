@@ -41,7 +41,12 @@ export default {
   fetch: async (request, env) => {
     const url = new URL(request.url)
     if (url.pathname.startsWith("/api/")) return env.CHAT_API.fetch(request)
-    if (url.pathname === MCP_OAUTH_PROTECTED_RESOURCE_ROUTE || url.pathname === MCP_OAUTH_AUTH_SERVER_ROUTE) {
+    if (
+      url.pathname === MCP_OAUTH_PROTECTED_RESOURCE_ROUTE ||
+      url.pathname.startsWith(`${MCP_OAUTH_PROTECTED_RESOURCE_ROUTE}/`) ||
+      url.pathname === MCP_OAUTH_AUTH_SERVER_ROUTE ||
+      url.pathname.startsWith(`${MCP_OAUTH_AUTH_SERVER_ROUTE}/`)
+    ) {
       return env.CHAT_API.fetch(request)
     }
     const repository = parsePublicRepoMcpPath(url.pathname)

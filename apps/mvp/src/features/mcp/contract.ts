@@ -154,7 +154,7 @@ export const mcpClientSnippet = (
       return {
         label: "Fallback for stdio-only clients",
         command: `npx @smthrs/cli mcp login --origin ${cleanOrigin}\nnpx @smthrs/cli mcp serve --repo ${owner}/${name}`,
-        note: "Uses GitHub Device Flow and bridges stdio MCP to Smithers with the same role and person-only guards.",
+        note: "Uses OAuth 2.1 + PKCE and bridges stdio MCP to Smithers with the same role and person-only guards.",
       }
   }
 }
