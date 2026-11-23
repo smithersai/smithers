@@ -1,0 +1,1121 @@
+/**
+ * The pure half of the replay, on generated inputs: the names git prints, the lines a failed step leaves, what a
+ * report adds up, and the numbers a replay decides by. Each property states what the module says of itself, and the
+ * cases under it are the inputs that broke one.
+ */
+import { describe, expect, it } from "@effect/vitest"
+import * as Arbitrary from "effect/Arbitrary"
+import * as Effect from "effect/Effect"
+import * as Option from "effect/Option"
+import * as Schema from "effect/Schema"
+import type { Plan } from "../../src/contract/Plan.vibe"
+import { type ReplayCommit, ReplayReport } from "../../src/contract/ReplayReport.vibe"
+import { type RunRecord, type TargetResult, type Verdict, verdictOf } from "../../src/contract/RunRecord.vibe"
+import type { Inventory } from "../../src/contract/Inventory.vibe"
+import { floorBytes, floorOf, stoppedLine, waitingLine } from "../../src/replay/Disk.vibe"
+import { gigabyte, sizeOf } from "../../src/replay/DiskSpace.ts"
+import {
+  containerPrograms,
+  daemonEnvironment,
+  guardedPath,
+  guardedPrograms,
+  recorderOf,
+  recorderRefusal,
+  recorders,
+  recorderVariable,
+  skippedNames,
+  skippedPart,
+  softwareEnvironment,
+  standIns,
+  stepEnvironment
+} from "../../src/replay/Environment.ts"
+import {
+  commandLine,
+  errorLine,
+  failedAsBefore,
+  failureMark,
+  failuresOf,
+  firstLine,
+  type LastFailures,
+  madeNoProgress,
+  noProgress,
+  printedFailure,
+  printedLimitOf,
+  readable,
+  reasonOf,
+  reasonOutputLimit,
+  remember,
+  signalExit,
+  stoppedResults
+} from "../../src/replay/Failures.ts"
+import { gitArguments, noUpkeep } from "../../src/replay/Git.vibe"
+import { cannotFetch, fetching, noRemote, shallow } from "../../src/replay/History.vibe"
+import { couldNotStart, fixesOf, homeOf, namedInStepHome, putOnPath } from "../../src/replay/HomeTools.vibe"
+import { reapedBy } from "../../src/replay/Job.vibe"
+import { bytesOf, notUtf8, sha256, unreadableName } from "../../src/replay/Names.ts"
+import { fromPs, fromStat, type ProcessEntry, treeOf, workOver } from "../../src/replay/ProcessTable.ts"
+import { cannotRecord, inPlainWords, readsListener, recorderStopped } from "../../src/replay/Reads.vibe"
+import {
+  addRerun,
+  cycleIn,
+  defaultJobs,
+  failureTexts,
+  finishedReport,
+  firstAttempt,
+  jobsCovered,
+  jobsFor,
+  machinePaths,
+  mismatchesOf,
+  nothingToReplay,
+  recordOf,
+  recovered,
+  reportOf,
+  rootsWithout,
+  runNames,
+  seenIn,
+  spentBy,
+  startCostOf,
+  stationsOf,
+  stepKey,
+  tooFewLeft,
+  totalsOf,
+  trialOf,
+  type Unit,
+  withoutCredentials
+} from "../../src/replay/Summary.vibe"
+
+// --- checking ---------------------------------------------------------------------------------------------------------
+
+/** Fails the test with the shrunk counterexample unless `predicate` holds, without throwing, for every value. */
+const assertProperty = <A>(
+  arb: Arbitrary.Arbitrary<A>,
+  predicate: (value: A) => boolean,
+  options: { readonly runs: number; readonly seed: number }
+) => effect {
+  const outcome = try Arbitrary.checkEffect(
+    arb,
+    (value) => Effect.try(() => predicate(value)),
+    options
+  )
+  try Effect.try(() => {
+    if (outcome._tag !== "Passed") {
+      expect.fail(Arbitrary.formatCheckFailure(outcome))
+    }
+    expect(outcome._tag).toBe("Passed")
+  })
+}
+
+// --- generators -------------------------------------------------------------------------------------------------------
+
+const int = (minimum: number, maximum: number): Arbitrary.Arbitrary<number> =>
+  Arbitrary.schema(Schema.Int.check(Schema.isBetween({ minimum, maximum })))
+
+const oneOf = <const A extends string | number>(values: readonly [A, ...Array<A>]): Arbitrary.Arbitrary<A> =>
+  Arbitrary.schema(Schema.Literals(values)) as Arbitrary.Arbitrary<A>
+
+const flag: Arbitrary.Arbitrary<boolean> = Arbitrary.map(int(0, 1), (bit) => bit === 1)
+
+/** Texts made of these pieces, which shrink by losing pieces. */
+const text = (pieces: readonly [string, ...Array<string>], maxLength = 8): Arbitrary.Arbitrary<string> =>
+  Arbitrary.map(Arbitrary.array(oneOf(pieces), { maxLength }), (parts) => parts.join(""))
+
+const letters = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+
+/** A text of exactly `length` letters and digits, drawn from `seed`. */
+const lettersOf = (seed: number, length: number): string => {
+  let state = seed + 1
+  let made = ""
+  for (let index = 0; index < length; index++) {
+    state = (state * 1103515245 + 12345) % 2147483648
+    made += letters[state % letters.length] as string
+  }
+  return made
+}
+
+const same = (one: ReadonlyArray<unknown>, other: ReadonlyArray<unknown>): boolean =>
+  one.length === other.length && one.every((each, index) => each === other[index])
+
+/** True for a text in which every half of a two-unit character has its other half. */
+const wellFormed = (shown: string): boolean =>
+  !/[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/.test(shown)
+
+// --- Names: the bytes of a name as git prints it ------------------------------------------------------------------
+
+const escapeOf: Readonly<Record<number, string>> = { 7: "a", 8: "b", 9: "t", 10: "n", 11: "v", 12: "f", 13: "r", 34: "\"", 92: "\\" }
+
+/** A name of these bytes as git prints it with `core.quotePath`: its `quote_c_style`. */
+const shownByGit = (bytes: ReadonlyArray<number>): string => {
+  if (bytes.every((byte) => byte >= 0x20 && byte < 0x7f && byte !== 34 && byte !== 92)) {
+    return String.fromCharCode(...bytes)
+  }
+  const quoted = bytes.map((byte) =>
+    escapeOf[byte] !== undefined
+      ? `\\${escapeOf[byte]}`
+      : byte < 0x20 || byte >= 0x7f
+      ? `\\${byte.toString(8).padStart(3, "0")}`
+      : String.fromCharCode(byte)
+  )
+  return `"${quoted.join("")}"`
+}
+
+/** True for bytes that are UTF-8: decoded and encoded again, they are the same bytes. */
+const utf8 = (bytes: ReadonlyArray<number>): boolean => {
+  const read = new TextDecoder("utf-8", { ignoreBOM: true }).decode(Uint8Array.from(bytes))
+  return same([...new TextEncoder().encode(read)], bytes)
+}
+
+/** Bytes of a file name: every value but 0, with those git escapes and those of UTF-8 sequences drawn often. */
+const nameBytes: Arbitrary.Arbitrary<Array<number>> = Arbitrary.map(
+  Arbitrary.array(
+    Arbitrary.all([
+      int(0, 3),
+      int(1, 255),
+      oneOf([7, 8, 9, 10, 11, 12, 13, 34, 92, 47, 32, 48, 55, 56, 0x7f, 0x80, 0xbf, 0xc3, 0xa9, 0xe2, 0x82, 0xac, 0xf0, 0x9f, 0x98, 0xff, 0xfe, 0xed, 0xa0])
+    ]),
+    { maxLength: 14 }
+  ),
+  (drawn) => drawn.map(([pick, any, special]) => pick === 0 ? any : special)
+)
+
+describe("the names git prints", () => {
+  it.live("give their bytes back exactly, whatever the bytes", () =>
+    assertProperty(nameBytes, (bytes) => same([...bytesOf(shownByGit(bytes))], bytes), { runs: 400, seed: 1 }))
+
+  it.live("are read without failing from any text, quoted to its end or not", () =>
+    assertProperty(
+      text(["\"", "\\", "\\303", "\\251", "\\n", "\\\"", "\\\\", "\\8", "\\x", "7", "0", "a", "é", "\u{1f600}", "\ud800", " ", "\n"], 12),
+      (shown) => {
+        const bytes = bytesOf(shown)
+        return bytes instanceof Uint8Array && (shown.startsWith("\"") || same([...bytes], [...new TextEncoder().encode(shown)]))
+      },
+      { runs: 400, seed: 2 }
+    ))
+
+  it.live("name the first of a listing that is not UTF-8, and none when all are", () =>
+    assertProperty(Arbitrary.array(nameBytes, { maxLength: 6 }), (names) => {
+      const shown = names.map(shownByGit)
+      const first = names.findIndex((bytes) => bytes.length > 0 && !utf8(bytes))
+      return notUtf8(`${shown.join("\n")}\n`) === (first === -1 ? undefined : shown[first])
+    }, { runs: 400, seed: 3 }))
+
+  it.live("hash to 64 hexadecimal digits, the same for the same text and another for another", () =>
+    assertProperty(
+      Arbitrary.all([text(["a", "b", "/", " ", "é", "\u{1f600}", "\n", "0"], 10), text(["a", "b", "/", " ", "é", "\u{1f600}", "\n", "0"], 10)]),
+      ([one, other]) =>
+        /^[0-9a-f]{64}$/.test(sha256(one)) && sha256(one) === sha256(one) && (one === other) === (sha256(one) === sha256(other)),
+      { runs: 200, seed: 4 }
+    ))
+
+  it("hash as SHA-256 does, and say which file a replay cannot read", () => {
+    expect(sha256("")).toBe("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855")
+    expect(sha256("abc")).toBe("ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad")
+    // `caf\303\251` is "café" in UTF-8; `caf\351` is Latin-1 and not UTF-8.
+    expect([...bytesOf("\"caf\\303\\251.txt\"")]).toEqual([...new TextEncoder().encode("café.txt")])
+    expect(notUtf8("src/a.ts\n\"caf\\303\\251.txt\"\n\"data/caf\\351.txt\"\n\"b\\377\"\n")).toBe("\"data/caf\\351.txt\"")
+    expect([...bytesOf("\"a\\tb\\nc\\\"d\\\\e\"")]).toEqual([97, 9, 98, 10, 99, 34, 100, 92, 101])
+    expect(unreadableName("\"caf\\351\"", "0123456789abcdef")).toContain("the file \"caf\\351\" at 0123456 has a name that is not UTF-8")
+  })
+})
+
+// --- Git, Job, History: what is said and started ------------------------------------------------------------------
+
+describe("what a replay starts and says", () => {
+  const word = text(["a", "-c", "gc.auto=1", "--", " ", "\n", "fetch", "$(id)"], 3)
+
+  it.live("starts every git with no upkeep, then with the arguments as they were given", () =>
+    assertProperty(Arbitrary.array(word, { maxLength: 6 }), (args) => {
+      const all = gitArguments(args)
+      return same(all.slice(0, noUpkeep.length), noUpkeep) && same(all.slice(noUpkeep.length), args) &&
+        same(noUpkeep, ["-c", "maintenance.auto=false", "-c", "gc.auto=0"])
+    }, { runs: 150, seed: 5 }))
+
+  it.live("runs a step's command under the reaper whole, after `--`", () =>
+    assertProperty(Arbitrary.all([Arbitrary.array(word, { maxLength: 5 }), oneOf(["", "/opt/smthrs-observe", "--reap"])]), ([rest, reaper]) => {
+      const argv = ["sh", ...rest] as const
+      const run = reapedBy(argv, reaper === "" ? undefined : reaper)
+      return reaper === "" ? run === argv : same(run, [reaper, "--reap", "--", ...argv])
+    }, { runs: 150, seed: 6 }))
+
+  it.live("counts one object and many objects as a person does", () =>
+    assertProperty(Arbitrary.all([int(0, 5000), int(0, 50), oneOf(["origin", "up stream", "o"])]), ([count, more, remote]) => {
+      const noun = count === 1 ? `${count} object ` : `${count} objects `
+      const commits = count === 1 ? "1 commit of" : `${count} commits of`
+      return fetching(count, remote).includes(noun) && noRemote(count, remote).includes(noun) &&
+        cannotFetch(count, remote, "why").includes(noun) && cannotFetch(count, remote, "fatal: x").includes("(fatal: x)") &&
+        shallow(count, count + more, more + 1).includes(commits) && shallow(count, count + more, more + 1).includes(`--deepen=${more + 1}\``)
+    }, { runs: 150, seed: 7 }))
+})
+
+// --- Reads: the line that says reads are not recorded -------------------------------------------------------------
+
+const unobservedLine = "smthrs: reads are not observed on this host: this host is darwin; a target that asks for it fails"
+
+describe("the listener for unrecorded reads", () => {
+  const lines = Arbitrary.array(
+    oneOf([
+      unobservedLine,
+      `│ ${unobservedLine}\r`,
+      "smthrs: reads are not observed on this host: strace is not installed",
+      "//:a: smthrs: reads are not observed on this host: a step printed this",
+      "smthrs: reads are not observed on this host: ",
+      "smthrs: reads are observed",
+      "",
+      "plain",
+      "smthrs: reads are not observed"
+    ]),
+    { maxLength: 6 }
+  )
+
+  it.live("says the sentence once, the same however the output is cut into chunks", () =>
+    assertProperty(Arbitrary.all([lines, Arbitrary.array(int(0, 400), { maxLength: 8 }), flag]), ([all, cuts, ended]) => {
+      const output = `${all.join("\n")}${ended ? "\n" : ""}`
+      const whole = readsListener()(output)
+      const at = [...new Set(cuts.map((cut) => cut % (output.length + 1)))].sort((a, b) => a - b)
+      const listen = readsListener()
+      const said = [0, ...at].map((from, index) => listen(output.slice(from, at[index] ?? output.length)))
+        .filter((line) => line !== undefined)
+      return whole === undefined ? said.length === 0 : said.length === 1 && said[0] === whole
+    }, { runs: 400, seed: 8 }))
+
+  it.live("names each system as a person does, and is done after one pass", () =>
+    assertProperty(text(["darwin", "win32", " ", "darwinian", "x-darwin", "win32.", "is", "linux", "_win32"], 8), (reason) => {
+      const plain = inPlainWords(reason)
+      return !/\bdarwin\b|\bwin32\b/.test(plain) && inPlainWords(plain) === plain && cannotRecord(reason).includes(`(${plain})`)
+    }, { runs: 200, seed: 9 }))
+
+  it("reads a recorder that stopped from any cause, and nothing from another", () => {
+    const names = new Map([["//:ci.yml-test-1", { step: "test: unit" }]])
+    const gone = "//:ci.yml-test-1: smthrs-observe stopped before the step ended, so its run says nothing about the step"
+    for (const cause of [undefined, null, 0, "text", {}, [], { message: 5 }, { message: null }, new Error("other"), gone]) {
+      expect(recorderStopped(cause, "0123456789", names)).toBeUndefined()
+    }
+    expect(recorderStopped(new Error(gone), "0123456789", names)).toMatch(/^the replay stopped at 0123456: .*what test: unit reads/)
+    expect(recorderStopped({ message: gone.replace("ci.yml-test-1", "other") }, "0123456789", names)).toContain("what //:other reads")
+  })
+})
+
+// --- HomeTools ------------------------------------------------------------------------------------------------------
+
+describe("a tool named in a step's home", () => {
+  const directory = Arbitrary.map(
+    text(["/tmp", "/replay.1", "/w (x)", "/a+b", "/r[0]", "/$x", "/^a", "/a|b", "/{1}", "/back\\slash", "/a*"], 4),
+    (under) => `/replay${under}`
+  )
+  const relative = oneOf([".local/go/bin/go", "bin/tool", ".cargo/bin/cargo-nextest", "go", ".nvm/v22.1.0/bin/node"])
+
+  it.live("is found under any work directory, whatever its name holds", () =>
+    assertProperty(Arbitrary.all([directory, relative, flag, text(["sh: 1: ", "\"", "'", ": not found", " ", "\n", "/home/x/"], 5)]), ([work, tool, machine, around]) => {
+      const home = machine ? `${work}/machines/3f2a/build/home` : `${work}/home/normal`
+      const found = namedInStepHome(`${around}${home}/${tool}: not found\n${around}`, [work, `${work}/other`])
+      return found.includes(tool) && found.every((path) => !/[\s:'"]/.test(path)) && new Set(found).size === found.length &&
+        namedInStepHome(undefined, [work]).length === 0
+    }, { runs: 300, seed: 10 }))
+
+  it.live("is told to be put on PATH by its own directory", () =>
+    assertProperty(relative, (tool) => {
+      const line = putOnPath(tool)
+      const parent = tool.includes("/") ? `~/${tool.slice(0, tool.lastIndexOf("/"))}` : "~"
+      return line.startsWith(`put ${parent} on PATH: ~/${tool} is in your home directory`)
+    }, { runs: 50, seed: 11 }))
+
+  it.live("is asked for only by a failure that could not start, and each fix is given once", () =>
+    assertProperty(
+      Arbitrary.array(Arbitrary.all({ status: oneOf(["hit", "ran", "failed", "skipped"]), exit: oneOf([-1, 0, 1, 2, 126, 127, 128]), fix: oneOf(["", "a", "b", "c"]) }), { maxLength: 8 }),
+      (drawn) => {
+        const results = drawn.map((each) => ({
+          status: each.status,
+          ...(each.exit === -1 ? {} : { exitCode: each.exit }),
+          ...(each.fix === "" ? {} : { fix: each.fix })
+        }))
+        const fixes = fixesOf(results)
+        const expected = results.flatMap((result) => result.status === "failed" && result.fix !== undefined ? [result.fix] : [])
+        return new Set(fixes).size === fixes.length && same(fixes, [...new Set(expected)]) &&
+          results.every((result) =>
+            couldNotStart(result) === (result.status === "failed" && (result.exitCode === undefined || result.exitCode === 126 || result.exitCode === 127))
+          )
+      },
+      { runs: 200, seed: 12 }
+    ))
+
+  it("has the person's tools nowhere when their variables name no home", () => {
+    expect(homeOf({ HOME: "/home/me" })).toBe("/home/me")
+    expect(homeOf({})).toBe("/nonexistent/smithers-ci")
+  })
+})
+
+// --- Disk -----------------------------------------------------------------------------------------------------------
+
+const gigabytesIn = (line: string, shape: RegExp): ReadonlyArray<number> => (shape.exec(line) ?? []).slice(1).map(Number)
+
+describe("the disk a replay leaves free", () => {
+  // Sizes around every edge a sentence rounds at: nothing, a tenth, the floor, ten gigabytes, a large disk.
+  const bytes = Arbitrary.map(
+    Arbitrary.all([oneOf([0, 0.05, 0.1, 0.95, 1, 2.5, 4.9, 4.97, 5, 9.94, 9.95, 9.99, 10, 10.4, 10.5, 99.5, 250, 4000]), int(-3, 3), int(0, 999_999)]),
+    ([size, tenths, more]) => Math.max(0, size * gigabyte + tenths * gigabyte / 10 + more)
+  )
+
+  it.live("is 5 GB, or 2% of the disk when that is more, and never less for a larger disk", () =>
+    assertProperty(Arbitrary.all([bytes, bytes]), ([one, other]) => {
+      const [small, large] = one <= other ? [one, other] : [other, one]
+      return floorOf(small) >= floorBytes && floorOf(small) >= small * 0.02 && floorOf(small) <= floorOf(large) &&
+        (floorOf(small) === floorBytes || floorOf(small) === small * 0.02)
+    }, { runs: 300, seed: 13 }))
+
+  it.live("reads as under the floor whenever it is under the floor", () =>
+    assertProperty(Arbitrary.all([bytes, bytes, bytes, bytes]), ([total, free, held, machines]) => {
+      const floor = floorOf(total * 50)
+      if (free >= floor) return true
+      const waiting = gigabytesIn(waitingLine(free, floor), /: ([\d.]+) GB free, under the ([\d.]+) GB a replay leaves free/)
+      const line = stoppedLine("/tmp/replay", free, floor, held, machines)
+      const stopped = gigabytesIn(line, /has ([\d.]+) GB free, under the ([\d.]+) GB a replay leaves free/)
+      const toFree = gigabytesIn(line, /Free ([\d.]+) GB more on that disk/)
+      return waiting.length === 2 && (waiting[0] as number) < (waiting[1] as number) &&
+        stopped.length === 2 && (stopped[0] as number) < (stopped[1] as number) &&
+        !/NaN|Infinity|-\d/.test(line) &&
+        // Either fewer jobs give space back, or the line says how much to free, and that is never nothing.
+        (machines >= gigabyte / 10 ? line.includes("fewer jobs at once (--jobs)") : toFree.length === 1 && (toFree[0] as number) > 0)
+    }, { runs: 400, seed: 14 }))
+
+  it.live("is written as a size that never falls as the bytes rise", () =>
+    assertProperty(Arbitrary.all([bytes, bytes]), ([one, other]) => {
+      const [small, large] = one <= other ? [one, other] : [other, one]
+      const read = (size: number): number => Number(sizeOf(size).replace(" GB", ""))
+      return /^\d+(\.\d)? GB$/.test(sizeOf(small)) && read(small) <= read(large) && sizeOf(-small) === "0 GB"
+    }, { runs: 300, seed: 15 }))
+})
+
+// --- ProcessTable: what a stall is decided by --------------------------------------------------------------------
+
+describe("the processes a stall is decided by", () => {
+  const entries: Arbitrary.Arbitrary<Array<ProcessEntry>> = Arbitrary.array(
+    Arbitrary.map(Arbitrary.all([int(0, 7), int(0, 7), int(0, 500)]), ([pid, parent, cpuMs]): ProcessEntry => ({ pid, parent, cpuMs })),
+    { maxLength: 12 }
+  )
+
+  it.live("are each counted once in a tree, though the table names one twice or in a ring", () =>
+    assertProperty(Arbitrary.all([entries, int(0, 7)]), ([table, root]) => {
+      const tree = treeOf(table, root)
+      const last = new Map(table.map((entry) => [entry.pid, entry]))
+      if (!last.has(root)) return tree.pids.length === 0 && tree.leaves.length === 0 && tree.cpuMs === 0
+      const sum = tree.pids.reduce((total, pid) => total + (last.get(pid) as ProcessEntry).cpuMs, 0)
+      // Everything the table puts under the root, by any of its lines, is in the tree.
+      const under = new Set([root])
+      for (let grew = true; grew;) {
+        grew = false
+        for (const entry of table) {
+          if (under.has(entry.parent) && !under.has(entry.pid)) {
+            under.add(entry.pid)
+            grew = true
+          }
+        }
+      }
+      return tree.pids[0] === root && new Set(tree.pids).size === tree.pids.length && tree.cpuMs === sum &&
+        tree.pids.length === under.size && tree.pids.every((pid) => under.has(pid)) &&
+        tree.leaves.length > 0 && tree.leaves.every((pid) => tree.pids.includes(pid)) &&
+        new Set(tree.leaves).size === tree.leaves.length
+    }, { runs: 400, seed: 16 }))
+
+  it.live("are read from a line of /proc whatever the program is called", () =>
+    assertProperty(
+      Arbitrary.all([int(1, 99_999), int(0, 99_999), text(["sh", " ", ")", "(", ") S 1 2", "é", "a b"], 4), Arbitrary.array(int(0, 10_000), { minLength: 4, maxLength: 4 }), int(0, 1_000_000)]),
+      ([pid, parent, name, ticks, started]) => {
+        const fields = ["S", parent, pid, pid, 0, -1, 4194560, 0, 0, 0, 0, ...ticks, 20, 0, 1, 0, started, 1000, 100]
+        const entry = fromStat(`${pid} (${name}) ${fields.join(" ")}`)
+        const [user, system, waitedUser, waitedSystem] = ticks as [number, number, number, number]
+        return entry !== undefined && entry.pid === pid && entry.parent === parent && entry.started === started &&
+          entry.ownMs === (user + system) * 10 && entry.waitedMs === (waitedUser + waitedSystem) * 10 &&
+          entry.cpuMs === (entry.ownMs ?? 0) + (entry.waitedMs ?? 0)
+      },
+      { runs: 300, seed: 17 }
+    ))
+
+  it.live("leave out every line that cannot be read, of /proc and of ps", () =>
+    assertProperty(text(["1", "22", " ", "  ", "\n", "0:01", "1-02:03:04", "00:00.50", "0:00,5", "x", "abc", "(", ")", "-", "1e3", "0x10", ".", ":"], 14), (printed) => {
+      const whole = (value: number | undefined): boolean => value !== undefined && Number.isInteger(value) && value >= 0
+      const stat = printed.split("\n").map(fromStat)
+      return fromPs(printed).every((entry) => whole(entry.pid) && whole(entry.parent) && Number.isFinite(entry.cpuMs) && entry.cpuMs >= 0) &&
+        stat.every((entry) => entry === undefined || (Number.isInteger(entry.pid) && Number.isInteger(entry.parent) && Number.isFinite(entry.cpuMs)))
+    }, { runs: 400, seed: 18 }))
+
+  it.live("call one hundredth of a core work, and never less than one tick", () =>
+    assertProperty(Arbitrary.all([int(0, 3_600_000), int(0, 3_600_000)]), ([one, other]) => {
+      const [short, long] = one <= other ? [one, other] : [other, one]
+      return workOver(short) >= 10 && workOver(short) <= workOver(long) && workOver(long) === Math.max(10, long / 100)
+    }, { runs: 200, seed: 19 }))
+
+  it("read what ps prints, and count a process the table names twice once", () => {
+    expect(fromPs("  1     0   0:01.50\n 22     1 1-00:00:01\nPID PPID TIME\nabc def 0:01\n")).toEqual([
+      { pid: 1, parent: 0, cpuMs: 1500 },
+      { pid: 22, parent: 1, cpuMs: 86_401_000 }
+    ])
+    const twice = [{ pid: 1, parent: 0, cpuMs: 10 }, { pid: 2, parent: 1, cpuMs: 5 }, { pid: 2, parent: 1, cpuMs: 5 }]
+    expect(treeOf(twice, 1)).toEqual({ cpuMs: 15, pids: [1, 2], leaves: [2] })
+  })
+})
+
+// --- Environment ----------------------------------------------------------------------------------------------------
+
+describe("what a step sees of the machine", () => {
+  const directory = text(["/usr/bin", "/opt/a b", "/tmp/guard", "/x"], 2)
+  const path = text(["/usr/bin", ":", "/bin", ":", ".", "/opt/a b"], 6)
+  const names = ["PATH", "HOME", "A", "GH_TOKEN", "AWS_SECRET_ACCESS_KEY", "__proto__", "constructor", "GIT_CONFIG_COUNT", "DOCKER_HOST", "LANG", "SMTHRS_OBSERVE_WITH"] as const
+
+  it.live("finds the stand-ins first on any PATH, and gets no empty entry it did not have", () =>
+    assertProperty(Arbitrary.all([directory, path, flag]), ([guard, given, unset]) => {
+      const made = guardedPath(guard || "/guard", unset ? undefined : given)
+      const first = guard || "/guard"
+      if (unset || given === "") return made === first
+      return made === `${first}:${given}` && made.startsWith(`${first}:`) && made.slice(first.length + 1) === given
+    }, { runs: 200, seed: 20 }))
+
+  it.live("gives a step its own home and variables, with the stand-ins before any PATH of its own", () =>
+    assertProperty(Arbitrary.array(Arbitrary.all([oneOf(names), path]), { maxLength: 6 }), (pairs) => {
+      const declared: Record<string, string> = Object.fromEntries(pairs)
+      const place = { home: "/replay/home/normal", tmp: "/replay/tmp", guard: "/replay/guard" }
+      const seen = stepEnvironment(declared, place)
+      const own = Object.keys(declared).filter((name) => name !== "PATH" && Object.hasOwn(seen, name))
+      const found = seen["PATH"] ?? ""
+      return (found === place.guard || found.startsWith(`${place.guard}:`)) &&
+        (declared["PATH"] === undefined || declared["PATH"] === "" ? true : found === `${place.guard}:${declared["PATH"]}`) &&
+        seen["HOME"] === (declared["HOME"] ?? place.home) &&
+        seen["GIT_TERMINAL_PROMPT"] === "0" && seen["GIT_CONFIG_KEY_1"] === "credential.helper" && seen["GIT_CONFIG_VALUE_1"] === "" &&
+        own.every((name) => seen[name] === declared[name])
+    }, { runs: 200, seed: 21 }))
+
+  it.live("tells a step where the container daemon is only when Docker is allowed", () =>
+    assertProperty(Arbitrary.all([Arbitrary.array(Arbitrary.all([oneOf(names), path]), { maxLength: 6 }), flag]), ([pairs, allowed]) => {
+      const person: Record<string, string> = Object.fromEntries(pairs)
+      const told = daemonEnvironment(allowed, person)
+      const host = person["DOCKER_HOST"]
+      return Object.keys(told).every((name) => name === "DOCKER_HOST") &&
+        (allowed && host !== undefined ? told["DOCKER_HOST"] === host : Object.keys(told).length === 0) &&
+        standIns(allowed).length === guardedPrograms.length + (allowed ? 0 : containerPrograms.length) &&
+        standIns(allowed).every(([program, script]) => script.startsWith("#!/bin/sh\n") && script.includes(`does not run ${program}`))
+    }, { runs: 150, seed: 22 }))
+
+  it.live("refuses a recorder that is none, and never repeats what the variable holds", () =>
+    assertProperty(oneOf(["", "strace", "smthrs-observe", "ZQX-secret-value", "Strace", " strace", "strace\n", "ZQX none"]), (chosen) => {
+      const person = chosen === "" ? {} : { [recorderVariable]: chosen }
+      const refusal = recorderRefusal(person)
+      const known = chosen === "" || recorders.includes(chosen)
+      return (refusal === undefined) === known && (refusal === undefined || !refusal.includes("ZQX")) &&
+        recorderOf(person)[recorderVariable] === (chosen === "" ? undefined : chosen) &&
+        Object.keys(recorderOf({ [recorderVariable]: "" })).length === 0
+    }, { runs: 60, seed: 23 }))
+
+  it.live("names the part of a path a tool skips, and only a whole part", () =>
+    assertProperty(Arbitrary.array(oneOf(["tmp", "node_modules", ".git", ".cache", "my.git", "node_modules2", ".yarn", "", "a", ".output", ".gitx"]), { maxLength: 6 }), (parts) => {
+      const skipped = skippedPart(parts.join("/"))
+      const first = parts.find((part) => skippedNames.includes(part))
+      return skipped === first
+    }, { runs: 200, seed: 24 }))
+
+  it.live("tells a step only of the runner software that is set to something", () =>
+    assertProperty(Arbitrary.array(Arbitrary.all([oneOf(["ImageOS", "ImageVersion", "RUNNER_TOOL_CACHE", "A", "GH_TOKEN", "AGENT_TOOLSDIRECTORY"]), oneOf(["", "x", "ubuntu22"])]), { maxLength: 6 }), (pairs) => {
+      const person: Record<string, string> = Object.fromEntries(pairs)
+      const told = softwareEnvironment(person)
+      return Object.entries(told).every(([name, value]) => value !== "" && person[name] === value && name !== "GH_TOKEN" && name !== "A")
+    }, { runs: 150, seed: 25 }))
+})
+
+// --- Failures -------------------------------------------------------------------------------------------------------
+
+/** A credential of each shape that needs no word before it, with the part that is the secret. */
+const credential = Arbitrary.map(Arbitrary.all([int(0, 5), int(0, 1_000_000)]), ([shape, seed]) => {
+  const body = lettersOf(seed, 36)
+  const head = ["ghp_", "github_pat_", "sk-", "npm_", "ghs_", "gho_"][shape] as string
+  return { whole: `${head}${body}`, body }
+})
+
+/** True when `text` shows ten characters in a row of a credential's secret part. */
+const shows = (shown: string, body: string): boolean =>
+  Array.from({ length: body.length - 9 }, (_, at) => body.slice(at, at + 10)).some((piece) => shown.includes(piece))
+
+/** Lines of exactly `length` characters that a build tool prints as it goes: none is a reason. */
+const progress = (length: number): string => {
+  let made = ""
+  for (let left = length; left > 0;) {
+    const line = left >= 240 ? 120 : left
+    made += `Compiling ${"a".repeat(line - 11)}\n`
+    left -= line
+  }
+  return made
+}
+
+const outputPiece = [
+  "error: boom",
+  "npm error code 1",
+  "> pkg@1.0.0 test",
+  "  at run (file.js:1:1)",
+  "Progress: resolved 1, reused 0",
+  "1 failed, 3 passed in 0.12s",
+  "\u001b[31mred\u001b[0m",
+  "\r",
+  "\n",
+  "\n",
+  " ",
+  "\u0000",
+  "\u0007",
+  "é",
+  "\u{1f600}",
+  "×",
+  "├─▶ cause",
+  "╰─▶ last cause",
+  "│ wrapped",
+  "TypeError: x is not a function {",
+  "}",
+  "sh: 1: tool: not found",
+  "smithers-ci: a replayed step may not push; nothing was sent",
+  "the tool was terminated by SIGKILL",
+  "x".repeat(250),
+  "\u{1f600}".repeat(120)
+] as const
+
+describe("why a step failed", () => {
+  it.live("is one line of at most 200 characters, without control characters, well formed, and the same read twice", () =>
+    assertProperty(text(outputPiece, 14), (output) => {
+      const line = firstLine(output)
+      return line.length <= 200 && !/\p{Cc}/u.test(line) && wellFormed(line) && line === line.trim() && firstLine(line) === line
+    }, { runs: 400, seed: 26 }))
+
+  it.live("is always some reason, whatever a step printed and however it ended", () =>
+    assertProperty(Arbitrary.all([text(outputPiece, 14), text(outputPiece, 14), oneOf([-1, 0, 1, 2, 127, 137, 255])]), ([stderr, stdout, exit]) => {
+      const reason = reasonOf({ stderr, stdout, ...(exit === -1 ? {} : { exitCode: exit }) })
+      const error = errorLine(`${readable(stderr)}\n${readable(stdout)}`)
+      return reason !== "" && reason.length <= 200 && !/\p{Cc}/u.test(reason) && wellFormed(reason) &&
+        // The line that reports an error is the reason, unless the step's program is not installed.
+        (error === "" || reason === error || reason.endsWith("is not installed on this machine"))
+    }, { runs: 400, seed: 27 }))
+
+  it.live("never shows a credential a step printed, in a reason, a command or a failure's mark", () =>
+    assertProperty(Arbitrary.all([credential, text(outputPiece, 6), text(outputPiece, 6), oneOf(["", "TOKEN=", "error: bad token ", "Authorization: Bearer ", "curl -u me:", "https://me:"])]), ([secret, before, after, lead]) => {
+      const output = `${before}\n${lead}${secret.whole} failed\n${after}`
+      const failed: TargetResult = { label: "//:a", status: "failed", key: "", durationMs: 1, error: output, command: output, fix: output, notStored: output }
+      const [failure] = failuresOf([failed])
+      const all = [
+        readable(output),
+        reasonOf({ stderr: output, stdout: "" }),
+        reasonOf({ stderr: "", stdout: output, exitCode: 127 }),
+        commandLine(output),
+        failureMark(failed),
+        printedFailure(output).error ?? "",
+        printedFailure(`command failed (exit 2): sh -c 'run'\n${output}`).error ?? "",
+        JSON.stringify(failure),
+        JSON.stringify(totalsOf(recordOf([failed], "c", 1)))
+      ]
+      return all.every((shown) => !shows(shown, secret.body))
+    }, { runs: 300, seed: 28 }))
+
+  it.live("never shows the end of a credential that the cut of a long output went through", () =>
+    assertProperty(Arbitrary.all([credential, int(1, 44), flag, oneOf(["", "token ", "Authorization: Bearer "])]), ([secret, into, cutBefore, lead]) => {
+      // The line with the credential, then enough progress that the last `reasonOutputLimit` characters start
+      // `into` characters into the credential: its head is cut off, and with it the shape it is withheld by.
+      const line = `${lead}${secret.whole} error: denied\n`
+      const cut = lead.length + Math.min(into, secret.whole.length - 12)
+      const output = `started\n${line}${progress(reasonOutputLimit + cut - line.length)}`
+      // A step's output reaches a reason whole, or as the end a running step's output is kept to.
+      const kept = cutBefore ? output.slice(-reasonOutputLimit) : output
+      const reason = cutBefore
+        ? reasonOf({ stderr: kept, stdout: "", exitCode: 127 })
+        : reasonOf({ stderr: "", stdout: kept, exitCode: 1 })
+      return reason !== "" && !shows(reason, secret.body)
+    }, { runs: 40, seed: 29 }))
+
+  it.live("never shows the start of a credential that the cut of a long command went through", () =>
+    assertProperty(Arbitrary.all([credential, int(1, 30), flag]), ([secret, shown, breaks]) => {
+      // Blank lines, then the credential so that only its first `shown` characters stand before the 4000th.
+      const command = `${(breaks ? "\n" : " ").repeat(4000 - shown)}${secret.whole} deploy`
+      const failed: TargetResult = { label: "//:a", status: "failed", key: "", durationMs: 1, error: "x", command }
+      return [commandLine(command), printedFailure(command).error ?? "", JSON.stringify(failuresOf([failed]))]
+        .every((line) => !shows(line, secret.body))
+    }, { runs: 120, seed: 30 }))
+
+  it.live("reads what smthrs printed for a failed target, in either form, without failing", () =>
+    assertProperty(
+      Arbitrary.all([text(["sh", " ", "-c", "'", "\"", "\\", "\n", "npm test", "$(x)", "run_step '\\''", "echo \"a\nb\""], 8), text(outputPiece, 8), oneOf([-1, 0, 1, 2, 127, 255, 1.5]), flag]),
+      ([command, output, exit, json]) => {
+        const printed = json
+          ? `${JSON.stringify({ _tag: "smithers-build/ExecError", argv: ["sh", "-c", command], exitCode: exit, stdout: "", stderr: output })}\nnote`
+          : `command failed (exit ${Math.trunc(exit)}): sh -c ${command}\n${output}`
+        const read = printedFailure(printed)
+        const signalled = /^the tool was terminated by (SIG[A-Z0-9]+)$/m.test(output)
+        return (read.error ?? "") !== "" && (read.error ?? "").length <= 200 && (read.command ?? "").length <= 200 &&
+          !/\p{Cc}/u.test(`${read.error}${read.command}`) &&
+          (read.exitCode === undefined || (Number.isInteger(read.exitCode) && read.exitCode >= 0)) &&
+          // A structured failure gives its exit code as it is, and a signal the code a shell gives for it.
+          (!json || (signalled ? read.exitCode === signalExit("SIGKILL") : read.exitCode === (Number.isInteger(exit) && exit >= 0 ? exit : undefined))) &&
+          (!json || read.command === commandLine(command))
+      },
+      { runs: 400, seed: 31 }
+    ))
+
+  it.live("remembers how a step last failed, forgets a step that passed, and leaves one that did not run", () =>
+    assertProperty(
+      Arbitrary.array(Arbitrary.all({ label: oneOf(["//:a", "//:b", "//:c"]), status: oneOf(["hit", "ran", "failed", "skipped"]), error: oneOf(["boom", "bang", "boom\nmore"]), exit: oneOf([1, 2]) }), { maxLength: 10 }),
+      (drawn) => {
+        const last: LastFailures = new Map()
+        const model = new Map<string, string>()
+        for (const each of drawn) {
+          const result: TargetResult = { label: each.label, status: each.status, key: "", durationMs: 1, error: each.error, exitCode: each.exit }
+          const again = failedAsBefore(last, result)
+          if (again !== (each.status === "failed" && model.get(each.label) === `${each.exit} ${each.error.split("\n")[0]}`)) return false
+          remember(last, [result])
+          if (each.status === "failed") model.set(each.label, `${each.exit} ${each.error.split("\n")[0]}`)
+          else if (each.status !== "skipped") model.delete(each.label)
+        }
+        return same([...last.keys()].sort(), [...model.keys()].sort()) && [...model].every(([label, mark]) => last.get(label) === mark)
+      },
+      { runs: 200, seed: 32 }
+    ))
+
+  it.live("calls stopped only what failed after the limit, and everything asked for when nothing was recorded", () =>
+    assertProperty(
+      Arbitrary.all([Arbitrary.array(Arbitrary.all({ status: oneOf(["hit", "ran", "failed", "skipped"]), durationMs: int(0, 2000) }), { maxLength: 8 }), int(0, 2000), int(1, 90)]),
+      ([drawn, limitMs, minutes]) => {
+        const recorded = drawn.map((each, index): TargetResult => ({ label: `//:t${index}`, status: each.status, key: "", durationMs: each.durationMs, exitCode: 1 }))
+        const reason = noProgress(minutes)
+        const stopped = stoppedResults(recorded, [], limitMs, reason)
+        const asked = stoppedResults(undefined, ["//:a", "//:b"], limitMs, reason)
+        return stopped.length === recorded.length && asked.length === 2 && asked.every((result) => madeNoProgress(result) && result.status === "failed") &&
+          stopped.every((result, index) => {
+            const was = recorded[index] as TargetResult
+            const late = was.status === "failed" && was.durationMs >= limitMs
+            return late ? madeNoProgress(result) && result.exitCode === undefined : result === was
+          }) &&
+          reason === `it made no progress for ${minutes} ${minutes === 1 ? "minute" : "minutes"}`
+      },
+      { runs: 200, seed: 33 }
+    ))
+
+  it.live("keeps enough of what smthrs prints for the reason of every target asked for", () =>
+    assertProperty(Arbitrary.all([int(0, 5000), int(0, 5000)]), ([one, other]) => {
+      const [few, many] = one <= other ? [one, other] : [other, one]
+      return printedLimitOf(few) >= 8_000_000 && printedLimitOf(few) <= printedLimitOf(many) && printedLimitOf(many) >= many * 256_000 &&
+        signalExit("SIGKILL") === 137 && signalExit("SIGNONE") === 128
+    }, { runs: 100, seed: 34 }))
+
+  it("holds for the outputs that showed part of a credential before", () => {
+    const token = `ghp_${lettersOf(7, 36)}`
+    const line = `${token} error: denied\n`
+    // The last 64,000 characters start five characters into the credential: `ghp_` is cut off.
+    const output = `${line}${progress(reasonOutputLimit + 5 - line.length)}`
+    expect(output.slice(-reasonOutputLimit).startsWith(token.slice(5))).toBe(true)
+    expect(reasonOf({ stderr: output, stdout: "" })).not.toContain(token.slice(5, 20))
+    expect(reasonOf({ stderr: output.slice(-reasonOutputLimit), stdout: "" })).not.toContain(token.slice(5, 20))
+    // An output that is one line is left out whole when it is cut: nothing says where a credential in it starts.
+    const oneLine = `${"x".repeat(100)}${token}${"x".repeat(reasonOutputLimit - 36)} error`
+    expect(oneLine.slice(-reasonOutputLimit).startsWith(token.slice(-30))).toBe(true)
+    expect(reasonOf({ stderr: oneLine, stdout: "" })).toBe("it printed nothing")
+    expect(reasonOf({ stderr: oneLine, stdout: "boom failed" })).toBe("boom failed")
+    // An output that was not cut keeps its first line.
+    expect(reasonOf({ stderr: "error: first\nCompiling a\n", stdout: "" })).toBe("error: first")
+    // A command cut at its 4,000th character, through a credential nineteen characters in.
+    const command = `${"\n".repeat(4000 - 23)}${token} deploy`
+    expect(commandLine(command)).toBe("[withheld] deploy")
+    // A line cut at its 200th character, through a character of two units.
+    expect(firstLine(`${"a".repeat(199)}\u{1f600}b`)).toBe("a".repeat(199))
+    expect(firstLine(`${"a".repeat(198)}\u{1f600}b`)).toBe(`${"a".repeat(198)}\u{1f600}`)
+  })
+})
+
+// --- Summary --------------------------------------------------------------------------------------------------------
+
+const labels = ["//:a", "//:b", "//:c", "//:d", "//:e"] as const
+
+const result: Arbitrary.Arbitrary<TargetResult> = Arbitrary.map(
+  Arbitrary.all({
+    label: oneOf(labels),
+    status: oneOf(["hit", "ran", "failed", "skipped"]),
+    durationMs: int(0, 5000),
+    attempts: Arbitrary.array(flag, { maxLength: 3 }),
+    safe: flag
+  }),
+  (drawn): TargetResult => ({
+    label: drawn.label,
+    status: drawn.status,
+    key: "k",
+    durationMs: drawn.durationMs,
+    ...(drawn.status === "skipped"
+      ? (drawn.safe ? { skipReason: "predicted-safe" as const } : {})
+      : drawn.attempts.length === 0
+      ? {}
+      : { attempts: drawn.attempts.map((passed) => ({ passed, durationMs: 1 })) })
+  })
+)
+
+/** Results with each label once. */
+const results: Arbitrary.Arbitrary<Array<TargetResult>> = Arbitrary.map(
+  Arbitrary.array(result, { maxLength: 6 }),
+  (drawn) => drawn.filter((each, index) => drawn.findIndex((other) => other.label === each.label) === index)
+)
+
+const passes = (verdict: Verdict): boolean => verdict === "pass" || verdict === "flaky"
+const agrees = (one: Verdict, other: Verdict): boolean => one === other || (passes(one) && passes(other))
+
+const totals = Arbitrary.map(
+  Arbitrary.all({ ok: flag, wallMs: oneOf([0, 0, 1, 7, 1000, 59_999, 3_600_000]), cpu: oneOf([-1, 0, 5, 900]), start: oneOf([-1, 0, 40, 5000]) }),
+  (drawn) => ({
+    ok: drawn.ok,
+    wallMs: drawn.wallMs,
+    workMs: drawn.wallMs,
+    counts: { hit: 0, ran: 1, failed: drawn.ok ? 0 : 1, skipped: 0 },
+    ...(drawn.cpu === -1 ? {} : { cpuMs: drawn.cpu }),
+    ...(drawn.start === -1 ? {} : { parts: { ms: { start: drawn.start, plan: 3 } } })
+  })
+)
+
+const mismatch = Arbitrary.map(
+  Arbitrary.all({ label: oneOf(labels), mode: oneOf(["normal", "fast"]), cause: oneOf(["", "cspell read .smithers/x, which Smithers CI wrote."]) }),
+  (drawn) => ({
+    label: drawn.label,
+    mode: drawn.mode,
+    baseline: "pass" as const,
+    got: "fail" as const,
+    ...(drawn.cause === "" ? {} : { cause: drawn.cause })
+  })
+)
+
+const commit: Arbitrary.Arbitrary<ReplayCommit> = Arbitrary.map(
+  Arbitrary.all({ baseline: totals, normal: totals, fast: totals, withFast: flag, mismatches: Arbitrary.array(mismatch, { maxLength: 2 }), sha: int(0, 99) }),
+  (drawn): ReplayCommit => ({
+    commit: `${drawn.sha}`.padStart(40, "a"),
+    changedFiles: 1,
+    baseline: drawn.baseline,
+    normal: drawn.normal,
+    mismatches: drawn.mismatches,
+    ...(drawn.withFast ? { fast: drawn.fast, model: { ms: 12, questions: 2 } } : {})
+  })
+)
+
+const read: Inventory = { version: 1, repository: "r", commit: "c", toolchains: [], jobs: [] }
+const isReport = Schema.decodeUnknownOption(ReplayReport)
+
+const unit = (job: string, extra: Partial<Unit> = {}): Unit => ({ job, needs: [], steps: [], ...extra })
+
+describe("what a replay reports", () => {
+  it.live("has a speedup that is a number, none where normal mode differed, and sums that cover the measured commits", () =>
+    assertProperty(Arbitrary.array(commit, { maxLength: 5 }), (commits) => {
+      const report = reportOf(read, commits, { left: [], flaky: 0 })
+      const differs = commits.some((each) => each.mismatches.some((found) => found.mode === "normal" && found.cause === undefined))
+      const measured = differs ? [] : commits.filter((each) => each.baseline.ok)
+      const baseline = measured.reduce((sum, each) => sum + each.baseline.wallMs, 0)
+      const normal = measured.reduce((sum, each) => sum + each.normal.wallMs, 0)
+      return Option.isSome(isReport(report)) && Number.isFinite(report.speedup) && report.speedup >= 0 &&
+        report.speedupCommits === measured.length && report.baselineWallMs === baseline && report.normalWallMs === normal &&
+        report.speedup === (normal === 0 ? 0 : baseline / normal) &&
+        (!differs || (report.speedup === 0 && report.baselineWallMs === 0 && report.startCost === undefined)) &&
+        report.mismatches === commits.reduce((sum, each) => sum + each.mismatches.length, 0) &&
+        // A way's CPU time is given only when every measured commit has one.
+        (report.baselineCpuMs === undefined) === (measured.length === 0 || measured.some((each) => each.baseline.cpuMs === undefined)) &&
+        report.fastWallMs === undefined && report.model === undefined
+    }, { runs: 400, seed: 35 }))
+
+  it.live("says what starting costs only as numbers, and only when normal mode was the slower", () =>
+    assertProperty(Arbitrary.array(commit, { maxLength: 4 }), (commits) => {
+      const cost = startCostOf(commits)
+      const mean = (values: ReadonlyArray<number>): number => values.reduce((sum, each) => sum + each, 0) / values.length
+      if (cost === undefined) return true
+      return commits.length > 0 && Number.isFinite(cost.startMs) && Number.isFinite(cost.commitMs) && cost.startMs * 20 > cost.commitMs &&
+        mean(commits.map((each) => each.normal.wallMs)) > cost.commitMs
+    }, { runs: 300, seed: 36 }))
+
+  it.live("leaves every fast-mode number out when fast mode was not measured to the end", () =>
+    assertProperty(Arbitrary.all([Arbitrary.array(commit, { maxLength: 4 }), flag, oneOf([-5, 0, 0.4, 1234.6, 5e12])]), ([commits, measured, disk]) => {
+      const report = finishedReport(read, commits, {
+        fastAsked: true,
+        rows: [],
+        selected: new Map(),
+        left: [],
+        flaky: 1,
+        fastFlaky: 2,
+        fastNotMeasured: measured ? undefined : "the model stopped answering",
+        firstRun: { commit: "c", baselineMs: 1, normalMs: 2, fastMs: 3 },
+        diskHeldBytes: disk
+      })
+      const held = report.diskHeldBytes ?? -1
+      return Option.isSome(isReport(report)) && Number.isInteger(held) && held >= 0 && report.flaky === (measured ? 3 : 1) &&
+        (measured
+          ? report.selection !== undefined && report.firstRun?.fastMs === 3
+          : report.selection === undefined && report.fastWallMs === undefined && report.model === undefined && report.fastCpuMs === undefined &&
+            report.firstRun?.fastMs === undefined && report.commits.every((each) => each.fast === undefined && each.mismatches.every((found) => found.mode !== "fast")))
+    }, { runs: 200, seed: 37 }))
+
+  it.live("finds no mismatch between a run and itself, and one for every verdict a mode did not give", () =>
+    assertProperty(Arbitrary.all([results, results]), ([baseline, got]) => {
+      const expected = recordOf(baseline, "c", 1)
+      const mode = recordOf(got, "c", 1, "normal")
+      const byLabel = new Map(got.map((each) => [each.label, each]))
+      const found = mismatchesOf("normal", expected, mode)
+      const model = baseline.filter((each) => {
+        const other = byLabel.get(each.label)
+        const verdict = verdictOf(each)
+        // A step fast mode chose not to run differs only from a step that failed in the CI.
+        if (other?.skipReason === "predicted-safe") return verdict === "fail"
+        return !agrees(verdict, other === undefined ? "skipped" : verdictOf(other))
+      })
+      return mismatchesOf("normal", expected, expected).length === 0 &&
+        same(found.map((each) => each.label), model.map((each) => each.label)) &&
+        found.every((each) => each.mode === "normal" && each.baseline === verdictOf(baseline.find((other) => other.label === each.label) as TargetResult)) &&
+        // A mode that ran nothing agrees with nothing that ran.
+        same(mismatchesOf("normal", expected, recordOf([], "c", 1, "normal")).map((each) => each.label), baseline.filter((each) => verdictOf(each) !== "skipped").map((each) => each.label))
+    }, { runs: 400, seed: 38 }))
+
+  it.live("gives a split step the verdict of its targets together, and a mismatch when one was never reported", () =>
+    assertProperty(Arbitrary.all([result, results]), ([step, targets]) => {
+      const whole: TargetResult = { ...step, label: "step" }
+      const split = new Map([["step", labels as ReadonlyArray<string>]])
+      const found = mismatchesOf("normal", recordOf([whole], "c", 1), recordOf(targets, "c", 1, "normal"), split)
+      if (targets.length < labels.length) return found.length === 1 && found[0]?.got === "skipped"
+      return found.length <= 1 && found.every((each) => each.label === "step" && each.baseline === verdictOf(whole))
+    }, { runs: 300, seed: 39 }))
+
+  it.live("counts a run's results by status, and passes it only when none failed", () =>
+    assertProperty(Arbitrary.all([Arbitrary.array(result, { maxLength: 8 }), int(0, 9000)]), ([all, wallMs]) => {
+      const record: RunRecord = { ...recordOf(all, "c", wallMs, "normal"), parts: { ms: { start: 40, plan: 3 } } }
+      const sum = record.counts.hit + record.counts.ran + record.counts.failed + record.counts.skipped
+      const run = totalsOf(record)
+      const rest = spentBy(record)?.ms["rest"] ?? -1
+      return sum === all.length && record.ok === all.every((each) => each.status !== "failed") &&
+        run.workMs === all.reduce((total, each) => total + each.durationMs, 0) && run.wallMs === wallMs &&
+        (run.failures?.length ?? 0) === record.counts.failed && Number.isInteger(rest) && rest >= 0 && rest === Math.max(0, wallMs - 43)
+    }, { runs: 300, seed: 40 }))
+
+  it.live("settles a target by its attempts: a rerun that passes makes it pass, and its first failure makes it flaky", () =>
+    assertProperty(Arbitrary.all([result, Arbitrary.array(oneOf(["ran", "hit", "failed", "none"]), { maxLength: 4 })]), ([drawn, reruns]) => {
+      const { attempts: _attempts, ...bare } = drawn
+      const first = firstAttempt(bare)
+      if (first.status === "skipped") return first.skipReason !== undefined
+      if (first.status === "hit") return first === bare
+      let settled = first
+      for (const status of reruns) {
+        settled = addRerun(settled, status === "none" ? undefined : { label: drawn.label, status, key: "k", durationMs: 2 })
+      }
+      const passedAfter = reruns.some((status) => status === "ran" || status === "hit")
+      const failedFirst = bare.status === "failed"
+      return (settled.attempts ?? []).length === reruns.length + 1 &&
+        settled.status === (failedFirst && !passedAfter ? "failed" : "ran") &&
+        recovered(settled) === (settled.status === "ran" && verdictOf(settled) === "flaky") &&
+        verdictOf(settled) === (reruns.length === 0 || (!failedFirst && reruns.every((status) => status === "ran" || status === "hit"))
+          ? (failedFirst ? "fail" : "pass")
+          : passedAfter || !failedFirst
+          ? "flaky"
+          : "fail") &&
+        (settled.status === "failed" || (settled.error === undefined && settled.exitCode === undefined))
+    }, { runs: 300, seed: 41 }))
+})
+
+describe("the jobs a replay runs", () => {
+  const jobs = ["a", "b", "c", "d", "e"] as const
+  const graph = Arbitrary.array(Arbitrary.all({ job: oneOf(jobs), needs: Arbitrary.array(oneOf([...jobs, "missing"]), { maxLength: 3 }) }), { maxLength: 5 })
+
+  it.live("can never start when their needs form a ring or name no job, and only then", () =>
+    assertProperty(graph, (drawn) => {
+      const units = drawn.filter((each, index) => drawn.findIndex((other) => other.job === each.job) === index)
+        .map((each) => unit(each.job, { needs: each.needs }))
+      const needs = new Map(units.map((each) => [each.job, each.needs]))
+      /** Every job a job waits for, however far: itself among them when it waits in a ring. */
+      const waitsFor = (job: string): ReadonlySet<string> => {
+        const found = new Set<string>()
+        const next = [...(needs.get(job) ?? [])]
+        for (let need = next.pop(); need !== undefined; need = next.pop()) {
+          if (found.has(need)) continue
+          found.add(need)
+          next.push(...(needs.get(need) ?? []))
+        }
+        return found
+      }
+      const stuck = (job: string): boolean => {
+        const all = waitsFor(job)
+        return all.has(job) || [...all].some((need) => !needs.has(need) || waitsFor(need).has(need))
+      }
+      const named = cycleIn(units)
+      return named === undefined ? units.every((each) => !stuck(each.job)) : needs.has(named) && stuck(named)
+    }, { runs: 400, seed: 42 }))
+
+  it.live("are left out of a plan's roots with everything that waits on them", () =>
+    assertProperty(
+      Arbitrary.all([Arbitrary.array(Arbitrary.array(int(1, 6), { maxLength: 3 }), { minLength: 1, maxLength: 7 }), Arbitrary.array(int(0, 6), { maxLength: 3 }), flag]),
+      ([edges, leftOut, ring]) => {
+        // Target `n` waits on targets after it, so the plan has no ring, unless one is asked for.
+        const label = (index: number): string => `//:t${index}`
+        const targets = edges.map((after, index) => ({
+          label: label(index),
+          rule: "r",
+          key: "",
+          cacheable: true,
+          dependencies: after.map((step) => label(ring ? (index + step) % edges.length : index + step)).filter((name) => ring || name !== label(index))
+        }))
+        const plan: Plan = { verb: "ci", pattern: "//...", roots: targets.map((target) => target.label), targets }
+        const left = new Set(leftOut.map(label))
+        const roots = rootsWithout(plan, left)
+        const reaches = (from: string): boolean => {
+          const seen = new Set<string>()
+          const next = [from]
+          for (let at = next.pop(); at !== undefined; at = next.pop()) {
+            if (left.has(at)) return true
+            if (seen.has(at)) continue
+            seen.add(at)
+            next.push(...(targets.find((target) => target.label === at)?.dependencies ?? []))
+          }
+          return false
+        }
+        // In a plan with a ring, which Smithers build refuses, it must only end, and leave out what is left out.
+        if (ring) return roots.every((root) => !left.has(root) && plan.roots.includes(root))
+        return same(roots, plan.roots.filter((root) => !reaches(root)))
+      },
+      { runs: 400, seed: 43 }
+    ))
+
+  const place = text(["build", "test", "../", "/", "..", ".", " ", "-rf", "$(id)", "é", "a".repeat(30), "\n", "\\", ":"], 4)
+  const variant = oneOf(["", "node=22", "node=24", "os=linux,node=22"])
+  const variantOf = (shown: string): Readonly<Record<string, string>> | undefined =>
+    shown === "" ? undefined : Object.fromEntries(shown.split(",").map((pair) => pair.split("=") as [string, string]))
+
+  it.live("have machines whose names are folder names, one for each run, the same at every commit", () =>
+    assertProperty(
+      Arbitrary.array(Arbitrary.array(Arbitrary.all({ job: place, tree: place, variant, shared: flag }), { minLength: 1, maxLength: 3 }), { maxLength: 6 }),
+      (drawn) => {
+        const runs = drawn.map((run) => run.map((each) => unit(each.job, { tree: each.shared ? each.tree : undefined, variant: variantOf(each.variant) })))
+        const names = runNames(runs)
+        const again = runNames(runs)
+        // The first run of a kind keeps its name wherever it stands among the runs: a job added later moves none.
+        const alone = runs.map((run) => runNames([run])[0])
+        const identity = (run: ReadonlyArray<Unit>): string => JSON.stringify(run.map((each) => [each.tree ?? each.job, each.job, each.variant ?? {}]))
+        return same(names, again) && new Set(names).size === names.length &&
+          names.every((name) => /^[A-Za-z0-9._-]+$/.test(name) && name.length <= 60 && name !== "." && name !== "..") &&
+          names.every((name, index) => runs.findIndex((run) => identity(run) === identity(runs[index] as ReadonlyArray<Unit>)) !== index || name === alone[index])
+      },
+      { runs: 300, seed: 44 }
+    ))
+
+  it.live("keep a machine in folders named by the checkout and the machine, never outside the machines' folder", () =>
+    assertProperty(Arbitrary.all([place, place, place]), ([checkout, name, other]) => {
+      const paths = machinePaths("/replay/machines", checkout, name)
+      const parts = paths.directory.slice("/replay/machines/".length).split("/")
+      const different = machinePaths("/replay/machines", checkout, other)
+      return paths.directory.startsWith("/replay/machines/") && parts.length === 2 &&
+        parts.every((part) => /^[A-Za-z0-9._-]+$/.test(part) && part !== "." && part !== "..") &&
+        paths.home === `${paths.directory}/home` && paths.tmp === `${paths.directory}/tmp` && paths.tree === `${paths.directory}/w` &&
+        (name === other) === (paths.directory === different.directory)
+    }, { runs: 300, seed: 45 }))
+
+  it.live("are named with their matrix variant in one order, whatever order the matrix gives it in", () =>
+    assertProperty(Arbitrary.array(Arbitrary.all([oneOf(["os", "node", "arch", "Z", "a"]), oneOf(["1", "linux", "x 64"])]), { maxLength: 4 }), (pairs) => {
+      const forward = Object.fromEntries(pairs)
+      const backward = Object.fromEntries([...Object.entries(forward)].reverse())
+      const key = stepKey("lint", forward)
+      return key === stepKey("lint", backward) && (Object.keys(forward).length === 0 ? key === "lint" : key.startsWith("lint (") && key.endsWith(")"))
+    }, { runs: 200, seed: 46 }))
+
+  it.live("start together by job or shared tree, each unit in one run", () =>
+    assertProperty(
+      Arbitrary.array(Arbitrary.all({ job: oneOf(jobs), tree: oneOf(["", "", "t1", "t2"]), needs: Arbitrary.array(oneOf(jobs), { maxLength: 2 }), steps: int(0, 2) }), { maxLength: 7 }),
+      (drawn) => {
+        const units = drawn.map((each, index) =>
+          unit(each.job, {
+            needs: each.needs,
+            tree: each.tree === "" ? undefined : each.tree,
+            steps: Array.from({ length: each.steps }, (_, step) => ({ id: `s${index}-${step}`, name: "s", label: `//:s${index}-${step}`, targets: [`//:s${index}-${step}`], command: "true", written: "true", cwd: "", env: {} }))
+          })
+        )
+        const stations = stationsOf(units)
+        const ran = stations.flatMap((station) => station.runs.flat())
+        // Every unit with a step runs once; one with none runs only beside the units of its tree.
+        return new Set(ran).size === ran.length && units.every((each) => each.steps.length === 0 || ran.includes(each)) &&
+          stations.every((station) => station.needs.every((need) => !station.jobs.includes(need)) && station.runs.length > 0) &&
+          jobsCovered(units, [{ job: "left", reasons: [] }]).total === new Set(units.map((each) => each.job)).size + 1
+      },
+      { runs: 300, seed: 47 }
+    ))
+
+  it.live("pass or fail the first run, never both, and the first failure is the first job's", () =>
+    assertProperty(Arbitrary.all([results, Arbitrary.array(Arbitrary.array(oneOf(labels), { maxLength: 3 }), { maxLength: 4 })]), ([all, jobsSteps]) => {
+      const units = jobsSteps.map((stepLabels, index) =>
+        unit(`job${index}`, {
+          ...(index % 2 === 0 ? {} : { variant: { node: "22" } }),
+          steps: stepLabels.map((label) => ({ id: label, name: `step ${label}`, label, targets: [label], command: "true", written: "true", cwd: "", env: {} }))
+        })
+      )
+      const trial = trialOf(units, all, new Map())
+      const failedJobs = trial.failed.map((each) => `${each.job}${each.variant === undefined ? "" : " (node=22)"}`)
+      const byLabel = new Map(all.map((each) => [each.label, each]))
+      return trial.passed.every((job) => !failedJobs.includes(job)) && (trial.first === undefined) === (trial.failed.length === 0) &&
+        units.every((each, index) => {
+          const own = each.steps.map((step) => byLabel.get(step.label))
+          const failed = own.some((found) => found?.status === "failed")
+          return failed === trial.failed.some((entry) => entry.job === `job${index}`)
+        }) &&
+        trial.failed.every((entry) => entry.variant === undefined || entry.reason.startsWith("(node=22) "))
+    }, { runs: 300, seed: 48 }))
+
+  it.live("run at once as many as the machine's cores give, never fewer than one", () =>
+    assertProperty(Arbitrary.all([int(0, 256), oneOf([0, 1, 3, 64]), oneOf([0, 1, 2, 8])]), ([cores, requested, most]) => {
+      const fallback = defaultJobs(cores)
+      return fallback >= 1 && fallback === Math.max(1, Math.floor(cores / 4)) &&
+        jobsFor(requested === 0 ? undefined : requested, most === 0 ? undefined : most, cores) ===
+          Math.min(requested === 0 ? fallback : requested, most === 0 ? Number.POSITIVE_INFINITY : most)
+    }, { runs: 200, seed: 49 }))
+
+  it.live("are listed with why when too few are left, or none", () =>
+    assertProperty(Arbitrary.all([Arbitrary.array(oneOf(["build", "a long job name", "", "é"]), { maxLength: 5 }), int(0, 12)]), ([names, could]) => {
+      const left = names.map((job) => ({ job, reasons: [{ feature: "other-system", detail: `${job} runs on win32; this machine is linux` }] }))
+      const few = tooFewLeft(could, left)
+      const none = nothingToReplay(left)
+      return none.split("\n").length === left.length + 1 &&
+        (few === undefined) === (left.length === 0 || left.length * 2 < could) &&
+        (few === undefined || (few.split("\n").length === left.length + 2 && few.includes(`${left.length} of its ${could} jobs ${left.length === 1 ? "does" : "do"} not pass here`)))
+    }, { runs: 200, seed: 50 }))
+})
+
+describe("the text a replay reads", () => {
+  const secretPiece = ["me", "p", "@", ":", "%40", "ss", "é", " ", "$", "!", "_"] as const
+
+  it.live("names a remote without the user and password it holds, whatever they hold", () =>
+    assertProperty(
+      Arbitrary.all([text(secretPiece, 4), text(secretPiece, 5), oneOf(["https://", "http://", "ssh://", "git+ssh://", "HTTPS://"]), oneOf(["github.com/x/y.git", "host:8443/x", "[::1]/x", "host/a@b/c", "host/x?token=@y"]), flag]),
+      ([user, password, scheme, rest, spaced]) => {
+        const clean = withoutCredentials(`${spaced ? "  " : ""}${scheme}${user}:${password}@${rest}${spaced ? "\n" : ""}`)
+        return clean === `${scheme}${rest}` && withoutCredentials(`${scheme}${rest}`) === `${scheme}${rest}` && withoutCredentials(clean) === clean
+      },
+      { runs: 400, seed: 51 }
+    ))
+
+  it("leaves an address that holds no password as it is", () => {
+    expect(withoutCredentials("git@github.com:x/y.git")).toBe("git@github.com:x/y.git")
+    expect(withoutCredentials("/srv/git/x@y.git")).toBe("/srv/git/x@y.git")
+    expect(withoutCredentials("../x@y")).toBe("../x@y")
+    // A password with an `@` in it: the host starts after the last one.
+    expect(withoutCredentials("https://me:p@ss@github.com/x/y.git")).toBe("https://github.com/x/y.git")
+  })
+
+  const status = oneOf(["hit", "ran", "failed", "skipped", "cancelled"])
+  const body = Arbitrary.array(oneOf(["plain line", "error: boom", "//:t1: said by t1", "//:t2: said by t2", "", "  indented", "ok: false", "counts: 1", "//:t1  failed", "{\"stdout\":\"x\"}"]), { maxLength: 4 })
+
+  it.live("gives each failed target what was printed under its own line, and no other target's lines", () =>
+    assertProperty(Arbitrary.array(Arbitrary.all({ label: oneOf(["//:t1", "//:t2", "//pkg:t3"]), status, body }), { maxLength: 6 }), (blocks) => {
+      const output = blocks.map((block) => [`${block.label}  ${block.status}  12ms  sh -c x`, ...block.body].join("\n")).join("\n")
+      const texts = failureTexts(output)
+      const lines = new Set(output.split("\n"))
+      // A line a target printed that reads as a status line is one.
+      const failed = new Set([
+        ...blocks.filter((block) => block.status === "failed").map((block) => block.label),
+        ...(blocks.some((block) => block.body.includes("//:t1  failed")) ? ["//:t1"] : [])
+      ])
+      return same([...texts.keys()].sort(), [...failed].sort()) &&
+        [...texts].every(([label, said]) =>
+          said.split("\n").every((line) => (said === "" || lines.has(line)) && (!/^\/\/\S*:\S+: /.test(line) || line.startsWith(`${label}: `)))
+        )
+    }, { runs: 400, seed: 52 }))
+
+  const written = oneOf([".smithers/ci/targets.json", ".github/workflows/smithers.yml", ".smithers/cache/", "dir[1]/", "a+b/", "(x)/", "c\\d/", "$HOME/", "PACKAGE.ts", "^a/", "a|b/"])
+
+  it.live("names the file Smithers CI wrote that a failed step read, whatever the file is called", () =>
+    assertProperty(Arbitrary.all([Arbitrary.array(written, { maxLength: 5 }), written, text(["error TS2307 in ", "cspell: Unknown word ", "\"", "(", " ", "\n", "x/", ": "], 4), flag]), ([all, named, around, present]) => {
+      const file = named.endsWith("/") ? `${named}entry.json` : named
+      const error = present ? `${around}\n ${file}: bad\n` : around
+      const line = seenIn(error, [...all, named])
+      if (seenIn(undefined, all) !== undefined) return false
+      if (line === undefined) return !present
+      return present && line.includes("which Smithers CI wrote") && line.includes(` read ${file}, which`)
+    }, { runs: 300, seed: 53 }))
+})

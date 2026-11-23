@@ -14,18 +14,19 @@
 // a box of its own, four boxes at once at most, its results in <out>/<n>; a table of the jobs follows.
 import { spawn, spawnSync } from "node:child_process"
 import {
+  closeSync,
   copyFileSync,
   existsSync,
   mkdirSync,
+  openSync,
   readdirSync,
   readFileSync,
   realpathSync,
-  renameSync,
   rmSync,
   statSync,
   writeFileSync
 } from "node:fs"
-import { isAbsolute, join, resolve } from "node:path"
+import { basename, isAbsolute, join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 
 /** The result files a box may return, the only ones taken from it. */
@@ -41,6 +42,9 @@ export const kept = [
   "wall-seconds",
   "NOT-REPRODUCED.txt"
 ]
+
+/** The most bytes one result file may hold: 1 GiB. A box that returns more of one has filled it for no reader. */
+export const largest = 2 ** 30
 
 /** Flags of cfbox that carry something of this machine, or of another job, into the box. */
 const carriers = {
@@ -134,6 +138,11 @@ export const tarballs = (packs) => {
   const manifestPath = join(packs, "manifest.json")
   if (!existsSync(manifestPath)) throw new Refusal(`${packs} has no manifest.json: pack it with pack-release.mjs`)
   const listed = JSON.parse(readFileSync(manifestPath, "utf8")).map((entry) => entry.filename)
+  // A name with a directory in it is a file somewhere else on this machine, which would go into the box as listed.
+  const elsewhere = listed.find((name) => typeof name !== "string" || name !== basename(name) || /^\.{0,2}$/.test(name))
+  if (elsewhere !== undefined) {
+    throw new Refusal(`${packs} lists ${elsewhere}, which is no file of it: only release tarballs go in a box`)
+  }
   if (!listed.some((name) => name.startsWith("smithers-ci-"))) throw new Refusal(`${packs} holds no smithers-ci`)
   const allowed = new Set(["manifest.json", "release-manifest.json", ...listed])
   for (const name of readdirSync(packs)) {
@@ -178,24 +187,34 @@ export const command = (options, upload, jobId, output = join(upload, "..", "res
 export const quote = (word) => /^[\w@%+=:,./-]+$/.test(word) ? word : `'${word.replaceAll("'", `'"'"'`)}'`
 
 /**
- * Of an artifact's `tar -tvzf` listing, what is taken: plain files named in `kept` (under `out/`). The rest is
- * dropped with why.
+ * Of an artifact's `tar -tvzf` listing, what is taken: plain files named in `kept` (under `out/`), each of at most
+ * `largest` bytes and listed once. The rest is dropped with why. A result listed twice is dropped both times: the
+ * box wrote each once, so an artifact with two was made to put one file in another's place.
  */
 export const sift = (listing) => {
-  const keep = []
+  const listed = []
   const drop = []
   for (const line of listing.split("\n").filter((line) => line.trim() !== "")) {
     const fields = line.trim().split(/\s+/)
     const bsd = /^\d+$/.test(fields[1] ?? "") && /^[A-Z][a-z]{2}$/.test(fields[5] ?? "")
     const path = fields.slice(bsd ? 8 : 5).join(" ")
-    const bytes = Number(fields[bsd ? 4 : 2])
+    const size = fields[bsd ? 4 : 2] ?? ""
+    const bytes = /^\d+$/.test(size) ? Number(size) : Number.NaN
     const name = path.replace(/^\.\//, "").replace(/^out\//, "")
     if (name === "" || name === "out" || name === "out/") continue
     if (!line.startsWith("-")) drop.push({ path, why: "not a plain file" })
     else if (!kept.includes(name)) drop.push({ path, why: "not a named result" })
-    else keep.push({ path, name, bytes })
+    else if (!(bytes <= largest)) drop.push({ path, why: "larger than a result is" })
+    else listed.push({ path, name, bytes })
   }
-  return { keep, drop }
+  const once = (entry) => listed.filter((other) => other.name === entry.name).length === 1
+  return {
+    keep: listed.filter(once),
+    drop: [
+      ...drop,
+      ...listed.filter((entry) => !once(entry)).map((entry) => ({ path: entry.path, why: "listed more than once" }))
+    ]
+  }
 }
 
 /** The lines that sum a replay's JSON up. */
@@ -222,26 +241,41 @@ export const summary = (report, cpu) => {
   return lines
 }
 
-/** Takes the kept files out of the artifact into `out`, and deletes the artifact. */
+/** What a shell runs to print the bytes of the member `$2` of the artifact `$1`, and no more than `$3` of them. */
+const bytesOfMember = "tar -xzOf \"$1\" -- \"$2\" | head -c \"$3\""
+
+/**
+ * Takes the kept files out of the artifact into `out`, and deletes the artifact; what it took.
+ *
+ * tar extracts every member that has a name it is given, and every member under it: an artifact that holds a plain
+ * `out/replay.log` and then a link `out/replay.log` to a file of this machine lists a plain file and leaves the
+ * link, and one that holds a directory of that name leaves the directory and what is in it. So tar creates nothing
+ * here. It prints the bytes of a name (`-O`), this script writes them to a new file, and the file is kept only when
+ * it holds the bytes the listing gave for one plain file: a link prints nothing, and a second member prints more.
+ * No more is ever written than the listing gave, and one byte.
+ */
 export const unpack = (artifact, out) => {
   const listing = spawnSync("tar", ["-tvzf", artifact], { encoding: "utf8" })
   if (listing.status !== 0) throw new Error(`could not list ${artifact}: ${listing.stderr}`)
   const { keep, drop } = sift(listing.stdout)
   for (const entry of drop) console.error(`box-replay: left in the artifact: ${entry.path} (${entry.why})`)
-  const into = join(out, "unpack")
-  mkdirSync(into)
-  if (keep.length > 0) {
-    const taken = spawnSync(
-      "tar",
-      ["-xzf", artifact, "-C", into, "--no-same-owner", "--no-same-permissions", "--", ...keep.map((e) => e.path)],
-      { encoding: "utf8" }
+  const taken = keep.filter((entry) => {
+    const file = join(out, entry.name)
+    // A new file: nothing that is there is written over, or written through.
+    const to = openSync(file, "wx")
+    spawnSync("sh", ["-c", bytesOfMember, "sh", artifact, entry.path, String(entry.bytes + 1)], {
+      stdio: ["ignore", to, "ignore"]
+    })
+    closeSync(to)
+    if (statSync(file).size === entry.bytes) return true
+    rmSync(file)
+    console.error(
+      `box-replay: left in the artifact: ${entry.path} (not the one plain file of ${entry.bytes} bytes it is listed as)`
     )
-    if (taken.status !== 0) throw new Error(`could not take the results: ${taken.stderr}`)
-  }
-  for (const entry of keep) renameSync(join(into, entry.path), join(out, entry.name))
-  rmSync(into, { recursive: true })
+    return false
+  })
   rmSync(artifact)
-  return keep
+  return taken
 }
 
 /** Runs cfbox with these arguments, its output to the console and to `log`. */
@@ -290,6 +324,28 @@ export const reportIn = (out) => {
 }
 
 /**
+ * The numbers the table reads of a job's report, or nothing for a text that is no report: `replay.json` holds what
+ * the repository's code made the box write, and one job's must not take the table of the others away.
+ */
+const figuresOf = (report) => {
+  try {
+    const counts = report.commits.map((commit) => commit.normal.counts)
+    const figures = {
+      baseline: report.baselineWallMs,
+      normal: report.normalWallMs,
+      hit: counts.reduce((sum, each) => sum + each.hit, 0),
+      steps: counts.reduce((sum, each) => sum + each.hit + each.ran + each.failed + each.skipped, 0),
+      mismatches: report.mismatches
+    }
+    return Object.values(figures).every((figure) => typeof figure === "number" && Number.isFinite(figure))
+      ? figures
+      : undefined
+  } catch {
+    return undefined
+  }
+}
+
+/**
  * The jobs of a run with a box for each, one line each: the job, its exit code, its baseline and normal-mode
  * seconds over the commits its replay counted, the steps it reused and its mismatches. Under them the seconds added
  * up, named for what they are: no speedup, since each box fills a cache of its own.
@@ -299,23 +355,20 @@ export const table = (rows, cpu) => {
   const total = { baseline: 0, normal: 0 }
   const cells = [["job", "exit", "baseline", "normal", "reused", "mismatches"]]
   for (const row of rows) {
-    const report = row.report
-    if (report === undefined) {
+    const figures = figuresOf(row.report)
+    if (figures === undefined) {
       cells.push([row.job, String(row.exit), "-", "-", "-", "-"])
       continue
     }
-    total.baseline += report.baselineWallMs
-    total.normal += report.normalWallMs
-    const counts = report.commits.map((commit) => commit.normal.counts)
-    const hit = counts.reduce((sum, each) => sum + each.hit, 0)
-    const steps = counts.reduce((sum, each) => sum + each.hit + each.ran + each.failed + each.skipped, 0)
+    total.baseline += figures.baseline
+    total.normal += figures.normal
     cells.push([
       row.job,
       String(row.exit),
-      seconds(report.baselineWallMs),
-      seconds(report.normalWallMs),
-      `${hit} of ${steps}`,
-      String(report.mismatches)
+      seconds(figures.baseline),
+      seconds(figures.normal),
+      `${figures.hit} of ${figures.steps}`,
+      String(figures.mismatches)
     ])
   }
   const widths = cells[0].map((_, column) => Math.max(...cells.map((line) => line[column].length)))
@@ -329,7 +382,7 @@ export const table = (rows, cpu) => {
 
 /**
  * What a run brought back, in `out`: the named files taken from the artifact, the replay summed up, and the exit
- * code, the replay's own when the box wrote it, else `code` (cfbox's).
+ * code, the replay's own when the box wrote one, else `code` (cfbox's).
  */
 export const collect = (out, cpu, code) => {
   if (!existsSync(join(out, "result.tgz"))) {
@@ -354,8 +407,11 @@ export const collect = (out, cpu, code) => {
       console.error(`box-replay: replay.json is not a report: ${error.message}`)
     }
   }
+  // What a program exits with is 0 to 255. A file that holds anything else, or nothing, as one the box was stopped
+  // while writing does, says no exit code: read as a number, nothing is 0, and the run would have passed.
   const exit = join(out, "exit")
-  return existsSync(exit) ? Number(readFileSync(exit, "utf8").trim()) : code
+  const wrote = existsSync(exit) ? readFileSync(exit, "utf8").trim() : ""
+  return /^\d{1,3}$/.test(wrote) && Number(wrote) <= 255 ? Number(wrote) : code
 }
 
 /** The whole run for a command line; its exit code. */

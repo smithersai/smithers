@@ -74,9 +74,13 @@ In `<results>`:
 | `box.log`                               | What the box printed.                                                            |
 | `setup.log`, `install.log`, `clone.log` | What installing and cloning printed.                                             |
 
+A file comes back only when the box's artifact holds it once, as a plain file of
+at most 1 GiB. A link, a directory, a larger file or a name the artifact holds
+twice stays in the artifact, and the command says which and why.
+
 The command prints the jobs replayed, the mismatches, the speedup and, for each
 commit, how many steps were reused, with the box's size beside the times. It
-exits with the replay's exit code.
+exits with the replay's exit code, or with the box's when `exit` holds none.
 
 ## The box
 

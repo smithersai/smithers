@@ -95,7 +95,8 @@ const millisOf = (time: string): number | undefined => {
 }
 
 /**
- * What `ps -axo pid=,ppid=,time=` prints. A line it cannot read is left out.
+ * What `ps -axo pid=,ppid=,time=` prints. A line it cannot read is left out:
+ * one whose time is none, or whose process or parent is no number.
  *
  * @throws {never}
  * @category parsing
@@ -104,12 +105,13 @@ const millisOf = (time: string): number | undefined => {
 export const fromPs = (text: string): ReadonlyArray<ProcessEntry> =>
   text.split("\n").flatMap((line) => {
     const [pid, parent, time] = line.trim().split(/\s+/)
-    const cpuMs = time === undefined ? undefined : millisOf(time)
+    const cpuMs = time === undefined || !/^\d+ \d+$/.test(`${pid} ${parent}`) ? undefined : millisOf(time)
     return cpuMs === undefined ? [] : [{ pid: Number(pid), parent: Number(parent), cpuMs }]
   })
 
 /**
- * The tree under `root`.
+ * The tree under `root`. A process the table names twice, as one that got
+ * another parent while the table was read, is in it once.
  *
  * @throws {never}
  * @category accessors
@@ -127,7 +129,7 @@ export const treeOf = (entries: ReadonlyArray<ProcessEntry>, root: number): Proc
   for (let next = waiting.pop(); next !== undefined; next = waiting.pop()) {
     pids.push(next)
     cpuMs += (byPid.get(next) as ProcessEntry).cpuMs
-    const below = (children.get(next) ?? []).filter((pid) => !seen.has(pid))
+    const below = [...new Set(children.get(next) ?? [])].filter((pid) => !seen.has(pid))
     if (below.length === 0) leaves.push(next)
     for (const pid of below) {
       seen.add(pid)

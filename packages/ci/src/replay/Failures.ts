@@ -62,7 +62,8 @@ const noReason = "no reason was given"
 
 /**
  * The first line of a text that says something, without control characters,
- * cut at 200 characters.
+ * cut at 200 characters. The cut leaves no half of a character that takes
+ * two, and no space at the end, so the line read again is the same line.
  *
  * @throws {never}
  * @category accessors
@@ -70,7 +71,7 @@ const noReason = "no reason was given"
  */
 export const firstLine = (text: string): string => {
   const line = text.split("\n").map((entry) => entry.replace(/\p{Cc}/gu, " ").trim()).find((entry) => entry !== "")
-  return (line ?? "").slice(0, lineLimit)
+  return (line ?? "").slice(0, lineLimit).replace(/[\ud800-\udbff]$/, "").trimEnd()
 }
 
 /** A terminal's color code: the escape character or its one-character form, then the code. */
@@ -85,6 +86,35 @@ const colors = new RegExp(`(?:${String.fromCharCode(0x1b)}\\[|${String.fromCharC
  * @since 0.1.0
  */
 export const readable = (text: string): string => scrub(text.replace(colors, ""))
+
+/**
+ * How much more of a text than is kept is read for credentials before its
+ * start is cut off: more than the longest start of a credential that has
+ * not yet its shape, as `github_pat_` and nineteen characters is.
+ */
+const shapeMargin = 200
+
+/**
+ * The first `limit` characters of a text, readable. A credential the cut
+ * goes through is withheld whole: it is found in the text before the cut is
+ * made.
+ */
+const startOf = (text: string, limit: number): string => readable(text.slice(0, limit + shapeMargin)).slice(0, limit)
+
+/**
+ * The end of an output, at most `limit` characters of it, readable. An
+ * output that long was cut at its start, here or where a running step's
+ * output is kept (`Process.run`), and the cut may have gone through a
+ * credential: what is left of it has no shape to be withheld by, and neither
+ * has a value whose name stood before the cut. So the line the cut went
+ * through is left out, and an output of one line with it.
+ */
+const endOf = (text: string, limit: number): string => {
+  if (text.length < limit) return readable(text)
+  const end = text.slice(-limit)
+  const firstBreak = end.indexOf("\n")
+  return firstBreak === -1 ? "" : readable(end.slice(firstBreak + 1))
+}
 
 /**
  * Words that report an error, as `error`, `failed`, `cannot`, `not found`
@@ -324,11 +354,11 @@ export interface StepOutput {
  * @since 0.1.0
  */
 export const reasonOf = (output: StepOutput): string => {
-  const program = output.exitCode === notFound ? missingProgram(readable(output.stderr.slice(-sampleLimit))) : undefined
+  const program = output.exitCode === notFound ? missingProgram(endOf(output.stderr, sampleLimit)) : undefined
   if (program !== undefined) return firstLine(`\`${program}\` is not installed on this machine`)
   // Error output first, then what it printed: the order `smthrs` prints a failed target's output in.
-  const errors = readable(output.stderr.slice(-reasonOutputLimit))
-  const printed = readable(output.stdout.slice(-reasonOutputLimit))
+  const errors = endOf(output.stderr, reasonOutputLimit)
+  const printed = endOf(output.stdout, reasonOutputLimit)
   const text = `${errors}\n${printed}`
   return errorLine(text) || lastLine(text) || noOutput
 }
@@ -446,7 +476,7 @@ export const stoppedResults = (
  * @category accessors
  * @since 0.1.0
  */
-export const commandLine = (command: string): string => firstLine(readable(command.slice(0, sampleLimit)))
+export const commandLine = (command: string): string => firstLine(startOf(command, sampleLimit))
 
 /** The part of the error `smthrs` prints for a target whose command failed that a report uses. */
 const PrintedError = Schema.fromJsonString(Schema.Struct({
@@ -572,7 +602,7 @@ export const printedFailure = (printed: string): Pick<TargetResult, "command" | 
     return failedWith({ exitCode, stderr, stdout }, commandOfArgv(argv))
   }
   const heading = failedCommand.exec(printed)
-  if (heading === null) return { error: firstLine(readable(printed.slice(0, sampleLimit))) }
+  if (heading === null) return { error: firstLine(startOf(printed, sampleLimit)) }
   const rest = printed.slice(heading[0].length)
   const end = endOfCommand(rest)
   // The output follows the command, error output first, as one text.
