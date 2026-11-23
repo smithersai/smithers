@@ -52,6 +52,48 @@ export const changedPaths = async (root: string, options: {
   if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 86_400_000) {
     throw new AffectedGitError("invalid_timeout", [], "git timeout must be an integer from 1 to 86400000ms")
   }
+  // Support pure Jujutsu workspaces (where `.jj` exists without `.git`).
+  if (!Fs.existsSync(Path.join(root, ".git")) && Fs.existsSync(Path.join(root, ".jj"))) {
+    const jjBase = options.base === "HEAD" ? "@-" : options.base
+    const jjHead = options.head ?? "@"
+    const args = ["--no-pager", "--color=never", "diff", "--name-only", `--from=${jjBase}`, `--to=${jjHead}`]
+    let stdout = ""
+    let stderr = ""
+    let code: number
+    try {
+      code = await run({
+        command: "jj",
+        args,
+        cwd: root,
+        signal: options.signal,
+        environment: options.environment,
+        timeoutMs,
+        maxOutputBytes: 16 * 1024 * 1024,
+        fatalUtf8: true,
+        stdout: (text) => {
+          stdout += text
+        },
+        stderr: (text) => {
+          stderr += text
+        }
+      })
+    } catch (cause) {
+      throw new AffectedGitError(
+        cause instanceof ContainedProcess.ProcessError ? cause.code : "process_failed",
+        args,
+        `jj diff failed: ${cause instanceof Error ? cause.message : String(cause)}`,
+        cause
+      )
+    }
+    if (code !== 0) {
+      throw new AffectedGitError("nonzero_exit", args, `jj diff exited ${code}: ${stderr.trim()}`, {
+        exitCode: code,
+        stderr
+      })
+    }
+    const jjPaths = stdout.split(/\r?\n/).map((line) => line.trim()).filter(Boolean)
+    return [...new Set(jjPaths)].sort()
+  }
   const git = async (args: ReadonlyArray<string>): Promise<string> => {
     let stdout = ""
     let stderr = ""

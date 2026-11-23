@@ -201,6 +201,13 @@ export const TestAttrs = Schema.Struct({
   gates: Schema.optional(Attr.Gates),
   shards: Schema.optional(Schema.Int.check(Schema.isGreaterThanOrEqualTo(1))),
   /**
+   * Optional directories and files captured and materialized on cache hits
+   * (e.g. benchmark JSON reports emitted by an exclusive `Shell.Test`).
+   * Cannot be combined with `shards > 1`.
+   */
+  outDirs: Schema.optional(Schema.Array(Schema.NonEmptyString)),
+  outFiles: Schema.optional(Schema.Array(Schema.NonEmptyString)),
+  /**
    * Records every path a run looks at: the files it opens, the directories
    * it lists and the paths it finds missing. A later run is answered from
    * the cache when each of them is unchanged, whatever else in `data`
@@ -317,6 +324,12 @@ export const TestAttrs = Schema.Struct({
     )
     if (twice.length > 0) {
       return `observe.env names ${twice.join(", ")}, which env or inheritEnv also names; declare each variable once`
+    }
+    return undefined
+  }),
+  Schema.makeFilter((attrs) => {
+    if ((attrs.shards ?? 1) > 1 && ((attrs.outDirs ?? []).length > 0 || (attrs.outFiles ?? []).length > 0)) {
+      return "shards > 1 cannot declare outDirs or outFiles"
     }
     return undefined
   }),
