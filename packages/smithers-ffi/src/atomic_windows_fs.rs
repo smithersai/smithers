@@ -912,7 +912,7 @@ mod tests {
                 .private_child(OsStr::new("private"))
                 .unwrap();
             super::super::atomic_windows_handle::verify_private(
-                &parent.read_file(OsStr::new("snapshot")).unwrap(),
+                &parent.read_private_file(OsStr::new("snapshot")).unwrap(),
             )
             .unwrap();
         }

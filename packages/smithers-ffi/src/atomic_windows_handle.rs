@@ -730,6 +730,19 @@ impl Directory {
         Ok(file)
     }
 
+    #[cfg(test)]
+    pub(super) fn read_private_file(&self, name: &OsStr) -> io::Result<File> {
+        let file = open(
+            Some(&self.0),
+            name_units(name)?,
+            FILE_READ_DATA | 0x0002_0000, // READ_CONTROL for verify_private
+            false,
+            true,
+        )?;
+        regular_file(&file)?;
+        Ok(file)
+    }
+
     /// Create without an intermediate broadly readable state. Existing entries,
     /// including dangling links, are never opened or overwritten by this call.
     pub(super) fn create_private_file(&self, name: &OsStr) -> io::Result<File> {

@@ -155,7 +155,9 @@ fn interrupted_publications_reopen_as_complete_old_or_new_snapshots() {
                 .private_child(std::ffi::OsStr::new("nested"))
                 .unwrap();
             atomic_windows_handle::verify_private(
-                &parent.read_file(std::ffi::OsStr::new("snapshot")).unwrap(),
+                &parent
+                    .read_private_file(std::ffi::OsStr::new("snapshot"))
+                    .unwrap(),
             )
             .unwrap();
         }

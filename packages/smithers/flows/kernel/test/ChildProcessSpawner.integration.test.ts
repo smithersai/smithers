@@ -133,7 +133,10 @@ describe("ChildProcessSpawner real Node lifecycle", () => {
       for (
         const command of [
           ChildProcess.make(process.execPath, ["-e", code]),
-          ChildProcess.make(`echo 42 #${"x".repeat(5000)}`, { shell: true })
+          ChildProcess.make(
+            process.platform === "win32" ? `echo 42 & rem ${"x".repeat(5000)}` : `echo 42 #${"x".repeat(5000)}`,
+            { shell: true }
+          )
         ]
       ) {
         const output = yield* withGuardedSpawner(

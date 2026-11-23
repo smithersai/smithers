@@ -118,7 +118,7 @@ describe("documentation contracts", () => {
     // the program's own context, where it can reply to its own requests. The
     // docs put it beneath HostServices.layer with `Layer.provide` instead.
     const exposed = /Effect\.provide(Service)?\(\s*(Layer\.orDie\(\s*)?(Layer\.succeed\(\s*)?GrantStore\./
-    const files = globSync("**/*.md", { cwd: docsDir })
+    const files = globSync("**/*.md", { cwd: docsDir }).map((file) => file.replaceAll("\\", "/"))
     // Controls: the attended guides are scanned, and the probe catches the old composition.
     expect(files).toEqual(expect.arrayContaining(["quickstart.md", "guides/answer-permission-requests.md"]))
     expect(exposed.test("Effect.provideService(GrantStore.GrantStore, store)")).toBe(true)
