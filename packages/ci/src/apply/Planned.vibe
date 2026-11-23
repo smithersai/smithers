@@ -39,7 +39,9 @@ const kept = 64 * 1024
 
 /** A Node runtime warning line that accompanies a command's own output. */
 const nodeWarning = /^\(node:\d+\)\s+\w*Warning:|^\(Use `node --trace-warnings /
-const ansiControl = /\u001b\[[0-?]*[ -/]*[@-~]/g
+// A terminal control sequence, or else one escape character. Removing a sequence can join an escape character before
+// it to the text after it as a new sequence (`ESC ESC [ m [ 3 1 m`), so no escape character is left.
+const ansiControl = /\u001b\[[0-?]*[ -/]*[@-~]|\u001b/g
 
 // The last complete refusal, even if an earlier log line has an unmatched brace. A frame
 // parses just its own fields: each completed child is replaced with {} (or an invalid token).

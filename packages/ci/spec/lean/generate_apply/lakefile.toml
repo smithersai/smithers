@@ -1,0 +1,10 @@
+name = "generate_apply_spec"
+version = "0.1.0"
+defaultTargets = ["GenerateApplySpec", "generate-apply-spec"]
+
+[[lean_lib]]
+name = "GenerateApplySpec"
+
+[[lean_exe]]
+name = "generate-apply-spec"
+root = "Main"

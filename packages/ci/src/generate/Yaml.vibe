@@ -266,9 +266,14 @@ const valueLines = (head: string, value: Value, indent: number): ReadonlyArray<s
 // the repository, must also remain a single string key. YAML limits implicit keys to 1024 characters.
 const ordinaryKey = /^(?!(?:y|yes|n|no|on|off|true|false|null)$)[a-z_][a-z0-9_-]*$/i
 
+// The one name that reads back as itself as a value and not as a key: YAML 1.1 merges the mapping after `<<` into
+// this one, and stops at a value that is no mapping.
+const mergeKey = "<<"
+
 const mappingHead = (key: string, indent: number): string => {
   const pad = " ".repeat(indent)
-  const name = (indent === 0 && key === "on") || ordinaryKey.test(key) || isPlain(key) ? key : doubleQuoted(key)
+  const plain = (indent === 0 && key === "on") || ordinaryKey.test(key) || (key !== mergeKey && isPlain(key))
+  const name = plain ? key : doubleQuoted(key)
   return name.length <= 1024 ? `${pad}${name}:` : `${pad}? ${name}\n${pad}:`
 }
 
