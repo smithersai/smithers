@@ -1,0 +1,10 @@
+name = "observed_reads"
+version = "0.1.0"
+defaultTargets = ["ObservedReadsSpec", "observed-reads-spec"]
+
+[[lean_lib]]
+name = "ObservedReadsSpec"
+
+[[lean_exe]]
+name = "observed-reads-spec"
+root = "Main"

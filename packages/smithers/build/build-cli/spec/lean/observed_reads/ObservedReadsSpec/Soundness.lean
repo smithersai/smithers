@@ -1,0 +1,363 @@
+import ObservedReadsSpec.Record
+
+/-!
+# When a record still holds: `changed`, and why its answer is sound
+
+`changed` says what a record's run read that is no longer the same, or nothing when the record still holds and
+the run's results may be used again. This module specifies it over the file system of `Vfs.lean` and proves
+that a record does not hold once anything it names has changed:
+
+* a path it read (`changed_of_read_mutated`),
+* a directory it listed (`changed_of_listing_mutated`),
+* a variable it could have used (`changed_of_variable_mutated`),
+* a file it changed, under the `u2` rule (`changed_of_modified_left`),
+* a directory it looked at, under the `u3` rule (`changed_of_links_mutated`).
+
+`Observe.lean` specifies the other direction: the record `observe` makes holds on the file system it was made on.
+-/
+namespace ObservedReadsSpec
+
+/-- `heldAs`: a variable's value as a record holds it: a digest, or `-` when the variable is not set. -/
+def heldAs : Option String → String
+  | none => absent
+  | some value => sha256Hex value
+
+/-- The state of a directory. -/
+def directory : String := State.dir.render
+
+/-- What stands for a file's state before a run that changed it, where that state was not measured. -/
+def unmeasured : String := String.ofList ['?']
+
+/-- What a record is held against. -/
+structure World where
+  /-- The file system now. -/
+  fs : Node
+  /-- The workspace root. -/
+  root : String
+  /-- The host's variables now. -/
+  values : String → Option String
+  /-- For a step the run read files from: the ids of the records it is answered from, none once it ran. -/
+  answered : String → Option (List String) := fun _ => none
+  /-- The same for a step whose program answered the run. -/
+  served : String → Option (List String) := fun _ => none
+  /-- Which of some names the commit holds; none where git cannot say. -/
+  holds : List String → Option (List String) := fun _ => none
+  /-- Whether a path is one of the commit's own files, which are held first. -/
+  own : String → Bool := fun _ => false
+
+/-- A path of a record on the host: from the root inside the workspace, itself outside it. -/
+def absolute (root path : String) : String :=
+  if path = String.ofList ['.'] then root
+  else if path.toList.head? = some '/' then path
+  else root ++ String.ofList ['/'] ++ path
+
+/-- The first verdict that says something. -/
+def first {α : Type} : List (Option α) → Option α
+  | [] => none
+  | some verdict :: _ => some verdict
+  | none :: rest => first rest
+
+theorem first_eq_none {α : Type} {verdicts : List (Option α)} :
+    first verdicts = none ↔ ∀ verdict ∈ verdicts, verdict = none := by
+  induction verdicts with
+  | nil => simp [first]
+  | cons head rest step =>
+    cases head with
+    | none => simp [first, step]
+    | some verdict => simp [first]
+
+/-! ## Reads -/
+
+/--
+Whether a path that holds `now` is as its row says.
+
+Before `u2`, a row `[path, left, before]` of a file the run changed held with either state. Under `u2` it
+holds only with `before`: a run that finds the file as the last run left it reads other bytes than that run
+read. A third state of `-` marks a path the run found missing and made, which holds missing or as it was left.
+-/
+def readHolds (u2 : Bool) (now state : String) (other : Option String) : Bool :=
+  if u2 then
+    match other with
+    | none => now = state
+    | some before => if before = absent then now = state ∨ now = absent else now = before
+  else now = state ∨ other = some now
+
+/-- How `changed` says a read no longer holds. -/
+def readMessage (path now state : String) : String :=
+  if now = absent then path ++ " is gone"
+  else if state = absent then path ++ " now exists"
+  else path ++ " changed"
+
+def readVerdict (rules : Rules) (world : World) (row : ReadRow) : Option String :=
+  let now := measure world.fs (absolute world.root row.path)
+  if readHolds rules.u2 now row.state row.other then none else some (readMessage row.path now row.state)
+
+/-- The group a read is held in: the commit's own files, the rest of the workspace, what is outside it. -/
+def tier (world : World) (row : ReadRow) : Nat :=
+  if world.own row.path then 0 else if row.path.startsWith "/" then 2 else 1
+
+/-- `cheapestFirst`: the reads in the order they are held against the host, each group by size. -/
+def cheapestFirst (world : World) (reads : List ReadRow) : List ReadRow :=
+  let sized (group : Nat) : List ReadRow :=
+    (reads.filter (fun row => tier world row = group)).mergeSort
+      (fun left right => sizeOf world.fs (absolute world.root left.path) ≤
+        sizeOf world.fs (absolute world.root right.path))
+  sized 0 ++ sized 1 ++ sized 2
+
+theorem mem_cheapestFirst {world : World} {reads : List ReadRow} {row : ReadRow} :
+    row ∈ cheapestFirst world reads ↔ row ∈ reads := by
+  simp only [cheapestFirst, List.mem_append, List.mem_mergeSort, List.mem_filter, decide_eq_true_eq]
+  constructor
+  · rintro ((⟨held, _⟩ | ⟨held, _⟩) | ⟨held, _⟩) <;> exact held
+  · intro held
+    have : tier world row = 0 ∨ tier world row = 1 ∨ tier world row = 2 := by
+      unfold tier
+      split
+      · exact .inl rfl
+      · split
+        · exact .inr (.inr rfl)
+        · exact .inr (.inl rfl)
+    rcases this with zero | one | two
+    · exact .inl (.inl ⟨held, zero⟩)
+    · exact .inl (.inr ⟨held, one⟩)
+    · exact .inr ⟨held, two⟩
+
+def readsVerdict (rules : Rules) (world : World) (record : Record) : Option String :=
+  (cheapestFirst world record.reads).findSome? (readVerdict rules world)
+
+/-! ## Programs, variables, made names and steps before the run -/
+
+/-- Whether a step is answered from a record: unknown once the step ran. -/
+def answeredFrom (answer : Option (List String)) (id : String) : Option Bool := answer.map (fun ids => decide (id ∈ ids))
+
+def servedVerdict (world : World) (record : Record) : Option String :=
+  (record.served.getD []).findSome? fun (label, id) =>
+    if answeredFrom (world.served label) id = some true then none
+    else some ("the program " ++ label ++ " started, which it talked to, is not the one it talked to")
+
+def variableVerdict (world : World) (row : String × String) : Option String :=
+  if heldAs (world.values row.1) = row.2 then none else some ("the variable " ++ row.1 ++ " has another value")
+
+def variablesVerdict (world : World) (record : Record) : Option String :=
+  (record.variables.getD []).findSome? (variableVerdict world)
+
+/--
+A name the run made where its commit held nothing: the record does not hold once a commit puts something
+there. Where git cannot say, anything there may be the commit's.
+-/
+def madeVerdict (world : World) (record : Record) : Option String :=
+  match record.made with
+  | none => none
+  | some made =>
+    let held := world.holds made
+    let there := held.getD (made.filter fun name => present world.fs (absolute world.root name))
+    (made.find? fun name => decide (name ∈ there)).map fun name =>
+      name ++ ", which the run made, " ++ (if held.isNone then "is there now" else "is in the commit now")
+
+def fromVerdict (world : World) (record : Record) : Option String :=
+  (record.from.getD []).findSome? fun (label, id) =>
+    if answeredFrom (world.answered label) id = some false then
+      some (label ++ " is answered from another of its runs")
+    else none
+
+/-- Whether the step at a place in `from` is answered from the record this run read its files under. -/
+def again (world : World) (record : Record) (place : Nat) : Bool :=
+  match (record.from.getD [])[place]? with
+  | some (label, id) => answeredFrom (world.answered label) id = some true
+  | none => false
+
+def labelAt (record : Record) (place : Nat) : String := (((record.from.getD [])[place]?).map (·.1)).getD ""
+
+def givenVerdict (world : World) (record : Record) : Option String :=
+  (record.given.getD []).findSome? fun (path, state, place) =>
+    let now := measure world.fs (absolute world.root path)
+    let left := path ++ ", which " ++ labelAt record place ++ " left,"
+    if now = state then none
+    else if now ≠ absent then some (if state = absent then path ++ " now exists" else left ++ " changed")
+    else if again world record place then none
+    else some (left ++ " is gone")
+
+/--
+The paths a step before the run wrote that are missing now, where that step is answered from the same record:
+it writes them again as they were, so what the run listed there is not held yet.
+-/
+def pending (world : World) (record : Record) : List String :=
+  (record.given.getD []).filterMap fun (path, state, place) =>
+    let now := measure world.fs (absolute world.root path)
+    if now ≠ state ∧ now = absent ∧ again world record place then some path else none
+
+/-! ## Directories -/
+
+/-- A name a step before the run wrote in a directory: it is there, or that step writes it again. -/
+def addedVerdict (world : World) (record : Record) (path directory : String) (added : List (String × Nat)) :
+    Option String :=
+  added.findSome? fun (name, place) =>
+    if !present world.fs (directory ++ "/" ++ name) && !again world record place then
+      some ((if path = "." then "" else path ++ "/") ++ name ++ " is gone")
+    else none
+
+def listVerdict (world : World) (record : Record) (row : ListRow) : Option String :=
+  if row.path ∈ pending world record then none
+  else
+    let added := row.added.getD []
+    if listing world.fs (absolute world.root row.path) (row.own ++ added.map (·.1)) = some row.digest then
+      addedVerdict world record row.path (absolute world.root row.path) added
+    else some (row.path ++ " gained or lost an entry")
+
+def listsVerdict (world : World) (record : Record) : Option String :=
+  record.lists.findSome? (listVerdict world record)
+
+def linkVerdict (world : World) (record : Record) (row : LinkRow) : Option String :=
+  if row.path ∈ pending world record then none
+  else
+    let added := row.added.getD []
+    if dirLinks world.fs (absolute world.root row.path) (row.own ++ added.map (·.1)) = some row.count then
+      addedVerdict world record row.path (absolute world.root row.path) added
+    else some (row.path ++ " gained or lost a subdirectory")
+
+/-- The `u3` rule: a directory the run looked at holds while its count of directories is the same. -/
+def linksVerdict (rules : Rules) (world : World) (record : Record) : Option String :=
+  if rules.u3 then (record.links.getD []).findSome? (linkVerdict world record) else none
+
+/-! ## `changed` -/
+
+/--
+`changed`: what a record's run read that is no longer the same, or none when every path it read still holds
+what the run left there and every variable it could have used holds the value it had.
+-/
+def changed (rules : Rules) (world : World) (record : Record) : Option String :=
+  first [
+    servedVerdict world record,
+    variablesVerdict world record,
+    readsVerdict rules world record,
+    madeVerdict world record,
+    fromVerdict world record,
+    givenVerdict world record,
+    linksVerdict rules world record,
+    listsVerdict world record
+  ]
+
+/-! ## Soundness: a record that holds names nothing that changed -/
+
+/-- A record that holds has every read as its row says. -/
+theorem reads_hold_of_unchanged {rules : Rules} {world : World} {record : Record}
+    (holds : changed rules world record = none) (row : ReadRow) (held : row ∈ record.reads) :
+    readHolds rules.u2 (measure world.fs (absolute world.root row.path)) row.state row.other = true := by
+  have quiet := first_eq_none.mp holds (readsVerdict rules world record) (by simp)
+  have each := List.findSome?_eq_none_iff.mp quiet row (mem_cheapestFirst.mpr held)
+  simp only [readVerdict] at each
+  split at each
+  · assumption
+  · cases each
+
+/--
+**Theorem 2 (no stale hit on a read).** A record that holds `[path, state]` does not hold on a file system
+where the path measures otherwise.
+-/
+theorem changed_of_read_mutated (rules : Rules) (world : World) (record : Record) (row : ReadRow)
+    (held : row ∈ record.reads) (plain : row.other = none)
+    (mutated : measure world.fs (absolute world.root row.path) ≠ row.state) :
+    changed rules world record ≠ none := by
+  intro holds
+  have each := reads_hold_of_unchanged holds row held
+  cases u2 : rules.u2 <;> simp [readHolds, u2, plain, mutated] at each
+
+/--
+**Theorem 3 (no stale hit on a listed directory).** A record that holds a listing `[directory, digest, own]`
+does not hold once the directory's names apart from `own` have another digest, or the directory cannot be
+listed. The one exemption `changed` makes is a directory a step before the run wrote that is missing now and
+that the step writes again (`pending`).
+-/
+theorem changed_of_listing_mutated (rules : Rules) (world : World) (record : Record) (row : ListRow)
+    (held : row ∈ record.lists) (due : row.path ∉ pending world record)
+    (mutated : listing world.fs (absolute world.root row.path) (row.own ++ (row.added.getD []).map (·.1)) ≠
+      some row.digest) :
+    changed rules world record ≠ none := by
+  intro holds
+  have quiet := first_eq_none.mp holds (listsVerdict world record) (by simp)
+  have each := List.findSome?_eq_none_iff.mp quiet row held
+  simp [listVerdict, due, mutated] at each
+
+/-- Theorem 3 for a record of a run that read no file of a step before it: no directory is exempt. -/
+theorem changed_of_listing_mutated_alone (rules : Rules) (world : World) (record : Record) (row : ListRow)
+    (held : row ∈ record.lists) (alone : record.given = none) (plain : row.added = none)
+    (mutated : listing world.fs (absolute world.root row.path) row.own ≠ some row.digest) :
+    changed rules world record ≠ none := by
+  apply changed_of_listing_mutated rules world record row held
+  · simp [pending, alone]
+  · simpa [plain] using mutated
+
+/--
+**Theorem 4 (no stale hit on a variable).** A record that holds `[name, held]` does not hold where the
+variable's value is held as anything else.
+-/
+theorem changed_of_variable_mutated (rules : Rules) (world : World) (record : Record) (name value : String)
+    (held : (name, value) ∈ record.variables.getD []) (mutated : heldAs (world.values name) ≠ value) :
+    changed rules world record ≠ none := by
+  intro holds
+  have quiet := first_eq_none.mp holds (variablesVerdict world record) (by simp)
+  have each := List.findSome?_eq_none_iff.mp quiet (name, value) held
+  simp [variableVerdict, mutated] at each
+
+/--
+**Theorem 5 (`u2`).** Under `u2`, a record that holds `[path, left, before]` for a file its run changed does
+not hold on a file system where the file is as the run left it, when that is not as the run found it.
+-/
+theorem changed_of_modified_left (u3 : Bool) (world : World) (record : Record) (row : ReadRow) (before : String)
+    (held : row ∈ record.reads) (modified : row.other = some before) (found : before ≠ absent)
+    (rewritten : before ≠ row.state) (left : measure world.fs (absolute world.root row.path) = row.state) :
+    changed ⟨true, u3⟩ world record ≠ none := by
+  intro holds
+  have each := reads_hold_of_unchanged holds row held
+  simp [readHolds, modified, found, left] at each
+  exact rewritten each.symm
+
+/--
+Why `u2` is needed: before it, the same record held on the file system the run left, whatever the run had
+found. A run answered from it would be given the results of a run that read other bytes.
+-/
+theorem legacy_holds_as_left (u3 : Bool) (world : World) (row : ReadRow)
+    (left : measure world.fs (absolute world.root row.path) = row.state) :
+    changed ⟨false, u3⟩ world { id := "", reads := [row], lists := [] } = none := by
+  apply first_eq_none.mpr
+  intro verdict among
+  simp only [List.mem_cons, List.not_mem_nil, or_false] at among
+  rcases among with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl
+  · simp [servedVerdict]
+  · simp [variablesVerdict]
+  · apply List.findSome?_eq_none_iff.mpr
+    intro other inside
+    have same : other = row := by simpa using mem_cheapestFirst.mp inside
+    subst same
+    simp [readVerdict, readHolds, left]
+  · simp [madeVerdict]
+  · simp [fromVerdict]
+  · simp [givenVerdict]
+  · cases u3 <;> simp [linksVerdict]
+  · simp [listsVerdict]
+
+/--
+**Theorem 6 (`u3`).** Under `u3`, a record that holds `[directory, count, own]` does not hold once the
+directory's link count less the directories among `own` is another: a directory made in it or taken out of it
+that is not the run's own. The exemption is the one of Theorem 3.
+-/
+theorem changed_of_links_mutated (u2 : Bool) (world : World) (record : Record) (links : List LinkRow) (row : LinkRow)
+    (stored : record.links = some links) (held : row ∈ links) (due : row.path ∉ pending world record)
+    (mutated : dirLinks world.fs (absolute world.root row.path) (row.own ++ (row.added.getD []).map (·.1)) ≠
+      some row.count) :
+    changed ⟨u2, true⟩ world record ≠ none := by
+  intro holds
+  have quiet := first_eq_none.mp holds (linksVerdict ⟨u2, true⟩ world record) (by simp)
+  have each := List.findSome?_eq_none_iff.mp quiet row (by simpa [stored] using held)
+  simp [linkVerdict, due, mutated] at each
+
+/-- A record that holds is answered by every program it talked to. -/
+theorem changed_of_program_restarted (rules : Rules) (world : World) (record : Record) (label id : String)
+    (held : (label, id) ∈ record.served.getD []) (restarted : answeredFrom (world.served label) id ≠ some true) :
+    changed rules world record ≠ none := by
+  intro holds
+  have quiet := first_eq_none.mp holds (servedVerdict world record) (by simp)
+  have each := List.findSome?_eq_none_iff.mp quiet (label, id) held
+  simp [restarted] at each
+
+end ObservedReadsSpec

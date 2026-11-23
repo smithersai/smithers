@@ -1199,7 +1199,7 @@
         "Positionals.d.ts": "0112c6d2e5a65aebf2927ce4c4da81c778120473e5dbc926345a6266317c2298",
         "Query.d.ts": "765968dcc223078d6b279c99c643fd56746f9082da7c61d9ebc7329d75a6c77c",
         "RepoResolution.d.ts": "c6129df5f251ade8374c8c9251c2105655b920b2501306e3f90e721c959d98b2",
-        "Reporter.d.ts": "21c0bb012e885142649d880f41ecf0b4c33658a16bc7b817046a1d99560c1178",
+        "Reporter.d.ts": "bafcd2e3a2bd4b7e3439beff90a74828d5631cb4806fa559474b77d53b045d68",
         "Resolver.d.ts": "8710b644774603bc4c3786c5ff8963f8f346c955f419d21d0f57b0bd5e62950f",
         "RspackRunner.d.ts": "65a492b1592aeebff7780c9afa9d98d9bc761460c0aa142f3308a57ee5b07bb9",
         "ServiceSupervisor.d.ts": "f5a2d6dfb8f2a95666c83eb86dbeb6eda1b008f46b8437c430e720f0f887df7b",
@@ -1238,7 +1238,7 @@
         "internal/InstalledTree.d.ts": "1e7063399594bbe1a4026e8735b5d587beb1809a36ccf49d77d33dd80735ea4b",
         "internal/Machine.d.ts": "bc933c13c4661f6cce79c187ab3d18f1e5f5f3a7451558942adf0c0cdbe5a46b",
         "internal/MissingTool.d.ts": "da6565584fabe84a221eb9b1ba16d4c5dfa78b22415aab6e8f48978442cc5387",
-        "internal/ObservedReads.d.ts": "6e2d9fd81e56c205a00d350e9a6385a2b68896d491bfd6bcde26d4c07d00233d",
+        "internal/ObservedReads.d.ts": "71e96bf09303184ba6c6364a43056b2a9111bec284a2c830d5722b5707f04404",
         "internal/OutputCas.d.ts": "6617f92cbfd883094ee392ba9a8353cbfdc11dda031adaa9dabd0eb1d8c4e909",
         "internal/PackageOptions.d.ts": "748658819397fd4fa2912cd24f421d074a3c47366b68c0cfdca07b2c27aa2803",
         "internal/PackagePlanner.d.ts": "a8f7f4b5e1575b7eda156195622bcb2f5e6a5d2d53a4d74a0b055eff8f20f7e6",
@@ -2325,6 +2325,7 @@
         "cli/Generate.d.ts": "c0e8082f18fe6d89222d1dc3312cf6ad5aec86b009290a67008f1629c614f6a8",
         "cli/HistoryCommands.d.ts": "a7c456fbd641fe2a7b148d154cf4b3a9f7c6f35153f0aa3d1eb367fe9e0a139a",
         "cli/LegacyBin.d.ts": "2fb76067d62dc48fa0cdebdd65ea9540a7465cf9c40f3057050250a0d67df89b",
+        "cli/McpRemote.d.ts": "5e95d2c325666512eb8b81371dd050b55ff0e0bf8dfdb81b80f1360e13b5d6bf",
         "cli/McpStdio.d.ts": "aa0a098723d5ec7ddbc3431a0ea91a03d2a639f6f2551ec262c42fad51545544",
         "cli/OperatorTokenFile.d.ts": "6aee6628521d043a3cec0dc6d6ffa5aec1e7b6e5a50d50fd4fcf1ef738acb686",
         "cli/Presentation.d.ts": "8cc4fce31e2a7e808c26db8fa1f7dbbfddade378e0b81a73fb48e2a4ad1a3904",
@@ -11940,7 +11941,7 @@
         "Secret.d.ts": "12cbedd88ad134680fea42f3e8945051831c44acc507f62194c0e1bdb9e0aa0e",
         "SecretProxy.d.ts": "68e094d62252f1b3466042ff78a291622c5068c107ce24a4f6216b07a05a8014",
         "SecurityReview.d.ts": "33ef9ef128ef4b1e99524c3cf3cce12dbc6f2770da0e392b5b24a1a394554af2",
-        "Shell.d.ts": "c583b8410f43db8d39b4101821957a98cb8d838e6346dd28874319c4948a11c3",
+        "Shell.d.ts": "f06ad6748d038fb04f117847105b84a8cfc412bd13548b01d4bdd5bd5284f356",
         "Skills.d.ts": "ad8f76ce74e555e7cf23a99771786f97191e064bf90270d020d0318282d89731",
         "Smithers.d.ts": "2d0d3b63976381f0ec553e63d7edd4e8e5b23a569731b34b325b8f7a2048037c",
         "SortPackageJson.d.ts": "c947c969e96ede1214b23d20a2ed79ed2258b86d33bfbe8da3ad6762ec28231b",
@@ -12338,6 +12339,16 @@
             "types": "./dist/cjs/TurnLog.d.ts",
             "default": "./dist/cjs/TurnLog.js"
           }
+        },
+        "./FuzzV8Coverage": {
+          "import": {
+            "types": "./dist/esm/FuzzV8Coverage.d.ts",
+            "default": "./dist/esm/FuzzV8Coverage.js"
+          },
+          "require": {
+            "types": "./dist/cjs/FuzzV8Coverage.d.ts",
+            "default": "./dist/cjs/FuzzV8Coverage.js"
+          }
         }
       },
       "declarations": {
@@ -12352,6 +12363,7 @@
         "Fixture.d.ts": "8e43f034df5a6e79da5d330edc686363a853d4b71dce1c6d697c0c3e89148267",
         "FixtureStore.d.ts": "7015ea4074a6cd6f953851494523ca789d184373e5e507e3d9d887c48e2403a4",
         "FlowEngineLike.d.ts": "71af0dfb626cf7da233a0f3f4267b3f2a4d3f6644988d9937f0c8b26a0ce1a42",
+        "FuzzV8Coverage.d.ts": "31e864479f085b93fa0789442b1456312c2c75b85789a469b49ac08ba37b017e",
         "HostSuite.d.ts": "cda8504e5d41fcf48b6fc825967e3f7c40427ab43e8e126a5eaaf893cddff0c4",
         "HttpRecording.d.ts": "09c17e8d1ee72ddc2568d7e2833449aebe412615506ccf8ef431450c006639e1",
         "JournalAssertions.d.ts": "d576bb0aee1a715ca1d7dc5f79595f0afb80ef472097b52ab43619741301ba0d",
@@ -12376,9 +12388,9 @@
         "TurnGate.d.ts": "0a776b400cd01de3c963f215057ebb56d2c7dd3f694f20c3dffa69582d3ed530",
         "TurnLog.d.ts": "0eb45820a2964ee7f60508bf9d3f0475b459b68af13e946c99fa1635aff85575",
         "Vitest.d.ts": "c92a0e1a832aca5523569c2ca27efda30b7945573d84169226ac8ef7a14a2ec9",
-        "index.d.ts": "8255548aa4385982320095e250b6f9812303989e19119f5ae4fa96d91dcc150e",
+        "index.d.ts": "cf46fb7889dcceb1a54343cdb95ecaaeec27a51678ded4b7a956064e6a558aa0",
         "internal/Execution.d.ts": "10b97add564555190438970f2e1229f3b672156a5007a942c8690c04e7ca01a0",
-        "internal/FuzzRegistration.d.ts": "299abb6d11902d180674580d709c9d418b737deac1c4ce4f45ef480542905f4d",
+        "internal/FuzzRegistration.d.ts": "d0457f7c192b88adc2feeecbfe55d40f35a720499107d98b862d406eb8454c8c",
         "internal/MemoryEngineOwner.d.ts": "9513017610204e72fc0bdf806ea7efa82a59430eb8868a2339eafd1f33d3e328",
         "internal/Pin.d.ts": "b68c45d9d7fa41a3a2c50abe82cbb1fe8c0d5ecbdab28c555b11817d5f6bd688",
         "internal/ScoreSuite.d.ts": "489615733c79a39a57542d89ebbf2dab212027de5d322f4a174311ce4d895408",
