@@ -241,6 +241,57 @@ describe("Evaluator.layerVercelGateway", () => {
 
     expect(error).toMatchObject({ code: "unconfigured", message: Permission.formatError(denied) })
     expect(Evaluator.faults[error.code]).toBe("policy")
+    // The kernel's failure itself, so an attended host can act on it.
+    expect(error.permission).toBeInstanceOf(Permission.PermissionDenied)
+    expect(error.permission).toMatchObject({ reason: "denied by policy" })
+  })
+
+  it("carries a pending model:call grant's PermissionRequired, so an attended host can prompt for it", async () => {
+    const required = Permission.PermissionRequired.new({
+      requestId: "permission-gateway-judge-1",
+      capability: Capability.make("model:call", "google/gemini-3-flash"),
+      tier: "sealed",
+      meta: {}
+    })
+    const layer = Evaluator.layerVercelGateway({ apiKey: Redacted.make("k") }).pipe(
+      Layer.provide(
+        Layer.succeed(KernelHttpClient.HttpClient)(
+          HttpClient.make((request) => Effect.fail(KernelHttpClient.toHttpClientError({ request, error: required })))
+        )
+      )
+    )
+
+    const error = failure(await evaluate(layer))
+
+    expect(error.code).toBe("unconfigured")
+    expect(error.permission).toBeInstanceOf(Permission.PermissionRequired)
+    expect(error.permission).toMatchObject({ requestId: "permission-gateway-judge-1" })
+    // The error round-trips through its schema, as it does through the journal.
+    const decoded = Schema.decodeUnknownSync(Evaluator.EvaluatorError)(
+      Schema.encodeSync(Evaluator.EvaluatorError)(error)
+    )
+    expect(decoded.permission).toBeInstanceOf(Permission.PermissionRequired)
+  })
+
+  it("leaves permission absent for an ordinary outage", async () => {
+    const layer = Evaluator.layerVercelGateway({ apiKey: Redacted.make("k") }).pipe(
+      Layer.provide(
+        Layer.succeed(KernelHttpClient.HttpClient)(
+          HttpClient.make((request) =>
+            Effect.fail(
+              new HttpClientError.HttpClientError({
+                reason: new HttpClientError.TransportError({ request, cause: new Error("connection reset") })
+              })
+            )
+          )
+        )
+      )
+    )
+
+    const error = failure(await evaluate(layer))
+
+    expect(error.code).toBe("unreachable")
+    expect(error.permission).toBeUndefined()
   })
 
   it("speaks the recorded wire protocol and answers the recorded body", async () => {

@@ -1,7 +1,7 @@
 //! Flow filesystem requests evaluated through pinned Windows directory handles.
 use super::atomic_glob::{relative_pattern, GlobBudget, GlobRule};
 use super::atomic_protocol::{self, syscall, HARD_LIMIT};
-use super::atomic_windows_handle::{info, BoundaryError, Directory, Info};
+use super::atomic_windows_handle::{info, staged, BoundaryError, Directory, Info};
 use base64::Engine as _;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
@@ -116,9 +116,13 @@ fn directory(root: &Directory, parts: &[&OsStr], create: bool) -> io::Result<Dir
 fn private_directory(root: &Directory, parts: &[&OsStr]) -> io::Result<Directory> {
     let mut current = root.try_clone()?;
     for name in parts {
-        let child = current.prepare_private_child(name)?;
-        child.sync()?;
-        current.sync()?;
+        let child = current
+            .prepare_private_child(name)
+            .map_err(staged("prepare private directory"))?;
+        child.sync().map_err(staged("flush private directory"))?;
+        current
+            .sync()
+            .map_err(staged("flush parent of private directory"))?;
         current = child;
     }
     Ok(current)
@@ -429,15 +433,20 @@ pub(super) fn run_observed(
             }
             let temporary = atomic_protocol::publication_name();
             let temporary = OsStr::new(&temporary);
-            let mut file = dir.create_publication_file(temporary)?;
+            let mut file = dir
+                .create_publication_file(temporary)
+                .map_err(staged("create publication temporary"))?;
             let result = (|| {
                 observe("temporary-created");
-                file.write_all(&bytes)?;
-                file.sync_all()?;
+                file.write_all(&bytes)
+                    .map_err(staged("write publication temporary"))?;
+                file.sync_all()
+                    .map_err(staged("flush publication temporary"))?;
                 observe("file-synced");
-                dir.publish_file(&file, name)?;
+                dir.publish_file(&file, name)
+                    .map_err(staged("rename publication temporary"))?;
                 observe("renamed");
-                dir.sync()?;
+                dir.sync().map_err(staged("flush publication directory"))?;
                 observe("directory-synced");
                 Ok(Value::Null)
             })();

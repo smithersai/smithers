@@ -31,7 +31,7 @@ import type * as BrowserSqlite from "./BrowserSqlite.ts"
 import * as Engine from "./internal/Engine.ts"
 import * as Leader from "./internal/Leader.ts"
 import * as Metrics from "./internal/Metrics.ts"
-import type * as PrepareModule from "./internal/Prepare.ts"
+import * as PrepareModule from "./internal/Prepare.ts"
 import * as Protocol from "./internal/Protocol.ts"
 import type * as SharedSqlite from "./SharedSqlite.ts"
 import * as TabChannel from "./TabChannel.ts"
@@ -112,13 +112,34 @@ export type Authorize = (database: SharedSqlite.Service) => Effect.Effect<void, 
  * `success` as its result's schema. A crash mid-way resumes on the next
  * leader; a run that finished answers at once. The step is tried three times;
  * if it still fails, the leader logs `browser.runtime.prepare` and refuses
- * every tab's statement with `PrepareFailed` until a later build's epoch
- * prepares the database.
+ * every tab's statement with {@link PrepareFailed}. The next leader, such as
+ * the next page load, tries again; a failure `run` marks permanent, by
+ * failing with `new PrepareFailed({ error, permanent: true })`, fences every
+ * leader until a later build's epoch prepares the database.
  *
  * @category models
  * @since 1.0.0
  */
 export type Prepare<A = any> = PrepareModule.Prepare<A>
+
+/**
+ * Why the leader refuses a tab's statement: the build's preparation failed.
+ * A `run` fails with one marked `permanent: true` to keep the fence for the
+ * whole `epoch`, such as for a store it found corrupt; every other failure is
+ * transient, and the next leader tries the preparation again.
+ *
+ * @category errors
+ * @since 1.0.0
+ */
+export const PrepareFailed = PrepareModule.PrepareFailed
+
+/**
+ * The type of {@link PrepareFailed}'s instances.
+ *
+ * @category errors
+ * @since 1.0.0
+ */
+export type PrepareFailed = PrepareModule.PrepareFailed
 
 /**
  * The services the engine host gives every registered flow: WebCrypto,

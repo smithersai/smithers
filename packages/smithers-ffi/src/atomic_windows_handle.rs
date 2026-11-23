@@ -159,6 +159,47 @@ impl std::fmt::Display for BoundaryError {
 
 impl std::error::Error for BoundaryError {}
 
+/// An operating-system failure with the operation stages that led to it.
+#[derive(Debug)]
+pub(super) struct Staged {
+    stage: &'static str,
+    source: io::Error,
+}
+
+impl std::fmt::Display for Staged {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(formatter, "{}: {}", self.stage, self.source)
+    }
+}
+
+impl std::error::Error for Staged {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        Some(&self.source)
+    }
+}
+
+/// Names the operation stage of an operating-system failure, such as which
+/// handle of a publication was refused, keeping its kind so the protocol code
+/// is unchanged. Stages nest, outermost first. Boundary refusals and coded
+/// failures pass through untouched.
+pub(super) fn staged(stage: &'static str) -> impl FnOnce(io::Error) -> io::Error {
+    move |error| {
+        let os = error.raw_os_error().is_some()
+            || error.get_ref().is_some_and(|inner| inner.is::<Staged>());
+        if os {
+            io::Error::new(
+                error.kind(),
+                Staged {
+                    stage,
+                    source: error,
+                },
+            )
+        } else {
+            error
+        }
+    }
+}
+
 fn denied(error: BoundaryError) -> io::Error {
     io::Error::new(io::ErrorKind::PermissionDenied, error)
 }
@@ -487,12 +528,14 @@ impl Directory {
             )
         };
         if handle == INVALID_HANDLE_VALUE {
-            return Err(io::Error::last_os_error());
+            return Err(staged("reopen directory for flush")(
+                io::Error::last_os_error(),
+            ));
         }
         // SAFETY: ReOpenFile transfers a new owned handle on success.
         let file = unsafe { File::from_raw_handle(handle) };
-        no_reparse(&file)?;
-        file.sync_all()
+        no_reparse(&file).map_err(staged("inspect directory for flush"))?;
+        file.sync_all().map_err(staged("flush directory"))
     }
 
     /// Recovery directories may be reused only with the exact private ACL we
@@ -1067,34 +1110,18 @@ mod tests {
                 assert_ne!(unsafe { RevertToSelf() }, 0);
             }
         }
-        for publication in [false, true] {
-            let temp = tempfile::tempdir().unwrap();
-            let root = Directory::root(temp.path()).unwrap();
-            let mut private = if publication {
-                root.create_publication_file(OsStr::new("temporary"))
-                    .unwrap()
-            } else {
-                root.create_private_file(OsStr::new("private")).unwrap()
-            };
-            private.write_all(b"private bytes").unwrap();
-            private.sync_all().unwrap();
-            if publication {
-                root.publish_file(&private, OsStr::new("private")).unwrap();
-                root.sync().unwrap();
-            }
-            drop(private);
-            // Positive control grants the anonymous identity read access, proving
-            // the read below reaches the leaf DACL rather than failing at a parent.
-            let user = current_user_sid().unwrap();
-            let sddl: Vec<_> = format!("O:{user}D:P(A;;FA;;;{user})(A;;FR;;;AN)")
-                .encode_utf16()
-                .chain(Some(0))
-                .collect();
+        // The anonymous token holds no SeChangeNotifyPrivilege, so NTFS checks
+        // traverse on the parent even for an open relative to its handle. The
+        // probe directory grants the anonymous identity traverse and nothing
+        // else, so both reads below reach their leaf DACL.
+        let user = current_user_sid().unwrap();
+        let sddl = |text: String| -> LocalAllocation {
+            let units: Vec<_> = text.encode_utf16().chain(Some(0)).collect();
             let mut descriptor = ptr::null_mut();
             assert_ne!(
                 unsafe {
                     ConvertStringSecurityDescriptorToSecurityDescriptorW(
-                        sddl.as_ptr(),
+                        units.as_ptr(),
                         SDDL_REVISION_1,
                         &mut descriptor,
                         ptr::null_mut(),
@@ -1102,7 +1129,46 @@ mod tests {
                 },
                 0
             );
-            let security = LocalAllocation(descriptor);
+            LocalAllocation(descriptor)
+        };
+        for publication in [false, true] {
+            let temp = tempfile::tempdir().unwrap();
+            let parent = Directory::root(temp.path()).expect("setup: open temporary root");
+            // FILE_TRAVERSE | SYNCHRONIZE for ANONYMOUS LOGON.
+            let probe = sddl(format!(
+                "O:{user}D:P(A;;FA;;;{user})(A;;FA;;;SY)(A;;0x100020;;;AN)"
+            ));
+            let root = Directory(
+                open_with(
+                    Some(&parent.0),
+                    name_units(OsStr::new("probe")).unwrap(),
+                    FILE_GENERIC_READ | FILE_TRAVERSE,
+                    true,
+                    FILE_SHARE_READ | FILE_SHARE_WRITE,
+                    Some(&probe),
+                )
+                .expect("setup: create probe directory"),
+            );
+            let mut private = if publication {
+                root.create_publication_file(OsStr::new("temporary"))
+                    .expect("setup: create publication temporary")
+            } else {
+                root.create_private_file(OsStr::new("private"))
+                    .expect("setup: create private file")
+            };
+            private
+                .write_all(b"private bytes")
+                .expect("setup: write private file");
+            private.sync_all().expect("setup: flush private file");
+            if publication {
+                root.publish_file(&private, OsStr::new("private"))
+                    .expect("publication: rename temporary");
+                root.sync().expect("publication: flush probe directory");
+            }
+            drop(private);
+            // Positive control grants the anonymous identity read access, proving
+            // the read below reaches the leaf DACL rather than failing at a parent.
+            let security = sddl(format!("O:{user}D:P(A;;FA;;;{user})(A;;FR;;;AN)"));
             let mut control = open_with(
                 Some(&root.0),
                 name_units(OsStr::new("control")).unwrap(),
@@ -1111,11 +1177,13 @@ mod tests {
                 FILE_SHARE_READ,
                 Some(&security),
             )
-            .unwrap();
-            control.write_all(b"public control").unwrap();
+            .expect("setup: create control file");
+            control
+                .write_all(b"public control")
+                .expect("setup: write control file");
             drop(control);
-            // A real read attempt under a different security identity, relative to
-            // the pinned parent so ancestor traversal cannot explain the denial.
+            // A real read attempt under a different security identity. The probe
+            // grants that identity traverse, so only the leaf DACL can deny it.
             assert_ne!(unsafe { ImpersonateAnonymousToken(GetCurrentThread()) }, 0);
             let revert = Revert;
             let mut control = open(
@@ -1125,9 +1193,11 @@ mod tests {
                 false,
                 true,
             )
-            .unwrap();
+            .expect("control: anonymous open of the readable control");
             let mut bytes = Vec::new();
-            control.read_to_end(&mut bytes).unwrap();
+            control
+                .read_to_end(&mut bytes)
+                .expect("control: anonymous read of the readable control");
             assert_eq!(bytes, b"public control");
             let result = open(
                 Some(&root.0),
@@ -1139,10 +1209,29 @@ mod tests {
             assert_eq!(result.unwrap_err().kind(), io::ErrorKind::PermissionDenied);
             drop(revert);
             assert_eq!(
-                fs::read(temp.path().join("private")).unwrap(),
+                fs::read(temp.path().join("probe").join("private"))
+                    .expect("owner: read private file"),
                 b"private bytes"
             );
         }
+    }
+
+    #[test]
+    fn stages_name_os_failures_and_leave_boundary_refusals_alone() {
+        let failure = staged("flush private directory")(staged("flush directory")(
+            io::Error::from_raw_os_error(5),
+        ));
+        assert_eq!(failure.kind(), io::ErrorKind::PermissionDenied);
+        let message = failure.to_string();
+        assert!(
+            message.starts_with("flush private directory: flush directory: "),
+            "{message}"
+        );
+        assert!(message.contains("os error 5"), "{message}");
+        let boundary = staged("rename publication temporary")(denied(BoundaryError::ReparsePoint));
+        assert!(boundary
+            .get_ref()
+            .is_some_and(|inner| inner.is::<BoundaryError>()));
     }
 
     #[test]

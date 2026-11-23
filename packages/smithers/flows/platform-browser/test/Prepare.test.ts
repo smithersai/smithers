@@ -202,19 +202,84 @@ describe("BrowserRuntime.run with prepare", () => {
       yield* Fiber.interrupt(next)
     }).pipe(Effect.scoped))
 
-  it.live("keeps the fence for the build whose preparation failed: its next leader answers from the journal, and a later build prepares", () =>
+  it.live("tries a transiently failed preparation again on the next leader, and the tabs use the database once it succeeds", () =>
     Effect.gen(function*() {
       const name = Engines.name()
       const ran: Array<number> = []
-      const failing = preparation(1, ran, () => Effect.fail("no"))
+      // The disk is full for the first leader's three attempts, then freed.
+      let full = true
+      const prepare = preparation(
+        1,
+        ran,
+        (database) =>
+          full ? Effect.fail({ _tag: "QuotaExceededError" }) : preparation(1, []).run(database).pipe(Effect.asVoid)
+      )
+      const tab = yield* Engines.sharedTab(name)
+      const telemetry = Telemetry.make()
+      const first = worker(name, prepare, telemetry)
+      expect(yield* fenced(tab.execute("SELECT 1"))).toBe(true)
+      yield* Fiber.interrupt(first)
+      expect(ran).toEqual([1, 1, 1])
+      expect(telemetry.lines("browser.runtime.prepare")).toMatchObject([
+        { annotations: { outcome: "failed", epoch: 1 } }
+      ])
+      full = false
+      // The next page load of the same build tries again and serves the database.
+      const again = worker(name, prepare, telemetry)
+      expect(yield* select(tab)).toEqual([{ epoch: 1 }])
+      yield* Fiber.interrupt(again)
+      expect(ran).toEqual([1, 1, 1, 1])
+      expect(telemetry.count(BrowserRuntime.preparations, { outcome: "prepared" })).toBe(1)
+      // The one after answers from the journal: the preparation does not run a third time.
+      const third = worker(name, prepare)
+      expect(yield* select(tab)).toEqual([{ epoch: 1 }])
+      yield* Fiber.interrupt(third)
+      expect(ran).toEqual([1, 1, 1, 1])
+    }).pipe(Effect.scoped))
+
+  it.live("tries again after any number of failed leaderships, each failing leader fenced", () =>
+    Effect.gen(function*() {
+      const name = Engines.name()
+      const ran: Array<number> = []
+      let failures = 2
+      const prepare = preparation(
+        1,
+        ran,
+        (database) => failures > 0 ? Effect.fail("io") : preparation(1, []).run(database).pipe(Effect.asVoid)
+      )
+      const tab = yield* Engines.sharedTab(name)
+      for (let leader = 0; leader < 2; leader++) {
+        const failing = worker(name, prepare)
+        expect(yield* fenced(tab.execute("SELECT 1"))).toBe(true)
+        yield* Fiber.interrupt(failing)
+        failures--
+      }
+      const next = worker(name, prepare)
+      expect(yield* select(tab)).toEqual([{ epoch: 1 }])
+      yield* Fiber.interrupt(next)
+      expect(ran).toHaveLength(7)
+    }).pipe(Effect.scoped))
+
+  it.live("keeps the fence for every leader of the epoch when the preparation marks its failure permanent, and a later build prepares", () =>
+    Effect.gen(function*() {
+      const name = Engines.name()
+      const ran: Array<number> = []
+      const failing = preparation(
+        1,
+        ran,
+        () => Effect.fail(new BrowserRuntime.PrepareFailed({ error: "CorruptStore", permanent: true }))
+      )
       const tab = yield* Engines.sharedTab(name)
       const first = worker(name, failing)
       expect(yield* fenced(tab.execute("SELECT 1"))).toBe(true)
       yield* Fiber.interrupt(first)
-      const again = worker(name, failing)
+      const telemetry = Telemetry.make()
+      const again = worker(name, failing, telemetry)
       expect(yield* fenced(tab.execute("SELECT 1"))).toBe(true)
       yield* Fiber.interrupt(again)
+      // The next leader answers from the journal and does not run the preparation again.
       expect(ran).toEqual([1, 1, 1])
+      expect(telemetry.count(BrowserRuntime.preparations, { outcome: "failed" })).toBe(1)
       const next = worker(name, preparation(2, ran))
       expect(yield* select(tab)).toEqual([{ epoch: 2 }])
       yield* Fiber.interrupt(next)

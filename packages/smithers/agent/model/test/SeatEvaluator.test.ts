@@ -107,7 +107,7 @@ describe("subscription seat evaluator", () => {
       meta: {}
     })
     await expect(run(Model.make({ stream: () => Stream.fail(required) })))
-      .rejects.toMatchObject({ code: "unconfigured", message: Permission.formatError(required) })
+      .rejects.toMatchObject({ code: "unconfigured", message: Permission.formatError(required), permission: required })
     await expect(
       run(
         Model.make({ stream: () => Stream.fail(new ModelError({ code: "authentication", message: "secret-token" })) })

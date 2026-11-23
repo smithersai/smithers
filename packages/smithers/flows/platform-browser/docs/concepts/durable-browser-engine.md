@@ -206,10 +206,11 @@ this build's versions (`@smthrs/effect-tanstack-db`'s
 `Migrations.prepare(registry)`). After it wakes unfinished runs, the leader
 runs `prepare.run` over its own connection as the durable flow
 `device/prepare`, execution `device/prepare/v2/<epoch>`, and waits for it; a
-tab's statement waits meanwhile.
+tab's statement waits meanwhile. A later attempt in the same epoch runs as
+`device/prepare/v2/<epoch>/<n>`.
 
 - **Once per epoch.** The next leader of the same build finds the run
-  finished and goes on at once; a build with a new `epoch` prepares again.
+  prepared and goes on at once; a build with a new `epoch` prepares again.
 - **Resumable.** A leader that dies mid-way leaves the run unfinished, and the
   next leader runs the step again. A transaction the step left open ends with
   the old connection, and the step rolls back any transaction it leaves open.
@@ -220,8 +221,15 @@ tab's statement waits meanwhile.
   `outcome: fenced`): nothing runs on a database this build could not bring to
   its versions. A tab's statement fails with a `ConnectionError` whose `cause`
   names `PrepareFailed`, so `SharedSqlite.open` rejects and the app keeps its
-  rows in memory. The failed run is the epoch's answer, so the fence holds for
-  every leader of that build; the next build's epoch prepares again.
+  rows in memory. The fence holds for that leadership only.
+- **Tried again by the next leader.** A failure is transient by default, such
+  as a full disk or a lost storage handle: the next leader, such as the next
+  page load, passes over the failed run and tries the epoch's next attempt.
+- **Permanent when `run` says so.** A `run` that fails with
+  `new BrowserRuntime.PrepareFailed({ error, permanent: true })`, such as for a
+  store it found corrupt, makes that failure the epoch's answer: every leader
+  of that build keeps the fence without running it again, and the next build's
+  epoch prepares again.
 - An engine without the app's database, such as `BrowserRuntime.layer`'s,
   skips it (`outcome: skipped`).
 

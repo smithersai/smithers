@@ -12,7 +12,7 @@
  * @since 1.0.0-rc.0
  */
 
-import { Permission } from "@smthrs/capability"
+import { decodePermissionError, Permission } from "@smthrs/capability"
 import { Fault, SpanFailure } from "@smthrs/flow"
 import { HttpClient as KernelHttpClient } from "@smthrs/kernel"
 import * as Clock from "effect/Clock"
@@ -92,7 +92,14 @@ export class EvaluatorError extends Schema.TaggedError<EvaluatorError>()("flows/
     outputTokens: Schema.Number,
     modelId: Schema.optional(Schema.String),
     costUsd: Schema.optional(Schema.Number)
-  }))
+  })),
+  /**
+   * The kernel's own failure when the judge's `model:call` grant was refused
+   * or is pending, with code `unconfigured`. An attended host reads its
+   * `PermissionRequired` to show the grant prompt, as it does for any other
+   * model call, then asks the judge again. Absent for every other failure.
+   */
+  permission: Schema.optional(Permission.PermissionError)
 }) {}
 
 /**
@@ -800,9 +807,13 @@ export function layerVercelGateway(
                 // A refused or pending `model:call` grant is not an outage: as
                 // `unreachable` it would send the question to a backup model
                 // on another credential.
-                const permission = KernelHttpClient.fromHttpClientError(error)
+                const permission = Option.flatMap(KernelHttpClient.fromHttpClientError(error), decodePermissionError)
                 return Option.isSome(permission)
-                  ? new EvaluatorError({ code: "unconfigured", message: Permission.formatError(permission.value) })
+                  ? new EvaluatorError({
+                    code: "unconfigured",
+                    message: Permission.formatError(permission.value),
+                    permission: permission.value
+                  })
                   : new EvaluatorError({ code: "unreachable", message: error.message })
               }),
               Effect.tapError((error) => Effect.sync(() => failed(error.code))),
@@ -1006,6 +1017,7 @@ export const layerFromSeat = (
                   return yield* new EvaluatorError({
                     code: "unconfigured",
                     message: Permission.formatError(error),
+                    permission: error,
                     ...paid()
                   })
                 }
