@@ -112,7 +112,10 @@ const readWord = (text: string, start: number): WordToken | undefined => {
       while (text[at] !== "\"") {
         const inner = text[at]
         if (inner === undefined || inner === "`") return undefined
-        if (inner === "\\" && /["\\$`]/.test(text[at + 1] ?? "")) {
+        if (inner === "\\" && text[at + 1] === "\n") {
+          // A backslash before a line break joins two lines, inside double quotes as outside them.
+          at += 2
+        } else if (inner === "\\" && /["\\$`]/.test(text[at + 1] ?? "")) {
           value += text[at + 1]
           at += 2
         } else if (inner === "$") {

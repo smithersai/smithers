@@ -37,6 +37,15 @@ describe("commands", () => {
     expect(read(`echo "a\\\\b" "c\\$d" "e\\nf"`)).toEqual([["echo", "a\\b", "c$d", "e\\nf"]])
   })
 
+  it("joins a line continued with a backslash inside double quotes", () => {
+    // The shell removes a backslash and the line break after it there too: `"pn\<line break>pm"` is `pnpm`.
+    expect(read("\"pn\\\npm\" run \"te\\\nst\"")).toEqual([["pnpm", "run", "test"]])
+    expect(read("\"\\\n\"")).toEqual([[""]])
+    // Inside single quotes both characters stay, and a quoted backslash before a line break is a backslash.
+    expect(read("'a\\\nb'")).toEqual([["a\\\nb"]])
+    expect(read("\"a\\\\\nb\"")).toEqual([["a\\\nb"]])
+  })
+
   it("joins a line continued with a backslash", () => {
     expect(read("turbo run test \\\n  --filter=web")).toEqual([["turbo", "run", "test", "--filter=web"]])
     expect(read("echo a\\\nb")).toEqual([["echo", "ab"]])

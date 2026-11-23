@@ -176,4 +176,20 @@ describe("walk", () => {
     expect(ran(settings, "web", "build", "test")).toEqual(["web#build", "web#test"])
     expect(ran(settings, "docs", "undefined-task")).toEqual([])
   })
+
+  it("keeps two tasks apart that are spelled the same with `#`", () => {
+    const packages: ReadonlyArray<Package> = [
+      { name: "a", directory: "packages/a", scripts: { "x#y": "one" }, dependencies: [] },
+      { name: "a#x", directory: "packages/ax", scripts: { y: "two" }, dependencies: [] },
+      { name: "b", directory: "packages/b", scripts: { build: "tsc" }, dependencies: ["a#x"] }
+    ]
+    const settings = config({ tasks: { build: { dependsOn: ["^y", "a#x#y"] }, y: {}, "x#y": {} } })
+    const walked = walk(settings, { ...workspace, packages }, packages[2] as Package, ["build"])
+    // `a#x#y` names the task `x#y` of `a`, and `^y` the task `y` of the package `a#x`: both run.
+    expect(walked.scripts.map(([owner, script]) => [owner.name, script])).toEqual([
+      ["b", "build"],
+      ["a", "x#y"],
+      ["a#x", "y"]
+    ])
+  })
 })

@@ -1,0 +1,10 @@
+name = "decomposeSpec"
+version = "0.1.0"
+defaultTargets = ["DecomposeSpec", "decompose-spec"]
+
+[[lean_lib]]
+name = "DecomposeSpec"
+
+[[lean_exe]]
+name = "decompose-spec"
+root = "Main"

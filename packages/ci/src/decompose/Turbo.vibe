@@ -180,7 +180,8 @@ export const walk = (
   const pending: Array<readonly [Package, string]> = tasks.map((task) => [start, task])
   while (pending.length > 0) {
     const [owner, task] = pending.pop() as readonly [Package, string]
-    const key = `${owner.name}#${task}`
+    // The package and the task, each whole: `a#x` with `y` and `a` with `x#y` are two tasks, not one.
+    const key = JSON.stringify([owner.name, task])
     if (seen.has(key)) continue
     seen.add(key)
     const definition = definitionOf(config, owner.name, task)
