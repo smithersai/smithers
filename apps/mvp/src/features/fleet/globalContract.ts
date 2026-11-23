@@ -1,0 +1,89 @@
+// Shared contract for deployment-wide fleet visibility (`/app/fleet`): host nodes, observed sessions across all
+// harnesses (Claude, Codex, AGY CLI/IDE, Cloudflare sandboxes, Smithers runners), and provider account quotas.
+// Zero runtime library imports so browser, workerd, CLI, and tests share one source of truth.
+
+export const FLEET_NODES_SHAPE_ROUTE = "/api/shapes/fleet/nodes"
+export const FLEET_SESSIONS_SHAPE_ROUTE = "/api/shapes/fleet/sessions"
+export const FLEET_ACCOUNTS_SHAPE_ROUTE = "/api/shapes/fleet/accounts"
+
+export const HOST_KINDS = ["macbook", "mac-mini", "bare-metal", "cloudflare", "lan", "browser"] as const
+export type HostKind = (typeof HOST_KINDS)[number]
+
+export const SESSION_HARNESSES = [
+  "claude",
+  "codex",
+  "agy-cli",
+  "agy-ide",
+  "cfbox",
+  "cf-sandbox",
+  "smithers",
+  "daemon",
+] as const
+export type SessionHarness = (typeof SESSION_HARNESSES)[number]
+
+export const SESSION_STATUSES = ["working", "idle", "stalled", "waiting", "error", "ended"] as const
+export type SessionStatus = (typeof SESSION_STATUSES)[number]
+
+export const ACCOUNT_PROVIDERS = ["claude", "codex", "google-agy"] as const
+export type AccountProvider = (typeof ACCOUNT_PROVIDERS)[number]
+
+export const ACCOUNT_STATUSES = ["ready", "cooling", "limit_reached", "auth_expired", "unknown"] as const
+export type AccountStatus = (typeof ACCOUNT_STATUSES)[number]
+
+export const HOST_NODE_COLUMNS = [
+  "node_id",
+  "name",
+  "kind",
+  "labels",
+  "online",
+  "held",
+  "load1",
+  "cpu_cores",
+  "mem_used_gb",
+  "mem_total_gb",
+  "disk_free_gb",
+  "disk_total_gb",
+  "active_sessions",
+  "runner_capacity",
+  "version",
+  "seen_at",
+] as const
+
+export const OBSERVED_SESSION_COLUMNS = [
+  "session_key",
+  "node_id",
+  "managed",
+  "harness",
+  "model",
+  "account_label",
+  "repo",
+  "lane",
+  "title",
+  "status",
+  "pid",
+  "cpu_seconds",
+  "tokens_used",
+  "started_at",
+  "last_activity_at",
+  "ended_at",
+] as const
+
+export const PROVIDER_ACCOUNT_COLUMNS = [
+  "account_key",
+  "provider",
+  "label",
+  "plan",
+  "status",
+  "five_hour_pct",
+  "weekly_pct",
+  "scoped_pct",
+  "resets_at",
+  "grants_json",
+  "credits_balance",
+  "active_sessions",
+  "pools",
+  "cool_reason",
+  "cool_until",
+  "source_node",
+  "checked_at",
+] as const

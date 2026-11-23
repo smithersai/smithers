@@ -7,6 +7,8 @@ import type { Source } from "../repo/gate"
 import { RepoStore } from "../repo/store"
 import { repoVisibility } from "../repo/visibility"
 import { AGENT_RUNS_SHAPE_ROUTE, MACHINES_SHAPE_ROUTE } from "./contract"
+import { FLEET_ACCOUNTS_SHAPE_ROUTE, FLEET_NODES_SHAPE_ROUTE, FLEET_SESSIONS_SHAPE_ROUTE } from "./globalContract"
+import { HostNode, ObservedSession, ProviderAccount } from "./globalSchema"
 import { AgentRun, Machine } from "./schema"
 
 // The fleet on this tab (decision 0143, docs/features/fleet.md#the-browser): Electric's `agent_runs` and `runners` of
@@ -31,6 +33,15 @@ const machinesQuery = (collection: Source<Machine>) =>
 /** One repository's runs or machines, as a live query. */
 export type Runs = Effect.Success<ReturnType<typeof runsQuery>>
 export type Machines = Effect.Success<ReturnType<typeof machinesQuery>>
+const globalNodesQuery = (collection: ElectricCollection.ElectricCollection<HostNode>) =>
+  LiveQuery.make((q) => q.from({ node: collection.tanstack }).orderBy(({ node }) => node.name, "asc"))
+const globalSessionsQuery = (collection: ElectricCollection.ElectricCollection<ObservedSession>) =>
+  LiveQuery.make((q) => q.from({ s: collection.tanstack }).orderBy(({ s }) => s.sessionKey, "asc"))
+const globalAccountsQuery = (collection: ElectricCollection.ElectricCollection<ProviderAccount>) =>
+  LiveQuery.make((q) => q.from({ a: collection.tanstack }).orderBy(({ a }) => a.accountKey, "asc"))
+export type GlobalNodes = Effect.Success<ReturnType<typeof globalNodesQuery>>
+export type GlobalSessions = Effect.Success<ReturnType<typeof globalSessionsQuery>>
+export type GlobalAccounts = Effect.Success<ReturnType<typeof globalAccountsQuery>>
 
 /** Electric's text for a timestamp, a big integer and a numeric, as the rows hold them. */
 const parser = {
@@ -117,6 +128,12 @@ export class FleetStore extends Context.Service<
     readonly runs: (repo: string) => Effect.Effect<Runs>
     /** Repository `repo`'s machines, by name, opened once and synced while the store lives. */
     readonly machines: (repo: string) => Effect.Effect<Machines>
+    /** Deployment-wide host nodes synced over ElectricSQL (Admin only). */
+    readonly globalNodes: Effect.Effect<GlobalNodes>
+    /** Deployment-wide observed & managed agent sessions synced over ElectricSQL (Admin only). */
+    readonly globalSessions: Effect.Effect<GlobalSessions>
+    /** Deployment-wide provider accounts synced over ElectricSQL (Admin only). */
+    readonly globalAccounts: Effect.Effect<GlobalAccounts>
   }
 >()("@smthrs/mvp/fleet/FleetStore") {
   /** The store; its shapes closed when the scope closes. Needs the tab's `ShapeSource`. */
@@ -173,7 +190,95 @@ export class FleetStore extends Context.Service<
             }).pipe(Scope.provide(scope), Effect.orDie),
           capacity: Number.MAX_SAFE_INTEGER,
         })
-        return FleetStore.of({ runs: (repo) => Cache.get(runs, repo), machines: (repo) => Cache.get(machines, repo) })
+        const adminShape = <A extends Record<string, unknown>>(
+          id: string,
+          schema: Parameters<typeof ElectricCollection.make<A>>[0]["schema"],
+          getKey: (row: A) => string,
+          route: string,
+        ) =>
+          Effect.gen(function* () {
+            const running = yield* Latch.make(true)
+            let collection: ElectricCollection.ElectricCollection<A> | undefined
+            const stop = Effect.suspend(() =>
+              Effect.andThen(running.close, collection === undefined ? Effect.void : collection.evict)
+            ).pipe(Effect.orDie)
+            const source = yield* ShapeSource.ShapeSource
+            collection = yield* ElectricCollection.make<A>({
+              id,
+              schema,
+              getKey,
+              syncMode: "eager",
+              shape: {
+                url: `${config.origin}${route}`,
+                columnMapper: ElectricCollection.snakeCamelMapper(),
+                parser,
+              },
+            }).pipe(
+              Effect.provideService(ShapeSource.ShapeSource, {
+                cacheNamespace: source.cacheNamespace,
+                request: (url, init) =>
+                  Effect.andThen(
+                    running.await,
+                    Effect.tap(source.request(url, init), (response) => {
+                      if (response.status === 401) {
+                        return Effect.andThen(running.close, Option.isSome(auth) ? auth.value.askCheck : Effect.void)
+                      }
+                      return response.status === 403
+                        ? Effect.forkIn(stop, scope, { startImmediately: true })
+                        : Effect.void
+                    }),
+                  ),
+              })
+            )
+            if (Option.isSome(auth)) {
+              yield* auth.value.sessionState.rows.pipe(
+                Stream.runForEach((sessions) => sessions[0]?.status === "signed_out" ? stop : Effect.void),
+                Effect.forkIn(scope, { startImmediately: true }),
+              )
+              yield* auth.value.confirmations.pipe(
+                Stream.mapEffect(() =>
+                  Effect.map(auth.value.session.get(SESSION), (row) => Option.isSome(row) && row.value.status === "signed_in")
+                ),
+                Stream.filter((signedIn) => signedIn),
+                Stream.runForEach(() =>
+                  Effect.andThen(running.open, collection === undefined ? Effect.void : collection.reconnect)
+                ),
+                Effect.forkIn(scope, { startImmediately: true }),
+              )
+            }
+            return collection
+          })
+        const nodesCache = yield* Cache.make({
+          lookup: (_key: string) =>
+            Effect.gen(function* () {
+              const c = yield* adminShape<HostNode>("fleet-global-nodes", HostNode, (r) => r.nodeId, FLEET_NODES_SHAPE_ROUTE)
+              return yield* globalNodesQuery(c)
+            }).pipe(Scope.provide(scope), Effect.orDie),
+          capacity: 1,
+        })
+        const sessionsCache = yield* Cache.make({
+          lookup: (_key: string) =>
+            Effect.gen(function* () {
+              const c = yield* adminShape<ObservedSession>("fleet-global-sessions", ObservedSession, (r) => r.sessionKey, FLEET_SESSIONS_SHAPE_ROUTE)
+              return yield* globalSessionsQuery(c)
+            }).pipe(Scope.provide(scope), Effect.orDie),
+          capacity: 1,
+        })
+        const accountsCache = yield* Cache.make({
+          lookup: (_key: string) =>
+            Effect.gen(function* () {
+              const c = yield* adminShape<ProviderAccount>("fleet-global-accounts", ProviderAccount, (r) => r.accountKey, FLEET_ACCOUNTS_SHAPE_ROUTE)
+              return yield* globalAccountsQuery(c)
+            }).pipe(Scope.provide(scope), Effect.orDie),
+          capacity: 1,
+        })
+        return FleetStore.of({
+          runs: (repo) => Cache.get(runs, repo),
+          machines: (repo) => Cache.get(machines, repo),
+          globalNodes: Cache.get(nodesCache, "all"),
+          globalSessions: Cache.get(sessionsCache, "all"),
+          globalAccounts: Cache.get(accountsCache, "all"),
+        })
       }),
     )
 }

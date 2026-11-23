@@ -1,0 +1,85 @@
+/**
+ * Deployment-wide and per-repository authorization policy.
+ *
+ * Only configured deployment admins (default: `roninjin10`) hold deployment
+ * admin authority (global fleet, host nodes, provider accounts, deployment
+ * settings). Every other signed-in person is a contributor except on projects
+ * they own (`repository.owner === login`).
+ */
+
+import type { Role } from "../src/features/auth/contract.ts"
+import type { Actor } from "./Actor.ts"
+
+export const DEFAULT_DEPLOYMENT_ADMIN = "roninjin10"
+export const DEFAULT_ADMINS: ReadonlySet<string> = new Set([DEFAULT_DEPLOYMENT_ADMIN])
+
+export type RepoRef = string | { readonly owner: string; readonly name?: string }
+
+export function ownerOf(repository: RepoRef): string {
+  if (typeof repository === "string") {
+    const clean = repository.startsWith("github/") ? repository.slice("github/".length) : repository
+    return (clean.split("/")[0] ?? "").trim().toLowerCase()
+  }
+  return repository.owner.trim().toLowerCase()
+}
+
+export function parseAdminLogins(raw: string): ReadonlySet<string> {
+  const entries = raw
+    .split(",")
+    .map((entry) => entry.trim().toLowerCase())
+    .filter((entry) => entry.length > 0)
+  return entries.length === 0 ? DEFAULT_ADMINS : new Set(entries)
+}
+
+export effect function configuredAdmins() {
+  const raw = try Config.withDefault(Config.String("DEPLOYMENT_ADMIN_LOGINS"), DEFAULT_DEPLOYMENT_ADMIN)
+  return parseAdminLogins(raw)
+}
+
+export function isDeploymentAdmin(
+  login: string | undefined,
+  admins: ReadonlySet<string> = DEFAULT_ADMINS
+): boolean {
+  return login !== undefined && login.trim().length > 0 && admins.has(login.trim().toLowerCase())
+}
+
+export function isProjectOwner(
+  login: string | undefined,
+  repository: RepoRef
+): boolean {
+  return (
+    login !== undefined &&
+    login.trim().length > 0 &&
+    ownerOf(repository) === login.trim().toLowerCase()
+  )
+}
+
+export function effectiveRole(
+  login: string | undefined,
+  repository: RepoRef,
+  rawRole: Role | null,
+  admins: ReadonlySet<string> = DEFAULT_ADMINS
+): Role | null {
+  if (isDeploymentAdmin(login, admins)) return "admin"
+  if (isProjectOwner(login, repository) && rawRole === "admin") return "admin"
+  if (rawRole === "admin" || rawRole === "maintainer") return "member"
+  return rawRole
+}
+
+export schema error DeploymentAdminRequired {
+  readonly code: "forbidden"
+  readonly message: string
+}
+
+export effect function requireDeploymentAdmin(
+  actor: Actor,
+  admins: ReadonlySet<string> = DEFAULT_ADMINS
+): string!DeploymentAdminRequired {
+  if (!isDeploymentAdmin(actor.login, admins)) {
+    throw new DeploymentAdminRequired({
+      code: "forbidden",
+      message: "Deployment admin access is restricted to the deployment owner.",
+    })
+  }
+  return actor.login!
+}

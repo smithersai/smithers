@@ -1,0 +1,176 @@
+/**
+ * Local-first Smithers host node daemon (VibeLang + Effect).
+ *
+ * Collects host health, observed agent sessions (Claude, Codex, AGY CLI/IDE,
+ * host daemons, Cloudflare cfbox), and provider account usage (Claude Max,
+ * Codex Pro, Google/AGY), and syncs them into `smithers.sh` over BYOA MCP
+ * (`POST /api/mcp`) so Neon Postgres + ElectricSQL replicate live to every
+ * browser and CLI TanStack DB.
+ */
+
+import type { HttpClient } from "effect/http"
+import * as McpClient from "./McpClient.vibe"
+
+export interface HostSnapshot {
+  readonly nodeId: string
+  readonly name: string
+  readonly kind: "macbook" | "mac-mini" | "bare-metal" | "cloudflare" | "lan" | "browser"
+  readonly labels: ReadonlyArray<string>
+  readonly online: boolean
+  readonly held: string | null
+  readonly load1: number | null
+  readonly cpuCores: number | null
+  readonly memUsedGb: number | null
+  readonly memTotalGb: number | null
+  readonly diskFreeGb: number | null
+  readonly diskTotalGb: number | null
+  readonly activeSessions: number
+  readonly runnerCapacity: number
+  readonly version: string | null
+}
+
+export interface SessionSnapshot {
+  readonly sessionKey: string
+  readonly managed: boolean
+  readonly harness: "claude" | "codex" | "agy-cli" | "agy-ide" | "cfbox" | "cf-sandbox" | "smithers" | "daemon"
+  readonly model: string | null
+  readonly accountLabel: string | null
+  readonly repo: string | null
+  readonly lane: string | null
+  readonly title: string | null
+  readonly status: "working" | "idle" | "stalled" | "waiting" | "error" | "ended"
+  readonly pid: number | null
+  readonly cpuSeconds: number | null
+  readonly tokensUsed: number | null
+  readonly startedAt: string | null
+  readonly lastActivityAt: string | null
+  readonly endedAt: string | null
+}
+
+export interface AccountSnapshot {
+  readonly accountKey: string
+  readonly provider: "claude" | "codex" | "google-agy"
+  readonly label: string
+  readonly plan: string | null
+  readonly status: "ready" | "cooling" | "limit_reached" | "auth_expired" | "unknown"
+  readonly fiveHourPct: number | null
+  readonly weeklyPct: number | null
+  readonly scopedPct: number | null
+  readonly resetsAt: string | null
+  readonly grantsJson: Readonly<Record<string, unknown>> | null
+  readonly creditsBalance: number | null
+  readonly activeSessions: number
+  readonly pools: ReadonlyArray<string>
+  readonly coolReason: string | null
+  readonly coolUntil: string | null
+  readonly checkedAt: string | null
+}
+
+export service NodeCollectors {
+  readonly collectHost: () => HostSnapshot!never
+  readonly collectSessions: () => ReadonlyArray<SessionSnapshot>!never
+  readonly collectAccounts: () => ReadonlyArray<AccountSnapshot>!never
+  readonly collectCfbox: () => ({ readonly host: HostSnapshot; readonly sessions: ReadonlyArray<SessionSnapshot> } | null)!never
+}
+
+export interface DaemonOptions {
+  readonly mcp: McpClient.McpClientConfig
+  readonly intervalMs: number
+  readonly accountIntervalMs: number
+  readonly collectAccounts: boolean
+  readonly collectCfbox: boolean
+  readonly once: boolean
+}
+
+/** Runs one full host + session sync cycle over BYOA MCP-over-HTTP. */
+export effect function syncHostOnce(
+  mcp: McpClient.McpClientConfig
+): { readonly nodeId: string; readonly sessions: number }!McpClient.McpCallError!(NodeCollectors | HttpClient.HttpClient) {
+  const collectors = try NodeCollectors
+  const host = try collectors.collectHost()
+  const sessions = try collectors.collectSessions()
+  const activeCount = sessions.filter((s) => s.status !== "ended").length
+  try McpClient.callTool(mcp, "fleet_heartbeat", {
+    ...host,
+    activeSessions: activeCount,
+  })
+  try McpClient.callTool(mcp, "fleet_sessions_report", {
+    nodeId: host.nodeId,
+    replaceActive: true,
+    sessions,
+  })
+  return { nodeId: host.nodeId, sessions: sessions.length }
+}
+
+/** Runs one provider account + Cloudflare cfbox sync cycle over BYOA MCP-over-HTTP. */
+export effect function syncAccountsAndCfboxOnce(
+  mcp: McpClient.McpClientConfig,
+  doAccounts: boolean,
+  doCfbox: boolean
+): { readonly accounts: number; readonly cfboxSessions: number }!McpClient.McpCallError!(NodeCollectors | HttpClient.HttpClient) {
+  const collectors = try NodeCollectors
+  let accountsCount = 0
+  let cfboxSessions = 0
+  if (doAccounts) {
+    const host = try collectors.collectHost()
+    const accounts = try collectors.collectAccounts()
+    if (accounts.length > 0) {
+      try McpClient.callTool(mcp, "fleet_accounts_report", {
+        sourceNode: host.nodeId,
+        accounts,
+      })
+      accountsCount = accounts.length
+    }
+  }
+  if (doCfbox) {
+    const cf = try collectors.collectCfbox()
+    if (cf !== null) {
+      try McpClient.callTool(mcp, "fleet_heartbeat", {
+        ...cf.host,
+        activeSessions: cf.sessions.filter((s) => s.status !== "ended").length,
+      })
+      try McpClient.callTool(mcp, "fleet_sessions_report", {
+        nodeId: cf.host.nodeId,
+        replaceActive: true,
+        sessions: cf.sessions,
+      })
+      cfboxSessions = cf.sessions.length
+    }
+  }
+  return { accounts: accountsCount, cfboxSessions }
+}
+
+/** Runs the continuous Smithers node observer daemon until interrupted. */
+export effect function runDaemon(
+  options: DaemonOptions
+): void!never!(NodeCollectors | HttpClient.HttpClient) {
+  if (options.once) {
+    const _h = syncHostOnce(options.mcp) catch (e) => ({ error: e.message })
+    const _a = syncAccountsAndCfboxOnce(options.mcp, options.collectAccounts, options.collectCfbox) catch (e) => ({ error: e.message })
+    void _h; void _a
+    return
+  }
+  const hostLoop = effect {
+    while (true) {
+      const res = syncHostOnce(options.mcp) catch (e) => ({ error: e.message })
+      if ("error" in res) {
+        try Effect.logWarning("node.sync.host_failed").pipe(Effect.annotateLogs({ reason: res.error }))
+      }
+      try sleep(Duration.millis(options.intervalMs))
+    }
+  }
+  const extrasLoop = effect {
+    while (true) {
+      const res = syncAccountsAndCfboxOnce(options.mcp, options.collectAccounts, options.collectCfbox) catch (e) => ({ error: e.message })
+      if ("error" in res) {
+        try Effect.logWarning("node.sync.extras_failed").pipe(Effect.annotateLogs({ reason: res.error }))
+      }
+      try sleep(Duration.millis(options.accountIntervalMs))
+    }
+  }
+  if (options.collectAccounts || options.collectCfbox) {
+    try.all [hostLoop, extrasLoop]
+  } else {
+    try hostLoop
+  }
+}

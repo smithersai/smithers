@@ -1,0 +1,220 @@
+/**
+ * Pure view-model projections for `/app/fleet` (Hosts, Observed Sessions,
+ * Provider Accounts) synced via ElectricSQL into TanStack DB.
+ */
+
+import type { HostNode, ObservedSession, ProviderAccount } from "../../../src/features/fleet/globalSchema"
+import { durationOf, tokensOf, type Tone, UNREACHABLE_MS } from "./model"
+
+export interface HostRow {
+  readonly nodeId: string
+  readonly name: string
+  readonly kind: string
+  readonly stateWord: string
+  readonly tone: Tone
+  readonly load: string
+  readonly memory: string
+  readonly disk: string
+  readonly diskLow: boolean
+  readonly activeSessions: number
+  readonly runnerCapacity: number
+  readonly version: string
+  readonly seenMs: number | null
+}
+
+export interface SessionRow {
+  readonly sessionKey: string
+  readonly nodeId: string
+  readonly harness: string
+  readonly managed: boolean
+  readonly model: string
+  readonly account: string
+  readonly repoOrLane: string
+  readonly title: string
+  readonly statusWord: string
+  readonly tone: Tone
+  readonly duration: string
+  readonly lastMs: number | null
+  readonly tokens: string
+}
+
+export interface AccountRow {
+  readonly accountKey: string
+  readonly provider: string
+  readonly label: string
+  readonly plan: string
+  readonly statusWord: string
+  readonly tone: Tone
+  readonly fiveHour: string
+  readonly weekly: string
+  readonly scoped: string
+  readonly resetsMs: number | null
+  readonly credits: string
+  readonly activeSessions: number
+  readonly pools: string
+  readonly note: string
+}
+
+export interface GlobalSummary {
+  readonly onlineHosts: number
+  readonly totalHosts: number
+  readonly activeSessions: number
+  readonly claudeSessions: number
+  readonly codexSessions: number
+  readonly agySessions: number
+  readonly cloudflareSessions: number
+  readonly readyAccounts: number
+  readonly totalAccounts: number
+  readonly alertsCount: number
+}
+
+function parseMs(iso: string | null | undefined): number | null {
+  if (iso === undefined || iso === null) return null
+  const n = Date.parse(iso)
+  return Number.isFinite(n) ? n : null
+}
+
+export function hostRowsOf(nodes: ReadonlyArray<HostNode>, nowMs: number): ReadonlyArray<HostRow> {
+  return nodes.map((n) => {
+    const seenMs = parseMs(n.seenAt)
+    const reachable = n.online && seenMs !== null && nowMs - seenMs <= UNREACHABLE_MS * 3
+    const diskLow = n.diskFreeGb !== null && n.diskFreeGb < 25
+    const stateWord = !reachable
+      ? "Offline"
+      : n.held !== null
+      ? `Held · ${n.held}`
+      : diskLow
+      ? "Low disk"
+      : "Online"
+    const tone: Tone = !reachable ? "bad" : n.held !== null || diskLow ? "warn" : "ok"
+    return {
+      nodeId: n.nodeId,
+      name: n.name,
+      kind: n.kind,
+      stateWord,
+      tone,
+      load: n.load1 === null ? "-" : n.cpuCores === null ? n.load1.toFixed(1) : `${n.load1.toFixed(1)}/${n.cpuCores}c`,
+      memory: n.memUsedGb !== null && n.memTotalGb !== null ? `${n.memUsedGb.toFixed(0)}/${n.memTotalGb.toFixed(0)}G` : "-",
+      disk: n.diskFreeGb === null ? "-" : `${Math.round(n.diskFreeGb)}G free`,
+      diskLow,
+      activeSessions: n.activeSessions,
+      runnerCapacity: n.runnerCapacity,
+      version: n.version ?? "-",
+      seenMs,
+    }
+  })
+}
+
+const SESSION_TONE: Readonly<Record<string, { readonly word: string; readonly tone: Tone }>> = {
+  working: { word: "Working", tone: "run" },
+  idle: { word: "Idle", tone: "muted" },
+  stalled: { word: "Stalled", tone: "bad" },
+  waiting: { word: "Waiting", tone: "warn" },
+  error: { word: "Error", tone: "bad" },
+  ended: { word: "Ended", tone: "muted" },
+}
+
+export function sessionRowsOf(
+  sessions: ReadonlyArray<ObservedSession>,
+  nowMs: number,
+  includeEnded: boolean = false
+): ReadonlyArray<SessionRow> {
+  return sessions
+    .filter((s) => includeEnded || s.status !== "ended")
+    .map((s) => {
+      const meta = SESSION_TONE[s.status] ?? { word: s.status, tone: "muted" as const }
+      const startMs = parseMs(s.startedAt)
+      const endMs = parseMs(s.endedAt)
+      const lastMs = parseMs(s.lastActivityAt)
+      const duration = startMs === null ? "-" : durationOf((endMs ?? nowMs) - startMs)
+      return {
+        sessionKey: s.sessionKey,
+        nodeId: s.nodeId,
+        harness: s.harness,
+        managed: s.managed,
+        model: s.model ?? "-",
+        account: s.accountLabel ?? "-",
+        repoOrLane: s.lane ?? s.repo ?? "-",
+        title: s.title ?? "-",
+        statusWord: meta.word,
+        tone: meta.tone,
+        duration,
+        lastMs,
+        tokens: s.tokensUsed === null ? "-" : `${tokensOf(s.tokensUsed)} tok`,
+      }
+    })
+}
+
+function pctOf(value: number | null): string {
+  return value === null ? "-" : `${Math.round(value)}%`
+}
+
+export function accountRowsOf(accounts: ReadonlyArray<ProviderAccount>): ReadonlyArray<AccountRow> {
+  return accounts.map((a) => {
+    const creditDanger = a.provider === "codex" && a.weeklyPct !== null && a.weeklyPct >= 95
+    const statusWord = creditDanger
+      ? "Credit risk"
+      : a.status === "ready"
+      ? "Ready"
+      : a.status === "cooling"
+      ? "Cooling"
+      : a.status === "limit_reached"
+      ? "At limit"
+      : a.status === "auth_expired"
+      ? "Auth expired"
+      : "Unknown"
+    const tone: Tone =
+      creditDanger || a.status === "auth_expired" || a.status === "limit_reached"
+        ? "bad"
+        : a.status === "cooling"
+        ? "warn"
+        : a.status === "ready"
+        ? "ok"
+        : "muted"
+    return {
+      accountKey: a.accountKey,
+      provider: a.provider,
+      label: a.label,
+      plan: a.plan ?? "-",
+      statusWord,
+      tone,
+      fiveHour: pctOf(a.fiveHourPct),
+      weekly: pctOf(a.weeklyPct),
+      scoped: pctOf(a.scopedPct),
+      resetsMs: parseMs(a.resetsAt),
+      credits: a.creditsBalance === null ? "-" : String(Math.round(a.creditsBalance)),
+      activeSessions: a.activeSessions,
+      pools: a.pools.length === 0 ? "-" : a.pools.join(", "),
+      note: a.coolReason ?? "-",
+    }
+  })
+}
+
+export function summarizeGlobal(
+  hosts: ReadonlyArray<HostRow>,
+  sessions: ReadonlyArray<SessionRow>,
+  accounts: ReadonlyArray<AccountRow>
+): GlobalSummary {
+  const onlineHosts = hosts.filter((h) => h.stateWord !== "Offline").length
+  const claudeSessions = sessions.filter((s) => s.harness === "claude").length
+  const codexSessions = sessions.filter((s) => s.harness === "codex").length
+  const agySessions = sessions.filter((s) => s.harness === "agy-cli" || s.harness === "agy-ide").length
+  const cloudflareSessions = sessions.filter((s) => s.harness === "cfbox" || s.harness === "cf-sandbox").length
+  const readyAccounts = accounts.filter((a) => a.tone === "ok").length
+  const alertsCount =
+    hosts.filter((h) => h.tone === "bad" || h.diskLow).length +
+    sessions.filter((s) => s.tone === "bad").length +
+    accounts.filter((a) => a.tone === "bad").length
+  return {
+    onlineHosts,
+    totalHosts: hosts.length,
+    activeSessions: sessions.length,
+    claudeSessions,
+    codexSessions,
+    agySessions,
+    cloudflareSessions,
+    readyAccounts,
+    totalAccounts: accounts.length,
+    alertsCount,
+  }
+}

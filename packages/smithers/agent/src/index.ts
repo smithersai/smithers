@@ -203,3 +203,9 @@ export * as Acp from "./Acp.ts"
  * @since 1.0.0
  */
 export * as Transcript from "./Transcript.ts"
+
+/**
+ * @category guards
+ * @since 1.0.0
+ */
+export * as ModelPolicy from "./ModelPolicy.vibe"

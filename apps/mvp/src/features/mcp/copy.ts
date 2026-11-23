@@ -15,6 +15,7 @@ export const CLIENTS = "Agent client"
 /** Each client preset's button. */
 export const CLIENT_LABEL: Record<McpClientId, string> = {
   claude: "Claude Code",
+  agy: "Antigravity (agy)",
   codex: "Codex",
   cursor: "Cursor",
   http: "Streamable HTTP",

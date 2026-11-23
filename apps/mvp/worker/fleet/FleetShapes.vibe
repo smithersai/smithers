@@ -1,0 +1,90 @@
+/**
+ * Deployment-wide ElectricSQL shape proxies for `/app/fleet`.
+ *
+ * Strictly restricted to deployment admins (`roninjin10` by default via
+ * `DeploymentPolicy`): signed-out callers get 401; non-admin signed-in users
+ * (even owners of their own projects) get 403.
+ */
+
+import { ShapeProxy } from "@smthrs/effect-electric"
+import { HttpServerRequest, HttpServerResponse } from "effect/http"
+import { LOCAL_ELECTRIC_URL } from "../../src/features/chat/contract.ts"
+import {
+  FLEET_ACCOUNTS_SHAPE_ROUTE,
+  FLEET_NODES_SHAPE_ROUTE,
+  FLEET_SESSIONS_SHAPE_ROUTE,
+  HOST_NODE_COLUMNS,
+  OBSERVED_SESSION_COLUMNS,
+  PROVIDER_ACCOUNT_COLUMNS,
+} from "../../src/features/fleet/globalContract.ts"
+import * as DeploymentPolicy from "../DeploymentPolicy.vibe"
+import * as ShapeAccess from "../ShapeAccess.ts"
+
+export const nodeShapes = Metric.counter("smithers_fleet_node_shape_requests", { incremental: true })
+export const sessionShapes = Metric.counter("smithers_fleet_session_shape_requests", { incremental: true })
+export const accountShapes = Metric.counter("smithers_fleet_account_shape_requests", { incremental: true })
+
+export function handles(path: string): boolean {
+  return (
+    path === FLEET_NODES_SHAPE_ROUTE ||
+    path === FLEET_SESSIONS_SHAPE_ROUTE ||
+    path === FLEET_ACCOUNTS_SHAPE_ROUTE
+  )
+}
+
+export effect function make(admins?: ReadonlySet<string>) {
+  const connection = try ShapeProxy.config({ url: LOCAL_ELECTRIC_URL })
+  const allowedAdmins = admins ?? (DeploymentPolicy.configuredAdmins() catch () => DeploymentPolicy.DEFAULT_ADMINS)
+
+  const requireAdmin = effect {
+    const actor = try ShapeAccess.actor
+    if (Option.isNone(actor)) {
+      throw new ShapeProxy.Refused({ status: 401 })
+    }
+    if (!DeploymentPolicy.isDeploymentAdmin(actor.value.login, allowedAdmins)) {
+      throw new ShapeProxy.Refused({ status: 403 })
+    }
+    return actor.value
+  }
+
+  const nodes = ShapeProxy.make({
+    ...connection,
+    shape: effect {
+      try requireAdmin
+      return { table: "host_nodes", columns: [...HOST_NODE_COLUMNS] }
+    },
+    name: "fleet.shape.nodes",
+    metric: nodeShapes,
+  })
+
+  const sessions = ShapeProxy.make({
+    ...connection,
+    shape: effect {
+      try requireAdmin
+      return { table: "observed_sessions", columns: [...OBSERVED_SESSION_COLUMNS] }
+    },
+    name: "fleet.shape.sessions",
+    metric: sessionShapes,
+  })
+
+  const accounts = ShapeProxy.make({
+    ...connection,
+    shape: effect {
+      try requireAdmin
+      return { table: "provider_accounts", columns: [...PROVIDER_ACCOUNT_COLUMNS] }
+    },
+    name: "fleet.shape.accounts",
+    metric: accountShapes,
+  })
+
+  const fetch = effect {
+    const request = try HttpServerRequest.HttpServerRequest
+    const path = request.url.split("?")[0] ?? ""
+    if (path === FLEET_NODES_SHAPE_ROUTE) return try nodes
+    if (path === FLEET_SESSIONS_SHAPE_ROUTE) return try sessions
+    if (path === FLEET_ACCOUNTS_SHAPE_ROUTE) return try accounts
+    return HttpServerResponse.empty({ status: 404 })
+  }
+
+  return { fetch }
+}

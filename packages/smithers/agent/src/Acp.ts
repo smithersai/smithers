@@ -28,6 +28,7 @@ import * as Ref from "effect/Ref"
 import * as Schema from "effect/Schema"
 import type * as Scope from "effect/Scope"
 import * as Stream from "effect/Stream"
+import * as ModelPolicy from "./ModelPolicy.vibe"
 
 /**
  * The protocol version this client speaks.
@@ -133,6 +134,15 @@ export interface Client {
    * sign it read the message.
    */
   readonly steer: (sessionId: string, text: string) => Effect.Effect<boolean, AcpError>
+  /** Selects `modelId` on `sessionId` via `session/set_model`. */
+  readonly setModel: (sessionId: string, modelId: string) => Effect.Effect<void, AcpError>
+  /** Returns the current model reported for `sessionId`, if any. */
+  readonly currentModel: (sessionId: string) => Effect.Effect<Option.Option<string>>
+  /** Enforces `policy` on `sessionId` (selecting `policy.model` when needed) before any prompt turn. */
+  readonly enforceModelPolicy: (
+    sessionId: string,
+    policy: ModelPolicy.ModelPolicy
+  ) => Effect.Effect<string, AcpError | ModelPolicy.ModelPolicyRefused>
 }
 
 /**
@@ -185,7 +195,20 @@ const InitializeResult = Schema.Struct({
   }))
 })
 const SteeringResult = Schema.Struct({ outcome: Schema.String })
-const NewSessionResult = Schema.Struct({ sessionId: Schema.String })
+const SessionModels = Schema.Struct({
+  currentModelId: Schema.optional(Schema.String),
+  availableModels: Schema.optional(Schema.Array(Schema.Struct({
+    modelId: Schema.String,
+    name: Schema.optional(Schema.String)
+  })))
+})
+const NewSessionResult = Schema.Struct({
+  sessionId: Schema.String,
+  models: Schema.optional(SessionModels)
+})
+const LoadSessionResult = Schema.Struct({
+  models: Schema.optional(SessionModels)
+})
 const PromptResult = Schema.Struct({ stopReason: Schema.Literals(STOP_REASONS) })
 const PermissionRequest = Schema.Struct({
   options: Schema.Array(Schema.Struct({ optionId: Schema.String, kind: Schema.String }))
@@ -237,6 +260,7 @@ export const make = <E, R>(
     const pending = new Map<number, { readonly method: string; readonly deferred: Pending }>()
     const nextId = yield* Ref.make(0)
     const closed = yield* Ref.make(false)
+    const sessionModels = new Map<string, string>()
     const write = (method: string, value: unknown) =>
       transport.send(JSON.stringify(value)).pipe(Effect.mapError(() => new AcpError({ code: "closed", method })))
     const answer = (id: number | string, method: string, result: unknown) =>
@@ -354,9 +378,27 @@ export const make = <E, R>(
       newSession: (cwd) =>
         request("session/new", { cwd, mcpServers: [] }).pipe(
           Effect.flatMap(decoded("session/new", NewSessionResult)),
+          Effect.tap((result) =>
+            Effect.sync(() => {
+              if (result.models?.currentModelId !== undefined) {
+                sessionModels.set(result.sessionId, result.models.currentModelId)
+              }
+            })
+          ),
           Effect.map((result) => result.sessionId)
         ),
-      loadSession: (sessionId, cwd) => Effect.asVoid(request("session/load", { sessionId, cwd, mcpServers: [] })),
+      loadSession: (sessionId, cwd) =>
+        request("session/load", { sessionId, cwd, mcpServers: [] }).pipe(
+          Effect.tap((raw) =>
+            Effect.sync(() => {
+              const parsed = Schema.decodeUnknownOption(LoadSessionResult)(raw)
+              if (Option.isSome(parsed) && parsed.value.models?.currentModelId !== undefined) {
+                sessionModels.set(sessionId, parsed.value.models.currentModelId)
+              }
+            })
+          ),
+          Effect.asVoid
+        ),
       prompt: (sessionId, text) =>
         request("session/prompt", { sessionId, prompt: [{ type: "text", text }] }).pipe(
           Effect.flatMap(decoded("session/prompt", PromptResult)),
@@ -368,7 +410,28 @@ export const make = <E, R>(
         request("_session/steering", { sessionId, prompt: [{ type: "text", text }] }).pipe(
           Effect.flatMap(decoded("_session/steering", SteeringResult)),
           Effect.map((result) => result.outcome === "injected")
-        )
+        ),
+      setModel: (sessionId, modelId) =>
+        request("session/set_model", { sessionId, modelId }).pipe(
+          Effect.tap(() =>
+            Effect.sync(() => {
+              sessionModels.set(sessionId, modelId)
+            })
+          ),
+          Effect.asVoid
+        ),
+      currentModel: (sessionId) => Effect.sync(() => Option.fromNullishOr(sessionModels.get(sessionId))),
+      enforceModelPolicy: (sessionId, policy) =>
+        Effect.gen(function*() {
+          const observed = sessionModels.get(sessionId)
+          if (policy.model !== undefined && observed !== policy.model) {
+            // Check requested model against prefix allow/deny rules before switching.
+            yield* ModelPolicy.checkModel(policy, policy.model)
+            yield* client.setModel(sessionId, policy.model)
+          }
+          const effective = sessionModels.get(sessionId) ?? policy.model
+          return yield* ModelPolicy.checkModel(policy, effective)
+        })
     }
     return client
   })

@@ -751,10 +751,16 @@ const session = (options: {
           const loaded = yield* Effect.exit(client.loadSession(options.resume, checkout.dir))
           loading = false
           if (Exit.isSuccess(loaded)) {
+            if (options.profile.modelPolicy !== undefined) {
+              yield* client.enforceModelPolicy(options.resume, options.profile.modelPolicy)
+            }
             return { sessionId: options.resume, text: CONTINUE, steering: initialized.steering }
           }
         }
         const sessionId = yield* client.newSession(checkout.dir)
+        if (options.profile.modelPolicy !== undefined) {
+          yield* client.enforceModelPolicy(sessionId, options.profile.modelPolicy)
+        }
         checkpoint = { ...checkpoint, sessionId }
         yield* save()
         return {
@@ -766,7 +772,12 @@ const session = (options: {
       signal
     )
     if (isSignal(opened)) return yield* stopped(opened, undefined, undefined)
-    if (opened._tag === "Failure") return failure(opened.failure)
+    if (opened._tag === "Failure") {
+      if (opened.failure._tag === "ModelPolicyRefused") {
+        return ended(failed("refused"), "model_policy")
+      }
+      return failure(opened.failure)
+    }
     const { sessionId, steering, text } = opened.success
     // The turn in flight. A steer may replace it: `replacing` says its end is the cancel the steer asked for, and
     // `turns` takes each turn a steer started.

@@ -1,26 +1,63 @@
 {
   "apiVersion": 1,
   "id": "fleet",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "title": "Fleet",
-  "description": "A repository's agent runs and runner machines, live: who works, who waits, what stalled or failed.",
+  "description": "Every Smithers host, live agent session, Cloudflare sandbox, and provider account across the deployment.",
   "requires": { "api": "^1.0.0" },
   "capabilities": [],
-  "uses": [],
+  "uses": ["app/navigate"],
   "contributes": {
     "views": [
       {
-        "id": "fleet/runs", "title": "Fleet", "scope": "repository", "path": "", "sizes": ["full"], "minimum": "maintainer",
-        "reads": ["core/agent-runs", "core/machines"], "render": { "kind": "component", "export": "Fleet" }
+        "id": "fleet/global",
+        "title": "Fleet",
+        "scope": "app",
+        "path": "",
+        "sizes": ["full"],
+        "minimum": "admin",
+        "reads": ["core/fleet-nodes", "core/fleet-sessions", "core/fleet-accounts"],
+        "render": { "kind": "component", "export": "GlobalFleet" }
+      },
+      {
+        "id": "fleet/runs",
+        "title": "Fleet",
+        "scope": "repository",
+        "path": "",
+        "sizes": ["full"],
+        "minimum": "maintainer",
+        "reads": ["core/agent-runs", "core/machines"],
+        "render": { "kind": "component", "export": "Fleet" }
       }
     ],
-    "slots": [{
-      "slot": "repo.tabs",
-      "id": "fleet/tab",
-      "order": 20,
-      "minimum": "maintainer",
-      "reads": ["core/agent-runs"],
-      "render": { "kind": "component", "export": "RepoTab" }
-    }]
+    "slots": [
+      {
+        "slot": "shell.nav",
+        "id": "fleet/nav",
+        "order": 15,
+        "minimum": "admin",
+        "reads": ["core/fleet-nodes", "core/fleet-sessions"],
+        "render": { "kind": "component", "export": "NavButton" }
+      },
+      {
+        "slot": "repo.tabs",
+        "id": "fleet/tab",
+        "order": 20,
+        "minimum": "maintainer",
+        "reads": ["core/agent-runs"],
+        "render": { "kind": "component", "export": "RepoTab" }
+      }
+    ],
+    "commands": [
+      {
+        "id": "fleet/open-global",
+        "flow": "app/navigate",
+        "args": { "to": "/app/fleet" },
+        "title": "Fleet",
+        "minimum": "admin",
+        "slash": { "name": "fleet" },
+        "palette": true
+      }
+    ]
   }
 }

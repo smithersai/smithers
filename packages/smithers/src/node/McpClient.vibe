@@ -1,0 +1,85 @@
+/**
+ * Streamable HTTP MCP client (BYOA) for Smithers host nodes and CLI callers.
+ *
+ * Calls `POST <origin>/api/mcp` over Effect `HttpClient` with `Authorization:
+ * Bearer sma_...` using standard MCP JSON-RPC 2.0 `tools/call`.
+ */
+
+import { HttpClient, HttpClientRequest } from "effect/http"
+
+export schema error McpCallError {
+  readonly code: "http" | "protocol" | "rpc" | "unauthorized"
+  readonly message: string
+}
+
+export interface McpClientConfig {
+  readonly origin: string
+  readonly token: string
+}
+
+schema RpcContentBlock {
+  type: string
+  text?: string
+}
+
+schema RpcResult {
+  content?: ReadonlyArray<RpcContentBlock>
+  isError?: boolean
+}
+
+schema RpcError {
+  code: number
+  message: string
+}
+
+schema RpcEnvelope {
+  jsonrpc?: string
+  result?: RpcResult
+  error?: RpcError
+}
+
+/** Calls one MCP tool on `config.origin/api/mcp` via Streamable HTTP JSON-RPC 2.0. */
+export effect function callTool(
+  config: McpClientConfig,
+  name: string,
+  args: Readonly<Record<string, unknown>>
+): unknown!McpCallError!HttpClient.HttpClient {
+  const client = try HttpClient.HttpClient
+  const url = `${config.origin.replace(/\/+$/, "")}/api/mcp`
+  const payload = {
+    jsonrpc: "2.0",
+    id: `node-${Date.now()}`,
+    method: "tools/call",
+    params: { name, arguments: args },
+  }
+  const req = HttpClientRequest.post(url).pipe(
+    HttpClientRequest.setHeader("content-type", "application/json"),
+    HttpClientRequest.setHeader("accept", "application/json, text/event-stream"),
+    HttpClientRequest.setHeader("authorization", `Bearer ${config.token}`),
+    HttpClientRequest.bodyJsonUnsafe(payload)
+  )
+  const res = client.execute(req) catch effect (err) => {
+    throw new McpCallError({ code: "http", message: `MCP transport error: ${String(err)}` })
+  }
+  if (res.status === 401 || res.status === 403) {
+    throw new McpCallError({ code: "unauthorized", message: `MCP auth refused (${res.status})` })
+  }
+  if (res.status < 200 || res.status >= 300) {
+    throw new McpCallError({ code: "http", message: `MCP HTTP ${res.status}` })
+  }
+  const body = res.json catch effect () => {
+    throw new McpCallError({ code: "protocol", message: "MCP response was not valid JSON" })
+  }
+  const envelope = Schema.decodeUnknownEffect(RpcEnvelope)(body) catch effect () => {
+    throw new McpCallError({ code: "protocol", message: "MCP JSON-RPC envelope malformed" })
+  }
+  if (envelope.error !== undefined) {
+    throw new McpCallError({ code: "rpc", message: `${envelope.error.code}: ${envelope.error.message}` })
+  }
+  const text = envelope.result?.content?.[0]?.text
+  if (envelope.result?.isError === true) {
+    throw new McpCallError({ code: "rpc", message: text ?? "MCP tool returned error" })
+  }
+  if (text === undefined) return {}
+  return Effect.try(() => JSON.parse(text) as unknown) catch () => text
+}

@@ -67,12 +67,14 @@
     "./index": "./src/index.ts",
     "./ScriptedJudge": "./src/ScriptedJudge.ts",
     "./Acp": "./src/Acp.ts",
+    "./ModelPolicy": "./src/ModelPolicy.vibe",
     "./AgentRunner": "./src/AgentRunner.ts",
     "./ExternalAgent": "./src/ExternalAgent.ts",
     "./Transcript": "./src/Transcript.ts"
   },
   "files": [
     "src/**/*.ts",
+    "src/**/*.vibe",
     "dist/**/*.js",
     "dist/**/*.js.map",
     "dist/**/*.d.ts",

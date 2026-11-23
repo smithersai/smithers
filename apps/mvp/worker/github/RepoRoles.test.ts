@@ -120,12 +120,12 @@ describe("resolve", () => {
   })
 
   test.each([
-    ["admin", "admin"],
-    ["maintain", "maintainer"],
+    ["admin", "member"],
+    ["maintain", "member"],
     ["write", "member"],
     ["triage", "guest"],
     ["read", "guest"],
-  ] as const)("another repository: GitHub's %s is %s, held by the person's row", async (permission, role) => {
+  ] as const)("another repository (non-owner): GitHub's %s is capped at %s, held by the person's row", async (permission, role) => {
     const github = scriptedGitHub("acme", "widgets")
     github.roles.set("maya", permission)
     const resolved = await resolve(await roles(github))
@@ -134,6 +134,21 @@ describe("resolve", () => {
       // The row's check time ties a write to this very read (decision 0079 §6).
       held: Option.some({ repoId: OTHER.id, personId: MAYA, role, checkedAt: expect.any(String) }),
     })
+  })
+
+  test("project owner holds admin on their own repository, and deployment admin roninjin10 holds admin everywhere", async () => {
+    const ownedRepo = { id: "github/maya/widgets", owner: "maya", name: "widgets" } as const
+    const ownedGh = scriptedGitHub("maya", "widgets")
+    ownedGh.roles.set("maya", "admin")
+    const ownedResolved = await resolve(await roles(ownedGh), maya, ownedRepo)
+    expect(ownedResolved._tag === "Success" && ownedResolved.success.role).toBe("admin")
+
+    const RONIN = "8e2f4c9a-5b3d-4f7a-9c8e-3d4f5a6b7c8d"
+    await sql(runtime, `INSERT INTO people (id, github_id, github_login) VALUES ('${RONIN}', ${accountIdOf("roninjin10")}, 'roninjin10')`)
+    const otherGh = scriptedGitHub("acme", "widgets")
+    otherGh.roles.set("roninjin10", "admin")
+    const adminResolved = await resolve(await roles(otherGh), { ...maya, subject: { kind: "person", id: RONIN }, login: "roninjin10" }, OTHER)
+    expect(adminResolved._tag === "Success" && adminResolved.success.role).toBe("admin")
   })
 
   test("a role is kept 5 minutes, no role included; a stale one is read again", async () => {

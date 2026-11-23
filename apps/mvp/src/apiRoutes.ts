@@ -7,15 +7,15 @@
  * src/apiRoutes.test.ts fails when a route literal in src/ or worker/ has a word that isn't here.
  */
 export const ROUTE_WORDS: ReadonlySet<string> = new Set([
-  "about", "ack", "actions", "admin-receipts", "agent-runs", "alert-channels", "alert-deliveries", "answers", "api", "archive", "arrive", "audit", "auth", "blob", "broker",
+  "about", "accounts", "ack", "actions", "admin-receipts", "agent-runs", "alert-channels", "alert-deliveries", "answers", "api", "archive", "arrive", "audit", "auth", "authorize", "blob", "broker",
   "branch-publications", "branches", "bug-reports", "bugs", "call", "callback", "calls", "checks", "cloud-runs", "codex",
-  "comments", "compare", "connections", "conversations", "create", "creation", "credential", "delete", "docs", "domains", "exchange", "feeds", "file",
-  "flow-drafts", "flows", "github", "github-sync", "github-writes", "handoff", "home", "hosted-model", "issue-edges", "item-summaries", "items", "jev", "launch", "logs", "machines", "me", "merge",
-  "message-pin", "message-pins", "messages", "metrics", "model", "my-conversations", "notifications", "personal-model",
-  "preview", "profiles", "pull-commits", "pulls", "questions", "raw", "refs", "remote-runs", "renderer", "repos", "repositories", "resolve",
-  "review", "reviews", "room", "run", "runners", "runs", "sandbox", "sandbox-limits", "save", "secrets", "session", "shapes", "shares",
+  "comments", "compare", "connections", "conversations", "create", "creation", "credential", "delete", "docs", "domains", "exchange", "feeds", "file", "fleet",
+  "flow-drafts", "flows", "github", "github-sync", "github-writes", "handoff", "home", "hosted-model", "issue-edges", "item-summaries", "items", "jev", "launch", "logs", "machines", "mcp", "mcp-tokens", "me", "merge",
+  "message-pin", "message-pins", "messages", "metrics", "model", "my-conversations", "nodes", "notifications", "oauth", "personal-model",
+  "preview", "profiles", "pull-commits", "pulls", "questions", "raw", "refs", "register", "remote-runs", "renderer", "repos", "repositories", "resolve",
+  "review", "reviews", "room", "run", "runners", "runs", "sandbox", "sandbox-limits", "save", "secrets", "session", "sessions", "shapes", "shares",
   "sign-in", "sign-out", "source", "spend-alerts", "stack", "stamp", "start", "state", "steers", "stop", "summaries",
-  "telemetry", "terminals", "test", "texts", "timeline", "todo-leaves", "todo-requests", "todos", "traces", "tree", "triage-settings",
+  "telemetry", "terminals", "test", "texts", "timeline", "todo-leaves", "token", "todo-requests", "todos", "traces", "tree", "triage-settings",
   "v1", "views", "watches", "web", "webhook", "work-links", "write", "writes",
 ])
 

@@ -153,6 +153,9 @@ const FEED_ITEMS = "core/feed-items"
 /** The fleet's core queries (docs/features/fleet.md#queries): a repository's agent runs and its runner machines. */
 const AGENT_RUNS = "core/agent-runs"
 const MACHINES = "core/machines"
+const FLEET_NODES = "core/fleet-nodes"
+const FLEET_SESSIONS = "core/fleet-sessions"
+const FLEET_ACCOUNTS = "core/fleet-accounts"
 
 /** Where `core/feed-items` keeps a document's items: `<repo>:<document>`. */
 const itemsKey = (repo: string, document: string) => `${repo}:${document}`
@@ -489,6 +492,24 @@ export const queryOf = (name: string, params: Host.QueryParams | undefined) =>
     const plugins = yield* Plugins
     const fixed = plugins.core.get(name)
     if (fixed !== undefined) return fixed.live
+    if (name === FLEET_NODES || name === FLEET_SESSIONS || name === FLEET_ACCOUNTS) {
+      const key = `global:${name}`
+      const existing = plugins.fleetOpen.get(key)
+      if (existing !== undefined) return yield* existing
+      const open = yield* Effect.cached(
+        Effect.gen(function* () {
+          const query =
+            name === FLEET_NODES
+              ? yield* plugins.fleet.globalNodes
+              : name === FLEET_SESSIONS
+              ? yield* plugins.fleet.globalSessions
+              : yield* plugins.fleet.globalAccounts
+          return (yield* liveOf(query.rows as unknown as Stream.Stream<ReadonlyArray<Readonly<Record<string, unknown>>>>))
+        }).pipe(Scope.provide(plugins.scope), Effect.orDie)
+      )
+      plugins.fleetOpen.set(key, open)
+      return yield* open
+    }
     const fleetQuery = name === AGENT_RUNS || name === MACHINES
     if (name !== FEED_INDEX && name !== FEED_DOCUMENT && name !== FEED_ITEMS && !fleetQuery) {
       return yield* Effect.fail("query" as const)
