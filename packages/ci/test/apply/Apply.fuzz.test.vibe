@@ -96,7 +96,7 @@ describe("apply diagnostics and read-only preflight", () => {
       const outcome = inspect(new Map(), paths.map((path) => ({ path, content: "" })))
       expect(outcome).toMatchObject({ _tag: "Failure", failure: {
         part: "generate", code: "unsupported",
-        message: paths.map((path) => JSON.stringify(path) + " is not a repository-relative file path").join("; ")
+        message: paths.map((path) => JSON.stringify(path) + " is outside the repository (not a repository-relative file path)").join("; ")
       } })
     }))
 

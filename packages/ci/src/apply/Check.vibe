@@ -84,7 +84,7 @@ effect function placeOf(root: string, realRoot: string, path: string) {
   // GeneratedFile paths are portable, repository-relative names. Validate the entire name before
   // looking for the first missing parent, using the same slash spelling as the writer.
   if (/[\\\0]|^[A-Za-z]:|(?:^|\/)\.{0,2}(?:\/|$)/.test(path)) {
-    return Place.Refused({ why: `${JSON.stringify(path)} is not a repository-relative file path` })
+    return Place.Refused({ why: `${JSON.stringify(path)} is outside the repository (not a repository-relative file path)` })
   }
   for (const prefix of prefixesOf(path)) {
     const at = paths.join(root, prefix)
