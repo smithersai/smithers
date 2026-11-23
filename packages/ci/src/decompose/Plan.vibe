@@ -176,7 +176,8 @@ const rootScript = (
   seen: ReadonlySet<string>
 ): Run | undefined => {
   const scripts = workspace.rootScripts
-  const body = scripts[name]
+  // An own entry only: `scripts.constructor` of a plain object is no script.
+  const body = Object.hasOwn(scripts, name) ? scripts[name] : undefined
   if (body === undefined || seen.has(name) || body.includes(">")) return undefined
   if (Object.hasOwn(scripts, `pre${name}`) || Object.hasOwn(scripts, `post${name}`)) return undefined
   const parsed = commands(body)

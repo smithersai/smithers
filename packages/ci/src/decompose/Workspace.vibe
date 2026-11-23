@@ -118,18 +118,54 @@ export const managerOf = (manifest: Readonly<Record<string, unknown>>, files: Re
   return lockfiles.find(([file]) => files.has(file))?.[1] ?? "npm"
 }
 
+// True when a pattern matches all of a subject. The token `star` matches any run of the subject's items, an empty
+// run too; any other token matches one item, when `matches` says so. It is one pass with one place to go back to,
+// the last star: the work is at most the product of the two lengths. A regular expression's work for a subject it
+// does not match grows many times over with each star: `a*a*a*a*a*a*a*z` took seven seconds for one directory.
+const wild = (
+  pattern: ReadonlyArray<string>,
+  subject: ReadonlyArray<string>,
+  star: string,
+  matches: (token: string, item: string) => boolean
+): boolean => {
+  let at = 0
+  let item = 0
+  let last = -1
+  let resume = 0
+  while (item < subject.length) {
+    if (pattern[at] === star) {
+      last = at
+      resume = item
+      at += 1
+    } else if (at < pattern.length && matches(pattern[at] as string, subject[item] as string)) {
+      at += 1
+      item += 1
+    } else if (last >= 0) {
+      // The last star takes one more item.
+      at = last + 1
+      resume += 1
+      item = resume
+    } else {
+      return false
+    }
+  }
+  return pattern.slice(at).every((token) => token === star)
+}
+
 // One workspace pattern as a test of a directory, or `undefined` when it uses
-// glob syntax this reader does not implement.
-const patternTest = (pattern: string): RegExp | undefined => {
+// glob syntax this reader does not implement. `*` matches any run of characters
+// in one name, and a `**` segment any run of directories.
+const patternTest = (pattern: string): ((directory: string) => boolean) | undefined => {
   if (/[{}[\]?\\]/.test(pattern)) return undefined
   const segments = pattern.split("/").filter((segment) => segment !== "" && segment !== ".")
   if (segments.includes("..")) return undefined
-  const source = segments.map((segment) =>
-    segment === "**"
-      ? "(?:[^/]+/)*"
-      : `${segment.split("*").map((part) => part.replace(/[.+^$()|]/g, "\\$&")).join("[^/]*")}/`
-  ).join("")
-  return new RegExp(`^${source}$`)
+  return (directory) =>
+    wild(
+      segments,
+      directory.split("/"),
+      "**",
+      (segment, name) => wild([...segment], [...name], "*", (left, right) => left === right)
+    )
 }
 
 // Settings in `.npmrc` that change which packages a run selects.
@@ -184,8 +220,8 @@ export const packageDirectories = (
   patterns: ReadonlyArray<string>,
   files: ReadonlySet<string>
 ): ReadonlyArray<string> | undefined => {
-  const include: Array<RegExp> = []
-  const exclude: Array<RegExp> = []
+  const include: Array<(directory: string) => boolean> = []
+  const exclude: Array<(directory: string) => boolean> = []
   for (const pattern of patterns) {
     const test = patternTest(pattern.startsWith("!") ? pattern.slice(1) : pattern)
     if (test === undefined) return undefined
@@ -195,8 +231,7 @@ export const packageDirectories = (
   for (const file of files) {
     if (!file.endsWith("/package.json") || file.includes("node_modules/")) continue
     const directory = file.slice(0, -"/package.json".length)
-    const subject = `${directory}/`
-    if (include.some((test) => test.test(subject)) && !exclude.some((test) => test.test(subject))) found.push(directory)
+    if (include.some((test) => test(directory)) && !exclude.some((test) => test(directory))) found.push(directory)
   }
   return found.sort()
 }
@@ -297,7 +332,7 @@ export const scanner = (workspace: Workspace): (text: string, bare: boolean) => 
   const names = new Set(workspace.packages.map((candidate) => candidate.name))
   const tops = new Set(workspace.packages.map((candidate) => candidate.directory.split("/")[0] as string))
   const unscopedNames = [...names].filter((name) => !name.includes("/")).map((name) =>
-    name.replace(/[.+^$()|]/g, "\\$&")
+    name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
   )
   const unscoped = new RegExp(`(?<![A-Za-z0-9_@.~/-])(?:${unscopedNames.join("|")})(?![A-Za-z0-9_@.~/-])`, "g")
   return (text, bare) => {

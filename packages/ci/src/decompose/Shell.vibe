@@ -74,7 +74,9 @@ type Token =
 
 type Draft = { -readonly [Key in keyof Command]: Command[Key] }
 
-const wordEnd = /[\s;&|<>]/
+// A space, a tab and a line break part words. Any other blank, such as a carriage return or a no-break space, is a
+// character of a word, as it is for the shell.
+const wordEnd = /[ \t\n;&|<>]/
 const variable = /^(?:[A-Za-z_][A-Za-z0-9_]*|[?!$#0-9]|\{[A-Za-z_][A-Za-z0-9_]*\})/
 const assignment = /^([A-Za-z_][A-Za-z0-9_]*)=/
 const redirection = /^[0-9]?>>?(?:&[0-9])?/
@@ -167,7 +169,7 @@ const lex = (text: string): ReadonlyArray<Token> | undefined => {
       if (next === ";") return undefined
       tokens.push({ kind: "operator", text: ";" })
       at += 1
-    } else if (/\s/.test(char)) {
+    } else if (char === " " || char === "\t") {
       at += 1
     } else if (char === "\\" && next === "\n") {
       at += 2
@@ -325,9 +327,11 @@ const readList = (reader: Reader, stops: ReadonlySet<string>, conditional: boole
   let joint: Joint = "first"
   for (;;) {
     while (((token) => token?.kind === "operator" && token.text === ";")(reader.tokens[reader.at])) reader.at += 1
-    if (reader.at >= reader.tokens.length) return stops.size === 0
+    // `a &&`, `a ||` and `a |` with no command after them are not a script.
+    const complete = joint !== "&&" && joint !== "||" && joint !== "|"
+    if (reader.at >= reader.tokens.length) return stops.size === 0 && complete
     const keyword = bareWord(reader)
-    if (keyword !== undefined && stops.has(keyword)) return true
+    if (keyword !== undefined && stops.has(keyword)) return complete
     if (keyword !== undefined && (branchKeywords.has(keyword) || refusedKeywords.has(keyword))) return false
     if (keyword === "if") {
       // An `if` stands alone: nothing may join it to a neighbour but a separator.

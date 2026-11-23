@@ -199,7 +199,8 @@ const syntax: ReadonlyArray<readonly [found: RegExp, what: string]> = [
   [/[()]/, "runs commands in a subshell"],
   [/[$`]/, "reads a variable or the output of a command"],
   [/["'\\]/, "quotes a word"],
-  [/[^A-Za-z0-9_@%+:,./=\s-]/, "has a character the shell reads in its own way"]
+  // A space and a tab part words. Any other blank, such as a no-break space, is a character of a word.
+  [/[^A-Za-z0-9_@%+:,./= \t-]/, "has a character the shell reads in its own way"]
 ]
 
 // The links of a script that is nothing but plain words joined by `&&`, or what else the script holds.
@@ -210,7 +211,7 @@ const linksOf = (
   const rest = text.replaceAll("&&", " ")
   const found = syntax.find(([pattern]) => pattern.test(rest))
   if (found !== undefined) return { syntax: found[1] }
-  const links = text.split("&&").map((link) => link.split(/\s+/).filter((word) => word !== ""))
+  const links = text.split("&&").map((link) => link.split(/[ \t]+/).filter((word) => word !== ""))
   return links.some((link) => link.length === 0) ? { syntax: "has `&&` with no command beside it" } : { links }
 }
 
@@ -235,9 +236,14 @@ interface Leaf {
   readonly words: ReadonlyArray<string>
 }
 
+interface Visit extends Leaf {
+  /** True once the script's links are all read: it is then no longer one of the scripts being run. */
+  readonly done: boolean
+}
+
 // The commands a link runs, to any depth, or the name of a script that reaches itself, which never ends. A script
 // that cannot be split is run by its link as it is, hooks and all: the package manager runs it the same wherever
-// it is started.
+// it is started. The links are walked with a list, not with calls: a chain may be thousands of scripts deep.
 const leavesOf = (
   words: ReadonlyArray<string>,
   script: string,
@@ -245,15 +251,28 @@ const leavesOf = (
   manager: Manager,
   scripts: Readonly<Record<string, string>>
 ): ReadonlyArray<Leaf> | string => {
-  if (seen.has(script)) return script
-  const read = hooked(scripts, script) === undefined ? linksOf(scripts[script] as string) : { syntax: "" }
-  const inner = "links" in read ? read.links.map((link) => linkScript(link, manager, scripts)) : []
-  if (!("links" in read) || inner.includes(undefined)) return [{ script, words }]
   const leaves: Array<Leaf> = []
-  for (const [index, link] of read.links.entries()) {
-    const found = leavesOf(link, inner[index] as string, new Set([...seen, script]), manager, scripts)
-    if (typeof found === "string") return found
-    leaves.push(...found)
+  const running = new Set(seen)
+  const pending: Array<Visit> = [{ script, words, done: false }]
+  while (pending.length > 0) {
+    const visit = pending.pop() as Visit
+    if (visit.done) {
+      running.delete(visit.script)
+      continue
+    }
+    if (running.has(visit.script)) return visit.script
+    const read = hooked(scripts, visit.script) === undefined ? linksOf(scripts[visit.script] as string) : { syntax: "" }
+    const inner = "links" in read ? read.links.map((link) => linkScript(link, manager, scripts)) : []
+    if (!("links" in read) || inner.includes(undefined)) {
+      leaves.push({ script: visit.script, words: visit.words })
+      continue
+    }
+    running.add(visit.script)
+    pending.push({ ...visit, done: true })
+    // The last link is pushed first, so the first is read first.
+    for (let index = read.links.length - 1; index >= 0; index -= 1) {
+      pending.push({ script: inner[index] as string, words: read.links[index] as ReadonlyArray<string>, done: false })
+    }
   }
   return leaves
 }
@@ -372,12 +391,14 @@ export const decide = (
   if (read === undefined) return none
   const { directory, run, words } = read
   const declared = readObject(text(inDirectory(directory, "package.json")) ?? "")?.["scripts"]
-  const scripts: Record<string, string> = {}
-  for (const [name, body] of Object.entries(typeof declared === "object" && declared !== null ? declared : {})) {
-    if (typeof body === "string") scripts[name] = body
-  }
-  const body = scripts[run.script]
-  if (body === undefined) return none
+  // Own entries only: `scripts.constructor` of a plain object is no script, and `__proto__` may be one.
+  const scripts: Record<string, string> = Object.fromEntries(
+    Object.entries(typeof declared === "object" && declared !== null ? declared : {}).filter((
+      entry
+    ): entry is [string, string] => typeof entry[1] === "string")
+  )
+  if (!Object.hasOwn(scripts, run.script)) return none
+  const body = scripts[run.script] as string
   const chain = linksOf(body)
   // One command with shell syntax of its own, such as a quoted word, is still one command.
   if (!("links" in chain)) return /&&|\|\||[;|&\n\r]/.test(body) ? whole("script-syntax", chain.syntax) : none

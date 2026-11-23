@@ -1,0 +1,1661 @@
+/**
+ * Property and fuzz tests of the decompose part: the shell reader, the package script splitter, the workspace
+ * reader, the alias remover, the Turborepo walk and the plan.
+ *
+ * Every generator is a pure function of a tape of bytes, so a failure shrinks to a short tape and prints the
+ * structure it built. Each property names the rule of the source it holds to.
+ */
+import { describe, expect, it } from "@effect/vitest"
+import * as Arbitrary from "effect/Arbitrary"
+import * as Effect from "effect/Effect"
+import * as Schema from "effect/Schema"
+import type { Job, Step } from "../../src/contract/Inventory.vibe"
+import { treeOrder } from "../../src/contract/Inventory.vibe"
+import { withoutAliases } from "../../src/decompose/Aliases.vibe"
+import * as Plan from "../../src/decompose/Plan.vibe"
+import * as Script from "../../src/decompose/Script.vibe"
+import { type Command, commands, quote } from "../../src/decompose/Shell.vibe"
+import * as Turbo from "../../src/decompose/Turbo.vibe"
+import * as Workspace from "../../src/decompose/Workspace.vibe"
+import * as Zig from "../../src/decompose/Zig.ts"
+
+// ---------------------------------------------------------------------------------------------------------------
+// The harness
+// ---------------------------------------------------------------------------------------------------------------
+
+interface Runs {
+  readonly runs: number
+  readonly seed: number
+}
+
+/** Holds when `problems` names none. A problem, or anything the code under test throws, is a counterexample. */
+const assertHolds = <A>(arb: Arbitrary.Arbitrary<A>, problems: (value: A) => ReadonlyArray<string>, options: Runs) =>
+  effect {
+    const outcome = try Arbitrary.checkEffect(
+      arb,
+      (value) =>
+        Effect.try(() => {
+          const found = problems(value)
+          if (found.length > 0) expect.fail(found.join("\n"))
+          return true
+        }),
+      options
+    )
+    try Effect.try(() => {
+      if (outcome._tag !== "Passed") expect.fail(Arbitrary.formatCheckFailure(outcome))
+      expect(outcome._tag).toBe("Passed")
+    })
+  }
+
+/** Runs every case of a corpus, and names each case that has a problem. */
+const assertCorpus = <A>(cases: ReadonlyArray<A>, problems: (value: A) => ReadonlyArray<string>) =>
+  effect {
+    try Effect.try(() => {
+      const found = cases.flatMap((value) =>
+        problems(value).map((problem) => `${JSON.stringify(value)}: ${problem}`)
+      )
+      expect(found).toEqual([])
+    })
+  }
+
+const same = (left: unknown, right: unknown): boolean => JSON.stringify(left) === JSON.stringify(right)
+
+const unique = (values: ReadonlyArray<string>): boolean => new Set(values).size === values.length
+
+const sorted = (values: ReadonlyArray<string>): boolean => same(values, [...values].sort())
+
+const subset = (values: Iterable<string>, of: ReadonlySet<string>): boolean => [...values].every((value) => of.has(value))
+
+const check = (holds: boolean, problem: string): ReadonlyArray<string> => holds ? [] : [problem]
+
+/** A source of choices: each `next(bound)` is below `bound`, and zero once the tape ends. */
+interface Tape {
+  readonly next: (bound: number) => number
+  readonly pick: <A>(values: ReadonlyArray<A>) => A
+  readonly chance: (outOf: number) => boolean
+}
+
+const tapeOf = (bytes: ReadonlyArray<number>): Tape => {
+  let at = 0
+  const next = (bound: number): number => {
+    const value = bytes[at] ?? 0
+    at += 1
+    return value % bound
+  }
+  return {
+    next,
+    pick: (values) => values[next(values.length)] as (typeof values)[number],
+    chance: (outOf) => next(outOf) === 0
+  }
+}
+
+/** Tapes of bytes from a fixed sequence, to count what a generator makes. */
+const tapes = (count: number): ReadonlyArray<Tape> => {
+  let state = 12345
+  return Array.from({ length: count }, () =>
+    tapeOf(Array.from({ length: 256 }, () => {
+      state = (state * 1103515245 + 12345) % 2147483648
+      return Math.floor(state / 65536) % 256
+    })))
+}
+
+const byte = Arbitrary.schema(Schema.Literals(Array.from({ length: 256 }, (_, index) => index)))
+
+/** A value built from a tape of at least `length` bytes. */
+const built = <A>(build: (tape: Tape) => A, length = 64): Arbitrary.Arbitrary<A> =>
+  Arbitrary.map(Arbitrary.array(byte, { minLength: length, maxLength: length * 2 }), (bytes) => build(tapeOf(bytes)))
+
+const anyString = Arbitrary.schema(Schema.String)
+
+/** Text made of the given pieces, which reaches syntax a string of any characters rarely does. */
+const soup = (pieces: ReadonlyArray<string>, length = 14): Arbitrary.Arbitrary<string> =>
+  built((tape) => Array.from({ length: tape.next(length) + 1 }, () => tape.pick(pieces)).join(""), length + 1)
+
+const shuffled = <A>(values: ReadonlyArray<A>, tape: Tape): Array<A> => {
+  const out = [...values]
+  for (let index = out.length - 1; index > 0; index -= 1) {
+    const other = tape.next(index + 1)
+    const held = out[index] as A
+    out[index] = out[other] as A
+    out[other] = held
+  }
+  return out
+}
+
+const nbsp = String.fromCharCode(0xa0)
+const lineSeparator = String.fromCharCode(0x2028)
+const formFeed = String.fromCharCode(0x0c)
+const verticalTab = String.fromCharCode(0x0b)
+const carriageReturn = String.fromCharCode(0x0d)
+const nul = String.fromCharCode(0)
+
+// ---------------------------------------------------------------------------------------------------------------
+// Shell: a program generated from a grammar, with what the shell reads from it
+// ---------------------------------------------------------------------------------------------------------------
+
+interface Piece {
+  readonly source: string
+  readonly text: string
+  readonly literal: boolean
+}
+
+const programs = ["npm", "echo", "tsc", "node", "x1", "run", "./bin/tool", "a-b", "@s/cli", "printf"]
+const bare = ["a", "b", "x1", "-f", "--flag", "path/to", "k=v", "%", "@s", ":", "+", ",", "a#b", "if", "then", "fi", "for", "!"]
+const hostile = [
+  "a b",
+  "&&",
+  "||",
+  ";",
+  "|",
+  "&",
+  "$(rm -rf /)",
+  "`id`",
+  "*",
+  "(x)",
+  "{a,b}",
+  "<<EOF",
+  "> out",
+  "2>&1",
+  "#c",
+  "\\",
+  "\n",
+  "\t",
+  "\"",
+  "$HOME",
+  "",
+  nul,
+  "~",
+  "[x]",
+  "cd /; export A=1; set -e",
+  nbsp
+]
+const insideDouble = ["a b", "&&", ";", "|", "#", "'", "*", "(", ")", "{", "}", "~", "<", ">", "\n", "\\n", "", "[", nul]
+const escapedInDouble = ["\"", "\\", "$", "`"]
+const variables = ["$HOME", "${X_1}", "$?", "$1", "$#", "$$", "$!"]
+const escapable = [" ", ";", "&", "|", "'", "\"", "$", "*", "(", ")", "#", "\\", "<", ">", "a", "~", "{", "`", "?"]
+
+const single = (tape: Tape): Piece => {
+  const text = tape.pick(hostile)
+  return { source: `'${text}'`, text, literal: true }
+}
+
+const double = (tape: Tape): Piece => {
+  let source = ""
+  let text = ""
+  let literal = true
+  for (let count = tape.next(4); count > 0; count -= 1) {
+    const kind = tape.next(4)
+    if (kind === 0) {
+      const value = tape.pick(variables)
+      source += value
+      text += value
+      literal = false
+    } else if (kind === 1) {
+      const value = tape.pick(escapedInDouble)
+      source += `\\${value}`
+      text += value
+    } else {
+      const value = tape.pick(insideDouble)
+      source += value
+      text += value
+    }
+  }
+  return { source: `"${source}"`, text, literal }
+}
+
+const escaped = (tape: Tape): Piece => {
+  const text = tape.pick(escapable)
+  return { source: `\\${text}`, text, literal: true }
+}
+
+const expanded = (tape: Tape): Piece => {
+  const text = tape.pick(variables)
+  return { source: text, text, literal: false }
+}
+
+const plain = (tape: Tape): Piece => {
+  const text = tape.pick(bare)
+  return { source: text, text, literal: true }
+}
+
+const joined = (pieces: ReadonlyArray<Piece>): Piece => ({
+  source: pieces.map((piece) => piece.source).join(""),
+  text: pieces.map((piece) => piece.text).join(""),
+  literal: pieces.every((piece) => piece.literal)
+})
+
+const anyPiece = (tape: Tape): Piece => [plain, single, double, escaped, expanded][tape.next(5)]!(tape)
+
+const argument = (tape: Tape): Piece => joined(Array.from({ length: tape.next(3) + 1 }, () => anyPiece(tape)))
+
+// The first word of a command is a program's name: no keyword, and nothing the shell reads as an assignment.
+const program = (tape: Tape): Piece => {
+  const name = tape.pick(programs)
+  const head = { source: name, text: name, literal: true }
+  return tape.chance(3) ? joined([head, tape.chance(2) ? single(tape) : escaped(tape)]) : head
+}
+
+const redirections = ["> out.txt", ">>log", "2>&1", "2> 'e r'", ">&2", "1>/dev/null", ">\t\"$OUT\""]
+const gaps = [" ", "  ", "\t", " \\\n "]
+const joints = [
+  [" ; ", ";"],
+  [" && ", "&&"],
+  [" || ", "||"],
+  [" | ", "|"],
+  [" & ", "&"],
+  ["\n", ";"],
+  [" ;\n", ";"],
+  [" &&\n ", "&&"],
+  [" # a note; with | operators && more\n", ";"],
+  [";", ";"],
+  ["&&", "&&"],
+  ["|", "|"]
+] as const
+const endings = [["", false], [" ;", false], [" &", true], ["\n", false], [" # the end", false]] as const
+
+interface Program {
+  readonly script: string
+  readonly expected: ReadonlyArray<Command>
+}
+
+const programOf = (tape: Tape): Program => {
+  let script = tape.pick(["", " ", "\n", "# first line\n", "\t"])
+  const expected: Array<Command> = []
+  let joint: Command["joint"] = "first"
+  const count = tape.next(4) + 1
+  for (let index = 0; index < count; index += 1) {
+    const assignments: Array<readonly [string, { text: string; literal: boolean }]> = []
+    const words: Array<{ text: string; literal: boolean }> = []
+    let start: number | undefined
+    let end: number | undefined
+    let replaceable = true
+    let redirected = false
+    const redirect = (): void => {
+      if (tape.chance(5)) {
+        script += `${tape.pick(redirections)}${tape.pick(gaps)}`
+        redirected = true
+      }
+    }
+    for (let assigned = tape.next(5) < 1 ? tape.next(2) + 1 : 0; assigned > 0; assigned -= 1) {
+      redirect()
+      const name = tape.pick(["A", "NODE_ENV", "_x9"])
+      const value = tape.chance(4) ? { source: "", text: "", literal: true } : argument(tape)
+      script += `${name}=${value.source}${tape.pick(gaps)}`
+      assignments.push([name, { text: value.text, literal: value.literal }])
+    }
+    const wordCount = assignments.length > 0 && tape.chance(3) ? 0 : tape.next(4) + 1
+    for (let word = 0; word < wordCount; word += 1) {
+      redirect()
+      const piece = word === 0 ? program(tape) : argument(tape)
+      if (word === 0) start = script.length
+      else if (redirected) replaceable = false
+      redirected = false
+      script += piece.source
+      end = script.length
+      words.push({ text: piece.text, literal: piece.literal })
+      if (word < wordCount - 1) script += tape.pick(gaps)
+    }
+    if (tape.chance(5)) script += ` ${tape.pick(redirections)}`
+    const last = index === count - 1
+    const ending = tape.pick(endings)
+    const next = tape.pick(joints)
+    script += last ? ending[0] : next[0]
+    expected.push({
+      assignments,
+      words,
+      start: replaceable ? start : undefined,
+      end: replaceable ? end : undefined,
+      joint,
+      piped: !last && next[1] === "|",
+      background: last ? ending[1] : next[1] === "&",
+      conditional: false
+    })
+    joint = next[1]
+  }
+  return { script, expected }
+}
+
+/** Text the reader must refuse wherever it stands as a word of a command. */
+const refusedWords = [
+  "$(id)",
+  "`id`",
+  "(a)",
+  "{",
+  "}",
+  "*.ts",
+  "a?",
+  "~",
+  "~/x",
+  "<in",
+  "<<EOF",
+  "<<<word",
+  "x[1]",
+  "${X:-d}",
+  "$((1+1))",
+  "'open",
+  "\"open",
+  "\"`id`\"",
+  "\"$(id)\"",
+  "&>f",
+  "|& b",
+  ";;",
+  "2>",
+  ">",
+  "> ;",
+  "$",
+  "a{b,c}",
+  ">&",
+  "<(x)"
+]
+
+/** Whole commands the reader must refuse. */
+const refusedCommands = [
+  "for x in a; do b; done",
+  "while true; do x; done",
+  "until x; do y; done",
+  "case a in esac",
+  "function f",
+  "f() { x; }",
+  "time x",
+  "select x",
+  "then",
+  "else",
+  "elif",
+  "fi",
+  "do",
+  "done",
+  "( a )",
+  "{ a; }",
+  "if a; then b",
+  "if a; b; fi",
+  "if a; then b; else",
+  "if a; then b; fi | c",
+  "if a; then b; fi > f",
+  "if a; then b; fi && c",
+  "a && if b; then c; fi",
+  "a | if b; then c; fi",
+  "if a; then b; fi c",
+  "cat <<EOF\nnpm run build\nEOF",
+  "&& a",
+  "a && && b",
+  "| a"
+]
+
+const shellPieces = [
+  ...hostile,
+  ...refusedWords,
+  ...variables,
+  "npm run build",
+  "if ",
+  "; then ",
+  "; else ",
+  "; elif ",
+  "; fi",
+  "[ a = a ]",
+  "[ -n \"\" ]",
+  "test ! -z x",
+  " ",
+  " ",
+  "\\\n",
+  "'",
+  "\"",
+  "A=1 ",
+  "2>&1",
+  ">> f ",
+  "#",
+  "!",
+  "=",
+  carriageReturn,
+  formFeed,
+  lineSeparator
+]
+
+/** What holds for whatever the reader returns for a script. */
+const readProblems = (script: string): ReadonlyArray<string> => {
+  const read = commands(script)
+  if (!same(read, commands(script))) return ["two readings differ"]
+  if (read === undefined) return []
+  return read.flatMap((command, index) => {
+    const { end, start } = command
+    const before = read[index - 1]
+    const problems = [
+      ...check((start === undefined) === (end === undefined), "one of start and end is missing"),
+      ...check(command.words.length + command.assignments.length > 0, "a command with no word"),
+      ...check(!(command.piped && command.background), "a command both piped and in the background"),
+      ...check(command.joint !== "|" || before?.piped === true, "joined by a pipe to a command that is not piped"),
+      ...check(command.joint !== "&" || before?.background === true, "joined by & to a command not in the background")
+    ]
+    if (start === undefined || end === undefined) return problems
+    if (command.words.length === 0) return [...problems, "a place with no word"]
+    if (!(start >= 0 && start < end && end <= script.length)) return [...problems, `place ${start}..${end} is not in the script`]
+    // What `Plan.decide` replaces is the command's own words and nothing more: read alone, the same words.
+    const alone = commands(script.slice(start, end))
+    return [
+      ...problems,
+      ...check(
+        alone === undefined || (alone.length === 1 && same(alone[0]?.words, command.words) && alone[0]?.assignments.length === 0),
+        `the text at ${start}..${end} reads as other words`
+      )
+    ]
+  })
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Shell: `if` chains whose tests are computed
+// ---------------------------------------------------------------------------------------------------------------
+
+const alwaysTrue = ["[ a = a ]", "test x == x", "[ -n y ]", "[ ! -z y ]", "[ a != b ]", "[ ! a = b ]", "test -z ''", "[ \"a b\" = 'a b' ]"]
+const alwaysFalse = ["[ a = b ]", "[ -z y ]", "[ ! -n y ]", "test a != a", "[ -n \"\" ]", "[ ! a == a ]"]
+const unknown = [
+  "[ -f x ]",
+  "[ \"$A\" = a ]",
+  "grep q f",
+  "[ a = a ] && true",
+  "[ a -eq a ]",
+  "! [ a = a ]",
+  "X=1 [ a = a ]",
+  "[ a = a ] | cat",
+  "[ -n a b ]",
+  "[ a = a",
+  "test",
+  "[ ! ]"
+]
+
+interface Ran {
+  readonly words: string
+  readonly conditional: boolean
+}
+
+interface Chain {
+  readonly script: string
+  readonly ran: ReadonlyArray<Ran>
+}
+
+const uncertain = (ran: ReadonlyArray<Ran>): ReadonlyArray<Ran> => ran.map((entry) => ({ ...entry, conditional: true }))
+
+const breaks = ["; ", "\n", " ;\n  "]
+
+const listOf = (tape: Tape, depth: number, counter: { value: number }): Chain => {
+  const parts: Array<Chain> = []
+  for (let count = tape.next(2) + 1; count > 0; count -= 1) {
+    if (depth < 2 && tape.chance(3)) parts.push(chainOf(tape, depth + 1, counter))
+    else {
+      counter.value += 1
+      parts.push({ script: `m${counter.value} arg`, ran: [{ words: `m${counter.value} arg`, conditional: false }] })
+    }
+  }
+  return { script: parts.map((part) => part.script).join(tape.pick(breaks)), ran: parts.flatMap((part) => part.ran) }
+}
+
+// What the shell runs of an `if` chain: no branch after a test that is true, no branch whose test is false, and
+// every other branch in doubt once one test before it is unknown.
+const chainOf = (tape: Tape, depth: number, counter: { value: number }): Chain => {
+  let script = ""
+  const ran: Array<Ran> = []
+  let open = true
+  let certain = true
+  const branches = tape.next(3) + 1
+  for (let index = 0; index < branches; index += 1) {
+    const kind = tape.next(3)
+    const test = tape.pick(kind === 0 ? alwaysTrue : kind === 1 ? alwaysFalse : unknown)
+    const body = listOf(tape, depth, counter)
+    script += `${index === 0 ? "if" : "elif"} ${test}${tape.pick(breaks)}then${tape.pick([" ", "\n"])}${body.script}${tape.pick(breaks)}`
+    if (open && kind === 0) {
+      ran.push(...(certain ? body.ran : uncertain(body.ran)))
+      open = false
+    } else if (open && kind === 2) {
+      const tested = (commands(test) ?? []).map((command) => ({
+        words: command.words.map((word) => word.text).join(" "),
+        conditional: false
+      }))
+      ran.push(...tested, ...uncertain(body.ran))
+      certain = false
+    }
+  }
+  if (tape.chance(2)) {
+    const otherwise = listOf(tape, depth, counter)
+    script += `else ${otherwise.script}${tape.pick(breaks)}`
+    if (open) ran.push(...(certain ? otherwise.ran : uncertain(otherwise.ran)))
+  }
+  return { script: `${script}fi`, ran }
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Script: a `package.json` of scripts that run each other, and a step that runs one
+// ---------------------------------------------------------------------------------------------------------------
+
+const scriptNames = ["a", "b", "c", "d", "e", "f", "prea", "postb", "pred", "constructor", "__proto__", "toString", "build:x", "test", "valueOf"]
+const managers: ReadonlyArray<Script.Manager> = ["npm", "pnpm", "yarn", "bun"]
+const strays = ["tsc -p .", "echo hi", "node build.js", "npm run a --flag", "pnpm run a extra", "yarn install", "bun test", "npm run missing"]
+const unchained = ["a || b", "x | y", "x; y", "echo 'q'", "x > f", "echo $(x)", "x &", "npm run a &&", "&& npm run a", "", "npm run a\nnpm run b", "npm run a && (npm run b)", "FOO=1 npm run a && npm run b"]
+const ands = [" && ", "&&", "  &&\t", " &&  "]
+
+interface Manifest {
+  readonly manager: Script.Manager
+  readonly scripts: ReadonlyArray<readonly [name: string, body: string]>
+  readonly step: Pick<Step, "command" | "cwd" | "env" | "runner">
+  readonly target: string
+  readonly files: ReadonlyArray<readonly [path: string, text: string | null]>
+  readonly leads: boolean
+}
+
+const manifestText = (scripts: ReadonlyArray<readonly [string, string]>): string =>
+  `{"name":"p","scripts":{${scripts.map(([name, body]) => `${JSON.stringify(name)}:${JSON.stringify(body)}`).join(",")}}}`
+
+const manifestOf = (tape: Tape, quiet: boolean): Manifest => {
+  const manager = tape.pick(managers)
+  const names = shuffled(scriptNames, tape).slice(0, tape.next(7) + 2)
+  const link = (): string => {
+    const name = tape.next(12) === 0 ? tape.pick(scriptNames) : tape.pick(names)
+    const by = tape.next(10) === 0 ? tape.pick(managers) : manager
+    const kind = tape.next(8)
+    if (kind === 0) return tape.pick(strays)
+    if (kind === 1 && (by === "pnpm" || by === "yarn")) return `${by} ${name}`
+    if (kind === 2 && by !== "yarn" && by !== "bun") return `${by} run-script ${name}`
+    return `${by} run ${name}`
+  }
+  const scripts = names.map((name): readonly [string, string] => {
+    if (tape.next(7) === 0) return [name, tape.pick(unchained)]
+    if (tape.next(3) === 0) return [name, tape.pick(strays)]
+    const count = tape.next(3) + 1
+    const links = Array.from({ length: count }, link)
+    return [name, links.reduce((text, next) => `${text}${tape.pick(ands)}${next}`)]
+  })
+  const target = tape.pick(names)
+  const cwd = quiet ? tape.pick(["", "packages/app"]) : tape.pick(["", "packages/app", ".", "a/../b", "/abs", "..", "${{ x }}"])
+  const directory = Workspace.join("", cwd) ?? ""
+  const at = (file: string): string => directory === "" ? file : `${directory}/${file}`
+  const files: Array<readonly [string, string | null]> = [[at("package.json"), manifestText(scripts)]]
+  const command = quiet || tape.next(6) > 0
+    ? `${manager} run ${target}`
+    : tape.pick([`${manager} ${target}`, `${manager} run ${target} --watch`, `${manager} run ${target} > log`, `CI=1 ${manager} run ${target}`, `${manager} run '${target}'`, `${manager} run ${target} # note`])
+  if (!quiet) {
+    const extra = tape.next(12)
+    if (extra === 0) files.push([".npmrc", "script-shell=/bin/zsh\n"])
+    if (extra === 1) files.push([at("package-lock.json"), null])
+    if (extra === 2) files.push(["package-lock.json", "{\"lockfileVersion\": 1}"])
+    if (extra === 3) files.push([at("yarn.lock"), "__metadata:\n  version: 8\n"])
+    if (extra === 4) files.push(["pnpm-workspace.yaml", "shellEmulator: true\npackages: []\n"])
+    if (extra === 5) files.push(["pnpm-lock.yaml", "lockfileVersion: '5.4'\n"])
+    if (extra === 6) files.push(["bunfig.toml", "[run]\nshell = \"bun\"\n"])
+  }
+  const loud = !quiet && tape.chance(8)
+  return {
+    manager,
+    scripts,
+    target,
+    files,
+    leads: !quiet && tape.chance(6),
+    step: {
+      command,
+      cwd,
+      env: loud ? { [tape.pick(["npm_config_script_shell", "NPM_CONFIG_X", "yarn_x", "CI"])]: "1" } : {},
+      ...(!quiet && tape.chance(6) ? { runner: tape.pick(["__limit=5\nrun", "run"]) } : {})
+    }
+  }
+}
+
+const textOf = (manifest: Manifest): (path: string) => string | null | undefined => {
+  const files = new Map(manifest.files)
+  return (path) => files.get(path)
+}
+
+/**
+ * What a package manager runs for a script, as the names of the commands that are not chains: the script's `pre`
+ * hook, each link of a chain of script runs in order, the `post` hook. `undefined` when it never ends.
+ */
+const traceOf = (
+  manifest: Manifest,
+  name: string,
+  running: ReadonlySet<string> = new Set()
+): ReadonlyArray<string> | undefined => {
+  // A script that runs itself, at any distance, never ends.
+  if (running.has(name)) return undefined
+  const scripts = new Map(manifest.scripts)
+  const body = scripts.get(name) as string
+  const out: Array<string> = []
+  if (scripts.has(`pre${name}`)) out.push(`hook pre${name}`)
+  const links = /^[A-Za-z0-9_@%+:,./= \t-]*$/.test(body.replaceAll("&&", " "))
+    ? body.split("&&").map((link) => link.split(/[ \t]+/).filter((word) => word !== ""))
+    : []
+  const targets = links.map((words) => {
+    const run = Script.runOf(words)
+    return run !== undefined && run.manager === manifest.manager && run.rest.length === 0 && scripts.has(run.script)
+      ? run.script
+      : undefined
+  })
+  if (links.length === 0 || links.some((words) => words.length === 0) || targets.includes(undefined)) out.push(`body ${name}`)
+  else {
+    for (const target of targets) {
+      const inner = traceOf(manifest, target as string, new Set([...running, name]))
+      if (inner === undefined) return undefined
+      out.push(...inner)
+    }
+  }
+  if (scripts.has(`post${name}`)) out.push(`hook post${name}`)
+  return out
+}
+
+const wholeFeatures = new Set([
+  "script-syntax",
+  "script-command",
+  "script-cycle",
+  "script-hook",
+  "script-arguments",
+  "script-limit",
+  "script-first",
+  "script-setting",
+  "script-release"
+])
+
+const scriptProblems = (manifest: Manifest): ReadonlyArray<string> => {
+  const asked: Array<string> = []
+  const text = textOf(manifest)
+  const decision = Script.decide(manifest.step, (path) => {
+    asked.push(path)
+    return text(path)
+  }, manifest.leads)
+  const files = new Set(Script.filesOf(manifest.step))
+  const scripts = new Map(manifest.scripts)
+  const problems = [
+    ...check(same(decision, Script.decide(manifest.step, text, manifest.leads)), "two decisions differ"),
+    ...check(subset(asked, files), `asked for a file filesOf does not list: ${asked.filter((path) => !files.has(path)).join(", ")}`),
+    ...check(
+      [...files].every((file) => !file.startsWith("/") && !file.split("/").includes("..") && !file.split("/").includes("")),
+      "filesOf names a path that is not under the root"
+    ),
+    ...check(decision.kind === "none" || files.size > 0, "a decision with no file read")
+  ]
+  if (decision.kind === "none") return problems
+  if (decision.kind === "whole") {
+    return [
+      ...problems,
+      ...check(wholeFeatures.has(decision.why.feature), `an unknown reason ${decision.why.feature}`),
+      ...check(
+        decision.why.feature !== "script-cycle" || traceOf(manifest, manifest.target) === undefined,
+        "a cycle is named where the script ends"
+      )
+    ]
+  }
+  // The step is split: every link is one script run, and the links run what the script ran, in its order.
+  const whole = traceOf(manifest, manifest.target)
+  const traces: Array<string> = []
+  const linkProblems = decision.links.flatMap((link) => {
+    const read = commands(link.command)
+    const command = read?.[0]
+    if (read?.length !== 1 || command === undefined) return [`the link ${link.command} is not one command`]
+    const run = Script.runOf(command.words.map((word) => word.text))
+    if (run === undefined || !scripts.has(run.script)) return [`the link ${link.command} runs no script of the manifest`]
+    const trace = traceOf(manifest, run.script)
+    traces.push(...(trace ?? ["never ends"]))
+    return [
+      ...check(run.manager === manifest.manager && run.rest.length === 0, `the link ${link.command} is not a plain run`),
+      ...check(link.name === run.script || link.name.startsWith(`${run.script}#`), `the link ${link.name} is misnamed`),
+      ...check(!command.piped && !command.background && command.words.every((word) => word.literal), "a link is not plain"),
+      ...check(
+        subset(command.assignments.map(([name]) => name), new Set(["PATH", "YARN_WRAP_OUTPUT", "npm_config_argv"])),
+        "a link sets a variable the package manager did not"
+      )
+    ]
+  })
+  const env = Object.keys(manifest.step.env)
+  return [
+    ...problems,
+    ...linkProblems,
+    ...check(decision.links.length >= 2, "a split into fewer than two links"),
+    ...check(unique(decision.links.map((link) => link.name)), "two links share a name"),
+    // A script that never ends, which a hooked script can hide from the splitter, has a link that never ends.
+    ...check(
+      whole === undefined ? traces.includes("never ends") : same(traces, whole),
+      `the links run ${traces.join(", ")} where the script ran ${whole?.join(", ")}`
+    ),
+    ...check(!scripts.has(`pre${manifest.target}`) && !scripts.has(`post${manifest.target}`), "a hooked script is split"),
+    ...check(manifest.step.command === `${manifest.manager} run ${manifest.target}`, "a step with more than the run is split"),
+    ...check(!env.some((name) => /^(?:npm_config_|pnpm_config_|yarn_|bun_config_)/i.test(name)), "a step with a setting is split"),
+    ...check(!manifest.files.some(([, content]) => content === null), "a split beside a file that cannot be read"),
+    ...check(!(manifest.leads && manifest.step.runner !== undefined), "a job's first step is split"),
+    ...check(!(manifest.step.runner ?? "").includes("__limit="), "a step with a time limit is split")
+  ]
+}
+
+const npmStep = (command: string): Pick<Step, "command" | "cwd" | "env" | "runner"> => ({ command, cwd: "", env: {} })
+
+const decideWith = (scripts: ReadonlyArray<readonly [string, string]>, command: string): Script.Decision =>
+  Script.decide(npmStep(command), (path) => path === "package.json" ? manifestText(scripts) : undefined)
+
+// ---------------------------------------------------------------------------------------------------------------
+// Workspace: packages that declare and mention each other
+// ---------------------------------------------------------------------------------------------------------------
+
+const validNames = ["a", "b", "web", "x.y", "c-d", "@s/a", "@s/b", "@t/a", "constructor", "__proto__", "tostring", "ui"]
+const oddNames = ["a+b", "a(1)", "a[0]", "w*", "q?", "back\\slash", "{x}", "a b", "a|b", "^a$", "[", "(", "*", ")", "a/b", "@s", "é", "-", "a\"b"]
+const directoriesPool = ["packages/a", "packages/b", "packages/a/sub", "apps/web", "libs/x.y", "tools", "packages/c-d", "apps/web/e2e", "deep/er/est", "packages/b/x/y"]
+const fileNames = ["index.ts", "src/main.ts", "src/util.js", "README.md", "package.json", "tsconfig.json", "src/deep/a/b.tsx", "lib/index.cjs"]
+const taskNames = ["build", "test", "lint", "prebuild", "constructor", "dev"]
+
+interface Layout {
+  readonly manifests: ReadonlyArray<readonly [directory: string, text: string]>
+  readonly files: ReadonlyArray<string>
+  readonly mentions: ReadonlyArray<readonly [file: string, mentions: Workspace.Mentions]>
+  readonly names: ReadonlyArray<string>
+  readonly root: Readonly<Record<string, unknown>>
+}
+
+const layoutOf = (tape: Tape, namePool: ReadonlyArray<string> = validNames): Layout => {
+  const count = tape.next(6) + 1
+  const directories = shuffled(directoriesPool, tape).slice(0, count)
+  const names = shuffled(namePool, tape).slice(0, count)
+  const manifests = directories.map((directory, index): readonly [string, string] => {
+    const dependencies = names.filter(() => tape.chance(3))
+    const scripts = taskNames.filter(() => tape.chance(2)).map((task) =>
+      `${JSON.stringify(task)}:${JSON.stringify(tape.pick(["tsc -p .", "vitest run", "node build.js", "turbo run build", "echo ok"]))}`
+    )
+    const field = tape.pick(["dependencies", "devDependencies", "peerDependencies", "optionalDependencies"])
+    const listed = dependencies.map((name) => `${JSON.stringify(name)}:"workspace:*"`).join(",")
+    return [
+      directory,
+      `{"name":${JSON.stringify(names[index])},"scripts":{${scripts.join(",")}},"${field}":{${listed},"left-pad":"1.0.0"}}`
+        .replace("{,", "{")
+    ]
+  })
+  const files = [
+    "package.json",
+    "pnpm-lock.yaml",
+    "docs/guide/intro.md",
+    "scripts/release.ts",
+    "packages/README.md",
+    "apps/shared.config.ts",
+    ...directories.flatMap((directory) => [`${directory}/package.json`, ...fileNames.filter(() => tape.chance(2)).map((file) => `${directory}/${file}`)])
+  ]
+  const unique = [...new Set(files)]
+  const mentions = unique.filter(() => tape.chance(2)).map((file): readonly [string, Workspace.Mentions] => [file, {
+    names: names.filter(() => tape.chance(5)),
+    relative: Array.from({ length: tape.next(3) }, () =>
+      tape.pick(["./src/main", "../b/src/util.js", "../../apps/web", "../a", "./missing", "../../../outside", "../sub/index.ts", "../../packages/a/src/main.ts", "./"])),
+    rooted: Array.from({ length: tape.next(2) }, () =>
+      tape.pick([...unique, "packages/a", "packages/zzz/none.ts", "apps/web/src", "tools/../packages/b/index.ts"]))
+  }])
+  return { manifests, files: unique, mentions, names, root: { name: "root", scripts: { build: "pnpm -r run build", test: "turbo run test" } } }
+}
+
+const workspaceOf = (layout: Layout): Workspace.Workspace | undefined => Workspace.assemble("pnpm", layout.root, false, layout.manifests)
+
+const graphOf = (layout: Layout, workspace: Workspace.Workspace): Workspace.Graph => {
+  const mentions = new Map(layout.mentions)
+  return Workspace.graph(workspace, new Set(layout.files), (file) => mentions.get(file) ?? { names: [], relative: [], rooted: [] })
+}
+
+/** A reach as text, to compare two of them. */
+const reachText = (reach: Workspace.Reach): string => JSON.stringify([[...reach.packages].sort(), [...reach.files].sort()])
+
+const graphProblems = (input: { readonly layout: Layout; readonly reordered: Layout }): ReadonlyArray<string> => {
+  const workspace = workspaceOf(input.layout)
+  const other = workspaceOf(input.reordered)
+  if (workspace === undefined || other === undefined) return ["a workspace of named packages is not read"]
+  const graph = graphOf(input.layout, workspace)
+  const again = graphOf(input.reordered, other)
+  const files = new Set(input.layout.files)
+  const directories = new Set(workspace.packages.map((owner) => owner.directory))
+  const ownerProblems = input.layout.files.flatMap((file) => {
+    // The deepest package directory that holds the file.
+    const holding = [...directories].filter((directory) => file.startsWith(`${directory}/`)).sort((a, b) => b.length - a.length)[0]
+    const owner = graph.ownerOf(file)?.directory
+    const outside = graph.outside.some((glob) =>
+      glob === "*"
+        ? !file.includes("/")
+        : glob.endsWith("/**")
+        ? file.startsWith(glob.slice(0, -2))
+        : file.slice(0, file.lastIndexOf("/") + 1) === glob.slice(0, -1)
+    )
+    return [
+      ...check(owner === holding, `${file} is owned by ${owner}, not ${holding}`),
+      ...check(holding !== undefined || outside, `${file} is in no package and no outside glob names it`)
+    ]
+  })
+  const reachProblems = workspace.packages.flatMap((owner) => {
+    const reach = graph.reachOf(owner)
+    const inside = (file: string): boolean => [...reach.packages].some((directory) => file.startsWith(`${directory}/`))
+    const closed = [...reach.packages].flatMap((directory) => {
+      const reached = workspace.packages.find((candidate) => candidate.directory === directory)
+      if (reached === undefined) return [`${owner.name} reaches ${directory}, which is no package`]
+      const further = graph.reachOf(reached)
+      return [
+        ...check(subset(further.packages, reach.packages), `${owner.name} reaches ${reached.name} and not all it reaches`),
+        ...check([...further.files].every((file) => reach.files.has(file) || inside(file)), `${owner.name} loses a file ${reached.name} reaches`)
+      ]
+    })
+    const twin = other.packages.find((candidate) => candidate.name === owner.name) as Workspace.Package
+    return [
+      ...closed,
+      ...check(reach.packages.has(owner.directory), `${owner.name} does not reach itself`),
+      ...check(
+        owner.dependencies.every((name) => reach.packages.has((graph.named(name) as Workspace.Package).directory)),
+        `${owner.name} does not reach a package it declares`
+      ),
+      ...check(subset(reach.files, files), `${owner.name} reaches a file the repository does not have`),
+      ...check([...reach.files].every((file) => !directories.has(graph.ownerOf(file)?.directory ?? "") || !reach.packages.has(graph.ownerOf(file)?.directory ?? "")), `${owner.name} lists a file of a package it reaches whole`),
+      ...check(reachText(reach) === reachText(again.reachOf(twin)), `${owner.name} reaches other things when the packages are listed in another order`),
+      ...check(reachText(reach) === reachText(graphOf(input.layout, workspace).reachOf(owner)), `${owner.name} reaches other things when asked first`)
+    ]
+  })
+  return [
+    ...ownerProblems,
+    ...reachProblems,
+    ...check(same(graph.outside, again.outside), "the outside globs depend on the order of the packages"),
+    ...check(sorted(graph.outside) && unique(graph.outside), "the outside globs are not a sorted set")
+  ]
+}
+
+const reorderedLayout = (tape: Tape): { readonly layout: Layout; readonly reordered: Layout } => {
+  const layout = layoutOf(tape)
+  return {
+    layout,
+    reordered: { ...layout, manifests: shuffled(layout.manifests, tape), files: shuffled(layout.files, tape), mentions: shuffled(layout.mentions, tape) }
+  }
+}
+
+// One glob pattern a workspace may list, and the directories it names, by a reader of its own.
+const segmentMatches = (pattern: string, name: string): boolean => {
+  if (pattern === "") return name === ""
+  if (pattern[0] === "*") return segmentMatches(pattern.slice(1), name) || (name !== "" && segmentMatches(pattern, name.slice(1)))
+  return name !== "" && pattern[0] === name[0] && segmentMatches(pattern.slice(1), name.slice(1))
+}
+
+const pathMatches = (pattern: ReadonlyArray<string>, path: ReadonlyArray<string>): boolean => {
+  const [head, ...rest] = pattern
+  if (head === undefined) return path.length === 0
+  if (head === "**") return pathMatches(rest, path) || (path.length > 0 && pathMatches(pattern, path.slice(1)))
+  return path.length > 0 && segmentMatches(head, path[0] as string) && pathMatches(rest, path.slice(1))
+}
+
+const patternPool = ["packages/*", "apps/*", "packages/**", "**", "*", "tools", "./libs/*", "packages/a", "!packages/a", "!**/e2e", "packages/*/sub", "deep/**/est", "pack*/b*", "*/*/*", "!packages/b/**", "libs/x.y", "libs/x?y", "{a,b}", "../up", "packages/[ab]", "packages//a/", "**/**", "p**s/*"]
+
+const patternProblems = (input: { readonly patterns: ReadonlyArray<string>; readonly files: ReadonlyArray<string> }): ReadonlyArray<string> => {
+  const found = Workspace.packageDirectories(input.patterns, new Set(input.files))
+  const unread = input.patterns.some((pattern) => /[{}[\]?\\]/.test(pattern) || pattern.split("/").includes(".."))
+  if (found === undefined || unread) return check((found === undefined) === unread, "a pattern is refused, or read, against its syntax")
+  const segments = (pattern: string): ReadonlyArray<string> =>
+    pattern.replace(/^!/, "").split("/").filter((segment) => segment !== "" && segment !== ".")
+  const candidates = input.files.filter((file) => file.endsWith("/package.json") && !file.includes("node_modules/")).map((file) =>
+    file.slice(0, -"/package.json".length)
+  )
+  const expected = candidates.filter((directory) => {
+    const included = input.patterns.some((pattern) => !pattern.startsWith("!") && pathMatches(segments(pattern), directory.split("/")))
+    const excluded = input.patterns.some((pattern) => pattern.startsWith("!") && pathMatches(segments(pattern), directory.split("/")))
+    return included && !excluded
+  }).sort()
+  return check(same(found, expected), `found ${found.join(", ")} where the patterns name ${expected.join(", ")}`)
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Turbo: a task graph over the packages
+// ---------------------------------------------------------------------------------------------------------------
+
+interface TurboCase {
+  readonly layout: Layout
+  readonly reordered: Layout
+  readonly root: string
+  readonly own: ReadonlyArray<readonly [name: string, text: string]>
+  readonly start: number
+  readonly tasks: ReadonlyArray<string>
+}
+
+const turboCase = (tape: Tape): TurboCase => {
+  const { layout, reordered } = reorderedLayout(tape)
+  const entry = (): string => {
+    const task = tape.pick(taskNames)
+    const kind = tape.next(6)
+    return kind === 0 ? `^${task}` : kind === 1 ? `${tape.pick(layout.names)}#${task}` : kind === 2 ? `//#${task}` : kind === 3 ? `nobody#${task}` : kind === 4 ? "$TURBO_EXTENDS$" : task
+  }
+  const task = (): string => {
+    const dependsOn = tape.chance(4) ? "" : `"dependsOn":[${Array.from({ length: tape.next(4) }, () => JSON.stringify(entry())).join(",")}]`
+    const inputs = tape.chance(3)
+      ? `"inputs":[${Array.from({ length: tape.next(3) }, () => JSON.stringify(tape.pick(["src/**", "$TURBO_ROOT$/tsconfig.json", "../shared/**", "../../../out", "$TURBO_EXTENDS$", "$TURBO_ROOT$/", "../"]))).join(",")}]`
+      : ""
+    return `{${[dependsOn, inputs].filter((part) => part !== "").join(",")}}`
+  }
+  const tasks = (): string =>
+    [...new Set(Array.from({ length: tape.next(5) + 1 }, () => tape.chance(5) ? `${tape.pick(layout.names)}#${tape.pick(taskNames)}` : tape.pick(taskNames)))]
+      .map((name) => `${JSON.stringify(name)}:${task()}`).join(",")
+  const globals = Array.from({ length: tape.next(3) }, () => JSON.stringify(tape.pick(["tsconfig.json", "./.env", "!ignored", "/abs", "../up", "a/../b", "", "./"])))
+  return {
+    layout,
+    reordered,
+    root: `{ // the root\n "${tape.pick(["tasks", "pipeline"])}":{${tasks()}}, "globalDependencies":[${globals.join(",")}], }`,
+    own: layout.names.filter(() => tape.chance(4)).map((name): readonly [string, string] => [name, tape.chance(5) ? "{\"tags\":[]}" : `{"extends":["//"],"tasks":{${tasks()}}}`]),
+    start: tape.next(layout.names.length),
+    tasks: Array.from({ length: tape.next(3) + 1 }, () => tape.pick(taskNames))
+  }
+}
+
+// One task of one package, as a key. No package or task name holds a line break.
+const keyOf = (owner: string, task: string): string => `${owner}\n${task}`
+const partsOf = (key: string): readonly [owner: string, task: string] => [key.slice(0, key.indexOf("\n")), key.slice(key.indexOf("\n") + 1)]
+
+// What `turbo run` reaches from one task of one package, by following `dependsOn` to a fixed point.
+const reachedTasks = (config: Turbo.Config, workspace: Workspace.Workspace, start: Workspace.Package, tasks: ReadonlyArray<string>): ReadonlySet<string> => {
+  const byName = new Map(workspace.packages.map((owner) => [owner.name, owner]))
+  const reached = new Set(tasks.map((task) => keyOf(start.name, task)))
+  for (let size = -1; size !== reached.size;) {
+    size = reached.size
+    for (const key of [...reached]) {
+      const [owner, task] = partsOf(key)
+      const own = config.packages.get(owner)?.get(task)
+      const root = config.tasks.get(`${owner}#${task}`) ?? config.tasks.get(task)
+      const dependsOn = own === undefined ? root?.dependsOn ?? [] : [...(own.extendsDependsOn ? root?.dependsOn ?? [] : []), ...own.dependsOn]
+      for (const entry of dependsOn) {
+        if (entry.startsWith("^")) {
+          for (const name of (byName.get(owner) as Workspace.Package).dependencies) reached.add(keyOf(name, entry.slice(1)))
+        } else if (!entry.includes("#")) reached.add(keyOf(owner, entry))
+        else if (!entry.startsWith("//#") && byName.has(entry.slice(0, entry.indexOf("#")))) {
+          reached.add(keyOf(entry.slice(0, entry.indexOf("#")), entry.slice(entry.indexOf("#") + 1)))
+        }
+      }
+    }
+  }
+  return reached
+}
+
+const turboProblems = (input: TurboCase): ReadonlyArray<string> => {
+  const workspace = workspaceOf(input.layout)
+  const other = workspaceOf(input.reordered)
+  const config = Turbo.readConfig(input.root, input.own)
+  if (workspace === undefined || other === undefined || config === undefined) return ["a generated workspace or its turbo.json is not read"]
+  const start = workspace.packages[input.start] as Workspace.Package
+  const walked = Turbo.walk(config, workspace, start, input.tasks)
+  const reached = reachedTasks(config, workspace, start, input.tasks)
+  const ran = walked.scripts.map(([owner, script]) => keyOf(owner.name, script))
+  const defined = (key: string): boolean => {
+    const [owner, task] = partsOf(key)
+    const holder = workspace.packages.find((candidate) => candidate.name === owner) as Workspace.Package
+    const definition = config.packages.get(owner)?.get(task) ?? config.tasks.get(`${owner}#${task}`) ?? config.tasks.get(task)
+    return definition !== undefined && Object.hasOwn(holder.scripts, task)
+  }
+  const expected = [...reached].filter(defined).sort()
+  const twin = Turbo.walk(config, other, other.packages.find((candidate) => candidate.name === start.name) as Workspace.Package, [...input.tasks].reverse())
+  const each = input.tasks.flatMap((task) => Turbo.walk(config, workspace, start, [task]).scripts.map(([owner, script]) => keyOf(owner.name, script)))
+  return [
+    ...check(unique(ran), "a script runs twice"),
+    ...check(same([...ran].sort(), expected), `walk runs ${[...ran].sort().join(" ")} where dependsOn reaches ${expected.join(" ")}`),
+    ...check(same(walked.packages.map((owner) => owner.name).sort(), [...new Set(walked.scripts.map(([owner]) => owner.name))].sort()), "the packages are not the scripts' owners"),
+    ...check(sorted(walked.globs) && unique(walked.globs) && walked.globs.every((glob) => glob !== "" && !glob.split("/").includes("..")), "a glob leaves the repository or is listed twice"),
+    ...check(same(twin.scripts.map(([owner, script]) => keyOf(owner.name, script)).sort(), [...ran].sort()), "the walk depends on the order of the packages or the tasks"),
+    ...check(same(twin.globs, walked.globs) && twin.root === walked.root, "the globs depend on the order of the packages or the tasks"),
+    ...check(same([...new Set(each)].sort(), [...ran].sort()), "the tasks together run other scripts than each alone"),
+    ...check(config.globalDependencies.every((glob) => glob !== "" && !/^(?:!|\/|\.\/)/.test(glob) && !glob.split("/").includes("..")), "a global dependency leaves the repository"),
+    ...check([...config.tasks.values()].every((task) => !task.dependsOn.includes("$TURBO_EXTENDS$") && !task.inputs.includes("$TURBO_EXTENDS$")), "the extends marker is kept as an entry")
+  ]
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Plan: one step over the packages of a workspace
+// ---------------------------------------------------------------------------------------------------------------
+
+const stepOf = (command: string, cwd = ""): Step => ({ id: "job:0", command, cwd, env: {}, secrets: [] })
+
+interface PlanCase {
+  readonly layout: Layout
+  readonly reordered: Layout
+  readonly command: string
+  readonly task: string
+  readonly turbo: string
+}
+
+const planCase = (tape: Tape): PlanCase => {
+  const { layout, reordered } = reorderedLayout(tape)
+  const task = tape.pick(["build", "test", "lint"])
+  const filter = tape.pick(["@s/*", "a", "./packages/*", "*", "web", "./apps/**", "b"])
+  return {
+    layout,
+    reordered,
+    task,
+    turbo: `{"tasks":{"build":{"dependsOn":["^build"]},"test":{"dependsOn":["build"]},"lint":{}}}`,
+    command: tape.pick([
+      `pnpm -r run ${task}`,
+      `pnpm -r ${task}`,
+      `pnpm --filter ${filter} run ${task}`,
+      `turbo run ${task}`,
+      `pnpm exec turbo run ${task} --filter=${filter}`,
+      `set -e\npnpm -r run ${task}`,
+      `CI=1 pnpm -r run ${task} 2>&1`,
+      `pnpm -r run ${task} && echo done`,
+      `pnpm --recursive --if-present run ${task} -- --ci`
+    ])
+  }
+}
+
+const factsOf = (layout: Layout, turbo: string): Plan.Facts | undefined => {
+  const workspace = workspaceOf(layout)
+  return workspace === undefined ? undefined : { workspace, graph: graphOf(layout, workspace), turbo: Turbo.readConfig(turbo, []) }
+}
+
+const decisionText = (decision: Plan.Decision): string =>
+  JSON.stringify(decision.kind === "split" ? [...decision.parts].sort((a, b) => a.name < b.name ? -1 : 1) : decision)
+
+const planProblems = (input: PlanCase): ReadonlyArray<string> => {
+  const facts = factsOf(input.layout, input.turbo)
+  const other = factsOf(input.reordered, input.turbo)
+  if (facts === undefined || other === undefined) return ["a workspace of named packages is not read"]
+  const step = stepOf(input.command)
+  const understood = Plan.understand(step, facts.workspace)
+  if (understood === undefined) return check(Plan.understand(step, other.workspace) === undefined, "understood in one order of the packages only")
+  const decision = Plan.decide(step, understood, facts)
+  const again = Plan.decide(step, Plan.understand(step, other.workspace) as Plan.Understood, other)
+  const problems = check(decisionText(decision) === decisionText(again), "the decision depends on the order of the packages")
+  if (decision.kind === "whole") return problems
+  const everyInput = decision.kind === "scope" ? [decision.inputs] : decision.parts.map((part) => part.inputs)
+  const inputProblems = everyInput.flatMap((inputs) => [
+    ...check(inputs.length > 0 && sorted(inputs) && unique(inputs), "the inputs are not a sorted set that names something"),
+    ...check(!inputs.includes("**") || inputs.length === 1, "everything is listed beside something")
+  ])
+  if (decision.kind === "scope") return [...problems, ...inputProblems]
+  const having = facts.workspace.packages.filter((owner) => Object.hasOwn(owner.scripts, input.task))
+  const partProblems = decision.parts.flatMap((part) => {
+    const owner = facts.graph.named(part.name)
+    const read = commands(part.command)
+    if (owner === undefined || read === undefined) return [`the part ${part.name} names no package or its command is not read`]
+    const words = new Set(read.flatMap((command) => command.words.map((word) => word.text)))
+    const covers = (directory: string): boolean =>
+      part.inputs.some((glob) => glob === "**" || (glob.endsWith("/**") && `${directory}/`.startsWith(glob.slice(0, -2))))
+    // A package's task may need its dependencies' task first: the part runs each that has the script.
+    const needed = new Set<string>()
+    const pending = [owner]
+    while (pending.length > 0) {
+      const next = pending.pop() as Workspace.Package
+      if (needed.has(next.name)) continue
+      needed.add(next.name)
+      for (const name of next.dependencies) pending.push(facts.graph.named(name) as Workspace.Package)
+    }
+    const turbo = input.command.includes("turbo")
+    return [
+      ...check(read.length === commands(input.command)?.length, `the part ${part.name} has another number of commands than the step`),
+      ...check(words.has(`--filter=${part.name}`), `the part ${part.name} does not run its own package`),
+      ...check(covers(owner.directory), `the part ${part.name} does not read its own package`),
+      ...check(
+        turbo || [...needed].every((name) => !having.some((candidate) => candidate.name === name) || words.has(`--filter=${name}`)),
+        `the part ${part.name} leaves out a dependency that has the script`
+      ),
+      ...check(
+        [...needed].every((name) => covers((facts.graph.named(name) as Workspace.Package).directory)),
+        `the part ${part.name} does not read a package it depends on`
+      )
+    ]
+  })
+  return [
+    ...problems,
+    ...inputProblems,
+    ...partProblems,
+    ...check(decision.parts.length >= 2 && unique(decision.parts.map((part) => part.name)), "parts share a name, or there is one"),
+    ...check(
+      !/^pnpm -r/.test(input.command) || same(decision.parts.map((part) => part.name).sort(), having.map((owner) => owner.name).sort()),
+      "a package that has the script has no part"
+    )
+  ]
+}
+
+const sources = ["github-actions", "justfile"] as const
+
+const jobsOf = (tape: Tape): ReadonlyArray<Job> => {
+  const ids = Array.from({ length: tape.next(7) + 1 }, (_, index) => `j${index}`)
+  return ids.map((id): Job => ({
+    id,
+    source: tape.pick(sources) as Job["source"],
+    file: tape.pick(["Justfile", "ci.yml"]),
+    name: id,
+    needs: [...new Set(Array.from({ length: tape.next(4) }, () => tape.pick([...ids, "missing"])))],
+    triggers: ["push"],
+    matrix: [],
+    steps: Array.from({ length: tape.next(4) }, (_, index) => ({ ...stepOf("echo ok"), id: `${id}:${index}` })),
+    unsupported: []
+  }))
+}
+
+const jobProblems = (jobs: ReadonlyArray<Job>): ReadonlyArray<string> => {
+  const followed = Plan.followed(jobs)
+  const preceded = Plan.preceded(jobs)
+  const order = treeOrder(jobs)
+  const shared = jobs.filter((job) => job.source !== "github-actions")
+  const listed = [...order.values()].flat()
+  const needs = (job: Job): ReadonlyArray<Job> => jobs.filter((other) => job.needs.includes(other.id) && other.file === job.file && other.source !== "github-actions")
+  // A job reaches itself through its needs: then no order runs each after what it needs.
+  const cyclic = (job: Job): boolean => {
+    const seen = new Set<string>()
+    const pending = [...needs(job)]
+    while (pending.length > 0) {
+      const next = pending.pop() as Job
+      if (next.id === job.id) return true
+      if (seen.has(next.id)) continue
+      seen.add(next.id)
+      pending.push(...needs(next))
+    }
+    return false
+  }
+  return [
+    ...check(unique(listed) && same([...listed].sort(), shared.map((job) => job.id).sort()), "a job of a shared tree is lost from its order, or listed twice"),
+    ...shared.flatMap((job) => {
+      const place = (order.get(job.file) ?? []).indexOf(job.id)
+      return needs(job).filter((need) => !shared.some(cyclic) && (order.get(job.file) ?? []).indexOf(need.id) > place).map((need) => `${job.id} runs before ${need.id}, which it needs`)
+    }),
+    ...jobs.flatMap((job) => job.steps.flatMap((step, index) => [
+      ...check(index === job.steps.length - 1 || followed.has(step), `${step.id} is followed and not listed so`),
+      ...check(index === 0 || preceded.has(step), `${step.id} is preceded and not listed so`),
+      ...check(job.source !== "github-actions" || index > 0 || !preceded.has(step), `${step.id} starts a checkout of its own and is listed as preceded`)
+    ]))
+  ]
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Aliases
+// ---------------------------------------------------------------------------------------------------------------
+
+interface AliasCase {
+  readonly file: string
+  readonly text: string
+  readonly names: ReadonlyArray<string>
+  /** Text that must be gone, and text that must stay. */
+  readonly gone: ReadonlyArray<string>
+  readonly kept: ReadonlyArray<string>
+}
+
+const aliasKeys = ["@acme/ui", "@acme/ui/*", "core", "core/*", "core/sub/path", "@other/x", "left-pad", "~/*", "@acme", "corex", "@acme/uix/*"]
+const aliasNames = ["@acme/ui", "core"]
+const aliased = (key: string): boolean => aliasNames.includes(key.startsWith("@") ? key.split("/").slice(0, 2).join("/") : key.split("/")[0] as string)
+
+const tsconfigCase = (tape: Tape): AliasCase => {
+  const keys = shuffled(aliasKeys, tape).slice(0, tape.next(6) + 1)
+  const gone: Array<string> = []
+  const kept: Array<string> = ["\"strict\"", "outside-marker"]
+  const entries = keys.map((key, index) => {
+    const marker = `marker-${index}-x`
+    ;(aliased(key) ? gone : kept).push(marker)
+    if (!aliased(key)) kept.push(JSON.stringify(key))
+    return `${JSON.stringify(key)}:${tape.pick([" ", "\n      ", ""])}["../${marker}/src/index.ts"${tape.chance(3) ? ", \"./second\"" : ""}]`
+  })
+  const comment = tape.pick(["", "// a comment\n", "/* block */ "])
+  return {
+    file: tape.pick(["tsconfig.json", "packages/a/tsconfig.build.json", "jsconfig.json", "apps/web/tsconfig.json"]),
+    names: aliasNames,
+    gone,
+    kept,
+    text: `{\n  ${comment}"compilerOptions": {\n    "strict": true,\n    "paths": {\n      ${entries.join(tape.pick([",\n      ", ", "]))}${tape.pick(["", ","])}\n    }\n  },\n  "include": ["outside-marker"]\n}\n`
+  }
+}
+
+const codeCase = (tape: Tape): AliasCase => {
+  const keys = shuffled(aliasKeys, tape).slice(0, tape.next(6) + 1)
+  const gone: Array<string> = []
+  const kept: Array<string> = ["outside-marker"]
+  const entries = keys.map((key, index) => {
+    const marker = `marker-${index}-x`
+    const builds = tape.next(3) > 0
+    const value = builds
+      ? tape.pick([`path.resolve(root, "${marker}")`, `"./${marker}"`, `fileURLToPath(new URL("./${marker}", import.meta.url))`, `join(dirname(here), '${marker}', "a,b}")`, `resolve(\`${marker}\`)`])
+      : tape.pick([`require("${marker}")`, `load("${marker}") + ""`, `{ find: "${marker}" }`, `["${marker}"]`, `fs.readFileSync("${marker}")`, `() => "${marker}"`])
+    ;(aliased(key) && builds ? gone : kept).push(marker)
+    return `${tape.pick(["\"", "'"]).repeat(1)}${key}QUOTE: ${value}`.replace(/^(.)(.*)QUOTE/, "$1$2$1")
+  })
+  return {
+    file: tape.pick(["vite.config.ts", "webpack.config.js", "packages/a/vitest.config.mts", "rollup.config.cjs", "app.tsx"]),
+    names: aliasNames,
+    gone,
+    kept,
+    text: `import path from "node:path"\nexport default {\n  name: "outside-marker",\n  resolve: {\n    alias${tape.pick([": {", " : {", ":{"])}\n      ${entries.join(",\n      ")}${tape.pick(["", ","])}\n    }\n  }\n}\n`
+  }
+}
+
+const aliasFiles = ["tsconfig.json", "a/tsconfig.app.json", "jsconfig.json", "vite.config.ts", "x.mjs", "x.cjs", "a.tsx", "README.md", "tsconfig.json.bak", "notes.txt"]
+const aliasPieces = ["alias: {", "alias:{", "}", "{", ",", "\"@acme/ui\"", "'core'", "`core`", ":", " ", "\n", "path.resolve(", ")", "(", "[", "]", "\"", "'", "`", "\\", "\"paths\"", "\"compilerOptions\"", "require(\"x\")", "//", "/*", "*/", "${", "x", "@acme/ui", "core/*"]
+
+/** What holds for any text: only spaces are written, only over text that is not a line break. */
+const blankProblems = (input: { readonly file: string; readonly text: string; readonly names: ReadonlyArray<string> }): ReadonlyArray<string> => {
+  const out = withoutAliases(input.file, input.text, new Set(input.names))
+  const config = /(?:^|\/)[jt]sconfig(?:\.[^/]*)?\.json$/.test(input.file) || /\.[cm]?[jt]sx?$/.test(input.file)
+  return [
+    ...check(out.length === input.text.length, "the text changes length"),
+    ...check(
+      Array.from({ length: out.length }, (_, index) => index).every((index) =>
+        out[index] === input.text[index] || (out[index] === " " && input.text[index] !== "\n")
+      ),
+      "a character is changed to something but a space, or a line break is lost"
+    ),
+    ...check(config || out === input.text, "a file that defines no alias is changed"),
+    ...check(input.names.length > 0 || out === input.text, "text is removed with no package to name"),
+    ...check(withoutAliases(input.file, input.text, new Set(input.names)) === out, "two readings differ")
+  ]
+}
+
+const aliasProblems = (input: AliasCase): ReadonlyArray<string> => {
+  const out = withoutAliases(input.file, input.text, new Set(input.names))
+  return [
+    ...blankProblems(input),
+    ...input.gone.filter((marker) => out.includes(marker)).map((marker) => `the alias to ${marker} is kept in ${out}`),
+    ...input.kept.filter((marker) => !out.includes(marker)).map((marker) => `${marker} is removed from ${out}`),
+    ...check(withoutAliases(input.file, out, new Set(input.names)) === out, "a second pass removes more")
+  ]
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// The properties
+// ---------------------------------------------------------------------------------------------------------------
+
+describe("Shell.commands", () => {
+  it.live("reads a generated program as the shell does: every word, joint and place", () =>
+    assertHolds(built(programOf, 96), (program) =>
+      check(same(commands(program.script), program.expected), `read ${JSON.stringify(commands(program.script))}`), { runs: 300, seed: 11 }))
+
+  it.live("holds its own rules for any text", () =>
+    effect {
+      try assertHolds(anyString, readProblems, { runs: 300, seed: 12 })
+      try assertHolds(soup(shellPieces), readProblems, { runs: 400, seed: 13 })
+      try assertHolds(built(programOf, 96), (program) => readProblems(program.script), { runs: 200, seed: 14 })
+    })
+
+  it.live("never splits a quoted word, whatever it holds", () =>
+    assertHolds(Arbitrary.all([anyString, soup(shellPieces, 5), anyString]), ([first, second, third]) => {
+      const words = [first, second, third]
+      const head = `A=${quote(third)} `
+      const body = `run ${words.map(quote).join(" ")}`
+      const script = `${head}${body} > ${quote(second)}`
+      const expected = [{
+        assignments: [["A", { text: third, literal: true }]],
+        words: ["run", ...words].map((text) => ({ text, literal: true })),
+        start: head.length,
+        end: head.length + body.length,
+        joint: "first",
+        piped: false,
+        background: false,
+        conditional: false
+      }]
+      return check(same(commands(script), expected), `read ${JSON.stringify(commands(script))}`)
+    }, { runs: 300, seed: 15 }))
+
+  it.live("refuses a script that holds syntax it does not read, wherever it stands", () =>
+    assertHolds(built((tape) => {
+      const before = programOf(tape).script
+      const after = programOf(tape).script
+      const refused = tape.chance(2) ? `echo a ${tape.pick(refusedWords)}` : tape.pick(refusedCommands)
+      return { refused, script: tape.pick([`${before}\n${refused}`, `${refused}\n${after}`, `${before}\n${refused}\n${after}`, refused]) }
+    }, 200), (input) => check(commands(input.script) === undefined, `read ${JSON.stringify(commands(input.script))}`), { runs: 250, seed: 16 }))
+
+  it.live("computes an if chain: no branch that cannot run, none in doubt that must", () =>
+    assertHolds(built((tape) => {
+      const counter = { value: 0 }
+      const before = tape.chance(2) ? "first\n" : ""
+      const chain = chainOf(tape, 0, counter)
+      const after = tape.chance(2) ? "\nlast one" : ""
+      return {
+        script: `${before}${chain.script}${after}`,
+        ran: [
+          ...(before === "" ? [] : [{ words: "first", conditional: false }]),
+          ...chain.ran,
+          ...(after === "" ? [] : [{ words: "last one", conditional: false }])
+        ]
+      }
+    }, 120), (chain) => {
+      const read = commands(chain.script)?.map((command) => ({
+        words: command.words.map((word) => word.text).join(" "),
+        conditional: command.conditional
+      }))
+      return check(same(read, chain.ran), `read ${JSON.stringify(read)}`)
+    }, { runs: 300, seed: 17 }))
+
+  it.live("refuses a script that ends before a command, a quote or an if does", () =>
+    assertCorpus(["echo a \\", "echo 'a", "echo \"a", "echo \"a\\", "a &&", "a ||", "a |", "a |\n", "a && # b", "if a | then b; fi", "if a && then b; fi", "if a; then b ||\nfi", "if a; then b; fi; c &&"], (script) =>
+      check(commands(script) === undefined, `read ${JSON.stringify(commands(script))}`)))
+
+  it.live("reads a command that goes on after a line break", () =>
+    assertCorpus(["a &&\n b", "a ||\n\n b", "a |\n b", "a \\\n&& b", "a && # why\n b"], (script) =>
+      check(same(commands(script)?.map((command) => command.words.map((word) => word.text).join(" ")), ["a", "b"]), `read ${JSON.stringify(commands(script))}`)))
+
+  it.live("reads only a space, a tab and a line break as the shell's blanks", () =>
+    assertCorpus([nbsp, lineSeparator, formFeed, verticalTab, carriageReturn, String.fromCharCode(0x3000), String.fromCharCode(0xfeff)], (blank) => {
+      // `npm<nbsp>run build` runs a program named `npm<nbsp>run`: it is one word to the shell.
+      const read = commands(`npm${blank}run build`)
+      return [
+        ...check(same(read?.map((command) => command.words.map((word) => word.text)), [[`npm${blank}run`, "build"]]), `read ${JSON.stringify(read)}`),
+        ...check(Script.runOf((commands(`npm run build${blank}`) ?? [])[0]?.words.map((word) => word.text) ?? [])?.script !== "build", "the blank is dropped from a script's name")
+      ]
+    }))
+})
+
+describe("Shell.quote", () => {
+  it.live("writes any word so that the reader gives it back", () =>
+    assertHolds(Arbitrary.array(anyString, { minLength: 1, maxLength: 4 }), (words) => {
+      const read = commands(`echo ${words.map(quote).join(" ")}`)
+      return check(same(read?.[0]?.words.slice(1), words.map((text) => ({ text, literal: true }))) && read?.length === 1, `read ${JSON.stringify(read)}`)
+    }, { runs: 300, seed: 21 }))
+})
+
+describe("Script.decide", () => {
+  it.live("splits a script only into the script runs it ran, in order, and only when nothing forbids it", () =>
+    effect {
+      try assertHolds(built((tape) => manifestOf(tape, false), 96), scriptProblems, { runs: 300, seed: 31 })
+      // Steps with nothing around the run, where most scripts split.
+      try assertHolds(built((tape) => manifestOf(tape, true), 96), scriptProblems, { runs: 300, seed: 32 })
+    })
+
+  it.live("splits often enough for the property above to mean something", () =>
+    effect {
+      try Effect.try(() => {
+        const kinds = tapes(200).map((tape) => manifestOf(tape, true)).map((manifest) => Script.decide(manifest.step, textOf(manifest)).kind)
+        expect(kinds).toContain("links")
+        expect(kinds).toContain("whole")
+        expect(kinds).toContain("none")
+      })
+    })
+
+  it.live("never throws for any command, directory or manifest text", () =>
+    assertHolds(
+      Arbitrary.all([soup([...shellPieces, "npm run ", "pnpm ", "yarn ", "bun run ", ...scriptNames]), anyString, soup(["{", "}", "\"scripts\"", ":", "\"a\"", "\"npm run a && npm run b\"", ",", "[", "]", "null", "1", "\"__proto__\"", "\"constructor\"", " "])]),
+      ([command, cwd, manifest]) => {
+        const step = { command, cwd, env: {}, runner: cwd }
+        const decision = Script.decide(step, (path) => path.length % 3 === 0 ? null : manifest, cwd.length % 2 === 0)
+        return [
+          ...check(same(decision, Script.decide(step, (path) => path.length % 3 === 0 ? null : manifest, cwd.length % 2 === 0)), "two decisions differ"),
+          ...check(decision.kind !== "whole" || decision.why.feature !== "", "a reason with no name"),
+          ...check(unique(Script.filesOf(step)), "filesOf lists a file twice")
+        ]
+      },
+      { runs: 300, seed: 33 }
+    ))
+
+  it.live("reads a script named like a member of every object as any other script", () =>
+    assertCorpus(["constructor", "__proto__", "toString", "valueOf", "hasOwnProperty", "__defineGetter__"], (name) => {
+      const absent = decideWith([["a", "npm run b && npm run c"]], `npm run ${name}`)
+      const present = decideWith([[name, "npm run b && npm run c"], ["b", "tsc"], ["c", "eslint ."]], `npm run ${name}`)
+      const inner = decideWith([["a", `npm run ${name} && npm run c`], [name, "tsc"], ["c", "eslint ."]], "npm run a")
+      return [
+        ...check(absent.kind === "none", `a manifest without ${name} gives ${JSON.stringify(absent)}`),
+        ...check(present.kind === "links" && same(present.links.map((link) => link.name), ["b", "c"]), `gives ${JSON.stringify(present)}`),
+        ...check(inner.kind === "links" && same(inner.links.map((link) => link.name), [name, "c"]), `inside gives ${JSON.stringify(inner)}`)
+      ]
+    }))
+
+  it.live("keeps whole a script with a blank the shell reads as a character of a word", () =>
+    assertCorpus([nbsp, formFeed, verticalTab, lineSeparator, String.fromCharCode(0x3000)], (blank) => {
+      // `npm run b<nbsp>&& npm run c` runs a script named `b<nbsp>`, which the manifest does not have.
+      const decision = decideWith([["a", `npm run b${blank}&& npm run c`], ["b", "tsc"], ["c", "eslint ."]], "npm run a")
+      const between = decideWith([["a", `npm run b &&${blank}npm run c`], ["b", "tsc"], ["c", "eslint ."]], "npm run a")
+      return [
+        ...check(decision.kind === "whole" && decision.why.feature === "script-syntax", `gives ${JSON.stringify(decision)}`),
+        ...check(between.kind === "whole" && between.why.feature === "script-syntax", `between links gives ${JSON.stringify(between)}`)
+      ]
+    }))
+
+  it.live("ends for scripts that reach themselves, at any distance", () =>
+    assertCorpus([1, 2, 3, 7, 40], (length) => {
+      const ring = Array.from({ length }, (_, index): readonly [string, string] => [`s${index}`, `npm run s${(index + 1) % length} && npm run leaf`])
+      const decision = decideWith([...ring, ["leaf", "tsc"]], "npm run s0")
+      const alone = decideWith(Array.from({ length }, (_, index): readonly [string, string] => [`s${index}`, `npm run s${(index + 1) % length}`]), "npm run s0")
+      return [
+        ...check(decision.kind === "whole" && decision.why.feature === "script-cycle", `a ring of ${length} gives ${JSON.stringify(decision)}`),
+        ...check(alone.kind === "whole" && alone.why.feature === "script-cycle", `a ring of ${length} single links gives ${JSON.stringify(alone)}`)
+      ]
+    }))
+
+  it.live("ends for a chain of scripts thousands deep", () =>
+    assertCorpus([3000], (depth) => {
+      const chain = Array.from({ length: depth }, (_, index): readonly [string, string] => [`s${index}`, `npm run s${index + 1} && npm run leaf`])
+      const decision = decideWith([...chain, [`s${depth}`, "tsc"], ["leaf", "eslint ."]], "npm run s0")
+      return check(decision.kind === "links" && decision.links.length === depth + 1 && unique(decision.links.map((link) => link.name)), `gives ${decision.kind}`)
+    }))
+})
+
+describe("Script.decide fan-out", () => {
+  it.live("gives a script that runs another twice, ten deep, one link for each of its 1,024 runs", () =>
+    assertCorpus([10], (depth) => {
+      const doubling = Array.from({ length: depth }, (_, index): readonly [string, string] => [`s${index}`, `npm run s${index + 1} && npm run s${index + 1}`])
+      const decision = decideWith([...doubling, [`s${depth}`, "tsc"]], "npm run s0")
+      return check(
+        decision.kind === "links" && decision.links.length === 2 ** depth && unique(decision.links.map((link) => link.name)) &&
+          decision.links.every((link) => link.command.endsWith(`npm run s${depth}`)),
+        `gives ${decision.kind}`
+      )
+    }))
+})
+
+describe("Script.runOf", () => {
+  it.live("reads a run only where the words name the package manager, the script and what follows", () =>
+    assertHolds(Arbitrary.array(soup(["npm", "pnpm", "yarn", "bun", "run", "run-script", "test", "-", "--", "x", "install", "constructor", " ", "=", "b"], 2), { maxLength: 6 }), (words) => {
+      const run = Script.runOf(words)
+      if (run === undefined) return []
+      return [
+        ...check(run.manager === words[0], "the manager is not the first word"),
+        ...check(!run.script.startsWith("-") && words.includes(run.script), "the script is an option or no word of the command"),
+        ...check(same(words.slice(words.length - run.rest.length), run.rest) && words[words.length - run.rest.length - 1] === run.script, "the rest is not what follows the script"),
+        ...check(words.length - run.rest.length <= 3, "a word is dropped between the manager and the script")
+      ]
+    }, { runs: 300, seed: 34 }))
+})
+
+describe("Workspace", () => {
+  it.live("joins paths as one walk: in parts or at once, and never out of the repository", () =>
+    assertHolds(Arbitrary.array(soup(["a", "b", "..", ".", "/", "c.d", ""], 5), { minLength: 3, maxLength: 3 }), ([directory, first, second]) => {
+      const start = Workspace.join("", directory as string)
+      if (start === undefined) return []
+      const stepped = Workspace.join(start, first as string)
+      const once = Workspace.join(start, `${first}/${second}`)
+      const twice = stepped === undefined ? undefined : Workspace.join(stepped, second as string)
+      return [
+        ...check(once === twice, `at once ${once}, in two parts ${twice}`),
+        ...check(Workspace.join("", start) === start, "a joined path is not a fixed point"),
+        ...check(once === undefined || once.split("/").every((segment) => segment !== ".." && segment !== "." && (segment !== "" || once === "")), `${once} is not plain`)
+      ]
+    }, { runs: 300, seed: 41 }))
+
+  it.live("finds the package directories its patterns name, as a reader of its own does", () =>
+    assertHolds(built((tape) => ({
+      patterns: Array.from({ length: tape.next(4) + 1 }, () => tape.pick(patternPool)),
+      files: [...layoutOf(tape).files, "node_modules/x/package.json", "packages/a/node_modules/y/package.json", "package.json"]
+    })), patternProblems, { runs: 300, seed: 42 }))
+
+  it.live("matches a pattern of many stars in time that does not grow with each star", () =>
+    assertCorpus([
+      `${"*".repeat(40)}z`,
+      `${"**/".repeat(30)}z`,
+      `${"a*".repeat(30)}z`,
+      `${"**/a/".repeat(20)}z`,
+      `${"*a".repeat(30)}/${"**/*a*/".repeat(12)}z`
+    ], (pattern) => {
+      const began = Date.now()
+      const files = new Set([`${"a".repeat(60)}/package.json`, `${"a/".repeat(40)}b/package.json`, `${"a".repeat(60)}/${"a/".repeat(40)}b/package.json`])
+      const found = Workspace.packageDirectories([pattern], files)
+      const matched = Workspace.packageDirectories([pattern.replaceAll("z", "b")], new Set([...files, `${"a".repeat(31)}b/package.json`]))
+      return [
+        ...check(same(found, []), `found ${found?.join(", ")}`),
+        ...check(matched !== undefined && matched.length > 0, `with b for z found ${matched?.length} directories`),
+        ...check(Date.now() - began < 2000, `took ${Date.now() - began} ms`)
+      ]
+    }))
+
+  it.live("assembles the packages whatever order their manifests come in, and only what they declare", () =>
+    assertHolds(built(reorderedLayout), (input) => {
+      const workspace = workspaceOf(input.layout)
+      const other = workspaceOf(input.reordered)
+      if (workspace === undefined || other === undefined) return ["a workspace of named packages is not read"]
+      const names = new Set(input.layout.names)
+      const byName = (packages: ReadonlyArray<Workspace.Package>): string => JSON.stringify([...packages].sort((a, b) => a.name < b.name ? -1 : 1))
+      return [
+        ...check(byName(workspace.packages) === byName(other.packages), "the packages depend on the order of the manifests"),
+        ...check(same(workspace.packages.map((owner) => owner.directory), input.layout.manifests.map(([directory]) => directory)), "a package is lost or moved"),
+        ...workspace.packages.flatMap((owner) => check(sorted(owner.dependencies) && unique(owner.dependencies) && subset(owner.dependencies, names), `${owner.name} declares what is no package`)),
+        ...check(Workspace.assemble("pnpm", {}, false, [...input.layout.manifests, input.layout.manifests[0] as readonly [string, string]]) === undefined, "two packages of one name are read")
+      ]
+    }, { runs: 200, seed: 43 }))
+
+  it.live("scans for a package of any name, and finds each name written in quotes", () =>
+    assertHolds(built((tape) => {
+      const layout = layoutOf(tape, [...validNames, ...oddNames])
+      return { layout, text: Array.from({ length: tape.next(8) }, () => tape.pick([...layout.names, " ", "\"", "'", "/", "./x/y", "../", "node_modules/", "packages/a/src", "\n", "import ", "@", "."])).join("") }
+    }), (input) => {
+      const workspace = workspaceOf(input.layout)
+      if (workspace === undefined) return ["a workspace of named packages is not read"]
+      const scan = Workspace.scanner(workspace)
+      const quiet = scan(input.text, false)
+      const loud = scan(input.text, true)
+      const names = new Set(input.layout.names)
+      // A name a package manager takes: a scope and a word, or a word, of path characters.
+      const usual = input.layout.names.filter((name) => /^(?:@[a-z0-9-]+\/)?[a-z0-9_][a-z0-9._-]*$/.test(name))
+      return [
+        ...[quiet, loud].flatMap((found) => [
+          ...check(sorted(found.names) && unique(found.names) && subset(found.names, names), "the names are not a sorted set of packages"),
+          ...check(sorted(found.relative) && found.relative.every((path) => path.startsWith("./") || path.startsWith("../")), "a relative path is not one"),
+          ...check(sorted(found.rooted) && unique(found.rooted), "the rooted paths are not a sorted set")
+        ]),
+        ...check(subset(quiet.names, new Set(loud.names)) && same(quiet.relative, loud.relative) && same(quiet.rooted, loud.rooted), "bare text names fewer packages"),
+        ...check(same(scan(input.text, false), quiet), "two scans differ"),
+        ...usual.flatMap((name) => [
+          ...check(scan(`import x from "${name}"`, false).names.includes(name), `"${name}" in quotes is not found`),
+          ...check(scan(`pnpm --filter ${name} build`, true).names.includes(name), `${name} bare in a script is not found`),
+          ...check(scan(`require('${name}/sub/path.js')`, false).names.includes(name), `a subpath of ${name} is not found`)
+        ])
+      ]
+    }, { runs: 300, seed: 44 }))
+
+  it.live("reaches everything a package declares and mentions, to a fixed point, in any order", () =>
+    assertHolds(built(reorderedLayout, 160), graphProblems, { runs: 200, seed: 45 }))
+
+  it.live("reads patterns, managers and manifests of any text without throwing", () =>
+    assertHolds(Arbitrary.all([anyString, soup(["packages:", "\n", " - ", "'a/*'", "tasks:", "{", "}", "[", "]", ":", "\t", "includeWorkspaceRoot: true", "\""]), soup(["{", "}", "\"workspaces\"", ":", "[", "]", "\"a/*\"", ",", "\"packages\"", "1", "null", "\"packageManager\"", "\"pnpm@9\"", "\"__proto__\""])]), ([any, yaml, json]) => {
+      const manifest = Workspace.readObject(json) ?? {}
+      const patterns = [Workspace.readPatterns(manifest, yaml, any), Workspace.readPatterns(manifest, undefined, null), Workspace.readPatterns(manifest, undefined, any)]
+      const files = new Set([any, `${any}/package.json`, "bun.lock"])
+      return [
+        ...check(["pnpm", "bun", "npm", "yarn"].includes(Workspace.managerOf(manifest, files)), "a manager of no name"),
+        ...check(patterns[1] === undefined || patterns[1].orchestrated, "an .npmrc that cannot be read sets nothing"),
+        ...patterns.flatMap((read) => check(read === undefined || read.patterns.every((pattern) => typeof pattern === "string"), "a pattern that is no text")),
+        ...check(Workspace.resolveFile(any, files) === any && subset([Workspace.resolveFile(`${any}/package`, files) ?? any], files), "a file is resolved to one the repository lacks"),
+        ...check(Workspace.assemble("npm", manifest, false, [["a", json], ["b", any]]) === undefined || Workspace.readObject(any) !== undefined, "a manifest that is no object is read")
+      ]
+    }, { runs: 200, seed: 46 }))
+})
+
+describe("Aliases.withoutAliases", () => {
+  it.live("writes only spaces, and only in a file that defines aliases", () =>
+    assertHolds(Arbitrary.all([soup(aliasFiles, 1), soup(aliasPieces, 24), soup(["a", "@acme/ui", "core", "x"], 1), anyString]), ([file, text, name, any]) => [
+      ...blankProblems({ file, text, names: [name, "core"] }),
+      ...blankProblems({ file, text: any, names: [name] }),
+      ...blankProblems({ file, text: `{"compilerOptions":{"paths":{${text}}}}`, names: [name, "core"] }),
+      ...blankProblems({ file, text, names: [] })
+    ], { runs: 400, seed: 51 }))
+
+  it.live("removes each alias of a package from a tsconfig, and nothing else", () =>
+    assertHolds(built(tsconfigCase), aliasProblems, { runs: 200, seed: 52 }))
+
+  it.live("removes each alias that only builds a path from a bundler's config, and nothing else", () =>
+    assertHolds(built(codeCase), aliasProblems, { runs: 200, seed: 53 }))
+})
+
+describe("Turbo", () => {
+  it.live("walks dependsOn to the same fixed point a reader of its own reaches, in any order", () =>
+    assertHolds(built(turboCase, 200), turboProblems, { runs: 200, seed: 61 }))
+
+  it.live("reads a turbo.json of any text without throwing", () =>
+    assertHolds(Arbitrary.all([anyString, soup(["{", "}", "\"tasks\"", "\"pipeline\"", ":", "[", "]", "\"dependsOn\"", "\"inputs\"", "\"^build\"", "\"a#build\"", ",", "null", "1", "\"__proto__\"", "//c\n", "\"globalDependencies\"", "\"../x\""], 20)]), ([any, json]) => {
+      const config = Turbo.readConfig(json, [["a", any], ["b", json]]) ?? Turbo.readConfig(`{"tasks":{${json}}}`, [["a", json]]) ?? Turbo.readConfig(any, [])
+      if (config === undefined) return []
+      const owner: Workspace.Package = { name: "a", directory: "packages/a", scripts: { build: "tsc" }, dependencies: ["a"] }
+      const walked = Turbo.walk(config, { manager: "pnpm", rootName: undefined, rootScripts: {}, packages: [owner], orchestrated: false }, owner, ["build", any])
+      return [
+        ...check(Turbo.defines(config, "build") || !walked.scripts.some(([, script]) => script === "build"), "a task nothing defines runs"),
+        ...check(typeof Turbo.rootRuns(config, any) === "boolean" && walked.scripts.length <= 1, "more scripts run than the package has")
+      ]
+    }, { runs: 300, seed: 62 }))
+})
+
+describe("Plan", () => {
+  it.live("gives each package that has work one part, with its dependencies, in any order of the packages", () =>
+    assertHolds(built(planCase, 200), planProblems, { runs: 200, seed: 71 }))
+
+  it.live("splits often enough for the property above to mean something", () =>
+    effect {
+      try Effect.try(() => {
+        const kinds = tapes(200).map(planCase).map((input) => {
+          const facts = factsOf(input.layout, input.turbo) as Plan.Facts
+          const understood = Plan.understand(stepOf(input.command), facts.workspace)
+          return understood === undefined ? "unread" : Plan.decide(stepOf(input.command), understood, facts).kind
+        })
+        expect(kinds).toContain("split")
+        expect(kinds).toContain("scope")
+      })
+    })
+
+  it.live("understands or refuses any step without throwing, whatever the root's scripts are named", () =>
+    assertHolds(Arbitrary.all([soup([...shellPieces, "pnpm run ", "pnpm ", "yarn ", "bun run ", "npm run ", "turbo run ", "-r ", "--filter ", "cd ", "bash -c ", "zig build ", "export ", "set -e\n", ...scriptNames], 10), soup(["", "packages/a", "..", "/", "${{ x }}", "a/"], 1)]), ([command, cwd]) => {
+      const root = { name: "root", scripts: { a: "pnpm run b", b: "pnpm run a", c: "turbo run build", d: "X=1 pnpm -r run build", e: "pnpm run e", constructor: "pnpm -r run test" } }
+      const workspace = Workspace.assemble("pnpm", root, false, [["packages/a", "{\"name\":\"a\",\"scripts\":{\"build\":\"tsc\"}}"], ["packages/b", "{\"name\":\"b\",\"scripts\":{\"build\":\"tsc\",\"toString\":\"x\"},\"dependencies\":{\"a\":\"*\"}}"]])
+      const bare = Workspace.assemble("pnpm", {}, false, [["packages/a", "{\"name\":\"a\"}"]])
+      if (workspace === undefined || bare === undefined) return ["a workspace is not read"]
+      const step = stepOf(command === "" ? " " : command, cwd)
+      const understood = Plan.understand(step, workspace)
+      const facts: Plan.Facts = { workspace, graph: Workspace.graph(workspace, new Set(["packages/a/package.json", "packages/b/package.json"]), () => ({ names: [], relative: [], rooted: [] })), turbo: Turbo.readConfig("{\"tasks\":{\"build\":{}}}", []) }
+      const decision = understood === undefined ? undefined : Plan.decide(step, understood, facts)
+      return [
+        ...check(same(understood, Plan.understand(step, workspace)), "two readings differ"),
+        ...check(Plan.understand(step, bare) === undefined || true, ""),
+        ...check(Plan.understand(step, undefined)?.runs.length === undefined || Plan.understand(step, undefined)?.runs.length === 0, "a run is read where there is no workspace"),
+        ...check(commands(step.command) !== undefined || understood === undefined, "a step the shell reader refuses is understood"),
+        ...check(decision?.kind !== "split" || unique(decision.parts.map((part) => part.name)), "parts share a name"),
+        ...check(Zig.soleBuild(step.command) === undefined || commands(step.command) !== undefined, "a build is read in a script the shell reader refuses")
+      ]
+    }, { runs: 400, seed: 72 }))
+
+  it.live("follows a root script named like a member of every object as any other", () =>
+    assertCorpus(["constructor", "__proto__", "toString", "valueOf", "hasOwnProperty"], (name) => {
+      const workspace = Workspace.assemble("pnpm", { scripts: { build: "tsc" } }, false, [["packages/a", "{\"name\":\"a\"}"]])
+      const understood = workspace === undefined ? undefined : Plan.understand(stepOf(`pnpm run ${name}`), workspace)
+      return check(workspace !== undefined && understood === undefined, `pnpm run ${name} is read as ${JSON.stringify(understood)}`)
+    }))
+
+  it.live("names the inputs of any reaches as a sorted set where no glob holds another", () =>
+    assertHolds(built(reorderedLayout, 160), (input) => {
+      const workspace = workspaceOf(input.layout)
+      if (workspace === undefined) return ["a workspace of named packages is not read"]
+      const graph = graphOf(input.layout, workspace)
+      const reaches = workspace.packages.filter((_, index) => index % 2 === 0).map((owner) => graph.reachOf(owner))
+      const inputs = Plan.inputsOf(graph.outside, reaches, ["extra/**", "tsconfig.json"])
+      const whole = inputs.filter((glob) => glob.endsWith("/**"))
+      const named = (path: string): boolean => inputs.includes(path) || whole.some((glob) => path.startsWith(glob.slice(0, -2)))
+      return [
+        ...check(sorted(inputs) && unique(inputs), "the inputs are not a sorted set"),
+        ...check(!inputs.some((path) => whole.some((glob) => glob !== path && path.startsWith(glob.slice(0, -2)))), "one input is inside another"),
+        ...reaches.flatMap((reach) => [
+          ...[...reach.packages].filter((directory) => !named(`${directory}/**`)).map((directory) => `the package ${directory} is lost`),
+          ...[...reach.files].filter((file) => !named(file)).map((file) => `the file ${file} is lost`)
+        ]),
+        ...graph.outside.filter((glob) => !named(glob)).map((glob) => `the outside glob ${glob} is lost`),
+        ...check(same(Plan.inputsOf(graph.outside, [{ packages: new Set(["packages/[a]"]), files: new Set() }], []), ["**"]), "a path a glob reader takes as a pattern is listed")
+      ]
+    }, { runs: 150, seed: 73 }))
+
+  it.live("orders the jobs of a shared tree after what they need, and loses none, cycles included", () =>
+    assertHolds(built((tape) => jobsOf(tape), 96), jobProblems, { runs: 200, seed: 74 }))
+})
+
+describe("Zig", () => {
+  it.live("splits only a step that is nothing but one build, into one step per named step", () =>
+    assertHolds(built((tape) => {
+      const flags = Array.from({ length: tape.next(3) }, () => tape.pick(["--summary all", "--verbose", "-j4", "--color off", "-Doptimize=fast", "--release", "--summary", "-- x", "--seed 0x1", "'--verbose'", "-freference-trace=3"]))
+      const name = tape.pick(["test", "", "check", "'te st'", "$STEP", "a b"])
+      const build = `zig build ${name} ${flags.join(" ")}`
+      return {
+        command: tape.pick([build, `set -e\n${build}`, `bash -euo pipefail -c ${quote(build)}`, `${build} && echo ok`, `cd x && ${build}`, `A=1 ${build}`, `${build} | tee log`, `if true; then ${build}; fi`, `${build} > log`, `echo hi; ${build}`]),
+        cwd: tape.pick(["", ".", "./", "sub", "/abs", "$HOME", "a/.."]),
+        groups: tape.pick([["a", "b"], ["a"], [], ["x y", "b", "c;d"]])
+      }
+    }), (input) => {
+      const step = { ...stepOf(input.command, input.cwd), name: "Build" }
+      const sole = Zig.sole(input.command)
+      const parts = Zig.split(step, new Map([[sole?.step ?? "", input.groups]]))
+      if (parts === undefined) return check(sole === undefined || !Zig.atRoot(step) || input.groups.length < 2, "a sole build at the root is not split")
+      return [
+        ...check(sole !== undefined && Zig.atRoot(step) && parts.length === input.groups.length, "a step is split that is no sole build at the root"),
+        ...check(!/&&|\||\bcd\b|\bif\b|A=1|echo|-D|--release|-- x|\$STEP|a b /.test(input.command.replace(/pipefail/, "")), `a step with more than a build is split: ${input.command}`),
+        ...check(unique(parts.map((part) => part.id)) && parts.every((part) => part.from === step.id && part.atOnce === true), "the parts are not steps of their own"),
+        ...parts.flatMap((part, index) => {
+          const read = Zig.sole(part.command)
+          return check(read?.step === input.groups[index] && same(read?.flags, sole?.flags), `the part ${part.command} is not the build of ${input.groups[index]} with the step's flags`)
+        })
+      ]
+    }, { runs: 250, seed: 81 }))
+})
