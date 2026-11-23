@@ -193,3 +193,74 @@ describe("LiveDeps public GitHub fallback with the deployment read token", () =>
     expect(calls).toBe(1)
   })
 })
+
+
+describe("LiveDeps pull_files and docsSource", () => {
+  test("reads PR changed files via GitHub API and docs via DocsSource", async () => {
+    const client = HttpClient.make((request) => {
+      const url = new URL(request.url)
+      if (url.pathname === "/repos/evmts/voltaire/pulls/397/files") {
+        return Effect.succeed(
+          HttpClientResponse.fromWeb(
+            request,
+            new Response(
+              JSON.stringify([
+                { filename: "package.json", status: "modified", additions: 1, deletions: 1, changes: 2, patch: "@@ -1 +1 @@\n-a\n+b" },
+              ]),
+              { status: 200, headers: { "content-type": "application/json" } },
+            ),
+          ),
+        )
+      }
+      return Effect.succeed(HttpClientResponse.fromWeb(request, new Response("{}", { status: 404 })))
+    })
+
+    const fakeDocsSource = {
+      index: () =>
+        Effect.succeed({
+          _tag: "Index" as const,
+          source: "declared" as const,
+          cached: true,
+          index: {
+            title: "Voltaire",
+            url: "https://voltaire.tevm.sh/llms.txt",
+            pages: [
+              { title: "Address Overview", path: "/primitives/address", url: "https://voltaire.tevm.sh/primitives/address", section: "Core Primitives" },
+            ],
+          },
+        }),
+      page: (_o: string, _n: string, path: string) =>
+        path === "/primitives/address"
+          ? Effect.succeed({
+              _tag: "Page" as const,
+              cached: true,
+              page: { title: "Address Overview", path, url: "https://voltaire.tevm.sh/primitives/address" },
+              text: "# Address",
+            })
+          : Effect.succeed({ _tag: "Refused" as const, code: "page_not_found" as const }),
+    }
+
+    const deps = await Effect.runPromise(
+      makeLiveDeps({
+        database: emptySql,
+        reads: Option.none(),
+        repoCache: emptyCache,
+        starter: stubStarter as never,
+        githubFallbackClient: client,
+        docsSource: fakeDocsSource,
+      }),
+    )
+
+    const files = await Effect.runPromise(deps.getPullFiles("evmts", "voltaire", 397))
+    expect(files.files).toHaveLength(1)
+    expect(files.files[0]!.filename).toBe("package.json")
+    expect(files.files[0]!.patch).toContain("+b")
+
+    const docs = await Effect.runPromise(deps.listDocs("evmts", "voltaire", "address"))
+    expect(docs.pages).toHaveLength(1)
+    expect(docs.pages[0]!.path).toBe("/primitives/address")
+
+    const page = await Effect.runPromise(deps.readDoc("evmts", "voltaire", "/primitives/address"))
+    expect(page.content).toBe("# Address")
+  })
+})

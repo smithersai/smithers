@@ -1,11 +1,14 @@
 import type { ImmutableCache } from "@smthrs/artifacts"
 import { digestSync } from "@smthrs/crypto"
+import { Docs } from "@smthrs/views"
 import { Clock, Duration, Effect, Layer, Option, Redacted, Schema } from "effect"
 import { HttpClient, HttpClientRequest } from "effect/http"
 import { SqlClient } from "effect/sql"
+import { MAX_LISTED, SEARCH_LIMIT } from "../../src/features/docs/contract.ts"
 import { agentAttribution, writeExecutionId } from "../../src/features/issues/contract.ts"
 import { repoId, textOf } from "../../src/features/repo/contract.ts"
 import { TreeListing as RepoTreeListing } from "../../src/features/repo/schema.ts"
+import type { DocsSource } from "../docs/Source.ts"
 import type { FlowStarter } from "../Flows.ts"
 import * as IssueList from "../github/IssueList.ts"
 import type * as ReadToken from "../github/ReadToken.ts"
@@ -23,6 +26,7 @@ import {
   type IssueQuery,
   type McpToolDeps,
   type PullDetail,
+  type PullFilesListing,
   type PullSummary,
   type RefListing,
   type TreeListing,
@@ -85,6 +89,7 @@ interface PublicGitHubReader {
   readonly getIssue: (owner: string, name: string, number: number) => Effect.Effect<IssueDetail, McpToolError>
   readonly listPulls: (owner: string, name: string, state: "open" | "closed" | "all") => Effect.Effect<ReadonlyArray<PullSummary>, McpToolError>
   readonly getPull: (owner: string, name: string, number: number) => Effect.Effect<PullDetail, McpToolError>
+  readonly getPullFiles: (owner: string, name: string, number: number) => Effect.Effect<PullFilesListing, McpToolError>
 }
 
 /**
@@ -377,7 +382,28 @@ const makePublicGitHubReader = (
       }
     })
 
-  return { listRefs, readTree, readFile, listIssues, getIssue, listPulls, getPull }
+  const getPullFiles = (owner: string, name: string, number: number): Effect.Effect<PullFilesListing, McpToolError> =>
+    Effect.gen(function* () {
+      const rp = repoPath(owner, name)
+      const raw = yield* getJson(`${rp}/pulls/${number}/files?per_page=100`, `files for pull request #${number}`)
+      const list = Array.isArray(raw) ? raw : []
+      const files = list.map((entry) => {
+        const f = entry as Record<string, unknown>
+        const prev = typeof f["previous_filename"] === "string" ? f["previous_filename"] : undefined
+        return {
+          filename: typeof f["filename"] === "string" ? f["filename"] : "",
+          status: typeof f["status"] === "string" ? f["status"] : "modified",
+          additions: Number(f["additions"] ?? 0),
+          deletions: Number(f["deletions"] ?? 0),
+          changes: Number(f["changes"] ?? 0),
+          ...(prev === undefined ? {} : { previousFilename: prev }),
+          patch: typeof f["patch"] === "string" ? f["patch"] : null,
+        }
+      })
+      return { files, truncated: list.length >= 100 }
+    })
+
+  return { listRefs, readTree, readFile, listIssues, getIssue, listPulls, getPull, getPullFiles }
 }
 
 export interface LiveDepsOptions<R = never> {
@@ -390,6 +416,8 @@ export interface LiveDepsOptions<R = never> {
   readonly githubApiBaseUrl?: string
   /** Optional deployment read token (`worker/github/ReadToken.ts`) to avoid GitHub's 60 req/hr shared-IP limit. */
   readonly githubReadToken?: ReadToken.ReadToken
+  /** Optional repository docs source (`worker/docs/Source.ts`) for `docs_list` and `docs_read`. */
+  readonly docsSource?: DocsSource["Service"]
 }
 
 /**
@@ -750,6 +778,59 @@ export const makeLiveDeps = <R = never>(options: LiveDepsOptions<R>): Effect.Eff
           Effect.provide(database),
           Effect.mapError((error) => (error instanceof McpToolError ? error : mapSqlError("pull_get")())),
         ),
+
+      getPullFiles: (owner, name, number) =>
+        publicGitHub === undefined
+          ? Effect.fail(new McpToolError({ code: "unavailable", message: "GitHub client is not configured" }))
+          : publicGitHub.getPullFiles(owner, name, number),
+
+      listDocs: (owner, name, q) =>
+        Effect.gen(function* () {
+          if (options.docsSource === undefined) {
+            return yield* new McpToolError({ code: "unavailable", message: "Documentation source is not configured" })
+          }
+          const read = yield* options.docsSource.index(owner, name)
+          if (read._tag === "Refused") {
+            if (read.code === "no_docs" || read.code === "not_found" || read.code === "page_not_found") {
+              return yield* new McpToolError({ code: "not_found", message: `No documentation index for ${owner}/${name}` })
+            }
+            return yield* new McpToolError({ code: "unavailable", message: `Documentation index unavailable (${read.code})` })
+          }
+          const query = q.trim()
+          const matched = query === "" ? read.index.pages.slice(0, MAX_LISTED) : Docs.search(read.index, query, SEARCH_LIMIT)
+          const truncated = query === "" ? read.index.pages.length > MAX_LISTED : false
+          return {
+            title: read.index.title,
+            source: read.source,
+            pages: matched.map((page) => ({
+              title: page.title,
+              path: page.path,
+              ...(page.description === undefined ? {} : { description: page.description }),
+              ...(page.section === undefined ? {} : { section: page.section }),
+            })),
+            truncated,
+          }
+        }),
+
+      readDoc: (owner, name, docPath) =>
+        Effect.gen(function* () {
+          if (options.docsSource === undefined) {
+            return yield* new McpToolError({ code: "unavailable", message: "Documentation source is not configured" })
+          }
+          const read = yield* options.docsSource.page(owner, name, docPath)
+          if (read._tag === "Refused") {
+            if (read.code === "page_not_found" || read.code === "no_docs" || read.code === "not_found") {
+              return yield* new McpToolError({ code: "not_found", message: `Documentation page ${docPath} not found` })
+            }
+            return yield* new McpToolError({ code: "unavailable", message: `Documentation page unavailable (${read.code})` })
+          }
+          return {
+            title: read.page.title,
+            path: read.page.path,
+            url: read.page.url,
+            content: read.text,
+          }
+        }),
 
       createIssue: (params) =>
         admitWrite(params.owner, params.name, params.writeId, params.personId, {

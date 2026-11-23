@@ -45,7 +45,7 @@ and model credential writes remain the person's.
 ## Tools
 
 `tools/list` is the client-facing catalog. `tools/call` checks repository access and the action's permissions on every
-call. The catalog covers repository files and refs, docs, issues and pull requests, and workflows. Where the person's
+call. The catalog covers repository files and refs (`repo_tree`, `repo_read_file`, `repo_refs`), docs (`docs_list`, `docs_read`), issues and pull requests (`issues_list`, `issue_get`, `pulls_list`, `pull_get`, `pull_files`), and workflows (`flows_list`, `flow_get`). Where the person's
 role permits, the agent can open issues, comment, draft TODOs and post work links. Workflows the client fetches for
 local execution run on the client's machine.
 

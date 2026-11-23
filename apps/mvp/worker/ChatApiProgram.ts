@@ -604,8 +604,18 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
                 const mcpAuth = McpAuth.McpAuthServiceLive({ database, roles })
                 const mcpTools = Layer.effect(
                   McpToolRegistry,
-                  McpLiveDeps.makeLiveDeps({ database, reads: repos.reads, repoCache, starter, githubReadToken: mcpReadToken }).pipe(
-                    Effect.provide(FetchHttpClient.layer),
+                  Effect.gen(function* () {
+                    const docsSvc = yield* DocsSource.DocsSource
+                    return yield* McpLiveDeps.makeLiveDeps({
+                      database,
+                      reads: repos.reads,
+                      repoCache,
+                      starter,
+                      githubReadToken: mcpReadToken,
+                      docsSource: docsSvc,
+                    })
+                  }).pipe(
+                    Effect.provide(Layer.merge(FetchHttpClient.layer, docsSource)),
                     Effect.flatMap(McpTools.makeMcpToolRegistry)
                   )
                 ).pipe(Layer.provide(mcpAuth))

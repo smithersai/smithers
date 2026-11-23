@@ -147,7 +147,7 @@ export const mcpClientSnippet = (
     case "http":
       return {
         label: "Streamable HTTP MCP 2025-11-25",
-        command: `Endpoint:  ${url}\nDiscovery: ${cleanOrigin}${MCP_OAUTH_PROTECTED_RESOURCE_ROUTE}\nAuth:      OAuth 2.1 + PKCE (S256) + Dynamic Client Registration`,
+        command: `Endpoint:  ${url}\nDiscovery: ${cleanOrigin}${MCP_OAUTH_PROTECTED_RESOURCE_ROUTE}/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/mcp\nAuth:      OAuth 2.1 + PKCE (S256) + Dynamic Client Registration`,
         note: `Multi-repository endpoint is also available at ${cleanOrigin}${MCP_ROUTE}.`,
       }
     case "stdio":
