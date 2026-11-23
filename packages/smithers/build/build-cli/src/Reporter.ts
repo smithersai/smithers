@@ -66,12 +66,6 @@ export interface Terminal {
 }
 
 /**
- * Wraps a process stream as a {@link Terminal}.
- *
- * @category constructors
- * @since 0.1.0
- */
-/**
  * Installs an EPIPE error listener on a process output stream so piping
  * commands like `smthrs targets //... | head` terminates cleanly instead of
  * crashing with an uncaught stream error.
@@ -92,6 +86,12 @@ export const installEpipeHandler = (
   })
 }
 
+/**
+ * Wraps a process stream as a {@link Terminal}.
+ *
+ * @category constructors
+ * @since 0.1.0
+ */
 export const terminalOf = (stream: NodeJS.WriteStream): Terminal => ({
   write: (text) => {
     stream.write(text)
