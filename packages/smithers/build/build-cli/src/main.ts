@@ -7,7 +7,13 @@
  */
 
 import { main } from "./Entry.ts"
-import { terminalOf } from "./Reporter.ts"
+import { installEpipeHandler, terminalOf } from "./Reporter.ts"
+
+const exitOnPipeClose = () => {
+  process.exit(0)
+}
+installEpipeHandler(process.stdout, exitOnPipeClose)
+installEpipeHandler(process.stderr, exitOnPipeClose)
 
 await main({
   argv: process.argv.slice(2),
