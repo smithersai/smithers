@@ -93,7 +93,7 @@ const makeSession = (compiler: CompilerService = liveCompiler) => {
       const extension = /\.(tsx|jsx|mts|cts|mjs|cjs|js)$/i.exec(file)?.[1]?.toLowerCase() ?? "ts"
       const input = `${directory}/input.${extension}`
       files.clear()
-      files.set(input, text)
+      files.set(input, text.toWellFormed())
       files.set(
         config,
         JSON.stringify({

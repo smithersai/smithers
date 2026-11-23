@@ -1229,6 +1229,7 @@ static struct change *openOf[THREAD_BUCKETS];
 
 /* A name as groups know it: `.` parts, doubled slashes and a slash at the end left out (`a/./b//` is `a/b`). */
 static void keyOf(const char *name, char *out, size_t capacity) {
+  if (capacity == 0) return;
   size_t n = 0;
   for (const char *at = name; *at != 0 && n + 1 < capacity;) {
     if (*at == '/') {
@@ -1243,7 +1244,7 @@ static void keyOf(const char *name, char *out, size_t capacity) {
     }
     out[n++] = *at++;
   }
-  if (n == 0 && name[0] == '/') out[n++] = '/';
+  if (n == 0 && name[0] == '/' && n + 1 < capacity) out[n++] = '/';
   out[n] = 0;
 }
 

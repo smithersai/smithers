@@ -29,6 +29,30 @@ describe("regexOf", () => {
     for (const path of left) expect([path, names(pattern, path)]).toEqual([path, false])
   })
 
+  it("escapes malformed character classes instead of emitting invalid regular expressions", () => {
+    for (
+      const pattern of [
+        "lock[9-0].txt",
+        "lock[!].txt",
+        "lock[^].txt",
+        "lock[a-c-e].txt",
+        "lock[[:alpha:]].txt",
+        "lock[[.a.]].txt",
+        "lock[[=a=]].txt",
+        "lock[].txt",
+        "lock[\\-z].txt",
+        "lock[\\].txt"
+      ]
+    ) {
+      const re = regexOf(pattern)
+      expect(re).toBeTypeOf("string")
+      expect(() => new RegExp(re as string)).not.toThrow()
+    }
+    expect(names("lock[9-0].txt", "lock[9-0].txt")).toBe(true)
+    expect(names("lock[!].txt", "lock[!].txt")).toBe(true)
+    expect(names("lock[a-z0-9].txt", "lock5.txt")).toBe(true)
+  })
+
   it("reads no pattern that leaves the repository", () => {
     for (const pattern of ["/etc/hosts", "~/.npmrc", "../other/lock", "a/../../b", "", "./"]) {
       expect(regexOf(pattern)).toBeUndefined()

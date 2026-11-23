@@ -15,15 +15,17 @@
  *   --concurrency <N>       Parallel package workers (default: min(8, cpus/2))
  *   --include-vibelang      Include apps/vibelang compiler fuzz suites (130+ files)
  *   --rust                  Run Rust deterministic fuzz tests (flows-jj, smithers-ffi)
+ *   --zig                   Run Zig native fuzz tests (observe.c, smithers-ffi C ABI)
+ *   --zig-runs <N>          Run Zig LLVM coverage-guided --fuzz=<N> on Linux
  *   --libfuzzer-seconds <N> Also run all 6 Rust cargo-fuzz LLVM libFuzzer targets for N seconds each (Linux/nightly)
  *   --list                  List discovered fuzz suites without running them
  */
 
 import { spawn } from "node:child_process"
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs"
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs"
 import { cpus, tmpdir } from "node:os"
 import { dirname, join, relative, resolve } from "node:path"
-import { fileURLToPath } from "node:url"
+import { fileURLToPath, pathToFileURL } from "node:url"
 
 const rootDir = resolve(dirname(fileURLToPath(import.meta.url)), "..")
 
@@ -44,8 +46,10 @@ const filter = flagValue("--filter")
 const v8Guided = hasFlag("--v8")
 const measureCoverage = hasFlag("--coverage")
 const includeVibelang = hasFlag("--include-vibelang") || (filter !== undefined && filter.includes("vibelang"))
-const rustOnly = hasFlag("--rust") && !hasFlag("--all") && !measureCoverage && filter === undefined
+const zigRuns = Number(flagValue("--zig-runs") ?? "0")
 const runRust = hasFlag("--rust") || hasFlag("--all") || flagValue("--libfuzzer-seconds") !== undefined
+const runZig = hasFlag("--zig") || hasFlag("--all") || zigRuns > 0
+const nativeOnly = (hasFlag("--rust") || hasFlag("--zig")) && !hasFlag("--all") && !measureCoverage && filter === undefined
 const libfuzzerSeconds = Number(flagValue("--libfuzzer-seconds") ?? "0")
 const listOnly = hasFlag("--list")
 const concurrency = Math.max(
@@ -106,9 +110,18 @@ function discoverSuites() {
     }
     list.push(relative(pkgDir, file))
   }
+  const crossFiles = findFuzzFiles(join(rootDir, "fuzz"))
+  if (crossFiles.length > 0 && (filter === undefined || "fuzz".includes(filter))) {
+    const testingDir = join(rootDir, "packages/testing")
+    byPkg.set("fuzz", crossFiles.map((f) => relative(testingDir, f)))
+  }
   return [...byPkg.entries()]
     .sort(([a], [b]) => a.localeCompare(b))
-    .map(([pkg, relFiles]) => ({ pkg, dir: join(rootDir, pkg), files: relFiles.sort() }))
+    .map(([pkg, relFiles]) => ({
+      pkg,
+      dir: pkg === "fuzz" ? join(rootDir, "packages/testing") : join(rootDir, pkg),
+      files: relFiles.sort()
+    }))
 }
 
 function execAsync(cmd, cmdArgs, cwd, env) {
@@ -175,6 +188,7 @@ async function runTsSuites(suites) {
   const results = await runPool(suites, concurrency, async (suite) => {
     const isTui = suite.pkg === "apps/tui"
     const isMvp = suite.pkg === "apps/mvp"
+    const isCrossFuzz = suite.pkg === "fuzz"
     const covDir = tmpBase ? join(tmpBase, suite.pkg.replace(/[\\/]/g, "__")) : undefined
     if (covDir) mkdirSync(covDir, { recursive: true })
 
@@ -188,7 +202,7 @@ async function runTsSuites(suites) {
         "exec",
         "vitest",
         "run",
-        ...(isMvp ? ["--config", "vitest.fuzz.config.ts"] : []),
+        ...(isMvp || isCrossFuzz ? ["--config", "vitest.fuzz.config.ts"] : []),
         ...suite.files,
         "--coverage.enabled=true",
         "--coverage.provider=v8",
@@ -204,7 +218,7 @@ async function runTsSuites(suites) {
         "exec",
         "vitest",
         "run",
-        ...(isMvp ? ["--config", "vitest.fuzz.config.ts"] : []),
+        ...(isMvp || isCrossFuzz ? ["--config", "vitest.fuzz.config.ts"] : []),
         ...suite.files,
         "--coverage=false"
       ]
@@ -271,7 +285,10 @@ async function runRustFuzz() {
   console.log("\n=== Rust Deterministic Fuzz Suites ===")
   const detSuites = [
     { name: "flows-jj::fuzz_state_machine", args: ["test", "-p", "flows-jj", "--test", "fuzz_state_machine"] },
-    { name: "smithers-ffi::fuzz_ffi_and_crdt", args: ["test", "-p", "smithers-ffi", "--test", "fuzz_ffi_and_crdt"] }
+    { name: "flows-jj::fuzz_abi_and_ops", args: ["test", "-p", "flows-jj", "--test", "fuzz_abi_and_ops"] },
+    { name: "smithers-ffi::fuzz_ffi_and_crdt", args: ["test", "-p", "smithers-ffi", "--test", "fuzz_ffi_and_crdt"] },
+    { name: "smithers-ffi::fuzz_targets", args: ["test", "-p", "smithers-ffi", "--test", "fuzz_targets"] },
+    { name: "smithers-ffi::atomic_glob", args: ["test", "-p", "smithers-ffi", "--bin", "smithers-jj-export", "fuzz_atomic_glob"] }
   ]
   let allOk = true
   for (const s of detSuites) {
@@ -313,6 +330,54 @@ async function runRustFuzz() {
   return allOk
 }
 
+async function ensureObserveCallsHeader(observeFuzzDir) {
+  const genDir = join(observeFuzzDir, ".gen")
+  const headerPath = join(genDir, "calls.h")
+  if (existsSync(headerPath)) return
+  const buildObserveUrl = pathToFileURL(join(rootDir, "packages/smithers/build/build-cli/scripts/build-observe.mjs")).href
+  const { callsHeader } = await import(buildObserveUrl)
+  mkdirSync(genDir, { recursive: true })
+  writeFileSync(headerPath, callsHeader(), "utf8")
+}
+
+async function runZigFuzz() {
+  const observeFuzzDir = join(rootDir, "packages/smithers/build/build-cli/native/fuzz")
+  const ffiFuzzDir = join(rootDir, "packages/smithers-ffi/fuzz")
+  const useFuzzMode = zigRuns > 0 && process.platform === "linux"
+  console.log(
+    useFuzzMode
+      ? `\n=== Zig LLVM Coverage-Guided Fuzz Suites (--fuzz=${zigRuns}) ===`
+      : "\n=== Zig Native Fuzz Suites ==="
+  )
+
+  await ensureObserveCallsHeader(observeFuzzDir)
+
+  const buildLib = await execAsync("cargo", ["build", "-p", "smithers-ffi", "--lib"], rootDir, process.env)
+  if (buildLib.code !== 0) {
+    console.error("  [FAIL] cargo build -p smithers-ffi --lib")
+    console.error((buildLib.stdout + "\n" + buildLib.stderr).trim().split("\n").slice(-25).join("\n"))
+    return false
+  }
+
+  const zigArgs = useFuzzMode ? ["build", "test", `--fuzz=${zigRuns}`] : ["build", "test", "--summary", "all"]
+  const targets = [
+    { name: "observe.c (C helpers + keyOf bounds)", dir: observeFuzzDir },
+    { name: "smithers-ffi (live_document C ABI)", dir: ffiFuzzDir }
+  ]
+  let allOk = true
+  for (const t of targets) {
+    const res = await execAsync("zig", zigArgs, t.dir, process.env)
+    const combined = res.stdout + "\n" + res.stderr
+    const runsLine = combined.split("\n").find((l) => l.startsWith("Runs:"))
+    console.log(`  [${res.code === 0 ? "PASS" : "FAIL"}] ${t.name} (${res.ms}ms)${runsLine ? ` — ${runsLine.trim()}` : ""}`)
+    if (res.code !== 0) {
+      allOk = false
+      console.error(combined.trim().split("\n").slice(-30).join("\n"))
+    }
+  }
+  return allOk
+}
+
 async function main() {
   const suites = discoverSuites()
   if (listOnly) {
@@ -324,11 +389,14 @@ async function main() {
   }
 
   let ok = true
-  if (!rustOnly) {
+  if (!nativeOnly) {
     ok = (await runTsSuites(suites)) && ok
   }
   if (runRust) {
     ok = (await runRustFuzz()) && ok
+  }
+  if (runZig) {
+    ok = (await runZigFuzz()) && ok
   }
   process.exit(ok ? 0 : 1)
 }

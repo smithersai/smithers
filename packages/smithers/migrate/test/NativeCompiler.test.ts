@@ -76,4 +76,9 @@ describe("native migration syntax compiler", () => {
       { specifier: "dynamic", form: "dynamic", line: 3, column: 1 }
     ])
   })
+
+  it("sanitizes unpaired UTF-16 surrogates instead of crashing the native TypeScript compiler", () => {
+    const source = Ts.parse("surrogate.ts", "const x = \"\ud800\"")
+    expect(source.text).toBeDefined()
+  })
 })

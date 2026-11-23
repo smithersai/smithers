@@ -50,7 +50,10 @@
     "fuzz:v8": "node scripts/fuzz-repo.mjs --v8",
     "fuzz:coverage": "node scripts/fuzz-repo.mjs --coverage",
     "fuzz:rust": "node scripts/fuzz-repo.mjs --rust",
-    "fuzz:rust:libfuzzer": "node scripts/fuzz-repo.mjs --rust --libfuzzer-seconds=30"
+    "fuzz:rust:libfuzzer": "node scripts/fuzz-repo.mjs --rust --libfuzzer-seconds=30",
+    "fuzz:zig": "node scripts/fuzz-repo.mjs --zig",
+    "fuzz:zig:campaign": "node scripts/fuzz-repo.mjs --zig --zig-runs=10000",
+    "fuzz:all": "node scripts/fuzz-repo.mjs --all"
   },
   "engines": {
     "node": ">=26.4.0",

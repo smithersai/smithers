@@ -803,4 +803,56 @@ mod tests {
             assert_eq!(relative_pattern(pattern, base, exclusion), expected);
         }
     }
+
+    #[test]
+    fn fuzz_atomic_glob_never_panics_and_enforces_entry_limits() {
+        fn next_u64(seed: &mut u64) -> u64 {
+            *seed ^= *seed << 13;
+            *seed ^= *seed >> 7;
+            *seed ^= *seed << 17;
+            *seed
+        }
+        fn make_str(seed: &mut u64, alphabet: &[u8], max_len: usize) -> String {
+            let len = (next_u64(seed) as usize) % (max_len + 1);
+            let mut out = String::with_capacity(len);
+            for _ in 0..len {
+                let idx = (next_u64(seed) as usize) % alphabet.len();
+                out.push(alphabet[idx] as char);
+            }
+            out
+        }
+        let iters: usize = std::env::var("FUZZ_ITERS")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(500);
+        let alphabet: &[u8] = b"ab01/*?{}[],!\\.^$+-_ \0";
+        let mut seed: u64 = 0x9e37_79b9_7f4a_7c15;
+
+        for _ in 0..iters {
+            let pat = make_str(&mut seed, alphabet, 48);
+            let path = make_str(&mut seed, alphabet, 48);
+            let base = make_str(&mut seed, alphabet, 24);
+            let anchor = (next_u64(&mut seed) & 1) == 1;
+            let exclusion = (next_u64(&mut seed) & 1) == 1;
+            let is_dir = (next_u64(&mut seed) & 1) == 1;
+
+            let _ = relative_pattern(&pat, &base, exclusion);
+            if let Ok(matcher) = GlobRule::new(&pat, anchor) {
+                let _ = matcher.includes_root();
+                let _ = matcher.matches(&path, is_dir);
+                let _ = matcher.below(&path);
+            }
+
+            let limit = ((next_u64(&mut seed) as usize) % 8) + 1;
+            let mut sel = super::GlobBudget::new(limit);
+            let mut accepted = 0usize;
+            for step in 0..16 {
+                let candidate = format!("p{step}/{}", make_str(&mut seed, alphabet, 12));
+                if let Ok(true) = sel.select(&candidate, step == 0, limit) {
+                    accepted += 1;
+                }
+            }
+            assert!(accepted <= limit);
+        }
+    }
 }
