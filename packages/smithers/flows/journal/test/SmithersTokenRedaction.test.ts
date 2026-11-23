@@ -111,9 +111,7 @@ for (const [surface, redact] of [["journal", Redaction.redact], ["diagnostic", R
 
     for (const [kind, token] of tokens) {
       it(`redacts contextual ${kind} Basic headers without splitting the scoped prefix`, () => {
-        expect(redact(`Authorization: Basic ${token}`)).toBe(
-          surface === "diagnostic" ? "[REDACTED]" : "Authorization: Basic [REDACTED]"
-        )
+        expect(redact(`Authorization: Basic ${token}`)).toBe("[REDACTED]")
       })
       for (
         const [context, message, expected] of [

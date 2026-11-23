@@ -24,6 +24,11 @@ const database = Layer.provideMerge(Migrations.layer, TestDatabase.layer)
 const journal = (options: Partial<SqlJournal.SqlJournalOptions> = {}) =>
   Layer.provideMerge(SqlJournal.layer({ capacity: 64, batchSize: 1, overflow: "reject", ...options }), database)
 
+const owner = { hostId: "auto", pid: 1, nonce: "owner" }
+
+/** Makes `owner` the holder of `run`, so its fenced writes may trigger the policy. */
+const held = Effect.flatMap(SqlClient.SqlClient, (sql) => Leases.hold(sql, run, owner))
+
 const committed = (runId: RunId) =>
   Effect.gen(function*() {
     const sql = yield* SqlClient.SqlClient
@@ -65,8 +70,9 @@ describe("automatic compaction maintenance", () => {
           let captures = 0
           yield* Effect.gen(function*() {
             const service = yield* Journal
+            yield* held
             const started = yield* Deferred.make<void>()
-            const write = service.emitDurableUnfenced(input(0))
+            const write = service.emitDurable(input(0), owner)
             const fiber = yield* Deferred.succeed(started, undefined).pipe(
               Effect.andThen(Effect.never),
               Effect.ensuring((nested ? service.transact(write) : write).pipe(
@@ -108,7 +114,8 @@ describe("automatic compaction maintenance", () => {
       const reached = yield* Deferred.make<void>()
       yield* Effect.gen(function*() {
         const service = yield* Journal
-        const writing = yield* service.transact(service.emitDurableUnfenced(input(0))).pipe(
+        yield* held
+        const writing = yield* service.transact(service.emitDurable(input(0), owner)).pipe(
           Effect.forkChild({ startImmediately: true })
         )
         yield* Deferred.await(reached)
@@ -128,19 +135,36 @@ describe("automatic compaction maintenance", () => {
       )
     }))
 
-  it.effect("drains a twenty-entry burst across a threshold with one-entry batches", () =>
+  it.effect("drains a twenty-entry lossy burst across a threshold and leaves compaction to the owner", () =>
     Effect.gen(function*() {
-      const service = yield* Journal
-      for (let index = 0; index < 20; index++) yield* service.emitLossy(input(index))
-      yield* service.flush
-      expect(Option.getOrThrow(yield* service.latestCheckpoint(run)).compactedAtMs).not.toBeNull()
-      expect((yield* committed(run)).at(-1)).toBe(19)
-    }).pipe(
-      Effect.provide(
-        journal({ compaction: { entryThreshold: 3, capture: () => Effect.succeed(null) } })
-      ),
-      Effect.scoped
-    ))
+      let captures = 0
+      yield* Effect.gen(function*() {
+        const service = yield* Journal
+        for (let index = 0; index < 20; index++) yield* service.emitLossy(input(index))
+        yield* service.flush
+        // Lossy batches cross the threshold six times over and compact nothing.
+        expect(captures).toBe(0)
+        expect(Option.isNone(yield* service.latestCheckpoint(run))).toBe(true)
+        expect(yield* committed(run)).toHaveLength(20)
+        yield* held
+        yield* service.emitDurable(input(20), owner)
+        expect(captures).toBe(1)
+        expect(Option.getOrThrow(yield* service.latestCheckpoint(run)).compactedAtMs).not.toBeNull()
+        expect(yield* committed(run)).toEqual([20])
+      }).pipe(
+        Effect.provide(journal({
+          compaction: {
+            entryThreshold: 3,
+            capture: () =>
+              Effect.sync(() => {
+                captures++
+                return null
+              })
+          }
+        })),
+        Effect.scoped
+      )
+    }))
 
   it.effect("drains a second batch admitted while capture is gated and flush awaits maintenance", () =>
     Effect.gen(function*() {
@@ -148,7 +172,8 @@ describe("automatic compaction maintenance", () => {
       const release = yield* Deferred.make<void>()
       yield* Effect.gen(function*() {
         const service = yield* Journal
-        yield* service.emitLossy(input(0))
+        yield* held
+        const crossing = yield* service.emitDurable(input(0), owner).pipe(Effect.forkChild({ startImmediately: true }))
         yield* Deferred.await(reached)
         yield* service.emitLossy(input(1))
         const flushing = yield* service.flush.pipe(Effect.forkChild({ startImmediately: true }))
@@ -156,6 +181,7 @@ describe("automatic compaction maintenance", () => {
         expect(flushing.pollUnsafe()).toBeUndefined()
         yield* Deferred.succeed(release, undefined)
         yield* Fiber.join(flushing)
+        yield* Fiber.join(crossing)
         expect(yield* committed(run)).toEqual([0, 1])
         expect(Option.getOrThrow(yield* service.latestCheckpoint(run)).compactedAtMs).not.toBeNull()
       }).pipe(
@@ -177,7 +203,10 @@ describe("automatic compaction maintenance", () => {
       const release = yield* Deferred.make<void>()
       yield* Effect.gen(function*() {
         const service = yield* Journal
-        for (let index = 0; index < 3; index++) yield* service.emitLossy(input(index))
+        yield* held
+        for (let index = 0; index < 2; index++) yield* service.emitLossy(input(index))
+        yield* service.flush
+        const crossing = yield* service.emitDurable(input(2), owner).pipe(Effect.forkChild({ startImmediately: true }))
         yield* Deferred.await(reached)
         yield* service.emitLossy(input(0, other))
         yield* service.emitLossy(input(1, other))
@@ -186,7 +215,9 @@ describe("automatic compaction maintenance", () => {
           yield* Effect.yieldNow
         }
         expect(yield* committed(other)).toEqual([0, 1])
+        expect(crossing.pollUnsafe()).toBeUndefined()
         yield* Deferred.succeed(release, undefined)
+        yield* Fiber.join(crossing)
         yield* service.flush
       }).pipe(
         Effect.ensuring(Deferred.succeed(release, undefined)),
@@ -324,36 +355,4 @@ describe("automatic compaction maintenance", () => {
       expect(receipt.seq).toBe(1)
       expect(receipt.sourceSeq).toBe(1)
     }).pipe(Effect.provide(journal()), Effect.scoped))
-
-  it.effect("scope closure waits for registered maintenance before interrupting its scope", () =>
-    Effect.gen(function*() {
-      const reached = yield* Deferred.make<void>()
-      const release = yield* Deferred.make<void>()
-      const captured = yield* Deferred.make<void>()
-      const closing = yield* Effect.gen(function*() {
-        const service = yield* Journal
-        yield* service.emitLossy(input(0))
-        yield* Deferred.await(reached)
-      }).pipe(
-        Effect.provide(journal({
-          compaction: {
-            entryThreshold: 1,
-            capture: () =>
-              Deferred.succeed(reached, undefined).pipe(
-                Effect.andThen(Deferred.await(release)),
-                Effect.andThen(Deferred.succeed(captured, undefined)),
-                Effect.as(null)
-              )
-          }
-        })),
-        Effect.scoped,
-        Effect.forkChild({ startImmediately: true })
-      )
-      yield* Deferred.await(reached)
-      for (let index = 0; index < 20; index++) yield* Effect.yieldNow
-      expect(closing.pollUnsafe()).toBeUndefined()
-      yield* Deferred.succeed(release, undefined)
-      yield* Fiber.join(closing)
-      expect(yield* Deferred.isDone(captured)).toBe(true)
-    }))
 })

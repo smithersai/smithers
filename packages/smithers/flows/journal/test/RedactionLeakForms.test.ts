@@ -59,12 +59,20 @@ describe("URL userinfo passwords", () => {
     }
   })
 
-  it.each([
-    "https://host.invalid:8443/path?q=a@b",
-    "https://host.invalid:8443#frag@x",
-    "ssh://git@host.invalid:22/repo"
-  ])("leaves a URL without a password unchanged: %s", (input) => {
+  it("leaves a URL with no userinfo unchanged", () => {
+    const input = "https://host.invalid:8443/path?q=a@b"
     expect(Redaction.redact(input)).toBe(input)
+  })
+
+  it.each([
+    [`GET https://${secret}@api.invalid/v1`, "GET https://[REDACTED]@api.invalid/v1"],
+    ["ssh://git@host.invalid:22/repo", "ssh://[REDACTED]@host.invalid:22/repo"],
+    ["https://host.invalid:8443#frag@x", "https://[REDACTED]@x"]
+  ])("redacts bare URL userinfo in a durable row, where it may be a token: %s", (input, expected) => {
+    for (const redact of [Redaction.redact, Redaction.redactDiagnostic]) {
+      expect(redact(input)).toBe(expected)
+      expect(redact(expected)).toBe(expected)
+    }
   })
 })
 
@@ -209,9 +217,12 @@ describe("the default rules", () => {
     expect(redacted).toContain(Redaction.placeholder)
   })
 
-  it("leaves a -p value alone in a durable row", () => {
+  it("leaves a -p value alone in a durable row under a command whose -p is not a password", () => {
     expect(Redaction.redact("mkdir -p build/out")).toBe("mkdir -p build/out")
     expect(Redaction.redact(["ssh", "-p", "2222", "host"])).toEqual(["ssh", "-p", "2222", "host"])
+    expect(Redaction.redact("gcc -pthread main.c && tar -pxf a.tar")).toBe("gcc -pthread main.c && tar -pxf a.tar")
+    expect(Redaction.redact("mysql -p ./dump.sql")).toBe("mysql -p ./dump.sql")
+    expect(Redaction.redact("mysql -p --database app")).toBe("mysql -p --database app")
   })
 
   it("keeps the host and path of a URL whose user names a credential", () => {
@@ -655,9 +666,9 @@ describe("the scanner's cost", () => {
   // costs sixteen times. Both sizes are past the CPU cache, whose effect
   // would inflate the ratio, and a noisy attempt is retried: garbage
   // collection on a busy machine rarely repeats, a quadratic cost does.
-  const bestRatio = (small: () => unknown, large: () => unknown) => {
+  const bestRatio = (small: () => unknown, large: () => unknown, limit = 10) => {
     let best = Infinity
-    for (let attempt = 0; attempt < 3 && best >= 10; attempt++) best = Math.min(best, ratio(small, large))
+    for (let attempt = 0; attempt < 3 && best >= limit; attempt++) best = Math.min(best, ratio(small, large))
     return best
   }
 
@@ -691,14 +702,14 @@ describe("the scanner's cost", () => {
 
   // Each `<` searched on to the end of the text for a `>`: eight times the
   // run cost about fifty times as much, and 320 kB blocked the process for
-  // 11 s (#4541). Eight times the input separates linear from quadratic by
-  // more than any noise does.
+  // 11 s (#4541). Eight times the input costs about eight times as much when
+  // linear and sixty-four when quadratic; a noisy attempt is retried.
   it.each([
     ["a durable row", (n: number) => () => Redaction.redact(`token=${"<".repeat(n)}`)],
     ["a diagnostic", (n: number) => () => Redaction.redactDiagnostic(`token=${"<".repeat(n)}`)]
   ])("grows linearly over a run of < after a credential name in %s (#4541)", (_name, run) => {
     run(500)()
-    expect(ratio(run(16_000), run(128_000))).toBeLessThan(25)
+    expect(bestRatio(run(16_000), run(128_000), 25)).toBeLessThan(25)
   })
 
   // Each unclosed container past its line reads the 4 KiB floor, and the
@@ -817,22 +828,25 @@ describe("a credential named inside URL userinfo", () => {
 
 describe("complete authorization header names", () => {
   it.each(["Authorization", "Proxy-Authorization", "AUTHORIZATION", "proxy-authorization"])(
-    "redacts whitespace Token credentials for %s only in diagnostics",
+    "redacts whitespace Token credentials for %s, on the name's line in a durable row",
     (name) => {
       for (const space of [" ", "\t", "\n"]) {
         const input = `${name}${space}Token ${secret}`
         expect(Redaction.redactDiagnostic(input)).toBe(`${name}${space}[REDACTED]`)
-        expect(Redaction.redact(input)).toBe(input)
+        // A value on the line after its name is a diagnostic's reach only.
+        expect(Redaction.redact(input)).toBe(space === "\n" ? input : `${name}${space}[REDACTED]`)
         expect(Redaction.redactDiagnostic(Redaction.redactDiagnostic(input))).toBe(`${name}${space}[REDACTED]`)
       }
-      expect(Redaction.redactDiagnostic(`"${name} Token ${secret}" next`)).toBe(`"${name} [REDACTED]" next`)
+      for (const redact of [Redaction.redact, Redaction.redactDiagnostic]) {
+        expect(redact(`"${name} Token ${secret}" next`)).toBe(`"${name} [REDACTED]" next`)
+      }
     }
   )
 
   it.each([" ", "\t", " \t "])("redacts same-line Token value whitespace %j", (space) => {
     const input = `Authorization Token${space}${secret}`
     expect(Redaction.redactDiagnostic(input)).toBe(`Authorization [REDACTED]`)
-    expect(Redaction.redact(input)).toBe(input)
+    expect(Redaction.redact(input)).toBe(`Authorization [REDACTED]`)
   })
 
   it.each(["\n", "\r\n", " \n", "\t\r\n"])("preserves Token prose across value line break %j", (space) => {
@@ -929,7 +943,7 @@ describe("diagnostic header quote boundaries", () => {
         }${Redaction.placeholder}${quote}`
         expect(Redaction.redactDiagnostic(input)).toBe(expected)
         expect(Redaction.redactDiagnostic(expected)).toBe(expected)
-        expect(Redaction.redact(input)).toBe(input)
+        expect(Redaction.redact(input)).toBe(syntax.startsWith("\r\n") ? input : expected)
       }
     }
   })
@@ -998,5 +1012,143 @@ describe("diagnostic header quote boundaries", () => {
       `('Authorization': ${Redaction.placeholder})\n\`Proxy-Authorization ${Redaction.placeholder}\`\nx'Authorization: ordinary\nx\`Proxy-Authorization: ordinary`
     expect(Redaction.redactDiagnostic(input)).toBe(expected)
     expect(Redaction.redactDiagnostic(expected)).toBe(expected)
+  })
+})
+
+// #4548, Option A: a permanent row is replayed to every sync follower and
+// time-travel reader, so where text names a credential the credential wins.
+describe("credentials in a permanent row (#4548)", () => {
+  it.each([
+    ["an Authorization header in any scheme", `Authorization: Token ${secret}`, "Authorization: [REDACTED]"],
+    [
+      "a Digest header with quoted parameters",
+      `Authorization: Digest username="demo", response="${secret}"`,
+      "Authorization: [REDACTED]"
+    ],
+    ["a Basic header whose value is not base64", "Authorization: Basic not-base64-secret", "Authorization: [REDACTED]"],
+    ["a Proxy-Authorization header", `Proxy-Authorization: Token ${secret}`, "Proxy-Authorization: [REDACTED]"],
+    ["a Cookie header", `Cookie: sid=${secret}; other=1`, "Cookie: [REDACTED]"],
+    ["a Set-Cookie header", `Set-Cookie: sid=${secret}; Path=/; HttpOnly`, "Set-Cookie: [REDACTED]"],
+    [
+      "a header line inside a dump",
+      `> GET /v1 HTTP/1.1\n> Cookie: sid=${secret}\n> Accept: */*`,
+      "> GET /v1 HTTP/1.1\n> Cookie: [REDACTED]\n> Accept: */*"
+    ],
+    [
+      "a header inside JSON text",
+      `{"headers":{"authorization":"Token ${secret}"},"attempt":2}`,
+      `{"headers":{"authorization":"[REDACTED]"},"attempt":2}`
+    ],
+    [
+      "a header as an array pair",
+      `[['Authorization', 'Token ${secret}'], ['Accept', 'text/plain']]`,
+      "[['Authorization', '[REDACTED]'], ['Accept', 'text/plain']]"
+    ],
+    ["curl -u", `curl -u admin:${secret} https://api.invalid`, "curl -u [REDACTED] https://api.invalid"],
+    ["curl --user=", `curl --user=admin:${secret} https://api.invalid`, "curl --user=[REDACTED] https://api.invalid"],
+    ["mysql -p attached", `mysql -u root -p${secret} app`, "mysql -u root -p[REDACTED] app"],
+    ["mysql -p separate", `mysql -u root -p ${secret} app`, "mysql -u root -p [REDACTED] app"],
+    ["mysqldump -p attached", `mysqldump -p${secret} app > dump.sql`, "mysqldump -p[REDACTED] app > dump.sql"],
+    ["mariadb -p", `mariadb -h db.invalid -p ${secret}`, "mariadb -h db.invalid -p [REDACTED]"],
+    ["sshpass -p", `sshpass -p ${secret} ssh host`, "sshpass -p [REDACTED] ssh host"],
+    ["sshpass -p with a leading --", `sshpass -p --${secret} ssh host`, "sshpass -p [REDACTED] ssh host"],
+    ["redis-cli -a", `redis-cli -a ${secret} ping`, "redis-cli -a [REDACTED] ping"],
+    ["openssl -passin", `openssl rsa -passin pass:${secret} -in k.pem`, "openssl rsa -passin [REDACTED] -in k.pem"],
+    [
+      "a signed URL",
+      `GET https://b.invalid/o?X-Amz-Signature=${secret}&x=1`,
+      "GET https://b.invalid/o?X-Amz-Signature=[REDACTED]&x=1"
+    ],
+    ["a sig query parameter", `https://b.invalid/o?sv=1&sig=${secret}`, "https://b.invalid/o?sv=1&sig=[REDACTED]"]
+  ])("redacts %s exactly as a diagnostic does", (_name, input, expected) => {
+    const durable = Redaction.redact(input)
+    expect(durable).toBe(expected)
+    expect(durable).not.toContain(secret)
+    expect(Redaction.redact(durable)).toBe(durable)
+    expect(Redaction.redactDiagnostic(input)).toBe(expected)
+  })
+
+  it("redacts a Bearer header whose token is too short and plain to stand alone", () => {
+    expect(Redaction.redact("retry with Bearer abcd")).toBe("retry with Bearer abcd")
+    expect(Redaction.redact("Authorization: Bearer abcd")).toBe("Authorization: [REDACTED]")
+    expect(Redaction.redact("Authorization: Bearer abcd1")).toBe("Authorization: Bearer [REDACTED_TOKEN]")
+  })
+
+  it.each([
+    [{ argv: ["curl", "-u", `admin:${secret}`] }, { argv: ["curl", "-u", "[REDACTED]"] }],
+    [{ argv: ["mysql", "-p", secret] }, { argv: ["mysql", "-p", "[REDACTED]"] }],
+    [{ cmd: `sshpass -p ${secret} ssh host` }, { cmd: "sshpass -p [REDACTED] ssh host" }],
+    [{ url: `https://b.invalid/o?X-Amz-Signature=${secret}&x=1` }, {
+      url: "https://b.invalid/o?X-Amz-Signature=[REDACTED]&x=1"
+    }]
+  ])("redacts a structured payload %#", (input, expected) => {
+    expect(Redaction.redact(input)).toEqual(expected)
+  })
+
+  it.each([
+    "Basic authentication failed for the upstream registry",
+    "## Basic Usage\nRun the command",
+    "BASIC authentication is disabled; a basic example follows",
+    "Basic YWJj is three letters, not a user and a password",
+    "Bearer token expired; the bearer must present a new one.",
+    "the bearer of bad news",
+    "Bearer well-known instruments",
+    "Authorization is required before the bearer continues"
+  ])("keeps plain prose in a durable row: %s", (input) => {
+    expect(Redaction.redact(input)).toBe(input)
+  })
+
+  it.each([
+    ["a token with a digit", "Bearer abc1", "Bearer [REDACTED_TOKEN]"],
+    ["a token with a base64 character", "bearer ab/cd+ef~gh=", "Bearer [REDACTED_TOKEN]"],
+    ["a token with an underscore", "Bearer live_token", "Bearer [REDACTED_TOKEN]"],
+    ["a 16-character token", "Bearer abcdefghijklmnop", "Bearer [REDACTED_TOKEN]"],
+    ["an encoded user and password", `Basic ${btoa("demo:hunter")}`, "Basic [REDACTED_TOKEN]"],
+    ["an encoded pair in any case of the scheme", `BASIC ${btoa("demo:hunter")}`, "Basic [REDACTED_TOKEN]"]
+  ])("still redacts a credential-shaped value outside a header: %s", (_name, input, expected) => {
+    expect(Redaction.redact(`sent ${input} upstream`)).toBe(`sent ${expected} upstream`)
+  })
+
+  it("keeps a Basic value that decodes to control characters around a colon", () => {
+    // `AToB` decodes to 0x01 0x3a 0x01: a colon, and no user or password.
+    expect(atob("AToB")).toBe("\u0001:\u0001")
+    expect(Redaction.redact("Basic AToB")).toBe("Basic AToB")
+  })
+
+  it("keeps the reach that is a diagnostic's alone", () => {
+    for (
+      const input of [
+        "mkdir -p build/out",
+        "retry with Bearer abcd",
+        "Basic authentication failed",
+        `Authorization:\nToken ${secret}`
+      ]
+    ) {
+      expect(Redaction.redact(input)).toBe(input)
+      expect(Redaction.redactDiagnostic(input)).not.toBe(input)
+    }
+    expect(Redaction.redact("password=correct horse battery")).toBe("password=[REDACTED] horse battery")
+    expect(Redaction.redactDiagnostic("password=correct horse battery")).toBe("password=[REDACTED]")
+  })
+
+  it.each([
+    [
+      "an encoded user and password",
+      `sent basic ${btoa("demo:hunter")} upstream`,
+      "sent Basic [REDACTED_TOKEN] upstream"
+    ],
+    ["a mixed-case scheme", `bAsIc ${btoa("demo:hunter")}`, "Basic [REDACTED_TOKEN]"],
+    ["a word that is not base64", "a basic abcde follows", "a basic abcde follows"],
+    ["base64 that holds no pair", `basic ${btoa("example")}`, `basic ${btoa("example")}`]
+  ])("reads a lowercase basic in a diagnostic as prose unless it decodes to a pair: %s", (_name, input, expected) => {
+    expect(Redaction.redactDiagnostic(input)).toBe(expected)
+  })
+
+  it("scans the durable command rules in linear time", () => {
+    for (const text of ["mysql -h h ".repeat(40_000), "sshpass -e ".repeat(40_000), "bearer of ".repeat(40_000)]) {
+      const started = Date.now()
+      Redaction.redact(text)
+      expect(Date.now() - started).toBeLessThan(5_000)
+    }
   })
 })

@@ -46,6 +46,36 @@ PEM private-key blocks, INI/YAML credential assignments such as
 `--password value`, cookie and session assignments, and embedded JSON
 credential members.
 
+A permanent row also loses every credential the text names by its position,
+whatever the value looks like. When the redactor cannot tell a credential from
+ordinary text in one of these positions, the credential wins and the row loses
+the text:
+
+| Position                         | Example                                              | Stored as                             |
+| -------------------------------- | ---------------------------------------------------- | ------------------------------------- |
+| Authorization header, any scheme | `Authorization: Token abc`, `Proxy-Authorization: …` | `Authorization: [REDACTED]`           |
+| Cookie header                    | `Cookie: sid=abc; theme=dark`, `Set-Cookie: sid=abc` | `Cookie: [REDACTED]`                  |
+| Header as an array pair          | `[['Authorization', 'Token abc']]`                   | `[['Authorization', '[REDACTED]']]`   |
+| User flag carrying a `:`         | `curl -u admin:abc`, `--user=admin:abc`              | `curl -u [REDACTED]`                  |
+| Password flag of a known command | `mysql -pabc`, `mysqldump -p abc`, `sshpass -p abc`  | `mysql -p[REDACTED]`                  |
+| Flags that always take one       | `plink -pw abc`, `openssl -passin pass:abc`          | `plink -pw [REDACTED]`                |
+| Command-specific flags           | `zip -P abc`, `redis-cli -a abc`                     | `redis-cli -a [REDACTED]`             |
+| Signed query parameter           | `?X-Amz-Signature=abc`, `&sig=abc`, `?api_key=abc`   | `?X-Amz-Signature=[REDACTED]`         |
+| Bare URL userinfo                | `https://abc@api.example.test`, `ssh://git@host`     | `https://[REDACTED]@api.example.test` |
+
+A header's value runs to the end of its line, or to the close of the string it
+was written in, so a cookie list and a `Digest` header's quoted parameters go
+whole. The header rules need the header's syntax: `Authorization is required`
+and `Authorization token policy` are prose and are kept.
+
+The two scheme words that are also English need a value shaped like a
+credential when no header names them. `Bearer` is followed by a token that
+holds a digit or one of `_~+/`, or that runs to 16 characters. `Basic`, in any
+case, is followed by base64 that decodes to a `user:password` pair with no
+control characters. So `Basic authentication failed`, `## Basic Usage`, and
+`the bearer of bad news` are stored as written, and a short all-letter token
+is still redacted where it follows an `Authorization` name.
+
 Smithers prefix rules also match inside URLs and beside underscores, without
 requiring a credential field or authorization header. They redact the containing
 dotted identifier, including underscore wrappers, so a match inside another
@@ -91,8 +121,10 @@ A credential name that is a URL's user
 (`https://x-access-token:…@github.com/acme/app.git`) takes only the password
 before `@`, so the host and path a failed clone is diagnosed by are kept.
 A URL password runs to the last `@` before the host, as a URL parser reads it,
-so `redis://:pa:ss@cache` and `mysql://root:p@ss@db` lose the whole password,
-and a URL with no password (`ssh://git@host`) is unchanged.
+so `redis://:pa:ss@cache` and `mysql://root:p@ss@db` lose the whole password.
+A URL with userinfo and no password (`ssh://git@host`, `https://token@host`)
+loses the userinfo, which is where a token is written, and keeps its host and
+path.
 
 Credential URL scanning requires both `://` and `@`. The redactor checks those
 literals before running the same matcher; custom rules retain their own syntax.
@@ -117,18 +149,24 @@ that has not settled after eight passes is replaced whole.
 
 A log line, a stderr message, and an error handed to a remote caller are read
 once, so a false positive there costs a word of context rather than data in a
-permanent row. `Redaction.diagnosticRules` reads further than the journal: a
-bare value runs over several words to the end of its line
-(`password=correct horse battery`), an unclosed string or container runs to the
-end of the text (a value cut by a bound), and a value may sit on the line after
-its name. It adds an authorization or cookie header in any scheme, written as
-`name: value` or as an array pair (`[['Authorization', 'Token …']]`). Whitespace
-`Authorization Token value` and `Proxy-Authorization Token value` forms also
-match, with Token, Bearer, or Basic schemes and the value on the scheme's line.
-It adds bare URL userinfo, a signed query parameter, `curl -u user:pass` (or `-uuser:pass`),
-`zip -P`, `redis-cli -a`, and a `-p` flag's value, a password to `mysql` and
-`sshpass`. A path after `-p` and the single-dash words that are not passwords
-(`-print`, `-pthread`) are kept.
+permanent row. `Redaction.diagnosticRules` is every default rule, and it reads
+further than the journal in four ways:
+
+- **Assignments.** A bare value runs over several words to the end of its line
+  (`password=correct horse battery`), an unclosed string or container runs to
+  the end of the text (a value cut by a bound), and a value may sit on the
+  line after its name.
+- **Headers.** A header's value may sit on the line after its name. In a
+  journal row it starts on the name's line. Both read the whitespace forms
+  `Authorization Token value` and `Proxy-Authorization Token value`, with
+  Token, Bearer, or Basic schemes and the value on the scheme's line.
+- **`Bearer` and `Basic`.** The scheme's own spellings take a token of any
+  length and shape, so `Basic authentication` loses a word in a log line.
+- **`-p`.** The flag's value is a password under any command, so
+  `mkdir -p build` loses a word. A path after `-p` and the single-dash words
+  that are not passwords (`-print`, `-pthread`) are kept. In a journal row
+  `-p` is a password only to the `mysql` and `mariadb` clients and `sshpass`.
+
 `Redaction.redactDiagnostic` applies them, and every diagnostic path in
 Smithers shares it: `RedactedLogger`, the engine's failure rendering, and the
 CLI's error output.

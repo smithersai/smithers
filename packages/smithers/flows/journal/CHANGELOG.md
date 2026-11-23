@@ -6,7 +6,49 @@
 
 - `Journal.Service.heads?` reads committed sequence tails and rewind generations together for a set of runs on SQLite and PostgreSQL, in batches of 2,000 IDs.
 
+### Changed
+
+- Journal rows now lose header, cookie, command-line and signed-URL
+  credentials, which only log redaction removed before
+  ([#4548](https://github.com/smithersai/smithers/issues/4548)).
+  `Redaction.defaultRules` gains `authorization-header`, `header-pair`,
+  `user-flag`, `password-flag`, `sshpass-password`, `command-password-flag`,
+  `url-userinfo`, `signed-query`, and `short-password-flag` and
+  `attached-password-flag` for the `mysql` and `mariadb` clients and
+  `sshpass`. `Authorization: Token abc`, `Cookie: sid=abc`,
+  `curl -u user:pass`, `mysql -pabc`, `?X-Amz-Signature=abc` and
+  `https://token@host` are stored redacted. When the redactor cannot tell a
+  credential from text in one of these positions, the row loses the text.
+- `SqlJournalOptions.maxEntryBytes` defaults to
+  `SqlJournal.defaultMaxEntryBytes`, 2,031,616 bytes (2 MiB less 64 KiB),
+  instead of unbounded
+  ([#4558](https://github.com/smithersai/smithers/issues/4558)). An entry over
+  a 2 MiB sync frame could be served to no follower and failed every workspace
+  read that reached it. A host that raises its sync `maxFrameBytes` raises
+  `maxEntryBytes` with it.
+
 ### Fixed
+
+- Automatic compaction is fenced
+  ([#4555](https://github.com/smithersai/smithers/issues/4555)). The policy ran
+  unfenced after any committed entry, lossy ones included, so a process that
+  did not own a run, such as a displaced owner writing telemetry, pinned its
+  own stale `capture` as the checkpoint above the live owner's entries and
+  deleted them. An attempt now runs only after `emitDurable` or a flushed
+  `emitDeferred` entry, under that owner's fence, and the checkpoint and the
+  compaction each re-check ownership in their transaction. `emitLossy` and
+  `emitDurableUnfenced` count toward `entryThreshold` and never trigger an
+  attempt. An owner that lost or released the run before the attempt, the
+  write that parks a run included, is refused with `fence_lost`, logged and
+  damped.
+
+- Plain prose is no longer rewritten in a journal row
+  ([#4548](https://github.com/smithersai/smithers/issues/4548)). Outside a
+  header, `Bearer` needs a value that holds a digit or one of `_~+/` or runs
+  to 16 characters, and `Basic` in any case needs base64 that decodes to a
+  `user:password` pair with no control characters. `Basic authentication
+  failed`, `## Basic Usage` and `the bearer of bad news` are stored as
+  written. `Redaction.diagnosticRules` keeps its broader spellings.
 
 - Logged errors nested in objects, arrays, annotations, or aggregate errors
   keep their redacted messages and stacks instead of appearing as `{}`.

@@ -49,8 +49,11 @@ was allocated. The common causes are:
 - An owner that is missing, null, or not an `OwnerId`, most often a fractional
   or negative `pid`.
 - A payload nested past `Redaction.maxDepth` (256 container edges).
-- An encoded `payload` plus `meta` larger than the layer's `maxEntryBytes`, when
-  that option is set.
+- An encoded `payload` plus `meta` larger than the layer's `maxEntryBytes`,
+  which defaults to 2,031,616 bytes (2 MiB less 64 KiB) so every admitted entry
+  fits a sync frame. Store a large output outside the journal and journal a
+  reference to it, or raise `maxEntryBytes` together with the sync server's and
+  clients' `maxFrameBytes`.
 
 **What to change.** Fix the argument. A refused event costs no sequence and
 leaves no gap, so nothing needs cleaning up. On a fenced call, note that

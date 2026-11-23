@@ -258,7 +258,7 @@ declare const layer: (
 | `overflow`         | `OverflowPolicy`     | required            | what a full admission queue does                                                                             |
 | `batchSize`        | `number`             | `min(capacity, 64)` | entries the queued writer commits per transaction; `stream` reads pages of `min(batchSize, maxEntriesLimit)` |
 | `sourceEventCache` | `number`             | `4096`              | upper bound on the in-process producer-idempotency index                                                     |
-| `maxEntryBytes`    | `number`             | unset               | largest single entry, in UTF-8 bytes of encoded `payload` plus `meta`                                        |
+| `maxEntryBytes`    | `number`             | `2,031,616`         | largest single entry, in UTF-8 bytes of encoded `payload` plus `meta`                                        |
 | `redact`           | `Redaction.Redactor` | `Redaction.make()`  | scrub applied before encoding                                                                                |
 | `compaction`       | `CompactionPolicy`   | unset               | automatic checkpoint-and-compact policy                                                                      |
 
@@ -268,14 +268,23 @@ Once a run's committed entry count reaches `entryThreshold`, the journal asks
 a checkpoint at that sequence, and compacts below it. A capture is interrupted
 after 30 seconds, and a failed or refused attempt is logged at warning, damped
 for `entryThreshold` further committed entries, and never surfaced to the emit
-that triggered it. The policy drives the internal unfenced channel, so it needs
-no owner.
+that triggered it. Every committed entry counts toward the threshold. The
+attempt runs only after a write an owner's fence admitted (`emitDurable`, or a
+flushed `emitDeferred` entry), under that owner's fence. `emitLossy` and
+`emitDurableUnfenced` never trigger it, and an owner that lost or released the
+run is refused with `fence_lost`.
 
 `capacity` bounds entries, never bytes. `maxEntryBytes` is checked after
 encoding and before any sequence is allocated, so an entry over the bound fails
-`invalid_event` and leaves no gap. It is unset by default because a running
-engine may legitimately write large payloads and a cap introduced under one
-would refuse writes that used to succeed.
+`invalid_event` and leaves no gap. It defaults to
+`SqlJournal.defaultMaxEntryBytes`, 2 MiB less 64 KiB (2,031,616 bytes). A sync
+server serves an entry in a frame of at most 2 MiB and measures the whole
+encoded entry, so the 64 KiB is room for the entry's envelope: an entry the
+journal admits always fits a default sync frame. An entry over a frame can be
+served to no follower, which is why the journal refuses it at the write. A
+host that raises `maxFrameBytes` on its sync server and clients raises
+`maxEntryBytes` with it and keeps the same margin. There is no unbounded
+setting.
 
 `sourceEventCache` bounds a cache, never the authority: the database unique
 constraint on `(run_id, source_id, source_seq)` stays authoritative, so a miss
@@ -387,7 +396,7 @@ The scrub applied to every `payload` and `meta` before persistence.
 | `Rule`                | `{ id, pattern, replace?, rewrite? }`            | one textual rule; `rewrite` for a value a regex cannot bound            |
 | `Options`             | `{ rules?, onTooDeep? }`                         | `onTooDeep` is `"throw"` (default) or `"name"`                          |
 | `defaultRules`        | `ReadonlyArray<Rule>`                            | the built-in credential shapes                                          |
-| `diagnosticRules`     | `ReadonlyArray<Rule>`                            | `defaultRules` plus the spellings too broad for a durable row           |
+| `diagnosticRules`     | `ReadonlyArray<Rule>`                            | `defaultRules` read further: longer values, any `-p`, any Bearer token  |
 | `redactDiagnostic`    | `(value: unknown) => unknown`                    | `redact` with `diagnosticRules`, naming a too-deep value                |
 | `lineRedactor`        | `(rules?: ReadonlyArray<Rule>) => LineRedactor`  | redacts a stream line by line, holding a value open across lines        |
 | `LineRedactor`        | `{ line, flush }`                                | `line` returns the lines safe to emit; `flush` ends the stream          |
@@ -717,16 +726,16 @@ Reads below a run's compaction floor fail with `compacted`. See
 
 ## Resource limits
 
-| Limit                                | Value                                                                  |
-| ------------------------------------ | ---------------------------------------------------------------------- |
-| admission queue and `changes` buffer | `capacity` entries                                                     |
-| one entry                            | `maxEntryBytes` UTF-8 bytes of `payload` plus `meta`, unset by default |
-| run ids, source ids, event types     | 1,024 UTF-16 code units                                                |
-| `Seq`, `SourceSeq`                   | below `Number.MAX_SAFE_INTEGER`                                        |
-| one `entries` page                   | `maxEntriesLimit`, 10,000 entries                                      |
-| producer-idempotency index           | `sourceEventCache` entries, default 4,096                              |
-| redaction traversal                  | `maxDepth`, 256 container edges                                        |
-| binary view walk                     | `binaryWalkLimit`, 65,536 bytes or own members                         |
+| Limit                                | Value                                                                      |
+| ------------------------------------ | -------------------------------------------------------------------------- |
+| admission queue and `changes` buffer | `capacity` entries                                                         |
+| one entry                            | `maxEntryBytes` UTF-8 bytes of `payload` plus `meta`, 2,031,616 by default |
+| run ids, source ids, event types     | 1,024 UTF-16 code units                                                    |
+| `Seq`, `SourceSeq`                   | below `Number.MAX_SAFE_INTEGER`                                            |
+| one `entries` page                   | `maxEntriesLimit`, 10,000 entries                                          |
+| producer-idempotency index           | `sourceEventCache` entries, default 4,096                                  |
+| redaction traversal                  | `maxDepth`, 256 container edges                                            |
+| binary view walk                     | `binaryWalkLimit`, 65,536 bytes or own members                             |
 
 A payload deeper than `Redaction.maxDepth` fails `invalid_event` rather than
 overflowing the stack, and the canonical encoder carries the same ceiling for a

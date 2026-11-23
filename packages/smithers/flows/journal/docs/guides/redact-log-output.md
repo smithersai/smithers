@@ -13,7 +13,9 @@ writes it to stderr in full, and it reaches whatever collects that stream.
 
 `RedactedLogger` closes that half with the same rules rather than a second rule
 set. A log line is a diagnostic, so it takes `Redaction.diagnosticRules`: the
-default rules plus the spellings too broad for a durable row.
+default rules, read further: a value may run over several words or onto the
+next line, a `-p` flag's value is a password under any command, and `Bearer`
+or `Basic` is followed by a token of any shape.
 
 ## Install the layer
 

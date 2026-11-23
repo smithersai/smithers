@@ -33,7 +33,7 @@ import * as PubSub from "effect/PubSub"
 import * as Queue from "effect/Queue"
 import * as Result from "effect/Result"
 import * as Schema from "effect/Schema"
-import * as Scope from "effect/Scope"
+import type * as Scope from "effect/Scope"
 import * as Semaphore from "effect/Semaphore"
 import * as SqlClient from "effect/sql/SqlClient"
 import type * as SqlError from "effect/sql/SqlError"
@@ -88,16 +88,24 @@ const UnknownFromJsonString = Schema.fromJsonString(Schema.Unknown)
  * caller's replay state at the run's durable tail, writes it as a checkpoint
  * at that sequence, and compacts the entries strictly below it.
  *
- * Both channels run the policy after their allocation permit is free. Lossy
- * commits fork scoped maintenance so the sole queue consumer keeps draining;
- * durable emits await their attempt. `flush` awaits registered maintenance.
- * `capture` may read or emit without blocking unrelated allocation. A capture is interrupted
- * after 30 seconds so caller code cannot wedge journal admission indefinitely.
+ * Only the run's owner compacts it. Every committed entry counts toward the
+ * threshold, and the attempt runs after a write an owner's fence admitted
+ * (`emitDurable`, `emitDeferred`), under that owner's fence: the checkpoint
+ * and the compaction each re-check ownership in their own transaction. A
+ * lossy entry and `emitDurableUnfenced` carry no fence, so they never trigger
+ * an attempt, and a process that does not own the run, a displaced owner
+ * included, cannot pin its own `capture` over the live owner's history.
+ *
+ * The attempt runs after the write's allocation permit is free, and the
+ * durable emit awaits it. `flush` awaits registered maintenance. `capture`
+ * may read or emit without blocking unrelated allocation. A capture is
+ * interrupted after 30 seconds so caller code cannot wedge journal admission
+ * indefinitely.
  *
  * A failed or refused attempt (a live stream behind the boundary, a capture
- * failure) is logged at warning, damped for `entryThreshold`
- * further committed entries, and never surfaced to the emit that triggered
- * it.
+ * failure, an owner that lost or released the run after its write committed)
+ * is logged at warning, damped for `entryThreshold` further committed
+ * entries, and never surfaced to the emit that triggered it.
  *
  * @category models
  * @since 0.1.0
@@ -120,9 +128,8 @@ export interface SqlJournalOptions {
    * and the sliding `changes` buffer, where a slow subscriber silently loses
    * the entries that fall out of it.
    *
-   * It bounds entries, not bytes. Set {@link SqlJournalOptions.maxEntryBytes}
-   * to bound the size of one entry as well; with it unset a handful of very
-   * large payloads is still the memory bill.
+   * It bounds entries, not bytes. {@link SqlJournalOptions.maxEntryBytes}
+   * bounds the size of one entry, so together they bound the memory bill.
    */
   readonly capacity: number
   /** Policy applied when the lossy admission queue is full. */
@@ -161,12 +168,16 @@ export interface SqlJournalOptions {
    * Largest single entry the journal admits, measured in UTF-8 bytes of the
    * encoded `payload` plus `meta`.
    *
-   * Unset by default, which means unbounded: `capacity` bounds how MANY entries
-   * the admission queue and the `changes` buffer hold, never how large one is,
-   * so without this a handful of multi-megabyte payloads is the memory bill,
-   * and every one of them is replayed to each sync subscriber and time-travel
-   * consumer on every read. Set it where the journal is fed by untrusted or
-   * unbounded producers.
+   * Defaults to {@link defaultMaxEntryBytes}. `capacity` bounds how MANY
+   * entries the admission queue and the `changes` buffer hold, never how large
+   * one is, and every entry is replayed to each sync subscriber and
+   * time-travel consumer on every read. An entry larger than a sync frame can
+   * never be served to a follower at all, so the journal refuses it where it
+   * is written rather than storing a row no reader can carry (#4558).
+   *
+   * A host that raises the sync server's and client's `maxFrameBytes` raises
+   * this with it, and keeps it below that ceiling by the size of an entry's
+   * envelope. There is no unbounded setting.
    *
    * The bound is checked after encoding and BEFORE any sequence is allocated or
    * anything is queued, so a refused entry costs no sequence and leaves no gap.
@@ -191,6 +202,25 @@ export interface SqlJournalOptions {
    */
   readonly compaction?: CompactionPolicy | undefined
 }
+
+/**
+ * Default bound on one entry's encoded `payload` plus `meta`, in UTF-8 bytes:
+ * 2 MiB less 64 KiB.
+ *
+ * `@smthrs/sync` serves a journal entry in a frame of at most 2 MiB
+ * (`SyncProtocol.defaultMaxFrameBytes`) and measures the whole encoded entry.
+ * The 64 KiB left over is the entry's envelope: its run id, source id, event
+ * type and event id at their longest (1,024 characters each, the event id
+ * repeating two of them) in their widest encoding, and its sequences and
+ * timestamp. An entry admitted under this bound therefore always fits a
+ * default sync frame. The journal cannot import the sync package, which
+ * depends on it, so the figure is restated here and a test in `@smthrs/sync`
+ * pins the two together.
+ *
+ * @category constants
+ * @since 1.0.0
+ */
+export const defaultMaxEntryBytes = 2 * 1024 * 1024 - 64 * 1024
 
 /** Default retained window of the source-event index. */
 const defaultSourceEventCache = 4096
@@ -437,8 +467,10 @@ const encodeFingerprint = (value: unknown, field: string): Result.Result<string,
  * The journal used to pass `OwnerId | undefined` and fence only when the value
  * happened to be present, so an untyped caller that omitted the argument
  * silently selected the unfenced path on three public methods. The tag makes
- * the choice explicit: only `emitDurableUnfenced` and the internal
- * auto-compaction path construct `unfenced`, and they say so at the call site.
+ * the choice explicit: only `emitDurableUnfenced` and the queued lossy writer
+ * construct `unfenced`, and they say so at the call site. A checkpoint and a
+ * compaction take an {@link OwnedFence} and nothing else, the automatic policy
+ * included (#4555).
  */
 interface OwnedFence {
   readonly _tag: "Owned"
@@ -488,10 +520,10 @@ const decodeOwner = Schema.decodeUnknownResult(OwnerId)
  * process owns the run and send it looking for a conflict that never
  * happened.
  */
-const requireFence = (owner: unknown, method: string): Result.Result<Fence, JournalError> =>
+const requireFence = (owner: unknown, method: string): Result.Result<OwnedFence, JournalError> =>
   Result.match(decodeOwner(owner), {
     onFailure: (cause) => Result.fail(error("invalid_event", `${method} requires a well-formed owner fence`, cause)),
-    onSuccess: (value) => Result.succeed<Fence>({ _tag: "Owned", owner: value })
+    onSuccess: (value) => Result.succeed<OwnedFence>({ _tag: "Owned", owner: value })
   })
 
 const decodeInput = Schema.decodeUnknownResult(Input)
@@ -566,7 +598,7 @@ const freezePublished = <A>(value: A): A => {
 interface ValidatedOptions {
   readonly batchSize: number
   readonly sourceEventCache: number
-  readonly maxEntryBytes: number | undefined
+  readonly maxEntryBytes: number
   readonly redact: Redaction.Redactor
 }
 
@@ -592,10 +624,8 @@ const validateOptions = (options: SqlJournalOptions): Effect.Effect<ValidatedOpt
     if (!Number.isSafeInteger(sourceEventCache) || sourceEventCache <= 0) {
       return Effect.fail(error("invalid_event", "sourceEventCache must be a positive safe integer"))
     }
-    if (
-      options.maxEntryBytes !== undefined &&
-      (!Number.isSafeInteger(options.maxEntryBytes) || options.maxEntryBytes <= 0)
-    ) {
+    const maxEntryBytes = options.maxEntryBytes ?? defaultMaxEntryBytes
+    if (!Number.isSafeInteger(maxEntryBytes) || maxEntryBytes <= 0) {
       return Effect.fail(error("invalid_event", "maxEntryBytes must be a positive safe integer"))
     }
     if (
@@ -607,7 +637,7 @@ const validateOptions = (options: SqlJournalOptions): Effect.Effect<ValidatedOpt
     return Effect.succeed({
       batchSize,
       sourceEventCache,
-      maxEntryBytes: options.maxEntryBytes,
+      maxEntryBytes,
       redact: options.redact ?? Redaction.make()
     })
   })
@@ -753,8 +783,6 @@ export const make = (
     // Close this scope AFTER the journal's flushing finalizer. Dynamically
     // forking directly into the layer scope would register interruption
     // finalizers ahead of the flush that must await these attempts.
-    const maintenanceScope = yield* Scope.make()
-    yield* Effect.addFinalizer((exit) => Scope.close(maintenanceScope, exit))
     let pendingMaintenance = 0
     const policyRunCounts = new Map<RunId, number>()
     const compactingRuns = new Set<RunId>()
@@ -988,7 +1016,7 @@ export const make = (
                           // The batch still owns loss reporting and pending
                           // settlement; neither may escape an outer rollback.
                           for (const { queued, commit } of outcome.commits) {
-                            yield* Effect.asVoid(settleCommit(queued, commit, restore))
+                            yield* Effect.asVoid(settleCommit(queued, commit, restore, undefined))
                           }
                         }
                         return yield* Effect.asSome(effect)
@@ -1135,16 +1163,14 @@ export const make = (
         const metaJson = yield* encodeFingerprint(redactedMeta, "meta")
         // Measured on the encoded bytes, and here rather than at admission,
         // so a refused entry costs no sequence and leaves no gap in the run.
-        if (maxEntryBytes !== undefined) {
-          const bytes = encodedBytes(byteCounter, payloadJson, metaJson)
-          if (bytes > maxEntryBytes) {
-            return yield* Result.fail(
-              error(
-                "invalid_event",
-                `event is ${bytes} bytes, over the ${maxEntryBytes}-byte maxEntryBytes bound`
-              )
+        const bytes = encodedBytes(byteCounter, payloadJson, metaJson)
+        if (bytes > maxEntryBytes) {
+          return yield* Result.fail(
+            error(
+              "invalid_event",
+              `event is ${bytes} bytes, over the ${maxEntryBytes}-byte maxEntryBytes bound`
             )
-          }
+          )
         }
         return { validated, payloadJson, metaJson }
       })
@@ -2070,7 +2096,9 @@ export const make = (
     const settleCommit = (
       queued: QueuedEntry,
       commit: Commit,
-      restoreMaintenance: (effect: Effect.Effect<void>) => Effect.Effect<void>
+      restoreMaintenance: (effect: Effect.Effect<void>) => Effect.Effect<void>,
+      /** The owner whose fence admitted this write, when one did. */
+      owner: OwnerId | undefined
     ): Effect.Effect<Effect.Effect<void>> =>
       Effect.gen(function*() {
         const mandatory = Effect.sync(() => rememberCommitted(queued, commit.entry.seq)).pipe(
@@ -2081,7 +2109,7 @@ export const make = (
         // even interruptible(void) here re-delivers its pending interruption
         // after COMMIT and abandons that cleanup. Ordinary callers still make
         // a slow capture interruptible when the writer publishes after COMMIT.
-        const maintenance = restoreMaintenance(noteCommitted(queued.runId, commit.inserted ? 1 : 0))
+        const maintenance = restoreMaintenance(noteCommitted(queued.runId, commit.inserted ? 1 : 0, owner))
         const enclosing = yield* Effect.serviceOption(sql.transactionService)
         if (Option.isNone(enclosing)) {
           yield* mandatory
@@ -2235,7 +2263,12 @@ export const make = (
                  */
                 Effect.flatMap((written) =>
                   Effect.gen(function*() {
-                    const maintenance = yield* settleCommit(written.queued, written.commit, restoreMaintenance)
+                    const maintenance = yield* settleCommit(
+                      written.queued,
+                      written.commit,
+                      restoreMaintenance,
+                      fence._tag === "Owned" ? fence.owner : undefined
+                    )
                     const receipt: DurableReceipt = written.commit.inserted
                       ? { _tag: "Accepted", seq: written.commit.entry.seq, sourceSeq: written.sourceSeq }
                       : {
@@ -2339,7 +2372,7 @@ export const make = (
             entry.sourceSeq = sourceSeq
             const queued = queuedOf(entry.prepared, entry.emittedAtMs, seq, sourceSeq)
             const commit = yield* insertOne(queued, guarded)
-            yield* Effect.asVoid(settleCommit(queued, commit, (effect) => effect))
+            yield* Effect.asVoid(settleCommit(queued, commit, (effect) => effect, entry.owner))
             yield* Metric.update(JournalMetrics.durable[commit.inserted ? "Accepted" : "Duplicate"], 1)
           }).pipe(
             Effect.catchIf(isJournalError, (cause) =>
@@ -2426,7 +2459,7 @@ export const make = (
         deferred.set(runId, [...deferred.get(runId) ?? [], {
           prepared,
           emittedAtMs,
-          owner: (fence as OwnedFence).owner
+          owner: fence.owner
         }])
       })
     )
@@ -2474,7 +2507,7 @@ export const make = (
 
     const checkpointInternal = (
       checkpointOptions: CheckpointOptions,
-      fence: Fence
+      fence: OwnedFence
     ): Effect.Effect<Checkpoint, JournalError> =>
       Effect.gen(function*() {
         yield* Effect.annotateCurrentSpan({
@@ -2500,9 +2533,7 @@ export const make = (
         return yield* writeRun(
           checkpointOptions.runId,
           Effect.gen(function*() {
-            if (fence._tag === "Owned") {
-              yield* fenceGuard(checkpointOptions.runId, fence.owner)
-            }
+            yield* fenceGuard(checkpointOptions.runId, fence.owner)
             // The target must be a committed entry: the surviving row is what
             // keeps the run's durable `MAX(seq)` allocation floor at or above
             // the compaction boundary, so a process restarted after
@@ -2580,7 +2611,7 @@ export const make = (
 
     const compactInternal = (
       compactOptions: CompactOptions,
-      fence: Fence
+      fence: OwnedFence
     ): Effect.Effect<Compacted, JournalError> =>
       Effect.gen(function*() {
         yield* Effect.annotateCurrentSpan({
@@ -2595,9 +2626,7 @@ export const make = (
         return yield* withCompactionBarrier(
           compactOptions.runId,
           Effect.gen(function*() {
-            if (fence._tag === "Owned") {
-              yield* fenceGuard(compactOptions.runId, fence.owner)
-            }
+            yield* fenceGuard(compactOptions.runId, fence.owner)
             const upTo = compactOptions.upTo
             const rows = upTo === undefined
               ? yield* sql<CheckpointRow>`
@@ -2719,12 +2748,12 @@ export const make = (
 
     /**
      * One automatic checkpoint-and-compact attempt at the run's durable
-     * tail. Runs post-commit; a failure or refusal is logged and damped,
-     * the counter restarts, so the next attempt waits for another
-     * `entryThreshold` commits, and is never surfaced to the emit whose
-     * settlement crossed the threshold.
+     * tail, on behalf of `owner`. Runs post-commit; a failure or refusal is
+     * logged and damped, the counter restarts, so the next attempt waits for
+     * another `entryThreshold` commits, and is never surfaced to the emit
+     * whose settlement crossed the threshold.
      */
-    const policyCompact = (policy: CompactionPolicy, runId: RunId): Effect.Effect<void> =>
+    const policyCompact = (policy: CompactionPolicy, runId: RunId, owner: OwnerId): Effect.Effect<void> =>
       Effect.gen(function*() {
         const tail = yield* sql<{ readonly last: number | null }>`
             SELECT MAX(seq) AS last FROM flows_journal_events WHERE run_id = ${runId}
@@ -2744,16 +2773,17 @@ export const make = (
               })
             )
         })
-        // The policy is the journal's OWN post-commit maintenance, not a
-        // caller's mutating entrypoint: it owns no run and holds no fence,
-        // so it drives the internal channel. The attempt only ever
-        // truncates below a tail the run's own commits produced, a retry is
-        // idempotent (a re-attempt after a reclaim compacts the same
-        // committed prefix the live owner also sees), and every failure is
-        // damped below, never surfaced to the emit that crossed the
-        // threshold.
-        yield* checkpointInternal({ runId, seq: upTo, state: captured }, unfenced)
-        yield* compactInternal({ runId, upTo }, unfenced)
+        // The checkpoint's `state` is this process's own `capture`, so the
+        // attempt is a mutating write like any caller's and is fenced like
+        // one: both statements re-check, inside their transaction, that
+        // `owner` still holds the run. An owner displaced since its write
+        // committed, or one that released the run with that write (the entry
+        // that parks it), is refused `fence_lost` here, and the refusal is
+        // damped below. Unfenced, a displaced process pinned its stale replay
+        // state above the live owner's entries and deleted them (#4555).
+        const fence: OwnedFence = { _tag: "Owned", owner }
+        yield* checkpointInternal({ runId, seq: upTo, state: captured }, fence)
+        yield* compactInternal({ runId, upTo }, fence)
         policyRunCounts.set(runId, yield* countEntries(runId))
       }).pipe(
         Effect.catchCause((cause) =>
@@ -2770,10 +2800,14 @@ export const make = (
       )
 
     /**
-     * Counts a run's committed entries toward the compaction policy and
-     * triggers an attempt at the threshold. Lossy settlements register and
-     * fork it; durable settlements await it. Registration and handoff are
-     * uninterruptible so cancellation cannot leak the maintenance count.
+     * Counts a run's committed entries toward the compaction policy and, for
+     * a write `owner`'s fence admitted, triggers an attempt at the threshold
+     * and awaits it. Every committed entry counts; only a fenced one triggers.
+     * A lossy batch and `emitDurableUnfenced` prove nothing about who owns the
+     * run, so a process that only writes telemetry for it, a displaced owner
+     * among them, never compacts it: the count they raise is acted on by the
+     * owner's next fenced write. Registration and handoff are uninterruptible
+     * so cancellation cannot leak the maintenance count.
      *
      * The count is seeded lazily from the durable COUNT on the run's first
      * committed entry in this process, mirroring `ensureFloors`, so a
@@ -2797,7 +2831,7 @@ export const make = (
      * settlement of the same run, which is the stall {@link settleCommit}
      * moved this work off the allocation permit to avoid.
      */
-    const noteCommitted = (runId: RunId, committed: number, background = false): Effect.Effect<void> => {
+    const noteCommitted = (runId: RunId, committed: number, owner: OwnerId | undefined): Effect.Effect<void> => {
       const policy = compactionPolicy
       if (policy === undefined || committed <= 0) {
         return Effect.void
@@ -2807,31 +2841,28 @@ export const make = (
           restore(barrier.maintenance.withPermit(
             Effect.gen(function*() {
               if (compactingRuns.has(runId)) {
-                return false
+                return undefined
               }
               const known = policyRunCounts.get(runId)
               const current = known === undefined ? yield* countEntries(runId) : known + committed
               policyRunCounts.set(runId, current)
-              if (current < policy.entryThreshold) {
-                return false
+              if (current < policy.entryThreshold || owner === undefined) {
+                return undefined
               }
               compactingRuns.add(runId)
               pendingMaintenance += 1
-              return true
+              return owner
             })
           )).pipe(
-            Effect.flatMap((triggered) => {
-              if (!triggered) return Effect.void
-              const attempt = policyCompact(policy, runId).pipe(Effect.ensuring(Effect.sync(() => {
-                compactingRuns.delete(runId)
-                pendingMaintenance -= 1
-                if (state.pending === 0 && pendingMaintenance === 0) completeFlushWaiters(Effect.void)
-              })))
-              // The sole queue consumer must never await a compaction barrier:
-              // that barrier may need another batch from this very consumer.
-              return background
-                ? Effect.asVoid(Effect.forkIn(Effect.interruptible(attempt), maintenanceScope))
-                : restore(attempt)
+            Effect.flatMap((triggeredBy) => {
+              if (triggeredBy === undefined) return Effect.void
+              return restore(
+                policyCompact(policy, runId, triggeredBy).pipe(Effect.ensuring(Effect.sync(() => {
+                  compactingRuns.delete(runId)
+                  pendingMaintenance -= 1
+                  if (state.pending === 0 && pendingMaintenance === 0) completeFlushWaiters(Effect.void)
+                })))
+              )
             }),
             Effect.catchCause((cause) =>
               Cause.hasInterruptsOnly(cause)
@@ -2932,7 +2963,8 @@ export const make = (
               }
               perRun.set(queued.runId, (perRun.get(queued.runId) ?? 0) + 1)
             })
-            return Effect.forEach(perRun, ([runId, committed]) => noteCommitted(runId, committed, true), {
+            // A lossy entry carries no fence, so it counts and never triggers.
+            return Effect.forEach(perRun, ([runId, committed]) => noteCommitted(runId, committed, undefined), {
               discard: true
             })
           }),

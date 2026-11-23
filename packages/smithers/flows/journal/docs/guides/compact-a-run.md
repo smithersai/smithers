@@ -118,11 +118,19 @@ const layer = SqlJournal.layer({
 
 Once a run's committed entry count reaches `entryThreshold`, the journal
 captures your replay state at the run's durable tail, checkpoints it, and
-compacts below it. The policy holds no fence, so it needs no owner and no
-lease.
+compacts below it.
+
+The policy acts for the run's owner only. Every committed entry counts toward
+the threshold, and the attempt runs after an `emitDurable` or a flushed
+`emitDeferred` entry, under the fence of the owner that wrote it. Lossy
+entries and `emitDurableUnfenced` raise the count and never trigger an
+attempt, so a process that does not own the run cannot checkpoint or compact
+it. An owner that lost or released the run before the attempt is refused with
+`fence_lost`.
 
 Write `capture` to finish quickly and to tolerate being abandoned: it is
-interrupted after 30 seconds, and a failed or refused attempt is logged at
+interrupted after 30 seconds, its result is discarded when the owner's fence
+is gone by the time it returns, and a failed or refused attempt is logged at
 warning, damped for `entryThreshold` further entries, and never surfaced to the
 emit that triggered it.
 

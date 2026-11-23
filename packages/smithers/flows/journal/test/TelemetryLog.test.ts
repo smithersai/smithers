@@ -629,7 +629,7 @@ describe("TelemetryLog", () => {
     })
 
     it("redacts with the rules it is given", () => {
-      const line = "fetching https://bucket.test/report?sig=abc123"
+      const line = "ran mkdir -p build/out"
       // The two rule sets disagree on this line, so the case can tell them apart.
       expect(Redaction.redactDiagnostic(line)).not.toEqual(Redaction.redact(line))
       expect(one(Effect.logInfo(line)).message).toEqual([Redaction.redact(line)])

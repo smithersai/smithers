@@ -1130,35 +1130,47 @@ describe("Journal", () => {
       { discard: true }
     ))
 
-  effect("accepts a multi-megabyte payload when no byte cap is configured", () =>
+  effect("refuses a payload over the default byte bound, and accepts one exactly at it (#4558)", () =>
     runJournal(
       Effect.gen(function*() {
-        // `capacity` bounds the NUMBER of queued events, never their size, so
-        // one event can be arbitrarily large unless the layer sets
-        // `maxEntryBytes`. That option is off by default because a durable
-        // engine already in flight may legitimately write large payloads, and a
-        // cap introduced under it would refuse writes that used to succeed. The
-        // cost of leaving it off is real and is stated on the option: a row this
-        // size is replayed to every sync subscriber and time-travel consumer, so
-        // it is paid on every read, not just the write. The `maxEntryBytes`
-        // cases below pin the bounded contract.
+        // `capacity` bounds the NUMBER of queued events, never their size. A
+        // row is replayed to every sync subscriber, and one larger than a sync
+        // frame can be served to none of them: it used to be admitted, and
+        // then failed every workspace read that reached it. So the default
+        // bound sits under the 2 MiB frame ceiling by an entry's envelope.
+        expect(SqlJournal.defaultMaxEntryBytes).toBe(2 * 1024 * 1024 - 64 * 1024)
         const journal = yield* Journal
         const run = runId("huge-payload")
-        const huge = "x".repeat(5 * 1024 * 1024)
+        // The payload's `{"blob":""}` is 11 bytes around the string, and a `null` meta is 4.
+        const atBound = "x".repeat(SqlJournal.defaultMaxEntryBytes - 15)
 
-        const durable = yield* journal.emitDurableUnfenced(input(run, sourceId("durable"), "big", { blob: huge }))
-        expect(durable._tag).toBe("Accepted")
-
-        const lossy = yield* journal.emitLossy(input(run, sourceId("lossy"), "big", { blob: huge }))
-        expect(lossy._tag).toBe("Accepted")
-        yield* journal.flush
-
-        const page = yield* journal.entries({ runId: run, limit: 10 })
-        expect(page.entries).toHaveLength(2)
-        for (const entry of page.entries) {
-          expect((entry.payload as { readonly blob: string }).blob).toHaveLength(huge.length)
+        for (const emit of [journal.emitDurableUnfenced, journal.emitLossy]) {
+          const failure = yield* Effect.flip(emit(input(run, sourceId("over"), "big", { blob: `${atBound}x` })))
+          expect(failure.code).toBe("invalid_event")
+          expect(failure.message).toBe(
+            `event is ${
+              SqlJournal.defaultMaxEntryBytes + 1
+            } bytes, over the ${SqlJournal.defaultMaxEntryBytes}-byte maxEntryBytes bound`
+          )
         }
+        // A refused entry costs no sequence, so the first admitted one is 0.
+        const durable = yield* journal.emitDurableUnfenced(input(run, sourceId("durable"), "big", { blob: atBound }))
+        expect(durable).toMatchObject({ _tag: "Accepted", seq: 0 })
+        expect((yield* journal.entries({ runId: run, limit: 10 })).entries).toHaveLength(1)
       })
+    ))
+
+  effect("admits a larger entry when the host raises the bound with its frame ceiling", () =>
+    Effect.gen(function*() {
+      const journal = yield* Journal
+      const huge = "x".repeat(5 * 1024 * 1024)
+      const durable = yield* journal.emitDurableUnfenced(
+        input(runId("raised-bound"), sourceId("durable"), "big", { blob: huge })
+      )
+      expect(durable._tag).toBe("Accepted")
+    }).pipe(
+      Effect.provide(journalLayer({ capacity: 16, overflow: "reject", maxEntryBytes: 8 * 1024 * 1024 })),
+      Effect.scoped
     ))
 
   effect("persists telemetry events through the same queue and changes subscription", () => {
@@ -2268,9 +2280,8 @@ describe("SqlJournal read boundaries", () => {
 
 /**
  * `capacity` bounds how MANY entries the queue and the `changes` buffer hold,
- * never how large one is. `maxEntryBytes` is the opt-in byte bound; it is off by
- * default so a running engine that legitimately writes large payloads is not
- * refused by an upgrade.
+ * never how large one is. `maxEntryBytes` is the byte bound; it defaults to
+ * `defaultMaxEntryBytes`, and a host sets its own.
  */
 describe("SqlJournal maxEntryBytes", () => {
   const run = runId("bounded")

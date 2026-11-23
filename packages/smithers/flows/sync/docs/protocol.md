@@ -61,7 +61,12 @@ the encoded-entry ceiling, `maxFrameBytes`, which defaults to 2 MiB. The
 ceiling is a budget on the page, not a verdict on the read: the server serves
 entries until the next one would cross it, then returns `done: false` so the
 client asks for the rest. Only a single entry whose own encoded size exceeds
-the ceiling fails, with `frame_too_large`, because no page can carry it.
+the ceiling is refused, because no page can carry it. A run-scoped read fails
+with `frame_too_large`. A workspace read omits that run from the entry onward:
+its cursor is returned unchanged, or not at all when the page served nothing
+for it, and the run does not keep `done` at `false`. A workspace subscription
+stops sending frames for that run. The other runs are unaffected. To learn why
+a run stopped, read it in run scope.
 
 Persist the returned cursors only after applying the returned batch.
 

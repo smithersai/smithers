@@ -21,7 +21,14 @@ import * as TestSync from "../../src/test/TestSync.ts"
 const [mode, directory] = process.argv.slice(2)
 if ((mode !== "seed" && mode !== "reopen") || !directory) throw new Error("Expected seed/reopen and directory")
 const bytes = (value: unknown) => Buffer.byteLength(JSON.stringify(value))
-const journalLayer = SqlJournal.layer({ capacity: 32, overflow: "reject" }).pipe(Layer.provideMerge(
+// This fixture writes entries one byte under, at and over the frame ceiling,
+// so its journal admits past the default entry bound, which sits an envelope
+// below that ceiling so that no entry an ordinary host admits can reach it.
+const journalLayer = SqlJournal.layer({
+  capacity: 32,
+  overflow: "reject",
+  maxEntryBytes: 2 * Protocol.defaultMaxFrameBytes
+}).pipe(Layer.provideMerge(
   Layer.provideMerge(
     JournalMigrations.layer,
     Layer.provideMerge(DurableWriter.layer(), NodeDatabase.layer({ filename: join(directory, "limits.sqlite") }))

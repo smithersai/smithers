@@ -4,6 +4,14 @@
 
 ### Fixed
 
+- One journal entry larger than `maxFrameBytes` no longer fails a whole
+  workspace read or workspace subscription
+  ([#4558](https://github.com/smithersai/smithers/issues/4558)). The server
+  stops serving that entry's run below the entry, keeps the entries the page
+  already holds, serves every other run, and logs a warning naming the run,
+  the sequence and the size. A workspace subscription does not read the
+  withheld run again. A run-scoped read or subscription still fails with
+  `frame_too_large`.
 - Workspace and branch capabilities cap overflowing expiry times at
   `Number.MAX_SAFE_INTEGER` instead of crashing during minting.
 - Journal failures whose codes match object prototype names remain typed

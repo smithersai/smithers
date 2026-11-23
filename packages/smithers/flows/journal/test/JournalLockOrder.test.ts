@@ -14,7 +14,7 @@
  * The barriers below also park a transaction-owning producer at its floor
  * result (or before preflight) while compaction reaches its SQL request.
  * These cases assert that neither the gate nor the run permit is held there,
- * then join all work, including automatic maintenance from batch settlement.
+ * then join all work, including automatic maintenance after an owner's write.
  * All statements use the production Node SQLite adapter.
  */
 import { describe, expect, it } from "@effect/vitest"
@@ -642,7 +642,7 @@ describe("SqlJournal lock order", () => {
   )
 
   withDatabase(
-    "batch-settlement automatic compaction lets an unrelated transaction admit and commit",
+    "post-commit automatic compaction lets an unrelated transaction admit and commit",
     (seams) =>
       Effect.gen(function*() {
         const captureReached = yield* Deferred.make<void>()
@@ -650,12 +650,17 @@ describe("SqlJournal lock order", () => {
         yield* Effect.gen(function*() {
           const journal = yield* Journal
           const sql = yield* Effect.service(SqlClient.SqlClient)
-          // This is the background compactor forked by the queue consumer.
-          yield* journal.emitLossy(implicit(first, "initial"))
+          // The owner's fenced write crosses the threshold and awaits its
+          // policy attempt, which runs after the write's own commit.
+          yield* Leases.hold(sql, run, owner)
+          const crossing = yield* journal.emitDurable(implicit(first, "initial"), owner)
+            .pipe(Effect.forkChild({ startImmediately: true }))
           yield* Deferred.await(captureReached)
           // Let automatic checkpoint creation finish, but stop the following
-          // compaction after its first drain and before it requests SQL.
-          seams.armRequest(1)
+          // compaction after its first drain and before it requests SQL. The
+          // checkpoint is two writer requests: its own, and the owner fence's
+          // guard joined inside it.
+          seams.armRequest(2)
           yield* Deferred.succeed(resumeCapture, undefined)
           yield* Deferred.await(seams.writeRequested)
           yield* Deferred.succeed(seams.floorReadGate, undefined)
@@ -668,12 +673,13 @@ describe("SqlJournal lock order", () => {
           yield* Deferred.succeed(seams.floorResultGate, undefined)
           expect(yield* Fiber.join(producer)).toMatchObject({ _tag: "Accepted", seq: 1 })
           yield* Fiber.join(flushing)
+          expect(yield* Fiber.join(crossing)).toMatchObject({ _tag: "Accepted", seq: 0 })
           const checkpoints = yield* sql<{ compacted_at_ms: number | null }>`
           SELECT compacted_at_ms FROM flows_journal_checkpoints WHERE run_id = ${run}
         `
           expect(checkpoints).toHaveLength(1)
           expect(checkpoints[0]!.compacted_at_ms).not.toBeNull()
-          // Settlement may trigger a second policy attempt at the new tail.
+          // The lossy wake counts toward the threshold and triggers nothing.
           // Every identity must survive, either in replay or retained dedup.
           const identities = yield* sql<{ source_id: string }>`
             SELECT source_id, seq FROM flows_journal_events WHERE run_id = ${run}

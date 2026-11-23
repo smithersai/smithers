@@ -93,28 +93,42 @@ Once a run's committed entry count reaches `entryThreshold`, the journal asks
 `capture` for the caller's replay state at the run's durable tail, writes it as
 a checkpoint at that sequence, and compacts below it.
 
-The policy is the journal's own post-commit maintenance rather than a caller's
-entrypoint, so it holds no fence and needs no lease. It only ever
-truncates below a tail the run's own commits produced, and a retry after a
-reclaim compacts the same committed prefix the live owner sees.
+Only the run's owner compacts it. The checkpoint's `state` is whatever the
+calling process's `capture` returns, so an attempt is a mutating write and is
+fenced like one:
 
-Three properties of the hook matter when you write `capture`:
+- Every committed entry counts toward `entryThreshold`, on either channel.
+- An attempt runs only after a write an owner's fence admitted: `emitDurable`,
+  or an `emitDeferred` entry when it is flushed. It runs under that owner's
+  fence, and the checkpoint and the compaction each re-check ownership inside
+  their own transaction.
+- A lossy entry and `emitDurableUnfenced` carry no fence, so they never
+  trigger an attempt. The count they raise is acted on by the owner's next
+  fenced write.
 
-- It runs after the triggering commit's allocation permit is free. Lossy
-  commits schedule one scoped maintenance fiber per compacting run, so capture
-  and compaction never occupy the queue-draining fiber. Capture may read or
-  emit through the journal while other runs continue committing.
+A process that does not own the run therefore cannot compact it. That includes
+a displaced owner that still holds stale replay state in memory and only
+writes telemetry for the run. An owner that loses or releases the run between
+its commit and the attempt is refused with `fence_lost`, which is damped like
+any other refusal. The write that parks a run releases it in the same
+transaction, so that write never compacts; the next owner's writes do.
+
+Four properties of the hook matter when you write `capture`:
+
+- It runs after the triggering commit's allocation permit is free, and the
+  durable emit that crossed the threshold awaits it. Capture may read or emit
+  through the journal while other runs continue committing.
+- It can run for an owner whose fence is already gone, because ownership is
+  checked when the checkpoint is written, after `capture` returns. Its result
+  is then discarded.
 - It is interrupted after 30 seconds, so caller code cannot wedge journal
   admission indefinitely.
-- A failed or refused attempt, whether a live stream behind the boundary or a
-  `capture` failure, is logged at warning, damped for `entryThreshold` further
-  committed entries while the run's policy counter is retained, and never
-  surfaced to the emit that triggered it.
+- A failed or refused attempt, whether a live stream behind the boundary, a
+  `capture` failure, or a lost fence, is logged at warning, damped for
+  `entryThreshold` further committed entries while the run's policy counter is
+  retained, and never surfaced to the emit that triggered it.
 
 `flush` waits for queued writes and registered automatic maintenance attempts.
-The attempt is registered before its triggering batch settles, so flush cannot
-miss it. Scope closure flushes before interrupting the maintenance scope.
-Durable emits still await their own policy attempt after commit.
 
 Flush also retires per-run barriers and policy counters when there are no
 admissions, writes, queued entries, barrier waiters, live readers, or maintenance

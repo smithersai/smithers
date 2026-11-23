@@ -25,9 +25,12 @@ follow.
 
 The frame ceiling is a budget on the page, not a verdict on the read. The
 server serves entries until the next one would cross it, then returns
-`done: false` so the client asks for the rest. The single case that fails is
-one entry whose own encoded size exceeds the ceiling, refused with
-`frame_too_large`, because no page can ever carry it.
+`done: false` so the client asks for the rest. The single case that is refused
+is one entry whose own encoded size exceeds the ceiling, because no page can
+ever carry it. The refusal belongs to that entry's run. A run-scoped read fails
+with `frame_too_large`. A workspace read leaves that run's cursor below the
+entry and serves the other runs, so one runaway entry cannot stop every
+follower of the workspace.
 
 ### Why a page is shared, not filled in order
 

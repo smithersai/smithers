@@ -308,6 +308,14 @@ const emitMany = (service: Service, from: number, count: number) =>
     }
   })
 
+/** {@link emitMany} through `owner`'s fence, the only writes the policy acts on. */
+const emitOwned = (service: Service, from: number, count: number) =>
+  Effect.gen(function*() {
+    for (let index = from; index < from + count; index++) {
+      yield* service.emitDurable(input(index), owner)
+    }
+  })
+
 /**
  * The replay a consumer performs: the latest checkpoint's state, then the
  * durable tail strictly after it — paged small so the floor guard is
@@ -1146,7 +1154,8 @@ describe("the compaction policy hook", () => {
   effect("is off by default: nothing is checkpointed or deleted", () =>
     Effect.gen(function*() {
       const service = yield* Journal
-      yield* emitMany(service, 0, 12)
+      yield* claim(owner)
+      yield* emitOwned(service, 0, 12)
       expect(yield* eventCount).toBe(12)
       expect(Option.isNone(yield* service.latestCheckpoint(run))).toBe(true)
     }).pipe(Effect.provide(journal()), Effect.scoped))
@@ -1157,7 +1166,8 @@ describe("the compaction policy hook", () => {
       const reachedCapture = yield* Deferred.make<void>()
       yield* Effect.gen(function*() {
         const service = yield* Journal
-        const crossing = yield* service.emitDurableUnfenced(input(0)).pipe(
+        yield* claim(owner)
+        const crossing = yield* service.emitDurable(input(0), owner).pipe(
           Effect.forkChild({ startImmediately: true })
         )
         yield* Deferred.await(reachedCapture)
@@ -1210,7 +1220,8 @@ describe("the compaction policy hook", () => {
       const reachedCapture = yield* Deferred.make<void>()
       yield* Effect.gen(function*() {
         const service = yield* Journal
-        const crossing = yield* service.emitDurableUnfenced(input(0)).pipe(
+        yield* claim(owner)
+        const crossing = yield* service.emitDurable(input(0), owner).pipe(
           Effect.forkChild({ startImmediately: true })
         )
         yield* Deferred.await(reachedCapture)
@@ -1242,14 +1253,15 @@ describe("the compaction policy hook", () => {
   effect("checkpoints and compacts at the entry-count threshold, repeatedly", () =>
     Effect.gen(function*() {
       const service = yield* Journal
-      yield* emitMany(service, 0, 5)
+      yield* claim(owner)
+      yield* emitOwned(service, 0, 5)
       const first = yield* service.latestCheckpoint(run)
       expect(Option.getOrThrow(first).seq).toBe(4)
       expect(Option.getOrThrow(first).state).toEqual({ capturedAt: 4 })
       expect(Option.getOrThrow(first).compactedAtMs).not.toBeNull()
       expect(yield* eventCount).toBe(1)
 
-      yield* emitMany(service, 5, 4)
+      yield* emitOwned(service, 5, 4)
       const second = yield* service.latestCheckpoint(run)
       expect(Option.getOrThrow(second).seq).toBe(8)
       expect(yield* eventCount).toBe(1)
@@ -1267,12 +1279,14 @@ describe("the compaction policy hook", () => {
     Effect.gen(function*() {
       yield* Effect.gen(function*() {
         const service = yield* Journal
-        yield* emitMany(service, 0, 6)
+        yield* claim(owner)
+        yield* emitOwned(service, 0, 6)
       }).pipe(Effect.provide(journal()), Effect.scoped)
 
       yield* Effect.gen(function*() {
         const service = yield* Journal
-        yield* service.emitDurableUnfenced(input(6))
+        yield* claim(owner)
+        yield* service.emitDurable(input(6), owner)
         const latest = yield* service.latestCheckpoint(run)
         expect(Option.getOrThrow(latest).seq).toBe(6)
       }).pipe(
@@ -1285,28 +1299,50 @@ describe("the compaction policy hook", () => {
       expect(yield* eventCount).toBe(1)
     }))
 
-  effect("counts the lossy channel's committed batches toward the threshold", () =>
-    Effect.gen(function*() {
-      const service = yield* Journal
-      for (let index = 0; index < 3; index++) {
-        yield* service.emitLossy(input(index))
-      }
-      yield* service.flush
-      const latest = yield* service.latestCheckpoint(run)
-      expect(Option.getOrThrow(latest).seq).toBe(2)
-      expect(yield* eventCount).toBe(1)
-    }).pipe(
-      Effect.provide(journal({
-        compaction: { entryThreshold: 3, capture: () => Effect.succeed(null) }
-      })),
-      Effect.scoped
-    ))
+  effect(
+    "counts the lossy channel's committed batches toward the threshold without acting on them",
+    () =>
+      Effect.gen(function*() {
+        let captures = 0
+        yield* Effect.gen(function*() {
+          const service = yield* Journal
+          yield* claim(owner)
+          for (let index = 0; index < 3; index++) {
+            yield* service.emitLossy(input(index))
+          }
+          yield* service.flush
+          // A lossy entry carries no fence: the threshold is crossed and
+          // nothing is captured, checkpointed or deleted.
+          expect(captures).toBe(0)
+          expect(Option.isNone(yield* service.latestCheckpoint(run))).toBe(true)
+          expect(yield* eventCount).toBe(3)
+          // The owner's next fenced write acts on the count the lossy ones raised.
+          yield* service.emitDurable(input(3), owner)
+          expect(captures).toBe(1)
+          expect(Option.getOrThrow(yield* service.latestCheckpoint(run)).seq).toBe(3)
+          expect(yield* eventCount).toBe(1)
+        }).pipe(
+          Effect.provide(journal({
+            compaction: {
+              entryThreshold: 3,
+              capture: () =>
+                Effect.sync(() => {
+                  captures += 1
+                  return null
+                })
+            }
+          })),
+          Effect.scoped
+        )
+      })
+  )
 
   effect("an idempotent duplicate emit counts nothing toward the threshold", () =>
     Effect.gen(function*() {
       const service = yield* Journal
-      const first = yield* service.emitDurableUnfenced(input(0))
-      const duplicate = yield* service.emitDurableUnfenced(input(0))
+      yield* claim(owner)
+      const first = yield* service.emitDurable(input(0), owner)
+      const duplicate = yield* service.emitDurable(input(0), owner)
       expect(duplicate.seq).toBe(first.seq)
       // Two emits, one committed entry: the duplicate reports zero committed
       // rows, so the threshold of 2 is never crossed.
@@ -1325,15 +1361,19 @@ describe("the compaction policy hook", () => {
       const reachedCapture = yield* Deferred.make<void>()
       yield* Effect.gen(function*() {
         const service = yield* Journal
-        yield* service.emitLossy(input(0))
+        yield* claim(owner)
+        const crossing = yield* service.emitDurable(input(0), owner).pipe(
+          Effect.forkChild({ startImmediately: true })
+        )
         yield* Deferred.await(reachedCapture)
-        const next = yield* service.emitDurableUnfenced(input(2)).pipe(
+        const next = yield* service.emitDurable(input(2), owner).pipe(
           Effect.forkChild({ startImmediately: true })
         )
         const receipt = yield* Fiber.join(next)
         expect(receipt.seq).toBe(1)
         expect(Option.isNone(yield* service.latestCheckpoint(run))).toBe(true)
         yield* Deferred.succeed(gate, undefined)
+        yield* Fiber.join(crossing)
         yield* service.flush
         const latest = yield* service.latestCheckpoint(run)
         expect(Option.getOrThrow(latest).seq).toBe(0)
@@ -1366,10 +1406,11 @@ describe("the compaction policy hook", () => {
       const captured: Array<number> = []
       yield* Effect.gen(function*() {
         const service = yield* Journal
-        const first = yield* service.emitDurableUnfenced(input(0)).pipe(
+        yield* claim(owner)
+        const first = yield* service.emitDurable(input(0), owner).pipe(
           Effect.forkChild({ startImmediately: true })
         )
-        const second = yield* service.emitDurableUnfenced(input(1)).pipe(
+        const second = yield* service.emitDurable(input(1), owner).pipe(
           Effect.forkChild({ startImmediately: true })
         )
         yield* Fiber.join(first)
@@ -1382,7 +1423,7 @@ describe("the compaction policy hook", () => {
         // then added its own, so the attempt lands one commit EARLY rather than
         // never: over-counting is the safe direction, and `policyCompact`
         // re-seeds from a fresh COUNT so it does not accumulate.
-        yield* emitMany(service, 2, 8)
+        yield* emitOwned(service, 2, 8)
         expect(captured).toEqual([8])
         expect(Option.getOrThrow(yield* service.latestCheckpoint(run)).seq).toBe(8)
       }).pipe(
@@ -1409,7 +1450,8 @@ describe("the compaction policy hook", () => {
       const reachedCapture = yield* Deferred.make<void>()
       yield* Effect.gen(function*() {
         const service = yield* Journal
-        const crossing = yield* service.emitDurableUnfenced(input(0)).pipe(
+        yield* claim(owner)
+        const crossing = yield* service.emitDurable(input(0), owner).pipe(
           Effect.forkChild({ startImmediately: true })
         )
         yield* Deferred.await(reachedCapture)
@@ -1437,7 +1479,8 @@ describe("the compaction policy hook", () => {
     Effect.gen(function*() {
       yield* Effect.gen(function*() {
         const service = yield* Journal
-        const exit = yield* Effect.exit(service.emitDurableUnfenced(input(0)))
+        yield* claim(owner)
+        const exit = yield* Effect.exit(service.emitDurable(input(0), owner))
         expect(Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause)).toBe(true)
         expect(Option.isNone(yield* service.latestCheckpoint(run))).toBe(true)
         expect(yield* eventCount).toBe(1)
@@ -1458,11 +1501,12 @@ describe("the compaction policy hook", () => {
       const captured: Array<unknown> = []
       yield* Effect.gen(function*() {
         const service = yield* Journal
+        yield* claim(owner)
         // A concurrent process compacted-and-truncated between this process's
         // commit and its tail read: MAX(seq) comes back NULL (first attempt)
         // or the row itself is gone (second attempt). Both stand down.
-        yield* service.emitDurableUnfenced(input(0))
-        yield* service.emitDurableUnfenced(input(1))
+        yield* service.emitDurable(input(0), owner)
+        yield* service.emitDurable(input(1), owner)
         expect(captured).toEqual([])
         expect(Option.isNone(yield* service.latestCheckpoint(run))).toBe(true)
       }).pipe(
@@ -1494,11 +1538,12 @@ describe("the compaction policy hook", () => {
     Effect.gen(function*() {
       yield* Effect.gen(function*() {
         const service = yield* Journal
+        yield* claim(owner)
         // The seed count comes back rowless, so the first commit seeds zero
         // and the second commit crosses the threshold.
-        yield* service.emitDurableUnfenced(input(0))
+        yield* service.emitDurable(input(0), owner)
         expect(Option.isNone(yield* service.latestCheckpoint(run))).toBe(true)
-        yield* service.emitDurableUnfenced(input(1))
+        yield* service.emitDurable(input(1), owner)
         const latest = yield* service.latestCheckpoint(run)
         expect(Option.getOrThrow(latest).seq).toBe(1)
         expect(Option.getOrThrow(latest).compactedAtMs).not.toBeNull()
@@ -1520,7 +1565,8 @@ describe("the compaction policy hook", () => {
     Effect.gen(function*() {
       yield* Effect.gen(function*() {
         const service = yield* Journal
-        const durable = yield* service.emitDurableUnfenced(input(0))
+        yield* claim(owner)
+        const durable = yield* service.emitDurable(input(0), owner)
         expect(durable.seq).toBe(0)
         // The bookkeeping defect is logged and swallowed: nothing was
         // checkpointed, and the emit itself settled durably.
@@ -1540,14 +1586,15 @@ describe("the compaction policy hook", () => {
       let attempts = 0
       yield* Effect.gen(function*() {
         const service = yield* Journal
+        yield* claim(owner)
         // Attempt 1 fails; the damped counter restarts, so the next attempt
         // happens only after `entryThreshold` further commits.
-        yield* emitMany(service, 0, 2)
+        yield* emitOwned(service, 0, 2)
         expect(attempts).toBe(1)
         expect(yield* eventCount).toBe(2)
         expect(Option.isNone(yield* service.latestCheckpoint(run))).toBe(true)
 
-        yield* emitMany(service, 2, 2)
+        yield* emitOwned(service, 2, 2)
         expect(attempts).toBe(2)
         const latest = yield* service.latestCheckpoint(run)
         expect(Option.getOrThrow(latest).seq).toBe(3)

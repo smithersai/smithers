@@ -173,9 +173,17 @@ type ServeOutcome = { readonly _tag: "more" } | { readonly _tag: "drained" } | P
 /**
  * The two ways one run ends a read page: the page's byte budget was reached,
  * or a single entry alone outgrows the frame ceiling and no page can ever
- * carry it.
+ * carry it. The second ends the page of a run-scoped read only: a workspace
+ * read withholds that run and goes on (see `withhold`).
  */
-type PageStop = { readonly _tag: "truncated" } | { readonly _tag: "oversized"; readonly bytes: number }
+type PageStop = { readonly _tag: "truncated" } | Oversized
+
+/** One entry that alone outgrows the frame ceiling: where it sits, and its encoded size. */
+interface Oversized {
+  readonly _tag: "oversized"
+  readonly seq: JournalEvent.Seq
+  readonly bytes: number
+}
 
 /**
  * Largest number of journal reads one workspace subscription keeps open at
@@ -356,12 +364,53 @@ const makeWith = (
      * of every downstream combinator on the hot follow path.
      */
     const guardEntryChunk = (chunk: ReadonlyArray<JournalEvent.Entry>): Effect.Effect<void, SyncError> => {
-      for (const entry of chunk) {
-        const bytes = SyncProtocol.encodedByteLength(entry)
-        if (bytes > maxFrameBytes) return frameTooLarge(bytes)
-      }
-      return Effect.void
+      const oversized = firstOversized(chunk)
+      return oversized === undefined ? Effect.void : frameTooLarge(oversized.entry.bytes)
     }
+
+    /** The first entry of `chunk` that alone outgrows the ceiling, and its index. */
+    const firstOversized = (
+      chunk: ReadonlyArray<JournalEvent.Entry>
+    ): { readonly index: number; readonly entry: Oversized } | undefined => {
+      for (const [index, entry] of chunk.entries()) {
+        const bytes = SyncProtocol.encodedByteLength(entry)
+        if (bytes > maxFrameBytes) return { index, entry: { _tag: "oversized", seq: entry.seq, bytes } }
+      }
+      return undefined
+    }
+
+    /**
+     * Records that a workspace read or tail stopped serving ONE run at an
+     * entry no frame can carry (#4558).
+     *
+     * A workspace page and a workspace tail merge many runs, and failing the
+     * whole of either for one run's entry failed every other run with it: the
+     * cursors did not advance, `frame_too_large` is not retried, and the next
+     * read carried the same cursors and failed identically, so one runaway
+     * entry wedged every workspace follower on every run. The entry belongs to
+     * one run, so one run stops. Its cursor stays below the entry, which keeps
+     * what the follower holds a true prefix of the run, and every other run is
+     * served as if this one were drained.
+     *
+     * The follower is told nothing in band: the wire has no per-run refusal,
+     * and a failure would be the wedge again. The refusal is still typed where
+     * it is asked for by name: a run-scoped read or subscription of this run
+     * fails `frame_too_large`, as it always has. This warning is the operator's
+     * record. It names the run, the sequence and the size, and never the
+     * entry's content.
+     */
+    const withhold = (
+      surface: "read" | "subscription",
+      runId: JournalEvent.RunId,
+      oversized: Oversized
+    ): Effect.Effect<void> =>
+      Effect.logWarning("sync withheld a run whose next entry exceeds the frame ceiling", {
+        surface,
+        runId,
+        seq: oversized.seq,
+        entryBytes: oversized.bytes,
+        maxFrameBytes
+      })
 
     /**
      * The catalog's run set: deduplicated, then ordered.
@@ -623,6 +672,9 @@ const makeWith = (
         // Runs that still had more when their share ran out, in the order the
         // page visited them. They get the budget the page did not spend.
         const behind: Array<JournalEvent.RunId> = []
+        // Runs a workspace page stopped serving at an entry no frame can
+        // carry. Their cursors stay below it; every other run goes on.
+        const withheld = new Map<JournalEvent.RunId, Oversized>()
 
         /**
          * Serves at most `cap` of one run's unserved entries into the page.
@@ -635,7 +687,8 @@ const makeWith = (
          * retryable, and the client's next bootstrap carries the same cursors
          * and gets the same refusal. So the page stops at the budget and
          * reports `done: false`; only an entry that alone outgrows the
-         * ceiling still refuses, because no page can ever carry it.
+         * ceiling still refuses, because no page can ever carry it. What it
+         * refuses is its own run: `pass` decides whether that is the read.
          */
         const serve = (runId: JournalEvent.RunId, cap: number): Effect.Effect<ServeOutcome, SyncError> =>
           Effect.gen(function*() {
@@ -644,7 +697,7 @@ const makeWith = (
             generations.set(runId, generation)
             for (const accepted of admitted) {
               const bytes = SyncProtocol.encodedByteLength(accepted)
-              if (bytes > maxFrameBytes) return { _tag: "oversized", bytes }
+              if (bytes > maxFrameBytes) return { _tag: "oversized", seq: accepted.seq, bytes }
               if (frameBytes + bytes > maxFrameBytes) return { _tag: "truncated" }
               frameBytes += bytes
               entries.push(accepted)
@@ -668,6 +721,12 @@ const makeWith = (
          * argument rather than the return value because the second pass reads
          * the list the first one filled, and appending to the array being
          * iterated would serve a run twice in one page.
+         *
+         * An entry that alone outgrows the ceiling ends a RUN-scoped read,
+         * which is that run's read and has nothing else to serve. In a
+         * workspace read it ends only its own run's share: the entries the
+         * page already holds stay in it, that run's included, and the pass
+         * goes on to the next run.
          */
         const pass = (
           runs: Iterable<JournalEvent.RunId>,
@@ -679,7 +738,11 @@ const makeWith = (
               if (entries.length >= limit) return undefined
               const outcome = yield* serve(runId, cap())
               if (outcome._tag === "more") more.push(runId)
-              if (outcome._tag === "truncated" || outcome._tag === "oversized") return outcome
+              if (outcome._tag === "truncated") return outcome
+              if (outcome._tag === "oversized") {
+                if (request.scope._tag === "Run") return outcome
+                withheld.set(runId, outcome)
+              }
             }
             return undefined
           })
@@ -700,6 +763,7 @@ const makeWith = (
         const stop = shares ?? (yield* pass(behind, () => limit - entries.length, []))
         if (stop?._tag === "oversized") return yield* frameTooLarge(stop.bytes)
         if (expiresAtMs <= (yield* Clock.currentTimeMillis)) return yield* Effect.fail(expired)
+        for (const [runId, oversized] of withheld) yield* withhold("read", runId, oversized)
         return {
           entries,
           cursors: Array.from(cursors, ([runId, afterSeq]) => ({
@@ -711,7 +775,10 @@ const makeWith = (
           // second pass then drained it: the page is a snapshot of a journal
           // that is still being written, and only an untruncated pass over
           // runs that all reported drained can promise there is nothing left.
-          done: stop === undefined && behind.length === 0 && entries.length < limit
+          // A withheld run is not waited for: no later page can serve it, and
+          // a page that reported more on its account would send the follower
+          // back for the same refusal forever.
+          done: stop === undefined && behind.every((runId) => withheld.has(runId)) && entries.length < limit
         }
       })
 
@@ -814,6 +881,12 @@ const makeWith = (
         // Set by an announcement: the next wake re-lists the catalog whatever
         // `dirty` holds, since the announced run is not covered yet.
         let announced = false
+        // Runs this subscription stopped serving at an entry no frame can
+        // carry (see `withhold`). Such an entry never becomes servable under
+        // this server's ceiling, so the run is not read again: re-reading it
+        // each round would load the same oversized entry once per interval
+        // per follower. A new subscription tries it afresh.
+        const withheld = new Set<JournalEvent.RunId>()
         // When the last catalog-wide round began. A wake that arrives once
         // the interval has elapsed since then runs a full round, so local
         // appends faster than the interval cannot defer reconciliation of
@@ -898,15 +971,26 @@ const makeWith = (
          */
         const tail = (runId: JournalEvent.RunId): Stream.Stream<SyncProtocol.ServerFrame, SyncError> =>
           Stream.unwrap(Effect.gen(function*() {
+            if (withheld.has(runId)) return Stream.empty
             const after = served.get(runId)
-            const { admitted, generation, hasMore } = yield* readPage(
+            const page = yield* readPage(
               runId,
               after,
               generations.get(runId),
               tailBatchSize
             )
+            const { generation } = page
             generations.set(runId, generation)
-            yield* guardEntryChunk(admitted)
+            // One entry no frame can carry stops THIS run below it and no
+            // other: the entries before it are served, the run is withheld
+            // for the rest of the subscription, and the round goes on.
+            const oversized = firstOversized(page.admitted)
+            const admitted = oversized === undefined ? page.admitted : page.admitted.slice(0, oversized.index)
+            const hasMore = oversized === undefined && page.hasMore
+            if (oversized !== undefined) {
+              withheld.add(runId)
+              yield* withhold("subscription", runId, oversized.entry)
+            }
             const frames: Array<SyncProtocol.ServerFrame> = []
             let previous = after === undefined ? -1 : after
             for (const accepted of admitted) {

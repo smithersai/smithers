@@ -246,14 +246,25 @@ const headerNames = new RegExp(
   "gi"
 )
 
-/** Whitespace headers require a scheme spelling, so ordinary authorization prose survives. */
-const diagnosticHeaderNames = new RegExp(
-  // A trailing token quote requires an opener; double quotes are never token characters.
-  `${headerName}(?:` +
-    String.raw`(?:(?<=["'\x60](?:${headerWord}))|(?!\\*['\x60]))${separator(String.raw`\s*`)}|` +
-    String.raw`(?<=${authorizationName})\s+(?=(?:Token|TOKEN|[Bb]earer|BEARER|Basic|BASIC)[ \t]+\S))`,
-  "g"
-)
+/**
+ * A header name and what separates it from its value, where `space` is the
+ * whitespace that may sit between them. Whitespace headers require a scheme
+ * spelling, so ordinary authorization prose survives.
+ */
+const headerNamesAcross = (space: string): RegExp =>
+  new RegExp(
+    // A trailing token quote requires an opener; double quotes are never token characters.
+    `${headerName}(?:` +
+      String.raw`(?:(?<=["'\x60](?:${headerWord}))|(?!\\*['\x60]))${separator(`${space}*`)}|` +
+      String.raw`(?<=${authorizationName})${space}+(?=(?:Token|TOKEN|[Bb]earer|BEARER|Basic|BASIC)[ \t]+\S))`,
+    "g"
+  )
+
+/** In a durable row the header's value starts on the header's own line. */
+const durableHeaderNames = headerNamesAcross("[ \\t]")
+
+/** A diagnostic also reads a value on the line after the header's name. */
+const diagnosticHeaderNames = headerNamesAcross(String.raw`\s`)
 
 /** Any credential or header name, to stop a bare value before the next pair. */
 const anyName = new RegExp(`${credentialNames.source}|${headerNames.source}`, "gi")
@@ -680,6 +691,27 @@ const commandPasswordFlag = new RegExp(
 )
 
 /**
+ * A command whose `-p` is a password, up to that flag: the `mysql` and
+ * `mariadb` clients and `sshpass`. The command is looked for at most 256
+ * characters back on the same command line.
+ */
+const passwordCommand = String
+  .raw`\b(?:mysql\w*|mariadb[\w-]*|sshpass)\b[^\r\n|;&]{0,256}?[\s"'\x60,[(]-p`
+
+/** {@link shortPasswordFlag} under a {@link passwordCommand}. */
+const commandShortPasswordFlag = new RegExp(
+  String.raw`${passwordCommand}${argumentSeparator}(?!(?:\.{0,2}|~)\/|--)`,
+  "g"
+)
+
+/** `-p` with its value attached (`-psecret`) under a {@link passwordCommand}. */
+const commandAttachedPasswordFlag = new RegExp(String.raw`${passwordCommand}(?=[^\s,\]"'\x60])`, "g")
+
+/** A decoded Basic credential: `user:password`, with no control character in either. */
+// eslint-disable-next-line no-control-regex
+const userAndPassword = /^[^\x00-\x1f\x7f]*:[^\x00-\x1f\x7f]*$/
+
+/**
  * An HTTP header written as a name and value pair of an array
  * (`[['Authorization', 'Token x']]`), the shape `Headers` entries and many
  * clients log, up to the quote that opens the value.
@@ -863,19 +895,26 @@ export const defaultRules: ReadonlyArray<Rule> = [
   },
   {
     id: "bearer-token",
-    pattern: /\bBearer\s+[A-Za-z0-9._~+/-]{4,}=*/gi,
+    // The scheme word is also English (`the bearer of bad news`, `Bearer
+    // token expired.`), so outside a header the value must be shaped like a
+    // credential: it holds a digit or one of `_~+/`, or runs to 16
+    // characters. A word, hyphenated or ending a sentence, is none of those.
+    // A shorter all-letter token after an `Authorization` name is the header
+    // rule's, and a diagnostic takes any token (`bearer-or-basic`).
+    pattern: /\bBearer\s+(?=[A-Za-z.-]*[0-9_~+/]|[A-Za-z.-]{16})[A-Za-z0-9._~+/-]{4,}=*/gi,
     replace: "Bearer [REDACTED_TOKEN]"
   },
   {
     id: "basic-authorization",
-    // HTTP schemes are case-insensitive. For prose spellings, require an
-    // encoded user:password pair so `a basic example` and module imports survive.
+    // HTTP schemes are case-insensitive, and every spelling is also English
+    // (`Basic authentication failed`, `## Basic Usage`), so outside a header
+    // the value must decode to a `user:password` pair of printable
+    // characters. A value after an `Authorization` name is the header rule's.
     pattern: /\bbasic\s+[A-Za-z0-9+/]{4,}={0,2}/gi,
     rewrite: (text) =>
-      text.replace(/\b(basic)\s+([A-Za-z0-9+/]{4,}={0,2})/gi, (match: string, scheme: string, token: string) => {
-        if (scheme === "Basic" || scheme === "BASIC") return "Basic [REDACTED_TOKEN]"
+      text.replace(/\bbasic\s+([A-Za-z0-9+/]{4,}={0,2})/gi, (match: string, token: string) => {
         try {
-          return atob(token).includes(":") ? "Basic [REDACTED_TOKEN]" : match
+          return userAndPassword.test(atob(token)) ? "Basic [REDACTED_TOKEN]" : match
         } catch {
           return match
         }
@@ -964,35 +1003,7 @@ export const defaultRules: ReadonlyArray<Rule> = [
     pattern:
       /(?<![A-Za-z0-9-])((?:COOKIE|SESSION)S?)(\s*=\s*)(?!\[REDACTED\])("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|(?!["'])[^\s;,]+)/gi,
     replace: "$1$2[REDACTED]"
-  }
-]
-
-/**
- * The rules for a diagnostic: {@link defaultRules} and the spellings too broad
- * for a durable row.
- *
- * A log line, a stderr message, and an error handed to a remote caller are
- * read once, so a false positive costs a word of context. A journal row is
- * permanent, so the same false positive destroys data. These rules sit on the
- * diagnostic side of that line: an authorization header in any scheme, bare
- * URL userinfo (`https://token@host`), a signed query parameter, and the value
- * of a `-p` flag, which is a password to `mysql` and `sshpass` and a path to
- * `mkdir`. A path, a port and a lowercase word attached to `-p` (`-print`,
- * `-path`) are left alone.
- *
- * @since 1.0.0
- * @category constants
- */
-export const diagnosticRules: ReadonlyArray<Rule> = [
-  ...defaultRules.map((rule): Rule =>
-    rule.id === "assignment"
-      ? {
-        id: "assignment",
-        pattern: diagnosticNames,
-        rewrite: (text) => redactValues(text, diagnosticNames, { header: false, diagnostic: true })
-      }
-      : rule
-  ),
+  },
   {
     id: "authorization-header",
     // The header value is a credential whatever its scheme (`Token`, a cookie
@@ -1000,14 +1011,7 @@ export const diagnosticRules: ReadonlyArray<Rule> = [
     // its line or the close of the string it was written in.
     // A lookbehind-free superset lets the compiled prefilter skip ordinary prose.
     pattern: /(?:proxy-)?authorization|(?:set-)?cookies?/gi,
-    rewrite: (text) => redactValues(text, diagnosticHeaderNames, { header: true, diagnostic: true })
-  },
-  {
-    id: "bearer-or-basic",
-    // A token shorter than the default rules' minimum. A lowercase `basic` is
-    // prose ("a basic example"), so only the scheme's own spellings count.
-    pattern: /(\b(?:[Bb]earer|BEARER|Basic|BASIC)\s+)(?!\[REDACTED)[^\s,;"'\\]+/g,
-    replace: "$1[REDACTED]"
+    rewrite: (text) => redactValues(text, durableHeaderNames, { header: true, diagnostic: false })
   },
   {
     id: "password-flag",
@@ -1052,19 +1056,105 @@ export const diagnosticRules: ReadonlyArray<Rule> = [
   },
   {
     id: "short-password-flag",
-    // A path is kept, and so is a flag: `mysql -p --database x` prompts for
-    // the password rather than taking one.
-    pattern: shortPasswordFlag,
-    rewrite: (text) => redactArguments(text, shortPasswordFlag)
+    // `mysql -p secret`, `sshpass -p secret`. A path is kept, and so is a
+    // flag: `mysql -p --database x` prompts for the password rather than
+    // taking one. Only under a command whose `-p` is a password: to `mkdir`
+    // and `ssh` it is a path and a port, and a permanent row keeps those.
+    pattern: commandShortPasswordFlag,
+    rewrite: (text) => redactArguments(text, commandShortPasswordFlag)
   },
   {
+    id: "attached-password-flag",
+    // `mysql -psecret`, under the same commands.
+    pattern: commandAttachedPasswordFlag,
+    rewrite: (text) => redactArguments(text, commandAttachedPasswordFlag)
+  }
+]
+
+/**
+ * The rules a diagnostic reads further than a durable row does, by the id of
+ * the default rule each one replaces.
+ */
+const diagnosticOverrides: Readonly<Record<string, ReadonlyArray<Rule>>> = {
+  "bearer-token": [{
+    id: "bearer-token",
+    pattern: /\bBearer\s+[A-Za-z0-9._~+/-]{4,}=*/gi,
+    replace: "Bearer [REDACTED_TOKEN]"
+  }],
+  "basic-authorization": [{
+    id: "basic-authorization",
+    // The scheme's own spellings take any token; a lowercase `basic` is prose
+    // (`a basic example`) unless its token decodes to a user:password pair.
+    pattern: /\bbasic\s+[A-Za-z0-9+/]{4,}={0,2}/gi,
+    rewrite: (text) =>
+      text.replace(/\b(basic)\s+([A-Za-z0-9+/]{4,}={0,2})/gi, (match: string, scheme: string, token: string) => {
+        if (scheme === "Basic" || scheme === "BASIC") return "Basic [REDACTED_TOKEN]"
+        try {
+          return atob(token).includes(":") ? "Basic [REDACTED_TOKEN]" : match
+        } catch {
+          return match
+        }
+      })
+  }],
+  assignment: [{
+    id: "assignment",
+    pattern: diagnosticNames,
+    rewrite: (text) => redactValues(text, diagnosticNames, { header: false, diagnostic: true })
+  }],
+  "authorization-header": [
+    {
+      id: "authorization-header",
+      // A lookbehind-free superset lets the compiled prefilter skip ordinary prose.
+      pattern: /(?:proxy-)?authorization|(?:set-)?cookies?/gi,
+      rewrite: (text) => redactValues(text, diagnosticHeaderNames, { header: true, diagnostic: true })
+    },
+    {
+      id: "bearer-or-basic",
+      // A token shorter than the default rules' minimum. A lowercase `basic` is
+      // prose ("a basic example"), so only the scheme's own spellings count.
+      pattern: /(\b(?:[Bb]earer|BEARER|Basic|BASIC)\s+)(?!\[REDACTED)[^\s,;"'\\]+/g,
+      replace: "$1[REDACTED]"
+    }
+  ],
+  "short-password-flag": [{
+    id: "short-password-flag",
+    // Under any command: `mkdir -p build` loses a word of context.
+    pattern: shortPasswordFlag,
+    rewrite: (text) => redactArguments(text, shortPasswordFlag)
+  }],
+  "attached-password-flag": [{
     id: "attached-password-flag",
     // `-psecret`. The single-dash words that start with `p` and are not a
     // password, `find -print` and the compilers' `-pthread` among them, are kept.
     pattern: attachedPasswordFlag,
     rewrite: (text) => redactArguments(text, attachedPasswordFlag)
-  }
-]
+  }]
+}
+
+/**
+ * The rules for a diagnostic: {@link defaultRules} read further, and the one
+ * spelling too broad for a durable row.
+ *
+ * A log line, a stderr message, and an error handed to a remote caller are
+ * read once, so a false positive costs a word of context. A journal row is
+ * permanent, so the same false positive destroys data. Credentials win that
+ * trade wherever the text names one: an authorization or cookie header in any
+ * scheme, bare URL userinfo (`https://token@host`), a signed query parameter,
+ * `curl -u user:pass` and the `-p` password of `mysql` and `sshpass` are in
+ * {@link defaultRules} and so in every durable row. What stays on the
+ * diagnostic side is reach, not a credential shape: an assignment's bare value
+ * runs over several words, an unclosed value runs to the end of the text, a
+ * value may sit on the line after its name, a `-p` flag's value is a password
+ * under any command, and a `Bearer` or `Basic` word is followed by a token of
+ * any length and shape, which in prose (`Basic authentication`) is ordinary
+ * text.
+ *
+ * @since 1.0.0
+ * @category constants
+ */
+export const diagnosticRules: ReadonlyArray<Rule> = defaultRules.flatMap((rule) =>
+  diagnosticOverrides[rule.id] ?? [rule]
+)
 
 // Contextual Smithers redaction. Compare effective rule shapes so custom
 // policies and rules that reuse a built-in name retain their own behavior.

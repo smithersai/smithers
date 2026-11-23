@@ -124,9 +124,18 @@ one journal stream directly and keeps that stream's wake.
 ## What the server refuses
 
 - A request whose cursor set names one run twice, with `invalid_request`.
-- A single entry whose own encoded size exceeds `maxFrameBytes`, with
-  `frame_too_large`. A page that merely sums past the ceiling is truncated and
-  reports `done: false` instead.
+- A single entry whose own encoded size exceeds `maxFrameBytes`. A run-scoped
+  read or subscription fails with `frame_too_large`. A workspace read or
+  subscription withholds that one run below the entry, keeps serving the other
+  runs, and logs a warning naming the run, the sequence and the size. A page
+  that merely sums past the ceiling is truncated and reports `done: false`
+  instead.
+
+The journal refuses such an entry at the write: `SqlJournal`'s `maxEntryBytes`
+defaults to 2 MiB less 64 KiB, so every entry it admits fits a default frame.
+If you raise `maxFrameBytes`, raise `maxEntryBytes` with it. The withheld-run
+path is for rows written before that bound, or under a larger one.
+
 - Every non-branch read for an anonymous caller, with `unauthorized`.
 - A subscription whose credential has expired, which ends the stream with
   `unauthorized`.

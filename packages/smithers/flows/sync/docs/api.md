@@ -162,8 +162,13 @@ order instead let a producer that stayed one page ahead take every slot of every
 page, so `done` never became true and a bootstrapping follower never reached the
 runs behind it. The frame ceiling is a page budget rather than a verdict on the
 read, so a page whose entries sum past it reports `done: false`; only a SINGLE
-entry whose own encoded size exceeds the ceiling is refused with
-`frame_too_large`, because no page can ever carry it.
+entry whose own encoded size exceeds the ceiling is refused, because no page
+can ever carry it. What it refuses is its own run. A run-scoped read fails with
+`frame_too_large`. A workspace read stops serving that run below the entry and
+serves every other run: the page keeps the entries it holds, the run's cursor
+stays where it was, and the run does not hold `done` at `false`. A workspace
+subscription does the same and does not read that run again. The server logs a
+warning that names the run, the sequence and the size.
 
 Cursors are unique per run. A request that names one run twice is refused with
 `invalid_request` on both `read` and `subscribe`, because the read position and

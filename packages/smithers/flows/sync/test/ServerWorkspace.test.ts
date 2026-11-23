@@ -343,16 +343,17 @@ describe("RunCatalog", () => {
       expect(response.done).toBe(false)
     }))
 
-  it.effect("refuses the whole read when the first run carries an entry no page can hold", () =>
+  // One run's entry that no page can hold ends that run's share and nothing
+  // else (#4558): failing the read for it failed every other run with it, on
+  // every retry, because the cursors never moved.
+  it.effect("serves the other runs when the first run carries an entry no page can hold", () =>
     Effect.gen(function*() {
       const first = runId("aaa-huge")
       const second = runId("zzz-small")
-      const failure = yield* (
+      const response = yield* (
         Effect.gen(function*() {
           const server = yield* SyncServer.makeLiveWith({ maxFrameBytes: 512 })
-          return yield* Effect.flip(
-            server.read({ protocolVersion: 1, scope: { _tag: "Workspace" }, cursors: [], limit: 8 })
-          )
+          return yield* server.read({ protocolVersion: 1, scope: { _tag: "Workspace" }, cursors: [], limit: 8 })
         }).pipe(
           Effect.provide(
             Layer.mergeAll(
@@ -367,6 +368,8 @@ describe("RunCatalog", () => {
         )
       )
 
-      expect(failure.code).toBe("frame_too_large")
+      expect(response.entries.map((value) => `${value.runId}:${value.seq}`)).toEqual(["zzz-small:0"])
+      expect(response.cursors).toEqual([{ generation: 0, runId: "zzz-small", afterSeq: 0 }])
+      expect(response.done).toBe(true)
     }))
 })

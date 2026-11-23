@@ -156,7 +156,7 @@ describe("Redaction", () => {
   it("redacts credential-shaped strings anywhere in the payload", () => {
     expect(
       Redaction.redact({
-        headers: ["Authorization: Bearer abcdefghijkl"],
+        headers: ["Authorization: Bearer abcdefghijkl9"],
         note: "use sk-proj-abcdefghij when calling",
         env: "ANTHROPIC_API_KEY=shhh"
       })
@@ -193,7 +193,7 @@ describe("Redaction", () => {
     [
       "session cookie",
       "Set-Cookie: session=4f3c2b1a; Path=/; HttpOnly",
-      `Set-Cookie: session=${Redaction.placeholder}; Path=/; HttpOnly`
+      `Set-Cookie: ${Redaction.placeholder}`
     ]
   ])("redacts an incident-derived %s", (_name, source, expected) => {
     expect(Redaction.redact(source)).toBe(expected)
@@ -546,7 +546,7 @@ describe("Redaction", () => {
 
     const own = {
       ignored: true,
-      toJSON: () => ({ note: "Bearer abcdefgh" })
+      toJSON: () => ({ note: "Bearer abcdefgh9" })
     }
     expect(Redaction.redact(own)).toEqual({ note: "Bearer [REDACTED_TOKEN]" })
 
@@ -627,8 +627,8 @@ describe("Redaction", () => {
       yield* journal.emitDurableUnfenced(
         input(run, sourceId("action"), "action.completed", {
           apiKey: "sk-ant-api03-abcdefgh",
-          prompt: "call with Bearer abcdefghijkl"
-        }, { authorization: "Bearer abcdefghijkl" })
+          prompt: "call with Bearer abcdefghijkl9"
+        }, { authorization: "Bearer abcdefghijkl9" })
       )
       const page = yield* journal.entries({ runId: run, limit: 10 })
       const entry = page.entries[0]!

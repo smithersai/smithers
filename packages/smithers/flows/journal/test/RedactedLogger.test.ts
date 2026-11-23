@@ -182,7 +182,7 @@ describe("RedactedLogger", () => {
     Effect.gen(function*() {
       const recorded = yield* logged(Effect.gen(function*() {
         yield* Effect.logInfo("use sk-proj-abcdefghij when calling")
-        yield* Effect.logInfo("Authorization: Bearer abcdefghijkl")
+        yield* Effect.logInfo("Authorization: Bearer abcdefghijkl9")
         yield* Effect.logInfo("ANTHROPIC_API_KEY=shhh")
       }))
       const text = rendered(recorded)
@@ -190,7 +190,7 @@ describe("RedactedLogger", () => {
       expect(text).toContain("Bearer [REDACTED_TOKEN]")
       expect(text).toContain(`ANTHROPIC_API_KEY=${Redaction.placeholder}`)
       expect(text).not.toContain("sk-proj-abcdefghij")
-      expect(text).not.toContain("Bearer abcdefghijkl")
+      expect(text).not.toContain("Bearer abcdefghijkl9")
       expect(text).not.toContain("=shhh")
     }))
 
@@ -445,10 +445,10 @@ describe("RedactedLogger", () => {
     // A cycle is not exotic once errors carry each other: the walk records
     // what it has seen and hands the original back rather than recurring.
     const inner = new Error("inner token=sk-live-abcdefgh")
-    const outer = new Error("outer Bearer abcdefghijkl", { cause: inner }) as Error & { self?: unknown }
+    const outer = new Error("outer Bearer abcdefghijkl9", { cause: inner }) as Error & { self?: unknown }
     outer.self = outer
     Object.defineProperty(outer, "detail", {
-      get: () => "sent Bearer abcdefghijkl",
+      get: () => "sent Bearer abcdefghijkl9",
       enumerable: true,
       configurable: true
     })
@@ -590,13 +590,13 @@ describe("RedactedLogger", () => {
       const value = {
         at: new Date(0),
         token: "sk-live-abcdefgh",
-        nested: { authorization: "Bearer abcdefghijkl" }
+        nested: { authorization: "Bearer abcdefghijkl9" }
       }
       const message = rendered(yield* logged(Effect.logInfo(value)))
       const annotation = rendered(yield* logged(Effect.logInfo("annotated").pipe(Effect.annotateLogs({ value }))))
       for (const output of [message, annotation]) {
         expect(output).not.toContain("sk-live-abcdefgh")
-        expect(output).not.toContain("Bearer abcdefghijkl")
+        expect(output).not.toContain("Bearer abcdefghijkl9")
         expect(output).toContain("1970-01-01T00:00:00.000Z")
         expect(output).toContain("[REDACTED]")
         expect(output).toContain("authorization: '[REDACTED]'")
@@ -921,7 +921,7 @@ describe("RedactedLogger", () => {
   it.effect("redacts a credential inside a logged structure without flattening it", () =>
     Effect.gen(function*() {
       const recorded = yield* logged(
-        Effect.logInfo("request", { headers: ["Authorization: Bearer abcdefghijkl"], attempt: 2 })
+        Effect.logInfo("request", { headers: ["Authorization: Bearer abcdefghijkl9"], attempt: 2 })
       )
       const structure = recorded.lines.flat().find((value) =>
         typeof value === "object" && value !== null && "attempt" in value
@@ -954,7 +954,7 @@ describe("RedactedLogger", () => {
     // the rules to read and the delegate is bound straight through.
     redacting.groupEnd()
     redacting.clear()
-    redacting.log("Bearer abcdefghijkl")
+    redacting.log("Bearer abcdefghijkl9")
     expect(rendered(recorded)).toBe("Bearer [REDACTED_TOKEN]")
   })
 
@@ -964,7 +964,7 @@ describe("RedactedLogger", () => {
     // caller-supplied label: `console.count("api_key=sk-abcdefgh")` prints
     // `api_key=sk-abcdefgh: 1`. All four put a credential on the operator's
     // terminal.
-    const secrets = ["TOKEN=dummy-secret", "api_key=sk-abcdefgh", "Bearer abcdefghijkl"]
+    const secrets = ["TOKEN=dummy-secret", "api_key=sk-abcdefgh", "Bearer abcdefghijkl9"]
     for (const label of secrets) {
       const recorded = capture()
       const redacting = RedactedLogger.redactingConsole(recorded.console, Redaction.make())
@@ -975,7 +975,7 @@ describe("RedactedLogger", () => {
       const output = rendered(recorded)
       expect(output).not.toContain("dummy-secret")
       expect(output).not.toContain("sk-abcdefgh")
-      expect(output).not.toContain("abcdefghijkl")
+      expect(output).not.toContain("abcdefghijkl9")
       expect(output).not.toContain(label)
       expect(recorded.lines).toHaveLength(4)
     }
