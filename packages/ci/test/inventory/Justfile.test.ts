@@ -461,6 +461,13 @@ describe("readJustfile exactness", () => {
     expect(features(custom)).toEqual(["interpreter"])
   })
 
+  it("preserves commands less indented than the first line or interpreter", () => {
+    expect(commands(jobOf("r:\n    #!/bin/sh\n  echo intact\n", "r"))).toEqual(["sh -c 'echo intact'"])
+    expect(commands(jobOf("[script]\nr:\n    echo first\n  echo intact\n", "r")))
+      .toEqual(["sh -eu -c 'echo first\necho intact'"])
+    expect(features(jobOf("r:\n  #!/usr/bin/env -S bash -- -e\n  go\n", "r"))).toEqual(["interpreter"])
+  })
+
   it("removes only the shebang's indent from a script", () => {
     const job = jobOf("r:\n  #!/bin/sh\n    cat <<X\n    X\n", "r")
     expect(commands(job)).toEqual([`sh -c ${shellQuote("cat <<X\n  X")}`])

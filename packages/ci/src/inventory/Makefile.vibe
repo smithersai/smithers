@@ -202,7 +202,11 @@ const expandText = (scope: Scope, text: string): string => {
 const words = (text: string): ReadonlyArray<string> => text.split(/\s+/).filter((word) => word !== "")
 
 /** True when the line ends in an odd number of backslashes, which continues it. */
-const continues = (line: string): boolean => /(?:^|[^\\])(?:\\\\)*\\$/.test(line)
+const continues = (line: string): boolean => {
+  let end = line.length
+  while (end > 0 && line[end - 1] === "\\") end--
+  return (line.length - end) % 2 === 1
+}
 
 /** The line up to its comment, with `\#` read as `#`. */
 const withoutComment = (line: string): string => {
@@ -580,10 +584,12 @@ const readLine = (reader: Reader, raw: string, tabbed: boolean, number: number, 
 }
 
 const readRecipeLine = (reader: Reader, header: Header, line: string, number: number): void => {
-  let text = line.slice(1)
-  while (continues(text) && reader.index < reader.lines.length) {
+  let part = line.slice(1)
+  const parts = [part]
+  while (continues(part) && reader.index < reader.lines.length) {
     const next = reader.lines[reader.index++] as string
-    text += `\n${next.startsWith("\t") ? next.slice(1) : next}`
+    part = next.startsWith("\t") ? next.slice(1) : next
+    parts.push(part)
   }
   if (reader.depth > 0) {
     for (const rule of header.rules) {
@@ -591,7 +597,7 @@ const readRecipeLine = (reader: Reader, header: Header, line: string, number: nu
     }
   }
   startRecipe(header)
-  header.lines.push({ text, number })
+  header.lines.push({ text: parts.join("\n"), number })
 }
 
 /** Gives each prerequisite of a rule with a variable of its own the problem: it inherits the variable. */
@@ -632,13 +638,15 @@ const parse = (text: string): Makefile => {
       readRecipeLine(reader, reader.header, line, number)
       continue
     }
-    let raw = line
-    let continued = false
-    while (continues(raw) && reader.index < reader.lines.length) {
-      raw = `${raw.slice(0, -1).trimEnd()} ${(reader.lines[reader.index++] as string).trimStart()}`
-      continued = true
+    let part = line
+    const parts: Array<string> = []
+    while (continues(part) && reader.index < reader.lines.length) {
+      const prefix = part.slice(0, -1).trimEnd()
+      if (parts.length === 0 || prefix !== "") parts.push(prefix)
+      part = (reader.lines[reader.index++] as string).trimStart()
     }
-    readLine(reader, raw, line.startsWith("\t"), number, continued)
+    parts.push(part)
+    readLine(reader, parts.join(" "), line.startsWith("\t"), number, reader.index !== number)
   }
   if (reader.depth > 0) block(makefile, "malformed-file", "a conditional has no endif")
   spreadScoped(makefile)
@@ -767,7 +775,7 @@ const runGoals = (
 ): void => {
   const seen = new Set<string>()
   const pending = [...goals].reverse().map((name) => ({ name, ready: false }))
-  while (pending.length > 0) {
+  while (pending.length > 0 && context.visits <= maxVisits) {
     const { name, ready } = pending.pop() as { name: string; ready: boolean }
     const rule = context.makefile.rules.get(name)
     if (rule === undefined) continue
@@ -878,7 +886,12 @@ const readRuleSteps = (context: Context, job: Draft, rule: Rule, running: Readon
     running: new Set([...running, rule.name])
   }
   if (makefile.oneShell) readOneShell(recipe, rule.recipe)
-  else rule.recipe.forEach((line) => readRecipeStep(recipe, line))
+  else {
+    for (const line of rule.recipe) {
+      readRecipeStep(recipe, line)
+      if (context.visits > maxVisits) break
+    }
+  }
 }
 
 /** Every path given and every directory above one. */
@@ -904,7 +917,7 @@ const readJob = (context: Context, file: string, rule: Rule): Draft => {
     needs: prerequisites.filter((name) => name !== rule.name && makefile.rules.has(name)).map(jobId)
   })
   for (const blocker of makefile.blockers) note(job, blocker.feature, blocker.reason)
-  if (makefile.blockers.length === 0) readRuleSteps({ ...context, visits: 0 }, job, rule, new Set())
+  if (makefile.blockers.length === 0) readRuleSteps(context, job, rule, new Set())
   return job
 }
 

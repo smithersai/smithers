@@ -28,9 +28,10 @@ import {
   type Inventory,
   type Job,
   type Step,
-  type Unsupported
+  type Unsupported,
+  withVariant
 } from "../contract/Inventory.vibe"
-import { type Command, commands, type Word } from "../decompose/Shell.vibe"
+import { type Command, commands, quote, type Word } from "../decompose/Shell.vibe"
 import { withoutSudo } from "./WithoutSudo.vibe"
 
 /**
@@ -220,14 +221,24 @@ const privilege: ReadonlyMap<string, ReadonlyArray<string>> = new Map([
 ])
 
 /** Programs that run the command they are given, and the flags of theirs that take a value. */
-const runners: ReadonlySet<string> = new Set([
-  ...["env", "command", "builtin", "exec", "nice", "ionice", "nohup", "timeout", "stdbuf", "setsid", "chronic", "xargs"]
+const runnerFlags: ReadonlyMap<string, ReadonlyArray<string>> = new Map([
+  ["env", ["-u", "--unset", "-C", "--chdir", "--argv0", "-a"]],
+  ["exec", ["-a"]],
+  ["nice", ["-n", "--adjustment"]],
+  ["ionice", ["-c", "--class", "-n", "--classdata", "-p", "--pid", "-P", "--pgid", "-u", "--uid"]],
+  ["timeout", ["-k", "--kill-after", "-s", "--signal"]],
+  ["stdbuf", ["-i", "--input", "-o", "--output", "-e", "--error"]],
+  ["xargs", [
+    "-a", "--arg-file", "-d", "--delimiter", "-E", "-I", "-L", "--max-lines", "-n", "--max-args",
+    "-P", "--max-procs", "-s", "--max-chars", "--process-slot-var"
+  ]],
+  ["time", ["-f", "--format", "-o", "--output"]],
+  ["command", []], ["builtin", []], ["nohup", []], ["setsid", []], ["chronic", []]
 ])
-const runnerValueFlags: ReadonlyArray<string> = ["-u", "-C", "-S", "-I", "-E", "-d", "-a", "-L", "-s", "-k", "-c", "-p"]
 const shells: ReadonlySet<string> = new Set(["sh", "bash", "dash", "zsh", "ksh"])
 
 /** Words that may stand before a command. */
-const leading: ReadonlySet<string> = new Set(["if", "then", "elif", "else", "do", "while", "until", "!", "{", "time", "coproc"])
+const leading: ReadonlySet<string> = new Set(["if", "then", "elif", "else", "do", "while", "until", "!", "{", "coproc"])
 
 /** How deep commands inside commands are followed. */
 const maxDepth = 8
@@ -357,11 +368,16 @@ const languageRules: ReadonlyMap<string, Rule> = new Map<string, Rule>([
 const programOf = (word: string): string | undefined =>
   !word.includes("/") ? word : word.startsWith("/") ? word.slice(word.lastIndexOf("/") + 1) : undefined
 
+const splitStringFlag = /^(?:-S|--split-string(?:=|$))/
+
 /** What a program that runs another one is given to run, past its flags, assignments, numbers and placeholders. */
-const commandAfter = (args: ReadonlyArray<string>, valueFlags: ReadonlyArray<string>): ReadonlyArray<string> => {
+const commandAfter = (
+  args: ReadonlyArray<string>, valueFlags: ReadonlyArray<string>, splitEnv = false
+): ReadonlyArray<string> => {
   let at = 0
   while (at < args.length) {
     const word = args[at] as string
+    if (splitEnv && splitStringFlag.test(word)) break
     if (valueFlags.includes(word)) at += 2
     else if (isFlag(word) || assignmentOf(word) !== undefined || /^\d+[smhd]?$/.test(word) || word === "{}") at += 1
     else break
@@ -399,7 +415,8 @@ const classify = (
   words: ReadonlyArray<string>,
   env: Readonly<Record<string, string>>,
   depth: number,
-  seen: Seen
+  seen: Seen,
+  input?: string
 ): ReadonlyArray<Change> => {
   let at = 0
   let scope = env
@@ -416,7 +433,7 @@ const classify = (
   if (name === undefined || depth > maxDepth) return []
   const args = words.slice(at + 1)
   seen({ name, args })
-  const inner = (next: ReadonlyArray<string>) => classify(next, scope, depth + 1, seen)
+  const inner = (next: ReadonlyArray<string>) => classify(next, scope, depth + 1, seen, input)
   const options = privilege.get(name)
   if (options !== undefined) {
     const rest = commandAfter(args, options)
@@ -425,12 +442,26 @@ const classify = (
     return within.length > 0 ? within : [run(`${name} ${programOf(rest[0] as string) ?? rest[0]}`)]
   }
   if (name === "su") return [run("su")]
-  if (name === "command" && args.some((word) => word === "-v" || word === "-V")) return []
-  if (runners.has(name)) return inner(commandAfter(args, runnerValueFlags))
+  const flags = runnerFlags.get(name)
+  if (flags !== undefined) {
+    const rest = commandAfter(args, flags, name === "env")
+    const options = args.slice(0, args.length - rest.length)
+    if (name === "command" && options.some((word) => /^-[pVv]*[vV][pVv]*$/.test(word))) return []
+    if (name === "env" && splitStringFlag.test(rest[0] ?? "")) {
+      const attached = (rest[0] as string).replace(/^(?:-S|--split-string=?)/, "")
+      const split = attached || rest[1] || ""
+      const tail = rest.slice(attached ? 1 : 2).map(quote)
+      return scan([split, ...tail].join(" "), scope, depth + 1, seen)
+    }
+    return inner(rest)
+  }
   if (name === "eval") return scan(args.join(" "), scope, depth + 1, seen)
   if (shells.has(name)) {
     const flag = args.findIndex((word) => /^-[A-Za-z]*c[A-Za-z]*$/.test(word))
-    return flag < 0 || args[flag + 1] === undefined ? [] : scan(args[flag + 1] as string, scope, depth + 1, seen)
+    const command = flag < 0
+      ? args.every(isFlag) || args.includes("-s") ? input : undefined
+      : args.slice(flag + 1).find((word) => !isFlag(word))
+    return command === undefined ? [] : scan(command, scope, depth + 1, seen)
   }
   if (name === "find") return findCommands(args).flatMap(inner)
   if (/^python[\d.]*$/.test(name) && args[0] === "-m" && args[1] === "pip") {
@@ -439,6 +470,9 @@ const classify = (
   }
   const pip = /^pip[\d.]*$/.test(name) ? ofPip("pip", args, scope) : undefined
   if (pip !== undefined) return [run(pip)]
+  if (name === "rpm" && args.some((word, index) =>
+    (word === "--eval" || word === "-E") && args[index + 1]?.includes("%(")
+  )) return [run(name)]
   const family = families.get(name)
   const flagged = flagTools.get(name)
   const service = services.get(name)
@@ -459,7 +493,34 @@ const classify = (
   return change === undefined ? [] : [change]
 }
 
-const closingOf = (text: string, start: number, open: string, close: string): number => {
+/**
+ * Closing quote of a shell ANSI-C word starting at the dollar, or the end of the script.
+ *
+ * @category reading
+ * @since 0.1.0
+ */
+export const ansiQuoteEnd = (text: string, start: number): number => {
+  let at = start + 2
+  while (at < text.length && text[at] !== "'") at += text[at] === "\\" ? 2 : 1
+  return at
+}
+
+const escapes: Readonly<Record<string, string>> = {
+  a: "\x07", b: "\b", e: "\x1b", E: "\x1b", f: "\f", n: "\n", r: "\r", t: "\t", v: "\v",
+  "'": "'", '"': '"', "\\": "\\", "?": "?"
+}
+
+/** Decode the escapes inside a dollar-quoted word. A shell word ends at its first zero byte. */
+const ansiWord = (raw: string): string =>
+  raw.replace(/\\(?:[0-7]{1,3}|x[\da-fA-F]{1,2}|u[\da-fA-F]{1,4}|U[\da-fA-F]{1,8}|c[\s\S]|[\s\S])/g, (escape) => {
+    const code = escape.slice(1)
+    if (code.length === 1 && !/[0-7]/.test(code)) return escapes[code] ?? escape
+    if (code[0] === "c") return String.fromCharCode(code.charCodeAt(1) & 31)
+    const value = /^[0-7]/.test(code) ? parseInt(code, 8) & 255 : parseInt(code.slice(1), 16)
+    return value <= 0x10ffff ? String.fromCodePoint(value) : escape
+  }).split("\0", 1)[0] as string
+
+const closingOf = (text: string, start: number, open: string, close: string, inDoubleQuotes = false): number => {
   let depth = 0
   let quote: string | undefined
   for (let at = start; at < text.length; at++) {
@@ -467,11 +528,17 @@ const closingOf = (text: string, start: number, open: string, close: string): nu
     if (char === "\\" && quote !== "'") at += 1
     else if (quote !== undefined) {
       if (char === quote) quote = undefined
-    } else if (char === "'" || char === '"' || char === "`") quote = char
+    } else if (char === "$" && text[at + 1] === "'" && !inDoubleQuotes) at = ansiQuoteEnd(text, at)
+    else if ((char === "'" && !inDoubleQuotes) || char === '"' || char === "`") quote = char
     else if (char === open) depth += 1
     else if (char === close && --depth === 0) return at
   }
   return text.length
+}
+
+const singleQuoteEnd = (text: string, start: number): number => {
+  const end = text.indexOf("'", start + 1)
+  return end < 0 ? text.length : end
 }
 
 /** Every simple command of a script, as its words with quotes removed, and what the commands inside it do. */
@@ -480,32 +547,39 @@ const scan = (
   env: Readonly<Record<string, string>>,
   depth: number,
   seen: Seen,
-  data = false
+  data?: "document" | "quoted-parameter" | "parameter"
 ): ReadonlyArray<Change> => {
   const found: Array<Change> = []
   const documents: Array<{ mark: string; strip: boolean; expand: boolean; shell: boolean }> = []
   let words: Array<string> = []
   let word: string | undefined
   let redirected = false
+  let hereString = false
+  let input: string | undefined
   const add = (text: string) => {
     word = (word ?? "") + text
   }
   const endWord = () => {
-    if (word !== undefined && !redirected) words.push(word)
+    if (word !== undefined && hereString) {
+      input = word
+      hereString = false
+    } else if (word !== undefined && !redirected) words.push(word)
     if (word !== undefined) redirected = false
     word = undefined
   }
   const endCommand = () => {
     endWord()
     redirected = false
-    found.push(...classify(words, env, depth, seen))
+    found.push(...classify(words, env, depth, seen, input))
+    input = undefined
+    hereString = false
     words = []
   }
-  const nested = (inner: string) => {
-    if (depth < maxDepth) found.push(...scan(inner, env, depth + 1, seen))
+  const nested = (inner: string, asData?: typeof data) => {
+    if (depth < maxDepth) found.push(...scan(inner, env, depth + 1, seen, asData))
   }
   /** Reads what starts with `$` at `at` into the word and returns where it ends. */
-  const dollar = (at: number): number => {
+  const dollar = (at: number, inDoubleQuotes = false): number => {
     const next = script[at + 1]
     if (next === "(") {
       const end = closingOf(script, at + 1, "(", ")")
@@ -514,7 +588,12 @@ const scan = (
       return end + 1
     }
     if (next === "{") {
-      const end = closingOf(script, at + 1, "{", "}")
+      const end = closingOf(script, at + 1, "{", "}", inDoubleQuotes)
+      if (end === script.length) {
+        add("${")
+        return at + 2
+      }
+      nested(script.slice(at + 2, end), inDoubleQuotes ? "quoted-parameter" : "parameter")
       add(script.slice(at, end + 1))
       return end + 1
     }
@@ -530,20 +609,28 @@ const scan = (
     return end + 1
   }
   let at = 0
+  let quotedData = false
   while (at < script.length) {
     const char = script[at] as string
     if (data) {
       if (char === "\\") at += 2
-      else if (char === "$" && script[at + 1] === "(") at = dollar(at)
+      else if (data === "parameter" && char === '"') {
+        quotedData = !quotedData
+        at += 1
+      } else if (data === "parameter" && !quotedData && char === "'") at = singleQuoteEnd(script, at) + 1
+      else if (char === "$") at = dollar(at, data !== "parameter" || quotedData)
       else if (char === "`") at = backtick(at)
       else at += 1
       word = undefined
     } else if (char === "\\") {
       if (script[at + 1] !== "\n") add(script[at + 1] ?? "")
       at += 2
+    } else if (char === "$" && script[at + 1] === "'") {
+      const end = ansiQuoteEnd(script, at)
+      add(ansiWord(script.slice(at + 2, end)))
+      at = end + 1
     } else if (char === "'") {
-      const close = script.indexOf("'", at + 1)
-      const end = close < 0 ? script.length : close
+      const end = singleQuoteEnd(script, at)
       add(script.slice(at + 1, end))
       at = end + 1
     } else if (char === "\"") {
@@ -554,7 +641,7 @@ const scan = (
         if (inner === "\\") {
           add(script[at + 1] ?? "")
           at += 2
-        } else if (inner === "$") at = dollar(at)
+        } else if (inner === "$") at = dollar(at, true)
         else if (inner === "`") at = backtick(at)
         else {
           add(inner)
@@ -572,6 +659,11 @@ const scan = (
       // A number right before it names a stream, and the word after it is where the stream goes.
       if (word !== undefined && /^\d+$/.test(word)) word = undefined
       endWord()
+      if (script.startsWith("<<<", at)) {
+        hereString = true
+        at += 3
+        continue
+      }
       const document = /^<<(-?)[ \t]*(?:'([^'\n]+)'|"([^"\n]+)"|(\\?)([\w.-]+))(?=[ \t\n;&|)]|$)/.exec(script.slice(at))
       if (document !== null) {
         const mark = (document[2] ?? document[3] ?? document[5]) as string
@@ -605,7 +697,7 @@ const scan = (
             end = at
           }
           if ((doc.shell || doc.expand) && depth < maxDepth) {
-            found.push(...scan(script.slice(start, end), env, depth + 1, seen, !doc.shell))
+            found.push(...scan(script.slice(start, end), env, depth + 1, seen, doc.shell ? undefined : "document"))
           }
         }
       }
@@ -682,13 +774,23 @@ const findsProgramsByEnv = ["PATH", "BASH_ENV", "ENV"]
  * `PATH`, in its script or among its variables, may find another `sudo` than the stand-in a replay puts first, so
  * its steps are read as written.
  */
-const changesOfStep = (job: Job): (step: Step) => ReadonlyArray<Change> => {
-  const asWritten = job.steps.some((step) =>
+const changesOfStep = (steps: ReadonlyArray<Step>): (step: Step) => ReadonlyArray<Change> => {
+  const asWritten = steps.some((step) =>
     findsPrograms.test(step.command) || findsProgramsByEnv.some((name) => Object.hasOwn(step.env, name))
     || findsProgramsByEnv.some((name) => step.runner?.includes(`\nexport ${name}=`) === true)
   )
   return (step) => changesIn(asWritten ? step.command : withoutSudo(step.command), step.env)
 }
+
+/**
+ * Reads each matrix leg's steps together, retaining the result while releasing expanded runner scripts.
+ * A job without a matrix is read once.
+ *
+ * @category reading
+ * @since 0.1.0
+ */
+export const acrossVariants = <A>(job: Job, read: (steps: ReadonlyArray<Step>) => A): ReadonlyArray<A> =>
+  job.matrix.length === 0 ? [read(job.steps)] : job.matrix.map((variant) => read(job.steps.map((step) => withVariant(step, variant))))
 
 /**
  * A job with one `changes-machine` entry for each thing its steps do to the
@@ -698,7 +800,7 @@ const changesOfStep = (job: Job): (step: Step) => ReadonlyArray<Change> => {
  * @since 0.1.0
  */
 export const markChanges = <J extends Job>(job: J): J => {
-  const lines = linesFor(job.steps.flatMap(changesOfStep(job)))
+  const lines = linesFor(acrossVariants(job, (steps) => steps.flatMap(changesOfStep(steps))).flat())
   return lines.length === 0
     ? job
     : { ...job, unsupported: [...job.unsupported, ...lines.map((detail) => ({ feature: changesMachine, detail }))] }
@@ -809,10 +911,16 @@ export const installsOf = (command: string): ReadonlyArray<Install> | undefined 
 const installSteps = (job: Job) => {
   const blocks = blockers(job).filter((entry) => entry.feature !== docker)
   if (blocks.length === 0 || blocks.some((entry) => entry.feature !== changesMachine)) return undefined
-  const changesOf = changesOfStep(job)
-  const steps = job.steps.map((step) => {
-    const changes = changesOf(step).length > 0
-    return { step, changes, installs: changes ? installsOf(step.command) : undefined }
+  const variants = acrossVariants(job, (steps) => {
+    const changesOf = changesOfStep(steps)
+    return steps.map((step) => changesOf(step).length === 0 ? null : installsOf(step.command))
+  })
+  // A source step is removed for every leg together, only if each leg solely installs packages.
+  const steps = job.steps.map((step, index) => {
+    const legs = variants.map((variant) => variant[index])
+    const changes = legs.some((leg) => leg !== null)
+    const installs = legs.every((leg) => leg != null) ? legs.flat() : undefined
+    return { step, changes, installs }
   })
   return steps.some((entry) => entry.changes && entry.installs === undefined) ? undefined : steps
 }

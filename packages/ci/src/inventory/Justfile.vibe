@@ -286,10 +286,13 @@ const parse = (text: string): Justfile => {
       else attributes.push(...read)
     } else {
       // A recipe header may continue on the next line.
+      const parts: Array<string> = []
       while (trimmed.endsWith("\\") && !trimmed.includes(":=") && index < lines.length) {
-        trimmed = `${trimmed.slice(0, -1)} ${(lines[index++] as string).trim()}`
+        parts.push(trimmed.slice(0, -1))
+        trimmed = (lines[index++] as string).trim()
       }
-      const read = readTopLine(justfile, trimmed, attributes)
+      parts.push(trimmed)
+      const read = readTopLine(justfile, parts.join(" "), attributes)
       if (read === "unreadable") justfile.unreadable.push(number)
       if (typeof read === "object") {
         const body: Array<BodyLine> = []
@@ -335,19 +338,23 @@ const interpolate = (text: string, values: ReadonlyMap<string, string | undefine
  */
 const logicalLines = (body: ReadonlyArray<BodyLine>, ignoreComments: boolean): ReadonlyArray<BodyLine> => {
   const lines: Array<BodyLine> = []
-  let open: BodyLine | undefined
+  const parts: Array<string> = []
+  let number = 0
   for (const line of body) {
     const text = line.text.trimStart()
-    if (open === undefined && (text === "" || (ignoreComments && text.startsWith("#")))) continue
-    const joined: BodyLine = open === undefined ? { text, number: line.number } : { ...open, text: open.text + text }
-    if (joined.text.endsWith("\\")) {
-      open = { ...joined, text: joined.text.slice(0, -1) }
-    } else {
-      lines.push(joined)
-      open = undefined
+    if (parts.length === 0) {
+      if (text === "" || (ignoreComments && text.startsWith("#"))) continue
+      number = line.number
+    }
+    if (text.endsWith("\\")) parts.push(text.slice(0, -1))
+    else {
+      parts.push(text)
+      lines.push({ text: parts.join(""), number })
+      parts.length = 0
     }
   }
-  return (open === undefined ? lines : [...lines, open]).filter((line) => !line.text.startsWith("#"))
+  if (parts.length > 0) lines.push({ text: parts.join(""), number })
+  return lines.filter((line) => !line.text.startsWith("#"))
 }
 
 interface RecipeContext {
@@ -377,10 +384,13 @@ const fillIn = (context: RecipeContext, where: string, text: string): string | u
 const readScript = (
   context: RecipeContext,
   start: string,
-  indent: number,
   lines: ReadonlyArray<BodyLine>
 ): void => {
   const { cwd, env, job, recipe } = context
+  let indent = Infinity
+  for (const line of recipe.body) {
+    if (line.text.trim() !== "") indent = Math.min(indent, indentOf(line))
+  }
   const script = fillIn(context, recipe.name, lines.map((line) => line.text.slice(indent)).join("\n").trim())
   if (script !== undefined) {
     addStep(job, { where: recipe.name, command: `${start} -c ${shellQuote(script)}`, cwd, env })
@@ -395,7 +405,7 @@ const shebangStart = (shebang: string): string | undefined => {
   const match = /^#!\s*\/usr\/bin\/env\s+-S\s+(?:\S*\/)?(bash|sh)((?:\s+-[\w-]+)*)\s*$/.exec(shebang)
     ?? /^#!\s*\/usr\/bin\/env\s+(?:\S*\/)?(bash|sh)()\s*$/.exec(shebang)
     ?? /^#!\s*\/(?:[\w.-]+\/)*(bash|sh)(\s+-[\w-]+)?\s*$/.exec(shebang)
-  return match === null ? undefined : `${match[1]}${(match[2] ?? "").replace(/\s+/g, " ")}`
+  return match === null || /(?:^|\s)--(?:\s|$)/.test(shebang) ? undefined : `${match[1]}${(match[2] ?? "").replace(/\s+/g, " ")}`
 }
 
 const indentOf = (line: BodyLine): number => line.text.length - line.text.trimStart().length
@@ -452,12 +462,12 @@ const readBody = (context: RecipeContext, script: Attribute | undefined): void =
   const first = recipe.body.find((line) => line.text.trim() !== "")
   if (script !== undefined) {
     const start = scriptStart(justfile, job, recipe, script.args)
-    if (start !== undefined && first !== undefined) readScript(context, start, indentOf(first), recipe.body)
+    if (start !== undefined && first !== undefined) readScript(context, start, recipe.body)
   } else if (first?.text.trim().startsWith("#!")) {
     const shebang = first.text.trim()
     const start = shebangStart(shebang)
     if (start === undefined) return note(job, "interpreter", `${recipe.name} runs in ${shebang.slice(2).trim()}`)
-    readScript(context, start, indentOf(first), recipe.body.slice(recipe.body.indexOf(first) + 1))
+    readScript(context, start, recipe.body.slice(recipe.body.indexOf(first) + 1))
   } else {
     for (const line of logicalLines(recipe.body, justfile.ignoreComments)) readLine(context, line)
   }

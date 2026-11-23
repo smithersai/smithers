@@ -1274,6 +1274,12 @@ const sort = (
 ): { readonly kept: ReadonlyArray<Job>; readonly left: ReadonlyArray<NotReplayed> } => {
   const jobs = ciJobs(inventory)
   const byId = new Map(jobs.map((job) => [job.id, job]))
+  const trees = treeOrder(jobs)
+  const prerequisites = new Map(jobs.map((job) => [job.id, new Set(job.needs)]))
+  // Each recipe starts with the tree left by its predecessor, including siblings of a grouping recipe.
+  for (const ids of trees.values()) {
+    for (let i = 1; i < ids.length; i++) prerequisites.get(ids[i]!)!.add(ids[i - 1]!)
+  }
   const dependents = new Map<string, Array<Job>>()
   const pending = new Map<string, number>()
   const ready: Array<Job> = []
@@ -1285,9 +1291,10 @@ const sort = (
   }
   for (const job of jobs) {
     if (own.get(job.id)!.length > 0) continue
-    pending.set(job.id, job.needs.length)
-    if (job.needs.length === 0) ready.push(job)
-    for (const id of job.needs) {
+    const needs = prerequisites.get(job.id)!
+    pending.set(job.id, needs.size)
+    if (needs.size === 0) ready.push(job)
+    for (const id of needs) {
       const next = dependents.get(id)
       if (next === undefined) dependents.set(id, [job])
       else next.push(job)
@@ -1305,7 +1312,7 @@ const sort = (
   const runnable = new Set(ready.map((job) => job.id))
   const reasonsOf = (job: Job): ReadonlyArray<Unsupported> => [
     ...own.get(job.id)!,
-    ...job.needs.filter((id) => !runnable.has(id)).map((id) => ({
+    ...[...prerequisites.get(job.id)!].filter((id) => !runnable.has(id)).map((id) => ({
       feature: needsLeftOut,
       detail: byId.has(id) ? `${job.id} needs ${id}, which is not replayed` : `${job.id} needs ${id}, which is missing`
     }))
@@ -1336,7 +1343,7 @@ const sort = (
   const kept = jobs.filter((job) => job.steps.length > 0 && runnable.has(job.id))
   // A tree's jobs occupy their original slots in dependency order.
   const queues = new Map<string, Array<Job>>()
-  for (const [tree, ids] of treeOrder(jobs)) {
+  for (const [tree, ids] of trees) {
     const ordered = ids.map((id) => byId.get(id)!).filter((job) => runnable.has(job.id) && job.steps.length > 0)
     queues.set(tree, ordered.reverse())
   }

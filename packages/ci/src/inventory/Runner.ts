@@ -11,7 +11,7 @@
  * `/tmp/smithers-ci-runner-<user id>`, named after the repository's place and
  * the job. The job's first step starts the state anew, as a runner empties
  * `RUNNER_TEMP` when a job starts, writes the shared functions there for the
- * steps after it, and removes the state of any checkout that is gone. A job
+ * steps after it, and reclaims abandoned state on a shared machine. A job
  * that is told its own temporary directory (`Inventory.jobTemporaryVariable`),
  * as a job on a machine of its own is, keeps its state there: no other job's
  * state is beside it, and it is gone when the job ends, so the job's next
@@ -49,8 +49,7 @@ import {
   toText,
   truthy,
   type Value,
-  type Variable,
-  variablesOf
+  type Variable
 } from "./Expression.ts"
 import type { Files } from "./Glob.vibe"
 
@@ -242,14 +241,16 @@ const library = (job: JobFacts): string =>
     `}`,
     `__ci_folded() { __ci_plain "$1$2"; __ci_upper "$1"; __a=$__u; __ci_upper "$2"; __b=$__u; }`,
     `__ci_same() { [ "$1" = "$2" ] && return 0; __ci_folded "$1" "$2"; [ "$__a" = "$__b" ]; }`,
-    `__ci_true() { case $1 in s) [ -n "$2" ];; f|n0) return 1;; *) return 0;; esac; }`,
+    `__ci_true() { case $1 in s) [ -n "$2" ];; f|n0|n-0|nNaN) return 1;; *) return 0;; esac; }`,
+    // Map tagged infinities to decimal overflow, which also compares correctly to a numeric string like "1e999".
     `__ci_number() {`,
-    `  case $1 in t) __number=1;; f) __number=0;; n*) __number=\${1#n};;`,
+    `  case $1 in t) __number=1;; f) __number=0;; nInfinity) __number=1e9999;; n-Infinity) __number=-1e9999;; n*) __number=\${1#n};;`,
     `    s) __number=$2; __number=\${__number#"\${__number%%[![:space:]]*}"}; __number=\${__number%"\${__number##*[![:space:]]}"}; __number=\${__number:-0};;`,
     `  esac`,
     `}`,
     `__ci_equal() {`,
     `  if [ "$1" = s ] && [ "$3" = s ]; then __ci_same "$2" "$4"; return; fi`,
+    `  case $1/$3 in nNaN/*|*/nNaN) return 1;; esac`,
     `  __ci_number "$1" "$2"; __left=$__number; __ci_number "$3" "$4"`,
     `  CI_LEFT="$__left" CI_RIGHT="$__number" LC_ALL=C awk '`,
     `    function number(x,    base,i,d,n) {`,
@@ -359,7 +360,7 @@ const library = (job: JobFacts): string =>
     `    if [ -f "$__state/steps/$__k/vars" ]; then`,
     `      while IFS= read -r __n; do`,
     `        case " $1 " in *" $__n "*) continue;; esac`,
-    `        case $__n in GITHUB_*|RUNNER_*) continue;; esac`,
+    `        case $__n in GITHUB_*|RUNNER_*|__*|IFS) continue;; esac`,
     `        IFS= read -r -d '' __v < "$__state/steps/$__k/env.$__n"`,
     `        export "$__n=$__v"`,
     `      done < "$__state/steps/$__k/vars"`,
@@ -628,11 +629,30 @@ interface Emitter {
 
 const matrixPrefix = "matrix:"
 
-/** True for an expression that reads the matrix and nothing else decided while the job runs. */
-const overMatrix = (node: Residual, emitter: Emitter): boolean => {
-  const read = variablesOf(node)
-  return emitter.variants.length > 0 && read.length > 0 && read.every((found) => found.id.startsWith(matrixPrefix))
+/** The expression tree is immutable. Repeated tests of a subtree share its analysis. */
+const byNode = <A>(analyze: (node: Residual) => A): (node: Residual) => A => {
+  const cache = new WeakMap<Residual, A>()
+  return (node) => {
+    const seen = cache.get(node)
+    if (seen !== undefined) return seen
+    const result = analyze(node)
+    cache.set(node, result)
+    return result
+  }
 }
+
+/** A subtree's highest dependency: literals (0), matrix values (1), or other runtime values (2). */
+const dependencyOf: (node: Residual) => number = byNode((node) => {
+  if (node.kind === "literal") return 0
+  if (node.kind === "variable") return node.variable.id.startsWith(matrixPrefix) ? 1 : 2
+  if (node.kind === "not") return dependencyOf(node.operand)
+  if (node.kind === "binary") return Math.max(dependencyOf(node.left), dependencyOf(node.right))
+  return node.args.reduce((highest, arg) => Math.max(highest, dependencyOf(arg)), 0)
+})
+
+/** True for an expression that reads the matrix and nothing else decided while the job runs. */
+const overMatrix = (node: Residual, emitter: Emitter): boolean =>
+  emitter.variants.length > 0 && dependencyOf(node) === 1
 
 /** A matrix value as GitHub holds it: a key written as a number or a boolean gives one, and a key a variant lacks is `null`. */
 const matrixValue = (found: Variable, variant: Readonly<Record<string, string>>): Value => {
@@ -661,7 +681,7 @@ const falsyKinds: ReadonlyArray<Kind> = ["empty", "null", "false", "other"]
  * `x == 'y' && 'one' || 'two'` is always text. A number, a list and a variable that is a number or a boolean on
  * GitHub are `other`: their text is known and what they are is not.
  */
-const kindsOf = (node: Residual): ReadonlyArray<Kind> => {
+const kindsOf: (node: Residual) => ReadonlyArray<Kind> = byNode((node): ReadonlyArray<Kind> => {
   if (node.kind === "literal") {
     const held = node.value
     if (typeof held === "string") return [held === "" ? "empty" : "text"]
@@ -677,7 +697,7 @@ const kindsOf = (node: Residual): ReadonlyArray<Kind> => {
   if (node.kind !== "binary" || (node.operator !== "&&" && node.operator !== "||")) return ["true", "false"]
   const kept = node.operator === "&&" ? falsyKinds : truthyKinds
   return [...new Set([...kindsOf(node.left).filter((kind) => kept.includes(kind)), ...kindsOf(node.right)])]
-}
+})
 
 /**
  * Whether the residual can only return text or a missing value.
@@ -725,20 +745,8 @@ const tested = (node: Residual, compared: boolean, emitter: Emitter): Residual =
  * Writes the shell lines that work a residual out. Returns the number of
  * the pair `__v<n>` and `__t<n>` that holds the result.
  */
-const compile = (node: Residual, emitter: Emitter): number => {
-  if (!overMatrix(node, emitter)) return compileInShell(node, emitter)
-  if (kindsOf(node).includes("other")) return compileByVariant(node, emitter)
-  const inner: Emitter = { ...emitter, lines: [] }
-  try {
-    const n = compileInShell(node, inner)
-    emitter.count = inner.count
-    emitter.lines.push(...inner.lines)
-    return n
-  } catch {
-    // A shell cannot finish it: GitHub's rules can, one variant at a time.
-    return compileByVariant(node, emitter)
-  }
-}
+const compile = (node: Residual, emitter: Emitter): number =>
+  overMatrix(node, emitter) ? compileByVariant(node, emitter) : compileInShell(node, emitter)
 
 const assignment = (n: number, held: Value): string =>
   `__v${n}=${quote(toText(held))}; __t${n}=${
@@ -766,15 +774,15 @@ const compileByVariant = (node: Residual, emitter: Emitter): number => {
       throw new Refused("a list or mapping is used with a value decided while the job runs")
     }
     const set = assignment(n, held)
-    arms.set(set, [
-      ...(arms.get(set) ?? []),
-      quote(
-        keys.map((key) => {
-          const text = Object.hasOwn(variant, key) ? variant[key]! : ""
-          return `|${text.replaceAll("%", "%25").replaceAll("|", "%7C")}`
-        }).join("")
-      )
-    ])
+    const pattern = quote(
+      keys.map((key) => {
+        const text = Object.hasOwn(variant, key) ? variant[key]! : ""
+        return `|${text.replaceAll("%", "%25").replaceAll("|", "%7C")}`
+      }).join("")
+    )
+    const patterns = arms.get(set)
+    if (patterns === undefined) arms.set(set, [pattern])
+    else patterns.push(pattern)
   }
   emitter.lines.push(
     "__pattern=",
@@ -783,6 +791,7 @@ const compileByVariant = (node: Residual, emitter: Emitter): number => {
     ),
     "case \"$__pattern\" in",
     ...[...arms].map(([set, patterns]) => `  ${patterns.join("|")}) ${set} ;;`),
+    `  *) __ci_fail "the step's matrix values match no known variant" ;;`,
     "esac"
   )
   return n
@@ -1033,7 +1042,11 @@ export const write = (job: JobFacts, step: StepFacts, command: string): Written 
       `if [ -n "\${${jobTemporaryVariable}-}" ] && [ -w "$${jobTemporaryVariable}" ]; then __place=; [ /tmp -ef "$${jobTemporaryVariable}" ] || __base=$${jobTemporaryVariable}; fi`,
       // Private machines already isolate each invocation. On a shared machine, use the workflow run and
       // attempt, or the local invoking process when the workflow host supplies neither.
-      `__invocation=; if [ -n "$__place" ]; then __id=GITHUB_RUN_''ID; __attempt=GITHUB_RUN_''ATTEMPT; __invocation=\${!__id:-$PPID}.\${!__attempt-}; fi`,
+      `__invocation=; __owner=$PPID`,
+      `if [ -n "$__place" ]; then`,
+      `  __id=GITHUB_RUN_''ID; __attempt=GITHUB_RUN_''ATTEMPT; __invocation=\${!__id:-$PPID}.\${!__attempt-}`,
+      `  [ -z "\${!__id-}" ] || __owner="workflow $PPID"`,
+      `fi`,
       `unset ${jobTemporaryVariable}; [ -w "$__base" ] || __base=\${TMPDIR:-/tmp}`,
       `__base=$__base/smithers-ci-runner-$(id -u)`,
       `mkdir -m 700 -- "$__base" 2>/dev/null; [ ! -L "$__base" ] && [ -d "$__base" ] && [ -O "$__base" ] && case $(ls -ld -- "$__base" 2>/dev/null) in drwx------*) ;; *) false;; esac || ${
@@ -1068,9 +1081,20 @@ export const write = (job: JobFacts, step: StepFacts, command: string): Written 
               // The state of a checkout that is gone, such as a replay's copy, is removed with the first step of a
               // job. A state whose place cannot be read is being written by another step and is left alone.
               `for __d in "$__base"/*; do`,
-              `  [ -f "$__d/root" ] || continue`,
+              `  [ ! -L "$__d" ] && [ -f "$__d/root" ] || continue`,
               `  __r=; { IFS= read -r -d '' __r < "$__d/root"; } 2>/dev/null`,
-              `  [ -z "$__r" ] || [ -d "$__r" ] || __ci_gone "$__d"`,
+              `  [ -n "$__r" ] || continue`,
+              `  if [ ! -d "$__r" ]; then __ci_gone "$__d"; continue; fi`,
+              // Old runners recorded only the checkout. Age out an inactive legacy state on the same schedule.
+              `  if [ ! -f "$__d/owner" ]; then`,
+              `    [ -z "$(find "$__d/root" -mtime +6 -print 2>/dev/null)" ] || __ci_gone "$__d"; continue`,
+              `  fi`,
+              `  { IFS= read -r __lease < "$__d/owner"; } 2>/dev/null || continue`,
+              `  __pid=\${__lease#workflow }; [[ $__pid =~ ^[1-9][0-9]*$ ]] || continue`,
+              `  kill -0 "$__pid" 2>/dev/null && continue`,
+              // A workflow run ID can outlive a step's parent. Give it a week since its last step.
+              `  [ "$__lease" = "$__pid" ] || [ -n "$(find "$__d/owner" -mtime +6 -print 2>/dev/null)" ] || continue`,
+              `  __ci_gone "$__d"`,
               `done`,
               `__ci_gone "$__state" || ${fail("could not remove $__state")}`,
               `mkdir -p -- "$__state" || exit 1`,
@@ -1100,6 +1124,9 @@ export const write = (job: JobFacts, step: StepFacts, command: string): Written 
             : started("__state"))
         ]),
       `[ -f "$__state/lib.sh" ] || ${fail("the steps before this one have not run in $__root")}`,
+      `if [ -n "$__place" ]; then`,
+      `  printf '%s\\n' "$__owner" > "$__state/owner.$$" && mv -f -- "$__state/owner.$$" "$__state/owner" || exit 1`,
+      `fi`,
       `. "$__state/lib.sh" || exit 1`,
       `__ci_start`,
       ...(step.python === true ? python(fail) : []),

@@ -26,7 +26,7 @@ const rate = Schema.Finite.check(Schema.isGreaterThanOrEqualTo(0), Schema.isLess
 export const Features = Schema.Struct({
   extensions: Schema.Array(Schema.String),
   fileChanges: Schema.Struct({ d3: count, d14: count, d56: count }),
-  failureRates: Schema.Struct({ d7: rate, d14: rate, d28: rate, d56: Schema.Finite }),
+  failureRates: Schema.Struct({ d7: rate, d14: rate, d28: rate, d56: rate }),
   project: Schema.String,
   testCount: count,
   graphDistance: Schema.Int.check(Schema.isGreaterThanOrEqualTo(-1))

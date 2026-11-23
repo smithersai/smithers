@@ -10,6 +10,7 @@ import {
   rmSync,
   statSync,
   symlinkSync,
+  utimesSync,
   writeFileSync
 } from "node:fs"
 import { tmpdir } from "node:os"
@@ -287,14 +288,15 @@ describe("write", () => {
       [
         `printf 'PLAIN=one=two\\n\\nHEREDOC<<EOF\\nline 1\\n\\nline 3\\nEOF\\n' >> "$GITHUB_ENV"`,
         `printf 'ARROW=x<<y\\nOWN=from-env\\nGITHUB_SHA=bad\\nRUNNER_ARCH=bad\\nEMPTY=\\n' >> "$GITHUB_ENV"`,
+        `printf '__SAVED=ignored\\nIFS=ignored\\n' >> "$GITHUB_ENV"`,
         `printf 'LAST<<END\\nno newline\\nEND' >> "$GITHUB_ENV"`
       ].join("\n")
     )
     const stdout = pass(
-      { own: ["OWN", "OTHER"] },
+      { own: ["OWN", "OTHER"], fills: [["@IFS@", named("process:IFS")]] },
       [
         `printf '[%s]\\n' "$PLAIN" "$HEREDOC" "$ARROW" "$OWN" "$RUNNER_ARCH" "$LAST" "\${EMPTY-unset}"`,
-        `test "$GITHUB_SHA" != bad`
+        `test "$GITHUB_SHA" != bad && test -z "\${__SAVED+x}" && test '@IFS@' != ignored`
       ].join("\n"),
       { env: { OWN: "mine" } }
     )
@@ -807,6 +809,61 @@ describe("write", () => {
       expect(pass({ before: ["STEP"] }, "printf %s \"$HELD\"", invocation("22"))).toBe("22")
     })
 
+    it("reclaims a dead local invocation and expires an inactive workflow after a week", () => {
+      const start = (id?: string) => {
+        const env = id === undefined ? {} : { GITHUB_RUN_ID: id }
+        return join(pass({ first: true, job: "build" }, "echo \"$RUNNER_TEMP\"", { env }).trim(), "..")
+      }
+      const local = start()
+      const legacy = start("20")
+      rmSync(join(legacy, "owner"))
+      const workflow = start("21")
+      expect(readFileSync(join(local, "owner"), "utf8").trim()).toBe(String(process.pid))
+      expect(readFileSync(join(workflow, "owner"), "utf8").trim()).toBe(`workflow ${process.pid}`)
+      const exited = spawnSync("sh", ["-c", "true"]).pid
+      writeFileSync(join(local, "owner"), `${exited}\n`)
+      writeFileSync(join(workflow, "owner"), `workflow ${exited}\n`)
+
+      start("22")
+      expect(existsSync(local)).toBe(false)
+      expect(existsSync(workflow)).toBe(true)
+      expect(existsSync(legacy)).toBe(true)
+      const old = new Date(Date.now() - 8 * 24 * 60 * 60 * 1_000)
+      utimesSync(join(workflow, "owner"), old, old)
+      utimesSync(join(legacy, "root"), old, old)
+      start("23")
+      expect(existsSync(workflow)).toBe(false)
+      expect(existsSync(legacy)).toBe(false)
+    })
+
+    it("keeps concurrently started workflow states while both jobs sweep a dead owner", () => {
+      const state = join(pass({ first: true, job: "build" }, "echo \"$RUNNER_TEMP\"").trim(), "..")
+      writeFileSync(join(state, "owner"), `${spawnSync("sh", ["-c", "true"]).pid}\n`)
+      const command = "echo \"$RUNNER_TEMP\""
+      const written = write(job(), { ...defaults, after: undefined }, command)
+      if ("problem" in written) throw new Error(written.problem)
+      const both = spawnSync("bash", [
+        "-c",
+        [
+          "GITHUB_RUN_ID=first bash -c \"$1\" > \"$TMPDIR/first\" & a=$!",
+          "GITHUB_RUN_ID=second bash -c \"$1\" > \"$TMPDIR/second\" & b=$!",
+          "wait \"$a\" && wait \"$b\""
+        ].join("\n"),
+        "runs",
+        script({ command, runner: written.text })
+      ], {
+        cwd: at.repo,
+        env: { HOME: at.home, TMPDIR: at.tmp, PATH: process.env.PATH },
+        encoding: "utf8"
+      })
+      expect(both.stderr).toBe("")
+      expect(both.status).toBe(0)
+      const states = ["first", "second"].map((id) => readFileSync(join(at.tmp, id), "utf8").trim())
+      expect(new Set(states).size).toBe(2)
+      expect(states.every((temp) => existsSync(temp))).toBe(true)
+      expect(existsSync(state)).toBe(false)
+    })
+
     it("removes the state of a checkout that is gone when the next job starts", () => {
       const gone = place(1)
       const temp = pass({ first: true }, `echo "$RUNNER_TEMP"`, { cwd: gone.repo }).trim()
@@ -897,6 +954,24 @@ describe("write", () => {
     expect(write(job(), { ...defaults, fills: [["value", named("hash:invalid")]] }, "true")).toEqual({
       problem: "the expression carries malformed runner data"
     })
+  })
+
+  it("analyzes a repeated operand a bounded number of times per occurrence", () => {
+    let reads = 0
+    const name = { id: "process:VALUE", name: "VALUE", typed: false, nullable: false }
+    const operand: Residual = {
+      kind: "variable",
+      get variable() {
+        reads += 1
+        return name
+      }
+    }
+    let chain = operand as Residual
+    const length = 200
+    for (let index = 1; index < length; index += 1) chain = binary("||", chain, operand)
+    const written = write(job({ variants: [{}] }), { ...defaults, condition: chain }, "true")
+    expect("text" in written).toBe(true)
+    expect(reads).toBeLessThan(4 * length)
   })
 
   it("refuses an expression nested too deep to finish in a shell", () => {
@@ -1373,6 +1448,11 @@ describe("write", () => {
     it("compares typed operands with runtime text using their numeric values", () => {
       for (
         const [held, runtime, expected] of [
+          [Number.NaN, "NaN", false],
+          [Infinity, "1e9999", true],
+          [-Infinity, "-1e9999", true],
+          [Infinity, "-1e9999", false],
+          [Infinity, "Infinity", false],
           [20, "20", true],
           [20, "0", false],
           [20, "0x14", true],
@@ -1426,9 +1506,23 @@ describe("write", () => {
       expect(ranAt({ os: "mac", go: "24" })).toBe("smithers-ci: not run, its condition is false")
     })
 
-    it("stays in the shell when a shell can finish it", () => {
-      const written = write(matrix, { ...defaults, fills: [["x", binary("==", os, literal("mac"))]] }, "true")
-      expect("text" in written ? written.text : written.problem).not.toContain("case '|os=")
+    it("treats NaN and negative zero as false in a step condition", () => {
+      for (const n of [Number.NaN, -0]) {
+        const variant = { n: String(n) }
+        const facts = job({ matrixKeys: ["n"], variants: [variant], typedVariants: [{ n }] })
+        expect(pass({ first: true, condition: named("matrix:n", false, true) }, "echo ran", at(variant, facts)))
+          .toBe("smithers-ci: not run, its condition is false\n")
+      }
+    })
+
+    it("compares non-ASCII matrix text for each variant and refuses an unknown variant", () => {
+      const facts = job({ matrixKeys: ["os"], variants: [{ os: "Étape" }, { os: "Test" }] })
+      const condition = binary("==", os, literal("étape"))
+      expect(pass({ first: true, condition }, "echo ran", at({ os: "Étape" }, facts))).toBe("ran\n")
+      expect(pass({ first: true, condition }, "echo ran", at({ os: "Test" }, facts))).toContain("condition is false")
+      const unknown = run({ first: true, condition }, "echo ran", at({ os: "other" }, facts))
+      expect(unknown.status).toBe(1)
+      expect(unknown.stderr).toContain("matrix values match no known variant")
     })
 
     it.each<[string, Residual, string]>([

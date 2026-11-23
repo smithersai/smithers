@@ -142,6 +142,8 @@ describe("a step that only sends the job's results out", () => {
     )
     expect(env.unkept).toEqual([{ uses: "codecov/codecov-action@v5", why }])
     expect(env.kept).toBeUndefined()
+    const named = jobOf(main("      - uses: codecov/codecov-action@v5\n        name: Report ${{ env.REPORT }}"))
+    expect(named.unkept).toEqual([{ uses: "codecov/codecov-action@v5", why }])
     // The step costs only itself: nothing keeps the job from being replayed.
     expect(blockers(env)).toEqual([])
     const condition = jobOf(main(`

@@ -489,7 +489,7 @@ const shellStart = (shell: string | undefined): ReadonlyArray<string> | undefine
   if (shell === "bash") return ["bash", "--noprofile", "--norc", "-eo", "pipefail"]
   if (shell === "sh") return ["sh", "-e"]
   const template = /^(bash|sh)((?: [-\w]+)*) \{0\}$/.exec(shell)
-  return template === null
+  return template === null || shell.split(" ").includes("--")
     ? undefined
     : [template[1] as string, ...(template[2] as string).split(" ").filter((flag) => flag !== "")]
 }
@@ -976,6 +976,7 @@ const resultActionOf = (uses: string, inputs: unknown) => {
 /** Every text of a kept step that the workflow `apply` writes. */
 const keptTexts = (step: KeptStep): ReadonlyArray<string> => [
   step.if ?? "",
+  step.name ?? "",
   ...Object.values(step.with ?? {}),
   ...Object.values(step.env ?? {}),
   step.continueOnError ?? "",

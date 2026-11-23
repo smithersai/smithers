@@ -214,3 +214,27 @@ describe("a machine that keeps a job's programs until the job ends", () => {
     expect(read(workspacePath)).not.toContain("ci.yml-mac")
   })
 })
+
+it.each(["-0", "-s 0", "-SIGNULL", "-s NULL", "-n 0", "--signal=0"])(
+  "keeps a process after a %s health check",
+  (flag) => {
+    expect(leftRunningIn(`observe & pid=$!\nkill ${flag} "$pid"`)).toEqual(["observe"])
+  }
+)
+
+it("applies the final EXIT trap, including one set before the process starts", () => {
+  expect(leftRunningIn("trap 'kill \"$pid\"' EXIT\nobserve & pid=$!")).toEqual([])
+  expect(leftRunningIn("observe & pid=$!\ntrap 'kill -0 \"$pid\"' 0")).toEqual(["observe"])
+  expect(leftRunningIn("observe & pid=$!\ntrap 'kill \"$pid\"' INT")).toEqual(["observe"])
+  expect(leftRunningIn("trap 'kill %1' EXIT\ntrap - EXIT\nobserve &")).toEqual(["observe"])
+  expect(leftRunningIn("trap -- 'kill %1' EXIT\ntrap -p EXIT\nobserve &")).toEqual([])
+  expect(leftRunningIn("printf $'can\\'t &'; observe &")).toEqual(["observe"])
+  expect(leftRunningIn("x=$(printf $'can\\'t )'); observe &")).toEqual(["observe"])
+})
+
+it("lists programs left running in any leg once per source step", () => {
+  const matrix = ["true", "alpha &", "bravo &", "alpha &"].map((cmd) => ({ cmd }))
+  expect(markLeftRunning({ ...job(["${{ matrix.cmd }}", "report"], ["Serve"]), matrix }).unsupported).toEqual([
+    { feature: leftRunning, detail: "\"Serve\" leaves alpha and bravo running" }
+  ])
+})

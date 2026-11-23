@@ -255,15 +255,21 @@ describe("repositoryName", () => {
   it.each([
     ["https://github.com/owner/name.git", "owner/name"],
     ["https://x-access-token:SECRET@github.com/owner/name", "owner/name"],
+    ["https://user:pass@host/group/owner/name.git?branch=alpha/beta#fragment", "owner/name"],
+    ["file:///owner/name.git", "owner/name"],
+    ["https:host/owner/name.git?query=value", "owner/name"],
     ["git@github.com:owner/name.git", "owner/name"],
     ["ssh://git@host:22/group/owner/name.git", "owner/name"]
   ])("reads %s", (remote, name) => {
     expect(repositoryName(remote, "fallback")).toBe(name)
   })
 
-  it.each([[""], ["/local/path"], ["https://host/one"]])("falls back for %j", (remote) => {
-    expect(repositoryName(remote, "fallback")).toBe("fallback")
-  })
+  it.each([[""], ["/local/path"], ["https://host/one"], ["https://["], ["https://host?next=owner/repo"]])(
+    "falls back for %j",
+    (remote) => {
+      expect(repositoryName(remote, "fallback")).toBe("fallback")
+    }
+  )
 })
 
 describe("secrets", () => {

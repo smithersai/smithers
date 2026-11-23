@@ -20,6 +20,34 @@ import {
 const fixture = (name: string): unknown =>
   JSON.parse(readFileSync(new URL(`./fixtures/${name}`, import.meta.url), "utf8"))
 
+describe("diagnostics", () => {
+  it("matches complete diagnostic fields and bounds very large fields", () => {
+    const message = "E-extra preE E2 [E]"
+    expect(Command.errorText({ message, code: "E" })).toBe(message)
+    expect(Command.errorText({ message: "file E-long", code: "E" })).toBe("file E-long (code: E)")
+    expect(Command.errorText(Object.assign(new RangeError("read failed"), { path: "x".repeat(40_000) }))).toBe(
+      `read failed (RangeError, path: ${"x".repeat(300)}…)`
+    )
+  })
+
+  it("redacts credentials with raw delimiters and secret query parameters", () => {
+    for (const delimiter of ["/", "?", "#"]) {
+      expect(Command.errorLine(`fetch https://user:pass${delimiter}tail@host/repo?access_token=value&label=public#tag`))
+        .toBe("fetch https://host/repo?access_token=[redacted]&label=public#tag")
+    }
+    expect(Command.errorLine("https://host:443/path@name?password=value")).toBe(
+      "https://host:443/path@name?password=[redacted]"
+    )
+  })
+
+  it("distinguishes absent prerequisites from skipped ones in persisted inventory details", () => {
+    expect(Reasons.reasonsSentence([
+      { feature: "needs", detail: "test needs build, which is not replayed" },
+      { feature: "needs", detail: "test needs check, which is missing" }
+    ])).toBe("needs build, which is not replayed; needs check, which is missing")
+  })
+})
+
 describe("contract 1: run record", () => {
   it("decodes the real rc.18 workspace-targets run: 721 targets, no cache hits", () => {
     const record = Schema.decodeUnknownSync(RunRecord.RunRecord)(fixture("run-record.rc18-workspace-targets.json"))
@@ -516,6 +544,19 @@ describe("contract 5: replay report", () => {
 })
 
 describe("contract 6: selection", () => {
+  it("bounds the 56-day failure rate inclusively", () => {
+    const valid = (d56: number) =>
+      Schema.is(Selection.Features)({
+        extensions: [],
+        fileChanges: { d3: 0, d14: 0, d56: 0 },
+        failureRates: { d7: 0, d14: 0, d28: 0, d56 },
+        project: "",
+        testCount: 0,
+        graphDistance: -1
+      })
+    expect([-0.01, 0, 0.5, 1, 1.01].map(valid)).toEqual([false, true, true, true, false])
+  })
+
   const rows = Schema.decodeUnknownSync(Schema.Array(Selection.Row))(fixture("selection-rows.example.json"))
   const score = (commit: string, target: string, value: number): Selection.Score => ({ commit, target, score: value })
 
@@ -917,10 +958,11 @@ describe("contract changes, fourth round: what is CI, and splitting a step", () 
       "justfile:fmt",
       "justfile:ci"
     ])
-    // `tidy` and `fmt` form a dependency cycle, so both are blocked and only `test` remains runnable.
-    const narrowed = Inventory.ci(zig)
-    expect(narrowed.jobs.map((entry) => entry.id)).toEqual(["justfile:test"])
-    expect(narrowed.jobs.map((entry) => entry.needs)).toEqual([[]])
+    // The tidy/fmt cycle also blocks test, which runs after tidy in the same checkout.
+    expect(Inventory.ci(zig).jobs).toEqual([])
+    expect(Inventory.notReplayed(zig).find((entry) => entry.job === "justfile:test")?.reasons).toEqual([
+      { feature: "needs", detail: "justfile:test needs justfile:tidy, which is not replayed" }
+    ])
   })
 
   it("finds no CI in a repository with only scripts, and never runs a job that does not exit", () => {
@@ -1192,6 +1234,18 @@ describe("contract changes, sixth round: a job that cannot be reproduced is neve
     expect(Inventory.ci(just).jobs.map((entry) => entry.id)).toEqual(
       ["install", "lint", "build", "test"].map((id) => `justfile:${id}`)
     )
+    const blocked = decode({
+      ...just,
+      jobs: just.jobs.map((entry) =>
+        entry.id === "justfile:lint"
+          ? { ...entry, unsupported: [{ feature: "docker", detail: "runs docker" }] }
+          : entry
+      )
+    })
+    expect(Inventory.ci(blocked).jobs.map((entry) => entry.id)).toEqual(["justfile:install"])
+    expect(Inventory.notReplayed(blocked).find((entry) => entry.job === "justfile:build")?.reasons).toEqual([
+      { feature: "needs", detail: "justfile:build needs justfile:lint, which is not replayed" }
+    ])
     // A job of another tree between them keeps its place, and a need on a job of another tree orders nothing.
     const script = {
       ...job("package.json:ci", [], ["npm test"]),

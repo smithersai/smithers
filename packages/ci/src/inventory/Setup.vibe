@@ -235,5 +235,12 @@ export const readSetup = (uses: string, inputs: unknown): Setup | undefined => {
   const tools = name === "" ? listed(given, ref) : toolsOf(action, name, given, ref)
   if (tools.some((entry) => !validToolName(entry.name))) return { tools: [], problem: "names an invalid tool" }
   if (!modeled.has(action)) return { tools, problem: "has unmodeled setup behavior" }
+  for (const key of Object.keys(given)) {
+    if (!/(?:^|-)version-file$/.test(key) || input(given, key) === undefined) continue
+    const versionedTool = key === "version-file" ? name : key.slice(0, -"-version-file".length)
+    if (!tools.some((entry) => entry.name === versionedTool && entry.version !== undefined)) {
+      return { tools, problem: `reads its tool version from a file (${key})` }
+    }
+  }
   return { tools, ...alsoDoes(action, given) }
 }

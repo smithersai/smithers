@@ -51,8 +51,10 @@ export effect function toolbox(tools: Readonly<Record<string, string>>) {
   const path = try Path.Path
   const spawner = try ChildProcessSpawner
   const directory = try fs.makeTempDirectoryScoped()
-  const bash = try spawner.string(ChildProcess.make("bash", ["-c", "command -v bash"]))
-  try fs.symlink(bash.trim(), path.join(directory, "bash"))
+  for (const utility of ["bash", "head"]) {
+    const found = try spawner.string(ChildProcess.make("bash", ["-c", 'type -P "$1"', "fixture", utility]))
+    try fs.symlink(found.trim(), path.join(directory, utility))
+  }
   for (const [name, printed] of Object.entries(tools)) {
     const program = path.join(directory, name)
     const script = printed.startsWith("version:")

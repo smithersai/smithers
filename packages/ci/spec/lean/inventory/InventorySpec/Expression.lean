@@ -790,6 +790,10 @@ def finish (node : Residual) (knownVariable : Variable → Value) : Finished :=
   -- A value is all the functions read, so what stops them is always a problem.
   | .error (.secret name) => .problem name
 
+/-- Whether the generated runner should execute a step for these concrete variable values. -/
+def runnerCondition (knownVariable : Variable → Value) (node : Residual) : Except Stop Bool :=
+  (valueOf knownVariable node).map truthy
+
 /-! ## Text with expressions in it -/
 
 /-- Where an expression ends: the text before the first `}}` outside a string, and the text after it. -/

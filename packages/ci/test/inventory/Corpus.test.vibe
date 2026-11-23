@@ -409,21 +409,22 @@ it.layer(NodeServices.layer)("a first run on the shape of a public repository", 
       })
     })
 
-  it.effect("click: a setup action on no list means its tool, which the machine has", () =>
+  it.effect("click: an unresolved file version and an action with no command are listed", () =>
     effect {
       const linux = try firstRun(click, "linux")
       const bare = try firstRun(click, "linux", { python3: "Python 3.12.3" })
       try Effect.try(() => {
         expect(linux.refusal).toBeUndefined()
-        expect(linux.replayed).toEqual(["pre-commit.yaml:main", "tests.yaml:typing"])
+        expect(linux.replayed).toEqual(["pre-commit.yaml:main"])
         // A third-party action that is no setup action still has no command to run.
-        expect(linux.listed).toEqual([["zizmor.yaml:zizmor", "uses"]])
+        expect(linux.listed).toEqual([["tests.yaml:typing", "uses"], ["zizmor.yaml:zizmor", "uses"]])
+        expect(linux.details.some((detail) => detail.includes("python-version-file"))).toBe(true)
         expect(linux.versions).toEqual(["pre-commit.yaml:main asks for python 3.14; this machine has python 3.12.3"])
         // Without uv the jobs are not run, and the answer names what to install.
         expect(bare.refusal).toBe([
           "0 of 3 CI jobs can be reproduced on this machine",
           "  pre-commit.yaml:main  needs uv, which this machine does not have; install it and run smithers-ci again",
-          "  tests.yaml:typing     needs uv, which this machine does not have; install it and run smithers-ci again",
+          "  tests.yaml:typing     uses the action actions/setup-python@v7, which Smithers CI does not run",
           "  zizmor.yaml:zizmor    uses the action zizmorcore/zizmor-action@v0.6.0, which Smithers CI does not run"
         ].join("\n"))
       })

@@ -27,6 +27,10 @@ const features = (job: Job) => job.unsupported.map((entry) => entry.feature)
 const details = (job: Job) => job.unsupported.map((entry) => entry.detail)
 
 describe("readWorkflow jobs", () => {
+  it("rejects an end-of-options marker before the shell script", () => {
+    expect(features(jobOf(withSteps("      - run: echo ok\n        shell: bash -- {0}")))).toContain("shell")
+  })
+
   it("reads a job's steps, needs, triggers, runner and names", () => {
     const { jobs } = read(`
 name: CI

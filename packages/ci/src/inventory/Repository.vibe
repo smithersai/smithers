@@ -13,7 +13,9 @@
  * @since 0.1.0
  */
 export const repositoryName = (remote: string, fallback: string): string => {
-  const path = /^[a-z][a-z0-9+.-]*:\/\/[^/]+\/(.+)$/i.exec(remote)?.[1] ?? /^[^/:]+:(.+)$/.exec(remote)?.[1]
+  const path = /^(?:https?:|[a-z][a-z0-9+.-]*:\/\/)/i.test(remote)
+    ? URL.parse(remote)?.pathname
+    : /^[^/:]+:(.+)$/.exec(remote)?.[1]
   const parts = (path ?? "").replace(/\.git$/, "").split("/").filter((part) => part !== "")
   return parts.length < 2 ? fallback : parts.slice(-2).join("/")
 }

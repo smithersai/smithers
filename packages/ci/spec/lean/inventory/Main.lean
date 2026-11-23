@@ -136,13 +136,20 @@ def texts (json : Json) (name : String) : Except String (List String) := do
   (← items json name).mapM (·.getStr?)
 
 def answer (request : Json) : Except String Json := do
-  match ← text request "op" with
+  let op ← text request "op"
+  match op with
   | "evaluate" => return encodeEvaluated (evaluate (← text request "text") (← field request "scope" >>= decodeScope))
-  | "finish" =>
+  | "finish" | "runnerCondition" =>
     let knownValues ← (← items request "known").mapM fun entry => do
       let (id, held) ← pair entry
       pure (← id.getStr?, ← decodeValue held)
-    match finish (← field request "residual" >>= decodeResidual) (fun read => (knownValues.lookup read.id).getD .null) with
+    let node ← field request "residual" >>= decodeResidual
+    let known := fun (read : Variable) => (knownValues.lookup read.id).getD .null
+    if op == "runnerCondition" then
+      match runnerCondition known node with
+      | .ok yes => return Json.bool yes
+      | .error (.problem why) | .error (.secret why) => throw why
+    match finish node known with
     | .ok held => return Json.mkObj [("kind", "ok"), ("value", encodeValue held)]
     | .problem why => return Json.mkObj [("kind", "problem"), ("why", why)]
   | "settled" => return encodeOption Json.bool (settled (← field request "residual" >>= decodeResidual))

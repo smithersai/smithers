@@ -296,8 +296,13 @@ const fieldText = (value: unknown, depth: number): string | undefined => {
 }
 
 /** Whether `words` hold `text` as a whole: a code, a path or a name, never the middle of a longer one. */
-const holds = (words: string, text: string): boolean =>
-  new RegExp(`(?<![\\w-])${text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![\\w-])`).test(words)
+const holds = (words: string, text: string): boolean => {
+  if (text.length > longest) return false
+  for (let at = words.indexOf(text); at !== -1; at = words.indexOf(text, at + 1)) {
+    if (!/[\w-]/.test(words.charAt(at - 1)) && !/[\w-]/.test(words.charAt(at + text.length))) return true
+  }
+  return false
+}
 
 /**
  * What an object says about itself: its words, then its kind and each field
@@ -311,7 +316,9 @@ const said = (value: object, depth: number): string | undefined => {
   for (const [key, field] of Object.entries(value)) {
     if (unsaid.has(key) || /authorization|cookie|token|secret|pass(?:word|wd)|api[-_]?key|headers|credentials/i.test(key)) continue
     const text = fieldText(field, depth)
-    if (text !== undefined && (words === undefined || !holds(words, text))) fields.push(`${key}: ${text}`)
+    if (text !== undefined && (words === undefined || !holds(words, text))) {
+      fields.push(`${key}: ${text.length > longest ? limited(redact(text)) : text}`)
+    }
   }
   const named = kind !== undefined && (words === undefined || !holds(words, kind)) ? [kind, ...fields] : fields
   if (words === undefined) return named.length === 0 ? undefined : named.join(", ")
@@ -341,11 +348,18 @@ export const errorText = (cause: unknown): string => {
   }
 }
 
-/** Match each URL authority once; keep its host and port and everything after the authority. */
-const credential = /([a-z][a-z0-9+.-]{0,31}:\/\/)([^\s/?#]*)/gi
+/** Also recognize a password containing a raw path, query or fragment delimiter before its final @. */
+const credential = /([a-z][a-z0-9+.-]{0,31}:\/\/)([^\s:/?#@[\]]+:(?!\d+[/?#])[^\s/?#@]*[/?#][^\s]*@|[^\s/?#]*)/gi
+const querySecret = /([?&](?:[\w.-]*(?:token|secret|password|passwd|signature|credential|api[-_]?key)|sig|key|auth)=)[^\s&#]*/gi
+
+const redact = (text: string): string => text
+  .replace(credential, (_, prefix: string, authority: string) => prefix + authority.slice(authority.lastIndexOf("@") + 1))
+  .replace(querySecret, "$1[redacted]")
+  .replace(/\b(Bearer|Basic)\s+[A-Za-z0-9+/.=_~-]+/gi, "$1 [redacted]")
 
 /** The longest error a line quotes. */
 const longest = 300
+const limited = (text: string): string => text.length > longest ? `${text.slice(0, longest)}…` : text
 
 /**
  * What went wrong, in one line: {@link errorText}, with no URL's user name or
@@ -355,11 +369,7 @@ const longest = 300
  * @since 0.1.0
  */
 export const errorLine = (cause: unknown): string => {
-  const line = errorText(cause)
-    .replace(credential, (_, prefix: string, authority: string) => prefix + authority.slice(authority.lastIndexOf("@") + 1))
-    .replace(/\b(Bearer|Basic)\s+[A-Za-z0-9+/.=_~-]+/gi, "$1 [redacted]")
-    .replace(/\s+/g, " ").trim()
-  return line.length > longest ? `${line.slice(0, longest)}…` : line
+  return limited(redact(errorText(cause)).replace(/\s+/g, " ").trim())
 }
 
 /**

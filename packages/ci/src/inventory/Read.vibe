@@ -17,6 +17,8 @@ import { parseYaml } from "./Actions.vibe"
 import { eventFilesOf, type Facts } from "./Contexts.vibe"
 import { assemble, fileProblem, type Parsed } from "./Draft.vibe"
 import { readWorkflow } from "./GithubActions.vibe"
+import { hostPath } from "./HostPath.ts"
+import { machinePath, thisMachine } from "./Tools.ts"
 import { readJustfile } from "./Justfile.vibe"
 import { readMakefile } from "./Makefile.vibe"
 import {
@@ -29,7 +31,6 @@ import {
 } from "./PackageJson.vibe"
 import { repositoryName } from "./Repository.vibe"
 import { readToolFile, toolFiles } from "./Toolchains.vibe"
-import { thisMachine } from "./Tools.ts"
 import { readTurbo } from "./Turbo.vibe"
 import { isRecord, normalizeDirectory } from "./Values.vibe"
 import { gitArguments } from "../replay/Git.vibe"
@@ -64,10 +65,18 @@ const notARepository = (root: string): Failure => ({
   part: "inventory"
 })
 
-effect function git(root: string, args: ReadonlyArray<string>) {
+interface Git {
+  readonly root: string
+  readonly executable: string
+  readonly path: string
+}
+
+effect function git(repo: Git, args: ReadonlyArray<string>) {
   const spawner = try ChildProcessSpawner
   return scoped(effect {
-    const handle = try spawner.spawn(ChildProcess.make("git", gitArguments(["-C", root, ...args]), { stderr: "ignore" }))
+    const handle = try spawner.spawn(ChildProcess.make(repo.executable, gitArguments(["-C", repo.root, ...args]), {
+      env: { PATH: repo.path }, extendEnv: true, stderr: "ignore"
+    }))
     const [text, code] = try all([Stream.mkString(Stream.decodeText(handle.stdout)), handle.exitCode], { concurrency: 2 })
     return Number(code) === 0 ? text : undefined
   }) catch () => undefined
@@ -240,30 +249,30 @@ effect function readLocal(tree: Tree, texts: ReadonlyArray<string>) {
  * The branch a replayed commit is on: the one the remote names as its default, else the one checked out.
  * `undefined` when neither is known, and then an expression that reads it leaves its job out.
  */
-effect function defaultBranch(root: string) {
-  const remote = try git(root, ["symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD"])
-  const branch = remote === undefined ? try git(root, ["symbolic-ref", "--quiet", "--short", "HEAD"]) : remote.slice(remote.indexOf("/") + 1)
+effect function defaultBranch(repo: Git) {
+  const remote = try git(repo, ["symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD"])
+  const branch = remote === undefined ? try git(repo, ["symbolic-ref", "--quiet", "--short", "HEAD"]) : remote.slice(remote.indexOf("/") + 1)
   return branch?.trim()
 }
 
 /** What is known of the repository besides its files: its name, and the branch a replayed commit is on. */
-effect function known(root: string, repository: string) {
+effect function known(repo: Git, repository: string) {
   return {
     // A name with no owner is the directory's, taken when the repository has no remote.
     ...(repository.includes("/") ? { repository } : { directory: repository }),
-    defaultBranch: try defaultBranch(root)
+    defaultBranch: try defaultBranch(repo)
   } satisfies Facts
 }
 
-effect function readWorkflows(tree: Tree, repository: string) {
+effect function readWorkflows(tree: Tree, facts: Facts) {
   const directory = ".github/workflows"
   const loaded: Array<readonly [string, Loaded]> = []
   for (const name of try list(tree, directory)) {
     if (/\.ya?ml$/.test(name)) loaded.push([`${directory}/${name}`, try load(tree, `${directory}/${name}`)])
   }
   const local = try readLocal(tree, loaded.flatMap(([, file]) => file.kind === "text" ? [file.text] : []))
-  const facts: Facts = { ...(try known(tree.root, repository)), read: (path) => local.get(path) }
-  return loaded.map(([file, found]) => parsedOf(file, found, (text) => readWorkflow(file, text, facts)))
+  const workflowFacts: Facts = { ...facts, read: (path) => local.get(path) }
+  return loaded.map(([file, found]) => parsedOf(file, found, (text) => readWorkflow(file, text, workflowFacts)))
 }
 
 effect function readPackages(tree: Tree, rootPackage: Loaded, runner: Runner) {
@@ -310,10 +319,14 @@ effect function readPackages(tree: Tree, rootPackage: Loaded, runner: Runner) {
 export const read: ReadInventory<FileSystem.FileSystem | Path.Path | ChildProcessSpawner> = effect function (root) {
   const fs = try FileSystem.FileSystem
   const path = try Path.Path
-  const commit = (try git(root, ["rev-parse", "--verify", "HEAD"]))?.trim()
+  const search = hostPath(root, machinePath(thisMachine()))
+  const executable = search.program("git") ?? search.program("git.exe")
+  if (executable === undefined) throw notARepository(root)
+  const repo: Git = { root, executable, path: search.path }
+  const commit = (try git(repo, ["rev-parse", "--verify", "HEAD"]))?.trim()
   if (!commit) throw notARepository(root)
-  const remote = try git(root, ["remote", "get-url", "origin"])
-  const changes = try git(root, ["--no-optional-locks", "status", "--porcelain"])
+  const remote = try git(repo, ["remote", "get-url", "origin"])
+  const changes = try git(repo, ["--no-optional-locks", "status", "--porcelain"])
   const canonical = fs.realPath(root) catch () => path.resolve(root)
   const tree: Tree = { fs, path, root: canonical, problems: new Map(), children: new Map() }
   const rootFiles = try list(tree, "")
@@ -330,20 +343,21 @@ export const read: ReadInventory<FileSystem.FileSystem | Path.Path | ChildProces
     }
   }
   const repository = repositoryName(remote?.trim() ?? "", path.basename(path.resolve(root)))
-  parts.push(...try readWorkflows(tree, repository))
+  const facts = try known(repo, repository)
+  parts.push(...try readWorkflows(tree, facts))
   const justfiles = rootFiles.filter((name) => /^\.?justfile$/i.test(name))
   const [justfile] = justfiles
   if (justfiles.length > 1) {
     // Just reports MultipleCandidates before opening any of these files.
     parts.push(fileProblem(".", "unreadable-file", `Just cannot select a Justfile among ${justfiles.join(", ")}`))
   } else if (justfile !== undefined) {
-    parts.push(try readWith(tree, justfile, (text) => readJustfile(justfile, text, thisMachine().host)))
+    parts.push(try readWith(tree, justfile, (text) => readJustfile(justfile, text)))
   }
 
   const makefile = makefileNames.find((name) => rootFiles.includes(name))
   if (makefile !== undefined) {
     // Make skips a recipe or replaces it depending on which files exist.
-    const tracked = try git(root, ["ls-files", "-z"])
+    const tracked = try git(repo, ["ls-files", "-z"])
     if (tracked === undefined) parts.push(fileProblem(makefile, "unreadable-file", "tracked files could not be read"))
     else parts.push(try readWith(tree, makefile, (text) => readMakefile(makefile, text, tracked.split("\0"))))
   }
@@ -363,5 +377,5 @@ export const read: ReadInventory<FileSystem.FileSystem | Path.Path | ChildProces
   // A runner starts a workflow for an event and gives every step the event's file. A replay writes that file for
   // each commit, from what is known of each event here.
   if (!inventory.jobs.some((job) => job.source === "github-actions")) return inventory
-  return { ...inventory, events: eventFilesOf(try known(root, repository)) }
+  return { ...inventory, events: eventFilesOf(facts) }
 }

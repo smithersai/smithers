@@ -215,18 +215,22 @@ const nextFor = (feature: string, reason: Reason, subjects: ReadonlyArray<string
  */
 export const reasonsSentence = (
   entries: ReadonlyArray<{ readonly feature: string; readonly detail: string }>
-): string =>
-  [...new Set(entries.map((entry) => entry.feature))].map((feature) => {
-    const reason = own(reasons, feature)
+): string => {
+  // Persisted inventories use "needs" for both cases. Group the two sentences separately.
+  const groups = Map.groupBy(entries, (entry) =>
+    entry.feature === "needs" && entry.detail.endsWith(", which is missing") ? "missing-needs" : entry.feature)
+  return [...groups].map(([feature, group]) => {
+    const reason = feature === "missing-needs"
+      ? { ...reasons["needs"]!, sentence: "needs {}, which is missing" }
+      : own(reasons, feature)
     if (reason === undefined) return `uses something Smithers CI cannot run (${feature})`
-    const found = entries.flatMap((entry) =>
-      entry.feature === feature && reason.subject !== undefined ? [reason.subject(entry.detail)] : []
-    )
+    const found = group.map((entry) => reason.subject?.(entry.detail))
     const subjects = [...new Set(found.filter((subject) => subject !== undefined))]
     const text = reason.sentence.replace("{}", () => subjects.length > 0 ? subjects.join(", ") : reason.none as string)
     const next = nextFor(feature, reason, subjects)
     return next === undefined ? text : `${text}; ${next}`
   }).join("; ")
+}
 
 /**
  * The reasons as the command reference lists them: each feature with its

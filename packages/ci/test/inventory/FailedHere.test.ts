@@ -111,7 +111,7 @@ describe("what failed here, in an inventory", () => {
       needs("child", "typo"),
       needs("ok")
     ]
-    expect(refusal(inventoryOf(needs("typo", "missing")))).toContain("needs missing, which is not replayed")
+    expect(refusal(inventoryOf(needs("typo", "missing")))).toContain("needs missing, which is missing")
     for (const order of [jobs, [...jobs].reverse()]) {
       const inventory = inventoryOf(...order)
       expect(ci(inventory).jobs.map((job) => job.id)).toEqual(["ok"])

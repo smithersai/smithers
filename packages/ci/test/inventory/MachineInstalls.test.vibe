@@ -86,6 +86,29 @@ it.layer(NodeServices.layer, { excludeTestServices: true })("the packages a job 
       )
     })
 
+  it.effect("restores HOME for both Homebrew queries and skips queries when head is missing", () =>
+    effect {
+      const fs = try FileSystem.FileSystem
+      const path = try Path.Path
+      const root = try repository({
+        ".github/workflows/ci.yml": workflow("brew install jq", "      - uses: homebrew/actions/setup-homebrew@v1\n        with: { brew-version: 3 }")
+      })
+      const inventory = try read(root)
+      const bin = try toolbox({ brew: 'script:[ -n "$HOME" ] || exit 1; case "$1" in --version) echo 4.5;; list) echo "jq 1.7";; esac' })
+      const machine = { host: "linux", path: bin }
+      const here = try onThisMachine(inventory, machine, root)
+      try fs.remove(path.join(bin, "head"))
+      const blocked = try onThisMachine(inventory, machine, root)
+      const versionOnly = try onThisMachine({ ...here, toolVersions: [] }, machine, root)
+      try Effect.try(() => {
+        expect(notReplayed(here)).toEqual([])
+        expect(here.toolVersions?.[0]?.found).toBe("4.5")
+        expect(notReplayed(blocked)[0]?.reasons[0]?.feature).toBe(changesMachine)
+        expect(ci(versionOnly).jobs).toHaveLength(1)
+        expect(versionOnly.toolVersions).toEqual([])
+      })
+    })
+
   it.effect("a package manager that does not answer in time has not said yes", () =>
     effect {
       const root = try repository({ ".github/workflows/ci.yml": workflow("apk add jq") })

@@ -77,6 +77,23 @@ describe("readSetup", () => {
     expect(toolOf("actions/setup-node@v4", "not a mapping")).toEqual([{ name: "node" }])
   })
 
+  it("marks file versions that the setup reader cannot resolve", () => {
+    for (const name of ["node", "python", "ruby", "go"]) {
+      const owner = name === "ruby" ? "ruby" : "actions"
+      const uses = `${owner}/setup-${name}@v1`
+      const key = `${name}-version-file`
+      expect(readSetup(uses, { [key]: "ci/version" })?.problem).toContain(key)
+      expect(readSetup(uses, { [key]: "ci/version", [`${name}-version`]: "3" })).toEqual({
+        tools: [{ name, version: "3" }]
+      })
+      expect(readSetup(uses, { [key]: "ci/version", version: "3" })?.problem).toBeUndefined()
+      expect(readSetup(uses, { [key]: "" })?.problem).toBeUndefined()
+      expect(readSetup(uses, { "version-file": "ci/version", [`${name}-version`]: "3" })?.problem).toBeUndefined()
+    }
+    expect(readSetup("astral-sh/setup-uv@v9", { version: "0.9", "python-version-file": "python.txt" })?.problem)
+      .toContain("python-version-file")
+  })
+
   it("reads a Rust version from the release dtolnay/rust-toolchain is pinned to, and from no other release", () => {
     expect(toolOf("dtolnay/rust-toolchain@1.85.0")).toEqual([{ name: "rust", version: "1.85.0" }])
     expect(toolOf("dtolnay/rust-toolchain@nightly")).toEqual([{ name: "rust", version: "nightly" }])

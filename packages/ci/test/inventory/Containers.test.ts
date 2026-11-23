@@ -160,3 +160,10 @@ describe("a job GitHub runs with containers it starts itself", () => {
     )
   })
 })
+
+it("lists the union of container commands over all matrix legs", () => {
+  const matrix = ["echo", "docker", "podman", "docker"].map((cmd) => ({ cmd }))
+  expect(markContainers(job(["${{ matrix.cmd }} info"], { matrix })).unsupported).toEqual([
+    { feature: docker, detail: "runs docker and podman" }
+  ])
+})

@@ -14,7 +14,7 @@
  */
 
 import { docker, type Job } from "../contract/Inventory.vibe"
-import { listed, startedIn } from "./MachineChanges.vibe"
+import { acrossVariants, listed, startedIn } from "./MachineChanges.vibe"
 
 /** The programs that talk to a container daemon. */
 const programs: ReadonlySet<string> = new Set(["docker", "docker-compose", "podman", "nerdctl"])
@@ -66,7 +66,8 @@ export const detailOf = (started: ReadonlyArray<string>): string => `runs ${list
  * @since 0.1.0
  */
 export const markContainers = <J extends Job>(job: J): J => {
-  const started = [...new Set(job.steps.flatMap((step) => containersIn(step.command, step.env)))]
+  const variants = acrossVariants(job, (steps) => steps.flatMap((step) => containersIn(step.command, step.env)))
+  const started = [...new Set(variants.flat())]
   return started.length === 0
     ? job
     : { ...job, unsupported: [...job.unsupported, { feature: docker, detail: detailOf(started) }] }

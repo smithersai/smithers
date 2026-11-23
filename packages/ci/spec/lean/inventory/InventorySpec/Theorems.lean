@@ -309,6 +309,14 @@ theorem settled_sound (knownVariable : Variable → Value) (hAdmits : ∀ read :
         cases kind <;> simp_all [truthyKinds, ValueKind.isTrue]
     · simp at hSettled
 
+/-- A settled condition agrees with the runtime branch on every admitted assignment that finishes. -/
+theorem runnerCondition_of_settled (knownVariable : Variable → Value)
+    (hAdmits : ∀ read : Variable, read.admits (knownVariable read)) (node : Residual)
+    (held : Value) (verdict : Bool) (hValue : valueOf knownVariable node = .ok held)
+    (hSettled : settled node = some verdict) : runnerCondition knownVariable node = .ok verdict := by
+  rw [runnerCondition, hValue, ← settled_sound knownVariable hAdmits node held verdict hValue hSettled]
+  rfl
+
 /-! ## Matrices -/
 
 /-- Expanding is a function of the matrix as written. -/

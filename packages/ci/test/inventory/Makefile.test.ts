@@ -59,6 +59,19 @@ describe("Make expansion limits", () => {
     }
   })
 
+  it("shares the visit budget across rules of the same file", () => {
+    const inner = "\tmake empty\n".repeat(2100)
+    const jobs = read(`first:\n${inner}second:\n${inner}empty:\n`).jobs
+    expect(features(jobs[0]!)).toEqual([])
+    expect(features(jobs[1]!)).toContain("malformed-job")
+  })
+
+  it("joins a chain of continuations containing an empty segment", () => {
+    const continuation = "\\\n"
+    const job = jobOf(["ci: a ", "  ", "   b\n\tgo\na:\nb:\n"].join(continuation))
+    expect(job.needs).toEqual(["makefile:a", "makefile:b"])
+  })
+
   it("bounds the number and depth of inlined sub-makes", () => {
     expect(commands(jobOf("ci:\n\tmake inner\ninner: source.txt\n\tgo", "ci", ["source.txt"]))).toEqual(["go"])
     const rules = Array.from({ length: 66 }, (_, i) => "r" + i + ":\n\tmake r" + (i + 1)).join("\n")
@@ -559,7 +572,12 @@ describe("readMakefile rules that are not written out", () => {
     expect(jobOf(text).unsupported).toEqual([])
     expect(features(jobOf("%.o:\n\tcc\nci: a.o\n\tgo\n"))).toEqual(["pattern-rule"])
     expect(jobOf(text, "other").unsupported).toEqual([])
-    expect(Inventory.notReplayed(inventoryOf(text)).map((row) => row.job)).toEqual(["makefile:ci", "makefile:main.o"])
+    // lint follows main.o in this checkout and cannot see the tree that rule would leave.
+    expect(Inventory.notReplayed(inventoryOf(text)).map((row) => row.job)).toEqual([
+      "makefile:ci",
+      "makefile:lint",
+      "makefile:main.o"
+    ])
   })
 
   it("matches a pattern on the file name, or on the path when it names a directory", () => {

@@ -502,3 +502,78 @@ describe("shell token boundaries", () => {
     expect(changesIn("dpkg --status-fd 1")).toEqual([{ kind: "other", what: "dpkg" }])
   })
 })
+
+describe("commands within shell words", () => {
+  it.each([
+    ["echo ${VALUE:-$(observe)}", "observe"],
+    ["echo \"${A:-${B:-\`observe\`}}\"", "observe"],
+    ["cat <<END\n${A:-${B:-$(observe)}}\nEND", "observe"],
+    ["echo \"${MSG:-can't}\"; observe", "observe"],
+    ["echo ${unfinished; observe", "observe"],
+    ["$'observe' $'it\\'s open'; report", "report"],
+    ["$'observe' data", "observe"],
+    ["$'obs\\\\erve'", "obs\\erve"],
+    ["$'obs\\qerve'", "obs\\qerve"],
+    ["$'\\157\\x62\\u0073\\U00000065rve'", "observe"],
+    ["$'obs\\000gone'", "obs"],
+    ["$'\\cA\\n\\UFFFFFFFF'", "\x01\n\\UFFFFFFFF"],
+    ["echo $(echo $'can\\'t'); observe", "observe"],
+    ["$'unfinished", "unfinished"],
+    ["exec -c observe", "observe"],
+    ["exec -a identity observe", "observe"],
+    ["command -p observe", "observe"],
+    ["command -p observe -v", "observe"],
+    ["setsid -c observe", "observe"],
+    ["xargs -p -n 2 observe", "observe"],
+    ["env -C /work -S 'observe -a' extra", "observe"],
+    ["env --split-string='observe first' \"it's literal\"", "observe"],
+    ["env -S'observe first'", "observe"],
+    ["timeout --signal TERM 5 observe", "observe"],
+    ["time -p observe", "observe"],
+    ["sh -c -e 'observe first'", "observe"],
+    ["sh -c -- 'observe second'", "observe"],
+    ["bash <<< 'observe text'", "observe"],
+    ["<<< 'observe text' env bash", "observe"]
+  ])("finds the program in %s", (source, program) => {
+    expect(startedIn(source).map(({ name }) => name)).toContain(program)
+  })
+
+  it("preserves split-string trailing arguments as words and leaves ordinary stdin as data", () => {
+    expect(startedIn("env --split-string='observe --check' \"it's literal\"").at(-1)).toEqual({
+      name: "observe",
+      args: ["--check", "it's literal"]
+    })
+    expect(startedIn("bash script.sh <<< 'observe text'").map(({ name }) => name)).toEqual(["bash"])
+    expect(startedIn("bash -s arg <<< 'observe text'").at(-1)?.name).toBe("observe")
+    expect(startedIn("echo ${X:-'$(data)'}").map(({ name }) => name)).toEqual(["echo"])
+    expect(startedIn("echo ${X:-\"can't $(observe)\"}").map(({ name }) => name)).toEqual(["observe", "echo"])
+    expect(startedIn("env -S")).toEqual([{ name: "env", args: ["-S"] }])
+    expect(startedIn("cat <<< 'observe text'")).toEqual([{ name: "cat", args: [] }])
+  })
+
+  it("distinguishes rpm macro shell evaluation from literal evaluation", () => {
+    expect(changesIn("rpm --eval '%(true)'")).toEqual([{ kind: "other", what: "rpm" }])
+    expect(changesIn("rpm -E '%_arch'")).toEqual([])
+    expect(changesIn("rpm -q '%(true)'")).toEqual([])
+  })
+
+  it("uses every matrix leg before removing a shared install step", () => {
+    const source = (cmds: ReadonlyArray<string>) =>
+      inventory([
+        job(["${{ matrix.cmd }}", "test"], { matrix: cmds.map((cmd) => ({ cmd })) })
+      ])
+    const allInstalls = source(["brew install a", "brew install b", "brew install a"])
+    expect(allInstalls.jobs[0]?.unsupported).toEqual([{
+      feature: changesMachine,
+      detail: "installs a and b with brew"
+    }])
+    expect(questionsFor(allInstalls, everywhere).map((question) => question.name)).toEqual(["a", "b"])
+    expect(withInstalled(allInstalls, everywhere, () => true).jobs[0]?.steps.map((step) => step.command)).toEqual([
+      "test"
+    ])
+    for (const read of [source(["test", "brew install a"]), source(["test", "brew update", "corepack enable"])]) {
+      expect(read.jobs[0]?.unsupported.length).toBeGreaterThan(0)
+      expect(withInstalled(read, everywhere, () => true)).toEqual(read)
+    }
+  })
+})

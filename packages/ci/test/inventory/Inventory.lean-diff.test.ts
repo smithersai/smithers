@@ -11,15 +11,16 @@ import * as Arbitrary from "effect/Arbitrary"
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
 import { type ChildProcessWithoutNullStreams, spawn, spawnSync } from "node:child_process"
-import { existsSync } from "node:fs"
-import { homedir } from "node:os"
+import { existsSync, mkdtempSync, rmSync } from "node:fs"
+import { homedir, tmpdir } from "node:os"
 import { delimiter, join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { afterAll, beforeAll } from "vitest"
+import { expand, jobTemporaryVariable, script, shell } from "../../src/contract/Inventory.vibe"
 import * as Expression from "../../src/inventory/Expression.ts"
 import { filesOf, regexOf } from "../../src/inventory/Glob.vibe"
 import { expandMatrix } from "../../src/inventory/Matrix.vibe"
-import { settled } from "../../src/inventory/Runner.ts"
+import { settled, write } from "../../src/inventory/Runner.ts"
 import { isLiteralSecret } from "../../src/inventory/Secrets.vibe"
 import { asScalar, isRecord } from "../../src/inventory/Values.vibe"
 
@@ -777,6 +778,82 @@ describe("the Lean reference and Expression.ts agree", () => {
       property(4106, 300, async (dice) => {
         counts.expressions += 1
         await compareResidual(genResidual(dice, 1 + dice.next(4)), dice)
+      })
+  )
+
+  it.live.skipIf(!oracleReady)(
+    "on decisions made by the emitted runner for concrete matrix legs",
+    () =>
+      Effect.promise(async () => {
+        const axis = "matrix:axis"
+        const input = "process:CONTROL"
+        const variable = (id: string, typed: boolean): Expression.Residual => ({
+          kind: "variable",
+          variable: { id, name: id, nullable: false, typed }
+        })
+        const selected = variable(axis, true)
+        const conditions: ReadonlyArray<Expression.Residual> = [
+          selected,
+          { kind: "binary", operator: "==", left: selected, right: variable(input, false) },
+          { kind: "binary", operator: "==", left: selected, right: { kind: "literal", value: "é" } }
+        ]
+        const values = [Number.NaN, -0, Infinity, -Infinity, "É", "雪"]
+        const typedVariants = values.map((axis) => ({ axis }))
+        const variants = values.map((value) => ({ axis: String(value) }))
+        const job = { id: "compare", event: "{}", variables: {}, matrixKeys: ["axis"], variants, typedVariants }
+        const command = "printf ran"
+        const root = mkdtempSync(join(tmpdir(), "ci-inventory-oracle-"))
+        try {
+          for (const condition of conditions) {
+            const written = write(job, {
+              key: "CHECK",
+              after: undefined,
+              second: false,
+              apart: false,
+              job: job.id,
+              before: [],
+              cwd: "",
+              directory: undefined,
+              start: ["bash", "-e"],
+              own: [],
+              keeps: [],
+              condition,
+              outer: [],
+              env: [],
+              fills: [],
+              commit: false
+            }, command)
+            if ("problem" in written) throw new Error(written.problem)
+            const runner = script({ command, runner: written.alone })
+            for (const [index, value] of values.entries()) {
+              const control = typeof value === "number" ? "1e999" : value
+              const expected = await ask({
+                op: "runnerCondition",
+                residual: wireResidual(condition),
+                known: [[axis, wire(value)], [input, control]]
+              })
+              const actual = spawnSync(shell[0], [...shell.slice(1), expand(runner, variants[index]!)], {
+                cwd: root,
+                encoding: "utf8",
+                env: {
+                  PATH: process.env["PATH"],
+                  HOME: root,
+                  GITHUB_SHA: "0".repeat(40),
+                  [jobTemporaryVariable]: root,
+                  CONTROL: control
+                }
+              })
+              expect({ value, status: actual.status, stderr: actual.stderr, output: actual.stdout }).toEqual({
+                value,
+                status: 0,
+                stderr: "",
+                output: expected ? "ran" : "smithers-ci: not run, its condition is false\n"
+              })
+            }
+          }
+        } finally {
+          rmSync(root, { recursive: true, force: true })
+        }
       })
   )
 

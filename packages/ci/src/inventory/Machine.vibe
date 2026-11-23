@@ -17,6 +17,7 @@ import type { ReadInventory } from "../contract/Parts.vibe"
 import { answers, type Question, questionsFor, withInstalled } from "./MachineChanges.vibe"
 import { validToolName } from "./Setup.vibe"
 import { read } from "./Read.vibe"
+import { type HostPath, hostPath, probeEnvironment } from "./HostPath.ts"
 import {
   type Found,
   machinePath,
@@ -32,28 +33,24 @@ import {
 /** How long a program may take to print its version. One that takes longer is on the machine, at no known version. */
 const patience = "30 seconds"
 
-/** Absolute search directories from a PATH string; empty or relative entries are dropped so CWD is never probed. */
-const absolutePath = (path: string): string =>
-  path.split(":").filter((entry) => entry.startsWith("/")).join(":")
-
-/** Probes run outside the checkout without user startup hooks or repository configuration. */
-const shell = (machine: Machine, line: string, args: ReadonlyArray<string>) => {
-  const safePath = absolutePath(machinePath(machine))
-  return ChildProcess.make("/bin/bash", ["--noprofile", "--norc", "-c", line, "smithers-ci", ...args], {
-    stdin: "ignore",
-    cwd: "/",
-    env: { PATH: safePath, PROBE_PATH: safePath, COREPACK_ENABLE_NETWORK: "0" },
-    extendEnv: false
-  })
+interface Probe {
+  readonly search: HostPath
+  readonly head: string | undefined
+  readonly patience: NonNullable<Machine["patience"]>
 }
 
-/** Execute only when the trusted search resolves to the same binary that is first on PATH. */
-const trusted = [
-  'actual=$(type -P "$1") || exit 1',
-  '[[ "$actual" = /* && "$actual" = "$(PATH="$PROBE_PATH" type -P "$1")" ]] || exit 1',
-  'export PATH="$PROBE_PATH"',
-  'shift'
-].join("\n")
+/** A version or package query can read machine configuration, but cannot inherit shell startup hooks. */
+const shell = (probe: Probe, line: string, args: ReadonlyArray<string>) =>
+  ChildProcess.make("/bin/bash", ["--noprofile", "--norc", "-c", line, "smithers-ci", ...args], {
+    stdin: "ignore",
+    cwd: "/",
+    env: {
+      PATH: probe.search.path,
+      COREPACK_ENABLE_NETWORK: "0",
+      ...probeEnvironment()
+    },
+    extendEnv: false
+  })
 
 /** These binaries implement a read-only version query. Other names may be located but are never invoked. */
 const versioned = new Set([
@@ -61,46 +58,45 @@ const versioned = new Set([
   "pnpm", "npm", "yarn", "terraform", "ghc", "Rscript", "xcodebuild", "rustc", "cmake", "nix", "brew", "deno"
 ])
 
-/**
- * Whether a program is a file on the machine's `PATH`, or `undefined` when that could not be asked. A shell's own
- * commands, such as `test`, are no file.
- */
-effect function has(machine: Machine, program: string) {
-  const spawner = try ChildProcessSpawner
-  const code = spawner.exitCode(shell(machine, `type -P "$1" >/dev/null 2>&1`, [program])) catch () => undefined
-  return code === undefined ? undefined : Number(code) === 0
-}
-
 const versionFlag = new Map([
   ["go", "version"], ["zig", "version"], ["java", "-version"], ["xcodebuild", "-version"]
 ])
 
+/** Preserve argv[0] for multicall tools (e.g. a cargo symlink to rustup), and execute the checked target. */
+const runProgram = 'name=$1; program=$2; head=$3; shift 3; '
+const invoke = '(exec -a "$name" "$program" "$@")'
+const limitOutput = (bytes: number) => `(exec -a head "$head" -c ${bytes})`
+
 /** The first 4 KiB of a trusted program's version response. */
-effect function printed(machine: Machine, program: string, tool: string) {
+effect function printed(probe: Probe, program: string, executable: string, tool: string) {
+  if (probe.head === undefined) return ""
   const spawner = try ChildProcessSpawner
-  const line = trusted + "\n" + '"$actual" "$@" 2>&1 | /usr/bin/head -c 4096'
+  const line = `${runProgram}${invoke} 2>&1 | ${limitOutput(4096)}`
   const args = program === "docker" ? [tool, "version"] : [versionFlag.get(program) ?? "--version"]
-  return timeout(spawner.string(shell(machine, line, [program, ...args])), machine.patience ?? patience) catch () => ""
+  return timeout(spawner.string(shell(probe, line, [program, executable, probe.head, ...args])), probe.patience) catch () => ""
 }
 
 /** A new inventory samples this machine once per tool; a later inventory samples it again. */
-effect function find(machine: Machine, tool: string): (Found | undefined)!!ChildProcessSpawner {
+effect function find(probe: Probe, tool: string, canProbe: boolean): (Found | undefined)!!ChildProcessSpawner {
   if (!validToolName(tool)) return undefined
   for (const program of programsOf(tool)) {
-    const there = try has(machine, program)
-    if (there === undefined) return { program }
-    if (!there) continue
+    if (!canProbe) return { program }
+    const there = probe.search.program(program)
+    if (there === undefined) continue
     if (!versioned.has(program) && tool !== "buildx" && tool !== "compose") return { program }
-    return { program, version: versionIn(try printed(machine, program, tool)) }
+    return { program, version: versionIn(try printed(probe, program, there, tool)) }
   }
   return undefined
 }
 
 /** Whether the package manager succeeded and confirmed that this package is present. */
-effect function installed(machine: Machine, question: Question) {
+effect function installed(probe: Probe, question: Question) {
+  const [name, ...args] = question.argv
+  const executable = probe.search.program(name)
+  if (executable === undefined || probe.head === undefined) return false
   const spawner = try ChildProcessSpawner
-  const line = trusted + "\n" + 'set -o pipefail; out=$("$actual" "$@" 2>/dev/null | /usr/bin/head -c 65536) && printf "%s" "$out"'
-  const output = timeout(spawner.string(shell(machine, line, question.argv)), machine.patience ?? patience) catch () => ""
+  const line = `${runProgram}set -o pipefail; out=$(${invoke} 2>/dev/null | ${limitOutput(65536)}) && printf "%s" "$out"`
+  const output = timeout(spawner.string(shell(probe, line, [name, executable, probe.head, ...args])), probe.patience) catch () => ""
   return answers(question, output)
 }
 
@@ -114,16 +110,23 @@ effect function installed(machine: Machine, question: Question) {
  * @category parts
  * @since 0.1.0
  */
-export effect function onThisMachine(inventory: Inventory, machine: Machine = thisMachine()) {
+export effect function onThisMachine(inventory: Inventory, machine: Machine = thisMachine(), root = ".") {
+  const search = hostPath(root, machinePath(machine))
+  const probe: Probe = { search, head: search.program("head"), patience: machine.patience ?? patience }
   const here = (job: Job) => runsOn(job, machine.host)
   const present = new Set<string>()
   for (const question of questionsFor(inventory, here)) {
-    if (try installed(machine, question)) present.add(`${question.manager}\n${question.name}`)
+    if (try installed(probe, question)) present.add(`${question.manager}\n${question.name}`)
   }
   const settled = withInstalled(inventory, here, (manager, name) => present.has(`${manager}\n${name}`))
   const found = new Map<string, Found>()
-  for (const tool of neededTools(settled, machine.host)) {
-    const have = try find(machine, tool)
+  const tools = neededTools(settled, machine.host)
+  if (tools.length === 0) return onMachine(settled, machine.host, found)
+  // A machine without a probe shell has reported nothing about which tools it lacks.
+  const spawner = try ChildProcessSpawner
+  const shellStatus = spawner.exitCode(shell(probe, ":", [])) catch () => undefined
+  for (const tool of tools) {
+    const have = try find(probe, tool, shellStatus !== undefined)
     if (have !== undefined) found.set(tool, have)
   }
   return onMachine(settled, machine.host, found)
@@ -138,5 +141,5 @@ export effect function onThisMachine(inventory: Inventory, machine: Machine = th
  * @since 0.1.0
  */
 export const readHere: ReadInventory<FileSystem.FileSystem | Path.Path | ChildProcessSpawner> = effect function (root) {
-  return try onThisMachine(try read(root))
+  return try onThisMachine(try read(root), undefined, root)
 }
