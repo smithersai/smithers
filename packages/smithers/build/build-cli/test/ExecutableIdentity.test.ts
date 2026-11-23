@@ -858,4 +858,41 @@ describe("planned executable disappearance", () => {
     expect(result.results[0]?.error).toContain("executable changed since planning")
     await expect(Fs.stat(Path.join(tools, "dispatches"))).rejects.toMatchObject({ code: "ENOENT" })
   })
+
+  it("probes host binaries with `version` subcommand when `--version` exits non-zero (e.g. zig)", async () => {
+    const { root, tools } = await fixture(
+      "S.Shell.Build({ bin: S.Host.bin(\"identity-compiler\"), outDirs: [\"dist\"], sandbox: \"none\" })"
+    )
+    const subcommandTool = (ver: string): string =>
+      `#!/bin/sh
+if [ "$1" = --version ]; then echo "error: unknown command: --version" >&2; exit 1; fi
+if [ "$1" = version ]; then echo "${ver}"; exit 0; fi
+mkdir -p dist
+printf '${ver}' > dist/value
+`
+    await write(tools, "identity-compiler", subcommandTool("0.17.1"))
+    const loaded = await PackageLoader.load(await PackageDiscovery.discover(root))
+    const planFirst = await PackageExec.plan({
+      index: PackageIndex.make(loaded),
+      patterns: ["//:dist"],
+      cacheDirectory: ".flows",
+      verb: "auto"
+    })
+    const keyFirst = planFirst.nodes.get("//:dist")?.keyPreview
+    expect(await serve(root)).toContain("//:dist  ran")
+    expect(await Fs.readFile(Path.join(root, "dist/value"), "utf8")).toBe("0.17.1")
+
+    // Changing only the version reported by `version` must invalidate the cache key.
+    await write(tools, "identity-compiler", subcommandTool("0.17.2"))
+    const planSecond = await PackageExec.plan({
+      index: PackageIndex.make(loaded),
+      patterns: ["//:dist"],
+      cacheDirectory: ".flows",
+      verb: "auto"
+    })
+    const keySecond = planSecond.nodes.get("//:dist")?.keyPreview
+    expect(keySecond).not.toBe(keyFirst)
+    expect(await serve(root)).toContain("//:dist  ran")
+    expect(await Fs.readFile(Path.join(root, "dist/value"), "utf8")).toBe("0.17.2")
+  })
 })

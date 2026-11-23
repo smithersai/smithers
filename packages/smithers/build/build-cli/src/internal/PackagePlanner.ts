@@ -1016,7 +1016,16 @@ const resolveTool = async (context: PlanContext, reference: Record<string, unkno
         }
       }
     } else {
-      const probe = await probeOnce(context, path)
+      let probe = await probeOnce(context, path)
+      if (probe.exitCode !== 0) {
+        // Tools such as `zig` and `go` report their version through a `version`
+        // subcommand and exit non-zero on `--version` with a version-free usage
+        // message that would otherwise collide across tool versions in the cache key.
+        const subcommand = await probeOnce(context, path, ["version"])
+        if (subcommand.exitCode === 0 && subcommand.output.trim() !== "") {
+          probe = subcommand
+        }
+      }
       outcome = {
         _tag: "resolved",
         tool: {
