@@ -1,0 +1,437 @@
+// @vitest-environment node
+import { expect, it } from "@effect/vitest"
+import { Digest } from "effect/crypto"
+import { FlowRuntime } from "@smthrs/flow"
+import { CloudflareRuntime, ObjectDatabase } from "@smthrs/platform-cloudflare"
+import { TestNodeRuntime } from "@smthrs/platform-node"
+import { FetchHttpClient, HttpClient, HttpClientRequest, HttpServerRequest } from "effect/http"
+import { API, fakeClient, seed } from "../fuzz/issues-node-fake.vibe"
+import { apply, empty, newClient, receive, type Conversation } from "../src/core/conversation.vibe"
+import { decide, type Intent } from "../src/core/decide.vibe"
+import { ConversationRead, Factory } from "../src/core/Factory.vibe"
+import { MockFactory } from "../src/core/MockFactory.vibe"
+import { fixtureWikiHost, makeWikiStore } from "../src/core/WikiFactory.vibe"
+import { wikiEditFlow, wikiEditRegistration, wikiExecutionId, WikiHost } from "../src/core/wikiFlows.vibe"
+import { WikiFailure, type WikiRequest, type WikiState } from "../src/core/wikiSchemas.vibe"
+import type { Storage } from "../worker/Objects.vibe"
+import { executeWiki, serveWiki, WikiAuthority } from "../worker/Wiki.vibe"
+
+const KiB = 1024
+const chunk = 32 * KiB
+const blob = "\u0000blob:"
+const lit = "\u0000lit:"
+const actor = { id: "7", login: "fuzz", role: "maintainer" } as const
+const authority = { current: () => succeed(actor) }
+const read: WikiRequest = { op: "read", page: "roadmap", base: "", text: "", key: "read" }
+const hostId = "wiki-chunk-fuzz"
+const Int = (minimum: number, maximum: number) => Schema.Number.check(Schema.isInt(), Schema.isBetween({ minimum, maximum }))
+const Sample = Schema.Struct({
+  tokens: Schema.Array(Schema.Literals(["a", "é", "界", "🙂", "\u0001", "\n", "\"", "\\", "\u0000"])).check(Schema.isMaxLength(16)),
+  digit: Int(0, 15), offset: Int(-1, 1), extra: Int(0, 100),
+})
+type Sample = typeof Sample.Type
+type State = typeof WikiState.Type
+
+effect function check<A, E, R>(inputs: Arbitrary.Arbitrary<A>, runs: number, property: (sample: A) => boolean | (boolean!E!R)) {
+  const result = try Arbitrary.checkEffect(inputs, property, { runs }).pipe(Effect.provideService(References.MinimumLogLevel, "Warning"))
+  try Effect.try(() => expect(Arbitrary.formatCheckFailure(result)).toBeUndefined())
+}
+
+const samples = Arbitrary.schema(Sample)
+const bytes = (value: unknown) => new TextEncoder().encode(JSON.stringify(value)).length
+const literalRef = (s: Sample) => blob + s.digit.toString(16).repeat(64)
+const mix = (s: Sample) => "é界🙂\u0001" + s.tokens.join("")
+// Place the high surrogate at or adjacent to the final code unit of the first chunk.
+function boundary(s: Sample, prefix: string, suffix: string) {
+  return prefix.padEnd(chunk - 1 + s.offset, "x") + "🙂" + mix(s) + suffix
+}
+
+effect function database() {
+  const raw = try acquireRelease(Effect.try(() => TestNodeRuntime.sqliteObjectStorage()), raw => sync(() => raw.close()))
+  return { raw, storage: raw as unknown as Storage }
+}
+
+function act(storage: Storage, request: WikiRequest, host: WikiHost.Shape) {
+  return executeWiki(hostId, storage, request).pipe(
+    Effect.provideService(WikiAuthority, authority), Effect.provideService(WikiHost, host), Effect.provide(FetchHttpClient.layer),
+  )
+}
+
+// SQLite length(TEXT) counts characters and stops at NUL. SqlJournal budgets the sum of both encoded columns in bytes.
+function journalFits(raw: ReturnType<typeof TestNodeRuntime.sqliteObjectStorage>) {
+  const row = raw.sql.exec("SELECT max(length(CAST(payload_json AS BLOB)) + length(CAST(meta_json AS BLOB))) AS largest FROM flows_journal_events").toArray()[0]
+  expect(row?.largest).toBeGreaterThan(0)
+  expect(row?.largest).toBeLessThanOrEqual(2_031_616)
+}
+
+function storedChunks(parts: Map<string, unknown>, text: string) {
+  for (const [root, count] of parts) {
+    if (typeof count !== "number") continue
+    const chunks = Array.from({ length: count }, (_, index) => parts.get(root + "/" + String(index).padStart(6, "0")))
+    if (chunks.join("") !== text) continue
+    expect(chunks.length).toBeGreaterThan(1)
+    for (const [index, part] of chunks.entries()) {
+      expect(typeof part === "string" && part.isWellFormed()).toBe(true)
+      const units = (part as string).length
+      expect(units).toBeGreaterThanOrEqual(index === chunks.length - 1 ? 1 : chunk)
+      expect(units).toBeLessThanOrEqual(chunk + 1)
+    }
+    return blob + root.slice("wiki/blob/".length)
+  }
+  return undefined
+}
+
+it.live("spills escaped requests, preserves Unicode chunks and binds replay to the exact base and edit", () =>
+  check(samples, 8, s => scoped(effect {
+    const { raw, storage } = try database()
+    const repository = try makeWikiStore()
+    const host = try fixtureWikiHost(() => succeed(actor), repository)
+    // UTF-8 below 256 KiB but JSON above it. The base alone exceeds the entire SQL entry budget.
+    const base = boundary({ ...s, offset: 0 }, lit + literalRef(s), "\u0001".repeat(340_000 + s.extra))
+    const text = boundary(s, literalRef(s), "\u0001".repeat(45_000 + s.extra))
+    const state = { seq: 1, pages: [{ id: read.page, source: base, revision: "old" }] }
+    try Ref.set(repository.state, state)
+    const save: WikiRequest = { ...read, op: "save", base, text, key: "save" }
+    const saved = try act(storage, save, host)
+    const observed = try act(storage, read, host)
+    const replay = try act(storage, save, host)
+    const parts = try promise(() => raw.list({ prefix: "wiki/blob/" }))
+    const ref = try Effect.try(() => storedChunks(parts, text))
+    const changedText = try Effect.flip(act(storage, { ...save, text: ref ?? "" }, host))
+    const changedBase = try Effect.flip(act(storage, { ...save, base: base + "!" }, host))
+    const proposals = try Ref.get(repository.proposals)
+    const saveId = try wikiExecutionId(actor.id, "save", save.key)
+    const readId = try wikiExecutionId(actor.id, "read", read.key)
+    const markers = try promise(() => raw.list({ prefix: "wiki/blob-" }))
+    try Effect.try(() => {
+      expect(bytes(base)).toBeGreaterThan(2_031_616)
+      expect(new TextEncoder().encode(text).length).toBeLessThan(256 * KiB)
+      expect(bytes(text)).toBeGreaterThan(256 * KiB)
+      expect(storedChunks(parts, base)).toMatch(/^\u0000blob:[0-9a-f]{64}$/)
+      expect(ref).toMatch(/^\u0000blob:[0-9a-f]{64}$/)
+      expect(proposals).toHaveLength(1)
+      expect(proposals[0]!.base === base && proposals[0]!.text === text).toBe(true)
+      expect(saved.pages).toEqual(state.pages)
+      expect(observed.pages).toEqual(state.pages)
+      expect(replay).toEqual(saved)
+      expect([changedText, changedBase]).toMatchObject([{ reason: "invalid" }, { reason: "invalid" }])
+      expect(markers.get("wiki/blob-req/" + saveId)).toBe(1)
+      expect(markers.get("wiki/blob-res/" + saveId)).toBe(1)
+      expect(markers.get("wiki/blob-res/" + readId)).toBe(1)
+      expect(markers.has("wiki/blob-req/" + readId)).toBe(false)
+      journalFits(raw)
+    })
+    return true
+  })))
+
+for (const layout of ["medium pages", "small pages"] as const) {
+  it.live("hydrates every page and draft after compaction of " + layout, () => check(samples, 4, s => scoped(effect {
+    const { raw, storage } = try database()
+    const pageCount = layout === "medium pages" ? 8 : 84
+    const width = layout === "medium pages" ? 140 * KiB : 13 * KiB
+    const pages = Array.from({ length: pageCount }, (_, i) => ({
+      id: "page-" + i, revision: "rev-" + i, source: (i % 2 ? lit : "\u0000") + i + mix(s) + "a".repeat(width + s.extra),
+    }))
+    // First pass spills the large page. Aggregate size forces another pass (and for small pages a third).
+    pages.push({ id: "large", revision: "r", source: boundary(s, lit, "\u0001".repeat(45_000)) })
+    for (const source of ["\u0000", lit, lit + lit, literalRef(s)]) pages.push({ id: "literal-" + pages.length, revision: "r", source })
+    const draft = layout === "medium pages" ? boundary(s, lit + literalRef(s), "\u0001".repeat(45_000)) : lit + literalRef(s) + mix(s)
+    const state: State = { seq: pageCount, pages, draft: { page: read.page, text: draft } }
+    let calls = 0
+    const host = { perform: () => sync(() => { calls++; return state }) }
+    const first = try act(storage, read, host)
+    const replay = try act(storage, read, host)
+    const parts = try promise(() => raw.list({ prefix: "wiki/blob/" }))
+    try Effect.try(() => {
+      expect(calls).toBe(1)
+      expect(first).toEqual({ ...state, role: actor.role })
+      expect(replay).toEqual(first)
+      // Distinct medium/small page bodies must actually have spilled in the later pass.
+      expect([...parts.values()].filter(value => typeof value === "number").length).toBeGreaterThanOrEqual(pageCount + 1)
+      journalFits(raw)
+    })
+    return true
+  })))
+}
+
+it.live("returns HTTP 400 for public read payloads and 404 for fresh unknown pages before writing blobs", () =>
+  check(samples, 5, s => scoped(effect {
+    const { raw, storage } = try database()
+    const large = boundary(s, literalRef(s), "\u0001".repeat(45_000))
+    const unknown = "missing/" + s.digit + "-" + s.extra
+    // Observe committed inserts as well as surviving keys, so writing and deleting a chunk still fails.
+    try Effect.try(() => {
+      raw.sql.exec("CREATE TEMP TABLE blob_writes (key TEXT)")
+      raw.sql.exec("CREATE TEMP TRIGGER record_blob AFTER INSERT ON _object_values WHEN NEW.key GLOB 'wiki/blob/*' BEGIN INSERT INTO blob_writes VALUES (NEW.key); END")
+    })
+    const cases = [
+      [{ ...read, base: large }, 400], [{ ...read, text: large }, 400], [{ ...read, base: large, text: large }, 400],
+      [{ ...read, page: unknown }, 404],
+      ...(["save", "propose", "draft"] as const).map(op => [{ ...read, op, page: unknown, base: large, text: large }, 404] as const),
+    ] as const
+    for (const [request, status] of cases) {
+      const http = HttpClientRequest.post("https://wiki.invalid/api/wiki").pipe(HttpClientRequest.bodyJsonUnsafe(request))
+      const web = try HttpClientRequest.toWeb(http)
+      const response = try serveWiki(hostId, storage).pipe(
+        Effect.provideService(HttpServerRequest.HttpServerRequest, HttpServerRequest.fromWeb(web)),
+        Effect.provideService(WikiAuthority, { current: () => succeed(request.op === "read" ? undefined : actor) }),
+        Effect.provide(FetchHttpClient.layer),
+      )
+      const blobs = try promise(() => raw.list({ prefix: "wiki/blob/" }))
+      try Effect.try(() => {
+        expect(response.status).toBe(status)
+        expect(blobs.size).toBe(0)
+        expect(raw.sql.exec("SELECT key FROM blob_writes").toArray()).toEqual([])
+      })
+    }
+    return true
+  })))
+
+it.live("reads retained drafts on either side of 64 KiB of JSON through a fresh GitHub wiki host", () =>
+  check(samples, 5, s => scoped(effect {
+    const { raw, storage } = try database()
+    const repo = { owner: "o", name: "r", api: API, agent: "", root: "wiki" }
+    const github = seed()
+    github.files["wiki/roadmap.md"] = "on main"
+    const call = (request: WikiRequest) => executeWiki(hostId, storage, request, repo).pipe(
+      Effect.provideService(WikiAuthority, authority), Effect.provideService(HttpClient.HttpClient, fakeClient(github)),
+    )
+    const prefix = boundary(s, lit + literalRef(s), "\u0001".repeat(1000))
+    for (const over of [0, 1]) {
+      const text = prefix + "x".repeat(64 * KiB - bytes(prefix) + over)
+      const failure = try Effect.flip(call({ ...read, op: "save", key: "draft-" + over, text }))
+      const retained = try promise(() => raw.get("wiki/draft/" + actor.id + "/" + read.page))
+      const parts = try promise(() => raw.list({ prefix: "wiki/blob/" }))
+      const answer = try call({ ...read, key: "read-" + over })
+      try Effect.try(() => {
+        expect(failure).toMatchObject({ reason: "connect" })
+        if (over === 0) {
+          expect(retained).toEqual({ page: read.page, text })
+          expect(parts.size).toBe(0)
+        } else {
+          const ref = storedChunks(parts, text)
+          expect(ref).toMatch(/^\u0000blob:[0-9a-f]{64}$/)
+          expect(retained).toEqual({ page: read.page, text: ref, blob: 1 })
+        }
+        expect(answer.draft).toEqual({ page: read.page, text })
+        journalFits(raw)
+      })
+    }
+    return true
+  })))
+
+it.live("replays pre-marker receipts containing raw sentinel literals and refuses aliases", () =>
+  check(samples, 5, s => scoped(effect {
+    const { raw, storage } = try database()
+    // A large modern payload would encode to exactly this old literal.
+    const alias = boundary(s, lit, "\u0001".repeat(45_000))
+    const digest = try effect {
+      provide Digest.layerWebCrypto {
+        return try (try Digest.Digest).digestHex(Digest.sha256, new TextEncoder().encode(alias))
+      }
+    }
+    const request: WikiRequest = { ...read, op: "save", base: lit + mix(s), text: blob + digest }
+    const state: State = { seq: 1, pages: [{ id: read.page, revision: "legacy", source: request.text }], draft: { page: read.page, text: request.base } }
+    // Write the old wire format with the real engine, bypassing today's request and response encoders.
+    const flow = wikiEditFlow("save")
+    const executionId = try wikiExecutionId(actor.id, "save", request.key)
+    const runtime = CloudflareRuntime.layer({ hostId, executionId, flow: flow._tag }, wikiEditRegistration).pipe(
+      Layer.provide(ObjectDatabase.layer(storage)), Layer.provide(Layer.succeed(WikiHost, { perform: () => succeed(state) })),
+    )
+    try scoped(Effect.provide(effect { return try (try FlowRuntime.FlowRuntime).execute(flow, { executionId, payload: request }) }, runtime))
+    const noExecution = { perform: () => die("legacy receipt executed twice") }
+    const replay = try act(storage, request, noExecution)
+    const baseAlias = try Effect.flip(act(storage, { ...request, base: request.base.slice(lit.length) }, noExecution))
+    const textAlias = try Effect.flip(act(storage, { ...request, text: alias }, noExecution))
+    const markers = try promise(() => raw.list({ prefix: "wiki/blob-" }))
+    try Effect.try(() => {
+      expect(replay).toEqual({ ...state, role: actor.role })
+      expect([baseAlias, textAlias]).toMatchObject([{ reason: "invalid" }, { reason: "invalid" }])
+      expect(markers.size).toBe(0)
+      journalFits(raw)
+    })
+    return true
+  })))
+
+// With a failed original and a completed retry, both a lost-response replay and a modified retry reach the same target.
+effect function recoveredSave(base: string, text: string) {
+  const { raw, storage } = try database()
+  let calls = 0
+  const host: WikiHost.Shape = {
+    perform: effect (request) => {
+      if (++calls === 1) throw new WikiFailure({ reason: "conflict" })
+      return { seq: 1, pages: [{ id: read.page, revision: "fixed", source: request.base }], draft: { page: read.page, text: request.text } }
+    },
+  }
+  const save: WikiRequest = { ...read, op: "save", base, text }
+  const retry = { ...save, recovery: "retry" }
+  const first = try Effect.flip(act(storage, save, host))
+  const recovered = try act(storage, retry, host)
+  const replay = try act(storage, retry, host)
+  const changed = try Effect.result(act(storage, { ...retry, text: text + "!" }, host))
+  try Effect.try(() => {
+    expect(first).toMatchObject({ reason: "conflict" })
+    expect(recovered.pages[0]?.source).toBe(base)
+    expect(recovered.draft?.text).toBe(text)
+    expect(replay).toEqual(recovered)
+    expect(changed._tag === "Failure" ? changed.failure : "accepted").toMatchObject({ reason: "invalid" })
+    expect(calls).toBe(2)
+    journalFits(raw)
+  })
+  return true
+}
+
+// Minimal recovery case: one submitted character, then a different body under the same retry key.
+it.live("rejects a changed one-character edit after its recovery settled", () =>
+  scoped(recoveredSave("", "a")).pipe(Effect.provideService(References.MinimumLogLevel, "Error")))
+
+it.live("compares the payload again when joining an already completed recovery", () =>
+  check(samples, 5, s => scoped(recoveredSave(lit + mix(s), literalRef(s)))))
+
+const operations = ["post", "duplicate", "start", "chunk", "finish", "fail", "openWiki", "tour", "drive", "pause", "resume", "seek", "end"] as const
+const Command = Schema.Struct({ op: Schema.Literals(operations), n: Int(0, 15), wrong: Schema.Boolean })
+type Command = typeof Command.Type
+const commands = Arbitrary.schema(Schema.Array(Command).check(Schema.isMaxLength(45)))
+
+function intentFor(state: Conversation, command: Command): Intent {
+  const { op, n, wrong } = command
+  const next = "id-" + (state.seq + 1)
+  const id = wrong ? "stale-" + n : state.replying
+  const at = state.seq * 10 + n
+  switch (op) {
+    case "post": return { type: "Post", id: next, clientId: "client-" + n, name: "Ada", text: wrong ? " " : " post " + n }
+    case "duplicate": return { type: "Post", id: next, clientId: state.entries.find(e => e.author === "person")?.clientId ?? "", name: "Ada", text: "changed" }
+    case "start": {
+      const target = state.entries.find(e => e.author === "person" && !state.entries.some(reply => reply.inReplyTo === e.id))
+      return { type: "StartReply", id: next, inReplyTo: wrong ? "missing" : target?.id ?? "" }
+    }
+    case "chunk": return { type: "AppendReply", id, text: "🙂" + n }
+    case "finish": return { type: "FinishReply", id }
+    case "fail": return { type: "FailReply", id, reason: n === 0 ? "" : "offline" }
+    case "openWiki": return { type: "OpenPane", id: wrong ? id : "", url: "/wiki/roadmap#" + n }
+    case "tour": return { type: "StartTour", id: next }
+    case "drive": return { type: "DriveWalkthrough", id, step: n, target: "wiki", at, duration: n * 10 }
+    case "pause": return { type: "PauseTour", id, at }
+    case "resume": return { type: "ResumeTour", id, at }
+    case "seek": return { type: "SeekTour", id, step: n, at }
+    case "end": return { type: "EndTour", id }
+  }
+}
+
+function consistent(state: Conversation) {
+  const people = state.entries.filter(e => e.author === "person")
+  const replies = state.entries.filter(e => e.inReplyTo !== "")
+  const active = state.entries.filter(e => !e.done)
+  return new Set(state.entries.map(e => e.id)).size === state.entries.length &&
+    new Set(people.map(e => e.clientId)).size === people.length &&
+    new Set(replies.map(e => e.inReplyTo)).size === replies.length &&
+    state.entries.every((e, i) => e.id !== "" && e.seq > (state.entries[i - 1]?.seq ?? 0) && e.seq <= state.seq) &&
+    people.every(e => e.done && e.clientId !== "" && e.inReplyTo === "") &&
+    replies.every(e => e.author === "agent" && people.some(p => p.id === e.inReplyTo && p.seq < e.seq)) &&
+    (state.agent === "working" ? active.length === 1 && active[0]!.author === "agent" && active[0]!.id === state.replying
+      : active.length === 0 && state.replying === "")
+}
+
+// A valid tour and both reply endings are visited even for the smallest generated walk.
+const tourAndReplies: ReadonlyArray<Command> = (["tour", "drive", "pause", "resume", "seek", "openWiki", "end",
+  "post", "duplicate", "start", "chunk", "finish", "post", "start", "chunk", "fail"] as const)
+  .map((op, index) => ({ op, n: index % 10 + 1, wrong: false }))
+
+function walk(sequence: ReadonlyArray<Command>) {
+  let state = empty
+  for (const command of sequence) {
+    const intent = intentFor(state, command)
+    const before = JSON.stringify(state)
+    const decision = decide(state, intent)
+    if (before !== JSON.stringify(state)) return false
+    const current = state.entries.find(e => e.id === state.replying)
+    const streaming = state.agent === "working" && state.replying === intent.id
+    const touring = streaming && current?.inReplyTo === ""
+    const controlling = touring && state.walkthrough !== undefined
+    let allowed: boolean
+    switch (intent.type) {
+      case "Post": allowed = intent.text.trim() !== "" && intent.clientId !== "" && !state.entries.some(e => e.clientId === intent.clientId); break
+      case "StartReply": allowed = state.agent !== "working" && state.entries.some(e => e.author === "person" && e.id === intent.inReplyTo) && !state.entries.some(e => e.inReplyTo === intent.inReplyTo); break
+      case "AppendReply": case "FinishReply": case "FailReply": allowed = streaming; break
+      case "OpenPane": allowed = intent.id === "" || streaming; break
+      case "StartTour": allowed = state.agent !== "working"; break
+      case "DriveWalkthrough": allowed = touring && intent.step >= 1 && intent.step <= 10; break
+      case "PauseTour": case "ResumeTour": allowed = controlling; break
+      case "SeekTour": allowed = controlling && intent.step >= 1 && intent.step <= 11; break
+      case "EndTour": allowed = touring; break
+      default: return false
+    }
+    if (decision.ok !== allowed) return false
+    if (!decision.ok) {
+      if (command.op === "duplicate" && decision.refusal !== "duplicate") return false
+      continue
+    }
+    const event = decision.event
+    const next = apply(state, event)
+    if (event.seq !== state.seq + 1 || next.seq !== event.seq || !consistent(next) || JSON.stringify(state) !== before) return false
+    const client = { ...newClient, conversation: next }
+    const stale = { ...event, seq: Math.max(0, next.seq - command.n) }
+    const gap = { ...event, seq: next.seq + 2 }
+    if (apply(next, stale) !== next || receive(client, stale) !== client || apply(next, gap) !== next) return false
+    const waiting = receive(client, gap)
+    if (!waiting.gap || waiting.conversation !== next) return false
+    switch (intent.type) {
+      case "Post": if (next.entries.at(-1)?.text !== intent.text.trim()) return false; break
+      case "StartReply": case "StartTour": if (next.replying !== intent.id) return false; break
+      case "AppendReply": if (next.entries.find(e => e.id === intent.id)?.text !== current!.text + intent.text) return false; break
+      case "FailReply": if (next.agent !== "failed" || next.entries.find(e => e.id === intent.id)?.error !== (intent.reason || "failed")) return false; break
+      case "FinishReply": case "EndTour": if (next.agent !== "idle") return false; break
+      case "OpenPane": if (next.pane !== intent.url) return false; break
+      case "DriveWalkthrough": case "SeekTour": if (next.walkthrough?.step !== intent.step || next.walkthrough.revision !== next.seq) return false; break
+      case "ResumeTour": case "PauseTour": if (next.walkthrough?.paused !== (intent.type === "PauseTour") || next.walkthrough.revision !== next.seq) return false; break
+    }
+    state = next
+  }
+  return true
+}
+
+it.effect("decide and apply preserve the conversation through generated intent sequences and stale deliveries", () =>
+  check(commands, 250, sequence => walk([...tourAndReplies, ...sequence]) && walk(sequence)))
+
+const controls = Arbitrary.schema(Schema.Array(Schema.Literals(["pause", "resume", "seek", "openWiki"])).check(Schema.isMaxLength(8)))
+it.effect("MockFactory's public flows agree with replay, including duplicate posts and tour controls", () =>
+  check(controls, 8, extra => effect {
+    provide MockFactory {
+      const factory = try Factory
+      const reader = try ConversationRead
+      const room = "factory-room"
+      try factory.tour(room)
+      try Stream.runDrain(factory.events(room, 0).pipe(Stream.takeUntil(event => event.type === "WalkthroughDriven")))
+      let step = 1
+      for (const action of ["pause", ...extra, "seek", "resume", "openWiki"] as const) {
+        if (action === "openWiki") try factory.openWiki(room, "roadmap")
+        else try factory.controlTour!(room, action, step)
+        step = step % 10 + 1
+      }
+      try factory.endTour(room)
+      const stopped = try reader.read(room, 0)
+      const refused = try Effect.flip(factory.controlTour!(room, "pause", 1))
+      const unknown = try Effect.flip(factory.openWiki(room, "missing-" + step))
+      const unchanged = try reader.read(room, 0)
+      try factory.post(room, "client", "Ada", "message-" + step)
+      const duplicate = try Effect.flip(factory.post(room, "client", "Ada", "different"))
+      const snapshot = try reader.read(room, 0)
+      const events = Array.from(try Stream.runCollect(factory.events(room, 0).pipe(Stream.take(snapshot.seq))))
+      let state = empty
+      for (const event of events) {
+        if (event.seq !== state.seq + 1) return false
+        state = apply(state, event)
+        if (!consistent(state)) return false
+      }
+      try Effect.try(() => {
+        expect(refused).toMatchObject({ refusal: "not-replying" })
+        expect(unknown).toMatchObject({ refusal: "empty" })
+        expect(duplicate).toMatchObject({ refusal: "duplicate" })
+        expect(unchanged).toEqual(stopped)
+        expect(state.entries).toEqual(snapshot.entries)
+        expect(state.entries.filter(e => e.clientId === "client").map(e => e.text)).toEqual(["message-" + step])
+        expect(events.some(e => e.type === "PaneOpened" && e.url === "/wiki/roadmap")).toBe(true)
+      })
+      return true
+    }
+  }))

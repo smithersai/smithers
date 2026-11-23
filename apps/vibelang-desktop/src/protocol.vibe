@@ -1,5 +1,7 @@
 // The host/view protocol contains only serializable product state, never platform capabilities or credentials.
-export schema FolderInfo { readonly path: string; readonly files: number; readonly token: string; readonly identity: string }
+// JSON serializes negative zero as positive zero. Only canonical file counts belong on the wire.
+const FileCount = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0), Schema.makeFilter((n) => !Object.is(n, -0)))
+export schema FolderInfo { readonly path: string; readonly files: FileCount; readonly token: string; readonly identity: string }
 export schema ModelInfo { readonly selection?: string; readonly endpoint: string; readonly model: string; readonly state: "ready" | "failed" | "loading" }
 export schema ToolReceipt { readonly model?: string; readonly id?: string; readonly conversation: string; readonly reply: string; readonly operation: string; readonly path: string; readonly before: string; readonly after: string }
 export schema Snapshot { readonly mock: boolean; readonly folder: FolderInfo | null; readonly model: ModelInfo | null; readonly tools: ReadonlyArray<ToolReceipt> }

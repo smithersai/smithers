@@ -1,0 +1,374 @@
+import { vi } from "vitest"
+import { describe, expect, it } from "@effect/vitest"
+import { FlowEngine } from "@smthrs/engine"
+import { BunHost } from "@smthrs/platform-bun"
+import { HttpClientRequest, HttpServerRequest, HttpServerResponse } from "effect/http"
+import { ConversationRead } from "../../vibelang/src/core/Factory.vibe"
+import { MockFactory } from "../../vibelang/src/core/MockFactory.vibe"
+import { ReadSnapshot } from "../../vibelang/src/core/schemas.vibe"
+import { Desktop, Preferences, registration } from "../src/host/Factory.vibe"
+import { folderLayer } from "../src/host/Folder.vibe"
+import { handler } from "../src/host/Http.vibe"
+import { localModelsLayer } from "../src/host/LocalModel.vibe"
+import { choiceCurrent, editAllowed, modelReady, relativeFile } from "../src/policy.vibe"
+import { Snapshot, ToolReceipt } from "../src/protocol.vibe"
+import { receiptOf } from "../src/receipts.vibe"
+
+const executions = Config.withDefault(Config.Int("EFFECT_FUZZ_EXECUTIONS"), 80)
+const count = Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 256 }))
+const edge = Schema.Literals(["", "\0", "\r\n", "e\u0301", "é", "🚀", "\ud800", "\udfff", "…\n", "\n…"])
+const word = Schema.Struct({ left: Schema.String, edge, right: Schema.String })
+type Word = typeof word.Type
+const spelling = (word: Word) => word.left + word.edge + word.right
+
+effect function check<A, E = never, R = never>(inputs: Arbitrary.Arbitrary<A>, property: (value: A) => boolean | (boolean!E!R)) {
+  const result = try Arbitrary.checkEffect(inputs, property, { runs: try executions })
+  try Effect.try(() => expect(Arbitrary.formatCheckFailure(result)).toBeUndefined())
+}
+
+const receipt: ToolReceipt = { conversation: "room", reply: "reply", operation: "fs.edit", path: "notes", before: "", after: "" }
+const empty: Snapshot = { mock: true, model: null, folder: null, tools: [] }
+const folder = { path: "project", identity: "inode", token: "selection", files: 0 }
+const snapshotWire = Schema.fromJsonString(Snapshot)
+const receiptWire = Schema.fromJsonString(ToolReceipt)
+
+describe("desktop wire values", () => {
+  it.effect("round-trips generated snapshots and receipts in both directions through their JSON codecs", () => effect {
+    try check(Arbitrary.schema(Schema.Struct({ state: Snapshot, tool: ToolReceipt, text: word })), effect ({ state, tool, text }) => {
+      const sample = { ...tool, before: spelling(text), after: text.edge + text.left, path: text.right }
+      const value = { ...state, tools: [...state.tools, sample, tool] }
+      const bytes = try Schema.encodeEffect(snapshotWire)(value)
+      const decoded = try Schema.decodeUnknownEffect(snapshotWire)(bytes)
+      const toolBytes = try Schema.encodeEffect(receiptWire)(sample)
+      const decodedTool = try Schema.decodeUnknownEffect(receiptWire)(toolBytes)
+      const again = try Schema.encodeEffect(snapshotWire)(decoded)
+      const toolAgain = try Schema.encodeEffect(receiptWire)(decodedTool)
+      return try Effect.try(() => {
+        expect(decoded).toEqual(value)
+        expect(decodedTool).toEqual(sample)
+        return bytes === again && toolBytes === toolAgain
+      })
+    })
+  })
+
+  it("keeps all UTF-16 wire cases and the difference between absent and empty optional fields", () => {
+    for (const text of ["", "\0", "e\u0301", "🚀", "\ud800", "\udfff", "\udfff\ud800", "🚀".repeat(32769)]) {
+      for (const tool of [{ ...receipt, before: text }, { ...receipt, id: "", model: text, before: text }]) {
+        const wire = JSON.stringify({ ...empty, tools: [tool] })
+        const decoded = Schema.decodeUnknownOption(snapshotWire)(wire)
+        expect(Option.getOrUndefined(decoded)?.tools).toStrictEqual([tool])
+      }
+    }
+  })
+
+  it.effect("rejects malformed wire values even when the invalid field is deep in a tool list", () => effect {
+    const fields = Schema.Literals(["id", "model", "conversation", "reply", "operation", "path", "before", "after"])
+    try check(Arbitrary.schema(Schema.Struct({ state: Snapshot, field: fields, tool: ToolReceipt, n: count })), ({ state, field, tool, n }) => {
+      const malformed = { ...tool, [field]: n }
+      const tools = [...state.tools, malformed, tool]
+      const invalid = [
+        { ...state, tools }, { ...state, tools: {} }, { ...state, mock: 0 },
+        { ...state, folder: { ...folder, token: null } },
+        { ...state, model: { endpoint: "", model: "model", state: "unknown" } },
+      ]
+      return Option.isNone(Schema.decodeUnknownOption(receiptWire)(JSON.stringify(malformed))) &&
+        invalid.every(value => Option.isNone(Schema.decodeUnknownOption(snapshotWire)(JSON.stringify(value)))) &&
+        Option.isNone(Schema.decodeUnknownOption(snapshotWire)(JSON.stringify(state).slice(0, -1)))
+    })
+  })
+
+  it.effect("file counts encode as nonnegative safe integers even at the JSON precision boundary", () => effect {
+    try check(Arbitrary.schema(count), n => {
+      const accepts = (files: number) => Schema.is(Snapshot)({ ...empty, folder: { ...folder, files } })
+      return [0, n, Number.MAX_SAFE_INTEGER].every(accepts) &&
+        [-0, -1 - n, n + 0.5, Number.MAX_SAFE_INTEGER + 1, Infinity, NaN].every(files => !accepts(files))
+    })
+  })
+})
+
+describe("folder, edit and model policies", () => {
+  it.effect("keeps legal names under the root and refuses a forbidden component at every depth", () => effect {
+    const segments = Schema.Array(Schema.Literals(["a", ".config", "..draft", "a..", "文件", "🗂", "e\u0301", "a b"])).check(Schema.isMaxLength(12))
+    try check(Arbitrary.schema(Schema.Struct({ parents: segments, leaf: word })), ({ parents, leaf }) => {
+      const safe = [...parents, "file"].join("/")
+      if (!relativeFile(safe) || relativeFile("/" + safe) || relativeFile("")) return false
+      for (let i = 0; i <= parents.length; i++) {
+        for (const bad of ["..", "", "a\\b", spelling(leaf) + "\0"]) {
+          const parts = [...parents.slice(0, i), bad, ...parents.slice(i), "file"]
+          if (relativeFile(parts.join("/"))) return false
+        }
+      }
+      return !relativeFile(safe + "/..") && !relativeFile(safe + "/") && !relativeFile("..")
+    })
+  })
+
+  it.effect("every admitted arbitrary name resolves within its selected POSIX root", () => (effect {
+    const path = try Path.Path
+    try check(Arbitrary.schema(Schema.Struct({ parent: word, parts: Schema.Array(word).check(Schema.isMaxLength(8)) })), ({ parent, parts }) => {
+      const root = "/projects/project-" + encodeURIComponent(spelling(parent).toWellFormed())
+      const name = parts.map(spelling).join("/")
+      if (!relativeFile(name)) return true
+      const destination = path.relative(root, path.resolve(root, name))
+      return !path.isAbsolute(destination) && destination.split("/")[0] !== ".." &&
+        relativeFile("subfolder/" + name)
+    })
+  }).pipe(Effect.provide(Path.layer)))
+
+  it.effect("revoking a selection or changing an original disables its edit and reapplying a write is a no-op", () => effect {
+    try check(Arbitrary.schema(Schema.Struct({ original: word, next: word, selection: word })), inputs => {
+      const old = spelling(inputs.original)
+      const replacement = old + "\0" + spelling(inputs.next)
+      const token = "selected:" + spelling(inputs.selection)
+      const other = token + "\0"
+      return choiceCurrent(token, token) && !choiceCurrent(other, token) && !choiceCurrent(token, other) &&
+        !choiceCurrent("", "") && !choiceCurrent("", token) &&
+        editAllowed(old, old, replacement) && !editAllowed(old, replacement, replacement) &&
+        !editAllowed(old, old, old) && !editAllowed(old, old + "\0", replacement + "\0")
+    })
+  })
+
+  it.effect("enabling mock preserves readiness and only a ready, named local model admits live work", () => effect {
+    try check(Arbitrary.schema(word), input => {
+      const model = spelling(input)
+      for (const state of ["ready", "loading", "failed", "unknown:" + model]) {
+        if (!modelReady(true, "", state) || !modelReady(true, model, state) || modelReady(false, "", state)) return false
+        if (modelReady(false, "m" + model, state) !== (state === "ready")) return false
+      }
+      return true
+    })
+  })
+})
+
+describe("receipt display excerpts", () => {
+  it.effect("preserves identity and changed text while bounding both sides of huge or malformed diffs", () => effect {
+    try check(Arbitrary.schema(Schema.Struct({ tool: ToolReceipt, padding: count, text: word })), ({ tool, padding, text }) => {
+      const marker = spelling(text)
+      const prefix = "p".repeat(padding * 257)
+      const suffix = "s".repeat((256 - padding) * 257)
+      const source = { ...tool, operation: "fs.edit", before: prefix + "[" + marker + "]" + suffix, after: prefix + "{" + marker + "}" + suffix }
+      const bounded = receiptOf(source, 65536)
+      const expectedPrefix = prefix.length > 80 ? "…\n" + "p".repeat(80) : prefix
+      const expectedSuffix = suffix.length > 80 ? "s".repeat(80) + "\n…" : suffix
+      return sameExcerpt(bounded, source, expectedPrefix + "[" + marker + "]" + expectedSuffix, expectedPrefix + "{" + marker + "}" + expectedSuffix)
+    })
+  })
+
+  it.effect("caps search excerpts at code point boundaries and preserves an already bounded receipt", () => effect {
+    try check(Arbitrary.schema(Schema.Struct({ n: count, text: word })), ({ n, text }) => {
+      const limit = 128 + n
+      const prefix = "x".repeat(limit - 3)
+      const source = { ...receipt, operation: "fs.search", before: prefix + "🚀" + "xyz", after: spelling(text) }
+      const short = receiptOf(source, limit)
+      return sameExcerpt(short, source, prefix + "\n…", source.after) && sameExcerpt(receiptOf(short, limit), short, short.before, short.after)
+    })
+  })
+
+  it.effect("re-excerpting an edit cannot discard any more of its archived text", () => effect {
+    try check(Arbitrary.schema(Schema.Struct({ n: count, gap: count })), ({ n, gap }) => {
+      const middle = "z".repeat(128 + n + gap)
+      const cut = receiptOf({ ...receipt, before: "a" + middle + "a", after: "b" + middle + "b" }, 128 + n)
+      return cut.before.startsWith("a") && cut.after.startsWith("b") && cut.before.length <= 128 + n && cut.after.length <= 128 + n &&
+        sameExcerpt(receiptOf(cut, 128 + n), cut, cut.before, cut.after)
+    })
+  })
+
+  it("retains the two minimal 128-unit excerpt counterexamples on replay", () => {
+    const prefix = "x".repeat(125)
+    expect(receiptOf({ ...receipt, operation: "fs.search", before: prefix + "🚀xy" }, 128).before).toBe(prefix + "\n…")
+    const middle = "z".repeat(128)
+    const cut = receiptOf({ ...receipt, before: "a" + middle + "a", after: "b" + middle + "b" }, 128)
+    expect(cut.before).toBe("a" + "z".repeat(80) + "\n…")
+    expect(cut.after).toBe("b" + "z".repeat(80) + "\n…")
+    expect(receiptOf(cut, 128)).toStrictEqual(cut)
+  })
+
+  it.effect("keeps both edit context boundaries well-formed for replacements, insertions and deletions", () => effect {
+    try check(Arbitrary.schema(Schema.Struct({ n: count, replacement: Schema.Literals(["", "界", "🟠"]) })), ({ n, replacement }) => {
+      const shared = "🟢".repeat(42 + n)
+      const before = shared + "p" + "🔵" + "q" + shared
+      const after = shared + "p" + replacement + "q" + shared
+      const limit = 128 + n
+      const compact = receiptOf({ ...receipt, before, after }, limit)
+      return compact.before.isWellFormed() && compact.after.isWellFormed() &&
+        compact.before.includes("🔵") && (replacement === "" || compact.after.includes(replacement)) &&
+        compact.before.length <= limit && compact.after.length <= limit &&
+        sameExcerpt(receiptOf(compact, limit), compact, compact.before, compact.after)
+    })
+  })
+})
+
+const equalReceipt = Schema.toEquivalence(ToolReceipt)
+
+function sameExcerpt(actual: ToolReceipt, source: ToolReceipt, before: string, after: string) {
+  return equalReceipt(actual, { ...source, before, after })
+}
+
+const host = "127.0.0.1:44509"
+const origin = "http://" + host
+const launch = "0123456789abcdef".repeat(4)
+const rooms = ["one/é?#", "one%2Fé?#"] as const
+
+// The real desktop reads these two archives. The conversation routes share a single
+// product MockFactory. All requests stay inside the handler and the scope owns the files.
+const desktop = Layer.effect(Desktop, effect {
+  const fs = try FileSystem.FileSystem
+  const path = try Path.Path
+  const directory = try fs.makeTempDirectoryScoped({ directory: ".", prefix: ".desktop-fuzz-" })
+  for (const conversation of rooms) {
+    try fs.writeFileString(path.join(directory, "tools-" + encodeURIComponent(conversation) + ".json"), JSON.stringify([{ ...receipt, conversation }]))
+  }
+  const preferences = Layer.succeed(Preferences, { directory, chooseDirectory: () => succeed(null), openExternal: () => Effect.void })
+  const context = try Layer.build(registration.pipe(
+    Layer.provide(Layer.mergeAll(folderLayer, localModelsLayer, preferences)),
+    Layer.provide(FlowEngine.layerMemory),
+  ))
+  return Context.get(context, Desktop)
+})
+const hostServices = Layer.merge(desktop, MockFactory).pipe(Layer.provideMerge(BunHost.layer))
+
+interface Packet {
+  readonly headers?: Readonly<Record<string, string>>
+  readonly body?: string
+  readonly omitOrigin?: boolean
+  readonly rawTarget?: string
+}
+
+effect function request(target: string, packet: Packet = {}) {
+  const base = packet.body === undefined
+    ? HttpClientRequest.get(origin + target)
+    : HttpClientRequest.post(origin + target).pipe(HttpClientRequest.bodyText(packet.body, "application/json"))
+  const web = try HttpClientRequest.toWeb(base.pipe(HttpClientRequest.setHeaders({ host, ...(packet.omitOrigin ? {} : { origin }), ...packet.headers })))
+  const received = HttpServerRequest.fromWeb(web)
+  const incoming = packet.rawTarget === undefined ? received : received.modify({ url: packet.rawTarget })
+  provide HttpServerRequest.HttpServerRequest = incoming {
+    return HttpServerResponse.toWeb(try handler(origin, ".", launch))
+  }
+}
+
+effect function launchCookie() {
+  const response = try request("/desktop/launch?key=" + launch)
+  const header = response.headers.get("set-cookie") ?? ""
+  try Effect.try(() => {
+    expect(response.status).toBe(303)
+    expect(response.headers.get("location")).toBe("/")
+    expect(header).toMatch(/(?:^|;\s*)HttpOnly(?:;|$)/i)
+    expect(header).toMatch(/(?:^|;\s*)SameSite=Strict(?:;|$)/i)
+    expect(header).toMatch(/(?:^|;\s*)Path=\/(?:;|$)/i)
+  })
+  return header.split(";")[0]!
+}
+
+describe("in-process loopback requests", () => {
+  it.effect("compares every same-length launch candidate through the last character", () => (effect {
+    const spy = try acquireRelease(Effect.try(() => vi.spyOn(String.prototype, "charCodeAt")), spy => sync(() => spy.mockRestore()))
+    for (let mismatch = 0; mismatch < launch.length; mismatch++) {
+      const wrong = launch.slice(0, mismatch) + "x" + launch.slice(mismatch + 1)
+      spy.mockClear()
+      const refused = try request("/desktop/launch?key=" + wrong)
+      // Observe reads of the expected key only. A timing threshold would depend on the host.
+      const indices = spy.mock.calls.flatMap((args, i) => spy.mock.contexts[i] === launch ? [args[0]] : [])
+      try Effect.try(() => {
+        expect(refused.status).toBe(403)
+        expect(refused.headers.has("set-cookie")).toBe(false)
+        expect(indices).toEqual(Array.from({ length: launch.length }, (_, i) => i))
+      })
+    }
+  }).pipe(Effect.provide(hostServices), Effect.scoped))
+
+  it.effect("refuses inconsistent request metadata and incorrect cookies on both API namespaces", () => (effect {
+    const cookie = try launchCookie()
+    for (const site of ["same-origin", "none"]) {
+      const ownRead = try request("/desktop/state", { headers: { cookie, "sec-fetch-site": site }, omitOrigin: true })
+      try Effect.try(() => expect(ownRead.status).toBe(200))
+    }
+    const noOrigin = try request("/desktop/change", { headers: { cookie }, body: '{"operation":"mock"}', omitOrigin: true })
+    try Effect.try(() => expect(noOrigin.status).toBe(403))
+    try check(Arbitrary.schema(Schema.Struct({ n: count, api: Schema.Boolean })), effect ({ n, api }) => {
+      const target = api ? "/api/auth/session" : "/desktop/state"
+      const other = "other" + n + ".invalid"
+      const at = n % launch.length
+      const wrong = launch.slice(0, at) + "x" + launch.slice(at + 1)
+      const bad: Array<Record<string, string>> = [
+        { cookie, host: other }, { cookie, origin: "https://" + other },
+        { cookie, "sec-fetch-site": "cross-site" }, { cookie, "sec-fetch-site": "same-site" },
+        { cookie, "sec-fetch-site": "invalid-" + n }, {},
+        { cookie: "vibelang-desktop-launch=" + launch.slice(0, n % launch.length) },
+        { cookie: "different-name=" + launch }, { cookie: "vibelang-desktop-launch=" + wrong },
+      ]
+      for (const headers of bad) {
+        const response = try request(target, { headers })
+        if (response.status !== 403 || response.headers.has("set-cookie")) return false
+      }
+      const write = try request("/desktop/change", { headers: { cookie, origin: "https://" + other }, body: '{"operation":"mock"}' })
+      return write.status === 403
+    })
+  }).pipe(Effect.provide(hostServices), Effect.scoped))
+
+  it.effect("refuses invalid asset names and still serves the packaged index", () => (effect {
+    const index = try request("/index.html")
+    const fs = try FileSystem.FileSystem
+    const expected = try fs.readFileString("index.html")
+    const served = try promise(() => index.text())
+    try Effect.try(() => { expect(index.status).toBe(200); expect(served).toBe(expected) })
+    try check(Arbitrary.schema(count), effect (n) => {
+      const name = "sample-" + n + ".css"
+      for (const target of ["/assets/../index.html", "/media/./../index.html", "/assets/../" + name, "/assets/%2e%2e/index.html", "/assets/%2e%2e/" + name, "/assets/%00" + name, "/assets//" + name]) {
+        // A server adapter can supply a raw target; constructing a Web Request alone canonicalizes it first.
+        const answer = try request("/", { rawTarget: target })
+        if (answer.status !== 404) return false
+      }
+      return true
+    })
+  }).pipe(Effect.provide(hostServices), Effect.scoped))
+
+  it.effect("validates unknown operations, malformed JSON and the exact change-body limit", () => (effect {
+    const headers = { cookie: try launchCookie() }
+    const valid = JSON.stringify({ operation: "open" })
+    try check(Arbitrary.schema(word), effect (input) => {
+      const body = JSON.stringify({ operation: "unknown:" + spelling(input) })
+      return (try request("/desktop/change", { headers, body })).status === 400 &&
+        (try request("/desktop/change", { headers, body: body.slice(0, -1) })).status === 400
+    })
+    const boundary = try request("/desktop/change", { headers, body: valid.padEnd(4096) })
+    const over = try request("/desktop/change", { headers, body: valid.padEnd(4097) })
+    const snapshot = try Schema.decodeUnknownEffect(snapshotWire)(try promise(() => boundary.text()))
+    try Effect.try(() => { expect(boundary.status).toBe(200); expect(snapshot).toStrictEqual(empty); expect(over.status).toBe(413) })
+  }).pipe(Effect.provide(hostServices), Effect.scoped))
+
+  it.effect("isolates finite reads, cursors and desktop receipts in similarly named conversations", () => (effect {
+    const headers = { cookie: try launchCookie() }
+    const reader = try ConversationRead
+    for (const room of rooms) {
+      const route = "/api/conversations/" + encodeURIComponent(room)
+      const posted = try request(route + "/posts", { headers, body: JSON.stringify({ clientId: "shared-id", name: "A", text: room }) })
+      try Effect.try(() => expect(posted.status).toBe(200))
+    }
+    try TestClock.adjust("1 minute")
+    const hidden = try request("/desktop/state", { headers })
+    const desktopState = try Schema.decodeUnknownEffect(snapshotWire)(try promise(() => hidden.text()))
+    try Effect.try(() => expect(desktopState.tools).toStrictEqual([]))
+    try check(Arbitrary.schema(Schema.Struct({ second: Schema.Boolean, cursor: count })), effect ({ second, cursor }) => {
+      const room = rooms[second ? 1 : 0]
+      const encoded = encodeURIComponent(room)
+      const all = try reader.read(room, 0)
+      const after = cursor % (all.seq + 2)
+      const expected = try reader.read(room, after)
+      const response = try request("/api/conversations/" + encoded + "?after=" + after, { headers })
+      const read = try Schema.decodeUnknownEffect(Schema.fromJsonString(ReadSnapshot))(try promise(() => response.text()))
+      const snapshot = try request("/desktop/state?conversation=" + encoded, { headers })
+      const state = try Schema.decodeUnknownEffect(snapshotWire)(try promise(() => snapshot.text()))
+      return try Effect.try(() => {
+        expect(response.status).toBe(200)
+        expect(snapshot.status).toBe(200)
+        expect(state.tools).toStrictEqual([{ ...receipt, conversation: room }])
+        expect(all.entries.filter(entry => entry.author === "person").map(entry => entry.text)).toEqual([room])
+        expect(read).toStrictEqual(expected)
+        expect(read.seq).toBe(all.seq)
+        // Only the reply is touched again after the person's post.
+        expect(all.entries.map(entry => [entry.author, entry.done])).toEqual([["person", true], ["agent", true]])
+        expect(read.entries).toStrictEqual(all.entries.filter(entry => after < (entry.author === "person" ? entry.seq : all.seq)))
+        return true
+      })
+    })
+  }).pipe(Effect.provide(hostServices), Effect.scoped))
+})

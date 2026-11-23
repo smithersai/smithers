@@ -30,14 +30,24 @@ const graphemes = new Intl.Segmenter(undefined, { granularity: "grapheme" })
 /** Columns a character takes: box drawing and the arrow are one, as the terminal draws them. */
 const cellWidth = (char: string): number => /^[\u2500-\u25ff]$/.test(char) ? 1 : Math.max(1, stringWidth(char))
 
+/** The columns `put` gives `text`: an escape or zero-width character still takes the cell it is put in. */
+const cells = (text: string): number => {
+  let total = 0
+  for (const { segment: char } of graphemes.segment(text)) total += cellWidth(char)
+  return total
+}
+
 const clip = (text: string, width: number): string => {
-  if (stringWidth(text) <= width) return text + " ".repeat(width - stringWidth(text))
+  const whole = cells(text)
+  if (whole <= width) return text + " ".repeat(width - whole)
   let kept = ""
+  let used = 0
   for (const { segment: char } of graphemes.segment(text)) {
-    if (stringWidth(kept + char) > width - 1) break
+    if (used + cellWidth(char) > width - 1) break
     kept += char
+    used += cellWidth(char)
   }
-  return kept + "…" + " ".repeat(Math.max(0, width - 1 - stringWidth(kept)))
+  return kept + "…" + " ".repeat(Math.max(0, width - 1 - used))
 }
 
 interface Placed {

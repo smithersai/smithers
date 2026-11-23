@@ -366,7 +366,9 @@ export const treeRow = (
   inner: number,
   seat: number
 ): { readonly title: string; readonly gap: number; readonly aside: string } => {
-  const pad = (text: string, width: number) => SubagentCard.clip(text, width - 1).padEnd(width)
+  // Padded by cells: a wide model name is fewer characters than columns.
+  const fill = (text: string, width: number) => text + " ".repeat(Math.max(0, width - stringWidth(text)))
+  const pad = (text: string, width: number) => fill(SubagentCard.clip(text, width - 1), width)
   // The columns leave the clipped name one cell and the space before it, so the pane never cuts them off.
   const cap = Math.max(0, inner - 3 - lead)
   // A clock reads whole or not at all: a narrow pane never trims `5.1s` to `5.1`.
@@ -377,8 +379,9 @@ export const treeRow = (
   const seatWidth = Math.max(0, Math.min(seat, cap - clockWidth))
   const right = seatWidth + clockWidth
   const aside = row.seat === "" && stringWidth(clock) >= columns.clock
-    ? pad(clock, right)
-    : `${pad(row.seat, seatWidth)}${clock.padEnd(clockWidth)}`
+    // The clock fits `right` whole (it fit `cap`), so it is filled, never clipped.
+    ? fill(clock, right)
+    : `${pad(row.seat, seatWidth)}${fill(clock, clockWidth)}`
   // One space always separates the clipped name from the seat column.
   const title = SubagentCard.clip(row.name, Math.max(1, inner - 2 - lead - right))
   return { title, gap: Math.max(1, inner - 1 - lead - stringWidth(title) - right), aside }

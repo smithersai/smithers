@@ -19,7 +19,7 @@ import type { Storage } from "./Objects.vibe"
 import { GitHubDelegate, asPerson, refusalOf, type Connection } from "./GitHubDelegate.vibe"
 import { submissionBase } from "./SubmissionBase.vibe"
 import { PublicReads, READ_PATIENCE } from "./PublicReads.vibe"
-import { carriesCode, connectFailure, failureReason, draftProposed, joinsReceipt, objectPath, pinnedConflict, readRetriesSignedOut, refusalReason, requestKey, retriesSettledFailure, sameActor, wikiDraftRefusal, wikiEditRefusal, writeKeyMissing, wikiRefusalStatus, wikiUnwritten } from "../src/core/issueHostDecision.vibe"
+import { carriesCode, connectFailure, failureReason, draftProposed, objectPath, pinnedConflict, readRetriesSignedOut, refusalReason, requestKey, retriesSettledFailure, sameActor, wikiDraftRefusal, wikiEditRefusal, writeKeyMissing, wikiRefusalStatus, wikiUnwritten } from "../src/core/issueHostDecision.vibe"
 import { editable } from "../src/core/wikiPageDecision.vibe"
 import { bodyLimit, objectMethod, withinBodyLimit } from "./workerDecision.vibe"
 import { actorKind, actorRole, reviewAuthored, reviewChangesPage, executionActor } from "./actorDecision.vibe"
@@ -409,7 +409,8 @@ export effect function executeWiki(hostId: string, storage: Storage, input: Wiki
   }
   const result = try scoped(Effect.provide(effect {
     const engine = try FlowRuntime.FlowRuntime
-    if (joinsReceipt(observed.fresh, failed)) {
+    // Both the original execution and every recovery are bound to the original recorded payload.
+    if (!observed.fresh) {
       const inspection = try RunInspection.RunInspection
       const recorded = try inspection.payload(executionId)
       const decoded = Schema.decodeUnknownOption(WikiRequest)(recorded.payload)
@@ -421,9 +422,6 @@ export effect function executeWiki(hostId: string, storage: Storage, input: Wiki
         // CloudflareRuntime's engine store always retries from a step (EngineStore's `retryFrom`).
         const retryFrom = engine.retryFrom!
         const inspection = try RunInspection.RunInspection
-        const recorded = try inspection.payload(executionId)
-        const decoded = Schema.decodeUnknownOption(WikiRequest)(recorded.payload)
-        if (Option.isNone(decoded) || Object.entries(journaled).some(([name, value]) => decoded.value[name as keyof WikiRequest] !== value)) throw new WikiFailure({ reason: "invalid" })
         const source = try inspection.inspect(executionId)
         const step = source.steps.find((item) => item.action === `${flow._tag}/perform`)
         if (step === undefined) throw new WikiFailure({ reason: "unavailable" })

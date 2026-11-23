@@ -169,13 +169,22 @@ const lines = (content: unknown): string => {
 }
 
 /** A field the vendor sends as a list, or no items when it sends anything else. */
-const list = (value: unknown): ReadonlyArray<any> => (Array.isArray(value) ? value : [])
+const list = (value: unknown): ReadonlyArray<any> =>
+  Array.isArray(value) ? value.filter((each) => typeof each === "object" && each !== null) : []
+
+/** A field the vendor sends as an object; a `null` or a scalar in its place reads as absent. */
+const record = (value: unknown): Record<string, any> | undefined =>
+  typeof value === "object" && value !== null ? value : undefined
+
+/** The session a vendor named, when it named one as text. */
+const announced = (session: unknown): { readonly announce?: string } =>
+  typeof session === "string" ? { announce: session } : {}
 
 /** Folds one parsed line of Claude Code's `stream-json`. */
 const claude = (event: Record<string, any>): Folded => {
-  if (event.type === "system" && event.subtype === "init") return { rows: [], announce: event.session_id }
+  if (event.type === "system" && event.subtype === "init") return { rows: [], ...announced(event.session_id) }
   if (event.type === "assistant") {
-    const usage = event.message?.usage
+    const usage = record(event.message?.usage)
     const input = usage === undefined ?
       0 :
       (usage.input_tokens ?? 0) + (usage.cache_read_input_tokens ?? 0) + (usage.cache_creation_input_tokens ?? 0)
@@ -188,10 +197,10 @@ const claude = (event: Record<string, any>): Folded => {
     return {
       settled: true,
       rows: list(event.message?.content).flatMap((part: Record<string, any>): Array<Row> =>
-        part.type === "text" && String(part.text).trim() !== ""
+        part.type === "text" && typeof part.text === "string" && part.text.trim() !== ""
           ? [{ glyph: "⏺", text: first(part.text, 200) }]
           : part.type === "tool_use"
-          ? [{ glyph: "⏺", text: call(part.name, part.input ?? {}) }]
+          ? [{ glyph: "⏺", text: call(String(part.name), record(part.input) ?? {}) }]
           : []
       ),
       ...(usage === undefined ? {} : {
@@ -222,9 +231,9 @@ const claude = (event: Record<string, any>): Folded => {
 
 /** Folds one parsed line of `codex exec --json`. */
 const codex = (event: Record<string, any>): Folded => {
-  if (event.type === "thread.started") return { rows: [], announce: event.thread_id }
+  if (event.type === "thread.started") return { rows: [], ...announced(event.thread_id) }
   if (event.type === "turn.completed") {
-    const usage = event.usage ?? {}
+    const usage = record(event.usage) ?? {}
     // Codex names its thread before it can resume it: only a completed turn makes it resumable (0.x).
     return {
       rows: [],
@@ -240,7 +249,7 @@ const codex = (event: Record<string, any>): Folded => {
     return { rows: [], error: String(event.error?.message ?? event.message ?? "Codex failed") }
   }
   if (event.type !== "item.completed") return { rows: [] }
-  const item = event.item ?? {}
+  const item = record(event.item) ?? {}
   switch (item.type) {
     case "agent_message":
       return { rows: [{ glyph: "•", text: first(String(item.text ?? ""), 200) }], answer: String(item.text ?? "") }

@@ -27,10 +27,15 @@ effect function handle(origin: string, assets: string, launch: string) {
   const desktop = try Desktop
   const fs = try FileSystem.FileSystem
   const path = try Path.Path
-  const url = new URL(request.url, origin)
   if (request.headers.host !== new URL(origin).host) return json({ error: "host" }, 403)
-  if (request.headers["sec-fetch-site"] === "cross-site") return json({ error: "origin" }, 403)
-  if (request.method !== "GET" && request.method !== "HEAD" && request.headers.origin !== origin) return json({ error: "origin" }, 403)
+  const site = request.headers["sec-fetch-site"]
+  if (site !== undefined && site !== "none" && site !== "same-origin") return json({ error: "origin" }, 403)
+  const requestOrigin = request.headers.origin
+  if ((requestOrigin !== undefined || (request.method !== "GET" && request.method !== "HEAD")) && requestOrigin !== origin) return json({ error: "origin" }, 403)
+  // URL parsing removes dot segments. Refuse them while the transport still exposes the raw target.
+  const rawPath = request.url.split(/[?#]/, 1)[0]!
+  if (rawPath.includes("\\") || /(?:^|\/)(?:\.|%2e){1,2}(?:\/|$)/i.test(rawPath)) return json({ error: "not found" }, 404)
+  const url = new URL(request.url, origin)
   if (url.pathname === "/desktop/launch" && request.method === "GET") {
     if (!launched(url.searchParams.get("key"), launch)) return json({ error: "launch" }, 403)
     return try HttpServerResponse.redirect("/", { status: 303, headers: { "cache-control": "no-store" } }).pipe(HttpServerResponse.setCookie(LAUNCH_COOKIE, launch, { httpOnly: true, sameSite: "strict", path: "/" }), Effect.orDie)

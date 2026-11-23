@@ -320,6 +320,8 @@ const FlowId = Schema.String.check(
 const IssueNumber = Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 2_147_483_647 }))
 const IdempotencyKey = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(200), Schema.isPattern(/^[A-Za-z0-9._:-]+$/))
 const State = Schema.Literals(["open", "closed", "all"])
+/** A UTF-16 surrogate with no partner: text that has no UTF-8 encoding. */
+const UNPAIRED_SURROGATE = /[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/
 
 const RepoArgs = {
   owner: Schema.optional(Name),
@@ -732,8 +734,20 @@ export const makeMcpToolRegistry = (deps: McpToolDeps) =>
         Effect.tap(({ access }) => Effect.sync(() => { seen.role = access.role })),
       )
 
-    const keyOf = (args: { readonly idempotencyKey?: string | undefined }, ctx: McpToolContext) =>
-      args.idempotencyKey ?? `rpc:${ctx.requestId}`
+    /**
+     * A write's idempotency key: the call's own, else its JSON-RPC request id. The id is the client's text, and its
+     * write id hashes it as UTF-8 (`Uuid.v5` dies on an unpaired surrogate), so an id that is not well-formed Unicode
+     * is refused instead.
+     */
+    const keyOf = (args: { readonly idempotencyKey?: string | undefined }, ctx: McpToolContext): Effect.Effect<string, McpToolError> =>
+      args.idempotencyKey !== undefined
+        ? Effect.succeed(args.idempotencyKey)
+        : UNPAIRED_SURROGATE.test(ctx.requestId)
+        ? Effect.fail(new McpToolError({
+          code: "invalid_params",
+          message: "The JSON-RPC request id is not well-formed Unicode: pass `idempotencyKey`, or send another id",
+        }))
+        : Effect.succeed(`rpc:${ctx.requestId}`)
 
     const handlers: Record<string, (args: Record<string, unknown>, ctx: McpToolContext, seen: Seen) => Effect.Effect<Result, McpToolError>> = {
       repo_tree: (raw, ctx, seen) =>
@@ -973,7 +987,7 @@ export const makeMcpToolRegistry = (deps: McpToolDeps) =>
           const args = yield* decodeArgs(IssueCreateArgs, raw)
           const repo = yield* resolveRepoArgs(args, ctx.defaultRepo)
           const { principal } = yield* writeAccess(seen, ctx, repo, "guest")
-          const writeId = yield* mcpWriteId(principal.tokenId, "issue_create", keyOf(args, ctx))
+          const writeId = yield* mcpWriteId(principal.tokenId, "issue_create", yield* keyOf(args, ctx))
           const receipt = yield* deps.createIssue({
             owner: repo.owner,
             name: repo.name,
@@ -992,7 +1006,7 @@ export const makeMcpToolRegistry = (deps: McpToolDeps) =>
           const args = yield* decodeArgs(IssueCommentArgs, raw)
           const repo = yield* resolveRepoArgs(args, ctx.defaultRepo)
           const { principal } = yield* writeAccess(seen, ctx, repo, "guest")
-          const writeId = yield* mcpWriteId(principal.tokenId, "issue_comment", keyOf(args, ctx))
+          const writeId = yield* mcpWriteId(principal.tokenId, "issue_comment", yield* keyOf(args, ctx))
           const receipt = yield* deps.commentIssue({
             owner: repo.owner,
             name: repo.name,
