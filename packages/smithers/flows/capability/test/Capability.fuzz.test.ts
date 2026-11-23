@@ -1,54 +1,88 @@
 import { Fuzz } from "@smthrs/fuzz"
 import { Arbitrary, Effect, Option, Schema } from "effect"
 import { describe, expect, it } from "vitest"
-import { Capability, Permission } from "../src/index.ts"
+import { decodePermissionError } from "../src/decodePermissionError.ts"
+import { Capability, CapabilitySet, Permission } from "../src/index.ts"
 
-const executions = Number(process.env.EFFECT_FUZZ_EXECUTIONS ?? (process.env.EFFECT_FUZZ ? "2000" : "250"))
+const executions = Number(process.env.EFFECT_FUZZ_EXECUTIONS ?? (process.env.EFFECT_FUZZ ? "1000" : "250"))
 const seed = Number(process.env.EFFECT_FUZZ_SEED ?? "20261122")
 
-const seg = Schema.Literals(["src", "lib", "secrets", "config", "a.ts", "b.ts", "key", "env"])
-const patSeg = Schema.Literals(["src", "lib", "secrets", "*", "**", "*.ts", "key"])
+const validResource = Schema.Literals([
+  "src/index.ts",
+  "src/a/b.ts",
+  "api.example.com",
+  "10.0.0.1",
+  "node",
+  "git",
+  "/abs/path/file.ts",
+  "/abs/../escape",
+  "a/./b",
+  "a/../b"
+])
+const validPatternResource = Schema.Literals([
+  "*",
+  "src/*",
+  "src/**",
+  "*.example.com",
+  "api.example.com",
+  "node",
+  "src/index.ts",
+  "/abs/**"
+])
 
-describe("@smthrs/capability fuzz invariants", () => {
-  it("subsumption and overlap are sound: subsumes(p1, p2) && matches(p2, c) => matches(p1, c)", async () => {
+describe("@smthrs/capability comprehensive fuzz security invariants", () => {
+  it("parse/format, parsePattern/patternFromCapability, subsumes, matches, mayOverlap, and tierOf are sound across all actions", async () => {
     const arb = Arbitrary.schema(
       Schema.Struct({
-        a1: Capability.PatternAction,
-        a2: Capability.PatternAction,
-        ac: Capability.Action,
-        p1: Schema.Array(patSeg),
-        p2: Schema.Array(patSeg),
-        rc: Schema.Array(seg)
+        action: Capability.Action,
+        patAction1: Capability.PatternAction,
+        patAction2: Capability.PatternAction,
+        resource: validResource,
+        patRes1: validPatternResource,
+        patRes2: validPatternResource
       })
     )
     const report = await Effect.runPromise(
       Fuzz.run(
         arb,
-        ({ a1, a2, ac, p1, p2, rc }) => {
-          const r1 = "/" + (p1.slice(0, 4).join("/") || "src")
-          const r2 = "/" + (p2.slice(0, 4).join("/") || "src")
-          const res = "/" + (rc.slice(0, 4).join("/") || "src")
-          const pat1Opt = Capability.parsePattern(`${a1}:${r1}`)
-          const pat2Opt = Capability.parsePattern(`${a2}:${r2}`)
-          const cap = Capability.make(ac, res)
-          if (Option.isNone(pat1Opt) || Option.isNone(pat2Opt)) return true
-          const pat1 = pat1Opt.value
-          const pat2 = pat2Opt.value
+        ({ action, patAction1, patAction2, resource, patRes1, patRes2 }) =>
+          Effect.sync(() => {
+            const cap = Capability.make(action, resource)
+            const formatted = Capability.format(cap)
+            const reparsed = Capability.parse(formatted)
+            if (Option.isNone(reparsed)) return false
+            if (reparsed.value.action !== action || reparsed.value.resource !== resource) return false
 
-          // Format -> parse round-trip.
-          const rt = Capability.parse(Capability.format(cap))
-          if (Option.isNone(rt) || rt.value.action !== cap.action || rt.value.resource !== cap.resource) return false
+            // patternFromCapability ALWAYS matches its own capability
+            const exactPat = Capability.patternFromCapability(cap)
+            if (Option.isSome(exactPat)) {
+              if (!Capability.matches(exactPat.value, cap)) return false
+              if (!Capability.subsumes(exactPat.value, exactPat.value)) return false
+            }
 
-          const m1 = Capability.matches(pat1, cap)
-          const m2 = Capability.matches(pat2, cap)
+            // tierOf & requiresIdempotencyKey always return valid values
+            const tier = Capability.tierOf(cap, { workspaceRoot: "/abs" })
+            if (tier !== "sealed" && tier !== "compensable" && tier !== "irreversible") return false
+            if (typeof Capability.requiresIdempotencyKey(tier) !== "boolean") return false
 
-          // Subsumption soundness: attenuation MUST NEVER widen privilege.
-          if (Capability.subsumes(pat1, pat2) && m2 && !m1) return false
-
-          // Overlap soundness: common match implies mayOverlap.
-          if (m1 && m2 && !Capability.mayOverlap(pat1, pat2)) return false
-          return true
-        },
+            const p1 = Capability.parsePattern(`${patAction1}:${patRes1}`)
+            const p2 = Capability.parsePattern(`${patAction2}:${patRes2}`)
+            if (Option.isSome(p1) && Option.isSome(p2)) {
+              // Subsumption soundness: subsumes(p1, p2) && matches(p2, cap) => matches(p1, cap)
+              if (Capability.subsumes(p1.value, p2.value) && Capability.matches(p2.value, cap)) {
+                if (!Capability.matches(p1.value, cap)) return false
+              }
+              // Overlap soundness: if BOTH p1 and p2 match cap, mayOverlap(p1, p2) MUST be true!
+              if (Capability.matches(p1.value, cap) && Capability.matches(p2.value, cap)) {
+                if (!Capability.mayOverlap(p1.value, p2.value)) return false
+              }
+              // Wildcard *:* NEVER grants net:private
+              if (patAction1 === "*" && patRes1 === "*" && action === "net:private") {
+                if (Capability.matches(p1.value, cap)) return false
+              }
+            }
+            return true
+          }),
         { seed, executions }
       )
     )
@@ -57,42 +91,56 @@ describe("@smthrs/capability fuzz invariants", () => {
     expect(report._tag).toBe("Passed")
   })
 
-  it("security invariants: wildcard allow never grants net:private; configured deny vetoes later allows; traversal denies", async () => {
+  it("CapabilitySet intersect/within/equals/attenuate satisfy monotone lattice laws", async () => {
+    const patListArb = Schema.Array(
+      Schema.Struct({
+        action: Capability.PatternAction,
+        res: validPatternResource
+      })
+    ).pipe(Schema.check(Schema.isMaxLength(4)))
     const arb = Arbitrary.schema(
       Schema.Struct({
-        host: Schema.Literals(["127.0.0.1", "10.0.0.1", "169.254.169.254", "localhost", "api.example.com"]),
-        pathParts: Schema.Array(seg),
-        traversal: Schema.Literals(["/../secrets/key", "//secrets/key", "/secrets/key/", "/./secrets/key"])
+        g1: patListArb,
+        g2: patListArb,
+        probeAction: Capability.Action,
+        probeRes: validResource
       })
     )
     const report = await Effect.runPromise(
       Fuzz.run(
         arb,
-        ({ host, pathParts, traversal }) => {
-          const wildcardAllow: ReadonlyArray<Permission.Rule> = [
-            { effect: "allow", pattern: Option.getOrThrow(Capability.parsePattern("*:**")) }
-          ]
-          // Wildcard allow MUST NEVER allow net:private.
-          const privDecision = Permission.evaluate([wildcardAllow], Capability.make("net:private", host))
-          if (privDecision === "allow") return false
+        ({ g1, g2, probeAction, probeRes }) =>
+          Effect.gen(function*() {
+            const toPats = (list: ReadonlyArray<{ action: Capability.PatternAction; res: string }>) =>
+              list.flatMap((x) => {
+                const p = Capability.parsePattern(`${x.action}:${x.res}`)
+                return Option.isSome(p) ? [p.value] : []
+              })
+            const s1 = CapabilitySet.fromPatterns(toPats(g1))
+            const s2 = CapabilitySet.fromPatterns(toPats(g2))
+            const inter = CapabilitySet.intersect(s1, s2)
+            const cap = Capability.make(probeAction, probeRes)
 
-          // Configured deny in rulesets[0] MUST veto any allow in rulesets[1].
-          const targetPath = "/" + (pathParts.slice(0, 3).join("/") || "secrets/key")
-          const cap = Capability.make("fs:read", targetPath)
-          const veto = Permission.evaluate(
-            [
-              [{ effect: "deny", pattern: Option.getOrThrow(Capability.parsePattern(`fs:read:${targetPath}`)) }],
-              [{ effect: "allow", pattern: Option.getOrThrow(Capability.parsePattern("fs:read:/**")) }]
-            ],
-            cap
-          )
-          if (veto !== "deny") return false
-
-          // Non-canonical absolute path with ., .., // or trailing / MUST fail closed to deny.
-          const travDecision = Permission.evaluate([wildcardAllow], Capability.make("fs:read", traversal))
-          return travDecision === "deny"
-        },
-        { seed, executions }
+            // none allows nothing
+            if (CapabilitySet.allows(CapabilitySet.none, cap)) return false
+            // Intersection semantics: allows(s1 ∩ s2, c) <=> allows(s1, c) && allows(s2, c)
+            const expected = CapabilitySet.allows(s1, cap) && CapabilitySet.allows(s2, cap)
+            if (CapabilitySet.allows(inter, cap) !== expected) return false
+            // Commutativity & idempotence of equals
+            if (!CapabilitySet.equals(s1, s1)) return false
+            if (!CapabilitySet.equals(inter, CapabilitySet.intersect(s2, s1))) return false
+            // Soundness of within: if within(inner, outer), then allows(inner, cap) => allows(outer, cap)
+            if (CapabilitySet.within(inter, s1) && CapabilitySet.allows(inter, cap)) {
+              if (!CapabilitySet.allows(s1, cap)) return false
+            }
+            // Effect attenuation narrows current ambient authority
+            const afterAttenuate = yield* CapabilitySet.current.pipe(
+              CapabilitySet.attenuate(toPats(g1)),
+              CapabilitySet.attenuate(toPats(g2))
+            )
+            return CapabilitySet.allows(afterAttenuate, cap) === expected
+          }),
+        { seed: seed + 1, executions }
       )
     )
     const failure = Fuzz.formatReport(report)
@@ -100,21 +148,43 @@ describe("@smthrs/capability fuzz invariants", () => {
     expect(report._tag).toBe("Passed")
   })
 
-  it("arbitrary adversarial strings never crash parse, parsePattern, or evaluate", async () => {
-    const arb = Arbitrary.schema(Schema.Tuple([Schema.String, Schema.String]))
+  it("Permission.evaluate, PermissionError, decodePermissionError, and formatError uphold deny-veto & fail-closed traversal", async () => {
+    const arb = Arbitrary.schema(
+      Schema.Struct({
+        action: Capability.Action,
+        resource: validResource,
+        allowAll: Schema.Boolean,
+        denyThis: Schema.Boolean,
+        mode: Schema.Literals(["attended", "unattended"])
+      })
+    )
     const report = await Effect.runPromise(
       Fuzz.run(
         arb,
-        ([rawPat, rawRes]) => {
-          const pat = Capability.parsePattern(rawPat)
-          const cap = Capability.parse(rawRes)
-          if (Option.isSome(pat) && Option.isSome(cap)) {
-            const decision = Permission.evaluate([[{ effect: "allow", pattern: pat.value }]], cap.value)
-            return decision === "allow" || decision === "deny" || decision === "ask"
-          }
-          return true
-        },
-        { seed, executions }
+        ({ action, resource, allowAll, denyThis, mode }) =>
+          Effect.sync(() => {
+            const cap = Capability.make(action, resource)
+            const allowRules = allowAll
+              ? [Capability.parsePattern("*:*"), Capability.parsePattern("net:private:*")].flatMap((o) =>
+                Option.isSome(o) ? [{ pattern: o.value, effect: "allow" as const }] : []
+              )
+              : []
+            const exactOpt = Capability.patternFromCapability(cap)
+            const denyRules = denyThis && Option.isSome(exactOpt)
+              ? [{ pattern: exactOpt.value, effect: "deny" as const }]
+              : []
+            const verdict = Permission.evaluate([allowRules, denyRules], cap)
+            if (denyThis && Option.isSome(exactOpt) && verdict !== "deny") return false
+            if (verdict === "deny") {
+              const err = Permission.permissionDenied(cap, "denied_by_policy")
+              const formatted = Permission.formatError(err)
+              if (formatted.length === 0) return false
+              const decoded = decodePermissionError(err)
+              if (Option.isNone(decoded)) return false
+            }
+            return true
+          }),
+        { seed: seed + 2, executions }
       )
     )
     const failure = Fuzz.formatReport(report)

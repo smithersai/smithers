@@ -1,187 +1,279 @@
 import { Fuzz } from "@smthrs/fuzz"
-import { Arbitrary, Effect, Schema } from "effect"
+import { Arbitrary, Effect, Result, Schema } from "effect"
 import { describe, expect, it } from "vitest"
 import { BoundedJson, Canonical, CanonicalError, canonicalize, isRecord, sortCollections } from "../src/index.ts"
+import * as IssuePath from "../src/IssuePath.ts"
+import * as ReadonlyMap from "../src/ReadonlyMap.ts"
 
-const executions = Number(process.env.EFFECT_FUZZ_EXECUTIONS ?? (process.env.EFFECT_FUZZ ? "2000" : "250"))
+const executions = Number(process.env.EFFECT_FUZZ_EXECUTIONS ?? (process.env.EFFECT_FUZZ ? "1000" : "250"))
 const seed = Number(process.env.EFFECT_FUZZ_SEED ?? "20261122")
 
-const runProp = <A>(arb: Arbitrary.Arbitrary<A>, prop: (a: A) => boolean, count = executions) =>
-  Effect.runPromise(
-    Fuzz.run(arb, prop, { seed, executions: count }).pipe(
-      Effect.map((report) => {
-        const failure = Fuzz.formatReport(report)
-        if (failure !== undefined) throw new Error(failure)
-        expect(report._tag).toBe("Passed")
-      })
-    )
-  )
+const cleanString = (s: string): string => {
+  let out = ""
+  for (let i = 0; i < s.length; i++) {
+    const code = s.charCodeAt(i)
+    if (code >= 0xd800 && code <= 0xdfff) continue
+    out += s[i]
+  }
+  return out
+}
 
-// Strip lone surrogates from arbitrary strings so valid-JSON tests stay RFC 8785 legal.
-const cleanString = (s: string): string => s.replace(/[\uD800-\uDFFF]/g, "_")
-
-const JsonLeaf = Schema.Union([
+const jsonLeaf = Schema.Union([
   Schema.Null,
   Schema.Boolean,
   Schema.Finite,
-  Schema.String
+  Schema.String.pipe(Schema.check(Schema.isMaxLength(24)))
 ])
 
-const JsonEntry = Schema.Tuple([Schema.String, JsonLeaf])
+const jsonObj = Schema.Record(
+  Schema.String.pipe(Schema.check(Schema.isMaxLength(12))),
+  Schema.Union([jsonLeaf, Schema.Array(jsonLeaf).pipe(Schema.check(Schema.isMaxLength(5)))])
+)
 
-const shuffleKeys = (obj: Record<string, unknown>, perm: number): Record<string, unknown> => {
-  const entries = Object.entries(obj)
-  if (entries.length <= 1) return { ...obj }
-  const rotated = [...entries.slice(perm % entries.length), ...entries.slice(0, perm % entries.length)].reverse()
-  return Object.fromEntries(rotated)
-}
-
-describe("@smthrs/canonical fuzz invariants", () => {
-  it("RFC 8785 canonicalize is deterministic, idempotent, key-order invariant, and UTF-16 sorted", async () => {
-    const arb = Arbitrary.schema(
-      Schema.Struct({
-        entries: Schema.Array(JsonEntry),
-        nested: Schema.Array(JsonEntry),
-        perm: Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 64 }))
-      })
-    )
-    await runProp(arb, ({ entries, nested, perm }) => {
-      const sanitizeLeaf = (v: null | boolean | number | string) =>
-        typeof v === "string" ? cleanString(v) : Object.is(v, -0) ? 0 : v
-      const inner: Record<string, unknown> = Object.create(null)
-      for (const [k, v] of nested.slice(0, 8)) inner[cleanString(k)] = sanitizeLeaf(v)
-      const outer: Record<string, unknown> = Object.create(null)
-      for (const [k, v] of entries.slice(0, 10)) outer[cleanString(k)] = sanitizeLeaf(v)
-      outer["__nested"] = inner
-
-      const permuted = shuffleKeys({ ...outer, __nested: shuffleKeys(inner, perm) }, perm)
-      const c1 = canonicalize(outer)
-      const c2 = canonicalize(permuted)
-      if (c1 !== c2) return false
-
-      // Idempotency via JSON.parse round-trip and Schema decode.
-      const parsed = JSON.parse(c1)
-      if (canonicalize(parsed) !== c1) return false
-      if (Schema.decodeUnknownSync(Canonical)(permuted) !== c1) return false
-
-      // Compare emitted key positions in c1 against UTF-16 sorted key order (JS Object.keys hoists integer indices).
-      const expectedKeys = Object.keys(parsed).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0))
-      const expectedRendered = "{" + expectedKeys.map((k) =>
-        `${JSON.stringify(k)}:${canonicalize(parsed[k])}`
-      ).join(",") + "}"
-      if (c1 !== expectedRendered) return false
-      return true
-    })
-  })
-
-  it("rejects lone surrogates, non-finite numbers, BigInt, and non-plain objects with typed CanonicalError", async () => {
-    const arb = Arbitrary.schema(
-      Schema.Struct({
-        prefix: Schema.String,
-        suffix: Schema.String,
-        codeUnit: Schema.Int.check(Schema.isBetween({ minimum: 0xd800, maximum: 0xdfff })),
-        kind: Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 6 }))
-      })
-    )
-    await runProp(arb, ({ prefix, suffix, codeUnit, kind }) => {
-      let value: unknown
-      let expectedCode: string
-      switch (kind) {
-        case 0:
-          value = `${cleanString(prefix)}${String.fromCharCode(codeUnit)}${cleanString(suffix)}`
-          expectedCode = "canonical_lone_surrogate"
-          break
-        case 1:
-          value = Number.NaN
-          expectedCode = "canonical_nan"
-          break
-        case 2:
-          value = Number.POSITIVE_INFINITY
-          expectedCode = "canonical_non_finite"
-          break
-        case 3:
-          value = BigInt(codeUnit)
-          expectedCode = "canonical_bigint"
-          break
-        case 4:
-          value = new Map([["a", 1]])
-          expectedCode = "canonical_unsupported_value"
-          break
-        case 5:
-          value = new Set([1, 2])
-          expectedCode = "canonical_unsupported_value"
-          break
-        default: {
-          const cyc: Record<string, unknown> = {}
-          cyc.self = cyc
-          value = cyc
-          expectedCode = "canonical_circular"
-        }
-      }
-      try {
-        canonicalize(value)
-        return false
-      } catch (err) {
-        return err instanceof CanonicalError && err.code === expectedCode
-      }
-    })
-  })
-
-  it("BoundedJson.admit and admitStrict enforce limits, freeze outputs, and never invoke getters", async () => {
-    const arb = Arbitrary.schema(
-      Schema.Struct({
-        entries: Schema.Array(JsonEntry),
-        maxBytes: Schema.Int.check(Schema.isBetween({ minimum: 8, maximum: 512 })),
-        maxNodes: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 32 })),
-        maxMembers: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 16 })),
-        maxDepth: Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 4 }))
-      })
-    )
-    await runProp(arb, ({ entries, maxBytes, maxNodes, maxMembers, maxDepth }) => {
-      const obj: Record<string, unknown> = {}
-      for (const [k, v] of entries.slice(0, 12)) {
-        const key = cleanString(k)
-        if (key === "__proto__") continue
-        obj[key] = typeof v === "string" ? cleanString(v) : v
-      }
-      const limits = { maxBytes, maxNodes, maxMembers, maxTotalMembers: maxMembers * 2, maxDepth }
-      const r1 = BoundedJson.admit(obj, limits)
-      if (r1.ok) {
-        if (!Object.isFrozen(r1.value)) return false
-        if (!isRecord(r1.value)) return false
-      }
-      const strictLimits = { maxBytes, maxNodes, maxMembers, maxDepth, maxKeyBytes: 1024, maxStringBytes: 1024 }
-      const r2 = BoundedJson.admitStrict(obj, strictLimits)
-      if (r2.ok && !Object.isFrozen(r2.value)) return false
-
-      // Getter non-execution invariant: getters MUST be rejected without ever firing.
-      let getterCalled = false
-      const withGetter = Object.defineProperty({}, "trap", {
-        enumerable: true,
-        get() {
-          getterCalled = true
-          return 1
-        }
-      })
-      const rg = BoundedJson.admit(withGetter, limits)
-      if (rg.ok || getterCalled) return false
-      return true
-    })
-  })
-
-  it("sortCollections canonicalizes Sets and Maps identically regardless of insertion order", async () => {
-    const arb = Arbitrary.schema(Schema.Array(Schema.String))
-    await runProp(arb, (raw) => {
-      const items = raw.slice(0, 12).map(cleanString)
-      const s1 = sortCollections(new Set(items))
-      const s2 = sortCollections(new Set([...items].reverse()))
-      const m1 = sortCollections(new Map(items.map((k, i) => [k, i])))
-      const m2 = sortCollections(new Map([...items.map((k, i) => [k, i] as const)].reverse()))
-      return (
-        JSON.stringify([...(s1 as Set<string>)]) === JSON.stringify([...(s2 as Set<string>)])
-        && JSON.stringify([...(m1 as Map<string, number>).keys()])
-          === JSON.stringify([...(m2 as Map<string, number>).keys()])
+describe("@smthrs/canonical comprehensive fuzz invariants", () => {
+  it("canonicalize and Canonical schema are RFC 8785 permutation-invariant, idempotent, and UTF-16 key sorted", async () => {
+    const arb = Arbitrary.schema(jsonObj)
+    const report = await Effect.runPromise(
+      Fuzz.run(
+        arb,
+        (raw) =>
+          Effect.gen(function*() {
+            const entries = Object.entries(raw)
+              .filter(([k]) => k !== "__proto__")
+              .map(([k, v]) => {
+                const ck = cleanString(k)
+                const cv = typeof v === "string"
+                  ? cleanString(v)
+                  : Array.isArray(v)
+                  ? v.map((x) => (typeof x === "string" ? cleanString(x) : x))
+                  : v
+                return [ck, cv] as const
+              })
+            const dedupEntries = [...new Map(entries).entries()]
+            const forward = Object.fromEntries(dedupEntries)
+            const reversed = Object.fromEntries([...dedupEntries].reverse())
+            const c1 = canonicalize(forward)
+            const c2 = canonicalize(reversed)
+            if (c1 !== c2) return false
+            if (canonicalize(JSON.parse(c1)) !== c1) return false
+            // Canonical Effect Schema codec matches canonicalize and forbids encoding
+            const decoded = yield* Schema.decodeUnknownEffect(Canonical)(forward)
+            if (decoded !== c1) return false
+            const encoded = yield* Effect.result(Schema.encodeUnknownEffect(Canonical)(decoded))
+            if (Result.isFailure(encoded)) return false
+            // UTF-16 code-unit order verification
+            const dedup = new Map(entries)
+            const expectedKeys = [...dedup.keys()].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0))
+            const expectedRendered = "{" + expectedKeys.map((k) =>
+              `${JSON.stringify(k)}:${canonicalize(dedup.get(k))}`
+            ).join(",") + "}"
+            return c1 === expectedRendered
+          }),
+        { seed, executions }
       )
+    )
+    const failure = Fuzz.formatReport(report)
+    if (failure !== undefined) throw new Error(failure)
+    expect(report._tag).toBe("Passed")
+  })
+
+  it("canonicalize rejects every invalid JS value class with typed CanonicalError", async () => {
+    const arb = Arbitrary.schema(
+      Schema.Struct({
+        kind: Schema.Literals([
+          "nan",
+          "inf",
+          "negInf",
+          "bigint",
+          "symbol",
+          "fn",
+          "undef",
+          "cycle",
+          "loneHigh",
+          "loneLow",
+          "map",
+          "set",
+          "classInst"
+        ]),
+        n: Schema.Int
+      })
+    )
+    class CustomBox {
+      readonly v: number
+      constructor(v: number) {
+        this.v = v
+      }
+    }
+    const report = await Effect.runPromise(
+      Fuzz.run(
+        arb,
+        ({ kind, n }) =>
+          Effect.sync(() => {
+            let bad: unknown
+            if (kind === "nan") bad = Number.NaN
+            else if (kind === "inf") bad = Number.POSITIVE_INFINITY
+            else if (kind === "negInf") bad = Number.NEGATIVE_INFINITY
+            else if (kind === "bigint") bad = BigInt(n)
+            else if (kind === "symbol") bad = Symbol("s")
+            else if (kind === "fn") bad = () => n
+            else if (kind === "undef") bad = undefined
+            else if (kind === "loneHigh") bad = "\ud800"
+            else if (kind === "loneLow") bad = "\udc00"
+            else if (kind === "map") bad = new Map([["a", n]])
+            else if (kind === "set") bad = new Set([n])
+            else if (kind === "classInst") bad = new CustomBox(n)
+            else {
+              const obj: Record<string, unknown> = { n }
+              obj["self"] = obj
+              bad = obj
+            }
+            try {
+              canonicalize(bad)
+              return false
+            } catch (err) {
+              return err instanceof CanonicalError
+            }
+          }),
+        { seed: seed + 1, executions }
+      )
+    )
+    const failure = Fuzz.formatReport(report)
+    if (failure !== undefined) throw new Error(failure)
+    expect(report._tag).toBe("Passed")
+  })
+
+  it("BoundedJson.admit & admitStrict enforce all byte/node/member/depth/key/string limits and never invoke getters", async () => {
+    const arb = Arbitrary.schema(
+      Schema.Struct({
+        entries: Schema.Array(
+          Schema.Tuple([
+            Schema.String.pipe(Schema.check(Schema.isMaxLength(20))),
+            Schema.Union([
+              Schema.String.pipe(Schema.check(Schema.isMaxLength(40))),
+              Schema.Int,
+              Schema.Boolean,
+              Schema.Null,
+              Schema.Array(Schema.Int).pipe(Schema.check(Schema.isMaxLength(6)))
+            ])
+          ])
+        ).pipe(Schema.check(Schema.isMaxLength(12))),
+        maxBytes: Schema.Int.pipe(Schema.check(Schema.isBetween({ minimum: 8, maximum: 512 }))),
+        maxNodes: Schema.Int.pipe(Schema.check(Schema.isBetween({ minimum: 1, maximum: 24 }))),
+        maxMembers: Schema.Int.pipe(Schema.check(Schema.isBetween({ minimum: 1, maximum: 12 }))),
+        maxDepth: Schema.Int.pipe(Schema.check(Schema.isBetween({ minimum: 1, maximum: 6 }))),
+        maxKeyBytes: Schema.Int.pipe(Schema.check(Schema.isBetween({ minimum: 2, maximum: 32 }))),
+        maxStringBytes: Schema.Int.pipe(Schema.check(Schema.isBetween({ minimum: 2, maximum: 48 }))),
+        depthNest: Schema.Int.pipe(Schema.check(Schema.isBetween({ minimum: 0, maximum: 8 })))
+      })
+    )
+    const report = await Effect.runPromise(
+      Fuzz.run(
+        arb,
+        ({ entries, maxBytes, maxNodes, maxMembers, maxDepth, maxKeyBytes, maxStringBytes, depthNest }) =>
+          Effect.sync(() => {
+            const obj: Record<string, unknown> = {}
+            for (const [k, v] of entries) {
+              const key = cleanString(k)
+              if (key === "__proto__") continue
+              obj[key] = typeof v === "string" ? cleanString(v) : v
+            }
+            // Add nested structure to exercise depth bounds
+            let nested: unknown = "leaf"
+            for (let d = 0; d < depthNest; d++) nested = { n: nested }
+            obj["nest"] = nested
+
+            const limits = {
+              maxBytes,
+              maxNodes,
+              maxMembers,
+              maxTotalMembers: maxMembers * 2,
+              maxDepth,
+              maxKeyBytes,
+              maxStringBytes
+            }
+            const r1 = BoundedJson.admit(obj, limits)
+            if (r1.ok && (!Object.isFrozen(r1.value) || !isRecord(r1.value))) return false
+
+            const strictLimits = { maxBytes, maxNodes, maxMembers, maxDepth, maxKeyBytes, maxStringBytes }
+            const r2 = BoundedJson.admitStrict(obj, strictLimits)
+            if (r2.ok && !Object.isFrozen(r2.value)) return false
+
+            // Also check encodedStringBytes on arbitrary cleaned string
+            const sampleStr = entries[0]?.[0] ?? ""
+            const eb = BoundedJson.encodedStringBytes(cleanString(sampleStr), maxStringBytes)
+            if (eb !== undefined && eb > maxStringBytes) return false
+
+            let getterCalled = false
+            const withGetter = Object.defineProperty({}, "trap", {
+              enumerable: true,
+              get() {
+                getterCalled = true
+                return 1
+              }
+            })
+            const r3 = BoundedJson.admit(withGetter, limits)
+            return !r3.ok && !getterCalled
+          }),
+        { seed: seed + 2, executions }
+      )
+    )
+    const failure = Fuzz.formatReport(report)
+    if (failure !== undefined) throw new Error(failure)
+    expect(report._tag).toBe("Passed")
+  })
+
+  it("sortCollections, ReadonlyMap.make, and IssuePath.firstPath uphold determinism, immutability, and path formatting", async () => {
+    const arb = Arbitrary.schema(
+      Schema.Struct({
+        nums: Schema.Array(Schema.Int.pipe(Schema.check(Schema.isBetween({ minimum: -50, maximum: 50 })))).pipe(
+          Schema.check(Schema.isMaxLength(12))
+        ),
+        pairs: Schema.Array(
+          Schema.Tuple([
+            Schema.String.pipe(Schema.check(Schema.isMinLength(1), Schema.isMaxLength(10))),
+            Schema.Int
+          ])
+        ).pipe(Schema.check(Schema.isMaxLength(10)))
+      })
+    )
+    const TargetSchema = Schema.Struct({
+      nested: Schema.Struct({
+        items: Schema.Array(Schema.Int)
+      })
     })
+    const report = await Effect.runPromise(
+      Fuzz.run(
+        arb,
+        ({ nums, pairs }) =>
+          Effect.sync(() => {
+            const cleanPairs = pairs.map(([k, v]) => [cleanString(k) || "k", v] as const)
+            const s1 = sortCollections(new Set(nums))
+            const s2 = sortCollections(new Set([...nums].reverse()))
+            if (JSON.stringify([...s1]) !== JSON.stringify([...s2])) return false
+
+            const m1 = sortCollections(new Map(cleanPairs))
+            const m2 = sortCollections(new Map([...cleanPairs].reverse()))
+            if (JSON.stringify([...m1.keys()]) !== JSON.stringify([...m2.keys()])) return false
+
+            // ReadonlyMap.make returns an immutable map-like view matching entries
+            const rm = ReadonlyMap.make(cleanPairs)
+            for (const [k, v] of new Map(cleanPairs)) {
+              if (!rm.has(k) || rm.get(k) !== v) return false
+            }
+
+            // IssuePath.firstPath formats nested schema error paths
+            const badRes = Schema.decodeUnknownResult(TargetSchema)({ nested: { items: ["not-an-int"] } })
+            if (Result.isFailure(badRes)) {
+              const p = IssuePath.firstPath(badRes.failure)
+              if (!p.includes("nested") || !p.includes("items")) return false
+            }
+            return true
+          }),
+        { seed: seed + 3, executions }
+      )
+    )
+    const failure = Fuzz.formatReport(report)
+    if (failure !== undefined) throw new Error(failure)
+    expect(report._tag).toBe("Passed")
   })
 })

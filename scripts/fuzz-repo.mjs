@@ -44,7 +44,8 @@ const duration = flagValue("--duration")
 const seed = flagValue("--seed")
 const filter = flagValue("--filter")
 const v8Guided = hasFlag("--v8")
-const measureCoverage = hasFlag("--coverage")
+const measureCoverage = hasFlag("--coverage") || hasFlag("--per-file")
+const perFile = hasFlag("--per-file")
 const includeVibelang = hasFlag("--include-vibelang") || (filter !== undefined && filter.includes("vibelang"))
 const zigRuns = Number(flagValue("--zig-runs") ?? "0")
 const runRust = hasFlag("--rust") || hasFlag("--all") || flagValue("--libfuzzer-seconds") !== undefined
@@ -159,7 +160,11 @@ function readCoverageSummary(covDir) {
   if (!existsSync(summaryPath)) return undefined
   try {
     const parsed = JSON.parse(readFileSync(summaryPath, "utf8"))
-    return parsed.total
+    const files = Object.entries(parsed)
+      .filter(([k]) => k !== "total")
+      .map(([file, metrics]) => ({ file, lines: metrics.lines?.pct ?? 0, branches: metrics.branches?.pct ?? 0, totalLines: metrics.lines?.total ?? 0 }))
+      .sort((a, b) => a.lines - b.lines)
+    return { total: parsed.total, files }
   } catch {
     return undefined
   }
@@ -227,8 +232,8 @@ async function runTsSuites(suites) {
     const res = await execAsync(cmd, cmdArgs, suite.dir, baseEnv)
     const cov = covDir ? readCoverageSummary(covDir) : undefined
     const status = res.code === 0 ? "PASS" : "FAIL"
-    const covText = cov
-      ? ` | stmts=${cov.statements.pct.toFixed(1)}% branch=${cov.branches.pct.toFixed(1)}% funcs=${cov.functions.pct.toFixed(1)}% lines=${cov.lines.pct.toFixed(1)}%`
+    const covText = cov?.total
+      ? ` | stmts=${cov.total.statements.pct.toFixed(1)}% branch=${cov.total.branches.pct.toFixed(1)}% funcs=${cov.total.functions.pct.toFixed(1)}% lines=${cov.total.lines.pct.toFixed(1)}%`
       : ""
     console.log(`  [${status}] ${suite.pkg} (${suite.files.length} file${suite.files.length === 1 ? "" : "s"}, ${res.ms}ms)${covText}`)
     if (res.code !== 0) {
@@ -255,17 +260,24 @@ async function runTsSuites(suites) {
     let totFuncs = 0, covFuncs = 0
     let totLines = 0, covLines = 0
     for (const r of results) {
-      if (!r.cov) continue
-      totStmts += r.cov.statements.total; covStmts += r.cov.statements.covered
-      totBranches += r.cov.branches.total; covBranches += r.cov.branches.covered
-      totFuncs += r.cov.functions.total; covFuncs += r.cov.functions.covered
-      totLines += r.cov.lines.total; covLines += r.cov.lines.covered
+      if (!r.cov?.total) continue
+      const t = r.cov.total
+      totStmts += t.statements.total; covStmts += t.statements.covered
+      totBranches += t.branches.total; covBranches += t.branches.covered
+      totFuncs += t.functions.total; covFuncs += t.functions.covered
+      totLines += t.lines.total; covLines += t.lines.covered
       console.log(
-        `${r.suite.pkg} | ${r.cov.statements.pct.toFixed(1)}% (${r.cov.statements.covered}/${r.cov.statements.total}) | ` +
-          `${r.cov.branches.pct.toFixed(1)}% (${r.cov.branches.covered}/${r.cov.branches.total}) | ` +
-          `${r.cov.functions.pct.toFixed(1)}% (${r.cov.functions.covered}/${r.cov.functions.total}) | ` +
-          `${r.cov.lines.pct.toFixed(1)}% (${r.cov.lines.covered}/${r.cov.lines.total})`
+        `${r.suite.pkg} | ${t.statements.pct.toFixed(1)}% (${t.statements.covered}/${t.statements.total}) | ` +
+          `${t.branches.pct.toFixed(1)}% (${t.branches.covered}/${t.branches.total}) | ` +
+          `${t.functions.pct.toFixed(1)}% (${t.functions.covered}/${t.functions.total}) | ` +
+          `${t.lines.pct.toFixed(1)}% (${t.lines.covered}/${t.lines.total})`
       )
+      if (perFile && r.cov.files.length > 0) {
+        const worst = r.cov.files.filter((f) => f.totalLines > 0 && f.lines < 80).slice(0, 5)
+        for (const f of worst) {
+          console.log(`    ↳ ${relative(r.suite.dir, f.file)}: ${f.lines.toFixed(1)}% lines (${f.totalLines}L), ${f.branches.toFixed(1)}% branch`)
+        }
+      }
     }
     const pct = (c, t) => (t === 0 ? "100.0%" : `${((c / t) * 100).toFixed(1)}%`)
     console.log(

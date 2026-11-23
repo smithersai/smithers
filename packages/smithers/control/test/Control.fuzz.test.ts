@@ -164,3 +164,154 @@ describe("@smthrs/control security fuzz invariants", () => {
     expect(report._tag).toBe("Passed")
   })
 })
+
+import { Lineage, Monitor, Steering } from "../src/index.ts"
+
+describe("@smthrs/control Monitor, Lineage & Steering projection fuzz invariants", () => {
+  it("Monitor.classify & remedyFor preserve strict health precedence (awaiting-human NEVER auto-healed, finished runs healthy)", async () => {
+    const statusArb = Schema.Literals([
+      "running",
+      "pending",
+      "failed",
+      "completed",
+      "cancelled",
+      "waiting-approval",
+      "parked"
+    ])
+    const waitReasonArb = Schema.OptionFromUndefinedOr(
+      Schema.Literals(["approval", "event", "timer", "quota", "released"])
+    )
+    const arb = Arbitrary.schema(
+      Schema.Struct({
+        hasSummary: Schema.Boolean,
+        status: statusArb,
+        waitingReason: waitReasonArb,
+        roundOrdinal: Schema.Int.pipe(Schema.check(Schema.isBetween({ minimum: 0, maximum: 40 }))),
+        beatsWithoutProgress: Schema.Int.pipe(Schema.check(Schema.isBetween({ minimum: 0, maximum: 10 }))),
+        stallBeats: Schema.Int.pipe(Schema.check(Schema.isBetween({ minimum: 1, maximum: 5 }))),
+        semanticProgress: Schema.Boolean,
+        openAttempts: Schema.Int.pipe(Schema.check(Schema.isBetween({ minimum: 0, maximum: 3 }))),
+        lastAttemptFailed: Schema.Boolean
+      })
+    )
+    const report = await Effect.runPromise(
+      Fuzz.run(
+        arb,
+        ({
+          hasSummary,
+          status,
+          waitingReason,
+          roundOrdinal,
+          beatsWithoutProgress,
+          stallBeats,
+          semanticProgress,
+          openAttempts,
+          lastAttemptFailed
+        }) =>
+          Effect.sync(() => {
+            const events: Array<{
+              readonly runId: string
+              readonly seq: number
+              readonly kind: string
+              readonly at: number
+              readonly payload: unknown
+            }> = []
+            let seq = 1
+            if (lastAttemptFailed) {
+              events.push({ runId: "r1", seq: seq++, kind: Monitor.attemptStartedEventType, at: 1, payload: {} })
+              events.push({
+                runId: "r1",
+                seq: seq++,
+                kind: Monitor.attemptFinishedEventType,
+                at: 2,
+                payload: { state: "failed" }
+              })
+            }
+            for (let i = 0; i < openAttempts; i++) {
+              events.push({ runId: "r1", seq: seq++, kind: Monitor.attemptStartedEventType, at: 3 + i, payload: {} })
+            }
+            const wr = waitingReason._tag === "Some" ? waitingReason.value : undefined
+            const health = Monitor.classify({
+              summary: hasSummary
+                ? ({
+                  runId: "r1",
+                  status,
+                  waitingReason: wr,
+                  roundOrdinal
+                } as unknown as NonNullable<Monitor.Observation["summary"]>)
+                : undefined,
+              events: events as unknown as Monitor.Observation["events"],
+              beatsWithoutProgress,
+              stallBeats,
+              semanticProgress
+            })
+            const remedy = Monitor.remedyFor(health)
+            if (!hasSummary) return health === "unknown" && remedy === "none"
+            if (status === "failed") return health === "failing" && remedy === "cancel"
+            if (status === "completed" || status === "cancelled") return health === "healthy" && remedy === "none"
+            // CRITICAL SAFETY INVARIANT: awaiting-human NEVER gets auto-resumed or auto-cancelled!
+            if (status === "waiting-approval" || (status === "parked" && (wr === "approval" || wr === undefined))) {
+              return health === "awaiting-human" && remedy === "none"
+            }
+            if (health === "stalled" || health === "wedged-node") return remedy === "resume"
+            if (health === "failing" || health === "runaway-loop") return remedy === "cancel"
+            return remedy === "none"
+          }),
+        { seed: seed + 10, executions }
+      )
+    )
+    const failure = Fuzz.formatReport(report)
+    if (failure !== undefined) throw new Error(failure)
+    expect(report._tag).toBe("Passed")
+  })
+
+  it("Lineage.originOf/expand and Steering.expand never drop the original event or throw on arbitrary payloads", async () => {
+    const arb = Arbitrary.schema(
+      Schema.Struct({
+        kind: Schema.Literals([
+          Lineage.runDecisionEventType,
+          Lineage.forkCreatedEventType,
+          Steering.promotedEventType,
+          Monitor.beatEventType,
+          "custom.event"
+        ]),
+        hasParent: Schema.Boolean,
+        hasFork: Schema.Boolean,
+        hasPrev: Schema.Boolean
+      })
+    )
+    const report = await Effect.runPromise(
+      Fuzz.run(
+        arb,
+        ({ kind, hasParent, hasFork, hasPrev }) =>
+          Effect.sync(() => {
+            const origin = Lineage.originOf({
+              parentRunId: hasParent ? "p1" : undefined,
+              forkedFromRunId: hasFork ? "f1" : undefined,
+              continuedFromRunId: hasPrev ? "c1" : undefined
+            } as unknown as Lineage.Ancestry)
+            if (origin !== undefined && origin !== "child" && origin !== "fork" && origin !== "continuation") {
+              return false
+            }
+            const ev = {
+              runId: "r1",
+              seq: 1,
+              kind,
+              at: 1_700_000_000_000,
+              payload: { childRunId: "c2", reason: "fuzz" }
+            } as unknown as Parameters<typeof Lineage.expand>[0]
+            const linExp = Lineage.expand(ev)
+            if (linExp.length < 1 || linExp[0] !== ev) return false
+            const steerExp = Steering.expand(ev)
+            if (steerExp.length < 1 || steerExp[0] !== ev) return false
+            if (typeof Monitor.isBookkeepingEvent(kind) !== "boolean") return false
+            return true
+          }),
+        { seed: seed + 11, executions }
+      )
+    )
+    const failure = Fuzz.formatReport(report)
+    if (failure !== undefined) throw new Error(failure)
+    expect(report._tag).toBe("Passed")
+  })
+})
