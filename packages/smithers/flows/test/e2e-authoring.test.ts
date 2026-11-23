@@ -1306,8 +1306,15 @@ describe("live ownership races stay fenced", () => {
             ...store,
             // Keep the owner fiber alive without refreshing the persisted
             // timestamp, so the competing incarnation can observe a stale
-            // lease while the first action is still blocked.
-            heartbeat: () => Effect.succeed({ _tag: "Updated" })
+            // lease while the first action is still blocked. The owner's
+            // heartbeat loop renews the lease two ways: a pulse (`heartbeat`)
+            // and, once pulses lag past `heartbeatWriteTolerance` virtual
+            // time, its deadline's `reconfirm`. `TestClock.adjust` can outrun
+            // the pulse fiber on a loaded host, so both are stubbed; a real
+            // `reconfirm` writes a fresh lease, the rival refuses it without
+            // asking `isAlive`, and the probe assertion fails (#5454).
+            heartbeat: () => Effect.succeed({ _tag: "Updated" }),
+            reconfirm: () => Effect.succeed({ _tag: "Updated" })
           })
           const isAlive = (owner: RunStorePackage.Ownership.OwnerId) =>
             Effect.sync(() => {
@@ -1389,6 +1396,10 @@ describe("live ownership races stay fenced", () => {
         }))
 
         expect(calls).toEqual(["first:0", "first:1"])
+        // Each rival attempt saw a lease older than `heartbeatStaleAfter`
+        // (30 s), which is what sends it to `isAlive` instead of refusing.
+        expect(observed.rootWhileContended.heartbeatAtMs).toBeLessThan(31_000 - 30_000)
+        expect(observed.successorWhileContended.heartbeatAtMs).toBeLessThan(62_000 - 30_000)
         expect(probes.some((owner) => owner.hostId === "race-first")).toBe(true)
         expect(observed.rootWhileContended.status).toBe("running")
         expect(observed.rootWhileContended.owner?.hostId).toBe("race-first")

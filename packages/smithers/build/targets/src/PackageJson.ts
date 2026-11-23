@@ -1519,7 +1519,9 @@ export const targets = (
     fields,
     generated: declaration.generated,
     readme: declaration.readme === null ? null : Input.file(anchored(declaration.readme.path)),
-    sources: declaration.sources === null ? null : Input.glob(anchored(declaration.sources.pattern), {
+    sources: declaration.sources === null ? null : Input.Glob.make({
+      ...declaration.sources,
+      pattern: anchored(declaration.sources.pattern),
       exclude: declaration.sources.exclude.map(anchored)
     }),
     promptVersion: declaration.promptVersion,

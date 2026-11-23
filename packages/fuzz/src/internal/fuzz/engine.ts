@@ -283,10 +283,7 @@ const evaluate = <A, E, R>(
   }
   let scheduleRead = 0
   const scheduleTape: Fuzz.ScheduleTape = {
-    next: () => {
-      const position = scheduleRead++
-      return position < input.schedule.length ? input.schedule[position]! : Tape.filler(input.scheduleKey, position)
-    }
+    next: () => Tape.wordAt(input.schedule, input.scheduleKey, scheduleRead++)
   }
   const exit = Effect.exit(Effect.suspend(() => {
     const output = property(value)
@@ -464,6 +461,8 @@ interface Entry {
   readonly length: number
 }
 
+const boundaryWords = [0, 1, 0x7fffffff, 0x80000000, 0xffffffff]
+
 /** @internal */
 export const runTarget = Effect.fnUntraced(function*<A, E, R>(
   self: Fuzz.Target<A, E, R>,
@@ -528,18 +527,18 @@ export const runTarget = Effect.fnUntraced(function*<A, E, R>(
     FuzzError
   > {
     if (store === undefined) return { saved: "None" }
-    let encoded: string | undefined
+    let encoded: { readonly codec: string; readonly value: string } | undefined
     let codecError: string | undefined
     if (codec !== undefined) {
       try {
-        encoded = codec.encode(value)
+        encoded = { codec: codec.id, value: codec.encode(value) }
       } catch (error) {
         codecError = `the ${codec.id} codec cannot encode a value: ${describe(error)}`
       }
     }
     const content = encoded === undefined
       ? `${target.revision}\u0000${replayToken(input, path, signature)}`
-      : `${codec!.id}\u0000${encoded}`
+      : `${encoded.codec}\u0000${encoded.value}`
     yield* save(
       "Failure",
       Tape.hashHex(`failure\u0000${signature}\u0000${content}`),
@@ -549,9 +548,8 @@ export const runTarget = Effect.fnUntraced(function*<A, E, R>(
         input,
         signature,
         path,
-        codec: encoded === undefined ? undefined : codec!.id,
-        value: encoded,
-        note: `${signature}\n${encoded ?? Formatter.format(value)}`
+        ...encoded,
+        note: `${signature}\n${encoded?.value ?? Formatter.format(value)}`
       })
     )
     return { saved: encoded === undefined ? "Tape" : "Value", codecError }
@@ -586,7 +584,7 @@ export const runTarget = Effect.fnUntraced(function*<A, E, R>(
     entries.push({ input, length })
     for (const pair of pairs) {
       const owner = owners.get(pair)
-      if (owner === undefined || entries[owner]!.length > length) owners.set(pair, index)
+      if (owner === undefined || Arr.getUnsafe(entries, owner).length > length) owners.set(pair, index)
     }
     return true
   }
@@ -669,7 +667,7 @@ export const runTarget = Effect.fnUntraced(function*<A, E, R>(
         )
       }
       value = yield* Effect.try({
-        try: () => codec!.decode(entry.value!),
+        try: () => codec.decode(entry.value),
         catch: (error) =>
           fuzzError("Codec", `the ${entry.codec} codec cannot decode a saved value: ${describe(error)}`, error)
       })
@@ -737,7 +735,9 @@ export const runTarget = Effect.fnUntraced(function*<A, E, R>(
       const tape = Array.from(lane ? schedule : words)
       const at = rng.below(tape.length + 1)
       const length = 1 + rng.below(Math.min(16, tape.length + 1))
-      const other = entries[rng.below(entries.length)]!.input
+      const other = Arr.getUnsafe(entries, rng.below(entries.length)).input
+      // The append position has no prior word. Preserve its numeric coercion in existing seeded searches.
+      const word = tape[at] ?? Number.NaN
       switch (rng.below(tape.length === 0 ? 1 : 14)) {
         case 0:
           tape.splice(at, 0, ...Array.from({ length }, rng.next))
@@ -746,16 +746,16 @@ export const runTarget = Effect.fnUntraced(function*<A, E, R>(
           tape[at] = rng.next()
           break
         case 2:
-          tape[at] = [0, 1, 0x7fffffff, 0x80000000, 0xffffffff][rng.below(5)]!
+          tape[at] = Arr.getUnsafe(boundaryWords, rng.below(boundaryWords.length))
           break
         case 3:
-          tape[at] = (tape[at]! + 1 + rng.below(16)) >>> 0
+          tape[at] = (word + 1 + rng.below(16)) >>> 0
           break
         case 4:
-          tape[at] = (tape[at]! - 1 - rng.below(16)) >>> 0
+          tape[at] = (word - 1 - rng.below(16)) >>> 0
           break
         case 5:
-          tape[at] = (tape[at]! ^ 1 << rng.below(32)) >>> 0
+          tape[at] = (word ^ 1 << rng.below(32)) >>> 0
           break
         case 6:
           tape.fill(0, at, at + length)
@@ -793,9 +793,10 @@ export const runTarget = Effect.fnUntraced(function*<A, E, R>(
   }
 
   const choose = (): Format.Input => {
-    if (pending.length > 0) return pending.shift()!
+    const saved = pending.shift()
+    if (saved !== undefined) return saved
     if (entries.length === 0 || executions <= 32 || rng.below(8) === 0) return fresh()
-    if (rng.below(4) === 0) return mutate(entries[rng.below(entries.length)]!.input)
+    if (rng.below(4) === 0) return mutate(Arr.getUnsafe(entries, rng.below(entries.length)).input)
     const energy = new Map<number, number>()
     let total = 0
     for (const champion of champions.values()) {
@@ -819,7 +820,7 @@ export const runTarget = Effect.fnUntraced(function*<A, E, R>(
       pick -= rarity
       if (pick < 0) break
     }
-    return mutate(entries[chosen]!.input)
+    return mutate(Arr.getUnsafe(entries, chosen).input)
   }
 
   let stoppedBy: Fuzz.Stats["stoppedBy"]

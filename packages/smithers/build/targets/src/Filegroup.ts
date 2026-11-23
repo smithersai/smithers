@@ -230,7 +230,7 @@ const resolveSource = (cwd: string, source: Source): Source =>
   source._tag === "File"
     ? { _tag: "File", path: Input.resolvePath(cwd, source.path) }
     : {
-      _tag: "Glob",
+      ...source,
       pattern: Input.resolvePath(cwd, source.pattern),
       exclude: source.exclude.map((entry) => Input.resolvePath(cwd, entry))
     }

@@ -366,6 +366,28 @@ describe("Host.run workspace observation", () => {
     expect(basis(events).length).toBeGreaterThan(0)
     expect(new Set(basis(events))).toEqual(new Set(["observed"]))
   })
+
+  test("a default worker can read a nested workspace file", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "tui-default-worker-read-"))
+    roots.push(cwd)
+    mkdirSync(join(cwd, "src"))
+    writeFileSync(join(cwd, "src", "note.txt"), "workspace note\n")
+    const host = Host.make({ cwd, environment: {}, judge: ScriptedJudge.layer })
+    const cell = `const result = await ctx.call("read", { path: "src/note.txt" })
+ctx.done(result.content ?? result.error?.code)`
+    try {
+      const outcome = await host.run({
+        prompt: "Read src/note.txt",
+        role: "worker",
+        seat: `replay:${doneReplay(cwd, cell)}`,
+        history: [],
+        onEvent: () => {}
+      }).done
+      expect(outcome).toEqual({ _tag: "done", answer: "workspace note" })
+    } finally {
+      await host.dispose()
+    }
+  })
 })
 
 describe("Host.run Smithers plugin", () => {

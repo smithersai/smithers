@@ -1,25 +1,30 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import { afterAll, expect, it } from "@effect/vitest"
+import { FlowEngine } from "@smthrs/engine"
 import * as DurableEngineState from "@smthrs/engine-store/DurableEngineState"
-import { Flow, FlowRuntime } from "@smthrs/flow"
+import { Action, Flow, FlowRuntime, Interpreter, RetryPolicy } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
+import { TestNodeRuntime } from "@smthrs/platform-node"
 import * as Cause from "effect/Cause"
 import * as Clock from "effect/Clock"
 import * as ConfigProvider from "effect/ConfigProvider"
 import * as Deferred from "effect/Deferred"
+import * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
+import * as Fiber from "effect/Fiber"
 import * as FetchHttpClient from "effect/http/FetchHttpClient"
 import * as HttpClient from "effect/http/HttpClient"
 import * as HttpClientError from "effect/http/HttpClientError"
 import * as HttpClientResponse from "effect/http/HttpClientResponse"
 import * as Layer from "effect/Layer"
 import * as Option from "effect/Option"
+import * as Queue from "effect/Queue"
 import * as TestClock from "effect/testing/TestClock"
 import { mkdtempSync, rmSync } from "node:fs"
 import { createServer, type RequestListener, type Server } from "node:http"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { onTestFailed } from "vitest"
 import * as Kit from "../../../examples/use-cases/kit.ts"
 import {
   delayMillis,
@@ -72,67 +77,61 @@ const configured = <A, E, R>(
 /** The flow makes no agent calls, so any model request is unexpected. */
 const noAgents: Kit.Script = () => undefined
 
-/** Observe the real durable waits, then advance the virtual clock once per deadline. */
-const advanceTimers = (executionId: string, record: () => void) => {
-  const started = Date.now()
-  const progress = {
-    executionId,
-    polls: 0,
-    advances: 0,
-    wakeAt: null as number | null,
-    clock: 0,
-    adjusting: false,
-    waiting: "none"
-  }
-  onTestFailed(() =>
-    console.error("Tweet timer progress", JSON.stringify({ ...progress, elapsedMs: Date.now() - started }))
-  )
-  return Layer.effectDiscard(Effect.forkScoped(Effect.gen(function*() {
-    const state = yield* DurableEngineState.DurableEngineState
-    const runtime = yield* FlowRuntime.FlowRuntime
-    const virtual = yield* Clock.Clock
-    let lastWakeAt: number | null | undefined
-    let advances = 0
-    return yield* Effect.gen(function*() {
-      while (true) {
-        const row = yield* state.waiting(executionId)
-        progress.polls++
-        progress.waiting = Option.isSome(row) ? row.value.reason : "none"
-        progress.wakeAt = Option.isSome(row) ? row.value.wakeAt ?? null : null
-        progress.clock = virtual.currentTimeMillisUnsafe()
-        if (Option.isSome(row) && row.value.reason === "timer" && row.value.wakeAt !== lastWakeAt) {
-          lastWakeAt = row.value.wakeAt
-          advances++
-          record()
-          progress.advances = advances
-          const now = yield* Clock.currentTimeMillis
-          progress.adjusting = true
-          yield* TestClock.adjust((row.value.wakeAt ?? now) - now)
-          progress.adjusting = false
+const fallbackPollMs = delayMillis * 2
+const suspendedRetryPolicy = RetryPolicy.make({ initialMs: fallbackPollMs, factor: 1, maxMs: fallbackPollMs })
+
+const threadLayer = <ROut, RIn>(actions: Layer.Layer<ROut, never, RIn>) =>
+  Layer.mergeAll(actions, Interpreter.layer(TweetThread)).pipe(Layer.provideMerge(Action.layerImplementations))
+
+/** Exercise the full graph in memory. The separate SQLite test checks the persisted park. */
+const runThread = <ROut>(actions: Layer.Layer<ROut, never, FlowRuntime.FlowRuntime>, record: () => void = () => {}) =>
+  Effect.scoped(
+    Effect.gen(function*() {
+      const clock = yield* Clock.Clock
+      const armed = yield* Queue.unbounded<number>()
+      const observed = new Set<string>()
+      const observedClock: Clock.Clock = {
+        ...clock,
+        sleep: (duration) => {
+          const sleep = clock.sleep(duration)
+          if (Duration.toMillis(duration) !== delayMillis) return sleep
+          return Effect.gen(function*() {
+            const invocation = yield* Action.CurrentInvocationKey
+            // Replay can arm a completed step's clock again before reading its result.
+            if (invocation === undefined || observed.has(invocation)) return yield* sleep
+            observed.add(invocation)
+            const wakeAt = (yield* clock.currentTimeMillis) + delayMillis
+            const timer = yield* Effect.forkChild(sleep, { startImmediately: true })
+            yield* Queue.offer(armed, wakeAt)
+            yield* Fiber.join(timer)
+          })
         }
-        yield* Effect.promise(() => new Promise((resolve) => setTimeout(resolve, 1)))
       }
-    }).pipe(Effect.ensuring(Effect.gen(function*() {
-      const result = yield* runtime.poll(TweetThread, executionId).pipe(Effect.orElseSucceed(() => Option.none()))
-      if (Option.isSome(result)) return
-      const waiting = yield* state.waiting(executionId)
-      console.info("Unfinished tweet timer", {
-        executionId,
-        advances,
-        lastWakeAt,
-        now: yield* Clock.currentTimeMillis,
-        waiting: Option.isSome(waiting) ? waiting.value.reason : "none"
-      })
-    })))
-  })))
-}
+      yield* Effect.forkChild(Effect.forever(Effect.gen(function*() {
+        const wakeAt = yield* Queue.take(armed)
+        record()
+        yield* TestClock.setTime(wakeAt)
+      })))
+      return yield* Effect.flatMap(
+        FlowRuntime.FlowRuntime,
+        (runtime) => runtime.execute(TweetThread, { executionId: "tweet-thread", payload: {}, suspendedRetryPolicy })
+      ).pipe(
+        Effect.provideService(Clock.Clock, observedClock)
+      )
+    }).pipe(Effect.provide(
+      threadLayer(actions).pipe(
+        Layer.provideMerge(FlowEngine.layerMemory),
+        Layer.provideMerge(NodeCrypto.layer)
+      )
+    ))
+  )
 
 /**
  * A timer that records each wait instead of sleeping, and an X stand-in that
  * records each post with the tweet it replies to and answers id `t<n>`, or is
  * refused at tweet `refuseAt`. Both write to one ordered log.
  */
-const fakes = (executionId: string, refuseAt?: number) => {
+const fakes = (refuseAt?: number) => {
   const log: Array<string> = []
   const index = (text: string) => tweets.indexOf(text)
   const x = PostTweet.toLayer(({ replyToId, text }) =>
@@ -144,19 +143,13 @@ const fakes = (executionId: string, refuseAt?: number) => {
         : Effect.succeed({ tweetId: `t${n}`, posted: true })
     })
   )
-  const timer = advanceTimers(executionId, () => void log.push(`sleep ${delayMillis}`))
-  return { log, actions: Layer.mergeAll(x, timer) }
+  return { log, actions: x, record: () => void log.push(`sleep ${delayMillis}`) }
 }
 
 it.effect("posts every tweet in order, each replying to the one before it after a pause", () =>
   Effect.gen(function*() {
-    const { actions, log } = fakes("tweet-thread-posted")
-    const posts = yield* Kit.run(TweetThread, {}, {
-      filename: join(directory, "thread.sqlite"),
-      executionId: "tweet-thread-posted",
-      script: noAgents,
-      actions
-    })
+    const { actions, log, record } = fakes()
+    const posts = yield* runThread(actions, record)
 
     expect(tweets).toHaveLength(25)
     expect(log).toEqual([
@@ -170,13 +163,8 @@ it.effect("posts every tweet in order, each replying to the one before it after 
 
 it.effect("stops the thread at a refused post and never retries it", () =>
   Effect.gen(function*() {
-    const { actions, log } = fakes("tweet-thread-refused", 2)
-    const exit = yield* Effect.exit(Kit.run(TweetThread, {}, {
-      filename: join(directory, "refused.sqlite"),
-      executionId: "tweet-thread-refused",
-      script: noAgents,
-      actions
-    }))
+    const { actions, log, record } = fakes(2)
+    const exit = yield* Effect.exit(runThread(actions, record))
 
     // An irreversible post is attempted once: a retry could post it twice.
     expect(log).toEqual(["post 0", "sleep 3000", "post 1 replying to t0", "sleep 3000", "post 2 replying to t1"])
@@ -186,17 +174,11 @@ it.effect("stops the thread at a refused post and never retries it", () =>
 it.effect("records every post as not posted, without calling X, when the credentials are missing", () =>
   Effect.gen(function*() {
     const http = server(() => new Response("Unexpected request", { status: 500 }))
-    const log: Array<string> = []
-    const timer = advanceTimers("tweet-thread-no-credentials", () => void log.push("sleep"))
-    const posts = yield* Kit.run(TweetThread, {}, {
-      filename: join(directory, "no-credentials.sqlite"),
-      executionId: "tweet-thread-no-credentials",
-      script: noAgents,
-      actions: Layer.mergeAll(configured(xLayer, http.transport, {}), timer)
-    })
+    let waits = 0
+    const posts = yield* runThread(configured(xLayer, http.transport, {}), () => waits++)
 
     expect(http.requests).toEqual([])
-    expect(log).toHaveLength(24)
+    expect(waits).toBe(24)
     expect(posts).toHaveLength(25)
     expect(posts.every((post) =>
       !post.posted && post.tweetId === "" &&
@@ -208,13 +190,7 @@ it.effect("signs each X request and threads it on the id X returned for the post
   Effect.gen(function*() {
     const http = server((count) => new Response(JSON.stringify({ data: { id: `x${count}` } }), { status: 201 }))
     const { requests } = http
-    const timer = advanceTimers("tweet-thread-signed", () => {})
-    const posts = yield* Kit.run(TweetThread, {}, {
-      filename: join(directory, "signed.sqlite"),
-      executionId: "tweet-thread-signed",
-      script: noAgents,
-      actions: Layer.mergeAll(configured(xLayer, http.transport), timer)
-    })
+    const posts = yield* runThread(configured(xLayer, http.transport))
 
     expect(requests).toHaveLength(25)
     expect(requests[0]).toMatchObject({ url: "https://api.x.com/2/tweets", body: { text: tweets[0] } })
@@ -224,27 +200,6 @@ it.effect("signs each X request and threads it on the id X returned for the post
     )
     expect(posts.map((post) => post.tweetId)).toEqual(requests.map((_, i) => `x${i + 1}`))
   }))
-
-/**
- * Waits, in real time, until the run parks on a timer; records how far off its
- * wake-up is and how many posts went out before it; then moves the test clock
- * past it. It runs beside the run, on the same engine.
- */
-const clockMover = (executionId: string, posts: () => number, parks: Array<string>) =>
-  Layer.effectDiscard(Effect.forkScoped(
-    Effect.gen(function*() {
-      const state = yield* DurableEngineState.DurableEngineState
-      const pause = Effect.promise(() => new Promise((resolve) => setTimeout(resolve, 10)))
-      let row = yield* state.waiting(executionId)
-      while (Option.isNone(row) || row.value.reason !== "timer") {
-        yield* pause
-        row = yield* state.waiting(executionId)
-      }
-      const now = yield* Clock.currentTimeMillis
-      parks.push(`parked ${(row.value.wakeAt ?? now) - now} ms after ${posts()} post(s)`)
-      yield* TestClock.adjust(delayMillis)
-    })
-  ))
 
 it.effect("parks on the durable timer between posts with the flow's own layer", () =>
   Effect.gen(function*() {
@@ -256,15 +211,27 @@ it.effect("parks on the durable timer between posts with the flow's own layer", 
     )
     const parks: Array<string> = []
     const executionId = "tweet-thread-durable-timer"
-    const failure = yield* Effect.flip(Kit.run(TweetThread, {}, {
-      filename: join(directory, "durable-timer.sqlite"),
-      executionId,
-      script: noAgents,
-      actions: Layer.mergeAll(
-        configured(layer, http.transport),
-        clockMover(executionId, () => http.requests.length, parks)
-      )
-    }))
+    const advanceTimer = Layer.effectDiscard(Effect.forkScoped(Effect.gen(function*() {
+      const state = yield* DurableEngineState.DurableEngineState
+      const pause = TestClock.withLive(Effect.sleep(1))
+      while (true) {
+        const row = yield* state.waiting(executionId)
+        if (Option.isSome(row) && row.value.reason === "timer" && typeof row.value.wakeAt === "number") {
+          const now = yield* Clock.currentTimeMillis
+          parks.push(`parked ${row.value.wakeAt - now} ms after ${http.requests.length} post(s)`)
+          return yield* TestClock.setTime(row.value.wakeAt)
+        }
+        yield* pause
+      }
+    })))
+    const failure = yield* TweetThread.execute({}, { executionId }).pipe(
+      Effect.provide(
+        threadLayer(Layer.mergeAll(configured(layer, http.transport), advanceTimer)).pipe(
+          Layer.provideMerge(TestNodeRuntime.durableEngine(join(directory, "durable-timer.sqlite"), "tweet-thread"))
+        )
+      ),
+      Effect.flip
+    )
 
     // The run parked three seconds out after the first post, and posted the
     // second only once the clock moved.

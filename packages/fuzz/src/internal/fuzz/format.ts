@@ -18,16 +18,17 @@ export interface Input {
 }
 
 /** @internal */
-export interface Entry {
+export type Entry = {
   readonly kind: "input" | "failure"
   readonly revision: string
   readonly input: Input
   readonly signature?: string | undefined
   readonly path: ReadonlyArray<number>
-  readonly codec?: string | undefined
-  readonly value?: string | undefined
   readonly note?: string | undefined
-}
+} & (
+  | { readonly codec: string; readonly value: string }
+  | { readonly codec?: undefined; readonly value?: undefined }
+)
 
 const header = "effect-fuzz 2"
 const legacyHeader = "effect-fuzz 1"
@@ -52,7 +53,7 @@ export function encodeEntry(entry: Entry): string {
   ]
   if (entry.signature !== undefined) lines.push(`signature ${text(entry.signature)}`)
   lines.push(`path ${entry.path.join(".")}`)
-  if (entry.codec !== undefined) lines.push(`codec ${text(entry.codec)}`, `value ${text(entry.value!)}`)
+  if (entry.codec !== undefined) lines.push(`codec ${text(entry.codec)}`, `value ${text(entry.value)}`)
   if (entry.note !== undefined) lines.push(...entry.note.split("\n").map((line) => `# ${line}`))
   return lines.join("\n") + "\n"
 }
@@ -140,8 +141,7 @@ export function decodeEntry(source: string): Entry {
     },
     signature: kind === "failure" ? signature(string("signature")) : optional("signature"),
     path: path(field("path")),
-    codec,
-    value: codec === undefined ? undefined : string("value")
+    ...(codec === undefined ? { codec, value: undefined } : { codec, value: string("value") })
   }
 }
 

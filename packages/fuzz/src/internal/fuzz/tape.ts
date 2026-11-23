@@ -35,6 +35,11 @@ export function filler(key: number, position: number): number {
   return mix32(key ^ Math.imul(position + 1, 0x9e3779b9))
 }
 
+/** Reads a recorded word or reconstructs it from the tape key. @internal */
+export function wordAt(words: ReadonlyArray<number>, key: number, position: number): number {
+  return words[position] ?? filler(key, position)
+}
+
 /** @internal */
 export interface Used {
   max: number
@@ -56,7 +61,7 @@ export function makeTapeRandom(
   const nextUint32 = () => {
     const position = cursor++
     if (cursor > used.max) used.max = cursor
-    return position < words.length ? words[position]! : filler(key, position)
+    return wordAt(words, key, position)
   }
   return {
     nextUint32,
@@ -77,7 +82,7 @@ export function makeTapeRandom(
 /** @internal */
 export function materialize(words: ReadonlyArray<number>, key: number, length: number): Array<number> {
   const out = new Array<number>(length)
-  for (let index = 0; index < length; index++) out[index] = index < words.length ? words[index]! : filler(key, index)
+  for (let index = 0; index < length; index++) out[index] = wordAt(words, key, index)
   return out
 }
 
@@ -122,7 +127,7 @@ export function makeRng(seed: string | number): Rng {
 export function encodeWords(words: ReadonlyArray<number>): string {
   const bytes = new Uint8Array(words.length * 4)
   const view = new DataView(bytes.buffer)
-  for (let index = 0; index < words.length; index++) view.setUint32(index * 4, words[index]!, true)
+  for (const [index, word] of words.entries()) view.setUint32(index * 4, word, true)
   return Base64Url.encode(bytes)
 }
 

@@ -1,3 +1,4 @@
+import * as Arr from "effect/Array"
 import * as Clock from "effect/Clock"
 import * as Context from "effect/Context"
 import * as Duration from "effect/Duration"
@@ -63,7 +64,7 @@ export class World {
         this.fibers.add(fiber)
         const word = this.schedule.next()
         const index = word === 0 ? 0 : 1 + Math.floor(word / 0x100000000 * (this.quanta.length - 1))
-        this.slices.set(fiber, this.quanta[index]!)
+        this.slices.set(fiber, Arr.getUnsafe(this.quanta, index))
       }
       return fiber.currentOpCount >= this.slices.get(fiber)!
     },
@@ -97,7 +98,11 @@ export class World {
           wake: () => resume(Effect.void)
         }
         let index = this.timers.length
-        while (index > 0 && this.timers[index - 1]!.deadline > timer.deadline) index--
+        let previous = this.timers[index - 1]
+        while (previous !== undefined && previous.deadline > timer.deadline) {
+          index--
+          previous = this.timers[index - 1]
+        }
         this.timers.splice(index, 0, timer)
         // An interrupted sleep withdraws its timer. A woken timer has already left the list.
         return Effect.sync(() => {
@@ -108,8 +113,11 @@ export class World {
 
   enqueue(task: () => void, priority: number): void {
     let index = 0
-    while (index < this.buckets.length && this.buckets[index]![0] < priority) index++
-    const bucket = this.buckets[index]
+    let bucket = this.buckets[index]
+    while (bucket !== undefined && bucket[0] < priority) {
+      index++
+      bucket = this.buckets[index]
+    }
     if (bucket !== undefined && bucket[0] === priority) bucket[1].push(task)
     else this.buckets.splice(index, 0, [priority, [task]])
   }
@@ -117,7 +125,7 @@ export class World {
   dequeue(): (() => void) | undefined {
     const bucket = this.buckets[0]
     if (bucket === undefined) return undefined
-    const task = bucket[1].shift()!
+    const task = bucket[1].shift()
     if (bucket[1].length === 0) this.buckets.shift()
     return task
   }
@@ -138,14 +146,16 @@ export class World {
         task()
         continue
       }
-      const first = this.timers[0]
-      if (first === undefined) return "Deadlock"
-      this.now = first.deadline
-      while (this.timers.length > 0 && this.timers[0]!.deadline === this.now) {
+      let timer = this.timers[0]
+      if (timer === undefined) return "Deadlock"
+      this.now = timer.deadline
+      do {
         if (this.steps >= this.limit) return "Limited"
         this.steps++
-        this.timers.shift()!.wake()
-      }
+        this.timers.shift()
+        timer.wake()
+        timer = this.timers[0]
+      } while (timer !== undefined && timer.deadline === this.now)
     }
     return "Completed"
   }

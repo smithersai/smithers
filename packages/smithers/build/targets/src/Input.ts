@@ -9,6 +9,7 @@
  * @since 0.1.0
  */
 
+import * as Data from "effect/Data"
 import * as Schema from "effect/Schema"
 import createIgnore from "ignore"
 import { Minimatch, minimatch } from "minimatch"
@@ -28,7 +29,8 @@ import * as SafeFs from "./SafeFs.ts"
  */
 export const Glob = Schema.TaggedStruct("Glob", {
   pattern: Schema.NonEmptyString,
-  exclude: Schema.Array(Schema.String)
+  exclude: Schema.Array(Schema.String),
+  allowEmpty: Schema.optionalKey(Schema.Boolean)
 })
 
 /**
@@ -182,28 +184,33 @@ export interface FileDigest {
  * @category constructors
  * @since 0.1.0
  */
-export function glob(pattern: string, options?: { readonly exclude?: ReadonlyArray<string> }): Glob
-export function glob(patterns: ReadonlyArray<string>): ReadonlyArray<Glob>
+export function glob(pattern: string, options?: GlobOptions): Glob
+export function glob(patterns: ReadonlyArray<string>, options?: GlobOptions): ReadonlyArray<Glob>
 export function glob(
   pattern: string | ReadonlyArray<string>,
-  options: { readonly exclude?: ReadonlyArray<string> } = {}
+  options: GlobOptions = {}
 ): Glob | ReadonlyArray<Glob> {
-  if (typeof pattern === "string") {
-    return Glob.make({ pattern, exclude: [...(options.exclude ?? [])] })
-  }
+  const excludes = [...(options.exclude ?? [])]
+  const allowEmpty = options.allowEmpty === undefined ? {} : { allowEmpty: options.allowEmpty }
+  if (typeof pattern === "string") return Glob.make({ pattern, exclude: excludes, ...allowEmpty })
   // The array form is the PACKAGE.ts spelling: positive patterns plus
   // `!`-prefixed excludes shared by every positive pattern. It returns one
   // declared glob per positive pattern so the existing single-pattern
   // expansion applies unchanged.
   const positives: Array<string> = []
-  const excludes: Array<string> = []
   for (const entry of pattern) {
     if (typeof entry !== "string") throw new TypeError("glob patterns must be strings")
     if (entry.startsWith("!")) excludes.push(entry.slice(1))
     else positives.push(entry)
   }
   if (positives.length === 0) throw new Error("glob requires at least one positive pattern")
-  return positives.map((positive) => Glob.make({ pattern: positive, exclude: [...excludes] }))
+  return positives.map((positive) => Glob.make({ pattern: positive, exclude: [...excludes], ...allowEmpty }))
+}
+
+interface GlobOptions {
+  readonly exclude?: ReadonlyArray<string>
+  /** Allows a declared glob to contribute no files when its matches belong to nested packages. */
+  readonly allowEmpty?: boolean
 }
 
 /**
@@ -476,7 +483,7 @@ const isDeclaredSchema = Schema.is(Declared)
 /** The scalar and string-array fields the declared-input schemas may read. */
 const declaredFields: Readonly<Record<string, ReadonlyArray<string>>> = {
   File: ["_tag", "path"],
-  Glob: ["_tag", "pattern", "exclude"],
+  Glob: ["_tag", "pattern", "exclude", "allowEmpty"],
   GitDiff: ["_tag", "base", "paths", "added", "addedLines"],
   PnpmWorkspace: ["_tag", "path"],
   NodeModules: ["_tag", "path"],
@@ -847,6 +854,7 @@ interface Scan {
   readonly io: SafeFs.Io
   readonly cacheDirectory: string
   readonly packageScoped: boolean
+  readonly excludedPackages?: Set<string> | undefined
   /** Apply source ignore rules, host-directory exclusions, and repository boundaries. */
   readonly sourceFilters: boolean
   readonly repositoryBoundaries: ReadonlyArray<string>
@@ -1150,7 +1158,10 @@ const crossesPackageBoundary = async (
   ) return true
   for (let length = packageSegments.length + 1; length <= startSegments.length; length += 1) {
     const opened = chain[length]!
-    if (await isPackage(scan, opened.relative, opened.entries)) return true
+    if (await isPackage(scan, opened.relative, opened.entries)) {
+      scan.excludedPackages?.add(opened.relative)
+      return true
+    }
   }
   return false
 }
@@ -1244,7 +1255,10 @@ const walk = async (
 ): Promise<void> => {
   checkCancelled(scan)
   const relative = opened.relative
-  if (bounded && scan.packageScoped && await isPackage(scan, relative, opened.entries)) return
+  if (bounded && scan.packageScoped && await isPackage(scan, relative, opened.entries)) {
+    scan.excludedPackages?.add(relative)
+    return
+  }
   if (bounded && scan.sourceFilters && isRepository(opened.entries)) return
   const hasIgnore = opened.entries.some((entry) => entry.name === ".gitignore")
   const matcher = hasIgnore ? await permitted(scan, () => readIgnore(scan, relative)) : undefined
@@ -1297,8 +1311,47 @@ const walk = async (
   ])
 }
 
+interface GlobExpansionOptions {
+  readonly exclude?: ReadonlyArray<string>
+  readonly cacheDirectory?: string | undefined
+  readonly io?: SafeFs.Io | undefined
+  readonly limits?: Partial<ScanLimits> | undefined
+  /** Opaque child repositories that broad globs must not descend into. */
+  readonly repositoryBoundaries?: ReadonlyArray<string> | undefined
+  /** Selects raw scoped or unscoped expansion for callers comparing the two. */
+  readonly packageScoped?: boolean | undefined
+  /** Whether links that are not links to workspace files are listed as link inputs. */
+  readonly links?: boolean | undefined
+  readonly signal?: AbortSignal | undefined
+  /** Directory reads shared with the invocation's other expansions; see {@link WalkCache}. */
+  readonly walks?: WalkCache | undefined
+}
+
 /**
- * Expands one declared glob against the real filesystem.
+ * A declared glob whose only matches are excluded by nested package boundaries.
+ *
+ * @category errors
+ * @since 1.0.0
+ */
+export class GlobCrossesPackage extends Data.TaggedError("smithers-build/GlobCrossesPackage")<{
+  readonly pattern: string
+  readonly packages: ReadonlyArray<string>
+  readonly message: string
+}> {
+  constructor(pattern: string, packages: ReadonlyArray<string>) {
+    const labels = packages.map((directory) => `//${directory}:<target>`)
+    super({
+      pattern,
+      packages,
+      message: `S.glob(${JSON.stringify(pattern)}) matches no files in its declaring package. ` +
+        `Its matches are excluded by nested package boundaries in ${packages.join(", ")}. ` +
+        `Reference a target in the owning package (${labels.join(", ")}) or set allowEmpty: true.`
+    })
+  }
+}
+
+/**
+ * Expands a glob against the real filesystem.
  *
  * The walk starts at the pattern's static prefix, honors every `.gitignore`
  * from the workspace root down, and skips `.git`, the configured cache
@@ -1321,10 +1374,11 @@ const walk = async (
  * anchors pattern resolution at the workspace root but does not change the
  * declaring package's scope. Files in another package belong to that
  * package's own targets, and a target that wants them depends on its label
- * instead. The target applies to every glob in every target, not only to
- * `Filegroup`. The `packageScoped` option turns the boundary off for a caller
- * that is not expanding a declared input, such as the generated-output check
- * resolving the write set a generator declared.
+ * instead. A declared glob whose only matches are below those nested packages
+ * throws {@link GlobCrossesPackage}, unless its declaration has `allowEmpty`.
+ * Raw string patterns and explicit `packageScoped` scans only return matches.
+ * A generated-output check passes `packageScoped: false` to resolve its declared
+ * write set across package boundaries.
  *
  * ## Confinement
  *
@@ -1355,26 +1409,35 @@ export const expandGlob = async (
   workspaceRoot: string,
   packageDir: string,
   pattern: string | Glob,
-  options: {
-    readonly exclude?: ReadonlyArray<string>
-    readonly cacheDirectory?: string | undefined
-    readonly io?: SafeFs.Io | undefined
-    readonly limits?: Partial<ScanLimits> | undefined
-    /** Opaque child repositories that broad globs must not descend into. */
-    readonly repositoryBoundaries?: ReadonlyArray<string> | undefined
-    /**
-     * Whether a nested `PACKAGE.ts` bounds the expansion. Defaults to `true`,
-     * which is what a declared input glob means. A declared write set is not
-     * a glob over the declaring package, so the generated-output check passes
-     * `false`: the paths a generator names are its own wherever they live.
-     */
-    readonly packageScoped?: boolean | undefined
-    /** Whether links that are not links to workspace files are listed as link inputs. */
-    readonly links?: boolean | undefined
-    readonly signal?: AbortSignal | undefined
-    /** Directory reads shared with the invocation's other expansions; see {@link WalkCache}. */
-    readonly walks?: WalkCache | undefined
-  } = {}
+  options: GlobExpansionOptions = {}
+): Promise<ReadonlyArray<string>> => {
+  if (typeof pattern === "string" || pattern.allowEmpty === true || options.packageScoped !== undefined) {
+    return expandGlobPaths(workspaceRoot, packageDir, pattern, options)
+  }
+  const excludedPackages = new Set<string>()
+  const matched = await expandGlobPaths(workspaceRoot, packageDir, pattern, options, excludedPackages)
+  if (matched.length > 0 || excludedPackages.size === 0) return matched
+
+  const unscoped = await expandGlobPaths(workspaceRoot, packageDir, pattern, { ...options, packageScoped: false })
+  const packages = new Set<string>()
+  for (const file of unscoped) {
+    for (let parent = NodePath.posix.dirname(file); parent !== "."; parent = NodePath.posix.dirname(parent)) {
+      if (excludedPackages.has(parent)) {
+        packages.add(parent)
+        break
+      }
+    }
+  }
+  if (packages.size > 0) throw new GlobCrossesPackage(pattern.pattern, [...packages].sort())
+  return matched
+}
+
+const expandGlobPaths = async (
+  workspaceRoot: string,
+  packageDir: string,
+  pattern: string | Glob,
+  options: GlobExpansionOptions,
+  excludedPackages?: Set<string>
 ): Promise<ReadonlyArray<string>> => {
   const patternText = typeof pattern === "string" ? pattern : pattern.pattern
   const excludeTexts = typeof pattern === "string" ? options.exclude ?? [] : pattern.exclude
@@ -1402,6 +1465,7 @@ export const expandGlob = async (
     io,
     cacheDirectory,
     packageScoped: options.packageScoped ?? true,
+    excludedPackages,
     sourceFilters: true,
     repositoryBoundaries,
     enteredRepositories,

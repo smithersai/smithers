@@ -15,6 +15,7 @@ import type * as SecureRandom from "effect/crypto/SecureRandom"
  * timeout does is asserted rather than waited out.
  */
 import { describe, expect, it } from "@effect/vitest"
+import { FlowEngine } from "@smthrs/engine"
 import { Action, DurableDeferred, Flow, FlowRuntime, Graph, HumanTask, Interpreter, Sleep } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
 import { Cause, Effect, Exit, Layer, Option, Schema } from "effect"
@@ -1768,6 +1769,39 @@ describe("HumanTask.decode", () => {
     expect(stable(v1).diagnostics).toEqual([])
     expect(mapper(v1)).toEqual(mapper(HumanTask.decode(Unidentified, { version: "answer/v1" })))
     expect(mapper(v1)).not.toEqual(mapper(HumanTask.decode(Unidentified, { version: "answer/v2" })))
+  })
+
+  effect("decodes an answer inside a captured planned bind on the memory engine (#4963)", () => {
+    const Use = Action.make("humanTask/use-otp", {
+      payload: { otp: Schema.String },
+      success: Schema.String
+    })
+    const Otp = Flow.make("humanTask/otp", {
+      payload: {},
+      success: Schema.String,
+      error: HumanTask.HumanTaskFailed,
+      body: Node.capture({ v: "1" }, () =>
+        Node.bindPlanned(
+          HumanTask.action.call({ name: "otp", kind: "ask", prompt: "OTP?", maxAttempts: 3 }).pipe(
+            HumanTask.decode(Schema.String)
+          ),
+          Node.capture({ v: "1" }, (otp) => Use.call({ otp }))
+        ))
+    })
+    const layer = Interpreter.layerWithImplementations(
+      Otp,
+      Layer.merge(HumanTask.layer, Use.toLayer(({ otp }) => Effect.succeed(`used ${otp}`)))
+    ).pipe(Layer.provideMerge(FlowEngine.layerMemory))
+    const executionId = "human-decode-otp"
+
+    return Effect.gen(function*() {
+      yield* Otp.execute({}, { executionId, discard: true })
+      const parked = yield* pollUntil(Otp.poll(executionId), () => true, { turns: 200 })
+      expect(parked).toMatchObject({ _tag: "Some", value: { _tag: "Suspended" } })
+      const token = DurableDeferred.tokenFromExecutionId(HumanTask.deferred("otp", 1), { flow: Otp, executionId })
+      yield* HumanTask.answer({ token, value: "123456" })
+      expect(yield* Otp.execute({}, { executionId })).toBe("used 123456")
+    }).pipe(Effect.provide(layer))
   })
 
   effect("gives the answer the caller's own type", () =>
