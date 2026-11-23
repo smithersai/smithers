@@ -3,7 +3,7 @@
 // serveIssues on a loopback server over SQLite and the shipped product fixture host. A faulty IssueHost answers the two
 // failures: one that wrote nothing and one that may have landed.
 import { it, expect } from "@effect/vitest"
-import * as NodeHttpClient from "@effect/platform-node/NodeHttpClient"
+import { EgressHttpClient } from "@smthrs/platform-node"
 import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer"
 import { FetchHttpClient, HttpServer } from "effect/http"
 import { fixtureHost, makeIssueStore, type FixturePerson } from "../src/core/IssuesFactory.vibe"
@@ -48,7 +48,7 @@ it("a live issue write clears its resume address once it settles, and keeps it w
       ))
       const address = (try HttpServer.HttpServer).address
       const origin = address._tag === "UnixPathAddress" ? "http://localhost" : `http://127.0.0.1:${address.port}`
-      provide LiveFactory(origin).pipe(Layer.provide(NodeHttpClient.layerNodeHttp)) {
+      provide LiveFactory(origin).pipe(Layer.provide(EgressHttpClient.layer({}))) {
         const act = effect (request: IssueRequest) => {
           try sync(() => setLocation("/?issues=1"))
           const message = try execute(() => ActOnIssue({ request }))

@@ -8,7 +8,7 @@
  *
  * @since 1.0.0
  */
-import { ImportRules } from "@smthrs/repo-targets"
+import { ImportRules, WorkspaceSources } from "@smthrs/repo-targets"
 import { Smithers } from "@smthrs/targets"
 import { readdirSync } from "node:fs"
 import { workspacePackages } from "../../packages/repo-targets/scripts/workspace-packages.mjs"
@@ -150,10 +150,19 @@ const importRules = ImportRules({
  * @since 1.0.0
  * @category lint
  */
+const lintReads = Object.values(WorkspaceSources({ cwd }))
+
 const lint = Smithers.EsLint({
   sources: [Smithers.glob("src/**/*.ts"), Smithers.glob("src/**/*.tsx")],
   configs: [Smithers.file("eslint.config.js"), Smithers.file("//eslint.invariants.js")],
-  deps: [],
+  deps: lintReads,
+  // Typed rules load tsconfig.json and the whole program it includes (src, test, e2e).
+  data: [
+    Smithers.file("tsconfig.json"),
+    Smithers.file("package.json"),
+    Smithers.glob("test/**/*"),
+    Smithers.glob("e2e/**/*")
+  ],
   maxWarnings: 0,
   fix: false,
   cwd

@@ -81,7 +81,7 @@ async function chromiumEvidence(): Promise<CoverageMap> {
       const normalized: Record<string, unknown> = {}
       for (const [key, value] of Object.entries(data)) {
         const path = isAbsolute(key) ? key : resolve(dirname(filename), key)
-        const coverage = value as Record<string, unknown>
+        const coverage = value as unknown as Record<string, unknown>
         normalized[path] = { ...coverage, path }
       }
       const filtered = libCoverage.createCoverageMap()

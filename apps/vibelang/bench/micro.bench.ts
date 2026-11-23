@@ -1,5 +1,6 @@
 import { describe, test } from "vitest"
-import { canLinkIssues, issueAncestorAt, nextIssueNumber, type IssueRecord } from "../src/core/issueGraphDecision.vibe"
+import { type IssueRecord } from "../src/core/conversation.vibe"
+import { canLinkIssues, issueAncestorAt, nextIssueNumber } from "../src/core/issueGraphDecision.vibe"
 import { accountRoute, routeKind, sameOriginRequest, sessionCookie } from "../src/core/protocolDecision.vibe"
 import {
   beginReply,
