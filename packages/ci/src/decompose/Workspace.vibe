@@ -47,6 +47,7 @@ export interface Workspace {
   readonly rootScripts: Readonly<Record<string, string>>
   readonly packages: ReadonlyArray<Package>
   readonly orchestrated: boolean
+  readonly npmMismatch?: boolean
 }
 
 /**
@@ -152,20 +153,19 @@ const wild = (
   return pattern.slice(at).every((token) => token === star)
 }
 
-// One workspace pattern as a test of a directory, or `undefined` when it uses
-// glob syntax this reader does not implement. `*` matches any run of characters
-// in one name, and a `**` segment any run of directories.
+/** Matches literal name characters and stars. */
+export const matchesName = (pattern: string, name: string): boolean =>
+  wild([...pattern], [...name], "*", (left, right) => left === right)
+
+/** Matches directory components with globstars between components. */
+export const matchesDirectory = (segments: ReadonlyArray<string>, directory: string): boolean =>
+  wild(segments, directory.split("/"), "**", matchesName)
+
 const patternTest = (pattern: string): ((directory: string) => boolean) | undefined => {
   if (/[{}[\]?\\]/.test(pattern)) return undefined
   const segments = pattern.split("/").filter((segment) => segment !== "" && segment !== ".")
   if (segments.includes("..")) return undefined
-  return (directory) =>
-    wild(
-      segments,
-      directory.split("/"),
-      "**",
-      (segment, name) => wild([...segment], [...name], "*", (left, right) => left === right)
-    )
+  return (directory) => matchesDirectory(segments, directory)
 }
 
 // Settings in `.npmrc` that change which packages a run selects.
@@ -229,7 +229,7 @@ export const packageDirectories = (
   }
   const found: Array<string> = []
   for (const file of files) {
-    if (!file.endsWith("/package.json") || file.includes("node_modules/")) continue
+    if (!file.endsWith("/package.json") || file.split("/").includes("node_modules")) continue
     const directory = file.slice(0, -"/package.json".length)
     if (include.some((test) => test(directory)) && !exclude.some((test) => test(directory))) found.push(directory)
   }
@@ -340,7 +340,7 @@ export const scanner = (workspace: Workspace): (text: string, bare: boolean) => 
     const relative = new Set<string>()
     const rooted = new Set<string>()
     for (const [run, start] of slashedRuns(text)) {
-      const modules = run.lastIndexOf("node_modules/")
+      const modules = (`/${run}`).lastIndexOf("/node_modules/")
       if (modules < 0 && (run.startsWith("./") || run.startsWith("../"))) {
         if (!dotsOnly.test(run)) relative.add(run)
         continue
@@ -427,7 +427,7 @@ export const resolveFile = (path: string, files: ReadonlySet<string>): string | 
 }
 
 // The directory of a file inside a package, which always has one.
-const directoryOf = (file: string): string => file.slice(0, file.lastIndexOf("/"))
+const directoryOf = (file: string): string => file.slice(0, Math.max(0, file.lastIndexOf("/")))
 
 /**
  * Answers what a package's task can read inside other packages. Built once
@@ -463,8 +463,7 @@ interface Edges {
  *   that names anything else adds that package whole.
  *
  * `files` are the repository's files, and `mentioned` gives one file's
- * mentions. A relative path is read from the file's own directory; when it
- * names nothing there, it is also read from the package's directory, where a
+ * mentions. A relative path is read from the file's directory and the package's directory, where a
  * program runs. A rooted path is read from the repository root.
  *
  * @category closure
@@ -473,7 +472,8 @@ interface Edges {
 export const graph = (
   workspace: Workspace,
   files: ReadonlySet<string>,
-  mentioned: (file: string) => Mentions
+  mentioned: (file: string) => Mentions,
+  unknown: ReadonlySet<string> = new Set()
 ): Graph => {
   const byName = new Map(workspace.packages.map((candidate) => [candidate.name, candidate]))
   const byDirectory = new Map(workspace.packages.map((candidate) => [candidate.directory, candidate]))
@@ -492,21 +492,9 @@ export const graph = (
     if (owner !== undefined) (owned.get(owner.name) as Array<string>).push(file)
   }
 
-  const directories = new Set<string>()
-  for (const file of files) {
-    for (
-      let end = file.lastIndexOf("/");
-      end > 0 && !directories.has(file.slice(0, end));
-      end = file.lastIndexOf("/", end - 1)
-    ) {
-      directories.add(file.slice(0, end))
-    }
-  }
-  const exists = (path: string): boolean => directories.has(path) || resolveFile(path, files) !== undefined
-
   // What one file adds. `whole` is true when the file's own package is
   // already reached whole, so paths that stay inside it add nothing.
-  const edgesOfFile = (file: string, owner: Package, whole: boolean): Edges => {
+  const edgesOfFile = (file: string, owner: Package | undefined, whole: boolean): Edges => {
     const found = mentioned(file)
     const packages = found.names.map((name) => byName.get(name) as Package)
     const single: Array<string> = []
@@ -514,17 +502,15 @@ export const graph = (
     for (const path of found.relative) {
       const beside = join(directoryOf(file), path)
       targets.push(beside)
-      // A path means what it names from the file it is written in. When
-      // that names nothing, a program may read it from where it runs.
-      if (beside === undefined || !exists(beside)) targets.push(join(owner.directory, path))
+      targets.push(join(owner?.directory ?? "", path))
     }
     for (const target of targets) {
       const targetOwner = target === undefined ? undefined : ownerOf(target)
-      if (target === undefined || targetOwner === undefined || (whole && targetOwner === owner)) continue
+      if (target === undefined || (whole && targetOwner === owner)) continue
       const resolved = resolveFile(target, files)
       if (resolved !== undefined && ownerOf(resolved) === targetOwner) single.push(resolved)
       // A path that names no file may name anything in that package.
-      else packages.push(targetOwner)
+      else if (targetOwner !== undefined) packages.push(targetOwner)
     }
     return { packages, files: single }
   }
@@ -551,7 +537,7 @@ export const graph = (
   const edgesOfSingle = (file: string): Edges => {
     const known = fileEdges.get(file)
     if (known !== undefined) return known
-    const edges = edgesOfFile(file, ownerOf(file) as Package, false)
+    const edges = edgesOfFile(file, ownerOf(file), false)
     fileEdges.set(file, edges)
     return edges
   }
@@ -571,9 +557,11 @@ export const graph = (
       else packages.add(next)
       pending.push(...edges.packages, ...edges.files)
     }
+    const incomplete = [...single].some((file) => unknown.has(file)) ||
+      [...packages].some((owner) => owned.get(owner.name)!.some((file) => unknown.has(file)))
     const reach = {
       packages: new Set([...packages].map((reached) => reached.directory)),
-      files: new Set([...single].filter((file) => !packages.has(ownerOf(file) as Package)))
+      files: new Set([...single].filter((file) => !packages.has(ownerOf(file) as Package)).concat(incomplete ? ["**"] : []))
     }
     reaches.set(start, reach)
     return reach
@@ -602,6 +590,13 @@ export const spineOf = (workspace: Workspace): ReadonlySet<string> => {
   return spine
 }
 
+/** Tests whether a literal input path would be interpreted as glob syntax.
+ *
+ * @category paths
+ * @since 0.1.0
+ */
+export const globMagic = /[*?[\]{}\\]|[@+!]\(|^[!#]/
+
 /**
  * Globs for every file outside all packages: each file directly in a
  * directory above a package, and each other directory there, whole. Every
@@ -626,5 +621,6 @@ export const outsideGlobs = (workspace: Workspace, files: ReadonlySet<string>): 
       }
     }
   }
+  if ([...globs].some((glob) => globMagic.test(glob.replace(/\/?\*+$/, "")))) return ["**"]
   return [...globs].sort()
 }

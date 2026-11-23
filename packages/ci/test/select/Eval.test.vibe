@@ -49,7 +49,7 @@ describe("Eval.run", () => {
         expect(outcome.split.history.map((observation) => observation.row.commit)).toEqual(["c1"])
         expect(outcome.run.cases.map((each) => each.case)).toEqual(["c2", "c3", "c4"])
         expect(outcome.unfinished).toEqual([])
-        // Per change, at the starting settings: a score cutoff of 0.05 and the top 5 select both targets.
+        // Per change, at the starting settings: a score cutoff of 0.1 and the top 5 select both targets.
         expect(outcome.run.observations.map((each) => [each.case, each.scorerName, each.kind === "score" ? each.score : each.kind, each.kind === "score" ? each.reason : ""])).toEqual([
           ["c2", "caught", 1, "1 of 1 failures selected"],
           ["c2", "skipped", 0, "0 of 2 targets skipped"],
@@ -68,6 +68,11 @@ describe("Eval.run", () => {
     }
   })
 
+  it.effect("rejects invalid sample counts before running the eval", () => effect {
+    for (const changes of [0, -1, 1.5, NaN]) {
+      expect((try flip(Eval.run({ ...options, changes }, observations, () => succeed([])))).code).toBe("invalid_suite")
+    }
+  })
   it.live("caps the test set at evenly spaced changes when asked", () => effect {
     const constant = (rows: ReadonlyArray<{ readonly commit: string; readonly target: string }>) => succeed(rows.map((row) => ({ commit: row.commit, target: row.target, score: 0.5 })))
     const outcome = try Eval.run({ ...options, changes: 2, concurrency: 2 }, observations, constant)
@@ -95,6 +100,15 @@ describe("Eval.run", () => {
       expect(outcome.report).toBeUndefined()
       expect(outcome.run.cases.find((each) => each.case === "c3")!.error!.message).toBe("Target failed for case 'c3': model-unavailable: The judge did not score the rows: No judge is configured")
     })
+  })
+
+  it.live("rejects missing, duplicate and foreign scores", () => effect {
+    for (const mode of ["missing", "duplicate", "foreign"]) {
+      const outcome = try Eval.run(options, observations, (rows) => succeed(rows.flatMap((row, index) =>
+        mode === "missing" ? [] : [{commit: mode === "foreign" ? "other" : row.commit, target: rows[mode === "duplicate" ? 0 : index]!.target, score: 0.5}])))
+      expect(outcome.unfinished).toEqual(["c2", "c3", "c4"])
+      expect(outcome.report).toBeUndefined()
+    }
   })
 
   it.live("refuses a recall for a test week with no failure", () => effect {
@@ -133,6 +147,7 @@ describe("Eval.caught and Eval.skipped", () => {
 
   it.effect("fail when the case's rows or its scores cannot be read", () => effect {
     const noRows = try flip(Eval.caught.score({ input: {}, output: [] }))
+    expect((try flip(Eval.caught.score({ input: {rows}, output: [] }))).message).toContain("scores")
     const noScores = try flip(Eval.skipped.score({ input: { rows }, output: [{ commit: "c3" }] }))
     try Effect.try(() => {
       expect(noRows.message).toContain("The entries of a fast-mode case could not be read")

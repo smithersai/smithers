@@ -70,7 +70,9 @@ const reader = (text: string) => {
 
   const codePoint = (digits: string): string => {
     const value = Number.parseInt(digits, 16)
-    return Number.isNaN(value) || value > 0x10ffff ? stop("a bad escape") : String.fromCodePoint(value)
+    return !/^[0-9a-f]+$/i.test(digits) || value > 0x10ffff || (value >= 0xd800 && value <= 0xdfff)
+      ? stop("a bad escape")
+      : String.fromCodePoint(value)
   }
 
   const string = (): string => {
@@ -87,8 +89,14 @@ const reader = (text: string) => {
       const kind = text[at]
       at += 1
       if (kind === "x") {
-        out += codePoint(text.slice(at, at + 2))
-        at += 2
+        const bytes: Array<number> = []
+        do {
+          const digits = text.slice(at, at + 2)
+          if (!/^[0-9a-f]{2}$/i.test(digits)) return stop("a bad escape")
+          bytes.push(Number.parseInt(digits, 16))
+          at += 2
+        } while (take("\\x"))
+        out += new TextDecoder().decode(Uint8Array.from(bytes))
       } else if (kind === "u" && text[at] === "{") {
         const close = text.indexOf("}", at)
         if (close === -1) return stop("a bad escape")
@@ -154,7 +162,9 @@ const reader = (text: string) => {
     if (take("false")) return false
     if (take("null")) return null
     const digits = match(number)
-    return digits === undefined ? stop("a value was expected") : Number(digits.replaceAll("_", ""))
+    return digits === undefined
+      ? stop("a value was expected")
+      : (digits.startsWith("-") ? -Number(digits.slice(1).replaceAll("_", "")) : Number(digits.replaceAll("_", "")))
   }
 
   const document = (): Zon => {

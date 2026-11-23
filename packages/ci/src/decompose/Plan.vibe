@@ -15,7 +15,7 @@ import { type Job, type Step, treeOrder } from "../contract/Inventory.vibe"
 import { executorOf, type Invocation, type Known, type Pattern, recognize, turbo } from "./Runners.vibe"
 import { type Command, commands, quote } from "./Shell.vibe"
 import { type Config, defines, rootRuns, walk } from "./Turbo.vibe"
-import type { Graph, Package, Reach, Workspace } from "./Workspace.vibe"
+import { globMagic, join, matchesDirectory, matchesName, type Graph, type Package, type Reach, type Workspace } from "./Workspace.vibe"
 
 /**
  * One script run found in a step.
@@ -155,13 +155,7 @@ export const zigStep = (words: ReadonlyArray<string>): string | undefined => {
 
 const enter = (cwd: string, directory: string): string | undefined => {
   if (directory.startsWith("/") || directory.startsWith("~") || directory === "-") return undefined
-  const parts = cwd === "" ? [] : cwd.split("/")
-  for (const segment of directory.split("/")) {
-    if (segment === "" || segment === ".") continue
-    if (segment !== "..") parts.push(segment)
-    else if (parts.pop() === undefined) return undefined
-  }
-  return parts.join("/")
+  return join(cwd, directory)
 }
 
 // Follows a root script to the command it runs: `pnpm run test` where the
@@ -212,6 +206,7 @@ const understandList = (
     const words = command.words.map((word) => word.text)
     // After `cd a || b`, `b` runs where the `cd` did not go.
     if (entered && command.joint === "||") return false
+    const unconditional = command.joint === "first" || command.joint === ";" || (entered && command.joint === "&&")
     entered = false
     // A setting given as a variable can change which packages every later command runs in.
     const assigned = [...command.assignments.map(([name]) => name), ...(words[0] === "export" ? words.slice(1) : [])]
@@ -220,7 +215,7 @@ const understandList = (
     const literal = command.words.every((word) => word.literal)
     const plain = !command.conditional && !command.piped && !command.background && command.joint !== "|"
     if (words[0] === "cd") {
-      const next = words.length === 2 && literal && plain ? enter(cwd, words[1] as string) : undefined
+      const next = words.length === 2 && literal && plain && unconditional ? enter(cwd, words[1] as string) : undefined
       if (next === undefined) return false
       cwd = next
       entered = true
@@ -287,32 +282,21 @@ export const understand = (
   return out.runs.length + out.zig.length === 0 ? undefined : { runs: out.runs, zig: [...new Set(out.zig)].sort() }
 }
 
-const segmentSource = (segment: string, star: string): string =>
-  segment.split("*").map((part) => part.replace(/[.+^$()|/]/g, "\\$&")).join(star)
-
-const matches = (pattern: Pattern, candidate: Package): boolean => {
-  if (pattern.name !== undefined && new RegExp(`^${segmentSource(pattern.name, ".*")}$`).test(candidate.name)) {
-    return true
-  }
-  if (pattern.directory === undefined) return false
-  const source = pattern.directory.split("/").map((segment) =>
-    segment === "**" ? "(?:[^/]+/)*" : `${segmentSource(segment, "[^/]*")}/`
-  ).join("")
-  return new RegExp(`^${source}$`).test(`${candidate.directory}/`)
-}
+const matches = (pattern: Pattern, candidate: Package): boolean =>
+  (pattern.name !== undefined && matchesName(pattern.name, candidate.name)) ||
+  (pattern.directory !== undefined && matchesDirectory(pattern.directory.split("/"), candidate.directory))
 
 // Text in a script that reaches packages no name or path gives away: a
 // tool that works on the whole workspace or the history, a package manager
 // told to run in other packages, a command substitution, or a variable that
 // holds a directory.
-const wide = new RegExp(
-  [
-    String.raw`(?:^|[\s;&|()'"=])(?:turbo|nx|lerna|wsrun|git)(?=$|[\s;&|()'"])`,
-    String
-      .raw`(?:^|[\s;&|()'"=])(?:pnpm|npm|yarn|bun)\s[^;&|]*?(?:--filter|-F|-r|--recursive|--workspaces?|-ws|-w|workspaces?)(?=$|[\s=;&|'"])`,
-    String.raw`\$\(|\x60|\$\{?(?:INIT_CWD|PWD|OLDPWD|HOME)\b|~/`
-  ].join("|")
-)
+const broadTool = /(?:^|[\s;&|()'"=])(?:turbo|nx|lerna|wsrun|git)(?=$|[\s;&|()'"])|\$\(|\x60|\$\{?(?:INIT_CWD|PWD|OLDPWD|HOME)\b|~\//
+const manager = /(?:^|[\s()'"=])(?:pnpm|npm|yarn|bun)\s/
+const recursiveOption = /(?:--filter|-F|-r|--recursive|--workspaces?|-ws|-w|workspaces?)(?=$|[\s='"])/
+const wide = (body: string): boolean => broadTool.test(body) || body.split(/[;&|]/).some((segment) => {
+  const start = manager.exec(segment)
+  return start !== null && recursiveOption.test(segment.slice(start.index + start[0].length))
+})
 
 // True when a package's script, with its hooks and the scripts it names, may
 // read beyond what the package's files mention.
@@ -324,7 +308,7 @@ const reachesWide = (owner: Package, script: string): boolean => {
     const body = owner.scripts[name]
     if (body === undefined || seen.has(name)) continue
     seen.add(name)
-    if (wide.test(body)) return true
+    if (wide(body)) return true
     const tokens = new Set(body.split(/[^A-Za-z0-9_:.@/-]+/))
     for (const other of Object.keys(owner.scripts)) if (tokens.has(other)) pending.push(other)
   }
@@ -376,11 +360,17 @@ const entriesOf = (facts: Facts, invocation: Invocation): ReadonlyArray<Entry> |
   if (chosen === undefined) return undefined
   if (invocation.runner === "turbo") {
     const config = facts.turbo
-    if (config === undefined || !invocation.tasks.every((task) => defines(config, task))) return undefined
+    if (config === undefined) return undefined
+    const tasks = invocation.tasks.map((value) => {
+      const hash = value.indexOf("#")
+      return hash < 0 ? { task: value, owner: undefined } : { task: value.slice(hash + 1), owner: value.slice(0, hash) }
+    })
+    if (tasks.some(({ task, owner }) => !defines(config, task, owner) ||
+      (owner !== undefined && !chosen.some((candidate) => candidate.name === owner)))) return undefined
     // The root package's own task reads the whole repository and is not modelled.
-    if (invocation.tasks.some((task) => rootRuns(config, task))) return undefined
+    if (tasks.some(({ task, owner }) => owner === undefined && rootRuns(config, task))) return undefined
     return chosen.flatMap((owner): ReadonlyArray<Entry> => {
-      const walked = walk(config, workspace, owner, invocation.tasks)
+      const walked = walk(config, workspace, owner, tasks.filter((entry) => entry.owner === undefined || entry.owner === owner.name).map((entry) => entry.task))
       if (walked.scripts.length === 0) return []
       return [{
         owner,
@@ -397,6 +387,7 @@ const entriesOf = (facts: Facts, invocation: Invocation): ReadonlyArray<Entry> |
   const script = invocation.tasks[0] as string
   // pnpm and npm read settings that change which packages a run selects.
   if ((invocation.runner === "pnpm" || invocation.runner === "npm") && workspace.orchestrated) return undefined
+  if (invocation.runner === "npm" && workspace.npmMismatch) return undefined
   const having = chosen.filter((candidate) => Object.hasOwn(candidate.scripts, script))
   if (invocation.strict && having.length !== chosen.length) return undefined
   const single = invocation.selection.kind === "directory"
@@ -426,9 +417,6 @@ const entriesOf = (facts: Facts, invocation: Invocation): ReadonlyArray<Entry> |
   })
 }
 
-// Text a glob reader would not take as a plain path.
-const magic = /[*?[\]{}\\]|[@+!]\(|^[!#]/
-
 /**
  * The inputs of one or more reaches: the files outside every package, each
  * reached package's directory, each single file, and the extra globs. One
@@ -442,9 +430,10 @@ export const inputsOf = (
   reaches: ReadonlyArray<Reach>,
   globs: ReadonlyArray<string>
 ): ReadonlyArray<string> => {
+  if (outside.includes(everything)) return [everything]
   const directories = new Set(reaches.flatMap((reach) => [...reach.packages]))
   const files = new Set(reaches.flatMap((reach) => [...reach.files]))
-  if ([...directories, ...files].some((path) => magic.test(path))) return [everything]
+  if ([...directories, ...files].some((path) => globMagic.test(path))) return [everything]
   const whole = [
     ...new Set([...outside.filter((glob) => glob.endsWith("/**")), ...[...directories].map((path) => `${path}/**`)])
   ]
@@ -557,7 +546,9 @@ export const decide = (
   // The step has a run, and each run resolved to its packages.
   const run = understood.runs[0] as Run
   const entries = resolved[0] as ReadonlyArray<Entry>
-  if (understood.runs.length === 1 && run.replace !== undefined && entries.length > 1) {
+  const ordered = run.invocation.runner === "npm" && entries.some((entry) => entry.names.length > 1)
+  const qualified = run.invocation.runner === "turbo" && run.invocation.tasks.some((task) => task.includes("#"))
+  if (understood.runs.length === 1 && run.replace !== undefined && entries.length > 1 && !qualified && !ordered) {
     const [start, end] = run.replace
     return {
       kind: "split",

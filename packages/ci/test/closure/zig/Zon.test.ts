@@ -47,6 +47,12 @@ describe("Zon.parse", () => {
     expect(value("\"a\\n\\r\\t\\\\\\\"\\'\\x41\\u{1F600}\"")).toBe("a\n\r\t\\\"'A\u{1F600}")
   })
 
+  it("reads UTF-8 byte escapes and signed hexadecimal numbers strictly", () => {
+    expect(value(String.raw`"\xc3\xa9"`)).toBe("é")
+    expect(value("-0x10")).toBe(-16)
+    for (const escape of ["x4g", "u{41x}", "u{d800}"]) expect(refusal("\"\\" + escape + "\"")).toContain("bad escape")
+  })
+
   it("keeps a field named like a prototype member as a field", () => {
     const parsed = value(".{ .__proto__ = 1, .constructor = 2 }")
     expect(Zon.field(parsed, "__proto__")).toBe(1)

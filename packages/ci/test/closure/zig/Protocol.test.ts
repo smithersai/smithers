@@ -84,6 +84,7 @@ describe("Protocol.decodeBuild", () => {
     })
     // A header that promises more bytes than there are.
     expect(Protocol.decodeBuild(words(buildCompleted, 4)).completed).toBe(false)
+    expect(Protocol.decodeBuild(message(buildCompleted, bytes("unexpected"))).completed).toBe(false)
   })
 
   it("reports a build.zig that did not compile", () => {
@@ -135,20 +136,24 @@ describe("Protocol.decodeCompile", () => {
       bytes("\0bad\0src/x.zig\0")
     )
     expect(Protocol.decodeCompile(Protocol.join([message(0, bytes("0.17.1")), inputs, errors]))).toEqual({
+      completed: true,
       inputs: [{ prefix: "build-root", path: "src/beta.zig" }, { prefix: "zig-lib", path: "std/std.zig" }],
       problems: [{ message: "bad", file: "src/x.zig" }]
     })
   })
 
   it("says so when the compiler reported no files", () => {
-    expect(Protocol.decodeCompile(new Uint8Array())).toEqual({ inputs: undefined, problems: [] })
-    expect(Protocol.decodeCompile(message(1, words(0, 0)))).toEqual({ inputs: undefined, problems: [] })
+    expect(Protocol.decodeCompile(new Uint8Array())).toEqual({ completed: false, inputs: undefined, problems: [] })
+    expect(Protocol.decodeCompile(message(1, words(0, 0)))).toEqual({
+      completed: true,
+      inputs: undefined,
+      problems: []
+    })
   })
 
-  it("gives an entry with no prefix byte an unknown prefix", () => {
+  it("ignores the final path terminator", () => {
     expect(Protocol.decodeCompile(message(6, Uint8Array.of(5), bytes("a"), Uint8Array.of(0))).inputs).toEqual([
-      { prefix: "build-root", path: "a" },
-      { prefix: "unknown", path: "" }
+      { prefix: "build-root", path: "a" }
     ])
   })
 })

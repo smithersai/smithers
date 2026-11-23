@@ -13,6 +13,7 @@ describe("Ledger.layerMemory", () => {
       try ledger.record([seen(now, "c1", "//a:test"), seen(now, "c1", "//b:test")])
       try ledger.record([seen(now, "c1", "//a:test", true), seen(now + 1, "c2", "//a:test")])
       const held = try ledger.observations()
+      expect(try ledger.observations(now + 1)).toEqual([seen(now, "c1", "//b:test"), seen(now, "c1", "//a:test", true)])
       try Effect.try(() => {
         expect(empty).toEqual([])
         expect(held).toEqual([seen(now, "c1", "//b:test"), seen(now, "c1", "//a:test", true), seen(now + 1, "c2", "//a:test")])
@@ -74,6 +75,65 @@ describe("Ledger.layerFile", () => {
     }
   }))
 
+  it.live("detects equal-size edits even with the same timestamp", () => live(effect {
+    const fs = try FileSystem.FileSystem
+    const root = try directory()
+    const file = root + "/rows.jsonl"
+    const old = seen(now, "one", "a")
+    const edited = seen(now, "two", "a")
+    const stamp = new Date(now)
+    try fs.writeFileString(file, JSON.stringify(old) + "\n")
+    try fs.utimes(file, stamp, stamp)
+    provide layerFile(root) {
+      const ledger = try Ledger
+      expect(try ledger.observations()).toEqual([old])
+      try fs.writeFileString(file, JSON.stringify(edited) + "\n")
+      try fs.utimes(file, stamp, stamp)
+      expect(try ledger.observations()).toEqual([edited])
+      expect(try ledger.observations()).toEqual([edited])
+    }
+  }))
+
+  it.live("reloads the index when another writer appends during a local record", () => live(effect {
+    const fs = try FileSystem.FileSystem
+    const root = try directory()
+    const file = root + "/rows.jsonl"
+    const first = seen(now, "before", "a")
+    const own = seen(now + 1, "local", "a")
+    const external = seen(now + 2, "external", "a")
+    try fs.writeFileString(file, JSON.stringify(first) + "\n")
+    const interleaved: FileSystem.FileSystem = {
+      ...fs,
+      open: (path, options) => map(fs.open(path, options), (fileHandle) => ({
+        ...fileHandle,
+        stat: fileHandle.stat,
+        read: (buffer, settings) => fileHandle.read(buffer, settings),
+        writeAll: (bytes) => andThen(fileHandle.writeAll(bytes), fs.writeFileString(file, JSON.stringify(external) + "\n", { flag: "a" }))
+      }))
+    }
+    provide FileSystem.FileSystem = interleaved {
+      provide layerFile(root) {
+        const ledger = try Ledger
+        expect(try ledger.observations()).toEqual([first])
+        try ledger.record([own])
+        expect(try ledger.observations()).toEqual([first, own, external])
+      }
+    }
+  }))
+
+  it.live("recovers an interrupted last JSON line before and after another append", () => live(effect {
+    const fs = try FileSystem.FileSystem
+    const root = try directory()
+    const previous = seen(now, "c1", "a")
+    const next = seen(now, "c2", "b")
+    try fs.writeFileString(root + "/rows.jsonl", JSON.stringify(previous) + "\n{" )
+    provide layerFile(root) {
+      const ledger = try Ledger
+      expect(try ledger.observations()).toEqual([previous])
+      try ledger.record([next])
+      expect(try ledger.observations()).toEqual([previous, next])
+    }
+  }))
   it.live("reads a commit's saved plan, by a file name that cannot leave the directory", () => live(effect {
     const fs = try FileSystem.FileSystem
     const root = try directory()

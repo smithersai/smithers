@@ -255,6 +255,15 @@ describe("Script.decide", () => {
     expect(decide("npm run lint", { ...chain, prelint: "echo before" }).kind).toBe("none")
   })
 
+  it("preserves the original command when an expansion exceeds the step count budget", () => {
+    const scripts = {
+      first: [...Array(4097).fill("npm run leaf"), "npm run pair", "npm run pair"].join(" && "),
+      pair: "npm run leaf && npm run leaf",
+      leaf: "tsc"
+    }
+    expect(decide("npm run first", scripts).kind).toBe("none")
+  })
+
   it("refuses a script that reaches itself", () => {
     expect(whyOf(decide("npm run a", { a: "npm run b && npm run c", b: "npm run a", c: "true" }))).toBe(
       "script-cycle: a"

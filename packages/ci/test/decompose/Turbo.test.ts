@@ -40,9 +40,18 @@ describe("readConfig", () => {
       dependsOn: ["^build"],
       inputs: ["src/**"],
       extendsDependsOn: false,
+      companions: [],
+      extendsCompanions: true,
       extendsInputs: false
     })
-    expect(read?.tasks.get("lint")).toEqual({ dependsOn: [], inputs: [], extendsDependsOn: true, extendsInputs: true })
+    expect(read?.tasks.get("lint")).toEqual({
+      dependsOn: [],
+      inputs: [],
+      companions: [],
+      extendsCompanions: true,
+      extendsDependsOn: true,
+      extendsInputs: true
+    })
     expect(read?.tasks.get("odd")?.dependsOn).toEqual([])
     expect(readConfig(`{ "pipeline": { "build": { "dependsOn": "not a list" } } }`, [])?.tasks.get("build")?.dependsOn)
       .toEqual([])
@@ -137,6 +146,8 @@ describe("walk", () => {
     })
     expect(ran(extended, "ui", "build")).toEqual(["core#build", "ui#build", "ui#codegen"])
     expect(walk(extended, workspace, named("ui"), ["build"]).globs).toEqual(["own.ts", "shared.ts"])
+    const overridden = config({ tasks: { build: { with: ["docs#lint"] } } }, { ui: { tasks: { build: { with: [] } } } })
+    expect(ran(overridden, "ui", "build")).toEqual(["ui#build"])
     const narrowed = config(root, { core: { tasks: { build: { inputs: ["src/**"] } } } })
     expect(walk(narrowed, workspace, named("core"), ["build"]).globs).toEqual([])
     // A task with no script reads nothing: docs has no build.

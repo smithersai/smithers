@@ -5,6 +5,7 @@
  */
 
 import { Action, Flow, type FlowRuntime, Interpreter, RetryPolicy } from "@smthrs/flow"
+import * as Semaphore from "effect/Semaphore"
 import type { Digest } from "effect/crypto/Digest"
 import type { SecureRandom } from "effect/crypto/SecureRandom"
 import { Classifier, type Evaluator } from "@smthrs/model"
@@ -98,6 +99,7 @@ const forgetful: Kept.Shape = { get: () => succeed(undefined), set: () => Effect
  * @since 0.1.0
  */
 export service Kept {
+  readonly locks?: (key: string) => Semaphore.Semaphore
   get(key: string): (Scoring.Reading | undefined)!!
   set(key: string, reading: Scoring.Reading): void!!
   static readonly defaultValue = () => forgetful
@@ -111,7 +113,15 @@ export service Kept {
  */
 export const layerKept = Layer.sync(Kept, () => {
   const held = new Map<string, Scoring.Reading>()
+  const locks = new Map<string, Semaphore.Semaphore>()
   return {
+    locks: (key: string) => {
+      const found = locks.get(key)
+      if (found !== undefined) return found
+      const lock = Semaphore.makeUnsafe(1)
+      locks.set(key, lock)
+      return lock
+    },
     get: (key: string) => sync(() => held.get(key)),
     set: (key: string, reading: Scoring.Reading) =>
       sync(() => {
@@ -160,6 +170,8 @@ export const layer = Interpreter.layerWithImplementations(ScoreFlow, ScoreBatch.
  */
 export type Host = Evaluator.Evaluator | FlowRuntime.FlowRuntime | Digest | SecureRandom
 
+const cacheKey = (features: Features) => JSON.stringify([Scoring.classifier(1).digest, Scoring.stateOf([features])])
+
 /**
  * One score per row, from 0 to 1, with a one-line reason.
  *
@@ -174,12 +186,21 @@ export type Host = Evaluator.Evaluator | FlowRuntime.FlowRuntime | Digest | Secu
  */
 export effect function score(rows: ReadonlyArray<Row>) {
   const kept = try Kept
+  const work = scoreWith(rows, kept)
+  // Concurrent callers sharing a cache acquire matching feature locks in the same order.
+  if (kept.locks === undefined) return try work
+  const locks = kept.locks
+  const keys = [...new Set(rows.map((row) => cacheKey(row.features)))].sort()
+  return try keys.reduce((effect, key) => locks(key).withPermits(1)(effect), work)
+}
+
+effect function scoreWith(rows: ReadonlyArray<Row>, kept: Kept.Shape) {
   const known = new Map<string, Scoring.Reading>()
   const unanswered: Array<Row> = []
   for (const row of rows) {
     const key = Scoring.keyOf(row.features)
     if (known.has(key)) continue
-    const reading = try kept.get(key)
+    const reading = try kept.get(cacheKey(row.features))
     if (reading === undefined) unanswered.push(row)
     else known.set(key, reading)
   }
@@ -188,7 +209,7 @@ export effect function score(rows: ReadonlyArray<Row>) {
     // Every batch settles before any failure is reported, so one failed batch never cuts another off mid-request.
     const settled = try Effect.forEach(
       asked,
-      (items) => Effect.result(ScoreFlow.execute({ items, questions: Scoring.classifier(items.length).digest })),
+      (items) => Effect.result(ScoreFlow.execute({ items, questions: JSON.stringify([Scoring.classifier(items.length).digest, Scoring.stateOf(items)]) })),
       { concurrency: Scoring.concurrency }
     )
     const answered: Array<ReadonlyArray<Scoring.Reading>> = []
@@ -197,7 +218,7 @@ export effect function score(rows: ReadonlyArray<Row>) {
       answered.push(batch.success)
     }
     for (const [batch, items] of asked.entries()) {
-      for (const [item, features] of items.entries()) try kept.set(Scoring.keyOf(features), answered[batch]![item]!)
+      for (const [item, features] of items.entries()) try kept.set(cacheKey(features), answered[batch]![item]!)
     }
     return Scoring.scoresOf(rows, asked, answered, known)
   }

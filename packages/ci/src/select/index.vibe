@@ -1,5 +1,5 @@
 /**
- * Fast mode: builds rows, scores them, measures the result.
+ * Fast mode builds and scores replay rows. The evaluation harness lives in `Eval.vibe`.
  *
  * `rows` and `score` are this part's two functions under contract 10. A host
  * gives `rows` a {@link Repository}, a {@link Ledger} and the process runner

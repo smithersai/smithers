@@ -29,6 +29,12 @@ const decodeScores = Schema.decodeUnknownEffect(Schema.Array(Selection.Score))
 /** A scorer's failure to read its case. */
 const unreadable = (what: string) => new EvalError.EvalError({ code: "invalid_suite", message: `The ${what} of a fast-mode case could not be read` })
 
+const covers = (rows: ReadonlyArray<Selection.Row>, scores: ReadonlyArray<Selection.Score>): boolean => {
+  const key = (row: Selection.Row | Selection.Score) => JSON.stringify([row.commit, row.target])
+  const keys = new Set(rows.map(key))
+  return scores.length === rows.length && scores.every((item) => keys.delete(key(item)))
+}
+
 /** One change's rows, its scores, and what the starting settings select from them. */
 effect function graded(input: { readonly input: unknown; readonly output: unknown }) {
   const { rows } = decodeInput(input.input) catch effect () => {
@@ -37,6 +43,7 @@ effect function graded(input: { readonly input: unknown; readonly output: unknow
   const scores = decodeScores(input.output) catch effect () => {
     throw unreadable("scores")
   }
+  if (!covers(rows, scores)) throw unreadable("scores")
   return Measure.measure(rows, scores, Measure.defaults).metrics
 }
 
@@ -116,6 +123,9 @@ export const executor = (score: (rows: ReadonlyArray<Selection.Row>) => Readonly
     const output = score(rows) catch effect (failure) => {
       throw new EvalError.EvalError({ code: "executor", message: `${failure.code}: ${failure.message}` })
     }
+    if (!covers(rows, output)) {
+      throw new EvalError.EvalError({ code: "executor", message: `Case ${suiteCase.name} needs one score per target` })
+    }
     return { output, stepKey: suiteCase.name, latencyMs: (try Clock.currentTimeMillis) - started, target: ScoreFlow }
   })
 
@@ -149,6 +159,9 @@ export effect function run(
   observations: ReadonlyArray<Observation>,
   score: (rows: ReadonlyArray<Selection.Row>) => ReadonlyArray<Selection.Score>!Failure
 ) {
+  if (options.changes !== undefined && (!Number.isSafeInteger(options.changes) || options.changes <= 0)) {
+    throw new EvalError.EvalError({ code: "invalid_suite", message: "The number of changes to evaluate must be a positive integer" })
+  }
   const whole = Measure.split(observations)
   const split = options.changes === undefined ? whole : { ...whole, test: Measure.sample(whole.test, options.changes) }
   const declared = try suite(options.name, split.test, options.concurrency)

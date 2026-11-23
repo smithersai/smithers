@@ -166,8 +166,10 @@ export const admit = (place: Place, into: Draft, from: string, input: Located): 
       return
     default: {
       const relative = place.path.relative(place.root, place.path.resolve(place.directory, input.path))
-      if (relative.startsWith("..") || place.path.isAbsolute(relative)) into.packages.add("host")
-      else if (relative === "") into.dynamic.push({ from, specifier: "the whole repository" })
+      if (relative === ".." || relative.startsWith(`..${place.path.sep}`) || place.path.isAbsolute(relative)) {
+        into.packages.add("host")
+        into.dynamic.push({ from, specifier: input.path })
+      } else if (relative === "") into.dynamic.push({ from, specifier: "the whole repository" })
       else if (input.directory) into.directories.add(relative)
       else into.files.add(relative)
     }
@@ -219,7 +221,7 @@ export const settle = (
 const order = (left: string, right: string): number => left < right ? -1 : left > right ? 1 : 0
 
 const distinct = (items: ReadonlyArray<OpenImport>): ReadonlyArray<OpenImport> =>
-  [...new Map(items.map((item) => [`${item.from}\n${item.specifier}`, item])).values()]
+  [...new Map(items.map((item) => [JSON.stringify([item.from, item.specifier]), item])).values()]
     .sort((left, right) => order(left.from, right.from) || order(left.specifier, right.specifier))
 
 /**

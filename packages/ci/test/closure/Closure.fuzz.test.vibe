@@ -162,8 +162,7 @@ describe("Zig closure properties", () => {
       expect(invalid).toMatchObject({ ok: false, offset: source.length + 1 })
     }))
 
-  // Known Draft.admit regression. A fix makes this expected failure turn red.
-  it.fails("keeps repository files whose name begins with two dots", () => {
+  it("keeps repository files whose name begins with two dots", () => {
     const path = Effect.runSync(Effect.provide(Path.Path, Path.layer))
     const place = { path, root: "/p", directory: "/p", version: "0.17.1" }
     const draft = Draft.make("test")
@@ -171,8 +170,7 @@ describe("Zig closure properties", () => {
     expect([...draft.files]).toEqual(["..a"])
   })
 
-  // Known Draft.close regression. Both diagnostics must survive deduplication.
-  it.fails("preserves distinct open imports with embedded line breaks in either field", () => {
+  it("preserves distinct open imports with embedded line breaks in either field", () => {
     const draft = Draft.make("test")
     const entries = [{ from: "a", specifier: "\nb" }, { from: "a\n", specifier: "b" }]
     draft.unresolved.push(...entries)
@@ -218,7 +216,7 @@ describe("the compiler-reported files of a generated Zig project", () => {
   })
 
   // The compiler names the link. Editing its target also changes the bytes read.
-  it.fails("invalidates an entry importing a symlink when its target changes", () => {
+  it("invalidates an entry importing a symlink when its target changes", () => {
     expect(isAffectedBy(closures[2]!, ["shared.zig"])).toBe(true)
   })
 })

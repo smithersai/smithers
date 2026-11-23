@@ -146,6 +146,9 @@ export const batches = (rows: ReadonlyArray<Row>): ReadonlyArray<ReadonlyArray<F
   return cut
 }
 
+/** Bound repository-controlled strings in the model request. */
+const safeText = (value: string): string => value.slice(0, 128).replace(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/gu, " ")
+
 /**
  * The state the judge reads for one batch.
  *
@@ -156,7 +159,7 @@ export const stateOf = (items: ReadonlyArray<Features>): typeof State.Type => ({
   about,
   items: items.map((features, item) => ({
     item,
-    changedFileExtensions: features.extensions,
+    changedFileExtensions: features.extensions.slice(0, 32).map((value) => safeText(value)),
     commitsToTheChangedFiles: {
       last3Days: features.fileChanges.d3,
       last14Days: features.fileChanges.d14,
@@ -168,7 +171,7 @@ export const stateOf = (items: ReadonlyArray<Features>): typeof State.Type => ({
       last28Days: features.failureRates.d28,
       last56Days: features.failureRates.d56
     },
-    targetProject: features.project,
+    targetProject: safeText(features.project),
     testsInTarget: features.testCount,
     dependencyDistance: features.graphDistance === unreachable ? "no known path" : features.graphDistance
   }))

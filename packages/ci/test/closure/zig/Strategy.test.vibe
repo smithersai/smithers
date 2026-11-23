@@ -151,6 +151,33 @@ layer(shared, { timeout: limit, excludeTestServices: true })("the closure of a Z
     expect(narrow!.packages).toEqual(["host", expect.stringMatching(/^zig@/)])
   }, limit)
 
+  it.effect("rechecks only the requested manifests on a warm lookup", effect () => {
+    const { project } = try Shared
+    const real = try FileSystem.FileSystem
+    const reads: Array<string> = []
+    let cacheCleared = false
+    const recording: FileSystem.FileSystem = {
+      ...real,
+      readDirectory: (file, options) => cacheCleared && file.endsWith("/.zig-cache/h") ? succeed([]) : real.readDirectory(file, options),
+      readFile: (file) => {
+        if (file.includes("/.zig-cache/h/")) reads.push(file)
+        return real.readFile(file)
+      }
+    }
+    provide FileSystem.FileSystem = recording {
+      try Zig.ofSteps(project, ["test-alpha", "test-gamma"])
+      reads.length = 0
+      const first = try Zig.ofSteps(project, ["test-beta"])
+      const cold = reads.length
+      reads.length = 0
+      expect(try Zig.ofSteps(project, ["test-beta"])).toEqual(first)
+      expect(reads.length).toBe(2)
+      expect(reads.length).toBeLessThanOrEqual(cold)
+      cacheCleared = true
+      expect(isComplete((try Zig.ofSteps(project, ["test-beta"]))[0]!)).toBe(false)
+    }
+  }, limit)
+
   it.effect("builds in the cache directory it is given", effect () => {
     const { project } = try Shared
     const fs = try FileSystem.FileSystem
@@ -163,6 +190,17 @@ layer(shared, { timeout: limit, excludeTestServices: true })("the closure of a Z
 })
 
 layer(shared, { timeout: limit, excludeTestServices: true })("the closure of a Zig entry file", (it) => {
+  it.effect("digests files through a symlinked checkout root", effect () => {
+    const { project } = try Shared
+    const fs = try FileSystem.FileSystem
+    const folder = try fs.makeTempDirectoryScoped()
+    try fs.symlink(project.root, folder + "/checkout")
+    const [entry] = try Zig.ofFiles({ ...project, root: folder + "/checkout" }, ["src/beta.zig"])
+    expect(paths(entry!)).toEqual(["project/src/beta.zig", "project/src/shared.zig"])
+    expect(isComplete(entry!)).toBe(true)
+    expect((try flip(Zig.steps({ ...project, root: folder + "/absent" }))).code).toBe("configure-failed")
+  }, limit)
+
   it.effect("lists what the compiler read for the file alone", effect () => {
     const { project } = try Shared
     const [beta, alpha] = try Zig.ofFiles(project, ["src/beta.zig", "src/alpha.zig"])
@@ -184,6 +222,38 @@ layer(shared, { timeout: limit, excludeTestServices: true })("the closure of a Z
     ])
     expect(paths(broken!)).toEqual(["project/src/broken.zig"])
     expect(isAffectedBy(broken!, ["project/NOTES.md"])).toBe(true)
+  }, limit)
+
+  it.effect("rejects partial frames and failed compiler exits after retaining reported inputs", effect () => {
+    const { project } = try Shared
+    const fs = try FileSystem.FileSystem
+    try fs.symlink("src", project.root + "/project/linked")
+    try fs.symlink("linked/beta.zig", project.root + "/project/alias.zig")
+    for (const exit of [0, 3]) {
+      const body = "head -c 16 >/dev/null; printf '\\006\\000\\000\\000\\012\\000\\000\\000\\005alias.zig'; exit " + exit
+      provide instead("--listen=-", body) {
+        const [made] = try Zig.ofFiles(project, ["-input.zig"])
+        expect(made!.unresolved).toContainEqual({from:"-input.zig", specifier:"the compiler stopped before it finished"})
+        expect(paths(made!)).toContain("project/src/beta.zig")
+        expect(made!.dynamic.length).toBe(1)
+      }
+    }
+  }, limit)
+
+  it.effect("tracks an intermediate link and refuses an external linked file", effect () => {
+    const project = try repository()
+    const fs = try FileSystem.FileSystem
+    const outside = try fs.makeTempDirectoryScoped()
+    try fs.symlink("src", project.root + "/project/linked")
+    try fs.writeFileString(outside + "/external.zig", "test {}")
+    try fs.symlink(outside + "/external.zig", project.root + "/project/external.zig")
+    const inputs = "head -c 16 >/dev/null; printf '\\006\\000\\000\\000\\036\\000\\000\\000\\005linked/beta.zig\\000\\005external.zig'"
+    provide instead("--listen=-", inputs) {
+      const [made] = try Zig.ofFiles(project, ["src/beta.zig"])
+      expect(paths(made!)).toContain("project/src/beta.zig")
+      expect(made!.unresolved).toContainEqual({ from: "project/external.zig", specifier: "the file cannot be read" })
+      expect(made!.dynamic).toContainEqual({ from: "project/linked/beta.zig", specifier: "a directory or link chain cannot be tracked exactly" })
+    }
   }, limit)
 
   it.effect("reports a compiler that says nothing", effect () => {
@@ -282,6 +352,14 @@ layer(host, { timeout: limit, excludeTestServices: true })("a Zig closure that c
     })
   }, limit)
 
+  it.effect("limits Zig response size and elapsed time", effect () => {
+    const project = try repository()
+    const verbose = try script(project, "echo 0.17.1")
+    expect((try flip(Zig.steps({ ...project, zig: verbose, outputLimit: 2 }))).message).toContain("output limit")
+    const slow = try script(project, "exec sleep 2")
+    expect((try flip(Zig.steps({ ...project, zig: slow, timeoutMs: 25 }))).message).toContain("time limit")
+  }, limit)
+
   it.effect("refuses a Zig release it does not read", effect () => {
     const project = try repository()
     const old = try script(project, "echo 0.15.2")
@@ -314,13 +392,45 @@ layer(host, { timeout: limit, excludeTestServices: true })("a Zig closure that c
     })
   }, limit)
 
+  it.effect("reports an unavailable private configuration cache", effect () => {
+    const project = try repository()
+    const fs = try FileSystem.FileSystem
+    const unavailable = { ...fs, makeTempDirectoryScoped: () => fs.makeTempDirectoryScoped({ directory: project.root + "/absent" }) }
+    provide FileSystem.FileSystem = unavailable {
+      expect((try flip(Zig.steps(project))).code).toBe("configure-failed")
+    }
+  }, limit)
+
   it.effect("refuses a configuration it cannot read", effect () => {
     const project = try repository()
     provide instead("--print-configuration", "echo not zon") {
-      expect((try flip(Zig.steps(project))).message).toBe("zig build printed a configuration this strategy cannot read")
+      expect((try flip(Zig.steps(project))).message).toContain("Invalid Zig configuration at")
     }
     provide instead("--print-configuration", "echo '.{ .steps = .{} }'") {
       expect((try flip(Zig.steps(project))).code).toBe("configure-failed")
+    }
+  }, limit)
+
+  it.effect("refuses a failed configuration even when the server sends build-completed", effect () => {
+    const project = try repository()
+    provide instead("--listen=-", "head -c 16 >/dev/null; printf '\\002\\000\\000\\200\\000\\000\\000\\000\\004\\000\\000\\200\\000\\000\\000\\000'") {
+      expect((try flip(Zig.ofSteps(project, ["test-beta"]))).code).toBe("configure-failed")
+    }
+  }, limit)
+
+  it.effect("requires a completion frame even for Zig's known shutdown panic", effect () => {
+    const project = try repository()
+    const zig = try script(project, "if [ \"$1\" = version ]; then echo 0.17.1; else exec zig \"$@\"; fi")
+    const finish = "head -c 16 >/dev/null; printf '\\004\\000\\000\\200\\000\\000\\000\\000'; "
+    const panic = "echo 'thread 1 panic: attempt to unwrap error: Closed' >&2; exit 3"
+    provide instead("--listen=-", finish + panic) {
+      expect((try Zig.ofSteps({ ...project, zig }, ["test-beta"]))).toHaveLength(1)
+    }
+    provide instead("--listen=-", finish + "exit 3") {
+      expect((try flip(Zig.ofSteps({ ...project, zig }, ["test-beta"]))).code).toBe("build-stopped")
+    }
+    provide instead("--listen=-", panic) {
+      expect((try flip(Zig.ofSteps({ ...project, zig }, ["test-beta"]))).code).toBe("build-stopped")
     }
   }, limit)
 

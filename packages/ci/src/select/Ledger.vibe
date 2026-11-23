@@ -9,7 +9,7 @@ import type { Failure } from "../contract/Parts.vibe"
 import { Plan } from "../contract/Plan.vibe"
 import { Row } from "../contract/Selection.vibe"
 import { failure } from "./Failure.vibe"
-import type { Observation } from "./Features.vibe"
+import { day, horizonDays, type Observation } from "./Features.vibe"
 
 /**
  * One line of the ledger's `rows.jsonl`: a row and the time of its change,
@@ -24,27 +24,53 @@ export const Entry = Schema.Struct({ at: Schema.Finite, row: Row })
  * The rows and plans fast mode keeps.
  *
  * `observations` answers every row recorded so far, oldest record first, one
- * per commit and target. `record` adds rows; a row recorded again replaces
+ * per commit and target. With a time, it returns the feature window preceding that time, by day. `record` adds rows; a row recorded again replaces
  * the earlier one. `plan` answers the plan saved for a commit, if any.
  *
  * @category services
  * @since 0.1.0
  */
 export service Ledger {
-  observations(): ReadonlyArray<Observation>!Failure
+  observations(before?: number): ReadonlyArray<Observation>!Failure
   record(observations: ReadonlyArray<Observation>): void!Failure
   plan(commit: string): (Plan | undefined)!Failure
 }
 
-/** The observations with a later record of the same commit and target replacing an earlier one. */
-const latest = (observations: ReadonlyArray<Observation>): ReadonlyArray<Observation> => {
-  const kept = new Map<string, Observation>()
-  for (const observation of observations) {
-    const key = JSON.stringify([observation.row.commit, observation.row.target])
-    kept.delete(key)
-    kept.set(key, observation)
+/** Keep replacement order for a full export and index by day for the feature window. */
+const index = () => {
+  const latest = new Map<string, Observation>()
+  const days = new Map<number, Map<string, Observation>>()
+  const add = (rows: ReadonlyArray<Observation>): void => {
+    for (const row of rows) {
+      const key = JSON.stringify([row.row.commit, row.row.target])
+      const previous = latest.get(key)
+      if (previous !== undefined) {
+        latest.delete(key)
+        const oldDay = Math.floor(previous.at / day)
+        const bucket = days.get(oldDay)!
+        bucket.delete(key)
+        if (bucket.size === 0) days.delete(oldDay)
+      }
+      latest.set(key, row)
+      const date = Math.floor(row.at / day)
+      const bucket = days.get(date) ?? new Map<string, Observation>()
+      bucket.set(key, row)
+      days.set(date, bucket)
+    }
   }
-  return [...kept.values()]
+  const rows = (before?: number): ReadonlyArray<Observation> => {
+    if (before === undefined) return [...latest.values()]
+    const since = before - horizonDays * day
+    const recent: Array<Observation> = []
+    for (let offset = 0; offset <= horizonDays; offset++) {
+      const bucket = days.get(Math.floor(since / day) + offset)
+      if (bucket !== undefined) {
+        for (const row of bucket.values()) if (row.at >= since && row.at < before) recent.push(row)
+      }
+    }
+    return recent
+  }
+  return { add, rows }
 }
 
 /**
@@ -58,16 +84,26 @@ export const layerMemory = (seed: {
   readonly plans?: Readonly<Record<string, Plan>>
 } = {}) =>
   Layer.sync(Ledger, () => {
-    let held = latest(seed.observations ?? [])
+    const held = index()
+    held.add(seed.observations ?? [])
     return {
-      observations: () => succeed(held),
+      observations: (before?: number) => sync(() => held.rows(before)),
       record: (observations: ReadonlyArray<Observation>) =>
         sync(() => {
-          held = latest([...held, ...observations])
+          held.add(observations)
         }),
       plan: (commit: string) => succeed(Object.hasOwn(seed.plans ?? {}, commit) ? seed.plans![commit] : undefined)
     }
   })
+
+const isJson = (line: string): boolean => {
+  try {
+    JSON.parse(line)
+    return true
+  } catch {
+    return false
+  }
+}
 
 const decodeEntry = Schema.decodeUnknownEffect(Schema.fromJsonString(Entry))
 const decodePlan = Schema.decodeUnknownEffect(Schema.fromJsonString(Plan))
@@ -96,21 +132,34 @@ export const layerFile = (directory: string) =>
       return try Effect.mapError(fs.readFileString(file), unreadable(file))
     }
 
-    const observations = effect () => {
+    const lock = Semaphore.makeUnsafe(1)
+    let cached = { text: "", lines: 0, entries: index() }
+    const observations = effect (before?: number) => {
       const held = (try text(rowsFile)) ?? ""
+      if (held === cached.text) return cached.entries.rows(before)
+      // Verify the prefix itself: a writer can replace bytes without changing file size or mtime.
+      const append = cached.text.endsWith("\n") && held.startsWith(cached.text)
+      const base = append ? cached : { text: "", lines: 0, entries: index() }
       const entries: Array<Observation> = []
-      for (const [index, line] of held.split("\n").entries()) {
+      const lines = held.slice(base.text.length).split("\n")
+      for (const [index, line] of lines.entries()) {
         if (line.trim() === "") continue
+        // A writer marks the previous unterminated tail before starting a new batch.
+        // A complete final record without a newline is still valid and must survive.
+        const tail = index === lines.length - 1 || lines[index + 1] === "\t"
+        if (tail && !isJson(line)) continue
         entries.push(decodeEntry(line) catch effect () => {
-          throw failure("invalid-document", `Line ${index + 1} of ${rowsFile} is not a ledger entry`)
+          throw failure("invalid-document", `Line ${base.lines + index + 1} of ${rowsFile} is not a ledger entry`)
         })
       }
-      return latest(entries)
+      base.entries.add(entries)
+      cached = { text: held, lines: base.lines + lines.length - 1, entries: base.entries }
+      return cached.entries.rows(before)
     }
 
     return {
-      observations,
-      record: effect (added: ReadonlyArray<Observation>) => {
+      observations: (before?: number) => lock.withPermits(1)(observations(before)),
+      record: (added: ReadonlyArray<Observation>) => lock.withPermits(1)(effect {
         if (added.length === 0) return
         const lines = added.map((observation) => `${JSON.stringify(observation)}\n`).join("")
         try Effect.mapError(
@@ -121,12 +170,14 @@ export const layerFile = (directory: string) =>
             const last = new Uint8Array(1)
             if (size > 0n) try file.read(last, { position: size - 1n })
             // A complete final entry may have no newline. Keep it separate from the first new entry.
-            const separator = size > 0n && last[0] !== 10 ? "\n" : ""
-            try file.writeAll(new TextEncoder().encode(separator + lines))
+            const separator = size > 0n && last[0] !== 10 ? "\n\t\n" : ""
+            const bytes = new TextEncoder().encode(separator + lines)
+            try file.writeAll(bytes)
+
           }),
           unreadable(rowsFile)
         )
-      },
+      }),
       plan: effect (commit: string) => {
         if (!commit.isWellFormed()) throw failure("invalid-document", "The plan's commit is not well-formed Unicode")
         const file = path.join(directory, "plans", `${encodeURIComponent(commit)}.json`)

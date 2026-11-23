@@ -458,6 +458,7 @@ def decideSettings (step : Step) (read : Read) (files : Files) (leaves : List Le
           match uncheckedRelease read.run.manager directories files with
           | some release => .whole "script-release" release.toList
           | none =>
+            if leaves.length > 4096 then .none else
             let workspace := (files.lookup "pnpm-workspace.yaml".toList).isSome
             let bins := binDirectories read.run.manager read.directory workspace
             .links ((namesOf leaves).zip (leaves.map (commandOf · read.run read.words bins)))

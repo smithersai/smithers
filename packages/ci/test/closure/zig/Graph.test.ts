@@ -76,11 +76,19 @@ describe("Graph.read", () => {
     expect(graph(".{ .steps = .{ .{ .extended = .{ .flags = .{ .tag = .run } } } } }")).toBeUndefined()
   })
 
-  it("keeps only numeric dependencies and numeric step names", () => {
+  it("marks malformed dependencies and rejects malformed named indices", () => {
     const read = graph(`.{
-      .top_level_steps = .{ .a = 0, .b = "x" },
+      .top_level_steps = .{ .a = 0 },
       .steps = .{ .{ .name = "a", .deps = .{ 1, .odd }, .extended = .{ .flags = .{ .tag = .top_level } } } },
     }`)
+    expect(read?.steps[0]?.open).toEqual(["the step has unreadable dependencies", "a dependency has no step"])
+    for (const index of ["2", "\"x\""]) {
+      expect(
+        graph(
+          `.{ .top_level_steps = .{ .a = ${index} }, .steps = .{ .{ .name = "a", .deps = .{}, .extended = .{ .flags = .{ .tag = .top_level } } } } }`
+        )
+      ).toBeUndefined()
+    }
     expect(read?.steps[0]?.deps).toEqual([1])
     expect([...(read?.named ?? [])]).toEqual([["a", 0]])
   })
@@ -205,16 +213,23 @@ describe("Graph.grouped", () => {
     expect(Graph.grouped(graph, 1)).toEqual([])
   })
 
-  it("opens a group inside a group, and names a step two groups share once", () => {
+  it("refuses nested groups that would execute the same run step twice", () => {
     const graph: Graph.Graph = {
       steps: [top(0, [1, 2, 3]), top(1, [3, 4]), top(2, [5]), top(3, [5]), top(4, [5]), run(5)],
       named: new Map([["ci", 0], ["test", 1], ["lint", 2], ["unit", 3], ["e2e", 4]])
     }
     // `test` groups `unit` and `e2e`; `lint` runs a step with no name, so it is kept as one.
-    expect(Graph.grouped(graph, 0)).toEqual(["unit", "e2e", "lint"])
-    expect(Graph.grouped(graph, 1)).toEqual(["unit", "e2e"])
+    expect(Graph.grouped(graph, 0)).toEqual([])
+    expect(Graph.grouped(graph, 1)).toEqual([])
   })
 
+  it("refuses unknown steps in a proposed group", () => {
+    const graph = {
+      steps: [top(0, [1, 2]), top(1, []), { ...top(2, []), open: ["unknown"] }],
+      named: new Map([["all", 0], ["a", 1], ["b", 2]])
+    }
+    expect(Graph.grouped(graph, 0)).toEqual([])
+  })
   it("gives nothing for a group of one", () => {
     const graph: Graph.Graph = {
       steps: [top(0, [1]), top(1, [2]), run(2)],

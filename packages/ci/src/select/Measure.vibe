@@ -43,7 +43,7 @@ export const weekly = { testRecall: 0.9, selectionRate: 0.3 } as const
  * @category constants
  * @since 0.1.0
  */
-export const defaults: Selection.Settings = { scoreCutoff: 0.05, countCutoff: 5 }
+export const defaults: Selection.Settings = Selection.defaultSettings
 
 /**
  * The score cutoffs swept with the count cutoff at 0, highest first.
@@ -97,8 +97,7 @@ export const split = (observations: ReadonlyArray<Observation>): Split => {
 
 /**
  * At most `count` of the test set's changes, evenly spaced through its time
- * order, with all of their rows. Every change has the same chance, so the
- * metrics of the sample estimate the metrics of the test set.
+ * order, with all of their rows. The sample is deterministic.
  *
  * @category measuring
  * @since 0.1.0
@@ -167,7 +166,7 @@ export const measure = (
  * @since 0.1.0
  */
 export const lowerBound = (caught: number, total: number): number => {
-  if (caught === 0) return 0
+  if (caught <= 0 || total <= 0) return 0
   const z = 1.6448536269514722
   const share = caught / total
   const centre = share + (z * z) / (2 * total)

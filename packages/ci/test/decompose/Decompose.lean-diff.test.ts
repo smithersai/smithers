@@ -1248,6 +1248,7 @@ const rootedPaths = [
 ]
 
 interface ReachCase {
+  readonly unknown: ReadonlyArray<string>
   readonly packages: ReadonlyArray<Workspace.Package>
   readonly files: ReadonlyArray<string>
   readonly mentions: ReadonlyArray<readonly [file: string, mentions: Workspace.Mentions]>
@@ -1289,6 +1290,7 @@ const reachCase = (tape: Tape): ReachCase => {
     packages,
     files,
     mentions,
+    unknown: files.filter(() => tape.chance(7)),
     start,
     owner: tape.pick([...files, ...rootedPaths, "", "packages", "packages/a/"])
   }
@@ -1314,7 +1316,8 @@ const reachProblems = async (input: ReachCase): Promise<ReadonlyArray<string>> =
   const graph = Workspace.graph(
     workspaceOf(input.packages),
     new Set(input.files),
-    (file) => mentioned.get(file) ?? { names: [], relative: [], rooted: [] }
+    (file) => mentioned.get(file) ?? { names: [], relative: [], rooted: [] },
+    new Set(input.unknown)
   )
   const start = "file" in input.start
     ? input.start.file
@@ -1331,6 +1334,7 @@ const reachProblems = async (input: ReachCase): Promise<ReadonlyArray<string>> =
       packages: input.packages.map(packageView),
       files: input.files,
       mentions: input.mentions,
+      unknown: input.unknown,
       start: input.start,
       owner: input.owner
     })
@@ -1446,6 +1450,8 @@ const turboTasks = (tape: Tape, names: ReadonlyArray<string>, own: boolean): str
       "$TURBO_ROOT$/tsconfig.json",
       "$TURBO_ROOT$/",
       "../shared/**",
+      "./../shared/**",
+      "$TURBO_ROOT$/shared/../assets",
       "../../x",
       "../../../out",
       "..",
@@ -1465,6 +1471,7 @@ const turboTasks = (tape: Tape, names: ReadonlyArray<string>, own: boolean): str
       key,
       tape.chance(10) ? null : {
         ...(tape.chance(4) ? {} : { dependsOn: several(tape, 3, entry) }),
+        ...(tape.chance(3) ? { with: several(tape, 2, entry) } : {}),
         ...(tape.chance(2) ? {} : { inputs: several(tape, 3, input) })
       }
     ]))

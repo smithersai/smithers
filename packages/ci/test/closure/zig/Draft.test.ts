@@ -82,7 +82,7 @@ describe("Draft.admit", () => {
       files: [],
       packages: ["host", "zig@0.17.1", "zlib-1.3.1-ZZQ7lVg"],
       unresolved: [],
-      dynamic: []
+      dynamic: [{ from: "who", specifier: "../../elsewhere/x.zig" }, { from: "who", specifier: "/usr/include/stdio.h" }]
     })
   })
 

@@ -18,6 +18,8 @@ structure Task where
   dependsOn : List Str
   inputs : List Str
   extendsDependsOn : Bool
+  companions : List Str
+  extendsCompanions : Bool
   extendsInputs : Bool
   deriving DecidableEq, Repr
 
@@ -49,6 +51,8 @@ def definitionOf (config : Config) (owner task : Str) : Option Task :=
     some {
       dependsOn := (if own.extendsDependsOn then (root.map (·.dependsOn)).getD [] else []) ++ own.dependsOn
       inputs := (if own.extendsInputs then (root.map (·.inputs)).getD [] else []) ++ own.inputs
+      companions := (if own.extendsCompanions then (root.map (·.companions)).getD [] else []) ++ own.companions
+      extendsCompanions := false
       extendsDependsOn := false
       extendsInputs := false
     }
@@ -84,13 +88,13 @@ def namesRoot (entry : Str) : Bool := entry.head? ≠ some '^' && "//#".toList.i
 def edges (config : Config) (packages : List Package) : Node → List Node
   | (owner, task) =>
     match named packages owner, definitionOf config owner task with
-    | some package, some definition => definition.dependsOn.flatMap (entryTargets packages package)
+    | some package, some definition => (definition.dependsOn ++ definition.companions).flatMap (entryTargets packages package)
     | _, _ => []
 
 /-- Every task name a walk can come to: those it starts from and those a `dependsOn` entry names. -/
 def taskNames (config : Config) (tasks : List Str) : List Str :=
   let named := fun (definitions : List (Str × Task)) =>
-    definitions.flatMap fun (_, task) => task.dependsOn.flatMap fun entry =>
+    definitions.flatMap fun (_, task) => (task.dependsOn ++ task.companions).flatMap fun entry =>
       match entry with
       | '^' :: task => [task]
       | _ => match splitHash entry with
@@ -114,14 +118,14 @@ def walk (config : Config) (packages : List Package) (start : Str) (tasks : List
   let globs := running.flatMap fun (package, _, definition) => definition.inputs.filterMap fun input =>
     let glob :=
       match dropPrefix rootMarker input with
-      | some rest => some rest
-      | none => if "../".toList.isPrefixOf input then Workspace.join package.directory input else none
+      | some rest => Workspace.join [] rest
+      | none => if (splitOn '/' input).contains "..".toList then Workspace.join package.directory input else none
     glob.filter (· ≠ [])
   {
     packages := distinct (running.map (·.1.name))
     scripts := running.map fun (package, task, _) => (package.name, task)
     globs := jsSort (distinct globs)
-    root := defined.any fun (_, _, definition) => definition.dependsOn.any namesRoot
+    root := defined.any fun (_, _, definition) => (definition.dependsOn ++ definition.companions).any namesRoot
   }
 
 end Turbo

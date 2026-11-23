@@ -19,3 +19,11 @@ export { type Options, splitWith } from "./Split.vibe"
  * @since 0.1.0
  */
 export const split = splitWith({ zigGroups: groups })
+
+/**
+ * Splits steps using only static repository data.
+ *
+ * @category parts
+ * @since 0.1.0
+ */
+export const splitStatic = splitWith()

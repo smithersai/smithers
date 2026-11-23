@@ -117,12 +117,15 @@ const step = (value: Zon.Zon, index: number): Step | undefined => {
   const open: Array<string> = []
   if (!kinds.has(kind)) open.push(`a step of a kind this strategy does not know: ${kind}`)
   if (kind === "run" && sideEffects(extended)) open.push("a command Zig reruns every time")
+  const raw = Zon.field(value, "deps")
+  const deps = Zon.list(raw).filter((dep) => typeof dep === "number")
+  if (!Array.isArray(raw) || deps.length !== raw.length) open.push("the step has unreadable dependencies")
   collect(extended, paths, open)
   return {
     index,
     name,
     kind,
-    deps: Zon.list(Zon.field(value, "deps")).filter((dep) => typeof dep === "number"),
+    deps,
     paths,
     open,
     test: kind === "run" && Zon.field(flags, "stdio") === "zig_test"
@@ -141,16 +144,22 @@ const step = (value: Zon.Zon, index: number): Step | undefined => {
  */
 export const read = (configuration: Zon.Zon): Graph | undefined => {
   const steps: Array<Step> = []
-  for (const [index, value] of Zon.list(Zon.field(configuration, "steps")).entries()) {
+  const values = Zon.list(Zon.field(configuration, "steps"))
+  for (const [index, value] of values.entries()) {
     const read = step(value, index)
     if (read === undefined) return undefined
-    steps.push(read)
+    if (read.deps.some((dep) => !Number.isInteger(dep) || dep < 0 || dep >= values.length)) {
+      steps.push({ ...read, open: [...read.open, "a dependency has no step"] })
+    } else steps.push(read)
   }
   if (steps.length === 0) return undefined
   const named = new Map<string, number>()
   const names = Zon.field(configuration, "top_level_steps")
   if (typeof names === "object" && names !== null && !Array.isArray(names)) {
-    for (const [name, index] of Object.entries(names)) if (typeof index === "number") named.set(name, index)
+    for (const [name, index] of Object.entries(names)) {
+      if (typeof index !== "number" || !Number.isInteger(index) || steps[index] === undefined) return undefined
+      named.set(name, index)
+    }
   }
   return { steps, named }
 }
@@ -208,6 +217,8 @@ export const find = (graph: Graph, name: string): Step | undefined => {
  * @since 0.1.0
  */
 export const grouped = (graph: Graph, index: number): ReadonlyArray<string> => {
+  const unclear = (step: Step) => step.open.some((reason) => reason !== "a command Zig reruns every time")
+  if (reach(graph, index).some(unclear)) return []
   const names = new Map([...graph.named].map(([name, at]) => [at, name]))
   const seen = new Set<number>()
   const open = (at: number): ReadonlyArray<string> | undefined => {
@@ -224,5 +235,14 @@ export const grouped = (graph: Graph, index: number): ReadonlyArray<string> => {
     return inside
   }
   const inside = open(index) ?? []
-  return inside.length < 2 ? [] : inside
+  if (inside.length < 2) return []
+  const exclusive = new Set<number>()
+  for (const name of inside) {
+    for (const step of reach(graph, graph.named.get(name)!)) {
+      if (step.kind !== "run" && step.kind !== "update_source_files") continue
+      if (exclusive.has(step.index)) return []
+      exclusive.add(step.index)
+    }
+  }
+  return inside
 }

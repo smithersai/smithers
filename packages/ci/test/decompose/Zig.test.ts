@@ -31,6 +31,10 @@ describe("Zig.soleBuild", () => {
     for (
       const command of [
         // Each of these can pass where `zig build test` fails, or run it only sometimes.
+        "zig build test > output",
+        "set -n; zig build test",
+        "set -eo; zig build test",
+        "set pipefail; zig build test",
         "zig build test || true",
         "zig build test; echo done",
         "echo start; zig build test",

@@ -70,6 +70,10 @@ export interface Project {
   readonly args?: ReadonlyArray<string> | undefined
   /** The cache directory to build in. `.zig-cache` beside `build.zig` when omitted. */
   readonly cache?: string | undefined
+  /** Maximum bytes per Zig stdout response. */
+  readonly outputLimit?: number
+  /** Maximum wall time for one subprocess, in milliseconds. */
+  readonly timeoutMs?: number
 }
 
 /**
@@ -117,24 +121,45 @@ effect function run(session: Session, args: ReadonlyArray<string>, request?: Uin
     stdout: "pipe",
     stderr: "pipe"
   })
-  return scoped(effect {
+  const execution = scoped(effect {
     const handle = try spawner.spawn(command)
-    const [out, err] = try.all [Stream.runCollect(handle.stdout), Stream.runCollect(handle.stderr)]
+    let size = 0
+    let err = ""
+    const chunks: Array<Uint8Array> = []
+    const stdout = Stream.runForEach(handle.stdout, effect (chunk) => {
+      size += chunk.length
+      if (size > (session.project.outputLimit ?? 64 * 1024 * 1024)) {
+        throw new ZigClosureError({ code: "build-stopped", message: "Zig exceeded its output limit" })
+      }
+      chunks.push(chunk)
+    })
+    const stderr = Stream.runForEach(Stream.decodeText(handle.stderr), (chunk) => sync(() => {
+      err = (err + chunk).slice(-8192)
+    }))
+    try all([stdout, stderr], { concurrency: 2 })
     const code = map(handle.exitCode, Number) catch () => -1
-    return { out: Protocol.join(out), err: Protocol.utf8(Protocol.join(err)), code }
-  }) catch effect (cause) => {
+    return { out: Protocol.join(chunks), err, code }
+  })
+  const result = timeoutOption(execution, session.project.timeoutMs ?? 600_000) catch effect (cause) => {
+    if (cause._tag === "ZigClosureError") throw cause
     throw new ZigClosureError({ code: "zig-unavailable", message: `${session.zig} did not run: ${cause.message}` })
   }
+  if (Option.isNone(result)) throw new ZigClosureError({ code: "build-stopped", message: "Zig exceeded its time limit" })
+  return result.value
 }
 
 /** Checks the Zig release and settles the directories every later command uses. */
-effect function open(project: Project): Session!ZigClosureError!(ChildProcessSpawner | Path.Path) {
+effect function open(project: Project): Session!ZigClosureError!(ChildProcessSpawner | Path.Path | FileSystem.FileSystem) {
   const path = try Path.Path
-  const directory = path.join(project.root, project.directory ?? "")
+  const fs = try FileSystem.FileSystem
+  const root = fs.realPath(project.root) catch effect (error) => {
+    throw new ZigClosureError({ code: "configure-failed", message: error.message })
+  }
+  const directory = path.join(root, project.directory ?? "")
   const session = {
-    project,
+    project: { ...project, root },
     directory,
-    cache: project.cache ?? path.join(directory, ".zig-cache"),
+    cache: path.resolve(directory, project.cache ?? ".zig-cache"),
     zig: project.zig ?? "zig",
     version: ""
   }
@@ -161,13 +186,24 @@ const build = (session: Session, ...first: ReadonlyArray<string>): ReadonlyArray
   ["build", ...first, "--cache-dir", session.cache, ...(session.project.args ?? [])]
 
 /** Reads the step graph. `build.zig` runs here if its result is not cached. */
-effect function graph(session: Session): Graph.Graph!ZigClosureError!ChildProcessSpawner {
+effect function graph(session: Session): Graph.Graph!ZigClosureError!(ChildProcessSpawner | FileSystem.FileSystem) {
+  const fs = try FileSystem.FileSystem
+  return try scoped(effect {
+    const cache = fs.makeTempDirectoryScoped({ prefix: "smithers-ci-zig-" }) catch effect (error) => {
+      throw new ZigClosureError({ code: "configure-failed", message: error.message })
+    }
+    return try configured({ ...session, cache })
+  })
+}
+
+effect function configured(session: Session): Graph.Graph!ZigClosureError!ChildProcessSpawner {
   const ran = try run(session, build(session, "--print-configuration"))
   if (ran.code !== 0) {
     throw new ZigClosureError({ code: "configure-failed", message: `build.zig did not configure:\n${tail(ran.err)}` })
   }
   const parsed = Zon.parse(Protocol.utf8(ran.out))
-  const read = parsed.ok ? Graph.read(parsed.value) : undefined
+  if (!parsed.ok) throw new ZigClosureError({ code: "configure-failed", message: `Invalid Zig configuration at ${parsed.offset}: ${parsed.message}` })
+  const read = Graph.read(parsed.value)
   if (read === undefined) {
     throw new ZigClosureError({ code: "configure-failed", message: "zig build printed a configuration this strategy cannot read" })
   }
@@ -182,7 +218,7 @@ effect function graph(session: Session): Graph.Graph!ZigClosureError!ChildProces
  */
 export effect function steps(
   project: Project
-): ReadonlyArray<StepName>!ZigClosureError!(ChildProcessSpawner | Path.Path) {
+): ReadonlyArray<StepName>!ZigClosureError!(ChildProcessSpawner | Path.Path | FileSystem.FileSystem) {
   const read = try graph(try open(project))
   const named = new Set(read.named.values())
   return read.steps.map((step) => ({ name: step.name, named: named.has(step.index), test: step.test }))
@@ -204,7 +240,7 @@ export effect function steps(
 export effect function groupsOf(
   project: Project,
   names: ReadonlyArray<string>
-): ReadonlyArray<ReadonlyArray<string>>!ZigClosureError!(ChildProcessSpawner | Path.Path) {
+): ReadonlyArray<ReadonlyArray<string>>!ZigClosureError!(ChildProcessSpawner | Path.Path | FileSystem.FileSystem) {
   if (names.length === 0) return []
   const read = try graph(try open(project))
   return names.map((name) => {
@@ -213,18 +249,41 @@ export effect function groupsOf(
   })
 }
 
-/** Every finished manifest in the cache, by the output directory it belongs to. */
-effect function manifests(session: Session): ReadonlyMap<string, ReadonlyArray<Manifest.Input>>!!(FileSystem.FileSystem | Path.Path) {
+// Keep only last request's successful lookups per filesystem. A hint changes scan order only:
+// the manifest must still exist in this cache and its current bytes must still match the output.
+const recentManifests = new WeakMap<FileSystem.FileSystem, { directory: string; names: Map<string, string> }>()
+
+/** The requested manifests, verified against the output digest derived from their current bytes. */
+effect function manifests(session: Session, wanted: Set<string>): ReadonlyMap<string, ReadonlyArray<Manifest.Input>>!!(FileSystem.FileSystem | Path.Path) {
   const fs = try FileSystem.FileSystem
   const path = try Path.Path
   const directory = path.join(session.cache, "h")
   const names = fs.readDirectory(directory) catch () => []
   const found = new Map<string, ReadonlyArray<Manifest.Input>>()
-  for (const name of names.filter(Manifest.isName)) {
+  const cached = recentManifests.get(fs)
+  const order = new Set<string>()
+  const available = new Set(names.filter(Manifest.isName))
+  if (cached?.directory === directory) {
+    for (const digest of wanted) {
+      const name = cached.names.get(digest)
+      if (name !== undefined && available.has(name)) order.add(name)
+    }
+  }
+  for (const name of available) order.add(name)
+  const matched = new Map<string, string>()
+  for (const name of order) {
+    if (wanted.size === 0) break
     const bytes = fs.readFile(path.join(directory, name)) catch () => new Uint8Array()
     const inputs = Manifest.decode(bytes)
-    if (inputs !== undefined) found.set(Manifest.outputDigest(name, inputs), inputs)
+    if (inputs !== undefined) {
+      const digest = Manifest.outputDigest(name, inputs)
+      if (wanted.delete(digest)) {
+        found.set(digest, inputs)
+        matched.set(digest, name)
+      }
+    }
   }
+  recentManifests.set(fs, { directory, names: matched })
   return found
 }
 
@@ -244,11 +303,42 @@ effect function finish(
 ): ReadonlyArray<Closure>!!(FileSystem.FileSystem | Path.Path | EffectDigest.Digest) {
   const fs = try FileSystem.FileSystem
   const path = try Path.Path
-  const paths = [...new Set(drafts.flatMap((made) => [...made.files]))]
-  const digests = new Map<string, string>()
+  const root = path.resolve(session.project.root)
+  const paths = new Set(drafts.flatMap((made) => [...made.files, ...made.directories]))
+  const resolved = new Map<string, string>()
+  const indirect = new Set<string>()
   for concurrent(16) (const file of paths) {
-    const digest = flatMap(fs.readFile(path.join(session.project.root, file)), (bytes) => sha256(bytes)) catch () => undefined
-    if (digest !== undefined) digests.set(file, digest)
+    const source = path.join(root, file)
+    const actual = fs.realPath(source) catch () => undefined
+    if (actual === undefined) continue
+    const relative = path.relative(root, actual)
+    if (relative === "" || relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) continue
+    resolved.set(file, relative)
+    if (actual !== source) {
+      const link = fs.readLink(source) catch () => ""
+      if (path.resolve(path.dirname(source), link) !== actual) indirect.add(file)
+    }
+  }
+  const digests = new Map<string, string>()
+  for concurrent(16) (const file of new Set(drafts.flatMap((made) => [...made.files]))) {
+    const actual = resolved.get(file)
+    if (actual === undefined) continue
+    const digest = flatMap(fs.readFile(path.join(root, actual)), (bytes) => sha256(bytes)) catch () => undefined
+    if (digest !== undefined) {
+      digests.set(file, digest)
+      digests.set(actual, digest)
+    }
+  }
+  for (const made of drafts) {
+    for (const paths of [made.files, made.directories]) {
+      for (const file of [...paths]) {
+        const actual = resolved.get(file)
+        if (actual !== undefined) paths.add(actual)
+        if (indirect.has(file) || (paths === made.directories && (actual === undefined || actual !== file))) {
+          made.dynamic.push({ from: file, specifier: "a directory or link chain cannot be tracked exactly" })
+        }
+      }
+    }
   }
   return drafts.map((made) => Draft.close(strategy, made, digests))
 }
@@ -285,10 +375,17 @@ export effect function ofSteps(
   const toBuild = [...new Set(asked.flatMap((entry) => entry.reached.filter(Draft.compiles).map((step) => step.index)))]
   const ran = try run(session, build(session, "--listen=-"), Protocol.buildRequest(toBuild))
   const reply = Protocol.decodeBuild(ran.out)
-  if (!reply.completed) {
-    throw new ZigClosureError({ code: "build-stopped", message: `zig build stopped before it finished:\n${tail(ran.err)}` })
+  // Maker 0.17.1 can await its closed Io.Select after it has sent build-completed.
+  // Only that shutdown panic is tolerated, and only with a fully framed successful configuration.
+  const shutdownPanic = session.version === "0.17.1" && ran.err.includes("panic: attempt to unwrap error: Closed")
+  if (!reply.completed || reply.configurationFailed || (ran.code !== 0 && !shutdownPanic)) {
+    throw new ZigClosureError({
+      code: reply.configurationFailed ? "configure-failed" : "build-stopped",
+      message: `${reply.configurationFailed ? "zig build could not configure" : "zig build stopped before it finished"}:\n${tail(ran.err)}`
+    })
   }
-  const found = try manifests(session)
+  const outputs = [reply.configuration, ...reply.steps.flatMap((step) => step.outputs.map((output) => output.path))]
+  const found = try manifests(session, new Set(outputs.flatMap((path) => Draft.outputOf(path ?? "") ?? [])))
   const results = new Map(reply.steps.map((result) => [result.step, result]))
   const configured = Draft.listed(found, reply.configuration)
   const drafts: Array<Draft.Draft> = []
@@ -330,10 +427,13 @@ export effect function ofFiles(
   const drafts: Array<Draft.Draft> = []
   for (const file of files) {
     const made = Draft.make(file)
-    const ran = try run(session, ["test", file, "-fno-emit-bin", "--listen=-", "--cache-dir", session.cache], Protocol.compileRequest)
+    const ran = try run(session, ["test", file.startsWith("-") ? `./${file}` : file, "-fno-emit-bin", "--listen=-", "--cache-dir", session.cache], Protocol.compileRequest)
     const reply = Protocol.decodeCompile(ran.out)
     if (reply.inputs === undefined) made.unresolved.push({ from: file, specifier: "the compiler reported no files" })
     else for (const input of reply.inputs) Draft.admit(where, made, file, { ...input, directory: false })
+    if (reply.inputs !== undefined && (ran.code !== 0 || !reply.completed)) {
+      made.unresolved.push({ from: file, specifier: "the compiler stopped before it finished" })
+    }
     Draft.report(made, file, reply.problems)
     drafts.push(made)
   }
@@ -367,12 +467,13 @@ export effect function close(
   entries: ReadonlyArray<string>
 ): ReadonlyArray<Closure>!Failure!(FileSystem.FileSystem | Path.Path | ChildProcessSpawner | EffectDigest.Digest) {
   const isFile = (entry: string): boolean => entry.endsWith(".zig")
-  const closed = all([ofFiles({ root }, entries.filter(isFile)), ofSteps({ root }, entries.filter((entry) => !isFile(entry)))])
+  const unique = [...new Set(entries)]
+  const closed = all([ofFiles({ root }, unique.filter(isFile)), ofSteps({ root }, unique.filter((entry) => !isFile(entry)))])
   const [files, steps] = closed catch effect (error) => {
     throw failure(error)
   }
-  const made = [...files, ...steps]
-  return entries.flatMap((entry) => made.filter((closure) => closure.entries[0] === entry).slice(0, 1))
+  const made = new Map([...files, ...steps].map((closure) => [closure.entries[0], closure]))
+  return entries.map((entry) => made.get(entry)!)
 }
 
 /**
@@ -390,7 +491,7 @@ export effect function close(
 export effect function groups(
   root: string,
   steps: ReadonlyArray<string>
-): ReadonlyArray<ReadonlyArray<string>>!Failure!(ChildProcessSpawner | Path.Path) {
+): ReadonlyArray<ReadonlyArray<string>>!Failure!(ChildProcessSpawner | Path.Path | FileSystem.FileSystem) {
   return groupsOf({ root }, steps) catch effect (error) => {
     throw failure(error)
   }

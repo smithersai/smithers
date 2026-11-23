@@ -83,11 +83,14 @@ const buildOf = (words: ReadonlyArray<string>): Build | undefined => {
 const only = (list: ReadonlyArray<Command> | undefined): Build | undefined => {
   // Whatever joins two commands, or decides whether one runs, can change the step's verdict.
   if (list === undefined || !list.every(plain)) return undefined
-  const rest = list.filter((command) => command.words[0]?.text !== "set" || command.assignments.length > 0)
+  const rest = list.filter((command) =>
+    command.assignments.length > 0 || command.words[0]?.text !== "set" ||
+    !/^set -(?:(?:[eu]+)|[eu]*o pipefail)$/.test(command.words.map((word) => word.text).join(" "))
+  )
   const [command, ...more] = rest
   if (command === undefined || more.length > 0 || command.assignments.length > 0) return undefined
   const script = innerScript(command)
-  if (script !== undefined) return only(commands(script))
+  if (script !== undefined) return sole(script)
   return command.words.every((word) => word.literal) ? buildOf(command.words.map((word) => word.text)) : undefined
 }
 
@@ -103,7 +106,7 @@ const only = (list: ReadonlyArray<Command> | undefined): Build | undefined => {
  * @category reading
  * @since 0.1.0
  */
-export const sole = (command: string): Build | undefined => only(commands(command))
+export const sole = (command: string): Build | undefined => command.includes(">") ? undefined : only(commands(command))
 
 /**
  * The build step of {@link sole}.

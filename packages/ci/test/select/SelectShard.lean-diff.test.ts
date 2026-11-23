@@ -720,7 +720,7 @@ describe("selection against the Lean specification", () => {
     ]
     for (const input of corpus) await selectAgrees(input)
     expect(Selection.defaultSettings).toEqual({ scoreCutoff: 0.1, countCutoff: 5 })
-    expect(Measure.defaults).toEqual({ scoreCutoff: 0.05, countCutoff: 5 })
+    expect(Measure.defaults).toEqual({ scoreCutoff: 0.1, countCutoff: 5 })
     expect(await selectAgrees({ scores: tied, settings: { scoreCutoff: 1, countCutoff: 2 } })).toEqual(["a", "b"])
     expect(await selectAgrees({ scores: tied, settings: { scoreCutoff: 1, countCutoff: 0 } })).toEqual([])
   })

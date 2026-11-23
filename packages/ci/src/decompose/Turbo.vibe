@@ -25,6 +25,8 @@ export interface Task {
   readonly inputs: ReadonlyArray<string>
   /** True when a package's list starts with `$TURBO_EXTENDS$`, so the root's entries stay. */
   readonly extendsDependsOn: boolean
+  readonly companions: ReadonlyArray<string>
+  readonly extendsCompanions: boolean
   readonly extendsInputs: boolean
 }
 
@@ -72,11 +74,14 @@ const readTasks = (config: Readonly<Record<string, unknown>>): ReadonlyMap<strin
       const task = isRecord(raw) ? raw : {}
       const dependsOn = strings(task["dependsOn"])
       const inputs = strings(task["inputs"])
+      const companions = strings(task["with"])
       return [name, {
         dependsOn: dependsOn.filter((entry) => entry !== extendsMarker),
+        companions: companions.filter((entry) => entry !== extendsMarker),
+        extendsCompanions: task["with"] === undefined || companions.includes(extendsMarker),
         inputs: inputs.filter((entry) => entry !== extendsMarker),
-        extendsDependsOn: task["dependsOn"] === undefined || dependsOn[0] === extendsMarker,
-        extendsInputs: task["inputs"] === undefined || inputs[0] === extendsMarker
+        extendsDependsOn: task["dependsOn"] === undefined || dependsOn.includes(extendsMarker),
+        extendsInputs: task["inputs"] === undefined || inputs.includes(extendsMarker)
       }]
     })
   )
@@ -132,6 +137,8 @@ const definitionOf = (config: Config, owner: string, task: string): Task | undef
   return {
     dependsOn: [...(own.extendsDependsOn ? root?.dependsOn ?? [] : []), ...own.dependsOn],
     inputs: [...(own.extendsInputs ? root?.inputs ?? [] : []), ...own.inputs],
+    companions: [...(own.extendsCompanions ? root?.companions ?? [] : []), ...own.companions],
+    extendsCompanions: false,
     extendsDependsOn: false,
     extendsInputs: false
   }
@@ -144,7 +151,8 @@ const definitionOf = (config: Config, owner: string, task: string): Task | undef
  * @category accessors
  * @since 0.1.0
  */
-export const defines = (config: Config, task: string): boolean =>
+export const defines = (config: Config, task: string, owner?: string): boolean =>
+  owner !== undefined ? definitionOf(config, owner, task) !== undefined :
   [...config.tasks.keys()].some((key) => key === task || key.endsWith(`#${task}`)) ||
   [...config.packages.values()].some((own) => own.has(task))
 
@@ -191,13 +199,13 @@ export const walk = (
     // Only a task that runs reads its inputs.
     for (const input of runs ? definition.inputs : []) {
       const glob = input.startsWith(rootMarker)
-        ? input.slice(rootMarker.length)
-        : input.startsWith("../")
+        ? join("", input.slice(rootMarker.length))
+        : input.split("/").includes("..")
         ? join(owner.directory, input)
         : undefined
       if (glob !== undefined && glob !== "") globs.add(glob)
     }
-    for (const entry of definition.dependsOn) {
+    for (const entry of [...definition.dependsOn, ...definition.companions]) {
       const split = entry.indexOf("#")
       if (entry.startsWith("^")) {
         for (const name of owner.dependencies) pending.push([byName.get(name) as Package, entry.slice(1)])

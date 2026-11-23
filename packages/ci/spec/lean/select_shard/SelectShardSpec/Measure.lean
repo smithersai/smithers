@@ -70,7 +70,7 @@ def z : Float := 1.6448536269514722
 
 /-- `lowerBound`: Wilson's one-sided 95% lower bound for `caught` of `total`, in the implementation's operations. -/
 def lowerBound (caught total : Float) : Float :=
-  if caught == 0 then 0
+  if caught ≤ 0 || total ≤ 0 then 0
   else
     let share := caught / total
     let centre := share + (z * z) / (2 * total)
@@ -88,7 +88,7 @@ def scoreCutoffs : List Float := [1, 0.9, 0.7, 0.5, 0.3, 0.2, 0.1, 0.05, 0.02, 0
 def countCutoffs : List Nat := [0, 1, 2, 5, 10, 20, 50, 100]
 
 /-- The settings fast mode starts with. -/
-def defaults : Settings := { scoreCutoff := scoreKey 0.05, countCutoff := 5 }
+def defaults : Settings := { scoreCutoff := scoreKey 0.1, countCutoff := 5 }
 
 /-- One setting and what it measured. -/
 structure Point where

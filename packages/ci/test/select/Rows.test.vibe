@@ -24,6 +24,8 @@ describe("rows", () => {
     provide Layer.merge(layerGit, layerFile(ledger)) {
       // The second commit failed b:test on every attempt; the third commit's rows see that in b's failure rates.
       const second = try rows(root, record(commits[1], [result("//packages/a:test", "ran"), result("//packages/b:test", "failed", [false, false])]))
+      const explicit = try rows(root, record(commits[1], [result("//packages/b:test", "failed")]), plan({ "//packages/b:test": ["//packages/a:test"], "//packages/a:test": [] }))
+      expect(explicit[0]!.features.graphDistance).toBe(1)
       const third = try rows(root, record(commits[2], [
         result("//packages/a:test", "ran", [false, true]),
         result("//packages/b:test", "ran"),

@@ -358,6 +358,19 @@ describe("decide: pnpm, Bun and npm", () => {
     expect(decided["x"]?.inputs).toEqual(["*", "packages/*", "packages/x/**", "packages/y/**", "packages/z/**"])
   })
 
+  it("only follows an unconditional cd or a chain of cd commands", () => {
+    expect(plan(plain, "[ -n \"$SUB\" ] && cd packages/app; pnpm run test")).toEqual(whole)
+    expect(plan(plain, "true || cd packages/app; pnpm run test")).toEqual(whole)
+    expect(scoped(plan(plain, "cd packages && cd app && pnpm run test"))).toContain("packages/app/**")
+  })
+
+  it("keeps unmatched literal selectors and failing explicit npm sweeps whole", () => {
+    expect(plan(plain, "npm run test --workspace='['")).toEqual(whole)
+    expect(plan(plain, "npm test -w app -w lib -w docs")).toEqual(whole)
+    expect(plan(plain, "npm test -w app -w lib -w docs --if-present").kind).toBe("scope")
+    expect(plan(plain, "pnpm --filter app run test --file=../lone/x")).toEqual(whole)
+  })
+
   it("limits a run to the packages its filters select", () => {
     expect(Object.keys(parts(plan(plain, "pnpm --filter 'l*' run test")))).toEqual(["lib", "lone"])
     expect(Object.keys(parts(plan(plain, "pnpm --filter './**' run test")))).toEqual(["app", "lib", "lone"])
@@ -430,14 +443,12 @@ describe("decide: pnpm, Bun and npm", () => {
 
   it("splits an npm workspaces run, by name or by directory", () => {
     const npm: Repository = { ...plain, manager: "npm" }
-    expect(parts(plan(npm, "npm run test --workspaces --if-present"))["app"]?.command).toBe(
-      "npm run test --workspace=app --workspace=lib --if-present"
-    )
+    expect(scoped(plan(npm, "npm run test --workspaces --if-present"))).toContain("packages/lib/**")
     expect(plan(npm, "npm run test --workspaces")).toEqual(whole)
     expect(Object.keys(parts(plan(npm, "npm run test -w lib -w ./packages/lone")))).toEqual(["lib", "lone"])
     // npm never runs the root's script with its workspaces.
     const rooted = { ...npm, root: { name: "root", scripts: { test: "echo root" } } }
-    expect(Object.keys(parts(plan(rooted, "npm run test --workspaces --if-present")))).toEqual(["app", "lib", "lone"])
+    expect(scoped(plan(rooted, "npm run test --workspaces --if-present"))).toContain("packages/app/**")
   })
 
   it("scopes a Yarn run of one workspace", () => {
@@ -525,6 +536,16 @@ describe("decide: Turborepo", () => {
     // lone has no build script, so nothing reads the theme file there.
     expect(decided["lone"]?.inputs).toEqual([...global, "packages/lone/**"].sort())
     expect(decided["docs"]?.inputs).toEqual([...global, "packages/docs/**", "packages/lone/shared.json"].sort())
+  })
+
+  it("scopes qualified tasks to their owners and follows companions", () => {
+    const companion = { ...plain, turbo: { tasks: { test: { with: ["docs#build"] }, build: {} } } }
+    expect(scoped(plan(companion, "turbo run lone#test"))).toEqual(
+      [...outside, "packages/docs/**", "packages/lone/**"].sort()
+    )
+    expect(scoped(plan(companion, "turbo run lone#test lib#test"))).toContain("packages/lib/**")
+    expect(plan(companion, "turbo run missing#test")).toEqual(whole)
+    expect(plan({ ...plain, turbo: { tasks: { "lib#test": {} } } }, "turbo run lone#test lib#test")).toEqual(whole)
   })
 
   it("splits through a root script, behind the package manager's runner", () => {
@@ -722,6 +743,7 @@ describe("inputsOf", () => {
   })
 
   it("reads everything when a path cannot be written as a glob", () => {
+    expect(inputsOf([everything], [], [])).toEqual([everything])
     const reach = (path: string) => ({ packages: new Set<string>(), files: new Set([path]) })
     for (const path of ["app/[id]/page.tsx", "a/*.ts", "a/b?.ts", "a/{b}.ts", "a\\b", "a/+(b)", "!a", "#a"]) {
       expect(inputsOf(["*"], [reach(path)], []), path).toEqual([everything])

@@ -113,6 +113,7 @@ export interface BuildReply {
  * @since 0.1.0
  */
 export interface CompileReply {
+  readonly completed: boolean
   /** The files the compilation read, or `undefined` when it never reported them. */
   readonly inputs: ReadonlyArray<Located> | undefined
   readonly problems: ReadonlyArray<Problem>
@@ -124,7 +125,7 @@ interface Message {
 }
 
 /** Splits a server's output into messages. A message cut short ends the list. */
-const messages = (bytes: Uint8Array): ReadonlyArray<Message> => {
+const messages = (bytes: Uint8Array) => {
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
   const out: Array<Message> = []
   let at = 0
@@ -134,7 +135,7 @@ const messages = (bytes: Uint8Array): ReadonlyArray<Message> => {
     out.push({ tag: view.getUint32(at, true), body: bytes.subarray(at + 8, end) })
     at = end
   }
-  return out
+  return { all: out, framed: at === bytes.length }
 }
 
 /** A reader of little-endian `u32`s that yields zero past the end, so a short body cannot throw. */
@@ -171,7 +172,7 @@ const problems = (extra: Uint8Array, strings: Uint8Array): ReadonlyArray<Problem
 
 /** A path sent as a prefix byte then the rest. `shift` is what the sender added to the prefix. */
 const located = (bytes: Uint8Array, shift: number): Located => ({
-  prefix: Manifest.prefix((bytes[0] ?? 0xff) - shift),
+  prefix: Manifest.prefix(Number(bytes[0]) - shift),
   path: text.decode(bytes.subarray(1))
 })
 
@@ -205,13 +206,13 @@ const stepResult = (body: Uint8Array): StepResult => {
  * @since 0.1.0
  */
 export const decodeBuild = (bytes: Uint8Array): BuildReply => {
-  const all = messages(bytes)
+  const { all, framed } = messages(bytes)
   const configuration = all.find((message) => message.tag === serverConfiguration)
   return {
     configuration: configuration === undefined ? undefined : text.decode(configuration.body),
     configurationFailed: all.some((message) => message.tag === serverConfigurationFailed),
     steps: all.filter((message) => message.tag === serverStepCompleted).map((message) => stepResult(message.body)),
-    completed: all.some((message) => message.tag === serverBuildCompleted)
+    completed: framed && all.some((message) => message.tag === serverBuildCompleted && message.body.length === 0)
   }
 }
 
@@ -224,11 +225,12 @@ export const decodeBuild = (bytes: Uint8Array): BuildReply => {
  * @since 0.1.0
  */
 export const decodeCompile = (bytes: Uint8Array): CompileReply => {
-  const all = messages(bytes)
+  const { all, framed } = messages(bytes)
   const inputs = all.find((message) => message.tag === serverFileSystemInputs)
   const bundle = all.find((message) => message.tag === serverErrorBundle)
   const extraBytes = bundle === undefined ? 0 : 4 * word(bundle.body)(0)
   return {
+    completed: framed && bundle !== undefined && bundle.body.length === 8 + extraBytes + word(bundle.body)(4),
     inputs: inputs === undefined
       ? undefined
       : splitZero(inputs.body).map((entry) => located(entry, 1)),
@@ -242,12 +244,13 @@ export const decodeCompile = (bytes: Uint8Array): CompileReply => {
 const splitZero = (bytes: Uint8Array): ReadonlyArray<Uint8Array> => {
   const out: Array<Uint8Array> = []
   let at = 0
-  for (;;) {
+  while (at < bytes.length) {
     const end = bytes.indexOf(0, at)
     if (end === -1) return [...out, bytes.subarray(at)]
     out.push(bytes.subarray(at, end))
     at = end + 1
   }
+  return out
 }
 
 /**

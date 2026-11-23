@@ -238,6 +238,17 @@ describe("score", () => {
     }
   })
 
+  it.live("shares an overlapping feature across concurrent batches", () => effect {
+    const seen: Asked = { requests: 0, questions: 0 }
+    const a = row("c1","//a:test",false,rate(0.8))
+    const b = row("c1","//b:test",false,rate(0.2))
+    const c = row("c2","//c:test",false,rate(0.4))
+    provide host(judge(seen)), layerKept {
+      const [left,right] = try.all [score([a,b]),score([{...b,commit:"c2"},c])]
+      expect(left[1]!.score).toBe(right[0]!.score)
+      expect(seen.questions).toBe(6)
+    }
+  })
   it.live("asks nothing when every feature set of a change was answered before", () => effect {
     const seen: Asked = { requests: 0, questions: 0 }
     const a = row("c1", "//a:test", false, rate(0.8))

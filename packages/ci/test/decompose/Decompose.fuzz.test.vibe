@@ -1167,7 +1167,7 @@ const tsconfigCase = (tape: Tape): AliasCase => {
   const kept: Array<string> = ["\"strict\"", "outside-marker"]
   const entries = keys.map((key, index) => {
     const marker = `marker-${index}-x`
-    ;(aliased(key) ? gone : kept).push(marker)
+    kept.push(marker)
     if (!aliased(key)) kept.push(JSON.stringify(key))
     return `${JSON.stringify(key)}:${tape.pick([" ", "\n      ", ""])}["../${marker}/src/index.ts"${tape.chance(3) ? ", \"./second\"" : ""}]`
   })
@@ -1191,7 +1191,7 @@ const codeCase = (tape: Tape): AliasCase => {
     const value = builds
       ? tape.pick([`path.resolve(root, "${marker}")`, `"./${marker}"`, `fileURLToPath(new URL("./${marker}", import.meta.url))`, `join(dirname(here), '${marker}', "a,b}")`, `resolve(\`${marker}\`)`])
       : tape.pick([`require("${marker}")`, `load("${marker}") + ""`, `{ find: "${marker}" }`, `["${marker}"]`, `fs.readFileSync("${marker}")`, `() => "${marker}"`])
-    ;(aliased(key) && builds ? gone : kept).push(marker)
+    kept.push(marker)
     return `${tape.pick(["\"", "'"]).repeat(1)}${key}QUOTE: ${value}`.replace(/^(.)(.*)QUOTE/, "$1$2$1")
   })
   return {
@@ -1208,7 +1208,7 @@ const aliasPieces = ["alias: {", "alias:{", "}", "{", ",", "\"@acme/ui\"", "'cor
 
 /** What holds for any text: only spaces are written, only over text that is not a line break. */
 const blankProblems = (input: { readonly file: string; readonly text: string; readonly names: ReadonlyArray<string> }): ReadonlyArray<string> => {
-  const out = withoutAliases(input.file, input.text, new Set(input.names))
+  const out = withoutAliases(input.file, input.text, new Map(input.names.map((name) => [name, "packages/" + name])))
   const config = /(?:^|\/)[jt]sconfig(?:\.[^/]*)?\.json$/.test(input.file) || /\.[cm]?[jt]sx?$/.test(input.file)
   return [
     ...check(out.length === input.text.length, "the text changes length"),
@@ -1220,17 +1220,17 @@ const blankProblems = (input: { readonly file: string; readonly text: string; re
     ),
     ...check(config || out === input.text, "a file that defines no alias is changed"),
     ...check(input.names.length > 0 || out === input.text, "text is removed with no package to name"),
-    ...check(withoutAliases(input.file, input.text, new Set(input.names)) === out, "two readings differ")
+    ...check(withoutAliases(input.file, input.text, new Map(input.names.map((name) => [name, "packages/" + name]))) === out, "two readings differ")
   ]
 }
 
 const aliasProblems = (input: AliasCase): ReadonlyArray<string> => {
-  const out = withoutAliases(input.file, input.text, new Set(input.names))
+  const out = withoutAliases(input.file, input.text, new Map(input.names.map((name) => [name, "packages/" + name])))
   return [
     ...blankProblems(input),
     ...input.gone.filter((marker) => out.includes(marker)).map((marker) => `the alias to ${marker} is kept in ${out}`),
     ...input.kept.filter((marker) => !out.includes(marker)).map((marker) => `${marker} is removed from ${out}`),
-    ...check(withoutAliases(input.file, out, new Set(input.names)) === out, "a second pass removes more")
+    ...check(withoutAliases(input.file, out, new Map(input.names.map((name) => [name, "packages/" + name]))) === out, "a second pass removes more")
   ]
 }
 
@@ -1539,10 +1539,10 @@ describe("Aliases.withoutAliases", () => {
       ...blankProblems({ file, text, names: [] })
     ], { runs: 400, seed: 51 }))
 
-  it.live("removes each alias of a package from a tsconfig, and nothing else", () =>
+  it.live("preserves remapped destinations in tsconfig files", () =>
     assertHolds(built(tsconfigCase), aliasProblems, { runs: 200, seed: 52 }))
 
-  it.live("removes each alias that only builds a path from a bundler's config, and nothing else", () =>
+  it.live("preserves computed destinations in bundler configurations", () =>
     assertHolds(built(codeCase), aliasProblems, { runs: 200, seed: 53 }))
 })
 

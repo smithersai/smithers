@@ -267,6 +267,7 @@ describe.skipIf(!observes)("zig build test on a real repository", () => {
         const home = try homeWithZig()
         const root = try repository()
         const { steps, maxJobs } = try generate(root)
+        expect(try fs.exists(path.join(root, ".zig-cache"))).toBe(false)
         const brief = (step: Step) => [step.id, step.command, step.inputs, step.from, step.atOnce, step.env, step.shares]
         const from = "justfile:test:1"
         // No step is told where Zig keeps its caches. The roots one build ran at once name them as what they share.
@@ -289,8 +290,13 @@ describe.skipIf(!observes)("zig build test on a real repository", () => {
         // Each step runs in the open and its run is recorded: `tidy`, which the test roots follow, and each root.
         const first = try statuses(root, state, "first", tools, home)
         expect([first.statuses, first.out]).toEqual([{ [tidied]: "ran", [alpha]: "ran", [beta]: "ran", [gamma]: "ran" }, first.out])
-        // Nothing changed, so no step runs again.
-        expect((try statuses(root, state, "second", tools, home)).statuses).toEqual({ [tidied]: "hit", [alpha]: "hit", [beta]: "hit", [gamma]: "hit" })
+        // The build created .zig-cache after tidy observed the root directory.
+        // The test targets already know their cache and reuse their first records.
+        const second = try statuses(root, state, "second", tools, home)
+        expect(second.statuses, second.out).toEqual({ [tidied]: "ran", [alpha]: "hit", [beta]: "hit", [gamma]: "hit" })
+        expect(second.out).toContain(". gained or lost a subdirectory")
+        const stable = try statuses(root, state, "stable", tools, home)
+        expect(stable.statuses, stable.out).toEqual({ [tidied]: "hit", [alpha]: "hit", [beta]: "hit", [gamma]: "hit" })
         // Zig kept its caches where Zig puts them: beside `build.zig`, in the tree a recipe of a Justfile runs in,
         // and in the home directory. A test made its directory where it started, as Zig's tests do. Nothing of
         // Zig's is in the directory Smithers build keeps its cache in.
@@ -380,7 +386,8 @@ describe.skipIf(!observes)("zig build test on a real repository", () => {
         const y = "justfile-test-1-test-y"
         const first = try statuses(root, state, "first", tools, home)
         expect([first.statuses, first.out]).toEqual([{ [x]: "ran", [y]: "ran" }, first.out])
-        expect((try statuses(root, state, "second", tools, home)).statuses).toEqual({ [x]: "hit", [y]: "hit" })
+        const second = try statuses(root, state, "second", tools, home)
+        expect(second.statuses, second.out).toEqual({ [x]: "hit", [y]: "hit" })
         // Only the library's source changes. What each root read in Zig's caches is in neither record, and the
         // root that took the library from the cache compiled nothing from this file. Its record still holds the
         // file: Zig opens every source a cached library was built from to see that it is the same. Both run

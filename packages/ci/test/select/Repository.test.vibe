@@ -24,6 +24,12 @@ describe("Repository.layerGit", () => {
       { at: now - 2 * day, files: { "packages/a/src/x.ts": "2", "packages/a/src/old.ts": null } },
       { at: now, files: { "packages/a/src/x.ts": "3", "packages/b/Justfile": "build:" } }
     ])
+    provide layerGit {
+      const reader = try Repository
+      for (const commit of commits.slice(0, 3)) try reader.change(root, commit)
+      const warm = try reader.change(root, commits[3]!)
+      expect(warm).toEqual(try change(root, commits[3]!))
+    }
     const read = try change(root, commits[3]!)
     try Effect.try(() => {
       expect(read.at).toBe(now)
@@ -47,6 +53,13 @@ describe("Repository.layerGit", () => {
     try Effect.try(() => {
       expect(read).toEqual({ at: now, files: ["a.ts", "b/c.zig"], history: [], tree: ["a.ts", "b/c.zig"] })
     })
+  }))
+
+  it.live("refuses incomplete shallow history", () => live(effect {
+    const { root } = try repository([{ at: now, files: { "a": "1" } }, { at: now, files: { "a": "2" } }])
+    const destination = try directory()
+    try git(root, ["clone", "--depth=1", `file://${root}`, destination])
+    expect((try flip(change(destination, "HEAD"))).message).toContain("shallow")
   }))
 
   it.live("reads a merge against its first parent", () => live(effect {
@@ -85,6 +98,17 @@ describe("Repository.layerGit", () => {
     })
   }))
 
+  it.live("distinguishes a repository refusal from a missing repository", () => live(effect {
+    const root = try directory()
+    const real = try ChildProcessSpawner
+    const faulty = ChildProcessSpawner.of({
+      ...real,
+      spawn: () => real.spawn(ChildProcess.make("sh", ["-c", "echo permission-denied >&2; exit 3"]))
+    })
+    const failed = try flip(Effect.provideService(change(root, "HEAD"), ChildProcessSpawner, faulty))
+    expect(failed).toMatchObject({ code: "command-failed", message: expect.stringContaining("permission-denied") })
+  }))
+
   it.live("fails command-failed when git cannot be started", () => live(effect {
     const root = `${try directory()}/missing`
     const failed = try flip(change(root, "HEAD"))
@@ -114,7 +138,7 @@ describe("Repository.layerGit", () => {
         const read = try reader.change(root, commits[0]!)
         try Effect.try(() => {
           expect(read.tree).toEqual(["a.ts"])
-          expect(started).toEqual(["git rev-parse", "git show", "git ls-tree"])
+          expect(started).toEqual(["git rev-parse", "git rev-parse", "git show", "git ls-tree"])
         })
       }
     }
@@ -124,14 +148,17 @@ describe("Repository.layerGit", () => {
     const { root, commits } = try repository([{ at: now - day, files: { "a.ts": "1" } }, { at: now, files: { "a.ts": "2" } }])
     const real = try ChildProcessSpawner
     // A faulty spawner: every `git log` exits 3; every other command is the real one.
+    let stderr = ""
     const faulty = ChildProcessSpawner.of({
       ...real,
       spawn: (command) =>
         command._tag === "StandardCommand" && command.args.includes("log")
-          ? real.spawn(ChildProcess.make("sh", ["-c", "exit 3"]))
+          ? real.spawn(ChildProcess.make("sh", ["-c", stderr + "exit 3"]))
           : real.spawn(command)
     })
     const failed = try flip(Effect.provideService(change(root, commits[1]!), ChildProcessSpawner, faulty))
+    stderr = "echo read-failed >&2; "
+    expect((try flip(Effect.provideService(change(root, commits[1]!), ChildProcessSpawner, faulty))).message).toContain("read-failed")
     try Effect.try(() => {
       expect(failed).toEqual({ code: "command-failed", message: `git log exited 3 in ${root}`, part: "select" })
     })

@@ -389,7 +389,7 @@ describe("graph", () => {
     expect(reach("a")).toEqual({ packages: ["packages/a", "packages/a/b"], files: ["packages/b/data.json"] })
   })
 
-  it("reads a relative path from the file's directory alone when it names something there", () => {
+  it("includes both source-relative and package-relative files when both exist", () => {
     const { reach } = graphOf({ "packages/dom": manifest("dom"), "packages/utils": manifest("utils") }, {
       // `../utils/rect` is this package's own src/utils/rect.ts, not the package named utils.
       "packages/dom/src/platform/a.ts": `import "../utils/rect"; import "../shared"`,
@@ -397,7 +397,7 @@ describe("graph", () => {
       "packages/dom/src/shared/index.md": ``,
       "packages/utils/rect.ts": ``
     })
-    expect(reach("dom")).toEqual({ packages: ["packages/dom"], files: [] })
+    expect(reach("dom")).toEqual({ packages: ["packages/dom"], files: ["packages/utils/rect.ts"] })
   })
 
   it("ignores paths that stay inside the package, leave the repository, or name no package", () => {
@@ -406,7 +406,7 @@ describe("graph", () => {
         `import "./y"; import "../lib/z"; import "../../../../outside"; import "../../../scripts/tool"`,
       "scripts/tool.ts": `import "../packages/b/x"`
     })
-    expect(reach("a")).toEqual({ packages: ["packages/a"], files: [] })
+    expect(reach("a")).toEqual({ packages: ["packages/a", "packages/b"], files: ["scripts/tool.ts"] })
   })
 
   it("follows a path written from the root", () => {
@@ -450,6 +450,13 @@ describe("spineOf and outsideGlobs", () => {
     expect([...spineOf(workspaceOf({}))]).toEqual([""])
   })
 
+  it("widens an unrepresentable outside directory and treats node_modules as an entire segment", () => {
+    const workspace = assemble("npm", {}, false, [["apps/a", JSON.stringify({ name: "a" })]])!
+    expect(outsideGlobs(workspace, new Set(["tools[old]/file"]))).toEqual(["**"])
+    expect(packageDirectories(["**"], new Set(["mynode_modules/package.json", "node_modules/a/package.json"]))).toEqual(
+      ["mynode_modules"]
+    )
+  })
   it("names every file outside all packages", () => {
     const files = new Set([
       "package.json",

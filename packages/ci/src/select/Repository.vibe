@@ -7,6 +7,7 @@
 import * as ChildProcess from "effect/process/ChildProcess"
 import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 import type { Failure } from "../contract/Parts.vibe"
+import { errorLine } from "../contract/Command.vibe"
 import { failure } from "./Failure.vibe"
 import { type Commit, day, horizonDays } from "./Features.vibe"
 import { gitArguments } from "../replay/Git.vibe"
@@ -52,8 +53,12 @@ effect function run(root: string, args: ReadonlyArray<string>) {
   const spawner = try ChildProcessSpawner
   return scoped(effect {
     const handle = try spawner.spawn(ChildProcess.make("git", gitArguments(["-c", "core.quotePath=false", ...args]), { cwd: root }))
-    const [text, code] = try all([Stream.mkString(Stream.decodeText(handle.stdout)), handle.exitCode], { concurrency: 2 })
-    return { code: Number(code), text }
+    let diagnostic = ""
+    const drain = Stream.runForEach(Stream.decodeText(handle.stderr), (chunk) => sync(() => {
+      diagnostic = (diagnostic + chunk).slice(-2048)
+    }))
+    const [text, code] = try all([Stream.mkString(Stream.decodeText(handle.stdout)), handle.exitCode, drain], { concurrency: 3 })
+    return { code: Number(code), text, diagnostic: errorLine(diagnostic) }
   }) catch effect (error) => {
     throw failure("command-failed", `git ${args[0]} could not run in ${root}: ${error.message}`)
   }
@@ -61,8 +66,8 @@ effect function run(root: string, args: ReadonlyArray<string>) {
 
 /** What one git command printed, or `command-failed` when it exits nonzero. */
 effect function read(root: string, args: ReadonlyArray<string>) {
-  const { code, text } = try run(root, args)
-  if (code !== 0) throw failure("command-failed", `git ${args[0]} exited ${code} in ${root}`)
+  const { code, text, diagnostic } = try run(root, args)
+  if (code !== 0) throw failure("command-failed", `git ${args[0]} exited ${code} in ${root}${diagnostic ? `: ${diagnostic}` : ""}`)
   return text
 }
 
@@ -79,22 +84,35 @@ effect function read(root: string, args: ReadonlyArray<string>) {
  * @category layers
  * @since 0.1.0
  */
-export const layerGit = Layer.succeed(Repository, {
-  change: effect (root: string, commit: string) => {
-    if ((try run(root, ["rev-parse", "--git-dir"])).code !== 0) {
-      throw failure("not-a-repository", `${root} is not a git repository`)
+export const layerGit = Layer.sync(Repository, () => {
+  let previous: { readonly root: string; readonly oid: string; readonly at: number; readonly history: ReadonlyArray<Commit>; readonly files: ReadonlyArray<string> } | undefined
+  return {
+    change: effect (root: string, commit: string) => {
+      const shallow = try run(root, ["rev-parse", "--is-shallow-repository"])
+      if (shallow.code !== 0) {
+        if (!shallow.diagnostic.includes("not a git repository")) throw failure("command-failed", `git rev-parse exited ${shallow.code}: ${shallow.diagnostic}`)
+        throw failure("not-a-repository", `${root} is not a git repository`)
+      }
+      if (shallow.text.trim() === "true") throw failure("invalid-document", `The history at ${root} is shallow`)
+      const resolved = try run(root, ["rev-parse", "--verify", "--end-of-options", `${commit}^{commit}`])
+      if (resolved.code !== 0) throw failure("invalid-document", `The repository at ${root} holds no commit ${commit}`)
+      const oid = resolved.text.trim()
+      const shown = try read(root, ["show", "--no-patch", "--format=%ct%n%P", oid, "--"])
+      const [seconds, parents = ""] = shown.split("\n")
+      const at = Number(seconds) * 1000
+      const parent = parents.split(" ")[0]!
+      const tree = paths(try read(root, ["ls-tree", "-z", "-r", "--name-only", oid]))
+      const files = parent === "" ? tree : paths(try read(root, ["diff", "--no-renames", "-z", "--name-only", parent, oid, "--"]))
+      const since = Math.max(0, Math.floor((at - horizonDays * day) / 1000))
+      // A parent older than the window can itself have a parent inside it when commit clocks are out of order.
+      const prior = previous
+      const history: ReadonlyArray<Commit> = parent === "" ? [] :
+        prior !== undefined && prior.root === root && prior.oid === parent && prior.at <= at
+          ? [{ at: prior.at, files: prior.files }, ...prior.history].filter((entry) => entry.at >= since * 1000)
+          : commitsOf(try read(root, ["log", "--no-renames", "-z", `--since-as-filter=@${since} +0000`, "--format=%x00%x00%ct", "--name-only", parent]))
+      // At a merge the next log must visit all parents, including the side branch.
+      previous = parents.includes(" ") ? undefined : { root, oid, at, files, history }
+      return { at, files, history, tree }
     }
-    const shown = try run(root, ["show", "--no-patch", "--format=%ct%n%P", `${commit}^{commit}`])
-    if (shown.code !== 0) throw failure("invalid-document", `The repository at ${root} holds no commit ${commit}`)
-    const [seconds, parents = ""] = shown.text.split("\n")
-    const at = Number(seconds) * 1000
-    const parent = parents.split(" ")[0]!
-    const tree = paths(try read(root, ["ls-tree", "-z", "-r", "--name-only", commit]))
-    if (parent === "") return { at, files: tree, history: [], tree }
-    const files = paths(try read(root, ["diff", "-z", "--name-only", parent, commit]))
-    const since = Math.max(0, Math.floor((at - horizonDays * day) / 1000))
-    // A parent older than the window can itself have a parent inside it when commit clocks are out of order.
-    const history = commitsOf(try read(root, ["log", "-z", `--since-as-filter=@${since} +0000`, "--format=%x00%x00%ct", "--name-only", parent]))
-    return { at, files, history, tree }
   }
 })

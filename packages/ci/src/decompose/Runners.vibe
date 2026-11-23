@@ -9,6 +9,8 @@
  * @since 0.1.0
  */
 
+import { join } from "./Workspace.vibe"
+
 /**
  * Which packages a command runs in.
  *
@@ -90,7 +92,7 @@ const optionAt = (words: ReadonlyArray<string>, at: number, options: Options): O
 
 // An argument that could name a file outside the package, which the splitter
 // could not account for.
-const leaves = (word: string): boolean => /^[/~]|(?:^|\/)\.\.(?:\/|$)/.test(word)
+const leaves = (word: string): boolean => /(?:^|=)[/~]|(?:^|[=/])\.\.(?:\/|$)/.test(word)
 
 const pattern = /^[A-Za-z0-9_@.~*/-]+$/
 
@@ -165,6 +167,12 @@ export const turbo = (launch: ReadonlyArray<string>, words: ReadonlyArray<string
     if (word === "--") {
       args = words.slice(at + 1)
       break
+    }
+    const mode = words[at + 1]
+    if (word === "--continue" && ["always", "dependencies-successful", "never"].includes(mode as string)) {
+      kept.push(word, mode as string)
+      at += 2
+      continue
     }
     const option = optionAt(words, at, turboOptions)
     if (option === undefined) {
@@ -291,13 +299,8 @@ export const pnpm = (words: ReadonlyArray<string>, cwd: string): Invocation | un
 const under = (cwd: string, directory: string | undefined): Selection | undefined => {
   if (directory === undefined) return { kind: "directory", directory: cwd }
   if (directory.startsWith("/") || directory.startsWith("~")) return undefined
-  const parts = cwd === "" ? [] : cwd.split("/")
-  for (const segment of directory.split("/")) {
-    if (segment === "" || segment === ".") continue
-    if (segment !== "..") parts.push(segment)
-    else if (parts.pop() === undefined) return undefined
-  }
-  return { kind: "directory", directory: parts.join("/") }
+  const resolved = join(cwd, directory)
+  return resolved === undefined ? undefined : { kind: "directory", directory: resolved }
 }
 
 const bunOptions: Options = {
@@ -433,7 +436,7 @@ export const npm = (words: ReadonlyArray<string>, cwd: string): Invocation | und
     runner: "npm",
     tasks: [script],
     selection,
-    strict: all && !ifPresent,
+    strict: multiple && !ifPresent,
     args: passed,
     render: (names) => [
       "npm",

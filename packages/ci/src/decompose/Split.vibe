@@ -3,7 +3,7 @@
  * coarse steps replaced by steps that name what they read.
  *
  * It reads files and asks git which files exist. It never runs the
- * repository's code or its package manager.
+ * package manager. A caller may supply a Zig build discovery strategy.
  *
  * @since 0.1.0
  */
@@ -46,30 +46,40 @@ interface Tree {
   readonly path: Path.Path
   readonly root: string
   readonly files: ReadonlySet<string>
+  readonly opaque: boolean
 }
 
-const notARepository = (root: string): Failure => ({
-  code: "not-a-repository",
-  message: `${root} is not a git repository`,
-  part: "decompose"
-})
-
-/** Runs git in the repository and gives what it prints. A git that cannot start, or refuses, fails. */
+/** Read each listing once, draining both pipes before collecting its status. */
 effect function git(root: string, args: ReadonlyArray<string>): string!Failure!ChildProcessSpawner {
   const spawner = try ChildProcessSpawner
   const command = ChildProcess.make("git", gitArguments(["-C", root, ...args]))
-  const code = spawner.exitCode(command) catch () => undefined
-  if (code === undefined || Number(code) !== 0) throw notARepository(root)
-  return spawner.string(command) catch () => ""
+  const result = scoped(effect {
+    const handle = try spawner.spawn(command)
+    const [out, err, code] = try all([Stream.mkString(Stream.decodeText(handle.stdout)), Stream.mkString(Stream.decodeText(handle.stderr)), handle.exitCode], { concurrency: 3 })
+    return { out, err, code: Number(code) }
+  }) catch effect (error) => {
+    throw { part: "decompose", code: "command-failed", message: error.message } satisfies Failure
+  }
+  if (result.code !== 0) throw {
+    part: "decompose",
+    code: result.err.includes("not a git repository") ? "not-a-repository" : "command-failed",
+    message: `git ls-files exited ${result.code}: ${result.err.trim().slice(-512)}`
+  } satisfies Failure
+  return result.out
 }
 
 /** A file's text, or `undefined` when it is missing or cannot be read. */
 effect function text(tree: Tree, file: string): (string | undefined)!! {
-  return tree.fs.readFileString(tree.path.join(tree.root, file)) catch () => undefined
+  const full = tree.path.join(tree.root, file)
+  const resolved = tree.fs.realPath(full) catch () => undefined
+  if (resolved !== full) return undefined
+  const info = tree.fs.lstat(full) catch () => undefined
+  if (info?.type !== "File") return undefined
+  return tree.fs.readFileString(full) catch () => undefined
 }
 
 /** Reads the workspace: its patterns, then each package's manifest. */
-effect function readWorkspace(tree: Tree): (Workspace | undefined)!! {
+effect function readWorkspace(tree: Tree): (Workspace | undefined)!Failure!ChildProcessSpawner {
   const manifest = readObject((try text(tree, "package.json")) ?? "")
   if (manifest === undefined) return undefined
   const declared = readPatterns(
@@ -78,12 +88,20 @@ effect function readWorkspace(tree: Tree): (Workspace | undefined)!! {
     tree.files.has(".npmrc") ? (try text(tree, ".npmrc")) ?? null : ""
   )
   const directories = declared === undefined ? undefined : packageDirectories(declared.patterns, tree.files)
-  if (declared === undefined || directories === undefined) return undefined
+  if (declared === undefined || directories === undefined || tree.opaque) return undefined
+  // An ignored manifest still participates in package manager workspace discovery.
+  const ignored = try git(tree.root, ["ls-files", "--others", "--ignored", "--exclude-standard", "-z", "--", ":(glob)**/package.json", ":(exclude,glob)**/node_modules/**"])
+  const all = new Set([...tree.files, ...ignored.split("\0")])
+  if (packageDirectories(declared.patterns, all)!.length !== directories.length) return undefined
   const manifests: Array<readonly [string, string]> = []
   for (const directory of directories) {
     manifests.push([directory, (try text(tree, `${directory}/package.json`)) ?? ""])
   }
-  return assemble(managerOf(manifest, tree.files), manifest, declared.orchestrated, manifests)
+  const workspace = assemble(managerOf(manifest, tree.files), manifest, declared.orchestrated, manifests)
+  if (workspace === undefined || !tree.files.has("pnpm-workspace.yaml")) return workspace
+  const npm = readPatterns(manifest, undefined)
+  const npmDirectories = npm === undefined ? [] : packageDirectories(npm.patterns, all)
+  return { ...workspace, npmMismatch: JSON.stringify(npmDirectories) !== JSON.stringify(directories) }
 }
 
 /** Reads `turbo.json` at the root and in each package that has one. */
@@ -98,35 +116,31 @@ effect function readTurbo(tree: Tree, workspace: Workspace) {
   return readConfig((try text(tree, file)) ?? "", own)
 }
 
-/** The tracked symbolic links, which git lists with mode 120000. */
-effect function links(tree: Tree): ReadonlySet<string>!Failure!ChildProcessSpawner {
-  const staged = try git(tree.root, ["ls-files", "-s", "-z"])
-  return new Set(
-    staged.split("\0").filter((entry) => entry.startsWith("120000 ")).map((entry) => entry.slice(entry.indexOf("\t") + 1))
-  )
-}
-
 /**
  * Reads what every file in a package mentions, and builds the reach graph.
  * A symbolic link mentions the path it points to.
  */
 effect function readFacts(tree: Tree, workspace: Workspace): Facts!Failure!ChildProcessSpawner {
   const scan = scanner(workspace)
-  const names = new Set(workspace.packages.map((owner) => owner.name))
-  const linked = try links(tree)
+  const names = new Map(workspace.packages.map((owner) => [owner.name, owner.directory]))
+  const unknown = new Set<string>()
   const found = new Map<string, Mentions>()
   const none: Mentions = { names: [], relative: [], rooted: [] }
-  const owned = [...tree.files].filter((file) =>
-    !unscanned.test(file) && workspace.packages.some((owner) => file.startsWith(`${owner.directory}/`))
-  )
-  for concurrent(readers) (const file of owned) {
-    if (linked.has(file)) {
-      const target = tree.fs.readLink(tree.path.join(tree.root, file)) catch () => ""
-      found.set(file, { ...none, relative: target.startsWith("/") || target === "" ? [] : [`./${target}`] })
-    } else {
+  for concurrent(readers) (const file of tree.files) {
+    const full = tree.path.join(tree.root, file)
+    const actual = tree.fs.realPath(full) catch () => undefined
+    if (actual !== full) {
+      const relative = actual === undefined ? undefined : tree.path.relative(tree.root, actual)
+      if (relative === undefined || relative.startsWith(`..${tree.path.sep}`) || relative === ".." || !tree.files.has(relative)) unknown.add(file)
+      else {
+        const link = tree.fs.readLink(full) catch () => ""
+        if (tree.path.resolve(tree.path.dirname(full), link) !== actual) unknown.add(file)
+        found.set(file, { ...none, rooted: [relative] })
+      }
+    } else if (!unscanned.test(file)) {
       const content = try text(tree, file)
-      // A zero byte near the start marks a binary file, as it does for git.
-      if (content !== undefined && !content.slice(0, 8000).includes("\0")) {
+      if (content === undefined) unknown.add(file)
+      else if (!content.slice(0, 8000).includes("\0")) {
         const read = withoutAliases(file, content, names)
         found.set(file, manifest.test(file) ? manifestMentions(scan, read) : scan(read, false))
       }
@@ -134,7 +148,7 @@ effect function readFacts(tree: Tree, workspace: Workspace): Facts!Failure!Child
   }
   return {
     workspace,
-    graph: graph(workspace, tree.files, (file) => found.get(file) ?? none),
+    graph: graph(workspace, tree.files, (file) => found.get(file) ?? none, unknown),
     turbo: try readTurbo(tree, workspace)
   }
 }
@@ -146,6 +160,7 @@ const replaced = (
   groups: ReadonlyMap<string, ReadonlyArray<string>>,
   relied: boolean
 ): ReadonlyArray<Step> => {
+  if (/^__limit=/m.test(step.runner ?? "")) return [step]
   if (understood !== undefined && understood.zig.length > 0) {
     // A step a later step relies on keeps its command and its place: where Zig writes is what that step may read.
     if (relied) return [step]
@@ -231,8 +246,16 @@ export const splitWith = <R = never>(
     const steps = inventory.jobs.flatMap((job) => job.steps)
     const fs = try FileSystem.FileSystem
     const path = try Path.Path
-    const listed = try git(root, ["ls-files", "-z", "--cached", "--others", "--exclude-standard"])
-    const tree: Tree = { fs, path, root, files: new Set(listed.split("\0").filter((file) => file !== "")) }
+    const staged = try git(root, ["ls-files", "-z", "--stage"])
+    const untracked = try git(root, ["ls-files", "-z", "--others", "--exclude-standard"])
+    const files = new Set(untracked.split("\0").filter(Boolean))
+    let opaque = [...files].some((file) => file.endsWith("/"))
+    for (const entry of staged.split("\0").filter(Boolean)) {
+      if (entry.startsWith("160000 ")) opaque = true
+      files.add(entry.slice(entry.indexOf("\t") + 1))
+    }
+    const canonical = try Effect.mapError(fs.realPath(root), (error): Failure => ({ part: "decompose", code: "command-failed", message: error.message }))
+    const tree: Tree = { fs, path, root: canonical, files, opaque }
     const workspace = try readWorkspace(tree)
     const relied = followed(inventory.jobs)
     const after = preceded(inventory.jobs)
@@ -251,12 +274,15 @@ export const splitWith = <R = never>(
     // Only a step that is nothing but one build can be split by the named steps its build step groups.
     const builds = [...new Set(steps.flatMap((step) => {
       // The named steps are read from the root's build, so only a step that starts there is asked about.
-      const sole = relied.has(step) || !Zig.atRoot(step) ? undefined : Zig.soleBuild(step.command)
+      const sole = /^__limit=/m.test(step.runner ?? "") || relied.has(step) || !Zig.atRoot(step) ? undefined : Zig.soleBuild(step.command)
       return sole === undefined ? [] : [sole]
     }))].sort()
     const grouped = options.zigGroups === undefined || builds.length === 0
       ? []
-      : options.zigGroups(root, builds) catch (): ReadonlyArray<ReadonlyArray<string>> => []
+      : options.zigGroups(root, builds) catch effect (failure) => {
+        try Effect.logDebug("Zig group discovery failed; keeping the original steps", { code: failure.code, builds })
+        return [] as ReadonlyArray<ReadonlyArray<string>>
+      }
     const groups = new Map(builds.map((name, index) => [name, grouped[index] ?? []]))
     const scripts = try readScriptFiles(tree, steps)
     // The same jobs with their steps replaced are still the repository's CI: `withSteps` keeps every job and its needs.

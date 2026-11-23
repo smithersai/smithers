@@ -58,7 +58,7 @@ def packageDirectories (patterns files : List Str) : Option (List Str) :=
     let includes := (tests.filter (!·.1)).map (·.2)
     let excludes := (tests.filter (·.1)).map (·.2)
     let directories := files.filterMap fun file =>
-      if packageFile.isSuffixOf file && !contains modulesDirectory file then
+      if packageFile.isSuffixOf file && !(splitOn '/' file).contains "node_modules".toList then
         some (file.take (file.length - packageFile.length))
       else none
     some (jsSort (distinct (directories.filter fun directory =>
@@ -190,6 +190,7 @@ structure Facts where
   packages : List Package
   files : List Str
   mentions : List (Str × Mentions)
+  unknown : List Str := []
 
 /-- What a search of the workspace goes through: a package reached whole, or one file of a package. -/
 inductive Node where
@@ -225,31 +226,26 @@ def pathExists (facts : Facts) (path : Str) : Bool :=
 def directoryOf (file : Str) : Str :=
   match ((List.range file.length).filter fun index => file[index]? = some '/').getLast? with
   | some index => file.take index
-  | none => file.dropLast
+  | none => []
 
 /-- What one file adds. `whole` is true when the file's own package is already reached whole, so paths that stay
-inside it add nothing. A relative path is read from the file's own directory; when it names nothing there, it is
-also read from the package's directory, where a program runs. A rooted path is read from the repository root. A
+inside it add nothing. A relative path is read both from the file's own directory and from the package's directory, where a program runs. A rooted path is read from the repository root. A
 path that names a file adds that file; one that names anything else in a package adds that package whole. -/
-def edgesOfFile (facts : Facts) (file : Str) (owner : Package) (whole : Bool) : List Node :=
+def edgesOfFile (facts : Facts) (file : Str) (owner : Option Package) (whole : Bool) : List Node :=
   let found := facts.mentioned file
   let byName := (found.names.filterMap facts.named).map fun package => Node.package package.name
   let targets : List (Option Str) :=
     found.rooted.map (join []) ++
     found.relative.flatMap fun path =>
-      let beside := join (directoryOf file) path
-      let elsewhere := match beside with
-        | none => true
-        | some target => !facts.pathExists target
-      beside :: (if elsewhere then [join owner.directory path] else [])
+      [join (directoryOf file) path, join ((owner.map (·.directory)).getD []) path]
   byName ++ targets.filterMap fun target =>
     match target with
     | none => none
     | some target =>
       match facts.ownerOf target with
-      | none => none
+      | none => (resolveFile target facts.files).map Node.file
       | some targetOwner =>
-        if whole && targetOwner = owner then none
+        if whole && some targetOwner = owner then none
         else
           match resolveFile target facts.files with
           | some resolved =>
@@ -268,10 +264,7 @@ def edges (facts : Facts) : Node → List Node
     match facts.named name with
     | some package => facts.edgesOfPackage package
     | none => []
-  | .file path =>
-    match facts.ownerOf path with
-    | some owner => facts.edgesOfFile path owner false
-    | none => []
+  | .file path => facts.edgesOfFile path (facts.ownerOf path) false
 
 /-- Every node a search can go through. -/
 def domain (facts : Facts) (start : Node) : List Node :=
@@ -296,7 +289,10 @@ def reachOf (facts : Facts) (start : Node) : Reach :=
       | some owner => if packages.contains owner then none else some path
       | none => some path
     | .package _ => none
-  { packages := jsSort (distinct (packages.map (·.directory))), files := jsSort (distinct files) }
+  let incomplete := facts.unknown.any fun path =>
+    nodes.contains (.file path) || (facts.files.contains path && (facts.ownerOf path).any packages.contains)
+  { packages := jsSort (distinct (packages.map (·.directory))),
+    files := jsSort (distinct (files ++ (if incomplete then ["**".toList] else []))) }
 
 end Facts
 

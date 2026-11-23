@@ -6,7 +6,7 @@ import { ChildProcessSpawner, make as makeSpawner } from "effect/process/ChildPr
 import { WebCrypto } from "@smthrs/crypto"
 import { type Ci, ci as ciOf, Inventory, type Job, type Step } from "../../src/contract/Inventory.vibe"
 import { combine, type Verdict } from "../../src/contract/RunRecord.vibe"
-import { split, splitWith } from "../../src/decompose/index.ts"
+import { split, splitStatic, splitWith } from "../../src/decompose/index.ts"
 
 effect function run(root: string, command: string, args: ReadonlyArray<string>) {
   const spawner = try ChildProcessSpawner
@@ -330,6 +330,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, WebCrypto.layer))("split", (it) => {
         "packages/d/absolute.ts": ""
       })
       try fs.symlink("../b/shared.json", path.join(root, "packages/a/linked.json"))
+      try fs.writeFileString(path.join(root, "packages/a/local.json"), "{}")
       try fs.symlink("local.json", path.join(root, "packages/a/inner.json"))
       try fs.remove(path.join(root, "packages/d/absolute.ts"))
       try fs.symlink("/etc/hostname", path.join(root, "packages/d/absolute.ts"))
@@ -339,12 +340,12 @@ it.layer(Layer.mergeAll(NodeServices.layer, WebCrypto.layer))("split", (it) => {
       const steps = byId(after)
       try Effect.try(() => {
         expect(steps["s:a"]?.inputs).toEqual(["*", "packages/*", "packages/a/**", "packages/b/shared.json"])
-        expect(steps["s:c"]?.inputs).toEqual(["*", "packages/*", "packages/c/**"])
-        expect(steps["s:d"]?.inputs).toEqual(["*", "packages/*", "packages/d/**"])
+        expect(steps["s:c"]?.inputs).toEqual(["**"])
+        expect(steps["s:d"]?.inputs).toEqual(["**"])
       })
     })
 
-  it.effect("reads a link it cannot follow as pointing nowhere", () =>
+  it.effect("widens inputs when the link chain cannot be verified", () =>
     effect {
       const fs = try FileSystem.FileSystem
       const path = try Path.Path
@@ -361,7 +362,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, WebCrypto.layer))("split", (it) => {
       }
       provide FileSystem.FileSystem = faulty {
         const after = try split(root, ci([step("s", "npm run test --workspaces")]))
-        try Effect.try(() => expect(byId(after)["s:a"]?.inputs).toEqual(["*", "packages/*", "packages/a/**"]))
+        try Effect.try(() => expect(byId(after)["s:a"]?.inputs).toEqual(["**"]))
       }
     })
 
@@ -426,18 +427,75 @@ it.layer(Layer.mergeAll(NodeServices.layer, WebCrypto.layer))("split", (it) => {
       }
     })
 
-  it.effect("returns the CI as it was when git starts and cannot list the files", () =>
-    effect {
-      const root = try repository(pnpmWorkspace)
-      const real = try ChildProcessSpawner
-      const before = ci([step("s", "pnpm -r run test")])
-      const mute = { ...real, string: () => fail(PlatformError.systemError({ _tag: "Unknown", module: "ChildProcess", method: "string" })) }
-      provide ChildProcessSpawner = mute {
-        const after = try split(root, before)
-        try Effect.try(() => expect(after).toEqual(before))
-      }
+  it.effect("reports a refused listing and only spawns it once", () => effect {
+    const root = try repository(pnpmWorkspace)
+    const real = try ChildProcessSpawner
+    let count = 0
+    const faulty = makeSpawner(() => {
+      count += 1
+      return real.spawn(ChildProcess.make("sh", ["-c", "echo listing-failed >&2; exit 3"]))
     })
+    provide ChildProcessSpawner = faulty {
+      const failed = try flip(split(root, ci([])))
+      expect(failed).toMatchObject({code:"command-failed", message: expect.stringContaining("listing-failed")})
+      expect(count).toBe(1)
+    }
+  })
 
+  it.effect("keeps a timed step, an npm run with divergent workspace declarations, and a static Zig build whole", () => effect {
+    const root = try repository(pnpmWorkspace)
+    const before = separately([step("t", "pnpm -r test", { runner:"__limit=10" }), step("n", "npm test --workspaces --if-present"), step("z", "zig build test")])
+    expect(try splitStatic(root, before)).toEqual(before)
+  })
+
+  it.effect("preserves inventory for nested repositories and reports unavailable canonical roots", () => effect {
+    const fs = try FileSystem.FileSystem
+    const root = try repository(pnpmWorkspace)
+    const nested = root + "/packages/nested"
+    try fs.makeDirectory(nested)
+    try git(nested, ["init", "--quiet"])
+    try fs.writeFileString(nested + "/package.json", manifest("nested", { test: "t" }))
+    try commit(nested)
+    const before = ci([step("s", "pnpm -r run test")])
+    expect(try splitStatic(root, before)).toEqual(before)
+    try commit(root)
+    expect(try splitStatic(root, before)).toEqual(before)
+    const matching = try repository({ ...pnpmWorkspace, "package.json": JSON.stringify({ workspaces: ["packages/*"] }) })
+    expect(stepsOf(try splitStatic(matching, ci([step("n", "npm test --workspaces --if-present")]))).some((s) => s.from === "n")).toBe(true)
+    const inaccessible = { ...fs, lstat: (name: string) => fs.lstat(name + "/missing") }
+    provide FileSystem.FileSystem = inaccessible {
+      expect(try splitStatic(matching, before)).toEqual(before)
+    }
+    const missing = { ...fs, realPath: (name: string) => fs.realPath(name + "/absent") }
+    provide FileSystem.FileSystem = missing {
+      expect((try flip(splitStatic(root, before))).code).toBe("command-failed")
+    }
+  })
+  it.effect("leaves a workspace sweep whole when the package manager can see an ignored manifest", () => effect {
+    const root = try repository(pnpmWorkspace)
+    const fs = try FileSystem.FileSystem
+    try fs.makeDirectory(root + "/packages/ignored")
+    try fs.writeFileString(root + "/.gitignore", "packages/ignored/\n")
+    try fs.writeFileString(root + "/packages/ignored/package.json", manifest("ignored", {test:"test"}))
+    const before = ci([step("t","pnpm -r test")])
+    expect(try splitStatic(root,before)).toEqual(before)
+  })
+  it.effect("keeps root helpers, literal outside directories, and escaped manifests conservative", () => effect {
+    const fs = try FileSystem.FileSystem
+    const root = try repository({...pnpmWorkspace, "packages/ui/test.mjs": "import '../../helper.js'",
+      "helper.js": "import 'docs'"})
+    const before = ci([step("t","pnpm -r test")])
+    expect(byId(try splitStatic(root,before))["t:ui"]?.inputs).toContain("packages/docs/**")
+    try fs.makeDirectory(root + "/tools[dev]")
+    try fs.writeFileString(root + "/tools[dev]/file","")
+    expect(byId(try splitStatic(root,before))["t:ui"]?.inputs).toEqual(["**"])
+    const outside = try fs.makeTempDirectoryScoped()
+    try fs.writeFileString(outside + "/package.json", manifest("other",{test:"test"}))
+    try fs.symlink(outside + "/package.json",root + "/packages/ui/external")
+    try fs.remove(root + "/packages/ui/package.json")
+    try fs.symlink(outside + "/package.json",root + "/packages/ui/package.json")
+    expect(try splitStatic(root,before)).toEqual(before)
+  })
   it.effect("keeps every job of a CI that is the root ci recipe", () =>
     effect {
       const root = try repository({ ...pnpmWorkspace, "Justfile": "test:\n  pnpm -r run test\nbuild:\n  pnpm -r run build\nci: test build\n" })
@@ -486,14 +544,14 @@ it.layer(Layer.mergeAll(NodeServices.layer, WebCrypto.layer))("split", (it) => {
       const failure = try flip(split(outside, before))
       try Effect.try(() => expect(failure).toEqual({
         code: "not-a-repository",
-        message: `${outside} is not a git repository`,
+        message: expect.stringContaining("not a git repository"),
         part: "decompose"
       }))
       const root = try repository(pnpmWorkspace)
       const broken = makeSpawner(() => fail(PlatformError.systemError({ _tag: "NotFound", module: "ChildProcess", method: "spawn" })))
       provide ChildProcessSpawner = broken {
         const unstarted = try flip(split(root, before))
-        try Effect.try(() => expect(unstarted.code).toBe("not-a-repository"))
+        try Effect.try(() => expect(unstarted.code).toBe("command-failed"))
       }
     })
 

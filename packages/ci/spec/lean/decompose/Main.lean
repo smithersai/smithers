@@ -145,6 +145,8 @@ def asTask (value : Json) : Decode Turbo.Task := do
   return {
     dependsOn := ← field (asList asText) value "dependsOn"
     inputs := ← field (asList asText) value "inputs"
+    companions := ← field (asList asText) value "companions"
+    extendsCompanions := ← field (·.getBool?) value "extendsCompanions"
     extendsDependsOn := ← field (·.getBool?) value "extendsDependsOn"
     extendsInputs := ← field (·.getBool?) value "extendsInputs"
   }
@@ -201,6 +203,7 @@ def answer (request : Json) : Decode Json := do
       packages := ← field (asList asPackage) request "packages"
       files := ← field (asList asText) request "files"
       mentions := ← field (asList (asPair asText asMentions)) request "mentions"
+      unknown := (← fieldOptional (asList asText) request "unknown").getD []
     }
     let reach := facts.reachOf (← field asNode request "start")
     let owner := match ← fieldOptional asText request "owner" with

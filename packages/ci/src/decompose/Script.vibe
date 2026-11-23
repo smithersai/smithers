@@ -42,7 +42,7 @@
 import type { Step, Unsupported } from "../contract/Inventory.vibe"
 import { pnpmCommands, yarnCommands } from "./Runners.vibe"
 import { commands, quote } from "./Shell.vibe"
-import { join, readObject } from "./Workspace.vibe"
+import { join, type Manager as WorkspaceManager, readObject } from "./Workspace.vibe"
 
 /**
  * A package manager whose script runs are read.
@@ -50,7 +50,7 @@ import { join, readObject } from "./Workspace.vibe"
  * @category models
  * @since 0.1.0
  */
-export type Manager = "npm" | "pnpm" | "yarn" | "bun"
+export type Manager = WorkspaceManager
 
 /**
  * One run of a package script: `npm run build`. `rest` holds the words after
@@ -244,27 +244,32 @@ interface Visit extends Leaf {
 // The commands a link runs, to any depth, or the name of a script that reaches itself, which never ends. A script
 // that cannot be split is run by its link as it is, hooks and all: the package manager runs it the same wherever
 // it is started. The links are walked with a list, not with calls: a chain may be thousands of scripts deep.
+const maxLinks = 4096
+
 const leavesOf = (
   words: ReadonlyArray<string>,
   script: string,
+  leaves: Array<Leaf>,
+  completed: Set<string>,
   seen: ReadonlySet<string>,
   manager: Manager,
   scripts: Readonly<Record<string, string>>
-): ReadonlyArray<Leaf> | string => {
-  const leaves: Array<Leaf> = []
+): string | undefined => {
   const running = new Set(seen)
   const pending: Array<Visit> = [{ script, words, done: false }]
   while (pending.length > 0) {
     const visit = pending.pop() as Visit
     if (visit.done) {
+      completed.add(visit.script)
       running.delete(visit.script)
       continue
     }
+    if (leaves.length > maxLinks && completed.has(visit.script)) continue
     if (running.has(visit.script)) return visit.script
     const read = hooked(scripts, visit.script) === undefined ? linksOf(scripts[visit.script] as string) : { syntax: "" }
     const inner = "links" in read ? read.links.map((link) => linkScript(link, manager, scripts)) : []
     if (!("links" in read) || inner.includes(undefined)) {
-      leaves.push({ script: visit.script, words: visit.words })
+      if (leaves.length <= maxLinks) leaves.push({ script: visit.script, words: visit.words })
       continue
     }
     running.add(visit.script)
@@ -274,7 +279,7 @@ const leavesOf = (
       pending.push({ script: inner[index] as string, words: read.links[index] as ReadonlyArray<string>, done: false })
     }
   }
-  return leaves
+  return undefined
 }
 
 // A variable of a step that a package manager reads as a setting.
@@ -406,10 +411,10 @@ export const decide = (
   const stray = chain.links.find((_, index) => inner[index] === undefined)
   if (stray !== undefined) return chain.links.length > 1 ? whole("script-command", stray.join(" ")) : none
   const leaves: Array<Leaf> = []
+  const completed = new Set<string>()
   for (const [index, link] of chain.links.entries()) {
-    const found = leavesOf(link, inner[index] as string, new Set([run.script]), run.manager, scripts)
+    const found = leavesOf(link, inner[index] as string, leaves, completed, new Set([run.script]), run.manager, scripts)
     if (typeof found === "string") return whole("script-cycle", found)
-    leaves.push(...found)
   }
   // A script that only names another, down to one command, is that command.
   if (leaves.length < 2) return none
@@ -432,6 +437,7 @@ export const decide = (
   }
   const release = uncheckedRelease(run.manager, directories, text)
   if (release !== undefined) return whole("script-release", release)
+  if (leaves.length > maxLinks) return none
   const bins = binDirectories(run.manager, directory, text("pnpm-workspace.yaml") !== undefined)
   const names = namesOf(leaves)
   return {
