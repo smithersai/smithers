@@ -110,6 +110,12 @@ const machineNeedsNoSandbox =
 export const BuildAttrs = Schema.Struct({
   ...sharedFields,
   /**
+   * Puts the build in the exclusive tier: wildcard `build` and `ci` selections
+   * omit it unless `--include-exclusive` is set, and once selected it runs
+   * alone in its executor invocation (useful for benchmarks or heavy native builds).
+   */
+  exclusive: Schema.optional(Schema.Boolean),
+  /**
    * External assembly inputs without complete identities must opt out of
    * replay. An uncached build may declare no `outDirs` or `outFiles`: it runs
    * every time, and its dependents run after it.
