@@ -2,7 +2,7 @@ import { sandboxRequest, signedOutGateway } from "../../../vibelang/worker/Sandb
 // Loopback desktop API and bundled assets. Local privileges never follow web navigation, and only the window
 // launched with this run's secret holds the cookie that admits /desktop/* and /api/* requests.
 import { HttpServerRequest, HttpServerResponse } from "effect/http"
-import { Factory } from "../../../vibelang/src/core/Factory.vibe"
+import { ConversationRead, Factory } from "../../../vibelang/src/core/Factory.vibe"
 import { viewer } from "../../../vibelang/src/core/roles.vibe"
 import { handleConversations as factoryHttp, eventStream, afterOf } from "../../../vibelang/worker/Http.vibe"
 import { Desktop } from "./Factory.vibe"
@@ -23,6 +23,7 @@ function launched(presented: string | null | undefined, launch: string) {
 effect function handle(origin: string, assets: string, launch: string) {
   const request = try HttpServerRequest.HttpServerRequest
   const factory = try Factory
+  const reader = try ConversationRead
   const desktop = try Desktop
   const fs = try FileSystem.FileSystem
   const path = try Path.Path
@@ -60,7 +61,7 @@ effect function handle(origin: string, assets: string, launch: string) {
   if (url.pathname.startsWith("/api/")) return try factoryHttp({
     post: effect (conversation, body) => { return Effect.as(factory.post(conversation, body.clientId, body.name, body.text), null) catch (error) => error._tag === "Refused" ? error.refusal : "busy" },
     openWiki: effect (conversation, page) => { return Effect.as(factory.openWiki(conversation, page), null) catch (error) => error._tag === "Refused" ? error.refusal : "busy" },
-    read: (conversation, after) => factory.read(conversation, after).pipe(Effect.orDie),
+    read: (conversation, after) => reader.read(conversation, after).pipe(Effect.orDie),
     tour: effect (conversation) => { return Effect.as(factory.tour(conversation), null) catch () => "not-replying" },
     endTour: effect (conversation) => { return Effect.as(factory.endTour(conversation), null) catch () => "not-replying" },
     events: effect (conversation) => {

@@ -2,7 +2,7 @@
 import { BunHost } from "@smthrs/platform-bun"
 import { expect, it } from "@effect/vitest"
 import { HttpClientRequest, HttpServerRequest, HttpServerResponse } from "effect/http"
-import { Factory } from "../../vibelang/src/core/Factory.vibe"
+import { ConversationRead } from "../../vibelang/src/core/Factory.vibe"
 import { MockFactory } from "../../vibelang/src/core/MockFactory.vibe"
 import { Desktop } from "../src/host/Factory.vibe"
 import { handler } from "../src/host/Http.vibe"
@@ -45,7 +45,7 @@ it.effect("admits only the window that presented this launch's secret", () => (e
     const scoped = try send("/desktop/state?conversation=a%2Fb", { cookie: cookie.split(";")[0]! })
     const changed = try send("/desktop/change", { method: "POST", cookie: cookie.split(";")[0]!, body: JSON.stringify({ operation: "mock" }) })
     const wiki = try send("/api/conversations/home/wiki", { method: "POST", cookie: cookie.split(";")[0]!, body: JSON.stringify({ page: "index" }) })
-    const recorded = try (try Factory).read("home", 0)
+    const recorded = try (try ConversationRead).read("home", 0)
     const unknown = try send("/api/conversations/home/wiki", { method: "POST", cookie: cookie.split(";")[0]!, body: JSON.stringify({ page: "missing" }) })
     const refusal = try promise(() => unknown.json())
     try Effect.try(() => {

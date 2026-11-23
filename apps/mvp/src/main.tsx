@@ -300,6 +300,7 @@ const reopen = async (
           const entry = pendingReopens.get(mark)
           if (entry !== undefined) void reopen(entry.why, entry.reason, entry.mark, entry.within)
         }).catch(() => {
+          // expected: lock wait rejected; lifecycle signals still retry pending reopens
           lockWaiters.delete(mark)
         })
       }
