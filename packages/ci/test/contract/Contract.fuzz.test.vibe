@@ -1,0 +1,1250 @@
+/**
+ * Property and fuzz tests of the contracts: every exported schema, and the
+ * functions the contract files export beside them.
+ *
+ * Each property runs with a fixed seed, so a failure reproduces.
+ */
+
+import { describe, expect, it } from "@effect/vitest"
+import * as Arbitrary from "effect/Arbitrary"
+import * as Cause from "effect/Cause"
+import * as Effect from "effect/Effect"
+import * as Exit from "effect/Exit"
+import * as Schema from "effect/Schema"
+import * as ClosureFile from "../../src/contract/Closure.vibe"
+import * as CommandFile from "../../src/contract/Command.vibe"
+import * as InventoryFile from "../../src/contract/Inventory.vibe"
+import * as PartsFile from "../../src/contract/Parts.vibe"
+import * as PlanFile from "../../src/contract/Plan.vibe"
+import * as ReasonsFile from "../../src/contract/Reasons.vibe"
+import * as ReplayReportFile from "../../src/contract/ReplayReport.vibe"
+import * as RunRecordFile from "../../src/contract/RunRecord.vibe"
+import * as SelectionFile from "../../src/contract/Selection.vibe"
+import * as ShardFile from "../../src/contract/Shard.vibe"
+import * as TargetMapFile from "../../src/contract/TargetMap.vibe"
+
+type Codec = Schema.ConstraintCodec<unknown, unknown, never, never>
+
+/** A seed from a property's name, so each property has its own and keeps it. */
+const seedOf = (name: string): number =>
+  [...name].reduce((hash, character) => (hash * 31 + character.charCodeAt(0)) % 1_000_003, 7)
+
+const assertProperty = <A>(
+  arb: Arbitrary.Arbitrary<A>,
+  predicate: (value: A) => boolean,
+  options: { readonly runs: number; readonly seed: number }
+) => effect {
+  const outcome = try Arbitrary.checkEffect(
+    arb,
+    (value) => Effect.try(() => predicate(value)),
+    options
+  )
+  try Effect.try(() => {
+    if (outcome._tag !== "Passed") {
+      expect.fail(Arbitrary.formatCheckFailure(outcome))
+    }
+    expect(outcome._tag).toBe("Passed")
+  })
+}
+
+const prop = <A>(name: string, arb: Arbitrary.Arbitrary<A>, predicate: (value: A) => boolean, runs = 200): void => {
+  it.live(name, () => assertProperty(arb, predicate, { runs, seed: seedOf(name) }))
+}
+
+/** Explicit cases: every one must hold, and a failure names those that do not. */
+const cases = (name: string, all: () => ReadonlyArray<readonly [string, boolean]>): void => {
+  it.live(name, () =>
+    Effect.try(() => {
+      expect(all().filter(([, ok]) => !ok).map(([label]) => label)).toEqual([])
+    }))
+}
+
+const int = (minimum: number, maximum: number): Arbitrary.Arbitrary<number> =>
+  Arbitrary.schema(
+    Schema.Int.check(Schema.isGreaterThanOrEqualTo(minimum), Schema.isLessThanOrEqualTo(maximum))
+  )
+
+const pick = <A>(values: ReadonlyArray<A>): Arbitrary.Arbitrary<A> =>
+  Arbitrary.map(int(0, values.length - 1), (index) => values[index] as A)
+
+const boolean = Arbitrary.schema(Schema.Boolean)
+
+const text = Arbitrary.schema(Schema.String)
+
+/** Names that are also properties of every object, beside plain ones. */
+const names = ["a", "b", "c", "d", "e", "__proto__", "constructor", "toString", "hasOwnProperty", "valueOf"]
+
+/** Strings a repository can hold that a careless reader takes for something else. */
+const hostile = [
+  "<script>alert(1)</script>",
+  "</script>",
+  "\" onmouseover=\"alert(1)",
+  "'",
+  "&amp;",
+  "javascript:alert(1)",
+  "<!--",
+  "$&",
+  "$1",
+  "{}",
+  "__proto__",
+  "constructor",
+  "a\nb",
+  `nul${String.fromCharCode(0)}escape${String.fromCharCode(27)}[2J`,
+  `bidi${String.fromCharCode(0x202e)}`,
+  "(",
+  "[a-",
+  "\\",
+  " ",
+  "x".repeat(400)
+]
+
+const hostileText = Arbitrary.flatMap(int(0, 2), (kind) => kind === 0 ? text : pick(hostile))
+
+const same = (one: unknown, other: unknown, exact: boolean): boolean => {
+  if (typeof one === "number" && typeof other === "number") return exact ? Object.is(one, other) : one === other
+  if (Array.isArray(one) || Array.isArray(other)) {
+    return Array.isArray(one) && Array.isArray(other) && one.length === other.length &&
+      one.every((item, index) => same(item, other[index], exact))
+  }
+  if (typeof one === "object" && one !== null && typeof other === "object" && other !== null) {
+    const keys = Object.keys(one).sort()
+    const others = Object.keys(other).sort()
+    return keys.length === others.length &&
+      keys.every((key, index) => key === others[index] && same(Reflect.get(one, key), Reflect.get(other, key), exact))
+  }
+  return one === other
+}
+
+/** What `JSON.parse` reads, or nothing for a text that is not JSON. */
+const parse = (written: string): unknown =>
+  Effect.runSync(Effect.orElseSucceed(Effect.try(() => JSON.parse(written) as unknown), () => undefined))
+
+const sorted = (values: ReadonlyArray<string>): ReadonlyArray<string> => [...values].sort()
+
+const unique = (values: ReadonlyArray<string>): boolean => new Set(values).size === values.length
+
+const subset = (values: ReadonlyArray<string>, of: ReadonlyArray<string>): boolean => {
+  const all = new Set(of)
+  return values.every((value) => all.has(value))
+}
+
+/** True when nothing a program printed by accident is in a text. */
+const printable = (value: string): boolean => !/undefined|\[object |NaN|Infinity|function \w*\(/.test(value)
+
+const schemasOf = (
+  file: string,
+  exported: Readonly<Record<string, unknown>>
+): ReadonlyArray<readonly [string, Codec]> =>
+  Object.entries(exported).flatMap(([name, value]) =>
+    Schema.isSchema(value) ? [[`${file}.${name}`, value as unknown as Codec] as const] : []
+  )
+
+const schemas: ReadonlyArray<readonly [string, Codec]> = [
+  ...schemasOf("Closure", ClosureFile),
+  ...schemasOf("Inventory", InventoryFile),
+  ...schemasOf("Parts", PartsFile),
+  ...schemasOf("Plan", PlanFile),
+  ...schemasOf("ReplayReport", ReplayReportFile),
+  ...schemasOf("RunRecord", RunRecordFile),
+  ...schemasOf("Selection", SelectionFile),
+  ...schemasOf("Shard", ShardFile),
+  ...schemasOf("TargetMap", TargetMapFile)
+]
+
+/** The documents that hold other documents: they take the longest to make, so they run fewer times. */
+const large: ReadonlySet<string> = new Set([
+  "Inventory.Inventory",
+  "Inventory.Job",
+  "ReplayReport.ReplayReport",
+  "ReplayReport.ReplayCommit",
+  "RunRecord.RunRecord"
+])
+
+type Path = ReadonlyArray<string | number>
+
+const pathsOf = (value: unknown, at: Path = []): ReadonlyArray<Path> => {
+  if (Array.isArray(value)) return [at, ...value.flatMap((item, index) => pathsOf(item, [...at, index]))]
+  if (typeof value === "object" && value !== null) {
+    return [at, ...Object.entries(value).flatMap(([key, item]) => pathsOf(item, [...at, key]))]
+  }
+  return [at]
+}
+
+const gone = Symbol("gone")
+
+const rewrite = (value: unknown, path: Path, change: (old: unknown) => unknown): unknown => {
+  const [head, ...rest] = path
+  if (head === undefined) return change(value)
+  if (Array.isArray(value)) {
+    return value.flatMap((item, index) => {
+      if (index !== head) return [item]
+      const next = rewrite(item, rest, change)
+      return next === gone ? [] : [next]
+    })
+  }
+  if (typeof value === "object" && value !== null) {
+    return Object.fromEntries(
+      Object.entries(value).flatMap(([key, item]) => {
+        if (key !== head) return [[key, item] as const]
+        const next = rewrite(item, rest, change)
+        return next === gone ? [] : [[key, next] as const]
+      })
+    )
+  }
+  return value
+}
+
+const withKey = (old: unknown, key: string, value: unknown): unknown =>
+  typeof old === "object" && old !== null && !Array.isArray(old)
+    ? Object.fromEntries([...Object.entries(old), [key, value]])
+    : { [key]: value }
+
+/** Every way a document is spoiled: a field gone, of another type, out of range, too long, or named like a prototype. */
+const spoilers: ReadonlyArray<(old: unknown) => unknown> = [
+  () => gone,
+  () => null,
+  () => undefined,
+  () => Number.NaN,
+  () => Number.POSITIVE_INFINITY,
+  () => Number.NEGATIVE_INFINITY,
+  () => -1.5,
+  () => -1,
+  () => Number.MAX_SAFE_INTEGER + 2,
+  () => "",
+  () => [],
+  () => ({}),
+  () => true,
+  () => "__proto__",
+  (old) => typeof old === "string" ? 0 : "x",
+  (old) => [old],
+  (old) => Array.from({ length: 2000 }, () => old),
+  (old) => withKey(old, "__proto__", { polluted: true }),
+  (old) => withKey(old, "constructor", { prototype: { polluted: true } }),
+  (old) => withKey(old, "unknownKey", 1),
+  (old) => ({ value: old })
+]
+
+const spoil = (document: unknown, picks: ReadonlyArray<number>): unknown => {
+  let spoiled = document
+  const changes = 1 + (picks[0] as number) % 3
+  for (let change = 0; change < changes; change++) {
+    const paths = pathsOf(spoiled)
+    const path = paths[(picks[1 + change * 2] as number) % paths.length] as Path
+    const spoiler = spoilers[(picks[2 + change * 2] as number) % spoilers.length] as (old: unknown) => unknown
+    spoiled = rewrite(spoiled, path, spoiler)
+  }
+  return spoiled === gone ? undefined : spoiled
+}
+
+/** True when no object of a decoded value inherits what a spoiled document tried to plant. */
+const unpolluted = (value: unknown): boolean => {
+  if (Reflect.get({}, "polluted") !== undefined) return false
+  if (Array.isArray(value)) return value.every(unpolluted)
+  if (typeof value !== "object" || value === null) return true
+  return (Object.hasOwn(value, "polluted") || Reflect.get(value, "polluted") === undefined) &&
+    Object.values(value).every(unpolluted)
+}
+
+const picks = Arbitrary.array(int(0, 100_000), { minLength: 7, maxLength: 7 })
+
+describe("every contract schema", () => {
+  cases("is found by name", () => [
+    ["count", schemas.length >= 48],
+    ...[
+      "Closure.Closure",
+      "Inventory.Inventory",
+      "Inventory.NotReplayed",
+      "Parts.Failure",
+      "Plan.Plan",
+      "ReplayReport.ReplayReport",
+      "RunRecord.RunRecord",
+      "Selection.Metrics",
+      "Shard.Shard",
+      "TargetMap.TargetMap"
+    ].map((name) => [name, schemas.some(([found]) => found === name)] as const)
+  ])
+
+  for (const [name, schema] of schemas) {
+    const runs = large.has(name) ? 40 : 120
+    const is = Schema.is(schema)
+    const encode = Schema.encodeSync(schema)
+    const decode = Schema.decodeUnknownSync(schema)
+    const decodeExit = Schema.decodeUnknownExit(schema)
+
+    prop(
+      `${name}: a value is one, and comes back from its encoding and from JSON`,
+      Arbitrary.schema(schema),
+      (value) => {
+        const encoded = encode(value)
+        const decoded = decode(encoded)
+        const viaJson = decode(parse(JSON.stringify(encoded)))
+        return is(value) && is(decoded) && same(decoded, value, true) && same(viaJson, value, false) &&
+          same(encode(decoded), encoded, true)
+      },
+      runs
+    )
+
+    prop(
+      `${name}: a spoiled document is refused with a schema error, or decodes to a value`,
+      Arbitrary.all({ value: Arbitrary.schema(schema), picks }),
+      ({ picks, value }) => {
+        const spoiled = spoil(parse(JSON.stringify(encode(value))), picks)
+        const exit = decodeExit(spoiled)
+        if (Exit.isFailure(exit)) return !is(spoiled) && Schema.isSchemaError(Cause.squash(exit.cause))
+        return is(spoiled) && is(exit.value) && unpolluted(exit.value) &&
+          same(decode(encode(exit.value)), exit.value, true)
+      },
+      runs
+    )
+
+    prop(
+      `${name}: keys it does not name are dropped, a prototype's among them`,
+      Arbitrary.schema(schema),
+      (value) => {
+        const encoded = encode(value)
+        if (typeof encoded !== "object" || encoded === null) return true
+        const more = withKey(withKey(withKey(encoded, "__proto__", { polluted: true }), "constructor", 1), "zz", [])
+        const decoded = decode(more)
+        return same(decoded, value, true) && unpolluted(decoded)
+      },
+      runs
+    )
+  }
+
+  cases("a document out of range is refused", () => {
+    const refused = (schema: Codec, document: unknown): boolean =>
+      Exit.isFailure(Schema.decodeUnknownExit(schema)(document))
+    const report = {
+      version: 1,
+      repository: "r",
+      commits: [],
+      baselineWallMs: 0,
+      normalWallMs: 0,
+      speedup: 0,
+      mismatches: 0
+    }
+    const reportSchema = ReplayReportFile.ReplayReport as unknown as Codec
+    return [
+      ["the report itself decodes", !refused(reportSchema, report)],
+      ["speedup NaN", refused(reportSchema, { ...report, speedup: Number.NaN })],
+      ["speedup Infinity", refused(reportSchema, { ...report, speedup: Number.POSITIVE_INFINITY })],
+      ["wall time -Infinity", refused(reportSchema, { ...report, baselineWallMs: Number.NEGATIVE_INFINITY })],
+      ["wall time as text", refused(reportSchema, { ...report, normalWallMs: "12" })],
+      ["version 2", refused(reportSchema, { ...report, version: 2 })],
+      ["no repository", refused(reportSchema, { ...report, repository: "" })],
+      ["no commits", refused(reportSchema, { ...report, commits: undefined })],
+      ["commits not a list", refused(reportSchema, { ...report, commits: { length: 0 } })],
+      ["mismatches 0.5", refused(reportSchema, { ...report, mismatches: 0.5 })],
+      ["mismatches past a safe integer", refused(reportSchema, { ...report, mismatches: 2 ** 53 })],
+      ["speedupCommits -1", refused(reportSchema, { ...report, speedupCommits: -1 })],
+      ["diskHeldBytes -1", refused(reportSchema, { ...report, diskHeldBytes: -1 })],
+      ["asked.notAsked -1", refused(reportSchema, { ...report, asked: { jobs: [], needed: [], notAsked: -1 } })],
+      ["recorder unknown", refused(reportSchema, { ...report, recorder: { name: "ptrace" } })],
+      ["null", refused(reportSchema, null)],
+      ["a list", refused(reportSchema, [report])],
+      ["shard index -1", refused(ShardFile.Shard as unknown as Codec, { index: -1, count: 2 })],
+      ["shard count 0", refused(ShardFile.Shard as unknown as Codec, { index: 0, count: 0 })],
+      ["score above 1", refused(SelectionFile.Score as unknown as Codec, { commit: "c", target: "t", score: 1.5 })],
+      ["score below 0", refused(SelectionFile.Score as unknown as Codec, { commit: "c", target: "t", score: -0.1 })],
+      ["count cutoff -1", refused(SelectionFile.Settings as unknown as Codec, { scoreCutoff: 0.1, countCutoff: -1 })],
+      ["maxJobs 0", refused(TargetMapFile.TargetMap as unknown as Codec, { version: 1, targets: [], maxJobs: 0 })],
+      [
+        "tests -1",
+        refused(RunRecordFile.TargetResult as unknown as Codec, {
+          label: "l",
+          status: "ran",
+          key: "",
+          durationMs: 1,
+          tests: -1
+        })
+      ],
+      ["a status that is none", refused(RunRecordFile.TargetStatus as unknown as Codec, "passed")],
+      ["a verdict that is a prototype's", refused(RunRecordFile.Verdict as unknown as Codec, "constructor")]
+    ]
+  })
+
+  cases("a record keeps a key named like a prototype's, and plants nothing", () => {
+    const parts = Schema.decodeUnknownSync(RunRecordFile.Parts)(parse("{\"ms\":{\"__proto__\":1,\"a\":2}}"))
+    const entry = Schema.decodeUnknownSync(TargetMapFile.Entry)(
+      parse("{\"label\":\"l\",\"job\":\"j\",\"step\":\"s\",\"variant\":{\"__proto__\":\"x\",\"constructor\":\"y\"}}")
+    )
+    return [
+      ["Parts.ms keeps a", parts.ms["a"] === 2],
+      ["Parts.ms keeps __proto__", Object.hasOwn(parts.ms, "__proto__")],
+      ["Parts.ms has the plain prototype", Object.getPrototypeOf(parts.ms) === Object.prototype],
+      ["variant keeps __proto__", Object.hasOwn(entry.variant, "__proto__")],
+      [
+        "variant keeps constructor",
+        Object.hasOwn(entry.variant, "constructor") && entry.variant["constructor"] === "y"
+      ],
+      ["variant has the plain prototype", Object.getPrototypeOf(entry.variant) === Object.prototype],
+      ["nothing is planted", unpolluted(parts) && unpolluted(entry)]
+    ]
+  })
+})
+
+describe("Shard", () => {
+  const labels = Arbitrary.array(Arbitrary.flatMap(boolean, (plain) => plain ? pick(names) : hostileText), {
+    maxLength: 30
+  })
+
+  prop(
+    "shardOf is an index below the count",
+    Arbitrary.all({ label: hostileText, count: int(1, 97) }),
+    ({ count, label }) => {
+      const index = ShardFile.shardOf(label, count)
+      return Number.isInteger(index) && index >= 0 && index < count && index === ShardFile.shardOf(label, count)
+    }
+  )
+
+  prop("labelsOf gives every label to one shard", Arbitrary.all({ labels, count: int(1, 9) }), ({ count, labels }) => {
+    const parts = Array.from({ length: count }, (_, index) => ShardFile.labelsOf(labels, { index, count }))
+    return same(sorted(parts.flat()), sorted(labels), true) &&
+      parts.every((part, index) => part.every((label) => ShardFile.shardOf(label, count) === index))
+  })
+
+  const weights = Arbitrary.array(
+    Arbitrary.all([pick(names), pick([0, 1, 2, 3, 10, 500, 1000, -5, Number.NaN, Number.POSITIVE_INFINITY])]),
+    { maxLength: 12 }
+  )
+
+  prop(
+    "assign gives every label one shard, whatever their order, and no shard more than one label above another",
+    Arbitrary.all({ labels: Arbitrary.array(pick(names), { maxLength: 20 }), count: int(1, 6), weights }),
+    ({ count, labels, weights }) => {
+      const durations: Readonly<Record<string, number>> = Object.fromEntries(weights)
+      const weight = (label: string): number => {
+        const found = Object.hasOwn(durations, label) ? durations[label] as number : 0
+        return Number.isFinite(found) && found > 0 ? found : 0
+      }
+      const assigned = ShardFile.assign(labels, count, durations)
+      const loads = Array.from({ length: count }, () => 0)
+      for (const [label, index] of assigned) loads[index] = (loads[index] as number) + weight(label)
+      const heaviest = Math.max(0, ...labels.map(weight))
+      return same(sorted([...assigned.keys()]), sorted([...new Set(labels)]), true) &&
+        [...assigned.values()].every((index) => Number.isInteger(index) && index >= 0 && index < count) &&
+        [...assigned].every(([label, index]) => weight(label) > 0 || index === ShardFile.shardOf(label, count)) &&
+        same([...ShardFile.assign([...labels].reverse(), count, durations)].sort(), [...assigned].sort(), true) &&
+        Math.max(...loads) - Math.min(...loads) <= heaviest
+    }
+  )
+})
+
+describe("Selection", () => {
+  const score = Arbitrary.all({ commit: pick(["c1", "c2"]), target: pick(names), score: pick([0, 0.05, 0.1, 0.5, 1]) })
+  const scores = Arbitrary.array(score, { maxLength: 14 })
+  const settings = Arbitrary.all({ scoreCutoff: pick([0, 0.05, 0.1, 0.5, 1]), countCutoff: int(0, 6) })
+
+  prop(
+    "select is sorted, holds every score at the cutoff, and does not read the order",
+    Arbitrary.all({ scores, settings }),
+    ({
+      scores,
+      settings
+    }) => {
+      const chosen = SelectionFile.select(scores, settings)
+      const targets = [...new Set(scores.map((entry) => entry.target))]
+      return same(chosen, sorted(chosen), true) && unique(chosen) && subset(chosen, targets) &&
+        scores.every((entry) => entry.score < settings.scoreCutoff || chosen.includes(entry.target)) &&
+        (settings.countCutoff < scores.length || same(chosen, sorted(targets), true)) &&
+        (settings.countCutoff === 0 || scores.length === 0 || chosen.length > 0) &&
+        same(SelectionFile.select([...scores].reverse(), settings), chosen, true)
+    }
+  )
+
+  prop("select chooses no less at a lower cutoff", Arbitrary.all({ scores, settings, lower: settings }), ({
+    lower,
+    scores,
+    settings
+  }) => {
+    const loose = {
+      scoreCutoff: Math.min(settings.scoreCutoff, lower.scoreCutoff),
+      countCutoff: Math.max(settings.countCutoff, lower.countCutoff)
+    }
+    return subset(SelectionFile.select(scores, settings), SelectionFile.select(scores, loose))
+  })
+
+  const features: SelectionFile.Features = {
+    extensions: [],
+    fileChanges: { d3: 0, d14: 0, d56: 0 },
+    failureRates: { d7: 0, d14: 0, d28: 0, d56: 0 },
+    project: "",
+    testCount: 0,
+    graphDistance: 0
+  }
+  const row = Arbitrary.map(
+    Arbitrary.all({ commit: pick(["c1", "c2", "c3", "__proto__"]), target: pick(names), failed: boolean }),
+    (entry): SelectionFile.Row => ({ ...entry, features, attempts: [], flaky: false })
+  )
+  const rows = Arbitrary.array(row, { maxLength: 16 })
+  const selected = Arbitrary.array(
+    Arbitrary.all([pick(["c1", "c2", "c3", "__proto__"]), Arbitrary.array(pick(names), { maxLength: 6 })]),
+    { maxLength: 5 }
+  )
+
+  prop("metrics are shares of what was counted", Arbitrary.all({ rows, selected }), ({ rows, selected }) => {
+    const found = SelectionFile.metrics(rows, new Map(selected))
+    const share = (value: number | undefined): boolean => value === undefined || (value >= 0 && value <= 1)
+    const failures = rows.filter((entry) => entry.failed)
+    return Schema.is(SelectionFile.Metrics)(found) && found.rows === rows.length && found.selected <= found.rows &&
+      found.failures === failures.length &&
+      found.failedChanges === new Set(failures.map((entry) => entry.commit)).size &&
+      share(found.selectionRate) && share(found.testRecall) && share(found.changeRecall) &&
+      (found.testRecall === undefined) === (failures.length === 0) &&
+      (found.changeRecall === undefined) === (failures.length === 0) &&
+      (found.changeRecall ?? 0) >= 0 && ((found.testRecall ?? 0) > 0) === ((found.changeRecall ?? 0) > 0)
+  })
+
+  prop("metrics of everything selected recall everything, and of nothing recall nothing", rows, (rows) => {
+    const everything = new Map<string, Array<string>>()
+    for (const entry of rows) everything.set(entry.commit, [...(everything.get(entry.commit) ?? []), entry.target])
+    const all = SelectionFile.metrics(rows, everything)
+    const none = SelectionFile.metrics(rows, new Map())
+    return all.selected === rows.length && all.selectionRate === (rows.length === 0 ? 0 : 1) &&
+      (all.testRecall ?? 1) === 1 && (all.changeRecall ?? 1) === 1 && none.selected === 0 && none.selectionRate === 0 &&
+      (none.testRecall ?? 0) === 0 && (none.changeRecall ?? 0) === 0
+  })
+})
+
+describe("RunRecord", () => {
+  const verdicts: ReadonlyArray<RunRecordFile.Verdict> = ["pass", "fail", "flaky", "skipped"]
+  const some = Arbitrary.array(pick(verdicts), { maxLength: 8 })
+
+  prop("verdictOf reads the attempts before the status", Arbitrary.schema(RunRecordFile.TargetResult), (result) => {
+    const verdict = RunRecordFile.verdictOf(result)
+    const attempts = result.attempts ?? []
+    if (result.status === "skipped") return verdict === "skipped"
+    if (attempts.length === 0) return verdict === (result.status === "failed" ? "fail" : "pass")
+    const passes = attempts.filter((attempt) => attempt.passed).length
+    return verdict === (passes === attempts.length ? "pass" : passes === 0 ? "fail" : "flaky")
+  })
+
+  prop("combine reads no order, and the whole is the parts combined", Arbitrary.all({ one: some, other: some }), ({
+    one,
+    other
+  }) => {
+    const whole = RunRecordFile.combine([...one, ...other])
+    return whole === RunRecordFile.combine([...other, ...one].reverse()) &&
+      whole === RunRecordFile.combine([RunRecordFile.combine(one), RunRecordFile.combine(other)]) &&
+      RunRecordFile.combine([whole, whole]) === whole &&
+      (whole === "fail") === [...one, ...other].includes("fail") &&
+      (whole === "skipped") === [...one, ...other].every((verdict) => verdict === "skipped")
+  })
+})
+
+describe("Closure", () => {
+  const paths = ["a.ts", "src/a.ts", "src/deep/b.ts", "srcx/a.ts", "lib/x", "library/x", "src", "__proto__"]
+  const closure = Arbitrary.map(
+    Arbitrary.all({
+      files: Arbitrary.array(pick(paths), { maxLength: 4 }),
+      directories: Arbitrary.array(pick(["src", "src/", "lib", "l", "__proto__"]), { maxLength: 3 }),
+      listed: boolean,
+      open: int(0, 5)
+    }),
+    ({ directories, files, listed, open }): ClosureFile.Closure => ({
+      strategy: "s",
+      entries: ["e"],
+      files: files.map((path) => ({ path, digest: "d" })),
+      packages: [],
+      unresolved: open === 0 ? [{ from: "a.ts", specifier: "x" }] : [],
+      dynamic: open === 1 ? [{ from: "a.ts", specifier: "" }] : [],
+      ...(listed ? { directories } : {})
+    })
+  )
+  const changed = Arbitrary.array(pick(paths), { maxLength: 4 })
+
+  prop(
+    "a change affects a closure when one of its paths does",
+    Arbitrary.all({ closure, one: changed, other: changed }),
+    ({
+      closure,
+      one,
+      other
+    }) => {
+      const affected = ClosureFile.isAffectedBy(closure, [...one, ...other])
+      if (!ClosureFile.isComplete(closure)) return affected && ClosureFile.isAffectedBy(closure, [])
+      return !ClosureFile.isAffectedBy(closure, []) &&
+        affected === (ClosureFile.isAffectedBy(closure, one) || ClosureFile.isAffectedBy(closure, other)) &&
+        closure.files.every((file) => ClosureFile.isAffectedBy(closure, [file.path]))
+    }
+  )
+
+  cases("a directory covers what is under it and nothing beside it", () => {
+    const closure: ClosureFile.Closure = {
+      strategy: "s",
+      entries: ["e"],
+      files: [],
+      packages: [],
+      unresolved: [],
+      dynamic: [],
+      directories: ["src", "lib/"]
+    }
+    return [
+      ["under", ClosureFile.isAffectedBy(closure, ["src/deep/a.ts"])],
+      ["under, with the slash", ClosureFile.isAffectedBy(closure, ["lib/a.ts"])],
+      ["a longer name", !ClosureFile.isAffectedBy(closure, ["srcx/a.ts"])],
+      ["the directory's own name", !ClosureFile.isAffectedBy(closure, ["src"])],
+      ["a parent", !ClosureFile.isAffectedBy(closure, ["../src/a.ts"])]
+    ]
+  })
+})
+
+describe("TargetMap", () => {
+  const variant = Arbitrary.array(Arbitrary.all([pick(names), pick(["1", "2", "__proto__"])]), { maxLength: 4 })
+  const entry = Arbitrary.map(
+    Arbitrary.all({
+      label: pick(names),
+      job: pick(["j1", "j2"]),
+      step: pick(["s1", "s2"]),
+      variant,
+      part: pick([undefined, "p"]),
+      machine: pick([undefined, "m1", "m2"])
+    }),
+    ({ job, label, machine, part, step, variant }): TargetMapFile.Entry => ({
+      label,
+      job,
+      step,
+      variant: Object.fromEntries(variant),
+      ...(part === undefined ? {} : { part }),
+      ...(machine === undefined ? {} : { machine })
+    })
+  )
+  const map = Arbitrary.map(
+    Arbitrary.array(entry, { maxLength: 8 }),
+    (targets): TargetMapFile.TargetMap => ({ version: 1, targets })
+  )
+
+  prop("a variant is its values, whatever order its keys are in", Arbitrary.all({ one: variant, other: variant }), ({
+    one,
+    other
+  }) => {
+    const first = Object.fromEntries(one)
+    const second = Object.fromEntries(other)
+    const turned = Object.fromEntries(Object.entries(first).reverse())
+    return TargetMapFile.variantKey(first) === TargetMapFile.variantKey(turned) &&
+      (TargetMapFile.variantKey(first) === TargetMapFile.variantKey(second)) === same(first, second, true)
+  })
+
+  prop(
+    "labelsOf, partsOf and machineOf read the entries that match",
+    Arbitrary.all({ map, at: int(0, 7) }),
+    ({ at, map }) => {
+      const parts = TargetMapFile.partsOf(map)
+      const partsHold = [...parts].every(([label, part]) =>
+        map.targets.some((target) => target.label === label && target.part === part)
+      )
+      const asked = map.targets[at]
+      if (asked === undefined) {
+        return partsHold && TargetMapFile.labelsOf(map, "j1", "s1", {}).length <= map.targets.length
+      }
+      const turned = Object.fromEntries(Object.entries(asked.variant).reverse())
+      const labels = TargetMapFile.labelsOf(map, asked.job, asked.step, turned)
+      const machine = TargetMapFile.machineOf(map, asked.job, turned)
+      return partsHold && labels.includes(asked.label) &&
+        subset(
+          labels,
+          map.targets.filter((target) => target.job === asked.job && target.step === asked.step).map((target) =>
+            target.label
+          )
+        ) &&
+        (asked.machine === undefined || machine !== undefined) &&
+        (machine === undefined || map.targets.some((target) => target.job === asked.job && target.machine === machine))
+    }
+  )
+})
+
+describe("Reasons", () => {
+  const features = [...Object.keys(ReasonsFile.reasons), ...names, "unknown-feature"]
+  const entries = Arbitrary.array(Arbitrary.all({ feature: pick(features), detail: hostileText }), { maxLength: 6 })
+  const quiet = Arbitrary.array(
+    Arbitrary.all({
+      feature: pick(features),
+      detail: pick([
+        "",
+        "j runs on darwin; other",
+        "j runs on constructor; x",
+        "s receives TOKEN",
+        "runs docker",
+        "a: uses org/act@v1",
+        "j needs k, which is not replayed"
+      ])
+    }),
+    { maxLength: 6 }
+  )
+
+  prop("reasonsSentence says each feature once, in order, for any feature and detail", entries, (entries) => {
+    const sentence = ReasonsFile.reasonsSentence(entries)
+    return typeof sentence === "string" && sentence === ReasonsFile.reasonsSentence([...entries, ...entries]) &&
+      (entries.length === 0) === (sentence === "")
+  })
+
+  prop("reasonsSentence fills every slot and prints no program value", quiet, (entries) => {
+    const sentence = ReasonsFile.reasonsSentence(entries)
+    return printable(sentence) && !sentence.includes("{}") &&
+      entries.every((entry) =>
+        Object.hasOwn(ReasonsFile.reasons, entry.feature) || sentence.includes(`cannot run (${entry.feature})`)
+      )
+  })
+
+  prop(
+    "wholeScriptSentence holds the detail as it is written",
+    Arbitrary.all({
+      feature: pick([...Object.keys(ReasonsFile.wholeScript), ...names]),
+      detail: hostileText
+    }),
+    (why) => {
+      const sentence = ReasonsFile.wholeScriptSentence(why)
+      const template = Object.hasOwn(ReasonsFile.wholeScript, why.feature)
+        ? ReasonsFile.wholeScript[why.feature] as string
+        : ""
+      return sentence.startsWith("stays one step: ") && (!template.includes("{}") || sentence.includes(why.detail)) &&
+        (Object.hasOwn(ReasonsFile.wholeScript, why.feature) ||
+          sentence === "stays one step: its commands cannot be run one at a time")
+    }
+  )
+
+  cases("every feature has a row with no empty slot", () => {
+    const rows = ReasonsFile.reasonRows()
+    return [
+      ["one row a feature", rows.length === Object.keys(ReasonsFile.reasons).length],
+      ["sorted", same(rows.map(([feature]) => feature), sorted(rows.map(([feature]) => feature)), true)],
+      ["no slot left open", rows.every(([, meaning]) => !meaning.includes("{}") && printable(meaning))],
+      [
+        "no sentence left open",
+        Object.keys(ReasonsFile.reasons).every((feature) =>
+          !ReasonsFile.reasonsSentence([{ feature, detail: "" }]).includes("{}")
+        )
+      ]
+    ]
+  })
+
+  cases("a feature named like a prototype's property is one Smithers CI does not know", () => [
+    ...["constructor", "__proto__", "toString", "hasOwnProperty", "valueOf"].flatMap((feature) => [
+      [
+        `reasonsSentence ${feature}`,
+        ReasonsFile.reasonsSentence([{ feature, detail: "d" }]) === `uses something Smithers CI cannot run (${feature})`
+      ] as const,
+      [
+        `wholeScriptSentence ${feature}`,
+        ReasonsFile.wholeScriptSentence({ feature, detail: "d" }) ===
+        "stays one step: its commands cannot be run one at a time"
+      ] as const
+    ]),
+    [
+      "a system named constructor",
+      ReasonsFile.reasonsSentence([{ feature: "other-system", detail: "j runs on constructor; x" }]) ===
+      "runs only on constructor; smithers-ci runs on Linux and macOS"
+    ]
+  ])
+})
+
+describe("Command", () => {
+  const scalar = Arbitrary.flatMap(int(0, 5), (kind): Arbitrary.Arbitrary<unknown> =>
+    kind === 0
+      ? hostileText
+      : kind === 1
+      ? Arbitrary.schema(Schema.Number)
+      : pick<unknown>([null, undefined, true, false, Number.NaN, 0, -0, "", [], {}]))
+  const record = Arbitrary.map(
+    Arbitrary.array(
+      Arbitrary.all([pick([...names, "message", "_tag", "name", "cause", "stack", "errno", "code"]), scalar]),
+      {
+        maxLength: 5
+      }
+    ),
+    (fields): unknown => Object.fromEntries(fields)
+  )
+  const nested = Arbitrary.map(
+    Arbitrary.all({
+      outer: Arbitrary.array(Arbitrary.all([pick(names), record]), { maxLength: 3 }),
+      words: scalar,
+      deep: int(0, 6)
+    }),
+    ({ deep, outer, words }): unknown => {
+      let value: unknown = { message: words, ...Object.fromEntries(outer), list: outer.map(([, item]) => item) }
+      for (let depth = 0; depth < deep; depth++) {
+        value = { cause: value, inner: [value], message: depth % 2 === 0 ? "m" : "" }
+      }
+      return value
+    }
+  )
+  const cause = Arbitrary.flatMap(int(0, 3), (kind) => kind === 0 ? scalar : kind === 1 ? record : nested)
+
+  prop("errorText and errorLine are text for any cause, and a line is one short line", cause, (cause) => {
+    const words = CommandFile.errorText(cause)
+    const line = CommandFile.errorLine(cause)
+    return typeof words === "string" && line.length <= 301 && !/\s\s|[^\S ]/.test(line) && line === line.trim() &&
+      line === CommandFile.errorLine(cause) && CommandFile.errorLine(line) === line &&
+      (line.length <= 300 || line.endsWith("…")) && !line.includes("[object ")
+  }, 400)
+
+  cases("a cause that fails when it is read is an error with no message", () => {
+    const failing = (): never => Reflect.get(Object.freeze([]), "push").call(Object.freeze([]), 1) as never
+    const getter = Object.defineProperty({}, "message", { enumerable: true, get: failing })
+    const proxy = new Proxy({}, { get: failing, ownKeys: failing })
+    const cycle: { self?: unknown; message: string } = { message: "round" }
+    cycle.self = cycle
+    const bare = Object.create(null) as Record<string, unknown>
+    bare["code"] = "E"
+    return [
+      ["a getter", CommandFile.errorLine(getter) === "an error with no message"],
+      ["a proxy", CommandFile.errorLine(proxy) === "an error with no message"],
+      ["a cycle", CommandFile.errorLine(cycle).startsWith("round") && CommandFile.errorLine(cycle).length <= 301],
+      ["no prototype", CommandFile.errorLine(bare) === "code: E"],
+      ["a symbol", CommandFile.errorLine(Symbol("s")) === "Symbol(s)"],
+      ["a function", typeof CommandFile.errorLine(failing) === "string"],
+      ["a long message", CommandFile.errorLine("x".repeat(5000)) === `${"x".repeat(300)}…`],
+      ["many lines", CommandFile.errorLine(new Error("a\n\tb\r\n  c")) === "a b c"]
+    ]
+  })
+
+  const userinfo = "abcXYZ019-._~!$&'()*+,;=%:".split("")
+  const word = (characters: ReadonlyArray<string>, most: number): Arbitrary.Arbitrary<string> =>
+    Arbitrary.map(Arbitrary.array(pick(characters), { minLength: 1, maxLength: most }), (found) => found.join(""))
+
+  prop(
+    "errorLine holds no password of a URL, wherever the URL is",
+    Arbitrary.all({
+      scheme: pick(["https", "http", "redis", "postgres", "git+ssh", "s3", "HTTPS"]),
+      user: word(userinfo, 6),
+      password: word(userinfo, 12),
+      host: pick(["example.com", "10.0.0.1:6379", "cache.internal/path?x=1", "[::1]:80"]),
+      before: pick(["", "fetch failed: ", "connect to ", "(", "url="]),
+      after: pick(["", " refused", ")", ", retrying", "\nnext line"]),
+      shape: int(0, 3)
+    }),
+    ({ after, before, host, password, scheme, shape, user }) => {
+      const secret = `S3cr3t${password}`
+      const message = `${before}${scheme}://U5er${user}:${secret}@${host}${after}`
+      const cause = shape === 0
+        ? message
+        : shape === 1
+        ? new Error(message)
+        : shape === 2
+        ? { message: "request failed", url: message }
+        : { _tag: "HttpError", cause: { message }, urls: [message] }
+      const line = CommandFile.errorLine(cause)
+      return !line.includes("S3cr3t") && !line.includes("U5er") && line.includes(host.slice(0, 7))
+    },
+    400
+  )
+
+  const inventoryOf = (ids: ReadonlyArray<string>): InventoryFile.Inventory => ({
+    version: 1,
+    repository: "r",
+    commit: "c",
+    toolchains: [],
+    jobs: ids.map((id) => ({
+      id,
+      source: "github-actions",
+      file: ".github/workflows/ci.yml",
+      name: id,
+      needs: [],
+      triggers: [],
+      matrix: [],
+      steps: [],
+      unsupported: []
+    }))
+  })
+
+  prop(
+    "unknownJobs names each id the inventory lacks once",
+    Arbitrary.all({
+      known: Arbitrary.array(pick(names), { maxLength: 6 }),
+      asked: Arbitrary.array(pick(names), { maxLength: 8 })
+    }),
+    ({ asked, known }) => {
+      const inventory = inventoryOf(known)
+      const unknown = CommandFile.unknownJobs(inventory, asked)
+      const sentence = CommandFile.unknownJobsSentence(inventory, unknown)
+      return unique(unknown) && subset(unknown, asked) && unknown.every((id) => !known.includes(id)) &&
+        asked.every((id) => known.includes(id) || unknown.includes(id)) &&
+        printable(sentence.replaceAll("constructor", "")) &&
+        sentence.includes(unknown.length === 1 ? "names no job" : "name no jobs") &&
+        sentence.endsWith(known.length === 0 ? "none" : known.join(", "))
+    }
+  )
+
+  prop(
+    "writtenFiles and declarationOf read only the files apply writes",
+    Arbitrary.array(
+      Arbitrary.all({
+        path: pick([...CommandFile.applyRefuses, "a.ts", "__proto__"]),
+        content: pick(["", "x"]),
+        written: pick<false | undefined>([false, undefined])
+      }),
+      { maxLength: 6 }
+    ),
+    (drawn) => {
+      const files: ReadonlyArray<PartsFile.GeneratedFile> = drawn
+      const written = PartsFile.writtenFiles(files)
+      const declaration = CommandFile.declarationOf(files)
+      const refused = written.filter((file) => (CommandFile.applyRefuses as ReadonlyArray<string>).includes(file.path))
+      return written.every((file) => file.written !== false && files.includes(file)) &&
+        written.length === files.filter((file) => file.written === undefined).length &&
+        same(PartsFile.writtenFiles(written), written, true) && declaration === refused[0]
+    }
+  )
+})
+
+describe("Inventory", () => {
+  const featurePool = [
+    "docker",
+    "left-running",
+    "host-action",
+    "trigger-filter",
+    "fails-here",
+    "other-system",
+    "missing-tool",
+    "secret",
+    "smithers-build",
+    "constructor",
+    "__proto__"
+  ]
+  const runners = [
+    undefined,
+    "ubuntu-latest",
+    "macos-14",
+    "windows-latest",
+    "${{ matrix.os }}",
+    "self-hosted, linux",
+    "x"
+  ]
+  const trees = [
+    ["github-actions", ".github/workflows/ci.yml"],
+    ["justfile", "Justfile"],
+    ["makefile", "sub/Makefile"],
+    ["github-actions", InventoryFile.generatedWorkflow]
+  ] as const
+  const drawn = Arbitrary.all({
+    needs: Arbitrary.array(int(0, 7), { maxLength: 3 }),
+    triggers: pick([[], ["push"], ["pull_request", "schedule"], ["schedule"], ["merge_group"]]),
+    features: Arbitrary.array(pick(featurePool), { maxLength: 2 }),
+    steps: int(0, 2),
+    secrets: int(0, 5),
+    withheld: pick([[], ["CACHE_TOKEN"], ["B", "A"]]),
+    tree: int(0, 9),
+    matrix: pick<ReadonlyArray<Readonly<Record<string, string>>>>([
+      [],
+      [{ os: "ubuntu-latest" }],
+      [{ os: "windows-latest" }, { os: "macos-14" }]
+    ]),
+    runsOn: pick(runners),
+    entry: int(0, 3)
+  })
+  /** An inventory whose jobs need each other, share trees and are blocked in every way; `twins` lets two share an id. */
+  const inventoryWith = (twins: boolean): Arbitrary.Arbitrary<InventoryFile.Inventory> =>
+    Arbitrary.map(
+      Arbitrary.all({
+        jobs: Arbitrary.array(drawn, { maxLength: 8 }),
+        unread: Arbitrary.array(pick(featurePool), { maxLength: 2 })
+      }),
+      ({ jobs, unread }): InventoryFile.Inventory => {
+        const idOf = (index: number, entry: number): string => entry === 0 ? "ci" : `j${twins ? index % 5 : index}`
+        const ids = jobs.map((job, index) => idOf(index, twins || index === 0 ? job.entry : 1))
+        return {
+          version: 1,
+          repository: "r",
+          commit: "0123456789abcdef",
+          toolchains: [],
+          unsupported: unread.map((feature) => ({ feature, detail: "w" })),
+          jobs: jobs.map((job, index): InventoryFile.Job => {
+            const [source, file] = trees[job.tree < 6 ? 0 : job.tree - 6] ?? trees[0]
+            return {
+              id: ids[index] as string,
+              source,
+              file,
+              name: "",
+              needs: job.needs.map((need) => ids[need] ?? `j${need}`),
+              triggers: job.triggers,
+              matrix: job.matrix,
+              steps: Array.from({ length: job.steps }, (_, step) => ({
+                id: `s${step}`,
+                command: "true",
+                cwd: ".",
+                env: {},
+                secrets: job.secrets === 0 ? ["TOKEN"] : [],
+                withheld: job.withheld
+              })),
+              unsupported: job.features.map((feature) => ({ feature, detail: "runs on darwin; d" })),
+              ...(job.runsOn === undefined ? {} : { runsOn: job.runsOn })
+            }
+          })
+        }
+      }
+    )
+  const idsOf = (inventory: InventoryFile.Inventory): ReadonlyArray<string> => inventory.jobs.map((job) => job.id)
+
+  prop(
+    "ci keeps the jobs that can run, notReplayed lists the others with why, and refusal speaks when none is kept",
+    inventoryWith(false),
+    (inventory) => {
+      const kept = InventoryFile.ci(inventory)
+      const left = InventoryFile.notReplayed(inventory)
+      const refusal = InventoryFile.refusal(inventory)
+      const asked = idsOf({ ...inventory, jobs: [...InventoryFile.ciJobs(inventory)] })
+      const withSteps = inventory.jobs.filter((job) => job.steps.length > 0).map((job) => job.id)
+      const byId = new Map(inventory.jobs.map((job) => [job.id, job]))
+      return Schema.is(InventoryFile.Inventory)(kept) && unique(idsOf(kept)) && subset(idsOf(kept), asked) &&
+        kept.jobs.every((job) => InventoryFile.isRunnable(byId.get(job.id) as InventoryFile.Job)) &&
+        kept.jobs.every((job) => unique(job.needs) && subset(job.needs, withSteps)) &&
+        subset(left.map((entry) => entry.job), asked) && left.every((entry) => entry.reasons.length > 0) &&
+        left.every((entry) => !idsOf(kept).includes(entry.job)) &&
+        asked.every((id) =>
+          idsOf(kept).includes(id) || left.some((entry) => entry.job === id) ||
+          (byId.get(id) as InventoryFile.Job).steps.length === 0
+        ) &&
+        (refusal === undefined) === (kept.jobs.length > 0) && (refusal === undefined || printable(refusal)) &&
+        same(InventoryFile.withheldOf(inventory), sorted([...new Set(InventoryFile.withheldOf(inventory))]), true) &&
+        InventoryFile.notRead(inventory).every((entry) => entry.feature !== InventoryFile.smithersBuild) &&
+        (InventoryFile.ownWorkspace(inventory) === undefined) ===
+          !(inventory.unsupported ?? []).some((entry) => entry.feature === InventoryFile.smithersBuild)
+    },
+    300
+  )
+
+  prop(
+    "ci, notReplayed and refusal end on jobs that share an id or need themselves",
+    inventoryWith(true),
+    (inventory) => {
+      const kept = InventoryFile.ci(inventory)
+      const refusal = InventoryFile.refusal(inventory)
+      return Schema.is(InventoryFile.Inventory)(kept) && kept.jobs.length <= inventory.jobs.length &&
+        InventoryFile.notReplayed(inventory).length <= inventory.jobs.length &&
+        (refusal === undefined) === (kept.jobs.length > 0) &&
+        [...InventoryFile.treeOrder(inventory.jobs).values()].every((ids) => unique(ids))
+    },
+    300
+  )
+
+  prop(
+    "a job kept is kept when docker is allowed and when programs are kept running",
+    inventoryWith(false),
+    (inventory) => {
+      const kept = idsOf(InventoryFile.ci(inventory))
+      const docker = InventoryFile.allowingDocker(inventory)
+      const programs = InventoryFile.keepingPrograms(inventory)
+      const linux = InventoryFile.keepingPrograms(inventory, InventoryFile.keptOnRunner)
+      return subset(kept, idsOf(InventoryFile.ci(docker))) && subset(kept, idsOf(InventoryFile.ci(programs))) &&
+        subset(idsOf(InventoryFile.ci(linux)), idsOf(InventoryFile.ci(programs))) &&
+        docker.jobs.every((job) => job.unsupported.every((entry) => entry.feature !== InventoryFile.docker)) &&
+        programs.jobs.every((job) => job.unsupported.every((entry) => entry.feature !== InventoryFile.leftRunning)) &&
+        same(idsOf(docker), idsOf(inventory), true)
+    }
+  )
+
+  prop(
+    "a job that failed here is not kept, and a job that did not is as it was",
+    Arbitrary.all({
+      inventory: inventoryWith(false),
+      at: int(0, 7),
+      whole: boolean
+    }),
+    ({ at, inventory, whole }) => {
+      const job = inventory.jobs[at]
+      const untouched = InventoryFile.withoutFailedHere(inventory, [{ job: "no such job", reason: "r" }])
+      if (job === undefined) return same(untouched, inventory, true)
+      const failed = [{ job: job.id, reason: "exit 1", ...(whole ? {} : { variant: job.matrix[0] ?? { os: "none" } }) }]
+      const without = InventoryFile.withoutFailedHere(inventory, failed)
+      const after = without.jobs[at] as InventoryFile.Job
+      const variants = InventoryFile.variantsFailedHere(inventory, failed)
+      const gone = after.unsupported.some((entry) =>
+        entry.feature === InventoryFile.failsHere && entry.detail === "exit 1"
+      )
+      return same(untouched, inventory, true) && same(idsOf(without), idsOf(inventory), true) &&
+        without.jobs.every((other, index) => index === at || other === inventory.jobs[index]) &&
+        (gone ? !idsOf(InventoryFile.ci(without)).includes(job.id) : after.matrix.length === job.matrix.length - 1) &&
+        (whole ? gone && variants.length === 0 : variants.length === (gone ? 0 : 1)) &&
+        Schema.is(InventoryFile.Inventory)(without)
+    }
+  )
+
+  prop(
+    "expand fills the matrix values it has and leaves the rest as written",
+    Arbitrary.all({
+      key: pick(["os", "node-version", "a.b", "__proto__", "constructor"]),
+      value: hostileText,
+      before: hostileText,
+      spaces: pick(["", " ", "  "])
+    }),
+    ({ before, key, spaces, value }) => {
+      const reference = `\${{${spaces}matrix.${key}${spaces}}}`
+      const plain = before.replaceAll("${{", "")
+      const written = `${plain}${reference}${plain}`
+      return InventoryFile.expand(written, { [key]: value }) === `${plain}${value}${plain}` &&
+        InventoryFile.expand(written, {}) === written && InventoryFile.expand(written, { other: "x" }) === written &&
+        InventoryFile.expand(plain, { [key]: value }) === plain
+    }
+  )
+
+  /** Reads one word a POSIX shell takes as quoted text: runs of `'...'` and `\'`. Returns the word and what follows. */
+  const unquoted = (script: string): readonly [word: string, rest: string] | undefined => {
+    let word = ""
+    let at = 0
+    while (at < script.length) {
+      if (script.startsWith("\\'", at)) {
+        word += "'"
+        at += 2
+      } else if (script[at] === "'") {
+        const end = script.indexOf("'", at + 1)
+        if (end === -1) return undefined
+        word += script.slice(at + 1, end)
+        at = end + 1
+      } else break
+    }
+    return [word, script.slice(at)]
+  }
+
+  prop(
+    "script hands a command and a unit to the runner text as one shell word each",
+    Arbitrary.all({
+      command: Arbitrary.flatMap(
+        boolean,
+        (plain) => plain ? pick(["'; rm -rf / #", "a'b''c", "$(id)", "`id`", "\\'", "'\n'"]) : hostileText
+      ),
+      unit: hostileText,
+      from: pick([undefined, "job"]),
+      runner: pick(["run() { :; }", `${InventoryFile.commitNote}\nrun() { :; }`])
+    }),
+    ({ command, from, runner, unit }) => {
+      const step = { command: command === "" ? "x" : command, runner, ...(from === undefined ? {} : { from }) }
+      const written = InventoryFile.script(step, unit)
+      const head = "__smithers_ci_unit="
+      const first = written.startsWith(head) ? unquoted(written.slice(head.length)) : undefined
+      if (first === undefined) return false
+      const middle = `\n__smithers_ci_part=${from === undefined ? "" : "1"}\n${runner}\n${InventoryFile.runnerEntry} `
+      const second = first[1].startsWith(middle) ? unquoted(first[1].slice(middle.length)) : undefined
+      return first[0] === unit && second !== undefined && second[0] === step.command && second[1] === "" &&
+        InventoryFile.script({ command: step.command }) === step.command &&
+        InventoryFile.readsCommit(step) === runner.startsWith(InventoryFile.commitNote) &&
+        !InventoryFile.readsCommit({})
+    }
+  )
+
+  prop(
+    "givenTo gives a step the variables its script names, whatever their names",
+    Arbitrary.all({
+      name: Arbitrary.flatMap(boolean, (plain) => plain ? pick([...InventoryFile.runVariables]) : pick(hostile)),
+      braces: boolean,
+      suffix: pick(["", "_MORE", "9", " x", "/y", "a"]),
+      before: pick(["echo ", "", "$", "${"])
+    }),
+    ({ before, braces, name, suffix }) => {
+      const given = { [name]: "v", OTHER_NAME: "w" }
+      const written = `${before}${braces ? `\${${name}` : `$${name}`}${suffix}`
+      const found = InventoryFile.givenTo(written, given)
+      const names = /^[A-Z0-9_]/.test(suffix)
+      return Object.hasOwn(found, name) === !names && !Object.hasOwn(found, "OTHER_NAME") &&
+        InventoryFile.givenTo(`${InventoryFile.runnerEntry} ${written}`, given) === given &&
+        Object.keys(InventoryFile.givenTo("true", given)).length === 0
+    }
+  )
+
+  prop(
+    "runValues gives a commit one run id, a whole number at or above the base",
+    Arbitrary.all({
+      digits: Arbitrary.array(pick("0123456789abcdef".split("")), { minLength: 40, maxLength: 40 }),
+      count: int(0, 10_000)
+    }),
+    ({ count, digits }) => {
+      const commit = digits.join("")
+      const values = InventoryFile.runValues(commit, count)
+      const id = Number(values.GITHUB_RUN_ID)
+      return /^\d+$/.test(values.GITHUB_RUN_ID) && id >= InventoryFile.runIdBase &&
+        id < InventoryFile.runIdBase + 16 ** 9 &&
+        values.GITHUB_SHA === commit && values.GITHUB_WORKFLOW_SHA === commit &&
+        values.GITHUB_RUN_NUMBER === String(count) &&
+        same(Object.keys(values).sort(), [...InventoryFile.runVariables].sort(), true) &&
+        same(InventoryFile.runValues(commit, count), values, true)
+    }
+  )
+
+  prop(
+    "eventFiles writes each event with its commit and parent in place of the marks",
+    Arbitrary.all({
+      events: Arbitrary.array(Arbitrary.all([pick(["push", "pull_request", "__proto__"]), hostileText]), {
+        maxLength: 3
+      }),
+      parent: pick([undefined, "f".repeat(40)])
+    }),
+    ({ events, parent }) => {
+      const commit = "a".repeat(40)
+      const written = Object.fromEntries(
+        events.map(([event, words]) =>
+          [event, JSON.stringify({ after: InventoryFile.commitMark, before: InventoryFile.parentMark, words })] as const
+        )
+      )
+      const files = InventoryFile.eventFiles(written, commit, parent)
+      return files.length === Object.keys(written).length &&
+        files.every(([name, body]) => {
+          const event = name.slice(0, -".json".length)
+          const read = parse(body) as { readonly after: string; readonly before: string; readonly words: string }
+          return name.endsWith(".json") && body.endsWith("\n") && read.after === commit &&
+            read.before === (parent ?? InventoryFile.noParent) &&
+            read.words === (parse(written[event] as string) as { readonly words: string }).words
+        })
+    }
+  )
+
+  prop(
+    "resultAction reads an action by its name, in any case and at any version",
+    Arbitrary.all({
+      at: int(0, InventoryFile.resultActions.length - 1),
+      upper: boolean,
+      version: pick(["", "@v4", "@main", "@0123abc"])
+    }),
+    ({ at, upper, version }) => {
+      const entry = InventoryFile.resultActions[at] as InventoryFile.ResultAction
+      const uses = `${upper ? entry.action.toUpperCase() : entry.action}${version}`
+      return InventoryFile.resultAction(uses)?.action.toLowerCase() === entry.action.toLowerCase() &&
+        InventoryFile.resultAction(`${entry.action}-x${version}`) === undefined &&
+        InventoryFile.resultAction("") === undefined
+    }
+  )
+
+  prop(
+    "a runner is read from the matrix, and a system from the runner",
+    Arbitrary.all({
+      runsOn: pick(runners),
+      extra: hostileText,
+      variant: pick<Readonly<Record<string, string>>>([
+        {},
+        { os: "ubuntu-latest" },
+        { os: "windows-latest" },
+        { os: "macos-14" }
+      ])
+    }),
+    ({ extra, runsOn, variant }) => {
+      const job: InventoryFile.Job = {
+        id: "j",
+        source: "github-actions",
+        file: "f",
+        name: "",
+        needs: [],
+        triggers: [],
+        matrix: [{ os: "ubuntu-latest" }, { os: "macos-14" }],
+        steps: [],
+        unsupported: [],
+        runners: ["first"],
+        ...(runsOn === undefined ? {} : { runsOn })
+      }
+      const runner = InventoryFile.runnerOf(job, variant)
+      const host = InventoryFile.hostOf(runner)
+      const step: InventoryFile.Step = { id: "s", command: `c ${extra}`, cwd: extra, env: { A: extra }, secrets: [] }
+      return (variant["os"] === "ubuntu-latest"
+        ? runner === "first"
+        : runner === (runsOn === undefined ? undefined : InventoryFile.expand(runsOn, variant))) &&
+        (host === undefined || ["linux", "darwin", "win32"].includes(host)) &&
+        InventoryFile.unknownRunner(runner) === (runner?.includes("${{") ?? false) &&
+        InventoryFile.isSelfHosted(runsOn) === (runsOn === "self-hosted, linux") &&
+        InventoryFile.hostOf(extra) === InventoryFile.hostOf(extra) &&
+        same(InventoryFile.withVariant(step, {}), step, true) &&
+        InventoryFile.reasonsText([
+          { feature: "docker", detail: extra },
+          { feature: extra, detail: "d" },
+          { feature: "docker", detail: extra }
+        ]) ===
+          `docker (${extra})${extra === "docker" ? "" : `, ${extra}`}`
+    }
+  )
+})

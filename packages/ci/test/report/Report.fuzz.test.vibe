@@ -1,0 +1,1084 @@
+/**
+ * Property and fuzz tests of the report: the numbers both renderers print
+ * (`Format`), the terminal text and the HTML page.
+ *
+ * Each property runs with a fixed seed, so a failure reproduces.
+ */
+
+import { describe, expect, it } from "@effect/vitest"
+import * as Arbitrary from "effect/Arbitrary"
+import * as Effect from "effect/Effect"
+import * as Schema from "effect/Schema"
+import { ReplayReport } from "../../src/contract/ReplayReport.vibe"
+import { metrics, type Row } from "../../src/contract/Selection.vibe"
+import * as Format from "../../src/report/Format.vibe"
+import { html, text } from "../../src/report/index.vibe"
+
+/** A seed from a property's name, so each property has its own and keeps it. */
+const seedOf = (name: string): number =>
+  [...name].reduce((hash, character) => (hash * 31 + character.charCodeAt(0)) % 1_000_003, 7)
+
+const assertProperty = <A>(
+  arb: Arbitrary.Arbitrary<A>,
+  predicate: (value: A) => boolean,
+  options: { readonly runs: number; readonly seed: number }
+) => effect {
+  const outcome = try Arbitrary.checkEffect(
+    arb,
+    (value) => Effect.try(() => predicate(value)),
+    options
+  )
+  try Effect.try(() => {
+    if (outcome._tag !== "Passed") {
+      expect.fail(Arbitrary.formatCheckFailure(outcome))
+    }
+    expect(outcome._tag).toBe("Passed")
+  })
+}
+
+const prop = <A>(name: string, arb: Arbitrary.Arbitrary<A>, predicate: (value: A) => boolean, runs = 200): void => {
+  it.live(name, () => assertProperty(arb, predicate, { runs, seed: seedOf(name) }))
+}
+
+/** Explicit cases: every one must hold, and a failure names those that do not. */
+const cases = (name: string, all: () => ReadonlyArray<readonly [string, boolean]>): void => {
+  it.live(name, () =>
+    Effect.try(() => {
+      expect(all().filter(([, ok]) => !ok).map(([label]) => label)).toEqual([])
+    }))
+}
+
+const int = (minimum: number, maximum: number): Arbitrary.Arbitrary<number> =>
+  Arbitrary.schema(
+    Schema.Int.check(Schema.isGreaterThanOrEqualTo(minimum), Schema.isLessThanOrEqualTo(maximum))
+  )
+
+const pick = <A>(values: ReadonlyArray<A>): Arbitrary.Arbitrary<A> =>
+  Arbitrary.map(int(0, values.length - 1), (index) => values[index] as A)
+
+const boolean = Arbitrary.schema(Schema.Boolean)
+
+const maybe = <A>(arb: Arbitrary.Arbitrary<A>): Arbitrary.Arbitrary<A | undefined> =>
+  Arbitrary.flatMap(
+    boolean,
+    (present): Arbitrary.Arbitrary<A | undefined> => present ? arb : Arbitrary.Constant(undefined)
+  )
+
+const list = <A>(arb: Arbitrary.Arbitrary<A>, most: number): Arbitrary.Arbitrary<Array<A>> =>
+  Arbitrary.array(arb, { maxLength: most })
+
+const control = `${String.fromCharCode(0)}${String.fromCharCode(7)}${String.fromCharCode(27)}[2J${
+  String.fromCharCode(0x9b)
+}`
+
+/** Text a repository can hold that a page or a terminal takes for something else. None is empty. */
+const hostile = [
+  "<script>alert(1)</script>",
+  "</script><script>alert(1)</script>",
+  "\" onmouseover=\"alert(1)",
+  "' onfocus='alert(1)",
+  "'",
+  "\"",
+  "&",
+  "&lt;b&gt;",
+  "javascript:alert(1)",
+  "<!-- ",
+  "--><img src=x onerror=alert(1)>",
+  "<style>",
+  "</style>",
+  "<p>",
+  "</td></tr></table>",
+  "<b>x</b>",
+  "<a href=\"//x\">",
+  "]]>",
+  "$&",
+  "{}",
+  "a\nb",
+  "a\r\nforged line",
+  `nul${control}`,
+  `bidi${String.fromCharCode(0x202e)}txt.exe${String.fromCharCode(0x2066)}`,
+  `wide${String.fromCodePoint(0x1f600)}${String.fromCodePoint(0x1f600)}${String.fromCodePoint(0x1f600)}`,
+  " ",
+  ".",
+  "constructor",
+  "__proto__",
+  "plain",
+  "x".repeat(300)
+]
+
+const words = pick(hostile)
+
+/** Times and ratios at every edge a report can hold and still be a measurement of something. */
+const numbers = [
+  0,
+  -0,
+  1e-9,
+  0.094,
+  0.5,
+  0.96,
+  1,
+  6,
+  99.96,
+  949.5,
+  950,
+  59_949.99,
+  59_950,
+  3_599_499,
+  3_599_500,
+  86_400_000,
+  Number.MAX_SAFE_INTEGER,
+  -1,
+  -Number.MAX_SAFE_INTEGER
+]
+
+const number = pick(numbers)
+
+const counts = [0, 1, 2, 7, Number.MAX_SAFE_INTEGER]
+
+/** The strings a schema fixes, which stay as they are. */
+const fixed: ReadonlySet<string> = new Set([
+  "normal",
+  "fast",
+  "pass",
+  "fail",
+  "flaky",
+  "skipped",
+  "predicted-safe",
+  "smthrs-observe",
+  "strace",
+  "none"
+])
+
+const walk = (
+  value: unknown,
+  string: (found: string) => unknown,
+  numeric: (found: number, key: string) => unknown,
+  key = ""
+): unknown => {
+  if (typeof value === "string") return string(value)
+  if (typeof value === "number") return numeric(value, key)
+  if (Array.isArray(value)) return value.map((item) => walk(item, string, numeric, key))
+  if (typeof value === "object" && value !== null) {
+    return Object.fromEntries(Object.entries(value).map(([name, item]) => [name, walk(item, string, numeric, name)]))
+  }
+  return value
+}
+
+const valid = (arb: Arbitrary.Arbitrary<unknown>): Arbitrary.Arbitrary<ReplayReport> =>
+  Arbitrary.filter(arb, Schema.is(ReplayReport))
+
+/** A report from the schema, with its strings and numbers replaced by hostile text and edge numbers. */
+const spoiled = valid(Arbitrary.map(
+  Arbitrary.all({
+    report: Arbitrary.schema(ReplayReport),
+    picks: Arbitrary.array(int(0, 100_000), { minLength: 31, maxLength: 31 })
+  }),
+  ({ picks, report }): unknown => {
+    let at = 0
+    const next = (): number => picks[at++ % picks.length] as number
+    const found = walk(
+      report,
+      (string) => {
+        const choice = next()
+        return fixed.has(string) || choice % 3 === 0 ? string : hostile[choice % hostile.length]
+      },
+      (value, key) => {
+        const choice = next()
+        if (key === "version") return value
+        return Number.isInteger(value) ? counts[choice % counts.length] : numbers[choice % numbers.length]
+      }
+    )
+    return found
+  }
+))
+
+const compact = (value: unknown): unknown => {
+  if (Array.isArray(value)) return value.map(compact)
+  if (typeof value !== "object" || value === null) return value
+  return Object.fromEntries(
+    Object.entries(value).flatMap(([key, item]) => item === undefined ? [] : [[key, compact(item)]])
+  )
+}
+
+const failure = Arbitrary.all({
+  step: pick(["build", "test", "<b>x</b>", "a\nb"]),
+  reason: words,
+  exitCode: pick([undefined, 1, 127]),
+  command: maybe(words),
+  fix: maybe(words)
+})
+
+const stepNotReused = Arbitrary.all({
+  step: pick(["test", "test (18)", "test (20)", "lint", "<p>"]),
+  reason: pick(["src/a.ts changed", "it opened a network connection", "a\nb"]),
+  kept: boolean,
+  variantOf: pick([undefined, "test", "<style>"]),
+  command: maybe(pick(["npm test", "<!-- "])),
+  fix: maybe(words)
+})
+
+const totals = Arbitrary.all({
+  ok: boolean,
+  wallMs: number,
+  workMs: number,
+  counts: Arbitrary.all({ hit: int(0, 2), ran: int(0, 1), failed: int(0, 1), skipped: int(0, 1) }),
+  failures: maybe(list(failure, 2)),
+  cpuMs: maybe(number),
+  notReused: maybe(list(stepNotReused, 3))
+})
+
+const verdict = pick(["pass", "fail", "flaky", "skipped"] as const)
+
+const mismatch = Arbitrary.all({
+  label: words,
+  mode: pick(["normal", "fast"] as const),
+  baseline: verdict,
+  got: verdict,
+  cause: maybe(words)
+})
+
+const commit = Arbitrary.all({
+  commit: pick(["a1b2c3d4e5f6a7b8c9d0", "<style>", "<b>x</b>", "'\"&<>", "a\nb", ...hostile]),
+  changedFiles: pick(counts),
+  baseline: totals,
+  normal: totals,
+  mismatches: list(mismatch, 2),
+  fast: maybe(totals),
+  skipped: maybe(list(
+    Arbitrary.all({
+      label: words,
+      skipReason: Arbitrary.Constant("predicted-safe" as const),
+      score: maybe(number),
+      reason: pick([undefined, "", "docs only", "<b>x</b>"])
+    }),
+    7
+  )),
+  model: maybe(Arbitrary.all({ ms: number, questions: maybe(pick(counts)) }))
+})
+
+const reason = Arbitrary.all({
+  feature: pick(["docker", "secret", "other-system", "needs", "uses", "constructor", "__proto__", "<b>x</b>"]),
+  detail: pick([
+    "",
+    "runs docker",
+    "j runs on darwin; x",
+    "j runs on constructor; x",
+    "s receives <script>",
+    ...hostile
+  ])
+})
+
+const runnerStep = Arbitrary.all({ job: words, action: words, why: words })
+
+/** A report built field by field, so every line of a renderer is reached; `settled` makes it one a replay writes. */
+const built = valid(Arbitrary.map(
+  Arbitrary.all({
+    settled: boolean,
+    head: Arbitrary.all({
+      repository: words,
+      commits: list(commit, 4),
+      baselineWallMs: number,
+      normalWallMs: number,
+      speedup: number,
+      speedupCommits: pick([undefined, 0, 1, 2, 5]),
+      mismatches: pick([0, 0, 1, 3, -1]),
+      fastWallMs: maybe(number),
+      jobs: maybe(Arbitrary.all({ replayed: pick(counts), total: pick(counts) })),
+      trialMs: maybe(number),
+      appliedMs: maybe(number),
+      reruns: maybe(Arbitrary.all({ count: pick(counts), ms: number })),
+      firstRun: maybe(
+        Arbitrary.all({ commit: words, baselineMs: number, normalMs: maybe(number), fastMs: maybe(number) })
+      ),
+      startCost: maybe(Arbitrary.all({ commitMs: number, startMs: number }))
+    }),
+    tail: Arbitrary.all({
+      cold: maybe(words),
+      baselineCpuMs: maybe(number),
+      normalCpuMs: maybe(number),
+      fastCpuMs: maybe(number),
+      selection: maybe(Arbitrary.all({
+        rows: pick(counts),
+        selected: pick(counts),
+        failures: pick(counts),
+        failedChanges: pick(counts),
+        selectionRate: number,
+        testRecall: maybe(number),
+        changeRecall: maybe(number)
+      })),
+      model: maybe(Arbitrary.all({ ms: number, questions: maybe(pick(counts)) })),
+      fastNotMeasured: maybe(words),
+      flaky: maybe(pick(counts)),
+      notReplayed: maybe(list(Arbitrary.all({ job: words, reasons: list(reason, 3) }), 3)),
+      notRead: maybe(list(reason, 3)),
+      notReplayedCommits: maybe(
+        list(Arbitrary.all({ commit: words, reason: pick(["", "it had no CI\njob a", ...hostile]) }), 2)
+      ),
+      toolVersions: maybe(list(Arbitrary.all({ job: words, tool: words, asked: words, found: words }), 2)),
+      withheld: maybe(list(words, 2)),
+      targets: maybe(list(words, 5)),
+      diskHeldBytes: maybe(pick(counts)),
+      stopped: maybe(words),
+      recorder: maybe(Arbitrary.all({ name: pick(["smthrs-observe", "strace", "none"] as const), why: maybe(words) })),
+      runnerSteps: maybe(list(runnerStep, 2)),
+      asked: maybe(Arbitrary.all({
+        jobs: list(words, 2),
+        needed: list(Arbitrary.all({ job: words, for: list(words, 2) }), 2),
+        notAsked: pick(counts)
+      })),
+      stepsLeftOut: maybe(list(runnerStep, 2))
+    })
+  }),
+  ({ head, settled, tail }): unknown => {
+    const differs = head.commits.some((entry) =>
+      entry.mismatches.some((found) => found.mode === "normal" && found.cause === undefined)
+    )
+    const measured = differs ? 0 : head.commits.filter((entry) => entry.baseline.ok).length
+    const found = compact({
+      version: 1,
+      ...head,
+      ...tail,
+      ...(settled ? { speedupCommits: measured, speedup: measured === 0 ? 0 : head.speedup } : {})
+    })
+    return found
+  }
+))
+
+const reports = Arbitrary.flatMap(int(0, 2), (kind) => kind === 0 ? spoiled : built)
+
+/** True when nothing a program printed by accident is in what a renderer wrote. */
+const printable = (written: string): boolean => !/undefined|\[object |NaN|Infinity|function \w*\(/.test(written)
+
+const escaped = (value: string): string =>
+  value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll("\"", "&quot;").replaceAll(
+    "'",
+    "&#39;"
+  )
+
+const elements: ReadonlySet<string> = new Set([
+  "html",
+  "head",
+  "meta",
+  "title",
+  "style",
+  "body",
+  "main",
+  "h1",
+  "h2",
+  "p",
+  "div",
+  "span",
+  "table",
+  "thead",
+  "tbody",
+  "tr",
+  "th",
+  "td",
+  "code",
+  "ul",
+  "li",
+  "br"
+])
+
+const once = ["html", "head", "title", "style", "body", "main", "h1"]
+
+const attributes: ReadonlySet<string> = new Set([
+  "lang",
+  "charset",
+  "name",
+  "content",
+  "http-equiv",
+  "class",
+  "role",
+  "aria-label",
+  "title",
+  "style",
+  "scope",
+  "colspan"
+])
+
+const bare = /&(?!(?:amp|lt|gt|quot|#39);)/
+
+/**
+ * What is wrong with a page as markup, or nothing. A page is right when it is
+ * the tags the renderer writes and no other: each tag and attribute is one of
+ * its own, each attribute's value is quoted and closed, every element closes
+ * in order, and text holds no `<`, no `>` and no `&` that is not one of the
+ * five entities. Text from a repository that reached the page as markup breaks
+ * one of these.
+ */
+const problemOf = (page: string): string | undefined => {
+  const doctype = "<!doctype html>\n"
+  if (!page.startsWith(doctype)) return "no doctype"
+  const tag = /<(\/?)([a-z][a-z0-9]*)((?: [a-z-]+="[^"<>]*")*)>/y
+  const open: Array<string> = []
+  const seen = new Map<string, number>()
+  let at = doctype.length
+  while (at < page.length) {
+    const next = page.indexOf("<", at)
+    const between = page.slice(at, next === -1 ? page.length : next)
+    if (between.includes(">")) return `a > in text at ${at}`
+    if (bare.test(between)) return `an & that is no entity at ${at}`
+    if (next === -1) break
+    tag.lastIndex = next
+    const found = tag.exec(page)
+    if (found === null) return `not a tag at ${next}: ${page.slice(next, next + 60)}`
+    const [whole, closes, name, given] = found as unknown as readonly [string, string, string, string]
+    if (!elements.has(name)) return `an element the page does not write: ${name}`
+    at = next + whole.length
+    if (closes === "/") {
+      if (given !== "" || open.pop() !== name) return `${name} closes out of order at ${next}`
+      continue
+    }
+    for (const [, attribute, value] of given.matchAll(/ ([a-z-]+)="([^"]*)"/g)) {
+      if (!attributes.has(attribute as string)) return `an attribute the page does not write: ${attribute}`
+      if (bare.test(value as string)) return `an & that is no entity in ${attribute}`
+      if (attribute === "style" && !/^width:[-\w.+]+%$/.test(value as string)) {
+        return `a style that is no width: ${value}`
+      }
+    }
+    seen.set(name, (seen.get(name) ?? 0) + 1)
+    if (name === "meta" || name === "br") continue
+    if (name === "style") {
+      const end = page.indexOf("</style>", at)
+      if (end === -1 || page.slice(at, end).includes("<")) return "a style that does not end"
+      at = end + "</style>".length
+      continue
+    }
+    open.push(name)
+  }
+  if (open.length > 0) return `left open: ${open.join(" ")}`
+  const twice = once.find((name) => seen.get(name) !== 1)
+  return twice === undefined ? undefined : `${twice} is there ${seen.get(twice) ?? 0} times`
+}
+
+const linesOf = (written: string): ReadonlyArray<string> => written.split("\n")
+
+const headline = /^-?[\d.e+-]+× (?:faster|slower)(?: over .*)?$/
+
+const same = (one: unknown, other: unknown): boolean => {
+  if (Array.isArray(one) || Array.isArray(other)) {
+    return Array.isArray(one) && Array.isArray(other) && one.length === other.length &&
+      one.every((item, index) => same(item, other[index]))
+  }
+  if (typeof one === "object" && one !== null && typeof other === "object" && other !== null) {
+    const keys = Object.keys(one).sort()
+    const others = Object.keys(other).sort()
+    return keys.length === others.length &&
+      keys.every((key, index) => key === others[index] && same(Reflect.get(one, key), Reflect.get(other, key)))
+  }
+  return Object.is(one, other)
+}
+
+const copy = (value: unknown): unknown => walk(value, (string) => string, (found) => found)
+
+describe("the renderers, on any report", () => {
+  prop(
+    "write text and a page for every report the schema allows, the same each time, and change nothing",
+    Arbitrary.schema(ReplayReport),
+    (report) => {
+      const before = copy(report)
+      const written = text(report)
+      const page = html(report)
+      return typeof written === "string" && page.endsWith("</html>\n") && written === text(report) &&
+        page === html(report) &&
+        same(before, report) && problemOf(page) === undefined
+    },
+    150
+  )
+
+  prop(
+    "print no NaN, Infinity, undefined or object at any edge number",
+    reports,
+    (report) =>
+      printable(text(report)) && printable(html(report)) && text(report) === text(report) &&
+      html(report) === html(report),
+    400
+  )
+
+  prop("write a page that is the renderer's own markup, whatever text the report holds", reports, (report) => {
+    const page = html(report)
+    return problemOf(page) === undefined && page.includes(`<h1>${escaped(report.repository)}</h1>`) &&
+      page.includes(`<title>${escaped(report.repository)} · Smithers CI</title>`) &&
+      page.split(
+        "<meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'; style-src 'unsafe-inline'\">"
+      ).length === 2 &&
+      !/<script|<img|<a |<!--|<\/script/i.test(page)
+  }, 250)
+
+  prop(
+    "write text with no control character",
+    reports,
+    (report) => !/\p{Cc}/u.test(text(report).replaceAll("\n", "")),
+    400
+  )
+
+  // The break becomes a character no name holds, so two names that differ only by it still differ.
+  prop("write no more lines of text for a line break in a name", reports, (report) => {
+    const oneLine = walk(report, (string) => string.replaceAll("\n", String.fromCharCode(0xe000)), (found) => found)
+    return Schema.is(ReplayReport)(oneLine) && linesOf(text(oneLine)).length === linesOf(text(report)).length
+  }, 250)
+})
+
+describe("the speedup, on any report", () => {
+  prop(
+    "is not claimed where normal mode gave another result than the CI, or no commit is covered",
+    reports,
+    (report) => {
+      const written = text(report)
+      const page = html(report)
+      const none = Format.normalDiffers(report) || report.speedupCommits === 0 || report.commits.length === 0
+      const claimed = linesOf(written).some((line) => headline.test(line)) || page.includes("class=\"hero\"") ||
+        page.includes("class=\"bars\"")
+      if (!none) return true
+      if (report.commits.length === 0) return !claimed && written.endsWith("0 commits")
+      const why = Format.normalDiffers(report) ? Format.noSpeedupMismatch : Format.noSpeedup
+      return !claimed && linesOf(written).includes(why) && page.includes(`<p class="alert" role="alert">${why}</p>`) &&
+        Format.speedupCommits(report) === 0 && (!Format.normalDiffers(report) || Format.modelCost(report) === undefined)
+    },
+    300
+  )
+
+  prop("reads the same in the text and on the page, and says slower when it is", reports, (report) => {
+    const written = text(report)
+    const page = html(report)
+    if (report.commits.length === 0 || Format.speedupCommits(report) === 0) return !page.includes("class=\"hero\"")
+    const said = Format.speedup(report.speedup)
+    const slower = report.speedup > 0 && report.speedup < 1
+    return page.split(`<p class="hero">${said}</p>`).length === 2 && page.split("class=\"hero\"").length === 2 &&
+      linesOf(written).includes(`${said} ${Format.coverage(report)}`.trimEnd()) &&
+      said.endsWith(slower ? " slower" : " faster") &&
+      (report.speedup <= 0 || Number.parseFloat(said) >= 1 || !slower && report.speedup >= 0.95)
+  }, 300)
+
+  prop("stands under the mismatches, counted the same in the text and on the page", reports, (report) => {
+    const written = text(report)
+    const page = html(report)
+    const listed = report.commits.reduce((sum, entry) => sum + entry.mismatches.length, 0)
+    const found = Math.max(report.mismatches, listed)
+    const alert = `<p class="alert" role="alert">${Format.mismatches(found)}</p>`
+    return written.startsWith("✗ ") === (found > 0) && page.includes(alert) === (found > 0) &&
+      (found <= 0 || written.startsWith(`✗ ${Format.mismatches(found)}\n`) ||
+        written === `✗ ${Format.mismatches(found)}`) &&
+      (report.commits.length === 0 ||
+        written.includes(` · ${Format.mismatches(found)}`) && page.includes(` · ${Format.mismatches(found)}`))
+  }, 300)
+
+  prop("lists every mismatch and every failed step with its commit", built, (report) => {
+    const written = linesOf(text(report))
+    const page = html(report)
+    if (report.commits.length === 0) return true
+    const clean = (value: string): string => value.replace(/\p{Cc}/gu, String.fromCharCode(0xfffd))
+    return report.commits.every((entry) =>
+      entry.mismatches.every((found) =>
+        written.includes(
+          [
+            clean(Format.shortCommit(entry.commit)),
+            found.mode.padEnd(6),
+            clean(found.label),
+            `${found.baseline} → ${found.got}`
+          ].join("  ")
+        ) &&
+        page.includes(
+          `<li><code>${
+            escaped(found.label)
+          }</code> <span class="sub">${found.mode}: ${found.baseline} → ${found.got}</span>`
+        )
+      ) &&
+      [...(entry.baseline.failures ?? []), ...(entry.normal.failures ?? []), ...(entry.fast?.failures ?? [])].every((
+        failed
+      ) =>
+        written.some((line) =>
+          line.startsWith(`${clean(Format.shortCommit(entry.commit))}  `) && line.includes(`  ${clean(failed.step)}  `)
+        ) &&
+        page.includes(`<li><code>${escaped(failed.step)}</code> <span class="sub">`)
+      )
+    )
+  }, 300)
+})
+
+describe("Format", () => {
+  const time = Arbitrary.map(
+    Arbitrary.all({ digits: int(0, 9_999_999), scale: pick([0.0001, 0.1, 1, 60, 1000, 3600, 1_000_000]) }),
+    ({ digits, scale }) => digits * scale
+  )
+
+  /** What a duration says, in milliseconds, and how far from the time it may be; nothing for one that is not written as one. */
+  const read = (written: string): readonly [ms: number, within: number] | undefined => {
+    const short = /^(\d+)ms$/.exec(written)
+    if (short !== null) return [Number(short[1]), 0.5]
+    const seconds = /^(\d+\.\d)s$/.exec(written)
+    if (seconds !== null) return [Number(seconds[1]) * 1000, 50]
+    const minutes = /^(\d+)m (\d\d)s$/.exec(written)
+    if (minutes !== null) {
+      return Number(minutes[2]) < 60 ? [(Number(minutes[1]) * 60 + Number(minutes[2])) * 1000, 500] : undefined
+    }
+    const hours = /^(\d+)h (\d\d)m$/.exec(written)
+    if (hours !== null) {
+      return Number(hours[2]) < 60 ? [(Number(hours[1]) * 60 + Number(hours[2])) * 60_000, 30_500] : undefined
+    }
+    return undefined
+  }
+
+  prop(
+    "duration is one of four forms, within half its last digit of the time, and no shorter for a longer time",
+    Arbitrary.all({
+      one: time,
+      other: time
+    }),
+    ({ one, other }) => {
+      const [less, more] = one <= other ? [one, other] : [other, one]
+      const first = read(Format.duration(less))
+      const second = read(Format.duration(more))
+      const near = (ms: number, found: readonly [number, number]): boolean =>
+        Math.abs(found[0] - ms) <= found[1] * (1 + 1e-9) + 1e-6
+      return first !== undefined && second !== undefined && near(less, first) && near(more, second) &&
+        first[0] <= second[0] &&
+        !Format.duration(less).startsWith("60.0s") && Format.duration(less) !== "1000ms"
+    },
+    300
+  )
+
+  cases("duration at its edges", () => [
+    ["0", Format.duration(0) === "0ms"],
+    ["-0", Format.duration(-0) === "0ms"],
+    ["1e-9", Format.duration(1e-9) === "0ms"],
+    ["949.4", Format.duration(949.4) === "949ms"],
+    ["950", Format.duration(950) === "1.0s"],
+    ["59 949", Format.duration(59_949) === "59.9s"],
+    ["59 950", Format.duration(59_950) === "1m 00s"],
+    ["3 599 499", Format.duration(3_599_499) === "59m 59s"],
+    ["3 599 500", Format.duration(3_599_500) === "1h 00m"],
+    ["a day", Format.duration(86_400_000) === "24h 00m"],
+    ["the largest whole number", Format.duration(Number.MAX_SAFE_INTEGER) === "2501999792h 59m"],
+    ["below zero", Format.duration(-1) === "-1ms"]
+  ])
+
+  const ratioOf = Arbitrary.map(
+    Arbitrary.all({ digits: int(1, 999_999), scale: pick([1e-9, 1e-6, 1e-4, 0.01, 1, 1000]) }),
+    ({ digits, scale }) => digits * scale
+  )
+
+  prop("times is a number above zero for a ratio above zero, near the ratio", ratioOf, (ratio) => {
+    const written = Format.times(ratio)
+    const found = Number(written.slice(0, -1))
+    const within = ratio < 0.095 ? ratio * 0.06 : ratio < 100 ? 0.05 : 0.5
+    return written.endsWith("×") && Number.isFinite(found) && found > 0 &&
+      Math.abs(found - ratio) <= within * (1 + 1e-9) &&
+      printable(written)
+  }, 300)
+
+  prop("speedup says faster at one and above, slower below, and never less than one time", ratioOf, (ratio) => {
+    const written = Format.speedup(ratio)
+    return written.endsWith(ratio < 1 ? "× slower" : "× faster") && Number.parseFloat(written) >= 1 &&
+      (ratio < 1 || written === `${Format.times(ratio)} faster`) && printable(written)
+  }, 300)
+
+  cases("times and speedup at their edges", () => [
+    ["0", Format.times(0) === "0.0×"],
+    ["0.038", Format.times(0.038) === "0.038×"],
+    ["0.094", Format.times(0.094) === "0.094×"],
+    ["0.096", Format.times(0.096) === "0.1×"],
+    ["99.94", Format.times(99.94) === "99.9×"],
+    ["100", Format.times(100) === "100×"],
+    ["1e-9", Format.times(1e-9) === "1e-9×"],
+    ["6 times faster", Format.speedup(6) === "6.0× faster"],
+    ["twice slower", Format.speedup(0.5) === "2.0× slower"],
+    ["26 times slower", Format.speedup(1 / 26) === "26.0× slower"],
+    ["the same", Format.speedup(1) === "1.0× faster"],
+    [
+      "ratio of no time",
+      Format.ratio(5, 0) === undefined && Format.ratio(5, -1) === undefined && Format.ratio(0, 0) === undefined
+    ],
+    ["ratio", Format.ratio(6, 2) === 3 && Format.ratio(0, 2) === 0]
+  ])
+
+  const eighths = ["", "▏", "▎", "▍", "▌", "▋", "▊", "▉"]
+  const drawn = (bar: string): number => {
+    const full = bar.split("█").length - 1
+    const rest = bar.replaceAll("█", "")
+    return eighths.includes(rest) ? full * 8 + eighths.indexOf(rest) : -1
+  }
+
+  prop(
+    "bar is as long as its share, never wider than its width, and there for any time above zero",
+    Arbitrary.all({
+      max: pick([1e-9, 1, 7, 1000, 59_950, Number.MAX_SAFE_INTEGER]),
+      one: int(0, 1000),
+      other: int(0, 1000),
+      width: int(1, 40)
+    }),
+    ({ max, one, other, width }) => {
+      const [less, more] = one <= other ? [one, other] : [other, one]
+      const first = drawn(Format.bar(max * less / 1000, max, width))
+      const second = drawn(Format.bar(max * more / 1000, max, width))
+      return first >= 0 && second <= width * 8 && first <= second && (less === 0) === (first === 0) &&
+        [...Format.bar(max * more / 1000, max, width)].length <= width &&
+        Format.bar(max, max, width) === "█".repeat(width) &&
+        Format.bar(-max, max, width) === "" && Format.bar(max, 0, width) === "▏" && Format.bar(0, 0, width) === ""
+    },
+    250
+  )
+
+  prop(
+    "the small parts of a line read as they are counted",
+    Arbitrary.all({ count: pick([...counts, -1]), words, more: list(words, 9) }),
+    ({
+      count,
+      more,
+      words
+    }) => {
+      const none = count === 0
+      return Format.count(count, "job") === `${count} job${count === 1 ? "" : "s"}` &&
+        Format.mismatches(count) === `${count} mismatch${count === 1 ? "" : "es"}` &&
+        (Format.leftOut(count) === "") === none && (Format.flaky(count) === "") === none &&
+        (Format.unread(count) === "") === none &&
+        (Format.commitsLeftOut(count) === "") === none && Format.shortCommit(words) === words.slice(0, 7) &&
+        !Format.firstLine(words).includes("\n") && words.startsWith(Format.firstLine(words)) &&
+        Format.stoppedEarly(words).endsWith(".") && Format.stoppedEarly(words).length >= words.length + 1 &&
+        Format.verdict(none) === (none ? "pass" : "fail") && Format.percent(0.5) === "50%" &&
+        Format.ownTargets(more) ===
+          `own targets  ${more.slice(0, 3).join(" ")}${more.length > 3 ? ` +${more.length - 3}` : ""}` &&
+        Format.skippedLabels(more) ===
+          `${more.slice(0, 5).join(", ")}${more.length > 5 ? ` and ${more.length - 5} more` : ""}` &&
+        Format.leftEmpty(more).endsWith(more.length === 1 ? "it opens" : "they open") &&
+        Format.failureText({ step: "s", reason: words }) === words &&
+        Format.failureText({ step: "s", reason: words, exitCode: count }) === `exit ${count}: ${words}`
+    }
+  )
+
+  prop(
+    "every line of times and counts is printable at any edge number",
+    Arbitrary.all({
+      one: number,
+      other: number,
+      third: maybe(number),
+      count: pick(counts),
+      questions: maybe(pick(counts))
+    }),
+    ({ count, one, other, questions, third }) =>
+      [
+        Format.duration(one),
+        Format.times(one),
+        Format.speedup(one),
+        Format.percent(one),
+        Format.diskHeld(count),
+        Format.trialTime(one),
+        Format.appliedTime(one),
+        Format.rerunTime({ count, ms: one }),
+        Format.firstRunTime({
+          commit: "c",
+          baselineMs: one,
+          ...(third === undefined ? {} : { normalMs: third, fastMs: other })
+        }),
+        Format.modelTime({ ms: one, ...(questions === undefined ? {} : { questions }) }),
+        Format.startCost({ commitMs: one, startMs: other }, []),
+        Format.bar(Math.min(one, other), Math.max(one, other), 24)
+      ].every(printable) && (Format.ratio(one, other) === undefined) === (other <= 0)
+  )
+
+  const skip = Arbitrary.all({
+    label: words,
+    skipReason: Arbitrary.Constant("predicted-safe" as const),
+    reason: pick([undefined, "", "docs only", "a\nb"])
+  })
+
+  prop("skipGroups holds every skip once, by commit and reason, in order", reports, (report) => {
+    const groups = Format.skipGroups(report.commits)
+    const skipped = report.commits.flatMap((entry) => entry.skipped ?? [])
+    return groups.reduce((sum, group) => sum + group.labels.length, 0) === skipped.length &&
+      groups.every((group) => group.labels.length > 0) &&
+      same(groups.flatMap((group) => [...group.labels]).sort(), skipped.map((entry) => entry.label).sort()) &&
+      report.commits.every((entry, index) => {
+        const here = (entry.skipped ?? []).map((found) => found.reason ?? "")
+        const own = Format.skipGroups([entry])
+        return own.length === new Set(here).size && same(own.map((group) => group.reason), [...new Set(here)]) &&
+          own.every((group) => group.commit === entry.commit) && index >= 0
+      })
+  }, 300)
+
+  prop(
+    "failedSteps names every failed step once, with each way it failed in",
+    reports,
+    (report) =>
+      report.commits.every((entry) => {
+        const steps = Format.failedSteps(entry)
+        const ways = [["baseline", entry.baseline], ["normal", entry.normal], ["fast", entry.fast]] as const
+        const keyOf = (
+          failed: { readonly step: string; readonly exitCode?: number; readonly reason: string }
+        ): string => `${failed.step}\n${typeof failed.exitCode}\n${failed.exitCode ?? failed.reason}`
+        return new Set(steps.map((found) => keyOf(found.failure))).size === steps.length &&
+          steps.every((found) => found.ways.length > 0 && new Set(found.ways).size === found.ways.length) &&
+          ways.every(([way, run]) =>
+            (run?.failures ?? []).every((failed) =>
+              steps.some((found) => keyOf(found.failure) === keyOf(failed) && found.ways.includes(way))
+            )
+          ) &&
+          steps.every((found) =>
+            found.ways.every((way) =>
+              ways.some(([name, run]) =>
+                name === way && (run?.failures ?? []).some((failed) => keyOf(failed) === keyOf(found.failure))
+              )
+            )
+          )
+      }),
+    300
+  )
+
+  prop(
+    "notReused counts each step's commits, puts a step never kept first, and names every line",
+    reports,
+    (report) => {
+      const lines = Format.notReused(report)
+      const all = report.commits.flatMap((entry) => entry.normal.notReused ?? [])
+      return lines.every((line) => line.commits >= 1 && line.commits <= report.commits.length && line.variants >= 1) &&
+        lines.reduce((sum, line) => sum + line.variants, 0) <= all.length &&
+        (all.length === 0) === (lines.length === 0) &&
+        lines.every((line, index) => {
+          const next = lines[index + 1]
+          return next === undefined || Number(line.kept) < Number(next.kept) ||
+            (line.kept === next.kept && line.commits >= next.commits)
+        }) &&
+        lines.every((line) => {
+          const written = Format.notReusedText(line, report.commits.length)
+          return written.startsWith(`${line.commits} of ${Format.count(report.commits.length, "commit")}  `) &&
+            written.includes(line.reason) && (line.kept || written.includes("never reused: ")) &&
+            (line.variants === 1
+              ? written.includes(`  ${line.step}  `)
+              : written.includes(` (${line.variants} variants)  `)) &&
+            !written.includes("undefined")
+        })
+    },
+    250
+  )
+
+  const row = Arbitrary.map(
+    Arbitrary.all({ commit: pick(["c1", "c2", "c3"]), target: pick(["a", "b", "c", "d"]), failed: boolean }),
+    (entry): Row => ({
+      ...entry,
+      features: {
+        extensions: [],
+        fileChanges: { d3: 0, d14: 0, d56: 0 },
+        failureRates: { d7: 0, d14: 0, d28: 0, d56: 0 },
+        project: "",
+        testCount: 0,
+        graphDistance: 0
+      },
+      attempts: [],
+      flaky: false
+    })
+  )
+
+  prop(
+    "selectionRows gives back the counts the metrics were made of",
+    Arbitrary.all({
+      rows: list(row, 30),
+      selected: list(Arbitrary.all([pick(["c1", "c2", "c3"]), list(pick(["a", "b", "c", "d"]), 4)]), 4)
+    }),
+    ({ rows, selected }) => {
+      const chosen = new Map(selected)
+      const found = metrics(rows, chosen)
+      const lines = Format.selectionRows(found)
+      const caught = rows.filter((entry) => entry.failed && (chosen.get(entry.commit) ?? []).includes(entry.target))
+      const share = (written: string): boolean => /^\d+%$/.test(written) && Number.parseInt(written, 10) <= 100
+      const last = lines.at(-1)
+      return lines.length === (found.failures === 0 ? 1 : 3) &&
+        lines.every((line) => share(line.share) && printable(line.counts)) &&
+        last?.name === "selection rate" &&
+        last.counts === `${found.selected} of ${Format.count(rows.length, "target")}` &&
+        (found.failures === 0 || (
+          lines[0]?.counts === `${caught.length} of ${Format.count(found.failures, "failure")}` &&
+          lines[1]?.counts ===
+            `${new Set(caught.map((entry) => entry.commit)).size} of ${
+              Format.count(found.failedChanges, "failed change")
+            }`
+        ))
+    },
+    250
+  )
+
+  prop("the lines of a report's own numbers say what the report holds", reports, (report) => {
+    const cpu = Format.cpuTime(report)
+    const asked = Format.askedFor(report)
+    const covered = Format.coverage(report)
+    const jobs = Format.jobsCovered(report)
+    const cost = Format.modelCost(report)
+    return (cpu === undefined) === (report.baselineCpuMs === undefined || report.normalCpuMs === undefined) &&
+      (cpu === undefined || (cpu.startsWith("the steps used ") && cpu.includes(" in normal mode") &&
+        cpu.includes(" in fast mode") === (report.fastCpuMs !== undefined))) &&
+      (asked === undefined) === (report.asked === undefined) &&
+      (asked === undefined || (asked.startsWith("asked for ") && asked.endsWith(" of the CI not asked for"))) &&
+      (covered === "" || covered.startsWith("over ")) && (Format.jobsCount(report) === "") === (jobs === "") &&
+      (report.asked === undefined || jobs.endsWith(" asked for")) &&
+      (cost === undefined ||
+        (!Format.normalDiffers(report) && / (?:more|less) than normal mode's and asking the model took /.test(cost))) &&
+      Format.jobsLeftOut(report) ===
+        (report.jobs === undefined ? (report.notReplayed ?? []).length : report.jobs.total - report.jobs.replayed) &&
+      (report.startCost === undefined ||
+        /^your CI takes .+ for a commit and Smithers CI takes .+ to start[,;] /.test(
+          Format.startCost(report.startCost, report.commits)
+        )) &&
+      (report.recorder === undefined || Format.recordedBy(report.recorder).startsWith(
+        report.recorder.name === "none"
+          ? "what the steps read was not recorded"
+          : `what the steps read was recorded by ${report.recorder.name}`
+      )) &&
+      (report.notRead ?? []).every((entry) =>
+        Format.unreadText(entry) !== "" && (entry.detail === "" || Format.unreadText(entry) === entry.detail)
+      ) &&
+      (report.notReplayed ?? []).every((entry) => (Format.reasons(entry) === "") === (entry.reasons.length === 0)) &&
+      (report.toolVersions ?? []).every((entry) =>
+        Format.toolVersion(entry) ===
+        `asks for ${entry.tool} ${entry.asked}; this machine has ${entry.tool} ${entry.found}`
+      ) &&
+      Format.coldStart("r") === "started with an empty cache: r" &&
+      Format.fastNotMeasured("r") === "Fast mode was not measured. r" &&
+      Format.skippedHeading === "skipped, predicted-safe" && skip !== undefined
+  }, 250)
+})
+
+describe("what the fuzz found", () => {
+  const run = { ok: true, wallMs: 5000, workMs: 5000, counts: { hit: 3, ran: 0, failed: 0, skipped: 0 } }
+  const base: ReplayReport = {
+    version: 1,
+    repository: "r",
+    commits: [{
+      commit: "a1b2c3d4e5f6",
+      changedFiles: 1,
+      baseline: run,
+      normal: { ...run, wallMs: 1000 },
+      mismatches: []
+    }],
+    baselineWallMs: 5000,
+    normalWallMs: 1000,
+    speedup: 5,
+    mismatches: 0
+  }
+
+  cases("a commit id is text in the line of what starting costs, on the page and in the terminal", () => {
+    const report: ReplayReport = {
+      ...base,
+      commits: [{
+        ...base.commits[0]!,
+        commit: `<style>${String.fromCharCode(27)}[2J`,
+        normal: { ...run, wallMs: 9000 }
+      }],
+      startCost: { commitMs: 5000, startMs: 1000 }
+    }
+    const page = html(report)
+    const written = text(report)
+    return [
+      [
+        "the line is the one that names the commit",
+        Format.startCost(report.startCost!, report.commits).includes("; at <style>")
+      ],
+      ["the page is the renderer's own markup", problemOf(page) === undefined],
+      ["the page holds the id escaped", page.includes("; at &lt;style&gt;")],
+      ["the text holds no control character", !/\p{Cc}/u.test(written.replaceAll("\n", ""))],
+      ["the text holds the line", written.includes("; at <style>")]
+    ]
+  })
+
+  cases("a step and its variants that ran for one reason are a line that names the step", () => {
+    const report: ReplayReport = {
+      ...base,
+      commits: [{
+        ...base.commits[0]!,
+        normal: {
+          ...run,
+          notReused: [
+            { step: "test", reason: "src/a.ts changed", kept: true },
+            { step: "test (18)", reason: "src/a.ts changed", kept: true, variantOf: "test" }
+          ]
+        }
+      }]
+    }
+    const [line] = Format.notReused(report)
+    return [
+      ["one line", Format.notReused(report).length === 1 && line?.variants === 2],
+      [
+        "named",
+        line !== undefined && Format.notReusedText(line, 1) === "1 of 1 commit  test (2 variants)  src/a.ts changed"
+      ],
+      ["in the text", text(report).includes("test (2 variants)") && !text(report).includes("undefined")]
+    ]
+  })
+
+  cases("a report with a mismatch of normal mode has no speedup, whatever it says it covers", () => {
+    const differing = (covered: number | undefined): ReplayReport => ({
+      ...base,
+      commits: [{
+        ...base.commits[0]!,
+        mismatches: [{ label: "//a:test", mode: "normal", baseline: "pass", got: "fail" }]
+      }],
+      mismatches: 1,
+      ...(covered === undefined ? {} : { speedupCommits: covered })
+    })
+    const caused: ReplayReport = {
+      ...base,
+      commits: [{
+        ...base.commits[0]!,
+        mismatches: [{
+          label: "//a:test",
+          mode: "normal",
+          baseline: "pass",
+          got: "fail",
+          cause: "a tool read a file apply wrote"
+        }]
+      }],
+      mismatches: 1
+    }
+    return [
+      ...[undefined, 0, 1].flatMap((covered) => [
+        [
+          `text, covering ${covered}`,
+          !text(differing(covered)).includes("faster") && text(differing(covered)).includes(Format.noSpeedupMismatch)
+        ] as const,
+        [
+          `page, covering ${covered}`,
+          !html(differing(covered)).includes("class=\"hero\"") &&
+          html(differing(covered)).includes(Format.noSpeedupMismatch)
+        ] as const
+      ]),
+      [
+        "a mismatch that says why keeps the speedup",
+        text(caused).includes("5.0× faster") && html(caused).includes("<p class=\"hero\">5.0× faster</p>")
+      ],
+      [
+        "a fast-mode mismatch keeps the speedup",
+        text({
+          ...caused,
+          commits: [{
+            ...caused.commits[0]!,
+            mismatches: [{ label: "l", mode: "fast", baseline: "fail", got: "skipped" }]
+          }]
+        }).includes("5.0× faster")
+      ],
+      ["no commit passed its baseline", text({ ...base, speedupCommits: 0, speedup: 0 }).includes(Format.noSpeedup)]
+    ]
+  })
+
+  cases("a reason named like a prototype's property is one Smithers CI does not know", () => {
+    const report: ReplayReport = {
+      ...base,
+      notReplayed: [{
+        job: "deploy",
+        reasons: [{ feature: "constructor", detail: "" }, { feature: "__proto__", detail: "" }]
+      }],
+      notRead: [{ feature: "toString", detail: "" }]
+    }
+    return [
+      [
+        "text",
+        text(report).includes(
+          "deploy  uses something Smithers CI cannot run (constructor); uses something Smithers CI cannot run (__proto__)"
+        )
+      ],
+      [
+        "page",
+        html(report).includes("uses something Smithers CI cannot run (toString)") &&
+        problemOf(html(report)) === undefined
+      ]
+    ]
+  })
+})

@@ -35,6 +35,13 @@ const systems: Readonly<Record<string, string>> = { darwin: "macOS", linux: "Lin
 const whole = (detail: string): string => detail
 
 /**
+ * What a table holds under a name, or nothing: a name every object has, such
+ * as `constructor`, is a name the table lacks.
+ */
+const own = <A>(table: Readonly<Record<string, A>>, name: string): A | undefined =>
+  Object.hasOwn(table, name) ? table[name] : undefined
+
+/**
  * Every reason, by the feature recorded for it.
  *
  * @category constants
@@ -138,7 +145,7 @@ export const reasons: Readonly<Record<string, Reason>> = {
     none: "another operating system",
     subject: (detail) => {
       const system = /runs on ([^;]+);/.exec(detail)?.[1]
-      return system === undefined ? undefined : systems[system] ?? system
+      return system === undefined ? undefined : own(systems, system) ?? system
     }
   },
   "package-turbo": { sentence: "is in a package whose Turborepo settings were not read" },
@@ -207,7 +214,7 @@ export const reasonsSentence = (
   entries: ReadonlyArray<{ readonly feature: string; readonly detail: string }>
 ): string =>
   [...new Set(entries.map((entry) => entry.feature))].map((feature) => {
-    const reason = reasons[feature]
+    const reason = own(reasons, feature)
     if (reason === undefined) return `uses something Smithers CI cannot run (${feature})`
     const found = entries.flatMap((entry) =>
       entry.feature === feature && reason.subject !== undefined ? [reason.subject(entry.detail)] : []
@@ -262,5 +269,5 @@ export const wholeScript: Readonly<Record<string, string>> = {
  */
 export const wholeScriptSentence = (why: { readonly feature: string; readonly detail: string }): string =>
   `stays one step: ${
-    (wholeScript[why.feature] ?? "its commands cannot be run one at a time").replace("{}", () => why.detail)
+    (own(wholeScript, why.feature) ?? "its commands cannot be run one at a time").replace("{}", () => why.detail)
   }`

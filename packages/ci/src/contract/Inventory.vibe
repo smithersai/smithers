@@ -525,7 +525,9 @@ export const givenTo = (
   script.includes(runnerEntry)
     ? given
     : Object.fromEntries(
-      Object.entries(given).filter(([name]) => new RegExp(`\\$\\{?${name}(?![A-Z0-9_])`).test(script))
+      Object.entries(given).filter(([name]) =>
+        new RegExp(`\\$\\{?${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![A-Z0-9_])`).test(script)
+      )
     )
 
 /**

@@ -191,7 +191,7 @@ export const text: RenderReport = (report) => {
   if (report.trialMs !== undefined) sections.push([trialTime(report.trialMs)])
   if (report.appliedMs !== undefined) sections.push([appliedTime(report.appliedMs)])
   if (report.firstRun !== undefined) sections.push([firstRunTime(report.firstRun)])
-  if (report.startCost !== undefined) sections.push([startCost(report.startCost, report.commits)])
+  if (report.startCost !== undefined) sections.push([clean(startCost(report.startCost, report.commits))])
   if (report.cold !== undefined) sections.push([clean(coldStart(report.cold))])
   if (report.reruns !== undefined) sections.push([rerunTime(report.reruns)])
   if (report.diskHeldBytes !== undefined) sections.push([diskHeld(report.diskHeldBytes)])

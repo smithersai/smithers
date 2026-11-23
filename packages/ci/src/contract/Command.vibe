@@ -342,7 +342,7 @@ export const errorText = (cause: unknown): string => {
 }
 
 /** A URL's user name and password, wherever a text holds one. */
-const credential = /(\b[a-z][a-z0-9+.-]*:\/*)[^\s"']*@/gi
+const credential = /(\b[a-z][a-z0-9+.-]*:\/*)[^\s"]*@/gi
 
 /** The longest error a line quotes. */
 const longest = 300

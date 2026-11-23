@@ -247,12 +247,16 @@ export const ownTargets = (targets: ReadonlyArray<string>): string =>
 
 /**
  * How many commits the speedup covers: those whose baseline passed. A report
- * that does not say covers every commit.
+ * that does not say covers every commit. A report where normal mode's result
+ * differs from the CI's ({@link normalDiffers}) covers none, whatever it says:
+ * a document a replay did not write must not show a speedup beside such a
+ * mismatch.
  *
  * @category formatting
  * @since 0.1.0
  */
-export const speedupCommits = (report: ReplayReport): number => report.speedupCommits ?? report.commits.length
+export const speedupCommits = (report: ReplayReport): number =>
+  normalDiffers(report) ? 0 : report.speedupCommits ?? report.commits.length
 
 /**
  * What stands in the place of the speedup when no commit's baseline passed.
@@ -697,7 +701,7 @@ export const notReused = (report: ReplayReport): ReadonlyArray<NotReused> => {
 export const notReusedText = (entry: NotReused, commits: number): string =>
   [
     `${entry.commits} of ${count(commits, "commit")}`,
-    entry.variants > 1 ? `${entry.variantOf} (${entry.variants} variants)` : entry.step,
+    entry.variants > 1 ? `${entry.variantOf ?? entry.step} (${entry.variants} variants)` : entry.step,
     ...(entry.command === undefined ? [] : [entry.command]),
     `${entry.kept ? "" : "never reused: "}${entry.reason}${entry.fix === undefined ? "" : `; ${entry.fix}`}`
   ].join("  ")

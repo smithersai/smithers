@@ -998,7 +998,10 @@ describe("failed steps", () => {
     const startLonger =
       "your CI takes 1.1s for a commit and Smithers CI takes 1.4s to start, so your CI is already shorter than Smithers CI's start and there is nothing to gain here"
     expect(text(short(slower, 1400)).split("\n")).toContain(startLonger)
-    expect(body(html(short(slower, 1400)))).toContain(`<p class="summary">${startLonger}</p>`)
+    // The page holds the line as text: its apostrophe is an entity, as a commit id's markup would be.
+    expect(body(html(short(slower, 1400)))).toContain(
+      `<p class="summary">${startLonger.replaceAll("'", "&#39;")}</p>`
+    )
     // A start shorter than the CI, and the commit that reused every step still took longer.
     expect(text(short(slower, 900)).split("\n")).toContain(
       "your CI takes 1.1s for a commit and Smithers CI takes 900ms to start; at cb5e4c0, where it reused every step, it took 1.7s against your CI's 1.1s, so there is nothing to gain here"
