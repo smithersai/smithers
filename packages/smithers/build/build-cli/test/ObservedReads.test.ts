@@ -621,7 +621,10 @@ describe("reading a trace", () => {
       "/w/tmp1",
       "/w/to"
     ])
-    expect(paths(trace.found)).toEqual(["/w/exists", "/w/f2", "/w/from", "/w/h3", "/w/o2", "/w/o3", "/w/orig"])
+    // A call that only succeeds where something is found the path there: a file it cut short, by its link's end;
+    // a name it took away, by the name.
+    expect(paths(trace.found)).toEqual(["/w/exists", "/w/f2", "/w/from", "/w/h3", "/w/o2", "/w/o3", "/w/orig", "/w/t"])
+    expect(paths(trace.unfollowed ?? new Map())).toEqual(["/w/d3", "/w/tmp1"])
     expect(paths(trace.missing)).toEqual([
       "/w/d2",
       "/w/d2/sub",
@@ -657,8 +660,29 @@ describe("reading a trace", () => {
       "abcdefghijklm".split("").map((name) => `/w/${name}`)
     )
     expect(paths(trace.missing)).toEqual(["/w/gone"])
-    expect(paths(trace.found)).toEqual(["/w/kept"])
+    // Each call succeeds only where its path is: the run found it there. A descriptor's file was opened before.
+    expect(paths(trace.found)).toEqual(["a", "b", "e", "g", "i", "j", "k", "kept", "l"].map((name) => `/w/${name}`))
+    expect(paths(trace.unfollowed ?? new Map())).toEqual(["/w/c", "/w/f"])
     expect(paths(trace.made)).toEqual([])
+  })
+
+  it("finds a path it first reaches by a call that needs it there, and not one it wrote before", () => {
+    const trace = read([
+      // Opened to append with no leave to make it: it was there, and keeps what it held.
+      "100 openat(AT_FDCWD</w>, \"log.txt\", O_WRONLY|O_APPEND) = 3",
+      // Opened to append, made if need be: the trace does not say which, and `observe` asks the commit.
+      "100 openat(AT_FDCWD</w>, \"maybe.txt\", O_WRONLY|O_CREAT|O_APPEND, 0666) = 3",
+      // The run's own: written first, then changed and removed.
+      "100 openat(AT_FDCWD</w>, \"own.txt\", O_WRONLY|O_CREAT|O_TRUNC, 0666) = 3",
+      "100 chmod(\"/w/own.txt\", 0755) = 0",
+      "100 unlink(\"/w/own.txt\") = 0",
+      "100 unlink(\"/w/stale.txt\") = 0"
+    ].join("\n"))
+    expect(paths(trace.found)).toEqual(["/w/log.txt"])
+    expect(paths(trace.unfollowed ?? new Map())).toEqual(["/w/stale.txt"])
+    // Of the two names it took away, only the one it had never written was there before it.
+    expect([...trace.unlinked ?? []]).toEqual(["/w/stale.txt"])
+    expect([...trace.changed].sort()).toEqual(["/w/log.txt", "/w/maybe.txt", "/w/own.txt", "/w/stale.txt"])
   })
 
   it("stores nothing for a run that reached a program or a network outside it", () => {
@@ -717,11 +741,29 @@ describe("reading a trace", () => {
     ).toEqual(["it opened a network connection (uv to 2a04:4e42::223 port 443)"])
     expect(read("100 connect(3<socket:[9]>, {sa_family=AF_INET, sin_addr=0x7f}, 16) = 0").refusals)
       .toEqual(["it opened a network connection (to an address the trace does not show)"])
-    // A server the run started on a port the system chose answers any local port.
+    // A server the run started on a port the system chose answers on that port, once the trace says which it is:
+    // the run asked. No other local port is the run's for it.
+    const chosen =
+      "100 bind(4<socket:[2]>, {sa_family=AF_INET, sin_port=htons(0), sin_addr=inet_addr(\"127.0.0.1\")}, 16) = 0"
+    const asked = (socket: number, port: number): string =>
+      `100 getsockname(4<socket:[${socket}]>, {sa_family=AF_INET, sin_port=htons(${port}), sin_addr=inet_addr("127.0.0.1")}, [16]) = 0`
+    const local = (port: number): string =>
+      address(`{sa_family=AF_INET, sin_port=htons(${port}), sin_addr=inet_addr("127.0.0.1")}`)
+    expect(read([chosen, asked(2, 40123), local(40123)].join("\n")).refusals).toEqual([])
+    // Reached before the run asked: still its own.
+    expect(read([chosen, local(40123), asked(2, 40123)].join("\n")).refusals).toEqual([])
+    expect(read([chosen, local(40123)].join("\n")).refusals)
+      .toEqual(["it reached a program outside the run on local port 40123"])
+    expect(read([chosen, asked(2, 40123), local(40123), local(5432)].join("\n")).refusals)
+      .toEqual(["it reached a program outside the run on local port 5432"])
+    // The port of a socket the run did not bind so, as the near end of a connection is, is no port it listens on.
+    expect(read([chosen, asked(7, 40123), local(40123)].join("\n")).refusals)
+      .toEqual(["it reached a program outside the run on local port 40123"])
+    // smthrs-observe writes the port the system chose in the bind's own line.
     expect(
       read([
-        "100 bind(4<socket:[2]>, {sa_family=AF_INET, sin_port=htons(0), sin_addr=inet_addr(\"127.0.0.1\")}, 16) = 0",
-        address("{sa_family=AF_INET, sin_port=htons(40123), sin_addr=inet_addr(\"127.0.0.1\")}")
+        "100 bind(4<socket:[2]>, {sa_family=AF_INET, sin_port=htons(40123), sin_addr=inet_addr(\"127.0.0.1\")}, 16) = 0",
+        local(40123)
       ].join("\n")).refusals
     ).toEqual([])
     expect(read("100 connect(3<socket:[9]>) = 0").refusals).toEqual([])
@@ -1977,7 +2019,8 @@ describe("recording what a run read", () => {
       // Read and then rewritten: compared with what the run left, and marked as a file the run changes.
       open(root, "src/b.txt"),
       open(root, "src/b.txt", "O_WRONLY|O_TRUNC"),
-      // Removed without ever being read, and made at the top of the file system: neither is an input.
+      // Removed without ever being read: the call found a name there, which is all the record holds of it. Made
+      // at the top of the file system: no input.
       `100 unlink("${root}/src/scratch.tmp") = 0`,
       "100 mkdir(\"/smithers-observed-reads-made\", 0777) = 0"
     ]))
@@ -1986,7 +2029,8 @@ describe("recording what a run read", () => {
     expect(stored.reads).toEqual([
       ["src", "d"],
       ["src/b.txt", rewritten, "?"],
-      ["src/cache.json", cache, "-"]
+      ["src/cache.json", cache, "-"],
+      ["src/scratch.tmp", "-", "*"]
     ])
     expect(stored.lists).toEqual([
       ["src", ObservedReads.listing(Path.join(root, "src"), ["b.txt", "cache.json", "out.txt", "scratch.tmp"]), [
@@ -1996,7 +2040,9 @@ describe("recording what a run read", () => {
         "scratch.tmp"
       ]]
     ])
-    // With what the run found before rewriting measured, a fresh checkout without what it made still matches.
+    // With what the run found before rewriting measured, a fresh checkout without what it made, and with what it
+    // removed there again, still matches.
+    await Fs.writeFile(Path.join(root, "src", "scratch.tmp"), "scratch")
     const measuredStored = {
       ...stored,
       reads: stored.reads.map((row) => row[0] === "src/b.txt" ? [row[0], row[1], rewritten] as const : row)
@@ -2428,14 +2474,15 @@ describe("recording what a run read", () => {
       })
     await Fs.rm(Path.join(root, "src", "b.txt"))
     expect(record([open(root, "src/b.txt")])).toEqual({ refusal: "src/b.txt was removed while it ran" })
-    // A path the run itself removed is compared as the run left it: gone.
+    // A path the run read and then removed is held as the run found it, never as gone: a tree where it is gone
+    // already is not the tree the run read. Unmeasured, it matches nothing. Its absence is what the run left.
     expect(record([open(root, "src/b.txt"), `100 unlink("${root}/src/b.txt") = 0`]))
-      .toEqual({ reads: [["src/b.txt", "-"]], lists: [] })
-    // A listed directory that is gone by the end has no listing to compare.
+      .toEqual({ reads: [["src/b.txt", "-", "?"]], lists: [], left: true })
+    // A listed directory that is gone by the end has no listing to compare, and is held as nothing matches.
     expect(record([
       `100 getdents64(3<${root}/gone>, 0x55 /* 2 entries */, 32768) = 48`,
       `100 rmdir("${root}/gone") = 0`
-    ])).toEqual({ reads: [["gone", "-"]], lists: [] })
+    ])).toEqual({ reads: [["gone", "-", "?"]], lists: [], left: true })
   })
 
   it("repeats why a trace cannot be trusted", async () => {
@@ -2496,6 +2543,340 @@ describe("recording what a run read", () => {
       `100 execve("${root}/far.bin", ["far.bin"], 0x7ffd /* 3 vars */) = 0`
     ]))
     expect(stored.reads.map((row) => row[0])).toEqual(["far.bin", "static.bin"])
+  })
+})
+
+describe("a path a record cannot hold as the run found it", () => {
+  const fixture = async () => {
+    const base = await directory()
+    const root = Path.join(base, "ws")
+    await Fs.mkdir(Path.join(root, "src"), { recursive: true })
+    await Fs.writeFile(Path.join(root, "src", "a.txt"), "a")
+    await Fs.writeFile(Path.join(root, "src", "b.txt"), "b")
+    const observe = (
+      lines: ReadonlyArray<string>,
+      options: Partial<Parameters<typeof ObservedReads.observe>[1]> = {}
+    ) =>
+      ObservedReads.observe(ObservedReads.read(() => lines, root), {
+        root,
+        ignore: [],
+        startedMs: Date.now() + 60_000,
+        held: () => new Set(),
+        ...options
+      })
+    const recorded = (...given: Parameters<typeof observe>): ObservedReads.Record => {
+      const observed = observe(...given)
+      if ("refusal" in observed) throw new Error(observed.refusal)
+      return observed.record
+    }
+    return { base, root, observe, recorded }
+  }
+  const open = (root: string, name: string, flags = "O_RDONLY"): string =>
+    `100 openat(AT_FDCWD<${root}>, ${JSON.stringify(name)}, ${flags}) = 3`
+
+  it("digests a file of any size a block at a time, and a caller's reads as the caller gives them", async () => {
+    const base = await directory()
+    const large = Path.join(base, "large.bin")
+    // Longer than three blocks, and no whole number of them.
+    const bytes = Buffer.alloc(3 * 1024 * 1024 + 17, "smthrs")
+    await Fs.writeFile(large, bytes)
+    await Fs.writeFile(Path.join(base, "empty"), "")
+    const digest = (data: Buffer | string): string => createHash("sha256").update(data).digest("hex")
+    let whole = 0
+    const counting: ObservedReads.Io = {
+      ...ObservedReads.defaultIo,
+      readFile: (path) => {
+        whole += 1
+        return ObservedReads.defaultIo.readFile(path)
+      }
+    }
+    expect(ObservedReads.digestOf(large)).toBe(digest(bytes))
+    expect(ObservedReads.measure(large)).toBe(`f:${digest(bytes)}`)
+    expect(ObservedReads.measure(Path.join(base, "empty"))).toBe(`f:${digest("")}`)
+    // The host's own reads never hold the file whole; reads a caller supplies are the ones used.
+    expect(ObservedReads.measure(large, counting)).toBe(`f:${digest(bytes)}`)
+    expect(whole).toBe(1)
+    expect(ObservedReads.measure(large, { ...counting, digest: () => "given" })).toBe("f:given")
+    expect(whole).toBe(1)
+  })
+
+  it("stores nothing for a run that read a path that cannot be read now, whatever the reason", async () => {
+    const { observe, root } = await fixture()
+    // What Node says of a file over 2 GiB read whole, of a file the build may not read, and of a failing disk.
+    for (const code of ["ERR_FS_FILE_TOO_LARGE", "EACCES", "EIO"]) {
+      const io: ObservedReads.Io = {
+        ...ObservedReads.defaultIo,
+        readFile: (path) => {
+          if (path.endsWith("a.txt")) throw Object.assign(new Error(code), { code })
+          return ObservedReads.defaultIo.readFile(path)
+        }
+      }
+      expect(observe([open(root, "src/a.txt")], { io })).toEqual({
+        refusal: `src/a.txt cannot be read now (${code}), so what the run read there cannot be known`
+      })
+      // A path it found missing and made is as much a path whose state says nothing.
+      expect(
+        observe([
+          `100 openat(AT_FDCWD<${root}>, "src/a.txt", O_RDONLY) = -1 ENOENT (No such file or directory)`,
+          open(root, "src/a.txt", "O_WRONLY|O_CREAT|O_EXCL, 0666")
+        ], { io })
+      ).toEqual({ refusal: `src/a.txt cannot be read now (${code}), so what the run read there cannot be known` })
+      expect("record" in observe([open(root, "src/b.txt")], { io })).toBe(true)
+    }
+  })
+
+  it("never finds a path unchanged whose stored state says only that it could not be read", () => {
+    const states = new Map([["/w/f", "!EACCES"], ["/w/g", "f:1"], ["/w/out", "!EIO"]])
+    const measured = (path: string): string => states.get(path) ?? "-"
+    const changed = (record: Omit<ObservedReads.Record, "id" | "lists">): string | undefined =>
+      ObservedReads.changed({ lists: [], ...record }, "/w", measured, ObservedReads.defaultIo, () => new Set(["1"]))
+    // The same failure now says nothing of what is there now.
+    expect(changed({ reads: [["f", "!EACCES"]] })).toBe("f changed")
+    expect(changed({ reads: [["f", "f:1", "!EACCES"]] })).toBe("f changed")
+    expect(changed({ reads: [["f", "!EACCES", "-"]] })).toBe("f changed")
+    expect(changed({ reads: [["missing", "!EACCES", "-"]] })).toBeUndefined()
+    expect(changed({ reads: [], from: [["//:a", "1"]], given: [["f", "!EACCES", 0]] })).toBe(
+      "f, which //:a left, changed"
+    )
+    expect(changed({ reads: [["g", "f:1"]] })).toBeUndefined()
+    // Nor does a file a run left outside the workspace stand as it was left.
+    const kept = (state: string) => ({ archive: "a".repeat(64), gone: [], outside: [["/w/out", state] as const] })
+    expect(ObservedReads.outsideChanged({ reads: [], lists: [], kept: kept("!EIO") }, measured)).toBe("/w/out")
+    expect(ObservedReads.outsideHolds({ reads: [], lists: [], kept: kept("!EIO") }, measured)).toBe(false)
+  })
+
+  it("holds a path the run read and then removed or replaced as the run found it", async () => {
+    const { recorded, root } = await fixture()
+    const a = ObservedReads.measure(Path.join(root, "src", "a.txt"))
+    const before = (path: string): string | undefined =>
+      path.endsWith("src/a.txt") ? a : path.endsWith("src") ? "d" : "-"
+    await Fs.rm(Path.join(root, "src", "a.txt"))
+    const removed = recorded([open(root, "src/a.txt"), `100 unlink("${root}/src/a.txt") = 0`], { before })
+    expect(removed.reads).toEqual([["src/a.txt", "-", a]])
+    // Its absence is what the run left: a run answered from the record has to find it gone.
+    expect(removed.left).toBe(true)
+    // Gone already, the tree is not the one the run read: the run would fail where this one read a file.
+    expect(ObservedReads.changed(removed, root, ObservedReads.measure, ObservedReads.defaultIo, undefined, {}))
+      .toBe("src/a.txt is gone")
+    await Fs.writeFile(Path.join(root, "src", "a.txt"), "a")
+    expect(ObservedReads.changed(removed, root)).toBeUndefined()
+    await Fs.writeFile(Path.join(root, "src", "a.txt"), "other")
+    expect(ObservedReads.changed(removed, root)).toBe("src/a.txt changed")
+    // A directory it only gave a mode, or listed, emptied and made again, was a directory all along: held as left.
+    expect(recorded([`100 chmod("${root}/src", 0755) = 0`]).reads).toEqual([["src", "d"]])
+    expect(
+      recorded([
+        `100 getdents64(3<${root}/src>, 0x55 /* 2 entries */, 32768) = 48`,
+        `100 rmdir("${root}/src") = 0`,
+        `100 mkdir("${root}/src", 0777) = 0`
+      ]).reads
+    ).toEqual([["src", "d"]])
+    // Replaced by a directory: held as the file it was.
+    await Fs.rm(Path.join(root, "src", "a.txt"))
+    await Fs.mkdir(Path.join(root, "src", "a.txt"))
+    const replaced = recorded([
+      open(root, "src/a.txt"),
+      `100 unlink("${root}/src/a.txt") = 0`,
+      `100 mkdir("${root}/src/a.txt", 0777) = 0`
+    ], { before })
+    expect(replaced.reads).toEqual([["src/a.txt", "d", a]])
+    expect(ObservedReads.changed(replaced, root)).toBe("src/a.txt changed")
+    // A directory it listed and removed: `d` does not say what it listed there, so nothing matches.
+    await Fs.rm(Path.join(root, "src"), { recursive: true })
+    const listed = recorded([
+      `100 getdents64(3<${root}/src>, 0x55 /* 2 entries */, 32768) = 48`,
+      `100 rmdir("${root}/src") = 0`
+    ], { before })
+    expect([listed.reads, listed.lists]).toEqual([[["src", "-", "?"]], []])
+    await Fs.mkdir(Path.join(root, "src"))
+    expect(ObservedReads.changed(listed, root)).toBe("src changed")
+  })
+
+  it("leaves the absence of what a run found and removed, and nothing for what it made and removed", async () => {
+    const { observe, root } = await fixture()
+    await Fs.rm(Path.join(root, "src", "a.txt"))
+    // Removed with nothing asked of it first: the call found a name there, and that is all the run learned.
+    const cleaned = observe([`100 unlink("${root}/src/a.txt") = 0`])
+    if ("refusal" in cleaned) throw new Error(cleaned.refusal)
+    expect(cleaned.record.left).toBe(true)
+    expect(cleaned.record.reads).toEqual([["src/a.txt", "-", "*"]])
+    expect(cleaned.left).toEqual({ keep: [], gone: ["src/a.txt"], outside: [] })
+    // Gone already, the run would fail where this one removed a file. Any file there again holds, whatever it
+    // holds; a directory there does not, which `unlink` does not remove.
+    expect(ObservedReads.changed(cleaned.record, root)).toBe("src/a.txt is gone")
+    await Fs.writeFile(Path.join(root, "src", "a.txt"), "other bytes")
+    expect(ObservedReads.changed(cleaned.record, root)).toBeUndefined()
+    await Fs.rm(Path.join(root, "src", "a.txt"))
+    await Fs.mkdir(Path.join(root, "src", "a.txt"))
+    expect(ObservedReads.changed(cleaned.record, root)).toBe("src/a.txt changed")
+    await Fs.rmdir(Path.join(root, "src", "a.txt"))
+    // A directory removed so says nothing of what it held: nothing matches until it is measured.
+    await Fs.rm(Path.join(root, "src"), { recursive: true })
+    const emptied = observe([`100 rmdir("${root}/src") = 0`])
+    if ("refusal" in emptied) throw new Error(emptied.refusal)
+    expect(emptied.record.reads).toEqual([["src", "-", "?"]])
+    await Fs.mkdir(Path.join(root, "src"))
+    // A name it had read before it took it away is held by what it read.
+    const seen = observe([open(root, "src/a.txt"), `100 unlink("${root}/src/a.txt") = 0`])
+    if ("refusal" in seen) throw new Error(seen.refusal)
+    expect(seen.record.reads).toEqual([["src/a.txt", "-", "?"]])
+    // Its own scratch file was never there for anyone else.
+    const scratch = observe([
+      open(root, "src/tmp", "O_WRONLY|O_CREAT|O_EXCL, 0600"),
+      `100 unlink("${root}/src/tmp") = 0`
+    ])
+    if ("refusal" in scratch) throw new Error(scratch.refusal)
+    expect([scratch.record.left, scratch.left]).toEqual([undefined, undefined])
+  })
+
+  it("asks the commit about a name the run wrote without looking at it first", async () => {
+    const { recorded, root } = await fixture()
+    const tracked = (names: ReadonlyArray<string>) =>
+      new Set(names.filter((name) => name === "src" || name.startsWith("src/")))
+    const a = ObservedReads.measure(Path.join(root, "src", "a.txt"))
+    const listing = `100 getdents64(3<${root}/src>, 0x55 /* 3 entries */, 32768) = 80`
+    // Opened to append, made if need be: the commit holds it, so it was there and keeps what it held.
+    const appended = recorded([open(root, "src/a.txt", "O_WRONLY|O_CREAT|O_APPEND, 0666")], { held: tracked })
+    expect(appended.reads).toEqual([["src/a.txt", a, "?"]])
+    expect(
+      recorded([open(root, "src/a.txt", "O_WRONLY|O_CREAT|O_APPEND, 0666")], {
+        held: tracked,
+        found: new Map([[
+          Path.join(root, "src", "a.txt"),
+          "f:before"
+        ]])
+      }).reads
+    ).toEqual([["src/a.txt", a, "f:before"]])
+    // A name no commit holds is the run's own, as before, and so is every name where git cannot say.
+    expect(recorded([open(root, "src/a.txt", "O_WRONLY|O_CREAT|O_APPEND, 0666")]).reads).toEqual([])
+    expect(recorded([open(root, "src/a.txt", "O_WRONLY|O_CREAT|O_APPEND, 0666")], { held: () => undefined }).reads)
+      .toEqual([])
+    // Emptied so in a directory it listed: its bytes are the run's, its name was the commit's. The name counts in
+    // the listing, so a commit that takes it away is a change.
+    const emptied = recorded([listing, open(root, "src/a.txt", "O_WRONLY|O_CREAT|O_TRUNC, 0666")], { held: tracked })
+    expect(emptied.lists).toEqual([["src", ObservedReads.listing(Path.join(root, "src"), []), []]])
+    expect(ObservedReads.changed(emptied, root, ObservedReads.measure, ObservedReads.defaultIo, undefined, {}))
+      .toBeUndefined()
+    await Fs.rm(Path.join(root, "src", "a.txt"))
+    expect(ObservedReads.changed(emptied, root)).toBe("src gained or lost an entry")
+    await Fs.writeFile(Path.join(root, "src", "a.txt"), "a")
+    // A name the commit does not hold, written the same way, is the run's own name there.
+    const made = recorded([listing, open(root, "src/a.txt", "O_WRONLY|O_CREAT|O_TRUNC, 0666")])
+    expect(made.lists).toEqual([["src", ObservedReads.listing(Path.join(root, "src"), ["a.txt"]), ["a.txt"]]])
+    // One it found missing first is its own, whatever the commit holds now.
+    const probed = recorded([
+      `100 openat(AT_FDCWD<${root}>, "src/a.txt", O_RDONLY) = -1 ENOENT (No such file or directory)`,
+      listing,
+      open(root, "src/a.txt", "O_WRONLY|O_CREAT|O_TRUNC, 0666")
+    ], { held: tracked })
+    expect(probed.lists).toEqual([["src", ObservedReads.listing(Path.join(root, "src"), ["a.txt"]), ["a.txt"]]])
+  })
+
+  it("holds no count for a directory whose file system counts none", async () => {
+    const { root } = await fixture()
+    const flat: ObservedReads.Io = {
+      ...ObservedReads.defaultIo,
+      lstat: (path) => {
+        const stats = ObservedReads.defaultIo.lstat(path)
+        return stats.isDirectory()
+          ? Object.assign(Object.create(Object.getPrototypeOf(stats)), stats, { nlink: 1 })
+          : stats
+      }
+    }
+    expect(ObservedReads.dirLinks(Path.join(root, "src"), [])).toBe(2)
+    expect(ObservedReads.dirLinks(Path.join(root, "src"), [], flat)).toBeUndefined()
+  })
+
+  it("puts back no name in a repository's store, under any spelling or at any depth", () => {
+    for (const name of ["src/a.txt", "a/.github/x", ".gitignore", "a/.gitkeep", "/tmp/t/x"]) {
+      expect([name, ObservedReads.keptName(name, ["/tmp/t"])]).toEqual([name, true])
+    }
+    for (
+      const name of [
+        ".git/config",
+        "./.git/hooks/post-checkout",
+        "a/./.git/x",
+        "sub/.git/config",
+        "./a",
+        "a//b",
+        "a/../b",
+        "",
+        "a\0b",
+        "/tmp/t/./x",
+        "/tmp/t/../x",
+        "/tmp/other/x"
+      ]
+    ) expect([name, ObservedReads.keptName(name, ["/tmp/t"])]).toEqual([name, false])
+  })
+
+  it("is no record with a `running` or a `served` of another type", () => {
+    const base = { id: "1", reads: [], lists: [] }
+    for (const good of [{}, { running: true }, { served: [] }, { served: [["//:db", "7"]] }]) {
+      expect(ObservedReads.asRecord({ ...base, ...good })).toEqual({ ...base, ...good })
+    }
+    for (
+      const bad of [
+        { running: false },
+        { running: "yes" },
+        { served: 0 },
+        { served: [["//:db"]] },
+        { served: [["//:db", 7]] },
+        { served: {} }
+      ]
+    ) expect([bad, ObservedReads.asRecord({ ...base, ...bad })]).toEqual([bad, undefined])
+  })
+})
+
+describe("what the programs a job left running did while a later step ran", () => {
+  const step = [
+    "100 execve(\"/usr/bin/server\", [\"server\"], 0x7ffc /* 9 vars */) = 0",
+    "100 openat(AT_FDCWD</w>, \"own.log\", O_WRONLY|O_CREAT|O_TRUNC, 0666) = 3"
+  ]
+  const after = [
+    "100 lstat(\"/w/link\", {st_mode=S_IFLNK|0777, st_size=6, ...}) = 0",
+    "100 openat(AT_FDCWD</w>, \"read.txt\", O_RDONLY) = 4",
+    "100 openat(AT_FDCWD</w>, \"own.log\", O_WRONLY|O_CREAT|O_TRUNC, 0666) = 3",
+    "100 openat(AT_FDCWD</w>, \"state.db\", O_WRONLY|O_CREAT|O_TRUNC, 0666) = 5",
+    "100 unlink(\"/w/stale.pid\") = 0",
+    "100 openat2(AT_FDCWD</w>, \"walked\", {flags=O_RDONLY, resolve=RESOLVE_BENEATH}, 24) = 6</w/walked>",
+    "100 mount(\"none\", \"/mnt\", \"tmpfs\", 0, NULL) = 0"
+  ]
+
+  it("keeps every kind of look and write of theirs, and only what the lines since hold", () => {
+    const served = ObservedReads.servedBy(() => step, () => after, "/w")
+    expect(paths(served.found)).toEqual(["/w/read.txt"])
+    // A name looked at without following is the name, not what a link there leads to.
+    expect(paths(served.unfollowed ?? new Map())).toEqual(["/w/link", "/w/stale.pid"])
+    expect((served.walks ?? []).map((walk) => walk.path)).toEqual(["walked"])
+    expect([...served.unlinked ?? []]).toEqual(["/w/stale.pid"])
+    // What the step itself wrote stays the step's, whoever wrote it again.
+    expect(paths(served.emptied)).toEqual(["/w/state.db"])
+    expect([...served.changed].sort()).toEqual(["/w/stale.pid", "/w/state.db"])
+    expect([...served.removed]).toEqual(["/w/stale.pid"])
+    expect(served.refusals).toEqual(["it reached a file in a way the recorder cannot follow: mount"])
+  })
+
+  it("counts them as the run's, after every line of its own", () => {
+    const own = read([
+      "200 openat(AT_FDCWD</w>, \"client.txt\", O_RDONLY) = 3",
+      "200 openat(AT_FDCWD</w>, \"state.db\", O_RDONLY) = 4"
+    ].join("\n"))
+    const served = ObservedReads.servedBy(() => step, () => after, "/w")
+    const joined = ObservedReads.withServed(own, [served])
+    expect(paths(joined.found)).toEqual(["/w/client.txt", "/w/read.txt", "/w/state.db"])
+    expect(paths(joined.unfollowed ?? new Map())).toEqual(["/w/link", "/w/stale.pid"])
+    expect((joined.walks ?? []).map((walk) => [walk.path, walk.at > 2])).toEqual([["walked", true]])
+    // The run read `state.db` before the program wrote it: found first, then changed, never the program's own.
+    expect(joined.found.get("/w/state.db")! < joined.emptied.get("/w/state.db")!).toBe(true)
+    expect([...joined.changed].sort()).toEqual(["/w/stale.pid", "/w/state.db"])
+    expect([...joined.removed]).toEqual(["/w/stale.pid"])
+    expect([...joined.unlinked ?? []]).toEqual(["/w/stale.pid"])
+    // A name the run itself had looked at is no name taken away unseen.
+    const looked = read("200 openat(AT_FDCWD</w>, \"stale.pid\", O_RDONLY) = 3")
+    expect(ObservedReads.withServed(looked, [served]).unlinked).toBeUndefined()
+    expect(joined.refusals).toEqual(["it reached a file in a way the recorder cannot follow: mount"])
+    // A run alone is as it was.
+    expect(ObservedReads.withServed(own, [])).toEqual(own)
   })
 })
 
@@ -3294,6 +3675,87 @@ describe("a package manager that installs what a lockfile pins", () => {
     expect(ObservedReads.lockedInstall([])).toBe(false)
   })
 
+  it("reads the command past the flags a package manager takes before it, and never a flag's value as one", () => {
+    const locked = [
+      "pnpm --filter web install --frozen-lockfile",
+      "pnpm -C packages/ci install --frozen-lockfile",
+      "pnpm -r --silent ci",
+      "npm --prefix web ci",
+      "npm --prefix=ci ci",
+      "npm --loglevel error ci",
+      "yarn --cwd ci --frozen-lockfile",
+      "yarn --cwd ci install --immutable",
+      "go -C sub mod download",
+      "uv --directory ci sync --locked",
+      "uv --quiet run --frozen pytest",
+      "cargo +nightly fetch --locked",
+      "cargo --locked fetch",
+      "pip --no-cache-dir install --require-hashes -r requirements.txt"
+    ]
+    const open = [
+      // A package, a directory or a workspace named as a command is no command.
+      "pnpm --filter ci test",
+      "pnpm -F ci test",
+      "pnpm -C ci test",
+      "pnpm --dir ci run build",
+      "npm --prefix ci run build",
+      "npm -w ci test",
+      "npm --workspace ci run lint",
+      "bun --cwd ci test",
+      "yarn --cwd install test",
+      "go -C mod download",
+      "uv --directory sync run pytest --locked",
+      // A flag that is not known may take the next word.
+      "pnpm --unknown ci",
+      "npm --made-up ci",
+      "pnpm -Cci test"
+    ]
+    for (const line of locked) expect([line, ObservedReads.lockedInstall(line.split(" "))]).toEqual([line, true])
+    for (const line of open) expect([line, ObservedReads.lockedInstall(line.split(" "))]).toEqual([line, false])
+  })
+
+  it("is no program the workspace itself holds, whatever its name", () => {
+    const install = (argv: string, program?: string): boolean =>
+      ObservedReads.lockedInstall(argv.split(" "), "/w", program)
+    expect(install("node scripts/npm.js ci")).toBe(false)
+    expect(install("node ./tools/pnpm.cjs install --frozen-lockfile")).toBe(false)
+    expect(install("node /w/scripts/npm.js ci")).toBe(false)
+    expect(install("node /w/../w/scripts/npm.js ci")).toBe(false)
+    expect(install("bin/uv sync --locked")).toBe(false)
+    expect(install("./go mod download")).toBe(false)
+    // The words name a package manager; the file that was started is the workspace's.
+    expect(install("uv sync --locked", "/w/bin/uv")).toBe(false)
+    expect(install("npm ci", "/w/tools/npm")).toBe(false)
+    // One on the search path, one outside the workspace, and one a lockfile installed in it.
+    expect(install("npm ci", "/usr/bin/npm")).toBe(true)
+    expect(install("node /usr/lib/node_modules/npm/bin/npm-cli.js ci", "/usr/bin/node")).toBe(true)
+    expect(install("node /wide/npm.js ci")).toBe(true)
+    expect(install("pnpm install --frozen-lockfile", "/w/node_modules/.bin/pnpm")).toBe(true)
+    expect(install("node /w/node_modules/pnpm/bin/pnpm.cjs install --frozen-lockfile")).toBe(true)
+    expect(install("node_modules/.bin/pnpm install --frozen-lockfile")).toBe(true)
+    // With no workspace named, a path is trusted as it was.
+    expect(ObservedReads.lockedInstall(["node", "/w/scripts/npm.js", "ci"])).toBe(true)
+    // Read from a trace, the workspace is where the run started.
+    const remote =
+      "100 connect(3<socket:[9]>, {sa_family=AF_INET, sin_port=htons(443), sin_addr=inet_addr(\"104.16.4.34\")}, 16) = 0"
+    expect(
+      read([
+        "100 execve(\"/usr/bin/node\", [\"node\", \"scripts/npm.js\", \"ci\"], 0x7ffc /* 9 vars */) = 0",
+        remote
+      ].join("\n")).refusals
+    ).toEqual(["it opened a network connection (node to 104.16.4.34 port 443)"])
+    expect(
+      read(["100 execve(\"/w/bin/uv\", [\"uv\", \"sync\", \"--locked\"], 0x7ffc /* 9 vars */) = 0", remote].join("\n"))
+        .refusals
+    ).toEqual(["it opened a network connection (uv to 104.16.4.34 port 443)"])
+    expect(
+      read([
+        "100 execve(\"/w/node_modules/.bin/pnpm\", [\"pnpm\", \"--filter\", \"ci\", \"test\"], 0x7ffc /* 9 vars */) = 0",
+        remote
+      ].join("\n")).refusals
+    ).toEqual(["it opened a network connection (pnpm to 104.16.4.34 port 443)"])
+  })
+
   const remote = (pid: number): string =>
     `${pid} connect(3<socket:[9]>, {sa_family=AF_INET, sin_port=htons(443), sin_addr=inet_addr("104.16.4.34")}, 16) = 0`
   const start = (pid: number, ...argv: ReadonlyArray<string>): string =>
@@ -3377,6 +3839,41 @@ describe("a package manager that installs what a lockfile pins", () => {
         remote(105)
       ].join("\n")).refusals
     ).toEqual([])
+    // The command it was given, started as a process of its own, is no install, nor is what that starts.
+    const spawned = [
+      start(100, "uv", "run", "--locked", "pytest"),
+      "100 clone(child_stack=NULL, flags=CLONE_CHILD_CLEARTID|SIGCHLD) = 106",
+      start(106, "pytest")
+    ]
+    expect(read([...spawned, remote(100)].join("\n")).refusals).toEqual([])
+    expect(read([...spawned, remote(106)].join("\n")).refusals).toEqual([
+      "it opened a network connection (pytest to 104.16.4.34 port 443)"
+    ])
+    expect(
+      read([
+        ...spawned,
+        "106 clone(child_stack=NULL, flags=CLONE_CHILD_CLEARTID|SIGCHLD) = 107",
+        start(107, "curl", "https://example.com"),
+        remote(107)
+      ].join("\n")).refusals
+    ).toEqual(["it opened a network connection (curl to 104.16.4.34 port 443)"])
+    // What the command writes outside the workspace is the command's, not a package manager's cache.
+    const wrote = read([
+      ...spawned,
+      "100 openat(AT_FDCWD</w>, \"/home/u/.cache/uv/blob\", O_WRONLY|O_CREAT|O_TRUNC, 0666) = 3",
+      "106 openat(AT_FDCWD</w>, \"/home/u/report.xml\", O_WRONLY|O_CREAT|O_TRUNC, 0666) = 3"
+    ].join("\n"))
+    expect([...wrote.fetched]).toEqual(["/home/u/.cache/uv/blob"])
+    // A process id that comes round again under a process that is no install is no install.
+    expect(
+      read([
+        start(100, "npm", "ci"),
+        "100 clone(child_stack=NULL, flags=CLONE_CHILD_CLEARTID|SIGCHLD) = 108",
+        start(100, "node", "test.js"),
+        "100 clone(child_stack=NULL, flags=CLONE_CHILD_CLEARTID|SIGCHLD) = 108",
+        remote(108)
+      ].join("\n")).refusals
+    ).toEqual(["it opened a network connection (node to 104.16.4.34 port 443)"])
   })
 
   it("is not known from a command line the trace cut short, or from a start that failed", () => {
@@ -3907,8 +4404,10 @@ describe("the variables of the host a run could have used", () => {
     expect(read).not.toContain(tiny)
     // A value among bytes that are no text is found as it is in text.
     expect(observe([made, filled("out/run.bin")], {}, io).variables).toEqual(held("RUN"))
-    // A file is read one byte to a character: a value of wider characters is never in one, as before.
+    // A value of wider characters is in a file as the bytes of its UTF-8, and is found as those.
     expect(observe([made, filled("out/wide.txt")], { values: { WIDE: "日本語のパスです" } }, io).variables)
+      .toEqual([["WIDE", createHash("sha256").update("日本語のパスです").digest("hex")]])
+    expect(observe([made, filled("out/wide.txt")], { values: { WIDE: "日本語のパスでした" } }, io).variables)
       .toBeUndefined()
   })
 
@@ -3961,6 +4460,30 @@ describe("the variables of the host a run could have used", () => {
     none.hear(Buffer.from("1"))
     expect([...none.lines(() => lines)()]).toEqual(lines)
     expect([...none.names]).toEqual([])
+  })
+
+  it("finds a value the tracer escaped or a program printed as UTF-8", () => {
+    const values = { QUOTED: "a\"b\\c-123", NAMED: "Zoë Müller", PLAIN: "plain-value" }
+    // A quote, a backslash and a byte outside ASCII are escaped in the line that starts a program.
+    const started = ObservedReads.listening(values)
+    const line =
+      "1 execve(\"/bin/x\", [\"x\", \"a\\\"b\\\\c-123\", \"Zo\\303\\253 M\\303\\274ller\"], 0x7ffc /* 3 vars */) = 0"
+    expect([...started.lines(() => [line])()]).toEqual([line])
+    expect([...started.names].sort()).toEqual(["NAMED", "QUOTED"])
+    // Printed, a character outside ASCII is the bytes of its UTF-8, also cut in two by the end of a block.
+    const printed = ObservedReads.listening(values)
+    const bytes = Buffer.from("author: Zoë Müller\n", "utf8")
+    printed.hear(bytes.subarray(0, 11))
+    printed.hear(bytes.subarray(11))
+    expect([...printed.names]).toEqual(["NAMED"])
+    // A line cut short, or one that is no call, says nothing more than its text.
+    const cut = ObservedReads.listening(values)
+    for (
+      const _ of cut.lines(
+        () => ["1 execve(\"/bin/x\", [\"x\", \"a\\\"b\\\\c-1\"...], 0x7ffc) = 0", "execve \\ noise"]
+      )()
+    ) continue
+    expect([...cut.names]).toEqual([])
   })
 
   it("takes what the run showed from whoever listened to it", async () => {

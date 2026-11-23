@@ -14,13 +14,19 @@
  * - A path the run made before it looked at it is the run's own product and
  *   never an input, under whatever name the run moved it to. A path it found
  *   missing and then made matches when it is missing again or still as the
- *   run left it. A file it found and then changed matches when it is as the
- *   run found it or as the run left it: the build measures, before a run, the
- *   files earlier runs wrote. Any other path is compared with what the run
- *   left there.
+ *   run left it. A path it found and then changed, removed or put something
+ *   else at matches only when it is as the run found it: the run read what
+ *   was there, so a tree where the path is already as the run left it is not
+ *   the tree the run read. The build measures, before a run, the files
+ *   earlier runs wrote; a path whose state before the run was not measured
+ *   matches nothing until it is. A call that only succeeds where something
+ *   is (`rm`, `chmod`, an open to append) found its path as a look does. Any
+ *   other path is compared with what the run left there.
  * - A run whose reads cannot all be known stores nothing: it reached a
  *   program or a network the trace does not cover, changed its own view of
- *   the file system, or left a trace that cannot be read in full.
+ *   the file system, left a trace that cannot be read in full, or read a
+ *   path that cannot be read once it is over, as a file too large to hold or
+ *   one the build has no right to read.
  * - A file somebody else changed while the run was going stores nothing,
  *   because what the run saw there can no longer be measured.
  *
@@ -34,7 +40,10 @@
  * One kind of network connection does not stop a result from being stored:
  * that of a package manager told to install exactly what a lockfile pins
  * (`npm ci`, `pnpm install --frozen-lockfile`, `uv sync --locked`), and of the
- * processes it starts. What it fetches is fixed by a file the run read. For
+ * processes it starts. What it fetches is fixed by a file the run read. A
+ * program the workspace itself holds is no package manager, whatever its
+ * name, and the command an install goes on to run (`uv run --locked pytest`)
+ * is no install: its connections are the run's own. For
  * the same reason what such an install writes outside the workspace, its own
  * cache, is no input of the run: it rewrites entries of that cache at every
  * run, and a cache restored from another run would never match.
@@ -90,10 +99,16 @@ import { byCodeUnit } from "./Text.ts"
 /**
  * The format tag of a stored set of records; any other tag is ignored.
  *
+ * Records of form 4 held a path the run read and then removed as gone, held
+ * nothing of a file it removed, cut short or opened to append without
+ * looking first, and matched a path that could not be read whatever it
+ * held. Form 5 holds each as the run found it, so a record of form 4 is no
+ * record: its step runs once more.
+ *
  * @category constants
  * @since 1.0.0
  */
-export const format = "smthrs-observed-reads/4"
+export const format = "smthrs-observed-reads/5"
 
 /**
  * Records kept for one declaration. A fresh checkout and a tree a run has
@@ -146,7 +161,8 @@ const tracerFlags: ReadonlyArray<string> = [
   "-e",
   "signal=none",
   "-e",
-  `trace=${RecordedCalls.traced.join(",")}`,
+  // Beside the table's calls, the one that says which port the system chose for a socket bound to port 0.
+  `trace=${RecordedCalls.traced.join(",")},?getsockname`,
   "-e",
   "inject=io_uring_setup:error=ENOSYS",
   "-e",
@@ -198,6 +214,8 @@ const supervisor = [
   "      done",
   "    fi",
   `    if [ "$rounds" -gt 100 ]; then`,
+  // The shell below ends this watcher as soon as the tracer is gone: not before the line is written.
+  "      trap '' TERM",
   `      kill -KILL "$tracing" 2>/dev/null`,
   `      echo "the tracer was stopped before it wrote its last lines" >> "$out"`,
   "    fi",
@@ -538,6 +556,11 @@ export interface Trace {
   readonly started: ReadonlyMap<string, number>
   /** Paths the run removed or moved away. */
   readonly removed: ReadonlySet<string>
+  /**
+   * Names the run took away with a call that removes a name that is no directory (`unlink`), having neither
+   * looked at them nor written them before: all it learned of each is that such a name was there.
+   */
+  readonly unlinked?: ReadonlySet<string> | undefined
   /** Paths written by a package manager installing what a lockfile pins, or by a process it started. */
   readonly fetched: ReadonlySet<string>
   /** Why what the run read cannot all be known, when it cannot. */
@@ -830,46 +853,198 @@ export const bookkeeping = (argv: ReadonlyArray<string>): RegExp | undefined => 
 }
 
 /**
+ * The flags a package manager takes before its command: those that take the next word as their value, and those
+ * that take none. A word after a flag is the command only when the flag is known to take no value: `ci` in
+ * `pnpm --filter ci test` is a package's name. A flag that is in neither list leaves the command unknown.
+ */
+interface Flags {
+  readonly valued: ReadonlySet<string>
+  readonly plain: ReadonlySet<string>
+}
+
+const flagsOf = (valued: string, plain: string): Flags => ({
+  valued: new Set(valued.split(" ")),
+  plain: new Set(plain.split(" "))
+})
+
+const managerFlags: ReadonlyMap<string, Flags> = new Map([
+  [
+    "npm",
+    flagsOf(
+      "--prefix -C -w --workspace --loglevel --userconfig --globalconfig --cache --registry --tag --otp --scope " +
+        "--include --omit --logs-dir --logs-max",
+      "--silent -s --quiet -q --verbose -d -dd -ddd --no-audit --no-fund --ignore-scripts --offline " +
+        "--prefer-offline --no-progress --force -f --yes -y --legacy-peer-deps --strict-peer-deps -ws --workspaces " +
+        "--include-workspace-root --production --no-optional --foreground-scripts --no-update-notifier --no-color " +
+        "--color --no-package-lock --no-save"
+    )
+  ],
+  [
+    "pnpm",
+    flagsOf(
+      "--filter -F --filter-prod -C --dir --store-dir --virtual-store-dir --reporter --loglevel --config " +
+        "--registry --workspace-concurrency --child-concurrency --network-concurrency --lockfile-dir " +
+        "--modules-dir --test-pattern --changed-files-ignore-pattern",
+      "-r --recursive -w --workspace-root --silent -s --frozen-lockfile --prefer-offline --offline " +
+        "--ignore-scripts --no-color --color --stream --aggregate-output --prod -P --dev -D --no-optional " +
+        "--force --ignore-workspace --include-workspace-root --use-stderr --bail --no-bail --parallel --yes -y"
+    )
+  ],
+  [
+    "bun",
+    flagsOf(
+      "--cwd --config -c --filter --registry --cache-dir --backend --concurrent-scripts " +
+        "--network-concurrency --env-file --elide-lines --cafile",
+      "--frozen-lockfile --silent --verbose --no-progress --no-summary --ignore-scripts --production -p " +
+        "--dry-run --force -f --no-cache --no-save --no-verify --yarn -y --global -g --bun -b --trust --exact"
+    )
+  ],
+  [
+    "yarn",
+    flagsOf(
+      "--cwd --modules-folder --cache-folder --registry --mutex --network-concurrency --network-timeout " +
+        "--use-yarnrc --global-folder --preferred-cache-folder --link-folder --mode --https-proxy --proxy",
+      "--frozen-lockfile --immutable --immutable-cache --check-cache --inline-builds --silent -s --verbose " +
+        "--non-interactive --prefer-offline --offline --ignore-scripts --ignore-engines --ignore-platform " +
+        "--ignore-optional --no-progress --production --prod --pure-lockfile --check-files --force --json " +
+        "--no-bin-links --flat --har --no-default-rc --skip-integrity-check --no-node-version-check --focus"
+    )
+  ],
+  [
+    "uv",
+    flagsOf(
+      "--directory --project --config-file --cache-dir --color --python -p --allow-insecure-host " +
+        "--python-preference",
+      "--quiet -q --verbose -v --no-cache -n --offline --no-progress --no-config --native-tls " +
+        "--no-python-downloads --managed-python --no-managed-python"
+    )
+  ],
+  [
+    "pip",
+    flagsOf(
+      "--python --log --proxy --retries --timeout --exists-action --trusted-host --cert --client-cert " +
+        "--cache-dir --keyring-provider --use-feature --use-deprecated --resume-retries",
+      "--isolated --require-virtualenv --debug -v -vv -vvv --verbose -q -qq -qqq --quiet --no-input " +
+        "--no-cache-dir --disable-pip-version-check --no-color --no-python-version-warning"
+    )
+  ],
+  ["go", flagsOf("-C", "")],
+  ["cargo", flagsOf("--color --config -Z -C", "--locked --frozen --offline -q --quiet -v -vv --verbose")],
+  ["deno", flagsOf("", "-q --quiet")]
+])
+
+/**
+ * The words of a package manager's command line from its command on, with where the command is among `rest`, the
+ * words after the program; `undefined` when a flag before the command is not one of `flags`: what follows it
+ * may be its value.
+ */
+const commandOf = (
+  flags: Flags,
+  rest: ReadonlyArray<string>
+): { readonly at: number; readonly words: ReadonlyArray<string> } | undefined => {
+  let at = 0
+  for (; at < rest.length; at += 1) {
+    const word = rest[at]!
+    if (!word.startsWith("-")) break
+    const equals = word.indexOf("=")
+    const name = equals < 0 ? word : word.slice(0, equals)
+    // A flag that holds its own value (`--prefix=web`) takes no word after it.
+    if (flags.valued.has(name)) at += equals < 0 ? 1 : 0
+    else if (!flags.plain.has(name)) return undefined
+  }
+  return { at, words: rest.slice(at).filter((word) => !word.startsWith("-")) }
+}
+
+/** A path in a tree of installed packages: a package manager a lockfile put there is the package manager. */
+const installedTool = /(?:^|\/)node_modules\//
+
+/**
+ * Whether a program named by a path is one the workspace did not write: `node scripts/npm.js ci` and a
+ * repository's own `bin/uv` are the repository's programs under a package manager's name. A name with no slash is
+ * found on the search path; a path is trusted where it is absolute and outside `workspace`, or in a tree of
+ * installed packages.
+ */
+const notOfWorkspace = (path: string, workspace: string | undefined): boolean =>
+  !path.includes("/") || installedTool.test(path) ||
+  (path.startsWith("/") && (workspace === undefined || !under(NodePath.posix.normalize(path), workspace)))
+
+/**
+ * How a command line is a package manager told to install exactly what a lockfile pins: `install` for one that
+ * only installs, `run` for one that installs and then runs a command it was given (`uv run --locked`), and
+ * `undefined` for any other.
+ */
+const lockedKind = (
+  argv: ReadonlyArray<string>,
+  workspace: string | undefined,
+  program: string | undefined
+): "install" | "run" | undefined => {
+  const { at, names } = programOf(argv)
+  const name = names[at] === "yarnpkg" ? "yarn" : names[at] === "pip3" ? "pip" : names[at]
+  const flags = name === undefined ? undefined : managerFlags.get(name)
+  if (flags === undefined) return undefined
+  // The words name the program; the file that runs is the one that was started.
+  if (!notOfWorkspace(argv[at]!, workspace)) return undefined
+  if (at === 0 && program !== undefined && !notOfWorkspace(program, workspace)) return undefined
+  // cargo takes a toolchain before anything else (`cargo +nightly fetch`).
+  const rest = argv.slice(at + 1 + (name === "cargo" && argv[at + 1]?.startsWith("+") === true ? 1 : 0))
+  const command = commandOf(flags, rest)
+  if (command === undefined) return undefined
+  const { words } = command
+  const has = (...sought: ReadonlyArray<string>): boolean => sought.some((flag) => rest.includes(flag))
+  const installs = words[0] === "install" || words[0] === "i"
+  const locked = ((): boolean => {
+    switch (name) {
+      case "npm":
+        return ["ci", "clean-install", "install-clean", "ic"].includes(words[0]!)
+      case "pnpm":
+      case "bun":
+        return words[0] === "ci" || (installs && has("--frozen-lockfile"))
+      case "yarn":
+        return (installs || words.length === 0) && has("--frozen-lockfile", "--immutable")
+      case "uv":
+        return words[0] === "sync" && has("--locked", "--frozen")
+      case "pip":
+        return words[0] === "install" && has("--require-hashes")
+      case "go":
+        return words[0] === "mod" && words[1] === "download"
+      case "cargo":
+        return words[0] === "fetch" && has("--locked", "--frozen")
+      case "deno":
+        return words[0] === "install" && has("--frozen")
+      default:
+        return false
+    }
+  })()
+  if (locked) return "install"
+  // `uv run` passes every flag after the command's name on to the command, so its own comes first.
+  const next = rest[command.at + 1]
+  return name === "uv" && rest[command.at] === "run" && (next === "--locked" || next === "--frozen") ? "run" : undefined
+}
+
+/**
  * Whether a command line is a package manager told to install exactly what a
  * lockfile pins, and to fail when it cannot. What such an install fetches is
  * fixed by the lockfile, which the run reads, so a connection it opens does
  * not make its result depend on the network's answer.
  *
+ * The command is read past the flags the package manager is known to take
+ * before it: the value of one is never the command (`pnpm --filter ci test`
+ * runs a test), and a flag that is not known leaves the command unknown. A
+ * program the workspace itself holds is no package manager, whatever its
+ * name: `workspace` is the directory the run started in, and `program` the
+ * file that was started, where the caller knows them.
+ *
  * @category tracing
  * @since 1.0.0
  */
-export const lockedInstall = (argv: ReadonlyArray<string>): boolean => {
-  const { at, names } = programOf(argv)
-  const rest = argv.slice(at + 1)
-  const words = rest.filter((word) => !word.startsWith("-"))
-  const has = (...flags: ReadonlyArray<string>): boolean => flags.some((flag) => rest.includes(flag))
-  const installs = words[0] === "install" || words[0] === "i"
-  switch (names[at]) {
-    case "npm":
-      return ["ci", "clean-install", "install-clean", "ic"].includes(words[0]!)
-    case "pnpm":
-    case "bun":
-      return words[0] === "ci" || (installs && has("--frozen-lockfile"))
-    case "yarn":
-    case "yarnpkg":
-      return (installs || words.length === 0) && has("--frozen-lockfile", "--immutable")
-    case "uv":
-      // `uv run` passes every flag after the command's name on to the command, so its own comes first.
-      return (words[0] === "sync" && has("--locked", "--frozen")) ||
-        (rest[0] === "run" && (rest[1] === "--locked" || rest[1] === "--frozen"))
-    case "pip":
-    case "pip3":
-      return words[0] === "install" && has("--require-hashes")
-    case "go":
-      return words[0] === "mod" && words[1] === "download"
-    case "cargo":
-      return words[0] === "fetch" && has("--locked", "--frozen")
-    case "deno":
-      return words[0] === "install" && has("--frozen")
-    default:
-      return false
-  }
-}
+export const lockedInstall = (argv: ReadonlyArray<string>, workspace?: string, program?: string): boolean =>
+  lockedKind(argv, workspace, program) !== undefined
+
+/**
+ * The programs a package manager starts to fetch for it, by name: `uv run --locked` starts git for a dependency
+ * a lockfile pins to a commit. Any other program started under it is the command it was given.
+ */
+const fetchers = /^(?:git(?:-[a-z-]+)?|ssh)$/
 
 /** The build tools that fetch what a lockfile pins, the commands that do, and the files that pin and are rewritten. */
 const lockedBuilds: ReadonlyMap<
@@ -1293,8 +1468,12 @@ export const read = (
       }
     }
   }
-  /** Where the first call that found each path ended, where `found` holds where it began. */
+  /**
+   * Where the first call that found each path ended, where `found` holds where it began, and the same for
+   * `unfollowed`: each has its own first call, so each has its own end.
+   */
   const ended = new Map<string, number>()
+  const endedUnfollowed = new Map<string, number>()
   /** Where the call began that made each name the run made where nothing was: a directory, a link, a new file. */
   const began = new Map<string, number>()
   /**
@@ -1342,6 +1521,8 @@ export const read = (
   }
   /** Names the run removed or moved away. */
   const removed = new Set<string>()
+  /** Names the run took away with `unlink` before it had looked at them or written them ({@link Trace.unlinked}). */
+  const unlinked = new Set<string>()
   /** The names the run made as a file or a directory and that are still those ({@link Trace.plainMade}). */
   const plainMade = new Set<string>()
   /** The names the run made as a link or moved something onto, until it takes them away: a call may go through them. */
@@ -1357,6 +1538,12 @@ export const read = (
   /** Processes that are a locked install now, and the processes started under one. */
   const installing = new Set<number>()
   const installed = new Set<number>()
+  /**
+   * Processes that are, or were started under, an install that goes on to run a command it was given
+   * (`uv run --locked pytest`). The command is no install: a process among these that starts a program is the
+   * install's only while that program is one a package manager fetches with ({@link fetchers}).
+   */
+  const commanded = new Set<number>()
   /** What those processes wrote. */
   const fetched = new Set<string>()
   /** Processes started with a word of `quiet`, and the processes started under one: none of their reads is the run's. */
@@ -1409,7 +1596,14 @@ export const read = (
   const listened = new Set<string>()
   /** The sockets and ports the run reached before anything of it listened there, with what reaching them says. */
   const unbound: Array<readonly [key: string, how: string]> = []
-  let ephemeral = false
+  /**
+   * The sockets the run bound to port 0, where the system chooses the port, as strace names a socket
+   * (`socket:[<inode>]`). The trace says which port that was only where the run asked (`getsockname`): a program
+   * that tells anyone its port asked. `smthrs-observe` writes the chosen port in the bind's own line.
+   */
+  const chosen = new Set<string>()
+  const socketOf = (argument: string | undefined): string | undefined =>
+    argument === undefined ? undefined : /<(socket:\[\d+\])>/.exec(argument)?.[1]
   let root: number | undefined
   let at = 0
 
@@ -1447,7 +1641,20 @@ export const read = (
   const viewed = (pid: number, path: string, opened: string | undefined): string | undefined => {
     let current = path
     for (let hop = 0; hop < maximumLinks; hop += 1) {
-      if (supervised || !(current.startsWith("/proc/") || current.startsWith("/dev/"))) return current
+      if (!(current.startsWith("/proc/") || current.startsWith("/dev/"))) return current
+      if (supervised) {
+        // smthrs-observe writes a link of the calling process as it led. A link of a process by its number is
+        // left as the run named it: one of a process the run did not start leads to a file no trace shows.
+        const other = processLinkOf(current)
+        if (
+          other !== undefined && other !== "up" && typeof other.process === "number" &&
+          !cells.has(other.thread ?? other.process)
+        ) {
+          refusals.add(`it named ${path}, a file of a process outside the run`)
+          return undefined
+        }
+        return current
+      }
       const link = processLinkOf(current)
       if (link === undefined) return current
       if (link === "up") {
@@ -1516,7 +1723,7 @@ export const read = (
           )
         }
         networked = true
-      } else if (!ephemeral && !bound.has(`port:${portOf(address)}`)) {
+      } else if (!bound.has(`port:${portOf(address)}`)) {
         unbound.push([
           `port:${portOf(address)}`,
           `it reached a program outside the run on local port ${portOf(address)}`
@@ -1595,13 +1802,23 @@ export const read = (
       if (hushed.has(pid)) return
       if (own(path)) return
       const seen = follow ? found : unfollowed
-      if (!seen.has(path)) ended.set(path, at)
+      if (!seen.has(path)) (follow ? ended : endedUnfollowed).set(path, at)
       first(seen, path, entered)
     }
     const looked = (path: string | undefined, follow = true): void => {
       if (path === undefined || hushed.has(pid)) return
       if (!gone) saw(path, follow)
       else if (!own(path)) first(missing, path, entered)
+    }
+    /**
+     * A call that only succeeds where something is, and did, on a path the run has not written: the run found
+     * the path there, as a look would have. `rm stale.txt` fails where the file is gone, and a file opened to
+     * append keeps what it held. A path the run wrote before is its own already, and says nothing new. Answers
+     * the path, for the write that follows.
+     */
+    const foundFirst = (path: string | undefined, follow = true): string | undefined => {
+      if (ok && path !== undefined && !changed.has(path)) saw(path, follow)
+      return path
     }
     /**
      * Notes a write. `creates` says the call would have made the name: when it
@@ -1724,6 +1941,16 @@ export const read = (
       } else if (known !== undefined && known.kind !== "none") refusals.add(cannotFollow(known.name))
       return
     }
+    // The port the system chose for a socket the run bound to port 0: the run listens there.
+    if (name === "getsockname") {
+      const socket = socketOf(args[0])
+      const port = portOf(args[1] ?? "")
+      if (ok && socket !== undefined && chosen.has(socket) && port !== undefined && port !== "0") {
+        bound.add(`port:${port}`)
+        listened.add(`port:${port}`)
+      }
+      return
+    }
     const row = RecordedCalls.byName.get(name)
     if (row === undefined) return
     // A flag the table does not follow for this call may name a file another way.
@@ -1759,8 +1986,10 @@ export const read = (
         const creates = /O_CREAT/.test(flags)
         if (creates && /O_EXCL/.test(flags)) wrote(path, "made", true)
         else if (/O_TRUNC/.test(flags)) wrote(path, "emptied", creates)
-        // Opened to write without reading: the run learns only that the path can be opened.
-        else if (/O_WRONLY/.test(flags)) wrote(path, "changed", creates)
+        // Opened to write without reading, and not emptied: what was there stays under what the run writes. Where
+        // the call could not have made the file, one was there, and the run found it. Where it could have, the
+        // trace does not say which: `observe` asks the commit.
+        else if (/O_WRONLY/.test(flags)) wrote(creates ? path : foundFirst(path), "changed", creates)
         // Opened to read, making it if need be, in a directory the run made: the directory held nothing when
         // it was made, so the run finds there only what it put there. The name is the run's own and nothing it
         // read, as a lock or a manifest a tool opens in its own new cache directory is.
@@ -1811,8 +2040,20 @@ export const read = (
           if (!hushed.has(pid)) first(started, path, entered)
           programs.set(pid, path.slice(path.lastIndexOf("/") + 1))
           // A process that goes on to run another program is that program from here on.
-          if (words !== undefined && lockedInstall(words)) installing.add(pid)
-          else installing.delete(pid)
+          const locked = words === undefined ? undefined : lockedKind(words, cwd, path)
+          if (locked === undefined) {
+            installing.delete(pid)
+            // The command an install was told to run, and what that starts, is not the install: a test run so
+            // that calls a service on the network read the network's answer, which no lockfile fixes.
+            if (commanded.has(pid) && !fetchers.test(path.slice(path.lastIndexOf("/") + 1))) {
+              commanded.delete(pid)
+              installed.delete(pid)
+            }
+          } else {
+            installing.add(pid)
+            if (locked === "run") commanded.add(pid)
+            else commanded.delete(pid)
+          }
           const kept = words === undefined ? undefined : bookkeeping(words)
           if (kept === undefined) noting.delete(pid)
           else noting.set(pid, kept)
@@ -1838,9 +2079,11 @@ export const read = (
         }
         return
       }
-      case "utimensat":
+      case "utimensat": {
         // With no path, the descriptor itself is the file.
-        return wrote(args[1] === "NULL" ? baseOf(args[0]) : pathAt(row.dir, row.path), "meta")
+        if (args[1] === "NULL") return wrote(baseOf(args[0]), "meta")
+        return wrote(foundFirst(pathAt(row.dir, row.path), !/AT_SYMLINK_NOFOLLOW/.test(args[3] ?? "")), "meta")
+      }
       case "rename":
       case "link":
       case "renameat":
@@ -1909,8 +2152,12 @@ export const read = (
             if (errno === "EADDRINUSE") looked(socket)
             return
           }
-          if (key === "port:0") ephemeral = true
-          else if (key !== undefined) {
+          // A port the system chose is the run's own once the trace says which it was. Until then no port is: a
+          // bind to port 0 says nothing of the database or the daemon a later connection reaches on another port.
+          if (key === "port:0") {
+            const socket = socketOf(args[0])
+            if (socket !== undefined) chosen.add(socket)
+          } else if (key !== undefined) {
             bound.add(key)
             listened.add(key)
           }
@@ -1950,11 +2197,21 @@ export const read = (
       // A new mode, owner, time, size or attribute changes when the file last changed, as a write does.
       // Calls that cannot alter file bytes or the execute bit only mark `meta`, suppressing `moved` without
       // discarding what the run read.
-      case "remove":
-        return wrote(pathAt(row.dir, row.path), "changed")
+      case "remove": {
+        const path = pathAt(row.dir, row.path)
+        // The first the run has to do with the name: all it learns is that a name was there to take away.
+        const unseen = ok && path !== undefined && !changed.has(path) && !found.has(path) &&
+          !unfollowed.has(path) && !missing.has(path)
+        foundFirst(path, false)
+        const directory = name === "rmdir" || /AT_REMOVEDIR/.test(args[2] ?? "")
+        if (unseen && !directory && unfollowed.has(path)) unlinked.add(path)
+        return wrote(path, "changed")
+      }
       case "change": {
         const altersMeasure = name === "chmod" || name === "fchmodat" || name === "fchmodat2" || name === "truncate"
-        return wrote(pathAt(row.dir, row.path), altersMeasure ? "changed" : "meta")
+        const follows = row.nofollow !== true &&
+          !/AT_SYMLINK_NOFOLLOW/.test(row.flags === undefined ? "" : args[row.flags] ?? "")
+        return wrote(foundFirst(pathAt(row.dir, row.path), follows), altersMeasure ? "changed" : "meta")
       }
       case "changeFd":
         return wrote(baseOf(args[0]), name === "fchmod" ? "changed" : "meta")
@@ -2105,7 +2362,12 @@ export const read = (
       else leaders.delete(start.child)
       const program = programs.get(pid)
       if (program !== undefined) programs.set(start.child, program)
+      // A process id comes round again: a child is an install's only under an install.
+      installing.delete(start.child)
       if (installing.has(pid) || installed.has(pid)) installed.add(start.child)
+      else installed.delete(start.child)
+      if (commanded.has(pid)) commanded.add(start.child)
+      else commanded.delete(start.child)
       // A process id comes round again, so a child is quiet only under a quiet parent.
       if (hushed.has(pid)) hushed.add(start.child)
       else hushed.delete(start.child)
@@ -2138,10 +2400,10 @@ export const read = (
   // nothing was cannot have been found before it was made: a call that found it, and ended after the making
   // began, came after the making, so the name is the run's own and not something it read.
   for (const [path, start] of began) {
-    for (const seen of [found, unfollowed]) {
+    for (const [seen, ends] of [[found, ended], [unfollowed, endedUnfollowed]] as const) {
       const looked = seen.get(path)
       if (looked === undefined || removed.has(path)) continue
-      if (looked < made.get(path)! && ended.get(path)! > start) seen.delete(path)
+      if (looked < made.get(path)! && ends.get(path)! > start) seen.delete(path)
     }
   }
   // Every traced run starts a program, so a trace without a line is not a run's trace.
@@ -2173,6 +2435,7 @@ export const read = (
     ...(meta.size === 0 ? {} : { meta }),
     started,
     removed,
+    ...(unlinked.size === 0 ? {} : { unlinked }),
     fetched,
     refusals: [...refusals],
     outside: [...outside],
@@ -2349,8 +2612,8 @@ const sealLine = / \+\+\+ complete \+\+\+$/
  * on from it, so a path is read against the directories the step's trace
  * leaves each process in. The trace holds the paths found, found missing and
  * listed in `after`, with the line of the whole where each first appears
- * there, the refusals `after` adds, and every socket and port the programs
- * listened on (`bound`): a later step that talks to one talks to its job.
+ * there, what they wrote there, the refusals `after` adds, and every socket
+ * and port the programs listened on (`bound`): a later step that talks to one talks to its job.
  *
  * @category tracing
  * @since 1.0.0
@@ -2390,29 +2653,51 @@ export const servedBy = (
   )
   const later = (map: ReadonlyMap<string, number>): ReadonlyMap<string, number> =>
     new Map([...map].filter(([, at]) => at > count))
+  /** What only the lines since hold: a path the step itself wrote is the step's, whoever wrote it again. */
+  const since = (all: ReadonlySet<string> | undefined, first: ReadonlySet<string> | undefined): ReadonlySet<string> =>
+    new Set([...all ?? []].filter((path) => first?.has(path) !== true))
   const before = new Set(own.refusals)
   const earlier = new Set(own.outside ?? [])
+  const rights = new Set(own.rights ?? [])
+  const unfollowed = later(whole.unfollowed ?? new Map())
+  const meta = since(whole.meta, own.meta)
+  const unlinked = since(whole.unlinked, own.unlinked)
+  const walks = (whole.walks ?? []).filter((walk) => walk.at > count)
+  // The step's lines come first in both readings, so what they gave comes first in both.
+  const reached = (whole.reached ?? []).slice((own.reached ?? []).length)
+  const exchanged = (whole.exchanged ?? []).slice((own.exchanged ?? []).length)
+  const asked = (whole.rights ?? []).filter((program) => !rights.has(program))
   return {
     found: later(whole.found),
+    ...(unfollowed.size === 0 ? {} : { unfollowed }),
     missing: later(whole.missing),
     listed: later(whole.listed),
-    made: new Map(),
-    emptied: new Map(),
-    changed: new Set(),
+    // What the programs wrote while a later step ran is in that step's tree when it ends, as what it wrote is.
+    made: later(whole.made),
+    emptied: later(whole.emptied),
+    changed: since(whole.changed, own.changed),
+    ...(meta.size === 0 ? {} : { meta }),
     started: new Map(),
-    removed: new Set(),
-    fetched: new Set(),
+    removed: since(whole.removed, own.removed),
+    ...(unlinked.size === 0 ? {} : { unlinked }),
+    fetched: since(whole.fetched, own.fetched),
     refusals: whole.refusals.filter((refusal) => !before.has(refusal)),
     outside: (whole.outside ?? []).filter((refusal) => !earlier.has(refusal)),
+    ...(reached.length === 0 ? {} : { reached }),
+    ...(walks.length === 0 ? {} : { walks }),
+    ...(exchanged.length === 0 ? {} : { exchanged }),
+    ...(asked.length === 0 ? {} : { rights: asked }),
     bound: whole.bound ?? new Set()
   }
 }
 
 /**
  * A run's trace with what the programs its job left running read while it
- * ran ({@link servedBy}): the paths they found, found missing and listed
- * count as the run's, placed after every line of its own, so a path the run
- * made before they read it stays the run's own. Their refusals are the run's.
+ * ran ({@link servedBy}): the paths they found, looked at without following,
+ * found missing, listed, walked and wrote count as the run's, placed after
+ * every line of its own, so a path the run made before they read it stays
+ * the run's own. Their refusals are the run's, and the rights their programs
+ * ask for.
  *
  * @category tracing
  * @since 1.0.0
@@ -2429,13 +2714,50 @@ export const withServed = (own: Trace, served: ReadonlyArray<Trace>): Trace => {
     }
     return all
   }
+  const united = (pick: (trace: Trace) => ReadonlySet<string> | undefined): ReadonlySet<string> =>
+    new Set([own, ...served].flatMap((trace) => [...pick(trace) ?? []]))
+  const listed = <A>(pick: (trace: Trace) => ReadonlyArray<A> | undefined): ReadonlyArray<A> => [
+    ...pick(own) ?? [],
+    ...served.flatMap((trace) => pick(trace) ?? [])
+  ]
+  const unfollowed = joined((trace) => trace.unfollowed ?? new Map())
+  const meta = united((trace) => trace.meta)
+  // A name a program took away unseen is one the run never looked at either, or it is the run's by its own line.
+  const unlinked = new Set(
+    [...united((trace) => trace.unlinked)].filter((path) =>
+      own.unlinked?.has(path) === true ||
+      !(own.found.has(path) || own.unfollowed?.has(path) === true || own.missing.has(path) || own.changed.has(path))
+    )
+  )
+  const reached = listed((trace) => trace.reached)
+  const exchanged = listed((trace) => trace.exchanged)
+  // A walk is placed by its line, as a path is.
+  const walks = [
+    ...own.walks ?? [],
+    ...served.flatMap((trace) => (trace.walks ?? []).map((walk) => ({ ...walk, at: last + walk.at })))
+  ]
+  const rights = [...new Set(listed((trace) => trace.rights))]
   return {
     ...own,
     found: joined((trace) => trace.found),
+    ...(unfollowed.size === 0 ? {} : { unfollowed }),
     missing: joined((trace) => trace.missing),
     listed: joined((trace) => trace.listed),
+    // A name a program made, emptied, changed or removed while the run ran is changed in the run's tree: a file
+    // the run read before the program wrote it is held as the run found it, and never as the program left it.
+    made: joined((trace) => trace.made),
+    emptied: joined((trace) => trace.emptied),
+    changed: united((trace) => trace.changed),
+    ...(meta.size === 0 ? {} : { meta }),
+    removed: united((trace) => trace.removed),
+    ...(unlinked.size === 0 ? {} : { unlinked }),
+    fetched: united((trace) => trace.fetched),
     refusals: [...new Set([...own.refusals, ...served.flatMap((trace) => trace.refusals)])],
-    outside: [...new Set([...own.outside ?? [], ...served.flatMap((trace) => trace.outside ?? [])])]
+    outside: [...new Set([...own.outside ?? [], ...served.flatMap((trace) => trace.outside ?? [])])],
+    ...(reached.length === 0 ? {} : { reached }),
+    ...(walks.length === 0 ? {} : { walks }),
+    ...(exchanged.length === 0 ? {} : { exchanged }),
+    ...(own.rights === undefined && rights.length === 0 ? {} : { rights })
   }
 }
 
@@ -2452,6 +2774,11 @@ export interface Io {
   readonly readFile: (path: string) => Buffer
   /** The first `length` bytes of a file, or fewer when it is shorter. */
   readonly head: (path: string, length: number) => Buffer
+  /**
+   * The SHA-256 of a file's bytes, in hex, where these reads can give it without holding the file whole. Without
+   * it a file is digested as {@link digestOf} says.
+   */
+  readonly digest?: ((path: string) => string) | undefined
 }
 
 /**
@@ -2476,6 +2803,40 @@ export const defaultIo: Io = {
   }
 }
 
+/** One block of a file being digested: the reads are synchronous, so every file shares it. */
+const block = Buffer.allocUnsafe(1024 * 1024)
+
+/** The SHA-256 of a host file's bytes, read a block at a time: a file of any size, and never held whole. */
+const streamed = (path: string): string => {
+  const descriptor = NodeFs.openSync(path, "r")
+  try {
+    const hash = createHash("sha256")
+    for (;;) {
+      const got = NodeFs.readSync(descriptor, block, 0, block.length, null)
+      if (got === 0) return hash.digest("hex")
+      hash.update(got === block.length ? block : block.subarray(0, got))
+    }
+  } finally {
+    NodeFs.closeSync(descriptor)
+  }
+}
+
+/**
+ * The SHA-256 of a file's bytes, in hex. The host's own file is read a block
+ * at a time: `readFileSync` refuses a file over 2 GiB, and holds a smaller
+ * one whole. Reads a test or a caller supplies are used as given: by their
+ * `digest` when they have one, else by their `readFile`.
+ *
+ * @category measuring
+ * @since 1.0.0
+ */
+export const digestOf = (path: string, io: Io = defaultIo): string =>
+  io.digest !== undefined
+    ? io.digest(path)
+    : io.readFile === defaultIo.readFile
+    ? streamed(path)
+    : createHash("sha256").update(io.readFile(path)).digest("hex")
+
 const codeOf = (cause: unknown): string =>
   typeof cause === "object" && cause !== null && typeof (cause as { readonly code?: unknown }).code === "string"
     ? (cause as { readonly code: string }).code
@@ -2487,10 +2848,44 @@ const absent = "-"
 const unmeasured = "?"
 
 /**
+ * What stands for the state of a name the run took away without looking at it: a name that is no directory,
+ * whatever it holds. `unlink` succeeds on any such name, and the run read nothing of it.
+ */
+const nameOnly = "*"
+
+/**
+ * Whether a state says only that its path could not be read (`!<code>`). Such a state says nothing of what is
+ * there: it is the same text for every content a file may hold, so it never holds a path.
+ */
+const unread = (state: string): boolean => state.charCodeAt(0) === 33
+
+/**
+ * The state a row holds for a path the run found and then changed, from what was measured there before the run
+ * (`before`) and what the run left (`state`). `?`, which nothing matches, stands where the measurement cannot
+ * hold the path as the run found it: nothing was there, though the run found something; it could not be read; it
+ * was a directory that is none now, whose names and count of directories `d` does not say; or the run listed it
+ * and it is no directory now, so what the run listed there cannot be measured again.
+ */
+const priorOf = (before: string, state: string, listed: boolean): string =>
+  before === absent || unread(before) || (state !== "d" && (before === "d" || listed)) ? unmeasured : before
+
+/** Why a run that read a path that cannot be read now stores nothing. */
+const unreadable = (name: string, state: string): string =>
+  `${name} cannot be read now (${state.slice(1)}), so what the run read there cannot be known`
+
+/**
+ * Whether a path that holds `now` is as a record held it. A state that says the path could not be read matches
+ * nothing, itself included: the same failure at the next look says nothing of what is there then.
+ */
+const same = (now: string, held: string): boolean => now === held && !unread(held)
+
+/**
  * What is at a path, as one comparable text: `-` when nothing is, `d` for a
  * directory, `l:<target>` for a symbolic link, `f:<digest>` for a file (with
  * `:x` when it can be executed), `o:<kind>` for anything else, and `!<code>`
- * when it cannot be read.
+ * when it cannot be read. A `!<code>` state holds no path: {@link observe}
+ * stores nothing for a run that read one, and {@link changed} never finds
+ * one unchanged.
  *
  * @category measuring
  * @since 1.0.0
@@ -2501,8 +2896,7 @@ export const measure = (path: string, io: Io = defaultIo): string => {
     if (stats.isSymbolicLink()) return `l:${io.readlink(path)}`
     if (stats.isDirectory()) return "d"
     if (!stats.isFile()) return `o:${stats.mode & NodeFs.constants.S_IFMT}`
-    const digest = createHash("sha256").update(io.readFile(path)).digest("hex")
-    return `f:${digest}${(stats.mode & 0o111) === 0 ? "" : ":x"}`
+    return `f:${digestOf(path, io)}${(stats.mode & 0o111) === 0 ? "" : ":x"}`
   } catch (cause) {
     const code = codeOf(cause)
     return code === "ENOENT" || code === "ENOTDIR" ? absent : `!${code}`
@@ -2528,7 +2922,8 @@ export const listing = (path: string, own: ReadonlyArray<string>, io: Io = defau
 
 /**
  * The link count of a directory excluding direct subdirectories in `own`;
- * `undefined` when the path is not a directory that can be inspected.
+ * `undefined` when the path is not a directory that can be inspected, or is
+ * one on a file system that keeps no such count (a count under 2).
  *
  * @category measuring
  * @since 1.0.0
@@ -2537,6 +2932,9 @@ export const dirLinks = (path: string, own: ReadonlyArray<string>, io: Io = defa
   try {
     const stats = io.lstat(path)
     if (!stats.isDirectory()) return undefined
+    // A file system that does not count a directory's directories (btrfs, overlayfs: always 1) has no count to
+    // hold: less the run's own directories it would differ in every fresh tree, and it never moves otherwise.
+    if (stats.nlink < 2) return undefined
     let extra = 0
     for (const name of new Set(own)) {
       try {
@@ -2560,9 +2958,11 @@ export const dirLinks = (path: string, own: ReadonlyArray<string>, io: Io = defa
  */
 export interface Record {
   /**
-   * Each path with what the run left there. A third state is another the path may hold, and marks a path the
-   * run wrote: `-` when the run found the path missing and made it; when it changed a file it found there, what
-   * it found, or what it left again when what it found was not measured.
+   * Each path with what the run left there. A third state marks a path the run wrote, and says what the path
+   * must hold: `-` when the run found the path missing and made it, which holds missing or as it was left;
+   * otherwise what the run found there before it changed, removed or replaced it, which alone holds; `?`,
+   * which nothing matches, where that was not measured; or `*` for a name the run took away without looking at
+   * it, which holds while a name that is no directory is there.
    */
   readonly reads: ReadonlyArray<readonly [path: string, state: string] | readonly [string, string, string]>
   /**
@@ -2586,7 +2986,10 @@ export interface Record {
   readonly from?: ReadonlyArray<readonly [label: string, id: string]>
   /** Each path a step in `from` wrote that the run read: what was there, and that step's place in `from`. */
   readonly given?: ReadonlyArray<readonly [path: string, state: string, from: number]>
-  /** Set when the run left something behind that it wrote: a file, a directory or a link. */
+  /**
+   * Set when the run left something behind: a file, a directory or a link it wrote, or the absence of a path it
+   * found and removed where its files are kept. A step that only removes files leaves their absence.
+   */
   readonly left?: true
   /**
    * The names of the workspace the run made where its commit held nothing, from the root: a directory, a file,
@@ -2656,7 +3059,7 @@ export interface Observation {
   readonly record: Record
   readonly made: ReadonlySet<string>
   readonly touched: ReadonlySet<string>
-  /** What the run left behind, when it left anything: what to keep of it, or why it cannot be kept. */
+  /** What the run left behind, when it wrote or removed anything that is kept: what to keep, or why it cannot be. */
   readonly left?: Left | { readonly refusal: string }
 }
 
@@ -2795,6 +3198,9 @@ export const holdsValue = (text: string, value: string): boolean => {
   return false
 }
 
+/** A text of ASCII alone, which every encoding of a file or of a program's output writes the same. */
+const ascii = /^[\0-\x7f]*$/
+
 /** The bytes of a value as a file of one-byte characters holds it; none when no such file can. */
 const bytesOf = (value: string): Buffer | undefined => {
   for (let index = 0; index < value.length; index += 1) if (value.charCodeAt(index) > 0xff) return undefined
@@ -2811,6 +3217,8 @@ const hexByte = (byte: number | undefined): boolean =>
  */
 const bytesHoldValue = (data: Buffer, value: string): boolean => {
   if (value.length < minimumValueLength) return false
+  // A value outside ASCII is in most files as UTF-8, where each of its characters is two bytes or more.
+  if (!ascii.test(value) && data.includes(Buffer.from(value, "utf8"))) return true
   const whole = bytesOf(value)
   if (whole === undefined) return false
   if (!hexId.test(value)) return data.includes(whole)
@@ -2917,15 +3325,29 @@ export const listening = (
   readonly hear: (block: Uint8Array) => void
   readonly lines: (trace: () => Iterable<string>) => () => Iterable<string>
 } => {
+  // What a run prints is read a byte a character. A value outside ASCII goes by as the bytes of its UTF-8, so
+  // it is looked for as those bytes read the same way, beside the value as it is.
   const sought = Object.entries(values).flatMap(([name, value]) =>
-    value === undefined || value.length < minimumValueLength ? [] : [[name, value] as const]
+    value === undefined || value.length < minimumValueLength
+      ? []
+      : [[name, ascii.test(value) ? [value] : [value, Buffer.from(value, "utf8").toString("latin1")]] as const]
   )
-  const longest = Math.max(0, ...sought.map(([, value]) => value.length))
+  const longest = Math.max(0, ...sought.flatMap(([, forms]) => forms.map((form) => form.length)))
   const names = new Set<string>()
   const look = (text: string): void => {
-    for (const [name, value] of sought) {
-      if (!names.has(name) && holdsValue(text, value)) names.add(name)
+    for (const [name, forms] of sought) {
+      if (!names.has(name) && forms.some((form) => holdsValue(text, form))) names.add(name)
     }
+  }
+  /**
+   * The words a line that starts a program gives it, as the program got them: the tracer writes a quote, a
+   * backslash and every byte outside ASCII escaped, so a value that holds one is in no line as it is.
+   */
+  const wordsIn = (line: string): ReadonlyArray<string> => {
+    const call = callOf(/^\d+\s+(.*)$/s.exec(line)?.[1] ?? line)
+    if (call === undefined) return []
+    const args = split(call.body)
+    return wordsOf(args[call.name === "execveat" ? 2 : 1]) ?? []
   }
   let rest = ""
   return {
@@ -2940,7 +3362,10 @@ export const listening = (
     lines: (trace) =>
       function*() {
         for (const line of trace()) {
-          if (sought.length > names.size && line.includes("execve")) look(line)
+          if (sought.length > names.size && line.includes("execve")) {
+            look(line)
+            if (sought.length > names.size && line.includes("\\")) { for (const word of wordsIn(line)) look(word) }
+          }
           yield line
         }
       }
@@ -3172,10 +3597,11 @@ export const observe = (
      */
     readonly outside?: Measuring | undefined
     /**
-     * Paths measured just before the run began, by their real paths, each with what was there. A file the run
-     * found there and then changed is held as the run left it or as it found it: the next run that finds it as
-     * this one found it reads what this one read. A build measures the paths an earlier run wrote. A file a cache step puts back at every run, which the step
-     * reads and rewrites, is the same input each time, though never what the step left.
+     * Paths measured just before the run began, by their real paths, each with what was there. A path the run
+     * found there and then changed, removed or replaced is held as it found it: the next run that finds it as
+     * this one found it reads what this one read. A build measures the paths an earlier run wrote. A file a
+     * cache step puts back at every run, which the step reads and rewrites, is the same input each time, though
+     * never what the step left.
      */
     readonly found?: ReadonlyMap<string, string> | undefined
     /**
@@ -3229,6 +3655,8 @@ export const observe = (
       ? measure(path, io)
       : measure(path, {
         ...io,
+        // The names are looked for in the bytes as they are read, so the file is read whole.
+        digest: undefined,
         readFile: (file) => {
           const data = io.readFile(file)
           for (const name of namesHeld(data.toString("latin1"))) {
@@ -3643,6 +4071,49 @@ export const observe = (
     const path = pseudo(raw) ? undefined : named(raw)
     if (path !== undefined && visible(path)) made.add(path)
   }
+  /** The names the run removed or moved away, and those it took away unseen ({@link Trace.unlinked}). */
+  const takenAway = new Set<string>()
+  const unseen = new Set<string>()
+  for (const [raws, paths] of [[trace.removed, takenAway], [trace.unlinked ?? [], unseen]] as const) {
+    for (const raw of raws) {
+      const path = pseudo(raw) || tooLong(raw) ? undefined : named(raw)
+      if (path !== undefined) paths.add(path)
+    }
+  }
+  // A name the run wrote without first looking at it, where no call says nothing was there: whether something was
+  // there is not in the trace. Where the commit holds the name, something was. A file written so without being
+  // emptied (opened to append, or to write part of it) keeps bytes the run did not write, so it is an input, held
+  // as the run found it. A file emptied so is the run's own by its bytes, but its name was there for whatever
+  // listed its directory: the name counts in that listing again, and a commit that takes it away is a change.
+  {
+    const blind: Array<string> = []
+    const emptiedOver: Array<string> = []
+    for (const raw of trace.changed) {
+      if (pseudo(raw) || tooLong(raw)) continue
+      const path = named(raw)
+      if (path === undefined) continue
+      const real = ownName(raw) ? path : resolve(raw) ?? path
+      for (const candidate of real !== path && !trace.made.has(raw) ? [path, real] : [path]) {
+        if (candidate === options.root || !under(candidate, options.root) || made.has(candidate)) continue
+        const entry = entries.get(candidate)
+        if (entry === undefined) blind.push(candidate)
+        else if (entry.first === "made" && candidate === path) emptiedOver.push(candidate)
+      }
+    }
+    const asked = [...new Set([...blind, ...emptiedOver])]
+    const commit = asked.length === 0 ? undefined : (options.held ?? heldByGit(options.root))(asked.map(inside))
+    if (commit !== undefined) {
+      for (const path of blind) {
+        if (!commit.has(inside(path)) || entries.has(path)) continue
+        entries.set(path, { first: "found", made: false, changed: true, meta: false, listed: false })
+      }
+      for (const path of emptiedOver) {
+        if (!commit.has(inside(path))) continue
+        const slash = path.lastIndexOf("/")
+        own.get(path.slice(0, slash))?.delete(path.slice(slash + 1))
+      }
+    }
+  }
   const producers = options.producers ?? []
   /** The last step the run depends on that wrote a path, or made a directory above it. */
   const producerOf = (path: string): number | undefined => {
@@ -3713,6 +4184,10 @@ export const observe = (
     if (state === "!ENAMETOOLONG") {
       return { refusal: `it reached ${inside(path).slice(0, 60)}…, a path longer than this system can look at` }
     }
+    // So is any path that cannot be read now, whatever the reason: a file too large for the reader, one the run
+    // could read with rights the build does not have, a failure of the disk. The state would say only that, for
+    // every content the file may hold.
+    if (unread(state)) return { refusal: unreadable(inside(path), state) }
     if (entry.first === "missing") {
       reads.push(state !== absent && entry.made ? [inside(path), state, absent] : [inside(path), absent])
       continue
@@ -3722,15 +4197,25 @@ export const observe = (
       if (!entry.meta && state !== "d" && moved(path)) return { refusal: `${inside(path)} changed while it ran` }
     }
     const place = producers.length === 0 ? undefined : placeOf(path)
-    // A file the run found, changed and left is held only as it found it, never as it left it. Where what it found
-    // was not measured, the third state is `?` (never matches): the row still marks a file the run changes, so the
-    // next run measures it before it begins.
-    const before = entry.changed && state !== "d" && state !== absent
-      ? options.found?.get(path) ?? options.before?.(path) ?? unmeasured
-      : undefined
+    // A path the run found and then changed is held only as it found it, never as it left it: a file it wrote
+    // again, a file or a directory it removed or moved away, a name it put something else at. The run read what
+    // was there before, so a tree where the path is already as the run left it (removed, say) is not the tree
+    // the run read. Where what it found was not measured, the third state is `?` (never matches): the row still
+    // marks a path the run changes, so the next run measures it before it begins.
+    //
+    // A directory that is still one is held as the run left it where it was one all along: the run listed it, or
+    // never took its name away nor made it, so nothing else was ever at the name. Its names and its count of
+    // directories are held by their own rows. A name the run took away unseen is held as any name that is no
+    // directory: that one was there is all the run learned.
+    const steady = state === "d" && (entry.listed || !(entry.made || takenAway.has(path)))
+    const before = !entry.changed || steady
+      ? undefined
+      : state === absent && unseen.has(path)
+      ? nameOnly
+      : options.found?.get(path) ?? options.before?.(path) ?? unmeasured
     if (place !== undefined) given.push([inside(path), state, place])
     else if (before === undefined) reads.push([inside(path), state])
-    else reads.push([inside(path), state, before === absent ? unmeasured : before])
+    else reads.push([inside(path), state, priorOf(before, state, entry.listed)])
     if (!entry.listed) {
       if (
         state === "d" && place === undefined && path !== "/" &&
@@ -3765,7 +4250,12 @@ export const observe = (
       }
     }
     const digest = listing(path, [...names, ...added.map(([name]) => name)], io)
-    if (digest === undefined) continue
+    if (digest === undefined) {
+      // No directory now: the run removed it or put something else there, and its row holds it as nothing matches
+      // ({@link priorOf}). A directory that cannot be listed now leaves what the run listed there unknown.
+      if (state === "d") return { refusal: `${inside(path)}, which it listed, cannot be listed now` }
+      continue
+    }
     // A directory the run itself removed, made or renamed changed because the run changed it, as a file it wrote
     // did: it is compared with what the run left there.
     if (names.length === 0 && !entry.changed && !entry.meta && moved(path)) {
@@ -3864,20 +4354,6 @@ export const observe = (
   }
   const held = variables === undefined ? [] : used(variables)
   const madeAt = madePlaces()
-  const body = {
-    reads,
-    lists,
-    ...(links.length === 0 ? {} : { links }),
-    ...(from.length === 0 ? {} : { from, given }),
-    ...(survivors.length > 0 ? { left: true as const } : {}),
-    ...(madeAt === undefined || madeAt.length === 0 ? {} : { made: madeAt }),
-    ...(held.length === 0 ? {} : { variables: held }),
-    ...(options.running === true ? { running: true as const } : {}),
-    ...(options.served === undefined || options.served.length === 0 ? {} : { served: options.served })
-  }
-  const record = { ...body, id: idOf(body) }
-  if (survivors.length === 0) return { record, made, touched }
-
   const limits = options.limits ?? keptLimits
   /** A path as it is kept: from the root inside the workspace, absolute under a temporary directory. */
   const keptAs = (path: string): string | undefined =>
@@ -3886,6 +4362,34 @@ export const observe = (
       : temporary.some((directory) => under(path, directory))
       ? path
       : undefined
+  // What the run removed and left removed. A path that was there before the run and is gone after it is part of
+  // what the run left: a step that only cleans up leaves nothing else, and a run answered from its record still
+  // has to find those paths gone. A path the run made and removed again was never there for anyone else.
+  const removedNames = new Set<string>()
+  let cleared = false
+  for (const raw of trace.removed) {
+    const path = pseudo(raw) ? undefined : named(raw)
+    if (path === undefined || !visible(path) || there(path)) continue
+    const name = keptAs(path)
+    if (name === undefined) continue
+    removedNames.add(name)
+    if (entries.get(path)?.first === "found") cleared = true
+  }
+  const gone = [...removedNames].sort(byCodeUnit)
+  const body = {
+    reads,
+    lists,
+    ...(links.length === 0 ? {} : { links }),
+    ...(from.length === 0 ? {} : { from, given }),
+    ...(survivors.length > 0 || cleared ? { left: true as const } : {}),
+    ...(madeAt === undefined || madeAt.length === 0 ? {} : { made: madeAt }),
+    ...(held.length === 0 ? {} : { variables: held }),
+    ...(options.running === true ? { running: true as const } : {}),
+    ...(options.served === undefined || options.served.length === 0 ? {} : { served: options.served })
+  }
+  const record = { ...body, id: idOf(body) }
+  if (survivors.length === 0 && !cleared) return { record, made, touched }
+
   const leaves = (): Left | { readonly refusal: string } => {
     const keep: Array<string> = []
     const outside: Array<readonly [string, string]> = []
@@ -3895,7 +4399,10 @@ export const observe = (
       if (name === undefined) {
         // A package manager fills its own cache again when a file of it is missing.
         if (wrote(path, fetched)) continue
-        outside.push([path, measure(path, io)])
+        const state = measure(path, io)
+        // What cannot be read cannot be held to what the run left there.
+        if (unread(state)) return { refusal: `it left ${path} outside the workspace, which cannot be read` }
+        outside.push([path, state])
         if (outside.length > limits.outside) return { refusal: "it left too many files outside the workspace to keep" }
         continue
       }
@@ -3912,15 +4419,8 @@ export const observe = (
       keep.push(name)
       if (keep.length > limits.paths || bytes > limits.bytes) return { refusal: "it left too much to keep" }
     }
-    const gone: Array<string> = []
-    for (const raw of trace.removed) {
-      const path = pseudo(raw) ? undefined : named(raw)
-      if (path === undefined || !visible(path) || there(path)) continue
-      const name = keptAs(path)
-      if (name !== undefined) gone.push(name)
-    }
     if (gone.length > limits.paths) return { refusal: "it left too much to keep" }
-    return { keep, gone: [...new Set(gone)].sort(byCodeUnit), outside }
+    return { keep, gone, outside }
   }
   return { record, made, touched, left: leaves() }
 }
@@ -3945,7 +4445,7 @@ export const outsideHolds = (stored: Record, measured: (path: string) => string 
  * @since 1.0.0
  */
 export const outsideChanged = (stored: Record, measured: (path: string) => string = measure): string | undefined =>
-  (stored.kept?.outside ?? []).find(([path, state]) => measured(path) !== state)?.[0]
+  (stored.kept?.outside ?? []).find(([path, state]) => !same(measured(path), state))?.[0]
 
 /**
  * The modification times to give the files of a run that are put back, in
@@ -3981,8 +4481,9 @@ export const putBackTimes = (times: ReadonlyArray<bigint>, after: bigint, now: b
 
 /**
  * Whether a name in a kept archive may be put back: a path inside the
- * workspace, written from its root and never in `.git`, or an absolute path
- * under one of the temporary directories.
+ * workspace, written from its root in one spelling and never in a `.git`
+ * directory at any depth, or an absolute path under one of the temporary
+ * directories.
  *
  * @category recording
  * @since 1.0.0
@@ -3990,8 +4491,10 @@ export const putBackTimes = (times: ReadonlyArray<bigint>, after: bigint, now: b
 export const keptName = (name: string, temporary: ReadonlyArray<string>): boolean => {
   const parts = name.split("/")
   if (name === "" || name.includes("\0") || parts.includes("..")) return false
-  if (!name.startsWith("/")) return parts[0] !== ".git" && !parts.includes("")
-  return temporary.some((directory) => name.startsWith(`${directory}/`))
+  // No `.`: `./.git/hooks/x` is in the repository's store under another spelling. No `.git` at any depth: a
+  // nested repository's store runs what is put in it as the outer one's does.
+  if (!name.startsWith("/")) return !parts.some((part) => part === "" || part === "." || part === ".git")
+  return !parts.includes(".") && temporary.some((directory) => name.startsWith(`${directory}/`))
 }
 
 /** The names in a directory, sorted; none when it cannot be listed. */
@@ -4112,11 +4615,18 @@ export const changed = (
   const absolute = (path: string): string => path === "." ? root : path.startsWith("/") ? path : `${root}/${path}`
   for (const [path, state, other] of cheapestFirst(stored.reads, absolute, io, own)) {
     const now = measured(absolute(path))
-    if (other === undefined ? now === state : other === absent ? now === state || now === absent : now === other) {
-      continue
-    }
+    if (
+      other === undefined
+        ? same(now, state)
+        : other === absent
+        ? same(now, state) || now === absent
+        : other === nameOnly
+        ? now !== absent && now !== "d" && !unread(now)
+        : same(now, other)
+    ) continue
     if (now === absent) return `${path} is gone`
-    return state === absent ? `${path} now exists` : `${path} changed`
+    // A row with a third state is of a path the run wrote: one it left gone was there when the run found it.
+    return state === absent && other === undefined ? `${path} now exists` : `${path} changed`
   }
   // A name the run made where its commit held nothing: the run finds something there once a commit puts it there.
   // What the run itself left there, which git does not track, is no change. Where git cannot say, anything there
@@ -4141,7 +4651,7 @@ export const changed = (
   const pending = new Set<string>()
   for (const [path, state, place] of stored.given ?? []) {
     const now = measured(absolute(path))
-    if (now === state) continue
+    if (same(now, state)) continue
     // A file a step before this one left is no file of the commit: the line names the step, which ran again.
     const left = `${path}, which ${stored.from![place]![0]} left,`
     if (now !== absent) return state === absent ? `${path} now exists` : `${left} changed`
@@ -4424,7 +4934,20 @@ const isKept = (value: unknown): boolean => {
 
 const isRecord = (value: unknown): value is Record => {
   if (typeof value !== "object" || value === null) return false
-  const { from = [], given = [], id, kept, left, links = [], lists, made = [], reads, variables = [] } = value as {
+  const {
+    from = [],
+    given = [],
+    id,
+    kept,
+    left,
+    links = [],
+    lists,
+    made = [],
+    reads,
+    running,
+    served = [],
+    variables = []
+  } = value as {
     readonly [key in keyof Record]?: unknown
   }
   const text = (part: unknown): boolean => typeof part === "string"
@@ -4433,6 +4956,9 @@ const isRecord = (value: unknown): value is Record => {
     Number.isInteger(part) && (part as number) >= 0 && (part as number) < (from as ReadonlyArray<unknown>).length
   return Array.isArray(reads) && Array.isArray(lists) && Array.isArray(from) && Array.isArray(given) &&
     typeof id === "string" && (left === undefined || left === true) && isKept(kept) &&
+    // `changed` walks `served` and `idOf` digests both: a record that holds either as anything else is none.
+    (running === undefined || running === true) &&
+    Array.isArray(served) && served.every((row) => Array.isArray(row) && row.length === 2 && row.every(text)) &&
     Array.isArray(made) && made.every(text) &&
     Array.isArray(variables) && variables.every((row) => Array.isArray(row) && row.length === 2 && row.every(text)) &&
     reads.every((row) => Array.isArray(row) && (row.length === 2 || row.length === 3) && row.every(text)) &&

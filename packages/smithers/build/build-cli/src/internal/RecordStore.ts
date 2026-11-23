@@ -17,9 +17,9 @@ import { createHash, randomBytes } from "node:crypto"
 import * as NodeFs from "node:fs"
 import * as Fs from "node:fs/promises"
 import * as NodePath from "node:path"
-import * as Readline from "node:readline"
-import { Readable, Transform } from "node:stream"
+import { pipeline as piped, Readable, Transform } from "node:stream"
 import { pipeline } from "node:stream/promises"
+import { StringDecoder } from "node:string_decoder"
 import * as Zlib from "node:zlib"
 import * as ObservedReads from "./ObservedReads.ts"
 import { byCodeUnit } from "./Text.ts"
@@ -178,48 +178,106 @@ export const references = (output: unknown): ReadonlyArray<Reference> => {
 }
 
 /**
- * Reads one record from the content store, a line at a time. `undefined`
- * when it is not there, its bytes do not have its digest or its size, or its
- * lines are not a record of the paths the entry counts.
+ * The most a record may unpack to, and the most one line of it may hold, in
+ * bytes. A record of {@link ObservedReads.maximumPaths} paths unpacks to a
+ * few hundred megabytes at most, and its longest line names what one run
+ * removed. A store another machine wrote can hold a few kilobytes that
+ * unpack to gigabytes: such a record is none, and is given up on before it
+ * is held in memory.
  *
  * @category loading
  * @since 1.0.0
  */
-export const read = async (cas: string, reference: Reference): Promise<ObservedReads.Record | undefined> => {
+export const readLimits: { readonly bytes: number; readonly line: number } = {
+  bytes: 1024 * 1024 * 1024,
+  line: 64 * 1024 * 1024
+}
+
+/** A count of rows a head may give: a whole number from zero. */
+const isCount = (value: unknown): value is number => Number.isSafeInteger(value) && (value as number) >= 0
+
+/** The head of a record of `paths` paths, or nothing when the first line is no such head. */
+const asHead = (value: unknown, paths: number): Head | undefined => {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined
+  const { format, given = 0, id, links = 0, lists, reads } = value as { readonly [key in keyof Head]?: unknown }
+  if (format !== ObservedReads.format || typeof id !== "string") return undefined
+  if (!isCount(reads) || !isCount(lists) || !isCount(links) || !isCount(given)) return undefined
+  // The rows are counted before any is read: a head that promises more than the entry names is no head.
+  return reads + lists + links + given === paths && paths <= ObservedReads.maximumPaths ? value as Head : undefined
+}
+
+/**
+ * Reads one record from the content store, a line at a time. `undefined`
+ * when it is not there or cannot be read, its bytes do not have its digest
+ * or its size, it unpacks to more than `limits` allow, or its lines are not
+ * a record of the paths the entry counts.
+ *
+ * @category loading
+ * @since 1.0.0
+ */
+export const read = async (
+  cas: string,
+  reference: Reference,
+  limits: typeof readLimits = readLimits
+): Promise<ObservedReads.Record | undefined> => {
   const file = NodePath.join(cas, reference.digest)
-  const stats = await Fs.stat(file).catch(() => undefined)
-  if (stats === undefined || !stats.isFile() || stats.size !== reference.bytes) return undefined
+  // Opened once: the file measured is the file read, whatever takes its name away meanwhile.
+  const handle = await Fs.open(file, "r").catch(() => undefined)
+  if (handle === undefined) return undefined
+  const stats = await handle.stat().catch(() => undefined)
+  if (stats === undefined || !stats.isFile() || stats.size !== reference.bytes) {
+    await handle.close().catch(() => undefined)
+    return undefined
+  }
   const hash = createHash("sha256")
   const count = { bytes: 0 }
-  const input = NodeFs.createReadStream(file)
-  const unpacked = input.pipe(tap(hash, count)).pipe(Zlib.createGunzip())
-  const lines = Readline.createInterface({ input: unpacked, crlfDelay: Infinity })
+  // A failure of any part ends every part: the loop below then fails, and the record is none.
+  const unpacked = piped(handle.createReadStream(), tap(hash, count), Zlib.createGunzip(), () => undefined)
   let head: Head | undefined
   const reads: Array<readonly [string, string] | readonly [string, string, string]> = []
   const lists: Array<ObservedReads.Record["lists"][number]> = []
   const links: Array<NonNullable<ObservedReads.Record["links"]>[number]> = []
   const given: Array<NonNullable<ObservedReads.Record["given"]>[number]> = []
-  try {
-    for await (const line of lines) {
-      const value: unknown = JSON.parse(line)
-      if (head === undefined) {
-        head = value as Head
-        continue
-      }
-      if (reads.length < head.reads) reads.push(value as (typeof reads)[number])
-      else if (lists.length < head.lists) lists.push(value as (typeof lists)[number])
-      else if (links.length < (head.links ?? 0)) links.push(value as (typeof links)[number])
-      else if (given.length < (head.given ?? 0)) given.push(value as (typeof given)[number])
-      else return undefined
+  /** Takes one line; `false` when it is no line of this record. */
+  const take = (line: string): boolean => {
+    const value: unknown = JSON.parse(line)
+    if (head === undefined) {
+      head = asHead(value, reference.paths)
+      return head !== undefined
     }
+    if (reads.length < head.reads) reads.push(value as (typeof reads)[number])
+    else if (lists.length < head.lists) lists.push(value as (typeof lists)[number])
+    else if (links.length < (head.links ?? 0)) links.push(value as (typeof links)[number])
+    else if (given.length < (head.given ?? 0)) given.push(value as (typeof given)[number])
+    else return false
+    return true
+  }
+  const decoder = new StringDecoder("utf8")
+  let pending = ""
+  let unpackedBytes = 0
+  try {
+    for await (const chunk of unpacked as AsyncIterable<Buffer>) {
+      unpackedBytes += chunk.length
+      if (unpackedBytes > limits.bytes) return undefined
+      pending += decoder.write(chunk)
+      let from = 0
+      for (let end = pending.indexOf("\n", from); end >= 0; end = pending.indexOf("\n", from)) {
+        if (end - from > limits.line || !take(pending.slice(from, end))) return undefined
+        from = end + 1
+      }
+      pending = pending.slice(from)
+      // A line with no end yet is given up on once it is longer than any line of a record.
+      if (pending.length > limits.line) return undefined
+    }
+    pending += decoder.end()
+    if (pending !== "" && !take(pending)) return undefined
   } catch {
     return undefined
   } finally {
-    lines.close()
-    input.destroy()
+    unpacked.destroy()
+    await handle.close().catch(() => undefined)
   }
   if (head === undefined || hash.digest("hex") !== reference.digest || count.bytes !== reference.bytes) return undefined
-  if (head.format !== ObservedReads.format || typeof head.id !== "string") return undefined
   if (
     reads.length !== head.reads || lists.length !== head.lists ||
     links.length !== (head.links ?? 0) || given.length !== (head.given ?? 0)

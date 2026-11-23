@@ -8,6 +8,8 @@ the run's results may be used again. This module specifies it over the file syst
 that a record does not hold once anything it names has changed:
 
 * a path it read (`changed_of_read_mutated`),
+* a path that could not be read when the record was made, whatever is there now (`changed_of_unread`),
+* a path its run removed, where it is gone again and not as the run found it (`changed_of_removed_left`),
 * a directory it listed (`changed_of_listing_mutated`),
 * a variable it could have used (`changed_of_variable_mutated`),
 * a file it changed, under the `u2` rule (`changed_of_modified_left`),
@@ -27,6 +29,12 @@ def directory : String := State.dir.render
 
 /-- What stands for a file's state before a run that changed it, where that state was not measured. -/
 def unmeasured : String := String.ofList ['?']
+
+/--
+What stands for the state of a name the run took away without looking at it (`unlink`): a name that is no
+directory, whatever it holds. That one was there is all the run learned of it.
+-/
+def nameOnly : String := String.ofList ['*']
 
 /-- What a record is held against. -/
 structure World where
@@ -69,28 +77,60 @@ theorem first_eq_none {α : Type} {verdicts : List (Option α)} :
 /-! ## Reads -/
 
 /--
+Whether a state says only that its path could not be read (`!<code>`). Such a state says nothing of what is at
+the path: it is the same text for every content a file may hold.
+-/
+def unread (state : String) : Bool := state.toList.head? = some '!'
+
+/--
+`same`: whether a path that holds `now` is as a record held it. A state that says the path could not be read
+matches nothing, itself included: the same failure at the next look says nothing of what is there then.
+-/
+def same (now held : String) : Bool := now = held && !unread held
+
+theorem unread_absent : unread absent = false := by
+  simp [unread, absent, State.render]
+
+/-- Whether a path that holds `now` is a name that is no directory: what a row of `nameOnly` asks. -/
+def namePresent (now : String) : Bool := now != absent && now != directory && !unread now
+
+/--
 Whether a path that holds `now` is as its row says.
 
 Before `u2`, a row `[path, left, before]` of a file the run changed held with either state. Under `u2` it
 holds only with `before`: a run that finds the file as the last run left it reads other bytes than that run
-read. A third state of `-` marks a path the run found missing and made, which holds missing or as it was left.
+read. That is so of every path the run found and then changed: a file it wrote again, and a path it removed
+or put something else at, whose row is `[path, -, before]`. A third state of `-` marks a path the run found
+missing and made, which holds missing or as it was left. A third state of `*` marks a name the run took away
+without looking at it, which holds while a name that is no directory is there.
 -/
 def readHolds (u2 : Bool) (now state : String) (other : Option String) : Bool :=
   if u2 then
     match other with
-    | none => now = state
-    | some before => if before = absent then now = state ∨ now = absent else now = before
-  else now = state ∨ other = some now
+    | none => same now state
+    | some before =>
+      if before = absent then same now state || now = absent
+      else if before = nameOnly then namePresent now
+      else same now before
+  else
+    same now state ||
+      match other with
+      | none => false
+      | some held => if held = nameOnly then namePresent now else same now held
 
-/-- How `changed` says a read no longer holds. -/
-def readMessage (path now state : String) : String :=
+/--
+How `changed` says a read no longer holds. A row with a third state is of a path the run wrote: one it left
+gone was there when the run found it, so what is there now is other, not new.
+-/
+def readMessage (path now state : String) (other : Option String) : String :=
   if now = absent then path ++ " is gone"
-  else if state = absent then path ++ " now exists"
+  else if state = absent ∧ other = none then path ++ " now exists"
   else path ++ " changed"
 
 def readVerdict (rules : Rules) (world : World) (row : ReadRow) : Option String :=
   let now := measure world.fs (absolute world.root row.path)
-  if readHolds rules.u2 now row.state row.other then none else some (readMessage row.path now row.state)
+  if readHolds rules.u2 now row.state row.other then none
+  else some (readMessage row.path now row.state row.other)
 
 /-- The group a read is held in: the commit's own files, the rest of the workspace, what is outside it. -/
 def tier (world : World) (row : ReadRow) : Nat :=
@@ -172,7 +212,7 @@ def givenVerdict (world : World) (record : Record) : Option String :=
   (record.given.getD []).findSome? fun (path, state, place) =>
     let now := measure world.fs (absolute world.root path)
     let left := path ++ ", which " ++ labelAt record place ++ " left,"
-    if now = state then none
+    if same now state then none
     else if now ≠ absent then some (if state = absent then path ++ " now exists" else left ++ " changed")
     else if again world record place then none
     else some (left ++ " is gone")
@@ -260,7 +300,19 @@ theorem changed_of_read_mutated (rules : Rules) (world : World) (record : Record
     changed rules world record ≠ none := by
   intro holds
   have each := reads_hold_of_unchanged holds row held
-  cases u2 : rules.u2 <;> simp [readHolds, u2, plain, mutated] at each
+  cases u2 : rules.u2 <;> simp [readHolds, same, u2, plain, mutated] at each
+
+/--
+**Theorem 2b (no stale hit on a path that could not be read).** A record that holds `[path, !<code>]` holds on
+no file system: the state says only that the path could not be read, which is as true of a file whose bytes
+changed. `observe` stores no such row (`readRow`); a record that holds one was stored before it refused them.
+-/
+theorem changed_of_unread (rules : Rules) (world : World) (record : Record) (row : ReadRow)
+    (held : row ∈ record.reads) (plain : row.other = none) (failed : unread row.state = true) :
+    changed rules world record ≠ none := by
+  intro holds
+  have each := reads_hold_of_unchanged holds row held
+  cases u2 : rules.u2 <;> simp [readHolds, same, u2, plain, failed] at each
 
 /--
 **Theorem 3 (no stale hit on a listed directory).** A record that holds a listing `[directory, digest, own]`
@@ -305,18 +357,37 @@ not hold on a file system where the file is as the run left it, when that is not
 -/
 theorem changed_of_modified_left (u3 : Bool) (world : World) (record : Record) (row : ReadRow) (before : String)
     (held : row ∈ record.reads) (modified : row.other = some before) (found : before ≠ absent)
-    (rewritten : before ≠ row.state) (left : measure world.fs (absolute world.root row.path) = row.state) :
+    (measured : before ≠ nameOnly) (rewritten : before ≠ row.state)
+    (left : measure world.fs (absolute world.root row.path) = row.state) :
     changed ⟨true, u3⟩ world record ≠ none := by
   intro holds
   have each := reads_hold_of_unchanged holds row held
-  simp [readHolds, modified, found, left] at each
-  exact rewritten each.symm
+  simp [readHolds, same, modified, found, measured, left] at each
+  exact rewritten each.1.symm
+
+/--
+**Theorem 5b (`u2`, a removed input).** Under `u2`, a record that holds `[path, left, before]` for a path its
+run found does not hold on a file system where the path is gone, whatever the run left there: the run read
+what was there, and a tree where nothing is there is not the tree the run read. So a path the run found and
+then removed, whose row is `[path, -, before]`, does not hold where it is already gone.
+-/
+theorem changed_of_removed_left (u3 : Bool) (world : World) (record : Record) (row : ReadRow) (before : String)
+    (held : row ∈ record.reads) (modified : row.other = some before) (found : before ≠ absent)
+    (gone : measure world.fs (absolute world.root row.path) = absent) :
+    changed ⟨true, u3⟩ world record ≠ none := by
+  intro holds
+  have each := reads_hold_of_unchanged holds row held
+  by_cases unseen : before = nameOnly
+  · subst unseen
+    simp [readHolds, modified, found, namePresent, gone] at each
+  · simp [readHolds, same, modified, found, unseen, gone] at each
+    exact found each.1.symm
 
 /--
 Why `u2` is needed: before it, the same record held on the file system the run left, whatever the run had
 found. A run answered from it would be given the results of a run that read other bytes.
 -/
-theorem legacy_holds_as_left (u3 : Bool) (world : World) (row : ReadRow)
+theorem legacy_holds_as_left (u3 : Bool) (world : World) (row : ReadRow) (readable : unread row.state = false)
     (left : measure world.fs (absolute world.root row.path) = row.state) :
     changed ⟨false, u3⟩ world { id := "", reads := [row], lists := [] } = none := by
   apply first_eq_none.mpr
@@ -329,7 +400,7 @@ theorem legacy_holds_as_left (u3 : Bool) (world : World) (row : ReadRow)
     intro other inside
     have same : other = row := by simpa using mem_cheapestFirst.mp inside
     subst same
-    simp [readVerdict, readHolds, left]
+    simp [readVerdict, readHolds, same, left, readable]
   · simp [madeVerdict]
   · simp [fromVerdict]
   · simp [givenVerdict]

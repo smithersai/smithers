@@ -169,6 +169,82 @@ describe("the records of reads in the content store", () => {
     expect(await RecordStore.load(cas, entry)).toEqual([])
   })
 
+  it("reads none of a record that cannot be opened or read, and ends without an error of its own", async () => {
+    const cas = await store()
+    const reference = await RecordStore.write(cas, full)
+    const file = Path.join(cas, reference.digest)
+    const bytes = NodeFs.readFileSync(file)
+    // Taken away, a directory in its place, and a file the build may not read.
+    await Fs.rm(file)
+    expect(await RecordStore.read(cas, reference)).toBeUndefined()
+    await Fs.mkdir(file)
+    expect(await RecordStore.read(cas, reference)).toBeUndefined()
+    await Fs.rmdir(file)
+    await Fs.writeFile(file, bytes, { mode: 0o000 })
+    if (process.getuid?.() !== 0) expect(await RecordStore.read(cas, reference)).toBeUndefined()
+    await Fs.chmod(file, 0o644)
+    expect(await RecordStore.read(cas, reference)).toEqual(sorted)
+    // Bytes of the right size that are no gzip stream fail in the middle of the read, not at its start.
+    const broken = Buffer.concat([bytes.subarray(0, 20), Buffer.alloc(bytes.length - 20, 0xff)])
+    await Fs.writeFile(file, broken)
+    expect(await RecordStore.read(cas, reference)).toBeUndefined()
+    expect(await RecordStore.loadAll(cas, { kind: "observed", format: ObservedReads.format, records: [reference] }))
+      .toEqual({ records: [], unread: ["changed"] })
+  })
+
+  it("gives up on a record that unpacks to more than a record holds, before it holds it", async () => {
+    const cas = await store()
+    /** A stored file of these lines, named by its digest, as an entry would name it. */
+    const stored = async (text: string, paths: number): Promise<RecordStore.Reference> => {
+      const bytes = Zlib.gzipSync(text)
+      const digest = createHash("sha256").update(bytes).digest("hex")
+      await Fs.mkdir(cas, { recursive: true })
+      await Fs.writeFile(Path.join(cas, digest), bytes)
+      return { digest, paths, bytes: bytes.length }
+    }
+    const head = (counts: object): string => JSON.stringify({ format: ObservedReads.format, id: "1", ...counts })
+    const row = (name: string): string => JSON.stringify([name, "f:00"])
+    const good = await stored(`${head({ reads: 2, lists: 0 })}\n${row("a")}\n${row("b")}\n`, 2)
+    expect(await RecordStore.read(cas, good)).toEqual({ reads: [["a", "f:00"], ["b", "f:00"]], lists: [], id: "1" })
+    // The same record under limits it is over: its whole size, and the length of one line.
+    expect(await RecordStore.read(cas, good, { bytes: 40, line: 1024 })).toBeUndefined()
+    expect(await RecordStore.read(cas, good, { bytes: 4096, line: 8 })).toBeUndefined()
+    expect(await RecordStore.read(cas, good, { bytes: 4096, line: 1024 })).toBeDefined()
+    // A few kilobytes that unpack to megabytes of one line, with its digest right.
+    const bomb = await stored(`${head({ reads: 1, lists: 0 })}\n["${"a".repeat(8 * 1024 * 1024)}`, 1)
+    expect(bomb.bytes).toBeLessThan(64 * 1024)
+    expect(await RecordStore.read(cas, bomb, { bytes: 1024 * 1024, line: 1024 * 1024 })).toBeUndefined()
+    expect(await RecordStore.read(cas, bomb, { bytes: 64 * 1024 * 1024, line: 1024 })).toBeUndefined()
+    // A head that is no head, or that counts other rows than the entry names, is refused at its line.
+    for (
+      const first of [
+        "null",
+        "[]",
+        "7",
+        "\"head\"",
+        head({ reads: 1 }),
+        head({ reads: -1, lists: 3 }),
+        head({ reads: 1.5, lists: 0.5 }),
+        head({ reads: "2", lists: 0 }),
+        head({ reads: 1, lists: 0, links: 1, given: 1 }),
+        head({ reads: 400_001, lists: 0 }),
+        JSON.stringify({ format: "smthrs-observed-reads/0", id: "1", reads: 2, lists: 0 }),
+        JSON.stringify({ format: ObservedReads.format, id: 1, reads: 2, lists: 0 })
+      ]
+    ) {
+      const reference = await stored(`${first}\n${row("a")}\n${row("b")}\n`, 2)
+      expect([first, await RecordStore.read(cas, reference)]).toEqual([first, undefined])
+    }
+    // More rows than the head counts, and a last line with no end.
+    expect(await RecordStore.read(cas, await stored(`${head({ reads: 1, lists: 0 })}\n${row("a")}\n${row("b")}\n`, 1)))
+      .toBeUndefined()
+    expect(await RecordStore.read(cas, await stored(`${head({ reads: 2, lists: 0 })}\n${row("a")}\n${row("b")}`, 2)))
+      .toEqual({ reads: [["a", "f:00"], ["b", "f:00"]], lists: [], id: "1" })
+    // A record whose `served` is of another type is none, where reading it on would throw.
+    const served = await stored(`${head({ reads: 1, lists: 0, served: 0 })}\n${row("a")}\n`, 1)
+    expect(await RecordStore.read(cas, served)).toBeUndefined()
+  })
+
   it("names no record from an entry of another shape, or of the form before this one", async () => {
     const cas = await store()
     const reference = { digest: "a".repeat(64), paths: 1, bytes: 10 }

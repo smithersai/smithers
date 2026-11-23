@@ -461,7 +461,7 @@ describe("observing a virtual filesystem", () => {
     expect("refusal" in result || check(fs, result.record) !== undefined).toBe(true)
   })
 
-  it.fails("refuses a successful directory listing that cannot be measured after the run", () => {
+  it("refuses a successful directory listing that cannot be measured after the run", () => {
     const fs = new MemoryFs()
     fs.nodes.set(root + "/d", directory)
     const list = fs.readdir
@@ -613,11 +613,11 @@ describe("record decoding and bounded history", () => {
     )
   )
 
-  it.fails("checks the persisted running flag", () => {
+  it("checks the persisted running flag", () => {
     assertDecode({ id: "", reads: [], lists: [], running: false })
   })
 
-  it.fails("checks the persisted served tuple array", () => {
+  it("checks the persisted served tuple array", () => {
     assertDecode({ id: "", reads: [], lists: [], served: 0 })
   })
 

@@ -76,6 +76,8 @@ def traceOf (value : Json) : Trace where
   made := timedOf value "made"
   emptied := timedOf value "emptied"
   changed := names value "changed"
+  removed := names value "removed"
+  unlinked := names value "unlinked"
 
 def optionsOf (value : Json) : Options where
   root := text value "root"

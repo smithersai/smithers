@@ -6,16 +6,16 @@ import ObservedReadsSpec.Vfs
 
 The specification of `asRecord`, `pathsOf`, `idOf` and `store`.
 
-`isRecordShape` is the test `isRecord` in `ObservedReads.ts` makes of a value read back from disk.
-`isRecord` is the test the specification asks for: it also holds `running` and `served` to their types, which
-the implementation reads later without having checked them (`programsWellFormed`).
+`isRecord` is the test `isRecord` in `ObservedReads.ts` makes of a value read back from disk: the shape of its
+paths (`isRecordShape`), and `running` and `served` held to their types (`programsWellFormed`), which `changed`
+and `idOf` read.
 -/
 namespace ObservedReadsSpec
 
 open Lean (Json)
 
 /-- The format tag of a stored set of records. -/
-def format : String := "smthrs-observed-reads/4"
+def format : String := "smthrs-observed-reads/5"
 
 /-- Records kept for one declaration. -/
 def maximumRecords : Nat := 4
@@ -157,8 +157,8 @@ def isDirectoryRow (count : Nat) (second : Json → Bool) (row : Json) : Bool :=
   | _ => false
 
 /--
-The test `isRecord` makes in `ObservedReads.ts`. Under `u3` it also holds `links` to its shape; before `u3`
-a record has no `links` and the property is not looked at.
+The part of the test `isRecord` makes in `ObservedReads.ts` that holds a record's paths to their shape. Under
+`u3` it also holds `links` to its shape; before `u3` a record has no `links` and the property is not looked at.
 -/
 def isRecordShape (rules : Rules) (value : Json) : Bool :=
   match value with
@@ -204,7 +204,7 @@ def programsWellFormed (value : Json) : Bool :=
       | some rows => rows.all (isTexts 2)
       | none => false)
 
-/-- The shape the specification asks of a stored record. -/
+/-- `isRecord`: the shape of a stored record, as `ObservedReads.ts` tests it. -/
 def isRecord (rules : Rules) (value : Json) : Bool := isRecordShape rules value && programsWellFormed value
 
 /-! ## Reading a record of the right shape -/

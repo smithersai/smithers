@@ -7,8 +7,10 @@ import ObservedReadsSpec.Soundness
 what the run read. This module specifies the part of it that decides what a record holds:
 
 * `gather` resolves each path of the trace as the run's kernel did, noting every symbolic link on the way as
-  something the run read, and refuses a path through more than `maximumLinks` links;
-* `recordOf` measures each path the run did not make and writes its row.
+  something the run read, and refuses a path through more than `maximumLinks` links; it then asks the commit
+  about each name the run wrote without first looking at it (`blind`), and notes what the run removed (`goneOf`);
+* `recordOf` measures each path the run did not make and writes its row: none for a path that cannot be read
+  (`readRow`), and the state the run found for a path it then changed, removed or replaced (`priorOf`).
 
 `no_false_miss` (**Theorem 1**) then says the record holds on the file system it was made on.
 
@@ -44,6 +46,10 @@ structure Trace where
   made : List (String × Nat) := []
   emptied : List (String × Nat) := []
   changed : List String := []
+  /-- The names the run removed or moved away. -/
+  removed : List String := []
+  /-- The names the run took away with `unlink`, having neither looked at them nor written them before. -/
+  unlinked : List String := []
 
 /-- A path from its names. -/
 def renderPath (names : List String) : String := "/" ++ "/".intercalate names
@@ -117,6 +123,28 @@ def refusedPath (named : Bool) (path : String) : String := if named then (splitL
 def pseudo (path : String) : Bool :=
   ["/proc", "/sys", "/dev"].any fun top => path = top || path.startsWith (top ++ "/")
 
+/-- What `observe` is told besides the trace. -/
+structure Options where
+  root : String
+  /-- Paths measured just before the run began, each with what was there. -/
+  found : List (String × String) := []
+  /-- The host's variables. -/
+  values : String → Option String := fun _ => none
+  /-- The variables the run could have used. -/
+  shown : List String := []
+  /-- Whether the commit the run ran at holds a name; none where git cannot say. -/
+  held : Option (String → Bool) := none
+
+/-- `under(path, directory)`: the directory itself or a path below it. -/
+def under (path directory : String) : Bool :=
+  path = directory || (directory.toList ++ ['/']).isPrefixOf path.toList
+
+/-- A path as a record writes it: from the root inside the workspace, itself outside it. -/
+def inside (root path : String) : String :=
+  if path = root then String.ofList ['.']
+  else if (root.toList ++ ['/']).isPrefixOf path.toList then String.ofList (path.toList.drop (root.toList.length + 1))
+  else path
+
 /-- What `gather` knows so far. -/
 structure Gathered where
   entries : List Entry := []
@@ -126,6 +154,11 @@ structure Gathered where
   touched : List String := []
   /-- The names the run made. -/
   made : List String := []
+  /-- The paths of the workspace the run found, removed and left removed. -/
+  gone : List String := []
+  /-- The names the run removed or moved away, and those it took away unseen. -/
+  removed : List String := []
+  unlinked : List String := []
   refusal : Option String := none
 
 /-- Notes that the run met a path. The first meeting stays the first; making a path later is still noted. -/
@@ -218,40 +251,69 @@ def eventsOf (trace : Trace) : List (Event × String) :=
     trace.listed.map (fun (path, line) => (line, .listed, path))
   (all.mergeSort fun left right => left.1 ≤ right.1).map (·.2)
 
+/--
+A name the run wrote without first looking at it, where no call says nothing was there: whether something was
+there is not in the trace. Where the commit holds the name, something was.
+
+* A path with no entry was written so without being emptied (opened to append, or to write part of it): it
+  keeps bytes the run did not write, so it is an input, found and then changed, held as the run found it.
+* A name whose entry says the run made it, though no call made it where nothing was, was emptied so: its bytes
+  are the run's own, but the name was there for whatever listed its directory. It is taken out of the names the
+  run wrote there, so it counts in that directory's listing again, and a commit that takes it away is a change.
+-/
+def blind (fs : Node) (trace : Trace) (root : String) (committed : String → Bool) (made : List String)
+    (state : Gathered) (raw : String) : Gathered :=
+  if pseudo raw then state
+  else
+    match (namedPath fs raw).ended with
+    | none => state
+    | some path =>
+      let real := (realPath fs raw).ended.getD path
+      let candidates := if real ≠ path ∧ (trace.made.lookup raw).isNone then [path, real] else [path]
+      candidates.foldl (fun state candidate =>
+        if candidate = root ∨ !under candidate root ∨ candidate ∈ made ∨ !committed (inside root candidate) then state
+        else
+          match state.entries.find? (·.path = candidate) with
+          | none => { state with entries := state.entries ++ [⟨candidate, .found, false, true, false⟩] }
+          | some entry =>
+            if entry.first = .made ∧ candidate = path then
+              { state with own := state.own.filter fun name => name ≠ splitLast path }
+            else state) state
+
+/--
+The paths of the workspace the run found and then removed, and left removed: a later run answered from the
+record has to find them gone, so they are part of what the run left, also where it left nothing else. A path
+the run made and removed again was never there for anyone else, and is none.
+-/
+def goneOf (fs : Node) (trace : Trace) (root : String) (entries : List Entry) : List String :=
+  trace.removed.filterMap fun raw =>
+    if pseudo raw then none
+    else (namedPath fs raw).ended.filter fun path =>
+      !pseudo path && !present fs path && under path root &&
+        entries.any fun entry => entry.path = path ∧ entry.first = .found
+
 /-- What the run did with each path of its trace, or why it stores nothing. -/
-def gather (rules : Rules) (fs : Node) (trace : Trace) : Except String Gathered :=
+def gather (rules : Rules) (fs : Node) (trace : Trace) (options : Options) : Except String Gathered :=
   let state := (eventsOf trace).foldl (step fs) {}
   let state := trace.changed.foldl (written rules.u3 fs trace) state
   match state.refusal with
   | some refusal => .error refusal
   | none =>
+    let made := trace.made.filterMap fun (raw, _) =>
+      if pseudo raw then none else (namedPath fs raw).ended.filter (!pseudo ·)
+    let state :=
+      match options.held with
+      | none => state
+      | some committed => trace.changed.foldl (blind fs trace options.root committed made) state
+    let namedAll (raws : List String) : List String :=
+      raws.filterMap fun raw => if pseudo raw then none else (namedPath fs raw).ended
     .ok { state with
-      made := (trace.made.filterMap fun (raw, _) =>
-        if pseudo raw then none else (namedPath fs raw).ended.filter (!pseudo ·)) }
+      made := made
+      gone := goneOf fs trace options.root state.entries
+      removed := namedAll trace.removed
+      unlinked := namedAll trace.unlinked }
 
 /-! ## The record -/
-
-/-- What `observe` is told besides the trace. -/
-structure Options where
-  root : String
-  /-- Paths measured just before the run began, each with what was there. -/
-  found : List (String × String) := []
-  /-- The host's variables. -/
-  values : String → Option String := fun _ => none
-  /-- The variables the run could have used. -/
-  shown : List String := []
-  /-- Whether the commit the run ran at holds a name; none where git cannot say. -/
-  held : Option (String → Bool) := none
-
-/-- `under(path, directory)`: the directory itself or a path below it. -/
-def under (path directory : String) : Bool :=
-  path = directory || (directory.toList ++ ['/']).isPrefixOf path.toList
-
-/-- A path as a record writes it: from the root inside the workspace, itself outside it. -/
-def inside (root path : String) : String :=
-  if path = root then String.ofList ['.']
-  else if (root.toList ++ ['/']).isPrefixOf path.toList then String.ofList (path.toList.drop (root.toList.length + 1))
-  else path
 
 /--
 A path the run met is written in a record as a name that leads back to it: `absolute` undoes `inside` for every
@@ -306,17 +368,43 @@ theorem mem_dedup {name : String} {names : List String} : name ∈ dedup names �
         · exact step.mpr later
     · simp [step]
 
-/-- The row of one path the run did not make, or why the run stores nothing. -/
-def readRow (rules : Rules) (fs : Node) (options : Options) (entry : Entry) : Except String ReadRow :=
+/--
+`priorOf`: the state a row holds for a path the run found and then changed, from what was measured there before
+the run (`before`) and what the run left (`state`). The `fallback` (`?` under `u2`, which nothing matches)
+stands where the measurement cannot hold the path as the run found it: nothing was there, though the run found
+something; it could not be read; it was a directory that is none now, whose names and count of directories `d`
+does not say; or the run listed it and it is no directory now, so what it listed there cannot be measured again.
+-/
+def priorOf (fallback before state : String) (listed : Bool) : String :=
+  if before = absent ∨ unread before = true ∨ (state ≠ directory ∧ (before = directory ∨ listed = true)) then fallback
+  else before
+
+/--
+The row of one path the run did not make, or why the run stores nothing.
+
+A path that cannot be read now stores nothing: its state would say only that, for every content it may hold.
+A path the run found and then changed is held as the run found it, whatever it left there: a file it wrote
+again, and as much a path it removed or put a directory at. A directory that is still one is held as the run
+left it where it was one all along: the run listed it, or never took its name away nor made it. A name the run
+took away unseen is held as any name that is no directory (`nameOnly`).
+-/
+def readRow (rules : Rules) (fs : Node) (options : Options) (gathered : Gathered) (entry : Entry) :
+    Except String ReadRow :=
   let state := measure fs entry.path
   let name := inside options.root entry.path
-  if entry.first = .missing then
+  if unread state = true then
+    .error (name ++ " cannot be read now (" ++ String.ofList (state.toList.drop 1) ++
+      "), so what the run read there cannot be known")
+  else if entry.first = .missing then
     .ok (if state ≠ absent ∧ entry.made = true then ⟨name, state, some absent⟩ else ⟨name, absent, none⟩)
   else if entry.changed = false ∧ state = absent then .error (name ++ " was removed while it ran")
-  else if entry.changed = true ∧ state ≠ directory ∧ state ≠ absent then
+  else if entry.changed = true ∧
+      ¬(state = directory ∧ (entry.listed = true ∨ ¬(entry.made = true ∨ entry.path ∈ gathered.removed))) then
     let fallback := if rules.u2 then unmeasured else state
-    let before := (options.found.lookup entry.path).getD fallback
-    .ok ⟨name, state, some (if before = absent then fallback else before)⟩
+    let before :=
+      if state = absent ∧ entry.path ∈ gathered.unlinked then nameOnly
+      else (options.found.lookup entry.path).getD fallback
+    .ok ⟨name, state, some (priorOf fallback before state entry.listed)⟩
   else .ok ⟨name, state, none⟩
 
 /-- Maps a list with a function that may refuse; the first refusal is the answer. -/
@@ -406,7 +494,7 @@ def bodyOf (rules : Rules) (fs : Node) (options : Options) (gathered : Gathered)
   reads := reads
   lists := (inputsOf gathered).filterMap (listRow fs options gathered)
   links := if rules.u3 then nonempty ((inputsOf gathered).filterMap (linkRow fs options gathered)) else none
-  left := gathered.touched.any fun path => path ≠ options.root ∧ present fs path
+  left := (gathered.touched.any fun path => path ≠ options.root ∧ present fs path) || !gathered.gone.isEmpty
   made := (madePlaces options gathered).bind nonempty
   variables := nonempty (variablesOf options)
 
@@ -415,13 +503,13 @@ def withId (body : Record) : Record := { body with id := idOf body }
 
 /-- The record of what the run read, from what `gather` made of its trace. -/
 def recordOf (rules : Rules) (fs : Node) (options : Options) (gathered : Gathered) : Except String Record :=
-  match mapE (readRow rules fs options) (inputsOf gathered) with
+  match mapE (readRow rules fs options gathered) (inputsOf gathered) with
   | .error refusal => .error refusal
   | .ok reads => .ok (withId (bodyOf rules fs options gathered reads))
 
 /-- `observe`: the record of what a run read, or why the run stores nothing. -/
 def observe (rules : Rules) (fs : Node) (trace : Trace) (options : Options) : Except String Record :=
-  match gather rules fs trace with
+  match gather rules fs trace options with
   | .error refusal => .error refusal
   | .ok gathered => recordOf rules fs options gathered
 
@@ -444,12 +532,24 @@ theorem unmeasured_ne_absent : unmeasured ≠ absent := by
   have chars := congrArg String.toList same
   simp [unmeasured, absent, State.render] at chars
 
-/-- Under `u2`, a row whose third state is the path's state, or is `-`, holds where the path is as the row says. -/
-theorem readHolds_u2 (now before : String) (fixed : before ≠ absent → before = now) :
-    readHolds true now now (some before) = true := by
+/--
+Under `u2`, a row whose third state is the path's state, or is `-`, holds where the path is as the row says
+and could be read.
+-/
+theorem readHolds_u2 (now before : String) (readable : unread now = false)
+    (fixed : before ≠ absent → before = now) : readHolds true now now (some before) = true := by
   by_cases gone : before = absent
-  · simp [readHolds, gone]
-  · simp [readHolds, fixed gone]
+  · simp [readHolds, same, gone, readable]
+  · have settled := fixed gone
+    subst settled
+    by_cases unseen : before = nameOnly
+    · subst unseen
+      have away : nameOnly ≠ directory := by
+        intro equal
+        have chars := congrArg String.toList equal
+        simp [nameOnly, directory, State.render] at chars
+      simp [readHolds, gone, namePresent, readable, away]
+    · simp [readHolds, same, gone, unseen, readable]
 
 /-- A record's made names are none of them the commit's when each was chosen as a name the commit does not hold. -/
 theorem madeVerdict_none (world : World) (record : Record) (held : Option (String → Bool))
@@ -493,7 +593,7 @@ theorem recordOf_holds (rules : Rules) (fs : Node) (options : Options) (gathered
       before = row.state) :
     changed rules (worldOf fs options own) record = none := by
   unfold recordOf at recorded
-  cases mapped : mapE (readRow rules fs options) (inputsOf gathered) with
+  cases mapped : mapE (readRow rules fs options gathered) (inputsOf gathered) with
   | error refusal => simp [mapped] at recorded
   | ok reads =>
     simp only [mapped] at recorded
@@ -515,42 +615,45 @@ theorem recordOf_holds (rules : Rules) (fs : Node) (options : Options) (gathered
       have held := mem_cheapestFirst.mp held
       obtain ⟨entry, input, made⟩ := mem_of_mapE mapped held
       have back := spelled entry (inputOf entry input)
-      have same := unchanged
       simp only [readVerdict, worldOf]
       have holds : readHolds rules.u2 (measure fs (absolute options.root row.path)) row.state row.other = true := by
         unfold readRow at made
         simp only at made
         split at made
-        · rename_i missing
+        · cases made
+        · rename_i failed
+          have readable : unread (measure fs entry.path) = false := by simpa using failed
           split at made
-          · cases made
-            simp only [back]
-            cases rules.u2 <;> simp [readHolds]
-          · rename_i notMade
-            cases made
-            simp only [back]
-            have gone : measure fs entry.path = absent := by
-              by_cases there : measure fs entry.path = absent
-              · exact there
-              · have unmade : entry.made = false := by
-                  cases flag : entry.made
-                  · rfl
-                  · exact absurd ⟨there, flag⟩ notMade
-                exact quiet entry (inputOf entry input) missing unmade
-            cases rules.u2 <;> simp [readHolds, gone]
-        · split at made
-          · cases made
-          · split at made
-            · cases made
-              rw [back]
-              cases u2 : rules.u2
-              · simp [readHolds]
-              · have fixed := unchanged u2 _ held _ rfl
-                rw [u2] at fixed
-                exact readHolds_u2 _ _ fixed
+          · rename_i missing
+            split at made
             · cases made
               simp only [back]
-              cases rules.u2 <;> simp [readHolds]
+              cases rules.u2 <;> simp [readHolds, same, readable]
+            · rename_i notMade
+              cases made
+              simp only [back]
+              have gone : measure fs entry.path = absent := by
+                by_cases there : measure fs entry.path = absent
+                · exact there
+                · have unmade : entry.made = false := by
+                    cases flag : entry.made
+                    · rfl
+                    · exact absurd ⟨there, flag⟩ notMade
+                  exact quiet entry (inputOf entry input) missing unmade
+              cases rules.u2 <;> simp [readHolds, same, gone, unread_absent]
+          · split at made
+            · cases made
+            · split at made
+              · cases made
+                rw [back]
+                cases u2 : rules.u2
+                · simp [readHolds, same, readable]
+                · have fixed := unchanged u2 _ held _ rfl
+                  rw [u2] at fixed
+                  exact readHolds_u2 _ _ readable fixed
+              · cases made
+                simp only [back]
+                cases rules.u2 <;> simp [readHolds, same, readable]
       simp [holds]
     · exact madeVerdict_none _ _ options.held _ rfl rfl (by
         intro committed name held
@@ -585,9 +688,9 @@ theorem recordOf_holds (rules : Rules) (fs : Node) (options : Options) (gathered
 /-- Theorem 1 for `observe`: the hypotheses are asked of what `gather` made of the trace. -/
 theorem no_false_miss (rules : Rules) (fs : Node) (trace : Trace) (options : Options) (record : Record)
     (own : String → Bool) (observed : observe rules fs trace options = .ok record)
-    (spelled : ∀ gathered, gather rules fs trace = .ok gathered → ∀ entry ∈ gathered.entries,
+    (spelled : ∀ gathered, gather rules fs trace options = .ok gathered → ∀ entry ∈ gathered.entries,
       absolute options.root (inside options.root entry.path) = entry.path)
-    (quiet : ∀ gathered, gather rules fs trace = .ok gathered → ∀ entry ∈ gathered.entries,
+    (quiet : ∀ gathered, gather rules fs trace options = .ok gathered → ∀ entry ∈ gathered.entries,
       entry.first = .missing → entry.made = false → measure fs entry.path = absent)
     (unchanged : rules.u2 = true → ∀ row ∈ record.reads, ∀ before, row.other = some before → before ≠ absent →
       before = row.state) :

@@ -18,6 +18,7 @@ import { createHash, randomBytes } from "node:crypto"
 import * as NodeFs from "node:fs"
 import * as Fs from "node:fs/promises"
 import * as Net from "node:net"
+import * as NodeOs from "node:os"
 import * as NodePath from "node:path"
 import * as PackageTree from "../PackageTree.ts"
 import * as ObservedReads from "./ObservedReads.ts"
@@ -167,6 +168,23 @@ const xdg = (environment: Readonly<Record<string, string | undefined>>, name: st
   return value !== undefined && NodePath.isAbsolute(value) ? value : undefined
 }
 
+/**
+ * The home directory an environment names, or the user's own where it names none, as a container started without
+ * `HOME` does. Where the system knows no home either, the temporary directory stands in: machines are kept
+ * somewhere, and a build never fails for want of a variable.
+ */
+const homeOf = (environment: Readonly<Record<string, string | undefined>>): string => {
+  const named = environment["HOME"]
+  if (named !== undefined && named !== "") return named
+  try {
+    const own = NodeOs.homedir()
+    if (own !== "") return own
+  } catch {
+    // No home in the environment and none in the user database.
+  }
+  return NodeOs.tmpdir()
+}
+
 /** The directory inside `base`, named by the workspace's path, that holds the workspace's machines. */
 const forWorkspace = (base: string, root: string): string =>
   NodePath.join(base, createHash("sha256").update(root).digest("hex").slice(0, 16))
@@ -189,7 +207,7 @@ export const holding = (root: string, environment: Readonly<Record<string, strin
   forWorkspace(
     environment[holdingVariable] ??
       NodePath.join(
-        xdg(environment, "XDG_STATE_HOME") ?? NodePath.join(environment["HOME"] as string, ".local", "state"),
+        xdg(environment, "XDG_STATE_HOME") ?? NodePath.join(homeOf(environment), ".local", "state"),
         "smthrs",
         "machines"
       ),
@@ -344,25 +362,83 @@ const closed = (connection: Net.Socket, signal: AbortSignal | undefined): Promis
     })
   })
 
+/** Why nobody answered at a socket's path: its error's code. */
+const unanswered = (path: string): Promise<string | undefined> =>
+  new Promise((resolve) => {
+    const socket = Net.connect(path)
+    socket.once("connect", () => {
+      socket.destroy()
+      resolve(undefined)
+    })
+    socket.once("error", (error: NodeJS.ErrnoException) => resolve(error.code ?? "EIO"))
+  })
+
+/** How long a build waits before it asks again for the turn another build has, and when a turn left behind ends. */
+const turnPollMs = 5
+const turnStaleMs = 30_000
+
+/**
+ * Runs `body` while no other build takes or clears the hold at `path`: the two are one turn at a time. A build
+ * that cleared a hold nobody answered at, while another bound a new one in its place, would take away a live
+ * hold, and two builds would then use the same machines.
+ *
+ * On Linux the turn is a socket named apart from the file system, which the system takes away when its build
+ * ends, however it ends. Elsewhere it is a file made only where none is: a build killed inside its turn, which
+ * takes milliseconds, leaves one, and it is taken away once it is older than {@link turnStaleMs}. A hold that is
+ * itself named apart from the file system (a pipe, a socket of Linux's own names) leaves nothing behind to clear,
+ * and needs no turn.
+ */
+const inTurn = async <A>(path: string, body: () => Promise<A>, signal?: AbortSignal): Promise<A> => {
+  if (process.platform === "win32" || path.startsWith("\0")) return body()
+  if (process.platform === "linux") {
+    const name = `\0smthrs-machines-turn-${createHash("sha256").update(path).digest("hex")}`
+    for (;;) {
+      signal?.throwIfAborted()
+      const server = await listen(name)
+      if (server === undefined) {
+        await new Promise((resolve) => setTimeout(resolve, turnPollMs))
+        continue
+      }
+      try {
+        return await body()
+      } finally {
+        await new Promise<void>((resolve) => server.close(() => resolve()))
+      }
+    }
+  }
+  const file = `${path}.turn`
+  for (;;) {
+    signal?.throwIfAborted()
+    const taken = await Fs.open(file, "wx").then((handle) => handle.close().then(() => true), () => false)
+    if (taken) {
+      try {
+        return await body()
+      } finally {
+        await Fs.rm(file, { force: true })
+      }
+    }
+    const age = await Fs.stat(file).then((stats) => Date.now() - stats.mtimeMs, () => 0)
+    if (age > turnStaleMs) await Fs.rm(file, { force: true })
+    else await new Promise((resolve) => setTimeout(resolve, turnPollMs))
+  }
+}
+
 /**
  * Takes away a hold at `path` whose build ended without releasing it, as one that was killed does: its socket
- * is still there and nobody listens on it. It is moved aside first, so two builds that both found it so never
- * remove what a third took meanwhile; a socket that answers once moved aside is put back.
+ * is still there and nobody listens on it. It is asked once more inside the turn every build takes a hold in
+ * ({@link inTurn}), and taken away only when the system says nobody listens there: a hold another build took
+ * meanwhile answers, and stays. No build can take the hold between the question and the removal, so a live hold
+ * is never moved or removed, and a path nobody holds is never left with two builds that each believe they do.
  *
  * @category lifecycle
  * @since 1.0.0
  */
-export const unstale = async (path: string): Promise<void> => {
-  const aside = `${path}.stale-${process.pid}-${randomBytes(4).toString("hex")}`
-  // Gone already: another build took it away.
-  if (!(await Fs.rename(path, aside).then(() => true, () => false))) return
-  const answer = await answering(aside)
-  if (answer !== undefined) {
-    answer.destroy()
-    await Fs.link(aside, path)
-  }
-  await Fs.rm(aside, { force: true })
-}
+export const unstale = async (path: string, signal?: AbortSignal): Promise<void> =>
+  inTurn(path, async () => {
+    // Refused: a socket file is there and nobody listens on it. Any other answer leaves it where it is: one that
+    // answers is held, one that is gone needs nothing, and a failure that says neither is asked about again.
+    if ((await unanswered(path)) === "ECONNREFUSED") await Fs.rm(path, { force: true })
+  }, signal)
 
 /**
  * Holds the machines of the workspace at `root` for one build until it
@@ -390,11 +466,11 @@ export const hold = async (
   let said = false
   for (;;) {
     signal?.throwIfAborted()
-    const server = await listen(path)
+    const server = await inTurn(path, () => listen(path), signal)
     if (server !== undefined) return held(server)
     const other = await answering(path)
     if (other === undefined) {
-      await unstale(path)
+      await unstale(path, signal)
       continue
     }
     if (!said) waiting()
@@ -624,6 +700,18 @@ export const unmade = (
         const found = find(path)
         if (found === undefined) throw missing(path)
         const stats = io.lstat("at" in found ? found.at : kept)
+        // A link of the home is a link: a directory's stats for it would count it among its directory's
+        // directories, which the count of those leaves it out of.
+        if ("link" in found) {
+          return Object.assign(Object.create(Object.getPrototypeOf(stats)), stats, {
+            mode: NodeFs.constants.S_IFLNK | 0o777,
+            nlink: 1,
+            size: Buffer.byteLength(found.link),
+            isFile: () => false,
+            isDirectory: () => false,
+            isSymbolicLink: () => true
+          })
+        }
         if ("names" in found || ("at" in found && under(path, root) && held !== undefined && stats.isDirectory())) {
           const entries = "names" in found
             ? found.names
@@ -786,6 +874,84 @@ const copyIfThere = async (from: string, to: string): Promise<void> => {
 }
 
 /**
+ * The user and password of a URL fetched over HTTP: `https://name:token@host/` holds what lets its reader act
+ * as `name`. The user of an SSH URL (`ssh://git@host/`) is no secret, and the URL does not work without it.
+ */
+const userinfo = /((?:https?|ftps?):\/\/)[^/@\s"]*@/gi
+const holdsUser = /(?:https?|ftps?):\/\/[^/@\s"]*@/i
+
+/** The sections of a git configuration that hold or run what authenticates: all of each is left out. */
+const credentialSections = new Set(["credential", "include", "includeif"])
+
+/** The settings that hold a secret or name a program or a file that gives one, in any section. */
+const credentialKeys = new Set([
+  "extraheader",
+  "helper",
+  "askpass",
+  "sshcommand",
+  "cookiefile",
+  "smtppass",
+  "password",
+  "token"
+])
+
+/**
+ * A repository's configuration without what authenticates its owner: the copy of a checkout a step runs in
+ * reads this file, and checkout tooling writes tokens into it (`http.<url>.extraheader` holds the token of
+ * `actions/checkout`). Left out are the credential helpers, every setting that holds a secret or names a program
+ * or a file that gives one (an ask-pass program, an SSH command with its key, a cookie file), the files the
+ * configuration includes, where `actions/checkout` 6 keeps its token, and each `url` section whose name or value
+ * holds a user: a rewrite to an authenticated URL. A user and password inside any other URL (a remote's, a
+ * proxy's) are taken out of it, and the URL stays.
+ *
+ * @category lifecycle
+ * @since 1.0.0
+ */
+export const withoutCredentials = (config: string): string => {
+  const kept: Array<string> = []
+  /** The lines of the section being read, and whether the whole of it is left out. */
+  let section: Array<string> = []
+  let name = ""
+  let dropped = false
+  /** Whether the line before ended with a backslash: this one goes on with its value, and shares its fate. */
+  let continued: "kept" | "left" | undefined
+  const close = (): void => {
+    if (!dropped) kept.push(...section)
+    section = []
+  }
+  for (const line of config.split("\n")) {
+    if (continued !== undefined) {
+      if (continued === "kept") section.push(line.replace(userinfo, "$1"))
+      if (!line.endsWith("\\")) continued = undefined
+      continue
+    }
+    const header = /^\s*\[\s*([A-Za-z0-9.-]+)(?:\s+"((?:[^"\\]|\\.)*)")?\s*\]/.exec(line)
+    if (header !== null) {
+      close()
+      name = header[1]!.split(".")[0]!.toLowerCase()
+      dropped = credentialSections.has(name) || (name === "url" && holdsUser.test(header[2] ?? ""))
+      // A setting may follow its section's name on one line.
+      const rest = line.slice(header[0].length)
+      section.push(header[0])
+      if (rest.trim() === "") continue
+      const key = /^\s*([A-Za-z][A-Za-z0-9-]*)/.exec(rest)?.[1]?.toLowerCase()
+      const left = key !== undefined && credentialKeys.has(key)
+      if (!left) section[section.length - 1] = header[0] + rest.replace(userinfo, "$1")
+      if (line.endsWith("\\")) continued = left ? "left" : "kept"
+      continue
+    }
+    const key = /^\s*([A-Za-z][A-Za-z0-9-]*)/.exec(line)?.[1]?.toLowerCase()
+    const left = key !== undefined && credentialKeys.has(key)
+    // A rewrite of one URL to another that holds a user gives that user to every remote it matches.
+    if (name === "url" && !left && holdsUser.test(line)) dropped = true
+    if (!left) section.push(line.replace(userinfo, "$1"))
+    if (line.endsWith("\\")) continued = left ? "left" : "kept"
+  }
+  close()
+  return kept.join("\n")
+}
+
+/**
  * Gives the copy at `tree` a repository of its own for the checkout at
  * `root`: the same commit checked out, the same branches, tags and remotes,
  * the same index, and the same objects, which it reads from the workspace's
@@ -809,6 +975,10 @@ const repository = async (root: string, tree: string, git: Git): Promise<void> =
       await Fs.copyFile(NodePath.join(own, name), NodePath.join(store, name))
     }
   }
+  // The copy's configuration holds nothing that lets a step act as the person whose checkout this is.
+  const config = NodePath.join(store, "config")
+  const text = await Fs.readFile(config, "utf8").catch(() => undefined)
+  if (text !== undefined) await Fs.writeFile(config, withoutCredentials(text))
   // A submodule's store says where its working tree is. The copy's is where the copy is.
   await git(tree, ["config", "--unset", "core.worktree"]).catch(() => undefined)
 }
@@ -1106,6 +1276,22 @@ export const mounting = async (
   return started ? { bwrap } : { reason: `${bwrap} cannot give a process a mount of its own on this host` }
 }
 
+/** The characters a path in a word or a list of paths begins after. */
+const beforePath = new Set([":", "=", " ", "\t", "\n", "\"", "'", ",", ";", "(", "<", ">", "|", "&"])
+
+/**
+ * Whether the path at `at` in `value` begins there, and is not the end of a longer one: `/work` in
+ * `/home/runner/work/repo` names another directory than `/work`, and so does it in `../work`. What comes
+ * before it since the last character a path begins after is no part of a path then: it holds no slash and ends
+ * with no dot, as the flag of `-I/work/include`, or is the two slashes of a URL (`file:///work`).
+ */
+const startsPath = (value: string, at: number): boolean => {
+  let from = at
+  while (from > 0 && !beforePath.has(value[from - 1]!)) from -= 1
+  const before = value.slice(from, at)
+  return (!before.includes("/") && !before.endsWith(".")) || before === "//"
+}
+
 /**
  * A command word or a variable's value with the workspace's path replaced
  * by the machine's tree, so a program or a search path named inside the
@@ -1133,7 +1319,7 @@ export const relocated = (
   let from = 0
   for (let at = value.indexOf(root); at !== -1; at = value.indexOf(root, from)) {
     const after = value[at + root.length]
-    const whole = after === undefined || after === "/" || after === ":"
+    const whole = (after === undefined || after === "/" || after === ":") && startsPath(value, at)
     const cache = value.startsWith(kept, at) && (value[at + kept.length] === undefined ||
       value[at + kept.length] === "/" || value[at + kept.length] === ":")
     moved += value.slice(from, at) + (whole && !cache ? tree : root)
@@ -1225,7 +1411,9 @@ export const through = (
   readlink: (path) => io.readlink(place(path)),
   readdir: (path) => io.readdir(place(path)),
   readFile: (path) => io.readFile(place(path)),
-  head: (path, length) => io.head(place(path), length)
+  head: (path, length) => io.head(place(path), length),
+  // A file of any size, as the reads given digest one: never held whole where they do not hold it.
+  digest: (path) => ObservedReads.digestOf(place(path), io)
 })
 
 /**
@@ -1249,6 +1437,9 @@ export const recorded = (observation: ObservedReads.Observation, machine: Machin
     ...read,
     reads: written(read.reads),
     lists: written(read.lists),
+    // A directory's count of directories names its path as a read does: left as the host's, the record would
+    // answer only in the checkout its run happened in, and would carry that checkout's path wherever it is kept.
+    ...(read.links === undefined ? {} : { links: written(read.links) }),
     ...(read.given === undefined ? {} : { given: written(read.given) })
   }
   /** A path the run left or removed, as it is kept: one of the machine's home or temporary directory from the machine. */

@@ -123,7 +123,9 @@ const rules = {
 }
 
 /** Inputs on which the implementation was seen to differ from the specification in a known way, by the way. */
-const gaps = { programs: 0, supplementary: 0 }
+const gaps = { supplementary: 0 }
+/** Values of the right shape that are no record because `running` or `served` is not of its type. */
+let refusedForPrograms = 0
 /** How often each outcome was seen, so that no property passes on empty cases. */
 const seen = { held: 0, changed: 0, recorded: 0, refused: 0, links: 0, loops: 0, unreadable: 0, valid: 0, invalid: 0 }
 /** What `changed` said, without the names, each with how often. */
@@ -658,19 +660,13 @@ const decoded = async (input: unknown): Promise<void> => {
   const value = throughJson(input)
   const expected = await oracle.ask<Shape>({ op: "isRecord", rules, value })
   const actual = Reads.asRecord(value)
-  // `asRecord` checks the shape the specification calls `isRecordShape`.
-  expect(actual !== undefined, JSON.stringify(value)).toBe(expected.shape)
+  // `asRecord` makes the test the specification calls `isRecord`: the shape of the paths, and `running` and
+  // `served` held to their types, which `changed` and `idOf` read.
+  expect(expected.record).toBe(expected.shape && expected.programs)
+  expect(actual !== undefined, JSON.stringify(value)).toBe(expected.record)
   seen[actual === undefined ? "invalid" : "valid"] += 1
+  if (expected.shape && !expected.programs) refusedForPrograms += 1
   if (actual === undefined) return
-  if (!expected.programs) {
-    // Known difference (deferred in ObservedReads.fuzz.test.ts, "checks the persisted running flag" and "checks
-    // the persisted served tuple array"): the specification's `isRecord` also holds `running` and `served` to their
-    // types, and refuses this value. `asRecord` returns it, and `changed` and `idOf` then read it unchecked.
-    gaps.programs += 1
-    expect(expected.record).toBe(false)
-    return
-  }
-  expect(expected.record).toBe(true)
   expect(Reads.pathsOf(actual)).toBe(await oracle.ask({ op: "pathsOf", rules, value }))
   expect(Reads.idOf(actual)).toBe(await oracle.ask({ op: "idOf", rules, value }))
 }
@@ -757,8 +753,8 @@ describe("records read back from disk", () => {
       await decoded(corner)
       cases += 1
     }
-    // Both deferred shapes are among the corners.
-    expect(gaps.programs).toBeGreaterThan(0)
+    // A `running` and a `served` of another type are among the corners, and neither is a record.
+    expect(refusedForPrograms).toBeGreaterThan(0)
   })
 
   interface StoredShape {
@@ -1215,6 +1211,20 @@ describe("holding a record against a file system", () => {
         { id: "", reads: [["f", left, "-"]], lists: [] },
         { id: "", reads: [["gone", left, "-"]], lists: [] },
         { id: "", reads: [["gone", "-", left]], lists: [] },
+        // A path the run found and removed, where something else is now: other, not new.
+        { id: "", reads: [["f", "-", `f:${"0".repeat(64)}`]], lists: [] },
+        { id: "", reads: [["f", "-", left]], lists: [] },
+        // A name the run took away unseen: any name that is no directory holds, and nothing else.
+        { id: "", reads: [["f", "-", "*"]], lists: [] },
+        { id: "", reads: [["d", "-", "*"]], lists: [] },
+        { id: "", reads: [["gone", "-", "*"]], lists: [] },
+        // A state that says only that the path could not be read holds nothing, itself included.
+        { id: "", reads: [["f", "!EACCES"]], lists: [] },
+        { id: "", reads: [["f", left, "!EIO"]], lists: [] },
+        { id: "", reads: [["f", "!EIO", "-"]], lists: [] },
+        { id: "", reads: [["gone", "!EIO", "-"]], lists: [] },
+        { id: "", reads: [["gone", "!ENOENT"]], lists: [] },
+        { id: "", reads: [], lists: [], from: [["//:a", "1"]], given: [["f", "!EIO", 0]] },
         // A directory made in a directory the run only looked at: a hit before `u3`, a miss under it.
         { id: "", reads: [["d", "d"]], lists: [], links: [["d", 3, []]] },
         { id: "", reads: [["d", "d"]], lists: [], links: [["d", 2, []]] },
@@ -1300,6 +1310,10 @@ describe("holding a record against a file system", () => {
         if (row.kind === "changed") changed.add(raw)
         else if (!maps[row.kind].has(raw)) maps[row.kind].set(raw, line)
       }
+      // Every other path the run changed, it removed: what it found and left gone is part of what it left.
+      const removed = new Set([...changed].filter((_, index) => index % 2 === 0))
+      // Every other of those it took away unseen: such a name is held as any name that is no directory.
+      const unlinked = new Set([...removed].filter((_, index) => index % 2 === 0))
       const before = new Map<string, string>()
       for (const row of input.found) {
         const path = world.paths[row.at % world.paths.length]!
@@ -1325,7 +1339,7 @@ describe("holding a record against a file system", () => {
         variables: { values, text: "", shown: new Set(shown), ignored: () => new Set<string>() }
       }
       const observed = Reads.observe(
-        { ...maps, changed, started: new Map(), removed: new Set(), fetched: new Set(), refusals: [] },
+        { ...maps, changed, started: new Map(), removed, unlinked, fetched: new Set(), refusals: [] },
         options
       )
       const expected = await oracle.ask<{ readonly refusal: string } | { readonly record: Reads.Record }>({
@@ -1338,7 +1352,9 @@ describe("holding a record against a file system", () => {
           listed: [...maps.listed],
           made: [...maps.made],
           emptied: [...maps.emptied],
-          changed: [...changed]
+          changed: [...changed],
+          removed: [...removed],
+          unlinked: [...unlinked]
         },
         options: {
           root: workspace,
@@ -1386,8 +1402,7 @@ describe("the differential suite", () => {
   check("ran every case against the oracle, and saw the known differences only where they are known", () => {
     expect(cases).toBeGreaterThanOrEqual(3000)
     expect(oracle.asked).toBeGreaterThanOrEqual(cases)
-    // Neither known difference can appear once the implementation is fixed; both may be zero then.
-    expect(gaps.programs).toBeGreaterThanOrEqual(0)
+    // The known difference cannot appear once the implementation is fixed; it may be zero then.
     expect(gaps.supplementary).toBeGreaterThanOrEqual(0)
     for (const [outcome, count] of Object.entries(seen)) expect(count, outcome).toBeGreaterThan(10)
     if (process.env["LEAN_DIFF_REPORT"] !== undefined) {

@@ -262,6 +262,106 @@ const killed = async (child: ChildProcess): Promise<void> => {
   await ended
 }
 
+describe("where machines are kept when the environment names no home", () => {
+  it("is under the user's own home, and never fails for want of a variable", () => {
+    const kept = Machine.holding("/work/repo", {})
+    expect(Path.dirname(kept)).toBe(Path.join(Os.homedir() || Os.tmpdir(), ".local", "state", "smthrs", "machines"))
+    expect(Machine.holding("/work/repo", { HOME: "" })).toBe(kept)
+    expect(Path.basename(kept)).toBe(Path.basename(Machine.holding("/work/repo", { HOME: "/home/me" })))
+  })
+})
+
+describe("the configuration of a machine's repository", () => {
+  const token = "ghs_secretsecretsecret"
+  const config = [
+    "[core]",
+    "\trepositoryformatversion = 0",
+    "\tbare = false",
+    `\tsshCommand = ssh -i /home/me/.ssh/deploy_${token}`,
+    "\taskPass = /usr/local/bin/pass-helper",
+    "[remote \"origin\"]",
+    `\turl = https://x-access-token:${token}@github.com/acme/repo.git`,
+    "\tfetch = +refs/heads/*:refs/remotes/origin/*",
+    `\tpushurl = https://me:${token}@github.com/acme/repo.git`,
+    "[remote \"mirror\"]",
+    "\turl = git@github.com:acme/mirror.git",
+    "[branch \"main\"]",
+    "\tremote = origin",
+    "\tmerge = refs/heads/main",
+    "[http \"https://github.com/\"]",
+    `\textraheader = AUTHORIZATION: basic ${token}`,
+    "\tsslVerify = true",
+    `\tproxy = http://proxy-user:${token}@proxy.example:3128`,
+    "\tcookieFile = /home/me/.gitcookies",
+    "[credential]",
+    "\thelper = store --file /home/me/.git-credentials",
+    `\tusername = ${token}`,
+    "[credential \"https://example.com\"]",
+    "\thelper = !f() { echo password=" + token + "; }; f",
+    `[url "https://${token}:x-oauth-basic@github.com/"]`,
+    "\tinsteadOf = https://github.com/",
+    "[url \"https://github.com/\"]",
+    `\tinsteadOf = https://gh:${token}@internal.example/`,
+    "[url \"ssh://git@github.com/\"]",
+    "\tinsteadOf = gh:",
+    "[includeIf \"gitdir:/home/runner/work/\"]",
+    "\tpath = /home/runner/work/_temp/git-credentials-1.config",
+    "[include]",
+    `\tpath = /tmp/${token}.config`,
+    "[sendemail]",
+    `\tsmtpPass = ${token}`,
+    "\tsmtpServer = smtp.example.com",
+    "[alias]",
+    "\tlong = log \\",
+    "\t\t--oneline",
+    `[http] extraheader = AUTHORIZATION: bearer ${token}`,
+    "[user] name = Me",
+    "[http \"https://ci.example/\"]",
+    `\textraheader = AUTHORIZATION: \\`,
+    `\t\tbearer ${token}`,
+    "\tpostBuffer = 1",
+    ""
+  ].join("\n")
+
+  it("holds nothing that authenticates the person whose checkout it copies", () => {
+    const clean = Machine.withoutCredentials(config)
+    expect(clean).not.toContain(token)
+    expect(clean.split("\n")).toEqual([
+      "[core]",
+      "\trepositoryformatversion = 0",
+      "\tbare = false",
+      "[remote \"origin\"]",
+      "\turl = https://github.com/acme/repo.git",
+      "\tfetch = +refs/heads/*:refs/remotes/origin/*",
+      "\tpushurl = https://github.com/acme/repo.git",
+      "[remote \"mirror\"]",
+      "\turl = git@github.com:acme/mirror.git",
+      "[branch \"main\"]",
+      "\tremote = origin",
+      "\tmerge = refs/heads/main",
+      "[http \"https://github.com/\"]",
+      "\tsslVerify = true",
+      "\tproxy = http://proxy.example:3128",
+      "[url \"ssh://git@github.com/\"]",
+      "\tinsteadOf = gh:",
+      "[sendemail]",
+      "\tsmtpServer = smtp.example.com",
+      "[alias]",
+      "\tlong = log \\",
+      "\t\t--oneline",
+      "[http]",
+      "[user] name = Me",
+      "[http \"https://ci.example/\"]",
+      "\tpostBuffer = 1",
+      ""
+    ])
+    // A configuration with nothing to take out is as it was.
+    const plain = "[core]\n\tbare = false\n[remote \"origin\"]\n\turl = https://github.com/acme/repo.git\n"
+    expect(Machine.withoutCredentials(plain)).toBe(plain)
+    expect(Machine.withoutCredentials("")).toBe("")
+  })
+})
+
 describe("the hold on a workspace's machines", () => {
   const unprivilegedIt = it.skipIf(process.platform === "win32" || process.getuid?.() === 0)
   const linuxIt = it.skipIf(process.platform !== "linux")
@@ -526,7 +626,10 @@ describe("the host as a machine that is not made yet would find it", () => {
     expect(measured(Path.join(home, ".volta"))).toBe(`l:${volta}`)
     expect(measured(Path.join(home, ".volta/bin/node"))).toBe(ObservedReads.measure(Path.join(volta, "bin/node")))
     expect(io.readdir(Path.join(home, ".volta"))).toEqual(["bin"])
-    expect(io.lstat(Path.join(home, ".volta")).isDirectory()).toBe(true)
+    // A link of the home is a link, never a directory: it is no directory of the home's own count.
+    const link = io.lstat(Path.join(home, ".volta"))
+    expect([link.isSymbolicLink(), link.isDirectory(), link.isFile()]).toEqual([true, false, false])
+    expect(ObservedReads.dirLinks(home, [".volta"], io)).toBe(io.lstat(home).nlink)
     expect(measured(Path.join(home, ".local"))).toBe("d")
     expect(io.readdir(Path.join(home, ".local"))).toEqual(["share"])
     expect(io.readdir(Path.join(home, ".local/share"))).toEqual(["mise"])
@@ -797,6 +900,21 @@ describe("a target on a machine", () => {
     expect(Machine.temporaryVariable).toBe("SMTHRS_MACHINE_TMP")
   })
 
+  it("leaves a longer path that only holds the workspace's path as it is", () => {
+    const moved = (value: string): string => Machine.relocated(value, "/work", "/m/w/work", ".flows")
+    // The end of another directory's path is another directory.
+    expect(moved("/home/runner/work/repo")).toBe("/home/runner/work/repo")
+    expect(moved("/usr/bin:/home/runner/work:/work/bin")).toBe("/usr/bin:/home/runner/work:/m/w/work/bin")
+    expect(moved("../work/src")).toBe("../work/src")
+    // A path begins after a flag, an equals sign, a quote, a list's separator and the slashes of a URL.
+    expect(moved("-I/work/include")).toBe("-I/m/w/work/include")
+    expect(moved("--prefix=/work")).toBe("--prefix=/m/w/work")
+    expect(moved("cd '/work/a' && ls \"/work/src\"")).toBe("cd '/m/w/work/a' && ls \"/m/w/work/src\"")
+    expect(moved("file:///work/a.txt")).toBe("file:///m/w/work/a.txt")
+    expect(moved("a,/work/x;b(/work/y)")).toBe("a,/m/w/work/x;b(/m/w/work/y)")
+    expect(moved("/work/.flows/x:/work")).toBe("/work/.flows/x:/m/w/work")
+  })
+
   it("names the copy where its plan named the workspace, and the cache where it is", () => {
     const moved = (value: string): string => Machine.relocated(value, "/work/repo", "/m/w/repo", ".flows")
     expect(moved("/work/repo")).toBe("/m/w/repo")
@@ -998,11 +1116,24 @@ describe("a record of a run on a machine", () => {
     )
   })
 
+  it("digests a file through the machine's paths as the host's own, a block at a time", async () => {
+    const real = await directory("digested")
+    await write(real, "home/file", "content\n")
+    const io = Machine.through(Machine.actual({ ...machine, directory: real }))
+    expect(io.digest?.("/smthrs-machine/home/file")).toBe(ObservedReads.digestOf(Path.join(real, "home/file")))
+    // Reads a caller supplies stay the ones used.
+    const given = Machine.through((path) => path, { ...ObservedReads.defaultIo, readFile: () => Buffer.from("given") })
+    expect(ObservedReads.measure(Path.join(real, "home/file"), given)).toBe(
+      `f:${ObservedReads.digestOf("", { ...ObservedReads.defaultIo, readFile: () => Buffer.from("given") })}`
+    )
+  })
+
   it("holds no path of the checkout it was made in", () => {
     const home = (name: string): string => Path.join(machine.home, name)
     const body = {
       reads: [["src/a.txt", "f:1"], [home(".npmrc"), "-"], ["/usr/bin/node", "f:2:x"], [home(".seen"), "f:3", "-"]],
       lists: [[machine.home, "digest", [".seen"]], ["src", "digest", []]],
+      links: [[home(".config"), 3, ["own"]], ["src", 2, []], [machine.tmp, 2, [], [["made", 0]]]],
       given: [[home("bin/tool"), "f:4:x", 0]],
       from: [["//:install", "id"]]
     } as const
@@ -1020,6 +1151,13 @@ describe("a record of a run on a machine", () => {
       ["src/a.txt", "f:1"]
     ])
     expect(written.record.lists).toEqual([["/smthrs-machine/home", "digest", [".seen"]], ["src", "digest", []]])
+    // A directory's count of directories names its path as a read does.
+    expect(written.record.links).toEqual([
+      ["/smthrs-machine/home/.config", 3, ["own"]],
+      ["/smthrs-machine/tmp", 2, [], [["made", 0]]],
+      ["src", 2, []]
+    ])
+    expect(JSON.stringify(written.record)).not.toContain(machine.directory)
     expect(written.record.given).toEqual([["/smthrs-machine/home/bin/tool", "f:4:x", 0]])
     expect(written.record.from).toEqual(body.from)
     expect(written.left).toEqual({ keep: ["deps/a"], gone: [], outside: [["/smthrs-machine/home/bin/tool", "f:4:x"]] })
