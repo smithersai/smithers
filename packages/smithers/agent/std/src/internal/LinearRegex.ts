@@ -49,9 +49,10 @@ export const compile = (
       } else {
         if (character === "\\") offset++
         if (character === "[") {
-          while (pattern[offset] !== "]") {
+          while (offset < pattern.length && pattern[offset] !== "]") {
             if (pattern[offset++] === "\\") offset++
           }
+          if (offset >= pattern.length) throw new Error("unterminated character class")
           offset++
         }
         term = { kind: "atom", source: pattern.slice(start, offset) }
@@ -63,6 +64,7 @@ export const compile = (
         let max = quantifier === "?" ? 1 : Infinity
         if (quantifier === "{") {
           const end = pattern.indexOf("}", offset)
+          if (end === -1) throw new Error("unterminated repetition quantifier")
           const counts = pattern.slice(offset, end).split(",")
           min = Number(counts[0])
           max = counts.length === 1 ? min : counts[1] === "" ? Infinity : Number(counts[1])

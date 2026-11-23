@@ -96,6 +96,7 @@
     "@effect/language-service": "0.87.2",
     "@effect/vitest": "4.1.1",
     "@eslint/js": "9.39.5",
+    "@smthrs/fuzz": "workspace:*",
     "@smthrs/testing": "workspace:*",
     "@types/node": "26.4.1",
     "@vitest/coverage-v8": "5.0.0",

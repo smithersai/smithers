@@ -1,3 +1,7 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
+import { Flow } from "@smthrs/flow"
+import { Node } from "@smthrs/plan"
+import * as LoadGuard from "../src/LoadGuard.ts"
 import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
 import * as NodePath from "@effect/platform-node/NodePath"
 import { Fuzz } from "@smthrs/fuzz"
@@ -6,10 +10,14 @@ import * as fs from "node:fs/promises"
 import * as os from "node:os"
 import * as path from "node:path"
 import { describe, expect, it } from "vitest"
+import * as NodeLoadGuard from "../src/node/NodeLoadGuard.ts"
+import * as PromptJsx from "../src/Prompt/jsx-runtime.ts"
 import {
   Descriptor,
   Disclosure,
   Discovery,
+  Executable,
+  ExecutionSnapshot,
   MarkdownFlow,
   Pack,
   Prompt,
@@ -269,5 +277,158 @@ describe("@smthrs/registry comprehensive markdown, disclosure, pack & filesystem
     const failure = Fuzz.formatReport(report)
     if (failure !== undefined) throw new Error(failure)
     expect(report._tag).toBe("Passed")
+  })
+
+  it("Prompt JSX runtime, Executable lowering/catalog, ExecutionSnapshot & NodeLoadGuard uphold invariants", async () => {
+    const tmpRoot = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), "smthrs-reg-exec-fuzz-")))
+    const Echo = Flow.make("test/echo", {
+      payload: Executable.Invocation,
+      success: Schema.String,
+      body: (payload) => Node.succeed(payload.flow)
+    })
+    const Agent = Flow.make("agent", {
+      payload: Executable.Invocation,
+      success: Schema.String,
+      body: (payload) => Node.succeed(payload.prompt)
+    })
+    try {
+      const arb = Arbitrary.schema(
+        Schema.Struct({
+          heading: Schema.Literals(["h1", "h2", "h3", "h6"]),
+          text: Schema.String.pipe(Schema.check(Schema.isMaxLength(40))),
+          href: Schema.Literals(["https://example.com/a b(c)<d>", "https://smithers.sh", ""]),
+          codeLang: Schema.Literals(["ts", "sh", ""]),
+          codeTick: Schema.Literals(["plain", "`backtick`", "```triple```", " padded "]),
+          listTag: Schema.Literals(["ul", "ol"]),
+          flowName: Schema.Literals(["hello", "review-pr", "triage"]),
+          useExplicitDelegate: Schema.Boolean,
+          withArgs: Schema.Boolean
+        })
+      )
+      const report = await Effect.runPromise(
+        Fuzz.run(
+          arb,
+          ({ heading, text, href, codeLang, codeTick, listTag, flowName, useExplicitDelegate, withArgs }) =>
+            Effect.gen(function*() {
+              const clean = text.replace(/[\uD800-\uDFFF]/g, "x")
+              const doc = PromptJsx.jsx(PromptJsx.Fragment, {
+                children: [
+                  PromptJsx.jsx(heading, { children: clean }),
+                  "\n",
+                  PromptJsx.jsxs("p", {
+                    children: [
+                      PromptJsx.jsx("strong", { children: clean }),
+                      " ",
+                      PromptJsx.jsx("em", { children: clean }),
+                      " ",
+                      PromptJsx.jsx("del", { children: clean }),
+                      PromptJsx.jsx("br", {}),
+                      PromptJsx.jsx("a", { href, title: "tip", children: "link" }),
+                      PromptJsx.jsx("img", { src: href, alt: "[alt]\\x", title: "pic" }),
+                      PromptJsx.jsx("code", { children: codeTick })
+                    ]
+                  }),
+                  PromptJsx.jsx("hr", {}),
+                  PromptJsx.jsx("blockquote", { children: clean + "\nline2" }),
+                  PromptJsx.jsx("pre", {
+                    children: PromptJsx.jsx("code", {
+                      className: codeLang ? "language-" + codeLang : undefined,
+                      children: codeTick
+                    })
+                  }),
+                  PromptJsx.jsx(listTag, {
+                    start: 3,
+                    children: [
+                      PromptJsx.jsx("li", {
+                        children: [
+                          "item1",
+                          PromptJsx.jsx("ul", { children: [PromptJsx.jsx("li", { children: "nested" })] })
+                        ]
+                      }),
+                      PromptJsx.jsx("li", { children: ["item2", null, false, 42] })
+                    ]
+                  })
+                ]
+              })
+              const rendered = PromptJsx.render(doc)
+              if (rendered.length === 0 || !rendered.includes("---")) return false
+              if (rendered !== PromptJsx.render(doc)) return false
+              if (!rendered.includes("[link](") || rendered.includes("](" + href + " ") && /[\s<>()]/.test(href)) return false
+
+              const fnComp = (p: PromptJsx.Props): PromptJsx.Content =>
+                PromptJsx.jsx("blockquote", { children: p.children })
+              const compOut = PromptJsx.render(PromptJsx.jsx(fnComp, { children: clean }))
+              if (!compOut.startsWith(">")) return false
+
+              const dir = yield* Effect.promise(() => fs.mkdtemp(path.join(tmpRoot, "r-")))
+              try {
+                const flowDir = path.join(dir, ".smithers", "flows", flowName)
+                yield* Effect.promise(() => fs.mkdir(flowDir, { recursive: true }))
+                const mdPath = path.join(flowDir, "SKILL.md")
+                const mdText = [
+                  "---",
+                  `name: ${flowName}`,
+                  `description: "Run ${flowName}"`,
+                  ...(useExplicitDelegate ? ["flows: [test/echo]"] : []),
+                  "---",
+                  withArgs ? "Do $ARGUMENTS now." : "Run cleanly."
+                ].join("\n")
+                yield* Effect.promise(() => fs.writeFile(mdPath, mdText))
+
+                const spec = Executable.fileSpecifier(mdPath)
+                if (!spec.startsWith("file://")) return false
+
+                const regLayer = Registry.layerProject({ root: dir }).pipe(
+                  Layer.provide(Layer.mergeAll(NodeFileSystem.layer, NodePath.layer, NodeCrypto.layer))
+                )
+                const execOpts: Executable.Options = { delegates: [Echo, Agent] }
+                const cat = yield* Executable.catalog(execOpts).pipe(Effect.provide(regLayer))
+                if (cat.executables.length !== 1 || cat.refused.length !== 0) return false
+
+                const fromReg = yield* Executable.fromRegistry(flowName, execOpts).pipe(Effect.provide(regLayer))
+                const expectedDelegate = useExplicitDelegate ? "test/echo" : "agent"
+                if (fromReg.descriptor.name !== flowName || fromReg.delegate !== expectedDelegate) return false
+
+                const fromDesc = yield* Executable.fromDescriptor(fromReg.descriptor, execOpts)
+                if (fromDesc.descriptor.name !== flowName) return false
+
+                // Unknown delegate must be refused cleanly
+                const badRes = yield* Executable.fromDescriptor(fromReg.descriptor, { delegates: [] }).pipe(Effect.result)
+                if (Result.isSuccess(badRes)) return false
+
+                // ExecutionSnapshot filesystem store
+                const snapSvc = yield* ExecutionSnapshot.makeFileSystem({ root: path.join(dir, ".snaps") })
+                if (snapSvc === undefined) return false
+
+                // NodeLoadGuard rejects unconsulted registerHooks cleanly
+                let registered = 0
+                const guardRes = yield* Effect.scoped(
+                  Effect.gen(function*() {
+                    const guardOpt = yield* Effect.serviceOption(LoadGuard.LoadGuard)
+                    if (Option.isNone(guardOpt)) return undefined
+                    return yield* guardOpt.value.protect(dir).pipe(Effect.result)
+                  }).pipe(
+                    Effect.provide(
+                      NodeLoadGuard.layerWith(() => {
+                        registered++
+                      })
+                    )
+                  )
+                )
+                if (registered !== 1 || guardRes === undefined || Result.isSuccess(guardRes)) return false
+                return true
+              } finally {
+                yield* Effect.promise(() => fs.rm(dir, { recursive: true, force: true }))
+              }
+            }).pipe(Effect.provide(Layer.mergeAll(NodeFileSystem.layer, NodePath.layer, NodeCrypto.layer, Logger.layer([])))),
+          { seed: seed + 10, executions: Math.min(executions, 25) }
+        )
+      )
+      const failure = Fuzz.formatReport(report)
+      if (failure !== undefined) throw new Error(failure)
+      expect(report._tag).toBe("Passed")
+    } finally {
+      await fs.rm(tmpRoot, { recursive: true, force: true })
+    }
   })
 })

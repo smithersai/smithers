@@ -1,3 +1,5 @@
+import * as net from "node:net"
+import * as SlowNetwork from "../src/test/SlowNetwork.ts"
 import { Fuzz, FuzzSimulation } from "@smthrs/fuzz"
 import { Arbitrary, Duration, Effect, Layer, Logger, Result, Schema } from "effect"
 import * as SqlClient from "effect/sql/SqlClient"
@@ -942,5 +944,118 @@ describe("@smthrs/database fuzz", () => {
         }),
       { seed: seed + 7, executions: Math.min(ioExecutions, 24) }
     )
+  })
+
+  it("PostgresSelection.location & SlowNetwork.proxy uphold URL routing, schema derivation & TCP chunk ordering", async () => {
+    const report = await Effect.runPromise(Fuzz.run(
+      Arbitrary.schema(
+        Schema.Struct({
+          filename: Schema.Literals([
+            "",
+            ":memory:",
+            "file:memdb1?mode=memory",
+            "/tmp/store-a.db",
+            "postgres://user:pw@localhost:5432/db?schema=custom_s",
+            "postgresql://localhost/db",
+            "postgres://[invalid"
+          ]),
+          backend: Schema.Literals(["", "sqlite", "postgres"]),
+          envUrl: Schema.Literals(["", "postgres://envhost:5432/db", "http://not-pg"]),
+          envSchema: Schema.Literals(["", "test_run"]),
+          payload: Schema.String.pipe(Schema.check(Schema.isMinLength(1), Schema.isMaxLength(32)))
+        })
+      ),
+      ({ filename, backend, envUrl, envSchema, payload }) =>
+        Effect.gen(function*() {
+          const prevBackend = process.env.SMITHERS_BACKEND
+          const prevPg = process.env.SMITHERS_POSTGRES_URL
+          const prevDb = process.env.DATABASE_URL
+          const prevSchema = process.env.SMITHERS_POSTGRES_SCHEMA
+          try {
+            if (backend) process.env.SMITHERS_BACKEND = backend; else delete process.env.SMITHERS_BACKEND
+            if (envUrl) process.env.SMITHERS_POSTGRES_URL = envUrl; else delete process.env.SMITHERS_POSTGRES_URL
+            delete process.env.DATABASE_URL
+            if (envSchema) process.env.SMITHERS_POSTGRES_SCHEMA = envSchema; else delete process.env.SMITHERS_POSTGRES_SCHEMA
+
+            const isPg = PostgresSelection.isUrl(filename)
+            if (isPg !== (filename.startsWith("postgres://") || filename.startsWith("postgresql://"))) return false
+
+            try {
+              const loc = PostgresSelection.location(filename)
+              if (filename === "" || filename === ":memory:" || filename.startsWith("file:")) {
+                if (loc !== undefined) return false
+              }
+              if (loc !== undefined) {
+                if (loc.url.includes("schema=")) return false
+                if (loc.schema.length === 0) return false
+              }
+            } catch (e: unknown) {
+              const code = (e as { code?: string })?.code
+              if (code !== "postgres_url_missing" && code !== "postgres_url_invalid") return false
+            }
+          } finally {
+            if (prevBackend === undefined) delete process.env.SMITHERS_BACKEND; else process.env.SMITHERS_BACKEND = prevBackend
+            if (prevPg === undefined) delete process.env.SMITHERS_POSTGRES_URL; else process.env.SMITHERS_POSTGRES_URL = prevPg
+            if (prevDb === undefined) delete process.env.DATABASE_URL; else process.env.DATABASE_URL = prevDb
+            if (prevSchema === undefined) delete process.env.SMITHERS_POSTGRES_SCHEMA; else process.env.SMITHERS_POSTGRES_SCHEMA = prevSchema
+          }
+
+          // Exercise SlowNetwork.proxy over a real loopback TCP echo server
+          const cleanPayload = payload.replace(/[\uD800-\uDFFF]/g, "x")
+          const echoed = yield* Effect.scoped(
+            Effect.gen(function*() {
+              const echoPort = yield* Effect.acquireRelease(
+                Effect.callback<number>((resume) => {
+                  const srv = net.createServer((sock) => {
+                    sock.on("error", () => {})
+                    sock.on("data", (chunk) => sock.write(chunk))
+                  })
+                  srv.listen(0, "127.0.0.1", () => {
+                    const addr = srv.address() as net.AddressInfo
+                    ;(srv as unknown as { _port?: number })._port = addr.port
+                    resume(Effect.succeed(addr.port))
+                  })
+                  ;(globalThis as unknown as { __echoSrv?: net.Server }).__echoSrv = srv
+                }),
+                () =>
+                  Effect.callback<void>((resume) => {
+                    const srv = (globalThis as unknown as { __echoSrv?: net.Server }).__echoSrv
+                    if (srv) srv.close(() => resume(Effect.void))
+                    else resume(Effect.void)
+                  })
+              )
+              const proxiedUrl = yield* SlowNetwork.proxy(`postgres://127.0.0.1:${echoPort}/db`, { delayMs: 1 })
+              const parsed = new URL(proxiedUrl)
+              const data = yield* Effect.promise(
+                () =>
+                  new Promise<string>((resolve, reject) => {
+                    const expectedLen = Buffer.byteLength(cleanPayload, "utf8")
+                    const sock = net.connect(Number(parsed.port), "127.0.0.1")
+                    const chunks: Array<Buffer> = []
+                    let got = 0
+                    sock.on("connect", () => {
+                      sock.write(cleanPayload)
+                    })
+                    sock.on("data", (c) => {
+                      chunks.push(typeof c === "string" ? Buffer.from(c) : c)
+                      got += c.length
+                      if (got >= expectedLen) {
+                        sock.end()
+                        resolve(Buffer.concat(chunks).toString("utf8"))
+                      }
+                    })
+                    sock.on("error", reject)
+                  })
+              )
+              return data
+            })
+          )
+          return echoed === cleanPayload
+        }),
+      { seed: seed + 8, executions: Math.min(ioExecutions, 12) }
+    ))
+    const failure = Fuzz.formatReport(report)
+    if (failure !== undefined) throw new Error(failure)
+    expect(report._tag).toBe("Passed")
   })
 })

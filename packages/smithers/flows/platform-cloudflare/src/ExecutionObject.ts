@@ -64,7 +64,18 @@ export const Intent = Schema.Struct({
    * the same intent.
    */
   origin: Schema.optionalKey(Schema.Struct({ door: Schema.String, actor: Schema.String }))
-})
+}).pipe(
+  Schema.check(
+    Schema.makeFilter((value) => {
+      try {
+        canonicalize(value)
+        return true
+      } catch {
+        return "Intent must be valid canonical JSON (no unpaired surrogates or non-finite numbers)"
+      }
+    })
+  )
+)
 
 /**
  * The value form of {@link Intent}.

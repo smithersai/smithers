@@ -84,6 +84,7 @@
   },
   "devDependencies": {
     "@eslint/js": "9.39.5",
+    "@smthrs/fuzz": "workspace:*",
     "@types/node": "26.4.1",
     "@vitest/coverage-v8": "5.0.0",
     "dprint": "0.57.1",

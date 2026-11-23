@@ -69,7 +69,7 @@ function findFuzzFiles(dir, out = []) {
     return out
   }
   for (const entry of entries) {
-    if (SKIP_DIRS.has(entry.name)) continue
+    if (SKIP_DIRS.has(entry.name) && !(entry.name === "build" && existsSync(join(dir, entry.name, "package.json")))) continue
     const full = join(dir, entry.name)
     if (entry.isDirectory()) {
       findFuzzFiles(full, out)

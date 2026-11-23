@@ -1781,6 +1781,9 @@ importers:
       '@alchemy.run/cloudflare':
         specifier: 2.0.0-beta.85
         version: 2.0.0-beta.85(patch_hash=324e0dfcb3b289b272ea642aec3af06e066af55cccea4dd5f343d6c3dd3db31c)(a5e3c616da85944202c1b2fb11d091a6)
+      '@smthrs/fuzz':
+        specifier: workspace:*
+        version: link:../fuzz
       '@smthrs/plan':
         specifier: workspace:*
         version: link:../smithers/flows/plan
@@ -2035,6 +2038,9 @@ importers:
       '@smthrs/artifacts':
         specifier: 1.0.0-rc.18
         version: link:flows/artifacts
+      '@smthrs/fuzz':
+        specifier: workspace:*
+        version: link:../fuzz
       '@smthrs/platform-bun':
         specifier: 1.0.0-rc.18
         version: link:flows/platform-bun
@@ -2174,6 +2180,9 @@ importers:
       '@smthrs/flows':
         specifier: 1.0.0-rc.18
         version: link:../flows
+      '@smthrs/fuzz':
+        specifier: workspace:*
+        version: link:../../fuzz
       '@smthrs/jj':
         specifier: 1.0.0-rc.18
         version: link:../flows/jj
@@ -2274,6 +2283,9 @@ importers:
       '@eslint/js':
         specifier: 9.39.5
         version: 9.39.5
+      '@smthrs/fuzz':
+        specifier: workspace:*
+        version: link:../../../fuzz
       '@smthrs/testing':
         specifier: workspace:*
         version: link:../../../testing
@@ -2553,6 +2565,9 @@ importers:
       '@eslint/js':
         specifier: 9.39.5
         version: 9.39.5
+      '@smthrs/fuzz':
+        specifier: workspace:*
+        version: link:../../../fuzz
       '@types/node':
         specifier: 26.4.1
         version: 26.4.1
@@ -2614,6 +2629,9 @@ importers:
       '@eslint/js':
         specifier: 9.39.5
         version: 9.39.5
+      '@smthrs/fuzz':
+        specifier: workspace:*
+        version: link:../../../fuzz
       '@types/node':
         specifier: 26.4.1
         version: 26.4.1
@@ -3018,6 +3036,9 @@ importers:
       '@smthrs/engine':
         specifier: workspace:*
         version: link:../../flows/engine
+      '@smthrs/fuzz':
+        specifier: workspace:*
+        version: link:../../../fuzz
       '@smthrs/plan':
         specifier: workspace:*
         version: link:../../flows/plan
@@ -3434,6 +3455,9 @@ importers:
       '@smthrs/flow':
         specifier: 1.0.0-rc.18
         version: link:../../flows/flow
+      '@smthrs/fuzz':
+        specifier: workspace:*
+        version: link:../../../fuzz
       '@smthrs/patterns':
         specifier: 1.0.0-rc.18
         version: link:../../flows/patterns
@@ -3610,6 +3634,9 @@ importers:
       '@eslint/js':
         specifier: 9.39.5
         version: 9.39.5
+      '@smthrs/fuzz':
+        specifier: workspace:*
+        version: link:../../fuzz
       '@types/node':
         specifier: 26.4.1
         version: 26.4.1
@@ -3910,6 +3937,9 @@ importers:
       '@eslint/js':
         specifier: 9.39.5
         version: 9.39.5
+      '@smthrs/fuzz':
+        specifier: workspace:*
+        version: link:../../../fuzz
       '@types/node':
         specifier: 26.4.1
         version: 26.4.1
@@ -4158,6 +4188,9 @@ importers:
       '@smthrs/core':
         specifier: 1.0.0-rc.18
         version: link:core
+      '@smthrs/fuzz':
+        specifier: workspace:*
+        version: link:../../fuzz
       '@smthrs/model':
         specifier: 1.0.0-rc.18
         version: link:../agent/model
@@ -4823,6 +4856,9 @@ importers:
       '@smthrs/core':
         specifier: 1.0.0-rc.18
         version: link:../core
+      '@smthrs/fuzz':
+        specifier: workspace:*
+        version: link:../../../fuzz
       '@smthrs/platform-node':
         specifier: 1.0.0-rc.18
         version: link:../platform-node
@@ -4987,6 +5023,9 @@ importers:
       '@eslint/js':
         specifier: 9.39.5
         version: 9.39.5
+      '@smthrs/fuzz':
+        specifier: workspace:*
+        version: link:../../../fuzz
       '@types/node':
         specifier: 26.4.1
         version: 26.4.1
@@ -5734,6 +5773,9 @@ importers:
       '@smthrs/agent':
         specifier: 1.0.0-rc.18
         version: link:../../agent
+      '@smthrs/fuzz':
+        specifier: workspace:*
+        version: link:../../../fuzz
       '@smthrs/model':
         specifier: 1.0.0-rc.18
         version: link:../../agent/model
@@ -5870,6 +5912,9 @@ importers:
       '@smthrs/artifacts':
         specifier: 1.0.0-rc.18
         version: link:../artifacts
+      '@smthrs/fuzz':
+        specifier: workspace:*
+        version: link:../../../fuzz
       '@smthrs/platform-node':
         specifier: 1.0.0-rc.18
         version: link:../platform-node
@@ -5982,6 +6027,9 @@ importers:
       '@eslint/js':
         specifier: 9.39.5
         version: 9.39.5
+      '@smthrs/fuzz':
+        specifier: workspace:*
+        version: link:../../../fuzz
       '@smthrs/observability':
         specifier: 1.0.0-rc.18
         version: link:../observability
@@ -6124,6 +6172,9 @@ importers:
       '@eslint/js':
         specifier: 9.39.5
         version: 9.39.5
+      '@smthrs/fuzz':
+        specifier: workspace:*
+        version: link:../../../fuzz
       '@smthrs/plan':
         specifier: 1.0.0-rc.18
         version: link:../plan
@@ -6291,6 +6342,9 @@ importers:
       '@smthrs/engine':
         specifier: 1.0.0-rc.18
         version: link:../engine
+      '@smthrs/fuzz':
+        specifier: workspace:*
+        version: link:../../../fuzz
       '@smthrs/platform-bun':
         specifier: 1.0.0-rc.18
         version: link:../platform-bun
@@ -6933,6 +6987,9 @@ importers:
       '@eslint/js':
         specifier: 9.39.5
         version: 9.39.5
+      '@smthrs/fuzz':
+        specifier: workspace:*
+        version: link:../../fuzz
       '@types/node':
         specifier: 26.4.1
         version: 26.4.1

@@ -700,9 +700,9 @@ export const exceededBodyLimit = (error: unknown): boolean => {
   const reason = typeof error === "object" && error !== null
     ? (error as { readonly reason?: unknown }).reason
     : undefined
-  const cause = typeof reason === "object" && reason !== null
-    ? (reason as { readonly cause?: unknown }).cause
-    : undefined
+  if (typeof reason !== "object" || reason === null) return false
+  if ((reason as { readonly reason?: unknown }).reason === "BodyTooLarge") return true
+  const cause = (reason as { readonly cause?: unknown }).cause
   return cause instanceof Error && cause.message === maxBytesExceeded
 }
 

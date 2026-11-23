@@ -137,9 +137,11 @@
     "@eslint/js": "9.39.5",
     "@smthrs/control": "1.0.0-rc.18",
     "@smthrs/core": "1.0.0-rc.18",
+    "@smthrs/fuzz": "workspace:*",
     "@smthrs/model": "1.0.0-rc.18",
     "@smthrs/notifications": "1.0.0-rc.18",
     "@smthrs/patterns": "1.0.0-rc.18",
+    "@smthrs/platform-node": "1.0.0-rc.18",
     "@smthrs/registry": "1.0.0-rc.18",
     "@smthrs/targets": "1.0.0-rc.18",
     "@types/node": "26.4.1",
@@ -157,8 +159,7 @@
     "typescript-eslint": "8.69.0",
     "vibelang": "0.0.13",
     "vibelang-vite": "0.0.13",
-    "vitest": "5.0.0",
-    "@smthrs/platform-node": "1.0.0-rc.18"
+    "vitest": "5.0.0"
   },
   "peerDependencies": {
     "effect": "4.1.1"

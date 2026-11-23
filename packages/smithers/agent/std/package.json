@@ -464,6 +464,7 @@
     "@effect/vitest": "4.1.1",
     "@eslint/js": "9.39.5",
     "@smthrs/flow": "1.0.0-rc.18",
+    "@smthrs/fuzz": "workspace:*",
     "@smthrs/patterns": "1.0.0-rc.18",
     "@smthrs/plan": "1.0.0-rc.18",
     "@smthrs/platform-browser": "workspace:*",

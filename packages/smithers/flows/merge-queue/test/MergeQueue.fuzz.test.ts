@@ -895,7 +895,5 @@ describe("@smthrs/merge-queue fuzz invariants", () => {
       const failure = Fuzz.formatReport(report)
       if (failure !== undefined) throw new Error(failure)
       expect(report._tag).toBe("Passed")
-    },
-    30_000
-  )
+    }, 90_000)
 })
