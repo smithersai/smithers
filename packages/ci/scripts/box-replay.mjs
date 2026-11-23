@@ -19,6 +19,7 @@ import {
   mkdirSync,
   readdirSync,
   readFileSync,
+  realpathSync,
   renameSync,
   rmSync,
   statSync,
@@ -412,6 +413,14 @@ export const main = async (argv) => {
   return Math.max(...rows.map((row) => row.exit))
 }
 
-if (process.argv[1] !== undefined && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+const sameEntry = (arg) => {
+  try {
+    return realpathSync(arg) === realpathSync(fileURLToPath(import.meta.url))
+  } catch {
+    return resolve(arg) === fileURLToPath(import.meta.url)
+  }
+}
+
+if (process.argv[1] !== undefined && sameEntry(process.argv[1])) {
   process.exitCode = await main(process.argv.slice(2))
 }

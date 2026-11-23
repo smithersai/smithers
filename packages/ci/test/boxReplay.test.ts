@@ -15,6 +15,7 @@ import {
   writeFileSync
 } from "node:fs"
 import { tmpdir } from "node:os"
+import { fileURLToPath } from "node:url"
 import { join } from "node:path"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
@@ -395,5 +396,14 @@ describe("box-replay results", () => {
     const out = temporary()
     writeFileSync(join(out, "result.tgz"), "not gzip")
     expect(() => box.unpack(join(out, "result.tgz"), out)).toThrow(/could not list/)
+  })
+
+  it("runs when invoked through a symlink to scripts/box-replay.mjs", () => {
+    const dir = temporary()
+    const link = join(dir, "box-replay-link.mjs")
+    symlinkSync(fileURLToPath(new URL("../scripts/box-replay.mjs", import.meta.url)), link)
+    const run = spawnSync(process.execPath, [link, "--unknown-flag"], { encoding: "utf8" })
+    expect(run.status).toBe(2)
+    expect(run.stderr).toContain("unknown flag --unknown-flag")
   })
 })

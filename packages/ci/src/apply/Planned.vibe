@@ -44,15 +44,22 @@ const kept = 64 * 1024
  * @category accessors
  * @since 0.1.0
  */
+/** A Node runtime warning line that accompanies a command's own output and is not a refusal. */
+const nodeWarning = /^\(node:\d+\)\s+\w*Warning:|^\(Use `node --trace-warnings /
+
 export const refusalOf = (printed: string): string => {
   const start = printed.indexOf("{")
+  const end = printed.lastIndexOf("}")
   try {
-    const document = JSON.parse(start === -1 ? printed : printed.slice(start)) as { readonly message?: unknown }
+    const candidate = start === -1 ? printed : end > start ? printed.slice(start, end + 1) : printed.slice(start)
+    const document = JSON.parse(candidate) as { readonly message?: unknown }
     if (typeof document.message === "string" && document.message.trim() !== "") return errorLine(document.message)
   } catch {
     // Not a document: the last line it printed says why.
   }
-  const lines = printed.trim().split("\n")
+  const raw = printed.trim().split("\n")
+  const useful = raw.filter((line) => !nodeWarning.test(line.trim()))
+  const lines = useful.length > 0 ? useful : raw
   const last = lines[lines.length - 1] as string
   return errorLine(last === "" ? "it printed nothing" : last)
 }

@@ -106,6 +106,24 @@ describe("Smithers build's words for a refusal", () => {
     expect(refusalOf("{\"code\":\"x\"}")).toBe("{\"code\":\"x\"}")
     expect(refusalOf("{ not json")).toBe("{ not json")
     expect(refusalOf("")).toBe("it printed nothing")
+    // Node 24 prints ExperimentalWarning after JSON stderr; refusalOf reads the JSON message, not the warning.
+    expect(
+      refusalOf(
+        "{\"code\":\"ci_failed\",\"message\":\"link_input_refused: docs/x\"}\n" +
+          "(node:123) ExperimentalWarning: SQLite is an experimental feature and might change at any time\n" +
+          "(Use `node --trace-warnings ...` to show where the warning was created)\n"
+      )
+    ).toBe("link_input_refused: docs/x")
+    expect(
+      refusalOf(
+        "real error line\n" +
+          "(node:123) ExperimentalWarning: SQLite is an experimental feature\n" +
+          "(Use `node --trace-warnings ...` to show where the warning was created)\n"
+      )
+    ).toBe("real error line")
+    expect(
+      refusalOf("(node:123) ExperimentalWarning: SQLite is an experimental feature\n")
+    ).toBe("(node:123) ExperimentalWarning: SQLite is an experimental feature")
   })
 })
 
