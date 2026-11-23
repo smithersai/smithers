@@ -32,17 +32,20 @@ import {
 /** How long a program may take to print its version. One that takes longer is on the machine, at no known version. */
 const patience = "30 seconds"
 
-/** With no explicit tool path, version probes execute only system installations. */
-const systemPath = "/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin"
+/** Absolute search directories from a PATH string; empty or relative entries are dropped so CWD is never probed. */
+const absolutePath = (path: string): string =>
+  path.split(":").filter((entry) => entry.startsWith("/")).join(":")
 
 /** Probes run outside the checkout without user startup hooks or repository configuration. */
-const shell = (machine: Machine, line: string, args: ReadonlyArray<string>) =>
-  ChildProcess.make("/bin/bash", ["--noprofile", "--norc", "-c", line, "smithers-ci", ...args], {
+const shell = (machine: Machine, line: string, args: ReadonlyArray<string>) => {
+  const safePath = absolutePath(machinePath(machine))
+  return ChildProcess.make("/bin/bash", ["--noprofile", "--norc", "-c", line, "smithers-ci", ...args], {
     stdin: "ignore",
     cwd: "/",
-    env: { PATH: machinePath(machine), PROBE_PATH: machine.path ?? systemPath, COREPACK_ENABLE_NETWORK: "0" },
+    env: { PATH: safePath, PROBE_PATH: safePath, COREPACK_ENABLE_NETWORK: "0" },
     extendEnv: false
   })
+}
 
 /** Execute only when the trusted search resolves to the same binary that is first on PATH. */
 const trusted = [

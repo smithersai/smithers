@@ -53,6 +53,7 @@ import {
   keyringFilter,
   type Probe,
   probe,
+  probeWith,
   scopeProgram,
   scopes,
   temporaryOf,
@@ -1020,6 +1021,13 @@ describe("the jail", () => {
       "/tmp/tools",
       "/tmp/mine/tools"
     ])
+  })
+
+  it("includes an absolute XDG_RUNTIME_DIR in hidden paths and ignores a relative one", () => {
+    const withAbs = probeWith({ ...process.env, XDG_RUNTIME_DIR: "/run/custom-1000" })
+    const withRel = probeWith({ ...process.env, XDG_RUNTIME_DIR: "relative-runtime" })
+    if ("hidden" in withAbs) expect(withAbs.hidden).toContain("/run/custom-1000")
+    if ("hidden" in withRel) expect(withRel.hidden).not.toContain("relative-runtime")
   })
 
   it("names the credentials of a home", () => {

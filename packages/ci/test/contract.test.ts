@@ -917,10 +917,10 @@ describe("contract changes, fourth round: what is CI, and splitting a step", () 
       "justfile:fmt",
       "justfile:ci"
     ])
-    // The recipes of one Justfile come in the order `just ci` runs them: `ci: tidy test`, and `tidy` needs `fmt`.
+    // `tidy` and `fmt` form a dependency cycle, so both are blocked and only `test` remains runnable.
     const narrowed = Inventory.ci(zig)
-    expect(narrowed.jobs.map((entry) => entry.id)).toEqual(["justfile:fmt", "justfile:tidy", "justfile:test"])
-    expect(narrowed.jobs.map((entry) => entry.needs)).toEqual([["justfile:tidy"], ["justfile:fmt"], []])
+    expect(narrowed.jobs.map((entry) => entry.id)).toEqual(["justfile:test"])
+    expect(narrowed.jobs.map((entry) => entry.needs)).toEqual([[]])
   })
 
   it("finds no CI in a repository with only scripts, and never runs a job that does not exit", () => {
@@ -1067,8 +1067,7 @@ describe("contract changes, sixth round: a job that cannot be reproduced is neve
     expect(Inventory.hostActions).not.toContain("actions/download-artifact")
     expect(Inventory.ci(inventory).jobs.map((entry) => [entry.id, entry.needs])).toEqual([
       ["ci.yml:test", []],
-      ["ci.yml:plain", []],
-      ["ci.yml:after-gate", ["ci.yml:test", "ci.yml:plain"]]
+      ["ci.yml:plain", []]
     ])
     for (const feature of ["uses", "condition", "expression", "services", "continue-on-error", "something-new"]) {
       expect(Inventory.isRunnable(inventory.jobs[4]!)).toBe(true)
@@ -1119,7 +1118,7 @@ describe("contract changes, sixth round: a job that cannot be reproduced is neve
       ["ci.yml:plain", []],
       ["ci.yml:after", ["ci.yml:plain"]]
     ])
-    expect(Inventory.refusal(decode({ ...inventory, jobs: [upload] }))).toBe(
+    expect(Inventory.refusal(decode({ ...inventory, jobs: [{ ...upload, needs: [] }] }))).toBe(
       "0 of 1 CI job can be reproduced on this machine\n  ci.yml:package  has no command to run: all its steps only prepare the CI machine"
     )
   })
@@ -1303,6 +1302,14 @@ describe("contract changes, sixth round: a job that cannot be reproduced is neve
       },
       { job: "ci.yml:shards", reasons: [{ feature: "runner-variable", detail: "ci.yml:shards runner-variable" }] },
       { job: "ci.yml:reusable", reasons: [{ feature: "no-command", detail: "ci.yml:reusable has no command to run" }] },
+      {
+        job: "ci.yml:gate",
+        reasons: [{ feature: "needs", detail: "ci.yml:gate needs ci.yml:gone, which is missing" }]
+      },
+      {
+        job: "ci.yml:after-gate",
+        reasons: [{ feature: "needs", detail: "ci.yml:after-gate needs ci.yml:gate, which is not replayed" }]
+      },
       {
         job: "ci.yml:after-shards",
         reasons: [{ feature: "needs", detail: "ci.yml:after-shards needs ci.yml:shards, which is not replayed" }]

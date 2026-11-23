@@ -168,7 +168,8 @@ describe.each(ways)("pnpm run through corepack, $where", ({ jailed, runs }) => {
       const outcome = await start(bin, ["--commits", "2", "--no-apply-check", "--no-trial", "--json"], root, {
         // The person's own corepack cache, in a home that is theirs.
         COREPACK_HOME: cache,
-        PATH: searchPath(jailed, kept)
+        PATH: searchPath(jailed, kept),
+        ...(jailed ? {} : { SMITHERS_CI_ALLOW_UNCONFINED: "1" })
       }).done
       expect(outcome.code, outcome.stderr).toBe(exitCodes.ok)
       const report = Schema.decodeUnknownSync(ReplayReport)(JSON.parse(outcome.stdout))

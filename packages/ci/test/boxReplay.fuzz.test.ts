@@ -483,11 +483,10 @@ describe("unpack, on generated archives", () => {
     const linked = join(root, "linked")
     mkdirSync(linked)
     const link: Member = { path: "out/replay.log", kind: "symlink", data: "", owner: "root", target: "/etc/hostname" }
-    expect(box.unpack(archive([file("out/replay.log", "plain\n"), link], join(linked, "result.tgz")), linked)).toEqual([
-      { path: "out/replay.log", name: "replay.log", bytes: 6 }
-    ])
-    expect(lstatSync(join(linked, "replay.log")).isSymbolicLink()).toBe(false)
-    expect(readFileSync(join(linked, "replay.log"), "utf8")).toBe("plain\n")
+    expect(box.unpack(archive([file("out/replay.log", "plain\n"), link], join(linked, "result.tgz")), linked)).toEqual(
+      []
+    )
+    expect(existsSync(join(linked, "replay.log"))).toBe(false)
     // A plain result, then a directory of its name with a program in it: tar extracts what is under a name too.
     const filled = join(root, "filled")
     mkdirSync(filled)
@@ -599,22 +598,34 @@ describe("what a box reports", () => {
       const got = box.collect(out, "4", code)
       rmSync(out, { recursive: true })
       const own = /^\d{1,3}$/.test(exit.trim()) && Number(exit.trim()) <= 255
-      return Number.isInteger(got) && got >= 0 && got <= 255 && got === (own ? Number(exit.trim()) : code)
+      const valid = report === JSON.stringify(sound)
+      const status = own ? Number(exit.trim()) : 4
+      const expected = code !== 0 ? code : (status < 2 && !valid ? 4 : status)
+      return Number.isInteger(got) && got >= 0 && got <= 255 && got === expected
     }, { runs: 20, seed: 13 })
   })
 
   it("reads an exit file the box was stopped while writing as no exit code, not as a pass", () => {
     vi.spyOn(console, "error").mockImplementation(() => undefined)
     for (
-      const [wrote, expected] of [["", 137], ["\n", 137], ["abc", 137], ["1e3", 137], ["-1", 137], ["256", 137], [
+      const [wrote, expected] of [["", 4], ["\n", 4], ["abc", 4], ["1e3", 4], ["-1", 4], ["256", 4], [
         "0",
         0
       ], ["2\n", 2]] as const
     ) {
       const out = temporary()
-      archive([{ path: "out/exit", kind: "file", data: wrote, owner: "root", target: "" }], join(out, "result.tgz"))
-      expect([wrote, box.collect(out, "4", 137)]).toEqual([wrote, expected])
+      archive([
+        { path: "out/exit", kind: "file", data: wrote, owner: "root", target: "" },
+        { path: "out/replay.json", kind: "file", data: JSON.stringify(sound), owner: "root", target: "" }
+      ], join(out, "result.tgz"))
+      expect([wrote, box.collect(out, "4", 0)]).toEqual([wrote, expected])
     }
+    const failed = temporary()
+    archive([
+      { path: "out/exit", kind: "file", data: "0", owner: "root", target: "" },
+      { path: "out/replay.json", kind: "file", data: JSON.stringify(sound), owner: "root", target: "" }
+    ], join(failed, "result.tgz"))
+    expect(box.collect(failed, "4", 137)).toBe(137)
   })
 
   it("sums a sound report up, and says a report of another shape is none", () => {

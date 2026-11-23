@@ -99,6 +99,7 @@ describe.each(ways)("tools kept under the home directory, $where", ({ jailed, ru
       const root = repository("tool check", "other check")
       const outcome = await start(bin, ["--commits", "2", "--no-apply-check", "--json"], root, {
         HOME: home,
+        ...(jailed ? {} : { SMITHERS_CI_ALLOW_UNCONFINED: "1" }),
         PATH: `${join(home, ".vm", "shims")}:${join(home, ".vt", "shims")}:${dirname(process.execPath)}:${
           systemPath(jailed)
         }`
@@ -127,6 +128,7 @@ describe.each(ways)("tools kept under the home directory, $where", ({ jailed, ru
       const root = repository("wrap")
       const outcome = await start(bin, ["--commits", "1", "--no-apply-check"], root, {
         HOME: home,
+        ...(jailed ? {} : { SMITHERS_CI_ALLOW_UNCONFINED: "1" }),
         PATH: `${join(home, "a", "bin")}:${dirname(process.execPath)}:${systemPath(jailed)}`
       }).done
       expect(outcome.code, outcome.stderr).toBe(exitCodes.unsupported)

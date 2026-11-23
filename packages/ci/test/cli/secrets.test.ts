@@ -254,6 +254,7 @@ describe("smithers-ci started with tokens in its environment", () => {
         ...home,
         PATH: `${dirname(process.execPath)}:/usr/bin:/bin`,
         DOCKER_HOST: daemon,
+        SMITHERS_CI_ALLOW_UNCONFINED: "1",
         ...tokens
       },
       // A fourth descriptor, as a caller that keeps a channel to the program leaves one open.

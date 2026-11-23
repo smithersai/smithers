@@ -546,9 +546,8 @@ export const decide = (
   // The step has a run, and each run resolved to its packages.
   const run = understood.runs[0] as Run
   const entries = resolved[0] as ReadonlyArray<Entry>
-  const ordered = run.invocation.runner === "npm" && entries.some((entry) => entry.names.length > 1)
   const qualified = run.invocation.runner === "turbo" && run.invocation.tasks.some((task) => task.includes("#"))
-  if (understood.runs.length === 1 && run.replace !== undefined && entries.length > 1 && !qualified && !ordered) {
+  if (understood.runs.length === 1 && run.replace !== undefined && entries.length > 1 && !qualified) {
     const [start, end] = run.replace
     return {
       kind: "split",

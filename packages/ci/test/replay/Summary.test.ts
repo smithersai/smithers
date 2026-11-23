@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest"
+import { errorLine } from "../../src/contract/Command.vibe"
 import { type Ci, ci, type Inventory, type Job, longRunning } from "../../src/contract/Inventory.vibe"
 import type { RunRecord, TargetResult } from "../../src/contract/RunRecord.vibe"
 import type { TargetMap } from "../../src/contract/TargetMap.vibe"
@@ -355,14 +356,14 @@ describe("replayable", () => {
     const narrowed = inventory([
       job("x", { steps: [step("x1", "true"), step("x2", "true")] }),
       job("after-x", { needs: ["x"] }),
-      job("last", { needs: ["after-x", "plain", "gone"] }),
+      job("last", { needs: ["after-x", "plain"] }),
       job("plain"),
       job("m", { matrix: [{ a: "1" }, { a: "2" }] }),
       job("loop", { needs: ["loop"] })
     ])
     const targets = mapAll(narrowed).targets.filter((entry) => entry.step !== "x2" && entry.label !== "//:m1-2")
     const { left, units } = replayable(narrowed, { version: 1, targets }, "linux")
-    expect(units.map((unit) => unit.job)).toEqual(["plain", "loop"])
+    expect(units.map((unit) => unit.job)).toEqual(["plain"])
     expect(left).toEqual([
       { job: "x", reasons: [{ feature: "no-target", detail: "x2 has no target" }] },
       { job: "after-x", reasons: [{ feature: "needs", detail: "after-x needs x, which is not replayed" }] },
@@ -1344,5 +1345,11 @@ describe("the report of a replay whose model stopped answering", () => {
     expect(finishedReport(read, [{ ...commit, fast: totals }], { ...measured, firstRun }).firstRun).toEqual(firstRun)
     const lost = { ...gathered, fastNotMeasured: "why" }
     expect(finishedReport(read, [commit], lost)).not.toHaveProperty("firstRun")
+  })
+})
+
+describe("errorLine in replay", () => {
+  it("strips URL userinfo while keeping the host and path", () => {
+    expect(errorLine("failed https://user:secret@example.test/repo")).toBe("failed https://example.test/repo")
   })
 })

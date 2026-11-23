@@ -344,68 +344,92 @@ theorem withoutCredentials_strips_userinfo (first : Nat) (scheme userinfo host r
 
 /-! ## `Command.errorLine`: no user name or password in an error, whatever stands before the URL -/
 
-theorem credentialAt_no_at (c : Nat) (rest : Str) (h : 64 ∉ rest) : credentialAt c rest = none := by
-  unfold credentialAt
-  split
-  · split
-    · rename_i after heq
-      have none : 64 ∉ after.takeWhile isUrlUnit := by
-        intro member
-        have inAfter : 64 ∈ after := (List.takeWhile_sublist isUrlUnit).subset member
-        have : 64 ∈ rest.dropWhile isSchemeUnit := by rw [heq]; exact List.mem_cons_of_mem _ inAfter
-        exact h ((List.dropWhile_sublist isSchemeUnit).subset this)
-      rw [if_neg none]
-    · rfl
-  · rfl
+/-- If an authority holds no `@`, `afterLastAt` returns it unchanged. -/
+theorem afterLastAt_id_of_no_at (s : Str) (h : 64 ∉ s) : afterLastAt s = s := by
+  unfold afterLastAt
+  have hrev : ∀ x ∈ s.reverse, (x != 64) = true := by
+    intro x hx
+    simp only [bne_iff_ne, ne_eq]
+    intro eq
+    exact h (eq ▸ List.mem_reverse.mp hx)
+  rw [takeWhile_all _ hrev, List.reverse_reverse]
 
-/-- A text with no `@` holds no credential, and is left as it is. -/
+/-- If a text holds no `@`, `credentialAt` returns the exact prefix it consumed. -/
+theorem credentialAt_no_at_id (c : Nat) (rest stays rem : Str) (h : 64 ∉ c :: rest)
+    (heq : credentialAt c rest = some (stays, rem)) : stays ++ rem = c :: rest := by
+  unfold credentialAt at heq
+  split at heq
+  · split at heq
+    · rename_i after hdrop
+      simp only [Option.some.injEq, Prod.mk.injEq] at heq
+      obtain ⟨rfl, rfl⟩ := heq
+      have hsub : ∀ x ∈ after.takeWhile isLineAuthorityUnit, x ∈ c :: rest := by
+        intro x hx
+        have h1 : x ∈ after := (List.takeWhile_sublist isLineAuthorityUnit).subset hx
+        have h2 : x ∈ 58 :: 47 :: 47 :: after := by simp [h1]
+        have h3 : x ∈ rest.dropWhile isSchemeUnit := hdrop ▸ h2
+        exact List.mem_cons_of_mem c ((List.dropWhile_sublist isSchemeUnit).subset h3)
+      have hnoat : 64 ∉ after.takeWhile isLineAuthorityUnit := fun mem => h (hsub 64 mem)
+      rw [afterLastAt_id_of_no_at _ hnoat]
+      have hrest : rest.takeWhile isSchemeUnit ++ 58 :: 47 :: 47 :: after = rest := by
+        rw [← hdrop, List.takeWhile_append_dropWhile]
+      have hafter : after.takeWhile isLineAuthorityUnit ++ after.dropWhile isLineAuthorityUnit = after :=
+        List.takeWhile_append_dropWhile
+      calc (c :: rest.takeWhile isSchemeUnit ++ u!"://" ++ after.takeWhile isLineAuthorityUnit) ++
+              after.dropWhile isLineAuthorityUnit
+          = c :: (rest.takeWhile isSchemeUnit ++ (58 :: 47 :: 47 ::
+              (after.takeWhile isLineAuthorityUnit ++ after.dropWhile isLineAuthorityUnit))) := by
+            simp [List.append_assoc]
+        _ = c :: (rest.takeWhile isSchemeUnit ++ 58 :: 47 :: 47 :: after) := by rw [hafter]
+        _ = c :: rest := by rw [hrest]
+    · cases heq
+  · cases heq
+
+/-- If a text holds no `@`, `scrubAll` leaves it unchanged. -/
 theorem scrubAll_no_at : ∀ (fuel : Nat) (s : Str), 64 ∉ s → scrubAll fuel s = s
-  | 0, [], _ => by simp [scrubAll]
-  | _ + 1, [], _ => by simp [scrubAll]
-  | 0, _ :: _, _ => by simp [scrubAll]
+  | 0, [], _ => rfl
+  | _ + 1, [], _ => rfl
+  | 0, _ :: _, _ => rfl
   | fuel + 1, c :: rest, h => by
-    have hrest : 64 ∉ rest := fun member => h (List.mem_cons_of_mem _ member)
-    simp only [scrubAll, credentialAt_no_at c rest hrest]
-    rw [scrubAll_no_at fuel rest hrest]
+    unfold scrubAll
+    cases hcred : credentialAt c rest with
+    | none =>
+      simp [scrubAll_no_at fuel rest (fun m => h (List.mem_cons_of_mem c m))]
+    | some pair =>
+      obtain ⟨stays, rem⟩ := pair
+      have hid := credentialAt_no_at_id c rest stays rem h hcred
+      have hrem : 64 ∉ rem := fun m => h (hid ▸ List.mem_append_right stays m)
+      simp [scrubAll_no_at fuel rem hrem, hid]
 
 /-- A URL with a user name before its host matches where its scheme starts: the scheme and `://` stay. -/
 theorem credentialAt_url (c : Nat) (scheme userinfo tail : Str) (hc : isLetter c = true)
     (hscheme : ∀ x ∈ scheme, isSchemeUnit x = true) (hshort : scheme.length ≤ schemeTail)
-    (huser : ∀ x ∈ userinfo, isUrlUnit x = true) (hslash : ∀ x ∈ userinfo.head?, x ≠ 47) (htail : 64 ∉ tail) :
-    credentialAt c (scheme ++ 58 :: 47 :: 47 :: (userinfo ++ 64 :: tail)) = some (c :: scheme ++ u!"://", tail) := by
-  have run : (47 :: 47 :: (userinfo ++ 64 :: tail)).takeWhile isUrlUnit =
-      (47 :: 47 :: userinfo) ++ 64 :: tail.takeWhile isUrlUnit ∧
-      (47 :: 47 :: (userinfo ++ 64 :: tail)).dropWhile isUrlUnit = tail.dropWhile isUrlUnit := by
-    have split : 47 :: 47 :: (userinfo ++ 64 :: tail) =
-        ((47 :: 47 :: userinfo) ++ 64 :: tail.takeWhile isUrlUnit) ++ tail.dropWhile isUrlUnit := by
+    (huser : ∀ x ∈ userinfo, isLineAuthorityUnit x = true) (htail : 64 ∉ tail) :
+    credentialAt c (scheme ++ 58 :: 47 :: 47 :: (userinfo ++ 64 :: tail)) =
+      some (c :: scheme ++ u!"://" ++ tail.takeWhile isLineAuthorityUnit, tail.dropWhile isLineAuthorityUnit) := by
+  have run : (userinfo ++ 64 :: tail).takeWhile isLineAuthorityUnit =
+      userinfo ++ 64 :: tail.takeWhile isLineAuthorityUnit ∧
+      (userinfo ++ 64 :: tail).dropWhile isLineAuthorityUnit = tail.dropWhile isLineAuthorityUnit := by
+    have split : userinfo ++ 64 :: tail =
+        (userinfo ++ 64 :: tail.takeWhile isLineAuthorityUnit) ++ tail.dropWhile isLineAuthorityUnit := by
       simp [List.takeWhile_append_dropWhile]
-    have passes : ∀ x ∈ (47 :: 47 :: userinfo) ++ 64 :: tail.takeWhile isUrlUnit, isUrlUnit x = true := by
+    have passes : ∀ x ∈ userinfo ++ 64 :: tail.takeWhile isLineAuthorityUnit, isLineAuthorityUnit x = true := by
       intro x hx
       simp only [List.mem_append, List.mem_cons] at hx
-      rcases hx with (rfl | rfl | hx) | rfl | hx
-      · decide
-      · decide
+      rcases hx with hx | rfl | hx
       · exact huser x hx
       · decide
       · exact mem_takeWhile hx
     rw [split]
     exact ⟨takeWhile_append_boundary _ _ passes (head?_dropWhile _),
       dropWhile_append_boundary _ _ passes (head?_dropWhile _)⟩
-  have slashes : (47 :: 47 :: (userinfo ++ 64 :: tail)).takeWhile (· == 47) = [47, 47] := by
-    cases userinfo with
-    | nil => simp
-    | cons x userinfo =>
-      have := hslash x (by simp)
-      simp [this]
-  have last : afterLastAt ((47 :: 47 :: userinfo) ++ 64 :: tail.takeWhile isUrlUnit) = tail.takeWhile isUrlUnit :=
+  have last : afterLastAt (userinfo ++ 64 :: tail.takeWhile isLineAuthorityUnit) = tail.takeWhile isLineAuthorityUnit :=
     afterLastAt_append _ _ fun x hx hx64 =>
-      htail (hx64 ▸ (List.takeWhile_sublist isUrlUnit).subset hx)
+      htail (hx64 ▸ (List.takeWhile_sublist isLineAuthorityUnit).subset hx)
   unfold credentialAt
   rw [takeWhile_append_stop scheme 58 _ hscheme (by decide), dropWhile_append_stop scheme 58 _ hscheme (by decide),
     if_pos ⟨hc, hshort⟩]
-  simp only [run.1, run.2, slashes, last, List.takeWhile_append_dropWhile]
-  rw [if_pos (by simp)]
-  simp
+  simp only [run.1, run.2, last]
 
 /-- A run where some code unit fails: the first that fails is where `dropWhile` stops. -/
 theorem dropWhile_append_stops_in {p : Nat → Bool} : ∀ (l m : Str), (∃ x ∈ l, p x = false) →
@@ -425,42 +449,43 @@ theorem dropWhile_append_stops_in {p : Nat → Bool} : ∀ (l m : Str), (∃ x �
 /--
 **No user name or password stays, whatever stands before the URL.** A text that holds a URL with a user name
 before its host, after anything that has no `:` (a word, a digit, the letter that ends a terminal's colour
-sequence), loses all between `://` and the `@`: a token given as the user name, a password, a password with
-an `@`. The pattern `errorLine` used before, which asked for a word boundary before the scheme, kept the
-token of `\\u001b[31mhttps://TOKEN@host/`.
+sequence), loses all between `://` and the `@`.
 -/
 theorem scrubAll_strips_userinfo : ∀ (before : Str) (fuel : Nat) (first : Nat) (scheme userinfo tail : Str),
     before.length < fuel → 58 ∉ before → isLetter first = true → (∀ x ∈ scheme, isSchemeUnit x = true) →
-    scheme.length ≤ schemeTail → (∀ x ∈ userinfo, isUrlUnit x = true) → (∀ x ∈ userinfo.head?, x ≠ 47) →
+    scheme.length ≤ schemeTail → (∀ x ∈ userinfo, isLineAuthorityUnit x = true) →
     64 ∉ tail →
     scrubAll fuel (before ++ first :: scheme ++ u!"://" ++ userinfo ++ u!"@" ++ tail) =
       before ++ first :: scheme ++ u!"://" ++ tail
-  | [], fuel, first, scheme, userinfo, tail, hfuel, _, hfirst, hscheme, hshort, huser, hslash, htail => by
+  | [], fuel, first, scheme, userinfo, tail, hfuel, _, hfirst, hscheme, hshort, huser, htail => by
     obtain ⟨fuel, rfl⟩ : ∃ n, fuel = n + 1 := ⟨fuel - 1, by simp at hfuel; omega⟩
     have shape : [] ++ first :: scheme ++ u!"://" ++ userinfo ++ u!"@" ++ tail =
         first :: (scheme ++ 58 :: 47 :: 47 :: (userinfo ++ 64 :: tail)) := by simp
+    have hdrop : 64 ∉ tail.dropWhile isLineAuthorityUnit := fun m =>
+      htail ((List.dropWhile_sublist isLineAuthorityUnit).subset m)
     rw [shape]
-    simp only [scrubAll, credentialAt_url first scheme userinfo tail hfirst hscheme hshort huser hslash htail,
-      scrubAll_no_at fuel tail htail]
+    simp only [scrubAll, credentialAt_url first scheme userinfo tail hfirst hscheme hshort huser htail,
+      scrubAll_no_at fuel _ hdrop, List.append_assoc, List.takeWhile_append_dropWhile]
     simp
-  | c :: before, fuel, first, scheme, userinfo, tail, hfuel, hcolon, hfirst, hscheme, hshort, huser, hslash,
-      htail => by
+  | c :: before, fuel, first, scheme, userinfo, tail, hfuel, hcolon, hfirst, hscheme, hshort, huser, htail => by
     obtain ⟨fuel, rfl⟩ : ∃ n, fuel = n + 1 := ⟨fuel - 1, by simp at hfuel; omega⟩
     have hcolon' : 58 ∉ before := fun member => hcolon (List.mem_cons_of_mem _ member)
     have later := scrubAll_strips_userinfo before fuel first scheme userinfo tail
-      (by simp at hfuel; omega) hcolon' hfirst hscheme hshort huser hslash htail
+      (by simp at hfuel; omega) hcolon' hfirst hscheme hshort huser htail
     have shape : c :: before ++ first :: scheme ++ u!"://" ++ userinfo ++ u!"@" ++ tail =
         c :: ((before ++ first :: scheme) ++ 58 :: 47 :: 47 :: (userinfo ++ 64 :: tail)) := by simp
     have shape' : before ++ first :: scheme ++ u!"://" ++ userinfo ++ u!"@" ++ tail =
         (before ++ first :: scheme) ++ 58 :: 47 :: 47 :: (userinfo ++ 64 :: tail) := by simp
+    have hdrop : 64 ∉ tail.dropWhile isLineAuthorityUnit := fun m =>
+      htail ((List.dropWhile_sublist isLineAuthorityUnit).subset m)
     rw [shape]
     rw [shape'] at later
     by_cases allScheme : ∀ x ∈ before ++ first :: scheme, isSchemeUnit x = true
     · by_cases guard : isLetter c = true ∧ (before ++ first :: scheme).length ≤ schemeTail
-      · -- The match starts here: its scheme is all up to the URL's `:`.
-        simp only [scrubAll, credentialAt_url c _ userinfo tail guard.1 allScheme guard.2 huser hslash htail,
-          scrubAll_no_at fuel tail htail]
-        simp
+      · have hcred := credentialAt_url c (before ++ first :: scheme) userinfo tail guard.1 allScheme guard.2 huser htail
+        simp only [scrubAll]
+        rw [hcred]; dsimp only; rw [scrubAll_no_at fuel _ hdrop]
+        simp [List.append_assoc, List.takeWhile_append_dropWhile]
       · have none : credentialAt c ((before ++ first :: scheme) ++ 58 :: 47 :: 47 :: (userinfo ++ 64 :: tail)) =
             none := by
           unfold credentialAt
@@ -472,7 +497,8 @@ theorem scrubAll_strips_userinfo : ∀ (before : Str) (fuel : Nat) (first : Nat)
         intro none
         apply allScheme
         intro x hx
-        rcases List.mem_append.mp hx with hx | hx
+        simp only [List.mem_append] at hx
+        rcases hx with hx | hx
         · cases h : isSchemeUnit x with
           | true => rfl
           | false => exact absurd ⟨x, hx, h⟩ none

@@ -65,7 +65,8 @@ describe("smithers-ci on a machine with a git that keeps itself up", () => {
 
     const before = snapshot(root)
     const outcome = await spawnWith(bin, ["--commits", "2", "--no-trial", "--json"], root, {
-      PATH: `${tools}:${pathWithout("bwrap", tools)}`
+      PATH: `${tools}:${pathWithout("bwrap", tools)}`,
+      SMITHERS_CI_ALLOW_UNCONFINED: "1"
     })
     expect(outcome.code, outcome.stderr).toBe(exitCodes.ok)
     const report = JSON.parse(outcome.stdout) as ReplayReport

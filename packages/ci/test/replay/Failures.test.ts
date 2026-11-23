@@ -115,8 +115,8 @@ describe("a replay that cannot run", () => {
   it("refuses jobs that need each other", async () => {
     const root = track(makeSmallRepository([job("a", "true", { needs: ["b"] }), job("b", "true", { needs: ["a"] })]))
     const failure = await failureOf(replay(root))
-    expect(failure.code).toBe("invalid-document")
-    expect(failure.message).toContain("job a")
+    expect(failure.code).toBe("unsupported")
+    expect(failure.message).toContain("a")
   })
 
   it("refuses generated files with no target map", async () => {

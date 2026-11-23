@@ -1036,7 +1036,7 @@ export const write = (job: JobFacts, step: StepFacts, command: string): Written 
       `__invocation=; if [ -n "$__place" ]; then __id=GITHUB_RUN_''ID; __attempt=GITHUB_RUN_''ATTEMPT; __invocation=\${!__id:-$PPID}.\${!__attempt-}; fi`,
       `unset ${jobTemporaryVariable}; [ -w "$__base" ] || __base=\${TMPDIR:-/tmp}`,
       `__base=$__base/smithers-ci-runner-$(id -u)`,
-      `mkdir -m 700 -- "$__base" 2>/dev/null; [ ! -L "$__base" ] && [ -d "$__base" ] && [ -O "$__base" ] && [ "$(find "$__base" -prune -perm 700 -print)" = "$__base" ] || ${
+      `mkdir -m 700 -- "$__base" 2>/dev/null; [ ! -L "$__base" ] && [ -d "$__base" ] && [ -O "$__base" ] && case $(ls -ld -- "$__base" 2>/dev/null) in drwx------*) ;; *) false;; esac || ${
         fail("$__base is not a directory of this user")
       }`,
       ...(step.apart

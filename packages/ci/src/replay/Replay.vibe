@@ -133,7 +133,6 @@ import {
   addRerun,
   blocked,
   choose,
-  cycleIn,
   failedAt,
   failedTwice,
   failsApplied,
@@ -861,8 +860,6 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
       const replayed = replayable(narrowed, targetMap, thisHost())
       const labels = [...new Set(targetsOf(replayed.units))]
       if (labels.length === 0) throw failure("unsupported", nothingToReplay(replayed.left))
-      const cycle = cycleIn(replayed.units)
-      if (cycle !== undefined) throw failure("invalid-document", `job ${cycle} needs itself`)
       // Smithers build is pointed at this one file, beside the copy. A repository with a workspace file of its own
       // is replayed by its own targets and never comes here.
       const declaration = declarationOf(generated)

@@ -367,7 +367,7 @@ describe("decide: pnpm, Bun and npm", () => {
   it("keeps unmatched literal selectors and failing explicit npm sweeps whole", () => {
     expect(plan(plain, "npm run test --workspace='['")).toEqual(whole)
     expect(plan(plain, "npm test -w app -w lib -w docs")).toEqual(whole)
-    expect(plan(plain, "npm test -w app -w lib -w docs --if-present").kind).toBe("scope")
+    expect(plan(plain, "npm test -w app -w lib -w docs --if-present").kind).toBe("split")
     expect(plan(plain, "pnpm --filter app run test --file=../lone/x")).toEqual(whole)
   })
 
@@ -443,12 +443,14 @@ describe("decide: pnpm, Bun and npm", () => {
 
   it("splits an npm workspaces run, by name or by directory", () => {
     const npm: Repository = { ...plain, manager: "npm" }
-    expect(scoped(plan(npm, "npm run test --workspaces --if-present"))).toContain("packages/lib/**")
+    expect(parts(plan(npm, "npm run test --workspaces --if-present"))["app"]?.command).toBe(
+      "npm run test --workspace=app --workspace=lib --if-present"
+    )
     expect(plan(npm, "npm run test --workspaces")).toEqual(whole)
     expect(Object.keys(parts(plan(npm, "npm run test -w lib -w ./packages/lone")))).toEqual(["lib", "lone"])
     // npm never runs the root's script with its workspaces.
     const rooted = { ...npm, root: { name: "root", scripts: { test: "echo root" } } }
-    expect(scoped(plan(rooted, "npm run test --workspaces --if-present"))).toContain("packages/app/**")
+    expect(Object.keys(parts(plan(rooted, "npm run test --workspaces --if-present")))).toEqual(["app", "lib", "lone"])
   })
 
   it("scopes a Yarn run of one workspace", () => {

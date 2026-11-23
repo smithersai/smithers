@@ -3700,6 +3700,19 @@ export const observe = (
   }
   const entries = new Map<string, Entry>()
   const own = new Map<string, Set<string>>()
+  // When bubblewrap bind-mounts a private directory (such as a machine's tmp) at `/tmp` and then bind-mounts
+  // paths under `/tmp` on top of it, bubblewrap creates empty mountpoint stubs inside the backing directory.
+  // Those stubs are host-path artifacts absent on an unmade machine, so exclude them from directory checks.
+  for (const [mountAt, mountFrom] of mounts) {
+    if (mountAt === mountFrom) continue
+    for (const [otherAt] of mounts) {
+      if (!under(otherAt, mountAt)) continue
+      const stub = otherAt.slice(mountAt.length + 1).split("/")[0]!
+      let names = own.get(mountFrom)
+      if (names === undefined) own.set(mountFrom, names = new Set())
+      names.add(stub)
+    }
+  }
   let refusal: string | undefined
   const touch = (path: string, first: Entry["first"]): Entry => {
     const entry = entries.get(path)

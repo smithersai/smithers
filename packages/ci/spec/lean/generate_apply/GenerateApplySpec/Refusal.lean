@@ -78,40 +78,86 @@ def isSchemeUnit (c : Nat) : Bool := isAlpha c || isDigit c || c == 43 || c == 4
 /-- The most code units a scheme holds after its first letter, bounding the search on long words. -/
 def schemeTail : Nat := 31
 
-/--
-A match of `credential`, `/([a-z][a-z0-9+.-]{0,31}:\/*)[^\s"]*@/gi`, at the start of `text`: how many units the
-replacement keeps (the scheme, its colon and slashes) and how many the match holds (through the last `@` before a
-space or a quote).
--/
-def credentialAt (text : Str) : Option (Nat × Nat) :=
-  match text with
-  | c :: rest =>
-    let tail := rest.takeWhile isSchemeUnit
-    if isAlpha c && tail.length ≤ schemeTail then
-      match rest.dropWhile isSchemeUnit with
-      | 58 :: afterColon =>
-        let kept := tail.length + 2 + (afterColon.takeWhile (· == 47)).length
-        let run := (afterColon.dropWhile (· == 47)).takeWhile fun u => !isSpace u && u != 34
-        let throughAt := run.reverse.dropWhile (· != 64)
-        if throughAt.isEmpty then none else some (kept, kept + throughAt.length)
-      | _ => none
+/-- `[^\s/?#]`: a code unit of a URL authority in `errorLine`. -/
+def isLineAuthorityUnit (c : Nat) : Bool := !(isSpace c || c == 47 || c == 63 || c == 35)
+
+/-- `[A-Za-z0-9+/.=_~-]`: a code unit of a Bearer/Basic token. -/
+def isTokenUnit (c : Nat) : Bool :=
+  isAlpha c || isDigit c || c == 43 || c == 47 || c == 46 || c == 61 || c == 95 || c == 126 || c == 45
+
+/-- ASCII lowercase of a code unit. -/
+def lowerAscii (c : Nat) : Nat := if 65 ≤ c && c ≤ 90 then c + 32 else c
+
+/-- Case-insensitive prefix match against an ASCII lowercase pattern. -/
+def matchCiPrefix : Str → Str → Option (Str × Str)
+  | [], rest => some ([], rest)
+  | _, [] => none
+  | p :: ps, c :: cs =>
+    if lowerAscii c == p then
+      match matchCiPrefix ps cs with
+      | some (matched, rem) => some (c :: matched, rem)
+      | none => none
     else none
-  | [] => none
+
+/-- What follows the last `@` of a text, or all of it when it has none. -/
+def afterLastAt (s : Str) : Str := (s.reverse.takeWhile (· != 64)).reverse
 
 /--
-`text.replace(credential, "$1")`. `copy` units of a match are still to keep and then `skip` to drop. A match may
-start at any letter, whatever stands before it.
+A match of `credential`, `/([a-z][a-z0-9+.-]{0,31}:\/\/)([^\s/?#]*)/gi`, at `c :: rest`:
+keeps `prefix + authority.slice(authority.lastIndexOf("@") + 1)` and resumes after the authority.
 -/
-def withoutCredentials : Nat → Nat → Str → Str
+def credentialAt (c : Nat) (rest : Str) : Option (Str × Str) :=
+  let tail := rest.takeWhile isSchemeUnit
+  if isAlpha c && tail.length ≤ schemeTail then
+    match rest.dropWhile isSchemeUnit with
+    | 58 :: 47 :: 47 :: after =>
+      let authority := after.takeWhile isLineAuthorityUnit
+      let rem := after.dropWhile isLineAuthorityUnit
+      some (c :: tail ++ lit "://" ++ afterLastAt authority, rem)
+    | _ => none
+  else none
+
+/-- `text.replace(credential, ...)`, scanning left to right. -/
+def withoutCredentials : Nat → Str → Str
+  | _, [] => []
+  | 0, s => s
+  | fuel + 1, c :: rest =>
+    match credentialAt c rest with
+    | some (stays, rem) => stays ++ withoutCredentials fuel rem
+    | none => c :: withoutCredentials fuel rest
+
+/-- A match of `/\b(Bearer|Basic)\s+[A-Za-z0-9+/.=_~-]+/i` at `s`. -/
+def authHeaderAt (s : Str) : Option (Str × Bool × Str) :=
+  let tryKind (kw : Str) : Option (Str × Bool × Str) :=
+    match matchCiPrefix kw s with
+    | some (matched, afterKw) =>
+      let spaces := afterKw.takeWhile isSpace
+      if spaces.isEmpty then none
+      else
+        let afterSpaces := afterKw.dropWhile isSpace
+        let token := afterSpaces.takeWhile isTokenUnit
+        if token.isEmpty then none
+        else
+          let rem := afterSpaces.dropWhile isTokenUnit
+          let endsWord := match token.reverse with
+            | last :: _ => isWord last
+            | [] => false
+          some (matched ++ lit " [redacted]", endsWord, rem)
+    | none => none
+  match tryKind (lit "bearer") with
+  | some hit => some hit
+  | none => tryKind (lit "basic")
+
+/-- `text.replace(/\b(Bearer|Basic)\s+[A-Za-z0-9+/.=_~-]+/gi, "$1 [redacted]")`. -/
+def redactAuth : Nat → Bool → Str → Str
   | _, _, [] => []
-  | copy + 1, skip, c :: rest => c :: withoutCredentials copy skip rest
-  | 0, skip + 1, _ :: rest => withoutCredentials 0 skip rest
-  | 0, 0, c :: rest =>
-    if isAlpha c then
-      match credentialAt (c :: rest) with
-      | some (kept, total) => c :: withoutCredentials (kept - 1) (total - kept) rest
-      | none => c :: withoutCredentials 0 0 rest
-    else c :: withoutCredentials 0 0 rest
+  | 0, _, s => s
+  | fuel + 1, afterWord, c :: rest =>
+    if !afterWord then
+      match authHeaderAt (c :: rest) with
+      | some (stays, endsWord, rem) => stays ++ redactAuth fuel endsWord rem
+      | none => c :: redactAuth fuel (isWord c) rest
+    else c :: redactAuth fuel (isWord c) rest
 
 /-- `text.replace(/\s+/g, " ")`. `inRun` says the unit before was white space. -/
 def collapse : Bool → Str → Str
@@ -123,9 +169,11 @@ def collapse : Bool → Str → Str
 /-- The longest error a line quotes. -/
 def longest : Nat := 300
 
-/-- `errorLine` of a string: no credentials, one line, at most 300 characters and an ellipsis. -/
+/-- `errorLine` of a string: no credentials, no Bearer/Basic token, one line, at most 300 characters and an ellipsis. -/
 def errorLine (text : Str) : Str :=
-  let line := trim (collapse false (withoutCredentials 0 0 text))
+  let scrubbed := withoutCredentials text.length text
+  let redacted := redactAuth scrubbed.length false scrubbed
+  let line := trim (collapse false redacted)
   if longest < line.length then line.take longest ++ [0x2026] else line
 
 /-! ## `JSON.parse`, as far as a record's `message` -/
