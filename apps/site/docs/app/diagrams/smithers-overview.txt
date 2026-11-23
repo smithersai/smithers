@@ -1,0 +1,9 @@
++-----------------------+    reads    +------------------------------+    +---------------------+
+| GitHub (Truth)        | ----------> | Smithers Engine              | -> | Hosted: smithers.sh |
+| - main (append-only)  |             | .smithers/flows/<name>/      |    | Browse & sign in    |
+| - Issues & PRs        | <---------- | [Button] [/cmd] [Agent]      |    +---------------------+
+| - People merge        |   draft PR  | All run the same typed flow  | -> | Local: smthrs CLI   |
++-----------------------+             | with durable SQLite journal  |    | Your Mac & Codex    |
+                                      +------------------------------+    +---------------------+
+
+HARD TRUST BOUNDARY: Agents propose diffs and receipts. People approve and merge every change.

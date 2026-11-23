@@ -1,0 +1,12 @@
++-----------------------------------------------------------------------------------+
+| DISTRIBUTION        @smthrs/flows, cli, migrate, testing                          |
++-----------------------------------------------------------------------------------+
+| CONTROL & WIRE      control, gateway, sync, mcp, notifications, observability     |
++-----------------------------------------------------------------------------------+
+| AGENTS & TOOLS      agent, harness, model, memory, std, plugin, registry, evals   |
++-----------------------------------------------------------------------------------+
+| AUTHORING & ENGINE  flow, engine, plan, journal, step-cache, time-travel, db      |
++-----------------------------------------------------------------------------------+
+| HOSTS & KERNEL      platform-node, platform-bun, platform-browser, kernel, jj     |
+|                     (only this layer touches node:*, Bun.*, DOM, or processes)    |
++-----------------------------------------------------------------------------------+

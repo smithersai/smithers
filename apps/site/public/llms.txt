@@ -6,23 +6,24 @@
 
 ## Start here
 
-- [Install Smithers](https://smithers.sh/docs/installation/): Install the CLI from npm, or check the planned Mac host setup.
+- [Install Smithers](https://smithers.sh/docs/installation/): Install the smthrs CLI from npm today, or review the planned single-Mac host setup.
 - [Change your code with a flow](https://github.com/smithersai/smithers/blob/main/packages/smithers/docs/guides/change-code.md): Run a coding agent on your subscription, review its diff, and commit it yourself.
 
 ## Get started
 
-- [Welcome to Smithers](https://smithers.sh/docs/index.md): What Smithers is, and the two ways to use it.
-- [Quickstart](https://smithers.sh/docs/quickstart.md): Open a repository on smithers.sh, read its files and issues, sign in with GitHub, and ask Smithers.
+- [Welcome to Smithers](https://smithers.sh/docs/index.md): What Smithers is, how it layers on GitHub, and where to start.
+- [Quickstart](https://smithers.sh/docs/quickstart.md): Take a five-minute tour of smithers.sh: open any GitHub repo by URL, inspect its files and issues, sign in with GitHub, add your model, and ask Smithers.
 - [Settings](https://smithers.sh/docs/settings.md): Choose your models, alert destinations and sandbox limits.
 
 ## On your own Mac
 
-- [Run agents on your Mac](https://smithers.sh/docs/local-quickstart.md): Install smthrs, have a coding agent change a small project on your Codex subscription, check the change and push it yourself.
-- [Self-host Smithers](https://smithers.sh/docs/self-host.md): Run your own install on a Mac, merge your first TODO and invite your team.
+- [Run agents on your Mac](https://smithers.sh/docs/local-quickstart.md): Hands-on tutorial: install smthrs, let a coding agent build and test a feature on your Codex subscription, inspect the diff, and push it yourself.
+- [Self-host Smithers](https://smithers.sh/docs/self-host.md): Run a single-Mac team install: set up the host, merge stacked TODOs, manage members and secrets, and put HTTPS in front.
 
 ## Flows
 
-- [Flows reference](https://smithers.sh/docs/flows.md): Create, edit and run your own flows.
+- [How durable flows work](https://smithers.sh/docs/durable-flows.md): Why Smithers plans a flow before running it, identifies steps by their inputs, and enforces capabilities at the host boundary.
+- [Flows reference](https://smithers.sh/docs/flows.md): Create, edit, and run personal flows in smithers.sh, or author file flows for the CLI and SDK.
 - [Chat commands](https://smithers.sh/docs/commands.md): Slash commands, arguments and minimum roles.
 
 ## Operators
@@ -31,7 +32,7 @@
 
 ## Reference
 
-- [Library API](https://smithers.sh/docs/reference/api/): Published package API references, with contributor links for workspace-private libraries.
+- [Library API](https://smithers.sh/docs/reference/api/): Layered architecture and reference index for every published @smthrs/* package, plus contributor links for workspace-private libraries.
 - [@smthrs/flow](https://smithers.sh/docs/reference/api/flow/): What @smthrs/flow exports: the flow, action, runtime-port, and durable-primitive namespaces, with types and defaults from source.
 - [Export reference](https://smithers.sh/docs/reference/api/engine/): Entry points and namespaces of @smthrs/engine, with runtime and transport signatures, defaults, and field tables.
 - [Smithers API cheat sheet](https://smithers.sh/docs/reference/api/cheat-sheet/): The complete top-level Smithers API used in WORKSPACE.ts and PACKAGE.ts, shown through examples.
@@ -87,7 +88,7 @@
 - [@smthrs/triggers](https://smithers.sh/docs/reference/api/triggers/): Durable cron triggers and channel contracts for flows
 - [@smthrs/views](https://smithers.sh/docs/reference/api/views/): Generated views as safe arbitrary output: check a model-written TSX module, render it to HTML in a QuickJS presentation realm, and frame it behind a pinned CSP and a validated MessageChannel bridge
 - [CLI reference](https://smithers.sh/docs/reference/cli.md): Install discovery and additional local commands, with usage, arguments, options and defaults from the CLI's own help.
-- [HTTP and RPC endpoints](https://smithers.sh/docs/reference/http-api/): The routes smthrs serve mounts, their protocols, their authentication rules, and the RPC groups each one serves.
+- [HTTP and RPC endpoints](https://smithers.sh/docs/reference/http-api/): The routes smthrs serve mounts, their transport protocols, authentication rules, error codes, and RPC procedure groups.
 
 ## Package documentation
 

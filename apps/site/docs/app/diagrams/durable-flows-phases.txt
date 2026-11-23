@@ -1,0 +1,10 @@
+PHASE 1: PLAN (pure, zero side effects)        PHASE 2: EXECUTE (content-addressed)
++------------------------------+               +----------------------------------------+
+| Plan(issue) -> placeholder   |               | Step Key = SHA-256(                    |
+|      |                       |               |   payload + prior outputs +            |
+|      v                       |  approved     |   file boundary + env +                |
+| Test(plan)  -> placeholder   | ----------->  |   implementationVersion                |
+|      |                       |   plan        | )                                      |
+|      v                       |               |   |-- HIT  -> Replay from SQLite       |
+| Report(res) -> dry-run graph |               |   +-- MISS -> Run guarded host & store |
++------------------------------+               +----------------------------------------+

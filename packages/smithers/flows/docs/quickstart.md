@@ -1,27 +1,30 @@
 ---
 title: "Quickstart"
-description: "Run a durable flow on local SQLite: declare an action and a flow, grant the one capability its body needs, stand the host up with NodeRuntime.layerHost, and watch the second run answer from the journal."
+description: "Hands-on SDK tutorial: build a durable TypeScript flow on local SQLite, enforce a capability rule, and prove journal replay by editing a file between runs."
 sidebar:
   order: 2
 ---
 
-This quickstart runs one flow end to end on a real durable engine: SQLite on
-disk, the guarded Node host, and the journal a resume replays from. By the end
-you will have a program that reads a file through a recorded step, and a second
-run of it that answers without reading the file again. Each step below is
-TypeScript; the [VibeLang tab](#the-same-walkthrough-in-vibelang) runs the same
-steps as Effect code.
+In five minutes you will write a single TypeScript file, run it straight on Node (zero build step), watch it read a file through a capability-guarded step into SQLite, and then **edit the file on disk and rerun** to prove the second run answers straight from the journal.
 
-## Prerequisites
+```text
++---------------------------------------------------------------+
+| 1. Declaration (pure data)  Action.make + Flow.make           |
++---------------------------------------------------------------+
+| 2. Implementation (Effect)  ReadNote.toLayer + Interpreter    |
++---------------------------------------------------------------+
+| 3. Permission rule          allow fs:read on workspace/**     |
++---------------------------------------------------------------+
+| 4. Durable host             NodeRuntime.layerHost (SQLite)    |
++---------------------------------------------------------------+
+         |                                      |
+   Run 1 (executionId: "quickstart-1")    Run 2 (same executionId)
+   Reads workspace/note.txt -> records    Hits journal -> skips read
+```
 
-- Node.js 22.19.0 or later. It runs the TypeScript file below directly, with no
-  build step and no loader flag.
+## 1. Create the project
 
-The quickstart does not need jj. A compensable step or a time-travel fork
-does; [Installation](./installation.md#requirements) covers it.
-
-Create an empty project, install the three packages the program imports, and
-give it something to read:
+Require **Node.js 22.19.0 or later** (Node strips TypeScript annotations natively, so no compiler or loader flag is needed). Jujutsu is not required for this walkthrough; see [Installation](./installation.md#requirements) when adding compensable steps or time-travel forks.
 
 ```bash
 mkdir flows-quickstart && cd flows-quickstart
@@ -30,32 +33,21 @@ npm install @smthrs/platform-node@1.0.0-rc.16 @smthrs/flows@1.0.0-rc.16 effect@4
 mkdir -p workspace && echo "the note" > workspace/note.txt
 ```
 
-The project is `"type": "module"` because the program ends in a top-level
-`await`. `@smthrs/flows` is the engine and its authoring names, and imports no
-platform code. `@smthrs/platform-node` is the Node host: it installs the SQLite
-driver. The published `1.0.0-rc.16` runtime is imported from
-`@smthrs/flows/NodeRuntime`, as the example below shows. `effect` is on the line because
-the program imports it directly. These pins reproduce the published API used below. The published rc.16 adapters require Effect 4.0.5; use that cohort together.
+Why these three packages?
+- `@smthrs/flows`: the platform-independent engine and authoring APIs (imports no `node:*` code). In published `1.0.0-rc.16`, `NodeRuntime` is imported from `@smthrs/flows/NodeRuntime`.
+- `@smthrs/platform-node`: the Node host and SQLite driver.
+- `effect@4.0.5`: imported directly by your code (the published `rc.16` cohort requires `effect@4.0.5`).
 
-With pnpm 11, replace the `npm install` line with
-`pnpm add @smthrs/platform-node@1.0.0-rc.16 @smthrs/flows@1.0.0-rc.16 effect@4.0.5`, then run
-`pnpm approve-builds esbuild`. pnpm 11 installs only versions at least 24 hours
-old, so `@next` can resolve to a candidate more than one release behind; an
-exact version is installed the day it is published. pnpm 11 also ends the install with
-`ERR_PNPM_IGNORED_BUILDS` until the project allows or denies the install script
-of `esbuild`, which `@smthrs/platform-node` uses to bundle sandboxed flows.
-[Installation](./installation.md) has the requirements in full.
+> **Using pnpm 11?** Replace `npm install` with `pnpm add @smthrs/platform-node@1.0.0-rc.16 @smthrs/flows@1.0.0-rc.16 effect@4.0.5` and run `pnpm approve-builds esbuild`. pnpm 11 holds dist-tags behind a 24-hour maturity window and requires approving `esbuild`'s install script (used by `@smthrs/platform-node` for sandboxed bundles). See [Installation](./installation.md).
 
-## Declare the action and the flow
+## 2. Declare the action and flow (pure data)
 
-An action is one recorded operation, and its declaration is pure data:
-schemas and a name, with no code attached. A flow's body is a plan over those
-declarations, compiled before any of it runs.
+An **action** is one recorded operation described only by its name and schemas. A **flow** wires actions into a step graph compiled before anything executes.
 
-Create `quickstart.ts`:
+Start `quickstart.ts`:
 
 ```ts
-import { Action, Flow, Interpreter } from "@smthrs/flows"
+import { Action, Capability, Flow, Interpreter } from "@smthrs/flows"
 import * as Effect from "effect/Effect"
 import * as FileSystem from "effect/FileSystem"
 import * as Layer from "effect/Layer"
@@ -64,13 +56,13 @@ import { resolve } from "node:path"
 
 const workspaceRoot = resolve("workspace")
 
-/** One recorded step: read a file through the host the engine guards. */
+/** One recorded step: pure contract, no implementation yet. */
 export const ReadNote = Action.make("quickstart/ReadNote", {
   payload: { path: Schema.String },
   success: Schema.String
 })
 
-/** The flow: a graph of one action, planned before any of it runs. */
+/** The flow: compiles a graph of one action before anything runs. */
 export const ReadNoteFlow = Flow.make("quickstart/ReadNoteFlow", {
   payload: { path: Schema.String },
   success: Schema.String,
@@ -78,11 +70,9 @@ export const ReadNoteFlow = Flow.make("quickstart/ReadNoteFlow", {
 })
 ```
 
-## Attach the implementation
+## 3. Attach the implementation as an Effect layer
 
-The code arrives as a layer, separately from the declaration. The action's body
-asks for Effect's `FileSystem`, and under `layerHost` that service is the
-kernel's guarded host surface, not raw Node.
+Separating declaration from implementation lets the engine plan, inspect, and cache steps without running user code. Inside the layer, ask for Effect's `FileSystem` service so the host's capability kernel can mediate every read:
 
 ```ts
 const implementation = ReadNote.toLayer(({ path }) =>
@@ -92,22 +82,18 @@ const implementation = ReadNote.toLayer(({ path }) =>
   })
 )
 
-/** The registration phase: implementations, then the flow's interpreter. */
+/** Register implementations first, then the flow interpreter. */
 const flows = Interpreter.layer(ReadNoteFlow).pipe(
   Layer.provideMerge(implementation),
   Layer.provideMerge(Action.layerImplementations)
 )
 ```
 
-## Grant the one capability the body needs
+## 4. Grant the exact capability required
 
-The host's grant store is unattended: there is no operator to prompt, so a
-capability no rule allows is denied rather than escalated. The body reads a
-file, so grant `fs:read` under the workspace and nothing else.
+An unattended host defaults to **deny all**: any capability without an explicit allow rule is refused rather than prompted. Grant `fs:read` strictly under `workspaceRoot`:
 
 ```ts
-import { Capability } from "@smthrs/flows"
-
 const allowWorkspaceReads = new Capability.Permission.Rule({
   effect: "allow",
   pattern: new Capability.Capability.CapabilityPattern({
@@ -117,45 +103,14 @@ const allowWorkspaceReads = new Capability.Permission.Rule({
 })
 ```
 
-Leave the rule out and the read is refused with the `permission_required` code,
-naming the exact capability it asked for. Because the implementation above wraps
-the read in `Effect.orDie`, that refusal arrives as a defect, and the program
-stops with an error that includes this line:
+> **What does the kernel guard, and what does it not?**
+> Capability rules guard the injected Effect services (`FileSystem`, `ChildProcessSpawner`, `HttpClient`, `Jj`). They are **not** an OS sandbox: code that bypasses Effect to call `node:fs` or global `fetch` escapes the grant store. To isolate untrusted code, execute it as a containerized child flow via `SandboxedFlow`; see [Run a child flow in a sandbox](./guides/run-a-child-flow-in-a-sandbox.md).
 
-```console
-Error [PlatformError]: PermissionDenied: FileSystem.read (<path>): permission_required: fs:read:<path> (tier sealed, request permission-1)
-```
+## 5. Stand up the host and run
 
-To see it, remove the rule in a fresh workspace or run under a new
-`executionId`. A completed `quickstart-1` replays from the journal and prints
-the note even after the rule is removed. The refused execution is recorded as
-failed and replays that failure the same way, so after you restore the rule,
-run under a new `executionId` or delete `workspace/.flows`.
+`NodeRuntime.layerHost` wires the entire durable runtime in one call: creates `.flows/`, runs SQLite migrations, installs the capability kernel, sets up the artifact store and liveness probe, attaches `SIGINT`/`SIGTERM` shutdown hooks, and registers your flows last (so no persisted run resumes before its flow is loaded).
 
-An action that wants to report a denial rather than die on it catches the
-failure instead and returns what it found: a denial is an answer, and it is up
-to the action which kind.
-
-Rules govern what a step reaches through the host's Effect services:
-`FileSystem`, `ChildProcessSpawner`, `HttpClient`, and `Jj`. They do not see code
-that goes around those services. An action that imports `node:fs` or calls the
-global `fetch` reads and fetches whatever the process can, with no rule at all.
-The grant store guards the services a body is handed; it is not a process
-sandbox. To isolate a body's own code, run it as a child flow with
-`SandboxedFlow` from `@smthrs/flows/SandboxedFlow` in `1.0.0-rc.16` on a container provider, as
-[Run a child flow in a sandbox](./guides/run-a-child-flow-in-a-sandbox.md)
-shows.
-
-## Stand the host up and run it
-
-This example targets published `1.0.0-rc.16`, pinned above. The source checkout
-moves this namespace to the root of `@smthrs/platform-node`; that relocation
-is not exported by the published rc.16 package.
-
-`layerHost` owes nothing to its caller. It creates the database's parent
-directory, runs migrations, builds the guarded host over the grant store, adds
-the step boundary and the workspace sandbox, installs `SIGINT` and `SIGTERM`
-handlers, and only then runs your registration phase.
+Append this to `quickstart.ts` (this targets published `1.0.0-rc.16`, where `NodeRuntime` lives at `@smthrs/flows/NodeRuntime`):
 
 ```ts
 import * as NodeRuntime from "@smthrs/flows/NodeRuntime"
@@ -181,144 +136,52 @@ export const main = ReadNoteFlow.execute(
 console.log(await Effect.runPromise(main))
 ```
 
-Run it:
+Run it directly with Node:
 
 ```bash
 node quickstart.ts
 ```
 
-Node strips the type annotations itself, so this is the whole build. It prints
-the file's contents:
-
 ```text
 the note
 ```
 
-## Run it again
+## 6. Two experiments to prove it is really durable
 
-Run the same file a second time, unchanged. It prints the same line, and the
-implementation never runs: `executionId` names one execution, and the engine
-answers a completed one from its journal.
+### Experiment A: Mutate the file and rerun
 
-Change `note.txt` between the two runs to see it plainly. The second run still
-prints the old contents, because it is replaying a recorded step rather than
-reading the file again. To read the file for real, use a new `executionId`.
+Overwrite `workspace/note.txt` with different text, then run `node quickstart.ts` again with the **same** `executionId` (`quickstart-1`):
 
-The same `executionId` also returns the recorded result after you change the
-flow, so a step you add or edit does not run;
-[Change a flow and keep the work](./guides/change-a-flow-and-keep-the-work.md)
-shows how to run only what changed.
-
-## The same walkthrough in VibeLang
-
-In [VibeLang](https://github.com/smithersai/vibelang) the action's body is an
-`effect` arrow, so `try` replaces each `yield*`, and `main` is an `effect`
-function that takes the workspace root instead of resolving it with
-`node:path`. The tab follows the source checkout, where `NodeRuntime` is a
-namespace of `@smthrs/platform-node`'s root rather than the published rc.16
-`@smthrs/flows/NodeRuntime` subpath. `test/quickstart.test.vibe` runs it twice
-under one execution id after changing the note, and the second run still
-answers with the recorded contents.
-
-This is `examples/quickstart.vibe`. `test/quickstart.test.vibe` runs it, and
-the package's docs check fails if this block and the file differ.
-
-```vibe
-import { Action, Capability, Flow, Interpreter } from "@smthrs/flows"
-import { NodeRuntime } from "@smthrs/platform-node"
-
-/** One recorded step: read a file through the host the engine guards. */
-export const ReadNote = Action.make("quickstart/ReadNote", {
-  payload: { path: Schema.String },
-  success: Schema.String
-})
-
-/** The flow: a graph of one action, planned before any of it runs. */
-export const ReadNoteFlow = Flow.make("quickstart/ReadNoteFlow", {
-  payload: { path: Schema.String },
-  success: Schema.String,
-  body: (payload) => ReadNote.call(payload)
-})
-
-/** The registration phase: the implementation, then the flow's interpreter. */
-const flows = (workspaceRoot: string) =>
-  Interpreter.layer(ReadNoteFlow).pipe(
-    Layer.provideMerge(ReadNote.toLayer(effect ({ path }) => {
-      // Under `layerHost`, FileSystem is the kernel's guarded host surface, not raw Node.
-      const files = try FileSystem.FileSystem
-      return try orDie(files.readFileString(`${workspaceRoot}/${path}`))
-    })),
-    Layer.provideMerge(Action.layerImplementations)
-  )
-
-/** The one capability the body needs: `fs:read` under the workspace, and nothing else. */
-const allowWorkspaceReads = (workspaceRoot: string) =>
-  new Capability.Permission.Rule({
-    effect: "allow",
-    pattern: new Capability.Capability.CapabilityPattern({ action: "fs:read", resource: `${workspaceRoot}/**` })
-  })
-
-/** Stands the durable host up over `<workspaceRoot>/.flows/engine.db` and runs one execution. */
-export effect function main(workspaceRoot: string, executionId: string) {
-  const host = NodeRuntime.layerHost(
-    {
-      filename: `${workspaceRoot}/.flows/engine.db`,
-      workspaceRoot,
-      owner: { hostId: "quickstart" },
-      rules: [allowWorkspaceReads(workspaceRoot)]
-    },
-    flows(workspaceRoot)
-  )
-  return try scoped(Effect.provide(ReadNoteFlow.execute({ path: "note.txt" }, { executionId }), host))
-}
+```bash
+echo "changed on disk" > workspace/note.txt
+node quickstart.ts
 ```
 
-## What just happened
+It still prints `the note`. The action never ran a second time: `executionId` identifies one durable execution, and a completed execution replays straight from the SQLite journal. Change `executionId` to `"quickstart-2"` to read `"changed on disk"`.
 
-`layerHost` composed every layer you did not write: the SQLite
-database and its migrations, the journal, the run and attempt stores, the step
-cache, the artifact store under `.flows/objects`, the contained Node host, the
-grant store your one rule went into, the step boundary and workspace sandbox,
-and a liveness probe that reads this machine's process table. Registration ran
-last, so no persisted run could resume through this composition before its flow
-was registered.
+### Experiment B: Drop the permission rule
 
-Closing the scope closed all of it in order. Had you pressed `Ctrl-C` mid-run
-instead, the signal handler would have closed the same scope, and the run this
-host owned would have parked itself `released` for the next host to reclaim
-rather than sitting `running` behind a dead owner. The interrupted program
-prints `Error: All fibers interrupted without error` and exits 1, and the next
-run resumes the execution at once.
+Pass `rules: []` and run under a fresh `executionId` (such as `"quickstart-3"`). Because the implementation wrapped `readFileString` in `Effect.orDie`, the kernel refuses the read and halts with:
 
-A process that dies without closing its scope, such as one killed with
-`kill -9`, leaves the run `running` under its lease. The next run on the same
-machine finds no process behind the owner's pid, reclaims the run at once, and
-resumes it. A run it cannot prove abandoned, such as one owned by another
-`hostId`, waits, and the host logs why and for how long.
+```console
+Error [PlatformError]: PermissionDenied: FileSystem.read (<path>): permission_required: fs:read:<path> (tier sealed, request permission-1)
+```
 
-Resume with the same flow source. Editing a callback or the plan refuses that
-execution with `plan_changed`; use a new execution id for the changed plan.
-Uncaptured callbacks allow restart, but steps whose keys include them rerun;
-[`Node.capture`](../core/docs/concepts/identity.md) gives those callbacks stable
-identities when their closed-over values are declared.
+Note that a failed execution is recorded too. After restoring `allowWorkspaceReads`, use a new `executionId` (or delete `workspace/.flows`) to run cleanly. If an action should treat a denial as a normal return value rather than a defect, catch the error inside `toLayer` instead of calling `Effect.orDie`.
+
+> **There are no dumb questions**
+>
+> **Q: What happens if I press `Ctrl-C` or `kill -9` halfway through a long flow?**
+> A: On `Ctrl-C` (`SIGINT`/`SIGTERM`), `layerHost` closes its scope cleanly, marks the run `released`, prints `Error: All fibers interrupted without error`, and exits `1`; the next launch reclaims and resumes it immediately. On `kill -9`, the next launch on the same machine inspects the process table, sees the dead PID behind the lease, and reclaims it immediately (a run held by another `hostId` waits and logs why).
+>
+> **Q: What if I edit the flow code before resuming an incomplete execution?**
+> A: Resuming an existing execution with a modified plan refuses with `plan_changed`; start a new `executionId` for the new plan. Wrap callbacks with [`Node.capture`](../core/docs/concepts/identity.md) to give closed-over values stable identities across restarts, and read [Change a flow and keep the work](./guides/change-a-flow-and-keep-the-work.md) to reuse completed steps across edits.
 
 ## Next steps
 
-- [How Smithers Flows works](./concepts/how-it-works.md): why a step that did
-  not run can be trusted, from the plan to the step key and the record.
-- [Change a flow and keep the work](./guides/change-a-flow-and-keep-the-work.md):
-  add or edit a step and rerun only what changed, and print the plan before
-  anything runs.
-- [Stand up a durable Node runtime](./guides/stand-up-a-node-runtime.md):
-  the four entry points, and which one a given program should call.
-- [Shut a host down](./guides/shut-a-host-down.md): signals, the shutdown
-  deadline, and what a released run means.
-- [Inspect the plan a body builds](../flow/docs/guides/inspect-the-plan.md) and
-  [Diff two plans](../plan/docs/guides/diff-two-plans.md): see what a flow will
-  run, and compare two versions of it, before anything runs.
-- [Rewind a run to a frame](../time-travel/docs/guides/rewind-a-run.md): rewind
-  a paused run and resume it, or fork a finished one.
-- [Run a child flow in a sandbox](./guides/run-a-child-flow-in-a-sandbox.md):
-  the tier where the child's own code executes on another machine, including
-  one reached over SSH.
-- [Troubleshooting](./troubleshooting.md): every refusal these modules raise.
+- Understand the plan, step keys, and safe cache reuse: [How Smithers Flows works](./concepts/how-it-works.md).
+- Edit a flow and rerun only the changed steps: [Change a flow and keep the work](./guides/change-a-flow-and-keep-the-work.md).
+- Pick the right Node runtime entry point and graceful shutdown policy: [Stand up a durable Node runtime](./guides/stand-up-a-node-runtime.md) and [Shut a host down](./guides/shut-a-host-down.md).
+- Inspect plans, diff plans, and time-travel: [Inspect the plan](../flow/docs/guides/inspect-the-plan.md), [Diff two plans](../plan/docs/guides/diff-two-plans.md), [Rewind a run](../time-travel/docs/guides/rewind-a-run.md).
+- Isolate untrusted step code: [Run a child flow in a sandbox](./guides/run-a-child-flow-in-a-sandbox.md).
+- Look up every runtime refusal: [Troubleshooting](./troubleshooting.md).

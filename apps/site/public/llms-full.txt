@@ -5,10 +5,21 @@ https://smithers.sh/docs/installation/
 
 Smithers maintains your codebase. It turns issues into tested changes for you to review and, when enabled, keeps the project wiki current. Flows beside your code define how.
 
+```text
+[AVAILABLE NOW] CLI from npm (1.0 release candidate):
+  Node 22.19+ & jj, jq --> npm install -g smthrs@next --> smthrs --version & smthrs doctor
+
+[PLANNED] Mac Host via Homebrew (setup order):
+  1. Address -> 2. GitHub App -> 3. Owner sign-in -> 4. Repository -> 5. Model access
+```
+
+_Install the smthrs CLI from npm today; the Homebrew Mac host ships next and follows the five-step setup order._
+
 ## Install the CLI
 
-The 1.0 release candidate is available from npm. Use Node.js 22.19.0 or later.
-Install Jujutsu (`jj`) and `jq`; on macOS with Homebrew:
+The 1.0 release candidate ships on npm under `@next`. Require **Node.js 22.19.0 or later**, Jujutsu (`jj`), and `jq`.
+
+On macOS with Homebrew:
 
 ```bash
 brew install jj jq
@@ -16,20 +27,22 @@ npm install -g smthrs@next
 smthrs --version
 ```
 
-Follow [CLI installation](https://github.com/smithersai/smithers/blob/main/packages/smithers/docs/installation.md#install-the-cli)
-for Node downloads, other platforms and model sign-in. Then
-[change your code with a flow](https://github.com/smithersai/smithers/blob/main/packages/smithers/docs/guides/change-code.md),
-review its diff, run your tests, and commit and push it yourself.
+| Next step | Guide |
+| --- | --- |
+| Node downloads, Linux/other platforms, and Codex/Claude sign-in | [CLI installation](https://github.com/smithersai/smithers/blob/main/packages/smithers/docs/installation.md#install-the-cli) |
+| Run a coding agent on a local repo, check its diff, and push yourself | [Change your code with a flow](https://github.com/smithersai/smithers/blob/main/packages/smithers/docs/guides/change-code.md) |
 
 ## Mac host (planned)
 
-**Planned.** The Homebrew host package is not released. The host installation, startup and setup below apply once it ships. Prepare:
+**Planned.** The Homebrew host package is not released yet. The commands and setup order below apply once it ships.
 
-- An Apple Silicon Mac running macOS 15 or later, Homebrew, and at least 44 GiB free on the state volume.
+### Host requirements
+
+- Apple Silicon Mac running macOS 15 or later, Homebrew, and at least **44 GiB** free on the state volume.
 - A GitHub repository with squash merging enabled.
-- A coding-model provider key or ChatGPT sign-in, and an AI Gateway key for Decisions.
+- A coding-model provider key or ChatGPT sign-in, plus an AI Gateway key for Decisions.
 
-Once the package ships, run on your Mac:
+Once released, install on the host Mac:
 
 ```bash
 brew install smithersai/tap/smithers
@@ -37,46 +50,62 @@ brew install smithersai/tap/smithers
 
 ## Start the install
 
-The per-user launchd agent needs no administrator authorization and will print a setup URL for the Mac and each configured public address.
+The per-user `launchd` agent requires no administrator privileges and prints a one-time setup URL for the Mac and each configured public origin.
 
-| Access | Run on the Mac | Open the browser on | Example setup URL |
+| Access | Run on the Mac | Open browser on | Example setup URL |
 | --- | --- | --- | --- |
-| Mac | `smthrs host start` | The Mac | `http://localhost:4000/setup?token=...` |
-| LAN | `smthrs host start --bind 0.0.0.0 --origin http://studio-mini.local:4000` | The Mac or a LAN laptop | `http://studio-mini.local:4000/setup?token=...` |
+| Mac only | `smthrs host start` | The Mac | `http://localhost:4000/setup?token=...` |
+| Team LAN | `smthrs host start --bind 0.0.0.0 --origin http://studio-mini.local:4000` | The Mac or a LAN laptop | `http://studio-mini.local:4000/setup?token=...` |
 
-Replace `studio-mini.local` with your Mac's LAN hostname. The options are `--bind <addr>` and `--origin <url>`.
+Replace `studio-mini.local` with your Mac's LAN hostname. Network flags are `--bind <addr>` and `--origin <url>`.
 
 ## Complete setup
 
-Open the printed setup link. The setup card guides you in this order:
+Open the printed setup URL and finish each card in order:
 
-1. **Address:** choose **This Mac** or a network address your teammates will use. Address comes first because the GitHub App's sign-in callback is registered to it.
+1. **Address:** choose **This Mac** or a network address your team will open. Address comes first because the GitHub App's sign-in callback is registered to it.
 2. **GitHub App:** create the App through GitHub's app-manifest flow.
-3. **Owner sign-in:** sign in with GitHub through the new App to claim the install. Claiming invalidates the setup token.
+3. **Owner sign-in:** sign in with GitHub through the new App to claim the install and invalidate the setup token.
 4. **Repository:** choose the repository and install the App on it. Setup checks that GitHub allows squash merging; if it does not, enable squash merging on GitHub and retry.
 5. **Model access:** connect the three roles: **fast** for the app agent and summaries (Cerebras by default), **coding** through a provider key or ChatGPT sign-in, and **Decisions** through an AI Gateway key. Without a fast-model key, the app agent uses the coding model.
 
-The rest of the docs are in the app at `/docs`.
+In-app documentation lives at `/docs`.
 
 ---
 
 # Change your code with a flow
 https://github.com/smithersai/smithers/blob/main/packages/smithers/docs/guides/change-code.md
 
-Run a coding agent on your subscription, inspect its changes, then commit and push them yourself. Smithers does not review or land this change. You review the diff and tests and push with your own tools. A [person-only local landing route](https://github.com/smithersai/smithers/issues/4261) is planned.
+Run a coding agent locally on your own subscription, inspect every changed line, run the tests yourself, and push with your own VCS tools. Smithers never approves, commits, or lands this change (a [person-only local landing route](https://github.com/smithersai/smithers/issues/4261) is planned).
 
-## Install
+```text
++--------------------------------------------------+      +-------------------------------+
+| AGENT ZONE (durable SQLite journal in .flows/)   |      | YOUR REVIEW & SHIP            |
+|                                                  |      |                               |
+|  1. smthrs generate flow coding                  |      |  3. smthrs change diff        |
+|           |                                      |      |            |                  |
+|           v                                      |      |            v                  |
+|  2. smthrs flow start coding (your subscription) | ---> |  4. node --test               |
+|           |                                      |      |            |                  |
+|           v                                      |      |            v                  |
+|  Working copy edits only (no commit, no push)    |      |  5. jj / git commit & push    |
++--------------------------------------------------+      +-------------------------------+
+```
 
-Use Node 22.19.0 or later and install jj as described in [Installation](https://github.com/smithersai/smithers/blob/main/packages/smithers/docs/installation.md).
+## 1. Install `smthrs`
+
+Require Node.js 22.19.0 or later and Jujutsu (`jj`); see [Installation](https://github.com/smithersai/smithers/blob/main/packages/smithers/docs/installation.md) for platform instructions.
 
 ```bash
 npm install -g smthrs@next
 smthrs --version
 ```
 
-The tested prerelease printed `1.0.0-rc.15`.
+The tested prerelease prints `1.0.0-rc.15` or later.
 
-## Create a project
+## 2. Create a tiny sandbox project
+
+Set up a minimal ES module repository with one file and a clean base commit:
 
 ```bash
 mkdir slug
@@ -90,7 +119,7 @@ jj describe -m 'Initial tiny project'
 jj new
 ```
 
-Use your own name and email. For an existing project, start in its directory instead. If you use Git, replace the jj commands above with:
+Substitute your own name and email (or start inside an existing repository). Prefer Git? Replace the `jj` lines above with:
 
 ```bash
 git init -b main
@@ -100,32 +129,36 @@ git add .
 git commit -m 'Initial tiny project'
 ```
 
-Smithers uses jj to show changes, including in Git projects. In a Git project, also run `jj git init --colocate .` before continuing.
+> **Using Git?** Smithers computes diffs through `jj` even inside Git repos. Run `jj git init --colocate .` before continuing.
 
-## Choose your subscription
+## 3. Generate the coding flow and select your subscription
+
+Scaffold `.smithers/flows/coding/flow.ts` inside the repository:
 
 ```bash
 smthrs generate flow coding
 ```
 
-Open `.smithers/flows/coding/flow.ts`. Set both `seat` and `model` to `"openai:gpt-6.1-sol"` for Codex, or `"opus"` for Claude. Keep credentials out of the file.
+Open `.smithers/flows/coding/flow.ts` and set both `seat` and `model` to `"openai:gpt-6.1-sol"` for Codex, or `"opus"` for Claude. Never put credentials in source files.
 
-For an existing Codex login:
+To use an existing local Codex login without API keys:
 
 ```bash
 export SMITHERS_OPENAI_AUTH=chatgpt
 unset ANTHROPIC_API_KEY OPENAI_API_KEY AI_GATEWAY_API_KEY
 ```
 
-If you have not connected a subscription, follow [Installation](https://github.com/smithersai/smithers/blob/main/packages/smithers/docs/installation.md#requirements) first. The Codex path below was tested on a Pro subscription. The Claude alternative was not tested in this walkthrough.
+No subscription connected yet? Complete [Installation](https://github.com/smithersai/smithers/blob/main/packages/smithers/docs/installation.md#requirements) first. The Codex path below was tested on a Pro subscription; the Claude path was not executed during this walkthrough.
 
-## Ask for the change
+## 4. Ask the coding agent for a change
+
+Hand the flow a specific, testable prompt and an explicit stop boundary:
 
 ```bash
 smthrs flow start coding --data '{"args":"Add an exported slugify(text) function to index.js with tests in index.test.js using node:test and node:assert/strict. Lowercase text, replace spaces with hyphens, remove punctuation, trim hyphens. Actually write code and tests, run node --test. Do not commit, approve, merge, land or move main."}'
 ```
 
-Trimmed output from the subscription run:
+The command attaches while the agent writes code and executes tests, then prints the durable receipt and run ID:
 
 ```text
 _tag: Accepted
@@ -133,7 +166,7 @@ receiptId: "approve:plan-2"
 runId: run-2
 ```
 
-Use the run id printed by your command:
+Check the settled status using the run ID printed in your terminal:
 
 ```bash
 smthrs runs show run-2
@@ -147,21 +180,21 @@ flowId: coding
 status: completed
 ```
 
-Continue only after `status: completed`. If it failed or parked, inspect the diagnosis in `runs show` and follow [Diagnose a run](https://github.com/smithersai/smithers/blob/main/packages/smithers/docs/guides/diagnose-a-run.md).
+Proceed only once you see `status: completed`. If the run failed or parked, `runs show` prints the cause; see [Diagnose a run](https://github.com/smithersai/smithers/blob/main/packages/smithers/docs/guides/diagnose-a-run.md).
 
-## If the run stops
+> **What if my terminal dies mid-run?**
+> The run lives in `.flows/` on disk, not in your terminal session. Check it with `smthrs runs show <id>` and continue the exact same execution with `smthrs runs resume <id>`.
 
-If the process running this generated flow dies during coding, `smthrs runs show <id>` still shows the run.
-Run `smthrs runs resume <id>` to continue the same run. See [Diagnose a run](https://github.com/smithersai/smithers/blob/main/packages/smithers/docs/guides/diagnose-a-run.md).
+## 5. Review the diff and run the tests yourself
 
-## Review and test
+Never rely on the agent's report alone. Inspect every modified file and run `node --test` directly:
 
 ```bash
 smthrs change diff
 node --test
 ```
 
-The recorded diff included `Modified regular file index.js` and `Added regular file index.test.js`. The test output ended with:
+The recorded diff shows `Modified regular file index.js` and `Added regular file index.test.js`, alongside the scaffolded `.smithers/flows/coding/` files. The test summary ends with:
 
 ```text
 ℹ tests 6
@@ -169,11 +202,11 @@ The recorded diff included `Modified regular file index.js` and `Added regular f
 ℹ fail 0
 ```
 
-Read the whole diff, including generated flow files. Check that the tests cover the behavior you requested. Your agent may produce different code and a different test count.
+Read the full diff and confirm the tests cover real edge cases. Your agent's implementation and test count may vary.
 
-## Commit and push yourself
+## 6. Commit and push yourself
 
-Configure `origin` for your repository if it is not already set. With jj 0.46 or later (`jj --version`):
+Point `origin` at your remote (skip `remote add` if `origin` already exists). With Jujutsu 0.46 or later (`jj --version`):
 
 ```bash
 jj git remote add origin /path/to/your/origin.git
@@ -183,7 +216,7 @@ jj new
 jj git push --remote origin --bookmark main
 ```
 
-With Git, use these commands instead:
+With Git:
 
 ```bash
 git remote add origin /path/to/your/origin.git
@@ -192,94 +225,141 @@ git commit -m 'Add slugify'
 git push -u origin main
 ```
 
-Replace the example remote path with your own remote. Skip `remote add` when `origin` already exists. Follow your repository's branch and pull request policy when it requires review before main.
+Replace `/path/to/your/origin.git` with your repository's remote URL, and push to a feature branch if your repository protects `main`.
 
 ---
 
 # Welcome to Smithers
 https://smithers.sh/docs/
 
-Automate maintaining your codebase with Smithers. On smithers.sh, you open a repository at the path it has on GitHub and read it. On your own Mac, the `smthrs` CLI runs a coding agent on your project on your own subscription.
+Automate maintaining your codebase with Smithers. Browse repositories, configure your own models, and collaborate with coding agents at [smithers.sh](https://smithers.sh), or run agents locally on your Mac and subscription with the `smthrs` CLI.
+
+```text
++-----------------------+    reads    +------------------------------+    +---------------------+
+| GitHub (Truth)        | ----------> | Smithers Engine              | -> | Hosted: smithers.sh |
+| - main (append-only)  |             | .smithers/flows/<name>/      |    | Browse & sign in    |
+| - Issues & PRs        | <---------- | [Button] [/cmd] [Agent]      |    +---------------------+
+| - People merge        |   draft PR  | All run the same typed flow  | -> | Local: smthrs CLI   |
++-----------------------+             | with durable SQLite journal  |    | Your Mac & Codex    |
+                                      +------------------------------+    +---------------------+
+
+HARD TRUST BOUNDARY: Agents propose diffs and receipts. People approve and merge every change.
+```
+
+_How Smithers sits beside GitHub, runs typed flows through three doors, and keeps humans as the merge boundary_
+
+## Three rules Smithers enforces
+
+1. **GitHub stays the source of truth.** Your repository's `main` branch, issues, pull requests, and reviews remain on GitHub. Smithers reads them and writes changes back as branches and pull requests.
+2. **People merge; agents propose.** An agent writes code, runs tests, and attaches evidence. A person approves and merges every change to `main`. System flows are protected actions and cannot be replaced by personal revisions.
+3. **Every action is a durable flow.** A UI button, a chat `/` command, and an agent tool call all invoke the same typed program. Every step is journaled to SQLite, so a crash resumes rather than starts over.
 
 ![The smithers.sh home page with Get started for free](https://smithers.sh/images/docs/welcome-home.light.webp)
 
-## How Smithers relates to GitHub
+## Pick your starting point
 
-GitHub keeps your repository's `main`, issues, pull requests, reviews and checks. Smithers reads them and adds its own layer. A person merges every change. Agents never approve or merge.
-
-Every action in Smithers is a flow: a typed, durable program. A button, a slash command and an agent call all run the same flow. A repository can change its flows by committing files under `.smithers/flows/`. See [What a flow is](https://smithers.sh/docs/flows/).
-
-## Two ways to use Smithers
-
-| | smithers.sh | Your own Mac |
-| --- | --- | --- |
-| Where it runs | Hosted at smithers.sh | On your Mac, with the `smthrs` CLI |
-| Sign in | With GitHub | Not needed for the CLI |
-| Start here | [Quickstart](https://smithers.sh/docs/quickstart/) | [Run agents on your Mac](https://smithers.sh/docs/local-quickstart/) |
-
-## Next steps
-
-- [Quickstart](https://smithers.sh/docs/quickstart/): open a repository on smithers.sh and sign in with GitHub.
-- [Run agents on your Mac](https://smithers.sh/docs/local-quickstart/): have a coding agent change a project on your own Codex subscription.
-- [What a flow is](https://smithers.sh/docs/flows/): how Smithers' actions are built, and how to change them.
+| If you want to... | Run on | Sign-in required | Start with |
+| --- | --- | --- | --- |
+| Explore a repo, sign in with GitHub, add your model, and ask Smithers | Hosted at `smithers.sh` | Optional to read; GitHub to act | [Quickstart](https://smithers.sh/docs/quickstart/) |
+| Configure personal model keys, spend alerts, or sandbox limits | Hosted at `smithers.sh` | Member / Admin | [Settings](https://smithers.sh/docs/settings/) |
+| Have a coding agent edit a local project on your Codex subscription | Your Mac (`smthrs` CLI) | Local Codex login only | [Run agents on your Mac](https://smithers.sh/docs/local-quickstart/) |
+| Understand why flows plan before running and survive crashes | Concepts | None | [How durable flows work](https://smithers.sh/docs/durable-flows/) |
+| Create and run personal flows or author SDK file flows | Web app & `.smithers/flows/` | Member (web) / None (CLI) | [Flows reference](https://smithers.sh/docs/flows/) |
+| Look up every chat `/` command and minimum role | Hosted at `smithers.sh` | Varies by command | [Chat commands](https://smithers.sh/docs/commands/) |
+| Configure Cloudflare deployment model and sandbox limits | Operators | Admin / Operator | [Operator configuration](https://smithers.sh/docs/operator/) |
+| Install the CLI or read the planned Mac host setup | Local or LAN Mac | None | [Install Smithers](https://smithers.sh/docs/installation/) |
 
 ---
 
 # Quickstart
 https://smithers.sh/docs/quickstart/
 
-This page takes you from the smithers.sh home page to a repository's files and issues, then through signing in with GitHub to your first question. It takes about five minutes.
+You do not need an account, a config file, or a local install to explore Smithers. In the next five minutes you will open a live repository on `smithers.sh`, browse its code and issues, sign in with GitHub, connect your model, and ask your first question.
 
-**Before you start:** you need a GitHub account to sign in. To open a private repository, you also need read access to it on GitHub.
+```text
+URL trick: https://github.com/smithersai/vibelang  -->  https://smithers.sh/smithersai/vibelang
 
-## 1. Open smithers.sh
+[Signed-out read]                                         [Signed-in contribute]
+1. Home (smithers.sh) -> 2. Repo tree -> 3. Read file -> 4. Issues & PRs --> 5. Sign in with GitHub
+```
 
-Go to [smithers.sh](https://smithers.sh). Choose **Get started for free** to sign in, or open a repository below.
+_The five-minute tour: swap github.com for smithers.sh to read any public repository, then sign in with GitHub to contribute_
+
+**What you need:** a browser and a GitHub account to sign in at Step 5. To open a private repository, you need read access to it on GitHub; to ask Smithers inside a repository, you need write access or higher.
+
+## Step 1. Land on smithers.sh
+
+Open [smithers.sh](https://smithers.sh). Choose **Get started for free** to sign in, or jump straight to any public repository URL in Step 2.
 
 ![The smithers.sh home page with Get started for free](https://smithers.sh/images/docs/welcome-home.light.webp)
 
-## 2. Open a repository
+## Step 2. Swap the hostname to open any repo
 
-A repository on smithers.sh has the path it has on GitHub: replace `github.com` with `smithers.sh` in the repository's address. For example, `https://smithers.sh/smithersai/vibelang` opens the `smithersai/vibelang` repository.
+Smithers mirrors GitHub's URL path layout 1-to-1. Replace `github.com` with `smithers.sh` in any repository address:
 
-The repository opens on **Home**. Choose **Code** to browse its files and select a branch.
+```text
+https://github.com/smithersai/vibelang
+                   |
+                   v
+https://smithers.sh/smithersai/vibelang
+```
+
+Open `https://smithers.sh/smithersai/vibelang`. The repository lands on **Home**; choose **Code** to browse the file tree and switch branches.
 
 ![The smithersai/vibelang repository on its Home tab](https://smithers.sh/images/docs/quickstart-repo-home.light.webp)
 
-A repository not yet cloned offers **Sign in to clone**. A missing or inaccessible repository shows **Not found**; a failed lookup shows an error.
+:::note[There are no dumb questions]
+**Q: What happens if a repository has never been opened on smithers.sh?**
+A: Smithers tells you plainly what is true. A repository not yet cloned offers **Sign in to clone**. A missing or inaccessible repository shows **Not found**; a failed lookup shows an error.
 
-## 3. Read a file
+**Q: Does browsing a public repo touch GitHub?**
+A: No. Signed-out views are strictly read-only. Nothing writes to GitHub until a signed-in person explicitly acts or merges a pull request.
+:::
 
-Choose **Code**, then a folder to open it, or a file to read it. The file's path is at the top. Choose the repository's name in the path to go back to its files.
+## Step 3. Drill into a file and jump back
+
+Choose **Code**, then click a folder or file. The breadcrumb path stays pinned at the top of the viewer; click the repository name in that path to jump back to the root tree.
 
 ![package.json in smithersai/vibelang on smithers.sh, with the file's path at the top (1)](https://smithers.sh/images/docs/quickstart-file.light.webp)
 
-## 4. Read issues and pull requests
+## Step 4. Switch to Issues and Pull requests
 
-Choose **Issues** to list the repository's open and closed issues, or **Pull requests** to list its pull requests. Choose an issue to read it.
+Choose **Issues** to list open and closed issues, or **Pull requests** to inspect open PRs. Click any issue to read its full body and comments.
 
 ![The Issues tab of smithersai/vibelang on smithers.sh: Issues (1) and Pull requests (2), with each issue's author hidden](https://smithers.sh/images/docs/quickstart-issues.light.webp)
 
-## 5. Sign in with GitHub
+## Step 5. Sign in with GitHub
 
-From the home page, choose **Get started for free**. Until your first conversation, the app lists its steps above the chat: **Sign in**, **Add your model**, then **Ask Smithers** or **Open your repository**, each checked once done. Choose **Sign in with GitHub** on the first step. GitHub asks you to sign in, then to authorize Smithers to read your account and email address and to access your repositories.
+From the home page, choose **Get started for free**. Before your first conversation, the app shows a compact setup checklist above the chat: **Sign in**, **Add your model**, and **Ask Smithers** (or **Open your repository**), checking each step off as you finish.
+
+Choose **Sign in with GitHub**. GitHub authenticates you and asks you to authorize Smithers to read your account, email address, and repository access.
 
 ![GitHub's sign-in page, opened from Sign in on smithers.sh](https://smithers.sh/images/docs/quickstart-sign-in.light.webp)
 
-## 6. Add your model and ask
+## Step 6. Add your model and ask
 
-Smithers answers with your own model. On **Add your model**, choose **Open settings**, enter your provider's base URL, key and model under **Your model**, and save. Back in the chat, choose **Chat** on **Ask Smithers**, type a question and press Enter. Once you have asked, the steps are gone.
+Smithers answers with your own model key (see [Settings](https://smithers.sh/docs/settings/) for tier details):
 
-You ask Smithers in a repository where you have write access or more on GitHub. When the chat's own repository isn't one of yours, the last step is **Open your repository** instead: choose **Install** to add the Smithers GitHub App to a public repository of yours, type the repository as `owner/name`, and choose **Open**. On its page, choose **Clone**, then open a file or folder: the branch's conversation is beside it, and you ask there. A repository where you only read says **Members can ask Smithers.**
+1. On **Add your model**, choose **Open settings**, enter your provider's **Base URL**, **Key**, and model under **Your model**, and choose **Save**.
+2. Return to chat. If you have write access to the current repository, choose **Chat** on **Ask Smithers**, type a question, and press Enter.
+3. If the current repository is read-only for you (it shows **Members can ask Smithers.**), choose **Install** on **Open your repository** to add the Smithers GitHub App to a repository of yours, enter `owner/name`, choose **Open**, then **Clone**. Open any file or folder to chat beside it.
 
-## Result
+Once you ask your first question, the onboarding checklist disappears.
 
-You opened a repository on smithers.sh, read a file, listed its issues, signed in with GitHub, and asked Smithers your first question.
+## What you just unlocked
+
+| Signed out | Signed in with GitHub + your model |
+| --- | --- |
+| Read files and folders on public repos | Open private repositories you can read on GitHub |
+| Browse open and closed issues and PRs | Clone your repositories and chat with Smithers |
+| Explore `smithers.sh` with zero setup | Create personal flows, run `/` commands, and review changes |
 
 ## Next steps
 
-- [Run agents on your Mac](https://smithers.sh/docs/local-quickstart/): have a coding agent change a project on your own Codex subscription.
-- [What a flow is](https://smithers.sh/docs/flows/): how every action in Smithers is built.
+- Configure personal model tiers, spend alerts, and sandbox limits: [Settings](https://smithers.sh/docs/settings/).
+- Run a coding agent locally on your own Codex subscription: [Run agents on your Mac](https://smithers.sh/docs/local-quickstart/).
+- Understand why flows plan first and survive crashes: [How durable flows work](https://smithers.sh/docs/durable-flows/).
+- Build personal flows and explore chat commands: [Flows reference](https://smithers.sh/docs/flows/) and [Chat commands](https://smithers.sh/docs/commands/).
 
 ---
 
@@ -321,15 +401,37 @@ Operators can also configure [deployment limits](https://smithers.sh/docs/operat
 # Run agents on your Mac
 https://smithers.sh/docs/local-quickstart/
 
-This page has a coding agent change a small project on your Mac, on your own Codex subscription. You check the change and push it with your own tools. Smithers doesn't land it.
+Suppose you want a coding agent to implement a real function with unit tests in a local repository, using your existing Codex subscription instead of juggling API keys, and without ever letting the agent touch `git push` or move `main`.
 
-**Before you start:**
+That is what we are building in this tutorial. You will create a tiny Node project (`slug`), drop a Smithers coding flow into it, launch a durable run, inspect the working-copy diff, run the tests, and commit the result yourself.
 
-- Node.js at the version [Install Smithers](https://smithers.sh/docs/installation/) names. Check yours with `node --version`.
-- Jujutsu (`jj`) and `jq`. On macOS with Homebrew: `brew install jj jq`.
-- A Codex login on this Mac.
+```text
++-------------------------------------------------+     +-------------------------------+
+| AGENT ZONE (local, durable, resumable)          |     | YOUR CHECK & SHIP             |
+|                                                 |     |                               |
+| 1. smthrs generate flow coding                  |     | 3. smthrs change diff         |
+|         |                                       |     |         |                     |
+|         v                                       |     |         v                     |
+| 2. smthrs flow start coding (Codex login)       | --> | 4. node --test                |
+|         |                                       |     |         |                     |
+|         v                                       |     |         v                     |
+| .flows/ SQLite journal --> Working copy (jj @)  |     | 5. jj describe & jj git push  |
+|   (Crash? smthrs runs resume <id>)              |     |                               |
+| [AGENT STOPS HERE: no commit, no push]          |     +-------------------------------+
++-------------------------------------------------+
+```
 
-## 1. Install smthrs
+_The local coding loop: smthrs runs the coding agent durably through SQLite and stops at the working copy so you inspect, test, and push_
+
+## What you need before starting
+
+- **Node.js 22.19.0 or later** (check with `node --version`; see [Install Smithers](https://smithers.sh/docs/installation/) for platform notes).
+- **Jujutsu (`jj`) and `jq`:** on macOS with Homebrew, run `brew install jj jq`.
+- **An active Codex login** on this Mac.
+
+## Step 1. Install `smthrs` and verify the machine
+
+Install the 1.0 release candidate from npm and run `doctor` before touching any code:
 
 ```sh
 npm install -g smthrs@next
@@ -337,18 +439,18 @@ smthrs --version
 smthrs doctor
 ```
 
-`smthrs --version` prints `1.0.0-rc.15` or later. `smthrs doctor` checks project discovery, providers and tools.
+`smthrs --version` prints `1.0.0-rc.15` or later. `smthrs doctor` checks Node, `jj`, flow discovery, and provider credentials without modifying your disk. Fix any `fail` line before moving on.
 
-## 2. Create a project
+## Step 2. Build a tiny sandbox project
 
-Tell Jujutsu who you are, with your own name and email:
+First, tell Jujutsu who you are (replace with your own name and email):
 
 ```sh
 jj config set --user user.name 'Your Name'
 jj config set --user user.email you@example.com
 ```
 
-Then create a small project:
+Now create a minimal ES module project with one file and an initial commit:
 
 ```sh
 mkdir slug
@@ -360,28 +462,42 @@ jj describe -m 'Initial tiny project'
 jj new
 ```
 
-## 3. Add the coding flow
+Why `jj new` at the end? That leaves your initial commit cleanly sealed and gives the coding agent a fresh working-copy change (`@`) to edit.
+
+## Step 3. Add the coding flow and point it at Codex
+
+Generate a starter coding flow inside the repository:
 
 ```sh
 smthrs generate flow coding
 ```
 
-The generated `.smithers/flows/coding/flow.ts` already sets both `seat` and `model` to `"openai:gpt-6-sol"`. Keep these defaults for Codex. Keep credentials out of the file.
+This creates `.smithers/flows/coding/flow.ts` and adds `.flows/` to `.gitignore`. The generated file already sets both `seat` and `model` to `"openai:gpt-6-sol"`. Keep those defaults for Codex, and keep credentials out of source files.
 
-Use your Codex login instead of an API key:
+Now tell Smithers to route OpenAI seats through your local ChatGPT/Codex login and clear any API keys from this shell:
 
 ```sh
 export SMITHERS_OPENAI_AUTH=chatgpt
 unset ANTHROPIC_API_KEY OPENAI_API_KEY AI_GATEWAY_API_KEY
 ```
 
-## 4. Ask for a change
+:::note[There are no dumb questions]
+**Q: Why unset the API keys?**
+A: Smithers picks your Codex subscription cleanly when `SMITHERS_OPENAI_AUTH=chatgpt` is set and no provider API keys compete in the environment. A failed subscription never silently falls back to billing an API key.
+
+**Q: Why does the flow live inside `.smithers/flows/` instead of my home directory?**
+A: Because a flow is part of your repository's engineering contract. Committing `.smithers/flows/coding/flow.ts` lets teammates and CI run the exact same typed workflow.
+:::
+
+## Step 4. Launch the coding agent
+
+Give the flow a concrete, verifiable task and an explicit boundary ("do not commit or push"):
 
 ```sh
 smthrs flow start coding --data '{"args":"Add an exported slugify(text) function to index.js with tests in index.test.js using node:test and node:assert/strict. Lowercase text, replace spaces with hyphens, remove punctuation, trim hyphens. Actually write code and tests, run node --test. Do not commit, approve, merge, land or move main."}'
 ```
 
-The command waits while the coding agent works, about a minute for this change, then prints the run's ID:
+The command attaches while the agent plans, writes code, and runs tests (about a minute for this task), then prints the durable receipt and run ID:
 
 ```text
 _tag: Accepted
@@ -389,26 +505,37 @@ receiptId: "approve:plan-1"
 runId: run-1
 ```
 
-Follow the run with the ID your command printed:
+Inspect the finished run using the `runId` your terminal printed:
 
 ```sh
 smthrs runs show run-1
 ```
 
-Continue when it shows `status: completed`. If the run failed or stopped, `smthrs runs show run-1` says why. If the process running the flow dies, `smthrs runs resume run-1` continues the same run.
+Wait until you see `status: completed`. If a run fails or stops early, `smthrs runs show run-1` prints the diagnosis.
 
-## 5. Check the change
+:::tip[Under the hood: crash-safe by default]
+Every step of that run is journaled inside `.flows/` (SQLite). If your terminal closes or you kill the process mid-run, the work is not lost. Run `smthrs runs resume run-1` to pick up the exact same execution where it stopped.
+:::
+
+## Step 5. Inspect the diff and run the tests yourself
+
+Never trust an agent's summary alone. Read the full diff and execute the test suite directly:
 
 ```sh
 smthrs change diff
 node --test
 ```
 
-The diff includes the files `smthrs generate flow coding` added (`.gitignore` and `.smithers/flows/coding/`), the new `index.test.js` and the change to `index.js`. Read all of it. Your agent may write different code and a different number of tests.
+Your diff will contain:
+- `.gitignore` and `.smithers/flows/coding/` from Step 3,
+- edits to `index.js` adding `slugify(text)`, and
+- the new `index.test.js` test suite.
 
-## 6. Commit and push yourself
+Read every line. Confirm the tests actually exercise edge cases (punctuation, leading/trailing spaces, uppercase) and pass under `node --test`.
 
-Replace the path with your repository's remote. Skip `jj git remote add` when `origin` already exists. These commands are for Jujutsu 0.46 or later (`jj --version`).
+## Step 6. Commit and push with your own tools
+
+Once you are satisfied with the code, commit and push with Jujutsu (0.46 or later; check `jj --version`). Replace `/path/to/your/origin.git` with your real remote, or skip `jj git remote add` if `origin` already exists:
 
 ```sh
 jj git remote add origin /path/to/your/origin.git
@@ -418,31 +545,63 @@ jj new
 jj git push --remote origin --bookmark main
 ```
 
-Follow your repository's branch and pull request policy when it requires review before `main`.
+If your repository requires pull requests before `main`, push to a feature bookmark instead and open a PR as usual.
 
-## Result
+## What you just proved
 
-A coding agent changed your project on your Codex subscription, and you checked the change and pushed it yourself.
+- You ran a coding agent locally on your own Codex subscription with zero API keys in the repository.
+- Every step executed through a typed, resumable flow recorded in `.flows/`.
+- The agent stopped cleanly at the working copy; you verified the diff, ran the tests, and owned the commit.
 
 ## Next steps
 
-- [What a flow is](https://smithers.sh/docs/flows/): change how the coding flow works.
-- [Quickstart](https://smithers.sh/docs/quickstart/): open a repository on smithers.sh.
+- Understand why flows plan first and skip unchanged steps on rerun: [How durable flows work](https://smithers.sh/docs/durable-flows/).
+- Learn how to edit, pin, and test custom flows in `.smithers/flows/`: [Flows reference](https://smithers.sh/docs/flows/).
+- Explore repositories in the hosted web app: [Quickstart](https://smithers.sh/docs/quickstart/).
 
 ---
 
 # Self-host Smithers
 https://smithers.sh/docs/self-host/
 
-This page sets up Smithers as one install on your own Mac for your team: install the host, finish setup, merge your first TODO and invite teammates.
+This guide sets up one Smithers install on an Apple Silicon Mac for your team: start the host, finish onboarding, merge your first TODO, invite teammates, and harden access with HTTPS and backups.
 
-**Planned.** The Homebrew host package is not released yet; the steps below apply once it ships. To use Smithers on your Mac today, see [Run agents on your Mac](https://smithers.sh/docs/local-quickstart/).
+:::caution[Planned feature]
+**Planned.** The Homebrew host package is not released yet; the procedures below apply once it ships. To run coding agents on your Mac today, follow [Run agents on your Mac](https://smithers.sh/docs/local-quickstart/).
+:::
 
-## Install and setup
+```text
+TEAM LAPTOPS                       YOUR APPLE SILICON MAC (LaunchAgent)
++----------------------+           +----------------------------------------------------------+
+| Browser UI           | --HTTPS-> | Tailscale/Caddy (:443 -> 127.0.0.1:4000)                 |
+| Editor via SSH       | --:2222-> | SSH bridge      (:2222 -> 127.0.0.1:2222)                |
+| Laptop CLI           |           |                                                          |
+| (smthrs login <url>) |           | TODO Stack:    main (human squash-merge)                 |
++----------------------+           |                  |                                       |
+                                   |                  T1 (In review, open PR, merges first)   |
+                                   |                  |                                       |
+                                   |                  T2 (Working, draft PR)                  |
+                                   |                  |                                       |
+                                   |                  T3 (Queued, draft PR)                   |
+                                   |                                                          |
+                                   | Secrets: branch machines hold placeholders; host sends   |
+                                   | real API keys only to the bound provider host.           |
+                                   +----------------------------------------------------------+
+```
 
-Use the [install page](https://smithers.sh/docs/installation/) on an Apple Silicon Mac with macOS 15 or later, Homebrew, and at least 44 GiB free on the state volume. Prepare a GitHub repository whose default branch is `main`, with squash merging enabled, a coding-model provider key or ChatGPT sign-in, and an AI Gateway key.
+_Self-hosted Mac topology: team laptops reach the LaunchAgent over Tailscale or Caddy HTTPS and SSH, driving an ordered TODO stack with host-bound secret placeholders_
 
-Install and start the host on the Mac:
+## Prerequisites
+
+Prepare the host Mac and GitHub repository before installing (see [Install Smithers](https://smithers.sh/docs/installation/) for the full checklist):
+
+- Apple Silicon Mac on macOS 15 or later, with Homebrew and at least **44 GiB** free on the state volume.
+- A GitHub repository with `main` as its default branch and **squash merging enabled**.
+- Coding model access (a provider API key or ChatGPT sign-in) plus an AI Gateway key for Decisions.
+
+## Install and start the host
+
+Install the host package and verify it is running:
 
 ```sh
 brew install smithersai/tap/smithers
@@ -450,104 +609,112 @@ smthrs host start
 smthrs host status
 ```
 
-For LAN access, replace the hostname with your Mac’s LAN hostname:
+To expose the install on your LAN, bind `0.0.0.0` and pass your Mac's LAN origin:
 
 ```sh
 smthrs host start --bind 0.0.0.0 --origin http://studio-mini.local:4000
 ```
 
-Open the one-time setup URL printed on the Mac. Use the localhost URL on that Mac or the configured network URL from a LAN laptop. Keep the token private. Setup resumes completed steps after a restart; use the newly printed URL if the old token has expired.
+`smthrs host start` prints a one-time setup URL (localhost on the Mac, or the configured LAN origin). Keep that token private. If the host restarts mid-setup, completed steps are preserved; open the fresh URL printed on restart if the previous token expired.
 
-Complete the setup card in order:
+### Complete the setup card
 
-1. **Address:** choose This Mac or the address your team will open.
-2. **GitHub App:** create the App through GitHub. Register the chosen address's callback before signing in.
-3. **Owner sign-in:** sign in through the new App. This claims the install and invalidates the setup token.
-4. **Repository:** choose the repository and install the App on it. Enable squash merging and use `main` as the default branch on GitHub, then Retry if either check fails.
-5. **Model access:** set coding access, the optional fast-model key and the AI Gateway key for Decisions. Without a fast-model key, the app agent uses the coding model.
-6. **Source ready:** ask questions once the repository has arrived.
-7. **Machine ready:** wait for this separately before starting coding work.
+Work through the seven cards in order:
 
-## Open the command list
-
-Open Chat with Command-K on macOS or Control-K on Windows and Linux. Type `/help` and press Enter to list commands. `/docs` opens these pages.
+1. **Address:** pick **This Mac** or the network origin your team will open.
+2. **GitHub App:** create the App through GitHub's manifest flow so the chosen callback URL is registered before sign-in.
+3. **Owner sign-in:** sign in through the new App to claim the install and invalidate the setup token.
+4. **Repository:** install the App on your repository. If the `main` or squash-merge check fails, update GitHub settings and choose **Retry**.
+5. **Model access:** configure the coding model, an optional fast-model key (falls back to the coding model if omitted), and the AI Gateway key for Decisions.
+6. **Source ready:** you can ask repository questions as soon as source sync finishes.
+7. **Machine ready:** wait for this indicator before launching coding work.
 
 ## First TODO to Merged
 
-Ask a question about the repository. Open the answer's file cards to check the sources.
+Open Chat with `Cmd-K` on macOS (`Ctrl-K` on Windows/Linux). Run `/help` for the command list or `/docs` to open documentation.
 
-Open `/todo.new`, write one small change and choose **Append**. Watch it move through Queued, Starting, Working and In review. Answer a Needs you question on the branch; use Steer for an additional instruction.
+1. **Ask a question** about the codebase and click the attached file cards to verify citations.
+2. **Create a TODO:** open `/todo.new`, describe one small change, and choose **Append**.
+3. **Track its lifecycle:** the card advances through `Queued -> Starting -> Working -> In review`. Answer any **Needs you** prompt on the branch, or use **Steer** to add guidance mid-run.
+4. **Handle outside pushes:** if someone pushes to the branch externally, an owner or maintainer can choose **Discard** on the card to target the displayed commit (Git history is kept).
+5. **Review and merge:** open the diff, verification results, GitHub checks, and pull request (**on GitHub**). When ready, choose **Merge** in the app and confirm.
 
-When an outside push needs a decision, an owner or maintainer can choose **Discard** on the TODO card. The decision targets the displayed commit; that commit stays in history.
+People merge; agents never approve or merge. The TODO switches to **Merged** once GitHub confirms the squash merge, and a learning run follows.
 
-Open the TODO's evidence and pull request. Read the diff, verification results, GitHub checks and review. When the reviewed revision is ready, choose **Merge** in the app and confirm it. People merge; agents cannot approve or merge. The TODO becomes Merged after GitHub reports the squash merge. A learning run follows.
+### Read the TODO stack
 
-## Follow the pull request
-
-When a TODO reaches In review, it has one GitHub pull request. Open **on GitHub** from its card to read the pull request, reviews, and checks.
-
-Later stack items have draft pull requests.
-
-## Read the stack
-
-Open `main`'s conversation to see the stack. `main` stays at the top; TODOs follow in merge order.
+Open `main`'s conversation to inspect the ordered stack. `main` stays pinned at the top; TODOs merge in sequence below it. Only the front TODO (`In review`) has an open pull request; later items stay draft pull requests until their turn. Background runs appear beneath the stack.
 
 ```text
 main
   |
-  T1 <- merge first
+  T1  (In review, open PR -- merges first)
   |
-  T2 <- merges after T1
+  T2  (Working, draft PR -- merges after T1)
   |
-  T3 <- merges after T2
+  T3  (Queued, draft PR -- merges after T2)
 ```
-
-Open a TODO to read its prompt and evidence. Background runs appear below the stack.
 
 ## Members and secrets
 
-Open `/members` and add teammates by GitHub username. They need write access or higher on the repository. Maintainers can manage people and merge; Members can work on branches. The owner cannot be removed or demoted. Teammates open the address set during setup and sign in with GitHub.
+### Team roles
 
-Open the Secrets card to set the values your checks need. Choose all branches or main only for each secret. Keep credentials out of prompts, flow source and committed files.
+Open `/members` and add teammates by GitHub username (they must have write access or higher on the GitHub repository). Teammates open the configured install URL and sign in with GitHub.
 
-Every branch machine gets an all-branches secret as an environment variable. Set **Path** to also get it as a file, such as `~/.config/anthropic/key` in each home or a path under `/run/smithers/files/`. To give coding tools a model login without signing in on each machine, add the provider's API key, such as `ANTHROPIC_API_KEY` or `OPENAI_API_KEY`. The card binds a known key to its provider's host, so the machine holds only a placeholder and the install sends the real key to that host. A personal ChatGPT or Claude sign-in is never copied to a machine; it stays in your own terminal.
+| Role | Branch work | Manage members & merge | Can be removed |
+| --- | --- | --- | --- |
+| **Owner** | Yes | Yes | No (cannot be removed or demoted) |
+| **Maintainer** | Yes | Yes | Yes |
+| **Member** | Yes | No | Yes |
 
-## Connect an editor
+### Secrets and egress binding
 
-On a branch, use its SSH connection details. Replace the branch and install host below:
+Open the **Secrets** card to configure values needed by checks, scoped to **all branches** or **main only**. Never put credentials in prompts, flow source, or committed files.
+
+- All-branches secrets appear inside branch machines as environment variables. Set **Path** to also mount a secret as a file (for example `~/.config/anthropic/key` or under `/run/smithers/files/`).
+- Known model provider keys (such as `ANTHROPIC_API_KEY` or `OPENAI_API_KEY`) are bound to their provider's host: the branch machine receives only a placeholder, and the Mac host injects the real key only on outbound requests to that provider.
+- Personal ChatGPT or Claude sign-ins stay on your own terminal and are never copied onto branch machines.
+
+## Connect an editor or laptop CLI
+
+### SSH from your editor
+
+Add your public SSH key in member controls, then connect to any branch machine:
 
 ```sh
 ssh -p 2222 <branch>@<install-host>
 ```
 
-Add your public SSH key through the member controls. Edits share the branch's working copy with the app, terminals and coding agent. A branch terminal is already signed in to Smithers as you and includes the Smithers skill.
+Edits over SSH share the exact working copy used by the app, branch terminals, and coding agent. Branch terminals arrive pre-authenticated to Smithers as you with the Smithers skill installed.
 
-## Sign in from a laptop
+### Sign in from a laptop
 
-Install the CLI on your laptop, then sign in to your install address:
+Install the CLI on your laptop and authenticate against your Mac host:
 
 ```sh
 smthrs login https://smithers.example.com
 ```
 
-Complete browser sign-in. Your laptop agent uses a delegated credential attributed to you; it cannot approve, merge or move `main`.
+Complete browser sign-in. Your laptop agent gets a delegated credential attributed to you; it cannot approve, merge, or move `main`.
 
 ## Put HTTPS in front
 
-Plain HTTP works on a LAN. An HTTP origin sends the session cookie unencrypted. Use HTTPS for remote access and browser notifications.
+Plain HTTP works on a trusted LAN, but sends session cookies unencrypted. Use HTTPS for remote access and browser notifications.
 
-In Settings, the owner sets the bind address and public origins. Loopback is the default. Add the HTTPS origin and its exact GitHub App callback URL, `<origin>/api/auth/github/callback`, before signing in through that address.
+In **Settings**, the owner configures the bind address (loopback by default) and public origins. Add your HTTPS origin and register its exact GitHub App callback URL (`<origin>/api/auth/github/callback`) before signing in over HTTPS.
 
-For Tailscale serve on the install's Mac:
+### Option A: Tailscale serve (same Mac)
 
 ```sh
 tailscale serve --bg --https=443 http://127.0.0.1:4000
 tailscale serve --bg --tcp=2222 tcp://127.0.0.1:2222
 ```
 
-Use the HTTPS address it prints as a public origin. The HTTP proxy passes the original host as `X-Forwarded-Host` over loopback; the install accepts that header only from loopback. The TCP listener carries SSH separately.
+Add the printed HTTPS URL as a public origin. The install trusts `X-Forwarded-Host` only from loopback. TCP port `2222` carries SSH separately.
 
-Or use Caddy on the same Mac, with your DNS name pointing to it:
+### Option B: Caddy (same Mac)
+
+Point your DNS name at the Mac and configure Caddy:
 
 ```text
 smithers.example.com {
@@ -558,79 +725,224 @@ smithers.example.com {
 }
 ```
 
-Set `https://smithers.example.com` as a public origin. A proxy on another host must pass the original `Host` header; forwarding headers from that host are not trusted. Allow access only from your team.
+Set `https://smithers.example.com` as a public origin. A proxy on a separate host must preserve the original `Host` header (forwarding headers from non-loopback hosts are ignored). Restrict network ingress to your team.
 
-## Restart and recovery
+## Restart, backup, and recovery
 
-The install runs as a per-user launchd agent. If Hypervisor.framework refuses a daemon, use the LaunchAgent under the installing user's login session. Enable macOS automatic login for that user if the install must return after a reboot without someone logging in. Confirm Machine ready after restarting.
-
-Create a backup before changing the install:
+The host runs as a per-user `launchd` LaunchAgent inside the installing user's login session (Hypervisor.framework requires a login session rather than a root daemon). Enable macOS automatic login for that user if the host must recover unattended after a reboot, then confirm **Machine ready**.
 
 ```sh
 smthrs host backup
-```
-
-Keep the printed backup directory. Upgrade with:
-
-```sh
 smthrs host upgrade
 ```
 
-These commands currently refuse with `host_maintenance_unavailable` until the install's recovery providers are composed. A refusal is not a completed backup or upgrade.
+:::note[Maintenance availability]
+`host backup`, `host upgrade`, and `host restore` currently refuse with `host_maintenance_unavailable` until the install's recovery providers are composed. A refusal is not a completed backup or upgrade.
+:::
 
-Completed backups belong in `$STATE/backups/<version>-<UTC ts>/`; `$STATE` is `~/Library/Application Support/Smithers` on the install's Mac. Use a completed backup directory for restore, never a `.partial-` directory.
+Completed backups write to `$STATE/backups/<version>-<UTC ts>/`, where `$STATE` is `~/Library/Application Support/Smithers`. Keep backup directories private: they hold the install key and member data. Never restore from a `.partial-` directory.
 
-Before restoring a backup on another Mac, stop the original install first:
+### Move an install to another Mac
+
+Stop **both** the original and destination installs first so two hosts never operate on the same repository concurrently:
 
 ```sh
 smthrs host stop
 smthrs host restore /Users/will/Backups/smithers
 ```
 
-Stop the destination install too before running restore. Replace `/Users/will/Backups/smithers` with the directory printed by a successful backup. Restore currently has the same maintenance refusal. Do not restart the original install while the restored install is running.
-
-Two running installs would both act on the same repository. Keep backup directories private: they contain the install key and member data. Restore requires a stopped install, verified backup hashes and a compatible installed version. Interrupted work resumes or offers Retry after recovery.
-
-## API and flows
-
-The [HTTP API reference](https://smithers.sh/docs/reference/http-api/) documents the API used by the app and CLI. The [Flows reference](https://smithers.sh/docs/flows/) covers personal flows in the hosted app.
+Replace `/Users/will/Backups/smithers` with the directory printed by a completed backup. Restore verifies backup hashes and version compatibility; interrupted work resumes or offers **Retry**. Do not restart the original install while the restored host is running.
 
 ## Open the wiki in Obsidian
 
-In Settings, set **Obsidian folder** to an existing folder on the install's Mac, using its absolute path (for example `/Users/will/Vault`). Open that folder as a vault in Obsidian. Wiki edits and folder edits sync both ways every minute; the folder must be owned by the install user and outside the install's state directory. Teammates use the wiki in the app.
+In **Settings**, set **Obsidian folder** to an existing absolute path owned by the install user outside `$STATE` (for example `/Users/will/Vault`), then open that folder as an Obsidian vault. Edits sync bidirectionally every minute while teammates use the wiki in the app.
+
+## Related references
+
+- Gateway endpoints and authentication: [HTTP API reference](https://smithers.sh/docs/reference/http-api/).
+- Customizing how flows are authored: [Flows reference](https://smithers.sh/docs/flows/#sdk-file-flows).
+
+---
+
+# How durable flows work
+https://smithers.sh/docs/durable-flows/
+
+An agent run is not a shell script. It calls models that cost money, edits files on disk, waits for humans, and occasionally crashes halfway through. Making those runs reliable requires three things: a plan you can inspect before anything runs, a cache you can trust when you rerun, and a record you can resume after a crash.
+
+Smithers gets all three from two design choices:
+
+1. **A flow is planned before it runs.**
+2. **A step is identified by what it reads, not where it sits.**
+
+```text
+PHASE 1: PLAN (pure, zero side effects)        PHASE 2: EXECUTE (content-addressed)
++------------------------------+               +----------------------------------------+
+| Plan(issue) -> placeholder   |               | Step Key = SHA-256(                    |
+|      |                       |               |   payload + prior outputs +            |
+|      v                       |  approved     |   file boundary + env +                |
+| Test(plan)  -> placeholder   | ----------->  |   implementationVersion                |
+|      |                       |   plan        | )                                      |
+|      v                       |               |   |-- HIT  -> Replay from SQLite       |
+| Report(res) -> dry-run graph |               |   +-- MISS -> Run guarded host & store |
++------------------------------+               +----------------------------------------+
+```
+
+_Two-phase execution: Phase 1 builds a pure step graph from placeholders; Phase 2 hashes each step's declared inputs and replays hits from SQLite or runs misses through the capability kernel_
+
+## Phase 1: A flow is a plan
+
+A flow declares its input schema, output schema, capabilities, and `body`. When you invoke `body`, it does **not** call a model or touch the filesystem. It executes once in memory and returns a pure step graph: which actions exist, what data flows between them, and which branches or fan-outs are possible.
+
+```ts
+import { Flow } from "@smthrs/flow"
+import { Node } from "@smthrs/plan"
+import { Schema } from "effect"
+
+export default Flow.make("greet", {
+  description: "Return a greeting",
+  capabilities: [],
+  effects: [],
+  payload: Schema.Struct({ name: Schema.String }),
+  success: Schema.String,
+  body: Node.capture({}, ({ name }) => Node.succeed(`Hello, ${name}`))
+})
+```
+
+Inside `body`, the return value of an earlier step is a **placeholder**, not a live JavaScript value. You can pass a placeholder into the next step's payload, transform it with `Node.map`, or branch on it with `Node.branch`. Trying to compute with a placeholder directly (such as `JSON.stringify` or string concatenation) fails at plan time before a single side effect occurs.
+
+Because the plan is data:
+- You can inspect it with `smthrs flow plan greet name=World` without spending a token or writing a file.
+- A person can review the exact capability envelope and approve or deny the plan before execution begins.
+- A plan is append-only: completed steps are never rewritten in place.
+
+## Phase 2: Content-addressed step keys
+
+When the engine reaches a step at run time, it computes a deterministic SHA-256 **step key** from what the step declares can affect its result:
+
+- Its input payload and the concrete outputs it consumes from upstream steps.
+- Its declared file boundary (the paths it is allowed to read).
+- Its declared environment, tools, and capabilities.
+- Its `implementationVersion` string (bump this when you change the step's code).
+
+Notice what is **not** in the key: the step's line number or order in the flow.
+
+When the engine looks up that key in SQLite:
+- **Cache hit:** the engine returns the recorded output immediately and skips running the step.
+- **Cache miss:** the engine runs the step through the guarded host, persists the result under that key, and advances the graph.
+
+### What reruns when something changes
+
+Consider a three-step flow (`Plan -> Test -> Report`):
+
+| Event | `Plan` | `Test` | `Report` | Steps executed |
+| --- | --- | --- | --- | --- |
+| Process killed after `Plan`, then resumed | Reused | Ran | Ran | 2 of 3 |
+| New step appended at the end | Reused | Reused | Ran | 1 of 3 |
+| `Test` edited (`implementationVersion` bumped), same output | Reused | Ran | Reused | 1 of 3 |
+| `Plan` reran and produced identical bytes | Ran | Reused | Reused | 1 of 3 |
+| Flow input changed | Ran | Ran | Ran | 3 of 3 |
+
+Look at rows 3 and 4. Because downstream keys hash the **actual output bytes** of upstream steps, a step that reruns and produces the same output still lets every downstream step hit the cache.
+
+## Why you can edit a flow without replay versioning
+
+Traditional replay engines record an ordered log of every call a workflow made and expect the code to make the exact same calls in the exact same order on restart. Editing the workflow breaks replay unless you maintain manual version branches (`if (version >= 2)`).
+
+Smithers matches steps by content key rather than call order. When you edit a flow and bump a step's `implementationVersion`, unchanged upstream steps keep their keys and replay from the journal, while the changed step and any downstream step whose inputs changed run cleanly.
+
+## Capabilities and the host boundary
+
+Steps never call raw OS APIs directly. They call Effect services injected by the host (`FileSystem`, `ChildProcessSpawner`, `HttpClient`, `Jj`), wrapped in Smithers' capability kernel:
+
+| Capability prefix | Governs | Example |
+| --- | --- | --- |
+| `fs:read:` | File and directory reads | `fs:read:**` |
+| `fs:write:` | File writes and mutations | `fs:write:src/**` |
+| `proc:spawn:` | Child process execution | `proc:spawn:*` |
+| `model:call:` | LLM calls through a configured seat | `model:call:*` |
+
+In an unattended host, any capability not explicitly granted is denied with `permission_required` naming the exact resource requested. To isolate untrusted code that might bypass Effect services (for example calling `node:fs` directly), run it as a sandboxed child flow in a container.
+
+## Next steps
+
+- Discover, override, pin, and draft-test flows in your repository: [Flows reference](https://smithers.sh/docs/flows/).
+- Run a local coding flow end to end: [Run agents on your Mac](https://smithers.sh/docs/local-quickstart/).
+- Browse the `@smthrs/*` runtime packages: [Library API](https://smithers.sh/docs/reference/api/).
 
 ---
 
 # Flows reference
 https://smithers.sh/docs/flows/
 
-Open [Flows](https://smithers.sh/app/flows) to see your saved flows and drafts. Members and above can create and run personal flows.
+Every action in Smithers runs as a typed, durable **flow**. On `smithers.sh`, Members and above manage personal flows at [Flows](https://smithers.sh/app/flows). Locally, the CLI and SDK load committed file flows from `.smithers/flows/<name>/flow.ts`.
 
-## Create a flow
+```text
+WEB APP: PERSONAL FLOWS (/app/flows)
+  1. Draft (/flow.new name ...) -> 2. Check & Save (new revision) -> 3. Run (/flow.run name) -> Isolated browser realm
+     (Runs stay pinned to the revision active when they started; flows needing a machine show Needs a sandbox.)
 
-Choose **New flow**, enter a name and what it should do, then submit. In Chat, `/flow.new greet Return a greeting` starts the same draft. Type `/` to find commands; see the [command reference](https://smithers.sh/docs/commands/).
+CLI & SDK: FILE FLOWS + PROTECTED SYSTEM FLOWS
+  - .smithers/flows/<name>/flow.ts  (loaded by smthrs CLI and @smthrs/flow; invoke at a ref via /repo.run)
+  - System flows are protected actions; personal revisions never replace them.
+```
 
-The draft shows its questions, code and checks. Answer any questions. **Save** becomes available when the draft is ready and its checks pass. A failed draft shows why and offers **Draft again**.
+_Personal flow lifecycle in smithers.sh (/app/flows, /flow.new, /flow.run) alongside CLI/SDK file flows and protected system flows_
 
-## Edit and inspect
+## Create a personal flow
 
-On Flows, **Edit** starts a draft from the saved flow's latest source. Describe the change, review the resulting code and checks, then choose **Save**.
+Open [Flows](https://smithers.sh/app/flows), choose **New flow**, enter a name and what the flow should do, and submit. In Chat, `/flow.new greet Return a greeting` opens the exact same draft (see [Chat commands](https://smithers.sh/docs/commands/) for all `/` commands).
 
-**Code** opens the saved source for direct editing. Saving creates another revision. **Delete** removes a saved flow or an unfinished draft.
+| Draft stage | What happens |
+| --- | --- |
+| **Questions & code** | Smithers drafts the code and asks any clarifying questions. |
+| **Checks** | Validation checks run automatically on the draft. |
+| **Ready to save** | **Save** activates once checks pass, creating a saved revision. |
+| **Failed** | Shows the failure cause and offers **Draft again**. |
 
-## Run a flow
+## Edit, inspect, and delete
 
-Choose **Run**, or type `/flow.run greet` in Chat. An optional input follows the name: `/flow.run greet Hello`.
+On [Flows](https://smithers.sh/app/flows):
 
-A run uses the saved revision selected when it starts. Later edits do not change that run. Its run page shows progress, results or a failure reason.
+- **Edit:** starts a new draft from the saved flow's latest source; describe your change, check the diff and checks, then **Save**.
+- **Code:** opens the saved source for direct editing; saving appends a new revision.
+- **Delete:** removes a saved flow or an unfinished draft.
 
-Personal code runs in the browser's isolated realm. A flow that needs a machine says **Needs a sandbox** and cannot run yet.
+## Run a personal flow
+
+Choose **Run** on [Flows](https://smithers.sh/app/flows), or invoke `/flow.run greet` in Chat. Pass optional input after the name: `/flow.run greet Hello`.
+
+- **Pinned revision:** a run executes the saved revision selected at launch; later edits create newer revisions without mutating active runs.
+- **Execution realm:** personal code runs inside the browser's isolated realm. A flow that requires a remote machine shows **Needs a sandbox** and cannot run in the browser realm yet.
+- **Observability:** open the run page to inspect progress, outputs, or failure diagnostics.
 
 ## SDK file flows
 
 System flows are protected actions; personal revisions do not replace them.
 
-The CLI and SDK also load file flows from `.smithers/flows/<name>/flow.ts`. See the [flow API](/docs/reference/api/flow/) and [CLI reference](/docs/reference/cli/). The app's Flows page manages personal flows; repository file-flow overrides and activation controls are not available there.
+For the CLI and SDK, commit a file flow at `.smithers/flows/<name>/flow.ts` whose default export is a tagged `Flow.make` from `@smthrs/flow`:
+
+```ts
+import { Flow } from "@smthrs/flow"
+import { Node } from "@smthrs/plan"
+import { Schema } from "effect"
+
+export default Flow.make("greet", {
+  description: "Return a greeting",
+  capabilities: [],
+  effects: [],
+  payload: Schema.Struct({ name: Schema.String }),
+  success: Schema.String,
+  body: Node.capture({}, ({ name }) => Node.succeed(`Hello, ${name}`))
+})
+```
+
+The app's Flows page manages personal flows; repository file-flow overrides and activation controls are not available there. To run a committed repository flow at a branch's head from Chat, use `/repo.run`.
+
+## Related pages
+
+- Why flows plan first and cache steps by content: [How durable flows work](https://smithers.sh/docs/durable-flows/).
+- Every chat `/` command and minimum role: [Chat commands](https://smithers.sh/docs/commands/).
+- Package contracts and CLI verbs: [flow API](/docs/reference/api/flow/) and [CLI reference](/docs/reference/cli/).
 
 ---
 
@@ -751,87 +1063,108 @@ Awake capacity, capacity per person and the monthly spend alert are stored setti
 # Library API
 https://smithers.sh/docs/reference/api/
 
-The Smithers library is a roster of `@smthrs/*` packages, with published references linked below. Packages marked **workspace-private** link to contributor references and are not installable from npm.
+Smithers ships as a layered family of `@smthrs/*` Effect packages. Only the bottom **Hosts & Platforms** layer touches OS, Node, Bun, Cloudflare, or browser APIs; every upper layer runs portably through injected Effect services.
+
+```text
++-----------------------------------------------------------------------------------+
+| DISTRIBUTION        @smthrs/flows, cli, migrate, testing                          |
++-----------------------------------------------------------------------------------+
+| CONTROL & WIRE      control, gateway, sync, mcp, notifications, observability     |
++-----------------------------------------------------------------------------------+
+| AGENTS & TOOLS      agent, harness, model, memory, std, plugin, registry, evals   |
++-----------------------------------------------------------------------------------+
+| AUTHORING & ENGINE  flow, engine, plan, journal, step-cache, time-travel, db      |
++-----------------------------------------------------------------------------------+
+| HOSTS & KERNEL      platform-node, platform-bun, platform-browser, kernel, jj     |
+|                     (only this layer touches node:*, Bun.*, DOM, or processes)    |
++-----------------------------------------------------------------------------------+
+```
+
+_Upper layers depend only on Effect services. Platform-specific code lives exclusively inside @smthrs/platform-node, platform-bun, platform-browser, platform-cloudflare, kernel, sandbox, and jj._
+
+Packages marked **workspace-private** link to contributor references and cannot be installed from npm.
 
 ## Install
 
-The other packages are on npm under the `next` tag, which carries the 1.0 release candidates. Install the whole durable flow engine:
+Install the full 1.0 release-candidate engine barrel from npm under `@next`:
 
 ```bash
 npm install @smthrs/flows@next effect
 ```
 
-Install any single package the same way, by name with `@next`.
+Install any individual published package the same way (`npm install @smthrs/<name>@next effect`).
 
 ## Reading these pages
 
-Published pages mirror each package's colocated `docs/api.md` or `docs/reference/` source. `internal/*` is never public, and neither are nested `*/index` subpaths. Use the package root or a subpath explicitly listed in its export map.
+- **Source of truth:** published pages mirror each package's colocated `docs/api.md` or `docs/reference/` files.
+- **Public imports:** import from the package root (`@smthrs/cli`) or a subpath explicitly declared in its export map.
+- **Blocked internals:** `internal/*` and nested `*/index` subpaths are never public.
 
-## Packages
+## Package roster
 
 ### Authoring and runtime
 
 | Package | Role |
 | --- | --- |
-| [`@smthrs/flow`](/docs/reference/api/flow/) | The flow authoring model: flows, actions, durable waits, retry policy, and the runtime port they execute against |
-| [`@smthrs/engine`](/docs/reference/api/engine/) | The runtime that executes `@smthrs/flow` flows, plus HTTP and RPC transport projections |
-| [`@smthrs/engine-store`](/docs/reference/api/engine-store/) | Effect services for durable engine action persistence and replay boundaries |
-| [`@smthrs/journal`](/docs/reference/api/journal/) | Effect services for the Smithers event journal: the immutable run history and the owner fence on its durable channel |
-| [`@smthrs/plan`](/docs/reference/api/plan/) | The persisted flows plan: a keyed action graph, its append-only store, and its diff |
+| [`@smthrs/flow`](/docs/reference/api/flow/) | Flow authoring model: flows, actions, durable waits, retry policies, and execution port |
+| [`@smthrs/engine`](/docs/reference/api/engine/) | Durable execution runtime for `@smthrs/flow`, plus HTTP and RPC transport projections |
+| [`@smthrs/engine-store`](/docs/reference/api/engine-store/) | Effect services for durable action persistence and replay boundaries |
+| [`@smthrs/journal`](/docs/reference/api/journal/) | Immutable run event journal and owner-fenced durable emission channel |
+| [`@smthrs/plan`](/docs/reference/api/plan/) | Persisted keyed action graph, append-only plan store, and plan diff |
 | [`@smthrs/plan-store`](/docs/reference/api/plan-store/) | Append-only SQL plan persistence and migrations |
-| [`@smthrs/core`](/docs/reference/api/core/) | Flow and Node builders: the pure plan-time data model of the Smithers harness |
-| [`@smthrs/patterns`](/docs/reference/api/patterns/) | Higher-order flow patterns and decorators for flows |
-| [`@smthrs/run-store`](/docs/reference/api/run-store/) | Effect services for flows run state, attempts, and ownership arbitration |
-| [`@smthrs/step-cache`](/docs/reference/api/step-cache/) | Effect service for the flows content-addressed step result cache |
-| [`@smthrs/database`](/docs/reference/api/database/) | A driver-neutral SQL contract with a bounded write-retry seam, plus the composed migration ladder |
-| [`@smthrs/canonical`](/docs/reference/api/canonical/) | RFC 8785 canonical JSON as an Effect Schema |
-| [`@smthrs/errors`](/docs/reference/api/errors/) | `SmithersError` and the error codes the integration adapters raise |
-| [`@smthrs/crypto`](/docs/reference/api/crypto/) | Strict SHA-256 hashing with injected and synchronous Effect entry points |
+| [`@smthrs/core`](/docs/reference/api/core/) | Pure plan-time Flow and Node builders |
+| [`@smthrs/patterns`](/docs/reference/api/patterns/) | Higher-order flow patterns and decorators |
+| [`@smthrs/run-store`](/docs/reference/api/run-store/) | Run state, attempts, and lease-based ownership arbitration |
+| [`@smthrs/step-cache`](/docs/reference/api/step-cache/) | Content-addressed step result cache |
+| [`@smthrs/database`](/docs/reference/api/database/) | Driver-neutral SQL contract with bounded write retries and migration ladder |
+| [`@smthrs/canonical`](/docs/reference/api/canonical/) | RFC 8785 canonical JSON Effect Schema |
+| [`@smthrs/errors`](/docs/reference/api/errors/) | `SmithersError` and integration adapter error codes |
+| [`@smthrs/crypto`](/docs/reference/api/crypto/) | Strict SHA-256 hashing (injected Effect and synchronous entry points) |
 | [`@smthrs/keys`](/docs/reference/api/keys/) | Canonical flow-key derivation and stored-key validation |
-| [`@smthrs/time-travel`](/docs/reference/api/time-travel/) | Durable replay, fork, and rewind primitives for flows |
+| [`@smthrs/time-travel`](/docs/reference/api/time-travel/) | Durable replay, fork, and rewind primitives |
 
 ### Agents
 
 | Package | Role |
 | --- | --- |
-| [`@smthrs/agent`](/docs/reference/api/agent/) | The production agent loop on the durable engine, plus the `AgentSession` and `AgentAction` adapters |
-| [`@smthrs/harness`](/docs/reference/api/harness/) | The Smithers built-in agent loop: a cell-first controller whose model turns produce JavaScript cells |
-| [`@smthrs/model`](/docs/reference/api/model/) | Schema-first Effect model protocols, routes, and streaming events for flows |
-| [`@smthrs/memory`](/docs/reference/api/memory/) | Effect services for durable cross-run facts, history, notes, recall, and maintenance |
-| [`@smthrs/plugin`](/docs/reference/api/plugin/) | Vite-style typed plugin kernel for flows: hooks, resolution, and config execution |
-| [`@smthrs/registry`](/docs/reference/api/registry/) | Portable flow descriptor discovery and progressive-disclosure registry services |
-| [`@smthrs/std`](/docs/reference/api/std/) | The flows standard tool library: filesystem, search, HTTP, web-search, shell, and language-server flows |
-| [`@smthrs/integrations`](/docs/reference/api/integrations/) | Provider clients, outbound actions and webhook ingress |
-| [`@smthrs/triggers`](/docs/reference/api/triggers/) | Durable schedules, webhook triggers and occurrence admission |
-| [`@smthrs/chain`](/docs/reference/api/chain/) **workspace-private** | The Agent Chain spine: an append-only journal, keyed replayable calls, and the trampoline that runs model-authored flow scripts |
-| [`@smthrs/evals`](/docs/reference/api/evals/) | Fixed-suite evaluation, baselines, regression reports, and score gates for flows |
-| [`@smthrs/scorers`](/docs/reference/api/scorers/) | Flow-native scoring, durable observations, and asynchronous score runners for flows |
+| [`@smthrs/agent`](/docs/reference/api/agent/) | Production agent loop on the durable engine, plus `AgentSession` and `AgentAction` adapters |
+| [`@smthrs/harness`](/docs/reference/api/harness/) | Built-in cell-first agent controller whose turns produce JavaScript cells |
+| [`@smthrs/model`](/docs/reference/api/model/) | Schema-first Effect model protocols, routes, and streaming events |
+| [`@smthrs/memory`](/docs/reference/api/memory/) | Durable cross-run facts, history, notes, recall, and maintenance |
+| [`@smthrs/plugin`](/docs/reference/api/plugin/) | Vite-style typed plugin kernel: hooks, resolution, and config execution |
+| [`@smthrs/registry`](/docs/reference/api/registry/) | Portable flow descriptor discovery and progressive-disclosure registry |
+| [`@smthrs/std`](/docs/reference/api/std/) | Standard tool flows: filesystem, search, HTTP, web search, shell, and LSP |
+| [`@smthrs/integrations`](/docs/reference/api/integrations/) | Provider clients, outbound actions, and webhook ingress |
+| [`@smthrs/triggers`](/docs/reference/api/triggers/) | Durable schedules, webhook triggers, and occurrence admission |
+| [`@smthrs/chain`](/docs/reference/api/chain/) **workspace-private** | Agent Chain spine: append-only journal, keyed replayable calls, and script trampoline |
+| [`@smthrs/evals`](/docs/reference/api/evals/) | Fixed-suite evaluations, baselines, regression reports, and score gates |
+| [`@smthrs/scorers`](/docs/reference/api/scorers/) | Flow-native scoring, durable observations, and asynchronous score runners |
 
 ### Hosts and platforms
 
 | Package | Role |
 | --- | --- |
-| [`@smthrs/kernel`](/docs/reference/api/kernel/) | Capability kernel: effect tiers, monotone capability sets, grant store, and permission-decorating layers over the Host services |
-| [`@smthrs/capability`](/docs/reference/api/capability/) | Capability values and permission failures: the leaf vocabulary of the Smithers permission kernel |
-| [`@smthrs/sandbox`](/docs/reference/api/sandbox/) | Provisioned machines, provider-neutral remote process execution, conformance, and sandbox liveness for flows |
-| [`@smthrs/artifacts`](/docs/reference/api/artifacts/) | Effect service for the Smithers content-addressed artifact store, local and remote |
+| [`@smthrs/kernel`](/docs/reference/api/kernel/) | Capability kernel: effect tiers, monotone capability sets, grant store, and permission layers |
+| [`@smthrs/capability`](/docs/reference/api/capability/) | Capability values and permission failures for the kernel |
+| [`@smthrs/sandbox`](/docs/reference/api/sandbox/) | Provisioned machines, provider-neutral remote execution, conformance, and liveness |
+| [`@smthrs/artifacts`](/docs/reference/api/artifacts/) | Content-addressed artifact store (local and remote) |
 | [`@smthrs/jj`](/docs/reference/api/jj/) | Jujutsu version control as a portable Effect host service |
-| [`@smthrs/platform-node`](/docs/reference/api/platform-node/) | Node.js Host bundle for flows: Effect's Node platform services composed into the closed Host surface |
-| [`@smthrs/platform-bun`](/docs/reference/api/platform-bun/) | Bun Host bundle for flows: Effect's Bun platform services composed into the closed Host surface |
-| [`@smthrs/platform-browser`](/docs/reference/api/platform-browser/) | Browser implementations of Effect platform services backed by ZenFS and just-bash |
-| [`@smthrs/platform-cloudflare`](/docs/reference/api/platform-cloudflare/) | Cloudflare host, execution, edge-cache and container adapters |
+| [`@smthrs/platform-node`](/docs/reference/api/platform-node/) | Node.js Host bundle composing Effect's Node services into the closed Host surface |
+| [`@smthrs/platform-bun`](/docs/reference/api/platform-bun/) | Bun Host bundle composing Effect's Bun services into the closed Host surface |
+| [`@smthrs/platform-browser`](/docs/reference/api/platform-browser/) | Browser Host services backed by ZenFS, `just-bash`, and OPFS SQLite |
+| [`@smthrs/platform-cloudflare`](/docs/reference/api/platform-cloudflare/) | Cloudflare host, execution, edge-cache, and container adapters |
 
 ### Control and wire
 
 | Package | Role |
 | --- | --- |
 | [`@smthrs/views`](/docs/reference/api/views/) | Shared data projections for Smithers views |
-| [`@smthrs/control`](/docs/reference/api/control/) | Control services and RPC projections for flows |
-| [`@smthrs/gateway`](/docs/reference/api/gateway/) | Effect workspace gateway contracts, projections, and supervision ports for flows |
-| [`@smthrs/sync`](/docs/reference/api/sync/) | Workspace read-path sync protocol, server, and client for flows |
-| [`@smthrs/mcp`](/docs/reference/api/mcp/) | Model Context Protocol client and flow adapter: projects a remote MCP server's tools as ordinary flow bindings |
-| [`@smthrs/notifications`](/docs/reference/api/notifications/) | Durable notification queue, admission policy, and journal projection for flows |
-| [`@smthrs/observability`](/docs/reference/api/observability/) | Observability for flows: default OTLP export wiring plus Effect-native logger, metric, and OpenTelemetry SDK layers |
+| [`@smthrs/control`](/docs/reference/api/control/) | Control plane services and RPC projections |
+| [`@smthrs/gateway`](/docs/reference/api/gateway/) | Workspace gateway contracts, projections, and supervision ports |
+| [`@smthrs/sync`](/docs/reference/api/sync/) | Read-path journal sync protocol, server, and client |
+| [`@smthrs/mcp`](/docs/reference/api/mcp/) | Model Context Protocol client projecting remote MCP tools as ordinary flow bindings |
+| [`@smthrs/notifications`](/docs/reference/api/notifications/) | Durable notification queue, admission policy, and journal projection |
+| [`@smthrs/observability`](/docs/reference/api/observability/) | Default OTLP export wiring plus Effect logger, metric, and OpenTelemetry layers |
 
 ### UI
 
@@ -844,24 +1177,24 @@ Published pages mirror each package's colocated `docs/api.md` or `docs/reference
 | Package | Role |
 | --- | --- |
 | [`@smthrs/build`](/docs/reference/api/build/) | Effect services and durable install flows for the build system |
-| [`@smthrs/build-cli`](/docs/reference/api/build-cli/) | Target execution, inspection and cache commands |
-| [`@smthrs/targets`](/docs/reference/api/targets/) | Workspace target declarations, inputs and graph contracts |
+| [`@smthrs/build-cli`](/docs/reference/api/build-cli/) | Target execution, inspection, and cache commands |
+| [`@smthrs/targets`](/docs/reference/api/targets/) | Workspace target declarations, inputs, and graph contracts |
 
 ### Distribution
 
 | Package | Role |
 | --- | --- |
-| [`@smthrs/flows`](/docs/reference/api/flows/) | Barrel package re-exporting the whole `@smthrs` durable flow engine |
-| [`@smthrs/migrate`](/docs/reference/api/migrate/) | Upgrades Smithers 0.x projects to Smithers 1.0 flows and writes an auditable migration report |
-| [`@smthrs/cli`](/docs/reference/api/cli/) | Node command-line interface for Smithers control |
-| [`@smthrs/testing`](/docs/reference/api/testing/) | Testing and conformance library for flows |
+| [`@smthrs/flows`](/docs/reference/api/flows/) | Single barrel re-exporting the `@smthrs` durable flow engine |
+| [`@smthrs/migrate`](/docs/reference/api/migrate/) | Upgrades Smithers 0.x projects to 1.0 flows with an auditable report |
+| [`@smthrs/cli`](/docs/reference/api/cli/) | Node command-line interface (`smthrs`) for Smithers control |
+| [`@smthrs/testing`](/docs/reference/api/testing/) | Testing and conformance helpers for flows |
 | [`@smthrs/fuzz`](/docs/reference/api/fuzz/) | Feedback-guided fuzzing and deterministic fiber simulation over Effect Arbitrary |
 
 ## Platform support
 
-The [RC support matrix](/docs/reference/support-matrix/) defines the runtime and platform boundary. Node.js and Bun are durable runtimes through `NodeRuntime` and `BunRuntime`, storing in local SQLite or, when `SMITHERS_POSTGRES_URL` or `DATABASE_URL` is set, PostgreSQL.
+See the [RC support matrix](/docs/reference/support-matrix/) for certified runtime boundaries. Node.js and Bun run durably through `NodeRuntime` and `BunRuntime`, storing state in local SQLite or PostgreSQL (`SMITHERS_POSTGRES_URL` or `DATABASE_URL`).
 
-Browsers run durable flows through `BrowserRuntime` in `@smthrs/platform-browser`, over SQLite in OPFS in a dedicated worker. A Web Lock elects one leader per origin. All tabs closed pauses execution; a new leader resumes unfinished runs from the same browser profile's store. Browser storage may be cleared, and another profile or device has a separate store. No other SQL client is a supported durable browser store.
+Browsers run durable flows through `BrowserRuntime` in `@smthrs/platform-browser`, backed by SQLite in OPFS inside a dedicated worker. A Web Lock elects one leader per origin: with all tabs closed, execution pauses, and opening a new tab resumes unfinished runs from that browser profile's store. Clearing browser storage resets the store, and separate profiles or devices keep separate stores. No other SQL client is a supported durable browser store.
 
 ---
 
@@ -51804,89 +52137,123 @@ Aliases: ls
 # HTTP and RPC endpoints
 https://smithers.sh/docs/reference/http-api/
 
-`smthrs serve` mounts the workspace gateway: the control plane, the served projections, and the journal read path, plus an unauthenticated health probe.
+`smthrs serve` starts the local workspace gateway. It mounts three Effect RPC groups (control, read-model projections, and read-only journal sync) beside an unauthenticated health probe.
+
+```text
+Callers (CLI --remote, RPC/WS, Supervisor)
+  |
+  v
+[Ingress Guard: loopback Host & Origin -> 421 invalid_host / 403 invalid_origin]
+  |-- POST /rpc               -> ControlRpcs (10 procs), in-band ControlAuth
+  |-- WS   /rpc/ws            -> ControlRpcs Watch, edge Bearer auth
+  |-- POST/WS /projections*   -> GatewayRpcs (7 read models + Approval.Submit), edge Bearer
+  |-- POST/WS /sync*          -> SyncRpcs (read-only journal replication), edge Bearer
+  +-- GET  /health            -> Unauthenticated workspace identity JSON
+```
+
+_Every request passes the loopback Host/Origin ingress guard first, then routes to /health, in-band ControlAuth on POST /rpc, or edge Bearer authentication._
 
 ## Mounts
 
-Every route `GatewayServer.layer` mounts, in the order the startup banner prints them.
+`GatewayServer.layer` mounts seven routes, printed in this order in the startup banner:
 
-| Path | Protocol | Purpose | Auth |
+| Path | Protocol | RPC group | Authentication |
 | --- | --- | --- | --- |
-| `/rpc` | HTTP `POST` | Control RPC (`ControlRpcs`) | Bearer in band through `ControlAuth` when a credential is configured |
-| `/rpc/ws` | WebSocket | Control RPC, including a kept-alive `Watch` | Bearer at the edge when a credential is configured |
-| `/projections` | HTTP `POST` | Projection snapshots (`GatewayRpcs`) | Bearer at the edge when a credential is configured |
-| `/projections/ws` | WebSocket | Projection subscriptions | Bearer at the edge when a credential is configured |
-| `/sync` | HTTP `POST` | Journal sync (`SyncRpcs`) | Bearer at the edge when a credential is configured |
-| `/sync/ws` | WebSocket | Journal sync stream | Bearer at the edge when a credential is configured |
-| `/health` | HTTP `GET` | Workspace identity | None, by design |
+| `/rpc` | HTTP `POST` | `ControlRpcs` | In-band Bearer via `ControlAuth` when configured |
+| `/rpc/ws` | WebSocket | `ControlRpcs` (includes `Watch`) | Edge Bearer when configured |
+| `/projections` | HTTP `POST` | `GatewayRpcs` (snapshots) | Edge Bearer when configured |
+| `/projections/ws` | WebSocket | `GatewayRpcs` (subscriptions) | Edge Bearer when configured |
+| `/sync` | HTTP `POST` | `SyncRpcs` | Edge Bearer when configured |
+| `/sync/ws` | WebSocket | `SyncRpcs` (stream) | Edge Bearer when configured |
+| `/health` | HTTP `GET` | None (workspace identity) | None, by design |
 
-On the loopback default no bearer credential is configured. Every request must
-still carry a loopback `Host`, and a supplied browser `Origin` must use HTTP(S)
-on `localhost`, `127.0.0.1`, or `[::1]`; Origin-less CLI requests remain
-accepted. The banner prints
-`auth  no bearer (loopback Host; loopback browser Origin)` in that case and
-`auth  bearer token` otherwise.
+## Bind rules and authentication
 
-## Authentication
+The bind policy fails closed:
 
-The bind rule is strict and fails closed.
+| Mode | Bind address | Requirements | Startup banner |
+| --- | --- | --- | --- |
+| **Loopback (default)** | `127.0.0.1:3000` (also `::1`, `localhost`) | No opt-in, no token. `Host` must be loopback; browser `Origin` (if present) must be loopback HTTP(S). Origin-less CLI requests pass. | `auth  no bearer (loopback Host; loopback browser Origin)` |
+| **Network** | Any non-loopback address | Requires `--listen` **and** `SMITHERS_TOKEN`. Missing `--listen` refuses with `Refusing to bind <host>: pass --listen to serve on a non-loopback address.` Missing token refuses with `Refusing to bind <host> without a bearer token: set SMITHERS_TOKEN.` | `auth  bearer token` |
 
-- The default bind is `127.0.0.1:3000`. A loopback host (`127.0.0.1`, `::1`, or `localhost`) needs no opt-in and no credential. The ingress guard rejects foreign Host values and browser origins before HTTP or WebSocket RPC handling.
-- A non-loopback bind requires an explicit `--listen`. Without it the verb refuses: `Refusing to bind <host>: pass --listen to serve on a non-loopback address.`
-- A non-loopback bind also requires a bearer credential, set as `SMITHERS_TOKEN`. Without one the verb refuses: `Refusing to bind <host> without a bearer token: set SMITHERS_TOKEN.`
-- The server speaks plain HTTP only. For network access, terminate TLS at a trusted reverse proxy or use an encrypted tunnel so the bearer token is not sent in cleartext.
+- **Plain HTTP only:** `smthrs serve` does not terminate TLS. Put a reverse proxy or encrypted tunnel in front of any non-loopback listener so `SMITHERS_TOKEN` never travels in cleartext.
+- **Single principal:** one shared bearer token authenticates every mount. There are no users, roles, scopes, or per-run ownership checks at the gateway layer.
 
-One shared bearer authenticates every mount and binds one principal. There are no users, no roles, no per-run ownership, and no scopes.
+### Why `/rpc` and `/health` differ from edge auth
 
-Two mounts are deliberate exceptions to edge authentication. `POST /rpc` authenticates in band through the `ControlRpcs.ControlAuth` middleware, whose refusal is the typed control error `Unauthorized`, not an edge status; the `/rpc/ws` upgrade stays edge-authenticated because a refused handshake has no RPC channel to answer on. `GET /health` is unauthenticated so a supervisor can ask which workspace a gateway belongs to before deciding to keep or replace it. The local request guard answers `invalid_host` (421) or `invalid_origin` (403) before those exceptions. On the edge-authenticated paths the remaining refusal vocabulary is `unauthorized` (401) without the credential, `malformed_request` (400) for a body carrying no RPC request message, and `request_too_large` (413) for a body over the limit (default 1 MiB).
+- `POST /rpc` authenticates in band through `ControlRpcs.ControlAuth`, returning the typed RPC error `Unauthorized` rather than an HTTP edge status.
+- `/rpc/ws` stays edge-authenticated because a rejected WebSocket handshake has no RPC channel to carry a typed error.
+- `GET /health` is unauthenticated so a local supervisor can identify which workspace owns a port before keeping or replacing the process.
 
-## Worker relay authentication
+### Ingress and edge refusal codes
 
-The mounts above belong to `smthrs serve`. The web Worker has removed its raw
-gateway proxy: `/rpc`, `/projections`, `/sync`, `/health`, and their subpaths
-return HTTP 410 with code `gateway_proxy_removed`, including WebSocket upgrades.
-A `GET` or `HEAD` of a former documentation address under `/rpc/` (a page the
-old site published) redirects to this page instead; an RPC-shaped request there
-is still the 410. Cross-origin requests may be refused earlier by the
-same-origin guard.
-`GATEWAY_UPSTREAM_URL` and `GATEWAY_AUTH_TOKEN` are ignored and cannot restore
-the proxy. The Worker's `/health` is retired too.
+The loopback guard runs before every mount (including `/rpc` and `/health`). Edge-authenticated mounts return these HTTP statuses and error codes:
 
-Product clients use `/api/workflow/provision` and `/api/workflow/rpc` with a
-validated session. Every body names the repository and a box (`workspaceId`); a call without a box is refused. These routes resolve that
-box's coding host by login, repository and box and enforce a procedure
-allowlist; the host's credentials never leave the backend. Native RPC or
-WebSocket clients must connect to a separately authenticated gateway.
-
-## The RPC surface
-
-The gateway's RPC groups share one host. The sources pin the procedure names, the error vocabularies, and the subscription frame tags; row-level payload shapes are not pinned here and are decoded by selector through `GatewaySchema.rowSchemaFor`.
-
-`ControlRpcs` on `/rpc` is ten procedures:
-
-| Area | Procedures | Answers |
+| HTTP status | Code | Cause |
 | --- | --- | --- |
-| Runs | `Plan`, `Run`, `Resume`, `Cancel`, plus the `List` and `Watch` reads | A `Receipt` per mutation, a `PlanCard` from `Plan`, a stream of `ControlEvent` from `Watch` |
-| Approvals | `Approve`, `Deny` | A `Receipt` |
-| Steering | `Steer` (a durable message to the run), `Signal` (a durable delivery to a named wait) | A `Receipt` |
+| `421` | `invalid_host` | Non-loopback `Host` header on a loopback listener |
+| `403` | `invalid_origin` | Non-loopback browser `Origin` header on a loopback listener |
+| `401` | `unauthorized` | Missing or wrong bearer token on an edge-authenticated mount |
+| `400` | `malformed_request` | Request body contains no valid RPC message |
+| `413` | `request_too_large` | Request body exceeds the payload limit (default `1 MiB`) |
 
-There is no `Pause` procedure. `ControlRpcs` declares no memory procedure either; the [`smthrs memory`](/docs/reference/cli/memory/) verb is documented separately.
+## Worker relay status
 
-`GatewayRpcs` on `/projections` serves seven read models folded from the control event stream: `workspace-runs`, `run-summary`, `run-events`, `transcript`, `run-tree`, `approvals`, and `node-output`. Over WebSocket, `Projection.Subscribe` streams tagged frames (`SnapshotStartFrame`, `RowFrame`, `SnapshotEndFrame`, `DeltaFrame`, `HeartbeatFrame`) so a client can tell a snapshot from a change. A projection never claims a run and never writes. The group's one mutation, `Approval.Submit`, is the transport form of Control's approve, deny, and answer commands for an approval card; it adds no failure of its own.
+The routes above belong to `smthrs serve` only. The hosted web Worker no longer proxies raw gateway endpoints:
 
-`SyncRpcs` on `/sync` is read-only journal replication: `Sync.Snapshot` returns a public projection through a sequence, `Sync.Read` pages entries for a scope and cursor set, and `Sync.Subscribe` streams `Entries` frames under a credit bound.
+- `/rpc`, `/projections`, `/sync`, `/health`, and their subpaths return **HTTP `410`** with code `gateway_proxy_removed` (including WebSocket upgrades).
+- `GET` or `HEAD` on legacy `/rpc/` documentation paths redirects to this page; RPC-shaped requests still return `410`. Cross-origin calls may fail earlier at the same-origin guard.
+- `GATEWAY_UPSTREAM_URL` and `GATEWAY_AUTH_TOKEN` are ignored.
 
-The native gateway serves `BranchRpcs` presence at `POST /branch` when its authenticated runtime bridge is configured: `Branch.Announce`, `Branch.Leave`, `Branch.Roster`, and `Branch.PresenceOn`. Branch commands and share-link bootstrap remain unserved on that mount; `Branch.Submit`, `Branch.CreateBranch`, `Branch.MintShare`, and `Branch.WatchRoster` return `unsupported`.
+Product web clients use session-authenticated `/api/workflow/provision` and `/api/workflow/rpc`. Each call must specify both a repository and a box (`workspaceId`); the backend resolves that box's coding host by login, repository, and box and enforces a procedure allowlist so host credentials never leave the server. Native RPC or WebSocket clients connect directly to a separately authenticated gateway.
 
-## Health
+## RPC surface
 
-`GET /health` answers the gateway's identity as JSON:
+Source contracts pin procedure names, error vocabularies, and stream frame tags. Row payloads decode dynamically by selector via `GatewaySchema.rowSchemaFor`.
+
+### `ControlRpcs` (`/rpc`, `/rpc/ws`)
+
+Ten procedures govern run execution and operator intervention:
+
+| Group | Procedures | Return type |
+| --- | --- | --- |
+| **Runs** | `Plan`, `Run`, `Resume`, `Cancel`, `List`, `Watch` | `PlanCard` (`Plan`), `Receipt` (mutations), stream of `ControlEvent` (`Watch`) |
+| **Approvals** | `Approve`, `Deny` | `Receipt` |
+| **Steering** | `Steer` (durable message), `Signal` (named wait delivery) | `Receipt` |
+
+There is no `Pause` procedure and no memory procedure on `ControlRpcs`; memory is operated through [`smthrs memory`](/docs/reference/cli/memory/).
+
+### `GatewayRpcs` (`/projections`, `/projections/ws`)
+
+Seven read-only projections folded from the control event stream, plus one approval transport mutation:
+
+| Kind | Names | Behavior |
+| --- | --- | --- |
+| **Read models** | `workspace-runs`, `run-summary`, `run-events`, `transcript`, `run-tree`, `approvals`, `node-output` | Never claim a run and never write state |
+| **Stream frames** (`Projection.Subscribe`) | `SnapshotStartFrame`, `RowFrame`, `SnapshotEndFrame`, `DeltaFrame`, `HeartbeatFrame` | Distinguishes initial snapshots from live deltas over WebSocket |
+| **Mutation** | `Approval.Submit` | Transport form of Control's approve, deny, and answer commands; adds no new error cases |
+
+### `SyncRpcs` (`/sync`, `/sync/ws`)
+
+Read-only journal replication:
+
+| Procedure | Purpose |
+| --- | --- |
+| `Sync.Snapshot` | Public projection through a sequence number |
+| `Sync.Read` | Paginated journal entries for a scope and cursor set |
+| `Sync.Subscribe` | Credit-bounded stream of `Entries` frames |
+
+The native gateway also serves `BranchRpcs` presence at `POST /branch` when its authenticated runtime bridge is configured: `Branch.Announce`, `Branch.Leave`, `Branch.Roster`, and `Branch.PresenceOn`. Branch commands and share-link bootstrap remain unserved on that mount (`Branch.Submit`, `Branch.CreateBranch`, `Branch.MintShare`, and `Branch.WatchRoster` return `unsupported`).
+
+## Health response
+
+`GET /health` returns JSON containing workspace identity only:
 
 | Field | Value |
 | --- | --- |
-| `workspaceHash` | The first 16 hex characters of the SHA-256 of the resolved project root |
+| `workspaceHash` | First 16 hex characters of `SHA-256(resolvedProjectRoot)` |
 | `gatewayId` | `cli-<pid>` of the serving process |
 | `protocolVersion` | `"1"` |
-| `version` | The installed `@smthrs/cli` package version |
+| `version` | Installed `@smthrs/cli` package version |
 
-The response carries identity only: never a token, a run, or a path. The workspace path itself is not published, because it names directories on the operator's machine.
+No tokens, runs, or filesystem paths are ever included in `/health`.

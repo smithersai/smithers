@@ -1,0 +1,57 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 780 330" role="img" aria-labelledby="dur-title dur-desc">
+  <title id="dur-title">Two-phase execution and content-addressed step cache</title>
+  <desc id="dur-desc">Phase 1 compiles a flow body into a pure step graph using placeholders before any action runs. Phase 2 computes a SHA-256 step key from payload, prior outputs, declared boundary, and implementationVersion, then replays a cache hit from SQLite or executes a cache miss through the capability-guarded host.</desc>
+  <defs>
+    <marker id="dur-arrow" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M 0 1.5 L 9 5 L 0 8.5 z" fill="var(--sl-color-gray-4, #6f6e85)" />
+    </marker>
+    <marker id="dur-arrow-green" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M 0 1.5 L 9 5 L 0 8.5 z" fill="var(--sl-color-green, #207770)" />
+    </marker>
+    <marker id="dur-arrow-orange" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M 0 1.5 L 9 5 L 0 8.5 z" fill="var(--sl-color-orange, #826601)" />
+    </marker>
+  </defs>
+  <rect x="16" y="16" width="234" height="296" rx="10" fill="var(--sl-color-gray-6, #f0f0f0)" stroke="var(--sl-color-blue, #4876d6)" stroke-width="1.5" />
+  <text x="32" y="39" font-size="10.5" font-weight="700" letter-spacing="0.08em" fill="var(--sl-color-blue, #4876d6)">PHASE 1: PLAN (PURE)</text>
+  <text x="32" y="61" font-size="15" font-weight="700" fill="var(--sl-color-white, #211f30)">Build the step graph</text>
+  <text x="32" y="79" font-size="11.5" fill="var(--sl-color-gray-3, #5c5b71)">Zero models called. Zero files written.</text>
+  <rect x="32" y="96" width="202" height="44" rx="7" fill="var(--sl-color-black, #fbfbfb)" stroke="var(--sl-color-gray-5, #cfcfd6)" />
+  <text x="44" y="114" font-size="12" font-weight="600" font-family="var(--sl-font-mono, monospace)" fill="var(--sl-color-white, #211f30)">1. Plan(issue)</text>
+  <text x="44" y="131" font-size="10.5" fill="var(--sl-color-gray-3, #5c5b71)">returns placeholder: plan</text>
+  <line x1="133" y1="140" x2="133" y2="158" stroke="var(--sl-color-gray-4, #6f6e85)" stroke-width="1.5" marker-end="url(#dur-arrow)" />
+  <rect x="32" y="162" width="202" height="44" rx="7" fill="var(--sl-color-black, #fbfbfb)" stroke="var(--sl-color-gray-5, #cfcfd6)" />
+  <text x="44" y="180" font-size="12" font-weight="600" font-family="var(--sl-font-mono, monospace)" fill="var(--sl-color-white, #211f30)">2. Test(plan)</text>
+  <text x="44" y="197" font-size="10.5" fill="var(--sl-color-gray-3, #5c5b71)">returns placeholder: result</text>
+  <line x1="133" y1="206" x2="133" y2="224" stroke="var(--sl-color-gray-4, #6f6e85)" stroke-width="1.5" marker-end="url(#dur-arrow)" />
+  <rect x="32" y="228" width="202" height="44" rx="7" fill="var(--sl-color-black, #fbfbfb)" stroke="var(--sl-color-gray-5, #cfcfd6)" />
+  <text x="44" y="246" font-size="12" font-weight="600" font-family="var(--sl-font-mono, monospace)" fill="var(--sl-color-white, #211f30)">3. Report(result)</text>
+  <text x="44" y="263" font-size="10.5" fill="var(--sl-color-gray-3, #5c5b71)">inspectable via flow plan</text>
+  <text x="32" y="296" font-size="10.5" font-weight="600" fill="var(--sl-color-blue, #4876d6)">Review &amp; approve before execution</text>
+  <line x1="250" y1="164" x2="282" y2="164" stroke="var(--sl-color-gray-4, #6f6e85)" stroke-width="2" marker-end="url(#dur-arrow)" />
+  <rect x="286" y="16" width="478" height="296" rx="10" fill="var(--sl-color-gray-6, #f0f0f0)" stroke="var(--sl-color-accent, #3a756b)" stroke-width="1.75" />
+  <text x="302" y="39" font-size="10.5" font-weight="700" letter-spacing="0.08em" fill="var(--sl-color-accent, #3a756b)">PHASE 2: EXECUTE (CONTENT-ADDRESSED)</text>
+  <text x="302" y="61" font-size="15" font-weight="700" fill="var(--sl-color-white, #211f30)">Hash inputs, then look up the journal</text>
+  <rect x="302" y="78" width="208" height="122" rx="8" fill="var(--sl-color-black, #fbfbfb)" stroke="var(--sl-color-gray-5, #cfcfd6)" />
+  <text x="314" y="99" font-size="11.5" font-weight="700" fill="var(--sl-color-white, #211f30)">Step Key = SHA-256 of:</text>
+  <text x="314" y="119" font-size="11" fill="var(--sl-color-gray-2, #403f53)">- Payload &amp; prior outputs</text>
+  <text x="314" y="137" font-size="11" fill="var(--sl-color-gray-2, #403f53)">- Declared file boundary</text>
+  <text x="314" y="155" font-size="11" fill="var(--sl-color-gray-2, #403f53)">- Environment &amp; capabilities</text>
+  <text x="314" y="173" font-size="11" font-family="var(--sl-font-mono, monospace)" fill="var(--sl-color-accent, #3a756b)">- implementationVersion</text>
+  <text x="314" y="191" font-size="10" fill="var(--sl-color-gray-3, #5c5b71)">Position in flow is NOT hashed</text>
+  <path d="M 510 116 L 548 116" stroke="var(--sl-color-green, #207770)" stroke-width="1.75" marker-end="url(#dur-arrow-green)" />
+  <text x="529" y="108" text-anchor="middle" font-size="10" font-weight="700" fill="var(--sl-color-green, #207770)">HIT</text>
+  <rect x="552" y="78" width="196" height="72" rx="8" fill="var(--sl-color-accent-low, #e2efea)" stroke="var(--sl-color-green, #207770)" stroke-width="1.5" />
+  <text x="564" y="100" font-size="12" font-weight="700" fill="var(--sl-color-green, #207770)">Replay from journal</text>
+  <text x="564" y="118" font-size="11" fill="var(--sl-color-gray-2, #403f53)">Returns recorded output</text>
+  <text x="564" y="134" font-size="11" fill="var(--sl-color-gray-2, #403f53)">immediately. Step skipped.</text>
+  <path d="M 510 174 L 548 174" stroke="var(--sl-color-orange, #826601)" stroke-width="1.75" marker-end="url(#dur-arrow-orange)" />
+  <text x="529" y="166" text-anchor="middle" font-size="10" font-weight="700" fill="var(--sl-color-orange, #826601)">MISS</text>
+  <rect x="552" y="162" width="196" height="84" rx="8" fill="var(--sl-color-black, #fbfbfb)" stroke="var(--sl-color-orange, #826601)" stroke-width="1.5" />
+  <text x="564" y="183" font-size="12" font-weight="700" fill="var(--sl-color-orange, #826601)">Run via capability kernel</text>
+  <text x="564" y="201" font-size="11" fill="var(--sl-color-gray-2, #403f53)">Enforces fs/proc/http grants,</text>
+  <text x="564" y="217" font-size="11" fill="var(--sl-color-gray-2, #403f53)">commits result to SQLite,</text>
+  <text x="564" y="233" font-size="11" fill="var(--sl-color-gray-2, #403f53)">then unlocks next step.</text>
+  <rect x="302" y="260" width="446" height="36" rx="6" fill="var(--sl-color-black, #fbfbfb)" stroke="var(--sl-color-gray-5, #cfcfd6)" />
+  <text x="316" y="282" font-size="11.5" fill="var(--sl-color-gray-2, #403f53)">Edit a flow and re-run? Unchanged keys hit cache; only changed steps re-run.</text>
+</svg>

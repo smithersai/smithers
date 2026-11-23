@@ -1,33 +1,29 @@
 ---
 title: "@smthrs/cli"
-description: "The smthrs command line: plan, approve, run, and inspect durable agent runs from a shell, a CI job, an MCP client, or your own Node program."
+description: "The smthrs command line and embeddable control library: plan, approve, execute, and inspect durable agent runs."
 ---
 
-`@smthrs/cli` installs `smthrs`, the command line for Smithers. Smithers is a
-control plane for long agent runs: it keeps a run, its plan, its approvals, and
-its events as durable state, so the run survives the process that started it.
-Use `smthrs` to start such a run, decide the approvals it asks for, and read
-back what it did. [CLI reference](./reference/cli/README.md) lists the commands.
+`@smthrs/cli` provides `smthrs` (and its `smithers` alias), the command line and embeddable Node library for Smithers' durable control plane.
 
-## What it solves
+A long agent run outlives the terminal that launched it, pauses to ask human approval before consequential actions, and must explain which step failed and what already succeeded. Smithers persists runs, plans, approvals, and events in two SQLite files (`.flows/control.db` and `.flows/engine.db`) beside your repository, turning agent execution into an auditable record rather than terminal scrollback.
 
-A long agent run is not a shell command. It outlives the terminal that started
-it, it stops halfway to ask whether it may push a branch, and when it fails you
-need to know which step failed and what it had already done. Smithers keeps
-that run in two SQLite files beside your project, so the run is a durable record
-rather than terminal scrollback. `smthrs` is how you talk to it: start runs,
-list them, follow their events, approve what they ask for, and cancel them.
+```text
+  [Shell]    [CI --json]    [smthrs --mcp]    [Embedded Node Host]
+     |            |               |                    |
+     +------------+---------------+--------------------+
+                                  |
+                                  v
+                       +---------------------+
+                       |     smthrs CLI      |
+                       +---------------------+
+                         |                 |
+         local workspace |                 | --remote https://host:3000
+                         v                 v
+         .flows/control.db &        Workspace Gateway
+         .flows/engine.db           (/rpc, /projections, /sync)
+```
 
-Flow control, run management, and approvals can use a hosted control plane with
-`--remote https://host:3000`. Target execution and local operator commands use
-the selected workspace; history, memory, triggers, credentials, integrations,
-and evaluations refuse remote access.
-
-Four callers use it. You run flows from a shell. Scripts and CI jobs call it
-with `--json` and branch on its exit codes. Agents drive the same control plane
-through `smthrs --mcp`, the stdio MCP server the executable also hosts. Hosts
-that embed Smithers import the command tree and run it inside a program of
-their own.
+Flow control, run management, and approvals work against a remote gateway with `--remote https://host:3000`. Target execution and local-only verbs (`history`, `memory`, `triggers`, `credentials`, `integrations`, `eval`) operate strictly on the local workspace and refuse `--remote`.
 
 ## Install
 
@@ -35,14 +31,11 @@ their own.
 npm install -g smthrs@next
 ```
 
-Node 22.19.0 or later is required. The package installs one
-executable under two names, `smthrs` and its `smithers` alias. For the runner
-matrix and the import forms of the library, see
-[Installation](./installation.md).
+Requires Node.js 22.19.0 or later. See [Installation](./installation.md) for subscription logins, TUI setup, and workspace target installs.
 
-## The shortest real example
+## Minimal end-to-end example
 
-Scaffold a flow, plan it, approve the plan, and run it:
+Scaffold a flow, plan it without side effects, approve the plan payload, execute it, and list the recorded run:
 
 ```bash
 smthrs init hello
@@ -53,124 +46,81 @@ smthrs flow execute "$approval" --json
 smthrs runs list
 ```
 
-`smthrs flow plan` creates no run. It prints a plan card whose `approval`
-member is the payload `approvals approve`, `approvals deny`, and `flow execute`
-accept unchanged, which is why the same string appears twice above.
-`smthrs flow start hello` collapses all three steps into one command. [Quickstart](./quickstart.md) walks the loop to a settled run
-and reads its events back.
+`flow plan` creates no run; its `approval` field is the exact payload accepted by `approvals approve`, `approvals deny`, and `flow execute`. When no separate approval step is needed, `smthrs flow start hello` collapses all three into one command. Follow [Quickstart](./quickstart.md) for the full walkthrough.
 
-## The binary at a glance
+## Modes and command groups
 
-One executable answers in three modes, chosen before the command tree parses
-anything:
+The executable dispatches into one of three modes before parsing subcommands:
 
-| Invocation                          | What it does                                                                       |
-| ----------------------------------- | ---------------------------------------------------------------------------------- |
-| `smthrs --help`, `smthrs --version` | Prints a document. Resolves no project, opens no database.                         |
-| `smthrs --mcp`                      | Serves the Smithers MCP server on stdio over the same control plane the verbs use. |
-| `smthrs <verb> ...`                 | Runs one command handler against the control plane.                                |
+| Invocation | Behavior |
+| --- | --- |
+| `smthrs --help`, `smthrs --version` | Prints help or version. Opens no workspace and touches no database. |
+| `smthrs --mcp` | Runs the stdio MCP server over the same control plane. |
+| `smthrs <verb> ...` | Executes one command against the local or `--remote` control plane. |
 
-The commands group by the job they do:
+Verbs grouped by job (full `--help`-generated reference in [CLI reference](./reference/cli/README.md)):
 
-| Job                | Commands                                                              |
-| ------------------ | --------------------------------------------------------------------- |
-| Plan and launch    | `flow list`, `flow plan`, `flow start`, `flow execute`, `runs resume` |
-| Decide an approval | `approvals list`, `approvals approve`, `approvals deny`               |
-| Steer a live run   | `runs signal`, `runs steer`                                           |
-| End a run          | `runs cancel`, `runs cancel-all`                                      |
-| Read what happened | `runs list`, `runs show`, `runs logs`, `runs output`                  |
-| Set a project up   | `init`, `suggest`, `doctor`, `migrate`                                |
-| Host and integrate | `serve`, `mcp`                                                        |
-| Maintain           | `gc`, `memory`, `update`, `bug`, `completions`                        |
+| Job | Commands |
+| --- | --- |
+| Plan and launch | `flow list`, `flow plan`, `flow start`, `flow execute`, `runs resume` |
+| Decide approvals | `approvals list`, `approvals approve`, `approvals deny` |
+| Steer live runs | `runs signal`, `runs steer` |
+| Stop runs | `runs cancel`, `runs cancel-all` |
+| Inspect history | `runs list`, `runs show`, `runs logs`, `runs output` |
+| Initialize and check | `init`, `suggest`, `doctor`, `migrate` |
+| Host and integrate | `serve`, `mcp` |
+| Maintain | `gc`, `memory`, `update`, `bug`, `completions` |
 
-Smithers 0.x spellings that were removed refuse with one sentence and a
-migration link rather than a parser error, so a script written against 0.x is
-told what replaced each one. The per-command reference, generated from
-`--help`, is at [the CLI reference](https://github.com/smithersai/smithers/blob/main/packages/smithers/docs/reference/cli/README.md).
-See [the command surface](./concepts/command-surface.md) for how the shipped
-list and the removed list are both kept closed.
+Removed 0.x commands and flags fail with a single-line explanation and migration anchor rather than a generic parser error. See [The command surface](./concepts/command-surface.md).
 
-## The package at a glance
+## Library namespaces
 
-`@smthrs/cli` is also a library. A host that wants the Smithers commands inside
-its own Node program imports the command tree and the layer that satisfies it
-rather than shelling out. The root entry point exports every module as a
-namespace, and each is also importable from `@smthrs/cli/<Module>`:
+Import every module from `@smthrs/cli` or directly from `@smthrs/cli/<Module>` (complete signatures in [API reference](./api.md); embedding guide in [Embed the command tree](./guides/embed-the-command-tree.md)):
 
-| Namespace                                                             | What it is                                                                                                                                                                            |
-| --------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `Command`                                                             | The Effect CLI command tree: every shipped verb with a handler, every removed one with a refusal.                                                                                     |
-| `NodeControl`                                                         | The complete Node host for that tree: configuration, registry, durable engine, executor, output, and the served gateway.                                                              |
-| `Application`                                                         | The transport-neutral half of that composition: local control plane or RPC client, chosen from `Config`.                                                                              |
-| `Output`                                                              | Deterministic rendering, and the receipt-to-exit-code mapping.                                                                                                                        |
-| `Ui`                                                                  | Interactive terminal rendering, with a plain-line fallback for pipes and CI.                                                                                                          |
-| `CliError`                                                            | The five failures the command line adds, including refusals with an optional HTTP status, and the status each exits on.                                                               |
-| `CloudSession`                                                        | Signed-in Cloud requests and authentication-refusal detection from HTTP 401/403 or older typed user-fault records; uncertain and text-only errors do not establish a sign-in failure. |
-| `Verb`, `Unsupported`                                                 | The shipped verb catalog, and the removed verbs, flags, and reserved flow ids.                                                                                                        |
-| `Project`, `Environment`                                              | Where an invocation decides it is running, and the closed set of variables it reads.                                                                                                  |
-| `Detached`                                                            | The `flow start -d` launch, and the admission line its child prints.                                                                                                                  |
-| `Doctor`, `Forensics`, `NodeOutput`, `Legacy`                         | Readiness, run diagnosis, node outputs, and the 0.x database guard.                                                                                                                   |
-| `Agents`                                                              | The agent configurations `mcp add` writes the MCP server into.                                                                                                                        |
-| `Serve`                                                               | The gateway bind rule, the mount list, and the banner rendered from it.                                                                                                               |
-| `Init`, `Suggest`, `Providers`                                        | Scaffolding, the guided suggestion pass, and the seats this machine can run.                                                                                                          |
-| `Gc`, `Update`, `Bug`, `ClaudeMirror`, `ExecutorOwnership`, `Version` | Retention, version checks, bug reports, the Claude Code mirror protocol, executor ownership, and the installed version.                                                               |
+| Namespace | Responsibility |
+| --- | --- |
+| `Command` | Effect CLI command tree (every shipped verb and every 0.x refusal) |
+| `NodeControl` | Full Node host layer: config, registry, engine, executor, output, gateway |
+| `Application` | Transport-neutral composition switching local control vs. RPC client from `Config` |
+| `Output`, `Ui` | Deterministic rendering, exit-code mapping, and TTY/plain-line terminal output |
+| `CliError` | The five CLI error types (including HTTP status refusals) and their exit codes |
+| `CloudSession` | Authenticated Cloud requests and strict 401/403 auth-refusal detection |
+| `Verb`, `Unsupported` | Closed catalogs of shipped verbs and removed 0.x spellings |
+| `Project`, `Environment` | Workspace root resolution and closed environment-variable contract |
+| `Detached` | `flow start -d` child launch and admission handshake |
+| `Doctor`, `Forensics`, `NodeOutput`, `Legacy` | Readiness checks, run diagnosis, node outputs, and 0.x database guard |
+| `Agents`, `Serve` | `mcp add` agent config writers; gateway bind rules, mounts, and banner |
+| `Init`, `Suggest`, `Providers` | Scaffolding, guided suggestions, and available model seats |
+| `Gc`, `Update`, `Bug`, `ClaudeMirror`, `ExecutorOwnership`, `Version` | Retention, registry checks, bug reports, legacy mirror protocol, leases, version |
 
-Every export of every namespace is on the [API reference](./api.md), and
-[Embed the command tree](./guides/embed-the-command-tree.md) is the guide.
+## Underlying packages
 
-## The packages underneath
+Installing `@smthrs/cli` installs the full stack below. Import any package directly when building without the CLI:
 
-`@smthrs/cli` is the top of the Smithers package tree. Installing it installs
-the whole stack, so a host that embeds the command tree adds no further
-dependencies. Each package below is published on its own and documented on its
-own site; reach for one directly when you want that layer without the command
-line.
-
-| Package                           | What it is                                                                                               |
-| --------------------------------- | -------------------------------------------------------------------------------------------------------- |
-| [`@smthrs/control`](/api/control) | The control plane every verb talks to: plans, approvals, runs, events, and their RPC projections.        |
-| [`@smthrs/flow`](/api/flow)       | The flow authoring model: flows, actions, durable waits, and retry policy.                               |
-| [`@smthrs/engine`](/api/engine)   | The runtime that executes those flows durably, and its HTTP and RPC transports.                          |
-| [`@smthrs/flows`](/api/flows)     | One barrel over the whole durable flow engine, for a host that wants it in a single import.              |
-| [`@smthrs/agent`](/api/agent)     | The agent loop the executor runs, with the adapters for control-plane runs and typed workflow steps.     |
-| [`@smthrs/model`](/api/model)     | Model protocols, routes, and streaming events: the seats a flow names.                                   |
-| [`@smthrs/memory`](/api/memory)   | The durable cross-run facts behind `smthrs memory`.                                                      |
-| [`@smthrs/journal`](/api/journal) | The immutable run history behind `smthrs runs logs`, including the redaction every write passes through. |
-| [`@smthrs/plan`](/api/plan)       | The persisted plan a plan card renders: a keyed action graph, its store, and its diff.                   |
-| [`@smthrs/kernel`](/api/kernel)   | The capability kernel that confines what a run may touch on the filesystem and the shell.                |
-| [`@smthrs/gateway`](/api/gateway) | The server `smthrs serve` hosts, and the projections a client subscribes to.                             |
-| [`@smthrs/mcp`](/api/mcp)         | The MCP client that projects a remote server's tools into a run's flow catalog.                          |
-| [`@smthrs/migrate`](/api/migrate) | The Smithers 0.x project upgrade behind `smthrs migrate`.                                                |
-| [`@smthrs/testing`](/api/testing) | The testing and conformance library for flows.                                                           |
+| Package | Role |
+| --- | --- |
+| [`@smthrs/control`](/api/control) | Control plane: plans, approvals, runs, events, RPC projections |
+| [`@smthrs/flow`](/api/flow) | Flow authoring model: flows, actions, waits, retry policies |
+| [`@smthrs/engine`](/api/engine) | Durable execution runtime and HTTP/RPC transports |
+| [`@smthrs/flows`](/api/flows) | Single barrel re-exporting the durable flow engine |
+| [`@smthrs/agent`](/api/agent) | Production agent loop, `AgentSession`, and `AgentAction` |
+| [`@smthrs/model`](/api/model) | Schema-first model protocols, seats, and streaming events |
+| [`@smthrs/memory`](/api/memory) | Durable cross-run facts backing `smthrs memory` |
+| [`@smthrs/journal`](/api/journal) | Immutable event log with write-time redaction |
+| [`@smthrs/plan`](/api/plan) | Keyed action graph, append-only plan store, and plan diff |
+| [`@smthrs/kernel`](/api/kernel) | Capability kernel confining filesystem, process, and network access |
+| [`@smthrs/gateway`](/api/gateway) | Workspace gateway server (`smthrs serve`) and live projections |
+| [`@smthrs/mcp`](/api/mcp) | MCP client projecting remote tools into flow bindings |
+| [`@smthrs/migrate`](/api/migrate) | 0.x-to-1.0 project migration with auditable reports |
+| [`@smthrs/testing`](/api/testing) | Flow testing and conformance utilities |
 
 ## Where to go next
 
-- [Installation](./installation.md): requirements, executables, and the import
-  forms of the library.
-- [Quickstart](./quickstart.md): one project from `init` to a settled run.
-- Concepts: [the command surface](./concepts/command-surface.md),
-  [the project and its state](./concepts/project-and-state.md),
-  [local and remote control planes](./concepts/local-and-remote.md), and
-  [output and exit codes](./concepts/output-and-exit-codes.md).
-- Guides: [script the CLI](./guides/script-the-cli.md),
-  [launch a detached run](./guides/launch-a-detached-run.md),
-  [burn down a repository's issues](./guides/burn-down-issues.md),
-  [diagnose a run](./guides/diagnose-a-run.md),
-  [serve the workspace gateway](./guides/serve-the-workspace-gateway.md),
-  [schedule a build target](./guides/schedule-a-target.md),
-  [wire the MCP server into an agent](./guides/wire-the-mcp-server.md),
-  [embed the command tree](./guides/embed-the-command-tree.md), and
-  [page a person from a shell probe](./guides/page-a-person-from-a-probe.md).
-- [The CLI reference](./reference/cli/README.md): every verb, and the three
-  that start a run in depth.
-- [Troubleshooting](./troubleshooting.md): the refusals this CLI prints, and
-  what to change.
+- [Installation](./installation.md) and [Quickstart](./quickstart.md)
+- Concepts: [command surface](./concepts/command-surface.md), [project and state](./concepts/project-and-state.md), [local and remote](./concepts/local-and-remote.md), [output and exit codes](./concepts/output-and-exit-codes.md)
+- Guides: [script the CLI](./guides/script-the-cli.md), [launch a detached run](./guides/launch-a-detached-run.md), [diagnose a run](./guides/diagnose-a-run.md), [serve the workspace gateway](./guides/serve-the-workspace-gateway.md), [wire the MCP server](./guides/wire-the-mcp-server.md), [embed the command tree](./guides/embed-the-command-tree.md)
+- Reference: [CLI reference](./reference/cli/README.md) and [Troubleshooting](./troubleshooting.md)
 
 ### Legacy Claude mirror subscriptions
 
-The deprecated mirror reads existing `claude-mirror-subscriptions.json` snapshots
-and overlays per-subscription records from the adjacent `.entries` directory.
-Updates atomically replace only the caller's subscription or removal, so they
-cannot restore unrelated removed entries. Refreshes reuse a record; TTL buckets
-bound retained storage. A damaged record does not hide unrelated entries.
-Concurrent operations on the same subscription use last replacement wins.
+The deprecated mirror overlays per-subscription records from `.entries` onto existing `claude-mirror-subscriptions.json` snapshots. Updates atomically replace only the caller's entry (never restoring unrelated removals), refreshes reuse records, TTL buckets bound storage, damaged records do not hide siblings, and concurrent writes to one subscription use last-replacement-wins.

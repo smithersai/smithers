@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 780 304" role="img" aria-labelledby="fd-title fd-desc">
+  <title id="fd-title">Personal flows in smithers.sh and SDK file flows</title>
+  <desc id="fd-desc">Top: In smithers.sh, Members draft, edit, save, and run personal flows via /app/flows or /flow.new and /flow.run inside the browser isolated realm. Bottom: The CLI and SDK load repository file flows from .smithers/flows/. System flows remain protected actions.</desc>
+  <defs>
+    <marker id="fd-arrow" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M 0 1.5 L 9 5 L 0 8.5 z" fill="var(--sl-color-gray-4, #6f6e85)" />
+    </marker>
+    <marker id="fd-arrow-green" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M 0 1.5 L 9 5 L 0 8.5 z" fill="var(--sl-color-green, #207770)" />
+    </marker>
+  </defs>
+  <rect x="16" y="14" width="748" height="148" rx="10" fill="var(--sl-color-gray-6, #f0f0f0)" stroke="var(--sl-color-accent, #3a756b)" stroke-width="1.75" />
+  <text x="32" y="36" font-size="10.5" font-weight="700" letter-spacing="0.08em" fill="var(--sl-color-accent, #3a756b)">WEB APP: PERSONAL FLOWS (/app/flows)</text>
+  <rect x="32" y="50" width="166" height="62" rx="8" fill="var(--sl-color-black, #fbfbfb)" stroke="var(--sl-color-gray-5, #cfcfd6)" />
+  <text x="44" y="70" font-size="11.5" font-weight="700" fill="var(--sl-color-white, #211f30)">1. Draft</text>
+  <text x="44" y="88" font-size="10.5" font-family="var(--sl-font-mono, monospace)" fill="var(--sl-color-accent, #3a756b)">/flow.new name ...</text>
+  <text x="44" y="103" font-size="10.5" fill="var(--sl-color-gray-3, #5c5b71)">or New flow button</text>
+  <line x1="198" y1="81" x2="226" y2="81" stroke="var(--sl-color-gray-4, #6f6e85)" stroke-width="1.75" marker-end="url(#fd-arrow)" />
+  <rect x="230" y="50" width="164" height="62" rx="8" fill="var(--sl-color-black, #fbfbfb)" stroke="var(--sl-color-orange, #826601)" stroke-width="1.5" />
+  <text x="242" y="70" font-size="11.5" font-weight="700" fill="var(--sl-color-orange, #826601)">2. Check &amp; Save</text>
+  <text x="242" y="88" font-size="10.5" fill="var(--sl-color-gray-2, #403f53)">Questions, code, checks</text>
+  <text x="242" y="103" font-size="10.5" fill="var(--sl-color-gray-3, #5c5b71)">Creates saved revision</text>
+  <line x1="394" y1="81" x2="422" y2="81" stroke="var(--sl-color-green, #207770)" stroke-width="1.75" marker-end="url(#fd-arrow-green)" />
+  <rect x="426" y="50" width="154" height="62" rx="8" fill="var(--sl-color-accent-low, #e2efea)" stroke="var(--sl-color-green, #207770)" stroke-width="1.5" />
+  <text x="438" y="70" font-size="11.5" font-weight="700" fill="var(--sl-color-green, #207770)">3. Run</text>
+  <text x="438" y="88" font-size="10.5" font-family="var(--sl-font-mono, monospace)" fill="var(--sl-color-white, #211f30)">/flow.run name</text>
+  <text x="438" y="103" font-size="10.5" fill="var(--sl-color-gray-2, #403f53)">Pinned to saved rev</text>
+  <line x1="580" y1="81" x2="606" y2="81" stroke="var(--sl-color-gray-4, #6f6e85)" stroke-width="1.75" marker-end="url(#fd-arrow)" />
+  <rect x="610" y="50" width="138" height="62" rx="8" fill="var(--sl-color-black, #fbfbfb)" stroke="var(--sl-color-blue, #4876d6)" stroke-width="1.5" />
+  <text x="622" y="70" font-size="11.5" font-weight="700" fill="var(--sl-color-blue, #4876d6)">Isolated realm</text>
+  <text x="622" y="88" font-size="10.5" fill="var(--sl-color-gray-2, #403f53)">Runs in browser</text>
+  <text x="622" y="103" font-size="10.5" fill="var(--sl-color-gray-3, #5c5b71)">sandbox</text>
+  <text x="32" y="142" font-size="11" fill="var(--sl-color-gray-3, #5c5b71)">Later edits create new revisions without altering already-running executions. Flows requiring a machine show Needs a sandbox.</text>
+  <rect x="16" y="176" width="748" height="114" rx="10" fill="var(--sl-color-gray-6, #f0f0f0)" stroke="var(--sl-color-gray-5, #cfcfd6)" stroke-width="1.5" />
+  <text x="32" y="198" font-size="10.5" font-weight="700" letter-spacing="0.08em" fill="var(--sl-color-blue, #4876d6)">CLI &amp; SDK: REPOSITORY FILE FLOWS + PROTECTED SYSTEM FLOWS</text>
+  <rect x="32" y="212" width="350" height="62" rx="8" fill="var(--sl-color-black, #fbfbfb)" stroke="var(--sl-color-gray-5, #cfcfd6)" />
+  <text x="44" y="232" font-size="12" font-weight="700" font-family="var(--sl-font-mono, monospace)" fill="var(--sl-color-white, #211f30)">.smithers/flows/&lt;name&gt;/flow.ts</text>
+  <text x="44" y="250" font-size="11" fill="var(--sl-color-gray-2, #403f53)">Loaded by smthrs CLI and @smthrs/flow SDK</text>
+  <text x="44" y="265" font-size="10.5" fill="var(--sl-color-gray-3, #5c5b71)">Run repository flows at a ref via /repo.run</text>
+  <rect x="398" y="212" width="350" height="62" rx="8" fill="var(--sl-color-black, #fbfbfb)" stroke="var(--sl-color-red, #ba3f3b)" stroke-dasharray="5 3" />
+  <text x="410" y="232" font-size="12" font-weight="700" fill="var(--sl-color-red, #ba3f3b)">System flows (protected)</text>
+  <text x="410" y="250" font-size="11" fill="var(--sl-color-gray-2, #403f53)">Personal revisions never replace system actions.</text>
+  <text x="410" y="265" font-size="10.5" fill="var(--sl-color-gray-3, #5c5b71)">Merge, members, secrets, and auth stay fixed.</text>
+</svg>

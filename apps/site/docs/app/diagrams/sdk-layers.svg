@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 780 340" role="img" aria-labelledby="sdk-title sdk-desc">
+  <title id="sdk-title">Layered architecture of the @smthrs package family</title>
+  <desc id="sdk-desc">Five stacked layers: Distribution barrels and CLI at the top, then Control and Wire, Agents, Authoring and Runtime, and Hosts and Platforms at the bottom. Only Hosts and Platforms touch platform-specific APIs; every upper package runs portably across Node, Bun, Workers, and browsers.</desc>
+  <rect x="16" y="14" width="748" height="52" rx="8" fill="var(--sl-color-accent-low, #e2efea)" stroke="var(--sl-color-accent, #3a756b)" stroke-width="1.75" />
+  <text x="32" y="35" font-size="10.5" font-weight="700" letter-spacing="0.08em" fill="var(--sl-color-accent, #3a756b)">DISTRIBUTION</text>
+  <text x="32" y="54" font-size="12" font-family="var(--sl-font-mono, monospace)" fill="var(--sl-color-white, #211f30)">@smthrs/flows   @smthrs/cli   @smthrs/migrate   @smthrs/testing</text>
+  <rect x="16" y="76" width="748" height="52" rx="8" fill="var(--sl-color-gray-6, #f0f0f0)" stroke="var(--sl-color-gray-5, #cfcfd6)" stroke-width="1.5" />
+  <text x="32" y="97" font-size="10.5" font-weight="700" letter-spacing="0.08em" fill="var(--sl-color-blue, #4876d6)">CONTROL &amp; WIRE</text>
+  <text x="32" y="116" font-size="12" font-family="var(--sl-font-mono, monospace)" fill="var(--sl-color-white, #211f30)">@smthrs/control   @smthrs/gateway   @smthrs/sync   @smthrs/mcp   @smthrs/notifications   @smthrs/observability</text>
+  <rect x="16" y="138" width="748" height="52" rx="8" fill="var(--sl-color-gray-6, #f0f0f0)" stroke="var(--sl-color-gray-5, #cfcfd6)" stroke-width="1.5" />
+  <text x="32" y="159" font-size="10.5" font-weight="700" letter-spacing="0.08em" fill="var(--sl-color-blue, #4876d6)">AGENTS &amp; TOOLS</text>
+  <text x="32" y="178" font-size="12" font-family="var(--sl-font-mono, monospace)" fill="var(--sl-color-white, #211f30)">@smthrs/agent   @smthrs/model   @smthrs/memory   @smthrs/std   @smthrs/plugin   @smthrs/registry   @smthrs/evals</text>
+  <rect x="16" y="200" width="748" height="56" rx="8" fill="var(--sl-color-gray-6, #f0f0f0)" stroke="var(--sl-color-gray-5, #cfcfd6)" stroke-width="1.5" />
+  <text x="32" y="221" font-size="10.5" font-weight="700" letter-spacing="0.08em" fill="var(--sl-color-blue, #4876d6)">AUTHORING &amp; DURABLE RUNTIME (PORTABLE EFFECT)</text>
+  <text x="32" y="242" font-size="12" font-family="var(--sl-font-mono, monospace)" fill="var(--sl-color-white, #211f30)">@smthrs/flow   @smthrs/engine   @smthrs/plan   @smthrs/journal   @smthrs/step-cache   @smthrs/time-travel   @smthrs/database</text>
+  <rect x="16" y="268" width="748" height="58" rx="8" fill="var(--sl-color-black, #fbfbfb)" stroke="var(--sl-color-orange, #826601)" stroke-width="1.75" stroke-dasharray="6 3" />
+  <text x="32" y="289" font-size="10.5" font-weight="700" letter-spacing="0.08em" fill="var(--sl-color-orange, #826601)">HOSTS &amp; CAPABILITY KERNEL (INJECTED PLATFORM BOUNDARY)</text>
+  <text x="32" y="310" font-size="12" font-family="var(--sl-font-mono, monospace)" fill="var(--sl-color-white, #211f30)">@smthrs/platform-node   @smthrs/platform-bun   @smthrs/platform-browser   @smthrs/kernel   @smthrs/sandbox   @smthrs/jj</text>
+</svg>

@@ -54,6 +54,16 @@ export function docsText(source, { raw = {}, versions = {} } = {}) {
     return mapInlineProse(part, (prose) => prose.replace(/\{\/\*[\s\S]*?\*\/\}/g, ""))
       .replace(/^import\s+[\s\S]*?from\s+["'][^"']+["'];?\s*$/gm, "")
       .replace(/<DocsDiagram\b[\s\S]*?\/>/g, (tag) => `**${attr(tag, "title")}**\n\n${attr(tag, "caption")}`)
+      .replace(/<SvgDiagram\b[\s\S]*?\/>/g, (tag) => {
+        const textName = tag.match(/\btext=\{(\w+)\}/)?.[1]
+        const diagramText = textName === undefined ? undefined : raw[textName]
+        const title = attr(tag, "title")
+        const caption = attr(tag, "caption")
+        if (diagramText !== undefined) {
+          return `\n\`\`\`text\n${diagramText.trimEnd()}\n\`\`\`\n\n_${caption || title}_\n`
+        }
+        return `**${title}**\n\n${caption}`
+      })
       .replace(/<AppScreenshot\b[\s\S]*?\/>/g, (tag) => `![${attr(tag, "alt")}](${attr(tag, "src")})\n\n${attr(tag, "caption")}`)
       .replace(/<LinkCard\b[\s\S]*?\/>/g, (tag) => `- [${attr(tag, "title")}](${attr(tag, "href")}): ${attr(tag, "description")}`)
       .replace(/<LinkButton\b([^>]*)>([^<]*)<\/LinkButton>/g, (_, attrs, label) => `[${label}](${attr(attrs, "href")})`)

@@ -1,0 +1,4 @@
+URL trick: https://github.com/smithersai/vibelang  -->  https://smithers.sh/smithersai/vibelang
+
+[Signed-out read]                                         [Signed-in contribute]
+1. Home (smithers.sh) -> 2. Repo tree -> 3. Read file -> 4. Issues & PRs --> 5. Sign in with GitHub

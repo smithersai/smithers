@@ -35,7 +35,7 @@ const check = (root, script) =>
 
 test("generate-llms --check names the stale file and the fix command", () => {
   withCopy((root) => {
-    for (const rel of ["scripts/generate-llms.mjs", "scripts/docs-text.mjs", "src/content/docs/docs", "src/data", "public/docs", "public/llms.txt", "public/llms-full.txt"]) {
+    for (const rel of ["scripts/generate-llms.mjs", "scripts/docs-text.mjs", "docs/app/diagrams", "src/content/docs/docs", "src/data", "public/docs", "public/llms.txt", "public/llms-full.txt"]) {
       copy(root, join("apps/site", rel))
     }
     copyPackageRoster(root)

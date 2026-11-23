@@ -1,0 +1,5 @@
+[AVAILABLE NOW] CLI from npm (1.0 release candidate):
+  Node 22.19+ & jj, jq --> npm install -g smthrs@next --> smthrs --version & smthrs doctor
+
+[PLANNED] Mac Host via Homebrew (setup order):
+  1. Address -> 2. GitHub App -> 3. Owner sign-in -> 4. Repository -> 5. Model access

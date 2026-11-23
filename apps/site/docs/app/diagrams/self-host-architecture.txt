@@ -1,0 +1,16 @@
+TEAM LAPTOPS                       YOUR APPLE SILICON MAC (LaunchAgent)
++----------------------+           +----------------------------------------------------------+
+| Browser UI           | --HTTPS-> | Tailscale/Caddy (:443 -> 127.0.0.1:4000)                 |
+| Editor via SSH       | --:2222-> | SSH bridge      (:2222 -> 127.0.0.1:2222)                |
+| Laptop CLI           |           |                                                          |
+| (smthrs login <url>) |           | TODO Stack:    main (human squash-merge)                 |
++----------------------+           |                  |                                       |
+                                   |                  T1 (In review, open PR, merges first)   |
+                                   |                  |                                       |
+                                   |                  T2 (Working, draft PR)                  |
+                                   |                  |                                       |
+                                   |                  T3 (Queued, draft PR)                   |
+                                   |                                                          |
+                                   | Secrets: branch machines hold placeholders; host sends   |
+                                   | real API keys only to the bound provider host.           |
+                                   +----------------------------------------------------------+

@@ -1,16 +1,45 @@
 # Self-host Smithers
 
-> Run your own install on a Mac, merge your first TODO and invite your team.
+> Run a single-Mac team install: set up the host, merge stacked TODOs, manage members and secrets, and put HTTPS in front.
 
-This page sets up Smithers as one install on your own Mac for your team: install the host, finish setup, merge your first TODO and invite teammates.
+This guide sets up one Smithers install on an Apple Silicon Mac for your team: start the host, finish onboarding, merge your first TODO, invite teammates, and harden access with HTTPS and backups.
 
-**Planned.** The Homebrew host package is not released yet; the steps below apply once it ships. To use Smithers on your Mac today, see [Run agents on your Mac](https://smithers.sh/docs/local-quickstart/).
+:::caution[Planned feature]
+**Planned.** The Homebrew host package is not released yet; the procedures below apply once it ships. To run coding agents on your Mac today, follow [Run agents on your Mac](https://smithers.sh/docs/local-quickstart/).
+:::
 
-## Install and setup
+```text
+TEAM LAPTOPS                       YOUR APPLE SILICON MAC (LaunchAgent)
++----------------------+           +----------------------------------------------------------+
+| Browser UI           | --HTTPS-> | Tailscale/Caddy (:443 -> 127.0.0.1:4000)                 |
+| Editor via SSH       | --:2222-> | SSH bridge      (:2222 -> 127.0.0.1:2222)                |
+| Laptop CLI           |           |                                                          |
+| (smthrs login <url>) |           | TODO Stack:    main (human squash-merge)                 |
++----------------------+           |                  |                                       |
+                                   |                  T1 (In review, open PR, merges first)   |
+                                   |                  |                                       |
+                                   |                  T2 (Working, draft PR)                  |
+                                   |                  |                                       |
+                                   |                  T3 (Queued, draft PR)                   |
+                                   |                                                          |
+                                   | Secrets: branch machines hold placeholders; host sends   |
+                                   | real API keys only to the bound provider host.           |
+                                   +----------------------------------------------------------+
+```
 
-Use the [install page](https://smithers.sh/docs/installation/) on an Apple Silicon Mac with macOS 15 or later, Homebrew, and at least 44 GiB free on the state volume. Prepare a GitHub repository whose default branch is `main`, with squash merging enabled, a coding-model provider key or ChatGPT sign-in, and an AI Gateway key.
+_Self-hosted Mac topology: team laptops reach the LaunchAgent over Tailscale or Caddy HTTPS and SSH, driving an ordered TODO stack with host-bound secret placeholders_
 
-Install and start the host on the Mac:
+## Prerequisites
+
+Prepare the host Mac and GitHub repository before installing (see [Install Smithers](https://smithers.sh/docs/installation/) for the full checklist):
+
+- Apple Silicon Mac on macOS 15 or later, with Homebrew and at least **44 GiB** free on the state volume.
+- A GitHub repository with `main` as its default branch and **squash merging enabled**.
+- Coding model access (a provider API key or ChatGPT sign-in) plus an AI Gateway key for Decisions.
+
+## Install and start the host
+
+Install the host package and verify it is running:
 
 ```sh
 brew install smithersai/tap/smithers
@@ -18,104 +47,112 @@ smthrs host start
 smthrs host status
 ```
 
-For LAN access, replace the hostname with your Mac’s LAN hostname:
+To expose the install on your LAN, bind `0.0.0.0` and pass your Mac's LAN origin:
 
 ```sh
 smthrs host start --bind 0.0.0.0 --origin http://studio-mini.local:4000
 ```
 
-Open the one-time setup URL printed on the Mac. Use the localhost URL on that Mac or the configured network URL from a LAN laptop. Keep the token private. Setup resumes completed steps after a restart; use the newly printed URL if the old token has expired.
+`smthrs host start` prints a one-time setup URL (localhost on the Mac, or the configured LAN origin). Keep that token private. If the host restarts mid-setup, completed steps are preserved; open the fresh URL printed on restart if the previous token expired.
 
-Complete the setup card in order:
+### Complete the setup card
 
-1. **Address:** choose This Mac or the address your team will open.
-2. **GitHub App:** create the App through GitHub. Register the chosen address's callback before signing in.
-3. **Owner sign-in:** sign in through the new App. This claims the install and invalidates the setup token.
-4. **Repository:** choose the repository and install the App on it. Enable squash merging and use `main` as the default branch on GitHub, then Retry if either check fails.
-5. **Model access:** set coding access, the optional fast-model key and the AI Gateway key for Decisions. Without a fast-model key, the app agent uses the coding model.
-6. **Source ready:** ask questions once the repository has arrived.
-7. **Machine ready:** wait for this separately before starting coding work.
+Work through the seven cards in order:
 
-## Open the command list
-
-Open Chat with Command-K on macOS or Control-K on Windows and Linux. Type `/help` and press Enter to list commands. `/docs` opens these pages.
+1. **Address:** pick **This Mac** or the network origin your team will open.
+2. **GitHub App:** create the App through GitHub's manifest flow so the chosen callback URL is registered before sign-in.
+3. **Owner sign-in:** sign in through the new App to claim the install and invalidate the setup token.
+4. **Repository:** install the App on your repository. If the `main` or squash-merge check fails, update GitHub settings and choose **Retry**.
+5. **Model access:** configure the coding model, an optional fast-model key (falls back to the coding model if omitted), and the AI Gateway key for Decisions.
+6. **Source ready:** you can ask repository questions as soon as source sync finishes.
+7. **Machine ready:** wait for this indicator before launching coding work.
 
 ## First TODO to Merged
 
-Ask a question about the repository. Open the answer's file cards to check the sources.
+Open Chat with `Cmd-K` on macOS (`Ctrl-K` on Windows/Linux). Run `/help` for the command list or `/docs` to open documentation.
 
-Open `/todo.new`, write one small change and choose **Append**. Watch it move through Queued, Starting, Working and In review. Answer a Needs you question on the branch; use Steer for an additional instruction.
+1. **Ask a question** about the codebase and click the attached file cards to verify citations.
+2. **Create a TODO:** open `/todo.new`, describe one small change, and choose **Append**.
+3. **Track its lifecycle:** the card advances through `Queued -> Starting -> Working -> In review`. Answer any **Needs you** prompt on the branch, or use **Steer** to add guidance mid-run.
+4. **Handle outside pushes:** if someone pushes to the branch externally, an owner or maintainer can choose **Discard** on the card to target the displayed commit (Git history is kept).
+5. **Review and merge:** open the diff, verification results, GitHub checks, and pull request (**on GitHub**). When ready, choose **Merge** in the app and confirm.
 
-When an outside push needs a decision, an owner or maintainer can choose **Discard** on the TODO card. The decision targets the displayed commit; that commit stays in history.
+People merge; agents never approve or merge. The TODO switches to **Merged** once GitHub confirms the squash merge, and a learning run follows.
 
-Open the TODO's evidence and pull request. Read the diff, verification results, GitHub checks and review. When the reviewed revision is ready, choose **Merge** in the app and confirm it. People merge; agents cannot approve or merge. The TODO becomes Merged after GitHub reports the squash merge. A learning run follows.
+### Read the TODO stack
 
-## Follow the pull request
-
-When a TODO reaches In review, it has one GitHub pull request. Open **on GitHub** from its card to read the pull request, reviews, and checks.
-
-Later stack items have draft pull requests.
-
-## Read the stack
-
-Open `main`'s conversation to see the stack. `main` stays at the top; TODOs follow in merge order.
+Open `main`'s conversation to inspect the ordered stack. `main` stays pinned at the top; TODOs merge in sequence below it. Only the front TODO (`In review`) has an open pull request; later items stay draft pull requests until their turn. Background runs appear beneath the stack.
 
 ```text
 main
   |
-  T1 <- merge first
+  T1  (In review, open PR -- merges first)
   |
-  T2 <- merges after T1
+  T2  (Working, draft PR -- merges after T1)
   |
-  T3 <- merges after T2
+  T3  (Queued, draft PR -- merges after T2)
 ```
-
-Open a TODO to read its prompt and evidence. Background runs appear below the stack.
 
 ## Members and secrets
 
-Open `/members` and add teammates by GitHub username. They need write access or higher on the repository. Maintainers can manage people and merge; Members can work on branches. The owner cannot be removed or demoted. Teammates open the address set during setup and sign in with GitHub.
+### Team roles
 
-Open the Secrets card to set the values your checks need. Choose all branches or main only for each secret. Keep credentials out of prompts, flow source and committed files.
+Open `/members` and add teammates by GitHub username (they must have write access or higher on the GitHub repository). Teammates open the configured install URL and sign in with GitHub.
 
-Every branch machine gets an all-branches secret as an environment variable. Set **Path** to also get it as a file, such as `~/.config/anthropic/key` in each home or a path under `/run/smithers/files/`. To give coding tools a model login without signing in on each machine, add the provider's API key, such as `ANTHROPIC_API_KEY` or `OPENAI_API_KEY`. The card binds a known key to its provider's host, so the machine holds only a placeholder and the install sends the real key to that host. A personal ChatGPT or Claude sign-in is never copied to a machine; it stays in your own terminal.
+| Role | Branch work | Manage members & merge | Can be removed |
+| --- | --- | --- | --- |
+| **Owner** | Yes | Yes | No (cannot be removed or demoted) |
+| **Maintainer** | Yes | Yes | Yes |
+| **Member** | Yes | No | Yes |
 
-## Connect an editor
+### Secrets and egress binding
 
-On a branch, use its SSH connection details. Replace the branch and install host below:
+Open the **Secrets** card to configure values needed by checks, scoped to **all branches** or **main only**. Never put credentials in prompts, flow source, or committed files.
+
+- All-branches secrets appear inside branch machines as environment variables. Set **Path** to also mount a secret as a file (for example `~/.config/anthropic/key` or under `/run/smithers/files/`).
+- Known model provider keys (such as `ANTHROPIC_API_KEY` or `OPENAI_API_KEY`) are bound to their provider's host: the branch machine receives only a placeholder, and the Mac host injects the real key only on outbound requests to that provider.
+- Personal ChatGPT or Claude sign-ins stay on your own terminal and are never copied onto branch machines.
+
+## Connect an editor or laptop CLI
+
+### SSH from your editor
+
+Add your public SSH key in member controls, then connect to any branch machine:
 
 ```sh
 ssh -p 2222 <branch>@<install-host>
 ```
 
-Add your public SSH key through the member controls. Edits share the branch's working copy with the app, terminals and coding agent. A branch terminal is already signed in to Smithers as you and includes the Smithers skill.
+Edits over SSH share the exact working copy used by the app, branch terminals, and coding agent. Branch terminals arrive pre-authenticated to Smithers as you with the Smithers skill installed.
 
-## Sign in from a laptop
+### Sign in from a laptop
 
-Install the CLI on your laptop, then sign in to your install address:
+Install the CLI on your laptop and authenticate against your Mac host:
 
 ```sh
 smthrs login https://smithers.example.com
 ```
 
-Complete browser sign-in. Your laptop agent uses a delegated credential attributed to you; it cannot approve, merge or move `main`.
+Complete browser sign-in. Your laptop agent gets a delegated credential attributed to you; it cannot approve, merge, or move `main`.
 
 ## Put HTTPS in front
 
-Plain HTTP works on a LAN. An HTTP origin sends the session cookie unencrypted. Use HTTPS for remote access and browser notifications.
+Plain HTTP works on a trusted LAN, but sends session cookies unencrypted. Use HTTPS for remote access and browser notifications.
 
-In Settings, the owner sets the bind address and public origins. Loopback is the default. Add the HTTPS origin and its exact GitHub App callback URL, `<origin>/api/auth/github/callback`, before signing in through that address.
+In **Settings**, the owner configures the bind address (loopback by default) and public origins. Add your HTTPS origin and register its exact GitHub App callback URL (`<origin>/api/auth/github/callback`) before signing in over HTTPS.
 
-For Tailscale serve on the install's Mac:
+### Option A: Tailscale serve (same Mac)
 
 ```sh
 tailscale serve --bg --https=443 http://127.0.0.1:4000
 tailscale serve --bg --tcp=2222 tcp://127.0.0.1:2222
 ```
 
-Use the HTTPS address it prints as a public origin. The HTTP proxy passes the original host as `X-Forwarded-Host` over loopback; the install accepts that header only from loopback. The TCP listener carries SSH separately.
+Add the printed HTTPS URL as a public origin. The install trusts `X-Forwarded-Host` only from loopback. TCP port `2222` carries SSH separately.
 
-Or use Caddy on the same Mac, with your DNS name pointing to it:
+### Option B: Caddy (same Mac)
+
+Point your DNS name at the Mac and configure Caddy:
 
 ```text
 smithers.example.com {
@@ -126,43 +163,39 @@ smithers.example.com {
 }
 ```
 
-Set `https://smithers.example.com` as a public origin. A proxy on another host must pass the original `Host` header; forwarding headers from that host are not trusted. Allow access only from your team.
+Set `https://smithers.example.com` as a public origin. A proxy on a separate host must preserve the original `Host` header (forwarding headers from non-loopback hosts are ignored). Restrict network ingress to your team.
 
-## Restart and recovery
+## Restart, backup, and recovery
 
-The install runs as a per-user launchd agent. If Hypervisor.framework refuses a daemon, use the LaunchAgent under the installing user's login session. Enable macOS automatic login for that user if the install must return after a reboot without someone logging in. Confirm Machine ready after restarting.
-
-Create a backup before changing the install:
+The host runs as a per-user `launchd` LaunchAgent inside the installing user's login session (Hypervisor.framework requires a login session rather than a root daemon). Enable macOS automatic login for that user if the host must recover unattended after a reboot, then confirm **Machine ready**.
 
 ```sh
 smthrs host backup
-```
-
-Keep the printed backup directory. Upgrade with:
-
-```sh
 smthrs host upgrade
 ```
 
-These commands currently refuse with `host_maintenance_unavailable` until the install's recovery providers are composed. A refusal is not a completed backup or upgrade.
+:::note[Maintenance availability]
+`host backup`, `host upgrade`, and `host restore` currently refuse with `host_maintenance_unavailable` until the install's recovery providers are composed. A refusal is not a completed backup or upgrade.
+:::
 
-Completed backups belong in `$STATE/backups/<version>-<UTC ts>/`; `$STATE` is `~/Library/Application Support/Smithers` on the install's Mac. Use a completed backup directory for restore, never a `.partial-` directory.
+Completed backups write to `$STATE/backups/<version>-<UTC ts>/`, where `$STATE` is `~/Library/Application Support/Smithers`. Keep backup directories private: they hold the install key and member data. Never restore from a `.partial-` directory.
 
-Before restoring a backup on another Mac, stop the original install first:
+### Move an install to another Mac
+
+Stop **both** the original and destination installs first so two hosts never operate on the same repository concurrently:
 
 ```sh
 smthrs host stop
 smthrs host restore /Users/will/Backups/smithers
 ```
 
-Stop the destination install too before running restore. Replace `/Users/will/Backups/smithers` with the directory printed by a successful backup. Restore currently has the same maintenance refusal. Do not restart the original install while the restored install is running.
-
-Two running installs would both act on the same repository. Keep backup directories private: they contain the install key and member data. Restore requires a stopped install, verified backup hashes and a compatible installed version. Interrupted work resumes or offers Retry after recovery.
-
-## API and flows
-
-The [HTTP API reference](https://smithers.sh/docs/reference/http-api/) documents the API used by the app and CLI. The [Flows reference](https://smithers.sh/docs/flows/) covers personal flows in the hosted app.
+Replace `/Users/will/Backups/smithers` with the directory printed by a completed backup. Restore verifies backup hashes and version compatibility; interrupted work resumes or offers **Retry**. Do not restart the original install while the restored host is running.
 
 ## Open the wiki in Obsidian
 
-In Settings, set **Obsidian folder** to an existing folder on the install's Mac, using its absolute path (for example `/Users/will/Vault`). Open that folder as a vault in Obsidian. Wiki edits and folder edits sync both ways every minute; the folder must be owned by the install user and outside the install's state directory. Teammates use the wiki in the app.
+In **Settings**, set **Obsidian folder** to an existing absolute path owned by the install user outside `$STATE` (for example `/Users/will/Vault`), then open that folder as an Obsidian vault. Edits sync bidirectionally every minute while teammates use the wiki in the app.
+
+## Related references
+
+- Gateway endpoints and authentication: [HTTP API reference](https://smithers.sh/docs/reference/http-api/).
+- Customizing how flows are authored: [Flows reference](https://smithers.sh/docs/flows/#sdk-file-flows).

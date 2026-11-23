@@ -1,0 +1,9 @@
+Callers (CLI --remote, RPC/WS, Supervisor)
+  |
+  v
+[Ingress Guard: loopback Host & Origin -> 421 invalid_host / 403 invalid_origin]
+  |-- POST /rpc               -> ControlRpcs (10 procs), in-band ControlAuth
+  |-- WS   /rpc/ws            -> ControlRpcs Watch, edge Bearer auth
+  |-- POST/WS /projections*   -> GatewayRpcs (7 read models + Approval.Submit), edge Bearer
+  |-- POST/WS /sync*          -> SyncRpcs (read-only journal replication), edge Bearer
+  +-- GET  /health            -> Unauthenticated workspace identity JSON

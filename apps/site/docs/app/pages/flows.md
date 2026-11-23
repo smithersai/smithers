@@ -1,32 +1,64 @@
 ---
 title: "Flows reference"
-summary: "Create, edit and run your own flows."
+summary: "Create, edit, and run personal flows in smithers.sh, or author file flows for the CLI and SDK."
 ---
 
-Open [Flows](https://smithers.sh/app/flows) to see your saved flows and drafts. Members and above can create and run personal flows.
+Every action in Smithers runs as a typed, durable **flow**. On `smithers.sh`, Members and above manage personal flows at [Flows](https://smithers.sh/app/flows). Locally, the CLI and SDK load committed file flows from `.smithers/flows/<name>/flow.ts`.
 
-## Create a flow
+![Personal flow lifecycle in smithers.sh (/app/flows, /flow.new, /flow.run) alongside CLI/SDK file flows and protected system flows](diagrams/flow-doors-and-pins.svg)
 
-Choose **New flow**, enter a name and what it should do, then submit. In Chat, `/flow.new greet Return a greeting` starts the same draft. Type `/` to find commands; see the [command reference](commands.md).
+## Create a personal flow
 
-The draft shows its questions, code and checks. Answer any questions. **Save** becomes available when the draft is ready and its checks pass. A failed draft shows why and offers **Draft again**.
+Open [Flows](https://smithers.sh/app/flows), choose **New flow**, enter a name and what the flow should do, and submit. In Chat, `/flow.new greet Return a greeting` opens the exact same draft (see [Chat commands](commands.md) for all `/` commands).
 
-## Edit and inspect
+| Draft stage | What happens |
+| --- | --- |
+| **Questions & code** | Smithers drafts the code and asks any clarifying questions. |
+| **Checks** | Validation checks run automatically on the draft. |
+| **Ready to save** | **Save** activates once checks pass, creating a saved revision. |
+| **Failed** | Shows the failure cause and offers **Draft again**. |
 
-On Flows, **Edit** starts a draft from the saved flow's latest source. Describe the change, review the resulting code and checks, then choose **Save**.
+## Edit, inspect, and delete
 
-**Code** opens the saved source for direct editing. Saving creates another revision. **Delete** removes a saved flow or an unfinished draft.
+On [Flows](https://smithers.sh/app/flows):
 
-## Run a flow
+- **Edit:** starts a new draft from the saved flow's latest source; describe your change, check the diff and checks, then **Save**.
+- **Code:** opens the saved source for direct editing; saving appends a new revision.
+- **Delete:** removes a saved flow or an unfinished draft.
 
-Choose **Run**, or type `/flow.run greet` in Chat. An optional input follows the name: `/flow.run greet Hello`.
+## Run a personal flow
 
-A run uses the saved revision selected when it starts. Later edits do not change that run. Its run page shows progress, results or a failure reason.
+Choose **Run** on [Flows](https://smithers.sh/app/flows), or invoke `/flow.run greet` in Chat. Pass optional input after the name: `/flow.run greet Hello`.
 
-Personal code runs in the browser's isolated realm. A flow that needs a machine says **Needs a sandbox** and cannot run yet.
+- **Pinned revision:** a run executes the saved revision selected at launch; later edits create newer revisions without mutating active runs.
+- **Execution realm:** personal code runs inside the browser's isolated realm. A flow that requires a remote machine shows **Needs a sandbox** and cannot run in the browser realm yet.
+- **Observability:** open the run page to inspect progress, outputs, or failure diagnostics.
 
 ## SDK file flows
 
 System flows are protected actions; personal revisions do not replace them.
 
-The CLI and SDK also load file flows from `.smithers/flows/<name>/flow.ts`. See the [flow API](/docs/reference/api/flow/) and [CLI reference](/docs/reference/cli/). The app's Flows page manages personal flows; repository file-flow overrides and activation controls are not available there.
+For the CLI and SDK, commit a file flow at `.smithers/flows/<name>/flow.ts` whose default export is a tagged `Flow.make` from `@smthrs/flow`:
+
+```ts
+import { Flow } from "@smthrs/flow"
+import { Node } from "@smthrs/plan"
+import { Schema } from "effect"
+
+export default Flow.make("greet", {
+  description: "Return a greeting",
+  capabilities: [],
+  effects: [],
+  payload: Schema.Struct({ name: Schema.String }),
+  success: Schema.String,
+  body: Node.capture({}, ({ name }) => Node.succeed(`Hello, ${name}`))
+})
+```
+
+The app's Flows page manages personal flows; repository file-flow overrides and activation controls are not available there. To run a committed repository flow at a branch's head from Chat, use `/repo.run`.
+
+## Related pages
+
+- Why flows plan first and cache steps by content: [How durable flows work](durable-flows.md).
+- Every chat `/` command and minimum role: [Chat commands](commands.md).
+- Package contracts and CLI verbs: [flow API](/docs/reference/api/flow/) and [CLI reference](/docs/reference/cli/).

@@ -68,8 +68,12 @@ import { Package as mvpPackage } from "../mvp/PACKAGE.ts"
 
 const cwd = "apps/site"
 
-/** The product docs pages and toc.ts that sync-app-docs.mjs projects onto /docs. */
-const appDocsInputs = [Smithers.glob("docs/app/pages/*.md"), Smithers.file("docs/app/toc.ts")]
+/** The product docs pages, diagrams, and toc.ts that sync-app-docs.mjs projects onto /docs. */
+const appDocsInputs = [
+  Smithers.glob("docs/app/pages/*.md"),
+  Smithers.glob("docs/app/diagrams/*"),
+  Smithers.file("docs/app/toc.ts")
+]
 
 /** The docs screenshots app-docs-integration.mjs publishes at /images/docs/. */
 const appDocsImages = Smithers.glob("docs/app/images/*")
@@ -102,6 +106,7 @@ const appDocs = Smithers.Generate({
 /** The pages, docs content, components, layouts, styles, scripts, public assets, Astro config, and tsconfig. */
 const sources = [
   Smithers.glob("//apps/site/src/**/*"),
+  Smithers.glob("//apps/site/docs/app/diagrams/*"),
   Smithers.glob("//apps/site/scripts/**/*"),
   Smithers.glob("//apps/site/public/**/*"),
   Smithers.file("//apps/site/astro.config.mjs"),
@@ -237,6 +242,7 @@ const docsRegressionTest = Smithers.Shell.Test({
     Smithers.file("src/data/cli-reference-extra.json"),
     Smithers.glob("src/data/help/**/*.txt"),
     Smithers.glob("docs/app/**/*.md"),
+    Smithers.glob("docs/app/diagrams/*"),
     Smithers.file("docs/app/toc.ts"),
     Smithers.file("src/styles/starlight.css"),
     Smithers.file("//packages/smithers/flows/docs/quickstart.md"),
@@ -324,6 +330,7 @@ const llms = Smithers.Generate({
   data: [
     Smithers.glob("src/content/docs/**/*.mdx"),
     Smithers.glob("src/content/docs/**/*.md"),
+    Smithers.glob("docs/app/diagrams/*"),
     Smithers.glob("public/docs/**/*.md"),
     Smithers.file("src/data/docs-sidebar.json"),
     Smithers.file("src/data/project.json"),
@@ -400,6 +407,7 @@ const checkExitTest = Smithers.Shell.Test({
       "sync-support-docs"
     ].map((name) => Smithers.file(`scripts/${name}.mjs`)),
     Smithers.glob("src/content/docs/docs/**/*"),
+    Smithers.glob("docs/app/diagrams/*"),
     Smithers.glob("src/data/**/*"),
     Smithers.glob("public/docs/**"),
     Smithers.file("public/llms.txt"),

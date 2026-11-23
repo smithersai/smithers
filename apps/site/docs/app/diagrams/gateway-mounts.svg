@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 780 318" role="img" aria-labelledby="gw-title gw-desc">
+  <title id="gw-title">smthrs serve gateway request and authentication pipeline</title>
+  <desc id="gw-desc">Requests enter smthrs serve through the loopback Host and Origin guard, then route to /health with no auth, POST /rpc with in-band ControlAuth, or edge-authenticated /rpc/ws, /projections, and /sync endpoints.</desc>
+  <defs>
+    <marker id="gw-arrow" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M 0 1.5 L 9 5 L 0 8.5 z" fill="var(--sl-color-gray-4, #6f6e85)" />
+    </marker>
+    <marker id="gw-arrow-accent" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M 0 1.5 L 9 5 L 0 8.5 z" fill="var(--sl-color-accent, #3a756b)" />
+    </marker>
+  </defs>
+  <rect x="16" y="96" width="136" height="120" rx="10" fill="var(--sl-color-gray-6, #f0f0f0)" stroke="var(--sl-color-gray-5, #cfcfd6)" stroke-width="1.5" />
+  <text x="30" y="120" font-size="10.5" font-weight="700" letter-spacing="0.08em" fill="var(--sl-color-gray-3, #5c5b71)">CALLERS</text>
+  <text x="30" y="146" font-size="12" font-weight="600" fill="var(--sl-color-white, #211f30)">CLI (--remote)</text>
+  <text x="30" y="168" font-size="12" font-weight="600" fill="var(--sl-color-white, #211f30)">RPC / WS Client</text>
+  <text x="30" y="190" font-size="12" font-weight="600" fill="var(--sl-color-white, #211f30)">Supervisor</text>
+  <line x1="152" y1="156" x2="184" y2="156" stroke="var(--sl-color-gray-4, #6f6e85)" stroke-width="1.75" marker-end="url(#gw-arrow)" />
+  <rect x="188" y="84" width="170" height="144" rx="10" fill="var(--sl-color-black, #fbfbfb)" stroke="var(--sl-color-red, #ba3f3b)" stroke-width="1.5" />
+  <text x="202" y="106" font-size="10.5" font-weight="700" letter-spacing="0.08em" fill="var(--sl-color-red, #ba3f3b)">INGRESS GUARD</text>
+  <text x="202" y="128" font-size="12" font-weight="700" fill="var(--sl-color-white, #211f30)">Host &amp; Origin check</text>
+  <text x="202" y="149" font-size="11" fill="var(--sl-color-gray-2, #403f53)">Loopback default:</text>
+  <text x="202" y="165" font-size="10.5" font-family="var(--sl-font-mono, monospace)" fill="var(--sl-color-gray-3, #5c5b71)">127.0.0.1 / ::1</text>
+  <text x="202" y="187" font-size="10.5" fill="var(--sl-color-red, #ba3f3b)">421 invalid_host</text>
+  <text x="202" y="204" font-size="10.5" fill="var(--sl-color-red, #ba3f3b)">403 invalid_origin</text>
+  <path d="M 358 112 L 390 112 L 390 48 L 418 48" fill="none" stroke="var(--sl-color-accent, #3a756b)" stroke-width="1.75" marker-end="url(#gw-arrow-accent)" />
+  <path d="M 358 140 L 418 140" fill="none" stroke="var(--sl-color-gray-4, #6f6e85)" stroke-width="1.75" marker-end="url(#gw-arrow)" />
+  <path d="M 358 176 L 390 176 L 390 212 L 418 212" fill="none" stroke="var(--sl-color-gray-4, #6f6e85)" stroke-width="1.75" marker-end="url(#gw-arrow)" />
+  <path d="M 358 204 L 380 204 L 380 280 L 418 280" fill="none" stroke="var(--sl-color-gray-4, #6f6e85)" stroke-width="1.75" marker-end="url(#gw-arrow)" />
+  <rect x="422" y="16" width="342" height="62" rx="8" fill="var(--sl-color-accent-low, #e2efea)" stroke="var(--sl-color-accent, #3a756b)" stroke-width="1.5" />
+  <text x="436" y="38" font-size="12.5" font-weight="700" font-family="var(--sl-font-mono, monospace)" fill="var(--sl-color-white, #211f30)">POST /rpc</text>
+  <text x="536" y="38" font-size="11" font-weight="600" fill="var(--sl-color-accent, #3a756b)">ControlRpcs (10 procedures)</text>
+  <text x="436" y="58" font-size="11" fill="var(--sl-color-gray-2, #403f53)">In-band ControlAuth -&gt; typed Unauthorized error</text>
+  <rect x="422" y="92" width="342" height="74" rx="8" fill="var(--sl-color-gray-6, #f0f0f0)" stroke="var(--sl-color-orange, #826601)" stroke-width="1.5" />
+  <text x="436" y="114" font-size="12" font-weight="700" font-family="var(--sl-font-mono, monospace)" fill="var(--sl-color-white, #211f30)">WS /rpc/ws · /projections[,/ws]</text>
+  <text x="436" y="134" font-size="11" fill="var(--sl-color-gray-2, #403f53)">Edge Bearer (SMITHERS_TOKEN on --listen)</text>
+  <text x="436" y="152" font-size="10.5" fill="var(--sl-color-gray-3, #5c5b71)">7 read models + Approval.Submit; 401/400/413 at edge</text>
+  <rect x="422" y="180" width="342" height="62" rx="8" fill="var(--sl-color-gray-6, #f0f0f0)" stroke="var(--sl-color-blue, #4876d6)" stroke-width="1.5" />
+  <text x="436" y="202" font-size="12.5" font-weight="700" font-family="var(--sl-font-mono, monospace)" fill="var(--sl-color-white, #211f30)">POST/WS /sync[,/ws]</text>
+  <text x="614" y="202" font-size="11" font-weight="600" fill="var(--sl-color-blue, #4876d6)">SyncRpcs (read-only)</text>
+  <text x="436" y="222" font-size="11" fill="var(--sl-color-gray-2, #403f53)">Edge Bearer; Snapshot, Read, credit-bounded Subscribe</text>
+  <rect x="422" y="254" width="342" height="50" rx="8" fill="var(--sl-color-black, #fbfbfb)" stroke="var(--sl-color-green, #207770)" stroke-width="1.5" />
+  <text x="436" y="275" font-size="12.5" font-weight="700" font-family="var(--sl-font-mono, monospace)" fill="var(--sl-color-green, #207770)">GET /health</text>
+  <text x="536" y="275" font-size="11" font-weight="600" fill="var(--sl-color-white, #211f30)">No auth (by design)</text>
+  <text x="436" y="293" font-size="10.5" fill="var(--sl-color-gray-3, #5c5b71)">workspaceHash, gatewayId, protocolVersion, version only</text>
+</svg>

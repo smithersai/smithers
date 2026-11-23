@@ -1,0 +1,53 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 780 310" role="img" aria-labelledby="ov-title ov-desc">
+  <title id="ov-title">How Smithers works with GitHub</title>
+  <desc id="ov-desc">GitHub stores main, issues, and pull requests. Smithers adds typed durable flows in .smithers/flows/ that buttons, slash commands, and coding agents all call. People review and merge every change; agents never approve or merge.</desc>
+  <defs>
+    <marker id="ov-arrow" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 1.5 L 9 5 L 0 8.5 z" fill="var(--sl-color-gray-4, #6f6e85)" />
+    </marker>
+    <marker id="ov-arrow-accent" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 1.5 L 9 5 L 0 8.5 z" fill="var(--sl-color-accent, #3a756b)" />
+    </marker>
+  </defs>
+  <rect x="16" y="18" width="210" height="176" rx="10" fill="var(--sl-color-gray-6, #f0f0f0)" stroke="var(--sl-color-gray-5, #cfcfd6)" stroke-width="1.5" />
+  <text x="32" y="42" font-size="10.5" font-weight="700" letter-spacing="0.08em" fill="var(--sl-color-gray-3, #5c5b71)">SOURCE OF TRUTH</text>
+  <text x="32" y="66" font-size="16" font-weight="700" fill="var(--sl-color-white, #211f30)">GitHub</text>
+  <rect x="32" y="82" width="178" height="28" rx="6" fill="var(--sl-color-black, #fbfbfb)" stroke="var(--sl-color-gray-5, #cfcfd6)" />
+  <text x="44" y="100" font-size="12" font-family="var(--sl-font-mono, monospace)" fill="var(--sl-color-gray-2, #403f53)">main</text>
+  <text x="90" y="100" font-size="11.5" fill="var(--sl-color-gray-3, #5c5b71)">append-only</text>
+  <rect x="32" y="118" width="178" height="28" rx="6" fill="var(--sl-color-black, #fbfbfb)" stroke="var(--sl-color-gray-5, #cfcfd6)" />
+  <text x="44" y="136" font-size="12" fill="var(--sl-color-gray-2, #403f53)">Issues &amp; Pull Requests</text>
+  <rect x="32" y="154" width="178" height="28" rx="6" fill="var(--sl-color-black, #fbfbfb)" stroke="var(--sl-color-green, #207770)" />
+  <text x="44" y="172" font-size="12" font-weight="600" fill="var(--sl-color-green, #207770)">People review &amp; merge</text>
+  <line x1="226" y1="88" x2="274" y2="88" stroke="var(--sl-color-gray-4, #6f6e85)" stroke-width="1.75" marker-end="url(#ov-arrow)" />
+  <text x="250" y="79" text-anchor="middle" font-size="10.5" fill="var(--sl-color-gray-3, #5c5b71)">reads</text>
+  <line x1="276" y1="138" x2="228" y2="138" stroke="var(--sl-color-accent, #3a756b)" stroke-width="1.75" marker-end="url(#ov-arrow-accent)" />
+  <text x="252" y="154" text-anchor="middle" font-size="10.5" fill="var(--sl-color-accent, #3a756b)">draft PR</text>
+  <rect x="278" y="18" width="248" height="176" rx="10" fill="var(--sl-color-accent-low, #e2efea)" stroke="var(--sl-color-accent, #3a756b)" stroke-width="1.75" />
+  <text x="294" y="42" font-size="10.5" font-weight="700" letter-spacing="0.08em" fill="var(--sl-color-accent, #3a756b)">SMITHERS ENGINE</text>
+  <text x="294" y="66" font-size="16" font-weight="700" fill="var(--sl-color-white, #211f30)">Durable Flows</text>
+  <text x="294" y="86" font-size="11.5" font-family="var(--sl-font-mono, monospace)" fill="var(--sl-color-gray-2, #403f53)">.smithers/flows/&lt;name&gt;/flow.ts</text>
+  <rect x="294" y="102" width="68" height="30" rx="6" fill="var(--sl-color-black, #fbfbfb)" stroke="var(--sl-color-gray-5, #cfcfd6)" />
+  <text x="328" y="121" text-anchor="middle" font-size="11.5" font-weight="600" fill="var(--sl-color-gray-2, #403f53)">Button</text>
+  <rect x="368" y="102" width="72" height="30" rx="6" fill="var(--sl-color-black, #fbfbfb)" stroke="var(--sl-color-gray-5, #cfcfd6)" />
+  <text x="404" y="121" text-anchor="middle" font-size="11.5" font-family="var(--sl-font-mono, monospace)" fill="var(--sl-color-gray-2, #403f53)">/cmd</text>
+  <rect x="446" y="102" width="64" height="30" rx="6" fill="var(--sl-color-black, #fbfbfb)" stroke="var(--sl-color-gray-5, #cfcfd6)" />
+  <text x="478" y="121" text-anchor="middle" font-size="11.5" font-weight="600" fill="var(--sl-color-gray-2, #403f53)">Agent</text>
+  <rect x="294" y="144" width="216" height="36" rx="6" fill="var(--sl-color-black, #fbfbfb)" stroke="var(--sl-color-accent, #3a756b)" stroke-dasharray="4 3" />
+  <text x="402" y="160" text-anchor="middle" font-size="11.5" font-weight="600" fill="var(--sl-color-white, #211f30)">Same typed flow + SQLite journal</text>
+  <text x="402" y="174" text-anchor="middle" font-size="10.5" fill="var(--sl-color-gray-3, #5c5b71)">resumable, cached, auditable</text>
+  <path d="M 526 70 L 570 70" stroke="var(--sl-color-gray-4, #6f6e85)" stroke-width="1.75" marker-end="url(#ov-arrow)" />
+  <path d="M 526 148 L 570 148" stroke="var(--sl-color-gray-4, #6f6e85)" stroke-width="1.75" marker-end="url(#ov-arrow)" />
+  <rect x="574" y="18" width="190" height="82" rx="10" fill="var(--sl-color-gray-6, #f0f0f0)" stroke="var(--sl-color-blue, #4876d6)" stroke-width="1.5" />
+  <text x="590" y="40" font-size="10.5" font-weight="700" letter-spacing="0.08em" fill="var(--sl-color-blue, #4876d6)">HOSTED WEB APP</text>
+  <text x="590" y="61" font-size="14" font-weight="700" font-family="var(--sl-font-mono, monospace)" fill="var(--sl-color-white, #211f30)">smithers.sh</text>
+  <text x="590" y="81" font-size="11.5" fill="var(--sl-color-gray-3, #5c5b71)">Browse repos, sign in w/ GitHub</text>
+  <rect x="574" y="112" width="190" height="82" rx="10" fill="var(--sl-color-gray-6, #f0f0f0)" stroke="var(--sl-color-orange, #826601)" stroke-width="1.5" />
+  <text x="590" y="134" font-size="10.5" font-weight="700" letter-spacing="0.08em" fill="var(--sl-color-orange, #826601)">LOCAL CLI</text>
+  <text x="590" y="155" font-size="14" font-weight="700" font-family="var(--sl-font-mono, monospace)" fill="var(--sl-color-white, #211f30)">smthrs</text>
+  <text x="590" y="175" font-size="11.5" fill="var(--sl-color-gray-3, #5c5b71)">Runs on your Mac &amp; subscription</text>
+  <rect x="16" y="216" width="748" height="76" rx="10" fill="var(--sl-color-black, #fbfbfb)" stroke="var(--sl-color-red, #ba3f3b)" stroke-width="1.5" stroke-dasharray="6 4" />
+  <text x="34" y="241" font-size="11" font-weight="700" letter-spacing="0.08em" fill="var(--sl-color-red, #ba3f3b)">HARD TRUST BOUNDARY</text>
+  <text x="34" y="263" font-size="13" font-weight="600" fill="var(--sl-color-white, #211f30)">Agents propose code, diffs, and test receipts. People approve and merge every change to main.</text>
+  <text x="34" y="281" font-size="11.5" fill="var(--sl-color-gray-3, #5c5b71)">System flows (merge, secrets, members, settings) cannot be overridden by repository code.</text>
+</svg>

@@ -1,91 +1,122 @@
 ---
 title: "HTTP and RPC endpoints"
-description: "The routes smthrs serve mounts, their protocols, their authentication rules, and the RPC groups each one serves."
+description: "The routes smthrs serve mounts, their transport protocols, authentication rules, error codes, and RPC procedure groups."
 ---
 
-`smthrs serve` mounts the workspace gateway: the control plane, the served projections, and the journal read path, plus an unauthenticated health probe.
+import SvgDiagram from "../../../../components/SvgDiagram.astro"
+import gatewaySvg from "../../../../../docs/app/diagrams/gateway-mounts.svg?raw"
+import gatewayText from "../../../../../docs/app/diagrams/gateway-mounts.txt?raw"
+
+`smthrs serve` starts the local workspace gateway. It mounts three Effect RPC groups (control, read-model projections, and read-only journal sync) beside an unauthenticated health probe.
+
+<SvgDiagram
+  title="smthrs serve request and authentication flow"
+  caption="Every request passes the loopback Host/Origin ingress guard first, then routes to /health, in-band ControlAuth on POST /rpc, or edge Bearer authentication."
+  svg={gatewaySvg}
+  text={gatewayText}
+/>
 
 ## Mounts
 
-Every route `GatewayServer.layer` mounts, in the order the startup banner prints them.
+`GatewayServer.layer` mounts seven routes, printed in this order in the startup banner:
 
-| Path | Protocol | Purpose | Auth |
+| Path | Protocol | RPC group | Authentication |
 | --- | --- | --- | --- |
-| `/rpc` | HTTP `POST` | Control RPC (`ControlRpcs`) | Bearer in band through `ControlAuth` when a credential is configured |
-| `/rpc/ws` | WebSocket | Control RPC, including a kept-alive `Watch` | Bearer at the edge when a credential is configured |
-| `/projections` | HTTP `POST` | Projection snapshots (`GatewayRpcs`) | Bearer at the edge when a credential is configured |
-| `/projections/ws` | WebSocket | Projection subscriptions | Bearer at the edge when a credential is configured |
-| `/sync` | HTTP `POST` | Journal sync (`SyncRpcs`) | Bearer at the edge when a credential is configured |
-| `/sync/ws` | WebSocket | Journal sync stream | Bearer at the edge when a credential is configured |
-| `/health` | HTTP `GET` | Workspace identity | None, by design |
+| `/rpc` | HTTP `POST` | `ControlRpcs` | In-band Bearer via `ControlAuth` when configured |
+| `/rpc/ws` | WebSocket | `ControlRpcs` (includes `Watch`) | Edge Bearer when configured |
+| `/projections` | HTTP `POST` | `GatewayRpcs` (snapshots) | Edge Bearer when configured |
+| `/projections/ws` | WebSocket | `GatewayRpcs` (subscriptions) | Edge Bearer when configured |
+| `/sync` | HTTP `POST` | `SyncRpcs` | Edge Bearer when configured |
+| `/sync/ws` | WebSocket | `SyncRpcs` (stream) | Edge Bearer when configured |
+| `/health` | HTTP `GET` | None (workspace identity) | None, by design |
 
-On the loopback default no bearer credential is configured. Every request must
-still carry a loopback `Host`, and a supplied browser `Origin` must use HTTP(S)
-on `localhost`, `127.0.0.1`, or `[::1]`; Origin-less CLI requests remain
-accepted. The banner prints
-`auth  no bearer (loopback Host; loopback browser Origin)` in that case and
-`auth  bearer token` otherwise.
+## Bind rules and authentication
 
-## Authentication
+The bind policy fails closed:
 
-The bind rule is strict and fails closed.
+| Mode | Bind address | Requirements | Startup banner |
+| --- | --- | --- | --- |
+| **Loopback (default)** | `127.0.0.1:3000` (also `::1`, `localhost`) | No opt-in, no token. `Host` must be loopback; browser `Origin` (if present) must be loopback HTTP(S). Origin-less CLI requests pass. | `auth  no bearer (loopback Host; loopback browser Origin)` |
+| **Network** | Any non-loopback address | Requires `--listen` **and** `SMITHERS_TOKEN`. Missing `--listen` refuses with `Refusing to bind <host>: pass --listen to serve on a non-loopback address.` Missing token refuses with `Refusing to bind <host> without a bearer token: set SMITHERS_TOKEN.` | `auth  bearer token` |
 
-- The default bind is `127.0.0.1:3000`. A loopback host (`127.0.0.1`, `::1`, or `localhost`) needs no opt-in and no credential. The ingress guard rejects foreign Host values and browser origins before HTTP or WebSocket RPC handling.
-- A non-loopback bind requires an explicit `--listen`. Without it the verb refuses: `Refusing to bind <host>: pass --listen to serve on a non-loopback address.`
-- A non-loopback bind also requires a bearer credential, set as `SMITHERS_TOKEN`. Without one the verb refuses: `Refusing to bind <host> without a bearer token: set SMITHERS_TOKEN.`
-- The server speaks plain HTTP only. For network access, terminate TLS at a trusted reverse proxy or use an encrypted tunnel so the bearer token is not sent in cleartext.
+- **Plain HTTP only:** `smthrs serve` does not terminate TLS. Put a reverse proxy or encrypted tunnel in front of any non-loopback listener so `SMITHERS_TOKEN` never travels in cleartext.
+- **Single principal:** one shared bearer token authenticates every mount. There are no users, roles, scopes, or per-run ownership checks at the gateway layer.
 
-One shared bearer authenticates every mount and binds one principal. There are no users, no roles, no per-run ownership, and no scopes.
+### Why `/rpc` and `/health` differ from edge auth
 
-Two mounts are deliberate exceptions to edge authentication. `POST /rpc` authenticates in band through the `ControlRpcs.ControlAuth` middleware, whose refusal is the typed control error `Unauthorized`, not an edge status; the `/rpc/ws` upgrade stays edge-authenticated because a refused handshake has no RPC channel to answer on. `GET /health` is unauthenticated so a supervisor can ask which workspace a gateway belongs to before deciding to keep or replace it. The local request guard answers `invalid_host` (421) or `invalid_origin` (403) before those exceptions. On the edge-authenticated paths the remaining refusal vocabulary is `unauthorized` (401) without the credential, `malformed_request` (400) for a body carrying no RPC request message, and `request_too_large` (413) for a body over the limit (default 1 MiB).
+- `POST /rpc` authenticates in band through `ControlRpcs.ControlAuth`, returning the typed RPC error `Unauthorized` rather than an HTTP edge status.
+- `/rpc/ws` stays edge-authenticated because a rejected WebSocket handshake has no RPC channel to carry a typed error.
+- `GET /health` is unauthenticated so a local supervisor can identify which workspace owns a port before keeping or replacing the process.
 
-## Worker relay authentication
+### Ingress and edge refusal codes
 
-The mounts above belong to `smthrs serve`. The web Worker has removed its raw
-gateway proxy: `/rpc`, `/projections`, `/sync`, `/health`, and their subpaths
-return HTTP 410 with code `gateway_proxy_removed`, including WebSocket upgrades.
-A `GET` or `HEAD` of a former documentation address under `/rpc/` (a page the
-old site published) redirects to this page instead; an RPC-shaped request there
-is still the 410. Cross-origin requests may be refused earlier by the
-same-origin guard.
-`GATEWAY_UPSTREAM_URL` and `GATEWAY_AUTH_TOKEN` are ignored and cannot restore
-the proxy. The Worker's `/health` is retired too.
+The loopback guard runs before every mount (including `/rpc` and `/health`). Edge-authenticated mounts return these HTTP statuses and error codes:
 
-Product clients use `/api/workflow/provision` and `/api/workflow/rpc` with a
-validated session. Every body names the repository and a box (`workspaceId`); a call without a box is refused. These routes resolve that
-box's coding host by login, repository and box and enforce a procedure
-allowlist; the host's credentials never leave the backend. Native RPC or
-WebSocket clients must connect to a separately authenticated gateway.
-
-## The RPC surface
-
-The gateway's RPC groups share one host. The sources pin the procedure names, the error vocabularies, and the subscription frame tags; row-level payload shapes are not pinned here and are decoded by selector through `GatewaySchema.rowSchemaFor`.
-
-`ControlRpcs` on `/rpc` is ten procedures:
-
-| Area | Procedures | Answers |
+| HTTP status | Code | Cause |
 | --- | --- | --- |
-| Runs | `Plan`, `Run`, `Resume`, `Cancel`, plus the `List` and `Watch` reads | A `Receipt` per mutation, a `PlanCard` from `Plan`, a stream of `ControlEvent` from `Watch` |
-| Approvals | `Approve`, `Deny` | A `Receipt` |
-| Steering | `Steer` (a durable message to the run), `Signal` (a durable delivery to a named wait) | A `Receipt` |
+| `421` | `invalid_host` | Non-loopback `Host` header on a loopback listener |
+| `403` | `invalid_origin` | Non-loopback browser `Origin` header on a loopback listener |
+| `401` | `unauthorized` | Missing or wrong bearer token on an edge-authenticated mount |
+| `400` | `malformed_request` | Request body contains no valid RPC message |
+| `413` | `request_too_large` | Request body exceeds the payload limit (default `1 MiB`) |
 
-There is no `Pause` procedure. `ControlRpcs` declares no memory procedure either; the [`smthrs memory`](/docs/reference/cli/memory/) verb is documented separately.
+## Worker relay status
 
-`GatewayRpcs` on `/projections` serves seven read models folded from the control event stream: `workspace-runs`, `run-summary`, `run-events`, `transcript`, `run-tree`, `approvals`, and `node-output`. Over WebSocket, `Projection.Subscribe` streams tagged frames (`SnapshotStartFrame`, `RowFrame`, `SnapshotEndFrame`, `DeltaFrame`, `HeartbeatFrame`) so a client can tell a snapshot from a change. A projection never claims a run and never writes. The group's one mutation, `Approval.Submit`, is the transport form of Control's approve, deny, and answer commands for an approval card; it adds no failure of its own.
+The routes above belong to `smthrs serve` only. The hosted web Worker no longer proxies raw gateway endpoints:
 
-`SyncRpcs` on `/sync` is read-only journal replication: `Sync.Snapshot` returns a public projection through a sequence, `Sync.Read` pages entries for a scope and cursor set, and `Sync.Subscribe` streams `Entries` frames under a credit bound.
+- `/rpc`, `/projections`, `/sync`, `/health`, and their subpaths return **HTTP `410`** with code `gateway_proxy_removed` (including WebSocket upgrades).
+- `GET` or `HEAD` on legacy `/rpc/` documentation paths redirects to this page; RPC-shaped requests still return `410`. Cross-origin calls may fail earlier at the same-origin guard.
+- `GATEWAY_UPSTREAM_URL` and `GATEWAY_AUTH_TOKEN` are ignored.
 
-The native gateway serves `BranchRpcs` presence at `POST /branch` when its authenticated runtime bridge is configured: `Branch.Announce`, `Branch.Leave`, `Branch.Roster`, and `Branch.PresenceOn`. Branch commands and share-link bootstrap remain unserved on that mount; `Branch.Submit`, `Branch.CreateBranch`, `Branch.MintShare`, and `Branch.WatchRoster` return `unsupported`.
+Product web clients use session-authenticated `/api/workflow/provision` and `/api/workflow/rpc`. Each call must specify both a repository and a box (`workspaceId`); the backend resolves that box's coding host by login, repository, and box and enforces a procedure allowlist so host credentials never leave the server. Native RPC or WebSocket clients connect directly to a separately authenticated gateway.
 
-## Health
+## RPC surface
 
-`GET /health` answers the gateway's identity as JSON:
+Source contracts pin procedure names, error vocabularies, and stream frame tags. Row payloads decode dynamically by selector via `GatewaySchema.rowSchemaFor`.
+
+### `ControlRpcs` (`/rpc`, `/rpc/ws`)
+
+Ten procedures govern run execution and operator intervention:
+
+| Group | Procedures | Return type |
+| --- | --- | --- |
+| **Runs** | `Plan`, `Run`, `Resume`, `Cancel`, `List`, `Watch` | `PlanCard` (`Plan`), `Receipt` (mutations), stream of `ControlEvent` (`Watch`) |
+| **Approvals** | `Approve`, `Deny` | `Receipt` |
+| **Steering** | `Steer` (durable message), `Signal` (named wait delivery) | `Receipt` |
+
+There is no `Pause` procedure and no memory procedure on `ControlRpcs`; memory is operated through [`smthrs memory`](/docs/reference/cli/memory/).
+
+### `GatewayRpcs` (`/projections`, `/projections/ws`)
+
+Seven read-only projections folded from the control event stream, plus one approval transport mutation:
+
+| Kind | Names | Behavior |
+| --- | --- | --- |
+| **Read models** | `workspace-runs`, `run-summary`, `run-events`, `transcript`, `run-tree`, `approvals`, `node-output` | Never claim a run and never write state |
+| **Stream frames** (`Projection.Subscribe`) | `SnapshotStartFrame`, `RowFrame`, `SnapshotEndFrame`, `DeltaFrame`, `HeartbeatFrame` | Distinguishes initial snapshots from live deltas over WebSocket |
+| **Mutation** | `Approval.Submit` | Transport form of Control's approve, deny, and answer commands; adds no new error cases |
+
+### `SyncRpcs` (`/sync`, `/sync/ws`)
+
+Read-only journal replication:
+
+| Procedure | Purpose |
+| --- | --- |
+| `Sync.Snapshot` | Public projection through a sequence number |
+| `Sync.Read` | Paginated journal entries for a scope and cursor set |
+| `Sync.Subscribe` | Credit-bounded stream of `Entries` frames |
+
+The native gateway also serves `BranchRpcs` presence at `POST /branch` when its authenticated runtime bridge is configured: `Branch.Announce`, `Branch.Leave`, `Branch.Roster`, and `Branch.PresenceOn`. Branch commands and share-link bootstrap remain unserved on that mount (`Branch.Submit`, `Branch.CreateBranch`, `Branch.MintShare`, and `Branch.WatchRoster` return `unsupported`).
+
+## Health response
+
+`GET /health` returns JSON containing workspace identity only:
 
 | Field | Value |
 | --- | --- |
-| `workspaceHash` | The first 16 hex characters of the SHA-256 of the resolved project root |
+| `workspaceHash` | First 16 hex characters of `SHA-256(resolvedProjectRoot)` |
 | `gatewayId` | `cli-<pid>` of the serving process |
 | `protocolVersion` | `"1"` |
-| `version` | The installed `@smthrs/cli` package version |
+| `version` | Installed `@smthrs/cli` package version |
 
-The response carries identity only: never a token, a run, or a path. The workspace path itself is not published, because it names directories on the operator's machine.
+No tokens, runs, or filesystem paths are ever included in `/health`.

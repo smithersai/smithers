@@ -266,3 +266,19 @@ test("links after a list's code block still publish as list prose", () => {
   assert.equal(siteBody(source), code + "    [Flows](/docs/flows/)\n")
   assert.equal(copyBody(source), code + "    [Flows](https://smithers.sh/docs/flows/)\n")
 })
+
+test("a block diagram inlines its SVG for Starlight and emits its text equivalent for Markdown copies", (t) => {
+  const dir = mkdtempSync(join(tmpdir(), "sync-app-diagrams-"))
+  t.after(() => rmSync(dir, { recursive: true, force: true }))
+  writeFileSync(join(dir, "flow.svg"), '<?xml version="1.0"?>\n<svg viewBox="0 0 10 10">\n\n<rect width="10" height="10" />\n</svg>\n')
+  writeFileSync(join(dir, "flow.txt"), "Plan -> Run -> Journal\n")
+  assert.equal(
+    siteBody("Intro.\n\n![How flows run](diagrams/flow.svg)\n\nAfter.\n", dir),
+    'Intro.\n\n<figure class="docs-diagram not-content">\n<div class="diagram-canvas">\n<svg viewBox="0 0 10 10">\n<rect width="10" height="10" />\n</svg>\n</div>\n<figcaption>How flows run</figcaption>\n</figure>\n\nAfter.\n'
+  )
+  assert.equal(
+    copyBody("Intro.\n\n![How flows run](diagrams/flow.svg)\n\nAfter.\n", dir),
+    "Intro.\n\n```text\nPlan -> Run -> Journal\n```\n\n_How flows run_\n\nAfter.\n"
+  )
+  assert.throws(() => siteBody("![Missing](diagrams/nope.svg)\n", dir), /missing diagram/)
+})

@@ -1,0 +1,13 @@
++-------------------------------------------------+     +-------------------------------+
+| AGENT ZONE (local, durable, resumable)          |     | YOUR CHECK & SHIP             |
+|                                                 |     |                               |
+| 1. smthrs generate flow coding                  |     | 3. smthrs change diff         |
+|         |                                       |     |         |                     |
+|         v                                       |     |         v                     |
+| 2. smthrs flow start coding (Codex login)       | --> | 4. node --test                |
+|         |                                       |     |         |                     |
+|         v                                       |     |         v                     |
+| .flows/ SQLite journal --> Working copy (jj @)  |     | 5. jj describe & jj git push  |
+|   (Crash? smthrs runs resume <id>)              |     |                               |
+| [AGENT STOPS HERE: no commit, no push]          |     +-------------------------------+
++-------------------------------------------------+

@@ -1,19 +1,35 @@
 # Change your code with a flow
 
-Run a coding agent on your subscription, inspect its changes, then commit and push them yourself. Smithers does not review or land this change. You review the diff and tests and push with your own tools. A [person-only local landing route](https://github.com/smithersai/smithers/issues/4261) is planned.
+Run a coding agent locally on your own subscription, inspect every changed line, run the tests yourself, and push with your own VCS tools. Smithers never approves, commits, or lands this change (a [person-only local landing route](https://github.com/smithersai/smithers/issues/4261) is planned).
 
-## Install
+```text
++--------------------------------------------------+      +-------------------------------+
+| AGENT ZONE (durable SQLite journal in .flows/)   |      | YOUR REVIEW & SHIP            |
+|                                                  |      |                               |
+|  1. smthrs generate flow coding                  |      |  3. smthrs change diff        |
+|           |                                      |      |            |                  |
+|           v                                      |      |            v                  |
+|  2. smthrs flow start coding (your subscription) | ---> |  4. node --test               |
+|           |                                      |      |            |                  |
+|           v                                      |      |            v                  |
+|  Working copy edits only (no commit, no push)    |      |  5. jj / git commit & push    |
++--------------------------------------------------+      +-------------------------------+
+```
 
-Use Node 22.19.0 or later and install jj as described in [Installation](../installation.md).
+## 1. Install `smthrs`
+
+Require Node.js 22.19.0 or later and Jujutsu (`jj`); see [Installation](../installation.md) for platform instructions.
 
 ```bash
 npm install -g smthrs@next
 smthrs --version
 ```
 
-The tested prerelease printed `1.0.0-rc.15`.
+The tested prerelease prints `1.0.0-rc.15` or later.
 
-## Create a project
+## 2. Create a tiny sandbox project
+
+Set up a minimal ES module repository with one file and a clean base commit:
 
 ```bash
 mkdir slug
@@ -27,7 +43,7 @@ jj describe -m 'Initial tiny project'
 jj new
 ```
 
-Use your own name and email. For an existing project, start in its directory instead. If you use Git, replace the jj commands above with:
+Substitute your own name and email (or start inside an existing repository). Prefer Git? Replace the `jj` lines above with:
 
 ```bash
 git init -b main
@@ -37,32 +53,36 @@ git add .
 git commit -m 'Initial tiny project'
 ```
 
-Smithers uses jj to show changes, including in Git projects. In a Git project, also run `jj git init --colocate .` before continuing.
+> **Using Git?** Smithers computes diffs through `jj` even inside Git repos. Run `jj git init --colocate .` before continuing.
 
-## Choose your subscription
+## 3. Generate the coding flow and select your subscription
+
+Scaffold `.smithers/flows/coding/flow.ts` inside the repository:
 
 ```bash
 smthrs generate flow coding
 ```
 
-Open `.smithers/flows/coding/flow.ts`. Set both `seat` and `model` to `"openai:gpt-6.1-sol"` for Codex, or `"opus"` for Claude. Keep credentials out of the file.
+Open `.smithers/flows/coding/flow.ts` and set both `seat` and `model` to `"openai:gpt-6.1-sol"` for Codex, or `"opus"` for Claude. Never put credentials in source files.
 
-For an existing Codex login:
+To use an existing local Codex login without API keys:
 
 ```bash
 export SMITHERS_OPENAI_AUTH=chatgpt
 unset ANTHROPIC_API_KEY OPENAI_API_KEY AI_GATEWAY_API_KEY
 ```
 
-If you have not connected a subscription, follow [Installation](../installation.md#requirements) first. The Codex path below was tested on a Pro subscription. The Claude alternative was not tested in this walkthrough.
+No subscription connected yet? Complete [Installation](../installation.md#requirements) first. The Codex path below was tested on a Pro subscription; the Claude path was not executed during this walkthrough.
 
-## Ask for the change
+## 4. Ask the coding agent for a change
+
+Hand the flow a specific, testable prompt and an explicit stop boundary:
 
 ```bash
 smthrs flow start coding --data '{"args":"Add an exported slugify(text) function to index.js with tests in index.test.js using node:test and node:assert/strict. Lowercase text, replace spaces with hyphens, remove punctuation, trim hyphens. Actually write code and tests, run node --test. Do not commit, approve, merge, land or move main."}'
 ```
 
-Trimmed output from the subscription run:
+The command attaches while the agent writes code and executes tests, then prints the durable receipt and run ID:
 
 ```text
 _tag: Accepted
@@ -70,7 +90,7 @@ receiptId: "approve:plan-2"
 runId: run-2
 ```
 
-Use the run id printed by your command:
+Check the settled status using the run ID printed in your terminal:
 
 ```bash
 smthrs runs show run-2
@@ -84,21 +104,21 @@ flowId: coding
 status: completed
 ```
 
-Continue only after `status: completed`. If it failed or parked, inspect the diagnosis in `runs show` and follow [Diagnose a run](./diagnose-a-run.md).
+Proceed only once you see `status: completed`. If the run failed or parked, `runs show` prints the cause; see [Diagnose a run](./diagnose-a-run.md).
 
-## If the run stops
+> **What if my terminal dies mid-run?**
+> The run lives in `.flows/` on disk, not in your terminal session. Check it with `smthrs runs show <id>` and continue the exact same execution with `smthrs runs resume <id>`.
 
-If the process running this generated flow dies during coding, `smthrs runs show <id>` still shows the run.
-Run `smthrs runs resume <id>` to continue the same run. See [Diagnose a run](./diagnose-a-run.md).
+## 5. Review the diff and run the tests yourself
 
-## Review and test
+Never rely on the agent's report alone. Inspect every modified file and run `node --test` directly:
 
 ```bash
 smthrs change diff
 node --test
 ```
 
-The recorded diff included `Modified regular file index.js` and `Added regular file index.test.js`. The test output ended with:
+The recorded diff shows `Modified regular file index.js` and `Added regular file index.test.js`, alongside the scaffolded `.smithers/flows/coding/` files. The test summary ends with:
 
 ```text
 ℹ tests 6
@@ -106,11 +126,11 @@ The recorded diff included `Modified regular file index.js` and `Added regular f
 ℹ fail 0
 ```
 
-Read the whole diff, including generated flow files. Check that the tests cover the behavior you requested. Your agent may produce different code and a different test count.
+Read the full diff and confirm the tests cover real edge cases. Your agent's implementation and test count may vary.
 
-## Commit and push yourself
+## 6. Commit and push yourself
 
-Configure `origin` for your repository if it is not already set. With jj 0.46 or later (`jj --version`):
+Point `origin` at your remote (skip `remote add` if `origin` already exists). With Jujutsu 0.46 or later (`jj --version`):
 
 ```bash
 jj git remote add origin /path/to/your/origin.git
@@ -120,7 +140,7 @@ jj new
 jj git push --remote origin --bookmark main
 ```
 
-With Git, use these commands instead:
+With Git:
 
 ```bash
 git remote add origin /path/to/your/origin.git
@@ -129,4 +149,4 @@ git commit -m 'Add slugify'
 git push -u origin main
 ```
 
-Replace the example remote path with your own remote. Skip `remote add` when `origin` already exists. Follow your repository's branch and pull request policy when it requires review before main.
+Replace `/path/to/your/origin.git` with your repository's remote URL, and push to a feature branch if your repository protects `main`.

@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 780 264" role="img" aria-labelledby="ins-title ins-desc">
+  <title id="ins-title">Smithers installation paths: CLI now versus planned Mac host</title>
+  <desc id="ins-desc">Top: Available now via npm install -g smthrs@next on Node.js 22.19.0 or later with jj and jq. Bottom: Planned Mac host via Homebrew followed by the five-step setup card in order: Address, GitHub App, Owner sign-in, Repository, Model access.</desc>
+  <defs>
+    <marker id="ins-arrow" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M 0 1.5 L 9 5 L 0 8.5 z" fill="var(--sl-color-gray-4, #6f6e85)" />
+    </marker>
+    <marker id="ins-arrow-green" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M 0 1.5 L 9 5 L 0 8.5 z" fill="var(--sl-color-green, #207770)" />
+    </marker>
+  </defs>
+  <rect x="16" y="16" width="748" height="100" rx="10" fill="var(--sl-color-accent-low, #e2efea)" stroke="var(--sl-color-green, #207770)" stroke-width="1.75" />
+  <rect x="32" y="30" width="114" height="22" rx="11" fill="var(--sl-color-green, #207770)" />
+  <text x="89" y="45" text-anchor="middle" font-size="10.5" font-weight="700" letter-spacing="0.06em" fill="var(--sl-color-black, #fbfbfb)">AVAILABLE NOW</text>
+  <text x="158" y="46" font-size="14" font-weight="700" fill="var(--sl-color-white, #211f30)">CLI from npm (1.0 release candidate)</text>
+  <rect x="32" y="64" width="184" height="36" rx="6" fill="var(--sl-color-black, #fbfbfb)" stroke="var(--sl-color-gray-5, #cfcfd6)" />
+  <text x="44" y="86" font-size="11.5" font-family="var(--sl-font-mono, monospace)" fill="var(--sl-color-white, #211f30)">Node 22.19+ &amp; jj, jq</text>
+  <line x1="216" y1="82" x2="246" y2="82" stroke="var(--sl-color-green, #207770)" stroke-width="1.75" marker-end="url(#ins-arrow-green)" />
+  <rect x="250" y="64" width="248" height="36" rx="6" fill="var(--sl-color-black, #fbfbfb)" stroke="var(--sl-color-green, #207770)" />
+  <text x="262" y="86" font-size="11.5" font-family="var(--sl-font-mono, monospace)" fill="var(--sl-color-white, #211f30)">npm install -g smthrs@next</text>
+  <line x1="498" y1="82" x2="528" y2="82" stroke="var(--sl-color-green, #207770)" stroke-width="1.75" marker-end="url(#ins-arrow-green)" />
+  <rect x="532" y="64" width="216" height="36" rx="6" fill="var(--sl-color-black, #fbfbfb)" stroke="var(--sl-color-gray-5, #cfcfd6)" />
+  <text x="544" y="86" font-size="11.5" font-family="var(--sl-font-mono, monospace)" fill="var(--sl-color-white, #211f30)">smthrs --version &amp; doctor</text>
+  <rect x="16" y="132" width="748" height="116" rx="10" fill="var(--sl-color-gray-6, #f0f0f0)" stroke="var(--sl-color-orange, #826601)" stroke-width="1.5" stroke-dasharray="6 4" />
+  <rect x="32" y="146" width="84" height="22" rx="11" fill="var(--sl-color-orange, #826601)" />
+  <text x="74" y="161" text-anchor="middle" font-size="10.5" font-weight="700" letter-spacing="0.06em" fill="var(--sl-color-black, #fbfbfb)">PLANNED</text>
+  <text x="128" y="162" font-size="14" font-weight="700" fill="var(--sl-color-white, #211f30)">Mac Host via Homebrew (5-step setup order)</text>
+  <rect x="32" y="182" width="124" height="48" rx="6" fill="var(--sl-color-black, #fbfbfb)" stroke="var(--sl-color-gray-5, #cfcfd6)" />
+  <text x="44" y="201" font-size="11" font-weight="700" fill="var(--sl-color-orange, #826601)">1. Address</text>
+  <text x="44" y="218" font-size="10.5" fill="var(--sl-color-gray-3, #5c5b71)">Mac or LAN URL</text>
+  <line x1="156" y1="206" x2="174" y2="206" stroke="var(--sl-color-gray-4, #6f6e85)" stroke-width="1.5" marker-end="url(#ins-arrow)" />
+  <rect x="178" y="182" width="124" height="48" rx="6" fill="var(--sl-color-black, #fbfbfb)" stroke="var(--sl-color-gray-5, #cfcfd6)" />
+  <text x="190" y="201" font-size="11" font-weight="700" fill="var(--sl-color-orange, #826601)">2. GitHub App</text>
+  <text x="190" y="218" font-size="10.5" fill="var(--sl-color-gray-3, #5c5b71)">Manifest callback</text>
+  <line x1="302" y1="206" x2="320" y2="206" stroke="var(--sl-color-gray-4, #6f6e85)" stroke-width="1.5" marker-end="url(#ins-arrow)" />
+  <rect x="324" y="182" width="124" height="48" rx="6" fill="var(--sl-color-black, #fbfbfb)" stroke="var(--sl-color-gray-5, #cfcfd6)" />
+  <text x="336" y="201" font-size="11" font-weight="700" fill="var(--sl-color-orange, #826601)">3. Owner sign-in</text>
+  <text x="336" y="218" font-size="10.5" fill="var(--sl-color-gray-3, #5c5b71)">Claims install</text>
+  <line x1="448" y1="206" x2="466" y2="206" stroke="var(--sl-color-gray-4, #6f6e85)" stroke-width="1.5" marker-end="url(#ins-arrow)" />
+  <rect x="470" y="182" width="124" height="48" rx="6" fill="var(--sl-color-black, #fbfbfb)" stroke="var(--sl-color-gray-5, #cfcfd6)" />
+  <text x="482" y="201" font-size="11" font-weight="700" fill="var(--sl-color-orange, #826601)">4. Repository</text>
+  <text x="482" y="218" font-size="10.5" fill="var(--sl-color-gray-3, #5c5b71)">Squash merge check</text>
+  <line x1="594" y1="206" x2="612" y2="206" stroke="var(--sl-color-gray-4, #6f6e85)" stroke-width="1.5" marker-end="url(#ins-arrow)" />
+  <rect x="616" y="182" width="132" height="48" rx="6" fill="var(--sl-color-black, #fbfbfb)" stroke="var(--sl-color-gray-5, #cfcfd6)" />
+  <text x="628" y="201" font-size="11" font-weight="700" fill="var(--sl-color-orange, #826601)">5. Model access</text>
+  <text x="628" y="218" font-size="10.5" fill="var(--sl-color-gray-3, #5c5b71)">fast, coding, Decisions</text>
+</svg>

@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 780 250" role="img" aria-labelledby="qs-title qs-desc">
+  <title id="qs-title">Five-minute tour of smithers.sh</title>
+  <desc id="qs-desc">Replace github.com with smithers.sh in any repository URL to read its files, issues, and pull requests signed out, then click Sign in with GitHub when ready to contribute.</desc>
+  <defs>
+    <marker id="qs-arrow" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M 0 1.5 L 9 5 L 0 8.5 z" fill="var(--sl-color-accent, #3a756b)" />
+    </marker>
+  </defs>
+  <rect x="16" y="16" width="748" height="72" rx="10" fill="var(--sl-color-gray-6, #f0f0f0)" stroke="var(--sl-color-gray-5, #cfcfd6)" stroke-width="1.5" />
+  <text x="34" y="39" font-size="10.5" font-weight="700" letter-spacing="0.08em" fill="var(--sl-color-accent, #3a756b)">THE URL TRICK</text>
+  <rect x="34" y="48" width="290" height="28" rx="6" fill="var(--sl-color-black, #fbfbfb)" stroke="var(--sl-color-gray-5, #cfcfd6)" />
+  <text x="48" y="66" font-size="12.5" font-family="var(--sl-font-mono, monospace)" fill="var(--sl-color-gray-3, #5c5b71)">https://<tspan fill="var(--sl-color-red, #ba3f3b)" font-weight="600">github.com</tspan>/smithersai/vibelang</text>
+  <line x1="334" y1="62" x2="388" y2="62" stroke="var(--sl-color-accent, #3a756b)" stroke-width="2" marker-end="url(#qs-arrow)" />
+  <text x="361" y="53" text-anchor="middle" font-size="10.5" font-weight="600" fill="var(--sl-color-accent, #3a756b)">swap</text>
+  <rect x="398" y="48" width="348" height="28" rx="6" fill="var(--sl-color-accent-low, #e2efea)" stroke="var(--sl-color-accent, #3a756b)" stroke-width="1.5" />
+  <text x="412" y="66" font-size="12.5" font-family="var(--sl-font-mono, monospace)" fill="var(--sl-color-white, #211f30)">https://<tspan fill="var(--sl-color-accent, #3a756b)" font-weight="700">smithers.sh</tspan>/smithersai/vibelang</text>
+  <rect x="16" y="108" width="530" height="126" rx="10" fill="var(--sl-color-black, #fbfbfb)" stroke="var(--sl-color-gray-5, #cfcfd6)" stroke-width="1.5" />
+  <text x="32" y="130" font-size="10.5" font-weight="700" letter-spacing="0.08em" fill="var(--sl-color-blue, #4876d6)">STEPS 1-4: PUBLIC READ (NO SIGN-IN NEEDED)</text>
+  <rect x="32" y="144" width="114" height="72" rx="8" fill="var(--sl-color-gray-6, #f0f0f0)" stroke="var(--sl-color-gray-5, #cfcfd6)" />
+  <text x="44" y="164" font-size="11" font-weight="700" fill="var(--sl-color-blue, #4876d6)">1. Home</text>
+  <text x="44" y="182" font-size="11.5" fill="var(--sl-color-white, #211f30)">Open</text>
+  <text x="44" y="198" font-size="11" font-family="var(--sl-font-mono, monospace)" fill="var(--sl-color-gray-3, #5c5b71)">smithers.sh</text>
+  <line x1="146" y1="180" x2="160" y2="180" stroke="var(--sl-color-accent, #3a756b)" stroke-width="1.5" marker-end="url(#qs-arrow)" />
+  <rect x="164" y="144" width="114" height="72" rx="8" fill="var(--sl-color-gray-6, #f0f0f0)" stroke="var(--sl-color-gray-5, #cfcfd6)" />
+  <text x="176" y="164" font-size="11" font-weight="700" fill="var(--sl-color-blue, #4876d6)">2. Repo</text>
+  <text x="176" y="182" font-size="11.5" fill="var(--sl-color-white, #211f30)">Branch &amp;</text>
+  <text x="176" y="198" font-size="11.5" fill="var(--sl-color-gray-3, #5c5b71)">file tree</text>
+  <line x1="278" y1="180" x2="292" y2="180" stroke="var(--sl-color-accent, #3a756b)" stroke-width="1.5" marker-end="url(#qs-arrow)" />
+  <rect x="296" y="144" width="110" height="72" rx="8" fill="var(--sl-color-gray-6, #f0f0f0)" stroke="var(--sl-color-gray-5, #cfcfd6)" />
+  <text x="308" y="164" font-size="11" font-weight="700" fill="var(--sl-color-blue, #4876d6)">3. Files</text>
+  <text x="308" y="182" font-size="11.5" fill="var(--sl-color-white, #211f30)">Read source</text>
+  <text x="308" y="198" font-size="11.5" fill="var(--sl-color-gray-3, #5c5b71)">&amp; breadcrumbs</text>
+  <line x1="406" y1="180" x2="420" y2="180" stroke="var(--sl-color-accent, #3a756b)" stroke-width="1.5" marker-end="url(#qs-arrow)" />
+  <rect x="424" y="144" width="108" height="72" rx="8" fill="var(--sl-color-gray-6, #f0f0f0)" stroke="var(--sl-color-gray-5, #cfcfd6)" />
+  <text x="436" y="164" font-size="11" font-weight="700" fill="var(--sl-color-blue, #4876d6)">4. Work</text>
+  <text x="436" y="182" font-size="11.5" fill="var(--sl-color-white, #211f30)">Issues &amp;</text>
+  <text x="436" y="198" font-size="11.5" fill="var(--sl-color-gray-3, #5c5b71)">pull requests</text>
+  <line x1="546" y1="176" x2="574" y2="176" stroke="var(--sl-color-accent, #3a756b)" stroke-width="1.75" marker-end="url(#qs-arrow)" />
+  <rect x="578" y="108" width="186" height="126" rx="10" fill="var(--sl-color-accent-low, #e2efea)" stroke="var(--sl-color-accent, #3a756b)" stroke-width="1.75" />
+  <text x="594" y="130" font-size="10.5" font-weight="700" letter-spacing="0.08em" fill="var(--sl-color-accent, #3a756b)">STEP 5: CONTRIBUTE</text>
+  <text x="594" y="156" font-size="14" font-weight="700" fill="var(--sl-color-white, #211f30)">Sign in w/ GitHub</text>
+  <text x="594" y="178" font-size="11.5" fill="var(--sl-color-gray-2, #403f53)">Required for private</text>
+  <text x="594" y="194" font-size="11.5" fill="var(--sl-color-gray-2, #403f53)">repos, new repos, and</text>
+  <text x="594" y="210" font-size="11.5" fill="var(--sl-color-gray-2, #403f53)">running actions.</text>
+</svg>

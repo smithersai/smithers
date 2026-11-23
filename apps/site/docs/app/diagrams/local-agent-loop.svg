@@ -1,0 +1,49 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 780 300" role="img" aria-labelledby="loc-title loc-desc">
+  <title id="loc-title">Local coding agent loop on your Mac</title>
+  <desc id="loc-desc">Generate a coding flow under .smithers/flows/coding/flow.ts, start it on your Codex subscription through the durable SQLite journal, inspect the working copy diff and run tests yourself, then commit and push with Jujutsu.</desc>
+  <defs>
+    <marker id="loc-arrow" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M 0 1.5 L 9 5 L 0 8.5 z" fill="var(--sl-color-gray-4, #6f6e85)" />
+    </marker>
+    <marker id="loc-arrow-green" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M 0 1.5 L 9 5 L 0 8.5 z" fill="var(--sl-color-green, #207770)" />
+    </marker>
+  </defs>
+  <rect x="16" y="18" width="490" height="264" rx="10" fill="var(--sl-color-gray-6, #f0f0f0)" stroke="var(--sl-color-gray-5, #cfcfd6)" stroke-width="1.5" />
+  <text x="32" y="40" font-size="10.5" font-weight="700" letter-spacing="0.08em" fill="var(--sl-color-accent, #3a756b)">AGENT ZONE (LOCAL, DURABLE, RESUMABLE)</text>
+  <rect x="32" y="54" width="206" height="66" rx="8" fill="var(--sl-color-black, #fbfbfb)" stroke="var(--sl-color-gray-5, #cfcfd6)" />
+  <text x="44" y="74" font-size="11" font-weight="700" fill="var(--sl-color-blue, #4876d6)">1. Scaffold flow</text>
+  <text x="44" y="92" font-size="11" font-family="var(--sl-font-mono, monospace)" fill="var(--sl-color-white, #211f30)">smthrs generate flow coding</text>
+  <text x="44" y="109" font-size="10.5" fill="var(--sl-color-gray-3, #5c5b71)">.smithers/flows/coding/flow.ts</text>
+  <line x1="238" y1="87" x2="274" y2="87" stroke="var(--sl-color-gray-4, #6f6e85)" stroke-width="1.75" marker-end="url(#loc-arrow)" />
+  <rect x="278" y="54" width="212" height="66" rx="8" fill="var(--sl-color-accent-low, #e2efea)" stroke="var(--sl-color-accent, #3a756b)" stroke-width="1.5" />
+  <text x="290" y="74" font-size="11" font-weight="700" fill="var(--sl-color-accent, #3a756b)">2. Start durable run</text>
+  <text x="290" y="92" font-size="11" font-family="var(--sl-font-mono, monospace)" fill="var(--sl-color-white, #211f30)">smthrs flow start coding</text>
+  <text x="290" y="109" font-size="10.5" fill="var(--sl-color-gray-2, #403f53)">Uses Codex login (no API key)</text>
+  <line x1="384" y1="120" x2="384" y2="152" stroke="var(--sl-color-gray-4, #6f6e85)" stroke-width="1.75" marker-end="url(#loc-arrow)" />
+  <rect x="278" y="156" width="212" height="54" rx="8" fill="var(--sl-color-black, #fbfbfb)" stroke="var(--sl-color-orange, #826601)" stroke-width="1.5" />
+  <text x="290" y="176" font-size="11.5" font-weight="700" fill="var(--sl-color-orange, #826601)">.flows/ SQLite Journal</text>
+  <text x="290" y="195" font-size="10.5" fill="var(--sl-color-gray-3, #5c5b71)">Process killed? smthrs runs resume</text>
+  <line x1="278" y1="183" x2="242" y2="183" stroke="var(--sl-color-gray-4, #6f6e85)" stroke-width="1.75" marker-end="url(#loc-arrow)" />
+  <rect x="32" y="156" width="206" height="54" rx="8" fill="var(--sl-color-black, #fbfbfb)" stroke="var(--sl-color-gray-5, #cfcfd6)" />
+  <text x="44" y="176" font-size="11.5" font-weight="700" fill="var(--sl-color-white, #211f30)">Working Copy (jj @)</text>
+  <text x="44" y="195" font-size="10.5" font-family="var(--sl-font-mono, monospace)" fill="var(--sl-color-gray-3, #5c5b71)">index.js + index.test.js</text>
+  <rect x="32" y="226" width="458" height="40" rx="6" fill="var(--sl-color-black, #fbfbfb)" stroke="var(--sl-color-red, #ba3f3b)" stroke-dasharray="5 3" />
+  <text x="46" y="244" font-size="11" font-weight="700" fill="var(--sl-color-red, #ba3f3b)">AGENT STOPS HERE</text>
+  <text x="46" y="258" font-size="10.5" fill="var(--sl-color-gray-3, #5c5b71)">No commit, no bookmark move, no push. Changes stay uncommitted in @.</text>
+  <line x1="506" y1="150" x2="544" y2="150" stroke="var(--sl-color-green, #207770)" stroke-width="2" marker-end="url(#loc-arrow-green)" />
+  <rect x="548" y="18" width="216" height="264" rx="10" fill="var(--sl-color-black, #fbfbfb)" stroke="var(--sl-color-green, #207770)" stroke-width="1.75" />
+  <text x="564" y="40" font-size="10.5" font-weight="700" letter-spacing="0.08em" fill="var(--sl-color-green, #207770)">YOUR CHECK &amp; SHIP</text>
+  <rect x="564" y="54" width="184" height="62" rx="8" fill="var(--sl-color-gray-6, #f0f0f0)" stroke="var(--sl-color-gray-5, #cfcfd6)" />
+  <text x="576" y="74" font-size="11.5" font-weight="700" fill="var(--sl-color-white, #211f30)">3. Inspect diff</text>
+  <text x="576" y="92" font-size="11" font-family="var(--sl-font-mono, monospace)" fill="var(--sl-color-gray-2, #403f53)">smthrs change diff</text>
+  <text x="576" y="107" font-size="10.5" fill="var(--sl-color-gray-3, #5c5b71)">Read every changed line</text>
+  <rect x="564" y="128" width="184" height="58" rx="8" fill="var(--sl-color-gray-6, #f0f0f0)" stroke="var(--sl-color-gray-5, #cfcfd6)" />
+  <text x="576" y="148" font-size="11.5" font-weight="700" fill="var(--sl-color-white, #211f30)">4. Run tests</text>
+  <text x="576" y="166" font-size="11" font-family="var(--sl-font-mono, monospace)" fill="var(--sl-color-gray-2, #403f53)">node --test</text>
+  <text x="576" y="180" font-size="10.5" fill="var(--sl-color-gray-3, #5c5b71)">Verify behavior locally</text>
+  <rect x="564" y="198" width="184" height="68" rx="8" fill="var(--sl-color-accent-low, #e2efea)" stroke="var(--sl-color-green, #207770)" />
+  <text x="576" y="218" font-size="11.5" font-weight="700" fill="var(--sl-color-green, #207770)">5. Commit &amp; push</text>
+  <text x="576" y="236" font-size="10.5" font-family="var(--sl-font-mono, monospace)" fill="var(--sl-color-white, #211f30)">jj describe -m '...'</text>
+  <text x="576" y="253" font-size="10.5" font-family="var(--sl-font-mono, monospace)" fill="var(--sl-color-white, #211f30)">jj git push --bookmark main</text>
+</svg>

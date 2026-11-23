@@ -1,0 +1,15 @@
+---
+/** Inline, theme-aware vector diagram with a plain-text fallback for llms.txt. */
+interface Props {
+  title: string
+  caption: string
+  svg: string
+  text?: string
+}
+const { title, caption, svg } = Astro.props
+---
+
+<figure class="docs-diagram not-content" aria-label={title}>
+  <div class="diagram-canvas" set:html={svg} />
+  <figcaption>{caption}</figcaption>
+</figure>

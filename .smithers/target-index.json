@@ -49309,6 +49309,11 @@
         "exclude": []
       },
       {
+        "kind": "glob",
+        "pattern": "apps/site/docs/app/diagrams/*",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": "apps/site/docs/app/toc.ts"
       },
@@ -49378,6 +49383,11 @@
       {
         "kind": "glob",
         "pattern": "apps/site/src/**/*",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "apps/site/docs/app/diagrams/*",
         "exclude": []
       },
       {
@@ -49843,6 +49853,11 @@
       },
       {
         "kind": "glob",
+        "pattern": "apps/site/docs/app/diagrams/*",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
         "pattern": "apps/site/scripts/**/*",
         "exclude": []
       },
@@ -49927,6 +49942,11 @@
       {
         "kind": "glob",
         "pattern": "apps/site/src/content/docs/docs/**/*",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "apps/site/docs/app/diagrams/*",
         "exclude": []
       },
       {
@@ -50549,6 +50569,11 @@
         "exclude": []
       },
       {
+        "kind": "glob",
+        "pattern": "apps/site/docs/app/diagrams/*",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": "apps/site/docs/app/toc.ts"
       },
@@ -50703,6 +50728,11 @@
       {
         "kind": "glob",
         "pattern": "apps/site/docs/app/**/*.md",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "apps/site/docs/app/diagrams/*",
         "exclude": []
       },
       {
@@ -50948,6 +50978,11 @@
         "exclude": []
       },
       {
+        "kind": "glob",
+        "pattern": "apps/site/docs/app/diagrams/*",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": "apps/site/docs/app/toc.ts"
       },
@@ -51029,6 +51064,11 @@
       {
         "kind": "glob",
         "pattern": "apps/site/src/content/docs/**/*.md",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "apps/site/docs/app/diagrams/*",
         "exclude": []
       },
       {
@@ -51125,6 +51165,11 @@
       {
         "kind": "glob",
         "pattern": "apps/site/src/**/*",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "apps/site/docs/app/diagrams/*",
         "exclude": []
       },
       {

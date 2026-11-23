@@ -1,0 +1,7 @@
+WEB APP: PERSONAL FLOWS (/app/flows)
+  1. Draft (/flow.new name ...) -> 2. Check & Save (new revision) -> 3. Run (/flow.run name) -> Isolated browser realm
+     (Runs stay pinned to the revision active when they started; flows needing a machine show Needs a sandbox.)
+
+CLI & SDK: FILE FLOWS + PROTECTED SYSTEM FLOWS
+  - .smithers/flows/<name>/flow.ts  (loaded by smthrs CLI and @smthrs/flow; invoke at a ref via /repo.run)
+  - System flows are protected actions; personal revisions never replace them.

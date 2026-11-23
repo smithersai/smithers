@@ -1,70 +1,56 @@
 ---
 title: "Quickstart"
-description: "Scaffold a project, plan a flow, approve the plan, run it, and read the run back, using the smthrs command line end to end."
+description: "Hands-on CLI tutorial: scaffold a flow, inspect its plan, watch it park for approval, grant the scope, execute it durably, and read the journal back."
 sidebar:
   order: 2
 ---
 
-This quickstart takes one directory from empty to a settled run. Every command
-here is a real `smthrs` process against one real project.
+An ordinary shell script runs immediately and forgets everything the moment it exits. A Smithers flow **plans first**, **parks for approval**, **executes durably into SQLite**, and stays inspectable long after the process ends.
 
-By the end you will have a project with `.flows/control.db` and
-`.flows/engine.db` on disk, one flow discovered from `.smithers/flows/`, and one durable
-run you can list, read, and delete.
+In this tutorial you will walk one empty directory through the entire `smthrs` control-plane loop so you can see every moving part before collapsing it into a single command.
 
-## Before you start
+```text
+smthrs init hello
+       |
+       v
+smthrs flow plan hello  ----->  prints PlanCard + approval payload (0 steps run)
+       |
+       v
+smthrs flow execute "$approval"
+       |
+       +-- no grant yet  --->  Parks (exit 3, status: waiting-approval)
+       |                              |
+       |                              v
+       |                       smthrs approvals approve "$approval" --scope run
+       |                              |
+       +-- grant present <------------+
+       |
+       v
+Runs durably (.flows/control.db + .flows/engine.db) -> smthrs runs show / logs / output
+```
 
-Install the CLI and check the machine, as described in
-[Installation](./installation.md):
+## 1. Check the machine
+
+Install `smthrs` as shown in [Installation](./installation.md), create a workspace directory, and run `doctor`:
 
 ```bash
 mkdir hello-smithers && cd hello-smithers
 smthrs doctor
 ```
 
-`doctor` inspects discovery and existing state without creating execution databases. It reports the project root it resolved, both database
-files, the supported Node range (22.19.0 or later), whether `jj` is on the
-`PATH`, and which provider keys are set. A `fail` line is a fact that will stop
-the next command you run; fix those first.
+`smthrs doctor` checks the project root, database state, Node.js version (22.19.0+), `jj` on `PATH`, and available model providers without creating any databases. Fix any `fail` line before proceeding.
 
-## Scaffold a flow
+## 2. Scaffold and inspect a starter flow
 
 ```bash
 smthrs init hello
 ```
 
-`init` creates workspace declarations, a package manifest when absent, and
-`.smithers/flows/hello/flow.ts`. Existing declarations and any single `flow.ts`,
-`flow.vibe`, `flow.mdx` or `SKILL.md` entry are retained. Conflicting entry files are refused.
-It adds `.flows/` to `.gitignore` in a repository. An indented pattern does not
-cover `.flows/`. If no canonical exclusion follows the last negation, `init`
-appends a final `.flows/` exclusion to protect run state. Execution databases are
-acquired by runtime commands, not by generating a flow.
+`init` creates workspace declarations, a `package.json` if missing, `.smithers/flows/hello/flow.ts`, and adds `.flows/` to `.gitignore`. Existing declarations and single `flow.ts`, `flow.mdx`, or `SKILL.md` files are kept; conflicting entry files are refused.
 
-Use `smthrs init hello --vibe` to create `flow.vibe` instead. The generated
-VibeLang entry keeps its prompt inline and uses the same model seat and durable graph declaration
-as the TypeScript starter. Graph callbacks build `Node` values; use `effect`
-functions in action implementations that run Effects. TypeScript remains the default.
-A project running VibeLang entries needs `vibelang` and `vibelang-runtime` installed; the CLI
-loads it when executing the entry. Listing flows only reads metadata.
+> **Using npm or Bun?** Run `smthrs generate flow hello` instead. That preserves `packageManager` without creating an unsupported workspace executor. (`init` refuses `bun@` and npm package managers before writing anything because Smithers' workspace installer targets pnpm; write `WORKSPACE.ts` by hand to run tools under Bun.)
 
-For an existing npm or Bun workspace, use the supported flow-only path:
-
-```bash
-smthrs generate flow hello
-# Or create a VibeLang entry:
-smthrs generate flow hello --vibe
-```
-
-This preserves `packageManager` and adds the flow without inventing an npm
-workspace executor. `init` refuses an unsupported package manager before
-writing project files and points to this command. A `bun@<version>` manager
-gets a Bun workspace: `S.Runtime.Bun` at that version and
-`S.PackageManager.BunPackages`.
-
-The starter default-exports `Flow.make("hello", { ... })` from `@smthrs/flow`:
-its tag matches the directory name. Its body plans one `AgentAction`, and its
-named `layer` exports that action's implementation for the existing host.
+Open `.smithers/flows/hello/flow.ts`. Its default export declares the flow's tag (matching its folder), capabilities, effects, schemas, and body, while `export const layer` supplies the action's implementation:
 
 ```ts
 export const layer = Work.layer
@@ -80,42 +66,27 @@ export default Flow.make("hello", {
 })
 ```
 
-The generated file includes the imports and `Work` declaration. With no `args`,
-it summarizes the project and suggests one small improvement. Pass work through
-`--data '{"args":"Your request"}'`; the result is `{ "summary": "..." }`.
-Narrow the file, process and model capabilities when the work needs less authority.
+Tighten `capabilities` whenever a flow needs less authority. Pass input via `--data '{"args":"Your request"}'`; with no `args`, the starter summarizes the directory and suggests one small improvement.
 
-`init` chooses a model seat from the provider credentials this environment sets,
-in the order `doctor` reports them. Edit both `Work`'s `seat` and the flow's
-`model` to choose another. Credentials stay in the environment.
+### Choose a subscription or API key
 
-For a Codex subscription:
+`init` picks a seat from credentials already set in your shell (in `doctor` order). To change seats, update both `Work`'s `seat` and the flow's `model` while keeping secrets in environment variables:
 
-```bash
-codex login --device-auth
-export SMITHERS_OPENAI_AUTH=chatgpt
-```
+- **Codex subscription:** set both fields to `"openai:gpt-6.1-sol"`, then run `codex login --device-auth` and `export SMITHERS_OPENAI_AUTH=chatgpt`.
+- **Claude subscription:** set both fields to `"opus"`, run `claude auth login`, and leave `ANTHROPIC_API_KEY` unset (setting `ANTHROPIC_API_KEY` switches to the Anthropic API).
 
-For Codex, use `openai:gpt-6.1-sol` for both fields. For a Claude subscription, run
-`claude auth login` and use `opus` for both fields; with `ANTHROPIC_API_KEY` unset the
-seat runs on your own Claude Code, and with it set, on the Anthropic API. Team hosts use
-their connected accounts.
+The host picks its completion judge automatically:
 
-The host picks the completion judge from what it holds:
+| Available on host | Judge selected |
+| --- | --- |
+| `AI_GATEWAY_API_KEY` | Jev via Vercel AI Gateway |
+| Signed-in Claude Code (`ANTHROPIC_API_KEY` unset) | Claude Haiku on Claude Code |
+| Codex subscription (`SMITHERS_OPENAI_AUTH=chatgpt`) or team account pool | GPT-6 Luna on that subscription |
+| None of the above | None (run fails `unconfigured`) |
 
-| The host holds                                                                 | Judge                              |
-| ------------------------------------------------------------------------------ | ---------------------------------- |
-| `AI_GATEWAY_API_KEY`                                                           | Jev, through the Vercel AI Gateway |
-| No key, and a signed-in Claude Code with `ANTHROPIC_API_KEY` unset             | Claude Haiku on that Claude Code   |
-| No key or Claude Code, and the Codex subscription above or a team account pool | GPT-6 Luna on that subscription    |
-| None of these                                                                  | None: the run fails `unconfigured` |
+With both subscriptions present, Claude Haiku takes priority. With `AI_GATEWAY_API_KEY` set, a subscription steps in only when Jev is unreachable, times out, or returns 5xx/429. Provider API keys never judge, and refusals or invalid judgments fail without fallback.
 
-A host with both subscriptions judges on Claude Haiku. With a key, a
-subscription judges only while Jev is unreachable, times out, or answers 5xx
-or 429. A provider API key never judges. Refusals and invalid judgments fail
-the run without a fallback.
-
-Confirm the flow is discoverable:
+Verify discovery:
 
 ```bash
 smthrs flow list
@@ -153,28 +124,25 @@ smthrs flow list
 }
 ```
 
-`inputSchema` is the starter's declared payload. Input is decoded against it
-before a run exists, so `--data '{"args":42}'` is refused by `flow plan`.
+Because inputs validate against `inputSchema` before a run exists, invalid data like `--data '{"args":42}'` fails immediately at `flow plan`.
 
-## Plan the flow
+## 3. Plan first (zero side effects)
 
 ```bash
 smthrs flow plan hello
 ```
 
-`flow plan` creates no run. It asks the control plane to plan the flow and prints
-the plan card: the plan id, the content digest, the canonical summary of the
-input, the capability envelope, the node graph, and an `approval` member. That
-`approval` member is the payload `approvals approve`, `approvals deny`, and `flow execute` accept
-unchanged.
+`flow plan` creates **no run** and runs **no steps**. It prints a `PlanCard` containing the plan ID, content digest, canonical input summary, capability envelope, node graph, and an `approval` token.
 
-Capture it for the next two steps:
+Save that `approval` payload to reuse unchanged in the next steps:
 
 ```bash
 approval="$(smthrs flow plan hello --json | jq -c '.approval')"
 ```
 
-## Submit it, and watch it park
+## 4. Execute without a grant, and watch it park
+
+Try executing the plan before approving it:
 
 ```bash
 smthrs flow execute "$approval"
@@ -186,11 +154,12 @@ echo "exit: $?"
 exit: 3
 ```
 
-The plan carries no grant yet, so the control plane parks it instead of
-launching. Exit 3 is the one outcome a caller cannot read from the payload
-alone: the run did not fail, it is waiting for a decision.
+> **Why exit code `3` instead of `1`?**
+> Exit `1` means the run failed. Exit `3` tells scripts and CI pipelines that nothing broke: the control plane deliberately **parked** the plan waiting for a human decision.
 
-## Approve it, then run it
+## 5. Approve the plan, then execute it
+
+Record a run-scoped grant for that exact plan payload:
 
 ```bash
 smthrs approvals approve "$approval" --scope run
@@ -200,103 +169,76 @@ smthrs approvals approve "$approval" --scope run
 {"_tag":"Accepted","receiptId":"approve:plan-1"}
 ```
 
-`approvals approve` records the grant. It does not launch: the receipt carries no
-`runId`, and `smthrs runs list` still lists nothing. Submit the same payload again,
-and this time the grant is there:
+Notice there is no `runId` yet: approving records permission, it does not launch execution (`smthrs runs list` is still empty). Scope choices are `once` (single ask), `run` (this launch and its run), and `remembered` (future runs too).
+
+Now submit the exact same `$approval` payload again:
 
 ```bash
 smthrs flow execute "$approval"
 echo "exit: $?"
 ```
 
-`--scope run` grants this launch and the whole run it starts, which is the same
-grant `smthrs flow start` makes for itself. `once` grants a single ask, and
-`remembered` grants every later run.
+This time the grant matches. `flow execute` attaches to the local executor, waits for settlement, and mirrors the run's outcome in its exit code (`0` completed, `1` failed, `130` cancelled, `3` parked on an in-run ask).
 
-Because this process owns the executor, `flow execute` stays attached after the receipt
-is accepted, waits for the run to settle, and reports the run's outcome as its
-own exit status: 0 for `completed`, 1 for `failed`, 130 for `cancelled`, 3 if
-it parks again on an in-run ask.
-
-With no resolvable provider credential, the run settles `failed` and its
-`cause` names the key to set:
+If no provider credential is configured, the run fails cleanly and names the missing credential:
 
 ```text
 {"_tag":"Accepted","cause":"Set ANTHROPIC_API_KEY to run the anthropic:claude-sonnet-4-5 seat","receiptId":"approve:plan-1","runId":"run-1","status":"failed"}
 ```
 
-## Read the run back
+## 6. Read the durable record back
+
+Everything that happened sits in `.flows/control.db` and `.flows/engine.db`. Query it anytime:
 
 ```bash
 smthrs runs list
 ```
 
-`runs list` lists durable runs with their status, and `--status` filters on the seven
-statuses the release pins: `accepted`, `running`, `parked`,
-`waiting-approval`, `cancelled`, `completed`, and `failed`. An eighth value is
-a usage error, not an empty list. A listing is one page of 100 runs; when more
-remain it prints `nextCursor`, and `--cursor <nextCursor>` reads the next page.
-`--limit` sets the page size, from 1 to 500. `--since` and `--until` bound the
-creation time (epoch milliseconds or ISO 8601; `--until` is exclusive),
-`--sort newest|oldest` orders by it, and `--parent <run-id>` and
-`--trigger <trigger-id>` select a run's branches or a trigger's runs.
-`smthrs runs count` takes the same filters and prints how many runs match.
+Useful filters on `runs list` (and `runs count`, which takes the exact same flags):
 
-Take the run id from that listing and read what happened:
+| Flag | Behavior |
+| --- | --- |
+| `--status <state>` | Filter by `accepted`, `running`, `parked`, `waiting-approval`, `cancelled`, `completed`, or `failed` (unknown values error) |
+| `--limit <1..500>` / `--cursor <token>` | Paginate runs (default page size `100`) |
+| `--since` / `--until` | Creation-time bounds (epoch ms or ISO 8601; `--until` is exclusive) |
+| `--sort newest\|oldest` | Order results by creation time |
+| `--parent <run-id>` / `--trigger <trigger-id>` | Filter child branches or trigger runs |
+
+Inspect a single run from three angles:
 
 ```bash
-smthrs runs show <run-id>     # the diagnosis: what it did, and what to do next
-smthrs runs logs <run-id>     # the transcript; --json is the raw event stream
-smthrs runs output <run-id>   # every registered node output
+smthrs runs show <run-id>     # diagnosis: status, failure cause, next action
+smthrs runs logs <run-id>     # human transcript (--json for raw events, --follow to stream)
+smthrs runs output <run-id>   # every registered node output (or add <node-id> for one)
 ```
 
-`runs logs --follow` streams events as they land instead of rendering a transcript.
-`runs output <run-id> <node-id>` prints one node's output; a node id the run does
-not have is a usage error naming the run, not an empty document.
+## 7. Next time: collapse steps 3-5 into one command
 
-## Do it in one command next time
-
-The plan, approve, execute sequence collapses into one command when the plan needs no
-human review:
+When a plan does not need a separate manual approval handoff, `flow start` plans, grants `--scope run`, and executes in one shot:
 
 ```bash
 smthrs flow start hello --data '{"args":"Describe how durable runs work"}'
 ```
 
-`flow start` plans the flow, grants the plan's own approval at `run` scope, and submits
-it. Attached, it waits for the run to settle and exits with the run's status.
-With `-d` it launches a child process that outlives it and prints the run id
-and log path instead. See [Launch a detached run](./guides/launch-a-detached-run.md).
+Add `-d` to detach into a background child process that prints the run ID and log path immediately. See [Launch a detached run](./guides/launch-a-detached-run.md).
 
-## Clean up
+## 8. Clean up
 
 ```bash
-smthrs runs cancel-all                 # cancel every non-terminal run
-smthrs gc --older-than 1s --dry-run    # report what retention would delete
-smthrs gc --older-than 1s              # delete it
+smthrs runs cancel-all                 # idempotent: safe to run twice
+smthrs gc --older-than 1s --dry-run    # preview retention deletions
+smthrs gc --older-than 1s              # delete terminal records older than 1s
 ```
 
-`runs cancel-all` is a list followed by a cancel, so running it twice is a no-op rather
-than an error. `gc` refuses `--older-than 0s`: deleting everything is not a
-retention policy, and it is the easiest value to type by accident.
+`gc` refuses `--older-than 0s` to prevent accidental wipeouts.
 
-## What just happened
+## Mental model recap
 
-One project directory anchored every command on the same two SQLite files, so
-the run `flow execute` started is the run `runs list` listed and `gc` deleted.
-The approval you passed to `flow execute` and `approvals approve` was the same
-serialized payload `flow plan` printed,
-which is why another local operator process or explicitly delegated remote
-operator can decide a park this shell created. The MCP surface can inspect
-pending approvals but refuses approval and denial decisions.
+- Every command in this directory spoke to the same two SQLite files under `.flows/`.
+- Because the `approval` token from `flow plan` is self-contained, a different local shell or an explicitly delegated remote operator can approve a run that another process parked. (The MCP surface can inspect pending approvals, never approve or deny them.)
 
 ## Next steps
 
-[Change your code with a flow](./guides/change-code.md), review the diff, and commit and push it yourself.
-
-- [Script the CLI](./guides/script-the-cli.md): `--json`, exit codes, and the
-  idempotency keys that make a retried command safe.
-- [Diagnose a run](./guides/diagnose-a-run.md): what `status`, `logs`, and
-  `output` each answer, and how to file a bug with a run digest attached.
-- [Output and exit codes](./concepts/output-and-exit-codes.md): the rendering
-  rules and the status vocabulary a script branches on.
+- Put a coding agent to work on real code: [Change your code with a flow](./guides/change-code.md).
+- Automate `smthrs` in scripts and CI: [Script the CLI](./guides/script-the-cli.md) and [Output and exit codes](./concepts/output-and-exit-codes.md).
+- Debug failures and collect run digests: [Diagnose a run](./guides/diagnose-a-run.md).

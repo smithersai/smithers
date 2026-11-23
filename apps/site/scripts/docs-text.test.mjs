@@ -177,3 +177,13 @@ test("portable docs expand links and plain code without retaining MDX setup", ()
     String.fromCharCode(96).repeat(3) + "text\nUsage\nnext\n" + String.fromCharCode(96).repeat(3))
   assert.throws(() => docsText("{versions.unknown}"), /Unknown version field: unknown/)
 })
+
+test("exports SvgDiagram with its plain-text fallback when provided", () => {
+  const withText = docsText(
+    '<SvgDiagram title="Mounts" caption="Gateway mounts." svg={svg} text={ascii} />',
+    { raw: { ascii: "Client -> /rpc -> ControlRpcs\n" } }
+  )
+  assert.equal(withText, "```text\nClient -> /rpc -> ControlRpcs\n```\n\n_Gateway mounts._")
+  const fallback = docsText('<SvgDiagram title="Mounts" caption="Gateway mounts." svg={svg} />')
+  assert.equal(fallback, "**Mounts**\n\nGateway mounts.")
+})

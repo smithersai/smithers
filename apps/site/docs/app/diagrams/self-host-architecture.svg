@@ -1,0 +1,63 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 780 326" role="img" aria-labelledby="sh-title sh-desc">
+  <title id="sh-title">Self-hosted Mac install topology and TODO stack</title>
+  <desc id="sh-desc">Laptops and browsers reach the Mac install over HTTPS through Tailscale or Caddy on port 4000 and SSH on port 2222. Inside the Mac, the LaunchAgent manages the ordered TODO stack on top of main and binds secrets to provider hosts so machines hold placeholders only.</desc>
+  <defs>
+    <marker id="sh-arrow" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M 0 1.5 L 9 5 L 0 8.5 z" fill="var(--sl-color-gray-4, #6f6e85)" />
+    </marker>
+    <marker id="sh-arrow-accent" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M 0 1.5 L 9 5 L 0 8.5 z" fill="var(--sl-color-accent, #3a756b)" />
+    </marker>
+  </defs>
+  <rect x="16" y="16" width="184" height="294" rx="10" fill="var(--sl-color-gray-6, #f0f0f0)" stroke="var(--sl-color-gray-5, #cfcfd6)" stroke-width="1.5" />
+  <text x="30" y="38" font-size="10.5" font-weight="700" letter-spacing="0.08em" fill="var(--sl-color-blue, #4876d6)">TEAM LAPTOPS</text>
+  <rect x="30" y="52" width="156" height="58" rx="7" fill="var(--sl-color-black, #fbfbfb)" stroke="var(--sl-color-gray-5, #cfcfd6)" />
+  <text x="42" y="72" font-size="12" font-weight="700" fill="var(--sl-color-white, #211f30)">Browser UI</text>
+  <text x="42" y="90" font-size="11" fill="var(--sl-color-gray-3, #5c5b71)">Chat, /todo.new, PRs</text>
+  <rect x="30" y="122" width="156" height="58" rx="7" fill="var(--sl-color-black, #fbfbfb)" stroke="var(--sl-color-gray-5, #cfcfd6)" />
+  <text x="42" y="142" font-size="12" font-weight="700" fill="var(--sl-color-white, #211f30)">Editor via SSH</text>
+  <text x="42" y="160" font-size="10.5" font-family="var(--sl-font-mono, monospace)" fill="var(--sl-color-gray-3, #5c5b71)">ssh -p 2222 br@host</text>
+  <rect x="30" y="192" width="156" height="58" rx="7" fill="var(--sl-color-black, #fbfbfb)" stroke="var(--sl-color-gray-5, #cfcfd6)" />
+  <text x="42" y="212" font-size="12" font-weight="700" fill="var(--sl-color-white, #211f30)">Laptop CLI</text>
+  <text x="42" y="230" font-size="10.5" font-family="var(--sl-font-mono, monospace)" fill="var(--sl-color-gray-3, #5c5b71)">smthrs login &lt;url&gt;</text>
+  <text x="30" y="276" font-size="10.5" fill="var(--sl-color-gray-3, #5c5b71)">Delegated credentials:</text>
+  <text x="30" y="292" font-size="10.5" fill="var(--sl-color-red, #ba3f3b)">cannot approve or merge</text>
+  <line x1="200" y1="81" x2="236" y2="81" stroke="var(--sl-color-gray-4, #6f6e85)" stroke-width="1.5" marker-end="url(#sh-arrow)" />
+  <line x1="200" y1="151" x2="236" y2="151" stroke="var(--sl-color-gray-4, #6f6e85)" stroke-width="1.5" marker-end="url(#sh-arrow)" />
+  <line x1="200" y1="221" x2="236" y2="221" stroke="var(--sl-color-gray-4, #6f6e85)" stroke-width="1.5" marker-end="url(#sh-arrow)" />
+  <rect x="240" y="16" width="524" height="294" rx="10" fill="var(--sl-color-gray-6, #f0f0f0)" stroke="var(--sl-color-accent, #3a756b)" stroke-width="1.75" />
+  <text x="256" y="38" font-size="10.5" font-weight="700" letter-spacing="0.08em" fill="var(--sl-color-accent, #3a756b)">YOUR APPLE SILICON MAC (LAUNCHAGENT)</text>
+  <rect x="256" y="52" width="218" height="106" rx="8" fill="var(--sl-color-black, #fbfbfb)" stroke="var(--sl-color-gray-5, #cfcfd6)" />
+  <text x="268" y="72" font-size="12" font-weight="700" fill="var(--sl-color-white, #211f30)">HTTPS + SSH Ingress</text>
+  <text x="268" y="92" font-size="11" fill="var(--sl-color-gray-2, #403f53)">Tailscale serve or Caddy</text>
+  <text x="268" y="112" font-size="10.5" font-family="var(--sl-font-mono, monospace)" fill="var(--sl-color-accent, #3a756b)">HTTPS 443 -&gt; 127.0.0.1:4000</text>
+  <text x="268" y="130" font-size="10.5" font-family="var(--sl-font-mono, monospace)" fill="var(--sl-color-accent, #3a756b)">TCP  2222 -&gt; 127.0.0.1:2222</text>
+  <text x="268" y="148" font-size="10" fill="var(--sl-color-gray-3, #5c5b71)">X-Forwarded-Host trusted on loopback</text>
+  <rect x="256" y="172" width="218" height="122" rx="8" fill="var(--sl-color-black, #fbfbfb)" stroke="var(--sl-color-orange, #826601)" stroke-width="1.5" />
+  <text x="268" y="192" font-size="12" font-weight="700" fill="var(--sl-color-orange, #826601)">Secrets &amp; Branch Machines</text>
+  <text x="268" y="212" font-size="11" fill="var(--sl-color-gray-2, #403f53)">Machine receives placeholder.</text>
+  <text x="268" y="229" font-size="11" fill="var(--sl-color-gray-2, #403f53)">Host injects real API key only</text>
+  <text x="268" y="246" font-size="11" fill="var(--sl-color-gray-2, #403f53)">to the bound provider host.</text>
+  <text x="268" y="274" font-size="10.5" fill="var(--sl-color-gray-3, #5c5b71)">Personal logins never copied.</text>
+  <line x1="474" y1="105" x2="500" y2="105" stroke="var(--sl-color-accent, #3a756b)" stroke-width="1.75" marker-end="url(#sh-arrow-accent)" />
+  <rect x="504" y="52" width="244" height="242" rx="8" fill="var(--sl-color-accent-low, #e2efea)" stroke="var(--sl-color-accent, #3a756b)" stroke-width="1.5" />
+  <text x="518" y="72" font-size="10.5" font-weight="700" letter-spacing="0.08em" fill="var(--sl-color-accent, #3a756b)">ORDERED TODO STACK</text>
+  <rect x="520" y="84" width="212" height="34" rx="6" fill="var(--sl-color-black, #fbfbfb)" stroke="var(--sl-color-green, #207770)" stroke-width="1.5" />
+  <text x="532" y="105" font-size="12" font-weight="700" font-family="var(--sl-font-mono, monospace)" fill="var(--sl-color-green, #207770)">main</text>
+  <text x="580" y="105" font-size="11" fill="var(--sl-color-gray-2, #403f53)">squash-merged by human</text>
+  <line x1="626" y1="118" x2="626" y2="132" stroke="var(--sl-color-accent, #3a756b)" stroke-width="1.5" />
+  <rect x="520" y="132" width="212" height="38" rx="6" fill="var(--sl-color-black, #fbfbfb)" stroke="var(--sl-color-gray-5, #cfcfd6)" />
+  <text x="532" y="150" font-size="12" font-weight="700" font-family="var(--sl-font-mono, monospace)" fill="var(--sl-color-white, #211f30)">T1</text>
+  <text x="558" y="150" font-size="11" fill="var(--sl-color-gray-2, #403f53)">In review (open GitHub PR)</text>
+  <text x="558" y="164" font-size="10" fill="var(--sl-color-green, #207770)">merges first -&gt; triggers learning</text>
+  <line x1="626" y1="170" x2="626" y2="184" stroke="var(--sl-color-accent, #3a756b)" stroke-width="1.5" />
+  <rect x="520" y="184" width="212" height="38" rx="6" fill="var(--sl-color-black, #fbfbfb)" stroke="var(--sl-color-gray-5, #cfcfd6)" />
+  <text x="532" y="202" font-size="12" font-weight="700" font-family="var(--sl-font-mono, monospace)" fill="var(--sl-color-white, #211f30)">T2</text>
+  <text x="558" y="202" font-size="11" fill="var(--sl-color-gray-2, #403f53)">Working (draft PR)</text>
+  <text x="558" y="216" font-size="10" fill="var(--sl-color-gray-3, #5c5b71)">merges after T1</text>
+  <line x1="626" y1="222" x2="626" y2="236" stroke="var(--sl-color-accent, #3a756b)" stroke-width="1.5" />
+  <rect x="520" y="236" width="212" height="38" rx="6" fill="var(--sl-color-black, #fbfbfb)" stroke="var(--sl-color-gray-5, #cfcfd6)" />
+  <text x="532" y="254" font-size="12" font-weight="700" font-family="var(--sl-font-mono, monospace)" fill="var(--sl-color-white, #211f30)">T3</text>
+  <text x="558" y="254" font-size="11" fill="var(--sl-color-gray-2, #403f53)">Queued (draft PR)</text>
+  <text x="558" y="268" font-size="10" fill="var(--sl-color-gray-3, #5c5b71)">merges after T2</text>
+</svg>

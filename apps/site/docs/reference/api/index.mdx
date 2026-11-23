@@ -1,91 +1,106 @@
 ---
 title: "Library API"
-description: "Published package API references, with contributor links for workspace-private libraries."
+description: "Layered architecture and reference index for every published @smthrs/* package, plus contributor links for workspace-private libraries."
 sidebar:
   order: 0
 ---
 
-The Smithers library is a roster of `@smthrs/*` packages, with published references linked below. Packages marked **workspace-private** link to contributor references and are not installable from npm.
+import SvgDiagram from "../../../../../components/SvgDiagram.astro"
+import sdkLayersSvg from "../../../../../../docs/app/diagrams/sdk-layers.svg?raw"
+import sdkLayersText from "../../../../../../docs/app/diagrams/sdk-layers.txt?raw"
+
+Smithers ships as a layered family of `@smthrs/*` Effect packages. Only the bottom **Hosts & Platforms** layer touches OS, Node, Bun, Cloudflare, or browser APIs; every upper layer runs portably through injected Effect services.
+
+<SvgDiagram
+  title="Layered architecture of @smthrs packages"
+  caption="Upper layers depend only on Effect services. Platform-specific code lives exclusively inside @smthrs/platform-node, platform-bun, platform-browser, platform-cloudflare, kernel, sandbox, and jj."
+  svg={sdkLayersSvg}
+  text={sdkLayersText}
+/>
+
+Packages marked **workspace-private** link to contributor references and cannot be installed from npm.
 
 ## Install
 
-The other packages are on npm under the `next` tag, which carries the 1.0 release candidates. Install the whole durable flow engine:
+Install the full 1.0 release-candidate engine barrel from npm under `@next`:
 
 ```bash
 npm install @smthrs/flows@next effect
 ```
 
-Install any single package the same way, by name with `@next`.
+Install any individual published package the same way (`npm install @smthrs/<name>@next effect`).
 
 ## Reading these pages
 
-Published pages mirror each package's colocated `docs/api.md` or `docs/reference/` source. `internal/*` is never public, and neither are nested `*/index` subpaths. Use the package root or a subpath explicitly listed in its export map.
+- **Source of truth:** published pages mirror each package's colocated `docs/api.md` or `docs/reference/` files.
+- **Public imports:** import from the package root (`@smthrs/cli`) or a subpath explicitly declared in its export map.
+- **Blocked internals:** `internal/*` and nested `*/index` subpaths are never public.
 
-## Packages
+## Package roster
 
 ### Authoring and runtime
 
 | Package | Role |
 | --- | --- |
-| [`@smthrs/flow`](/docs/reference/api/flow/) | The flow authoring model: flows, actions, durable waits, retry policy, and the runtime port they execute against |
-| [`@smthrs/engine`](/docs/reference/api/engine/) | The runtime that executes `@smthrs/flow` flows, plus HTTP and RPC transport projections |
-| [`@smthrs/engine-store`](/docs/reference/api/engine-store/) | Effect services for durable engine action persistence and replay boundaries |
-| [`@smthrs/journal`](/docs/reference/api/journal/) | Effect services for the Smithers event journal: the immutable run history and the owner fence on its durable channel |
-| [`@smthrs/plan`](/docs/reference/api/plan/) | The persisted flows plan: a keyed action graph, its append-only store, and its diff |
+| [`@smthrs/flow`](/docs/reference/api/flow/) | Flow authoring model: flows, actions, durable waits, retry policies, and execution port |
+| [`@smthrs/engine`](/docs/reference/api/engine/) | Durable execution runtime for `@smthrs/flow`, plus HTTP and RPC transport projections |
+| [`@smthrs/engine-store`](/docs/reference/api/engine-store/) | Effect services for durable action persistence and replay boundaries |
+| [`@smthrs/journal`](/docs/reference/api/journal/) | Immutable run event journal and owner-fenced durable emission channel |
+| [`@smthrs/plan`](/docs/reference/api/plan/) | Persisted keyed action graph, append-only plan store, and plan diff |
 | [`@smthrs/plan-store`](/docs/reference/api/plan-store/) | Append-only SQL plan persistence and migrations |
-| [`@smthrs/core`](/docs/reference/api/core/) | Flow and Node builders: the pure plan-time data model of the Smithers harness |
-| [`@smthrs/patterns`](/docs/reference/api/patterns/) | Higher-order flow patterns and decorators for flows |
-| [`@smthrs/run-store`](/docs/reference/api/run-store/) | Effect services for flows run state, attempts, and ownership arbitration |
-| [`@smthrs/step-cache`](/docs/reference/api/step-cache/) | Effect service for the flows content-addressed step result cache |
-| [`@smthrs/database`](/docs/reference/api/database/) | A driver-neutral SQL contract with a bounded write-retry seam, plus the composed migration ladder |
-| [`@smthrs/canonical`](/docs/reference/api/canonical/) | RFC 8785 canonical JSON as an Effect Schema |
-| [`@smthrs/errors`](/docs/reference/api/errors/) | `SmithersError` and the error codes the integration adapters raise |
-| [`@smthrs/crypto`](/docs/reference/api/crypto/) | Strict SHA-256 hashing with injected and synchronous Effect entry points |
+| [`@smthrs/core`](/docs/reference/api/core/) | Pure plan-time Flow and Node builders |
+| [`@smthrs/patterns`](/docs/reference/api/patterns/) | Higher-order flow patterns and decorators |
+| [`@smthrs/run-store`](/docs/reference/api/run-store/) | Run state, attempts, and lease-based ownership arbitration |
+| [`@smthrs/step-cache`](/docs/reference/api/step-cache/) | Content-addressed step result cache |
+| [`@smthrs/database`](/docs/reference/api/database/) | Driver-neutral SQL contract with bounded write retries and migration ladder |
+| [`@smthrs/canonical`](/docs/reference/api/canonical/) | RFC 8785 canonical JSON Effect Schema |
+| [`@smthrs/errors`](/docs/reference/api/errors/) | `SmithersError` and integration adapter error codes |
+| [`@smthrs/crypto`](/docs/reference/api/crypto/) | Strict SHA-256 hashing (injected Effect and synchronous entry points) |
 | [`@smthrs/keys`](/docs/reference/api/keys/) | Canonical flow-key derivation and stored-key validation |
-| [`@smthrs/time-travel`](/docs/reference/api/time-travel/) | Durable replay, fork, and rewind primitives for flows |
+| [`@smthrs/time-travel`](/docs/reference/api/time-travel/) | Durable replay, fork, and rewind primitives |
 
 ### Agents
 
 | Package | Role |
 | --- | --- |
-| [`@smthrs/agent`](/docs/reference/api/agent/) | The production agent loop on the durable engine, plus the `AgentSession` and `AgentAction` adapters |
-| [`@smthrs/harness`](/docs/reference/api/harness/) | The Smithers built-in agent loop: a cell-first controller whose model turns produce JavaScript cells |
-| [`@smthrs/model`](/docs/reference/api/model/) | Schema-first Effect model protocols, routes, and streaming events for flows |
-| [`@smthrs/memory`](/docs/reference/api/memory/) | Effect services for durable cross-run facts, history, notes, recall, and maintenance |
-| [`@smthrs/plugin`](/docs/reference/api/plugin/) | Vite-style typed plugin kernel for flows: hooks, resolution, and config execution |
-| [`@smthrs/registry`](/docs/reference/api/registry/) | Portable flow descriptor discovery and progressive-disclosure registry services |
-| [`@smthrs/std`](/docs/reference/api/std/) | The flows standard tool library: filesystem, search, HTTP, web-search, shell, and language-server flows |
-| [`@smthrs/integrations`](/docs/reference/api/integrations/) | Provider clients, outbound actions and webhook ingress |
-| [`@smthrs/triggers`](/docs/reference/api/triggers/) | Durable schedules, webhook triggers and occurrence admission |
-| [`@smthrs/chain`](/docs/reference/api/chain/) **workspace-private** | The Agent Chain spine: an append-only journal, keyed replayable calls, and the trampoline that runs model-authored flow scripts |
-| [`@smthrs/evals`](/docs/reference/api/evals/) | Fixed-suite evaluation, baselines, regression reports, and score gates for flows |
-| [`@smthrs/scorers`](/docs/reference/api/scorers/) | Flow-native scoring, durable observations, and asynchronous score runners for flows |
+| [`@smthrs/agent`](/docs/reference/api/agent/) | Production agent loop on the durable engine, plus `AgentSession` and `AgentAction` adapters |
+| [`@smthrs/harness`](/docs/reference/api/harness/) | Built-in cell-first agent controller whose turns produce JavaScript cells |
+| [`@smthrs/model`](/docs/reference/api/model/) | Schema-first Effect model protocols, routes, and streaming events |
+| [`@smthrs/memory`](/docs/reference/api/memory/) | Durable cross-run facts, history, notes, recall, and maintenance |
+| [`@smthrs/plugin`](/docs/reference/api/plugin/) | Vite-style typed plugin kernel: hooks, resolution, and config execution |
+| [`@smthrs/registry`](/docs/reference/api/registry/) | Portable flow descriptor discovery and progressive-disclosure registry |
+| [`@smthrs/std`](/docs/reference/api/std/) | Standard tool flows: filesystem, search, HTTP, web search, shell, and LSP |
+| [`@smthrs/integrations`](/docs/reference/api/integrations/) | Provider clients, outbound actions, and webhook ingress |
+| [`@smthrs/triggers`](/docs/reference/api/triggers/) | Durable schedules, webhook triggers, and occurrence admission |
+| [`@smthrs/chain`](/docs/reference/api/chain/) **workspace-private** | Agent Chain spine: append-only journal, keyed replayable calls, and script trampoline |
+| [`@smthrs/evals`](/docs/reference/api/evals/) | Fixed-suite evaluations, baselines, regression reports, and score gates |
+| [`@smthrs/scorers`](/docs/reference/api/scorers/) | Flow-native scoring, durable observations, and asynchronous score runners |
 
 ### Hosts and platforms
 
 | Package | Role |
 | --- | --- |
-| [`@smthrs/kernel`](/docs/reference/api/kernel/) | Capability kernel: effect tiers, monotone capability sets, grant store, and permission-decorating layers over the Host services |
-| [`@smthrs/capability`](/docs/reference/api/capability/) | Capability values and permission failures: the leaf vocabulary of the Smithers permission kernel |
-| [`@smthrs/sandbox`](/docs/reference/api/sandbox/) | Provisioned machines, provider-neutral remote process execution, conformance, and sandbox liveness for flows |
-| [`@smthrs/artifacts`](/docs/reference/api/artifacts/) | Effect service for the Smithers content-addressed artifact store, local and remote |
+| [`@smthrs/kernel`](/docs/reference/api/kernel/) | Capability kernel: effect tiers, monotone capability sets, grant store, and permission layers |
+| [`@smthrs/capability`](/docs/reference/api/capability/) | Capability values and permission failures for the kernel |
+| [`@smthrs/sandbox`](/docs/reference/api/sandbox/) | Provisioned machines, provider-neutral remote execution, conformance, and liveness |
+| [`@smthrs/artifacts`](/docs/reference/api/artifacts/) | Content-addressed artifact store (local and remote) |
 | [`@smthrs/jj`](/docs/reference/api/jj/) | Jujutsu version control as a portable Effect host service |
-| [`@smthrs/platform-node`](/docs/reference/api/platform-node/) | Node.js Host bundle for flows: Effect's Node platform services composed into the closed Host surface |
-| [`@smthrs/platform-bun`](/docs/reference/api/platform-bun/) | Bun Host bundle for flows: Effect's Bun platform services composed into the closed Host surface |
-| [`@smthrs/platform-browser`](/docs/reference/api/platform-browser/) | Browser implementations of Effect platform services backed by ZenFS and just-bash |
-| [`@smthrs/platform-cloudflare`](/docs/reference/api/platform-cloudflare/) | Cloudflare host, execution, edge-cache and container adapters |
+| [`@smthrs/platform-node`](/docs/reference/api/platform-node/) | Node.js Host bundle composing Effect's Node services into the closed Host surface |
+| [`@smthrs/platform-bun`](/docs/reference/api/platform-bun/) | Bun Host bundle composing Effect's Bun services into the closed Host surface |
+| [`@smthrs/platform-browser`](/docs/reference/api/platform-browser/) | Browser Host services backed by ZenFS, `just-bash`, and OPFS SQLite |
+| [`@smthrs/platform-cloudflare`](/docs/reference/api/platform-cloudflare/) | Cloudflare host, execution, edge-cache, and container adapters |
 
 ### Control and wire
 
 | Package | Role |
 | --- | --- |
 | [`@smthrs/views`](/docs/reference/api/views/) | Shared data projections for Smithers views |
-| [`@smthrs/control`](/docs/reference/api/control/) | Control services and RPC projections for flows |
-| [`@smthrs/gateway`](/docs/reference/api/gateway/) | Effect workspace gateway contracts, projections, and supervision ports for flows |
-| [`@smthrs/sync`](/docs/reference/api/sync/) | Workspace read-path sync protocol, server, and client for flows |
-| [`@smthrs/mcp`](/docs/reference/api/mcp/) | Model Context Protocol client and flow adapter: projects a remote MCP server's tools as ordinary flow bindings |
-| [`@smthrs/notifications`](/docs/reference/api/notifications/) | Durable notification queue, admission policy, and journal projection for flows |
-| [`@smthrs/observability`](/docs/reference/api/observability/) | Observability for flows: default OTLP export wiring plus Effect-native logger, metric, and OpenTelemetry SDK layers |
+| [`@smthrs/control`](/docs/reference/api/control/) | Control plane services and RPC projections |
+| [`@smthrs/gateway`](/docs/reference/api/gateway/) | Workspace gateway contracts, projections, and supervision ports |
+| [`@smthrs/sync`](/docs/reference/api/sync/) | Read-path journal sync protocol, server, and client |
+| [`@smthrs/mcp`](/docs/reference/api/mcp/) | Model Context Protocol client projecting remote MCP tools as ordinary flow bindings |
+| [`@smthrs/notifications`](/docs/reference/api/notifications/) | Durable notification queue, admission policy, and journal projection |
+| [`@smthrs/observability`](/docs/reference/api/observability/) | Default OTLP export wiring plus Effect logger, metric, and OpenTelemetry layers |
 
 ### UI
 
@@ -98,21 +113,21 @@ Published pages mirror each package's colocated `docs/api.md` or `docs/reference
 | Package | Role |
 | --- | --- |
 | [`@smthrs/build`](/docs/reference/api/build/) | Effect services and durable install flows for the build system |
-| [`@smthrs/build-cli`](/docs/reference/api/build-cli/) | Target execution, inspection and cache commands |
-| [`@smthrs/targets`](/docs/reference/api/targets/) | Workspace target declarations, inputs and graph contracts |
+| [`@smthrs/build-cli`](/docs/reference/api/build-cli/) | Target execution, inspection, and cache commands |
+| [`@smthrs/targets`](/docs/reference/api/targets/) | Workspace target declarations, inputs, and graph contracts |
 
 ### Distribution
 
 | Package | Role |
 | --- | --- |
-| [`@smthrs/flows`](/docs/reference/api/flows/) | Barrel package re-exporting the whole `@smthrs` durable flow engine |
-| [`@smthrs/migrate`](/docs/reference/api/migrate/) | Upgrades Smithers 0.x projects to Smithers 1.0 flows and writes an auditable migration report |
-| [`@smthrs/cli`](/docs/reference/api/cli/) | Node command-line interface for Smithers control |
-| [`@smthrs/testing`](/docs/reference/api/testing/) | Testing and conformance library for flows |
+| [`@smthrs/flows`](/docs/reference/api/flows/) | Single barrel re-exporting the `@smthrs` durable flow engine |
+| [`@smthrs/migrate`](/docs/reference/api/migrate/) | Upgrades Smithers 0.x projects to 1.0 flows with an auditable report |
+| [`@smthrs/cli`](/docs/reference/api/cli/) | Node command-line interface (`smthrs`) for Smithers control |
+| [`@smthrs/testing`](/docs/reference/api/testing/) | Testing and conformance helpers for flows |
 | [`@smthrs/fuzz`](/docs/reference/api/fuzz/) | Feedback-guided fuzzing and deterministic fiber simulation over Effect Arbitrary |
 
 ## Platform support
 
-The [RC support matrix](/docs/reference/support-matrix/) defines the runtime and platform boundary. Node.js and Bun are durable runtimes through `NodeRuntime` and `BunRuntime`, storing in local SQLite or, when `SMITHERS_POSTGRES_URL` or `DATABASE_URL` is set, PostgreSQL.
+See the [RC support matrix](/docs/reference/support-matrix/) for certified runtime boundaries. Node.js and Bun run durably through `NodeRuntime` and `BunRuntime`, storing state in local SQLite or PostgreSQL (`SMITHERS_POSTGRES_URL` or `DATABASE_URL`).
 
-Browsers run durable flows through `BrowserRuntime` in `@smthrs/platform-browser`, over SQLite in OPFS in a dedicated worker. A Web Lock elects one leader per origin. All tabs closed pauses execution; a new leader resumes unfinished runs from the same browser profile's store. Browser storage may be cleared, and another profile or device has a separate store. No other SQL client is a supported durable browser store.
+Browsers run durable flows through `BrowserRuntime` in `@smthrs/platform-browser`, backed by SQLite in OPFS inside a dedicated worker. A Web Lock elects one leader per origin: with all tabs closed, execution pauses, and opening a new tab resumes unfinished runs from that browser profile's store. Clearing browser storage resets the store, and separate profiles or devices keep separate stores. No other SQL client is a supported durable browser store.
