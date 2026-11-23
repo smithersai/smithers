@@ -132,9 +132,14 @@ export const cacheable = (rule: string, mode: Mode, repositoryDirty: boolean | u
  * @category policies
  * @since 1.0.0
  */
-export const capabilities = (rule: string, mode: Mode, sandbox: PlannedRule["sandbox"]): ReadonlyArray<string> => {
+export const capabilities = (
+  rule: string,
+  mode: Mode,
+  sandbox: PlannedRule["sandbox"],
+  hasOutputs = false
+): ReadonlyArray<string> => {
   const result = ["fs:read", "proc:spawn"]
-  if (mode === "write" || of(rule).writes) result.push("fs:write")
+  if (mode === "write" || of(rule).writes || hasOutputs) result.push("fs:write")
   if (sandbox === "none" || (typeof sandbox === "object" && sandbox.network === true)) result.push("net:open")
   else if (typeof sandbox === "object" && sandbox.network === "loopback") result.push("net:loopback")
   return result

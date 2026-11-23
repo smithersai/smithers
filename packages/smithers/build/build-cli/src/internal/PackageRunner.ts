@@ -2283,12 +2283,58 @@ const executeWith = (
         return restored.value && (yield* measured())
       })
 
+    const cachedStreamLimit = 64 * 1024
+
+    /** Captures bounded, redacted process output for cache replay (e.g. test/benchmark summaries). */
+    const cachedStreamsOf = (
+      node: PackageNode,
+      result: Exec.Result | undefined
+    ): { readonly stdout?: string; readonly stderr?: string } => {
+      if (result === undefined) return {}
+      const redact = OutputStream.redactor({ ...(options.environment ?? process.env), ...node.env }, credentialNames)
+      const clip = (text: string): string => {
+        const clean = redact(text)
+        return clean.length <= cachedStreamLimit ? clean : clean.slice(-cachedStreamLimit)
+      }
+      const stdout = clip(result.stdout)
+      const stderr = clip(result.stderr)
+      return {
+        ...(stdout === "" ? {} : { stdout }),
+        ...(stderr === "" ? {} : { stderr })
+      }
+    }
+
+    /** Replays cached process output through the live observer seam so cache hits remain inspectable. */
+    const replayCachedStreams = (node: PackageNode, output: unknown): void => {
+      if (typeof output !== "object" || output === null) return
+      const record = output as { readonly stdout?: unknown; readonly stderr?: unknown }
+      const stdout = typeof record.stdout === "string" ? record.stdout : ""
+      const stderr = typeof record.stderr === "string" ? record.stderr : ""
+      if (stdout === "" && stderr === "") return
+      const ambient = options.environment ?? process.env
+      const repositoryChild = ambient["SMTHRS_REPO_CHILD"] === "1"
+      const observer = OutputStream.make({
+        write: repositoryChild
+          ? (stream, text) =>
+            (stream === "stdout" ?
+              options.stdout ?? Reporter.terminalOf(process.stdout) :
+              options.stderr ?? Reporter.terminalOf(process.stderr)).write(text)
+          : (stream, text) => reporter.toolOutput(node.label, stream, text),
+        environment: { ...ambient, ...node.env },
+        sensitiveNames: credentialNames
+      })
+      if (stdout !== "") observer.onStdout(Buffer.from(stdout, "utf8"))
+      if (stderr !== "") observer.onStderr(Buffer.from(stderr, "utf8"))
+      observer.close()
+    }
+
     const captureBuild = (
       node: PackageNode,
       key: string,
       sourceRoot: string = root,
       publish = true,
-      confined = true
+      confined = true,
+      streams: { readonly stdout?: string; readonly stderr?: string } = {}
     ): Effect.Effect<BuildOutput, unknown> =>
       Effect.gen(function*() {
         const manifests = yield* Effect.forEach(
@@ -2299,7 +2345,7 @@ const executeWith = (
           node.outFiles,
           (file) => services.captureFile(sourceRoot, cacheDirectory, file, root)
         )
-        if (publish) yield* cachePut(node, { kind: "build", manifests, files }, key, confined)
+        if (publish) yield* cachePut(node, { kind: "build", manifests, files, ...streams }, key, confined)
         return { manifests, files }
       })
 
@@ -2944,17 +2990,29 @@ const executeWith = (
           return spawned.ok ? green("ran") : fail(spawned.error)
         }
         const cached = yield* cacheGet(node)
-        if (cached !== undefined && (yield* restoreBuild(node, cached.output))) return green("hit")
+        const retainStreams = node.rule === "Shell.Test" || node.rule === "Foundry.Test"
+        if (cached !== undefined && (yield* restoreBuild(node, cached.output))) {
+          if (retainStreams) replayCachedStreams(node, cached.output)
+          return green("hit")
+        }
         if (node.overlays.length === 0) {
           const spawned = yield* timed(node.label, "step", spawnNode(node, root))
           if (!spawned.ok) return fail(spawned.error)
-          yield* captureBuild(node, node.keyPreview)
+          yield* captureBuild(
+            node,
+            node.keyPreview,
+            root,
+            true,
+            true,
+            retainStreams ? cachedStreamsOf(node, spawned.result) : {}
+          )
           return green("ran")
         }
         // The build's own declared outputs are cleared before it runs, so a stale
         // previous emit — viem's `src/_cjs` is hundreds of megabytes — is never
         // copied into the scratch tree in the first place.
         let output: BuildOutput = { manifests: [], files: [] }
+        let streams: { readonly stdout?: string; readonly stderr?: string } = {}
         const ran = yield* runWithOverlays(node, (scratch) =>
           Effect.gen(function*() {
             for (const outDir of node.outDirs) {
@@ -2965,6 +3023,7 @@ const executeWith = (
             }
             const spawned = yield* timed(node.label, "step", spawnNode(node, scratch))
             if (!spawned.ok) return spawned
+            if (retainStreams) streams = cachedStreamsOf(node, spawned.result)
             output = yield* captureBuild(node, node.keyPreview, scratch, false)
             return { ok: true as const }
           }), [...node.outDirs, ...node.outFiles])
@@ -2977,7 +3036,7 @@ const executeWith = (
         for (const file of output.files) {
           yield* joined(() => PackageTree.materializeFile(root, cacheDirectory, file))
         }
-        yield* cachePut(node, { kind: "build", ...output })
+        yield* cachePut(node, { kind: "build", ...output, ...streams })
         return green("ran")
       })
 
@@ -4949,6 +5008,9 @@ const executeWith = (
             }
             case "Shell.Test":
             case "Foundry.Test": {
+              if (node.rule === "Shell.Test" && (node.outFiles.length > 0 || node.outDirs.length > 0)) {
+                return yield* runBuild(node)
+              }
               if (node.rule === "Shell.Test" && node.family === "process" && node.shards > 1) {
                 // Through the same environment seam the rest of the executor reads,
                 // so an injected environment selects a shard exactly like CI does.
@@ -4977,11 +5039,19 @@ const executeWith = (
                     shards: 1
                   }
                   const cached = yield* cacheGet(shardNode)
-                  if (cached !== undefined) continue
+                  if (cached !== undefined) {
+                    replayCachedStreams(shardNode, cached.output)
+                    continue
+                  }
                   allHit = false
                   const spawned = yield* timed(node.label, "step", spawnConsumer(shardNode))
                   if (!spawned.ok) return fail(spawned.error)
-                  yield* cachePut(shardNode, { kind: "shell-test-shard", shard, total: node.shards })
+                  yield* cachePut(shardNode, {
+                    kind: "shell-test-shard",
+                    shard,
+                    total: node.shards,
+                    ...cachedStreamsOf(shardNode, spawned.result)
+                  })
                 }
                 return green(allHit ? "hit" : "ran")
               }
@@ -4997,10 +5067,13 @@ const executeWith = (
                 }
               }
               const cached = yield* cacheGet(node)
-              if (cached !== undefined) return green("hit")
+              if (cached !== undefined) {
+                replayCachedStreams(node, cached.output)
+                return green("hit")
+              }
               const spawned = yield* timed(node.label, "step", spawnConsumer(node))
               if (!spawned.ok) return fail(spawned.error)
-              yield* cachePut(node, { kind: "shell-test" })
+              yield* cachePut(node, { kind: "shell-test", ...cachedStreamsOf(node, spawned.result) })
               return green("ran")
             }
             case "Shell.Run": {

@@ -893,9 +893,10 @@ export const workspaceRootToken = "{smthrs:root}"
  * The executable one target used as a tool edge produces, workspace relative,
  * or the reason it produces none.
  *
- * Only a `Cargo.Build` that declares exactly one `bins` entry produces an
- * addressable executable today: its path follows from the profile and the bin
- * name. Every other target refuses by name rather than being guessed at.
+ * A `Cargo.Build` with one `bins` entry, a `Shell.Build` with one `outFiles`
+ * entry and no `outDirs`, or any target declaring a single `out` path produces
+ * an addressable executable. Every other target refuses by name rather than
+ * being guessed at.
  */
 const targetExecutable = (
   context: PlanContext,
@@ -918,6 +919,18 @@ const targetExecutable = (
     // Cargo puts every member's binaries in the workspace target directory,
     // so the path is workspace relative, not package relative.
     return { path: paths[0]! }
+  }
+  if (metadata.target === "Shell.Build") {
+    const outputs = RulePolicy.buildOutputs(metadata.attrs, packagePathOf(context, target))
+    if (outputs.outFiles.length === 1 && outputs.outDirs.length === 0) {
+      return { path: outputs.outFiles[0]! }
+    }
+    if (outputs.outFiles.length > 0 || outputs.outDirs.length > 0) {
+      return {
+        problem:
+          `bin names ${label}, which declares ${outputs.outFiles.length} outFiles and ${outputs.outDirs.length} outDirs; a tool edge needs exactly one outFiles entry and no outDirs`
+      }
+    }
   }
   const out = attrMember(metadata.attrs, "out")
   if (typeof out === "string") return { path: Input.resolvePath(packagePathOf(context, target), out) }
@@ -2358,7 +2371,7 @@ const visit = async (
       }
     }
     argv = resolved
-    if (rule === "Shell.Build") {
+    if (rule === "Shell.Build" || rule === "Shell.Test") {
       const outputs = RulePolicy.buildOutputs(attrs, packagePath)
       outDirs.push(...outputs.outDirs)
       outFiles.push(...outputs.outFiles)
@@ -3698,7 +3711,7 @@ const visit = async (
         }
     },
     layers: [],
-    capabilities: RulePolicy.capabilities(rule, mode, sandbox)
+    capabilities: RulePolicy.capabilities(rule, mode, sandbox, outDirs.length > 0 || outFiles.length > 0)
   }
 
   // A shell test that asks to be observed is found by its declaration alone.
