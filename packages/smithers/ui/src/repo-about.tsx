@@ -55,7 +55,7 @@ export type RepoAboutProps = Omit<ComponentProps<"section">, "children"> & {
 };
 
 /** GitHub's colors for the languages most repositories have; any other gets a neutral one. */
-const LANGUAGE_COLORS: Readonly<Record<string, string>> = {
+export const LANGUAGE_COLORS: Readonly<Record<string, string>> = {
   TypeScript: "#3178c6",
   JavaScript: "#f1e05a",
   HTML: "#e34c26",

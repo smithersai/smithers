@@ -1,5 +1,6 @@
 import { createMemoryHistory, createRootRoute, createRoute, createRouter } from "@tanstack/react-router"
 import { ROUTE_PATHS } from "../src/routePaths"
+import { isProfileOwner } from "../src/features/profile/contract"
 import { isRepository } from "../src/features/repo/contract"
 import { issueNumberOf } from "../src/features/issues/contract"
 import { PULL_TABS } from "../src/features/pulls/contract"
@@ -21,7 +22,8 @@ const router = createRouter({ routeTree: root.addChildren([...routes, ...plugins
 export const isAppRoute = (pathname: string): boolean => {
   const [, params, route] = router.getMatchedRoutes(pathname)
   if (route === undefined || params["**"] !== undefined) return false
-  if (params.owner !== undefined && !isRepository(params.owner, params.repo!)) return false
+  if (params.owner !== undefined && params.repo === undefined && !isProfileOwner(params.owner)) return false
+  if (params.owner !== undefined && params.repo !== undefined && !isRepository(params.owner, params.repo)) return false
   if (params.number !== undefined && (pathname.split("/")[3] === "stack" ? todoNumberOf(params.number) : issueNumberOf(params.number)) === undefined) return false
   return params.tab === undefined || (PULL_TABS as ReadonlyArray<string>).includes(params.tab) && params.tab !== "conversation"
 }

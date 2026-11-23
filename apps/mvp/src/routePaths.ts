@@ -16,6 +16,7 @@ export const ROUTE_PATHS = {
   pluginIndex: "/app/$plugin",
   settings: "/app/settings",
   run: "/app/runs/$runId",
+  profile: "/$owner",
   repo: "/$owner/$repo",
   repoPluginPath: "/$owner/$repo/-/$plugin/$",
   repoPluginIndex: "/$owner/$repo/-/$plugin",

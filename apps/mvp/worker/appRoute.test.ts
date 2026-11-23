@@ -6,6 +6,7 @@ import { sourceText } from "../../../packages/repo-targets/test-utils/source-rea
 test.each([
   "/", "/app", "/settings", "/flows", "/app/settings", "/app/flows/new", "/app/flows/code/example",
   "/app/flows/drafts/id", "/app/views/id", "/app/runs/id", "/app/conversations", "/app/bugs/report", "/app/queue",
+  "/roninjin10", "/octocat", "/smithersai",
   "/owner/repo", "/owner/repo/branches", "/owner/repo/tree/main", "/owner/repo/blob/main/src/file.ts",
   "/owner/repo/raw/main/file", "/owner/repo/docs/guide/page", "/owner/repo/issues", "/owner/repo/issues/new",
   "/owner/repo/issues/1", "/owner/repo/pulls/1", "/owner/repo/pull/1/files", "/owner/repo/stack/1",
@@ -13,7 +14,7 @@ test.each([
 ])("a supported deep link remains successful: %s", (path) => expect(isAppRoute(path)).toBe(true))
 
 test.each([
-  "/missing", "/favicon.ico", "/sitemap.xml", "/app/conversations/id", "/app/unknown", "/app/bugs/unknown",
+  "/api", "/assets", "/docs", "/_missing", "/owner!", "/favicon.ico", "/sitemap.xml", "/app/conversations/id", "/app/unknown", "/app/bugs/unknown",
   "/owner/repo/flows", "/owner/repo/issues/0", "/owner/repo/issues/abc", "/owner/repo/stack/0",
   "/owner/repo/pull/1/conversation", "/owner/repo/pull/1/unknown", "/owner!/repo", "/owner/repo/%",
 ])("an unsupported document has no route: %s", (path) => expect(isAppRoute(path)).toBe(false))

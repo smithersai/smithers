@@ -1,0 +1,597 @@
+import { type Core, GitHub } from "@smthrs/integrations"
+import { Data, Effect, Option, Schema } from "effect"
+import {
+  isProfileOwner,
+  PROFILE_ORGANIZATIONS_LIMIT,
+  PROFILE_REPOSITORIES_LIMIT,
+} from "../../src/features/profile/contract.ts"
+import type {
+  Profile,
+  ProfileContributionDay,
+  ProfileContributions,
+  ProfileOrganization,
+  ProfileReadme,
+  ProfileRepository,
+} from "../../src/features/profile/schema.ts"
+import { MAX_BLOB_BYTES, textOf } from "../../src/features/repo/contract.ts"
+
+// What GitHub says of a user or organization profile, read through `@smthrs/integrations`' `GitHubClient`:
+//
+// - `graphql`, with a token: one GraphQL query (`repositoryOwner(login: $login)`) that handles both `User` and
+//   `Organization`, returning profile metadata, organizations, pinned repositories, up to 100 public owned
+//   repositories, the profile README (`<login>/<login>/README.md` or `<org>/.github/profile/README.md`), and for Users
+//   the last-year contribution calendar.
+// - `rest`, anonymous: `GET /users/<login>` first, then public repositories, organizations (for Users) and profile
+//   README in parallel. Pinned repositories and contribution calendars are GraphQL-only, so REST leaves `pinned: []`
+//   and `contributions: null`.
+
+/** The GitHub operation a refusal or a missing optional part names. */
+export type ProfileStage = "owner" | "web" | "graphql" | "repositories" | "organizations" | "readme"
+
+/** Why GitHub gave no profile answer. */
+export class ProfileRefused extends Data.TaggedError("ProfileRefused")<{
+  readonly code: "not_found" | "rate_limited" | "github_unavailable"
+  readonly stage: ProfileStage
+  readonly upstreamStatus?: number
+  readonly retryAfterMillis?: number
+  readonly resetAtMillis?: number
+}> {}
+
+/** One read's profile answer, plus any optional parts GitHub transiently failed to return. */
+export interface Read {
+  readonly profile: Profile
+  readonly missing: ReadonlyArray<ProfileStage>
+}
+
+type Failure = Core.IntegrationError.IntegrationError
+
+const statusOf = (error: Failure): number | undefined => {
+  const status = error.details?.["status"]
+  return typeof status === "number" ? status : undefined
+}
+
+const isRateLimited = (error: Failure): boolean => error.details?.["rateLimited"] === true || statusOf(error) === 429
+
+const isTransient = (error: Failure): boolean => {
+  const status = statusOf(error)
+  return isRateLimited(error) || (status === undefined ? error.reason === "delivery-failed" : status >= 500)
+}
+
+const refusalOf = (error: Failure, stage: ProfileStage): ProfileRefused => {
+  const status = statusOf(error)
+  if (status === 404) return new ProfileRefused({ code: "not_found", stage, upstreamStatus: 404 })
+  const wait = error.details?.["retryAfterMillis"]
+  const reset = error.details?.["rateLimitResetAt"]
+  return new ProfileRefused({
+    code: isRateLimited(error) ? "rate_limited" : "github_unavailable",
+    stage,
+    ...(status === undefined ? {} : { upstreamStatus: status }),
+    ...(typeof wait === "number" ? { retryAfterMillis: wait } : {}),
+    ...(typeof reset === "number" ? { resetAtMillis: reset } : {}),
+  })
+}
+
+interface Part<A> {
+  readonly stage: ProfileStage
+  readonly value: A | null
+  readonly missing: boolean
+}
+
+const part = <A>(stage: ProfileStage, effect: Effect.Effect<A, Failure>): Effect.Effect<Part<A>> =>
+  effect.pipe(
+    Effect.map((value): Part<A> => ({ stage, value, missing: false })),
+    Effect.catch((error) => Effect.succeed<Part<A>>({ stage, value: null, missing: isTransient(error) })),
+  )
+
+const settled = <A>(stage: ProfileStage, value: A | null): Part<A> => ({ stage, value, missing: false })
+
+const missingOf = (parts: ReadonlyArray<Part<unknown>>): ReadonlyArray<ProfileStage> =>
+  parts.filter((item) => item.missing).map((item) => item.stage)
+
+const nullable = <S extends Schema.Top>(schema: S) => Schema.optional(Schema.NullOr(schema))
+
+const trimOrNull = (value: string | null | undefined): string | null => {
+  const trimmed = (value ?? "").trim()
+  return trimmed === "" ? null : trimmed
+}
+
+const safeHttpUrl = (value: string | null | undefined): string | null => {
+  const trimmed = (value ?? "").trim()
+  if (trimmed === "") return null
+  const normalized = /^https?:\/\//i.test(trimmed) ? trimmed : /^[a-z0-9-]+(?:\.[a-z0-9-]+)+(?:\/.*)?$/i.test(trimmed) ? `https://${trimmed}` : null
+  return normalized !== null && /^https?:\/\/\S+$/i.test(normalized) && URL.canParse(normalized) ? normalized : null
+}
+
+const safeAvatarUrl = (value: string | null | undefined): string | null => {
+  const trimmed = (value ?? "").trim()
+  return /^https?:\/\/\S+$/i.test(trimmed) && URL.canParse(trimmed) ? trimmed : null
+}
+
+const licenseOf = (license: { readonly spdx: string | null | undefined; readonly name: string | null | undefined } | null) =>
+  license === null ? null : license.spdx && license.spdx !== "NOASSERTION" ? license.spdx : license.name ?? null
+
+const ReadmeJson = Schema.Struct({
+  path: Schema.String,
+  size: Schema.Number,
+  content: Schema.optional(Schema.String),
+  encoding: Schema.optional(Schema.String),
+})
+
+const base64Text = (file: typeof ReadmeJson.Type): string | null => {
+  if (file.size > MAX_BLOB_BYTES || file.encoding !== "base64" || file.content === undefined) return null
+  try {
+    const binary = atob(file.content.replace(/\s/g, ""))
+    return textOf(Uint8Array.from(binary, (char) => char.charCodeAt(0))) ?? null
+  } catch {
+    return null
+  }
+}
+
+// --- REST: anonymous ---
+
+const RestOwnerJson = Schema.Struct({
+  login: Schema.String,
+  type: Schema.String,
+  name: nullable(Schema.String),
+  avatar_url: nullable(Schema.String),
+  bio: nullable(Schema.String),
+  company: nullable(Schema.String),
+  location: nullable(Schema.String),
+  blog: nullable(Schema.String),
+  twitter_username: nullable(Schema.String),
+  followers: Schema.optional(Schema.Number),
+  following: Schema.optional(Schema.Number),
+  public_repos: Schema.optional(Schema.Number),
+  created_at: nullable(Schema.String),
+})
+
+const RestRepoJson = Schema.Struct({
+  name: Schema.String,
+  owner: Schema.Struct({ login: Schema.String }),
+  description: nullable(Schema.String),
+  language: nullable(Schema.String),
+  stargazers_count: Schema.optional(Schema.Number),
+  forks_count: Schema.optional(Schema.Number),
+  fork: Schema.optional(Schema.Boolean),
+  archived: Schema.optional(Schema.Boolean),
+  private: Schema.optional(Schema.Boolean),
+  license: nullable(Schema.Struct({ spdx_id: nullable(Schema.String), name: nullable(Schema.String) })),
+  topics: Schema.optional(Schema.Array(Schema.String)),
+  pushed_at: nullable(Schema.String),
+})
+const RestReposJson = Schema.Array(RestRepoJson)
+
+const RestOrgJson = Schema.Struct({
+  login: Schema.String,
+  avatar_url: nullable(Schema.String),
+  description: nullable(Schema.String),
+})
+const RestOrgsJson = Schema.Array(RestOrgJson)
+
+/** Anonymous REST profile read for `owner`. */
+export const rest = (client: GitHub.GitHubClient.GitHubClient, owner: string): Effect.Effect<Read, ProfileRefused> =>
+  Effect.gen(function* () {
+    if (!isProfileOwner(owner)) return yield* new ProfileRefused({ code: "not_found", stage: "owner" })
+    const encoded = encodeURIComponent(owner)
+    const user = yield* client.request("GET", `/users/${encoded}`, undefined, { schema: RestOwnerJson }).pipe(
+      Effect.mapError((error) => refusalOf(error, "owner")),
+    )
+    const kind: Profile["kind"] = user.type === "Organization" ? "Organization" : "User"
+    const loginEncoded = encodeURIComponent(user.login)
+    const reposPath = kind === "Organization" ? `/orgs/${loginEncoded}/repos` : `/users/${loginEncoded}/repos`
+    const readmeRepo = kind === "Organization" ? ".github" : user.login
+    const readmePath = kind === "Organization"
+      ? `/repos/${loginEncoded}/.github/contents/profile/README.md`
+      : `/repos/${loginEncoded}/${loginEncoded}/readme`
+
+    const [repos, orgs, readme] = yield* Effect.all(
+      [
+        part(
+          "repositories",
+          client.request("GET", reposPath, undefined, {
+            schema: RestReposJson,
+            query: { type: kind === "Organization" ? "public" : "owner", sort: "pushed", direction: "desc", per_page: PROFILE_REPOSITORIES_LIMIT },
+          }),
+        ),
+        kind === "Organization"
+          ? Effect.succeed(settled<ReadonlyArray<typeof RestOrgJson.Type>>("organizations", []))
+          : part(
+            "organizations",
+            client.request("GET", `/users/${loginEncoded}/orgs`, undefined, {
+              schema: RestOrgsJson,
+              query: { per_page: PROFILE_ORGANIZATIONS_LIMIT },
+            }),
+          ),
+        part("readme", client.request("GET", readmePath, undefined, { schema: ReadmeJson })),
+      ] as const,
+      { concurrency: "unbounded" },
+    )
+
+    const repositories: ReadonlyArray<ProfileRepository> = (repos.value ?? [])
+      .filter((repo) => repo.private !== true)
+      .map((repo) => ({
+        owner: repo.owner.login,
+        name: repo.name,
+        description: trimOrNull(repo.description),
+        language: trimOrNull(repo.language),
+        languageColor: null,
+        stars: repo.stargazers_count ?? 0,
+        forks: repo.forks_count ?? 0,
+        fork: repo.fork ?? false,
+        archived: repo.archived ?? false,
+        license: licenseOf(
+          repo.license === null || repo.license === undefined
+            ? null
+            : { spdx: repo.license.spdx_id, name: repo.license.name },
+        ),
+        topics: (repo.topics ?? []).slice(0, 5),
+        pushedAt: trimOrNull(repo.pushed_at),
+      }))
+
+    const organizations: ReadonlyArray<ProfileOrganization> = (orgs.value ?? []).map((org) => ({
+      login: org.login,
+      name: null,
+      avatarUrl: safeAvatarUrl(org.avatar_url),
+    }))
+
+    const readmeText = readme.value === null ? null : base64Text(readme.value)
+    const profileReadme: ProfileReadme | null = readme.value === null || readmeText === null
+      ? null
+      : { repository: `${user.login}/${readmeRepo}`, path: readme.value.path, text: readmeText }
+
+    return {
+      profile: {
+        kind,
+        login: user.login,
+        name: trimOrNull(user.name),
+        avatarUrl: safeAvatarUrl(user.avatar_url),
+        bio: trimOrNull(user.bio),
+        company: trimOrNull(user.company),
+        location: trimOrNull(user.location),
+        website: safeHttpUrl(user.blog),
+        twitter: trimOrNull(user.twitter_username),
+        pronouns: null,
+        status: null,
+        followers: kind === "User" ? (user.followers ?? 0) : null,
+        following: kind === "User" ? (user.following ?? 0) : null,
+        publicRepos: user.public_repos ?? repositories.length,
+        createdAt: trimOrNull(user.created_at),
+        organizations,
+        pinned: [],
+        repositories,
+        readme: profileReadme,
+        contributions: null,
+      } satisfies Profile,
+      missing: missingOf([repos, orgs, readme]),
+    } satisfies Read
+  }).pipe(Effect.withSpan("profile.read.rest"))
+
+// --- GraphQL: with a token ---
+
+const REPO_FIELDS = `
+  name
+  owner { login }
+  description
+  stargazerCount
+  forkCount
+  isFork
+  isArchived
+  isPrivate
+  pushedAt
+  primaryLanguage { name color }
+  licenseInfo { spdxId name }
+  repositoryTopics(first: 5) { nodes { topic { name } } }
+`
+
+const BLOB_FIELDS = "... on Blob { text byteSize isBinary isTruncated }"
+
+/** One GraphQL query covering both User and Organization profiles, pinned items, repos, profile README and contributions. */
+export const QUERY = `query OwnerProfile($login: String!) {
+  repositoryOwner(login: $login) {
+    __typename
+    login
+    avatarUrl
+    ... on User {
+      name
+      bio
+      company
+      location
+      websiteUrl
+      twitterUsername
+      pronouns
+      createdAt
+      status { emoji message }
+      followers { totalCount }
+      following { totalCount }
+      organizations(first: ${PROFILE_ORGANIZATIONS_LIMIT}) {
+        nodes { login name avatarUrl }
+      }
+      pinnedItems(first: 6, types: REPOSITORY) {
+        nodes { ... on Repository { ${REPO_FIELDS} } }
+      }
+      repositories(first: ${PROFILE_REPOSITORIES_LIMIT}, privacy: PUBLIC, ownerAffiliations: OWNER, orderBy: { field: PUSHED_AT, direction: DESC }) {
+        totalCount
+        nodes { ${REPO_FIELDS} }
+      }
+      profileRepo: repository(name: $login) {
+        isPrivate
+        readmeUpper: object(expression: "HEAD:README.md") { ${BLOB_FIELDS} }
+        readmeLower: object(expression: "HEAD:readme.md") { ${BLOB_FIELDS} }
+        readmeTitle: object(expression: "HEAD:Readme.md") { ${BLOB_FIELDS} }
+      }
+      contributionsCollection {
+        totalCommitContributions
+        totalPullRequestContributions
+        totalIssueContributions
+        totalPullRequestReviewContributions
+        contributionCalendar {
+          totalContributions
+          weeks {
+            contributionDays { date contributionCount contributionLevel }
+          }
+        }
+      }
+    }
+    ... on Organization {
+      name
+      description
+      location
+      websiteUrl
+      twitterUsername
+      createdAt
+      pinnedItems(first: 6, types: REPOSITORY) {
+        nodes { ... on Repository { ${REPO_FIELDS} } }
+      }
+      repositories(first: ${PROFILE_REPOSITORIES_LIMIT}, privacy: PUBLIC, orderBy: { field: PUSHED_AT, direction: DESC }) {
+        totalCount
+        nodes { ${REPO_FIELDS} }
+      }
+      orgProfileRepo: repository(name: ".github") {
+        isPrivate
+        readmeProfile: object(expression: "HEAD:profile/README.md") { ${BLOB_FIELDS} }
+        readmeProfileLower: object(expression: "HEAD:profile/readme.md") { ${BLOB_FIELDS} }
+      }
+    }
+  }
+}`
+
+const GraphBlob = Schema.Struct({
+  text: nullable(Schema.String),
+  byteSize: Schema.Number,
+  isBinary: Schema.optional(Schema.Boolean),
+  isTruncated: Schema.optional(Schema.Boolean),
+})
+const decodeGraphBlob = Schema.decodeUnknownOption(GraphBlob)
+
+const blobText = (raw: unknown): string | null =>
+  Option.match(decodeGraphBlob(raw), {
+    onNone: () => null,
+    onSome: (blob) =>
+      blob.text === undefined || blob.text === null || blob.isBinary === true || blob.isTruncated === true || blob.byteSize > MAX_BLOB_BYTES
+        ? null
+        : blob.text.includes("\0")
+        ? null
+        : blob.text,
+  })
+
+const GraphRepo = Schema.Struct({
+  name: Schema.String,
+  owner: Schema.Struct({ login: Schema.String }),
+  description: nullable(Schema.String),
+  stargazerCount: Schema.Number,
+  forkCount: Schema.Number,
+  isFork: Schema.Boolean,
+  isArchived: Schema.Boolean,
+  isPrivate: Schema.Boolean,
+  pushedAt: nullable(Schema.String),
+  primaryLanguage: nullable(Schema.Struct({ name: Schema.String, color: nullable(Schema.String) })),
+  licenseInfo: nullable(Schema.Struct({ spdxId: nullable(Schema.String), name: nullable(Schema.String) })),
+  repositoryTopics: nullable(Schema.Struct({
+    nodes: Schema.Array(nullable(Schema.Struct({ topic: Schema.Struct({ name: Schema.String }) }))),
+  })),
+})
+const decodeGraphRepo = Schema.decodeUnknownOption(GraphRepo)
+
+const mapGraphRepo = (raw: unknown): ProfileRepository | null =>
+  Option.match(decodeGraphRepo(raw), {
+    onNone: () => null,
+    onSome: (repo) => repo.isPrivate
+      ? null
+      : {
+        owner: repo.owner.login,
+        name: repo.name,
+        description: trimOrNull(repo.description),
+        language: trimOrNull(repo.primaryLanguage?.name),
+        languageColor: trimOrNull(repo.primaryLanguage?.color),
+        stars: repo.stargazerCount,
+        forks: repo.forkCount,
+        fork: repo.isFork,
+        archived: repo.isArchived,
+        license: licenseOf(
+          repo.licenseInfo === null || repo.licenseInfo === undefined
+            ? null
+            : { spdx: repo.licenseInfo.spdxId, name: repo.licenseInfo.name },
+        ),
+        topics: (repo.repositoryTopics?.nodes ?? []).flatMap((node) => node ? [node.topic.name] : []).slice(0, 5),
+        pushedAt: trimOrNull(repo.pushedAt),
+      },
+  })
+
+const CONTRIBUTION_LEVELS: Readonly<Record<string, 0 | 1 | 2 | 3 | 4>> = {
+  NONE: 0,
+  FIRST_QUARTILE: 1,
+  SECOND_QUARTILE: 2,
+  THIRD_QUARTILE: 3,
+  FOURTH_QUARTILE: 4,
+}
+
+const GraphContributions = Schema.Struct({
+  totalCommitContributions: Schema.Number,
+  totalPullRequestContributions: Schema.Number,
+  totalIssueContributions: Schema.Number,
+  totalPullRequestReviewContributions: Schema.Number,
+  contributionCalendar: Schema.Struct({
+    totalContributions: Schema.Number,
+    weeks: Schema.Array(Schema.Struct({
+      contributionDays: Schema.Array(Schema.Struct({
+        date: Schema.String,
+        contributionCount: Schema.Number,
+        contributionLevel: Schema.String,
+      })),
+    })),
+  }),
+})
+
+const GraphOwner = Schema.Struct({
+  __typename: Schema.Literals(["User", "Organization"]),
+  login: Schema.String,
+  avatarUrl: nullable(Schema.String),
+  name: nullable(Schema.String),
+  bio: nullable(Schema.String),
+  description: nullable(Schema.String),
+  company: nullable(Schema.String),
+  location: nullable(Schema.String),
+  websiteUrl: nullable(Schema.String),
+  twitterUsername: nullable(Schema.String),
+  pronouns: nullable(Schema.String),
+  createdAt: nullable(Schema.String),
+  status: nullable(Schema.Struct({ emoji: nullable(Schema.String), message: nullable(Schema.String) })),
+  followers: nullable(Schema.Struct({ totalCount: Schema.Number })),
+  following: nullable(Schema.Struct({ totalCount: Schema.Number })),
+  organizations: nullable(Schema.Struct({
+    nodes: Schema.Array(nullable(Schema.Struct({
+      login: Schema.String,
+      name: nullable(Schema.String),
+      avatarUrl: nullable(Schema.String),
+    }))),
+  })),
+  pinnedItems: nullable(Schema.Struct({ nodes: Schema.Array(Schema.Unknown) })),
+  repositories: nullable(Schema.Struct({
+    totalCount: Schema.Number,
+    nodes: Schema.Array(Schema.Unknown),
+  })),
+  profileRepo: nullable(Schema.Struct({
+    isPrivate: Schema.Boolean,
+    readmeUpper: Schema.optional(Schema.Unknown),
+    readmeLower: Schema.optional(Schema.Unknown),
+    readmeTitle: Schema.optional(Schema.Unknown),
+  })),
+  orgProfileRepo: nullable(Schema.Struct({
+    isPrivate: Schema.Boolean,
+    readmeProfile: Schema.optional(Schema.Unknown),
+    readmeProfileLower: Schema.optional(Schema.Unknown),
+  })),
+  contributionsCollection: nullable(GraphContributions),
+})
+const decodeGraphOwner = Schema.decodeUnknownOption(GraphOwner)
+
+const GraphAnswer = Schema.Struct({
+  data: nullable(Schema.Struct({ repositoryOwner: Schema.NullOr(Schema.Unknown) })),
+  errors: Schema.optional(Schema.Array(Schema.Struct({ type: Schema.optional(Schema.String) }))),
+})
+
+const mapContributions = (raw: typeof GraphContributions.Type | null | undefined): ProfileContributions | null => {
+  if (raw === null || raw === undefined) return null
+  return {
+    total: raw.contributionCalendar.totalContributions,
+    commits: raw.totalCommitContributions,
+    pullRequests: raw.totalPullRequestContributions,
+    issues: raw.totalIssueContributions,
+    reviews: raw.totalPullRequestReviewContributions,
+    weeks: raw.contributionCalendar.weeks.map((week) =>
+      week.contributionDays.map((day): ProfileContributionDay => ({
+        date: day.date,
+        count: day.contributionCount,
+        level: CONTRIBUTION_LEVELS[day.contributionLevel] ?? 0,
+      }))
+    ),
+  }
+}
+
+const pickReadme = (owner: typeof GraphOwner.Type): ProfileReadme | null => {
+  if (owner.__typename === "User") {
+    const repo = owner.profileRepo
+    if (!repo || repo.isPrivate) return null
+    for (const [path, raw] of [["README.md", repo.readmeUpper], ["readme.md", repo.readmeLower], ["Readme.md", repo.readmeTitle]] as const) {
+      const text = blobText(raw)
+      if (text !== null) return { repository: `${owner.login}/${owner.login}`, path, text }
+    }
+    return null
+  }
+  const repo = owner.orgProfileRepo
+  if (!repo || repo.isPrivate) return null
+  for (const [path, raw] of [["profile/README.md", repo.readmeProfile], ["profile/readme.md", repo.readmeProfileLower]] as const) {
+    const text = blobText(raw)
+    if (text !== null) return { repository: `${owner.login}/.github`, path, text }
+  }
+  return null
+}
+
+/** Authenticated GraphQL profile read for `owner` (User or Organization). */
+export const graphql = (client: GitHub.GitHubClient.GitHubClient, owner: string): Effect.Effect<Read, ProfileRefused> =>
+  Effect.gen(function* () {
+    if (!isProfileOwner(owner)) return yield* new ProfileRefused({ code: "not_found", stage: "graphql" })
+    const answer = yield* client
+      .request("POST", "/graphql", { query: QUERY, variables: { login: owner } }, { schema: GraphAnswer })
+      .pipe(Effect.mapError((error) => refusalOf(error, "graphql")))
+
+    const errorTypes = new Set((answer.errors ?? []).flatMap((error) => (error.type === undefined ? [] : [error.type])))
+    if (errorTypes.has("RATE_LIMITED")) {
+      return yield* new ProfileRefused({ code: "rate_limited", stage: "graphql", upstreamStatus: 200 })
+    }
+    const rawOwner = answer.data?.repositoryOwner
+    if (rawOwner === null) {
+      if (errorTypes.has("NOT_FOUND") || errorTypes.size === 0) {
+        return yield* new ProfileRefused({ code: "not_found", stage: "graphql", upstreamStatus: 200 })
+      }
+      return yield* new ProfileRefused({ code: "github_unavailable", stage: "graphql" })
+    }
+    if (rawOwner === undefined) {
+      return yield* new ProfileRefused({ code: "github_unavailable", stage: "graphql" })
+    }
+    const decoded = decodeGraphOwner(rawOwner)
+    if (Option.isNone(decoded)) {
+      return yield* new ProfileRefused({ code: "github_unavailable", stage: "graphql" })
+    }
+    const parsed = decoded.value
+    const repositories = (parsed.repositories?.nodes ?? []).flatMap((node) => {
+      const repo = mapGraphRepo(node)
+      return repo === null ? [] : [repo]
+    })
+    const pinned = (parsed.pinnedItems?.nodes ?? []).flatMap((node) => {
+      const repo = mapGraphRepo(node)
+      return repo === null ? [] : [repo]
+    })
+    const organizations: ReadonlyArray<ProfileOrganization> = (parsed.organizations?.nodes ?? []).flatMap((org) =>
+      org === null || org === undefined
+        ? []
+        : [{ login: org.login, name: trimOrNull(org.name), avatarUrl: safeAvatarUrl(org.avatarUrl) }]
+    )
+    const statusEmoji = trimOrNull(parsed.status?.emoji)
+    const statusMessage = trimOrNull(parsed.status?.message)
+    return {
+      profile: {
+        kind: parsed.__typename,
+        login: parsed.login,
+        name: trimOrNull(parsed.name),
+        avatarUrl: safeAvatarUrl(parsed.avatarUrl),
+        bio: parsed.__typename === "Organization" ? trimOrNull(parsed.description) : trimOrNull(parsed.bio),
+        company: trimOrNull(parsed.company),
+        location: trimOrNull(parsed.location),
+        website: safeHttpUrl(parsed.websiteUrl),
+        twitter: trimOrNull(parsed.twitterUsername),
+        pronouns: trimOrNull(parsed.pronouns),
+        status: statusEmoji !== null || statusMessage !== null ? { emoji: statusEmoji, message: statusMessage } : null,
+        followers: parsed.__typename === "User" ? (parsed.followers?.totalCount ?? 0) : null,
+        following: parsed.__typename === "User" ? (parsed.following?.totalCount ?? 0) : null,
+        publicRepos: parsed.repositories?.totalCount ?? repositories.length,
+        createdAt: trimOrNull(parsed.createdAt),
+        organizations,
+        pinned,
+        repositories,
+        readme: pickReadme(parsed),
+        contributions: parsed.__typename === "User" ? mapContributions(parsed.contributionsCollection) : null,
+      } satisfies Profile,
+      missing: [],
+    } satisfies Read
+  }).pipe(Effect.withSpan("profile.read.graphql"))

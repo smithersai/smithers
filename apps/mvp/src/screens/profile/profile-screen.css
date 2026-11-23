@@ -1,0 +1,11 @@
+/* Page layout only; components and colors come from @smthrs/ui. */
+.profile-screen {
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+}
+
+.profile-screen .profile-page-empty {
+  min-height: 16rem;
+  align-content: center;
+}

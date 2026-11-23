@@ -55,6 +55,8 @@ import { PluginsProvider } from "./plugins/components/PluginsContext"
 import type { PluginsView } from "./plugins/ui"
 import { McpProvider } from "./features/mcp/components/McpContext"
 import type { McpView } from "./features/mcp/store"
+import { ProfileProvider } from "./features/profile/components/ProfileContext"
+import type { ProfileView } from "./features/profile/profile"
 
 /** Every layer the page's React tree reads: what the boot program hands the page (src/boot.ts `render`). */
 export interface AppViews {
@@ -86,6 +88,7 @@ export interface AppViews {
   readonly personalModel: PersonalModelView
   readonly firstRun: FirstRunView
   readonly mcp?: McpView
+  readonly profile?: ProfileView
 }
 
 /**
@@ -123,7 +126,10 @@ export function AppProviders({ views: app, children }: { readonly views: AppView
                                                       <AttentionProvider value={app.attention}>
                                                         {/* The plugin host: its slots in the shell, its views' routes (src/plugins/). */}
                                                         <PluginsProvider value={app.plugins}>
-                                                          {app.mcp === undefined ? children : <McpProvider value={app.mcp}>{children}</McpProvider>}
+                                                          {(() => {
+                                                            const withMcp = app.mcp === undefined ? children : <McpProvider value={app.mcp}>{children}</McpProvider>
+                                                            return app.profile === undefined ? withMcp : <ProfileProvider value={app.profile}>{withMcp}</ProfileProvider>
+                                                          })()}
                                                         </PluginsProvider>
                                                       </AttentionProvider>
                                                     </DocsProvider>

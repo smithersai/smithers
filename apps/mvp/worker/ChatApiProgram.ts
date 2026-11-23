@@ -71,6 +71,9 @@ import { DEFAULT_CHAT_MODEL } from "./ModelRoles.ts"
 import * as PersonalApi from "./personal/Api.ts"
 import { PersonalModels } from "./personal/Models.ts"
 import * as Placement from "./Placement.ts"
+import * as ProfileApi from "./profile/Api.ts"
+import * as ProfileSource from "./profile/Source.ts"
+import * as ProfileStore from "./profile/Store.ts"
 import * as RemoteRuns from "./RemoteRuns.ts"
 import * as RepoApi from "./RepoApi.ts"
 import * as RepoConfig from "./RepoConfig.ts"
@@ -404,6 +407,10 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
     const docsSource = DocsSource.layer(docsSettings, { about: repos.about }).pipe(
       Layer.provide(Layer.merge(FetchHttpClient.layer, repoCache))
     )
+    // Owner profiles (`GET /api/profiles/<owner>`, docs/features/profile.md): GitHub user or organization profile
+    // cached in Postgres across every data center.
+    const profileSettings = yield* ProfileSource.settings.pipe(Effect.provide(FetchHttpClient.layer), Effect.orDie)
+    const profileApi = ProfileApi.make(ProfileSource.make(profileSettings, ProfileStore.postgres(database)))
     const logs = Logger.layerStructuredJson()
     // ChatApi hosts the remote flow executions' Durable Object (worker/Executions.ts, docs/features/remote-flows.md), and
     // creates each one where the deployment places them (`FLOW_EXECUTION_LOCATION`, worker/Placement.ts).
@@ -667,6 +674,8 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
               }
               // And a home, `/api/repos/<owner>/<name>/home` (docs/features/home.md): who the asker is and the curated home.
               if (HomeApi.handles(path)) return yield* home.fetch.pipe(Effect.provide(signedIn))
+              // Owner profiles (`/api/profiles/<owner>`): open to everyone, cached in Postgres.
+              if (ProfileApi.handles(path)) return yield* profileApi.fetch.pipe(Effect.provide(FetchHttpClient.layer))
               // And docs, `/api/repos/<owner>/<name>/docs[/page]`: open to everyone, like the about read.
               if (DocsApi.handles(path)) return yield* docs.fetch.pipe(Effect.provide(docsSource))
               if (path === REPOS_ROUTE || path.startsWith(`${REPOS_ROUTE}/`) || path === REPOSITORIES_SHAPE_ROUTE) {

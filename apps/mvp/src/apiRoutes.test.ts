@@ -67,4 +67,6 @@ describe("apiRoute", () => {
 // Repository names remain private even when they happen to be route vocabulary.
 it("templates repository identifiers that match route words", () => {
   expect(routeTemplate("/api/repos/issues/branches/about")).toBe("/api/repos/:owner/:repo/about")
+  expect(routeTemplate("/api/profiles/roninjin10")).toBe("/api/profiles/:owner")
+  expect(routeTemplate("/api/profiles/runs")).toBe("/api/profiles/:owner")
 })

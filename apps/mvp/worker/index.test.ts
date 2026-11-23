@@ -106,7 +106,7 @@ test("conditional asset responses retain their empty body", async () => {
   expect(await site.fetch(new Request("https://custom.example/") as Parameters<typeof site.fetch>[0], env)).toBe(response)
 })
 
-test.each(["/definitely-missing-page", "/sitemap.xml", "/favicon.ico", "/app/conversations/missing", "/owner/repo/issues/0"])("the SPA fallback keeps recovery HTML with a true 404: %s", async (path) => {
+test.each(["/_definitely-missing-page", "/api", "/sitemap.xml", "/favicon.ico", "/app/conversations/missing", "/owner/repo/issues/0"])("the SPA fallback keeps recovery HTML with a true 404: %s", async (path) => {
   const env = { CHAT_API: binding("CHAT_API", []), ASSETS: { fetch: async () => new Response("<html>__SMITHERS_ORIGIN__</html>", { headers: { "content-type": "text/html" } }) } as unknown as Fetcher }
   const response = await site.fetch(new Request(`https://app.test${path}`) as Parameters<typeof site.fetch>[0], env)
   expect(response.status).toBe(404)

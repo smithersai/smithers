@@ -25,6 +25,7 @@ export * from "./issues-view/issuesViewCss.ts";
 export * from "./item-conversation/itemConversationCss.ts";
 export * from "./json-value/jsonValueCss.ts";
 export * from "./loading-delay.ts";
+export * from "./profileCss.ts";
 export * from "./prompt/promptAttachmentsCss.ts";
 export * from "./repository-home/repositoryHomeCss.ts";
 export * from "./repositoryCss.ts";

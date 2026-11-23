@@ -1,0 +1,147 @@
+import { Data, Effect, type Layer, Option } from "effect"
+import { SqlClient } from "effect/sql"
+
+// The owner profile's store in Postgres (migration 0127_owner_profile): one row per lowercased GitHub login, shared by
+// every Cloudflare data center. Each operation opens and returns its own database client, so no connection is held
+// while GitHub answers.
+
+/** Which token read a kept profile answer: the deployment's read token, or anonymous. */
+export type Via = "deployment" | "anonymous"
+
+/** A GitHub refusal kept to hold bursts off during an outage or rate limit. */
+export type KeptRefusal = "not_found" | "rate_limited" | "github_unavailable"
+
+/** A kept good answer, as JSON ready to serve. */
+export interface KeptAnswer {
+  readonly text: string
+  readonly via: Via
+  readonly readAtMs: number
+  readonly freshUntilMs: number
+}
+
+/** One owner's cached row. Times are epoch milliseconds; `null` is none. */
+export interface Kept {
+  readonly answer: Option.Option<KeptAnswer>
+  /** Nobody asks GitHub before this instant; `null`, a read is due now. */
+  readonly nextReadAtMs: number | null
+  readonly refusal: KeptRefusal | null
+  readonly refusalVia?: Via
+}
+
+/** The store couldn't answer `op`: Postgres was unreachable or refused. */
+export class StoreUnavailable extends Data.TaggedError("ProfileStoreUnavailable")<{
+  readonly op: "get" | "claim" | "keep" | "refuse"
+}> {}
+
+/** The profile read's cache store; `R` is what its effects need. */
+export interface ProfileStore<R = never> {
+  readonly get: (owner: string) => Effect.Effect<Option.Option<Kept>, StoreUnavailable, R>
+  readonly claim: (
+    owner: string,
+    nowMs: number,
+    untilMs: number,
+    recoverAnonymous?: boolean,
+  ) => Effect.Effect<string | false, StoreUnavailable, R>
+  readonly keep: (owner: string, answer: KeptAnswer, generation: string) => Effect.Effect<boolean, StoreUnavailable, R>
+  readonly refuse: (
+    owner: string,
+    refusal: KeptRefusal,
+    nextReadAtMs: number,
+    via: Via | undefined,
+    generation: string,
+  ) => Effect.Effect<boolean, StoreUnavailable, R>
+}
+
+const iso = (ms: number) => new Date(ms).toISOString()
+
+interface Row {
+  readonly profile: string | null
+  readonly via: Via | null
+  readonly readAtMs: number | null
+  readonly freshUntilMs: number | null
+  readonly nextReadAtMs: number | null
+  readonly refusal: KeptRefusal | null
+  readonly refusalVia: Via | null
+}
+
+const keptOf = (row: Row): Kept => ({
+  answer: row.profile === null
+    ? Option.none()
+    : Option.some({ text: row.profile, via: row.via!, readAtMs: row.readAtMs!, freshUntilMs: row.freshUntilMs! }),
+  nextReadAtMs: row.nextReadAtMs,
+  refusal: row.refusal,
+  ...(row.refusalVia === null ? {} : { refusalVia: row.refusalVia }),
+})
+
+/** Postgres-backed profile cache store. */
+export const postgres = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>): ProfileStore<R> => {
+  const run = <A>(op: StoreUnavailable["op"], query: (sql: SqlClient.SqlClient) => Effect.Effect<A, unknown>) =>
+    Effect.flatMap(SqlClient.SqlClient, query).pipe(
+      Effect.provide(database),
+      Effect.mapError(() => new StoreUnavailable({ op })),
+      Effect.withSpan(`profile.store.${op}`),
+    )
+  return {
+    get: (owner) =>
+      run("get", (sql) =>
+        Effect.map(
+          sql<Row>`
+            SELECT profile, via,
+              (extract(epoch FROM read_at) * 1000)::float8 AS "readAtMs",
+              (extract(epoch FROM fresh_until) * 1000)::float8 AS "freshUntilMs",
+              (extract(epoch FROM next_read_at) * 1000)::float8 AS "nextReadAtMs",
+              refusal, refusal_via AS "refusalVia"
+            FROM owner_profile WHERE owner = ${owner}`,
+          ([row]) => Option.map(Option.fromNullishOr(row), keptOf),
+        )),
+    claim: (owner, nowMs, untilMs, recoverAnonymous = false) =>
+      run("claim", (sql) =>
+        Effect.map(
+          sql<{ readonly generation: string }>`
+            INSERT INTO owner_profile (owner, next_read_at, claim_generation) VALUES (${owner}, ${iso(untilMs)}::timestamptz, 1)
+            ON CONFLICT (owner) DO UPDATE SET next_read_at = EXCLUDED.next_read_at, refusal = NULL, refusal_via = NULL,
+              claim_generation = owner_profile.claim_generation + 1
+            WHERE owner_profile.next_read_at IS NULL OR owner_profile.next_read_at <= ${iso(nowMs)}::timestamptz
+              OR (${recoverAnonymous} AND owner_profile.refusal = 'rate_limited' AND
+                (owner_profile.refusal_via IS NULL OR owner_profile.refusal_via = 'anonymous'))
+            RETURNING claim_generation::text AS generation`,
+          ([row]) => row?.generation ?? false,
+        )),
+    keep: (owner, answer, generation) =>
+      run("keep", (sql) =>
+        Effect.map(
+          sql<{ readonly owner: string }>`
+            UPDATE owner_profile
+            SET profile = ${answer.text}, via = ${answer.via},
+              read_at = ${iso(answer.readAtMs)}::timestamptz,
+              fresh_until = ${iso(answer.freshUntilMs)}::timestamptz,
+              next_read_at = ${iso(answer.freshUntilMs)}::timestamptz,
+              refusal = NULL, refusal_via = NULL,
+              claim_generation = claim_generation + 1
+            WHERE owner = ${owner} AND claim_generation = ${generation}::bigint
+            RETURNING owner`,
+          (rows) => rows.length > 0,
+        )),
+    refuse: (owner, refusal, nextReadAtMs, via, generation) =>
+      run("refuse", (sql) =>
+        Effect.map(
+          refusal === "not_found"
+            ? sql<{ readonly owner: string }>`
+                UPDATE owner_profile
+                SET profile = NULL, via = NULL, read_at = NULL, fresh_until = NULL,
+                  refusal = ${refusal}, refusal_via = ${via ?? null},
+                  next_read_at = ${iso(nextReadAtMs)}::timestamptz,
+                  claim_generation = claim_generation + 1
+                WHERE owner = ${owner} AND claim_generation = ${generation}::bigint
+                RETURNING owner`
+            : sql<{ readonly owner: string }>`
+                UPDATE owner_profile
+                SET refusal = ${refusal}, refusal_via = ${via ?? null},
+                  next_read_at = ${iso(nextReadAtMs)}::timestamptz,
+                  claim_generation = claim_generation + 1
+                WHERE owner = ${owner} AND claim_generation = ${generation}::bigint
+                RETURNING owner`,
+          (rows) => rows.length > 0,
+        )),
+  }
+}

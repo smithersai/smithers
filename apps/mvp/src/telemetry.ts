@@ -40,6 +40,7 @@ import { FIRST_RUN_TELEMETRY } from "./features/first-run/contract"
 import { STATUS_TELEMETRY } from "./features/status/contract"
 import { TERMINAL_TELEMETRY } from "./features/terminal/contract"
 import { PRESENCE_TELEMETRY } from "./features/presence/contract"
+import { PROFILE_TELEMETRY } from "./features/profile/contract"
 import { COEDIT_TELEMETRY } from "./features/coedit/contract"
 import { SHARING_TELEMETRY } from "./features/sharing/contract"
 import { SANDBOX_TELEMETRY } from "./features/sandbox/contract"
@@ -225,6 +226,7 @@ const features: ReadonlyArray<Telemetry> = [
   DOCS_TELEMETRY,
   ATTENTION_TELEMETRY,
   TIMELINE_TELEMETRY,
+  PROFILE_TELEMETRY,
 ]
 
 /**

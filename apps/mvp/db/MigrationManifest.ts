@@ -124,6 +124,7 @@ import m0123 from "./migrations/0123_personal_credential_nonce.ts"
 import m0124 from "./migrations/0124_flow_placement_syntax.ts"
 import m0125 from "./migrations/0125_flow_source_limits.ts"
 import m0126 from "./migrations/0126_mcp_tokens.ts"
+import m0127 from "./migrations/0127_owner_profile.ts"
 
 /** Every published migration identity, in ascending apply order. */
 export const migrations = {
@@ -252,4 +253,5 @@ export const migrations = {
   "0124_flow_placement_syntax": m0124,
   "0125_flow_source_limits": m0125,
   "0126_mcp_tokens": m0126,
+  "0127_owner_profile": m0127,
 }

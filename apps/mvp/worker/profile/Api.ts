@@ -1,0 +1,80 @@
+import { Clock, Effect, Metric } from "effect"
+import { type HttpClient, HttpServerRequest, HttpServerResponse } from "effect/http"
+import { isProfileOwner, PROFILE_ROUTE, type ProfileRefusal } from "../../src/features/profile/contract.ts"
+import { codeOf } from "../ErrorCode.ts"
+import { withRequestRay } from "../RequestRay.ts"
+import * as ProfileMetrics from "./Metrics.ts"
+import * as ProfileSource from "./Source.ts"
+
+// `GET /api/profiles/<owner>`: returns the GitHub user or organization profile JSON cached in Postgres.
+// Public read (open to visitors and signed-in users alike). Content-free observability: never logs logins or bios.
+
+const encoder = new TextEncoder()
+const noStore = { "cache-control": "no-store" }
+
+const refuse = (status: number, code: ProfileRefusal, headers: Record<string, string> = {}) =>
+  HttpServerResponse.jsonUnsafe({ code }, { status, headers: { ...noStore, ...headers } })
+
+/** Whether `path` belongs to the profile API (`/api/profiles/<owner>`). */
+export const handles = (path: string): boolean => path.startsWith(`${PROFILE_ROUTE}/`)
+
+const parseOwner = (path: string): string | undefined => {
+  const rest = path.slice(PROFILE_ROUTE.length + 1)
+  if (rest === "" || rest.includes("/")) return undefined
+  try {
+    return decodeURIComponent(rest)
+  } catch {
+    return undefined
+  }
+}
+
+/** Builds the profile HTTP handler over `source`. */
+export const make = <R>(source: ProfileSource.Source<R>) => {
+  const fetch: Effect.Effect<
+    HttpServerResponse.HttpServerResponse,
+    never,
+    HttpServerRequest.HttpServerRequest | HttpClient.HttpClient | R
+  > = Effect.gen(function* () {
+    const request = yield* HttpServerRequest.HttpServerRequest
+    const startedAt = yield* Clock.currentTimeMillis
+    const fields: Record<string, string | number> = {}
+    const response = yield* Effect.gen(function* () {
+      const path = request.url.split("?")[0]!
+      const owner = parseOwner(path)
+      if (owner === undefined || !isProfileOwner(owner)) return refuse(404, "not_found")
+      if (request.method !== "GET") return HttpServerResponse.empty({ status: 405, headers: { allow: "GET" } })
+      const outcome = yield* source.answer(owner)
+      Object.assign(fields, ProfileSource.fieldsOf(outcome))
+      yield* Metric.update(Metric.withAttributes(ProfileMetrics.profileAnswers, { cache: outcome.cache }), 1)
+      if (outcome._tag === "Answered") {
+        const bytes = encoder.encode(outcome.text)
+        fields.bytes = bytes.length
+        return HttpServerResponse.uint8Array(bytes, {
+          headers: { "cache-control": `public, max-age=${outcome.maxAgeSeconds}, must-revalidate` },
+          contentType: "application/json",
+        })
+      }
+      fields.errorCode = outcome.code
+      const wait: Record<string, string> = outcome.retryAfterMillis === undefined
+        ? {}
+        : { "retry-after": String(Math.max(1, Math.ceil(outcome.retryAfterMillis / 1000))) }
+      return outcome.code === "not_found" ? refuse(404, "not_found") : refuse(503, outcome.code, wait)
+    }).pipe(
+      Effect.catchDefect((defect) =>
+        Effect.sync(() => {
+          fields.errorCode = codeOf(defect)
+          return refuse(503, "unavailable")
+        })
+      ),
+    )
+    yield* Effect.annotateCurrentSpan({ "http.response.status_code": response.status })
+    yield* Effect.logWithLevel(response.status >= 500 ? "Error" : response.status >= 400 ? "Warn" : "Info")(
+      "profile.get",
+    ).pipe(
+      Effect.annotateLogs({ ...fields, status: response.status, durationMs: (yield* Clock.currentTimeMillis) - startedAt }),
+    )
+    return response
+  }).pipe(Effect.withSpan("profile.get", { kind: "server" }))
+
+  return { fetch: withRequestRay(fetch) }
+}

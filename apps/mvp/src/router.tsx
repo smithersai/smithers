@@ -18,6 +18,9 @@ import type { RepoView } from "./features/repo/repo"
 import type { RunsView } from "./features/runs/runs"
 import type { SecretsLayer } from "./features/secrets/secrets"
 import type { McpView } from "./features/mcp/store"
+import { isProfileOwner } from "./features/profile/contract"
+import type { ProfileView } from "./features/profile/profile"
+import { canonicalProfileHref, profileSearch } from "./features/profile/view"
 import type { TerminalView } from "./features/terminal/terminal"
 import type { ViewsView } from "./features/views/views"
 import { AppScreen } from "./screens/app/AppScreen"
@@ -60,6 +63,7 @@ import { SecretsScreen } from "./screens/secrets/SecretsScreen"
 import { RepoSettingsScreen } from "./screens/repo-settings/RepoSettingsScreen"
 import { SettingsScreen } from "./screens/settings/SettingsScreen"
 import { McpAuthorizeScreen } from "./screens/mcp/McpAuthorizeScreen"
+import { ProfileScreen } from "./screens/profile/ProfileScreen"
 import { PluginScreen } from "./screens/plugin/PluginScreen"
 import { RepoPluginScreen } from "./screens/plugin/RepoPluginScreen"
 import type { PluginsView } from "./plugins/ui"
@@ -96,6 +100,7 @@ export interface RouterContext {
   readonly domains: DomainsView
   readonly secrets: SecretsLayer
   readonly mcp?: McpView
+  readonly profile?: ProfileView
 }
 
 /**
@@ -423,6 +428,44 @@ const runRoute = createRoute({
   component: RunScreen,
   beforeLoad: (load) => enter(load, local, () => load.context.runs.actions.openRun(load.params.runId)),
   onLeave: ({ context, params }) => leaveRun(context, params.runId),
+})
+
+/** `/$owner`: a GitHub-style user or organization profile page (docs/features/profile.md). */
+const profileRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: ROUTE_PATHS.profile,
+  component: ProfileScreen,
+  params: {
+    parse: (params) => (isProfileOwner(params.owner) ? params : false as const),
+    stringify: (params) => params,
+  },
+  validateSearch: profileSearch,
+  beforeLoad: ({ context, params, search, ...load }) =>
+    enter(
+      load,
+      async () => {
+        await context.profile?.actions.warm(params.owner)
+        const href = canonicalProfileHref(load.location, params.owner, context.profile?.actions.knownLogin(params.owner))
+        if (href !== undefined) throw redirect({ href, replace: true })
+      },
+      () => {
+        context.profile?.actions.open(params.owner, {
+          tab: search.tab ?? "overview",
+          search: search.q ?? "",
+          sort: search.sort ?? "updated",
+          filter: search.type ?? "all",
+        })
+        if (context.profile === undefined || context.profile.actions.knownLogin(params.owner) !== undefined) return
+        void context.profile.actions.canonicalLogin(params.owner).then((canonical) => {
+          const routerInstance = context.router
+          if (routerInstance === undefined || load.abortController.signal.aborted) return
+          const shown = routerInstance.state.location
+          if (shown.pathname !== load.location.pathname) return
+          const href = canonicalProfileHref(shown, params.owner, canonical)
+          if (href !== undefined) void routerInstance.navigate({ href, replace: true })
+        }, () => undefined)
+      },
+    ),
 })
 
 /**
@@ -874,6 +917,7 @@ const routeTree = rootRoute.addChildren([
   repoPluginIndexRoute,
   repoPluginPathRoute,
   repoSettingsRoute,
+  profileRoute,
   repoRoute,
   treeRoute,
   blobRoute,

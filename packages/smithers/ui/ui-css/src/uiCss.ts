@@ -48,6 +48,7 @@ import { calendarCss } from "./calendar/calendarCss.ts";
 import { vaultCss } from "./vault/vaultCss.ts";
 import { wordmarkCss } from "./wordmark/wordmarkCss.ts";
 import { breadcrumbsCss, directoryListingCss, generatedChipCss, popoverCss, refPickerCss, repoAboutCss } from "./repositoryCss.ts";
+import { profileCss } from "./profileCss.ts";
 import { flowFormViewCss } from "./flow-form-view/flowFormViewCss.ts";
 import { generatedViewCss } from "./generated-view/generatedViewCss.ts";
 import { issuesViewCss } from "./issues-view/issuesViewCss.ts";
@@ -838,6 +839,7 @@ export const uiCss = [
   segmentedControlCss,
   commandPaletteCss,
   chatTimelineCss,
+  profileCss,
   reducedMotionCss,
 ]
   .map((block) => block.trim())

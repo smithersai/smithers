@@ -106,6 +106,9 @@ import { Domains, type DomainsView } from "./features/domains/domains"
 import { PersonalModelClient } from "./features/personal-model/api"
 import { PersonalModel, type PersonalModelView } from "./features/personal-model/personalModel"
 import { PersonalModelStore } from "./features/personal-model/store"
+import { ProfileClient } from "./features/profile/api"
+import { Profile, type ProfileView } from "./features/profile/profile"
+import { ProfileStore } from "./features/profile/store"
 import { Mcp, type McpView } from "./features/mcp/store"
 import { FirstRun, type FirstRunView } from "./features/first-run/firstRun"
 import { type ThemeHost, ThemeStore } from "./features/theme/store"
@@ -271,6 +274,8 @@ export const appLayer = <S = never>(
     Home.layer.pipe(Layer.provide(HomeStore.layer)),
     // A repository's docs (docs/features/docs.md): the Docs tab, over ChatApi's docs routes.
     Docs.layer.pipe(Layer.provide(DocsStore.layer)),
+    // Owner profiles (docs/features/profile.md): GitHub user & org profiles at `/$owner`.
+    Profile.layer.pipe(Layer.provide(ProfileStore.layer)),
     Commands.layer.pipe(Layer.provide(RunSteers.layer)),
     Views.layer,
     // The repository and issues views in the conversation the tab shows: what each renders, loaded as it arrives, while
@@ -430,6 +435,7 @@ export const appLayer = <S = never>(
         RepoClient.layer({ origin, within: REQUEST_WITHIN }),
         HomeClient.layer({ origin, within: REQUEST_WITHIN }),
         DocsClient.layer({ origin }),
+        ProfileClient.layer({ origin, within: REQUEST_WITHIN }),
         // A TODO's run, read from Cloudflare (ruling TODO-3).
         RemoteRunsClient.layer({ origin, within: REQUEST_WITHIN }),
       ),
@@ -619,6 +625,7 @@ export interface BootOptions {
     personalModel: PersonalModelView,
     firstRun: FirstRunView,
     mcp: McpView,
+    profile: ProfileView,
   ) => void
 }
 
@@ -660,6 +667,7 @@ export const boot = (options: BootOptions & { readonly storage: StoragePersisten
     const personalModel = yield* PersonalModel
     const firstRun = yield* FirstRun
     const mcp = yield* Mcp
+    const profile = yield* Profile
     const store = yield* ChatStore
     // Summaries that can't be made say so, on the one stack (ruling FE-19).
     const { launches } = yield* AttentionStore
@@ -698,6 +706,7 @@ export const boot = (options: BootOptions & { readonly storage: StoragePersisten
         personalModel,
         firstRun,
         mcp,
+        profile,
       )
     )
     if (timeline !== undefined) {

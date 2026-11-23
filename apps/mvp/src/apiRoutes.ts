@@ -12,7 +12,7 @@ export const ROUTE_WORDS: ReadonlySet<string> = new Set([
   "comments", "compare", "connections", "conversations", "create", "creation", "credential", "delete", "docs", "domains", "exchange", "feeds", "file",
   "flow-drafts", "flows", "github", "github-sync", "github-writes", "handoff", "home", "hosted-model", "issue-edges", "item-summaries", "items", "jev", "launch", "logs", "machines", "me", "merge",
   "message-pin", "message-pins", "messages", "metrics", "model", "my-conversations", "notifications", "personal-model",
-  "preview", "pull-commits", "pulls", "questions", "raw", "refs", "remote-runs", "renderer", "repos", "repositories", "resolve",
+  "preview", "profiles", "pull-commits", "pulls", "questions", "raw", "refs", "remote-runs", "renderer", "repos", "repositories", "resolve",
   "review", "reviews", "room", "run", "runners", "runs", "sandbox", "sandbox-limits", "save", "secrets", "session", "shapes", "shares",
   "sign-in", "sign-out", "source", "spend-alerts", "stack", "stamp", "start", "state", "steers", "stop", "summaries",
   "telemetry", "terminals", "test", "texts", "timeline", "todo-leaves", "todo-requests", "todos", "traces", "tree", "triage-settings",
@@ -28,17 +28,22 @@ const TELEMETRY_PREFIX = "/api/telemetry/"
  */
 export const routeTemplate = (pathname: string): string => {
   const template: Array<string> = []
-  // How many of the segments after `repos` still name its owner and repository.
+  // How many of the segments after `repos` or `profiles` still name its owner and repository.
   let naming = 0
+  let profileOwner = false
   for (const segment of pathname.split("/").slice(1)) {
     if (segment === "") {
       template.push(segment)
+    } else if (profileOwner) {
+      template.push(":owner")
+      profileOwner = false
     } else if (naming > 0) {
       template.push(naming === 2 ? ":owner" : ":repo")
       naming -= 1
     } else if (ROUTE_WORDS.has(segment)) {
       template.push(segment)
       naming = segment === "repos" && pathname.split("/").filter(Boolean).length > 3 ? 2 : 0
+      profileOwner = segment === "profiles"
     } else {
       template.push(":id")
     }

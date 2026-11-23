@@ -250,11 +250,26 @@ export {
   formatCount,
   languageShares,
   RepoAbout,
+  LANGUAGE_COLORS,
   type RepoAboutContributor,
   type RepoAboutLanguage,
   type RepoAboutProps,
   type RepoAboutRelease,
 } from "./repo-about";
+export {
+  OwnerProfile,
+  OwnerProfileSkeleton,
+  contributionMonthLabels,
+  type OwnerProfileContributionDay,
+  type OwnerProfileContributions,
+  type OwnerProfileLinkProps,
+  type OwnerProfileOrganization,
+  type OwnerProfileProps,
+  type OwnerProfileRepoFilter,
+  type OwnerProfileRepository,
+  type OwnerProfileSort,
+  type OwnerProfileTab,
+} from "./owner-profile";
 export { CopyButton, type CopyButtonProps } from "./copy-button";
 export { Kbd, type KbdProps } from "./kbd";
 export { SegmentedControl, type SegmentedControlOption, type SegmentedControlProps } from "./segmented-control";

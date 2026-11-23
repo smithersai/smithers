@@ -1,7 +1,8 @@
 import { Button } from "@smthrs/ui"
 import { useLiveQuery } from "@tanstack/react-db"
-import { useSearch } from "@tanstack/react-router"
+import { Link, useSearch } from "@tanstack/react-router"
 import { useOptionalChat } from "../../../AppContext"
+import { isProfileOwner } from "../../profile/contract"
 import { useOptionalTodos } from "../../todos/components/TodosContext"
 import { SIGN_IN_FAILED, SIGN_IN_FAILED_PARAM, SIGN_OUT } from "../contract"
 import { useAuth } from "./AuthContext"
@@ -33,7 +34,9 @@ function SignedInAccount({ login, signingOut, confirming }: { readonly login: st
   const todos = useOptionalTodos()
   return (
     <span aria-label="Account">
-      <span>{login}</span>
+      {login !== null && isProfileOwner(login)
+        ? <Link to="/$owner" params={{ owner: login }}>{login}</Link>
+        : <span>{login}</span>}
       {chat !== null && todos !== null
         ? <SignOutWithPending chat={chat} todos={todos} signingOut={signingOut} confirming={confirming} />
         : (
