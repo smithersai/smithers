@@ -1,3 +1,4 @@
+import { Effect } from "effect"
 import type { Locator, Page } from "@playwright/test"
 import { DEVICE_PERSON_HEADER } from "../src/features/auth/contract"
 import { expect, type Tab, test } from "./devices"
@@ -158,7 +159,7 @@ const expectNoShift = async (
     let boxes = await boxesOf(watched)
     await expect.poll(async () => {
       const shifts = (await shiftsSeen(page))?.length ?? 0
-      await page.waitForTimeout(1_500)
+      await Effect.runPromise(Effect.sleep(1_500))
       const now = await boxesOf(watched)
       const quiet = ((await shiftsSeen(page))?.length ?? 0) === shifts && JSON.stringify(now) === JSON.stringify(boxes)
       boxes = now

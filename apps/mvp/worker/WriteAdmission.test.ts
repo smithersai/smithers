@@ -83,7 +83,7 @@ test.each(["coedit seed", "issue"])("a valid paced %s upload lasting over ten se
   const start = performance.now()
   const response = await handler(new Request(kind === "coedit seed" ? "http://smithers.test/api/texts/file" : "http://smithers.test/api/repos/octo/hello/writes", {
     method: "POST", duplex: "half", body: new ReadableStream<Uint8Array>({ async pull(controller) {
-      await new Promise((resolve) => setTimeout(resolve, 700))
+      await Effect.runPromise(Effect.sleep(700))
       const end = Math.min(bytes.length, offset + Math.ceil(bytes.length / 16))
       controller.enqueue(bytes.slice(offset, end))
       offset = end

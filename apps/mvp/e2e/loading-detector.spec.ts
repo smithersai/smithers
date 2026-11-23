@@ -36,7 +36,7 @@ test("hidden and zero-sized skeletons stay unreported until they paint", async (
       <div id="transparent" style="opacity:0"><div data-slot="skeleton" style="width:120px;height:20px"></div></div>`
   })
   // Let the observer and several animation frames run while every marker is unpainted.
-  await page.waitForTimeout(350)
+  await page.evaluate(() => new Promise<void>((resolve) => { let left = 10; const tick = () => (--left <= 0 ? resolve() : requestAnimationFrame(tick)); requestAnimationFrame(tick) }))
   expect(await spinnersSeen(page)).toEqual([])
   const revealed = await page.evaluate(() => {
     document.getElementById("transparent")!.style.opacity = "1"

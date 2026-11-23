@@ -656,7 +656,7 @@ describe("POST /api/repos/<owner>/<name>/writes on another repository (decision 
     const early = await h.fetch(route, post(write))
     expect([early.status, early.headers.get("retry-after"), await early.json()]).toEqual([429, "1", { code: "rate_limited" }])
     expect(permissionReads(h)).toHaveLength(1)
-    await new Promise((done) => setTimeout(done, 1_100))
+    await Effect.runPromise(Effect.sleep(1_100))
     expect((await h.fetch(route, post(write))).status).toBe(202)
   })
 
@@ -672,7 +672,7 @@ describe("POST /api/repos/<owner>/<name>/writes on another repository (decision 
     const cooled = await h.fetch(route, post(createWrite()))
     expect([cooled.status, cooled.headers.get("retry-after")]).toEqual([503, "1"])
     expect(permissionReads(h)).toHaveLength(2)
-    await new Promise((done) => setTimeout(done, 1_100))
+    await Effect.runPromise(Effect.sleep(1_100))
     // Removed on GitHub: the next read says so.
     github.roles.delete("maya")
     expect((await h.fetch(route, post(createWrite()))).status).toBe(403)

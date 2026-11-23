@@ -1,3 +1,4 @@
+import { Effect } from "effect"
 import type { Page, Request } from "@playwright/test"
 import { expect, step, test } from "./fixtures"
 import { requires } from "./target"
@@ -100,14 +101,14 @@ test(
         const read = page.waitForResponse((response) => response.url().includes("/blob/") && response.url().includes(file), { timeout: 5_000 })
           .catch(() => undefined)
         await link.hover()
-        await Promise.all([page.waitForTimeout(150), read])
+        await Promise.all([Effect.runPromise(Effect.sleep(150)), read])
         await watchFrames(page, file, FIRST_LINE[file])
         clicking = true
         await link.click()
         await expect(page).toHaveURL(new RegExp(`/blob/main/${file.replace(".", "\\.")}$`))
         await expect.poll(async () => (await framesSeen(page)).shownAt, { timeout: 10_000 }).toBeDefined()
         // Five seconds for a reload or a late unmount to happen.
-        await page.waitForTimeout(5_000)
+        await Effect.runPromise(Effect.sleep(5_000))
         clicking = false
         const seen = await framesSeen(page)
         const ms = seen.shownAt! - seen.clickedAt!

@@ -1,3 +1,4 @@
+import { Effect } from "effect"
 import { type Browser, type BrowserContext, expect, test as base, type Page, type Request, type TestInfo } from "@playwright/test"
 import { appendFile } from "node:fs/promises"
 import { createHash } from "node:crypto"
@@ -133,17 +134,15 @@ export class Watched extends Problems {
    */
   async check(testInfo: Pick<TestInfo, "annotations">, log: Array<string>): Promise<Array<string>> {
     // A broken or streaming error body must never hide its already-recorded status or hold teardown indefinitely.
-    let timeout: ReturnType<typeof setTimeout> | undefined
     const endsAt = Date.now() + 2_000
-    try {
-      while (this.pendingDiagnostics.size > 0 && Date.now() < endsAt) {
-        await Promise.race([
-          Promise.allSettled([...this.pendingDiagnostics]),
-          new Promise<void>(resolve => { timeout = setTimeout(resolve, Math.max(0, endsAt - Date.now())) }),
-        ])
-        clearTimeout(timeout)
-      }
-    } finally { clearTimeout(timeout) }
+    while (this.pendingDiagnostics.size > 0 && Date.now() < endsAt) {
+      await Effect.runPromise(
+        Effect.promise(() => Promise.allSettled([...this.pendingDiagnostics])).pipe(
+          Effect.timeoutOption(Math.max(0, endsAt - Date.now())),
+          Effect.asVoid,
+        ),
+      )
+    }
     for (const candidate of this.nativeCandidates.splice(0)) {
       const cancelled = candidate.classify?.() === true
       this.cancellationRecords.push(`${cancelled ? "navigation cancellation" : "access-control"} ${candidate.receipt}`)

@@ -1,3 +1,4 @@
+import { Effect } from "effect"
 import { type APIRequestContext, request as requests } from "@playwright/test"
 import { createHash, randomBytes } from "node:crypto"
 import { ADMIN_RECEIPTS_ROUTE } from "../src/features/runners/contract"
@@ -84,7 +85,7 @@ test.afterEach(async () => {
   if (api === undefined) return
   const session = api
   try {
-    if (unanswered) await new Promise((resolve) => setTimeout(resolve, LATE_WRITE_MS))
+    if (unanswered) await Effect.runPromise(Effect.sleep(LATE_WRITE_MS))
     await retireBoth(session)
     expect((await session.get(new URL(`/api/repos/${repo}/agents/${NAME}`, baseURL).href)).status(), "the removed agent").toBe(404)
   } finally {

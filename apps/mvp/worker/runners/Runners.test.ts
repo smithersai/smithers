@@ -1116,7 +1116,7 @@ describe("the repository's runners and agents", () => {
         { repoId: REPO, name: "nyc-waits", tokenSha256: "a".repeat(64), labels: [], capacity: 1, repoAuthorized: true },
         fencedBy({ execution: "runners-put:waits", expiresAt: Date.now() + 300 }),
       ))
-      await new Promise((done) => setTimeout(done, 600))
+      await Effect.runPromise(Effect.sleep(600))
       await held.release()
       expect(await writing).toBe("authorization_expired")
       expect(await sql`SELECT count(*)::int AS n FROM runners`).toEqual([{ n: 0 }])
@@ -1207,7 +1207,7 @@ describe("the repository's runners and agents", () => {
         const writing = op === "put"
           ? query(Store.addRunner({ ...write, tokenSha256: "b".repeat(64) }, by))
           : query(Store.removeRunner({ repoId: REPO, name }, { ...by, fenced: { ...by.fenced!, op: "delete" } }))
-        await new Promise((done) => setTimeout(done, 700))
+        await Effect.runPromise(Effect.sleep(700))
         await held.release()
         expect(await writing).toBe("authorization_expired")
         expect(await sql`SELECT token_sha256 AS sha, removed_at IS NULL AS live FROM runners WHERE name = ${name}`)
@@ -1232,7 +1232,7 @@ describe("the repository's runners and agents", () => {
           authority: { _tag: "Session", personId: who.person, sessionId: who.session, alias: who.alias },
         }),
       )))
-      await new Promise((done) => setTimeout(done, 1_200))
+      await Effect.runPromise(Effect.sleep(1_200))
       // The holder gives the token up (rolls back), after the session ended.
       await held.abort()
       const exit = await writing
@@ -1287,9 +1287,9 @@ describe("the repository's runners and agents", () => {
         { ...write, labels: ["moved"] },
         fencedBy({ execution, expiresAt: Date.now() + 1_000, generation }),
       )))
-      await new Promise((done) => setTimeout(done, 700))
+      await Effect.runPromise(Effect.sleep(700))
       await generationRow.release()
-      await new Promise((done) => setTimeout(done, 700))
+      await Effect.runPromise(Effect.sleep(700))
       await receiptRow.abort()
       const exit = await writing
       expect(Exit.isSuccess(exit) ? exit.value : "failed").not.toBe("set")
@@ -1551,7 +1551,7 @@ describe("the repository's runners and agents", () => {
         }))))
       await rotating
       const asked = call(route, token, route === "settle" ? { key: job.key, claim: job.claim, outcome } : { key: job.key, claim: job.claim })
-      await new Promise((done) => setTimeout(done, 500))
+      await Effect.runPromise(Effect.sleep(500))
       commit()
       await locker
       expect(await asked).toEqual({ status: 403, body: { code: "not_authorized" } })
@@ -1601,7 +1601,7 @@ describe("the repository's runners and agents", () => {
           ? { key: job.key, claim: job.claim, events: [event] }
           : { key: job.key, claim: job.claim }
         const acting = call(route, token, body)
-        await new Promise((done) => setTimeout(done, 500))
+        await Effect.runPromise(Effect.sleep(500))
         commit()
         await revoker
         expect([route, await acting]).toEqual([route, { status: 403, body: { code: "not_authorized" } }])
@@ -1813,7 +1813,7 @@ describe("the repository's runners and agents", () => {
       }))))
     await locking
     const answers = [claim(token, { machine: { version: "1.0.0" } }), claim(token, { machine: { version: "2.0.0" } })]
-    await new Promise((done) => setTimeout(done, 500))
+    await Effect.runPromise(Effect.sleep(500))
     release()
     await holder
     expect((await Promise.all(answers)).map((answer) => answer.status)).toEqual([200, 200])
@@ -1823,7 +1823,7 @@ describe("the repository's runners and agents", () => {
     const token = await register("nyc-waits")
     const { claim } = await routes()
     const waiting = claim(token, { waitSeconds: 2 })
-    await new Promise((done) => setTimeout(done, 300))
+    await Effect.runPromise(Effect.sleep(300))
     await sql`DELETE FROM github_repositories`
     expect(await waiting).toEqual({ status: 403, body: { code: "not_authorized" } })
   })
@@ -1856,7 +1856,7 @@ describe("the repository's runners and agents", () => {
       }))))
     await rotating
     const reclaiming = claim(token)
-    await new Promise((done) => setTimeout(done, 500))
+    await Effect.runPromise(Effect.sleep(500))
     commit()
     await locker
     expect(await reclaiming).toEqual({ status: 403, body: { code: "not_authorized" } })

@@ -22,7 +22,6 @@ const query = (text: string, ...params: ReadonlyArray<unknown>) =>
     Effect.flatMap(SqlClient.SqlClient, (sql) => Effect.orDie(sql.unsafe<Record<string, unknown>>(text, params)))
   )
 const database = () => runtime.runPromise(Effect.map(TestDatabase.Scratch, (scratch) => scratch.database))
-const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
 beforeEach(() => query(`TRUNCATE notifications, fleet_alerts, github_repo_roles, feed_barriers`))
 
@@ -97,15 +96,18 @@ test("a role restored while the denied batch waits on its lock keeps the person'
   )
   await barrier("b3")
   // A read that restores her Member role holds her feed lock, as `remember` does, and commits a moment later.
+  let onLocked!: () => void
+  const locked = new Promise<void>((resolve) => { onLocked = resolve })
   const restoring = runtime.runPromise(
     Effect.flatMap(SqlClient.SqlClient, (sql) =>
       sql.withTransaction(Effect.gen(function*() {
         yield* FeedLocks.lock(sql, [{ repoId: "github/acme/widgets", personId: "restored" }])
         yield* sql`UPDATE github_repo_roles SET role = 'member', checked_at = now() WHERE person_id = 'restored'`
-        yield* Effect.sleep(400)
+        onLocked()
+        yield* Effect.sleep(300)
       })))
   )
-  await pause(100)
+  await Promise.race([locked, restoring])
   const db = await database()
   const denied = await Effect.runPromise(
     RedactFeed.observedBatch({ ...RedactFeed.startOf("b3"), phase: "denied" }, db, 10)

@@ -1,3 +1,4 @@
+import { Effect } from "effect"
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -56,7 +57,7 @@ test("release: an open tab discovers a second production build on navigation and
         await changed
         expect(checks.some((record) => record.includes("navigation"))).toBe(true)
         // Five seconds after the release took over the tab, the click's page is still the old release's, not reloaded.
-        await page.waitForTimeout(5_000)
+        await Effect.runPromise(Effect.sleep(5_000))
         await expect(page.locator('meta[name="release-test"]')).toHaveAttribute("content", "old")
         expect(documents).toBe(before)
         expect(lines.some((line) => line.startsWith("page.reload"))).toBe(false)

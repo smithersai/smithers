@@ -118,7 +118,7 @@ const browser = (options: { readonly path?: string; readonly search?: string; re
     },
     mark: (name) => void marks.push(name),
   }
-  const settle = () => new Promise<void>((resolve) => setTimeout(resolve, 0))
+  const settle = () => new Promise<void>((resolve) => setImmediate(resolve))
   return {
     host,
     lock,

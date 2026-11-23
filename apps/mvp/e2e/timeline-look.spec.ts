@@ -10,6 +10,20 @@ import { railMarkers } from "../src/features/timeline/view"
 // sizes, in both themes, at three lengths, beside the mock's own (test-results/timeline-look/).
 requires("scriptedAgent", "member")
 
+const settled = (page: Page, frames = 4) =>
+  page.evaluate(async (count) => {
+    const waitFrames = (n: number) => new Promise<void>((resolve) => {
+      let left = n
+      const tick = () => (--left <= 0 ? resolve() : requestAnimationFrame(tick))
+      requestAnimationFrame(tick)
+    })
+    await waitFrames(2)
+    const finite = document.getAnimations().filter((anim) => anim.effect?.getComputedTiming().iterations !== Infinity)
+    await Promise.all(finite.map((anim) => anim.finished.catch(() => undefined)))
+    await waitFrames(count)
+  }, frames)
+
+
 const LENGTHS = { short: 3, medium: 20, long: 64 } as const
 const SIZES = [{ width: 1440, height: 900 }, { width: 1280, height: 800 }] as const
 
@@ -111,7 +125,7 @@ test("Timeline: phases read as what happened, levels arrive, and hover adds deta
       await a.page.setViewportSize(size)
       await a.page.emulateMedia({ colorScheme: theme })
       await a.page.evaluate(wanted => { document.documentElement.dataset.theme = wanted }, theme)
-      await a.page.waitForTimeout(600)
+      await settled(a.page)
       await bounded(a.page)
       await snapshot(a.page, `${name}-${size.width}-${theme}`)
     })
@@ -119,7 +133,7 @@ test("Timeline: phases read as what happened, levels arrive, and hover adds deta
   await test.step("A single drag from the live edge loads unmounted middle history", async () => {
     const viewport = a.page.locator('[data-slot="message-scroller-viewport"]')
     await viewport.evaluate(el => { el.scrollTop = el.scrollHeight })
-    await a.page.waitForTimeout(400)
+    await settled(a.page)
     await rail(a.page).locator('[data-lens="1"]').hover()
     const lens = await rail(a.page).locator('[data-lens="1"]').boundingBox()
     const target = await rail(a.page).evaluate(element => {
@@ -162,16 +176,16 @@ test("Timeline: phases read as what happened, levels arrive, and hover adds deta
     const viewport = a.page.locator('[data-slot="message-scroller-viewport"]')
     for (const fraction of [.8, .55, .3, .05, .5]) {
       await viewport.evaluate((el, at) => { el.scrollTop = el.scrollHeight * at }, fraction)
-      await a.page.waitForTimeout(700)
+      await settled(a.page)
     }
     await expect(rail(a.page).locator('ol[data-level="0"] [aria-current="location"]').first()).toBeAttached()
   })
   await test.step("Resize recomputes the windows, lenses and funnels", async () => {
     await a.page.setViewportSize({ width: 1440, height: 900 })
     await a.page.locator('[data-slot="message-scroller-viewport"]').evaluate(el => { el.scrollTop = el.scrollHeight / 2 })
-    await a.page.waitForTimeout(600)
+    await settled(a.page)
     await a.page.setViewportSize({ width: 1280, height: 640 })
-    await a.page.waitForTimeout(600)
+    await settled(a.page)
     await bounded(a.page)
     await snapshot(a.page, "long-resize-dark")
     await a.page.setViewportSize({ width: 1280, height: 800 })
@@ -260,7 +274,7 @@ test("Timeline: phases read as what happened, levels arrive, and hover adds deta
     await expect(tip).toBeVisible()
     await expect(tip).toContainText("messages")
     await expect(tip).toContainText("finished after a few runs")
-    await a.page.waitForTimeout(900)
+    await settled(a.page)
   })
   await test.step("A phase jumps to where it starts", async () => {
     const block = rail(a.page).locator('ol[data-level="1"] button[data-in][data-summary="ready"]').first()
@@ -268,7 +282,8 @@ test("Timeline: phases read as what happened, levels arrive, and hover adds deta
     await block.click()
     await expect(a.page.locator(`[id="${target}"]`)).toBeInViewport()
     await a.page.mouse.move(1000, 20)
-    await a.page.waitForTimeout(600)
+    await expect(rail(a.page).getByRole("tooltip")).toBeHidden()
+    await settled(a.page)
   })
 })
 
@@ -294,7 +309,7 @@ test("Timeline: marks sit where their messages are, the band matches the screen,
   for (const size of [{ width: 1190, height: 785 }, { width: 1440, height: 900 }] as const) await test.step(`Geometry at ${size.width}`, async () => {
     await a.page.setViewportSize(size)
     await viewport.evaluate(el => { el.scrollTop = el.scrollHeight })
-    await a.page.waitForTimeout(800)
+    await settled(a.page)
     await expect(async () => {
       const seen = await rail(a.page).locator('ol[data-level="0"]').evaluate(list => {
         const clip = list.closest(".sui-tl-clip")!.getBoundingClientRect()
@@ -325,7 +340,7 @@ test("Timeline: marks sit where their messages are, the band matches the screen,
     for (const theme of ["light", "dark"] as const) {
       await a.page.emulateMedia({ colorScheme: theme })
       await a.page.evaluate(wanted => { document.documentElement.dataset.theme = wanted }, theme)
-      await a.page.waitForTimeout(400)
+      await settled(a.page)
       await a.page.screenshot({ path: `test-results/timeline-look/spacing-${size.width}x${size.height}-${theme}.png` })
     }
   })
@@ -337,7 +352,7 @@ test("Timeline: marks sit where their messages are, the band matches the screen,
       return shown.reduce((best, item) => item.box.height > best.box.height ? item : best).index
     })
     await viewport.evaluate(el => { el.scrollTop = 0 })
-    await a.page.waitForTimeout(600)
+    await settled(a.page)
     await row.nth(tallest).locator(".sui-tl-mk").click()
     await expect(a.page.locator(`[id="${await row.nth(tallest).getAttribute("aria-controls")}"]`)).toBeInViewport()
   })
@@ -412,7 +427,7 @@ test("Timeline: every label reads at every desktop width, and the chat keeps its
     await expect(a.page.locator(".sui-timeline-disclosure > summary")).toBeHidden()
     for (const at of [1, .5]) {
       await viewport.evaluate((el, at) => { el.scrollTop = (el.scrollHeight - el.clientHeight) * at }, at)
-      await a.page.waitForTimeout(800)
+      await settled(a.page)
       await expect.poll(() => unreadable(a.page), { timeout: 10_000 }).toEqual([])
     }
     const frame = await a.page.evaluate(() => {
@@ -427,7 +442,7 @@ test("Timeline: every label reads at every desktop width, and the chat keeps its
     for (const theme of ["light", "dark"] as const) {
       await a.page.emulateMedia({ colorScheme: theme })
       await a.page.evaluate(wanted => { document.documentElement.dataset.theme = wanted }, theme)
-      await a.page.waitForTimeout(400)
+      await settled(a.page)
       await a.page.screenshot({ path: `test-results/timeline-look/width-${size.width}x${size.height}-${theme}.png` })
     }
   })
@@ -436,12 +451,12 @@ test("Timeline: every label reads at every desktop width, and the chat keeps its
     const sheet = a.page.locator(".sui-timeline-disclosure")
     await sheet.locator("summary").click()
     await viewport.evaluate(el => { el.scrollTop = el.scrollHeight })
-    await a.page.waitForTimeout(800)
+    await settled(a.page)
     await expect.poll(() => unreadable(a.page), { timeout: 10_000 }).toEqual([])
     for (const theme of ["light", "dark"] as const) {
       await a.page.emulateMedia({ colorScheme: theme })
       await a.page.evaluate(wanted => { document.documentElement.dataset.theme = wanted }, theme)
-      await a.page.waitForTimeout(400)
+      await settled(a.page)
       await a.page.screenshot({ path: `test-results/timeline-look/width-390x844-sheet-${theme}.png` })
     }
     await a.page.keyboard.press("Escape")
@@ -477,6 +492,7 @@ for (const [word, code, text] of [["no_route", "unconfigured", "No summary model
     await a.page.keyboard.press("Alt+n")
     await expect(a.page.getByRole("dialog", { name: "Notifications" }).getByText(text)).toBeVisible({ timeout: 15_000 })
     await a.page.keyboard.press("Escape")
-    await a.page.waitForTimeout(800)
+    await expect(a.page.getByRole("dialog", { name: "Notifications" })).toBeHidden()
+    await settled(a.page)
   })
 }

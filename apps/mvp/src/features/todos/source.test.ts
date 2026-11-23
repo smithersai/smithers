@@ -144,7 +144,7 @@ test("a stack whose role read answered 503 reads unavailable, and Try again reco
     await tab.runPromise(store.stackOf(key))
     await vi.waitFor(async () => expect(Option.getOrThrow(await tab.runPromise(store.access.get(key))).status).toBe("unavailable"), { timeout: 5_000 })
     // Nothing asks again by itself.
-    await new Promise((done) => setTimeout(done, 2_500))
+    await Effect.runPromise(Effect.sleep(2_500))
     expect(asked).toHaveLength(1)
     // Try again: the page calls role once.
     ;(await tab.runPromise(Effect.service(Repo))).actions.role(owner, name)

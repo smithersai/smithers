@@ -1,3 +1,4 @@
+import { Effect } from "effect"
 import type { Page } from "@playwright/test"
 import { existsSync, readdirSync, readFileSync } from "node:fs"
 import { createServer, type IncomingMessage, request as httpRequest, type Server } from "node:http"
@@ -155,8 +156,7 @@ test("agent runner: an external agent's TODO publishes a pull request, watched l
     const blockedAt = Date.now()
     await step("The app refuses the runner's transcript for a minute; the panel holds what it has", async () => {
       proxy.state.blockedUntil = blockedAt + 60_000
-      await page.waitForTimeout(60_000)
-      expect(proxy.state.refused, "the runner tried to post during the minute").toBeGreaterThan(0)
+      await expect.poll(() => Date.now() >= blockedAt + 60_000 && proxy.state.refused > 0, { timeout: 75_000, intervals: [500] }).toBe(true)
     })
 
     await step("The transcript catches up with every event once and in order, then follows live", async () => {
@@ -379,7 +379,7 @@ test("agent runner stops: Stop ends a parked agent's whole process tree and noth
     })
     await step("Stop: the run reads Stopping, and the command's process is gone within 20 s", async () => {
       // Parked between its step's probes: the step is waiting on its job, which no process here holds.
-      await page.waitForTimeout(30_000)
+      await Effect.runPromise(Effect.sleep(30_000))
       const asked = Date.now()
       await page.getByRole("button", { name: "Stop", exact: true }).click()
       await expect(pill).toHaveAttribute("data-word", "Stopping", { timeout: 10_000 })

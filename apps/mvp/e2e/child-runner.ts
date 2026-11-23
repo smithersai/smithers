@@ -11,22 +11,24 @@ export const runChild = (command: string, args: ReadonlyArray<string>, options: 
 } = {}): Promise<{ status: number; stdout: string; stderr: string }> => new Promise((accept, reject) => {
   options.signal?.throwIfAborted()
   const child = spawn(command, [...args], { env: options.env, detached: true, stdio: options.capture ? ["ignore", "pipe", "pipe"] : "inherit" })
-  let timer: ReturnType<typeof setTimeout> | undefined
+  let killer: AbortController | undefined
   let stdout = ""
   let stderr = ""
   child.stdout?.on("data", (chunk) => { stdout += chunk })
   child.stderr?.on("data", (chunk) => { stderr += chunk })
   const stop = () => {
-    if (!child.pid || timer) return
+    if (!child.pid || killer) return
     const pid = child.pid
+    killer = new AbortController()
     try { process.kill(-pid, "SIGINT") } catch {}
-    timer = setTimeout(() => { try { process.kill(-pid, "SIGKILL") } catch {} }, options.killAfterMs ?? 30_000)
-    timer.unref()
+    void delay(options.killAfterMs ?? 30_000, undefined, { ref: false, signal: killer.signal })
+      .then(() => { try { process.kill(-pid, "SIGKILL") } catch {} })
+      .catch(() => undefined)
   }
   options.signal?.addEventListener("abort", stop, { once: true })
   const cleanup = () => {
     options.signal?.removeEventListener("abort", stop)
-    if (timer) clearTimeout(timer)
+    killer?.abort()
   }
   child.once("error", (error) => { cleanup(); reject(error) })
   child.once("close", async (status) => {

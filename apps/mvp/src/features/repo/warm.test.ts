@@ -272,16 +272,21 @@ describe("a repository's refusal", () => {
     const h = await repoHarness(server)
     const { id, headSha } = await h.seed("octocat", "Spoon-Knife")
     const answer = Promise.withResolvers<void>()
+    const completed = Promise.withResolvers<void>()
     const tab = await open(h, {
-      client: withTree(h, (real) => (owner, name, sha) => Effect.andThen(Effect.promise(() => answer.promise), real.tree(owner, name, sha))),
+      client: withTree(h, (real) => (owner, name, sha) =>
+        Effect.andThen(Effect.promise(() => answer.promise), real.tree(owner, name, sha)).pipe(
+          Effect.ensuring(Effect.sync(() => completed.resolve())),
+        )),
     })
-    void tab.repo.actions.warmRoute("tree", { ...SPOON, ref: "main" }, {})
+    const warming = tab.repo.actions.warmRoute("tree", { ...SPOON, ref: "main" }, {})
     await waitFor(() => expect(tab.repo.lookups.tree(id, headSha)?.state).toBe("loading"))
     const repos = await tab.runtime.runPromise(Effect.service(RepoStore))
     await tab.runtime.runPromise(repos.refuse(id))
     expect(tab.repo.lookups.tree(id, headSha)).toBeUndefined()
     answer.resolve()
-    await new Promise((resolve) => setTimeout(resolve, 300))
+    await Promise.all([warming, completed.promise])
+    await Effect.runPromise(Effect.sleep(50))
     expect(tab.repo.lookups.tree(id, headSha)).toBeUndefined()
   })
 })

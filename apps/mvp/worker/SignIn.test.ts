@@ -658,19 +658,20 @@ describe("roles", () => {
     await query((sql) => age === "stale"
       ? sql`UPDATE sessions SET role_checked_at = now() - interval '61 minutes'`
       : sql`UPDATE sessions SET role_checked_at = now() - interval '90 seconds', role_verified_at = NULL`)
-    let timer: ReturnType<typeof setTimeout> | undefined
     const pending = h.session(cookies)
     try {
-      const result = await Promise.race([pending, new Promise<"unbounded">((resolve) => {
-        timer = setTimeout(() => resolve("unbounded"), 2000)
-      })])
+      const result = await Effect.runPromise(
+        Effect.promise(() => pending).pipe(
+          Effect.timeoutOption("2 seconds"),
+          Effect.map(Option.getOrElse(() => "unbounded" as const)),
+        ),
+      )
       expect(result).toMatchObject({ signedIn: true, login: "octocat", role: "member" })
       expect(starts).toBe(1)
       expect(interrupted).toBe(true)
       expect(h.line("auth.role_check").at(-1)?.annotations).toMatchObject({ outcome: "not_started", errorCode: "start_timeout" })
       expect(h.count({ route: "role_check", outcome: "not_started", reason: "start_timeout" })).toBe(1)
     } finally {
-      clearTimeout(timer)
       await Effect.runPromise(Deferred.succeed(release, undefined))
       await pending
     }

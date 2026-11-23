@@ -478,7 +478,7 @@ describe("holds: the row a write's transaction locks (decision 0079 §6)", () =>
     await sql(runtime, `INSERT INTO github_repo_roles (repo_id, person_id, role, checked_at)
       VALUES ('${OTHER.id}', '${MAYA}', 'member', now() - interval '${RepoRoles.FRESH_SECONDS - 1} seconds')`)
     const waited = await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (client) =>
-      client.withTransaction(Effect.andThen(Effect.promise(() => new Promise((done) => setTimeout(done, 1_500))), RepoRoles.holds(held)))))
+      client.withTransaction(Effect.andThen(Effect.sleep(1_500), RepoRoles.holds(held)))))
     expect(waited).toBe(false)
   })
 
@@ -578,7 +578,7 @@ describe("two requests at once", () => {
         return { first: yield* Fiber.join(one), second: two, waitedMillis }
       }))
     )
-  const pause = (millis: number) => Effect.promise(() => new Promise((done) => setTimeout(done, millis)))
+  const pause = (millis: number) => Effect.sleep(millis)
 
   test("a write that waited for the row judges its freshness after the wait: a row released unchanged after expiry fails", async () => {
     // Fresh for one more second when the write starts waiting; expired when the other transaction lets go of it.
@@ -699,7 +699,7 @@ describe("reading an expired row: one GitHub read at a time, its failures cooled
   const slowFailure = (millis: number) => ({
     match: (_: string, path: string) => path.endsWith("/permission"),
     status: 502,
-    hold: () => new Promise<void>((done) => setTimeout(done, millis)),
+    hold: () => Effect.runPromise(Effect.sleep(millis)),
   })
 
   test("the cooldown starts when GitHub's failure arrives, so a slow failure still cools the next read", async () => {
@@ -734,7 +734,7 @@ describe("reading an expired row: one GitHub read at a time, its failures cooled
   test("a read GitHub holds past the deadline is unavailable, and the next is cooled", async () => {
     const github = scriptedGitHub("acme", "widgets")
     github.roles.set("maya", "write")
-    github.faults.push({ match: (_, path) => path.endsWith("/permission"), hold: () => new Promise<void>((done) => setTimeout(done, 3_000)) })
+    github.faults.push({ match: (_, path) => path.endsWith("/permission"), hold: () => Effect.runPromise(Effect.sleep(3_000)) })
     const made = await roles(github, { refreshDeadline: "300 millis" })
     await expire()
     const startedAt = Date.now()
@@ -777,7 +777,7 @@ describe("reading an expired row holds no transaction across GitHub", () => {
     const burst = Promise.all(Array.from({ length: 12 }, () => resolve(made)))
     try {
       await vi.waitFor(() => expect(permissionReads(github)).toBe(1), { timeout: 10_000 })
-      await new Promise((done) => setTimeout(done, 300))
+      await Effect.runPromise(Effect.sleep(300))
       // Connections name their isolated schema; other files' transactions are outside this assertion.
       const parked = await sql(runtime, `
         WITH k AS (SELECT hashtextextended('github_repo_roles:${OTHER.id}:${MAYA}', 0) AS h)
@@ -812,7 +812,7 @@ describe("claiming the read of an expired row", () => {
       client.withTransaction(Effect.gen(function* () {
         yield* client`SELECT 1 FROM github_repo_roles FOR UPDATE`
         yield* Deferred.succeed(locked, undefined)
-        yield* Effect.promise(() => new Promise((resolve) => setTimeout(resolve, millis)))
+        yield* Effect.sleep(millis)
       }))), database))
     await Effect.runPromise(Deferred.await(locked))
     return { done }
@@ -858,7 +858,7 @@ describe("claiming the read of an expired row", () => {
       client.withTransaction(Effect.gen(function* () {
         yield* client`LOCK TABLE github_repo_roles IN ACCESS EXCLUSIVE MODE`
         yield* Deferred.succeed(locked, undefined)
-        yield* Effect.promise(() => new Promise((resolve) => setTimeout(resolve, 3_000)))
+        yield* Effect.sleep(3_000)
       }))), database))
     await Effect.runPromise(Deferred.await(locked))
     const startedAt = Date.now()
@@ -883,7 +883,7 @@ describe("claiming the read of an expired row", () => {
     // failure waits for it, and Postgres would end that wait only after 2 s.
     const { done } = await holdRow(6_000)
     // GitHub fails with under a second of the deadline left.
-    await new Promise((wait) => setTimeout(wait, Math.max(0, startedAt + 2_100 - Date.now())))
+    await Effect.runPromise(Effect.sleep(Math.max(0, startedAt + 2_100 - Date.now())))
     failNow()
     const answered = await answering
     const tookMillis = Date.now() - startedAt
@@ -903,7 +903,7 @@ describe("claiming the read of an expired row", () => {
     const { done: held } = await holdRow(2_000)
     const startedAt = Date.now()
     const waiting = Promise.all(Array.from({ length: 5 }, () => resolve(made)))
-    await new Promise((done) => setTimeout(done, 400))
+    await Effect.runPromise(Effect.sleep(400))
     const blocked = await sql(runtime, `SELECT count(*)::int AS n FROM pg_stat_activity
       WHERE datname = current_database() AND application_name = current_setting('application_name')
         AND wait_event_type = 'Lock' AND query ILIKE '%github_repo_roles%'`)
@@ -971,7 +971,7 @@ describe("a rate limit's hold", () => {
       client.withTransaction(Effect.gen(function* () {
         yield* client`LOCK TABLE github_repo_roles IN ACCESS EXCLUSIVE MODE`
         yield* Deferred.succeed(locked, undefined)
-        yield* Effect.promise(() => new Promise((done) => setTimeout(done, 1_500)))
+        yield* Effect.sleep(1_500)
       }))), scratch.database))
     await Effect.runPromise(Deferred.await(locked))
     // Persisted deadlines use Postgres time; the host/container clocks need not agree.
@@ -1072,7 +1072,7 @@ describe("a role look is one statement, bounded by Postgres", () => {
       client.withTransaction(Effect.gen(function* () {
         yield* client`LOCK TABLE github_repo_roles IN ACCESS EXCLUSIVE MODE`
         yield* Deferred.succeed(locked, undefined)
-        yield* Effect.promise(() => new Promise((resolve) => setTimeout(resolve, 4_000)))
+        yield* Effect.sleep(4_000)
       }))), database))
     await Effect.runPromise(Deferred.await(locked))
     const startedAt = Date.now()
@@ -1096,7 +1096,7 @@ describe("a role look is one statement, bounded by Postgres", () => {
       client.withTransaction(Effect.gen(function* () {
         yield* client`LOCK TABLE github_repo_roles IN ACCESS EXCLUSIVE MODE`
         yield* Deferred.succeed(locked, undefined)
-        yield* Effect.promise(() => new Promise((resolve) => setTimeout(resolve, 500)))
+        yield* Effect.sleep(500)
         yield* client`UPDATE github_repo_roles SET role = NULL, checked_at = now() WHERE repo_id = ${OTHER.id} AND person_id = ${MAYA}`
       }))), database))
     await Effect.runPromise(Deferred.await(locked))

@@ -117,7 +117,7 @@ test("a repository page takes GitHub's spelling: at once when the tab knows it, 
   const elsewhere = { ...args, ...load(false), location }
   shown.location = { pathname: "/acme/widgets/pulls", searchStr: "", hash: "" }
   await enter({ ...elsewhere, context: routed(undefined) })
-  await new Promise((resolve) => setTimeout(resolve, 50))
+  await new Promise<void>((resolve) => setImmediate(resolve))
   expect(navigate).toHaveBeenCalledTimes(1)
   release()
 })

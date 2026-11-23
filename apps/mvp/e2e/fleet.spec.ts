@@ -1,3 +1,4 @@
+import { Effect } from "effect"
 import { expect, type Page, type TestInfo } from "@playwright/test"
 import { type AlertProviders, startAlertProviders } from "../worker/test/alertProviders.ts"
 import { recordActions, step, themeOf, writeManifest } from "./fixtures"
@@ -173,7 +174,7 @@ test("fleet: offline: killing the runner raises one Runner offline alert in the 
       const sent = () => providers?.received.filter((each) => JSON.stringify(each.body).includes(`Runner ${running.name} offline`)).length
       if (providers !== undefined) await expect.poll(sent, { timeout: 30_000 }).toBe(1)
       // Later probes and windows start nothing more.
-      await page.waitForTimeout(60_000)
+      await Effect.runPromise(Effect.sleep(60_000))
       await expect(alert).toHaveCount(1)
       if (providers !== undefined) expect(sent()).toBe(1)
     })

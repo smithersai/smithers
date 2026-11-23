@@ -318,7 +318,7 @@ test("two revisions recorded at once can't both replace the phases: the second r
     poster(h)({ op: "record_spans", ...older, spans: [span(ids[0]!, "First device")] }),
     poster(h)({ op: "record_spans", ...newer, spans: [span(ids[0]!, "Second device")] }),
   ])
-  await new Promise(resolve => setTimeout(resolve, 300))
+  await Effect.runPromise(Effect.sleep(300))
   release.resolve()
   await held
   const [one, two] = await racing

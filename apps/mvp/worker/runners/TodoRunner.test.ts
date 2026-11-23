@@ -374,7 +374,7 @@ describe("a TODO on an external agent", { timeout: 240_000 }, () => {
     const run = ctx.run(start)
     // Kill the runner once it holds the job and its agent is inside the sleep.
     await eventually(async () => (await jobs())[0]?.status === "claimed", 60_000)
-    await new Promise((done) => setTimeout(done, 2_000))
+    await Effect.runPromise(Effect.sleep(2_000))
     first.child.kill("SIGKILL")
     const second = startRunner(ctx.config)
     running.push(second.child)
@@ -771,13 +771,11 @@ describe("the fleet over a real runner", { timeout: 300_000 }, () => {
     alertHost = await alertHostFor(FleetAlert.registration(await database(), "github/smithersai/smithers", channels))
     const alert: Fleet.Alert = { alertId: "fleet-concurrent", kind: "offline", repoId: REPOSITORY.id, subject: runner!.id }
     const sends = [Effect.runPromise(alertHost.raise(alert)), Effect.runPromise(alertHost.raise(alert))]
-    let timer: ReturnType<typeof setTimeout> | undefined
     try {
       await reading
-      await Promise.race([duplicated, new Promise<void>(resolve => { timer = setTimeout(resolve, 5_000) })])
+      await Effect.runPromise(Effect.promise(() => duplicated).pipe(Effect.timeoutOption("5 seconds"), Effect.asVoid))
       expect(entered, "one durable execution may enter the held channel send").toBe(1)
     } finally {
-      if (timer !== undefined) clearTimeout(timer)
       release()
       const settled = await Promise.allSettled(sends)
       expect(settled.map(each => each.status)).toEqual(["fulfilled", "fulfilled"])
@@ -844,7 +842,7 @@ describe("the fleet over a real runner", { timeout: 300_000 }, () => {
       await eventually(async () => (await bells()).some((bell) => bell.title === FAILED_3), 60_000)
       expect(await runs[2]).toMatchObject({ status: "completed" })
       // The busy run's agent says nothing either, but its tree burns CPU: work through probe after probe, never a stall.
-      await new Promise((done) => setTimeout(done, 45_000))
+      await Effect.runPromise(Effect.sleep(45_000))
       expect(await state(2), runner.log()).toBe("working")
       const killedAt = Date.now()
       runner.child.kill("SIGKILL")
@@ -877,7 +875,7 @@ describe("the fleet over a real runner", { timeout: 300_000 }, () => {
       ])
       expect(JSON.stringify(providers.received)).not.toMatch(/Silent|Refused|test-runner/)
       // One incident per outage: later probes start nothing more.
-      await new Promise((done) => setTimeout(done, 5_000))
+      await Effect.runPromise(Effect.sleep(5_000))
       expect((await sql(runtime, `SELECT kind FROM fleet_alerts WHERE kind = 'offline'`)) as Array<{ kind: string }>)
         .toEqual([{ kind: "offline" }])
     } finally {

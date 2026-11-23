@@ -156,9 +156,10 @@ describe("watching a run's transcript", () => {
     peer.send(new Uint8Array([1, 2, 3]))
     peer.send("not a frame")
     peer.send({ type: "events", events: [] })
-    await new Promise((resolve) => setTimeout(resolve, 100))
+    // A real event sent after the ignored frames proves they arrived and changed nothing.
+    peer.send({ type: "events", events: [said("still here.")] })
+    await until(() => expect(page.panel().events).toBe(5))
     expect(host.peers).toHaveLength(1)
-    expect(page.panel().events).toBe(4)
   })
 
   test("a socket that drops dials again from its last event, and holds each event once", async () => {
@@ -198,7 +199,7 @@ describe("watching a run's transcript", () => {
       await until(() => expect(host.peers).toHaveLength(1))
       host.peers[0]!.drop()
       await until(() => expect(page.panel()).toMatchObject({ phase: "closed", closed }))
-      await new Promise((resolve) => setTimeout(resolve, 100))
+      await Effect.runPromise(Effect.sleep(100))
       expect(host.peers).toHaveLength(1)
       expect(page.count(dials, { outcome: closed })).toBe(1)
     }

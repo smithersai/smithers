@@ -178,6 +178,8 @@ describe("work links", () => {
     const encoder = new TextEncoder()
     const text = JSON.stringify({ links: [{ kind: "queue", ref: "q-late", state: "queued" }] })
     let sentHead = false
+    let onHeadPulled!: () => void
+    const headPulled = new Promise<void>((resolve) => { onHeadPulled = resolve })
     const body = new ReadableStream<Uint8Array>({
       async pull(controller) {
         if (!sentHead) {
@@ -185,13 +187,14 @@ describe("work links", () => {
           controller.enqueue(encoder.encode(text.slice(0, 5)))
           return
         }
+        onHeadPulled()
         await finished
         controller.enqueue(encoder.encode(text.slice(5)))
         controller.close()
       },
     })
     const posting = h.fetch(route(3), { method: "POST", headers: { "content-type": "application/json", ...asRunner }, body, duplex: "half" } as RequestInit)
-    await new Promise((done) => setTimeout(done, 300))
+    await Promise.race([headPulled, posting])
     await sql(runtime, `UPDATE runners SET repo_authorized_at = NULL`)
     finish()
     const answer = await posting

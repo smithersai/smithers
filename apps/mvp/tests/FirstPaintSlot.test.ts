@@ -12,7 +12,7 @@ import { WIPE } from "../src/wipe"
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
 
-const settle = () => new Promise<void>((resolve) => setTimeout(resolve, 5))
+const settle = () => new Promise<void>((resolve) => setImmediate(resolve))
 const answer = { viewer: "p", expiresAt: Date.now() + 3_600_000, serverNow: Date.now(), issue: { number: 7, title: "Seven", state: "open", author: null } }
 
 const paint = async () => {

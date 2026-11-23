@@ -329,7 +329,7 @@ describe("a runner's git credential", () => {
           yield* Effect.promise(() => committed)
         }))))
       await holding
-      setTimeout(commit, 500)
+      void Effect.runPromise(Effect.andThen(Effect.sleep(500), Effect.sync(commit)))
     }
     const { ask, revoked } = await holding({ credential, during })
     const answer = await ask()
@@ -360,7 +360,7 @@ describe("a runner's git credential", () => {
         }))))
       await holdingRow
       const asking = ask()
-      await new Promise((done) => setTimeout(done, 500))
+      await Effect.runPromise(Effect.sleep(500))
       commit()
       await revoker
       expect(await asking).toMatchObject({ status: 403, body: { code: "not_authorized" } })
@@ -408,7 +408,7 @@ describe("a runner's git credential", () => {
           yield* Effect.promise(() => released)
         }))))
       await locking
-      setTimeout(release, 1500)
+      void Effect.runPromise(Effect.andThen(Effect.sleep(1500), Effect.sync(release)))
     }
     const { ask, revoked } = await holding({ credential, during })
     const answer = await ask()

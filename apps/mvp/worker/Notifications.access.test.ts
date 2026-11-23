@@ -149,7 +149,7 @@ test("a denied watched repository recovers delivery after pruning without visiti
   const event = { kind: "main" as const, repoId, actor: "writer", title: "new main", ref: "a".repeat(40), href: "/acme/restored", occurredAt: new Date() }
   expect(await runtime.runPromise(Notifications.recordRepoEvent(event))).toBe(0)
   github.roles.set("reader", "write")
-  await new Promise((resolve) => setTimeout(resolve, 350))
+  await Effect.runPromise(Effect.sleep(350))
   await expireAccess(repoId)
   // Only the feed is reopened; the permission cache is written by its real resolver, not the test.
   const refreshed = await h.fetch(`${NOTIFICATIONS_SHAPE_ROUTE}?offset=-1`)

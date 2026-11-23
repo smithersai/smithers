@@ -612,7 +612,7 @@ describe("branches, tags and commits", () => {
       await waitFor(() => expect(tab.view().view).toMatchObject({ kind: "blob", sha: null }))
       await waitFor(() => expect(tab.lines("repo.repositories.load")).toHaveLength(1))
       // A failed shape cannot reject the cached head while this file's longer-ref check is still pending.
-      await new Promise((resolve) => setTimeout(resolve, 50))
+      await Effect.runPromise(Effect.sleep(50))
       expect(settled).toBe(false)
       await Effect.runPromise(Deferred.succeed(held, undefined))
       expect(await raw).toBe(rawRoute("octocat", "Spoon-Knife", shaOf("test-branch"), "only.txt"))
@@ -1276,7 +1276,7 @@ test("a held About read leaves canonical spelling unknown until its real answer 
     const checking = tab.repo.actions.canonicalName("octocat", "Spoon-Knife")
     await Effect.runPromise(Deferred.await(requested).pipe(Effect.timeout("10 seconds")))
     // Unknown while the read is held, past the tab's `pageWait`: nothing invents a spelling, and nothing waits for one.
-    await new Promise((resolve) => setTimeout(resolve, 200))
+    await Effect.runPromise(Effect.sleep(200))
     expect(tab.repo.actions.knownName("octocat", "Spoon-Knife")).toBeUndefined()
     await Effect.runPromise(Deferred.succeed(held, undefined))
     expect(await checking).toBe("octocat/Spoon-Knife")
@@ -1308,7 +1308,7 @@ test("a navigation never waits for what GitHub says: the page opens with About l
   tabs.push(tab)
   const params = { owner: "octocat", repo: "Spoon-Knife" }
   const within = <A>(promise: Promise<A>) =>
-    Promise.race([promise.then((value) => ({ value })), new Promise<"waited">((resolve) => setTimeout(() => resolve("waited"), 10_000))])
+    Effect.runPromise(Effect.promise(() => promise).pipe(Effect.map((value) => ({ value })), Effect.timeoutOption("10 seconds"), Effect.map(Option.getOrElse(() => "waited" as const))))
   expect(await within(tab.repo.actions.warmRoute("tree", params, {}))).toEqual({ value: undefined })
   tab.repo.actions.openRoute("tree", params, {})
   await waitFor(() => expect(tab.about().about?.state).toBe("loading"))

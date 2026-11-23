@@ -1,3 +1,4 @@
+import { Effect, Option } from "effect"
 import { type APIRequestContext, expect, type Page, request as requests, test } from "@playwright/test"
 import { type ChildProcess, execFileSync, spawn } from "node:child_process"
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
@@ -94,11 +95,13 @@ export const startRunner = async (
     process.off("exit", orphaned)
     if (runner !== undefined && runner.exitCode === null && runner.signalCode === null) {
       // A service manager's stop: SIGTERM, then SIGKILL if it hasn't exited in 30 s.
-      const exited = new Promise((done) => runner!.once("exit", done))
+      const exited = new Promise<void>((done) => runner!.once("exit", () => done()))
       runner.kill("SIGTERM")
-      const killed = setTimeout(() => runner!.kill("SIGKILL"), 30_000)
-      await exited
-      clearTimeout(killed)
+      const outcome = await Effect.runPromise(Effect.promise(() => exited).pipe(Effect.timeoutOption("30 seconds")))
+      if (Option.isNone(outcome)) {
+        runner.kill("SIGKILL")
+        await exited
+      }
     }
     rmSync(state, { recursive: true, force: true })
     await api.dispose()

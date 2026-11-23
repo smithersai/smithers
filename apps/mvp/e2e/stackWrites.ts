@@ -1,3 +1,4 @@
+import { Effect } from "effect"
 import type { Page } from "@playwright/test"
 import { ADMIN_RECEIPTS_ROUTE } from "../src/features/runners/contract"
 import { redactError } from "./redact"
@@ -98,7 +99,7 @@ const reset = async (page: Pick<Page, "request">, repository: string) => {
         throw new Error(`DELETE ${path} ended ${outcome}`)
       }
       if (Date.now() > deadline) throw new Error(`DELETE ${path} has no receipt after ${RETIRES_WITHIN_MS / 1000} s`)
-      await new Promise((resolve) => setTimeout(resolve, 500))
+      await Effect.runPromise(Effect.sleep(500))
     }
   }
   // The agent first, so nothing new is handed to the runner going away, and its runner stays to find it by if it can't go.

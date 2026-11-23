@@ -95,7 +95,7 @@ test.each([[403, 0], [401, 1]] as const)("a shape's %s asks no more and leaves %
     await expect.poll(() => refusing.asked, { timeout: 20_000 }).toBeGreaterThan(0)
     await expect.poll(async () => (await runtime.runPromise(runs.toArray)).length, { timeout: 5_000 }).toBe(left)
     const asked = refusing.asked
-    await new Promise((resolve) => setTimeout(resolve, 1_000))
+    await Effect.runPromise(Effect.sleep(1_000))
     expect(refusing.asked).toBe(asked)
     expect(await runtime.runPromise(runs.toArray)).toHaveLength(left)
   } finally {
@@ -142,7 +142,7 @@ test("a stopped shape starts again once authority may have returned", async () =
     refusing.now = false
     await runtime.runPromise(auth.session.update(SESSION, (row) => { row.status = "unreachable"; row.unverifiable = true }))
     await runtime.runPromise(auth.sessionConfirmed)
-    await new Promise((resolve) => setTimeout(resolve, 1_000))
+    await Effect.runPromise(Effect.sleep(1_000))
     expect(await runtime.runPromise(runs.toArray)).toHaveLength(0)
   } finally {
     await runtime.dispose()
@@ -175,14 +175,14 @@ test("machines a Member was refused sync once a role answer grants Maintainer", 
     const machines = await runtime.runPromise(store.machines("smithersai/vibelang"))
     // As a page that shows them does: the shape starts.
     void runtime.runPromise(Effect.ignore(machines.preload))
-    await new Promise((resolve) => setTimeout(resolve, 500))
+    await Effect.runPromise(Effect.sleep(500))
     expect(await runtime.runPromise(machines.toArray)).toEqual([])
     refusing.now = false
     // Astra on 342a97fb: while a reached server couldn't verify the session, a role answer restarts nothing.
     const auth = await runtime.runPromise(Effect.service(AuthStore))
     await runtime.runPromise(auth.session.update(SESSION, (row) => { row.status = "unreachable"; row.unverifiable = true }))
     await runtime.runPromise(repos.roles.update(id, (row) => { row.role = "maintainer" }))
-    await new Promise((resolve) => setTimeout(resolve, 1_000))
+    await Effect.runPromise(Effect.sleep(1_000))
     expect(await runtime.runPromise(machines.toArray)).toEqual([])
     await runtime.runPromise(auth.session.update(SESSION, (row) => { row.status = "signed_in"; row.unverifiable = false }))
     await runtime.runPromise(repos.roles.update(id, (row) => { row.role = "admin" }))

@@ -169,17 +169,28 @@ test("the bell takes its recipients' feed locks before it writes any of their ro
     ON CONFLICT (repo_id, person_id) DO UPDATE SET role = 'admin', checked_at = now()`, WIDGETS)
   await query(`INSERT INTO agent_runs (key, repo_id, agent, generation, queued_at, number, title, cost_usd)
     VALUES ('locked-cost', $1, 'coder', 1, now(), 3, 'x', 1)`, WIDGETS)
-  // admin-b's lock held a while, as a role read that denies them holds it.
+  // admin-b's lock held until released, as a role read that denies them holds it.
+  let onLocked!: () => void
+  const locked = new Promise<void>((resolve) => { onLocked = resolve })
+  let release!: () => void
+  const released = new Promise<void>((resolve) => { release = resolve })
   const holding = runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) => sql.withTransaction(Effect.gen(function* () {
     yield* FeedLocks.lock(sql, [{ repoId: WIDGETS, personId: "admin-b" }])
-    yield* Effect.sleep(500)
+    onLocked()
+    yield* Effect.promise(() => released)
   }))))
-  await new Promise((resolve) => setTimeout(resolve, 100))
-  const belling = runtime.runPromise(Effect.flatMap(TestDatabase.Scratch, (scratch) =>
-    FleetAlert.observedBell({ alertId: "locked-cost", kind: "cost", repoId: WIDGETS, subject: "locked-cost" }, "github/acme/home", scratch.database)))
-  await new Promise((resolve) => setTimeout(resolve, 200))
-  // Nothing yet, not even admin-a's row, whose lock was free.
-  expect(await query(`SELECT recipient FROM notifications WHERE subject = 'fleet:locked-cost'`)).toEqual([])
+  let belling: Promise<unknown> | undefined
+  try {
+    await Promise.race([locked, holding])
+    belling = runtime.runPromise(Effect.flatMap(TestDatabase.Scratch, (scratch) =>
+      FleetAlert.observedBell({ alertId: "locked-cost", kind: "cost", repoId: WIDGETS, subject: "locked-cost" }, "github/acme/home", scratch.database)))
+    await Effect.runPromise(Effect.sleep(200))
+    // Nothing yet, not even admin-a's row, whose lock was free.
+    expect(await query(`SELECT recipient FROM notifications WHERE subject = 'fleet:locked-cost'`)).toEqual([])
+  } finally {
+    release()
+    await holding.catch(() => undefined)
+  }
   await holding
   // Others with cached Admin roles from earlier tests hear it too; these two are who this checks.
   expect(await belling).toMatchObject({ outcome: "written" })

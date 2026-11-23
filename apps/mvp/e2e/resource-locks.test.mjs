@@ -318,7 +318,7 @@ test("cancellation waits for a descendant which handles SIGINT after its parent 
   `
   const controller = new AbortController()
   const running = runChild(process.execPath, ["-e", parent, ready, stopped], { signal: controller.signal, killAfterMs: 1_000 })
-  while (!(await readFile(ready, "utf8").catch(() => undefined))) await new Promise((resolve) => setTimeout(resolve, 5))
+  while (!(await readFile(ready, "utf8").catch(() => undefined))) await Effect.runPromise(Effect.sleep(5))
   controller.abort()
   await running
   assert.equal(await readFile(stopped, "utf8"), "stopped")

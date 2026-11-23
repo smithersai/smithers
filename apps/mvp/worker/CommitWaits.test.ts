@@ -11,12 +11,13 @@ import { REPOSITORY } from "./github/test/fixtures.ts"
 const runtime = testFile("commit_waits")
 const actor = { subject: { kind: "person" as const, id: "bounded-person" }, role: "admin" as const }
 const configuration = () => ({ opId: crypto.randomUUID(), op: "configure", lanes: 1, maxOpen: 7, base: "independent" })
-const observedResponse = async (request: Promise<Response>) => {
-  let timer: ReturnType<typeof setTimeout> | undefined
-  try { return await Promise.race([request.catch(() => ({ status: 499 })), new Promise<{ status: number }>((resolve) => {
-    timer = setTimeout(() => resolve({ status: 499 }), 12_000)
-  })]) } finally { clearTimeout(timer) }
-}
+const observedResponse = (request: Promise<Response>) =>
+  Effect.runPromise(
+    Effect.promise(() => request.catch(() => ({ status: 499 }))).pipe(
+      Effect.timeoutOption("12 seconds"),
+      Effect.map(Option.getOrElse(() => ({ status: 499 }))),
+    ),
+  )
 const request = (body: object) => ({ method: "POST", headers: { "content-type": "application/json" },
   body: JSON.stringify(body), signal: AbortSignal.timeout(12_000) })
 

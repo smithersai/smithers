@@ -1,3 +1,4 @@
+import { Effect, Option } from "effect"
 import { spawn } from "node:child_process"
 import { createHash, randomUUID } from "node:crypto"
 import { mkdtemp, rm } from "node:fs/promises"
@@ -82,21 +83,27 @@ export const httpsReceiver = async () => {
     if (tunnel.exitCode === null && tunnel.signalCode === null) {
       const exited = new Promise<void>((resolve) => tunnel.once("close", () => resolve()))
       tunnel.kill("SIGTERM")
-      const timer = setTimeout(() => tunnel.kill("SIGKILL"), 3_000)
-      await exited.finally(() => clearTimeout(timer))
+      const outcome = await Effect.runPromise(Effect.promise(() => exited).pipe(Effect.timeoutOption("3 seconds")))
+      if (Option.isNone(outcome)) {
+        tunnel.kill("SIGKILL")
+        await exited
+      }
     }
     await app.close()
     await rm(directory, { recursive: true, force: true })
   }
   try {
-    const origin = await new Promise<string>((resolve, reject) => {
+    const origin = await Effect.runPromise(Effect.callback<string, Error>((resume) => {
       let output = ""
-      const timer = setTimeout(() => reject(new Error("The test receiver's HTTPS tunnel did not become ready")), 30_000)
-      const done = (error?: Error, url?: string) => {
-        clearTimeout(timer)
+      const detach = () => {
         tunnel.stdout.off("data", read)
         tunnel.stderr.off("data", read)
-        error ? reject(error) : resolve(url!)
+        tunnel.off("error", onError)
+        tunnel.off("exit", onExit)
+      }
+      const done = (error?: Error, url?: string) => {
+        detach()
+        resume(error ? Effect.fail(error) : Effect.succeed(url!))
       }
       const read = (chunk: Buffer) => {
         output += chunk.toString()
@@ -107,11 +114,19 @@ export const httpsReceiver = async () => {
           if (url !== undefined) { done(undefined, url); return }
         }
       }
+      const onError = () => done(new Error("The test receiver's SSH client could not start"))
+      const onExit = () => done(new Error("The test receiver's HTTPS tunnel exited"))
       tunnel.stdout.on("data", read)
       tunnel.stderr.on("data", read)
-      tunnel.once("error", () => done(new Error("The test receiver's SSH client could not start")))
-      tunnel.once("exit", () => done(new Error("The test receiver's HTTPS tunnel exited")))
-    })
+      tunnel.once("error", onError)
+      tunnel.once("exit", onExit)
+      return Effect.sync(detach)
+    }).pipe(
+      Effect.timeoutOrElse({
+        duration: "30 seconds",
+        orElse: () => Effect.fail(new Error("The test receiver's HTTPS tunnel did not become ready")),
+      }),
+    ))
     // A checked TLS request must reach our handler before any token is created. No body or header is logged.
     stage = "https-readiness"
     const probe = await fetch(`${origin}${app.path}`, { signal: AbortSignal.timeout(20_000), redirect: "error" })
