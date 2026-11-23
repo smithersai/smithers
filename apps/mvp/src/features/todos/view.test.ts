@@ -90,7 +90,7 @@ const sending = (fields: Partial<Sending> & Pick<Sending, "id" | "op">): Sending
   number: 0,
   repoId: REPO,
   queuedAt: 1,
-  v: 3,
+  v: 4,
   ...fields,
 })
 

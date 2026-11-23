@@ -55,8 +55,8 @@ export const REPOSITORY_MEMORY = [
 export const UNSCOPED_LOCAL: Readonly<Record<string, string>> = Object.fromEntries([
   ...[
     "alert-channel-saves", "attention-details", "attention-entries", "attention-launches", "attention-panel",
-    "auth-session", "chat-asking", "chat-composer", "chat-connection", "chat-history", "chat-place", "commands-menu",
-    "conversation-list", "conversation-search", "first-run", "flow-editor", "flow-round", "flow-shown",
+    "auth-session", "chat-asking", "chat-composer", "chat-connection", "chat-history", "chat-place", "commands-menu", "commands-palette",
+    "conversation-list", "conversation-search", "first-run", "flow-editor", "flow-round", "flow-shown", "mcp-connect", "mcp-consent", "mcp-tokens",
     "personal-model-add", "personal-model-form", "personal-model-link", "personal-model-test", "plugin-shown",
     "plugin-views", "presence-participants", "presence-room", "sandbox-limit-saves", "share-dialog", "share-list",
     "status-local", "terminal-panel", "terminal-tabs", "timeline-notice", "transcript-items", "transcript-panel",

@@ -199,6 +199,56 @@ export const TodoRequestedV4 = Schema.Struct({
   answeredAt: Schema.optional(Schema.Number),
 })
 
+/** `todo-drafts`, version 1: a private TODO draft before optional `after` stacking (`5fecc6ebe510`). */
+export const TodoDraftV1 = Schema.Struct({
+  id: Schema.String,
+  repo: Schema.String,
+  repoId: Schema.String,
+  title: Schema.String,
+  prompt: Schema.String,
+  acceptance: Schema.Array(Schema.String),
+  answerId: Schema.NullOr(Schema.String),
+  createdAt: Schema.Number,
+  issue: Schema.optionalKey(Schema.Number),
+})
+
+/** The TODO ops and Not sent reasons before optional `after` stacking (`5fecc6ebe510`). */
+const TODO_OPS_V3 = ["commit", "drop", "retry", "attach"] as const
+const TODO_NOT_SENT_V5 = [
+  "invalid", "authentication", "forbidden", "not_found", "conflict", "stack_full",
+  "merged", "not_retryable", "too_large", "app_not_installed",
+  "issue_not_found", "issue_required", "attached",
+] as const
+const TodoQueuedV3 = {
+  id: Schema.String,
+  repo: Schema.String,
+  op: Schema.Literals(TODO_OPS_V3),
+  title: Schema.String,
+  prompt: Schema.String,
+  acceptance: Schema.Array(Schema.String),
+  number: Schema.Number,
+  issue: Schema.optionalKey(Schema.Number),
+}
+
+/** `todo-sending`, version 3: a queued change before optional `after` stacking (`5fecc6ebe510`). */
+export const TodoSendingV3 = Schema.Struct({
+  ...TodoQueuedV3,
+  repoId: Schema.String,
+  queuedAt: Schema.Number,
+  v: Schema.Literal(3),
+})
+
+/** `todo-requested`, version 5: a change the route took or refused before optional `after` stacking (`5fecc6ebe510`). */
+export const TodoRequestedV5 = Schema.Struct({
+  ...TodoQueuedV3,
+  repoId: Schema.String,
+  queuedAt: Schema.Number,
+  status: Schema.Literals(["requested", "not_sent"]),
+  reason: Schema.NullOr(Schema.Literals(TODO_NOT_SENT_V5)),
+  taken: Schema.NullOr(Schema.Number),
+  answeredAt: Schema.optional(Schema.Number),
+})
+
 /** An open file's tab before it named its repository (version 1; decision 0110, the data gate). */
 export const FileTabRowV1 = Schema.Struct({
   key: Schema.String,

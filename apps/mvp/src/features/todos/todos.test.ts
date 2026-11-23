@@ -1059,7 +1059,7 @@ describe("the device", () => {
       number: 0,
       repoId: REPO_ID,
       queuedAt: 1,
-      v: 3,
+      v: 4,
     }
     await tab.runtime.runPromise(keep(tab.store.requested, row, "requested", null, 4))
     await tab.runtime.runPromise(keep(tab.store.requested, row, "not_sent", "stack_full", null))
@@ -1451,8 +1451,8 @@ describe("issues for TODOs (decision 0153)", () => {
     const report = await prepare(path, deviceRegistry)
     expect(report.collections.filter(({ collection }) => collection.startsWith("todo-")).map(({ collection, outcome, from, to, kept }) =>
       `${collection} ${outcome} ${from}→${to} kept ${kept}`).sort()).toEqual([
-        "todo-drafts current 1→1 kept 0",
-        "todo-requested migrated 4→5 kept 0",
+        "todo-drafts migrated 1→2 kept 0",
+        "todo-requested migrated 4→6 kept 0",
       ])
     const host = nodeDevice({ agent: api, file: path, outboxEntries: outbox })
     const runtime: App = openTab(api, { host })

@@ -3,7 +3,7 @@ import { Effect, Schema } from "effect"
 import { describe, expect, test } from "vitest"
 import { Asking, Message } from "../features/chat/schema"
 import { Sending as IssueSending } from "../features/issues/schema"
-import { Requested as TodoRequestedRow, Sending as TodoSendingRow } from "../features/todos/schema"
+import { Draft as TodoDraftRow, Requested as TodoRequestedRow, Sending as TodoSendingRow } from "../features/todos/schema"
 import { Repository } from "../features/repo/schema"
 import { View } from "../features/views/schema"
 import {
@@ -408,8 +408,8 @@ test("a queued TODO v1 write upgrades to the latest version without losing its r
   expect(result._tag).toBe("Upgraded")
   if (result._tag !== "Upgraded") throw new Error(JSON.stringify(result))
   const write = JSON.parse(result.value)
-  expect(write.mutations[0].modified).toEqual({ ...source.mutations[0].modified, v: 3 })
-  expect(write.metadata.versions).toEqual({ "todo-sending": 3 })
+  expect(write.mutations[0].modified).toEqual({ ...source.mutations[0].modified, v: 4 })
+  expect(write.metadata.versions).toEqual({ "todo-sending": 4 })
 })
 
 // 446bca4adcb9 moved two stores a version (decision 0153): todo-requested 4 to 5, and the todo-sending payload 2 to 3. The
@@ -431,11 +431,11 @@ describe("the device build 7df7c2ecb983 left", () => {
     const report = await prepare(path, deviceRegistry)
     expect(report.collections.map(({ collection, outcome, from, to, migrated, kept }) =>
       `${collection} ${outcome} ${from}→${to} migrated ${migrated} kept ${kept}`)).toEqual([
-      "todo-requested migrated 4→5 migrated 3 kept 0",
+      "todo-requested migrated 4→6 migrated 3 kept 0",
     ])
     const kept = [...await opened(path, TodoRequestedStore)].sort((a: any, b: any) => (a.id < b.id ? -1 : 1))
     expect(kept).toEqual(rowsOf(fixture, "todo-requested"))
-    expect(TodoRequestedStore.schemaVersion).toBe(5)
+    expect(TodoRequestedStore.schemaVersion).toBe(6)
     expect(kept.every(Schema.is(TodoRequestedRow))).toBe(true)
     expect(await keptRows(path)).toEqual([])
   })
@@ -447,9 +447,9 @@ describe("the device build 7df7c2ecb983 left", () => {
     if (result._tag !== "Upgraded") throw new Error(JSON.stringify(result))
     const before = JSON.parse(stored!)
     const after = JSON.parse(result.value)
-    expect(after.mutations[0].modified).toEqual({ ...before.mutations[0].modified, v: 3 })
+    expect(after.mutations[0].modified).toEqual({ ...before.mutations[0].modified, v: 4 })
     expect(Schema.is(TodoSendingRow)(after.mutations[0].modified)).toBe(true)
-    expect(after.metadata.versions).toEqual({ "todo-sending": 3 })
+    expect(after.metadata.versions).toEqual({ "todo-sending": 4 })
     expect({ ...after, mutations: undefined, metadata: undefined }).toEqual({ ...before, mutations: undefined, metadata: undefined })
   })
 })
@@ -462,4 +462,79 @@ test("a version 1 refusal remains denied after migration to independent refusal 
   }, outbox: {} })
   await prepare(path, deviceRegistry)
   expect(await opened(path, RepoRefusalsStore)).toEqual([{ ...row, repoId: row.id }])
+})
+
+test("pre-stacking TODO drafts (v1), requested rows (v5), and outbox writes (v3) migrate cleanly to v2/v6/v4", async () => {
+  const draftV1 = {
+    id: "draft-v1",
+    repo: "acme/widgets",
+    repoId: "github/acme/widgets",
+    title: "Draft before stacking",
+    prompt: "Keep this draft across deploy.",
+    acceptance: ["Passes tests"],
+    answerId: null,
+    createdAt: 1_762_000_000_000,
+    issue: 42,
+  }
+  const reqV5 = {
+    id: "req-v5",
+    repo: "acme/widgets",
+    op: "attach",
+    title: "",
+    prompt: "",
+    acceptance: [],
+    number: 7,
+    issue: 42,
+    repoId: "github/acme/widgets",
+    queuedAt: 1_762_000_000_001,
+    status: "not_sent",
+    reason: "issue_required",
+    taken: null,
+    answeredAt: 1_762_000_000_500,
+  }
+  const { path } = await deviceFrom({
+    build: "pre-stacking",
+    collections: {
+      "todo-drafts": { kind: "local", key: "id", version: 1, rows: [draftV1] },
+      "todo-requested": { kind: "local", key: "id", version: 5, rows: [reqV5] },
+    },
+    outbox: {},
+  })
+  const report = await prepare(path, deviceRegistry)
+  expect(report.collections.map(({ collection, outcome, from, to, migrated, kept }) =>
+    `${collection} ${outcome} ${from}→${to} migrated ${migrated} kept ${kept}`).sort()).toEqual([
+    "todo-drafts migrated 1→2 migrated 1 kept 0",
+    "todo-requested migrated 5→6 migrated 1 kept 0",
+  ])
+  const drafts = await opened(path, TodoDraftsStore)
+  expect(drafts).toEqual([draftV1])
+  expect(drafts.every(Schema.is(TodoDraftRow))).toBe(true)
+  const reqs = await opened(path, TodoRequestedStore)
+  expect(reqs).toEqual([reqV5])
+  expect(reqs.every(Schema.is(TodoRequestedRow))).toBe(true)
+
+  const source = JSON.parse(Object.values(currentDeployed.outbox)[0]!)
+  source.mutationFnName = "todo-op"
+  source.metadata.versions = { "todo-sending": 3 }
+  source.mutations[0].collectionId = "todo-sending"
+  source.mutations[0].modified = {
+    id: "send-v3",
+    repo: "acme/widgets",
+    op: "attach",
+    title: "",
+    prompt: "",
+    acceptance: [],
+    number: 7,
+    issue: 42,
+    repoId: "github/acme/widgets",
+    queuedAt: 1_762_000_000_002,
+    v: 3,
+  }
+  const upgraded = outboxUpgrade.write(JSON.stringify(source))
+  expect(upgraded._tag).toBe("Upgraded")
+  if (upgraded._tag !== "Upgraded") throw new Error(JSON.stringify(upgraded))
+  const write = JSON.parse(upgraded.value)
+  expect(write.mutations[0].modified).toEqual({ ...source.mutations[0].modified, v: 4 })
+  expect(Schema.is(TodoSendingRow)(write.mutations[0].modified)).toBe(true)
+  expect(write.metadata.versions).toEqual({ "todo-sending": 4 })
 })

@@ -32,7 +32,7 @@ import { BugReport } from "../features/bugs/schema"
 import { RepoRunRow, SteerSending, SteerSent } from "../features/runs/schema"
 import { Run } from "../features/status/schema"
 import { Preference } from "../features/theme/schema"
-import { IssueRequestedV2, TodoSendingV1, TodoSendingV2, TodoRequestedV2, TodoRequestedV3, TodoRequestedV4 } from "./history"
+import { IssueRequestedV2, TodoDraftV1, TodoSendingV1, TodoSendingV2, TodoSendingV3, TodoRequestedV2, TodoRequestedV3, TodoRequestedV4, TodoRequestedV5 } from "./history"
 import { Draft as TodoDraft, Requested as TodoRequested, Sending as TodoSending, Todo, TodoRequest } from "../features/todos/schema"
 import { View } from "../features/views/schema"
 import { CuratedRowV1, HomeRowV2 } from "./home-history"
@@ -160,8 +160,13 @@ export const PersonalModelHiddenStore = Migrations.local({
   getKey: (row) => row.id,
 })
 
-/** TODO drafts. */
-export const TodoDraftsStore = Migrations.local({ id: "todo-drafts", versions: [TodoDraft], getKey: (row) => row.id })
+/** TODO drafts. Version 2 adds optional `after` stacking; a version 1 draft has none. */
+export const TodoDraftsStore = Migrations.local({
+  id: "todo-drafts",
+  versions: [TodoDraftV1, TodoDraft],
+  migrations: [Migrations.step(TodoDraftV1, TodoDraft, (row) => row)],
+  getKey: (row) => row.id,
+})
 
 /** The new-flow form and unsent answers survive a page reload or PWA update. */
 export const FlowFormStore = Migrations.local({ id: "flow-form", versions: [FlowForm], getKey: (row) => row.id })
@@ -174,15 +179,17 @@ export const FlowCodeStore = Migrations.local({ id: "flow-code", versions: [Flow
  */
 export const TodoRequestedStore = Migrations.local({
   id: "todo-requested",
-  versions: [TodoRequestedV1, TodoRequestedV2, TodoRequestedV3, TodoRequestedV4, TodoRequested],
+  versions: [TodoRequestedV1, TodoRequestedV2, TodoRequestedV3, TodoRequestedV4, TodoRequestedV5, TodoRequested],
   // Version 4 adds when the route answered (`answeredAt`, decision 0124); a row kept before has none. Version 5: a
   // change may be an `attach`, and the stack may refuse `issue_not_found`, `issue_required` or `attached` (decision
-  // 0153); every version 4 row is a version 5 row.
+  // 0153); every version 4 row is a version 5 row. Version 6 adds optional `after` stacking; every version 5 row is a
+  // version 6 row.
   migrations: [
     Migrations.step(TodoRequestedV1, TodoRequestedV2, (row) => row),
     Migrations.step(TodoRequestedV2, TodoRequestedV3, (row) => row),
     Migrations.step(TodoRequestedV3, TodoRequestedV4, (row) => row),
-    Migrations.step(TodoRequestedV4, TodoRequested, (row) => row),
+    Migrations.step(TodoRequestedV4, TodoRequestedV5, (row) => row),
+    Migrations.step(TodoRequestedV5, TodoRequested, (row) => row),
   ],
   getKey: (row) => row.id,
 })
@@ -281,11 +288,13 @@ export const TextSendingPayload = Migrations.payload({ key: "text-sending", vers
 /** Changes to a stack (src/features/todos/writes.ts, mutation `todo-op`). */
 export const TodoSendingPayload = Migrations.payload({
   key: "todo-sending",
-  versions: [TodoSendingV1, TodoSendingV2, TodoSending],
+  versions: [TodoSendingV1, TodoSendingV2, TodoSendingV3, TodoSending],
   // Version 3: a change may be an `attach` (decision 0153); every version 2 change is a version 3 change.
+  // Version 4: a commit may carry optional `after` stacking; every version 3 change is a version 4 change.
   migrations: [
     Migrations.step(TodoSendingV1, TodoSendingV2, (row) => ({ ...row, v: 2 as const })),
-    Migrations.step(TodoSendingV2, TodoSending, (row) => ({ ...row, v: 3 as const })),
+    Migrations.step(TodoSendingV2, TodoSendingV3, (row) => ({ ...row, v: 3 as const })),
+    Migrations.step(TodoSendingV3, TodoSending, (row) => ({ ...row, v: 4 as const })),
   ],
 })
 

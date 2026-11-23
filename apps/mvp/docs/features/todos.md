@@ -148,7 +148,7 @@ A TODO is a leaf under its issue (decision [0153](../decisions/0153-issues-are-a
 - **Validation.** `no_criteria` when the TODO's current revision has no acceptance criteria, else `pending`. `passed`, `failed` and `stale` come with proof (rollout step 6b): until then no leaf says a TODO passed.
 - **The backfill.** The migration wrote every TODO that had an issue as `none`: it was never proven.
 - **Attach** (`todo/attach`, migration `0099_todo_attach`, whose `stack_ops` checks `ops/stack-ops/validate.ts` validates once it has deployed) is a person's press: Member, never the agent. The writer replays the op id's receipt first, then checks the issue is a live issue of the repository, then that the TODO's issue is none or deleted, then sets `issue_number`; the work links follow in the same transaction and the leaf at its commit, and the stack's order, lanes and attempts don't move. It answers `issue_set`. The device keeps it Requested until the TODO shows the issue.
-- **Devices from before.** `todo-sending` is version 3 and `todo-requested` version 5: an `attach` and the codes `issue_not_found`, `issue_required` and `attached`. Every older row is a newer row unchanged, so a commit an older build queued is sent as it was.
+- **Devices from before.** Decision 0153 moved `todo-sending` to version 3 and `todo-requested` to version 5 (`attach` and the codes `issue_not_found`, `issue_required` and `attached`); optional `after` stacking moves `todo-drafts` to version 2, `todo-requested` to version 6 and `todo-sending` to version 4. Every older row is a newer row unchanged (with `v` bumped on `todo-sending`), so a commit an older build queued is sent as it was.
 
 ## The run
 

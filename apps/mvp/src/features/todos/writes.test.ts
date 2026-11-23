@@ -22,7 +22,7 @@ const row: Sending = {
   acceptance: [],
   number: 0,
   queuedAt: 1,
-  v: 3,
+  v: 4,
 }
 
 /** Keeps `row` as Requested on a device whose store fails its writes when `failing`; answers how the send settles. */
@@ -34,7 +34,7 @@ const keepOn = (failing: boolean) => {
         id: "todo-requested",
         schema: RequestedRow,
         getKey: (kept) => kept.id,
-        schemaVersion: 5,
+        schemaVersion: 6,
       })
       yield* requested.preload
       if (failing) store.failWrites()
@@ -66,7 +66,7 @@ describe("requestOf after forwarding", () => {
       acceptance: [],
       number: 0,
       queuedAt: 1,
-      v: 3 as const,
+      v: 4 as const,
     }
     expect("after" in requestOf(base)).toBe(false)
     expect(requestOf({ ...base, after: null })).toMatchObject({ op: "commit", after: null })
@@ -85,7 +85,7 @@ test("requestOf defaults missing attach issue to 0", () => {
     acceptance: [],
     number: 9,
     queuedAt: 1,
-    v: 3,
+    v: 4,
   }
   expect(requestOf(row)).toEqual({ opId: "op-attach-empty", op: "attach", number: 9, issue: 0 })
 })

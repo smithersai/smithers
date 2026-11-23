@@ -226,7 +226,7 @@ const admitChange = (op: "drop" | "retry" | "attach", owner: string, name: strin
       const row: Requested = { ...payload, id: crypto.randomUUID(), repoId: repoId(owner, name), op, title: "", prompt: "", acceptance: [], queuedAt: yield* Clock.currentTimeMillis, status: "not_sent", reason: null, taken: null }
       yield* store.view.update(VIEW, view => { view.admissionFailures = [...view.admissionFailures ?? [], { ...row, acceptance: [...row.acceptance] }] }).pipe(Effect.orDie)
       // Refusal is visible synchronously. Persist its same-identity recovery row once when that store is usable.
-      yield* whileAdmitting(row.id, admissionReceipt(keep(store.requested, { ...row, v: 3 }, "not_sent", null, null), row.id, flowOfChange[op], "refusal").pipe(
+      yield* whileAdmitting(row.id, admissionReceipt(keep(store.requested, { ...row, v: 4 }, "not_sent", null, null), row.id, flowOfChange[op], "refusal").pipe(
         Effect.andThen(clearFailure(row.id)), Effect.ignore,
       )).pipe(Effect.forkIn(store.scope, { startImmediately: true }))
       return
