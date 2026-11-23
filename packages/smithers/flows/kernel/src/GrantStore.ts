@@ -31,10 +31,44 @@ import {
 } from "@smthrs/capability/Permission"
 import { digestSync } from "@smthrs/crypto/Sha256"
 import { Cause, Context, Deferred, Effect, Layer, Option, Schema, type Scope, Semaphore } from "effect"
-import { allows, type CapabilitySet, current, fromPatterns, intersect } from "./CapabilitySet.ts"
+import { allows, type CapabilitySet, current, fromGroups, fromPatterns, intersect, within } from "./CapabilitySet.ts"
 import { DeniedGrant, EnvelopeGrant, type GrantEvent, OnceGrant, RememberedGrant, RunGrant } from "./GrantEvent.ts"
 import { fitsRequest, hasResourceWildcard } from "./internal/fitsRequest.ts"
 import { Workspace } from "./Workspace.ts"
+
+/**
+ * Well-known monotone attenuation hook invoked by `CapabilitySet.attenuate`
+ * when narrowing a `Context`. Knowing this symbol confers no widening
+ * authority: the handler only intersects its closure-bound ceiling with the
+ * argument and fails closed on unverified values.
+ */
+const AttenuateServiceSymbol: symbol = Symbol.for("@smthrs/capability/attenuateService")
+const unrestrictedCeiling: CapabilitySet = fromGroups([])
+
+const readAttenuator = (
+  service: Service
+): ((ceiling: CapabilitySet) => Service) | undefined => {
+  const descriptor = Object.getOwnPropertyDescriptor(service, AttenuateServiceSymbol)
+  return descriptor !== undefined &&
+      descriptor.writable === false &&
+      descriptor.configurable === false &&
+      typeof descriptor.value === "function"
+    ? (descriptor.value as (ceiling: CapabilitySet) => Service)
+    : undefined
+}
+
+const attachAttenuator = (
+  service: Service,
+  attenuateService: (narrow: CapabilitySet) => Service
+): Service => {
+  Object.defineProperty(service, AttenuateServiceSymbol, {
+    value: attenuateService,
+    enumerable: false,
+    writable: false,
+    configurable: false
+  })
+  return Object.freeze(service)
+}
 
 /**
  * A capability request waiting for an attended reply.
@@ -142,6 +176,8 @@ export type Persist = (event: GrantEvent) => Effect.Effect<void, GrantStoreError
  */
 export interface MakeOptions {
   readonly attended?: boolean | undefined
+  /** Keep checks, policy, list, reply, and envelopes within the ceiling active when this store is made. */
+  readonly bindCeiling?: boolean | undefined
   readonly rules?: ReadonlyArray<Rule> | ReadonlyArray<ReadonlyArray<Rule>> | undefined
   /** Bare rules use the constructor ceiling; captured groups intersect it. */
   readonly runRules?:
@@ -251,6 +287,7 @@ const isWellFormed = (value: string): boolean => {
 }
 
 const invalid = (message: string): GrantStoreError => new GrantStoreError({ code: "invalid_resolution", message })
+const outsideCeiling = (what: string): GrantStoreError => invalid(`${what} is outside the capability ceiling`)
 
 const immutableFields = <A extends object, K extends keyof A>(
   value: A,
@@ -611,6 +648,7 @@ export const make = (
     }
     const workspace = yield* Workspace
     const initialCeiling = yield* current
+    const rootBound = options.bindCeiling === true ? initialCeiling : unrestrictedCeiling
     const workspaceRoot = workspace.root
     const initial = yield* attemptSnapshot("rules", () => normalizeRules(options.rules))
     const initialRunRules = yield* attemptSnapshot("runRules", () => {
@@ -796,73 +834,74 @@ export const make = (
 
     const nextUnattendedRequestId = Effect.sync(() => `permission-${nextRequestId++}`)
 
-    const check: Service["check"] = Effect.fn("GrantStore.check")((capability, meta = {}) =>
-      Effect.uninterruptibleMask((restore) =>
-        Effect.gen(function*() {
-          const request = yield* attemptSnapshot("permission request", () => ({
-            capability: snapshotCapability(capability),
-            meta: metadataSnapshot(meta)
-          }))
-          // The permit guards only in-memory state, so acquiring it is
-          // interruptible: a cancelled caller is released instead of queueing
-          // uninterruptibly. The critical section itself stays uninterruptible.
-          const entry = yield* restore(mutation.take(1)).pipe(
-            Effect.andThen(
-              Effect.gen(function*() {
-                if (closed) {
-                  return yield* Effect.fail(new GrantStoreError({ code: "store_closed" }))
-                }
-                const ceiling = yield* current
-                if (!allows(ceiling, request.capability)) {
-                  return yield* Effect.fail(permissionDenied(request.capability, "outside capability ceiling"))
-                }
+    const makeCheck = (boundCeiling: CapabilitySet): Service["check"] =>
+      Effect.fn("GrantStore.check")((capability, meta = {}) =>
+        Effect.uninterruptibleMask((restore) =>
+          Effect.gen(function*() {
+            const request = yield* attemptSnapshot("permission request", () => ({
+              capability: snapshotCapability(capability),
+              meta: metadataSnapshot(meta)
+            }))
+            // The permit guards only in-memory state, so acquiring it is
+            // interruptible: a cancelled caller is released instead of queueing
+            // uninterruptibly. The critical section itself stays uninterruptible.
+            const entry = yield* restore(mutation.take(1)).pipe(
+              Effect.andThen(
+                Effect.gen(function*() {
+                  if (closed) {
+                    return yield* Effect.fail(new GrantStoreError({ code: "store_closed" }))
+                  }
+                  const ceiling = intersect(boundCeiling, yield* current)
+                  if (!allows(ceiling, request.capability)) {
+                    return yield* Effect.fail(permissionDenied(request.capability, "outside capability ceiling"))
+                  }
 
-                const decision = evaluate(rulesets(request.capability), request.capability)
-                if (decision === "allow") {
-                  return undefined
-                }
-                if (decision === "deny") {
-                  return yield* Effect.fail(permissionDenied(request.capability, "denied by permission policy"))
-                }
+                  const decision = evaluate(rulesets(request.capability), request.capability)
+                  if (decision === "allow") {
+                    return undefined
+                  }
+                  if (decision === "deny") {
+                    return yield* Effect.fail(permissionDenied(request.capability, "denied by permission policy"))
+                  }
 
-                const tier = tierOf(request.capability, { workspaceRoot })
-                if (!attended) {
-                  const requestId = yield* nextUnattendedRequestId
-                  return yield* Effect.fail(
-                    permissionRequired({
-                      requestId,
-                      runId,
-                      capability: request.capability,
-                      tier,
-                      meta: request.meta
-                    })
+                  const tier = tierOf(request.capability, { workspaceRoot })
+                  if (!attended) {
+                    const requestId = yield* nextUnattendedRequestId
+                    return yield* Effect.fail(
+                      permissionRequired({
+                        requestId,
+                        runId,
+                        capability: request.capability,
+                        tier,
+                        meta: request.meta
+                      })
+                    )
+                  }
+
+                  return yield* allocateRequest(
+                    request.capability,
+                    tier,
+                    request.meta,
+                    ceiling
                   )
-                }
-
-                return yield* allocateRequest(
-                  request.capability,
-                  tier,
-                  request.meta,
-                  ceiling
-                )
-              }).pipe(Effect.ensuring(mutation.release(1)))
-            )
-          )
-          if (entry === undefined) {
-            return
-          }
-          return yield* restore(Deferred.await(entry.deferred)).pipe(
-            Effect.ensuring(
-              mutation.withPermit(
-                Effect.sync(() => {
-                  pending.delete(entry.requestId)
-                })
+                }).pipe(Effect.ensuring(mutation.release(1)))
               )
             )
-          )
-        })
+            if (entry === undefined) {
+              return
+            }
+            return yield* restore(Deferred.await(entry.deferred)).pipe(
+              Effect.ensuring(
+                mutation.withPermit(
+                  Effect.sync(() => {
+                    pending.delete(entry.requestId)
+                  })
+                )
+              )
+            )
+          })
+        )
       )
-    )
 
     const resolveCovered: Effect.Effect<void> = Effect.suspend(() =>
       Effect.forEach(
@@ -909,6 +948,7 @@ export const make = (
       }
 
     const planReply = (
+      boundCeiling: CapabilitySet,
       requestId: string,
       resolution: Resolution,
       suppliedPattern: CapabilityPattern | undefined
@@ -932,7 +972,8 @@ export const make = (
         const entry = pending.get(requestId)
         // A request whose decision is already being persisted is decided:
         // the losing reply fails fast instead of queueing behind the journal.
-        if (entry === undefined || resolving.has(requestId)) {
+        // An attenuated view cannot observe or answer requests outside its bound.
+        if (entry === undefined || resolving.has(requestId) || !allows(boundCeiling, entry.capability)) {
           return yield* Effect.fail(new GrantStoreError({ code: "request_not_found" }))
         }
         const pattern = yield* attemptSnapshot("grant pattern", () => {
@@ -976,6 +1017,9 @@ export const make = (
                 })
               )
             }
+            if (!within(fromPatterns([pattern]), boundCeiling)) {
+              return yield* Effect.fail(outsideCeiling("grant pattern"))
+            }
             if (!isValidGrantPattern(pattern, entry.capability, entry.tier, workspaceRoot)) {
               return yield* Effect.fail(invalid("grant pattern exceeds the requested authority"))
             }
@@ -1006,6 +1050,9 @@ export const make = (
             }
           }
           case "remembered": {
+            if (!within(fromPatterns([pattern]), boundCeiling)) {
+              return yield* Effect.fail(outsideCeiling("grant pattern"))
+            }
             if (!isValidGrantPattern(pattern, entry.capability, entry.tier, workspaceRoot)) {
               return yield* Effect.fail(invalid("grant pattern exceeds the requested authority"))
             }
@@ -1100,52 +1147,59 @@ export const make = (
         }
       })
 
-    const reply: Service["reply"] = Effect.fn("GrantStore.reply")((
-      requestId,
-      resolution,
-      suppliedPattern
-    ) =>
-      Effect.uninterruptibleMask((restore) =>
-        Effect.gen(function*() {
-          const planned = yield* mutation.withPermit(planReply(requestId, resolution, suppliedPattern))
-          // Journal IO never holds the permit: only this reply waits on it,
-          // interruptibly, so the write deadline can fire and a cancelled
-          // reply is released. A failed write clears the in-flight mark so
-          // the request stays retryable.
-          yield* restore(persistEvent(planned.event)).pipe(
-            Effect.onError(() =>
-              mutation.withPermit(
-                Effect.sync(() => {
-                  resolving.delete(requestId)
-                  if (planned.resolution === "run" || planned.resolution === "remembered") reservedRules -= 1
-                })
+    const makeReply = (boundCeiling: CapabilitySet): Service["reply"] =>
+      Effect.fn("GrantStore.reply")((
+        requestId,
+        resolution,
+        suppliedPattern
+      ) =>
+        Effect.uninterruptibleMask((restore) =>
+          Effect.gen(function*() {
+            const planned = yield* mutation.withPermit(
+              planReply(boundCeiling, requestId, resolution, suppliedPattern)
+            )
+            // Journal IO never holds the permit: only this reply waits on it,
+            // interruptibly, so the write deadline can fire and a cancelled
+            // reply is released. A failed write clears the in-flight mark so
+            // the request stays retryable.
+            yield* restore(persistEvent(planned.event)).pipe(
+              Effect.onError(() =>
+                mutation.withPermit(
+                  Effect.sync(() => {
+                    resolving.delete(requestId)
+                    if (planned.resolution === "run" || planned.resolution === "remembered") reservedRules -= 1
+                  })
+                )
               )
             )
-          )
-          yield* mutation.withPermit(activateReply(requestId, planned))
-        })
-      )
-    )
-
-    const list: Service["list"] = Effect.fn("GrantStore.list")(() =>
-      mutation.withPermit(
-        Effect.sync(() =>
-          // Every entry's meta is already the frozen snapshot taken at check
-          // time; list copies the array and re-wraps identity without
-          // re-walking or re-serializing the metadata graph.
-          Object.freeze(Array.from(
-            pending.values(),
-            ({ requestId, capability, tier, meta }): PendingRequest =>
-              Object.freeze({
-                requestId,
-                capability: snapshotCapability(capability),
-                tier,
-                meta
-              })
-          ))
+            yield* mutation.withPermit(activateReply(requestId, planned))
+          })
         )
       )
-    )()
+
+    const makeList = (boundCeiling: CapabilitySet): Service["list"] =>
+      Effect.fn("GrantStore.list")(() =>
+        mutation.withPermit(
+          Effect.sync(() => {
+            // Every entry's meta is already the frozen snapshot taken at check
+            // time; list copies the array and re-wraps identity without
+            // re-walking or re-serializing the metadata graph.
+            const visible: Array<PendingRequest> = []
+            for (const { requestId, capability, tier, meta } of pending.values()) {
+              if (!allows(boundCeiling, capability)) continue
+              visible.push(
+                Object.freeze({
+                  requestId,
+                  capability: snapshotCapability(capability),
+                  tier,
+                  meta
+                })
+              )
+            }
+            return Object.freeze(visible)
+          })
+        )
+      )()
 
     type EnvelopeAdmission =
       | { readonly _tag: "Durable" }
@@ -1221,80 +1275,99 @@ export const make = (
         yield* resolveCovered
       })
 
-    const grantEnvelope: Service["grantEnvelope"] = Effect.fn("GrantStore.grantEnvelope")((input) =>
-      Effect.uninterruptibleMask((restore) => {
-        const admit = (
-          prepared: Effect.Success<ReturnType<typeof prepareEnvelope>>
-        ): Effect.Effect<void, GrantStoreError> =>
-          Effect.gen(function*() {
-            const planned = yield* mutation.withPermit(planEnvelope(prepared))
-            switch (planned._tag) {
-              case "Durable":
-                return
-              case "Wait": {
-                // The identical envelope is mid-flight elsewhere; adopt its
-                // outcome. A failed write fails here too: re-planning would
-                // turn one journal outage into an unbounded loop of writes.
-                // An interrupted first admission decided nothing and can be
-                // retried. Check this caller's cancellation before re-planning
-                // so an interrupted duplicate cannot loop under the mask.
-                return yield* restore(Deferred.await(planned.completion)).pipe(
-                  Effect.catchCause((cause) =>
-                    Cause.hasInterruptsOnly(cause)
-                      ? restore(Effect.void).pipe(Effect.andThen(admit(prepared)))
-                      : Effect.failCause(cause)
-                  )
-                )
-              }
-              case "Fresh": {
-                // Journal IO never holds the permit: only this admission
-                // waits on it, interruptibly, so the write deadline can fire.
-                // Concurrent duplicates are released with the same outcome.
-                yield* restore(persistEvent(planned.event)).pipe(
-                  Effect.onError((cause) =>
-                    mutation.withPermit(
-                      Effect.gen(function*() {
-                        granting.delete(planned.signature)
-                        reservedRules -= planned.patterns.length
-                        yield* Deferred.failCause(planned.completion, cause)
-                      })
+    const makeGrantEnvelope = (boundCeiling: CapabilitySet): Service["grantEnvelope"] =>
+      Effect.fn("GrantStore.grantEnvelope")((input) =>
+        Effect.uninterruptibleMask((restore) => {
+          const admit = (
+            prepared: Effect.Success<ReturnType<typeof prepareEnvelope>>
+          ): Effect.Effect<void, GrantStoreError> =>
+            Effect.gen(function*() {
+              const planned = yield* mutation.withPermit(planEnvelope(prepared))
+              switch (planned._tag) {
+                case "Durable":
+                  return
+                case "Wait": {
+                  // The identical envelope is mid-flight elsewhere; adopt its
+                  // outcome. A failed write fails here too: re-planning would
+                  // turn one journal outage into an unbounded loop of writes.
+                  // An interrupted first admission decided nothing and can be
+                  // retried. Check this caller's cancellation before re-planning
+                  // so an interrupted duplicate cannot loop under the mask.
+                  return yield* restore(Deferred.await(planned.completion)).pipe(
+                    Effect.catchCause((cause) =>
+                      Cause.hasInterruptsOnly(cause)
+                        ? restore(Effect.void).pipe(Effect.andThen(admit(prepared)))
+                        : Effect.failCause(cause)
                     )
                   )
-                )
-                yield* mutation.withPermit(activateEnvelope(planned)).pipe(
-                  Effect.tap(() => Deferred.succeed(planned.completion, undefined)),
-                  Effect.onError((cause) => Deferred.failCause(planned.completion, cause))
-                )
-                return
+                }
+                case "Fresh": {
+                  // Journal IO never holds the permit: only this admission
+                  // waits on it, interruptibly, so the write deadline can fire.
+                  // Concurrent duplicates are released with the same outcome.
+                  yield* restore(persistEvent(planned.event)).pipe(
+                    Effect.onError((cause) =>
+                      mutation.withPermit(
+                        Effect.gen(function*() {
+                          granting.delete(planned.signature)
+                          reservedRules -= planned.patterns.length
+                          yield* Deferred.failCause(planned.completion, cause)
+                        })
+                      )
+                    )
+                  )
+                  yield* mutation.withPermit(activateEnvelope(planned)).pipe(
+                    Effect.tap(() => Deferred.succeed(planned.completion, undefined)),
+                    Effect.onError((cause) => Deferred.failCause(planned.completion, cause))
+                  )
+                  return
+                }
               }
+            })
+          return Effect.gen(function*() {
+            const prepared = yield* prepareEnvelope(input, planDigest, workspaceRoot)
+            if (prepared.patterns.length === 0) return
+            const outside = prepared.patterns.findIndex((pattern) => !within(fromPatterns([pattern]), boundCeiling))
+            if (outside !== -1) {
+              return yield* Effect.fail(outsideCeiling(`patterns[${outside}]`))
             }
+            yield* admit(prepared)
           })
-        return Effect.gen(function*() {
-          const prepared = yield* prepareEnvelope(input, planDigest, workspaceRoot)
-          if (prepared.patterns.length === 0) return
-          yield* admit(prepared)
         })
-      })
-    )
+      )
 
-    const policy: Service["policy"] = mutation.withPermit(Effect.gen(function*() {
-      if (closed) return yield* Effect.fail(new GrantStoreError({ code: "store_closed" }))
-      const ceiling = yield* current
-      const unbounded = (rules: ReadonlyArray<Rule>) =>
-        rules.map((rule) =>
-          Object.freeze({ rule: snapshotRule(rule), ceiling: Object.freeze({ groups: Object.freeze([]) }) })
-        )
-      return Object.freeze({
-        ceiling,
-        groups: Object.freeze([
-          unbounded(configuredRules),
-          unbounded(envelopeRules),
-          runRules.map(({ rule, ceiling }) => Object.freeze({ rule: snapshotRule(rule), ceiling })),
-          unbounded(rememberedRules)
-        ].map((group) => Object.freeze(group)))
-      })
-    }))
-    return GrantStore.of({ check, reply, list, grantEnvelope, policy })
+    const makePolicy = (boundCeiling: CapabilitySet): Service["policy"] =>
+      mutation.withPermit(Effect.gen(function*() {
+        if (closed) return yield* Effect.fail(new GrantStoreError({ code: "store_closed" }))
+        const ceiling = intersect(boundCeiling, yield* current)
+        const unbounded = (rules: ReadonlyArray<Rule>) =>
+          rules.map((rule) =>
+            Object.freeze({ rule: snapshotRule(rule), ceiling: Object.freeze({ groups: Object.freeze([]) }) })
+          )
+        return Object.freeze({
+          ceiling,
+          groups: Object.freeze([
+            unbounded(configuredRules),
+            unbounded(envelopeRules),
+            runRules.map(({ rule, ceiling }) => Object.freeze({ rule: snapshotRule(rule), ceiling })),
+            unbounded(rememberedRules)
+          ].map((group) => Object.freeze(group)))
+        })
+      }))
+
+    const makeView = (boundCeiling: CapabilitySet): Service =>
+      attachAttenuator(
+        GrantStore.of({
+          check: makeCheck(boundCeiling),
+          reply: makeReply(boundCeiling),
+          list: makeList(boundCeiling),
+          grantEnvelope: makeGrantEnvelope(boundCeiling),
+          policy: makePolicy(boundCeiling)
+        }),
+        (narrow) => makeView(intersect(boundCeiling, narrow))
+      )
+
+    return makeView(rootBound)
   })
 
 /**
@@ -1307,34 +1380,139 @@ export const layer = (
   options: MakeOptions = {}
 ): Layer.Layer<GrantStore, GrantStoreError, Workspace> => Layer.effect(GrantStore, make(options))
 
+const makeNoopView = (boundCeiling: CapabilitySet): Service =>
+  attachAttenuator(
+    GrantStore.of({
+      policy: current.pipe(Effect.map((ambient) =>
+        Object.freeze({
+          ceiling: intersect(boundCeiling, ambient),
+          groups: Object.freeze([Object.freeze((["*", "net:private"] as const).map((action) =>
+            Object.freeze({
+              rule: snapshotRule(
+                new Rule({ effect: "allow", pattern: new CapabilityPattern({ action, resource: "**" }) })
+              ),
+              ceiling: Object.freeze({ groups: Object.freeze([]) })
+            })
+          ))])
+        })
+      )),
+      check: Effect.fn("GrantStore.check")((capability: Capability) =>
+        Effect.gen(function*() {
+          const request = yield* attemptSnapshot("permission request", () => snapshotCapability(capability))
+          const ceiling = intersect(boundCeiling, yield* current)
+          if (!allows(ceiling, request)) {
+            return yield* Effect.fail(permissionDenied(request, "outside capability ceiling"))
+          }
+        })
+      ),
+      reply: Effect.fn("GrantStore.reply")(() => Effect.void),
+      list: Effect.fn("GrantStore.list")(() => Effect.succeed([]))(),
+      grantEnvelope: Effect.fn("GrantStore.grantEnvelope")(() => Effect.void)
+    }),
+    (narrow) => makeNoopView(intersect(boundCeiling, narrow))
+  )
+
 /**
- * An allow-all grant store.
+ * A grant store that skips permission rules while still enforcing capability ceilings.
  *
  * @category constructors
  * @since 1.0.0-rc.0
  */
-export const makeNoop: Service = GrantStore.of({
-  policy: current.pipe(Effect.map((ceiling) =>
-    Object.freeze({
-      ceiling,
-      groups: Object.freeze([Object.freeze((["*", "net:private"] as const).map((action) =>
-        Object.freeze({
-          rule: snapshotRule(new Rule({ effect: "allow", pattern: new CapabilityPattern({ action, resource: "**" }) })),
-          ceiling: Object.freeze({ groups: Object.freeze([]) })
-        })
-      ))])
-    })
-  )),
-  check: Effect.fn("GrantStore.check")(() => Effect.void),
-  reply: Effect.fn("GrantStore.reply")(() => Effect.void),
-  list: Effect.fn("GrantStore.list")(() => Effect.succeed([]))(),
-  grantEnvelope: Effect.fn("GrantStore.grantEnvelope")(() => Effect.void)
-})
+export const makeNoop: Service = makeNoopView(unrestrictedCeiling)
 
 /**
- * Provides the allow-all grant store.
+ * Provides the ceiling-only allow-all grant store.
  *
  * @category layers
  * @since 1.0.0-rc.0
  */
 export const layerNoop: Layer.Layer<GrantStore> = Layer.succeed(GrantStore)(makeNoop)
+
+/**
+ * Returns a frozen view of a grant store whose ceiling is bound in a closure.
+ *
+ * When `service` was produced by {@link make}, {@link makeNoop}, or a prior
+ * call to {@link attenuated}, the returned view reuses the store's native
+ * monotone attenuation hook so checks, attended `RunGrant` captures, policy
+ * snapshots, pending request listings, replies, and bulk envelopes all stay
+ * atomically within the bound even on detached fibers with stripped contexts.
+ *
+ * Unverified `ceiling` values fail closed to empty authority.
+ *
+ * @category constructors
+ * @since 1.0.0
+ */
+export const attenuated = (service: Service, ceiling: CapabilitySet): Service => {
+  const bound = intersect(unrestrictedCeiling, ceiling)
+  const nativeAttenuator = readAttenuator(service)
+  if (nativeAttenuator !== undefined) {
+    return nativeAttenuator.call(service, bound)
+  }
+  const inside = (pattern: CapabilityPattern): boolean => within(fromPatterns([pattern]), bound)
+  return attachAttenuator(
+    GrantStore.of({
+      policy: Effect.map(
+        service.policy,
+        (policy) => Object.freeze({ groups: policy.groups, ceiling: intersect(bound, policy.ceiling) })
+      ),
+      check: (capability, meta) =>
+        Effect.flatMap(
+          attemptSnapshot("permission request", () => snapshotCapability(capability)),
+          (request) =>
+            allows(bound, request)
+              ? service.check(request, meta)
+              : Effect.fail(permissionDenied(request, "outside capability ceiling"))
+        ),
+      reply: (requestId, resolution, pattern) =>
+        Effect.gen(function*() {
+          const request = (yield* service.list).find((pending) => pending.requestId === requestId)
+          if (request !== undefined && !allows(bound, request.capability)) {
+            return yield* Effect.fail(new GrantStoreError({ code: "request_not_found" }))
+          }
+          const supplied = pattern === undefined
+            ? undefined
+            : yield* attemptSnapshot("grant pattern", () => snapshotPattern(pattern))
+          if (supplied !== undefined && !inside(supplied)) {
+            return yield* Effect.fail(outsideCeiling("grant pattern"))
+          }
+          return yield* service.reply(requestId, resolution, supplied)
+        }),
+      list: Effect.map(
+        service.list,
+        (pending) => Object.freeze(pending.filter((request) => allows(bound, request.capability)))
+      ),
+      grantEnvelope: (options) =>
+        Effect.gen(function*() {
+          const patterns = yield* attemptSnapshot("grant envelope", () => {
+            if (!Array.isArray(options.patterns)) throw invalid("patterns must be an array")
+            if (options.patterns.length > maximumEnvelopePatterns) {
+              throw invalid(`patterns exceed ${maximumEnvelopePatterns} entries`)
+            }
+            return canonicalEnvelopePatterns(options.patterns)
+          })
+          const index = patterns.findIndex((pattern) => !inside(pattern))
+          if (index !== -1) {
+            return yield* Effect.fail(outsideCeiling(`patterns[${index}]`))
+          }
+          return yield* service.grantEnvelope({ planDigest: options.planDigest, patterns, scope: options.scope })
+        })
+    }),
+    (narrow) => attenuated(service, intersect(bound, narrow))
+  )
+}
+
+/**
+ * Runs an effect with the ambient grant store replaced by a view bound to the
+ * calling fiber's current ceiling.
+ *
+ * @category combinators
+ * @since 1.0.0
+ */
+export const bindCeiling = <A, E, R>(
+  effect: Effect.Effect<A, E, R>
+): Effect.Effect<A, E, R | GrantStore> =>
+  Effect.gen(function*() {
+    const ceiling = yield* current
+    const store = yield* GrantStore
+    return yield* Effect.provideService(effect, GrantStore, attenuated(store, ceiling))
+  })
