@@ -10,10 +10,10 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterAll, describe, expect, it } from "vitest"
-import type { Failure, ReplayParts, ReplayRequest } from "../../src/contract/Parts.ts"
-import type { ReplayReport } from "../../src/contract/ReplayReport.ts"
+import type { Failure, ReplayParts, ReplayRequest } from "../../src/contract/Parts.vibe"
+import type { ReplayReport } from "../../src/contract/ReplayReport.vibe"
 import { cannotFetch, fetchMissing, noRemote, readyHistory, shallow } from "../../src/replay/History.vibe"
-import { Progress, run } from "../../src/replay/index.ts"
+import { Progress, run } from "../../src/replay/index.vibe"
 import { job, makeSmallRepository } from "./fixture.ts"
 import { options, parts } from "./TestParts.vibe"
 
@@ -205,7 +205,7 @@ describe("a replay of a partial clone", () => {
   }, 120_000)
 
   it("fails as a step of the command, exit 4", async () => {
-    const { failureExitCodes } = await import("../../src/contract/Command.ts")
+    const { failureExitCodes } = await import("../../src/contract/Command.vibe")
     expect(failureExitCodes["command-failed"]).toBe(4)
     expect(cannotFetch(1, "origin", "why")).toBe(
       "this partial clone lacks 1 object the replayed commits check out, and fetching them failed (why): " +

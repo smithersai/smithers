@@ -4,7 +4,7 @@ import type * as FileSystem from "effect/FileSystem"
 import type * as Path from "effect/Path"
 import { rmSync } from "node:fs"
 import { afterAll, describe, expect, it } from "vitest"
-import { generatedMark, workspace } from "../../src/native/index.ts"
+import { generatedMark, workspace } from "../../src/native/index.vibe"
 import { ownPackage, ownWorkspace, repository } from "./repo.ts"
 import { unreadable } from "./support.vibe"
 

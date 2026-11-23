@@ -3,8 +3,8 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, wr
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterAll, describe, expect, it } from "vitest"
-import { changesIn } from "../../src/inventory/MachineChanges.ts"
-import { withoutSudo } from "../../src/inventory/WithoutSudo.ts"
+import { changesIn } from "../../src/inventory/MachineChanges.vibe"
+import { withoutSudo } from "../../src/inventory/WithoutSudo.vibe"
 
 /** What a script does to the machine where `sudo` refuses, as the reader of machine changes words it. */
 const changes = (script: string): ReadonlyArray<string> =>

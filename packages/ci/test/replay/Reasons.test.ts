@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs"
 import { describe, expect, it } from "vitest"
-import type { TargetResult } from "../../src/contract/RunRecord.ts"
+import type { TargetResult } from "../../src/contract/RunRecord.vibe"
 import {
   commandLine,
   failuresOf,

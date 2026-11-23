@@ -4,9 +4,9 @@
  * @since 0.1.0
  */
 
-import type { RunRecord } from "../contract/RunRecord.ts"
-import { failure } from "./Failure.ts"
-import { build } from "./Features.ts"
+import type { RunRecord } from "../contract/RunRecord.vibe"
+import { failure } from "./Failure.vibe"
+import { build } from "./Features.vibe"
 import { Ledger } from "./Ledger.vibe"
 import { Repository } from "./Repository.vibe"
 

@@ -10,7 +10,7 @@ import {
   noCommand,
   notReplayed,
   reasonsText
-} from "../../src/contract/Inventory.ts"
+} from "../../src/contract/Inventory.vibe"
 import {
   answers,
   changesIn,
@@ -19,7 +19,7 @@ import {
   questionFor,
   questionsFor,
   withInstalled
-} from "../../src/inventory/MachineChanges.ts"
+} from "../../src/inventory/MachineChanges.vibe"
 
 const job = (commands: ReadonlyArray<string>, fields: Partial<Job> = {}): Job => ({
   id: "ci.yml:build",

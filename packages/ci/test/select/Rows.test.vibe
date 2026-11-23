@@ -1,7 +1,7 @@
 // `rows` over a real git repository and a real ledger directory.
 import { describe, expect, it } from "@effect/vitest"
-import { failure } from "../../src/select/Failure.ts"
-import { day } from "../../src/select/Features.ts"
+import { failure } from "../../src/select/Failure.vibe"
+import { day } from "../../src/select/Features.vibe"
 import { Ledger, layerFile, layerMemory } from "../../src/select/Ledger.vibe"
 import { layerGit, Repository } from "../../src/select/Repository.vibe"
 import { rows } from "../../src/select/Rows.vibe"

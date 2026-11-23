@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
-import type { Job } from "../../src/contract/Inventory.ts"
-import { isCacheCredential, leaveCacheEmpty, markWithheld } from "../../src/inventory/CacheCredentials.ts"
+import type { Job } from "../../src/contract/Inventory.vibe"
+import { isCacheCredential, leaveCacheEmpty, markWithheld } from "../../src/inventory/CacheCredentials.vibe"
 
 describe("the credentials of a remote build cache", () => {
   it("are known by the variable a build tool reads them from", () => {

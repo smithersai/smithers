@@ -15,8 +15,8 @@ import {
   writeFileSync
 } from "node:fs"
 import { tmpdir } from "node:os"
-import { fileURLToPath } from "node:url"
 import { join } from "node:path"
+import { fileURLToPath } from "node:url"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
 const script = join(import.meta.dirname, "..", "scripts", "box-replay.mjs")
@@ -396,6 +396,26 @@ describe("box-replay results", () => {
     const out = temporary()
     writeFileSync(join(out, "result.tgz"), "not gzip")
     expect(() => box.unpack(join(out, "result.tgz"), out)).toThrow(/could not list/)
+  })
+
+  it("reads both GNU tar and macOS BSD tar listings", () => {
+    const bsd = [
+      "drwxr-xr-x  0 runner runner      0 Nov 22 17:30 out/",
+      "-rw-r--r--  0 root   root    5269 Nov 22 17:30 out/replay.json",
+      "-rw-r--r--  0 runner runner    182 Nov 22 17:24 out/box.txt",
+      "-rw-r--r--  0 root   root      12 Nov 22 17:30 out/stray.bin",
+      "lrwxr-xr-x  0 root   root       0 Nov 22 17:30 out/replay.log -> /etc/passwd"
+    ].join("\n")
+    expect(box.sift(bsd)).toEqual({
+      keep: [
+        { path: "out/replay.json", name: "replay.json", bytes: 5269 },
+        { path: "out/box.txt", name: "box.txt", bytes: 182 }
+      ],
+      drop: [
+        { path: "out/stray.bin", why: "not a named result" },
+        { path: "out/replay.log -> /etc/passwd", why: "not a plain file" }
+      ]
+    })
   })
 
   it("runs when invoked through a symlink to scripts/box-replay.mjs", () => {

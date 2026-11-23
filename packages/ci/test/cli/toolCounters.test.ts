@@ -12,7 +12,7 @@
  * tracer, so the case runs on a Linux host that has `strace`.
  */
 import { afterAll, describe, expect, it } from "vitest"
-import type { ReplayReport } from "../../src/contract/ReplayReport.ts"
+import type { ReplayReport } from "../../src/contract/ReplayReport.vibe"
 import { bin, commit, git, observes, remove, spawn, temporary } from "./repo.ts"
 
 const made: Array<string> = []

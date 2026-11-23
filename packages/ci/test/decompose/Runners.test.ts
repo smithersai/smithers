@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { bun, executorOf, type Invocation, npm, pnpm, recognize, turbo, yarn } from "../../src/decompose/Runners.ts"
+import { bun, executorOf, type Invocation, npm, pnpm, recognize, turbo, yarn } from "../../src/decompose/Runners.vibe"
 
 const split = (command: string): ReadonlyArray<string> => command.split(" ")
 

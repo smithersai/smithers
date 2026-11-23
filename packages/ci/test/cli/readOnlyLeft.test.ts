@@ -10,8 +10,8 @@
  */
 import { readdirSync } from "node:fs"
 import { afterAll, describe, expect, it } from "vitest"
-import { exitCodes } from "../../src/contract/Command.ts"
-import type { ReplayReport } from "../../src/contract/ReplayReport.ts"
+import { exitCodes } from "../../src/contract/Command.vibe"
+import type { ReplayReport } from "../../src/contract/ReplayReport.vibe"
 import { bin, changed, commit, git, remove, snapshot, spawnWith, temporary } from "./repo.ts"
 
 const made: Array<string> = []

@@ -15,7 +15,7 @@ import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterAll, describe, expect, it } from "vitest"
-import { ReplayReport } from "../../src/contract/ReplayReport.ts"
+import { ReplayReport } from "../../src/contract/ReplayReport.vibe"
 import { stateDirectory, workflowPath, workspacePath } from "../../src/generate/Render.ts"
 import { smthrs } from "../replay/fixture.ts"
 import { commit, node, program, project, removeProjects, run, write } from "./project.ts"

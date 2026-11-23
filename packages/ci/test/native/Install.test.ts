@@ -16,7 +16,7 @@ import {
   PlannedInputs,
   readInstalls,
   smthrsBin
-} from "../../src/native/index.ts"
+} from "../../src/native/index.vibe"
 import { makePlace } from "../replay/place.ts"
 import { brokenInstall, ownFiles } from "./own.ts"
 import { temporary } from "./repo.ts"

@@ -6,7 +6,7 @@
  * other three variables read nothing in the baseline and a path in normal mode: one command, two answers.
  */
 import { afterAll, describe, expect, it } from "vitest"
-import type { ReplayReport } from "../../src/contract/ReplayReport.ts"
+import type { ReplayReport } from "../../src/contract/ReplayReport.vibe"
 import { probe } from "../../src/replay/Jail.ts"
 import { bin, commit, git, remove, spawn, temporary } from "./repo.ts"
 

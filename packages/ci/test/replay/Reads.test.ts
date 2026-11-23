@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { unjailed } from "../../src/replay/Jail.ts"
-import { cannotRecord, inPlainWords, readsListener } from "../../src/replay/Reads.ts"
+import { cannotRecord, inPlainWords, readsListener } from "../../src/replay/Reads.vibe"
 
 const line =
   "smthrs: reads are not observed on this host: strace is not installed; a target that asks for it is keyed by its declared inputs\n"

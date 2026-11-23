@@ -5,11 +5,11 @@
  */
 
 import { Evaluator } from "@smthrs/model"
-import { ci } from "../../src/contract/Inventory.ts"
-import type { GeneratedFile } from "../../src/contract/Parts.ts"
+import { ci } from "../../src/contract/Inventory.vibe"
+import type { GeneratedFile } from "../../src/contract/Parts.vibe"
 import { cli, type Parts } from "../../src/cli/Cli.vibe"
 import { type Environment, type Host, layer } from "../../src/cli/Host.vibe"
-import type * as Scoring from "../../src/select/Scoring.ts"
+import type * as Scoring from "../../src/select/Scoring.vibe"
 
 /**
  * Runs the program and resolves to its exit code. `directory` is where it

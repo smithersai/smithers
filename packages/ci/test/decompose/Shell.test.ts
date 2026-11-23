@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { type Command, commands, quote } from "../../src/decompose/Shell.ts"
+import { type Command, commands, quote } from "../../src/decompose/Shell.vibe"
 
 const words = (command: Command | undefined): ReadonlyArray<string> => (command?.words ?? []).map((word) => word.text)
 

@@ -3,7 +3,7 @@ import * as Schema from "effect/Schema"
 import { spawnSync } from "node:child_process"
 import { readFileSync } from "node:fs"
 import { describe, expect, it } from "vitest"
-import * as Reasons from "../src/contract/Reasons.ts"
+import * as Reasons from "../src/contract/Reasons.vibe"
 import {
   Closure,
   Command,

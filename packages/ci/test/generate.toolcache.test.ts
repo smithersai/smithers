@@ -1,7 +1,7 @@
 import * as Effect from "effect/Effect"
 import { describe, expect, it } from "vitest"
-import type { Ci, Inventory as InventoryDocument, Job, Step } from "../src/contract/Inventory.ts"
-import { files } from "../src/generate/index.ts"
+import type { Ci, Inventory as InventoryDocument, Job, Step } from "../src/contract/Inventory.vibe"
+import { files } from "../src/generate/index.vibe"
 import { packagePath, stateDirectory, workflowPath } from "../src/generate/Render.ts"
 
 const step = (id: string, command: string, extra: Partial<Step> = {}): Step => ({

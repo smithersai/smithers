@@ -10,7 +10,7 @@
  * @category contracts
  * @since 0.1.0
  */
-export * as Closure from "./contract/Closure.ts"
+export * as Closure from "./contract/Closure.vibe"
 
 /**
  * Contract 7: the commands, flags and exit codes of `smithers-ci`.
@@ -18,7 +18,7 @@ export * as Closure from "./contract/Closure.ts"
  * @category contracts
  * @since 0.1.0
  */
-export * as Command from "./contract/Command.ts"
+export * as Command from "./contract/Command.vibe"
 
 /**
  * Contract 4: what a repository's CI does today.
@@ -26,7 +26,7 @@ export * as Command from "./contract/Command.ts"
  * @category contracts
  * @since 0.1.0
  */
-export * as Inventory from "./contract/Inventory.ts"
+export * as Inventory from "./contract/Inventory.vibe"
 
 /**
  * Contract 10: how the parts are called.
@@ -34,7 +34,7 @@ export * as Inventory from "./contract/Inventory.ts"
  * @category contracts
  * @since 0.1.0
  */
-export * as Parts from "./contract/Parts.ts"
+export * as Parts from "./contract/Parts.vibe"
 
 /**
  * Contract 2: the targets a change selects.
@@ -42,7 +42,7 @@ export * as Parts from "./contract/Parts.ts"
  * @category contracts
  * @since 0.1.0
  */
-export * as Plan from "./contract/Plan.ts"
+export * as Plan from "./contract/Plan.vibe"
 
 /**
  * Contract 5: the replay report.
@@ -50,7 +50,7 @@ export * as Plan from "./contract/Plan.ts"
  * @category contracts
  * @since 0.1.0
  */
-export * as ReplayReport from "./contract/ReplayReport.ts"
+export * as ReplayReport from "./contract/ReplayReport.vibe"
 
 /**
  * Contract 1: the record of one run.
@@ -58,7 +58,7 @@ export * as ReplayReport from "./contract/ReplayReport.ts"
  * @category contracts
  * @since 0.1.0
  */
-export * as RunRecord from "./contract/RunRecord.ts"
+export * as RunRecord from "./contract/RunRecord.vibe"
 
 /**
  * Contract 6: fast mode's data, scorer and metrics.
@@ -66,7 +66,7 @@ export * as RunRecord from "./contract/RunRecord.ts"
  * @category contracts
  * @since 0.1.0
  */
-export * as Selection from "./contract/Selection.ts"
+export * as Selection from "./contract/Selection.vibe"
 
 /**
  * Contract 8: dividing one run across machines.
@@ -74,7 +74,7 @@ export * as Selection from "./contract/Selection.ts"
  * @category contracts
  * @since 0.1.0
  */
-export * as Shard from "./contract/Shard.ts"
+export * as Shard from "./contract/Shard.vibe"
 
 /**
  * Contract 11: which target each CI step became.
@@ -82,4 +82,4 @@ export * as Shard from "./contract/Shard.ts"
  * @category contracts
  * @since 0.1.0
  */
-export * as TargetMap from "./contract/TargetMap.ts"
+export * as TargetMap from "./contract/TargetMap.vibe"

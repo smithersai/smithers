@@ -10,9 +10,9 @@
  */
 import { spawnSync } from "node:child_process"
 import { afterAll, describe, expect, it } from "vitest"
-import { failsHere } from "../../src/contract/Inventory.ts"
-import type { ReplayCommit, ReplayReport, RunTotals } from "../../src/contract/ReplayReport.ts"
-import { text } from "../../src/report/Text.ts"
+import { failsHere } from "../../src/contract/Inventory.vibe"
+import type { ReplayCommit, ReplayReport, RunTotals } from "../../src/contract/ReplayReport.vibe"
+import { text } from "../../src/report/Text.vibe"
 import { bin, commit, git, remove, spawn, temporary } from "./repo.ts"
 
 const made: Array<string> = []

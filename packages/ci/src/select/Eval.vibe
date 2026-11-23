@@ -8,10 +8,10 @@
 
 import { CaseExecutor, EvalError, Runner, Suite } from "@smthrs/evals"
 import { Binding, Scorer } from "@smthrs/scorers"
-import type { Failure } from "../contract/Parts.ts"
-import * as Selection from "../contract/Selection.ts"
-import type { Observation } from "./Features.ts"
-import * as Measure from "./Measure.ts"
+import type { Failure } from "../contract/Parts.vibe"
+import * as Selection from "../contract/Selection.vibe"
+import type { Observation } from "./Features.vibe"
+import * as Measure from "./Measure.vibe"
 import { ScoreFlow } from "./Score.vibe"
 
 /**

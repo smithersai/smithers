@@ -186,12 +186,14 @@ export const sift = (listing) => {
   const drop = []
   for (const line of listing.split("\n").filter((line) => line.trim() !== "")) {
     const fields = line.trim().split(/\s+/)
-    const path = fields.slice(5).join(" ")
+    const bsd = /^\d+$/.test(fields[1] ?? "") && /^[A-Z][a-z]{2}$/.test(fields[5] ?? "")
+    const path = fields.slice(bsd ? 8 : 5).join(" ")
+    const bytes = Number(fields[bsd ? 4 : 2])
     const name = path.replace(/^\.\//, "").replace(/^out\//, "")
     if (name === "" || name === "out" || name === "out/") continue
     if (!line.startsWith("-")) drop.push({ path, why: "not a plain file" })
     else if (!kept.includes(name)) drop.push({ path, why: "not a named result" })
-    else keep.push({ path, name, bytes: Number(fields[2]) })
+    else keep.push({ path, name, bytes })
   }
   return { keep, drop }
 }

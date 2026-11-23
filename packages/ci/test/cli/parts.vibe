@@ -8,12 +8,12 @@
  */
 
 import { ChildProcess, ChildProcessSpawner } from "effect/process"
-import type { Failure, ReplayParts, ReplayRequest } from "../../src/contract/Parts.ts"
-import type { ReplayCommit, ReplayReport, RunTotals } from "../../src/contract/ReplayReport.ts"
-import type { Row } from "../../src/contract/Selection.ts"
+import type { Failure, ReplayParts, ReplayRequest } from "../../src/contract/Parts.vibe"
+import type { ReplayCommit, ReplayReport, RunTotals } from "../../src/contract/ReplayReport.vibe"
+import type { Row } from "../../src/contract/Selection.vibe"
 import type { Parts } from "../../src/cli/Cli.vibe"
 import type { Host } from "../../src/cli/Host.vibe"
-import { parts as onMain } from "../../src/cli/parts.ts"
+import { parts as onMain } from "../../src/cli/parts.vibe"
 
 effect function git(root: string, args: ReadonlyArray<string>) {
   const spawner = try ChildProcessSpawner.ChildProcessSpawner

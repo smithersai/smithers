@@ -8,8 +8,8 @@ import { readFileSync, rmSync, writeFileSync } from "node:fs"
 import { homedir } from "node:os"
 import { join } from "node:path"
 import { afterAll, describe, expect, it } from "vitest"
-import type { Failure, ReplayParts } from "../../src/contract/Parts.ts"
-import type { ReplayReport } from "../../src/contract/ReplayReport.ts"
+import type { Failure, ReplayParts } from "../../src/contract/Parts.vibe"
+import type { ReplayReport } from "../../src/contract/ReplayReport.vibe"
 import {
   guardedPath,
   guardedPrograms,
@@ -19,7 +19,7 @@ import {
   pushRefusal,
   stepEnvironment
 } from "../../src/replay/Environment.ts"
-import { run } from "../../src/replay/index.ts"
+import { run } from "../../src/replay/index.vibe"
 import { job, makeEmptyDirectory, makeSmallRepository } from "./fixture.ts"
 import { options, parts } from "./TestParts.vibe"
 

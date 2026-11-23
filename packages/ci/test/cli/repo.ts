@@ -20,7 +20,7 @@ import { tmpdir } from "node:os"
 import { dirname, join, relative } from "node:path"
 import { fileURLToPath } from "node:url"
 import type { TestContext } from "vitest"
-import { gitArguments } from "../../src/replay/Git.ts"
+import { gitArguments } from "../../src/replay/Git.vibe"
 
 /** A justfile whose CI is `ci`: it needs `test`, which needs `build`. */
 export const justfile = [

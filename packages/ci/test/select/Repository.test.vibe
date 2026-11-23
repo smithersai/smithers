@@ -2,10 +2,10 @@
 import { describe, expect, it } from "@effect/vitest"
 import * as ChildProcess from "effect/process/ChildProcess"
 import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
-import { day } from "../../src/select/Features.ts"
+import { day } from "../../src/select/Features.vibe"
 import { layerGit, Repository } from "../../src/select/Repository.vibe"
 import { directory, git, live, repository } from "./support.vibe"
-import { noUpkeep } from "../../src/replay/Git.ts"
+import { noUpkeep } from "../../src/replay/Git.vibe"
 
 const now = Date.UTC(2026, 10, 14)
 

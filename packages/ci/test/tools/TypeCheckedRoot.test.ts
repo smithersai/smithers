@@ -13,7 +13,7 @@ import { existsSync, readFileSync } from "node:fs"
 import { join } from "node:path"
 import { pathToFileURL } from "node:url"
 import { afterAll, describe, expect, it } from "vitest"
-import { ReplayReport } from "../../src/contract/ReplayReport.ts"
+import { ReplayReport } from "../../src/contract/ReplayReport.vibe"
 import { workspacePath } from "../../src/generate/Render.ts"
 import { commit, moduleOf, node, ownWorkflow, program, project, removeProjects, run, tool } from "./project.ts"
 

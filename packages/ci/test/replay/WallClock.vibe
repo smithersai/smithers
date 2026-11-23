@@ -1,8 +1,8 @@
 /** A clock a test moves ahead, to see which parts of a replay a wall time holds. */
 import { ChildProcessSpawner, make as makeSpawner } from "effect/process/ChildProcessSpawner"
-import { Options } from "../../src/replay/index.ts"
+import { Options } from "../../src/replay/index.vibe"
 import { linkTargets, smthrs } from "./fixture.ts"
-import { noUpkeep } from "../../src/replay/Git.ts"
+import { noUpkeep } from "../../src/replay/Git.vibe"
 
 /** One hour in milliseconds: far longer than any step of a test runs. */
 export const hour = 3_600_000

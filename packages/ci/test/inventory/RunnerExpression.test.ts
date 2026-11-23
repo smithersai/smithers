@@ -5,13 +5,13 @@
 
 import * as Effect from "effect/Effect"
 import { describe, expect, it } from "vitest"
-import { ci, type Job, runnerOf, unknownRunner } from "../../src/contract/Inventory.ts"
-import { path as targetMapPath, type TargetMap } from "../../src/contract/TargetMap.ts"
-import { files } from "../../src/generate/index.ts"
+import { ci, type Job, runnerOf, unknownRunner } from "../../src/contract/Inventory.vibe"
+import { path as targetMapPath, type TargetMap } from "../../src/contract/TargetMap.vibe"
+import { files } from "../../src/generate/index.vibe"
 import { notesPath } from "../../src/generate/Render.ts"
-import { readWorkflow } from "../../src/inventory/GithubActions.ts"
+import { readWorkflow } from "../../src/inventory/GithubActions.vibe"
 import { onMachine } from "../../src/inventory/Tools.ts"
-import { replayable } from "../../src/replay/Summary.ts"
+import { replayable } from "../../src/replay/Summary.vibe"
 
 const file = ".github/workflows/ci.yml"
 

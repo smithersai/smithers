@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { expandMatrix } from "../../src/inventory/Matrix.ts"
+import { expandMatrix } from "../../src/inventory/Matrix.vibe"
 
 describe("expandMatrix", () => {
   it("is empty when a job has no matrix", () => {

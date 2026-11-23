@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest"
-import type { Plan } from "../../src/contract/Plan.ts"
-import type { RunRecord, TargetResult } from "../../src/contract/RunRecord.ts"
-import type { Row } from "../../src/contract/Selection.ts"
-import * as Features from "../../src/select/Features.ts"
+import type { Plan } from "../../src/contract/Plan.vibe"
+import type { RunRecord, TargetResult } from "../../src/contract/RunRecord.vibe"
+import type { Row } from "../../src/contract/Selection.vibe"
+import * as Features from "../../src/select/Features.vibe"
 
 const day = Features.day
 const now = Date.UTC(2026, 10, 14)

@@ -30,7 +30,7 @@
  * @since 0.1.0
  */
 
-import * as Contract from "../contract/Inventory.ts"
+import * as Contract from "../contract/Inventory.vibe"
 import {
   commitNote,
   commitQuestion,
@@ -39,8 +39,8 @@ import {
   noParent,
   runnerEntry,
   stateVariable
-} from "../contract/Inventory.ts"
-import { shardOf } from "../contract/Shard.ts"
+} from "../contract/Inventory.vibe"
+import { shardOf } from "../contract/Shard.vibe"
 import {
   finish,
   formatPieces,

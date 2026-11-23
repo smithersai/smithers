@@ -14,8 +14,8 @@ import {
   listenTo,
   type Signal
 } from "../../src/cli/Signals.ts"
-import { exitCodes } from "../../src/contract/Command.ts"
-import { footer, uncommittedFooter } from "../../src/native/Workspace.ts"
+import { exitCodes } from "../../src/contract/Command.vibe"
+import { footer, uncommittedFooter } from "../../src/native/Workspace.vibe"
 import { ownWorkspace } from "../native/repo.ts"
 import { cannotStart } from "../native/support.vibe"
 import { inProcess } from "./inProcess.vibe"

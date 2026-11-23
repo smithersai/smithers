@@ -8,7 +8,7 @@
 
 import * as Schema from "effect/Schema"
 import { afterAll, describe, expect, it } from "vitest"
-import { ReplayReport } from "../../src/contract/ReplayReport.ts"
+import { ReplayReport } from "../../src/contract/ReplayReport.vibe"
 import { workflowPath, workspacePath } from "../../src/generate/Render.ts"
 import { commit, node, program, project, removeProjects, run, write } from "./project.ts"
 

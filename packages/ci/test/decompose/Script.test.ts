@@ -2,9 +2,9 @@ import { readFileSync } from "node:fs"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { describe, expect, it } from "vitest"
-import type { Step } from "../../src/contract/Inventory.ts"
-import { wholeScript, wholeScriptSentence } from "../../src/contract/Reasons.ts"
-import * as Script from "../../src/decompose/Script.ts"
+import type { Step } from "../../src/contract/Inventory.vibe"
+import { wholeScript, wholeScriptSentence } from "../../src/contract/Reasons.vibe"
+import * as Script from "../../src/decompose/Script.vibe"
 
 const step = (command: string, extra: Partial<Step> = {}): Step => ({
   id: "ci.yml:test:1",
@@ -431,7 +431,7 @@ describe("the sentences for a step left whole", () => {
   const packageDir = join(dirname(fileURLToPath(import.meta.url)), "../..")
 
   it("has one for every reason the splitter records", () => {
-    const source = readFileSync(join(packageDir, "src/decompose/Script.ts"), "utf8")
+    const source = readFileSync(join(packageDir, "src/decompose/Script.vibe"), "utf8")
     const recorded = [...source.matchAll(/whole\("([a-z-]+)"/g)].map((match) => match[1] as string)
     expect(recorded.length).toBeGreaterThan(6)
     expect([...new Set(recorded)].sort()).toEqual(Object.keys(wholeScript).sort())

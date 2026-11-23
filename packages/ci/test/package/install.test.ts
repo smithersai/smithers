@@ -6,9 +6,9 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { afterAll, describe, expect, it } from "vitest"
-import type { Ci } from "../../src/contract/Inventory.ts"
-import { Inventory } from "../../src/contract/Inventory.ts"
-import { files } from "../../src/generate/index.ts"
+import type { Ci } from "../../src/contract/Inventory.vibe"
+import { Inventory } from "../../src/contract/Inventory.vibe"
+import { files } from "../../src/generate/index.vibe"
 import { workflowPath } from "../../src/generate/Render.ts"
 
 const manifest = JSON.parse(readFileSync(new URL("../../package.json", import.meta.url), "utf8"))

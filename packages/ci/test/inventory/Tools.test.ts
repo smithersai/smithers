@@ -6,7 +6,7 @@ import {
   otherSystem,
   selfHosted,
   type Toolchain
-} from "../../src/contract/Inventory.ts"
+} from "../../src/contract/Inventory.vibe"
 import {
   differs,
   type Found,

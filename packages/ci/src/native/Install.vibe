@@ -1,0 +1,167 @@
+/**
+ * How a checkout of a repository that builds with Smithers build gets its
+ * dependencies, and where its own `smthrs` is afterwards.
+ *
+ * @since 0.1.0
+ */
+
+import * as Schema from "effect/Schema"
+
+/**
+ * A package manager: the lockfiles that mean a directory is installed with
+ * it, and the command that installs exactly what the lockfile pins.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export interface Manager {
+  readonly lockfiles: ReadonlyArray<string>
+  readonly command: readonly [string, ...Array<string>]
+}
+
+/**
+ * The package managers an install is run with, in the order their lockfiles
+ * are looked for.
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const managers: ReadonlyArray<Manager> = [
+  { lockfiles: ["pnpm-lock.yaml"], command: ["pnpm", "install", "--frozen-lockfile", "--prefer-offline"] },
+  { lockfiles: ["bun.lock", "bun.lockb"], command: ["bun", "install", "--frozen-lockfile"] },
+  { lockfiles: ["package-lock.json"], command: ["npm", "ci", "--no-audit", "--no-fund"] }
+]
+
+/**
+ * The manager whose lockfile is among a directory's file names.
+ *
+ * @category accessors
+ * @since 0.1.0
+ */
+export const managerFor = (names: ReadonlyArray<string>): Manager | undefined =>
+  managers.find((manager) => manager.lockfiles.some((lockfile) => names.includes(lockfile)))
+
+/**
+ * The directories installed, from the repository root: the one that holds
+ * the workspace file, then the root.
+ *
+ * @category accessors
+ * @since 0.1.0
+ */
+export const installDirectories = (workspaceFile: string): ReadonlyArray<string> => {
+  const directory = workspaceFile.includes("/") ? workspaceFile.slice(0, workspaceFile.lastIndexOf("/")) : ""
+  return directory === "" ? [""] : [directory, ""]
+}
+
+/**
+ * The directories to install, besides `installed`, for targets that name the
+ * files `inputs`, each a path from the repository root: every directory whose
+ * lockfile a target names. A target that reads a lockfile reads what its
+ * install brings, such as a tool in that directory's `node_modules/.bin`.
+ *
+ * @category accessors
+ * @since 0.1.0
+ */
+export const readInstalls = (
+  inputs: ReadonlyArray<string>,
+  installed: ReadonlyArray<string>
+): ReadonlyArray<string> => {
+  const lockfiles = managers.flatMap((manager) => manager.lockfiles)
+  const found = inputs.flatMap((file) => {
+    const slash = file.lastIndexOf("/")
+    const directory = slash === -1 ? "" : file.slice(0, slash)
+    return lockfiles.includes(file.slice(slash + 1)) && !installed.includes(directory) ? [directory] : []
+  })
+  return [...new Set(found)].sort()
+}
+
+/**
+ * The part of a printed plan (`smthrs ci --plan --format json`) that names
+ * the files each target reads, by how its target declared them.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export const PlannedInputs = Schema.Struct({
+  targets: Schema.Array(Schema.Struct({
+    declaredInputs: Schema.optionalKey(Schema.Array(Schema.Struct({
+      declaration: Schema.Struct({ _tag: Schema.String }),
+      files: Schema.Array(Schema.Struct({ path: Schema.String }))
+    })))
+  }))
+})
+
+/**
+ * Every file the targets of a printed plan name one by one, from the
+ * repository root. A file a glob matches is left out: a lockfile under a
+ * test's fixtures is read as data, not installed.
+ *
+ * @category accessors
+ * @since 0.1.0
+ */
+export const inputsOf = (plan: typeof PlannedInputs.Type): ReadonlyArray<string> =>
+  plan.targets.flatMap((target) =>
+    (target.declaredInputs ?? []).flatMap((input) =>
+      input.declaration._tag === "File" ? input.files.map((file) => file.path) : []
+    )
+  )
+
+/**
+ * Where a package manager leaves the `smthrs` a directory depends on.
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const smthrsBin = "node_modules/.bin/smthrs"
+
+/**
+ * The label of the result that stands for a commit whose install failed. No
+ * target ran, so the commit is failed in every mode.
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const installLabel = "(install)"
+
+/**
+ * What an install made of a checkout: its own `smthrs`, or why there is none.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export type Installed =
+  | { readonly ok: true; readonly smthrs: string }
+  | { readonly ok: false; readonly reason: string }
+
+/** A directory of the repository, as a sentence names it. */
+const placeOf = (directory: string): string => directory === "" ? "the repository root" : directory
+
+/**
+ * Why an install command failed. Its output is left out: it may hold a
+ * registry credential.
+ *
+ * @category constructors
+ * @since 0.1.0
+ */
+export const commandFailed = (command: ReadonlyArray<string>, directory: string, exitCode: number): string =>
+  `${command.join(" ")} exited ${exitCode} in ${placeOf(directory)}`
+
+/**
+ * Why an install command was stopped: `why` says at what limit.
+ *
+ * @category constructors
+ * @since 0.1.0
+ */
+export const commandStopped = (command: ReadonlyArray<string>, directory: string, why: string): string =>
+  `${command.join(" ")} in ${placeOf(directory)}: ${why}`
+
+/**
+ * Why a checkout has no `smthrs` after its installs.
+ *
+ * @category constructors
+ * @since 0.1.0
+ */
+export const noSmthrs = (directories: ReadonlyArray<string>): string =>
+  `no ${smthrsBin} in ${
+    directories.map(placeOf).join(" or ")
+  } after the install; the repository must depend on @smthrs/cli`

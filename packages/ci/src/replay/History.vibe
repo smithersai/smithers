@@ -10,8 +10,8 @@
 
 import { notUtf8, unreadableName } from "./Names.ts"
 import { exec, git, lines, outputLimit, stdoutOf } from "./Process.vibe"
-import { failure, withoutCredentials } from "./Summary.ts"
-import { gitArguments } from "./Git.ts"
+import { failure, withoutCredentials } from "./Summary.vibe"
+import { gitArguments } from "./Git.vibe"
 
 /** "1 object", "2 objects". */
 const counted = (count: number, noun: string): string => `${count} ${noun}${count === 1 ? "" : "s"}`

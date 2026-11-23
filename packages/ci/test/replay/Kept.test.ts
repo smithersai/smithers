@@ -22,7 +22,7 @@ import {
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterAll, describe, expect, it } from "vitest"
-import type { ReplayReport } from "../../src/contract/ReplayReport.ts"
+import type { ReplayReport } from "../../src/contract/ReplayReport.vibe"
 import { addEntries, backTo, keep, pathsIn, viewOf } from "../../src/replay/Kept.vibe"
 import { bin, commit, git, spawn, temporary } from "../cli/repo.ts"
 

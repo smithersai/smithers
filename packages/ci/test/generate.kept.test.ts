@@ -5,12 +5,12 @@
 import * as Effect from "effect/Effect"
 import { describe, expect, it } from "vitest"
 import { parse as parseYaml } from "yaml"
-import { ci, type Job } from "../src/contract/Inventory.ts"
-import { files } from "../src/generate/index.ts"
-import { keepValue, keptDirectory, keptRuns, keptSteps } from "../src/generate/Kept.ts"
+import { ci, type Job } from "../src/contract/Inventory.vibe"
+import { files } from "../src/generate/index.vibe"
+import { keepValue, keptDirectory, keptRuns, keptSteps } from "../src/generate/Kept.vibe"
 import { workflowPath } from "../src/generate/Render.ts"
-import type { StepTarget } from "../src/generate/Steps.ts"
-import * as Yaml from "../src/generate/Yaml.ts"
+import type { StepTarget } from "../src/generate/Steps.vibe"
+import * as Yaml from "../src/generate/Yaml.vibe"
 
 const job: Job = {
   id: "ci.yml:main",

@@ -5,7 +5,7 @@ import { spawnSync } from "node:child_process"
 import { readFileSync } from "node:fs"
 import { describe, expect, it } from "vitest"
 import { parse as parseYaml } from "yaml"
-import type { Ci, Inventory as InventoryDocument, Job, Step } from "../src/contract/Inventory.ts"
+import type { Ci, Inventory as InventoryDocument, Job, Step } from "../src/contract/Inventory.vibe"
 import {
   ci,
   commitNote,
@@ -17,18 +17,18 @@ import {
   runVariables,
   script,
   shell
-} from "../src/contract/Inventory.ts"
+} from "../src/contract/Inventory.vibe"
 import {
   type Failure,
   type GeneratedFile,
   type GenerateFiles,
   type GenerateOptions,
   writtenFiles
-} from "../src/contract/Parts.ts"
-import { shardOf } from "../src/contract/Shard.ts"
-import { labelsOf, path as targetMapPath, TargetMap } from "../src/contract/TargetMap.ts"
-import { forShell, forText } from "../src/generate/Expressions.ts"
-import { files } from "../src/generate/index.ts"
+} from "../src/contract/Parts.vibe"
+import { shardOf } from "../src/contract/Shard.vibe"
+import { labelsOf, path as targetMapPath, TargetMap } from "../src/contract/TargetMap.vibe"
+import { forShell, forText } from "../src/generate/Expressions.vibe"
+import { files } from "../src/generate/index.vibe"
 import {
   actionRefs,
   compiledCode,
@@ -44,7 +44,7 @@ import {
   workflowPath,
   workspacePath
 } from "../src/generate/Render.ts"
-import { compiledCode as replayed } from "../src/replay/index.ts"
+import { compiledCode as replayed } from "../src/replay/index.vibe"
 
 const releaseVersion: string = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")).version
 

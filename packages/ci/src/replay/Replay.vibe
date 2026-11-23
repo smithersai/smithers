@@ -28,8 +28,8 @@ import {
   stepTimeoutHours,
   variantsFailedHere,
   withoutFailedHere
-} from "../contract/Inventory.ts"
-import { declarationOf, errorLine } from "../contract/Command.ts"
+} from "../contract/Inventory.vibe"
+import { declarationOf, errorLine } from "../contract/Command.vibe"
 import {
   type Failure,
   type GeneratedFile,
@@ -37,7 +37,7 @@ import {
   type ReplayRequest,
   type ScoreRows,
   writtenFiles
-} from "../contract/Parts.ts"
+} from "../contract/Parts.vibe"
 import type {
   Asked,
   FirstRun,
@@ -46,14 +46,14 @@ import type {
   ReplayCommit,
   ReplayReport,
   StepFailure
-} from "../contract/ReplayReport.ts"
-import { type Parts, type Recorder, RunRecord, type TargetResult } from "../contract/RunRecord.ts"
-import { defaultSettings, type Row } from "../contract/Selection.ts"
-import { path as targetMapPath, TargetMap } from "../contract/TargetMap.ts"
-import { check } from "../apply/index.ts"
-import { toReplay } from "./Asked.ts"
-import { refusal as ownWorkspace } from "../native/Workspace.ts"
-import { withReasons } from "../native/Results.ts"
+} from "../contract/ReplayReport.vibe"
+import { type Parts, type Recorder, RunRecord, type TargetResult } from "../contract/RunRecord.vibe"
+import { defaultSettings, type Row } from "../contract/Selection.vibe"
+import { path as targetMapPath, TargetMap } from "../contract/TargetMap.vibe"
+import { check } from "../apply/index.vibe"
+import { toReplay } from "./Asked.vibe"
+import { refusal as ownWorkspace } from "../native/Workspace.vibe"
+import { withReasons } from "../native/Results.vibe"
 import {
   type Confined,
   confine,
@@ -117,11 +117,11 @@ import {
   stdoutOf
 } from "./Process.vibe"
 import { readableNames, readyHistory } from "./History.vibe"
-import { couldNotStart, fixesOf, homeOf, namedInStepHome, putOnPath } from "./HomeTools.ts"
+import { couldNotStart, fixesOf, homeOf, namedInStepHome, putOnPath } from "./HomeTools.vibe"
 import { backTo, keep, pathsIn, viewOf } from "./Kept.vibe"
 import { endLeftIn, keeperIn, keepsPrograms, processesBefore, reapedBy, reaperIn } from "./Job.vibe"
 import { client } from "@smthrs/targets/JobKeeper"
-import { printsNotes, readsListener, recorderStopped } from "./Reads.ts"
+import { printsNotes, readsListener, recorderStopped } from "./Reads.vibe"
 import { defaultStallMinutes, type StallLimit, type Table, tableFor, watchFor } from "./Stall.vibe"
 import {
   addRerun,
@@ -172,8 +172,8 @@ import {
   withCheckout,
   type Unit,
   unitKey
-} from "./Summary.ts"
-import { gitArguments } from "./Git.ts"
+} from "./Summary.vibe"
+import { gitArguments } from "./Git.vibe"
 
 /**
  * Where Node keeps the compiled code of `smthrs` between runs, in the

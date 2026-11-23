@@ -1,8 +1,8 @@
 /** The pure parts of finding what can pass here and of stopping what has stalled. */
 import { describe, expect, it } from "vitest"
-import { failsHere } from "../../src/contract/Inventory.ts"
-import type { Plan } from "../../src/contract/Plan.ts"
-import type { TargetResult } from "../../src/contract/RunRecord.ts"
+import { failsHere } from "../../src/contract/Inventory.vibe"
+import type { Plan } from "../../src/contract/Plan.vibe"
+import type { TargetResult } from "../../src/contract/RunRecord.vibe"
 import { madeNoProgress, noJobPassed, noProgress, stoppedResults } from "../../src/replay/Failures.ts"
 import {
   exitAndError,
@@ -13,7 +13,7 @@ import {
   trialOf,
   type Unit,
   unitKey
-} from "../../src/replay/Summary.ts"
+} from "../../src/replay/Summary.vibe"
 
 const step = (label: string) => ({
   id: label,

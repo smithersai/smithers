@@ -10,12 +10,12 @@
 
 import * as ChildProcess from "effect/process/ChildProcess"
 import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
-import { type Ci, type Step, withSteps } from "../contract/Inventory.ts"
-import type { Decompose, Failure } from "../contract/Parts.ts"
-import { withoutAliases } from "./Aliases.ts"
-import { decide, type Facts, followed, keepCommand, preceded, understand, type Understood } from "./Plan.ts"
-import * as Script from "./Script.ts"
-import { readConfig } from "./Turbo.ts"
+import { type Ci, type Step, withSteps } from "../contract/Inventory.vibe"
+import type { Decompose, Failure } from "../contract/Parts.vibe"
+import { withoutAliases } from "./Aliases.vibe"
+import { decide, type Facts, followed, keepCommand, preceded, understand, type Understood } from "./Plan.vibe"
+import * as Script from "./Script.vibe"
+import { readConfig } from "./Turbo.vibe"
 import * as Zig from "./Zig.ts"
 import {
   assemble,
@@ -28,8 +28,8 @@ import {
   readPatterns,
   scanner,
   type Workspace
-} from "./Workspace.ts"
-import { gitArguments } from "../replay/Git.ts"
+} from "./Workspace.vibe"
+import { gitArguments } from "../replay/Git.vibe"
 
 /** File types that hold no path or package name a program follows. */
 const unscanned =

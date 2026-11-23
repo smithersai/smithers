@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import type { Job, Step } from "../../src/contract/Inventory.ts"
+import type { Job, Step } from "../../src/contract/Inventory.vibe"
 import {
   decide,
   type Decision,
@@ -10,8 +10,8 @@ import {
   keepCommand,
   preceded,
   understand
-} from "../../src/decompose/Plan.ts"
-import { readConfig } from "../../src/decompose/Turbo.ts"
+} from "../../src/decompose/Plan.vibe"
+import { readConfig } from "../../src/decompose/Turbo.vibe"
 import {
   assemble,
   graph,
@@ -19,7 +19,7 @@ import {
   manifestMentions,
   type Mentions,
   scanner
-} from "../../src/decompose/Workspace.ts"
+} from "../../src/decompose/Workspace.vibe"
 
 const step = (command: string, extra: Partial<Step> = {}): Step => ({
   id: "ci.yml:test:1",

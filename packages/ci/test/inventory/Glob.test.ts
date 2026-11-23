@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { filesOf, regexOf } from "../../src/inventory/Glob.ts"
+import { filesOf, regexOf } from "../../src/inventory/Glob.vibe"
 
 /** True when the pattern names the path. */
 const names = (pattern: string, path: string): boolean => new RegExp(regexOf(pattern) as string).test(path)

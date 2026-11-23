@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import type { Step } from "../../src/contract/Inventory.ts"
+import type { Step } from "../../src/contract/Inventory.vibe"
 import * as Zig from "../../src/decompose/Zig.ts"
 
 const step = (command: string, extra: Partial<Step> = {}): Step => ({

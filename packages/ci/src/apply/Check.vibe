@@ -19,9 +19,9 @@
  * @since 0.1.0
  */
 
-import { type Failure, type GeneratedFile, writtenFiles } from "../contract/Parts.ts"
-import { overwriteRefusal, wrote } from "../native/Workspace.ts"
-import { besidePaths, besideRefusal, formerPaths } from "./Former.ts"
+import { type Failure, type GeneratedFile, writtenFiles } from "../contract/Parts.vibe"
+import { overwriteRefusal, wrote } from "../native/Workspace.vibe"
+import { besidePaths, besideRefusal, formerPaths } from "./Former.vibe"
 
 /**
  * What writing the generated files would do to one path: write a file that

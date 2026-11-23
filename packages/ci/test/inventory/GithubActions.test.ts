@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
-import type { Job } from "../../src/contract/Inventory.ts"
-import { assemble } from "../../src/inventory/Draft.ts"
-import { readWorkflow } from "../../src/inventory/GithubActions.ts"
+import type { Job } from "../../src/contract/Inventory.vibe"
+import { assemble } from "../../src/inventory/Draft.vibe"
+import { readWorkflow } from "../../src/inventory/GithubActions.vibe"
 
 const file = ".github/workflows/ci.yml"
 const read = (text: string) => readWorkflow(file, text)

@@ -6,14 +6,14 @@
  */
 
 import * as Result from "effect/Result"
-import { commitQuestion, type Inventory, stepTimeoutHours, type Toolchain } from "../contract/Inventory.ts"
-import type { Failure, GeneratedFile, GenerateOptions } from "../contract/Parts.ts"
-import { reasonsSentence } from "../contract/Reasons.ts"
-import { path as targetMapPath, type TargetMap } from "../contract/TargetMap.ts"
-import { variantKey } from "./Expressions.ts"
-import { keepValue, keepVariable, type KeptRun, keptRuns, keptSteps } from "./Kept.ts"
-import { type Leg, repositoryLabel, type StepPlan, type StepTarget, workflowPath } from "./Steps.ts"
-import * as Yaml from "./Yaml.ts"
+import { commitQuestion, type Inventory, stepTimeoutHours, type Toolchain } from "../contract/Inventory.vibe"
+import type { Failure, GeneratedFile, GenerateOptions } from "../contract/Parts.vibe"
+import { reasonsSentence } from "../contract/Reasons.vibe"
+import { path as targetMapPath, type TargetMap } from "../contract/TargetMap.vibe"
+import { variantKey } from "./Expressions.vibe"
+import { keepValue, keepVariable, type KeptRun, keptRuns, keptSteps } from "./Kept.vibe"
+import { type Leg, repositoryLabel, type StepPlan, type StepTarget, workflowPath } from "./Steps.vibe"
+import * as Yaml from "./Yaml.vibe"
 
 // The name of the generated workspace's cache directory. The directory itself is outside the checkout.
 const cacheDirectory = ".flows"
@@ -182,7 +182,10 @@ const bookkeeping: ReadonlyArray<string> = ["~/.npm/_logs", "$TMPDIR/node-compil
 
 // True for a setup target that names what it reads and what it writes. It is a build that always runs: its inputs
 // enter the key of every target after it, and its outputs enter their read set.
-const builds = (target: StepTarget, narrowed: boolean): boolean =>
+const builds = (
+  target: StepTarget,
+  narrowed: boolean
+): target is StepTarget & { readonly outputs: NonNullable<StepTarget["outputs"]> } =>
   narrowed && target.rule === "setup" && target.outputs !== undefined
 
 // True for a target whose step does not say what it reads. Smithers build observes it: the run is traced, the
@@ -211,8 +214,7 @@ const filesOf = (target: StepTarget, narrowed: boolean): ReadonlyArray<string> =
 
 // What a setup target that is a build declares it writes: the step's own outputs. It runs every time and its
 // result is never reused.
-const outputsOf = (target: StepTarget): ReadonlyArray<string> => {
-  const own = target.outputs as NonNullable<StepTarget["outputs"]>
+const outputsOf = (own: NonNullable<StepTarget["outputs"]>): ReadonlyArray<string> => {
   return [
     ...(own.files.length === 0 ? [] : [`outFiles: [${own.files.map((file) => text(`//${file}`)).join(", ")}]`]),
     ...(own.directories.length === 0
@@ -285,10 +287,11 @@ const renderTarget = (
   const observed = observes(target, narrowed)
   const held = narrows(target, narrowed) && target.runEnv.length > 0
   const inheritEnv = inheritedBy(target, passed, observed || held)
-  const build = builds(target, narrowed)
+  const buildOutputs = builds(target, narrowed) ? target.outputs : undefined
+  const build = buildOutputs !== undefined
   const fields = [
     `shell: ${text(target.script)}`,
-    ...(build ? outputsOf(target) : target.keeps ? [`cache: false`] : []),
+    ...(buildOutputs !== undefined ? outputsOf(buildOutputs) : target.keeps ? [`cache: false`] : []),
     ...(Object.keys(target.env).length === 0 ? [] : [`env: ${JSON.stringify(target.env)}`]),
     ...(inheritEnv.length === 0 ? [] : [`inheritEnv: ${JSON.stringify(inheritEnv)}`]),
     ...(target.host === undefined ? [] : [`hosts: [${text(target.host)}]`]),

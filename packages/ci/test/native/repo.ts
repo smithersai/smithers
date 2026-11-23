@@ -3,7 +3,7 @@ import { execFileSync } from "node:child_process"
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
-import { gitArguments } from "../../src/replay/Git.ts"
+import { gitArguments } from "../../src/replay/Git.vibe"
 
 /**
  * Runs git in `root` as a fixed author, apart from the machine's configuration,

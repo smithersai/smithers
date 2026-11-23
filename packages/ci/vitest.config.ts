@@ -12,8 +12,8 @@ import { shortfall } from "./vitest.shortfall.ts"
  * run per part over all of src). Every other source, and any new one outside these, is held by `testRest`.
  */
 export const held = {
-  cli: ["src/cli/**", "src/apply/Check.vibe", "src/apply/Former.ts", "src/apply/Planned.vibe"],
-  replay: ["src/replay/**", "src/contract/Command.ts"],
+  cli: ["src/cli/**", "src/apply/Check.vibe", "src/apply/Former.vibe", "src/apply/Planned.vibe"],
+  replay: ["src/replay/**", "src/contract/Command.vibe"],
   native: ["src/native/**"]
 } as const
 

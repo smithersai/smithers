@@ -6,15 +6,15 @@
 
 import * as ChildProcess from "effect/process/ChildProcess"
 import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
-import { exitCodes as codes, name } from "../contract/Command.ts"
+import { exitCodes as codes, name } from "../contract/Command.vibe"
 import { recorderRefusal } from "../replay/Environment.ts"
-import { discard } from "../replay/index.ts"
+import { discard } from "../replay/index.vibe"
 import { cli, type Parts } from "./Cli.vibe"
 import { type Environment, type Host, layer } from "./Host.vibe"
-import { parts } from "./parts.ts"
+import { parts } from "./parts.vibe"
 import { deaf, exitCodes, idle, type Listen, type Signal, uncaught } from "./Signals.ts"
-import { broken, nothingTold, stoppedCode, type Told, unanswered } from "./Stage.ts"
-import { gitArguments } from "../replay/Git.ts"
+import { broken, nothingTold, stoppedCode, type Told, unanswered } from "./Stage.vibe"
+import { gitArguments } from "../replay/Git.vibe"
 
 /**
  * The top directory of the repository that holds `directory`, as git names

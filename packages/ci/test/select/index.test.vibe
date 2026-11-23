@@ -3,8 +3,8 @@ import { describe, expect, it } from "@effect/vitest"
 import { WebCrypto } from "@smthrs/crypto"
 import { FlowEngine } from "@smthrs/engine"
 import { Evaluator } from "@smthrs/model"
-import * as Selection from "../../src/contract/Selection.ts"
-import * as Select from "../../src/select/index.ts"
+import * as Selection from "../../src/contract/Selection.vibe"
+import * as Select from "../../src/select/index.vibe"
 import { live, record, repository, result } from "./support.vibe"
 
 const now = Date.UTC(2026, 10, 14)

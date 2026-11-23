@@ -5,9 +5,9 @@ import * as Schema from "effect/Schema"
 import { execFileSync } from "node:child_process"
 import { rmSync } from "node:fs"
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest"
-import type { Failure, ReplayParts, ReplayRequest, RunReplay } from "../../src/contract/Parts.ts"
-import { ReplayReport } from "../../src/contract/ReplayReport.ts"
-import { read } from "../../src/inventory/index.ts"
+import type { Failure, ReplayParts, ReplayRequest, RunReplay } from "../../src/contract/Parts.vibe"
+import { ReplayReport } from "../../src/contract/ReplayReport.vibe"
+import { read } from "../../src/inventory/index.vibe"
 import {
   committedWorkspace,
   generatedMark,
@@ -16,10 +16,10 @@ import {
   notTargets,
   own,
   run
-} from "../../src/native/index.ts"
+} from "../../src/native/index.vibe"
 import { noPushUrl } from "../../src/replay/Environment.ts"
-import { Options, type Probe, Progress } from "../../src/replay/index.ts"
-import { cannotRecord } from "../../src/replay/Reads.ts"
+import { Options, type Probe, Progress } from "../../src/replay/index.vibe"
+import { cannotRecord } from "../../src/replay/Reads.vibe"
 import { unconfined } from "../replay/place.ts"
 import {
   fakeSmthrs,

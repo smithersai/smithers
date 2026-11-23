@@ -1,6 +1,6 @@
 /** Why there is nothing to measure: no step passed in any baseline. */
 import { describe, expect, it } from "vitest"
-import type { RunRecord, TargetResult } from "../../src/contract/RunRecord.ts"
+import type { RunRecord, TargetResult } from "../../src/contract/RunRecord.vibe"
 import { nothingPassed } from "../../src/replay/Failures.ts"
 import { refusedAt } from "../native/repo.ts"
 

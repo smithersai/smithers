@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
-import type { Inventory, Job } from "../../src/contract/Inventory.ts"
-import { chosenFor, covers, everything, notSelected, notTargets, patternsIn } from "../../src/native/index.ts"
+import type { Inventory, Job } from "../../src/contract/Inventory.vibe"
+import { chosenFor, covers, everything, notSelected, notTargets, patternsIn } from "../../src/native/index.vibe"
 
 const job = (id: string, commands: ReadonlyArray<string>, extra: Partial<Job> = {}): Job => ({
   id,

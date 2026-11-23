@@ -5,7 +5,7 @@ import { expect, it } from "vitest"
 import { cli, RunningUser } from "../../src/cli/Cli.vibe"
 import { layer } from "../../src/cli/Host.vibe"
 import { runningAsRoot } from "../../src/cli/Root.ts"
-import { exitCodes } from "../../src/contract/Command.ts"
+import { exitCodes } from "../../src/contract/Command.vibe"
 import { parts } from "./parts.vibe"
 import { recorder, remove, repository, temporary } from "./repo.ts"
 

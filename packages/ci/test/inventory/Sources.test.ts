@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { addStep, assemble, draft, fileProblem, note } from "../../src/inventory/Draft.ts"
+import { addStep, assemble, draft, fileProblem, note } from "../../src/inventory/Draft.vibe"
 import {
   chooseRunner,
   readGlobs,
@@ -7,12 +7,19 @@ import {
   readWorkspacePatterns,
   type Runner,
   segmentMatcher
-} from "../../src/inventory/PackageJson.ts"
-import { repositoryName } from "../../src/inventory/Repository.ts"
-import { hasSecretValue, isLiteralSecret, scrub } from "../../src/inventory/Secrets.ts"
-import { readToolFile, toolFiles } from "../../src/inventory/Toolchains.ts"
-import { readTurbo } from "../../src/inventory/Turbo.ts"
-import { asScalar, asStrings, isRecord, normalizeDirectory, shellQuote, shellWord } from "../../src/inventory/Values.ts"
+} from "../../src/inventory/PackageJson.vibe"
+import { repositoryName } from "../../src/inventory/Repository.vibe"
+import { hasSecretValue, isLiteralSecret, scrub } from "../../src/inventory/Secrets.vibe"
+import { readToolFile, toolFiles } from "../../src/inventory/Toolchains.vibe"
+import { readTurbo } from "../../src/inventory/Turbo.vibe"
+import {
+  asScalar,
+  asStrings,
+  isRecord,
+  normalizeDirectory,
+  shellQuote,
+  shellWord
+} from "../../src/inventory/Values.vibe"
 
 const bun: Runner = chooseRunner(`{"packageManager":"bun@1.3.0"}`, [])
 const token = `ghp_${"a".repeat(30)}`

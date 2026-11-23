@@ -10,8 +10,8 @@
 import { execFileSync } from "node:child_process"
 import { appendFileSync, existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
-import type { RunRecord, TargetResult } from "../src/contract/RunRecord.ts"
-import * as Features from "../src/select/Features.ts"
+import type { RunRecord, TargetResult } from "../src/contract/RunRecord.vibe"
+import * as Features from "../src/select/Features.vibe"
 
 const [logs, repository, out] = process.argv.slice(2)
 if (logs === undefined || repository === undefined || out === undefined) {

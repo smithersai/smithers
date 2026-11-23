@@ -24,7 +24,7 @@ import {
   type ToolVersion,
   unknownRunner,
   type Unsupported
-} from "../contract/Inventory.ts"
+} from "../contract/Inventory.vibe"
 
 /**
  * The machine an inventory is read for: its operating system in Node's

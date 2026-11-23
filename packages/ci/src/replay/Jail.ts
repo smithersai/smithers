@@ -11,7 +11,7 @@ import { spawnSync } from "node:child_process"
 import { readdirSync, realpathSync, statSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
-import { inPlainWords } from "./Reads.ts"
+import { inPlainWords } from "./Reads.vibe"
 
 /**
  * The files and directories of a home directory that hold a credential: the

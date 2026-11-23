@@ -9,15 +9,15 @@
 
 import * as ChildProcess from "effect/process/ChildProcess"
 import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
-import { uncommittedChanges } from "../contract/Inventory.ts"
-import type { Failure, ReadInventory } from "../contract/Parts.ts"
+import { uncommittedChanges } from "../contract/Inventory.vibe"
+import type { Failure, ReadInventory } from "../contract/Parts.vibe"
 import { workspace } from "../native/Detect.vibe"
-import { found } from "../native/Workspace.ts"
-import { eventFilesOf, type Facts } from "./Contexts.ts"
-import { assemble, fileProblem, type Parsed } from "./Draft.ts"
-import { readWorkflow } from "./GithubActions.ts"
-import { readJustfile } from "./Justfile.ts"
-import { readMakefile } from "./Makefile.ts"
+import { found } from "../native/Workspace.vibe"
+import { eventFilesOf, type Facts } from "./Contexts.vibe"
+import { assemble, fileProblem, type Parsed } from "./Draft.vibe"
+import { readWorkflow } from "./GithubActions.vibe"
+import { readJustfile } from "./Justfile.vibe"
+import { readMakefile } from "./Makefile.vibe"
 import {
   chooseRunner,
   readGlobs,
@@ -25,12 +25,12 @@ import {
   readWorkspacePatterns,
   type Runner,
   segmentMatcher
-} from "./PackageJson.ts"
-import { repositoryName } from "./Repository.ts"
-import { readToolFile, toolFiles } from "./Toolchains.ts"
-import { readTurbo } from "./Turbo.ts"
-import { normalizeDirectory } from "./Values.ts"
-import { gitArguments } from "../replay/Git.ts"
+} from "./PackageJson.vibe"
+import { repositoryName } from "./Repository.vibe"
+import { readToolFile, toolFiles } from "./Toolchains.vibe"
+import { readTurbo } from "./Turbo.vibe"
+import { normalizeDirectory } from "./Values.vibe"
+import { gitArguments } from "../replay/Git.vibe"
 
 /** Directories a workspace pattern never walks into. */
 const skipped = (name: string) => name === "node_modules" || name.startsWith(".")

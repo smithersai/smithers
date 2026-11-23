@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
-import { type Config, defines, readConfig, rootRuns, walk } from "../../src/decompose/Turbo.ts"
-import { assemble, type Package, type Workspace } from "../../src/decompose/Workspace.ts"
+import { type Config, defines, readConfig, rootRuns, walk } from "../../src/decompose/Turbo.vibe"
+import { assemble, type Package, type Workspace } from "../../src/decompose/Workspace.vibe"
 
 const workspace = assemble("pnpm", {}, false, [
   ["packages/core", JSON.stringify({ name: "core", scripts: { build: "tsc", test: "vitest" } })],

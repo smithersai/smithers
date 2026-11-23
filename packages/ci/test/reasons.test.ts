@@ -2,9 +2,9 @@ import { readdirSync, readFileSync } from "node:fs"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { describe, expect, it } from "vitest"
-import * as Inventory from "../src/contract/Inventory.ts"
-import { reasonRows, reasons, reasonsSentence } from "../src/contract/Reasons.ts"
-import { notSelected, notTargets } from "../src/native/index.ts"
+import * as Inventory from "../src/contract/Inventory.vibe"
+import { reasonRows, reasons, reasonsSentence } from "../src/contract/Reasons.vibe"
+import { notSelected, notTargets } from "../src/native/index.vibe"
 
 const packageDir = join(dirname(fileURLToPath(import.meta.url)), "..")
 

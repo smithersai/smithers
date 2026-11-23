@@ -2,7 +2,7 @@ import { describe, expect, it } from "@effect/vitest"
 import * as ChildProcess from "effect/process/ChildProcess"
 import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 import * as Zig from "../../../src/closure/zig/index.ts"
-import { isAffectedBy, isComplete } from "../../../src/contract/Closure.ts"
+import { isAffectedBy, isComplete } from "../../../src/contract/Closure.vibe"
 import { changed, repository } from "./environment.ts"
 import { host } from "./support.vibe"
 

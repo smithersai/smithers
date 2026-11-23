@@ -6,7 +6,7 @@
 import { chmodSync, existsSync, mkdirSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import { afterAll, describe, expect, it } from "vitest"
-import type { ReplayReport } from "../../src/contract/ReplayReport.ts"
+import type { ReplayReport } from "../../src/contract/ReplayReport.vibe"
 import { bin, commit, git, remove, spawn, temporary } from "../cli/repo.ts"
 
 const made: Array<string> = []

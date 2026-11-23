@@ -11,7 +11,7 @@
  */
 import { execFileSync } from "node:child_process"
 import { afterAll, describe, expect, it } from "vitest"
-import type { ReplayReport } from "../../src/contract/ReplayReport.ts"
+import type { ReplayReport } from "../../src/contract/ReplayReport.vibe"
 import { bin, commit, git, observes, pathWithout, remove, spawn, spawnWith, temporary } from "./repo.ts"
 
 const made: Array<string> = []

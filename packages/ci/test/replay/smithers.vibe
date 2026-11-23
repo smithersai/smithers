@@ -7,11 +7,11 @@
  * with the cache.
  */
 import * as NodeServices from "@effect/platform-node/NodeServices"
-import type { Inventory } from "../../src/contract/Inventory.ts"
-import type { Failure, ReplayParts } from "../../src/contract/Parts.ts"
-import { ReplayReport } from "../../src/contract/ReplayReport.ts"
-import { path as targetMapPath } from "../../src/contract/TargetMap.ts"
-import { maxReruns, Options, run } from "../../src/replay/index.ts"
+import type { Inventory } from "../../src/contract/Inventory.vibe"
+import type { Failure, ReplayParts } from "../../src/contract/Parts.vibe"
+import { ReplayReport } from "../../src/contract/ReplayReport.vibe"
+import { path as targetMapPath } from "../../src/contract/TargetMap.vibe"
+import { maxReruns, Options, run } from "../../src/replay/index.vibe"
 import { installCommand, installDependencies } from "./install.ts"
 
 const jobId = (target: string): string => `ci-${target}`

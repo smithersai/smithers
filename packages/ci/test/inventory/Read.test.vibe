@@ -3,8 +3,8 @@ import { expect, it } from "@effect/vitest"
 import * as PlatformError from "effect/PlatformError"
 import * as ChildProcess from "effect/process/ChildProcess"
 import { ChildProcessSpawner, make as makeSpawner } from "effect/process/ChildProcessSpawner"
-import { commitMark, Inventory, parentMark, smithersBuild, uncommittedChanges } from "../../src/contract/Inventory.ts"
-import { read } from "../../src/inventory/index.ts"
+import { commitMark, Inventory, parentMark, smithersBuild, uncommittedChanges } from "../../src/contract/Inventory.vibe"
+import { read } from "../../src/inventory/index.vibe"
 
 const denied = (method: string) =>
   PlatformError.systemError({ _tag: "PermissionDenied", module: "FileSystem", method })

@@ -5,11 +5,11 @@
  * @since 0.1.0
  */
 
-import type { Failure } from "../contract/Parts.ts"
-import { Plan } from "../contract/Plan.ts"
-import { Row } from "../contract/Selection.ts"
-import { failure } from "./Failure.ts"
-import type { Observation } from "./Features.ts"
+import type { Failure } from "../contract/Parts.vibe"
+import { Plan } from "../contract/Plan.vibe"
+import { Row } from "../contract/Selection.vibe"
+import { failure } from "./Failure.vibe"
+import type { Observation } from "./Features.vibe"
 
 /**
  * One line of the ledger's `rows.jsonl`: a row and the time of its change,

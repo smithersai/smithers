@@ -11,8 +11,8 @@ import { execFileSync } from "node:child_process"
 import { chmodSync, copyFileSync, cpSync, existsSync, mkdirSync, realpathSync, symlinkSync } from "node:fs"
 import { dirname, join, resolve } from "node:path"
 import { afterAll, expect, it } from "vitest"
-import { exitCodes } from "../../src/contract/Command.ts"
-import { ReplayReport } from "../../src/contract/ReplayReport.ts"
+import { exitCodes } from "../../src/contract/Command.vibe"
+import { ReplayReport } from "../../src/contract/ReplayReport.vibe"
 import { bin, commit, git, head, remove, start, temporary } from "./repo.ts"
 
 const made: Array<string> = []

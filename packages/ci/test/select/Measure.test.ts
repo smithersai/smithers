@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
-import type { Row, Score } from "../../src/contract/Selection.ts"
-import { day, type Observation } from "../../src/select/Features.ts"
-import * as Measure from "../../src/select/Measure.ts"
+import type { Row, Score } from "../../src/contract/Selection.vibe"
+import { day, type Observation } from "../../src/select/Features.vibe"
+import * as Measure from "../../src/select/Measure.vibe"
 
 const now = Date.UTC(2026, 10, 14)
 

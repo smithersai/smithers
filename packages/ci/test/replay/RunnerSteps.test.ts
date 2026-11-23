@@ -1,7 +1,7 @@
 /** The steps a person's runner runs and a replay does not: each kept step of a replayed job, with why. */
 import { describe, expect, it } from "vitest"
-import type { Inventory, Job } from "../../src/contract/Inventory.ts"
-import { reportOf, runnerStepsOf, stepsLeftOutOf } from "../../src/replay/Summary.ts"
+import type { Inventory, Job } from "../../src/contract/Inventory.vibe"
+import { reportOf, runnerStepsOf, stepsLeftOutOf } from "../../src/replay/Summary.vibe"
 
 const job = (id: string, kept?: Job["kept"], unkept?: Job["unkept"]): Job => ({
   id,

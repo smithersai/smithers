@@ -23,9 +23,9 @@ import {
 import { createServer, type Server } from "node:net"
 import { join } from "node:path"
 import { afterAll, describe, expect, it } from "vitest"
-import type { Failure, ReplayParts } from "../../src/contract/Parts.ts"
-import type { ReplayReport } from "../../src/contract/ReplayReport.ts"
-import { files } from "../../src/generate/index.ts"
+import type { Failure, ReplayParts } from "../../src/contract/Parts.vibe"
+import type { ReplayReport } from "../../src/contract/ReplayReport.vibe"
+import { files } from "../../src/generate/index.vibe"
 import { confine } from "../../src/replay/Confine.vibe"
 import {
   containerPrograms,
@@ -38,7 +38,7 @@ import {
   stepEnvironment,
   withoutAllowDocker
 } from "../../src/replay/Environment.ts"
-import { Options, Progress, run } from "../../src/replay/index.ts"
+import { Options, Progress, run } from "../../src/replay/index.vibe"
 import { daemonSockets, jailed, type Probe, probe, unjailed } from "../../src/replay/Jail.ts"
 import { inventoryWith, job, linkTargets, smthrs } from "./fixture.ts"
 import { parts } from "./TestParts.vibe"

@@ -10,9 +10,9 @@ import * as PlatformError from "effect/PlatformError"
 import * as Schema from "effect/Schema"
 import { readFileSync } from "node:fs"
 import { describe, expect, it } from "vitest"
-import { reasonOf } from "../../src/cli/Stage.ts"
-import { errorText } from "../../src/contract/Command.ts"
-import { Failure } from "../../src/contract/Parts.ts"
+import { reasonOf } from "../../src/cli/Stage.vibe"
+import { errorText } from "../../src/contract/Command.vibe"
+import { Failure } from "../../src/contract/Parts.vibe"
 
 /** Every tag a system error of the file system or of a process can carry. */
 const systemTags = [

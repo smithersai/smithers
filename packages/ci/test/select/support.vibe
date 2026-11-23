@@ -2,10 +2,10 @@
 import { NodeHost } from "@smthrs/platform-node"
 import * as ChildProcess from "effect/process/ChildProcess"
 import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
-import type { Plan } from "../../src/contract/Plan.ts"
-import type { RunRecord, TargetResult } from "../../src/contract/RunRecord.ts"
-import type { Row } from "../../src/contract/Selection.ts"
-import type { Observation } from "../../src/select/Features.ts"
+import type { Plan } from "../../src/contract/Plan.vibe"
+import type { RunRecord, TargetResult } from "../../src/contract/RunRecord.vibe"
+import type { Row } from "../../src/contract/Selection.vibe"
+import type { Observation } from "../../src/select/Features.vibe"
 
 /** Runs a test body on the real host, in a scope that removes its temporary directories. */
 export const live = <A, E>(body: A!E!(FileSystem.FileSystem | Path.Path | ChildProcessSpawner | Scope.Scope)) =>

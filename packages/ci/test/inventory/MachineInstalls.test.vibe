@@ -1,8 +1,8 @@
 /** A real repository read for a machine whose package manager is a real program on its `PATH`. */
 import * as NodeServices from "@effect/platform-node/NodeServices"
 import { expect, it } from "@effect/vitest"
-import { changesMachine, ci, notReplayed, reasonsText } from "../../src/contract/Inventory.ts"
-import { read } from "../../src/inventory/index.ts"
+import { changesMachine, ci, notReplayed, reasonsText } from "../../src/contract/Inventory.vibe"
+import { read } from "../../src/inventory/index.vibe"
 import { onThisMachine } from "../../src/inventory/Machine.vibe"
 import { repository, toolbox } from "./corpus.vibe"
 

@@ -13,12 +13,12 @@ import {
   reasonsText,
   refusal,
   withheldOf
-} from "../../src/contract/Inventory.ts"
-import { path as targetMapPath, TargetMap } from "../../src/contract/TargetMap.ts"
-import { files } from "../../src/generate/index.ts"
-import { read } from "../../src/inventory/index.ts"
+} from "../../src/contract/Inventory.vibe"
+import { path as targetMapPath, TargetMap } from "../../src/contract/TargetMap.vibe"
+import { files } from "../../src/generate/index.vibe"
+import { read } from "../../src/inventory/index.vibe"
 import { onThisMachine } from "../../src/inventory/Machine.vibe"
-import { replayable } from "../../src/replay/Summary.ts"
+import { replayable } from "../../src/replay/Summary.vibe"
 
 effect function git(root: string, args: ReadonlyArray<string>) {
   const spawner = try ChildProcessSpawner

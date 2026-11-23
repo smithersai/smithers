@@ -7,7 +7,7 @@ import { existsSync, mkdtempSync, readdirSync, realpathSync, rmSync, statSync, s
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, describe, expect, it } from "vitest"
-import type { Job } from "../../src/contract/Inventory.ts"
+import type { Job } from "../../src/contract/Inventory.vibe"
 import { jobsOf, type Repository, repository, runJob } from "./run.ts"
 
 const file = ".github/workflows/ci.yml"

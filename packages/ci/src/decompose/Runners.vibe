@@ -1,0 +1,569 @@
+/**
+ * Recognizes the commands that run a package script: Turborepo, pnpm, Bun,
+ * npm and Yarn.
+ *
+ * Each reader accepts only the flags it knows change nothing about which
+ * packages run. Any other flag makes the command unknown, and the step that
+ * holds it stays whole.
+ *
+ * @since 0.1.0
+ */
+
+/**
+ * Which packages a command runs in.
+ *
+ * - `all`: every workspace package.
+ * - `patterns`: the packages some pattern matches, by name or by directory.
+ *   In a name `*` matches any text; in a directory it stays within one path
+ *   segment and `**` crosses them.
+ * - `directory`: the package at this directory; `""` is the root package.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export type Selection =
+  | { readonly kind: "all" }
+  | { readonly kind: "patterns"; readonly patterns: ReadonlyArray<Pattern> }
+  | { readonly kind: "directory"; readonly directory: string }
+
+/**
+ * One selector: a package matches when its name matches `name` or its
+ * directory matches `directory`.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export interface Pattern {
+  readonly name: string | undefined
+  readonly directory: string | undefined
+}
+
+/**
+ * One recognized command.
+ *
+ * - `tasks`: the scripts it runs; only Turborepo takes several.
+ * - `strict`: a selected package without the script fails the run.
+ * - `args`: words passed on to the script.
+ * - `render`: the words of the same command limited to the named packages.
+ * - `program`: the repository file the command runs in place of `turbo`.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export interface Invocation {
+  readonly runner: "turbo" | "pnpm" | "bun" | "npm" | "yarn"
+  readonly tasks: ReadonlyArray<string>
+  readonly selection: Selection
+  readonly strict: boolean
+  readonly args: ReadonlyArray<string>
+  readonly render: (names: ReadonlyArray<string>) => ReadonlyArray<string>
+  readonly program?: string
+}
+
+/**
+ * How options are spelled: the names that take no value, and the names that
+ * take one, as `--name value` or `--name=value`.
+ */
+interface Options {
+  readonly flags: ReadonlySet<string>
+  readonly valued: ReadonlySet<string>
+}
+
+interface Option {
+  readonly name: string
+  readonly value: string | undefined
+  /** The words the option took, to copy it into a rendered command. */
+  readonly words: ReadonlyArray<string>
+}
+
+// Reads the option at `at`, or `undefined` when the word is no known option.
+const optionAt = (words: ReadonlyArray<string>, at: number, options: Options): Option | undefined => {
+  const word = words[at] as string
+  if (options.flags.has(word)) return { name: word, value: undefined, words: [word] }
+  const equals = word.indexOf("=")
+  if (word.startsWith("--") && equals > 0 && options.valued.has(word.slice(0, equals))) {
+    return { name: word.slice(0, equals), value: word.slice(equals + 1), words: [word] }
+  }
+  const value = words[at + 1]
+  return options.valued.has(word) && value !== undefined ? { name: word, value, words: [word, value] } : undefined
+}
+
+// An argument that could name a file outside the package, which the splitter
+// could not account for.
+const leaves = (word: string): boolean => /^[/~]|(?:^|\/)\.\.(?:\/|$)/.test(word)
+
+const pattern = /^[A-Za-z0-9_@.~*/-]+$/
+
+// Sorts filter values into name patterns and directory patterns. `undefined`
+// for a selector that follows the dependency graph or the git history.
+const readFilters = (filters: ReadonlyArray<string>): Selection | undefined => {
+  const patterns: Array<Pattern> = []
+  for (const filter of filters) {
+    if (!pattern.test(filter) || filter.includes("...") || leaves(filter)) return undefined
+    if (filter.startsWith("./")) patterns.push({ name: undefined, directory: filter.slice(2).replace(/\/$/, "") })
+    else if (filter.startsWith(".")) return undefined
+    else patterns.push({ name: filter, directory: undefined })
+  }
+  return { kind: "patterns", patterns }
+}
+
+const turboOptions: Options = {
+  flags: new Set([
+    "--continue",
+    "--force",
+    "--no-cache",
+    "--no-daemon",
+    "--daemon",
+    "--parallel",
+    "--verbose",
+    "--color",
+    "--no-color",
+    "--remote-only",
+    "--summarize",
+    "--no-update-notifier"
+  ]),
+  valued: new Set([
+    "--filter",
+    "-F",
+    "--concurrency",
+    "--output-logs",
+    "--log-order",
+    "--log-prefix",
+    "--cache",
+    "--cache-dir",
+    "--cache-workers",
+    "--env-mode",
+    "--ui",
+    "--continue",
+    "--framework-inference",
+    "--remote-cache-timeout"
+  ])
+}
+
+// Words after `turbo` that are its own commands, so never a task's name.
+const turboCommands = new Set(
+  ("bin boundaries clone completion config daemon devtools docs gen generate get-mfe-port help info link login logout " +
+    "ls mcp prune query scan telemetry unlink upgrade watch").split(" ")
+)
+
+/**
+ * Reads `turbo run <task>… [flags] [-- args]` and the short form `turbo
+ * <task>…`. `launch` holds the words that start Turborepo, such as `pnpm exec
+ * turbo`, and is kept; `words` are the words after them.
+ *
+ * @category recognizing
+ * @since 0.1.0
+ */
+export const turbo = (launch: ReadonlyArray<string>, words: ReadonlyArray<string>): Invocation | undefined => {
+  const ran = words[0] === "run"
+  const tasks: Array<string> = []
+  const kept: Array<string> = []
+  const filters: Array<string> = []
+  let args: ReadonlyArray<string> = []
+  for (let at = ran ? 1 : 0; at < words.length;) {
+    const word = words[at] as string
+    if (word === "--") {
+      args = words.slice(at + 1)
+      break
+    }
+    const option = optionAt(words, at, turboOptions)
+    if (option === undefined) {
+      if (word.startsWith("-")) return undefined
+      tasks.push(word)
+      at += 1
+    } else {
+      if (option.name === "--filter" || option.name === "-F") filters.push(option.value as string)
+      else kept.push(...option.words)
+      at += option.words.length
+    }
+  }
+  const selection = filters.length === 0 ? { kind: "all" as const } : readFilters(filters)
+  if (tasks.length === 0 || selection === undefined || args.some(leaves)) return undefined
+  // Without `run`, the first word may be one of Turborepo's own commands.
+  if (!ran && turboCommands.has(tasks[0] as string)) return undefined
+  return {
+    runner: "turbo",
+    tasks,
+    selection,
+    strict: false,
+    args,
+    render: (names) => [
+      ...launch,
+      ...(ran ? ["run"] : []),
+      ...tasks,
+      ...kept,
+      ...names.map((name) => `--filter=${name}`),
+      ...(args.length === 0 ? [] : ["--", ...args])
+    ]
+  }
+}
+
+const pnpmOptions: Options = {
+  flags: new Set([
+    "-r",
+    "--recursive",
+    "--if-present",
+    "--parallel",
+    "--stream",
+    "--no-bail",
+    "--bail",
+    "--no-sort",
+    "--sort",
+    "--reverse",
+    "--silent",
+    "-s",
+    "--aggregate-output",
+    "--color",
+    "--no-color"
+  ]),
+  valued: new Set(["--filter", "-F", "-C", "--dir", "--workspace-concurrency", "--reporter", "--loglevel"])
+}
+
+/**
+ * Words after `pnpm` that are its own commands, so never a script's name.
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const pnpmCommands: ReadonlySet<string> = new Set(
+  ("add audit bin cache ci config create dedupe deploy dlx doctor env exec fetch import init install i install-test it " +
+    "licenses link ln list ls la ll outdated pack patch patch-commit patch-remove prune publish rebuild rb recursive " +
+    "multi m remove rm uninstall un root server setup store unlink dislink update up upgrade why self-update " +
+    "approve-builds completion help start stop restart").split(" ")
+)
+
+/**
+ * Reads `pnpm [-r] [--filter <selector>]… run <script> [args]` and the short
+ * form `pnpm <script>`. `cwd` is where the command runs, from the repository
+ * root.
+ *
+ * @category recognizing
+ * @since 0.1.0
+ */
+export const pnpm = (words: ReadonlyArray<string>, cwd: string): Invocation | undefined => {
+  if (words[0] !== "pnpm") return undefined
+  const kept: Array<string> = []
+  const filters: Array<string> = []
+  let recursive = false
+  let directory: string | undefined
+  let ran = false
+  let at = 1
+  for (; at < words.length;) {
+    const word = words[at] as string
+    const option = optionAt(words, at, pnpmOptions)
+    if (option !== undefined) {
+      if (option.name === "-r" || option.name === "--recursive") recursive = true
+      else if (option.name === "--filter" || option.name === "-F") filters.push(option.value as string)
+      else if (option.name === "-C" || option.name === "--dir") directory = option.value
+      else kept.push(...option.words)
+      at += option.words.length
+    } else if (!ran && (word === "run" || word === "run-script")) {
+      ran = true
+      at += 1
+    } else {
+      break
+    }
+  }
+  const script = words[at]
+  const args = words.slice(at + 1)
+  if (script === undefined || script.startsWith("-") || args.some(leaves)) return undefined
+  if (!ran && pnpmCommands.has(script)) return undefined
+  const multiple = recursive || filters.length > 0
+  if (multiple && directory !== undefined) return undefined
+  const selection: Selection | undefined = filters.length > 0
+    ? readFilters(filters)
+    : recursive
+    ? { kind: "all" }
+    : under(cwd, directory)
+  if (selection === undefined) return undefined
+  return {
+    runner: "pnpm",
+    tasks: [script],
+    selection,
+    strict: false,
+    args,
+    render: (names) => ["pnpm", ...names.map((name) => `--filter=${name}`), ...kept, "run", script, ...args]
+  }
+}
+
+// The package directory a command runs in: `cwd`, or a directory named
+// relative to it. `undefined` when that leaves the repository.
+const under = (cwd: string, directory: string | undefined): Selection | undefined => {
+  if (directory === undefined) return { kind: "directory", directory: cwd }
+  if (directory.startsWith("/") || directory.startsWith("~")) return undefined
+  const parts = cwd === "" ? [] : cwd.split("/")
+  for (const segment of directory.split("/")) {
+    if (segment === "" || segment === ".") continue
+    if (segment !== "..") parts.push(segment)
+    else if (parts.pop() === undefined) return undefined
+  }
+  return { kind: "directory", directory: parts.join("/") }
+}
+
+const bunOptions: Options = {
+  flags: new Set([
+    "--if-present",
+    "--workspaces",
+    "--silent",
+    "--bun",
+    "-b",
+    "--parallel",
+    "--sequential",
+    "--no-exit-on-error",
+    "--smol"
+  ]),
+  valued: new Set(["--filter", "-F", "--cwd", "--elide-lines", "--conditions"])
+}
+
+/**
+ * Reads `bun run [--filter <pattern>]… <script> [args]`, `bun run
+ * --workspaces <script>` and `bun --filter <pattern> <script>`. Without a
+ * filter the word `run` is required, because `bun <word>` may be a file.
+ *
+ * @category recognizing
+ * @since 0.1.0
+ */
+export const bun = (words: ReadonlyArray<string>, cwd: string): Invocation | undefined => {
+  if (words[0] !== "bun") return undefined
+  const kept: Array<string> = []
+  const filters: Array<string> = []
+  let all = false
+  let ifPresent = false
+  let directory: string | undefined
+  let ran = false
+  let at = 1
+  for (; at < words.length;) {
+    const word = words[at] as string
+    const option = optionAt(words, at, bunOptions)
+    if (option !== undefined) {
+      if (option.name === "--filter" || option.name === "-F") filters.push(option.value as string)
+      else if (option.name === "--cwd") directory = option.value
+      else if (option.name === "--workspaces") all = true
+      else {
+        ifPresent = ifPresent || option.name === "--if-present"
+        kept.push(...option.words)
+      }
+      at += option.words.length
+    } else if (!ran && word === "run") {
+      ran = true
+      at += 1
+    } else {
+      break
+    }
+  }
+  const script = words[at]
+  const args = words.slice(at + 1)
+  const multiple = all || filters.length > 0
+  if (script === undefined || script.startsWith("-") || args.some(leaves)) return undefined
+  if ((!ran && !multiple) || (multiple && directory !== undefined) || (all && filters.length > 0)) return undefined
+  const selection: Selection | undefined = filters.length > 0
+    ? readFilters(filters)
+    : all
+    ? { kind: "all" }
+    : under(cwd, directory)
+  if (selection === undefined) return undefined
+  return {
+    runner: "bun",
+    tasks: [script],
+    selection,
+    strict: all && !ifPresent,
+    args,
+    render: (names) => ["bun", "run", ...kept, ...names.flatMap((name) => ["--filter", name]), script, ...args]
+  }
+}
+
+const npmOptions: Options = {
+  flags: new Set(["--workspaces", "-ws", "--if-present", "--silent", "-s"]),
+  valued: new Set(["--workspace", "-w", "--prefix"])
+}
+
+/**
+ * Reads `npm run <script>` with `--workspaces`, `--workspace <name or
+ * directory>` or neither, and `npm test`. Words after `--` go to the script.
+ *
+ * @category recognizing
+ * @since 0.1.0
+ */
+export const npm = (words: ReadonlyArray<string>, cwd: string): Invocation | undefined => {
+  if (words[0] !== "npm") return undefined
+  const kept: Array<string> = []
+  const chosen: Array<string> = []
+  const plain: Array<string> = []
+  let args: ReadonlyArray<string> = []
+  let all = false
+  let ifPresent = false
+  let directory: string | undefined
+  for (let at = 1; at < words.length;) {
+    const word = words[at] as string
+    if (word === "--") {
+      args = words.slice(at + 1)
+      break
+    }
+    const option = optionAt(words, at, npmOptions)
+    if (option === undefined) {
+      if (word.startsWith("-")) return undefined
+      plain.push(word)
+      at += 1
+    } else {
+      if (option.name === "--workspaces" || option.name === "-ws") all = true
+      else if (option.name === "--workspace" || option.name === "-w") chosen.push(option.value as string)
+      else if (option.name === "--prefix") directory = option.value
+      else if (option.name === "--if-present") ifPresent = true
+      else kept.push(...option.words)
+      at += option.words.length
+    }
+  }
+  const script = plain[0] === "test" ? "test" : plain[0] === "run" || plain[0] === "run-script" ? plain[1] : undefined
+  const positional = plain.slice(plain[0] === "test" ? 1 : 2)
+  const multiple = all || chosen.length > 0
+  if (script === undefined || [...positional, ...args].some(leaves) || chosen.some(leaves)) return undefined
+  if ((multiple && directory !== undefined) || (all && chosen.length > 0)) return undefined
+  const selection: Selection | undefined = all
+    ? { kind: "all" }
+    : chosen.length > 0
+    // A value is a package's name or its directory.
+    ? {
+      kind: "patterns",
+      patterns: chosen.map((value) => ({ name: value, directory: value.replace(/^\.\//, "").replace(/\/$/, "") }))
+    }
+    : under(cwd, directory)
+  if (selection === undefined) return undefined
+  const passed = [...positional, ...args]
+  return {
+    runner: "npm",
+    tasks: [script],
+    selection,
+    strict: all && !ifPresent,
+    args: passed,
+    render: (names) => [
+      "npm",
+      "run",
+      script,
+      ...names.map((name) => `--workspace=${name}`),
+      ...(ifPresent ? ["--if-present"] : []),
+      ...kept,
+      ...(passed.length === 0 ? [] : ["--", ...passed])
+    ]
+  }
+}
+
+/**
+ * Words after `yarn` that are its own commands, so never a script's name.
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const yarnCommands: ReadonlySet<string> = new Set(
+  ("add audit autoclean bin cache check config constraints create dedupe dlx exec explain generate-lock-entry global " +
+    "help import info init install licenses link list login logout node npm outdated owner pack patch patch-commit " +
+    "plugin policies publish rebuild remove search self-update set stage tag team unlink unplug up upgrade " +
+    "upgrade-interactive version versions why workspaces").split(" ")
+)
+
+/**
+ * Reads `yarn <script>`, `yarn run <script>` and `yarn workspace <name>
+ * <script>`: the forms that run one package's script. `yarn workspaces` is
+ * not read.
+ *
+ * @category recognizing
+ * @since 0.1.0
+ */
+export const yarn = (words: ReadonlyArray<string>, cwd: string): Invocation | undefined => {
+  if (words[0] !== "yarn") return undefined
+  const named = words[1] === "workspace" ? words[2] : undefined
+  const rest = words.slice(named === undefined ? 1 : 3)
+  const ran = rest[0] === "run"
+  const script = rest[ran ? 1 : 0]
+  const args = rest.slice(ran ? 2 : 1)
+  if (words[1] === "workspace" && named === undefined) return undefined
+  if (script === undefined || script.startsWith("-") || args.some(leaves)) return undefined
+  if (!ran && (yarnCommands.has(script) || script === "workspace" || script === "run")) return undefined
+  return {
+    runner: "yarn",
+    tasks: [script],
+    selection: named === undefined
+      ? { kind: "directory", directory: cwd }
+      : { kind: "patterns", patterns: [{ name: named, directory: undefined }] },
+    strict: false,
+    args,
+    render: () => words
+  }
+}
+
+// The words that run a package's program through each package manager.
+const executors: ReadonlyArray<ReadonlyArray<string>> = [
+  ["pnpm", "exec"],
+  ["yarn", "exec"],
+  ["bun", "x"],
+  ["npx"],
+  ["bunx"],
+  []
+]
+
+// Package managers that run a program when no script has its name.
+const shorthand = new Set(["pnpm", "bun", "yarn"])
+
+// Programs that run a script file given as their first argument.
+const runtimes = new Set(["bun", "node", "tsx"])
+
+/**
+ * What a command is read against.
+ *
+ * - `wrappers`: repository files, from the root, that the repository's owner
+ *   says pass their arguments to `turbo`. `bun scripts/turbo.ts run build` is
+ *   then read as `turbo run build`, and the file is kept in the command.
+ * - `rootScripts`: the names of the root package's scripts. `pnpm turbo`
+ *   runs Turborepo only when no script is named `turbo`.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export interface Known {
+  readonly wrappers: ReadonlyArray<string>
+  readonly rootScripts: ReadonlyArray<string>
+}
+
+/**
+ * Reads one command's words as a script run, or `undefined` when it is
+ * anything else. `turbo` may follow the words a package manager runs a
+ * program with, such as `pnpm exec`, `npx` or `pnpm` alone.
+ *
+ * @category recognizing
+ * @since 0.1.0
+ */
+export const recognize = (
+  words: ReadonlyArray<string>,
+  cwd: string,
+  known: Known = { wrappers: [], rootScripts: [] }
+): Invocation | undefined => {
+  const launchers = shorthand.has(words[0] as string) && !known.rootScripts.includes("turbo")
+    ? [...executors, [words[0] as string]]
+    : executors
+  for (const executor of launchers) {
+    if (executor.every((word, index) => words[index] === word) && words[executor.length] === "turbo") {
+      // Started inside a package, Turborepo runs that package only; only the root form is read.
+      return cwd === "" ? turbo(words.slice(0, executor.length + 1), words.slice(executor.length + 1)) : undefined
+    }
+  }
+  const at = runtimes.has(words[0] as string) ? 1 : 0
+  const program = words[at]?.replace(/^\.\//, "")
+  if (program !== undefined && known.wrappers.includes(program)) {
+    const read = cwd === "" ? turbo(words.slice(0, at + 1), words.slice(at + 1)) : undefined
+    return read === undefined ? undefined : { ...read, program }
+  }
+  return pnpm(words, cwd) ?? bun(words, cwd) ?? npm(words, cwd) ?? yarn(words, cwd)
+}
+
+/**
+ * The words that put a root script's program on the search path, per
+ * package manager: a root script runs `turbo` bare, a step cannot.
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const executorOf: Readonly<Record<"pnpm" | "bun" | "npm" | "yarn", ReadonlyArray<string>>> = {
+  pnpm: ["pnpm", "exec"],
+  bun: ["bunx"],
+  npm: ["npx"],
+  yarn: ["yarn", "exec"]
+}

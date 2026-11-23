@@ -11,7 +11,7 @@ import { existsSync } from "node:fs"
 import { createRequire } from "node:module"
 import { availableParallelism } from "node:os"
 import { delimiter, dirname, join } from "node:path"
-import { runnerSoftware } from "../contract/Inventory.ts"
+import { runnerSoftware } from "../contract/Inventory.vibe"
 
 /**
  * The directories a replay makes for the steps of one way of running a

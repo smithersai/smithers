@@ -10,7 +10,7 @@
  */
 
 import type * as Path from "effect/Path"
-import type { Closure, ClosureFile, OpenImport } from "../../contract/Closure.ts"
+import type { Closure, ClosureFile, OpenImport } from "../../contract/Closure.vibe"
 import type * as Graph from "./Graph.ts"
 import type * as Manifest from "./Manifest.ts"
 import type * as Protocol from "./Protocol.ts"

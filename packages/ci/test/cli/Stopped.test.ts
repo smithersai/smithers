@@ -14,9 +14,9 @@ import { join } from "node:path"
 import { afterAll, describe, expect, it } from "vitest"
 import { main, run } from "../../src/cli/main.vibe"
 import { exitCodes as signalExitCodes, idle, listenTo, uncaught } from "../../src/cli/Signals.ts"
-import { stageOf } from "../../src/cli/Stage.ts"
-import { exitCodes } from "../../src/contract/Command.ts"
-import type { ReplayReport } from "../../src/contract/ReplayReport.ts"
+import { stageOf } from "../../src/cli/Stage.vibe"
+import { exitCodes } from "../../src/contract/Command.vibe"
+import type { ReplayReport } from "../../src/contract/ReplayReport.vibe"
 import {
   awaited,
   bin,

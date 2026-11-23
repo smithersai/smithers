@@ -24,7 +24,7 @@ import {
   runVariables,
   script,
   shell
-} from "../../src/contract/Inventory.ts"
+} from "../../src/contract/Inventory.vibe"
 import { type Residual, type Value, variable } from "../../src/inventory/Expression.ts"
 import {
   commitMark,

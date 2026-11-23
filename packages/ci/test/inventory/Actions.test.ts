@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { cacheActions, checkoutProblems, parseYaml, readAction, setupVariables } from "../../src/inventory/Actions.ts"
+import { cacheActions, checkoutProblems, parseYaml, readAction, setupVariables } from "../../src/inventory/Actions.vibe"
 import type { Residual } from "../../src/inventory/Expression.ts"
 
 const sha: Residual = { kind: "variable", variable: { id: "sha", name: "github.sha", nullable: false, typed: false } }

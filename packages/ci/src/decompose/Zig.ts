@@ -30,9 +30,9 @@
  * @since 0.1.0
  */
 
-import type { Step } from "../contract/Inventory.ts"
-import { innerScript } from "./Plan.ts"
-import { type Command, commands, quote } from "./Shell.ts"
+import type { Step } from "../contract/Inventory.vibe"
+import { innerScript } from "./Plan.vibe"
+import { type Command, commands, quote } from "./Shell.vibe"
 
 const plain = (command: Command): boolean =>
   (command.joint === "first" || command.joint === ";") && !command.piped && !command.background && !command.conditional

@@ -4,10 +4,10 @@
  * @since 0.1.0
  */
 
-import type { Ci } from "../contract/Inventory.ts"
-import type { Failure, GeneratedFile, GenerateOptions } from "../contract/Parts.ts"
+import type { Ci } from "../contract/Inventory.vibe"
+import type { Failure, GeneratedFile, GenerateOptions } from "../contract/Parts.vibe"
 import { renderFiles } from "./Render.ts"
-import { planSteps } from "./Steps.ts"
+import { planSteps } from "./Steps.vibe"
 
 /**
  * The Smithers workspace, targets, target map and CI workflow for a

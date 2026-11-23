@@ -6,7 +6,7 @@
 
 import { describe, expect, it } from "vitest"
 import { parse } from "yaml"
-import * as Yaml from "../src/generate/Yaml.ts"
+import * as Yaml from "../src/generate/Yaml.vibe"
 
 const one = (value: Yaml.Value, key = "key"): string => Yaml.document(Yaml.mapping([Yaml.entry(key, value)]))
 

@@ -6,10 +6,10 @@
 
 import * as ChildProcess from "effect/process/ChildProcess"
 import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
-import type { Failure } from "../contract/Parts.ts"
-import { failure } from "./Failure.ts"
-import { type Commit, day, horizonDays } from "./Features.ts"
-import { gitArguments } from "../replay/Git.ts"
+import type { Failure } from "../contract/Parts.vibe"
+import { failure } from "./Failure.vibe"
+import { type Commit, day, horizonDays } from "./Features.vibe"
+import { gitArguments } from "../replay/Git.vibe"
 
 /**
  * One change as its repository records it: when it was made, the files it

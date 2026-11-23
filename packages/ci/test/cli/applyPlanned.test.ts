@@ -17,10 +17,10 @@ import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { afterAll, describe, expect, it } from "vitest"
 import { planned, refusalOf, refusals } from "../../src/apply/Planned.vibe"
-import { exitCodes } from "../../src/contract/Command.ts"
-import type { Failure, GeneratedFile } from "../../src/contract/Parts.ts"
-import { path as targetMapPath } from "../../src/contract/TargetMap.ts"
-import { generatedMark } from "../../src/native/Workspace.ts"
+import { exitCodes } from "../../src/contract/Command.vibe"
+import type { Failure, GeneratedFile } from "../../src/contract/Parts.vibe"
+import { path as targetMapPath } from "../../src/contract/TargetMap.vibe"
+import { generatedMark } from "../../src/native/Workspace.vibe"
 import { Options } from "../../src/replay/Replay.vibe"
 import { fullDisk, inProcess, noTempDirectory } from "./inProcess.vibe"
 import { parts } from "./parts.vibe"
@@ -85,8 +85,8 @@ const refusing = (refused: string, everything = false): string => {
 
 /** The files `apply` would write for the repository at `root`, as its generator makes them. */
 const generated = async (root: string): Promise<ReadonlyArray<GeneratedFile>> => {
-  const { parts } = await import("../../src/cli/parts.ts")
-  const { ci } = await import("../../src/contract/Inventory.ts")
+  const { parts } = await import("../../src/cli/parts.vibe")
+  const { ci } = await import("../../src/contract/Inventory.vibe")
   const program = Effect.gen(function*() {
     const inventory = yield* parts.read(root)
     const split = yield* parts.decompose(root, ci(inventory))

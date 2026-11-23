@@ -5,12 +5,12 @@ import { execFileSync } from "node:child_process"
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
 import { basename, join, relative } from "node:path"
 import { afterAll, describe, expect, it } from "vitest"
-import type { Failure, ReplayParts, ReplayRequest } from "../../src/contract/Parts.ts"
-import type { ReplayReport } from "../../src/contract/ReplayReport.ts"
-import { path as targetMapPath, type TargetMap } from "../../src/contract/TargetMap.ts"
-import { generatedMark } from "../../src/native/Workspace.ts"
-import { Options, Progress, run } from "../../src/replay/index.ts"
-import { cannotRecord } from "../../src/replay/Reads.ts"
+import type { Failure, ReplayParts, ReplayRequest } from "../../src/contract/Parts.vibe"
+import type { ReplayReport } from "../../src/contract/ReplayReport.vibe"
+import { path as targetMapPath, type TargetMap } from "../../src/contract/TargetMap.vibe"
+import { generatedMark } from "../../src/native/Workspace.vibe"
+import { Options, Progress, run } from "../../src/replay/index.vibe"
+import { cannotRecord } from "../../src/replay/Reads.vibe"
 import {
   job,
   linkTargets,

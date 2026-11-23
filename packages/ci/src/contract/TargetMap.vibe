@@ -1,0 +1,133 @@
+/**
+ * Contract 11: which target each CI step became.
+ *
+ * The generator returns this document among its files, at `path`, marked
+ * `written: false`: the replay reads it from that list to compare a step's
+ * baseline verdict with its target's verdict, a report can name the step a
+ * target came from, and no repository holds it.
+ *
+ * @since 0.1.0
+ */
+
+import * as Schema from "effect/Schema"
+
+/**
+ * Where the document is written, relative to the repository root.
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const path = ".smithers/ci-targets.json"
+
+/**
+ * One step of one job, in one matrix variant, and the label of a target
+ * that runs it. `label` is the label a run record reports. A job with no
+ * matrix has the empty variant. A step that was split has one entry per
+ * target, each naming the original step, and `part` says which part of the
+ * step the target runs: a package, a build step or a script. A report names
+ * a failed part by it. Two steps that do the same work at the same point of
+ * two jobs share one target: each has its own entry, with that target's
+ * label. `machine` is the machine the target runs on
+ * (`machine:` in its target file), for a target that has one: Smithers build
+ * gives the targets of one machine a checkout, a home and a temporary
+ * directory of their own, at paths named by the machine.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export const Entry = Schema.Struct({
+  label: Schema.NonEmptyString,
+  job: Schema.NonEmptyString,
+  step: Schema.NonEmptyString,
+  variant: Schema.Record(Schema.String, Schema.String),
+  part: Schema.optionalKey(Schema.NonEmptyString),
+  machine: Schema.optionalKey(Schema.NonEmptyString)
+})
+
+/**
+ * A decoded `Entry`.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export type Entry = typeof Entry.Type
+
+/**
+ * Every step the generator turned into a target. `maxJobs` is the most of
+ * these targets that may run at once; a caller never exceeds it. The
+ * generator writes 1 when two targets that are not ordered could write the
+ * same files, and leaves it out when none could.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export const TargetMap = Schema.Struct({
+  version: Schema.Literal(1),
+  targets: Schema.Array(Entry),
+  maxJobs: Schema.optionalKey(Schema.Int.check(Schema.isGreaterThanOrEqualTo(1)))
+})
+
+/**
+ * A decoded `TargetMap`.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export type TargetMap = typeof TargetMap.Type
+
+/**
+ * One text for a variant, whatever order its keys were written in.
+ *
+ * @category accessors
+ * @since 0.1.0
+ */
+export const variantKey = (variant: Readonly<Record<string, string>>): string =>
+  JSON.stringify(Object.entries(variant).sort(([a], [b]) => (a < b ? -1 : 1)))
+
+/**
+ * The labels of every target that runs a step: one, or several when the
+ * step was split. Empty when the generator made none for it.
+ *
+ * @category accessors
+ * @since 0.1.0
+ */
+export const labelsOf = (
+  map: TargetMap,
+  job: string,
+  step: string,
+  variant: Readonly<Record<string, string>>
+): ReadonlyArray<string> => {
+  const key = variantKey(variant)
+  return map.targets
+    .filter((entry) => entry.job === job && entry.step === step && variantKey(entry.variant) === key)
+    .map((entry) => entry.label)
+}
+
+/**
+ * The part of a split step each target runs (`Entry.part`), by the target's
+ * label. A target of a step that was not split has no entry.
+ *
+ * @category accessors
+ * @since 0.1.0
+ */
+export const partsOf = (map: TargetMap): ReadonlyMap<string, string> =>
+  new Map(map.targets.flatMap((entry) => entry.part === undefined ? [] : [[entry.label, entry.part] as const]))
+
+/**
+ * The machine the targets of one job's variant run on, or `undefined` when
+ * they run on none.
+ *
+ * @category reading
+ * @since 0.1.0
+ */
+export const machineOf = (
+  map: TargetMap,
+  job: string,
+  variant: Readonly<Record<string, string>>
+): string | undefined => {
+  const key = variantKey(variant)
+  return map.targets.find((entry) =>
+    entry.job === job && variantKey(entry.variant) === key && entry.machine !== undefined
+  )
+    ?.machine
+}

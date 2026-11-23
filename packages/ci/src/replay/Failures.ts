@@ -14,10 +14,10 @@
 import * as Option from "effect/Option"
 import * as Schema from "effect/Schema"
 import { constants } from "node:os"
-import { runnerEntry } from "../contract/Inventory.ts"
-import type { StepFailure, StepNotReused } from "../contract/ReplayReport.ts"
-import type { RunRecord, TargetResult } from "../contract/RunRecord.ts"
-import { scrub } from "../inventory/Secrets.ts"
+import { runnerEntry } from "../contract/Inventory.vibe"
+import type { StepFailure, StepNotReused } from "../contract/ReplayReport.vibe"
+import type { RunRecord, TargetResult } from "../contract/RunRecord.vibe"
+import { scrub } from "../inventory/Secrets.vibe"
 
 /**
  * How much of what `smthrs ci` prints for one failed target a replay keeps:

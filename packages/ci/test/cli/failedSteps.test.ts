@@ -1,7 +1,7 @@
 /** The real program on real repositories whose CI fails here. */
 import { rmSync } from "node:fs"
 import { afterAll, describe, expect, it } from "vitest"
-import { exitCodes } from "../../src/contract/Command.ts"
+import { exitCodes } from "../../src/contract/Command.vibe"
 import { commit, git, temporary } from "../native/repo.ts"
 import { bin, head, spawn } from "./repo.ts"
 

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
-import { readJustfile } from "../../src/inventory/Justfile.ts"
-import { readMakefile } from "../../src/inventory/Makefile.ts"
-import { isPlainCommand } from "../../src/inventory/Values.ts"
+import { readJustfile } from "../../src/inventory/Justfile.vibe"
+import { readMakefile } from "../../src/inventory/Makefile.vibe"
+import { isPlainCommand } from "../../src/inventory/Values.vibe"
 
 describe("isPlainCommand", () => {
   it("accepts a program with plain words", () => {

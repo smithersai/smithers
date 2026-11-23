@@ -16,6 +16,7 @@
  * @since 0.1.0
  */
 
+import { digestSync } from "@smthrs/crypto/Sha256"
 import { isUtf8 } from "node:buffer"
 
 /** The byte each escape git writes for a control character, a quote or a backslash stands for. */
@@ -82,3 +83,12 @@ export const notUtf8 = (listing: string): string | undefined =>
 export const unreadableName = (shown: string, commit: string): string =>
   `the file ${shown} at ${commit.slice(0, 7)} has a name that is not UTF-8, which Smithers build cannot read; ` +
   "rename the file to replay this repository"
+
+/**
+ * Hex SHA-256 digest of a UTF-8 string.
+ *
+ * @category hashing
+ * @throws {never}
+ * @since 0.1.0
+ */
+export const sha256 = (text: string): string => digestSync(text)

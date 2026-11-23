@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
-import type { Job } from "../../src/contract/Inventory.ts"
-import { readJustfile } from "../../src/inventory/Justfile.ts"
-import { shellQuote } from "../../src/inventory/Values.ts"
+import type { Job } from "../../src/contract/Inventory.vibe"
+import { readJustfile } from "../../src/inventory/Justfile.vibe"
+import { shellQuote } from "../../src/inventory/Values.vibe"
 
 const read = (text: string) => readJustfile("Justfile", text)
 

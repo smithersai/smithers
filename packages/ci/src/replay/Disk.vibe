@@ -11,9 +11,9 @@
  * @since 0.1.0
  */
 
-import type { Failure } from "../contract/Parts.ts"
+import type { Failure } from "../contract/Parts.vibe"
 import { gigabyte, heldUnder, sizeOf, type Space, spaceOf } from "./DiskSpace.ts"
-import { failure } from "./Summary.ts"
+import { failure } from "./Summary.vibe"
 
 /**
  * The least free space a replay leaves on the disk that holds its folder:

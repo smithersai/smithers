@@ -11,12 +11,12 @@
  */
 
 import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
-import { applyRefuses } from "../contract/Command.ts"
-import { failsHere, needsLeftOut, type NotReplayed, stepTimeoutHours } from "../contract/Inventory.ts"
-import type { Failure, ReplayParts, ReplayRequest, RunReplay } from "../contract/Parts.ts"
-import type { FirstRun, NotReplayedCommit, ReplayCommit, ReplayReport } from "../contract/ReplayReport.ts"
-import { type Recorder, RunRecord, type TargetResult } from "../contract/RunRecord.ts"
-import { defaultSettings, type Row } from "../contract/Selection.ts"
+import { applyRefuses } from "../contract/Command.vibe"
+import { failsHere, needsLeftOut, type NotReplayed, stepTimeoutHours } from "../contract/Inventory.vibe"
+import type { Failure, ReplayParts, ReplayRequest, RunReplay } from "../contract/Parts.vibe"
+import type { FirstRun, NotReplayedCommit, ReplayCommit, ReplayReport } from "../contract/ReplayReport.vibe"
+import { type Recorder, RunRecord, type TargetResult } from "../contract/RunRecord.vibe"
+import { defaultSettings, type Row } from "../contract/Selection.vibe"
 import { type Confined, confine, held, jobHomes, reading, sourceDirectory, type Way } from "../replay/Confine.vibe"
 import { addTo, type Count, type CpuBucket, uncounted, usedBy } from "../replay/Cpu.ts"
 import { cpuWatch } from "../replay/CpuWatch.vibe"
@@ -58,7 +58,7 @@ import {
   stdoutOf
 } from "../replay/Process.vibe"
 import { readableNames, readyHistory } from "../replay/History.vibe"
-import { printsNotes, readsListener } from "../replay/Reads.ts"
+import { printsNotes, readsListener } from "../replay/Reads.vibe"
 import { type Execute, Options, Progress, scoresOrReason, settle, WorkDirectory } from "../replay/Replay.vibe"
 import { defaultStall, defaultStallMinutes, type StallLimit, tableFor, watchFor } from "../replay/Stall.vibe"
 import {
@@ -80,7 +80,7 @@ import {
   rootsWithout,
   tooFewLeft,
   totalsOf
-} from "../replay/Summary.ts"
+} from "../replay/Summary.vibe"
 import {
   commandFailed,
   commandStopped,
@@ -93,11 +93,11 @@ import {
   PlannedInputs,
   readInstalls,
   smthrsBin
-} from "./Install.ts"
-import { linesOf, noRecord, noRecordLabel, ranAgain, ranAgainLines, withReasons } from "./Results.ts"
-import { chosenFor } from "./Targets.ts"
-import { isGenerated } from "./Workspace.ts"
-import { gitArguments } from "../replay/Git.ts"
+} from "./Install.vibe"
+import { linesOf, noRecord, noRecordLabel, ranAgain, ranAgainLines, withReasons } from "./Results.vibe"
+import { chosenFor } from "./Targets.vibe"
+import { isGenerated } from "./Workspace.vibe"
+import { gitArguments } from "../replay/Git.vibe"
 
 /** Why `--targets` cannot be honoured on a repository that has no targets of its own. */
 const noWorkspace =

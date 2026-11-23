@@ -30,10 +30,10 @@ import {
 import { homedir, tmpdir } from "node:os"
 import { basename, dirname, join } from "node:path"
 import { afterAll, describe, expect, it } from "vitest"
-import type { Failure, ReplayParts } from "../../src/contract/Parts.ts"
-import type { ReplayReport } from "../../src/contract/ReplayReport.ts"
-import type { Mode } from "../../src/contract/RunRecord.ts"
-import { files } from "../../src/generate/index.ts"
+import type { Failure, ReplayParts } from "../../src/contract/Parts.vibe"
+import type { ReplayReport } from "../../src/contract/ReplayReport.vibe"
+import type { Mode } from "../../src/contract/RunRecord.vibe"
+import { files } from "../../src/generate/index.vibe"
 import { confine, type Confined, held, machine as jobPlace, reading } from "../../src/replay/Confine.vibe"
 import {
   containerPrograms,
@@ -43,7 +43,7 @@ import {
   prePush,
   pushRefused
 } from "../../src/replay/Environment.ts"
-import { Options, Progress, run } from "../../src/replay/index.ts"
+import { Options, Progress, run } from "../../src/replay/index.vibe"
 import {
   credentials,
   daemonSockets,

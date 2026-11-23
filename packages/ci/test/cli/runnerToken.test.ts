@@ -15,7 +15,7 @@ import { parse as parseYaml } from "yaml"
 import { cli } from "../../src/cli/Cli.vibe"
 import { layer } from "../../src/cli/Host.vibe"
 import { smthrsCommand } from "../../src/cli/Install.ts"
-import { parts } from "../../src/cli/parts.ts"
+import { parts } from "../../src/cli/parts.vibe"
 import { probe } from "../../src/replay/Jail.ts"
 import { git, pathWithout, recorder, remove, spawn, temporary } from "./repo.ts"
 

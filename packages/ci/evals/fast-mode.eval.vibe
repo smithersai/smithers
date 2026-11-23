@@ -10,7 +10,7 @@
 import { expect, it } from "@effect/vitest"
 import * as Eval from "../src/select/Eval.vibe"
 import { Ledger, layerFile } from "../src/select/Ledger.vibe"
-import * as Measure from "../src/select/Measure.ts"
+import * as Measure from "../src/select/Measure.vibe"
 import { type Host, score } from "../src/select/Score.vibe"
 import { changes, concurrency, directory, layer } from "./host.ts"
 

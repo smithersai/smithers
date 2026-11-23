@@ -5,8 +5,8 @@
 import * as Schema from "effect/Schema"
 import { readFileSync } from "node:fs"
 import { describe, expect, it } from "vitest"
-import { ReplayReport } from "../src/contract/ReplayReport.ts"
-import { html, text } from "../src/report/index.ts"
+import { ReplayReport } from "../src/contract/ReplayReport.vibe"
+import { html, text } from "../src/report/index.vibe"
 
 const example: ReplayReport = Schema.decodeUnknownSync(ReplayReport)(
   JSON.parse(readFileSync(new URL("./fixtures/replay-report.example.json", import.meta.url), "utf8"))

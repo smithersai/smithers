@@ -1,6 +1,6 @@
 import { describe, expect, it, layer } from "@effect/vitest"
 import * as Zig from "../../../src/closure/zig/index.ts"
-import { isAffectedBy, isComplete } from "../../../src/contract/Closure.ts"
+import { isAffectedBy, isComplete } from "../../../src/contract/Closure.vibe"
 import { close, paths, sha256 } from "./helpers.ts"
 import { failing, host, instead, limit, repository, script, write } from "./support.vibe"
 

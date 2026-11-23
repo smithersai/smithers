@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
-import type { Features, Row } from "../../src/contract/Selection.ts"
-import * as Scoring from "../../src/select/Scoring.ts"
+import type { Features, Row } from "../../src/contract/Selection.vibe"
+import * as Scoring from "../../src/select/Scoring.vibe"
 
 const features = (overrides: Partial<Features> = {}): Features => ({
   extensions: [".ts"],

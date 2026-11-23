@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
-import { broken, nothingTold, reasonOf, stageOf, stoppedCode, type Told, unanswered } from "../../src/cli/Stage.ts"
-import { exitCodes } from "../../src/contract/Command.ts"
+import { broken, nothingTold, reasonOf, stageOf, stoppedCode, type Told, unanswered } from "../../src/cli/Stage.vibe"
+import { exitCodes } from "../../src/contract/Command.vibe"
 
 describe("the stage a progress line of a replay begins", () => {
   it("is the way and the commit of each run a replay announces", () => {

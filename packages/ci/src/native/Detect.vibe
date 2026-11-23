@@ -4,8 +4,8 @@
  * @since 0.1.0
  */
 
-import { applyRefuses } from "../contract/Command.ts"
-import { isGenerated } from "./Workspace.ts"
+import { applyRefuses } from "../contract/Command.vibe"
+import { isGenerated } from "./Workspace.vibe"
 
 /**
  * A file's text. `undefined` when it does not exist, which includes a file

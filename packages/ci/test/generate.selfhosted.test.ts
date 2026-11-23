@@ -9,8 +9,8 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterAll, describe, expect, it } from "vitest"
 import { parse as parseYaml } from "yaml"
-import type { Ci, Inventory as InventoryDocument, Job, Step } from "../src/contract/Inventory.ts"
-import { files } from "../src/generate/index.ts"
+import type { Ci, Inventory as InventoryDocument, Job, Step } from "../src/contract/Inventory.vibe"
+import { files } from "../src/generate/index.vibe"
 import { selfHostedCheck, workflowPath } from "../src/generate/Render.ts"
 
 const made: Array<string> = []

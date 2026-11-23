@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { withoutAliases } from "../../src/decompose/Aliases.ts"
+import { withoutAliases } from "../../src/decompose/Aliases.vibe"
 
 const names = new Set(["@acme/core", "@acme/ui", "web"])
 

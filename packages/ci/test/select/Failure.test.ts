@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { failure, unavailable } from "../../src/select/Failure.ts"
+import { failure, unavailable } from "../../src/select/Failure.vibe"
 
 const model = "The model that predicts which tests a change cannot break"
 const classifier = "flows/model/ClassifierError"

@@ -4,8 +4,8 @@
  */
 
 import { describe, expect, it } from "vitest"
-import { blockers, type Job, resultActions } from "../../src/contract/Inventory.ts"
-import { readWorkflow } from "../../src/inventory/GithubActions.ts"
+import { blockers, type Job, resultActions } from "../../src/contract/Inventory.vibe"
+import { readWorkflow } from "../../src/inventory/GithubActions.vibe"
 
 const file = ".github/workflows/ci.yml"
 

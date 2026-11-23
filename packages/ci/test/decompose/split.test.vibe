@@ -4,8 +4,8 @@ import * as PlatformError from "effect/PlatformError"
 import * as ChildProcess from "effect/process/ChildProcess"
 import { ChildProcessSpawner, make as makeSpawner } from "effect/process/ChildProcessSpawner"
 import { WebCrypto } from "@smthrs/crypto"
-import { type Ci, ci as ciOf, Inventory, type Job, type Step } from "../../src/contract/Inventory.ts"
-import { combine, type Verdict } from "../../src/contract/RunRecord.ts"
+import { type Ci, ci as ciOf, Inventory, type Job, type Step } from "../../src/contract/Inventory.vibe"
+import { combine, type Verdict } from "../../src/contract/RunRecord.vibe"
 import { split, splitWith } from "../../src/decompose/index.ts"
 
 effect function run(root: string, command: string, args: ReadonlyArray<string>) {

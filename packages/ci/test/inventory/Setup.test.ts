@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { readSetup } from "../../src/inventory/Setup.ts"
+import { readSetup } from "../../src/inventory/Setup.vibe"
 
 const toolOf = (uses: string, inputs?: unknown) => readSetup(uses, inputs)?.tools
 

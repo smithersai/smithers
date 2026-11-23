@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import type { RunRecord, TargetResult } from "../../src/contract/RunRecord.ts"
+import type { RunRecord, TargetResult } from "../../src/contract/RunRecord.vibe"
 import {
   firstLine,
   linesOf,
@@ -10,7 +10,7 @@ import {
   reasonsIn,
   whyNoRecord,
   withReasons
-} from "../../src/native/index.ts"
+} from "../../src/native/index.vibe"
 import { refusedAt } from "./repo.ts"
 
 const result = (label: string, status: TargetResult["status"], error?: string): TargetResult => ({

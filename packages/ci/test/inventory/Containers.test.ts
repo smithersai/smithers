@@ -8,10 +8,10 @@ import {
   type Job,
   notReplayed,
   reasonsText
-} from "../../src/contract/Inventory.ts"
-import { reasonsSentence } from "../../src/contract/Reasons.ts"
-import { containersIn, detailOf, markContainers } from "../../src/inventory/Containers.ts"
-import { markChanges, withInstalled } from "../../src/inventory/MachineChanges.ts"
+} from "../../src/contract/Inventory.vibe"
+import { reasonsSentence } from "../../src/contract/Reasons.vibe"
+import { containersIn, detailOf, markContainers } from "../../src/inventory/Containers.vibe"
+import { markChanges, withInstalled } from "../../src/inventory/MachineChanges.vibe"
 
 const job = (commands: ReadonlyArray<string>, fields: Partial<Job> = {}): Job => ({
   id: "ci.yml:build",

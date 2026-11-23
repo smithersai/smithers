@@ -4,8 +4,8 @@ import type * as FileSystem from "effect/FileSystem"
 import type * as Path from "effect/Path"
 import type { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 import * as Zig from "../../../src/closure/zig/index.ts"
-import type { Closure } from "../../../src/contract/Closure.ts"
-import type { CloseEntries } from "../../../src/contract/Parts.ts"
+import type { Closure } from "../../../src/contract/Closure.vibe"
+import type { CloseEntries } from "../../../src/contract/Parts.vibe"
 
 /** The strategy's `close` is contract 10's `CloseEntries`. Checked when the tests are compiled. */
 export const close: CloseEntries<FileSystem.FileSystem | Path.Path | ChildProcessSpawner | EffectDigest.Digest> =

@@ -1,0 +1,87 @@
+/**
+ * A tool a step did not find in its own home, though the person's home has
+ * it: a program on `PATH` started it through `HOME`, from a directory of the
+ * home a step is not given.
+ *
+ * A step is given the tools whose own directory is on `PATH`. A directory a
+ * program merely names may hold anything, so a step is not given it on a
+ * guess. The step fails, and its failure says what to do.
+ *
+ * @since 0.1.0
+ */
+
+import type { TargetResult } from "../contract/RunRecord.vibe"
+
+/** What a shell exits with for a command it could not start: found but not runnable, and not found. */
+const notStarted: ReadonlySet<number> = new Set([126, 127])
+
+/**
+ * True for a failed result whose command could not be started: it exited as
+ * a shell does for one, or it has no exit code at all, as a target whose
+ * program Smithers build did not find.
+ *
+ * @category accessors
+ * @since 0.1.0
+ */
+export const couldNotStart = (result: Pick<TargetResult, "exitCode" | "status">): boolean =>
+  result.status === "failed" && (result.exitCode === undefined || notStarted.has(result.exitCode))
+
+/** A directory nothing is in. */
+const nowhere = "/nonexistent/smithers-ci"
+
+/**
+ * The person's home directory, as their variables name it. A person whose
+ * variables name none has their tools nowhere.
+ *
+ * @category accessors
+ * @since 0.1.0
+ */
+export const homeOf = (person: Readonly<Record<string, string | undefined>>): string => person["HOME"] ?? nowhere
+
+const literal = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+
+/**
+ * The paths a text names in a step's home, each as it lies under the home:
+ * `.local/go/bin/go`; none for no text. `work` are the names of the replay's directory. Every
+ * step's home is in it: the home of a way or of a baseline job at
+ * `home/<name>`, and the home of a job's machine at
+ * `machines/<id>/<job>/home`.
+ *
+ * @category accessors
+ * @since 0.1.0
+ */
+export const namedInStepHome = (text: string | undefined, work: ReadonlyArray<string>): ReadonlyArray<string> => {
+  const found = new Set<string>()
+  for (const directory of work) {
+    const home = new RegExp(
+      `${literal(directory)}/(?:home/[^/\\s]+|machines/[^/\\s]+/[^/\\s]+/home)/([^\\s:'"]+)`,
+      "g"
+    )
+    for (const match of (text ?? "").matchAll(home)) found.add(match[1] as string)
+  }
+  return [...found]
+}
+
+/**
+ * What a person does about a tool at `relative` in their home that a step
+ * did not find in its own: one line.
+ *
+ * @category rendering
+ * @since 0.1.0
+ */
+export const putOnPath = (relative: string): string => {
+  const directory = relative.includes("/") ? `~/${relative.slice(0, relative.lastIndexOf("/"))}` : "~"
+  return `put ${directory} on PATH: ~/${relative} is in your home directory and not in the step's, `
+    + "and a step gets a tool whose own directory is on PATH"
+}
+
+/**
+ * What a person does about the failures among `results`, each thing once, in
+ * the order of the results.
+ *
+ * @category accessors
+ * @since 0.1.0
+ */
+export const fixesOf = (results: ReadonlyArray<Pick<TargetResult, "fix" | "status">>): ReadonlyArray<string> => [
+  ...new Set(results.flatMap((result) => result.status === "failed" && result.fix !== undefined ? [result.fix] : []))
+]

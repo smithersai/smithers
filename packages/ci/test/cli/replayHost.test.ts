@@ -8,7 +8,7 @@ import { delimiter, join } from "node:path"
 import { afterAll, describe, expect, it } from "vitest"
 import { layer, modelEnvironment, replayOptions } from "../../src/cli/Host.vibe"
 import { nodeProgram, smthrsCommand, smthrsWithToken } from "../../src/cli/Install.ts"
-import { Options, Progress } from "../../src/replay/index.ts"
+import { Options, Progress } from "../../src/replay/index.vibe"
 import { recorder } from "./repo.ts"
 
 const made: Array<string> = []

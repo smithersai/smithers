@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest"
-import { applyRefuses } from "../../src/contract/Command.ts"
-import { type Inventory, ownWorkspace, smithersBuild } from "../../src/contract/Inventory.ts"
-import { found, generatedMark, isGenerated, overwriteRefusal, refusal } from "../../src/native/index.ts"
-import { footer, uncommittedFooter, wrote } from "../../src/native/Workspace.ts"
+import { applyRefuses } from "../../src/contract/Command.vibe"
+import { type Inventory, ownWorkspace, smithersBuild } from "../../src/contract/Inventory.vibe"
+import { found, generatedMark, isGenerated, overwriteRefusal, refusal } from "../../src/native/index.vibe"
+import { footer, uncommittedFooter, wrote } from "../../src/native/Workspace.vibe"
 
 const inventory = (unsupported?: Inventory["unsupported"]): Inventory => ({
   version: 1,

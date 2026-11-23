@@ -16,8 +16,8 @@ import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { describe, expect, it } from "vitest"
-import type { Ci, Inventory as InventoryDocument, Job } from "../src/contract/Inventory.ts"
-import { files } from "../src/generate/index.ts"
+import type { Ci, Inventory as InventoryDocument, Job } from "../src/contract/Inventory.vibe"
+import { files } from "../src/generate/index.vibe"
 import { workspacePath } from "../src/generate/Render.ts"
 
 const cli = fileURLToPath(new URL("../../smithers/bin/smithers.mjs", import.meta.url))

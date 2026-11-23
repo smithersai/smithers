@@ -1,8 +1,8 @@
 /** Faulty host services for the unhappy paths, and a fixed scorer for fast mode. */
 import * as PlatformError from "effect/PlatformError"
 import { ChildProcessSpawner, make as makeSpawner } from "effect/process/ChildProcessSpawner"
-import type { RunRecord } from "../../src/contract/RunRecord.ts"
-import type { Row, Score } from "../../src/contract/Selection.ts"
+import type { RunRecord } from "../../src/contract/RunRecord.vibe"
+import type { Row, Score } from "../../src/contract/Selection.vibe"
 
 const denied = (method: string) =>
   PlatformError.systemError({ _tag: "PermissionDenied", module: "FileSystem", method })

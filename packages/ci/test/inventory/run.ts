@@ -2,9 +2,9 @@ import { spawnSync } from "node:child_process"
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
-import { type Job, script, shell, withVariant } from "../../src/contract/Inventory.ts"
-import type { Facts } from "../../src/inventory/Contexts.ts"
-import { readWorkflow } from "../../src/inventory/GithubActions.ts"
+import { type Job, script, shell, withVariant } from "../../src/contract/Inventory.vibe"
+import type { Facts } from "../../src/inventory/Contexts.vibe"
+import { readWorkflow } from "../../src/inventory/GithubActions.vibe"
 
 /** A repository made for one test, with the directory its jobs keep their state in. */
 export interface Repository {

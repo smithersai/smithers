@@ -9,9 +9,9 @@ import type { Digest } from "effect/crypto/Digest"
 import type { SecureRandom } from "effect/crypto/SecureRandom"
 import { Classifier, type Evaluator } from "@smthrs/model"
 import { Node } from "@smthrs/plan"
-import { Features, type Row } from "../contract/Selection.ts"
-import { failure, unavailable } from "./Failure.ts"
-import * as Scoring from "./Scoring.ts"
+import { Features, type Row } from "../contract/Selection.vibe"
+import { failure, unavailable } from "./Failure.vibe"
+import * as Scoring from "./Scoring.vibe"
 
 /**
  * The durable step: one request to the judge for one batch of feature sets.

@@ -9,7 +9,7 @@ import {
   reasonsText,
   variantsFailedHere,
   withoutFailedHere
-} from "../../src/contract/Inventory.ts"
+} from "../../src/contract/Inventory.vibe"
 
 const jobOf = (id: string, matrix: ReadonlyArray<Readonly<Record<string, string>>> = []): Job => ({
   id,

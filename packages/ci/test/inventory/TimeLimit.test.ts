@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { type Context, fields, type Scope, unknown, value, variable } from "../../src/inventory/Expression.ts"
-import { readLimit, secondsOf, within } from "../../src/inventory/TimeLimit.ts"
+import { readLimit, secondsOf, within } from "../../src/inventory/TimeLimit.vibe"
 
 const contexts: Record<string, Context> = {
   inputs: fields((name) => ({ minutes: value(45), label: value("45") })[name]),

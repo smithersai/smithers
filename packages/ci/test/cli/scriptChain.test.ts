@@ -21,7 +21,7 @@
  */
 import { spawnSync } from "node:child_process"
 import { afterAll, describe, expect, it } from "vitest"
-import type { ReplayReport } from "../../src/contract/ReplayReport.ts"
+import type { ReplayReport } from "../../src/contract/ReplayReport.vibe"
 import { corepackRelease, homeWith } from "./corepack.ts"
 import { bin, commit, git, observes, remove, skipBecause, spawn, temporary } from "./repo.ts"
 

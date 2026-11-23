@@ -9,7 +9,7 @@ import { existsSync, readFileSync } from "node:fs"
 import { join } from "node:path"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
 import { legsPath, notesPath, packIgnorePath, workflowPath, workspacePath } from "../../src/generate/Render.ts"
-import { seenIn } from "../../src/replay/Summary.ts"
+import { seenIn } from "../../src/replay/Summary.vibe"
 import {
   commit,
   dprintPlugins,

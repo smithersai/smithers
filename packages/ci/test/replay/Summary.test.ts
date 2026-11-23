@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
-import { type Ci, ci, type Inventory, type Job, longRunning } from "../../src/contract/Inventory.ts"
-import type { RunRecord, TargetResult } from "../../src/contract/RunRecord.ts"
-import type { TargetMap } from "../../src/contract/TargetMap.ts"
+import { type Ci, ci, type Inventory, type Job, longRunning } from "../../src/contract/Inventory.vibe"
+import type { RunRecord, TargetResult } from "../../src/contract/RunRecord.vibe"
+import type { TargetMap } from "../../src/contract/TargetMap.vibe"
 import {
   addRerun,
   blocked,
@@ -45,7 +45,7 @@ import {
   withCheckout,
   withoutCredentials,
   withoutFast
-} from "../../src/replay/Summary.ts"
+} from "../../src/replay/Summary.vibe"
 
 const step = (id: string, command: string, env: Readonly<Record<string, string>> = {}) => ({
   id,

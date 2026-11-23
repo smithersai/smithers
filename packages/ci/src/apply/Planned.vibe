@@ -14,10 +14,10 @@
  * @since 0.1.0
  */
 
-import { errorLine } from "../contract/Command.ts"
-import type { NotReplayed } from "../contract/Inventory.ts"
-import { type Failure, type GeneratedFile, writtenFiles } from "../contract/Parts.ts"
-import { path as targetMapPath, TargetMap } from "../contract/TargetMap.ts"
+import { errorLine } from "../contract/Command.vibe"
+import type { NotReplayed } from "../contract/Inventory.vibe"
+import { type Failure, type GeneratedFile, writtenFiles } from "../contract/Parts.vibe"
+import { path as targetMapPath, TargetMap } from "../contract/TargetMap.vibe"
 import { exec, git } from "../replay/Process.vibe"
 import { check } from "./Check.vibe"
 import { compiledCaches, Options } from "../replay/Replay.vibe"

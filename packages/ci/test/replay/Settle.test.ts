@@ -1,6 +1,6 @@
 import * as Effect from "effect/Effect"
 import { describe, expect, it } from "vitest"
-import { type TargetResult, verdictOf } from "../../src/contract/RunRecord.ts"
+import { type TargetResult, verdictOf } from "../../src/contract/RunRecord.vibe"
 import {
   failedAsBefore,
   failureMark,
@@ -9,7 +9,7 @@ import {
   remember,
   type RerunTally
 } from "../../src/replay/Failures.ts"
-import { maxReruns } from "../../src/replay/index.ts"
+import { maxReruns } from "../../src/replay/index.vibe"
 import { type Execute, settle } from "../../src/replay/Replay.vibe"
 
 const result = (label: string, status: TargetResult["status"]): TargetResult => ({

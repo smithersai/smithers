@@ -10,7 +10,7 @@ import { writeFileSync } from "node:fs"
 import { type AddressInfo, createServer } from "node:net"
 import { join } from "node:path"
 import { afterAll, describe, expect, it } from "vitest"
-import type { ReplayReport } from "../../src/contract/ReplayReport.ts"
+import type { ReplayReport } from "../../src/contract/ReplayReport.vibe"
 import { probe } from "../../src/replay/Jail.ts"
 import { bin, commit, git, remove, spawn, spawnWith, temporary } from "../cli/repo.ts"
 

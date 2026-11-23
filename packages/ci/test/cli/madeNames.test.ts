@@ -19,7 +19,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, symlinkSync } from "n
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { afterAll, describe, expect, it } from "vitest"
-import type { ReplayReport } from "../../src/contract/ReplayReport.ts"
+import type { ReplayReport } from "../../src/contract/ReplayReport.vibe"
 import { compiledCode } from "../../src/generate/Render.ts"
 import { probe } from "../../src/replay/Jail.ts"
 import { bin, commit, git, head, observes, remove, spawnWith } from "./repo.ts"

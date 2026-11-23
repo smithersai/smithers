@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import type { Host } from "../../src/contract/Inventory.ts"
+import type { Host } from "../../src/contract/Inventory.vibe"
 import {
   admits,
   defaultVariables,
@@ -15,7 +15,7 @@ import {
   standIns,
   startedVariables,
   variables
-} from "../../src/inventory/Contexts.ts"
+} from "../../src/inventory/Contexts.vibe"
 import { evaluate, type Evaluated } from "../../src/inventory/Expression.ts"
 import { commitMark, parentMark } from "../../src/inventory/Runner.ts"
 import { githubDefaultVariables } from "./githubDefaultVariables.ts"

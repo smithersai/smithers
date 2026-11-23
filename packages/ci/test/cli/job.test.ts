@@ -3,7 +3,7 @@
  * and with the usage exit code, an id that names no job and what it cannot measure with `--job`.
  */
 import { afterAll, describe, expect, it } from "vitest"
-import { exitCodes } from "../../src/contract/Command.ts"
+import { exitCodes } from "../../src/contract/Command.vibe"
 import { inProcess } from "./inProcess.vibe"
 import { parts } from "./parts.vibe"
 import { type Outcome, recorder, remove, repository, temporary } from "./repo.ts"

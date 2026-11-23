@@ -16,8 +16,8 @@ import { spawnSync } from "node:child_process"
 import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs"
 import { dirname, join, resolve } from "node:path"
 import { afterAll, describe, expect, it } from "vitest"
-import { shell } from "../../src/contract/Inventory.ts"
-import * as Script from "../../src/decompose/Script.ts"
+import { shell } from "../../src/contract/Inventory.vibe"
+import * as Script from "../../src/decompose/Script.vibe"
 import { remove, temporary } from "../cli/repo.ts"
 
 const made: Array<string> = []

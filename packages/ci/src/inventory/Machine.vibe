@@ -12,9 +12,9 @@
 
 import * as ChildProcess from "effect/process/ChildProcess"
 import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
-import type { Inventory, Job } from "../contract/Inventory.ts"
-import type { ReadInventory } from "../contract/Parts.ts"
-import { answers, type Question, questionsFor, withInstalled } from "./MachineChanges.ts"
+import type { Inventory, Job } from "../contract/Inventory.vibe"
+import type { ReadInventory } from "../contract/Parts.vibe"
+import { answers, type Question, questionsFor, withInstalled } from "./MachineChanges.vibe"
 import { read } from "./Read.vibe"
 import {
   type Found,

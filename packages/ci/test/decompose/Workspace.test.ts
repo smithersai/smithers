@@ -14,7 +14,7 @@ import {
   scanner,
   spineOf,
   type Workspace
-} from "../../src/decompose/Workspace.ts"
+} from "../../src/decompose/Workspace.vibe"
 
 const manifest = (name: string, extra: Record<string, unknown> = {}): string => JSON.stringify({ name, ...extra })
 

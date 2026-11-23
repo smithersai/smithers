@@ -212,7 +212,7 @@ describe("every docs page", () => {
 
 describe("fast mode's page", () => {
   it("names the two settings the program runs with", async () => {
-    const { defaultSettings } = await import("../src/contract/Selection.ts")
+    const { defaultSettings } = await import("../src/contract/Selection.vibe")
     expect(read("docs/fast-mode.md")).toContain(
       `runs with a score cutoff of ${defaultSettings.scoreCutoff} and a count cutoff of ${defaultSettings.countCutoff}.`
     )

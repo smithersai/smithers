@@ -22,8 +22,8 @@ import {
   type Watch,
   watchFor
 } from "./Stall.vibe"
-import { failure, withoutCredentials } from "./Summary.ts"
-import { gitArguments } from "./Git.ts"
+import { failure, withoutCredentials } from "./Summary.vibe"
+import { gitArguments } from "./Git.vibe"
 
 /**
  * The cache directory, kept between commits. Smithers build never reads it as

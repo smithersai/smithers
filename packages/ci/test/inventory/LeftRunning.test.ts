@@ -9,11 +9,11 @@ import {
   leftRunning,
   notReplayed,
   reasonsText
-} from "../../src/contract/Inventory.ts"
-import { reasonsSentence } from "../../src/contract/Reasons.ts"
-import { files } from "../../src/generate/index.ts"
+} from "../../src/contract/Inventory.vibe"
+import { reasonsSentence } from "../../src/contract/Reasons.vibe"
+import { files } from "../../src/generate/index.vibe"
 import { notesPath, workspacePath } from "../../src/generate/Render.ts"
-import { leftRunningIn, markLeftRunning, stepName } from "../../src/inventory/LeftRunning.ts"
+import { leftRunningIn, markLeftRunning, stepName } from "../../src/inventory/LeftRunning.vibe"
 
 const job = (commands: ReadonlyArray<string>, names: ReadonlyArray<string | undefined> = []): Job => ({
   id: "ci.yml:e2e",

@@ -18,8 +18,8 @@ import {
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, describe, expect, it } from "vitest"
-import type { Job } from "../../src/contract/Inventory.ts"
-import { cacheUse, handedOn, restoreScript, saveScript, shell, variables } from "../../src/inventory/Cache.ts"
+import type { Job } from "../../src/contract/Inventory.vibe"
+import { cacheUse, handedOn, restoreScript, saveScript, shell, variables } from "../../src/inventory/Cache.vibe"
 import { jobsOf, type Repository, repository, runJob } from "./run.ts"
 
 const file = ".github/workflows/ci.yml"

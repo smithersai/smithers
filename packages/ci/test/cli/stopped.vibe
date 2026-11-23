@@ -5,11 +5,11 @@
  * be removed from.
  */
 
-import type { ReplayParts, ReplayRequest } from "../../src/contract/Parts.ts"
+import type { ReplayParts, ReplayRequest } from "../../src/contract/Parts.vibe"
 import type { Parts } from "../../src/cli/Cli.vibe"
 import { type Environment, type Host, replayOptions } from "../../src/cli/Host.vibe"
-import { parts as onMain } from "../../src/cli/parts.ts"
-import { Progress, WorkDirectory } from "../../src/replay/index.ts"
+import { parts as onMain } from "../../src/cli/parts.vibe"
+import { Progress, WorkDirectory } from "../../src/replay/index.vibe"
 import { parts as answering, run as replayed } from "./parts.vibe"
 import { throwLater } from "./stray.ts"
 
