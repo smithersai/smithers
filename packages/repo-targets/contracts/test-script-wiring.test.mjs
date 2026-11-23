@@ -237,11 +237,17 @@ describe("test-file ownership", () => {
     const steps = workflow.jobs.test.steps.filter((step) => step.name === "Workspace targets")
     assert.equal(steps.length, 1)
     assert.match(steps[0].run, /^pnpm exec smthrs ci .* --shard \$\{\{ matrix\.shard \}\}\/9 /)
-    const selected = [...steps[0].run.matchAll(/'(\/\/packages\/[^']+:\*)'/g)].map((match) => match[1])
-    const expected = [...new Set(inventory.filter((row) => row.package.startsWith("packages/") &&
+    const selected = [...steps[0].run.matchAll(/'(\/\/packages\/[^']+)'/g)].map((match) => match[1])
+    const eligible = inventory.filter((row) => row.package.startsWith("packages/") &&
       row.kinds.some((kind) => ["build", "test", "lint", "docs"].includes(kind)))
-      .map((row) => `//${row.package}:*`))].sort()
+    // A package whose suite runs in parts (an exclusive Suite, as //packages/ci:test is) is
+    // selected label by label, its exclusive targets left out; see ci/shards.ts.
+    const split = new Set(eligible.filter((row) => row.rule === "Suite" && row.exclusive === true).map((row) => row.package))
+    const expected = [...new Set(eligible.flatMap((row) =>
+      !split.has(row.package) ? [`//${row.package}:*`] : row.exclusive === true ? [] : [row.label]
+    ))].sort()
     assert.ok(expected.includes("//packages/repo-targets:*"))
+    assert.ok(expected.includes("//packages/ci:lint") && !expected.includes("//packages/ci:*"))
     assert.deepEqual(selected.sort(), expected, "every package needs exactly one required CI owner")
     assert.deepEqual(advisoryFlags(workflow.jobs.repository), [], "repository")
   })

@@ -19,6 +19,7 @@ import * as Discovery from "../../smithers/agent/registry/src/Discovery.ts"
 import { inputPackage } from "../../smithers/build/build-cli/src/internal/InputPackage.ts"
 import { Package as StepCachePackage } from "../../smithers/flows/step-cache/PACKAGE.ts"
 import { BuildAndCheckTypeScriptPackage } from "../src/BuildAndCheckTypeScriptPackage.ts"
+import { WorkspaceSources } from "../src/WorkspaceSources.ts"
 import { plannedArgv, plannedCalls } from "./plan.ts"
 import { packageManager } from "./toolchain.ts"
 
@@ -449,6 +450,61 @@ describe("BuildAndCheckTypeScriptPackage dependencies", () => {
     }
   })
 
+  /**
+   * The keys package imports `@smthrs/canonical` and `@smthrs/crypto` and
+   * declared neither, so a confined lint could not resolve them and every
+   * result went unstored ("it passed, but failed when confined to its
+   * declared inputs", release run 44825537152). Omitted, `reads` is the
+   * package's own WorkspaceSources.
+   */
+  it("reads the workspace packages a member's manifest reaches when it names no reads", () => {
+    const targets = BuildAndCheckTypeScriptPackage({ packageManager, deps: [], cwd: "packages/smithers/flows/keys" })
+    const expected = Object.values(WorkspaceSources({ cwd: "packages/smithers/flows/keys" }))
+    const reached = (target: Target.AnyTarget) =>
+      Target.metadata(target).dependencies.filter(Filegroup.isFilegroup).map((group) => Target.metadata(group).attrs)
+    expect(expected.map((group) => (Target.metadata(group).attrs as { readonly cwd: string }).cwd))
+      .toEqual(["packages/smithers/flows/canonical", "packages/smithers/flows/crypto"])
+    for (const name of ["lib", "check", "test", "lint"] as const) {
+      expect(reached(targets[name])).toEqual(expected.map((group) => Target.metadata(group).attrs))
+    }
+    for (const name of ["fmt", "docs", "circular", "docsFiles"] as const) {
+      expect(Target.metadata(targets[name]).dependencies).toEqual([])
+    }
+  })
+
+  it("keeps the reads a member names, an empty list included", () => {
+    const group = Filegroup.Filegroup({ srcs: [Input.glob("src/**")], cwd: "packages/other" })
+    const named = BuildAndCheckTypeScriptPackage({ packageManager, cwd: "packages/smithers/flows/keys", reads: [group] })
+    expect(Target.metadata(named.lint).dependencies).toEqual([group])
+    const none = BuildAndCheckTypeScriptPackage({ packageManager, cwd: "packages/smithers/flows/keys", reads: [] })
+    expect(Target.metadata(none.lint).dependencies).toEqual([])
+  })
+
+  it("reads nothing for a directory that is no workspace package", () => {
+    const targets = BuildAndCheckTypeScriptPackage({ packageManager, cwd: "packages/example" })
+    expect(Target.metadata(targets.lint).dependencies).toEqual([])
+    expect(Target.metadata(targets.lib).dependencies).toEqual([])
+  })
+
+  it("runs a suite in parts as one exclusive Suite over a Vitest per part config", () => {
+    const targets = BuildAndCheckTypeScriptPackage({
+      packageManager,
+      cwd: "packages/example",
+      testParts: { testCli: { config: Input.file("vitest.cli.config.ts") }, testRest: { config: Input.file("vitest.rest.config.ts") } }
+    })
+    expect(Object.keys(targets.testParts)).toEqual(["testCli", "testRest"])
+    expect(Target.metadata(targets.testParts["testCli"]!).target).toBe("Vitest")
+    expect(attrsOf<Vitest.Attrs>(targets.testParts["testCli"]!).config).toEqual(Input.file("vitest.cli.config.ts"))
+    expect(Target.metadata(targets.test).dependencies).toEqual([targets.testParts["testCli"], targets.testParts["testRest"]])
+  })
+
+  it("runs the suite only on the hosts a package names, and on every host otherwise", () => {
+    const linux = BuildAndCheckTypeScriptPackage({ packageManager, cwd: "packages/example", testHosts: ["linux"] })
+    expect(attrsOf<Vitest.Attrs>(linux.test).hosts).toEqual(["linux"])
+    const every = BuildAndCheckTypeScriptPackage({ packageManager, cwd: "packages/example" })
+    expect(attrsOf<Vitest.Attrs>(every.test).hosts).toBeUndefined()
+  })
+
   it("keeps the self-lib edges when a package declares no dependencies", () => {
     const targets = BuildAndCheckTypeScriptPackage({ packageManager, deps: [], cwd: "packages/example" })
     expect(Target.metadata(targets.lib).dependencies).toEqual([])
@@ -481,16 +537,32 @@ describe("BuildAndCheckTypeScriptPackage lint and fmt gates", () => {
     expect(attrs.fix).toBe(false)
     // The jsdoc rules are declared key material even though only the first
     // config reaches the argv, so editing them re-keys the target.
-    // The flat config imports both shared rule sets and loads both tsconfigs.
+    // The flat config imports both shared rule sets.
     expect(attrs.configs).toEqual([
       Input.file("eslint.config.js"),
       Input.file("//eslint.jsdoc.js"),
-      Input.file("//eslint.invariants.js"),
-      Input.file("tsconfig.json"),
-      Input.file("tsconfig.test.json")
+      Input.file("//eslint.invariants.js")
     ])
-    // Typed rules resolve the test tsconfig's program, so the test tree keys the run without being linted.
-    expect(attrs.data).toEqual([Input.glob("test/**/*.{ts,vibe}")])
+    // Typed rules load both tsconfigs and resolve the test tsconfig's program,
+    // so the test tree keys the run without being linted.
+    expect(attrs.data).toEqual([Input.glob("test/**/*.{ts,vibe}"), Input.file("tsconfig.json"), Input.file("tsconfig.test.json")])
+  })
+
+  /**
+   * `//packages/smithers/flows/database:lint` names its own configs and left
+   * out both tsconfigs, so its confined run's project service found no
+   * project for any source and the result went unstored.
+   */
+  it("keeps the tsconfigs the typed rules load when a package names its own configs", () => {
+    const targets = BuildAndCheckTypeScriptPackage({
+      packageManager,
+      cwd: "packages/example",
+      eslintConfigs: [Input.file("eslint.config.js"), Input.file("//eslint.package.js")],
+      testTsconfig: Input.file("tsconfig.lint.json")
+    })
+    const attrs = attrsOf<EsLint.Attrs>(targets.lint)
+    expect(attrs.configs).toEqual([Input.file("eslint.config.js"), Input.file("//eslint.package.js")])
+    expect(attrs.data).toEqual([Input.glob("test/**/*.{ts,vibe}"), Input.file("tsconfig.json"), Input.file("tsconfig.lint.json")])
   })
 
   it("plans dprint in check mode over the sources and the test tree", () => {

@@ -354,7 +354,8 @@ const contractsLint = Smithers.EsLint({
     Smithers.glob("//packages/repo-targets/bun-coverage/**/*.mjs"),
     Smithers.glob("//packages/repo-targets/scripts/**/*.mjs")
   ],
-  configs: [Smithers.file("//eslint.config.js")],
+  // The root config imports the JSDoc rule set; a confined run sees only what is declared here.
+  configs: [Smithers.file("//eslint.config.js"), Smithers.file("//eslint.jsdoc.js")],
   deps: [],
   maxWarnings: 0,
   fix: false

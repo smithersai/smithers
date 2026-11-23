@@ -20,6 +20,7 @@ import { Typecheck } from "@smthrs/targets/Typecheck"
 import { Vitest } from "@smthrs/targets/Vitest"
 import { VitestBench } from "@smthrs/targets/VitestBench"
 import { CircularImports } from "./CircularImports.ts"
+import { reachedSources } from "./WorkspaceSources.ts"
 
 /** A host as `process.platform` names it. */
 type Host = "linux" | "darwin" | "win32"
@@ -47,11 +48,16 @@ export interface Options {
   /**
    * File groups whose files `lib`, `check`, `test` and `lint` read beside the
    * package's own: the sources of the other workspace packages it loads, from
-   * {@link WorkspaceSources}. The compiler reads their types, and the suite
-   * runs them. A confined run is shown them and its key covers them, so an
-   * edit to one reruns those four and nothing else.
+   * {@link WorkspaceSources}. The compiler reads their types, the lint
+   * resolves their imports, and the suite runs them. A confined run is shown
+   * them and its key covers them, so an edit to one reruns those four and
+   * nothing else.
    *
-   * @default []
+   * Omitted, a workspace package reads the {@link WorkspaceSources} of its
+   * own `cwd`, so a confined run sees every workspace package its manifest
+   * reaches; a directory that is no workspace package reads none.
+   *
+   * @default WorkspaceSources({ cwd }) for a workspace package, else []
    */
   readonly reads?: ReadonlyArray<Target.AnyTarget> | undefined
   readonly cwd: string
@@ -225,6 +231,16 @@ export interface PackageTargets {
 }
 
 /**
+ * The sources a package at `cwd` reads when its declaration names none: the
+ * {@link WorkspaceSources} of a workspace package, and nothing for a
+ * directory that is not one. Without them a confined run hides every
+ * workspace package the sources import, and the lint fails on
+ * `import/no-unresolved` though the unconfined run passed.
+ */
+const defaultReads = (cwd: string): ReadonlyArray<Target.AnyTarget> =>
+  Object.values(reachedSources({ cwd }) ?? {})
+
+/**
  * Expands one conventional package into `lib`, `check`, `test`, `lint`,
  * `fmt`, `docs`, `circular`, and `docsFiles` targets.
  *
@@ -264,7 +280,7 @@ export interface PackageTargets {
 export const BuildAndCheckTypeScriptPackage = (options: Options): PackageTargets => {
   const cwd = options.cwd
   const deps = options.deps ?? []
-  const reads = options.reads ?? []
+  const reads = options.reads ?? defaultReads(cwd)
   const sources = options.sources ?? Input.glob("src/**/*.{ts,vibe}")
   const tests = options.tests ?? Input.glob("test/**/*.test.{ts,vibe}")
   const testSources = options.testSources ?? Input.glob("test/**/*.{ts,vibe}")
@@ -275,14 +291,12 @@ export const BuildAndCheckTypeScriptPackage = (options: Options): PackageTargets
     ? Input.file("vitest.config.ts")
     : options.vitestConfig
   // Every file after the first is key material for what the flat config
-  // reads: the two shared rule sets it imports, and the tsconfigs its typed
-  // rules load.
+  // reads: the two shared rule sets it imports. The tsconfigs its typed rules
+  // load are the lint's data, so a package that names its own configs keeps them.
   const eslintConfigs = options.eslintConfigs ?? [
     Input.file("eslint.config.js"),
     Input.file("//eslint.jsdoc.js"),
-    Input.file("//eslint.invariants.js"),
-    tsconfig,
-    testTsconfig
+    Input.file("//eslint.invariants.js")
   ]
   const dprintConfig = options.dprintConfig ?? Input.file("dprint.json")
   // The published packages are dual: `PackageJson` derives an `import` and a
@@ -443,8 +457,10 @@ export const BuildAndCheckTypeScriptPackage = (options: Options): PackageTargets
     sources: [sources],
     deps: [...reads],
     configs: eslintConfigs,
-    // Typed rules load the test tsconfig's whole program, which includes the test tree.
-    data: [testSources],
+    // Typed rules load both tsconfigs and the test tsconfig's whole program,
+    // which includes the test tree. Without them a confined run's project
+    // service finds no project for any source.
+    data: [testSources, tsconfig, testTsconfig],
     maxWarnings: 0,
     fix: false,
     cwd

@@ -49,8 +49,11 @@ export const createPlanner = () => {
   }
   return {
     async plan(verb, pattern, workspace) {
+      // The child inherits none of the parent's flags (`--test` among them), but it loads
+      // workspace sources in-process, and `@smthrs/engine` has `.vibe` modules, so it needs
+      // the VibeLang loader the parent was started with.
       child ??= fork(new URL(import.meta.url), ["--worker"], {
-        execArgv: [], stdio: ["ignore", "inherit", "inherit", "ipc"],
+        execArgv: [`--import=${import.meta.resolve("vibelang/register")}`], stdio: ["ignore", "inherit", "inherit", "ipc"],
         env: { ...process.env, SMITHERS_CACHE_URL: "", SMITHERS_CACHE_TOKEN: "" }
       })
       try { return await requestPlan(child, { verb, pattern, workspace }) }

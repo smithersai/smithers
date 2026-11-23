@@ -12,8 +12,10 @@
  *
  * The reach is read from the manifests when the declaration is evaluated,
  * which every command does: the package's `dependencies`,
- * `devDependencies` and `peerDependencies`, then the `dependencies` and
- * `peerDependencies` of each package reached. Membership is
+ * `devDependencies`, `optionalDependencies` and `peerDependencies`, then the
+ * `dependencies`, `optionalDependencies` and `peerDependencies` of each
+ * package reached. pnpm installs and links an optional dependency like any
+ * other, so a source that imports one reads it. Membership is
  * `pnpm-workspace.yaml`'s, through `scripts/workspace-packages.mjs`.
  *
  * A file group that names a directory holding no file is refused where every
@@ -86,11 +88,24 @@ export interface Options {
  * @since 0.1.0
  */
 export const WorkspaceSources = (options: Options): Readonly<Record<string, ReturnType<typeof Filegroup>>> => {
+  const sources = reachedSources(options)
+  if (sources === undefined) throw new TypeError(`WorkspaceSources: ${options.cwd} is not a workspace package`)
+  return sources
+}
+
+/**
+ * {@link WorkspaceSources}, or `undefined` when `cwd` is not a workspace
+ * package, from one reading of the workspace's manifests.
+ *
+ * @category macros
+ * @since 0.1.0
+ */
+export const reachedSources = (options: Options): Readonly<Record<string, ReturnType<typeof Filegroup>>> | undefined => {
   const root = options.root ?? repoRoot
   const members = loadWorkspacePackages(root)
   const byName = new Map(members.map((member) => [member.name, member]))
   const own = members.find((member) => member.dir === options.cwd)
-  if (own === undefined) throw new TypeError(`WorkspaceSources: ${options.cwd} is not a workspace package`)
+  if (own === undefined) return undefined
   const reached = new Map<string, Member>()
   const visit = (manifest: Member["manifest"], fields: ReadonlyArray<string>): void => {
     for (const field of fields) {
@@ -98,11 +113,11 @@ export const WorkspaceSources = (options: Options): Readonly<Record<string, Retu
         const member = byName.get(name)
         if (member === undefined || member === own || reached.has(member.dir)) continue
         reached.set(member.dir, member)
-        visit(member.manifest, ["dependencies", "peerDependencies"])
+        visit(member.manifest, ["dependencies", "optionalDependencies", "peerDependencies"])
       }
     }
   }
-  visit(own.manifest, ["dependencies", "devDependencies", "peerDependencies"])
+  visit(own.manifest, ["dependencies", "devDependencies", "optionalDependencies", "peerDependencies"])
   const files = options.files ?? ["src/**", "bin/**", "package.json", "{tsconfig,jsconfig,vibe.config}.json"]
   const filesKey = files.join("\0")
   const present = (member: Member, file: string): boolean => {

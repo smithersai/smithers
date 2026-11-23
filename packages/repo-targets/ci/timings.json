@@ -154,6 +154,26 @@
       "label": "//packages/ci:testRest",
       "durationMs": 1835900,
       "exitCode": 0
+    },
+    {
+      "revision": "ced7fc40dc09c2a395dec3d6aafba03496e37b43",
+      "platform": "linux",
+      "node": "26.5.0",
+      "date": "2026-11-22",
+      "command": "pnpm exec smthrs lint //packages/repo-targets:coverageDirectories",
+      "label": "//packages/repo-targets:coverageDirectories",
+      "durationMs": 23413,
+      "exitCode": 0
+    },
+    {
+      "revision": "ced7fc40dc09c2a395dec3d6aafba03496e37b43",
+      "platform": "linux",
+      "node": "26.5.0",
+      "date": "2026-11-22",
+      "command": "pnpm exec smthrs test //packages/repo-targets:coverageDirectoriesUnit",
+      "label": "//packages/repo-targets:coverageDirectoriesUnit",
+      "durationMs": 3003,
+      "exitCode": 0
     }
   ],
   "method": "Maximum completed elapsed milliseconds per target, including failures, or an unfinished target's observed elapsed lower bound at cancellation. Service lifetimes are excluded from censored target costs. These observations are workload estimates, not upper wall-time bounds; no cache hits assumed.",
@@ -218,6 +238,8 @@
     "//packages/repo-targets:conflictMarkersUnit": 1900,
     "//packages/repo-targets:conformanceCheck": 1900,
     "//packages/repo-targets:contractsLint": 9171,
+    "//packages/repo-targets:coverageDirectories": 23413,
+    "//packages/repo-targets:coverageDirectoriesUnit": 3003,
     "//packages/repo-targets:dependencyBoundaries": 21100,
     "//packages/repo-targets:dependencyBoundariesUnit": 2200,
     "//packages/repo-targets:driftJob": 30900,

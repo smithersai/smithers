@@ -6,7 +6,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, describe, expect, it } from "vitest"
 import { repoRoot } from "../scripts/workspace-packages.mjs"
-import { WorkspaceSources } from "../src/WorkspaceSources.ts"
+import { reachedSources, WorkspaceSources } from "../src/WorkspaceSources.ts"
 
 const context: Target.ImplementationContext = { sourceFile: undefined, packageDirectory: undefined }
 const roots: Array<string> = []
@@ -64,6 +64,29 @@ describe("WorkspaceSources", () => {
       { base: "", source: Input.file("packages/runtime/package.json") },
       { base: "", source: Input.glob("packages/runtime/{tsconfig,jsconfig,vibe.config}.json") }
     ])
+  })
+
+  /**
+   * `@smthrs/migrate` lists every workspace package it imports under
+   * `optionalDependencies`. pnpm links them like any other, so a confined
+   * lint that was not shown them failed on `import/no-unresolved`.
+   */
+  it("reaches optional dependencies, the package's own and each reached package's", () => {
+    const root = workspace({
+      own: { optionalDependencies: { "@w/optional": "workspace:*" } },
+      optional: { optionalDependencies: { "@w/nested": "workspace:*" } },
+      nested: {}
+    })
+    expect(Object.keys(WorkspaceSources({ cwd: "packages/own", root }))).toEqual([
+      "sources-packages-nested",
+      "sources-packages-optional"
+    ])
+  })
+
+  it("answers undefined, not an error, for a directory that is not a workspace package", () => {
+    const root = workspace({ own: { dependencies: { "@w/runtime": "workspace:*" } }, runtime: {} })
+    expect(reachedSources({ cwd: "packages/missing", root })).toBeUndefined()
+    expect(Object.keys(reachedSources({ cwd: "packages/own", root })!)).toEqual(["sources-packages-runtime"])
   })
 
   it("takes the files a run reads of each package", () => {
