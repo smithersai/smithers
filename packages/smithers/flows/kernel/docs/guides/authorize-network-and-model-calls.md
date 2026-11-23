@@ -13,11 +13,11 @@ to reach the network whose contract never mentions permission.
 
 The decorator derives one capability per request:
 
-| Request                           | Action       |
-| --------------------------------- | ------------ |
-| `GET` or `HEAD`                   | `net:get`    |
-| Every other method                | `net:post`   |
-| Any method inside `withModelCall` | `model:call` |
+| Request                                                     | Action       |
+| ----------------------------------------------------------- | ------------ |
+| `GET` or `HEAD`                                             | `net:get`    |
+| Every other method                                          | `net:post`   |
+| Inside `withModelCall`, and the request asks for that model | `model:call` |
 
 The resource is the URL host, and the scheme decides how it is written:
 
@@ -39,21 +39,64 @@ the reason `"HTTP capability checks require an absolute, parseable URL"`.
 ## Mark a model call
 
 The same host answers many models, and a grant for one must not be a grant for
-the rest. Effect's tag has no room for an extra method, so the intent rides on
-a context reference:
+the rest. Effect's tag has no room for an extra method, so the caller claims
+the model around the request:
 
 ```ts
 import { HttpClient } from "@smthrs/kernel"
 
 const call = provider.chat(request).pipe(
-  HttpClient.withModelCall("anthropic:claude-sonnet-4-5")
+  HttpClient.withModelCall("claude-sonnet-4-5")
 )
 ```
 
-Every outgoing request inside `call` is checked as `model:call` on
-`<resource>/<model id>`, so the example asks for
-`api.anthropic.com/anthropic:claude-sonnet-4-5` rather than for the host in
-general. The reference is `HttpClient.ModelCall` if you need to read it.
+The claim is not trusted. For each request inside `call`, the guard reads the
+model out of the request itself and compares:
+
+```text
+claim             request sent                                  checked as
+----------------  --------------------------------------------  ---------------------------------------
+claude-haiku      POST /v1/messages  {"model":"claude-haiku"}   model:call  api.anthropic.com/claude-haiku
+claude-haiku      POST /v1/messages  {"model":"claude-opus"}    net:post    api.anthropic.com
+claude-haiku      GET  /v1/organizations/api_keys               net:get     api.anthropic.com
+claude-haiku      POST /v1/files     (no model)                 net:post    api.anthropic.com
+(ModelCall set    POST /v1/messages  {"model":"claude-haiku"}   net:post    api.anthropic.com
+ by hand)
+```
+
+So a grant for `api.anthropic.com/claude-haiku` sends Haiku requests and
+nothing else. `HttpClient.ModelCall` holds the claimed id for a transport or a
+trace to read; setting it yourself changes no check.
+
+### What counts as asking for a model
+
+`HttpClient.layer` reads the one top-level `model` string of a `POST`
+request's JSON body (`HttpClient.declaredModel`). That is where the Anthropic
+Messages, OpenAI Chat Completions and OpenAI Responses protocols name the
+model. A streamed body, a body that is not one JSON object, and a body that
+spells `model` twice all name no model.
+
+That default reads the body, not the path. A `POST` endpoint on the same host
+that accepts a top-level `model` field would pass it. Pin the endpoints to
+close that, and to read a protocol that names the model in a header:
+
+```ts
+import { HttpClient } from "@smthrs/kernel"
+
+const guarded = HttpClient.layerWith({
+  modelIdentity: HttpClient.modelEndpoints([
+    { url: "https://api.anthropic.com/v1/messages" },
+    { url: "https://ai-gateway.vercel.sh/v4/ai/evaluation-model", identity: HttpClient.headerModel("ai-model-id") }
+  ])
+})
+```
+
+With `modelEndpoints`, a request to any URL that is not listed names no model.
+The URL is compared exactly, query included. The identity is captured when the
+host builds the layer, so nothing a flow provides later replaces it.
+
+`authorizePreflight` authorizes `net:get` and `net:post` only. A model call is
+checked when it is sent.
 
 ## Every redirect hop is checked
 
@@ -68,6 +111,8 @@ Two halves guarantee it:
    client that ignores `RequestInit` must meet the precondition itself.
 2. By default, the decorator composes Effect's `followRedirects` **above** the guard, so
    every hop re-enters the guarded path and is checked exactly like hop zero.
+   A hop of a model call is read again: a redirected `GET` carries no body, so
+   it is checked as `net:get` on the new host.
 
 An authorized origin cannot lend its grant to another.
 

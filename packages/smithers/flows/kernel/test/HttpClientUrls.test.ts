@@ -2,6 +2,7 @@ import { describe, expect, it } from "@effect/vitest"
 import type * as Capability from "@smthrs/capability/Capability"
 import { PermissionDenied } from "@smthrs/capability/Permission"
 import { Effect, Option } from "effect"
+import * as HttpBody from "effect/http/HttpBody"
 import * as EffectHttpClient from "effect/http/HttpClient"
 import type * as EffectHttpClientError from "effect/http/HttpClientError"
 import * as HttpClientRequest from "effect/http/HttpClientRequest"
@@ -123,14 +124,18 @@ describe("HttpClient unparsable URLs", () => {
     )
   })
 
-  itEffect("names model:call for a rejected model request regardless of method", () => {
+  itEffect("names model:call for a rejected request that asks for the claimed model", () => {
     const calls: Array<string> = []
     const checks: Array<Capability.Capability> = []
     return provide(
       Effect.gen(function*() {
         const client = yield* EffectHttpClient.HttpClient
         const failure = yield* Effect.flip(
-          client.execute(HttpClientRequest.get(unparsable)).pipe(HttpClient.withModelCall("anthropic/claude"))
+          client.execute(
+            HttpClientRequest.post(unparsable, {
+              body: HttpBody.text(JSON.stringify({ model: "anthropic/claude" }), "application/json")
+            })
+          ).pipe(HttpClient.withModelCall("anthropic/claude"))
         )
         expect(denial(failure)).toMatchObject({ capability: { action: "model:call", resource: unparsable } })
         expect(checks).toEqual([])

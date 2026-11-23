@@ -60,6 +60,9 @@ const protectedClient = <A, E>(
     Effect.provideService(GrantStore, grants)
   )
 
+/** The JSON body a model protocol sends: the model it asks for, at the top level. */
+const asking = (model: string) => ({ body: HttpBody.text(JSON.stringify({ model }), "application/json") })
+
 const denial = (error: unknown) => Option.getOrThrow(HttpClient.fromHttpClientError(error as never))
 
 describe("HttpClient", () => {
@@ -71,7 +74,9 @@ describe("HttpClient", () => {
         return Effect.gen(function*() {
           const client = yield* EffectHttpClient.HttpClient
           const request = kind === "model"
-            ? client.post("https://api.test").pipe(HttpClient.withModelCall("x".repeat(length - "api.test/".length)))
+            ? client.post("https://api.test", asking("x".repeat(length - "api.test/".length))).pipe(
+              HttpClient.withModelCall("x".repeat(length - "api.test/".length))
+            )
             : client.get(kind === "host" ? `https://${"x".repeat(length)}` : "x".repeat(length))
           const error = denial(yield* Effect.flip(request))
           expect(error.code).toBe(length === 4096 ? "permission_denied" : "invalid_resolution")
@@ -171,9 +176,10 @@ describe("HttpClient", () => {
     const calls: Array<string> = []
     return Effect.gen(function*() {
       const client = yield* EffectHttpClient.HttpClient
-      yield* client.execute(HttpClientRequest.post("https://API.Example.Test/v1/messages")).pipe(
-        HttpClient.withModelCall("anthropic/claude")
-      )
+      yield* client.execute(HttpClientRequest.post("https://API.Example.Test/v1/messages", asking("anthropic/claude")))
+        .pipe(
+          HttpClient.withModelCall("anthropic/claude")
+        )
       expect(checks).toEqual([
         { action: "model:call", resource: "api.example.test/anthropic/claude" }
       ])
@@ -199,9 +205,11 @@ describe("HttpClient", () => {
 
       const failure = yield* Effect.gen(function*() {
         const client = yield* EffectHttpClient.HttpClient
-        yield* client.post("https://api.example.com/models").pipe(HttpClient.withModelCall("model-x"))
+        yield* client.post("https://api.example.com/models", asking("model-x")).pipe(
+          HttpClient.withModelCall("model-x")
+        )
         return yield* Effect.flip(
-          client.post("http://API.Example.COM/models").pipe(HttpClient.withModelCall("model-x"))
+          client.post("http://API.Example.COM/models", asking("model-x")).pipe(HttpClient.withModelCall("model-x"))
         )
       }).pipe((effect) => protectedClient(effect, host(calls), grants))
 

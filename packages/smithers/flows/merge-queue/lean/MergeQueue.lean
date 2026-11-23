@@ -8,6 +8,7 @@ import MergeQueue.Idempotent
 import MergeQueue.Policy
 import MergeQueue.PolicyLemmas
 import MergeQueue.Progress
+import MergeQueue.Measure
 import MergeQueue.NeverBlocks
 import MergeQueue.Rebase
 import MergeQueue.Compact

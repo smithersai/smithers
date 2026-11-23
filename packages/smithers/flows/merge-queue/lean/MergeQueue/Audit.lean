@@ -14,6 +14,7 @@ import MergeQueue.Idempotent
 import MergeQueue.Order
 import MergeQueue.Prediction
 import MergeQueue.Progress
+import MergeQueue.Measure
 import MergeQueue.NeverBlocks
 import MergeQueue.Rebase
 import MergeQueue.Compact

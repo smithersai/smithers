@@ -127,13 +127,12 @@ export { HttpClient } from "effect/http/HttpClient"
 export { make } from "effect/http/HttpClient"
 
 /**
- * The model identity an outgoing request is made on behalf of, if any.
+ * The model id the caller of an outgoing request said it is for, if any.
  *
- * A model call is not a general `net:*` effect: the same host answers many
- * models, and a grant for one must not be a grant for the rest. Effect's tag
- * has no room for an extra method, so the intent rides on a `Context`
- * reference instead — set it with {@link withModelCall} and the decorator asks
- * for `model:call` rather than `net:get`/`net:post`.
+ * This reference is information, never authority. {@link withModelCall} sets
+ * it so a transport or a trace can read the caller's intent; the guard does
+ * not read it. A value another module provides here changes nothing about how
+ * a request is checked: it stays `net:get` or `net:post`.
  *
  * @category references
  * @since 1.0.0-rc.0
@@ -144,14 +143,181 @@ export const ModelCall: Context.Reference<string | undefined> = Context.Referenc
 )
 
 /**
- * Runs `effect` with every outgoing request in it checked as a `model:call` on
- * `modelId` instead of as plain network access.
+ * A model-call claim. Only {@link withModelCall} mints one, and the guard
+ * accepts only the objects it minted: a look-alike handed to a reference with
+ * the same key is not in {@link claims} and is ignored.
+ */
+interface ModelClaim {
+  readonly modelId: string
+}
+
+const claims = new WeakSet<ModelClaim>()
+
+const Claim = Context.Reference<ModelClaim | undefined>("@smthrs/kernel/HttpClient/ModelClaim", {
+  defaultValue: () => undefined
+})
+
+/**
+ * Reads the model one outgoing request provably asks its endpoint for, or
+ * `undefined` when the request does not name one.
+ *
+ * The guard asks this of the exact request it is about to send, after the
+ * request was snapshotted, so the answer cannot go stale. It is trusted code:
+ * {@link layerWith} captures it when the host builds the layer, and nothing a
+ * caller provides later replaces it.
+ *
+ * @category model calls
+ * @since 1.0.0
+ */
+export type ModelIdentity = (request: HttpClientRequest.HttpClientRequest) => string | undefined
+
+/** How many keys of the JSON object `text` holds, at its top level, spell `key`. */
+const countTopLevelKey = (text: string, key: string): number => {
+  let depth = 0
+  let count = 0
+  let index = 0
+  while (index < text.length) {
+    const char = text[index]
+    if (char === "\"") {
+      let end = index + 1
+      while (text[end] !== "\"") end += text[end] === "\\" ? 2 : 1
+      if (depth === 1 && JSON.parse(text.slice(index, end + 1)) === key && /^\s*:/.test(text.slice(end + 1))) {
+        count += 1
+      }
+      index = end + 1
+    } else {
+      if (char === "{" || char === "[") depth += 1
+      else if (char === "}" || char === "]") depth -= 1
+      index += 1
+    }
+  }
+  return count
+}
+
+/**
+ * The default {@link ModelIdentity}: the `model` string at the top level of a
+ * `POST` request's JSON body, which is where the Anthropic Messages, OpenAI
+ * Chat Completions and OpenAI Responses protocols name the model.
+ *
+ * It answers `undefined` for every other method, for a body that is not
+ * in-memory bytes holding one JSON object, and for a body that spells `model`
+ * more than once at the top level, because two parsers may disagree about
+ * which spelling wins.
+ *
+ * It reads the body and not the path, so on its own it does not tell a model
+ * endpoint from another `POST` endpoint of the same host that accepts a
+ * `model` field. Pin the endpoints with {@link modelEndpoints} to close that.
+ *
+ * @category model calls
+ * @since 1.0.0
+ */
+export const declaredModel: ModelIdentity = (request) => {
+  if (request.method !== "POST" || request.body._tag !== "Uint8Array") return undefined
+  let text: string
+  let parsed: unknown
+  try {
+    text = new TextDecoder("utf-8", { fatal: true }).decode(request.body.body)
+    parsed = JSON.parse(text)
+  } catch {
+    return undefined
+  }
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return undefined
+  const model: unknown = Object.hasOwn(parsed, "model") ? (parsed as { readonly model: unknown }).model : undefined
+  return typeof model === "string" && countTopLevelKey(text, "model") === 1 ? model : undefined
+}
+
+/**
+ * A {@link ModelIdentity} for a protocol that names the model in a request
+ * header, such as the AI gateway's `ai-model-id`. A header says nothing about
+ * the endpoint, so use it only inside {@link modelEndpoints}.
+ *
+ * @category model calls
+ * @since 1.0.0
+ */
+export const headerModel = (name: string): ModelIdentity => (request) =>
+  request.method === "POST" ? request.headers[name.toLowerCase()] : undefined
+
+/** The exact URL a request goes to, query included and fragment dropped. */
+const exactUrl = (url: string, params: ReadonlyArray<readonly [string, unknown]>): string | undefined => {
+  try {
+    const parsed = new URL(url)
+    for (const [name, value] of params) {
+      // A redacted parameter cannot be compared, so the URL is not exact.
+      if (typeof value !== "string") return undefined
+      parsed.searchParams.append(name, value)
+    }
+    parsed.hash = ""
+    return parsed.href
+  } catch {
+    return undefined
+  }
+}
+
+/**
+ * A {@link ModelIdentity} that admits a model call only at the exact URLs a
+ * host lists, each read by its own `identity` ({@link declaredModel} when
+ * omitted). A request to any other URL names no model, whatever its body or
+ * headers say, so a `model:call` grant reaches the listed endpoints and
+ * nothing else on their hosts.
+ *
+ * @example
+ * ```ts
+ * import { HttpClient } from "@smthrs/kernel"
+ *
+ * const guarded = HttpClient.layerWith({
+ *   modelIdentity: HttpClient.modelEndpoints([
+ *     { url: "https://api.anthropic.com/v1/messages" },
+ *     { url: "https://ai-gateway.vercel.sh/v4/ai/evaluation-model", identity: HttpClient.headerModel("ai-model-id") }
+ *   ])
+ * })
+ * ```
+ *
+ * @category model calls
+ * @since 1.0.0
+ */
+export const modelEndpoints = (
+  endpoints: ReadonlyArray<{ readonly url: string; readonly identity?: ModelIdentity }>
+): ModelIdentity => {
+  const pinned = new Map<string | undefined, ModelIdentity>()
+  for (const endpoint of endpoints) {
+    const url = exactUrl(endpoint.url, [])
+    if (url === undefined) throw new TypeError("a model endpoint needs an absolute, parseable URL")
+    pinned.set(url, endpoint.identity ?? declaredModel)
+  }
+  return (request) => pinned.get(exactUrl(request.url, request.urlParams.params))?.(request)
+}
+
+/**
+ * Runs `effect` with each outgoing request in it offered to the guard as a
+ * `model:call` on `modelId` instead of as plain network access.
+ *
+ * The claim is an offer, not a grant of anything. The guard takes it only
+ * when the layer's {@link ModelIdentity} reads that same `modelId` out of the
+ * exact request being sent; then the check is `model:call` on
+ * `<resource>/<modelId>`. A request that names another model, no model, or
+ * goes somewhere the identity does not cover is checked as `net:get` or
+ * `net:post`, like any other request.
  *
  * @category references
  * @since 1.0.0-rc.0
  */
-export const withModelCall = (modelId: string) => <A, E, R>(effect: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> =>
-  Effect.provideService(effect, ModelCall, modelId)
+export const withModelCall = (modelId: string) => <A, E, R>(effect: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> => {
+  const claim: ModelClaim = Object.freeze({ modelId })
+  claims.add(claim)
+  return Effect.provideService(Effect.provideService(effect, ModelCall, modelId), Claim, claim)
+}
+
+/**
+ * The model id a request is admitted under: the claim's, when this module
+ * minted the claim and the trusted identity reads the same id out of the
+ * request itself.
+ */
+const admittedModel = (
+  request: HttpClientRequest.HttpClientRequest,
+  claim: ModelClaim | undefined,
+  identity: ModelIdentity
+): string | undefined =>
+  claim !== undefined && claims.has(claim) && identity(request) === claim.modelId ? claim.modelId : undefined
 
 /**
  * Projects a permission failure into the error channel Effect's `HttpClient`
@@ -302,11 +468,18 @@ const Admission = Context.Reference<PreflightAdmission | undefined>("@smthrs/ker
   defaultValue: () => undefined
 })
 
+/** The admissions {@link authorizePreflight} minted; the guard consumes no other. */
+const admissions = new WeakSet<PreflightAdmission>()
+
 /**
  * Authorizes a request before a caller performs network preflight work such as
  * DNS. The guarded transport consumes the same admission once, so a one-shot
  * grant is not spent twice. Admissions match both store identity and the exact
  * capability; redirects and retries require their own authorization.
+ *
+ * A preflight authorizes ordinary network access (`net:get` or `net:post`)
+ * only. A model call is admitted by the guarded layer itself, which holds the
+ * trusted {@link ModelIdentity}, so it is checked when it is sent.
  *
  * @category authorization
  * @since 1.0.0
@@ -317,11 +490,13 @@ export const authorizePreflight = <A, E, R>(
 ): Effect.Effect<A, E | HttpClientError.HttpClientError, R | GrantStore> =>
   Effect.gen(function*() {
     const store = yield* GrantStore
-    const capability = yield* Effect.withFiber((fiber) => capabilityFor(request, fiber.getRef(ModelCall))).pipe(
+    const capability = yield* capabilityFor(request, undefined).pipe(
       Effect.tap((capability) => store.check(capability)),
       Effect.mapError((error) => toHttpClientError({ request, error }))
     )
-    return yield* Effect.provideService(effect, Admission, { store, capability, consumed: false })
+    const admission: PreflightAdmission = { store, capability, consumed: false }
+    admissions.add(admission)
+    return yield* Effect.provideService(effect, Admission, admission)
   })
 
 /**
@@ -344,6 +519,75 @@ const manualRedirects = (context: Context.Context<never>): Context.Context<never
  * authorized first URL that redirects to an unauthorized one is denied at the
  * second hop instead of being fetched.
  *
+ * `modelIdentity` decides which requests are model calls. It is captured here,
+ * when the host builds the layer, and is the only thing that can turn a
+ * {@link withModelCall} claim into a `model:call` check: the claim is taken
+ * for one request, by this layer's own grant store, when the identity reads
+ * the claimed model out of that exact request. A redirect hop is a new
+ * request and is read again.
+ *
+ * @category layers
+ * @since 1.0.0
+ */
+export const layerWith = (options: { readonly modelIdentity: ModelIdentity }): Layer.Layer<
+  EffectHttpClient.HttpClient,
+  never,
+  EffectHttpClient.HttpClient | GrantStore
+> =>
+  Layer.effect(
+    EffectHttpClient.HttpClient,
+    Effect.gen(function*() {
+      const client = yield* EffectHttpClient.HttpClient
+      const grants = yield* GrantStore
+      const snapshotted = EffectHttpClient.mapRequestEffect(
+        client,
+        (request) =>
+          Effect.try({
+            try: () => snapshotRequest(request),
+            catch: () => invalidRequest(request)
+          })
+      )
+      const guarded = EffectHttpClient.transform(
+        snapshotted,
+        (execute, request) =>
+          Effect.withFiber((fiber) =>
+            capabilityFor(request, admittedModel(request, fiber.getRef(Claim), options.modelIdentity)).pipe(
+              Effect.flatMap((capability) => {
+                const admission = fiber.getRef(Admission)
+                if (
+                  admission !== undefined && admissions.has(admission) && !admission.consumed &&
+                  admission.store === grants
+                  && admission.capability.action === capability.action &&
+                  admission.capability.resource === capability.resource
+                ) {
+                  admission.consumed = true
+                  return Effect.void
+                }
+                return grants.check(capability)
+              }),
+              Effect.mapError((error: PermissionError) => toHttpClientError({ request, error })),
+              Effect.andThen(Effect.updateContext(execute, manualRedirects))
+            )
+          )
+      )
+      const followed = EffectHttpClient.followRedirects(guarded)
+      const result = EffectHttpClient.makeWith(
+        (request) =>
+          Effect.withFiber((fiber) =>
+            // Read caller policy before the guard forces manual transport.
+            Context.getOrUndefined(fiber.context, FetchHttpClient.RequestInit)?.redirect === "manual"
+              ? guarded.postprocess(request)
+              : followed.postprocess(request)
+          ),
+        guarded.preprocess
+      )
+      return supportsDestinationPinning(client) ? withDestinationPinning(result) : result
+    })
+  )
+
+/**
+ * {@link layerWith} reading model calls with {@link declaredModel}.
+ *
  * @category layers
  * @since 1.0.0-rc.0
  */
@@ -351,55 +595,7 @@ export const layer: Layer.Layer<
   EffectHttpClient.HttpClient,
   never,
   EffectHttpClient.HttpClient | GrantStore
-> = Layer.effect(
-  EffectHttpClient.HttpClient,
-  Effect.gen(function*() {
-    const client = yield* EffectHttpClient.HttpClient
-    const grants = yield* GrantStore
-    const snapshotted = EffectHttpClient.mapRequestEffect(
-      client,
-      (request) =>
-        Effect.try({
-          try: () => snapshotRequest(request),
-          catch: () => invalidRequest(request)
-        })
-    )
-    const guarded = EffectHttpClient.transform(
-      snapshotted,
-      (execute, request) =>
-        Effect.withFiber((fiber) =>
-          capabilityFor(request, fiber.getRef(ModelCall)).pipe(
-            Effect.flatMap((capability) => {
-              const admission = fiber.getRef(Admission)
-              if (
-                admission !== undefined && !admission.consumed && admission.store === grants
-                && admission.capability.action === capability.action &&
-                admission.capability.resource === capability.resource
-              ) {
-                admission.consumed = true
-                return Effect.void
-              }
-              return grants.check(capability)
-            }),
-            Effect.mapError((error: PermissionError) => toHttpClientError({ request, error })),
-            Effect.andThen(Effect.updateContext(execute, manualRedirects))
-          )
-        )
-    )
-    const followed = EffectHttpClient.followRedirects(guarded)
-    const result = EffectHttpClient.makeWith(
-      (request) =>
-        Effect.withFiber((fiber) =>
-          // Read caller policy before the guard forces manual transport.
-          Context.getOrUndefined(fiber.context, FetchHttpClient.RequestInit)?.redirect === "manual"
-            ? guarded.postprocess(request)
-            : followed.postprocess(request)
-        ),
-      guarded.preprocess
-    )
-    return supportsDestinationPinning(client) ? withDestinationPinning(result) : result
-  })
-)
+> = layerWith({ modelIdentity: declaredModel })
 
 /**
  * Address snapshot authorized for one web request. Host transports must reject

@@ -138,6 +138,112 @@ const awaitFile = (live: Session, path: string) =>
     return yield* Effect.die(new Error(`${path} never appeared in ${live.remoteId}`))
   })
 
+/** What a command wrote to stdout. */
+const said = (live: Session, command: string) =>
+  Effect.scoped(Effect.flatMap(
+    live.spawn(command, {}),
+    (running) => Stream.mkString(Stream.decodeText(running.stdout))
+  ))
+
+/** Prints the id the guest kernel drew when it booted: equal across a reattach, new after a restart. */
+const bootId = "cat /proc/sys/kernel/random/boot_id"
+
+/** The status and labels the vendor records for a machine. */
+const recorded = (name: string) =>
+  Effect.promise(() => Microsandbox.Sandbox.get(name)).pipe(
+    Effect.map((handle) => ({
+      status: handle.status,
+      labels: Object(Reflect.get(Object(JSON.parse(handle.configJson)), "labels")) as Record<string, string>
+    }))
+  )
+
+/** The vendor's error code for a machine it does not hold, or `"present"`. */
+const vendorCode = (name: string) =>
+  Effect.promise(() =>
+    Microsandbox.Sandbox.get(name).then(() => "present", (cause: unknown) => Reflect.get(Object(cause), "code"))
+  )
+
+/** How many creates and command starts the faulty SDK still refuses, and with what. */
+interface Faults {
+  create: number
+  starts: number
+  readonly error: () => Error
+}
+
+/** A failure the provider reads as one a fresh attempt may clear. */
+const transientFault = () => Object.assign(new Error("injected: agent client connection refused"), { code: "runtime" })
+
+/** A failure no fresh attempt clears. */
+const permanentFault = () => Object.assign(new Error("injected: the image is malformed"), { code: "imageInvalid" })
+
+/**
+ * The real SDK with a fault in front of it: while `faults` holds a count, a
+ * `create` or a command start is refused before it reaches the vendor, and
+ * every other call, and every call once the count is spent, is the vendor's
+ * own. Nothing is simulated: what succeeds here is a real microVM.
+ */
+const faultySdk = (
+  faults: Faults,
+  calls: { create: number; starts: number }
+): MicrosandboxSandbox.MicrosandboxSandboxOptions["sdk"] => {
+  type RealSandbox = Awaited<ReturnType<ReturnType<typeof Microsandbox.Sandbox.builder>["create"]>>
+  const guarded = (sandbox: RealSandbox): RealSandbox =>
+    new Proxy(sandbox, {
+      get: (target, key) => {
+        if (key === "execStreamWith") {
+          return (...args: Parameters<RealSandbox["execStreamWith"]>) => {
+            calls.starts++
+            if (faults.starts > 0) {
+              faults.starts--
+              return Promise.reject(faults.error())
+            }
+            return target.execStreamWith(...args)
+          }
+        }
+        const value: unknown = Reflect.get(target, key, target)
+        return typeof value === "function" ? value.bind(target) : value
+      }
+    })
+  type RealBuilder = ReturnType<typeof Microsandbox.Sandbox.builder>
+  const building = (builder: RealBuilder): RealBuilder => {
+    const proxy: RealBuilder = new Proxy(builder, {
+      get: (target, key) => {
+        if (key === "create") {
+          return async () => {
+            calls.create++
+            if (faults.create > 0) {
+              faults.create--
+              throw faults.error()
+            }
+            return guarded(await target.create())
+          }
+        }
+        const value: unknown = Reflect.get(target, key, target)
+        if (typeof value !== "function") return value
+        return (...args: ReadonlyArray<unknown>) => {
+          const result: unknown = Reflect.apply(value, target, args)
+          return result === target
+            ? proxy
+            : typeof Reflect.get(Object(result), "create") === "function"
+            ? building(result as RealBuilder)
+            : result
+        }
+      }
+    })
+    return proxy
+  }
+  return {
+    Sandbox: {
+      builder: (name) => building(Microsandbox.Sandbox.builder(name)),
+      get: (name) => Microsandbox.Sandbox.get(name),
+      listWith: (configure) => Microsandbox.Sandbox.listWith(configure as never)
+    },
+    Snapshot: Microsandbox.Snapshot,
+    defaultBackendKind: () => Microsandbox.defaultBackendKind(),
+    setDefaultBackend: (backend) => Microsandbox.setDefaultBackend(backend)
+  } as MicrosandboxSandbox.MicrosandboxSandboxOptions["sdk"]
+}
+
 describe.skipIf(!available)("MicrosandboxSandbox against a real microVM", () => {
   // Nothing this suite created may outlive it, whatever a case left behind.
   afterAll(() =>
@@ -420,6 +526,208 @@ describe.skipIf(!available)("MicrosandboxSandbox against a real microVM", () => 
         )
         expect(gone).toBe("sandboxNotFound")
         expect((yield* Effect.promise(() => Microsandbox.Sandbox.get(kept))).status).toBe("running")
+      }),
+    budget
+  )
+
+  it.live(
+    "reattaches a running sticky machine without rebooting it, and refuses another owner, network or ceiling",
+    () =>
+      Effect.gen(function*() {
+        const key = `${session}-reattach`
+        const first = yield* Effect.scoped(Effect.gen(function*() {
+          const live = yield* machine({ persistence: "sticky", holder: "first-holder" }).acquire(key)
+          yield* live.writeFile(`${live.workdir}/survivor.txt`, new TextEncoder().encode("on disk"))
+          return { name: live.remoteId, boot: yield* said(live, bootId) }
+        }))
+        expect(first.boot).toMatch(/^[0-9a-f-]{36}\n$/)
+        expect((yield* recorded(first.name)).status).toBe("running")
+
+        // Another process takes the machine over by the same key. The guest's
+        // boot id is the kernel's, drawn once per boot, so an equal one is the
+        // same running guest and not a restart that happened to keep the disk.
+        const second = machine({ persistence: "sticky", holder: "second-holder" })
+        const reattached = yield* Effect.scoped(Effect.gen(function*() {
+          const live = yield* second.acquire(key)
+          return { name: live.remoteId, seen: yield* said(live, `cat survivor.txt; echo; ${bootId}`) }
+        }))
+        expect(reattached).toEqual({ name: first.name, seen: `on disk\n${first.boot}` })
+        // The takeover is what the vendor now records, which is what `reap` reads.
+        expect((yield* recorded(first.name)).labels["smithers.holder"]).toBe("second-holder")
+
+        // A session that differs in owner, network or ceilings is refused, by
+        // the labels and network the real machine records.
+        const refusal = (options: Partial<MicrosandboxSandbox.MicrosandboxSandboxOptions>) =>
+          Effect.flip(Effect.scoped(machine({ persistence: "sticky", ...options }).acquire(key))).pipe(
+            Effect.map((error) => `${error.code} ${String(Reflect.get(Object(error.cause), "code"))}`)
+          )
+        expect(yield* refusal({ owner: `${owner}-stranger` })).toBe("unavailable ownership_mismatch")
+        expect(yield* refusal({ network: "open" })).toBe("unavailable network_mismatch")
+        expect(yield* refusal({ limits: { memoryMib: 2048 } })).toBe("unavailable limits_mismatch")
+
+        // No refusal touched the machine: same guest, same file, same holder.
+        const after = yield* Effect.scoped(Effect.flatMap(
+          second.acquire(key),
+          (live) => said(live, `cat survivor.txt; echo; ${bootId}`)
+        ))
+        expect(after).toBe(`on disk\n${first.boot}`)
+        expect((yield* recorded(first.name)).labels["smithers.holder"]).toBe("second-holder")
+
+        yield* second.destroy!({ id: key, remoteId: first.name })
+        expect(yield* vendorCode(first.name)).toBe("sandboxNotFound")
+      }),
+    budget
+  )
+
+  it.live(
+    "restarts a stopped sticky machine on its own disk, at acquire and under a held session, and no ephemeral one",
+    () =>
+      Effect.gen(function*() {
+        const key = `${session}-revive`
+        const provider = machine({ persistence: "sticky" })
+        const stop = (name: string) =>
+          Effect.gen(function*() {
+            yield* Effect.promise(() => Microsandbox.Sandbox.get(name).then((handle) => handle.stop()))
+            // The stop is the vendor's own, and it has to have happened: a
+            // machine still running would make everything below a reattach.
+            // An ephemeral machine is removed by its stop, which is as stopped as one gets.
+            for (let tries = 0; tries < 300; tries++) {
+              const status = yield* Effect.promise(() =>
+                Microsandbox.Sandbox.get(name).then((handle) => handle.status, () => "removed")
+              )
+              if (status !== "running") return
+              yield* elapsed(100)
+            }
+            return yield* Effect.die(new Error(`${name} never stopped`))
+          })
+        const first = yield* Effect.scoped(Effect.gen(function*() {
+          const live = yield* provider.acquire(key)
+          yield* live.writeFile(`${live.workdir}/survivor.txt`, new TextEncoder().encode("on disk"))
+          // Flushed, because a guest write the kernel still holds does not survive a stop.
+          return { name: live.remoteId, boot: yield* said(live, `sync; ${bootId}`) }
+        }))
+        yield* stop(first.name)
+
+        yield* Effect.scoped(Effect.gen(function*() {
+          // Acquire finds the machine stopped and starts it: a new boot, the old disk.
+          const live = yield* provider.acquire(key)
+          expect(live.remoteId).toBe(first.name)
+          const [file, boot] = (yield* said(live, `cat survivor.txt; echo; ${bootId}`)).split("\n")
+          expect(file).toBe("on disk")
+          expect(boot).toMatch(/^[0-9a-f-]{36}$/)
+          expect(boot).not.toBe(first.boot.trim())
+
+          // The machine stops again under the session that holds it. The
+          // next command on that same session brings it back.
+          yield* live.writeFile(`${live.workdir}/second.txt`, new TextEncoder().encode("also on disk"))
+          expect(yield* said(live, "sync; echo flushed")).toBe("flushed\n")
+          yield* stop(first.name)
+          const [files, again] = (yield* said(live, `cat survivor.txt second.txt; echo; ${bootId}`)).split("\n")
+          expect(files).toBe("on diskalso on disk")
+          expect(again).toMatch(/^[0-9a-f-]{36}$/)
+          expect([first.boot.trim(), boot]).not.toContain(again)
+          expect((yield* recorded(first.name)).status).toBe("running")
+          // File operations ride the revived machine as well.
+          yield* stop(first.name)
+          expect(new TextDecoder().decode(yield* live.readFile(`${live.workdir}/second.txt`))).toBe("also on disk")
+        }))
+
+        // The control: an ephemeral machine is never brought back, so the
+        // revival above is the sticky session's doing and not the vendor's.
+        yield* Effect.scoped(Effect.gen(function*() {
+          const live = yield* machine().acquire(`${session}-not-revived`)
+          expect(yield* said(live, "echo up")).toBe("up\n")
+          yield* stop(live.remoteId)
+          const failure = yield* Effect.flip(Effect.scoped(Effect.flatMap(
+            live.spawn("echo up", {}),
+            (running) => running.exitCode
+          )))
+          // The provider reports any command that never started this way; what
+          // matters is that it failed and that nothing started the machine again.
+          expect(failure.code).toBe("spawn_error")
+          expect(yield* vendorCode(live.remoteId)).toBe("sandboxNotFound")
+        }))
+      }),
+    budget
+  )
+
+  it.live(
+    "opens a real machine after transient vendor failures, gives up on a lasting or a permanent one, and leaves none",
+    () =>
+      Effect.gen(function*() {
+        const sandboxes = (label: string) =>
+          Effect.promise(() => Microsandbox.Sandbox.listWith((list) => list.label("smithers.case", label))).pipe(
+            Effect.map((page) => page.sandboxes.length)
+          )
+        const opening = (label: string, faults: Faults) => {
+          const calls = { create: 0, starts: 0 }
+          return {
+            calls,
+            acquire: machine({ sdk: faultySdk(faults, calls), labels: { ...labels, "smithers.case": label } })
+              .acquire(`${session}-${label}`)
+          }
+        }
+
+        // Two refusals, then the vendor's real create: the machine boots and runs.
+        const cleared = opening("cleared", { create: 2, starts: 0, error: transientFault })
+        const began = Date.now()
+        yield* Effect.scoped(Effect.gen(function*() {
+          const live = yield* cleared.acquire
+          // The two pauses were taken: 500 ms, then 2 s.
+          expect(Date.now() - began).toBeGreaterThanOrEqual(2_500)
+          expect(cleared.calls.create).toBe(3)
+          expect(yield* said(live, "echo up")).toBe("up\n")
+          expect(yield* sandboxes("cleared")).toBe(1)
+        }))
+
+        // A failure that outlasts both retries is reported, after exactly three tries.
+        const lasting = opening("lasting", { create: 3, starts: 0, error: transientFault })
+        const gaveUp = yield* Effect.flip(Effect.scoped(lasting.acquire))
+        expect(gaveUp.code).toBe("unavailable")
+        expect(lasting.calls.create).toBe(3)
+        expect(yield* sandboxes("lasting")).toBe(0)
+
+        // A failure a fresh attempt cannot clear is not tried again.
+        const permanent = opening("permanent", { create: 1, starts: 0, error: permanentFault })
+        const refused = yield* Effect.flip(Effect.scoped(permanent.acquire))
+        expect(refused.code).toBe("unavailable")
+        expect(permanent.calls.create).toBe(1)
+        expect(yield* sandboxes("permanent")).toBe(0)
+      }),
+    budget
+  )
+
+  it.live(
+    "runs a command once after a transient start failure on a healthy sticky machine, without rebooting it",
+    () =>
+      Effect.gen(function*() {
+        const faults: Faults = { create: 0, starts: 0, error: transientFault }
+        const calls = { create: 0, starts: 0 }
+        const sdk = faultySdk(faults, calls)
+        const once = "echo ran >> runs; wc -l < runs"
+        yield* Effect.scoped(Effect.gen(function*() {
+          const live = yield* machine({ sdk, persistence: "sticky" }).acquire(`${session}-reconnect`)
+          const boot = yield* said(live, bootId)
+          // The next start is refused before it reaches the guest. The guest
+          // itself is healthy, so the session reconnects instead of restarting.
+          const before = calls.starts
+          faults.starts = 1
+          expect(yield* said(live, `${once}; ${bootId}`)).toBe(`1\n${boot}`)
+          expect(faults.starts).toBe(0)
+          expect(calls.starts).toBe(before + 1)
+        }))
+        // The control: the same fault on an ephemeral machine is the caller's
+        // to see, and the machine it never reached still runs the next command.
+        yield* Effect.scoped(Effect.gen(function*() {
+          const live = yield* machine({ sdk }).acquire(`${session}-no-reconnect`)
+          faults.starts = 1
+          const failure = yield* Effect.flip(Effect.scoped(Effect.flatMap(
+            live.spawn(once, {}),
+            (running) => running.exitCode
+          )))
+          expect(Reflect.get(Object(failure.cause), "code")).toBe("runtime")
+          expect(yield* said(live, once)).toBe("1\n")
+        }))
       }),
     budget
   )

@@ -32,7 +32,10 @@ const keys = [
   "host-bundle",
   "neutral-limits",
   "session-reuse",
-  "open-network"
+  "open-network",
+  "closed-network",
+  "network-swap",
+  "forged-network"
 ].map(
   (name) => `sandbox-it-${process.pid}-${name}`
 )
@@ -64,6 +67,30 @@ const budget = 180_000
 // Exits 0 only when the guest reaches the public internet. busybox wget ships
 // in the image, so the probe runs on every machine this suite boots.
 const egressProbe = "wget -q -T 5 -O /dev/null http://example.com"
+
+// What the guest itself says about its network, needing no name service and no
+// far end that could be down: its interfaces, whether it has a default route,
+// and whether a TCP connection to a literal public address opens. Under
+// `--network none` that is loopback alone, no route, and a refused connect;
+// under the bridge it is `eth0`, a route, and an open one.
+const networkReport = "ls /sys/class/net | sort | tr '\\n' ' '; echo; ip route | grep -c '^default'; " +
+  "nc -z -w 5 1.1.1.1 80 >/dev/null 2>&1; echo connect=$?"
+
+/** What the engine records for a container: its network mode and the networks attached to it. */
+const engineNetwork = (name: string): string =>
+  spawnSync("docker", [
+    "container",
+    "inspect",
+    "--format",
+    "{{.HostConfig.NetworkMode}} {{range $network, $_ := .NetworkSettings.Networks}}{{$network}},{{end}}",
+    name
+  ], { encoding: "utf8" }).stdout.trim()
+
+const said = (session: Sandbox.Session, command: string) =>
+  Effect.scoped(Effect.flatMap(
+    session.spawn(command, {}),
+    (process) => Stream.mkString(Stream.decodeText(process.stdout))
+  ))
 
 // The skip has to be visible, and it has to name what is missing: a case that
 // silently disappears is indistinguishable from one that never existed, and one
@@ -113,6 +140,115 @@ describe.skipIf(!engineAvailable)("ContainerSandbox against a real engine", () =
       )
       expect(code).toBe(0)
     }).pipe(Effect.provide(platform)), budget)
+
+  it.effect(
+    "gives the default container loopback alone and the open one a route out, by the engine's record and the guest's",
+    () =>
+      Effect.gen(function*() {
+        const spawner = yield* ChildProcessSpawner
+        // The same report from the same image under both modes, in one test:
+        // a host with no route out fails the open half instead of passing the
+        // closed half for the wrong reason.
+        const observe = (network: "open" | undefined, key: string) =>
+          Effect.scoped(Effect.gen(function*() {
+            const session = yield* ContainerSandbox.make({ spawner, image, network }).acquire(key)
+            return { engine: engineNetwork(nameOf(key)), guest: yield* said(session, networkReport) }
+          }))
+        expect(yield* observe(undefined, keys[7]!)).toEqual({ engine: "none none,", guest: "lo \n0\nconnect=1\n" })
+        const open = yield* observe("open", keys[6]!)
+        expect(open.engine).toBe("bridge bridge,")
+        expect(open.guest).toMatch(/^(?:eth0 lo|lo eth0) \n1\nconnect=0\n$/)
+      }).pipe(Effect.provide(platform)),
+    budget
+  )
+
+  it.effect(
+    "never reattaches a leftover container that has a network when none was asked for",
+    () =>
+      Effect.gen(function*() {
+        const spawner = yield* ChildProcessSpawner
+        const key = keys[8]!
+        // A crashed run that opted in to the network leaves its container
+        // behind; a later run of the same key that names no network must not
+        // inherit it.
+        const leaked = yield* Scope.make()
+        yield* Effect.provideService(
+          ContainerSandbox.make({ spawner, image, network: "open" }).acquire(key),
+          Scope.Scope,
+          leaked
+        )
+        expect(engineNetwork(nameOf(key))).toBe("bridge bridge,")
+        const refused = yield* Effect.flip(Effect.scoped(ContainerSandbox.make({ spawner, image }).acquire(key)))
+        expect(refused.code).toBe("unavailable")
+        expect(refused.message).toBe(
+          `the container ${nameOf(key)} does not match the requested configuration or owner`
+        )
+        // The refusal took nothing over: the leftover is still its owner's to
+        // reattach, with the network it was created with.
+        expect(engineNetwork(nameOf(key))).toBe("bridge bridge,")
+        yield* Scope.close(leaked, Exit.void)
+      }).pipe(Effect.provide(platform)),
+    budget
+  )
+
+  it.effect(
+    "refuses a container that carries this session's fingerprint but was put on a network",
+    () =>
+      Effect.gen(function*() {
+        const spawner = yield* ChildProcessSpawner
+        const closed = ContainerSandbox.make({ spawner, image })
+        const key = keys[9]!
+        const name = nameOf(key)
+        // The fingerprint is a label anyone who can reach the engine can copy.
+        // Read the genuine one off a real acquire, then plant a container under
+        // the same name with that label, image and working directory, on the
+        // bridge. Only the engine's own record of the network tells them apart.
+        const fingerprint = yield* Effect.scoped(
+          Effect.as(
+            closed.acquire(key),
+            undefined
+          ).pipe(Effect.map(() =>
+            spawnSync("docker", [
+              "container",
+              "inspect",
+              "--format",
+              "{{index .Config.Labels \"smithers.dev/sandbox-fingerprint\"}}",
+              name
+            ], { encoding: "utf8" }).stdout.trim()
+          ))
+        )
+        expect(fingerprint).toMatch(/\S/)
+        const absent = () => spawnSync("docker", ["container", "inspect", name], { stdio: "ignore" }).status !== 0
+        for (let poll = 0; poll < 300 && !absent(); poll++) yield* Effect.sleep("100 millis")
+        expect(absent()).toBe(true)
+        const planted = spawnSync("docker", [
+          "run",
+          "--detach",
+          "--name",
+          name,
+          "--workdir",
+          "/workspace",
+          "--network",
+          "bridge",
+          "--label",
+          `smithers.dev/sandbox-fingerprint=${fingerprint}`,
+          image,
+          "sleep",
+          "infinity"
+        ], { encoding: "utf8" })
+        expect(planted.status).toBe(0)
+        const refused = yield* Effect.flip(Effect.scoped(closed.acquire(key)))
+        expect(refused.message).toBe(`the container ${name} does not match the requested configuration or owner`)
+        // The control: with the planted container gone, the same provider and
+        // key acquire a machine that reaches nothing.
+        spawnSync("docker", ["rm", "--force", name], { stdio: "ignore" })
+        const guest = yield* Effect.scoped(
+          Effect.flatMap(closed.acquire(key), (session) => said(session, networkReport))
+        )
+        expect(guest).toBe("lo \n0\nconnect=1\n")
+      }).pipe(Effect.provide(platform)),
+    budget
+  )
 
   it.effect("really places file IO and processes on the container's machine", () =>
     Effect.gen(function*() {

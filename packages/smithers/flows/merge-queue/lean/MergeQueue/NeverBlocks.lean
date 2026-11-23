@@ -128,4 +128,46 @@ theorem idle_means_every_change_is_probed {cfg : Config} {s : State} (idle : pla
   have := List.find?_eq_none.mp none c member
   simpa using this
 
+/-! ## What one run can add
+
+The queue's capacity has a ceiling. A run needs a free slot, and with no known
+failure a new run reaches at most `maxBatch` changes past the longest prefix
+already under test. So `maxRuns` slots put at most `maxRuns * maxBatch` changes
+under test past the target per CI duration, and no policy on these slots lands
+more than that. -/
+
+/-- **A speculative run adds at most `maxBatch` changes.** With no prefix known
+to fail, the run the policy starts has a free slot and takes at most
+`max maxBatch 1` ready changes beyond the longest prefix already under test. -/
+theorem speculation_reach {cfg : Config} {s : State} {count : Nat} (noFailure : s.shortestFailed = none)
+    (next : s.nextStart cfg = some count) :
+    s.pendingCount cfg < cfg.maxRuns
+      ∧ count ≤ s.longestUnfailed (s.ready.length + 1) + max cfg.maxBatch 1 := by
+  refine ⟨(State.nextStart_some next).1, ?_⟩
+  unfold State.nextStart at next
+  split at next
+  · cases next
+  · split at next
+    · cases next
+    · simp only [noFailure] at next
+      split at next
+      · cases next
+        omega
+      · cases next
+
+/-- **Nothing lands while every run fails.** A landing needs a green run, so a
+state whose runs have all failed takes no landing: the rate at which changes
+land has no lower bound that ignores how many of them fail. -/
+theorem all_failed_nothing_lands {cfg : Config} {s : State} (allFailed : ∀ r ∈ s.runs, failed r.results = true)
+    (run : RunId) : s.land cfg run = s := by
+  rcases s.land_cases cfg run with refused | ⟨_, eq⟩
+  · exact refused
+  · rw [eq]
+    rcases s.landNow_cases cfg run with refused | ⟨r, _, found, _, isGreen, _⟩
+    · exact refused
+    · have hasFailed := allFailed r (State.findRun_some found).1
+      simp only [green, Bool.and_eq_true, Bool.not_eq_true'] at isGreen
+      rw [hasFailed] at isGreen
+      cases isGreen.2
+
 end MergeQueue

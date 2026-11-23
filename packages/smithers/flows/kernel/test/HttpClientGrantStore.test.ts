@@ -1,6 +1,7 @@
 import { describe, expect, it } from "@effect/vitest"
 import { PermissionRequired } from "@smthrs/capability/Permission"
 import { Deferred, Effect, Fiber, Option } from "effect"
+import * as HttpBody from "effect/http/HttpBody"
 import * as EffectHttpClient from "effect/http/HttpClient"
 import * as HttpClientRequest from "effect/http/HttpClientRequest"
 import type * as HttpClientResponse from "effect/http/HttpClientResponse"
@@ -155,53 +156,59 @@ describe("HttpClient with a real GrantStore lifecycle", () => {
       })
     ))
 
-  itEffect("attends every hop of a redirecting model call with model authority", () =>
-    Effect.scoped(
-      Effect.gen(function*() {
-        const calls: Array<readonly [string, string]> = []
-        const raw = EffectHttpClient.make((request) =>
-          Effect.sync(() => {
-            calls.push([request.method, request.url])
-            return (request.url.includes("first.test")
-              ? { status: 302, headers: { location: "https://second.test/model" }, request }
-              : { status: 200, headers: {}, request }) as HttpClientResponse.HttpClientResponse
-          })
-        )
-        const store = yield* GrantStore.make({ runId: "run-model" }).pipe(
-          Effect.provide(Workspace.layer("/workspace"))
-        )
-
-        yield* provide(
-          Effect.gen(function*() {
-            const client = yield* EffectHttpClient.HttpClient
-            const request = yield* client.execute(
-              HttpClientRequest.post("https://first.test/model")
-            ).pipe(
-              HttpClient.withModelCall("provider/model"),
-              Effect.forkChild({ startImmediately: true })
-            )
-
-            const [first] = yield* awaitPending(store, 1)
-            expect(first).toMatchObject({
-              capability: { action: "model:call", resource: "first.test/provider/model" }
+  itEffect(
+    "attends a model call's first hop as model:call and its bodiless redirect hop as net:get",
+    () =>
+      Effect.scoped(
+        Effect.gen(function*() {
+          const calls: Array<readonly [string, string]> = []
+          const raw = EffectHttpClient.make((request) =>
+            Effect.sync(() => {
+              calls.push([request.method, request.url])
+              return (request.url.includes("first.test")
+                ? { status: 302, headers: { location: "https://second.test/model" }, request }
+                : { status: 200, headers: {}, request }) as HttpClientResponse.HttpClientResponse
             })
-            yield* store.reply(first!.requestId, "once")
+          )
+          const store = yield* GrantStore.make({ runId: "run-model" }).pipe(
+            Effect.provide(Workspace.layer("/workspace"))
+          )
 
-            const [second] = yield* awaitPending(store, 1)
-            expect(second).toMatchObject({
-              capability: { action: "model:call", resource: "second.test/provider/model" }
-            })
-            yield* store.reply(second!.requestId, "once")
+          yield* provide(
+            Effect.gen(function*() {
+              const client = yield* EffectHttpClient.HttpClient
+              const request = yield* client.execute(
+                HttpClientRequest.post("https://first.test/model", {
+                  body: HttpBody.text(JSON.stringify({ model: "provider/model" }), "application/json")
+                })
+              ).pipe(
+                HttpClient.withModelCall("provider/model"),
+                Effect.forkChild({ startImmediately: true })
+              )
 
-            expect((yield* Fiber.join(request)).status).toBe(200)
-            expect(calls).toEqual([
-              ["POST", "https://first.test/model"],
-              ["GET", "https://second.test/model"]
-            ])
-          }),
-          raw,
-          store
-        )
-      })
-    ))
+              const [first] = yield* awaitPending(store, 1)
+              expect(first).toMatchObject({
+                capability: { action: "model:call", resource: "first.test/provider/model" }
+              })
+              yield* store.reply(first!.requestId, "once")
+
+              const [second] = yield* awaitPending(store, 1)
+              expect(second).toMatchObject({
+                // The redirected GET carries no body, so it asks for no model.
+                capability: { action: "net:get", resource: "second.test" }
+              })
+              yield* store.reply(second!.requestId, "once")
+
+              expect((yield* Fiber.join(request)).status).toBe(200)
+              expect(calls).toEqual([
+                ["POST", "https://first.test/model"],
+                ["GET", "https://second.test/model"]
+              ])
+            }),
+            raw,
+            store
+          )
+        })
+      )
+  )
 })
