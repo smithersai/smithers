@@ -60,7 +60,7 @@ const summarized = Effect.gen(function*() {
 })
 ```
 
-- `threadId` restricts the pass to one thread; omit it to compact every thread.
+- `thread`, a `{ namespace, threadId }` pair, restricts the pass to one thread; omit it to compact every thread of every namespace.
 - `keepRecent` messages stay untouched, defaulting to 2. A thread with no more messages than that is skipped, and so is a thread whose only old message is a system message.
 - `maxMessagesPerSummary` bounds one summarizer call, defaulting to 1024 and at least 2. Longer histories compact in several windows, oldest first: each window becomes one summary, and the next window folds that summary in with the next oldest messages, so the thread ends with one summary. `deletedMessages` counts every deleted row, including folded summaries, so a summary id must differ per window; the default id does.
 - The summarizer receives the thread id, the old messages, and their rendered `role: text` lines, and answers the summary text.

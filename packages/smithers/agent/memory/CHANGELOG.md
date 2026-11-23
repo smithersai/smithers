@@ -16,6 +16,22 @@
 - `Recall.BankName`, and `Flows.MAX_REMEMBER_KEY_BYTES` and
   `MAX_REMEMBER_TEXT_BYTES`.
 
+### Changed
+
+- **Breaking:** note ids and thread ids are unique within a namespace instead
+  of globally, as fact keys already were (#4712). `GetNoteInput`,
+  `SetNoteStatusInput`, `SupersedeInput`, `GetThreadInput`, `DeleteThreadInput`,
+  `ListMessagesInput`, `AppendMessageInput`, `AppendMessageOnceInput`,
+  `CompactMessagesInput`, and the inputs of `messageStats` and `deleteMessages`
+  require `namespace`, and every statement filters on it. `appendMessage`
+  creates a missing thread in that namespace; threads earlier releases created
+  this way stay in `global:history`. `listThreadIds` is replaced by
+  `listThreadRefs`, which answers `{ namespace, threadId }`, and
+  `Maintenance.CompactionOptions.threadId` by `thread`, the same pair.
+  Migration `0005_namespace_keys` rebuilds `memory_notes`,
+  `memory_note_supersedes`, `memory_threads`, and `memory_messages` with the
+  namespace leading every primary and foreign key, keeping every row.
+
 ### Deprecated
 
 - `Maintenance.layerTtlGc` and `Maintenance.TtlGcScheduleOptions`. The layer

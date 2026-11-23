@@ -1,4 +1,5 @@
 import * as Dialect from "@smthrs/database/Dialect"
+import * as DatabaseMigrations from "@smthrs/database/Migrations"
 import * as TestDatabase from "@smthrs/database/test/TestDatabase"
 import { Effect, Exit, Layer } from "effect"
 import * as EffectDigest from "effect/crypto/Digest"
@@ -16,6 +17,24 @@ const testCrypto = Layer.succeed(EffectDigest.Digest)(EffectDigest.Digest.of({
     return Effect.map(this.digest(algorithm, data), Hex.encode)
   }
 })).pipe(Layer.merge(SecureRandom.layerWebCrypto))
+
+// The namespace every thread created by a bare append had before ids were scoped.
+const history = { kind: "global", id: "history" } as const
+
+// A database a release that shipped only the first `count` migrations left behind.
+const migratedThrough = (count: number) =>
+  DatabaseMigrations.run([{
+    ...Migrations.set,
+    migrations: Object.fromEntries(Object.entries(Migrations.set.migrations).slice(0, count))
+  }])
+
+const recorded = [
+  [7001, "memory_initial"],
+  [7002, "memory_indexes"],
+  [7003, "memory_fts_fold"],
+  [7004, "memory_note_lifecycle"],
+  [7005, "memory_namespace_keys"]
+]
 
 interface NameRow {
   readonly name: string
@@ -51,22 +70,31 @@ describe("memory migrations", () => {
         yield* sql`INSERT INTO memory_messages (id, thread_id, role, text, at_ms)
           VALUES ('shared', 'legacy-thread', 'user', 'legacy', 1)`
         const store = yield* MemoryStore.make
-        yield* store.appendMessage({ threadId: "new-thread", id: "shared", role: "assistant", text: "new", at: 2 })
+        yield* store.appendMessage({
+          namespace: history,
+          threadId: "new-thread",
+          id: "shared",
+          role: "assistant",
+          text: "new",
+          at: 2
+        })
         const table = yield* sql<{ readonly sql: string }>`SELECT sql FROM ${TestDatabase.catalog(sql)}
           WHERE type = 'table' AND name = 'memory_messages'`
         return {
           definition: table[0]?.sql,
           messages: yield* Effect.all([
-            store.listMessages({ threadId: "legacy-thread" }),
-            store.listMessages({ threadId: "new-thread" })
+            store.listMessages({ namespace: history, threadId: "legacy-thread" }),
+            store.listMessages({ namespace: history, threadId: "new-thread" })
           ])
         }
       }).pipe(Effect.provide(TestDatabase.sqliteLayer), Effect.provide(testCrypto))
     )
 
-    expect(result.definition).toMatch(/PRIMARY KEY\s*\(\s*thread_id\s*,\s*id\s*\)/iu)
+    expect(result.definition).toMatch(/PRIMARY KEY\s*\(namespace_kind, namespace_id, thread_id, id\)/iu)
     expect(result.definition).toContain("CHECK (length(id) > 0)")
-    expect(result.definition).toMatch(/FOREIGN KEY\s*\(thread_id\)\s+REFERENCES memory_threads\s*\(thread_id\)/iu)
+    expect(result.definition).toMatch(
+      /FOREIGN KEY\s*\(namespace_kind, namespace_id, thread_id\)\s+REFERENCES "?memory_threads"?\s*\(namespace_kind, namespace_id, thread_id\)/iu
+    )
     expect(result.messages).toEqual([
       [{ threadId: "legacy-thread", id: "shared", role: "user", text: "legacy", at: 1 }],
       [{ threadId: "new-thread", id: "shared", role: "assistant", text: "new", at: 2 }]
@@ -83,17 +111,9 @@ describe("memory migrations", () => {
         return { first, second, recorded }
       }).pipe(Effect.provide(TestDatabase.layer))
     )
-    expect(result.first).toEqual([[7001, "memory_initial"], [7002, "memory_indexes"], [7003, "memory_fts_fold"], [
-      7004,
-      "memory_note_lifecycle"
-    ]])
+    expect(result.first).toEqual(recorded)
     expect(result.second).toEqual([])
-    expect(result.recorded).toEqual([
-      { migration_id: 7001, name: "memory_initial" },
-      { migration_id: 7002, name: "memory_indexes" },
-      { migration_id: 7003, name: "memory_fts_fold" },
-      { migration_id: 7004, name: "memory_note_lifecycle" }
-    ])
+    expect(result.recorded).toEqual(recorded.map(([migration_id, name]) => ({ migration_id, name })))
   })
 
   // PostgreSQL FTS tables enabled before the fold carry a search column that
@@ -133,7 +153,8 @@ describe("memory migrations", () => {
       }).pipe(Effect.provide(TestMemory.layerWithDatabase))
     )
     expect(result.before).toEqual(result.postgres ? [] : ["menu"])
-    expect(result.applied).toEqual([[7003, "memory_fts_fold"], [7004, "memory_note_lifecycle"]])
+    // The namespace-key migration runs again here and leaves the scoped tables alone.
+    expect(result.applied).toEqual(recorded.slice(2))
     expect(result.after).toEqual([["menu"], ["menu"], ["menu"], ["menu"]])
     expect(result.indexes).toEqual(result.postgres ? ["memory_fts_flow_search"] : [])
   })
@@ -145,12 +166,11 @@ describe("memory migrations", () => {
     const result = await Effect.runPromise(
       Effect.gen(function*() {
         const sql = yield* Effect.service(SqlClient.SqlClient)
-        yield* Migrations.run
+        yield* migratedThrough(1)
         yield* sql`DROP INDEX memory_facts_expires_at_idx`
         yield* sql`DROP INDEX memory_note_supersedes_target_idx`
         yield* sql`CREATE INDEX memory_facts_expiry_idx
           ON memory_facts (updated_at_ms, ttl_ms) WHERE ttl_ms IS NOT NULL`
-        yield* sql`DELETE FROM flows_migrations WHERE migration_id >= 7002`
         const before = yield* sql<
           NameRow
         >`SELECT name FROM ${TestDatabase.catalog(sql)} WHERE type = 'index' AND name LIKE 'memory_facts_%'`
@@ -162,10 +182,7 @@ describe("memory migrations", () => {
       }).pipe(Effect.provide(TestDatabase.layer))
     )
     expect(result.before).toEqual(["memory_facts_expiry_idx"])
-    expect(result.applied).toEqual([[7002, "memory_indexes"], [7003, "memory_fts_fold"], [
-      7004,
-      "memory_note_lifecycle"
-    ]])
+    expect(result.applied).toEqual(recorded.slice(1))
     expect(result.after).toEqual(["memory_facts_expires_at_idx", "memory_note_supersedes_target_idx"])
   })
 
@@ -189,8 +206,10 @@ describe("memory migrations", () => {
             WHERE notes.namespace_kind = 'flow' AND notes.namespace_id = 'bank' AND notes.status = 'accepted'
               AND NOT EXISTS (
                 SELECT 1 FROM memory_note_supersedes edges
-                JOIN memory_notes superseder ON superseder.id = edges.superseder_id
-                WHERE edges.target_id = notes.id AND superseder.status = 'accepted')
+                JOIN memory_notes superseder ON superseder.namespace_kind = edges.namespace_kind
+                  AND superseder.namespace_id = edges.namespace_id AND superseder.id = edges.superseder_id
+                WHERE edges.namespace_kind = notes.namespace_kind AND edges.namespace_id = notes.namespace_id
+                  AND edges.target_id = notes.id AND superseder.status = 'accepted')
             ORDER BY notes.created_at_ms DESC, notes.id LIMIT 40`)
         }
       }).pipe(Effect.provide(TestDatabase.layer))
@@ -256,15 +275,12 @@ describe("memory migrations", () => {
     const result = await Effect.runPromise(
       Effect.gen(function*() {
         const sql = yield* SqlClient.SqlClient
-        yield* Migrations.run
-        yield* sql`ALTER TABLE memory_notes DROP COLUMN status_at_ms`
-        yield* sql`ALTER TABLE memory_notes DROP COLUMN accepted_todo`
-        yield* sql`DELETE FROM flows_migrations WHERE migration_id = 7004`
+        yield* migratedThrough(3)
         yield* sql`INSERT INTO memory_notes
         (id, namespace_kind, namespace_id, text, tags_json, provenance_json, status, created_at_ms)
         VALUES ('check:lint@review', 'flow', 'coding', 'Run lint', '[]', '{"runId":"learning-7"}', 'rejected', 12)`
         const store = yield* MemoryStore.make
-        return yield* store.getNote({ id: "check:lint@review" })
+        return yield* store.getNote({ namespace: { kind: "flow", id: "coding" }, id: "check:lint@review" })
       }).pipe(Effect.provide(TestDatabase.layer), Effect.provide(testCrypto))
     )
     expect(result).toEqual({

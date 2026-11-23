@@ -82,14 +82,15 @@ describe("MemoryStore", () => {
         metadata: { branch: "main" }
       })
       yield* store.appendMessage({
+        namespace,
         threadId: thread.id,
         id: "message-1",
         role: "user",
         text: "hello",
         at: 1
       })
-      const count = yield* store.countMessages({ threadId: thread.id })
-      const fetched = yield* store.getThread({ threadId: thread.id })
+      const count = yield* store.countMessages({ namespace, threadId: thread.id })
+      const fetched = yield* store.getThread({ namespace, threadId: thread.id })
       const threads = yield* store.listThreads({ namespace })
       yield* store.putNote({
         namespace,
@@ -98,9 +99,9 @@ describe("MemoryStore", () => {
         tags: [],
         provenance: {}
       })
-      const note = yield* store.getNote({ id: "get-note" })
-      const deletedThread = yield* store.deleteThread({ threadId: thread.id })
-      const missing = yield* store.getThread({ threadId: thread.id })
+      const note = yield* store.getNote({ namespace, id: "get-note" })
+      const deletedThread = yield* store.deleteThread({ namespace, threadId: thread.id })
+      const missing = yield* store.getThread({ namespace, threadId: thread.id })
       return {
         allFacts,
         deletedFact,
@@ -180,21 +181,21 @@ describe("MemoryStore", () => {
         yield* Effect.flip(store.putNote({ namespace, id: "n", text: "t", tags: overCap, provenance: {} })),
         yield* Effect.flip(store.putNote({ namespace, id: "", text: "t", tags: [], provenance: {} })),
         yield* Effect.flip(store.createThread({ namespace, id: "" })),
-        yield* Effect.flip(store.appendMessage({ threadId: "", id: "m", role: "user", text: "x", at: 0 })),
-        yield* Effect.flip(store.appendMessage({ threadId: "t", id: "", role: "user", text: "x", at: 0 })),
-        yield* Effect.flip(store.appendMessage({ threadId: "t", id: "m", role: "", text: "x", at: 0 })),
-        yield* Effect.flip(store.appendMessage({ threadId: "t", id: "m", role: "user", text: "x", at: -1 })),
+        yield* Effect.flip(store.appendMessage({ namespace, threadId: "", id: "m", role: "user", text: "x", at: 0 })),
+        yield* Effect.flip(store.appendMessage({ namespace, threadId: "t", id: "", role: "user", text: "x", at: 0 })),
+        yield* Effect.flip(store.appendMessage({ namespace, threadId: "t", id: "m", role: "", text: "x", at: 0 })),
+        yield* Effect.flip(store.appendMessage({ namespace, threadId: "t", id: "m", role: "user", text: "x", at: -1 })),
         yield* Effect.flip(store.getFact({ namespace, key: "" })),
         yield* Effect.flip(store.deleteFact({ namespace, key: "" })),
-        yield* Effect.flip(store.getThread({ threadId: "" })),
-        yield* Effect.flip(store.deleteThread({ threadId: "" })),
-        yield* Effect.flip(store.listMessages({ threadId: "" })),
-        yield* Effect.flip(store.countMessages({ threadId: "" })),
-        yield* Effect.flip(store.deleteMessages({ threadId: "", ids: ["a"] })),
-        yield* Effect.flip(store.getNote({ id: "" })),
-        yield* Effect.flip(store.setNoteStatus({ id: "", status: "accepted" })),
-        yield* Effect.flip(store.supersede({ supersederId: "", targetId: "t" })),
-        yield* Effect.flip(store.supersede({ supersederId: "s", targetId: "" }))
+        yield* Effect.flip(store.getThread({ namespace, threadId: "" })),
+        yield* Effect.flip(store.deleteThread({ namespace, threadId: "" })),
+        yield* Effect.flip(store.listMessages({ namespace, threadId: "" })),
+        yield* Effect.flip(store.countMessages({ namespace, threadId: "" })),
+        yield* Effect.flip(store.deleteMessages({ namespace, threadId: "", ids: ["a"] })),
+        yield* Effect.flip(store.getNote({ namespace, id: "" })),
+        yield* Effect.flip(store.setNoteStatus({ namespace, id: "", status: "accepted" })),
+        yield* Effect.flip(store.supersede({ namespace, supersederId: "", targetId: "t" })),
+        yield* Effect.flip(store.supersede({ namespace, supersederId: "s", targetId: "" }))
       ]
     }))
 
@@ -273,7 +274,7 @@ describe("MemoryStore", () => {
         })
         const store = yield* MemoryStore.make.pipe(Effect.provideService(SqlClient.SqlClient, opaqueSql))
         const failure = yield* Effect.flip(store.createThread({ id: "opaque", namespace }))
-        return { failure, thread: yield* store.getThread({ threadId: "opaque" }) }
+        return { failure, thread: yield* store.getThread({ namespace, threadId: "opaque" }) }
       }))
 
       expect(inserted).toBe(true)
@@ -400,18 +401,19 @@ describe("MemoryStore", () => {
       const result = await run(Effect.gen(function*() {
         const store = yield* MemoryStore.MemoryStore
         const source = { threadId: "thread", id: "source", role: "user", text: "original", at: 1 }
-        yield* store.appendMessage(source)
-        yield* store.deleteMessages({ threadId: "thread", ids: [source.id] })
+        yield* store.appendMessage({ namespace, ...source })
+        yield* store.deleteMessages({ namespace, threadId: "thread", ids: [source.id] })
         if (field !== "missing") {
-          yield* store.appendMessage({ ...source, [field]: field === "at" ? 2 : "changed" })
+          yield* store.appendMessage({ namespace, ...source, [field]: field === "at" ? 2 : "changed" })
         }
-        const before = yield* store.listMessages({ threadId: "thread" })
+        const before = yield* store.listMessages({ namespace, threadId: "thread" })
         const failure = yield* Effect.flip(store.compactMessages({
+          namespace,
           threadId: "thread",
           summary: { threadId: "thread", id: "summary", role: "system", text: "stale", at: 0 },
           sourceMessages: [source]
         }))
-        return { before, failure, after: yield* store.listMessages({ threadId: "thread" }) }
+        return { before, failure, after: yield* store.listMessages({ namespace, threadId: "thread" }) }
       }))
 
       expect(result.failure).toMatchObject({ code: "compaction_conflict", path: ["sourceMessages"] })
@@ -461,28 +463,29 @@ describe("MemoryStore", () => {
       ["listFacts", noop.listFacts({ namespace })],
       ["listAllFacts", noop.listAllFacts],
       ["createThread", noop.createThread({ namespace })],
-      ["getThread", noop.getThread({ threadId: "t" })],
+      ["getThread", noop.getThread({ namespace, threadId: "t" })],
       ["listThreads", noop.listThreads()],
-      ["deleteThread", noop.deleteThread({ threadId: "t" })],
-      ["appendMessage", noop.appendMessage({ threadId: "t", id: "m", role: "user", text: "x", at: 0 })],
-      ["appendMessageOnce", noop.appendMessageOnce({ threadId: "t", id: "m", role: "user", text: "x" })],
-      ["listMessages", noop.listMessages({ threadId: "t" })],
-      ["countMessages", noop.countMessages({ threadId: "t" })],
-      ["messageStats", noop.messageStats({ threadId: "t" })],
+      ["deleteThread", noop.deleteThread({ namespace, threadId: "t" })],
+      ["appendMessage", noop.appendMessage({ namespace, threadId: "t", id: "m", role: "user", text: "x", at: 0 })],
+      ["appendMessageOnce", noop.appendMessageOnce({ namespace, threadId: "t", id: "m", role: "user", text: "x" })],
+      ["listMessages", noop.listMessages({ namespace, threadId: "t" })],
+      ["countMessages", noop.countMessages({ namespace, threadId: "t" })],
+      ["messageStats", noop.messageStats({ namespace, threadId: "t" })],
       ["putNote", noop.putNote({ namespace, id: "n", text: "t", tags: [], provenance: {} })],
-      ["getNote", noop.getNote({ id: "n" })],
-      ["setNoteStatus", noop.setNoteStatus({ id: "n", status: "accepted" })],
-      ["supersede", noop.supersede({ supersederId: "s", targetId: "t" })],
+      ["getNote", noop.getNote({ namespace, id: "n" })],
+      ["setNoteStatus", noop.setNoteStatus({ namespace, id: "n", status: "accepted" })],
+      ["supersede", noop.supersede({ namespace, supersederId: "s", targetId: "t" })],
       ["listNotes", noop.listNotes({ namespace })],
       ["enableFts", noop.enableFts("flow")],
       ["searchFts", noop.searchFts({ namespace, query: "q" })],
       ["searchRows", noop.searchRows({ namespace })],
       ["deleteExpiredFacts", noop.deleteExpiredFacts],
-      ["listThreadIds", noop.listThreadIds],
-      ["deleteMessages", noop.deleteMessages({ threadId: "t", ids: ["m"] })],
+      ["listThreadRefs", noop.listThreadRefs],
+      ["deleteMessages", noop.deleteMessages({ namespace, threadId: "t", ids: ["m"] })],
       [
         "compactMessages",
         noop.compactMessages({
+          namespace,
           threadId: "t",
           summary: { threadId: "t", id: "s", role: "system", text: "x", at: 0 },
           sourceMessages: [{ threadId: "thread", id: "m", role: "user", text: "a", at: 0 }]
@@ -491,14 +494,14 @@ describe("MemoryStore", () => {
     ]
     const overridden = MemoryStore.makeNoop({
       getFact: () => Effect.succeed(undefined),
-      listThreadIds: Effect.succeed(["kept"])
+      listThreadRefs: Effect.succeed([{ namespace, threadId: "kept" }])
     })
 
     const messages = await Effect.runPromise(
       Effect.forEach(calls, ([name, effect]) => Effect.map(Effect.flip(effect), (error) => `${name}: ${error.message}`))
     )
     const kept = await Effect.runPromise(
-      Effect.all([overridden.getFact({ namespace, key: "k" }), overridden.listThreadIds])
+      Effect.all([overridden.getFact({ namespace, key: "k" }), overridden.listThreadRefs])
     )
     const stillUnavailable = await Effect.runPromise(
       Effect.flip(overridden.putFact({ namespace, key: "k", value: 1, provenance: {} }))
@@ -517,7 +520,7 @@ describe("MemoryStore", () => {
     )
 
     expect(messages).toEqual(calls.map(([name]) => `${name}: ${name} is unavailable`))
-    expect(kept).toEqual([undefined, ["kept"]])
+    expect(kept).toEqual([undefined, [{ namespace, threadId: "kept" }]])
     expect(stillUnavailable.message).toBe("putFact is unavailable")
     expect(layered.message).toBe("listAllFacts is unavailable")
     expect(layeredOverride).toEqual([])
@@ -600,7 +603,7 @@ describe("MemoryStore", () => {
       yield* sql`INSERT INTO memory_notes (
         id, namespace_kind, namespace_id, text, tags_json, provenance_json, status, created_at_ms
       ) VALUES ('bad-tags', 'flow', 'notes', 'text', '["vendor:x"]', '{}', 'accepted', 0)`
-      const storedTags = yield* Effect.flip(store.getNote({ id: "bad-tags" }))
+      const storedTags = yield* Effect.flip(store.getNote({ namespace: { kind: "flow", id: "notes" }, id: "bad-tags" }))
       yield* TestDatabase.checks(sql, false)
       yield* sql`INSERT INTO memory_facts (
         namespace_kind, namespace_id, fact_key, value_json, ttl_ms,
@@ -610,7 +613,9 @@ describe("MemoryStore", () => {
       yield* sql`INSERT INTO memory_threads (
         thread_id, namespace_kind, namespace_id, title, metadata_json, created_at_ms, updated_at_ms
       ) VALUES ('bad-thread', 'flow', 'threads', NULL, '{oops', 0, 0)`
-      const invalidMetadata = yield* Effect.flip(store.getThread({ threadId: "bad-thread" }))
+      const invalidMetadata = yield* Effect.flip(
+        store.getThread({ namespace: { kind: "flow", id: "threads" }, threadId: "bad-thread" })
+      )
       return [scalarProvenance, nullProvenance, storedTags, invalidJson, invalidMetadata]
     }))
 

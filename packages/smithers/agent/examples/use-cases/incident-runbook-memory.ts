@@ -388,7 +388,7 @@ const memorySteps = Layer.mergeAll(
   RatifyRule.toLayer(({ ruleNoteId, supersedes }) =>
     Effect.gen(function*() {
       const store = yield* MemoryStore.MemoryStore
-      yield* store.setNoteStatus({ id: ruleNoteId, status: "accepted" })
+      yield* store.setNoteStatus({ namespace, id: ruleNoteId, status: "accepted" })
       // ProposeRule persisted these edges with the pending note. Unlike live
       // namespace counts, that list is unchanged by acceptance or other writes.
       return { ratifiedNoteId: ruleNoteId, supersededCount: new Set(supersedes).size }

@@ -111,7 +111,7 @@ const securityReview = Smithers.SecurityReview({
       threat:
         "A caller holding one namespace reads, restatuses, or supersedes notes, facts, or threads of another namespace by guessing an id.",
       lookFor: [
-        "A SELECT, UPDATE, or DELETE keyed only by id, thread_id, or fact_key with no namespace_kind and namespace_id predicate (e.g. getNote, setNoteStatus).",
+        "A SELECT, UPDATE, or DELETE keyed only by id, thread_id, or fact_key with no namespace_kind and namespace_id predicate.",
         "A supersession edge or FTS or vector row written across namespaces."
       ],
       paths: [

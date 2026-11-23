@@ -46,7 +46,7 @@ describe("MemoryStore threads and messages", () => {
                 }
               })
             }
-            if (statement.includes("FROM memory_messages") && statement.includes("WHERE thread_id")) {
+            if (statement.includes("FROM memory_messages") && statement.includes("AND id =")) {
               return Effect.succeed([])
             }
             return Reflect.apply(target, thisArg, argumentsList)
@@ -54,6 +54,7 @@ describe("MemoryStore threads and messages", () => {
         })
         const store = yield* MemoryStore.make.pipe(Effect.provideService(SqlClient.SqlClient, inconsistentSql))
         const failure = yield* Effect.flip(store.appendMessage({
+          namespace,
           threadId: "unconfirmed",
           id: "message",
           role: "user",
@@ -63,8 +64,8 @@ describe("MemoryStore threads and messages", () => {
         const authoritative = yield* MemoryStore.MemoryStore
         return {
           failure,
-          thread: yield* authoritative.getThread({ threadId: "unconfirmed" }),
-          messages: yield* authoritative.listMessages({ threadId: "unconfirmed" })
+          thread: yield* authoritative.getThread({ namespace, threadId: "unconfirmed" }),
+          messages: yield* authoritative.listMessages({ namespace, threadId: "unconfirmed" })
         }
       }).pipe(Effect.provide(TestMemory.layerWithDatabase))
     )
@@ -82,10 +83,11 @@ describe("MemoryStore threads and messages", () => {
           { threadId: "paged", id: "b", role: "user", text: "b", at: 2 },
           { threadId: "paged", id: "c", role: "user", text: "c", at: 2 }
         ]
-      ) yield* store.appendMessage(message)
-      const first = yield* store.listMessages({ threadId: "paged", limit: 2 })
+      ) yield* store.appendMessage({ namespace, ...message })
+      const first = yield* store.listMessages({ namespace, threadId: "paged", limit: 2 })
       const last = first.at(-1)!
       const second = yield* store.listMessages({
+        namespace,
         threadId: "paged",
         limit: 2,
         cursor: { at: last.at, id: last.id }
@@ -100,10 +102,10 @@ describe("MemoryStore threads and messages", () => {
   it("appends ordered history and accepts an exact same-payload retry", async () => {
     const messages = await run(Effect.gen(function*() {
       const store = yield* MemoryStore.MemoryStore
-      yield* store.appendMessage({ threadId: "thread-1", id: "b", role: "assistant", text: "second", at: 2 })
-      yield* store.appendMessage({ threadId: "thread-1", id: "a", role: "user", text: "first", at: 1 })
-      yield* store.appendMessage({ threadId: "thread-1", id: "a", role: "user", text: "first", at: 1 })
-      return yield* store.listMessages({ threadId: "thread-1" })
+      yield* store.appendMessage({ namespace, threadId: "thread-1", id: "b", role: "assistant", text: "second", at: 2 })
+      yield* store.appendMessage({ namespace, threadId: "thread-1", id: "a", role: "user", text: "first", at: 1 })
+      yield* store.appendMessage({ namespace, threadId: "thread-1", id: "a", role: "user", text: "first", at: 1 })
+      return yield* store.listMessages({ namespace, threadId: "thread-1" })
     }))
 
     expect(messages).toEqual([
@@ -117,11 +119,11 @@ describe("MemoryStore threads and messages", () => {
       const store = yield* MemoryStore.MemoryStore
       const first = { threadId: "thread-1", id: "shared", role: "user", text: "first", at: 1 } as const
       const second = { threadId: "thread-2", id: "shared", role: "assistant", text: "second", at: 2 } as const
-      yield* store.appendMessage(first)
-      yield* store.appendMessage(second)
+      yield* store.appendMessage({ namespace, ...first })
+      yield* store.appendMessage({ namespace, ...second })
       return yield* Effect.all([
-        store.listMessages({ threadId: first.threadId }),
-        store.listMessages({ threadId: second.threadId })
+        store.listMessages({ namespace, threadId: first.threadId }),
+        store.listMessages({ namespace, threadId: second.threadId })
       ])
     }))
 
@@ -135,11 +137,11 @@ describe("MemoryStore threads and messages", () => {
     const failures = await run(Effect.gen(function*() {
       const store = yield* MemoryStore.MemoryStore
       const original = { threadId: "thread", id: "message", role: "user", text: "original", at: 1 } as const
-      yield* store.appendMessage(original)
+      yield* store.appendMessage({ namespace, ...original })
       return [
-        yield* Effect.flip(store.appendMessage({ ...original, role: "assistant" })),
-        yield* Effect.flip(store.appendMessage({ ...original, text: "changed" })),
-        yield* Effect.flip(store.appendMessage({ ...original, at: 2 }))
+        yield* Effect.flip(store.appendMessage({ namespace, ...original, role: "assistant" })),
+        yield* Effect.flip(store.appendMessage({ namespace, ...original, text: "changed" })),
+        yield* Effect.flip(store.appendMessage({ namespace, ...original, at: 2 }))
       ]
     }))
 
@@ -154,12 +156,12 @@ describe("MemoryStore threads and messages", () => {
     const result = await run(Effect.gen(function*() {
       const store = yield* MemoryStore.MemoryStore
       const bare = yield* store.createThread({ namespace })
-      const fetched = yield* store.getThread({ threadId: bare.id })
-      const duplicate = yield* Effect.flip(store.createThread({ id: bare.id, namespace: other, title: "ignored" }))
+      const fetched = yield* store.getThread({ namespace, threadId: bare.id })
+      const duplicate = yield* Effect.flip(store.createThread({ id: bare.id, namespace, title: "ignored" }))
       const all = yield* store.listThreads()
       const scoped = yield* store.listThreads({ namespace: other })
-      const ids = yield* store.listThreadIds
-      const missing = yield* store.deleteThread({ threadId: "absent" })
+      const ids = yield* store.listThreadRefs
+      const missing = yield* store.deleteThread({ namespace, threadId: "absent" })
       return { bare, fetched, duplicate, all, scoped, ids, missing }
     }))
 
@@ -177,7 +179,7 @@ describe("MemoryStore threads and messages", () => {
     })
     expect(result.all).toEqual([result.bare])
     expect(result.scoped).toEqual([])
-    expect(result.ids).toEqual([result.bare.id])
+    expect(result.ids).toEqual([{ namespace, threadId: result.bare.id }])
     expect(result.missing).toBe(false)
   })
 
@@ -191,7 +193,7 @@ describe("MemoryStore threads and messages", () => {
             const statement = Array.isArray(argumentsList[0]) ? argumentsList[0].join(" ") : ""
             if (statement.includes("INSERT INTO memory_threads")) {
               inserted = true
-            } else if (inserted && statement.includes("FROM memory_threads WHERE thread_id")) {
+            } else if (inserted && statement.includes("FROM memory_threads WHERE")) {
               return Effect.fail(new Error("injected thread read failure"))
             }
             return Reflect.apply(target, thisArg, argumentsList)
@@ -235,13 +237,13 @@ describe("MemoryStore threads and messages", () => {
   it("answers a thread's message count and text-size bounds in one read", async () => {
     const result = await run(Effect.gen(function*() {
       const store = yield* MemoryStore.MemoryStore
-      const empty = yield* store.messageStats({ threadId: "absent" })
-      yield* store.appendMessage({ threadId: "thread", id: "ascii", role: "user", text: "abc", at: 0 })
-      const ascii = yield* store.messageStats({ threadId: "thread" })
-      yield* store.appendMessage({ threadId: "thread", id: "emoji", role: "user", text: "é😀", at: 1 })
-      yield* store.appendMessage({ threadId: "other", id: "other", role: "user", text: "zzzz", at: 0 })
-      const mixed = yield* store.messageStats({ threadId: "thread" })
-      const invalid = yield* Effect.flip(store.messageStats({ threadId: "" }))
+      const empty = yield* store.messageStats({ namespace, threadId: "absent" })
+      yield* store.appendMessage({ namespace, threadId: "thread", id: "ascii", role: "user", text: "abc", at: 0 })
+      const ascii = yield* store.messageStats({ namespace, threadId: "thread" })
+      yield* store.appendMessage({ namespace, threadId: "thread", id: "emoji", role: "user", text: "é😀", at: 1 })
+      yield* store.appendMessage({ namespace, threadId: "other", id: "other", role: "user", text: "zzzz", at: 0 })
+      const mixed = yield* store.messageStats({ namespace, threadId: "thread" })
+      const invalid = yield* Effect.flip(store.messageStats({ namespace, threadId: "" }))
       return { empty, ascii, mixed, invalid }
     }))
 
@@ -255,32 +257,36 @@ describe("MemoryStore threads and messages", () => {
   it("counts, de-duplicates, chunks, and compacts messages at their boundaries", async () => {
     const result = await run(Effect.gen(function*() {
       const store = yield* MemoryStore.MemoryStore
-      const emptyCount = yield* store.countMessages({ threadId: "absent" })
-      const noIds = yield* store.deleteMessages({ threadId: "thread", ids: [] })
-      yield* store.appendMessage({ threadId: "thread", id: "m-0", role: "user", text: "a", at: 0 })
-      yield* store.appendMessage({ threadId: "thread", id: "m-899", role: "user", text: "b", at: 1 })
-      yield* store.appendMessage({ threadId: "thread", id: "m-900", role: "user", text: "c", at: 2 })
-      const duplicates = yield* store.deleteMessages({ threadId: "thread", ids: ["m-0", "m-0"] })
+      const emptyCount = yield* store.countMessages({ namespace, threadId: "absent" })
+      const noIds = yield* store.deleteMessages({ namespace, threadId: "thread", ids: [] })
+      yield* store.appendMessage({ namespace, threadId: "thread", id: "m-0", role: "user", text: "a", at: 0 })
+      yield* store.appendMessage({ namespace, threadId: "thread", id: "m-899", role: "user", text: "b", at: 1 })
+      yield* store.appendMessage({ namespace, threadId: "thread", id: "m-900", role: "user", text: "c", at: 2 })
+      const duplicates = yield* store.deleteMessages({ namespace, threadId: "thread", ids: ["m-0", "m-0"] })
       const chunked = yield* store.deleteMessages({
+        namespace,
         threadId: "thread",
         ids: Array.from({ length: 901 }, (_, index) => `m-${index}`)
       })
       const mismatched = yield* Effect.flip(store.compactMessages({
+        namespace,
         threadId: "thread",
         summary: { threadId: "other", id: "summary", role: "system", text: "s", at: 0 },
         sourceMessages: []
       }))
       const summaryOnly = yield* store.compactMessages({
+        namespace,
         threadId: "thread",
         summary: { threadId: "thread", id: "summary", role: "system", text: "s", at: 0 },
         sourceMessages: [{ threadId: "thread", id: "summary", role: "system", text: "s", at: 0 }]
       })
       const unknownThread = yield* Effect.flip(store.compactMessages({
+        namespace,
         threadId: "ghost",
         summary: { threadId: "ghost", id: "ghost-summary", role: "system", text: "s", at: 0 },
         sourceMessages: [{ threadId: "ghost", id: "ghost-message", role: "user", text: "s", at: 0 }]
       }))
-      const remaining = yield* store.countMessages({ threadId: "thread" })
+      const remaining = yield* store.countMessages({ namespace, threadId: "thread" })
       return { emptyCount, noIds, duplicates, chunked, mismatched, summaryOnly, unknownThread, remaining }
     }))
 
@@ -310,13 +316,14 @@ describe("MemoryStore threads and messages", () => {
     const result = await run(Effect.gen(function*() {
       const store = yield* MemoryStore.MemoryStore
       const source = { threadId: "thread", id: "source", role: "user", text: "original", at: 1 }
-      yield* store.appendMessage(source)
+      yield* store.appendMessage({ namespace, ...source })
       const outcome = yield* Effect.result(store.compactMessages({
+        namespace,
         threadId: "thread",
         summary: { threadId: "thread", id: "summary", role: "system", text: "s", at: 0, [field]: value },
         sourceMessages: [source]
       }))
-      return { outcome, source, messages: yield* store.listMessages({ threadId: "thread" }) }
+      return { outcome, source, messages: yield* store.listMessages({ namespace, threadId: "thread" }) }
     }))
 
     expect(result.outcome).toMatchObject({
@@ -330,19 +337,19 @@ describe("MemoryStore threads and messages", () => {
     const result = await run(Effect.gen(function*() {
       const store = yield* MemoryStore.MemoryStore
       const source = { threadId: "thread", id: "source", role: "user", text: "original", at: 1 }
-      yield* store.appendMessage(source)
+      yield* store.appendMessage({ namespace, ...source })
       const input = {
         threadId: "thread",
         summary: { threadId: "thread", id: "summary", role: "system", text: "s", at: 1 },
         sourceMessages: [source, source]
       }
-      const compact = store.compactMessages(input)
+      const compact = store.compactMessages({ namespace, ...input })
       input.threadId = "other"
       input.summary.text = "mutated"
       source.text = "mutated"
       input.sourceMessages.length = 0
       const deleted = yield* compact
-      return { deleted, messages: yield* store.listMessages({ threadId: "thread" }) }
+      return { deleted, messages: yield* store.listMessages({ namespace, threadId: "thread" }) }
     }))
 
     expect(result.deleted).toBe(1)
@@ -354,8 +361,9 @@ describe("MemoryStore threads and messages", () => {
       const store = yield* MemoryStore.MemoryStore
       const summary = { threadId: "thread", id: "summary", role: "system", text: "s", at: 0 }
       return [
-        yield* Effect.flip(store.compactMessages({ threadId: "", summary, sourceMessages: [] })),
+        yield* Effect.flip(store.compactMessages({ namespace, threadId: "", summary, sourceMessages: [] })),
         yield* Effect.flip(store.compactMessages({
+          namespace,
           threadId: "thread",
           summary,
           sourceMessages: [{ threadId: "other", id: "source", role: "user", text: "s", at: 0 }]
@@ -372,15 +380,20 @@ describe("MemoryStore threads and messages", () => {
   it("rejects an identical retry of a committed compaction", async () => {
     const result = await run(Effect.gen(function*() {
       const store = yield* MemoryStore.MemoryStore
-      yield* store.appendMessage({ threadId: "thread", id: "source", role: "user", text: "original", at: 1 })
+      yield* store.appendMessage({ namespace, threadId: "thread", id: "source", role: "user", text: "original", at: 1 })
       const input = {
         threadId: "thread",
         summary: { threadId: "thread", id: "summary", role: "system", text: "s", at: 1 },
-        sourceMessages: yield* store.listMessages({ threadId: "thread" })
+        sourceMessages: yield* store.listMessages({ namespace, threadId: "thread" })
       }
-      const deleted = yield* store.compactMessages(input)
-      const failure = yield* Effect.flip(store.compactMessages(input))
-      return { deleted, failure, summary: input.summary, messages: yield* store.listMessages({ threadId: "thread" }) }
+      const deleted = yield* store.compactMessages({ namespace, ...input })
+      const failure = yield* Effect.flip(store.compactMessages({ namespace, ...input }))
+      return {
+        deleted,
+        failure,
+        summary: input.summary,
+        messages: yield* store.listMessages({ namespace, threadId: "thread" })
+      }
     }))
 
     expect(result.deleted).toBe(1)
@@ -394,9 +407,10 @@ describe("MemoryStore threads and messages", () => {
   it("names an already-written summary as an idempotency conflict", async () => {
     const conflict = await run(Effect.gen(function*() {
       const store = yield* MemoryStore.MemoryStore
-      yield* store.appendMessage({ threadId: "thread", id: "m-0", role: "user", text: "a", at: 0 })
-      yield* store.appendMessage({ threadId: "thread", id: "summary", role: "system", text: "s", at: 1 })
+      yield* store.appendMessage({ namespace, threadId: "thread", id: "m-0", role: "user", text: "a", at: 0 })
+      yield* store.appendMessage({ namespace, threadId: "thread", id: "summary", role: "system", text: "s", at: 1 })
       return yield* Effect.flip(store.compactMessages({
+        namespace,
         threadId: "thread",
         summary: { threadId: "thread", id: "summary", role: "system", text: "s", at: 1 },
         sourceMessages: [{ threadId: "thread", id: "m-0", role: "user", text: "a", at: 0 }]

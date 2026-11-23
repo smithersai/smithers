@@ -76,7 +76,7 @@ describe("Embedding provider validation controls", () => {
               yield* sql`INSERT INTO memory_notes (
                 id, namespace_kind, namespace_id, text, tags_json, provenance_json, status, created_at_ms
               ) VALUES ('key', 'flow', 'bank', ${text}, '[]', '{}', 'accepted', ${updatedAtMs})
-              ON CONFLICT (id) DO UPDATE SET text = excluded.text`
+              ON CONFLICT (namespace_kind, namespace_id, id) DO UPDATE SET text = excluded.text`
               yield* projector.project({ bank: "flow-bank", recordKind: "note", recordId: "key", text, updatedAtMs })
             }).pipe(Effect.provideService(Embedding.Embedding, embedding))
           const scan = () =>

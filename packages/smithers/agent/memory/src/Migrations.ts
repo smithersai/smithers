@@ -13,6 +13,7 @@ import * as Layer from "effect/Layer"
 import { ftsFold } from "./internal/MemoryFtsFold.ts"
 import { indexes } from "./internal/MemoryIndexes.ts"
 import { initial } from "./internal/MemorySchema.ts"
+import { namespaceKeys } from "./internal/NamespaceKeys.ts"
 import { noteLifecycle } from "./internal/NoteLifecycle.ts"
 
 /**
@@ -28,7 +29,8 @@ export const set: DatabaseMigrations.MigrationSet = {
     "0001_initial": initial,
     "0002_indexes": indexes,
     "0003_fts_fold": ftsFold,
-    "0004_note_lifecycle": noteLifecycle
+    "0004_note_lifecycle": noteLifecycle,
+    "0005_namespace_keys": namespaceKeys
   }
 }
 

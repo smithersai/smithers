@@ -210,7 +210,7 @@ it.effect("counts the proposal's superseded lessons when acceptance already succ
           status: "pending",
           supersedes
         })
-        yield* store.setNoteStatus({ id: "rule/retry", status: "accepted" })
+        yield* store.setNoteStatus({ namespace, id: "rule/retry", status: "accepted" })
         yield* store.putNote({ namespace, id: "lesson/unrelated", text: "Other rule", tags: [], provenance: {} })
       }).pipe(Effect.provide(
         Layer.orDie(MemoryStore.layer).pipe(Layer.provideMerge(TestNodeRuntime.durableEngine(filename, "seed")))

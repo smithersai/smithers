@@ -143,10 +143,14 @@ export interface ListThreadsInput {
 /**
  * Input for an exact durable thread read.
  *
+ * A thread id is unique within its namespace, so every thread and message
+ * operation names the namespace and never reaches another one.
+ *
  * @category models
  * @since 0.1.0
  */
 export interface GetThreadInput {
+  readonly namespace: NamespaceInput
   readonly threadId: string
 }
 
@@ -157,6 +161,18 @@ export interface GetThreadInput {
  * @since 0.1.0
  */
 export interface DeleteThreadInput {
+  readonly namespace: NamespaceInput
+  readonly threadId: string
+}
+
+/**
+ * The identity of one durable thread: its namespace and its id within it.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export interface ThreadRef {
+  readonly namespace: Namespace.Namespace
   readonly threadId: string
 }
 
@@ -177,18 +193,23 @@ export interface Message {
 /**
  * Input for an idempotent history append.
  *
- * A message id is unique within its thread.
+ * A message id is unique within its thread, and the thread is the one with
+ * this id in `namespace`. An append to a thread that does not exist yet
+ * creates it in that namespace.
  *
  * @category models
  * @since 0.1.0
  */
-export type AppendMessageInput = Message
+export type AppendMessageInput = Message & { readonly namespace: NamespaceInput }
 
 /** An append whose timestamp defaults atomically to the first stored write.
  * @category models
  * @since 1.0.0
  */
-export type AppendMessageOnceInput = Omit<Message, "at"> & { readonly at?: number | undefined }
+export type AppendMessageOnceInput = Omit<Message, "at"> & {
+  readonly namespace: NamespaceInput
+  readonly at?: number | undefined
+}
 
 /**
  * Input for an ordered thread read.
@@ -197,6 +218,7 @@ export type AppendMessageOnceInput = Omit<Message, "at"> & { readonly at?: numbe
  * @since 0.1.0
  */
 export interface ListMessagesInput {
+  readonly namespace: NamespaceInput
   readonly threadId: string
   readonly limit?: number | undefined
   readonly cursor?: MessageCursor | undefined
@@ -230,12 +252,28 @@ export interface MessageCursor {
 }
 
 /**
+ * Input for deleting chosen messages of one thread.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export interface DeleteMessagesInput {
+  readonly namespace: NamespaceInput
+  readonly threadId: string
+  readonly ids: ReadonlyArray<string>
+}
+
+/**
  * Input for an exact note read.
+ *
+ * A note id is unique within its namespace; the same id in another namespace
+ * is a different note.
  *
  * @category models
  * @since 0.1.0
  */
 export interface GetNoteInput {
+  readonly namespace: NamespaceInput
   readonly id: string
 }
 
@@ -301,6 +339,7 @@ export interface PutNoteInput {
  * @since 0.1.0
  */
 export interface SetNoteStatusInput {
+  readonly namespace: NamespaceInput
   readonly id: string
   readonly status: NoteStatus
   /** Bind acceptance to one TODO; another TODO is an idempotency conflict. */
@@ -308,12 +347,13 @@ export interface SetNoteStatusInput {
 }
 
 /**
- * Input for a supersession edge.
+ * Input for a supersession edge between two notes of one namespace.
  *
  * @category models
  * @since 0.1.0
  */
 export interface SupersedeInput {
+  readonly namespace: NamespaceInput
   readonly supersederId: string
   readonly targetId: string
 }
@@ -436,6 +476,7 @@ export interface FtsRow extends SearchRow {
  * @since 0.1.0
  */
 export interface CompactMessagesInput {
+  readonly namespace: NamespaceInput
   readonly threadId: string
   readonly summary: Message
   /** Full rows supplied to the summarizer, checked again inside the write transaction. */
@@ -462,7 +503,7 @@ export interface Service {
   readonly appendMessageOnce: (input: AppendMessageOnceInput) => Effect.Effect<Message, MemoryError>
   readonly listMessages: (input: ListMessagesInput) => Effect.Effect<ReadonlyArray<Message>, MemoryError>
   readonly countMessages: (input: ListMessagesInput) => Effect.Effect<number, MemoryError>
-  readonly messageStats: (input: { readonly threadId: string }) => Effect.Effect<MessageStats, MemoryError>
+  readonly messageStats: (input: GetThreadInput) => Effect.Effect<MessageStats, MemoryError>
   readonly putNote: (input: PutNoteInput) => Effect.Effect<Note, MemoryError>
   readonly getNote: (input: GetNoteInput) => Effect.Effect<Note | undefined, MemoryError>
   readonly setNoteStatus: (input: SetNoteStatusInput) => Effect.Effect<void, MemoryError>
@@ -472,10 +513,8 @@ export interface Service {
   readonly searchFts: (input: SearchFtsInput) => Effect.Effect<ReadonlyArray<FtsRow>, MemoryError>
   readonly searchRows: (input: SearchRowsInput) => Effect.Effect<ReadonlyArray<SearchRow>, MemoryError>
   readonly deleteExpiredFacts: Effect.Effect<number, MemoryError>
-  readonly listThreadIds: Effect.Effect<ReadonlyArray<string>, MemoryError>
-  readonly deleteMessages: (
-    input: { readonly threadId: string; readonly ids: ReadonlyArray<string> }
-  ) => Effect.Effect<number, MemoryError>
+  readonly listThreadRefs: Effect.Effect<ReadonlyArray<ThreadRef>, MemoryError>
+  readonly deleteMessages: (input: DeleteMessagesInput) => Effect.Effect<number, MemoryError>
   readonly compactMessages: (input: CompactMessagesInput) => Effect.Effect<number, MemoryError>
 }
 
@@ -547,7 +586,7 @@ export const makeNoop = (overrides: Partial<Service> = {}): Service => {
     searchFts: () => unavailable("searchFts"),
     searchRows: () => unavailable("searchRows"),
     deleteExpiredFacts: unavailable("deleteExpiredFacts"),
-    listThreadIds: unavailable("listThreadIds"),
+    listThreadRefs: unavailable("listThreadRefs"),
     deleteMessages: () => unavailable("deleteMessages"),
     compactMessages: () => unavailable("compactMessages"),
     ...overrides

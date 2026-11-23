@@ -351,7 +351,7 @@ export const write = (
     const namespace = yield* Bank.parse(input.bank)
     const text = redact(input.text)
     const id = noteId(input.bank, text)
-    const held = yield* store.getNote({ id })
+    const held = yield* store.getNote({ namespace, id })
     if (held !== undefined) return held
     return yield* store.putNote({
       namespace,
@@ -365,10 +365,9 @@ export const write = (
         if (error.code !== "supersede_conflict") return yield* Effect.fail(error)
         // Another run may have inserted this normalized fact after our read.
         // Keep the store's creation-data conflict contract for unrelated notes.
-        const existing = yield* store.getNote({ id })
+        const existing = yield* store.getNote({ namespace, id })
         if (
-          existing !== undefined && existing.namespace.kind === namespace.kind &&
-          existing.namespace.id === namespace.id && normalize(existing.text) === normalize(text) &&
+          existing !== undefined && normalize(existing.text) === normalize(text) &&
           existing.tags.length === 1 && existing.tags[0] === "source:transcript"
         ) return existing
         return yield* Effect.fail(error)

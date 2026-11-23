@@ -17,11 +17,11 @@ describe("learning note lifecycle through the public SQL store", () => {
         status: "pending"
       })
       yield* TestClock.adjust(42)
-      yield* store.setNoteStatus({ id: "accepted", status: "accepted" })
-      const accepted = yield* store.getNote({ id: "accepted" })
+      yield* store.setNoteStatus({ namespace, id: "accepted", status: "accepted" })
+      const accepted = yield* store.getNote({ namespace, id: "accepted" })
       yield* TestClock.adjust(1000)
-      yield* store.setNoteStatus({ id: "accepted", status: "accepted", acceptedTodo: "T14" })
-      const bound = yield* store.getNote({ id: "accepted" })
+      yield* store.setNoteStatus({ namespace, id: "accepted", status: "accepted", acceptedTodo: "T14" })
+      const bound = yield* store.getNote({ namespace, id: "accepted" })
       return { accepted, bound }
     }))
     expect(result.accepted).toMatchObject({ status: "accepted", statusAtMs: 42 })
@@ -40,13 +40,13 @@ describe("learning note lifecycle through the public SQL store", () => {
         status: "pending"
       })
       yield* TestClock.adjust(1000)
-      yield* store.setNoteStatus({ id: original.id, status: "rejected" })
-      const dismissed = yield* store.getNote({ id: original.id })
+      yield* store.setNoteStatus({ namespace, id: original.id, status: "rejected" })
+      const dismissed = yield* store.getNote({ namespace, id: original.id })
       yield* TestClock.adjust(1000)
-      yield* store.setNoteStatus({ id: original.id, status: "rejected" })
-      const replay = yield* store.getNote({ id: original.id })
-      yield* store.setNoteStatus({ id: original.id, status: "pending" })
-      const reopened = yield* store.getNote({ id: original.id })
+      yield* store.setNoteStatus({ namespace, id: original.id, status: "rejected" })
+      const replay = yield* store.getNote({ namespace, id: original.id })
+      yield* store.setNoteStatus({ namespace, id: original.id, status: "pending" })
+      const reopened = yield* store.getNote({ namespace, id: original.id })
       return { original, dismissed, replay, reopened }
     }))
     expect(result.dismissed).toEqual({ ...result.original, status: "rejected", statusAtMs: 1000 })
@@ -66,15 +66,15 @@ describe("learning note lifecycle through the public SQL store", () => {
         status: "pending"
       })
       yield* TestClock.adjust(42)
-      yield* store.setNoteStatus({ id: "proposal", status: "accepted", acceptedTodo: "T14" })
-      const accepted = yield* store.getNote({ id: "proposal" })
+      yield* store.setNoteStatus({ namespace, id: "proposal", status: "accepted", acceptedTodo: "T14" })
+      const accepted = yield* store.getNote({ namespace, id: "proposal" })
       yield* TestClock.adjust(1000)
-      yield* store.setNoteStatus({ id: "proposal", status: "accepted", acceptedTodo: "T14" })
+      yield* store.setNoteStatus({ namespace, id: "proposal", status: "accepted", acceptedTodo: "T14" })
       const different = yield* Effect.flip(
-        store.setNoteStatus({ id: "proposal", status: "accepted", acceptedTodo: "T15" })
+        store.setNoteStatus({ namespace, id: "proposal", status: "accepted", acceptedTodo: "T15" })
       )
-      const dismiss = yield* Effect.flip(store.setNoteStatus({ id: "proposal", status: "rejected" }))
-      const replay = yield* store.getNote({ id: "proposal" })
+      const dismiss = yield* Effect.flip(store.setNoteStatus({ namespace, id: "proposal", status: "rejected" }))
+      const replay = yield* store.getNote({ namespace, id: "proposal" })
       return { accepted, different, dismiss, replay }
     }))
     expect(result.accepted).toMatchObject({ status: "accepted", acceptedTodo: "T14", statusAtMs: 42 })
@@ -105,8 +105,8 @@ describe("learning note lifecycle through the public SQL store", () => {
           { id: "proposal", status: "accepted" as const, acceptedTodo: "" },
           { id: "missing", status: "accepted" as const }
         ]
-      ) failures.push(yield* Effect.flip(store.setNoteStatus(input)))
-      return { original, failures, after: yield* store.getNote({ id: original.id }) }
+      ) failures.push(yield* Effect.flip(store.setNoteStatus({ namespace, ...input })))
+      return { original, failures, after: yield* store.getNote({ namespace, id: original.id }) }
     }))
     expect(result.failures.map((row) => row.code)).toEqual(["invalid_argument", "invalid_argument", "not_found"])
     expect(result.after).toEqual(result.original)

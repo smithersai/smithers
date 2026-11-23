@@ -33,7 +33,8 @@ it("retains facts, notes, messages, and FTS after the writing process exits", ()
         { migration_id: 7001, name: "memory_initial" },
         { migration_id: 7002, name: "memory_indexes" },
         { migration_id: 7003, name: "memory_fts_fold" },
-        { migration_id: 7004, name: "memory_note_lifecycle" }
+        { migration_id: 7004, name: "memory_note_lifecycle" },
+        { migration_id: 7005, name: "memory_namespace_keys" }
       ])
     } finally {
       db.close()

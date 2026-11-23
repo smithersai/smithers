@@ -69,8 +69,15 @@ export const make = (database: DatabaseService): {
 
   const notSupersededCondition = sql.literal(`NOT EXISTS (
     SELECT 1 FROM memory_note_supersedes edges
-    JOIN memory_notes superseder ON superseder.id = edges.superseder_id
-    WHERE edges.target_id = notes.id AND superseder.status = 'accepted')`)
+    JOIN memory_notes superseder ON superseder.namespace_kind = edges.namespace_kind
+      AND superseder.namespace_id = edges.namespace_id AND superseder.id = edges.superseder_id
+    WHERE edges.namespace_kind = notes.namespace_kind AND edges.namespace_id = notes.namespace_id
+      AND edges.target_id = notes.id AND superseder.status = 'accepted')`)
+
+  // A note id names a note only inside its namespace, so every statement
+  // keyed by an id carries this predicate too.
+  const inNamespace = (namespace: Namespace.Namespace): Fragment =>
+    sql`namespace_kind = ${namespace.kind} AND namespace_id = ${namespace.id}`
 
   const readNotes: ReadNotes = (input, recentFirst = false, start) =>
     Effect.gen(function*() {
@@ -139,10 +146,10 @@ export const make = (database: DatabaseService): {
           const inserted = yield* sql`INSERT INTO memory_notes (${sql.literal(CREATION_COLUMNS)}) VALUES (
             ${namespace.kind}, ${namespace.id}, ${input.id}, ${input.text}, ${tagsJson},
             ${provenanceJson}, ${status}, ${now}
-            ) ON CONFLICT (id) DO NOTHING`.raw
+            ) ON CONFLICT (namespace_kind, namespace_id, id) DO NOTHING`.raw
           const created = (yield* DurableWriter.affectedRows(inserted)) > 0
           const persisted = yield* sql<NoteRow>`SELECT ${columns}
-            FROM memory_notes WHERE id = ${input.id} LIMIT 1`
+            FROM memory_notes WHERE ${inNamespace(namespace)} AND id = ${input.id} LIMIT 1`
           if (persisted.length === 0) {
             return yield* Effect.fail(error("store", "inserted note could not be read back"))
           }
@@ -152,7 +159,6 @@ export const make = (database: DatabaseService): {
               yield* decodeJson(existing.provenance_json, "note provenance")
             )
             if (
-              existing.namespace_kind !== namespace.kind || existing.namespace_id !== namespace.id ||
               existing.text !== input.text || existing.tags_json !== tagsJson ||
               existingProvenance !== provenanceJson
             ) {
@@ -162,7 +168,7 @@ export const make = (database: DatabaseService): {
             }
             const persistedEdges = yield* sql<{ readonly target_id: string }>`SELECT target_id
               FROM memory_note_supersedes
-              WHERE superseder_id = ${input.id}
+              WHERE ${inNamespace(namespace)} AND superseder_id = ${input.id}
               ORDER BY target_id`
             const targets = persistedEdges.map((edge) => edge.target_id).sort(compareText)
             if (
@@ -177,9 +183,7 @@ export const make = (database: DatabaseService): {
             for (const targetId of supersedes) {
               const target = yield* sql<{ readonly id: string }>`
                 SELECT id FROM memory_notes
-                WHERE id = ${targetId}
-                  AND namespace_kind = ${namespace.kind}
-                  AND namespace_id = ${namespace.id}
+                WHERE ${inNamespace(namespace)} AND id = ${targetId}
                 LIMIT 1
               `
               if (target.length === 0) {
@@ -187,9 +191,11 @@ export const make = (database: DatabaseService): {
                   error("supersede_conflict", `superseded note "${targetId}" does not exist`)
                 )
               }
-              yield* sql`INSERT INTO memory_note_supersedes (superseder_id, target_id, created_at_ms)
-                VALUES (${input.id}, ${targetId}, ${now})
-                ON CONFLICT (superseder_id, target_id) DO NOTHING`
+              yield* sql`INSERT INTO memory_note_supersedes (
+                  namespace_kind, namespace_id, superseder_id, target_id, created_at_ms
+                )
+                VALUES (${namespace.kind}, ${namespace.id}, ${input.id}, ${targetId}, ${now})
+                ON CONFLICT (namespace_kind, namespace_id, superseder_id, target_id) DO NOTHING`
             }
             yield* Fts.replaceFtsRecord(database, namespace.kind, {
               recordId: input.id,
@@ -207,9 +213,10 @@ export const make = (database: DatabaseService): {
 
   const getNote: Service["getNote"] = (input) =>
     Effect.gen(function*() {
+      const { namespace } = yield* resolveNamespace(input.namespace)
       yield* validateNonEmpty(input.id, "note id", ["id"])
       const rows = yield* sql<NoteRow>`SELECT ${columns}
-        FROM memory_notes WHERE id = ${input.id} LIMIT 1`.pipe(
+        FROM memory_notes WHERE ${inNamespace(namespace)} AND id = ${input.id} LIMIT 1`.pipe(
         Effect.mapError(storeError("could not read memory note"))
       )
       return rows[0] === undefined ? undefined : yield* decodeNote(rows[0])
@@ -217,6 +224,8 @@ export const make = (database: DatabaseService): {
 
   const setNoteStatus: Service["setNoteStatus"] = (input) =>
     Effect.gen(function*() {
+      const { namespace } = yield* resolveNamespace(input.namespace)
+      const scoped = sql`${inNamespace(namespace)} AND id = ${input.id}`
       yield* validateNonEmpty(input.id, "note id", ["id"])
       if (input.acceptedTodo !== undefined) {
         yield* validateNonEmpty(input.acceptedTodo, "accepted TODO", ["acceptedTodo"])
@@ -228,11 +237,11 @@ export const make = (database: DatabaseService): {
       yield* database.write(Effect.gen(function*() {
         // A no-op update acquires the row lock on PostgreSQL as well as the
         // serialized SQLite writer, before reading the lifecycle binding.
-        const locked = yield* sql`UPDATE memory_notes SET status = status WHERE id = ${input.id}`.raw
+        const locked = yield* sql`UPDATE memory_notes SET status = status WHERE ${scoped}`.raw
         if ((yield* DurableWriter.affectedRows(locked)) === 0) {
           return yield* Effect.fail(error("not_found", `memory note "${input.id}" was not found`))
         }
-        const rows = yield* sql<NoteRow>`SELECT ${columns} FROM memory_notes WHERE id = ${input.id}`
+        const rows = yield* sql<NoteRow>`SELECT ${columns} FROM memory_notes WHERE ${scoped}`
         const row = rows[0]!
         if (
           row.accepted_todo !== null &&
@@ -251,12 +260,13 @@ export const make = (database: DatabaseService): {
         yield* sql`UPDATE memory_notes SET status = ${input.status},
           status_at_ms = ${row.status === input.status ? row.status_at_ms : now},
           accepted_todo = ${input.acceptedTodo ?? row.accepted_todo}
-          WHERE id = ${input.id}`.raw
+          WHERE ${scoped}`.raw
       })).pipe(Effect.mapError(storeError("could not update memory note status")))
     })
 
   const supersede: Service["supersede"] = (input) =>
     Effect.gen(function*() {
+      const { namespace } = yield* resolveNamespace(input.namespace)
       yield* validateNonEmpty(input.supersederId, "supersederId", ["supersederId"])
       yield* validateNonEmpty(input.targetId, "targetId", ["targetId"])
       if (input.supersederId === input.targetId) {
@@ -265,29 +275,20 @@ export const make = (database: DatabaseService): {
       const now = yield* Clock.currentTimeMillis
       yield* database.write(
         Effect.gen(function*() {
-          const rows = yield* sql<{
-            readonly id: string
-            readonly namespace_kind: Namespace.Kind
-            readonly namespace_id: string
-          }>`SELECT id, namespace_kind, namespace_id FROM memory_notes
-            WHERE id = ${input.supersederId} OR id = ${input.targetId}`
-          const found = new Set(rows.map((row) => row.id))
-          if (!found.has(input.supersederId) || !found.has(input.targetId)) {
+          // Both notes are looked up in the caller's namespace only, so an
+          // edge can never join notes of two namespaces.
+          const rows = yield* sql<{ readonly id: string }>`SELECT id FROM memory_notes
+            WHERE ${inNamespace(namespace)} AND (id = ${input.supersederId} OR id = ${input.targetId})`
+          if (rows.length < 2) {
             return yield* Effect.fail(
-              error("supersede_conflict", "both superseder and target notes must exist")
+              error("supersede_conflict", "both superseder and target notes must exist in the namespace")
             )
           }
-          const superseder = rows.find((row) => row.id === input.supersederId)!
-          const target = rows.find((row) => row.id === input.targetId)!
-          if (
-            superseder.namespace_kind !== target.namespace_kind ||
-            superseder.namespace_id !== target.namespace_id
-          ) {
-            return yield* Effect.fail(error("supersede_conflict", "superseder and target must share a namespace"))
-          }
-          yield* sql`INSERT INTO memory_note_supersedes (superseder_id, target_id, created_at_ms)
-            VALUES (${input.supersederId}, ${input.targetId}, ${now})
-            ON CONFLICT (superseder_id, target_id) DO NOTHING`
+          yield* sql`INSERT INTO memory_note_supersedes (
+              namespace_kind, namespace_id, superseder_id, target_id, created_at_ms
+            )
+            VALUES (${namespace.kind}, ${namespace.id}, ${input.supersederId}, ${input.targetId}, ${now})
+            ON CONFLICT (namespace_kind, namespace_id, superseder_id, target_id) DO NOTHING`
         })
       ).pipe(Effect.mapError(storeError("could not write memory supersession edge")))
     })

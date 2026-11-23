@@ -31,15 +31,18 @@ const mutations: ReadonlyArray<{
   readonly run: (store: MemoryStore.Service) => Effect.Effect<unknown, unknown>
 }> = [
   { name: "createThread", run: (store) => store.createThread({ namespace, id: "new-thread" }) },
-  { name: "deleteThread", run: (store) => store.deleteThread({ threadId: source.threadId }) },
-  { name: "appendMessage", run: (store) => store.appendMessage({ ...source, id: "new-message" }) },
+  { name: "deleteThread", run: (store) => store.deleteThread({ namespace, threadId: source.threadId }) },
+  { name: "appendMessage", run: (store) => store.appendMessage({ namespace, ...source, id: "new-message" }) },
   { name: "putNote", run: (store) => store.putNote({ ...note, id: "new-note", supersedes: [note.id] }) },
-  { name: "setNoteStatus", run: (store) => store.setNoteStatus({ id: note.id, status: "rejected" }) },
+  { name: "setNoteStatus", run: (store) => store.setNoteStatus({ namespace, id: note.id, status: "rejected" }) },
   { name: "deleteFact", run: (store) => store.deleteFact(fact) },
-  { name: "deleteMessages", run: (store) => store.deleteMessages({ threadId: source.threadId, ids: [source.id] }) },
+  {
+    name: "deleteMessages",
+    run: (store) => store.deleteMessages({ namespace, threadId: source.threadId, ids: [source.id] })
+  },
   {
     name: "compactMessages",
-    run: (store) => store.compactMessages({ threadId: source.threadId, sourceMessages: [source], summary })
+    run: (store) => store.compactMessages({ namespace, threadId: source.threadId, sourceMessages: [source], summary })
   },
   { name: "deleteExpiredFacts", run: (store) => store.deleteExpiredFacts }
 ]
@@ -52,7 +55,7 @@ describe("memory affected-row results", () => {
       yield* authoritative.putFact(fact)
       yield* authoritative.putFact({ ...fact, key: "expired", ttlMs: 0 })
       yield* authoritative.putNote(note)
-      yield* authoritative.appendMessage(source)
+      yield* authoritative.appendMessage({ namespace, ...source })
       const sql = yield* SqlClient.SqlClient
       const snapshot = () =>
         Effect.all([
@@ -87,22 +90,27 @@ describe("memory affected-row results", () => {
       const store = yield* MemoryStore.make.pipe(Effect.provideService(SqlClient.SqlClient, countedSql))
       yield* store.createThread({ namespace, id: source.threadId })
       yield* store.createThread({ namespace, id: source.threadId })
-      yield* store.appendMessage(source)
-      yield* store.appendMessage(source)
+      yield* store.appendMessage({ namespace, ...source })
+      yield* store.appendMessage({ namespace, ...source })
       yield* store.putNote(note)
       yield* store.putNote(note)
       yield* store.putNote({ ...note, id: "new-note", text: "replacement", supersedes: [note.id] })
-      yield* store.setNoteStatus({ id: "new-note", status: "rejected" })
-      const rejected = yield* store.getNote({ id: "new-note" })
+      yield* store.setNoteStatus({ namespace, id: "new-note", status: "rejected" })
+      const rejected = yield* store.getNote({ namespace, id: "new-note" })
       yield* store.putFact(fact)
       const deletedFact = yield* store.deleteFact(fact)
       const missingFact = yield* store.deleteFact(fact)
       yield* store.putFact({ ...fact, ttlMs: 0 })
       const expired = yield* store.deleteExpiredFacts
-      const compacted = yield* store.compactMessages({ threadId: source.threadId, sourceMessages: [source], summary })
-      const deletedMessages = yield* store.deleteMessages({ threadId: source.threadId, ids: [summary.id] })
-      const deletedThread = yield* store.deleteThread({ threadId: source.threadId })
-      const missingThread = yield* store.deleteThread({ threadId: source.threadId })
+      const compacted = yield* store.compactMessages({
+        namespace,
+        threadId: source.threadId,
+        sourceMessages: [source],
+        summary
+      })
+      const deletedMessages = yield* store.deleteMessages({ namespace, threadId: source.threadId, ids: [summary.id] })
+      const deletedThread = yield* store.deleteThread({ namespace, threadId: source.threadId })
+      const missingThread = yield* store.deleteThread({ namespace, threadId: source.threadId })
       return {
         rejected: rejected?.status,
         deletedFact,

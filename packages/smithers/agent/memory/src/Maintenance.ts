@@ -11,7 +11,7 @@ import type * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import { MemoryError } from "./MemoryError.ts"
-import { MemoryStore, type Message, type Service } from "./MemoryStore.ts"
+import { type GetThreadInput, MemoryStore, type Message, type Service, type ThreadRef } from "./MemoryStore.ts"
 
 /**
  * Result of one TTL garbage-collection pass.
@@ -115,14 +115,14 @@ const MESSAGE_PAGE_SIZE = 256
 // history ends or `visit` answers false.
 const forEachPage = <E, R>(
   store: Service,
-  threadId: string,
+  thread: ThreadRef,
   visit: (page: ReadonlyArray<Message>) => Effect.Effect<boolean, E, R>
 ): Effect.Effect<void, MemoryError | E, R> =>
   Effect.gen(function*() {
     let cursor: { readonly at: number; readonly id: string } | undefined
     while (true) {
       const page = yield* store.listMessages({
-        threadId,
+        ...thread,
         limit: MESSAGE_PAGE_SIZE,
         ...(cursor === undefined ? {} : { cursor })
       })
@@ -163,20 +163,20 @@ export const limitHistory = (
       )
     }
     const store = yield* MemoryStore
-    const threadIds = yield* store.listThreadIds
+    const threads = yield* store.listThreadRefs
     const deleted = yield* Effect.forEach(
-      threadIds,
-      (threadId) =>
+      threads,
+      (thread) =>
         Effect.gen(function*() {
           const budget = options.maxTokens * charsPerToken
           // JavaScript length lies between SQLite's code points and bytes, so
           // the SQL aggregate settles every thread that fits by bytes, and
           // every all-ASCII thread exactly, without reading message bodies.
-          const stats = yield* store.messageStats({ threadId })
+          const stats = yield* store.messageStats(thread)
           if (stats.bytes <= budget) return 0
           let chars = stats.codePoints === stats.bytes ? stats.bytes : 0
           if (stats.codePoints !== stats.bytes) {
-            yield* forEachPage(store, threadId, (page) =>
+            yield* forEachPage(store, thread, (page) =>
               Effect.sync(() => {
                 chars += page.reduce((total, message) => total + message.text.length, 0)
                 return true
@@ -184,7 +184,7 @@ export const limitHistory = (
           }
           let deleted = 0
           if (chars <= budget) return deleted
-          yield* forEachPage(store, threadId, (page) =>
+          yield* forEachPage(store, thread, (page) =>
             Effect.gen(function*() {
               const ids: Array<string> = []
               for (const message of page) {
@@ -192,7 +192,7 @@ export const limitHistory = (
                 ids.push(message.id)
                 chars -= message.text.length
               }
-              deleted += yield* store.deleteMessages({ threadId, ids })
+              deleted += yield* store.deleteMessages({ ...thread, ids })
               return chars > budget
             }))
           return deleted
@@ -233,7 +233,8 @@ export interface Summarizer<E = never, R = never> {
  */
 export interface CompactionOptions<E = never, R = never> {
   readonly summarizer: Summarizer<E, R>
-  readonly threadId?: string | undefined
+  /** Compact this one thread; absent compacts every thread of every namespace. */
+  readonly thread?: GetThreadInput | undefined
   readonly keepRecent?: number | undefined
   /**
    * Most messages handed to one summarizer call, at least 2 and defaulting to
@@ -297,20 +298,23 @@ export const compact = <E, R>(
       )
     }
     const store = yield* MemoryStore
-    const threadIds = options.threadId === undefined ? yield* store.listThreadIds : [options.threadId]
+    const threads: ReadonlyArray<GetThreadInput> = options.thread === undefined
+      ? yield* store.listThreadRefs
+      : [options.thread]
     let compactedThreads = 0
     let deletedMessages = 0
-    for (const threadId of threadIds) {
+    for (const thread of threads) {
+      const { threadId } = thread
       // Old messages still to summarize. Every window after the first also
       // carries the previous window's summary. The summary is carried
       // explicitly so custom ids may sort anywhere within a tied timestamp.
       // Default ids sort before ordinary message ids at that timestamp.
-      let unsummarized = (yield* store.countMessages({ threadId })) - keepRecent
+      let unsummarized = (yield* store.countMessages(thread)) - keepRecent
       let carried: Message | undefined
       while (unsummarized > 0) {
         const take = Math.min(maxMessagesPerSummary - (carried === undefined ? 0 : 1), unsummarized)
         const page = yield* store.listMessages({
-          threadId,
+          ...thread,
           limit: take + (carried === undefined ? 0 : 1)
         })
         const sources = page.filter((message) => message.id !== carried?.id).slice(0, take)
@@ -330,7 +334,7 @@ export const compact = <E, R>(
             Digest.digest(Digest.canonical({ threadId, messageIds: oldMessages.map((message) => message.id) }))
           }`
         const summary: Message = { threadId, id: summaryId, role: "system", text: summaryText, at: oldMessages[0]!.at }
-        deletedMessages += yield* store.compactMessages({ threadId, summary, sourceMessages: oldMessages })
+        deletedMessages += yield* store.compactMessages({ ...thread, summary, sourceMessages: oldMessages })
         if (carried === undefined) compactedThreads += 1
         unsummarized -= sources.length
         carried = summary

@@ -78,7 +78,7 @@ const remembered = Effect.gen(function*() {
 
 ## Store a note
 
-Notes are append-only knowledge records. Call `putNote` with a globally unique id, text, tags, and provenance:
+Notes are append-only knowledge records. Call `putNote` with a namespace, an id unique within it, text, tags, and provenance:
 
 ```ts
 const noted = Effect.gen(function*() {
@@ -119,21 +119,26 @@ Add a supersession edge after the fact with `supersede`:
 ```ts
 const corrected = Effect.gen(function*() {
   const store = yield* MemoryStore.MemoryStore
-  yield* store.supersede({ supersederId: "finding-41", targetId: "finding-40" })
+  yield* store.supersede({
+    namespace: "agent-reviewer",
+    supersederId: "finding-41",
+    targetId: "finding-40"
+  })
 })
 ```
 
-Both notes must exist and share a namespace, and a note cannot supersede itself; violations fail with `supersede_conflict`.
+Both notes must exist in the namespace the call names, and a note cannot supersede itself; violations fail with `supersede_conflict`.
 
 ## Store history
 
-Create a thread explicitly when it belongs in a specific namespace, then append messages:
+Every thread lives in one namespace, and every call names it. Create the thread, then append messages:
 
 ```ts
 const conversation = Effect.gen(function*() {
   const store = yield* MemoryStore.MemoryStore
   yield* store.createThread({ id: "conversation-7", namespace: "agent-reviewer", title: "PR 41 review" })
   yield* store.appendMessage({
+    namespace: "agent-reviewer",
     threadId: "conversation-7",
     id: "msg-1",
     role: "user",
@@ -144,18 +149,19 @@ const conversation = Effect.gen(function*() {
 ```
 
 - `createThread` generates an id when you omit one, and re-creating with identical data answers the existing thread. Reusing an id with different data fails with `idempotency_conflict`.
-- `appendMessage` creates a missing thread for you, in the `global` namespace under the id `history`. Call `createThread` first when the thread belongs somewhere else.
-- A message id is unique within its thread. Re-appending identical data is a no-op; any difference in `role`, `text`, or `at` fails with `idempotency_conflict` and a path to the field.
+- `appendMessage` creates a missing thread for you, in the namespace the append names. Call `createThread` first to give the thread a title or metadata.
+- A thread id is unique within its namespace, so two namespaces can each hold `conversation-7` and neither reads the other's. A message id is unique within its thread. Re-appending identical data is a no-op; any difference in `role`, `text`, or `at` fails with `idempotency_conflict` and a path to the field.
 
 Read a thread with `listMessages`, paginating with the exclusive `cursor` when you need more than one page:
 
 ```ts
 const history = Effect.gen(function*() {
   const store = yield* MemoryStore.MemoryStore
-  const page = yield* store.listMessages({ threadId: "conversation-7", limit: 100 })
+  const page = yield* store.listMessages({ namespace: "agent-reviewer", threadId: "conversation-7", limit: 100 })
   const last = page.at(-1)
   if (last === undefined) return page
   const nextPage = yield* store.listMessages({
+    namespace: "agent-reviewer",
     threadId: "conversation-7",
     limit: 100,
     cursor: { at: last.at, id: last.id }

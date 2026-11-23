@@ -35,17 +35,17 @@ A fact also carries first-class tags, validated against the tag vocabulary, and 
 
 ## Notes
 
-A note is an append-only text record with an id, a tag list, provenance, and a status. The id is global, not namespaced: `getNote` finds a note by id alone.
+A note is an append-only text record with an id, a tag list, provenance, and a status. The id is unique within the note's namespace: two namespaces can each hold a note `prefs`, and `getNote`, `setNoteStatus`, and `supersede` name the namespace and never reach a note of another one.
 
 Status is the only mutable field, and it moves through a gate: `pending`, `accepted`, or `rejected`. A note enters as `accepted` unless the writer says otherwise. Reads default to `accepted`, so a note an evaluation has not judged yet stays out of recall until something calls `setNoteStatus`.
 
-Supersession is how an append-only log corrects itself. A new note can declare `supersedes` edges to older notes in the same write transaction, and `supersede` adds an edge later. A note with an accepted superseder drops out of default reads; pass `includeSuperseded` to see it. A superseder that is still `pending` or `rejected` hides nothing. Contradicting what is already stored, reusing an id with different creation data, self-supersession, and edges across namespaces all fail with `supersede_conflict`.
+Supersession is how an append-only log corrects itself. A new note can declare `supersedes` edges to older notes in the same write transaction, and `supersede` adds an edge later. A note with an accepted superseder drops out of default reads; pass `includeSuperseded` to see it. A superseder that is still `pending` or `rejected` hides nothing. Contradicting what is already stored, reusing an id with different creation data, self-supersession, and an edge to a note outside the namespace all fail with `supersede_conflict`.
 
 ## Threads and messages
 
 A thread is an ordered history of messages, each with a caller-chosen id, a role, text, and a timestamp. Threads exist so agents can keep conversation history durable across runs.
 
-Messages read in timestamp order, breaking ties by the binary ordering of the id independently of the database locale. A message id is unique within its thread, not globally. Appending the same id with the same role, text, and timestamp is a no-op, which is what makes a retried append safe. Appending the same id with any difference fails with `idempotency_conflict` and a path to the first field that differs. `appendMessage` creates a missing thread for you, in the `global` namespace under the id `history`; call `createThread` first when the thread belongs somewhere else. Creating a thread is itself idempotent on identical creation data.
+Messages read in timestamp order, breaking ties by the binary ordering of the id independently of the database locale. A thread id is unique within its namespace, and a message id within its thread; every thread and message call names the namespace, so a caller holding one namespace cannot read, append to, compact, or delete a thread of another. Appending the same id with the same role, text, and timestamp is a no-op, which is what makes a retried append safe. Appending the same id with any difference fails with `idempotency_conflict` and a path to the first field that differs. `appendMessage` creates a missing thread for you, in the namespace the append names; call `createThread` first to give it a title or metadata. Creating a thread is itself idempotent on identical creation data.
 
 `appendMessageOnce` accepts the same identity, role and text with an optional
 timestamp and returns the stored message. The first insertion chooses the

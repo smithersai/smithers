@@ -116,7 +116,7 @@ describe("bank-wide semantic recall", () => {
         })
         yield* vectors.upsert(projection(id, { contentDigest: digest(id === "stale" ? "old text" : id) }))
       }
-      yield* store.supersede({ supersederId: "superseder", targetId: "superseded" })
+      yield* store.supersede({ namespace: "flow-bank", supersederId: "superseder", targetId: "superseded" })
       for (const key of ["live", "expired", "deleted", "wrong-kind"]) {
         yield* store.putFact({
           namespace: "flow-bank",

@@ -208,7 +208,7 @@ describe("confirmed memory and promotion findings", () => {
     )
   })
 
-  it.each(["text", "namespace", "tags"])("does not hide a concurrent note's conflicting %s", async (field) => {
+  it.each(["text", "tags"])("does not hide a concurrent note's conflicting %s", async (field) => {
     await Effect.runPromise(
       Effect.gen(function*() {
         const store = yield* MemoryStore.MemoryStore
@@ -220,7 +220,6 @@ describe("confirmed memory and promotion findings", () => {
               yield* store.putNote({
                 ...input,
                 text: field === "text" ? "Other fact." : text,
-                namespace: field === "namespace" ? "flow-other" : input.namespace,
                 tags: field === "tags" ? ["source:other"] : input.tags,
                 provenance: { runId: "other" }
               })
@@ -230,6 +229,28 @@ describe("confirmed memory and promotion findings", () => {
         const result = yield* Effect.result(MemoryMine.write(concurrent, { bank: "flow-build", runId: "one", text }))
         expect(Result.isFailure(result)).toBe(true)
         if (Result.isFailure(result)) expect(result.failure.code).toBe("supersede_conflict")
+      }).pipe(Effect.provide(TestMemory.layer))
+    )
+  })
+
+  it("writes a fact another namespace already holds under the same note id (#4712)", async () => {
+    await Effect.runPromise(
+      Effect.gen(function*() {
+        const store = yield* MemoryStore.MemoryStore
+        const text = "Builds use pnpm."
+        const id = MemoryMine.noteId("flow-build", text)
+        const other = yield* store.putNote({
+          namespace: "flow-other",
+          id,
+          text: "Other fact.",
+          tags: ["source:other"],
+          provenance: { runId: "other" },
+          status: "accepted"
+        })
+        const note = yield* MemoryMine.write(store, { bank: "flow-build", runId: "one", text })
+        expect(note.text).toBe(text)
+        expect(yield* store.listNotes({ namespace: "flow-build" })).toEqual([note])
+        expect(yield* store.listNotes({ namespace: "flow-other" })).toEqual([other])
       }).pipe(Effect.provide(TestMemory.layer))
     )
   })

@@ -68,7 +68,10 @@ it.skipIf(!url)(
     expect([...result.phrase].sort()).toEqual(["content", "json", "note", "string"])
     expect(result.limited).toEqual(result.backfilled.slice(0, 2))
     expect(result.before).toEqual(["separated"])
-    expect(result.applied).toEqual([[7003, "memory_fts_fold"], [7004, "memory_note_lifecycle"]])
+    expect(result.applied).toEqual([[7003, "memory_fts_fold"], [7004, "memory_note_lifecycle"], [
+      7005,
+      "memory_namespace_keys"
+    ]])
     expect(result.after).toEqual(result.backfilled)
     expect(result.indexes).toEqual([{ name: "memory_fts_flow_search" }])
   }

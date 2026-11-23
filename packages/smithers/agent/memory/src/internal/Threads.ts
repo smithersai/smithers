@@ -11,7 +11,8 @@ import * as Clock from "effect/Clock"
 import type * as SecureRandom from "effect/crypto/SecureRandom"
 import * as Effect from "effect/Effect"
 import type { DatabaseService } from "../Database.ts"
-import type { Service } from "../MemoryStore.ts"
+import type { GetThreadInput, Service } from "../MemoryStore.ts"
+import type * as Namespace from "../Namespace.ts"
 import { canonicalJson } from "./Canonical.ts"
 import { resolveNamespace } from "./ResolveNamespace.ts"
 import {
@@ -50,7 +51,7 @@ export const make = (database: DatabaseService, random: typeof SecureRandom.Secu
   | "listMessages"
   | "countMessages"
   | "messageStats"
-  | "listThreadIds"
+  | "listThreadRefs"
   | "deleteMessages"
   | "compactMessages"
 > => {
@@ -58,11 +59,24 @@ export const make = (database: DatabaseService, random: typeof SecureRandom.Secu
   const threadColumns = sql.literal(THREAD_COLUMNS)
   const messageColumns = sql.literal(MESSAGE_COLUMNS)
 
+  // A thread id names a thread only inside its namespace, so every statement
+  // keyed by a thread id carries the namespace predicate too.
+  const inThread = (namespace: Namespace.Namespace, threadId: string): Fragment =>
+    sql`namespace_kind = ${namespace.kind} AND namespace_id = ${namespace.id} AND thread_id = ${threadId}`
+
+  // Resolves the namespace and validates the thread id every scoped call names.
+  const scope = (input: GetThreadInput) =>
+    Effect.gen(function*() {
+      const { namespace } = yield* resolveNamespace(input.namespace)
+      yield* validateNonEmpty(input.threadId, "threadId", ["threadId"])
+      return namespace
+    })
+
   const getThread: Service["getThread"] = (input) =>
     Effect.gen(function*() {
-      yield* validateNonEmpty(input.threadId, "threadId", ["threadId"])
+      const namespace = yield* scope(input)
       const rows = yield* sql<ThreadRow>`SELECT ${threadColumns}
-        FROM memory_threads WHERE thread_id = ${input.threadId} LIMIT 1`.pipe(
+        FROM memory_threads WHERE ${inThread(namespace, input.threadId)} LIMIT 1`.pipe(
         Effect.mapError(storeError("could not read memory thread"))
       )
       return rows[0] === undefined ? undefined : yield* decodeThread(rows[0])
@@ -90,9 +104,9 @@ export const make = (database: DatabaseService, random: typeof SecureRandom.Secu
         Effect.gen(function*() {
           const inserted = yield* sql`INSERT INTO memory_threads (${threadColumns}) VALUES (
               ${id}, ${namespace.kind}, ${namespace.id}, ${input.title ?? null}, ${metadataJson}, ${now}, ${now}
-            ) ON CONFLICT (thread_id) DO NOTHING`.raw
+            ) ON CONFLICT (namespace_kind, namespace_id, thread_id) DO NOTHING`.raw
           const rows = yield* sql<ThreadRow>`SELECT ${threadColumns}
-            FROM memory_threads WHERE thread_id = ${id} LIMIT 1`
+            FROM memory_threads WHERE ${inThread(namespace, id)} LIMIT 1`
           const existing = rows[0]
           if (existing === undefined) {
             return yield* Effect.fail(error("store", "created memory thread could not be read back"))
@@ -101,10 +115,7 @@ export const make = (database: DatabaseService, random: typeof SecureRandom.Secu
             const existingMetadata = existing.metadata_json === null
               ? null
               : canonicalJson(yield* decodeJson(existing.metadata_json, "thread metadata"))
-            if (
-              existing.namespace_kind !== namespace.kind || existing.namespace_id !== namespace.id ||
-              existing.title !== (input.title ?? null) || existingMetadata !== metadataJson
-            ) {
+            if (existing.title !== (input.title ?? null) || existingMetadata !== metadataJson) {
               return yield* Effect.fail(
                 error(
                   "idempotency_conflict",
@@ -139,11 +150,11 @@ export const make = (database: DatabaseService, random: typeof SecureRandom.Secu
 
   const deleteThread: Service["deleteThread"] = (input) =>
     Effect.gen(function*() {
-      yield* validateNonEmpty(input.threadId, "threadId", ["threadId"])
+      const thread = inThread(yield* scope(input), input.threadId)
       return yield* database.write(
         Effect.gen(function*() {
-          yield* sql`DELETE FROM memory_messages WHERE thread_id = ${input.threadId}`
-          const result = yield* sql`DELETE FROM memory_threads WHERE thread_id = ${input.threadId}`.raw
+          yield* sql`DELETE FROM memory_messages WHERE ${thread}`
+          const result = yield* sql`DELETE FROM memory_threads WHERE ${thread}`.raw
           return (yield* DurableWriter.affectedRows(result)) > 0
         })
       ).pipe(Effect.mapError(storeError("could not delete memory thread")))
@@ -151,30 +162,37 @@ export const make = (database: DatabaseService, random: typeof SecureRandom.Secu
 
   const appendMessageOnce: Service["appendMessageOnce"] = (input) =>
     Effect.gen(function*() {
-      yield* validateNonEmpty(input.threadId, "threadId", ["threadId"])
+      const namespace = yield* scope(input)
+      const thread = inThread(namespace, input.threadId)
       yield* validateNonEmpty(input.id, "message id", ["id"])
       yield* validateNonEmpty(input.role, "message role", ["role"])
       if (input.at !== undefined) yield* validateTime(input.at, "message at", ["at"])
       return yield* database.write(
         Effect.gen(function*() {
           const at = input.at ?? (yield* Clock.currentTimeMillis)
+          // An append to a thread nobody created makes it in the caller's
+          // namespace, never in a shared one another caller could reach.
           yield* sql`INSERT INTO memory_threads (
             thread_id, namespace_kind, namespace_id, created_at_ms, updated_at_ms
           )
-            VALUES (${input.threadId}, 'global', 'history', ${at}, ${at})
-            ON CONFLICT (thread_id) DO NOTHING`
-          const inserted = yield* sql`INSERT INTO memory_messages (id, thread_id, role, text, at_ms)
-            VALUES (${input.id}, ${input.threadId}, ${input.role}, ${input.text}, ${at})
-            ON CONFLICT (thread_id, id) DO NOTHING`.raw
+            VALUES (${input.threadId}, ${namespace.kind}, ${namespace.id}, ${at}, ${at})
+            ON CONFLICT (namespace_kind, namespace_id, thread_id) DO NOTHING`
+          const inserted = yield* sql`INSERT INTO memory_messages (
+              namespace_kind, namespace_id, thread_id, id, role, text, at_ms
+            )
+            VALUES (
+              ${namespace.kind}, ${namespace.id}, ${input.threadId}, ${input.id}, ${input.role}, ${input.text}, ${at}
+            )
+            ON CONFLICT (namespace_kind, namespace_id, thread_id, id) DO NOTHING`.raw
           if ((yield* DurableWriter.affectedRows(inserted)) > 0) {
             yield* sql`UPDATE memory_threads
               SET updated_at_ms = ${Dialect.greatest(sql)}(updated_at_ms, ${at})
-              WHERE thread_id = ${input.threadId}`
+              WHERE ${thread}`
             return { threadId: input.threadId, id: input.id, role: input.role, text: input.text, at }
           }
           const existing = yield* sql<MessageRow>`SELECT ${messageColumns}
             FROM memory_messages
-            WHERE thread_id = ${input.threadId} AND id = ${input.id}
+            WHERE ${thread} AND id = ${input.id}
             LIMIT 1`
           const message = existing[0]
           if (message === undefined) {
@@ -214,13 +232,13 @@ export const make = (database: DatabaseService, random: typeof SecureRandom.Secu
 
   const listMessages: Service["listMessages"] = (input) =>
     Effect.gen(function*() {
-      yield* validateNonEmpty(input.threadId, "threadId", ["threadId"])
+      const namespace = yield* scope(input)
       const limit = yield* validateLimit(input.limit, "listMessages")
       if (limit === 0) return []
       // Summary ids use a leading control character. Locale collations can
       // ignore it, so ordering and pagination must use the same byte order.
       const messageId = sql.literal(Dialect.isPostgres(sql) ? "id COLLATE \"C\"" : "id COLLATE BINARY")
-      const conditions: Array<Fragment> = [sql`thread_id = ${input.threadId}`]
+      const conditions: Array<Fragment> = [inThread(namespace, input.threadId)]
       if (input.cursor !== undefined) {
         yield* validateTime(input.cursor.at, "message cursor at", ["cursor", "at"])
         yield* validateNonEmpty(input.cursor.id, "message cursor id", ["cursor", "id"])
@@ -245,9 +263,9 @@ export const make = (database: DatabaseService, random: typeof SecureRandom.Secu
 
   const countMessages: Service["countMessages"] = (input) =>
     Effect.gen(function*() {
-      yield* validateNonEmpty(input.threadId, "threadId", ["threadId"])
+      const namespace = yield* scope(input)
       const rows = yield* sql<{ readonly count: number }>`
-        SELECT count(*) AS count FROM memory_messages WHERE thread_id = ${input.threadId}
+        SELECT count(*) AS count FROM memory_messages WHERE ${inThread(namespace, input.threadId)}
       `.pipe(Effect.mapError(storeError("could not count memory messages")))
       // An aggregate without GROUP BY always returns exactly one row.
       return Number(rows[0]!.count)
@@ -255,47 +273,52 @@ export const make = (database: DatabaseService, random: typeof SecureRandom.Secu
 
   const messageStats: Service["messageStats"] = (input) =>
     Effect.gen(function*() {
-      yield* validateNonEmpty(input.threadId, "threadId", ["threadId"])
+      const namespace = yield* scope(input)
       const rows = yield* sql<{ readonly count: number; readonly code_points: number; readonly bytes: number }>`
         SELECT count(*) AS count,
           COALESCE(SUM(length(text)), 0) AS code_points,
           COALESCE(SUM(${
         sql.literal(Dialect.isPostgres(sql) ? "octet_length(text)" : "length(CAST(text AS BLOB))")
       }), 0) AS bytes
-        FROM memory_messages WHERE thread_id = ${input.threadId}
+        FROM memory_messages WHERE ${inThread(namespace, input.threadId)}
       `.pipe(Effect.mapError(storeError("could not measure memory messages")))
       // An aggregate without GROUP BY always returns exactly one row; COALESCE fills empty sums.
       const row = rows[0]!
       return { messages: Number(row.count), codePoints: Number(row.code_points), bytes: Number(row.bytes) }
     })
 
-  const deleteMessageRows = (threadId: string, ids: ReadonlyArray<string>) =>
+  const deleteMessageRows = (thread: Fragment, ids: ReadonlyArray<string>) =>
     Effect.gen(function*() {
       let deleted = 0
       for (let offset = 0; offset < ids.length; offset += DELETE_MESSAGES_CHUNK_SIZE) {
         const chunk = ids.slice(offset, offset + DELETE_MESSAGES_CHUNK_SIZE)
         const result = yield* sql`DELETE FROM memory_messages
-          WHERE thread_id = ${threadId} AND ${sql.in("id", chunk)}`.raw
+          WHERE ${thread} AND ${sql.in("id", chunk)}`.raw
         deleted += yield* DurableWriter.affectedRows(result)
       }
       return deleted
     })
 
-  const listThreadIds: Service["listThreadIds"] = sql<{ readonly thread_id: string }>`
-    SELECT thread_id FROM memory_threads ORDER BY created_at_ms, thread_id
+  const listThreadRefs: Service["listThreadRefs"] = sql<
+    Pick<ThreadRow, "thread_id" | "namespace_kind" | "namespace_id">
+  >`
+    SELECT namespace_kind, namespace_id, thread_id FROM memory_threads
+    ORDER BY created_at_ms, namespace_kind, namespace_id, thread_id
   `.pipe(
-    Effect.map((rows) => rows.map((row) => row.thread_id)),
+    Effect.map((rows) =>
+      rows.map((row) => ({ namespace: { kind: row.namespace_kind, id: row.namespace_id }, threadId: row.thread_id }))
+    ),
     Effect.mapError(storeError("could not list memory threads"))
   )
 
   const deleteMessages: Service["deleteMessages"] = (input) =>
     Effect.gen(function*() {
-      yield* validateNonEmpty(input.threadId, "threadId", ["threadId"])
+      const namespace = yield* scope(input)
       const ids = Array.from(new Set(input.ids))
       if (ids.length === 0) {
         return 0
       }
-      return yield* database.write(deleteMessageRows(input.threadId, ids)).pipe(
+      return yield* database.write(deleteMessageRows(inThread(namespace, input.threadId), ids)).pipe(
         Effect.mapError(storeError("could not delete memory messages"))
       )
     })
@@ -303,10 +326,12 @@ export const make = (database: DatabaseService, random: typeof SecureRandom.Secu
   const compactMessages: Service["compactMessages"] = (input) => {
     // Capture scalar payloads now so caller mutation cannot change a suspended write.
     const threadId = input.threadId
+    const owner = typeof input.namespace === "string" ? input.namespace : { ...input.namespace }
     const summary = { ...input.summary }
     const sources = input.sourceMessages.map((message) => ({ ...message }))
     return Effect.gen(function*() {
-      yield* validateNonEmpty(threadId, "threadId", ["threadId"])
+      const namespace = yield* scope({ namespace: owner, threadId })
+      const thread = inThread(namespace, threadId)
       yield* validateNonEmpty(summary.id, "summary id", ["summary", "id"])
       yield* validateNonEmpty(summary.role, "summary role", ["summary", "role"])
       yield* validateTime(summary.at, "summary at", ["summary", "at"])
@@ -333,7 +358,7 @@ export const make = (database: DatabaseService, random: typeof SecureRandom.Secu
         Effect.gen(function*() {
           // Preserve the existing-summary error even on a retry whose sources are gone.
           const existing = yield* sql<MessageRow>`SELECT ${messageColumns}
-            FROM memory_messages WHERE thread_id = ${threadId} AND id = ${summary.id}`
+            FROM memory_messages WHERE ${thread} AND id = ${summary.id}`
           if (existing.length > 0) {
             return yield* Effect.fail(
               error(
@@ -347,9 +372,7 @@ export const make = (database: DatabaseService, random: typeof SecureRandom.Secu
           for (let offset = 0; offset < sources.length; offset += DELETE_MESSAGES_CHUNK_SIZE) {
             const chunk = sources.slice(offset, offset + DELETE_MESSAGES_CHUNK_SIZE)
             const rows = yield* sql<MessageRow>`SELECT ${messageColumns}
-              FROM memory_messages WHERE thread_id = ${threadId} AND ${
-              sql.in("id", chunk.map((message) => message.id))
-            }`
+              FROM memory_messages WHERE ${thread} AND ${sql.in("id", chunk.map((message) => message.id))}`
             const byId = new Map(rows.map((row) => [row.id, row]))
             for (const source of chunk) {
               const row = byId.get(source.id)
@@ -368,9 +391,14 @@ export const make = (database: DatabaseService, random: typeof SecureRandom.Secu
               }
             }
           }
-          yield* sql`INSERT INTO memory_messages (id, thread_id, role, text, at_ms)
-            VALUES (${summary.id}, ${summary.threadId}, ${summary.role}, ${summary.text}, ${summary.at})`
-          return yield* deleteMessageRows(threadId, ids)
+          yield* sql`INSERT INTO memory_messages (
+              namespace_kind, namespace_id, thread_id, id, role, text, at_ms
+            )
+            VALUES (
+              ${namespace.kind}, ${namespace.id}, ${threadId}, ${summary.id}, ${summary.role}, ${summary.text},
+              ${summary.at}
+            )`
+          return yield* deleteMessageRows(thread, ids)
         })
       ).pipe(Effect.mapError(storeError("could not compact memory history")))
     })
@@ -386,7 +414,7 @@ export const make = (database: DatabaseService, random: typeof SecureRandom.Secu
     listMessages,
     countMessages,
     messageStats,
-    listThreadIds,
+    listThreadRefs,
     deleteMessages,
     compactMessages
   }

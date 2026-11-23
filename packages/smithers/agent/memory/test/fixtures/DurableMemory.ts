@@ -33,6 +33,7 @@ const result = await Effect.runPromise(
       yield* store.putNote({ namespace, id: "release-note", text: "release checklist", tags: [], provenance: {} })
       yield* store.createThread({ namespace, id: "release-thread", title: "Release" })
       yield* store.appendMessage({
+        namespace,
         threadId: "release-thread",
         id: "first",
         role: "user",
@@ -43,7 +44,7 @@ const result = await Effect.runPromise(
     return {
       fact: yield* store.getFact({ namespace, key: "runbook" }),
       notes: yield* store.listNotes({ namespace }),
-      messages: yield* store.listMessages({ threadId: "release-thread" }),
+      messages: yield* store.listMessages({ namespace, threadId: "release-thread" }),
       matches: (yield* store.searchFts({ namespace, query: "restore", limit: 10 })).map((row) => row.key)
     }
   }).pipe(Effect.provide(memory))

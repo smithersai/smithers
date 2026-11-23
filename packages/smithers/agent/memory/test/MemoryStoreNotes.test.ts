@@ -35,9 +35,9 @@ describe("MemoryStore notes", () => {
         supersedes: ["old"]
       })
       const pending = yield* store.listNotes({ namespace })
-      yield* store.setNoteStatus({ id: "replacement", status: "accepted" })
+      yield* store.setNoteStatus({ namespace, id: "replacement", status: "accepted" })
       const accepted = yield* store.listNotes({ namespace })
-      yield* store.setNoteStatus({ id: "replacement", status: "rejected" })
+      yield* store.setNoteStatus({ namespace, id: "replacement", status: "rejected" })
       const rejected = yield* store.listNotes({ namespace })
       const audit = yield* store.listNotes({ namespace, status: "any", includeSuperseded: true })
       return { duplicate, pending, accepted, rejected, audit }
@@ -56,26 +56,35 @@ describe("MemoryStore notes", () => {
     ])
   })
 
-  it("rejects note id collisions and supersession edges across namespaces", async () => {
-    const failures = await run(Effect.gen(function*() {
+  it("refuses supersession edges that reach a note of another namespace", async () => {
+    const result = await runWithDatabase(Effect.gen(function*() {
       const store = yield* MemoryStore.MemoryStore
+      const sql = yield* SqlClient.SqlClient
       yield* store.putNote({ namespace, id: "shared", text: "one", tags: [], provenance: {} })
-      const collision = yield* Effect.flip(
-        store.putNote({ namespace: other, id: "shared", text: "one", tags: [], provenance: {} })
-      )
       yield* store.putNote({ namespace: other, id: "other", text: "two", tags: [], provenance: {} })
-      const edge = yield* Effect.flip(store.supersede({ supersederId: "shared", targetId: "other" }))
-      return { collision, edge }
+      const edge = yield* Effect.flip(store.supersede({ namespace, supersederId: "shared", targetId: "other" }))
+      const reversed = yield* Effect.flip(
+        store.supersede({ namespace: other, supersederId: "shared", targetId: "other" })
+      )
+      const inPut = yield* Effect.flip(
+        store.putNote({ namespace, id: "newer", text: "three", tags: [], provenance: {}, supersedes: ["other"] })
+      )
+      const edges = yield* sql`SELECT superseder_id FROM memory_note_supersedes`
+      return { edge, reversed, inPut, edges, other: yield* store.listNotes({ namespace: other }) }
     }))
 
-    expect(failures.collision).toMatchObject({
+    for (const failure of [result.edge, result.reversed]) {
+      expect(failure).toMatchObject({
+        code: "supersede_conflict",
+        message: "both superseder and target notes must exist in the namespace"
+      })
+    }
+    expect(result.inPut).toMatchObject({
       code: "supersede_conflict",
-      message: expect.stringContaining("different creation data")
+      message: "superseded note \"other\" does not exist"
     })
-    expect(failures.edge).toMatchObject({
-      code: "supersede_conflict",
-      message: expect.stringContaining("share a namespace")
-    })
+    expect(result.edges).toEqual([])
+    expect(result.other.map((note) => note.id)).toEqual(["other"])
   })
 
   it("writes standalone supersession edges idempotently and rejects invalid edges", async () => {
@@ -95,10 +104,10 @@ describe("MemoryStore notes", () => {
         tags: [],
         provenance: {}
       })
-      yield* store.supersede({ supersederId: "superseder", targetId: "target" })
-      yield* store.supersede({ supersederId: "superseder", targetId: "target" })
+      yield* store.supersede({ namespace, supersederId: "superseder", targetId: "target" })
+      yield* store.supersede({ namespace, supersederId: "superseder", targetId: "target" })
       const visible = yield* store.listNotes({ namespace })
-      const invalid = yield* Effect.flip(store.supersede({ supersederId: "missing", targetId: "target" }))
+      const invalid = yield* Effect.flip(store.supersede({ namespace, supersederId: "missing", targetId: "target" }))
       return { visible, invalid }
     }))
 
@@ -177,7 +186,7 @@ describe("MemoryStore notes", () => {
         status: "pending" as const
       }
       yield* store.putNote(input)
-      yield* store.setNoteStatus({ id: input.id, status: "accepted" })
+      yield* store.setNoteStatus({ namespace, id: input.id, status: "accepted" })
       return yield* store.putNote(input)
     }))
 
@@ -235,9 +244,9 @@ describe("MemoryStore notes", () => {
       const onInsert = yield* Effect.flip(
         store.putNote({ namespace, id: "self", text: "t", tags: [], provenance: {}, supersedes: ["self"] })
       )
-      const onEdge = yield* Effect.flip(store.supersede({ supersederId: "same", targetId: "same" }))
-      const absent = yield* store.getNote({ id: "absent" })
-      const unknownStatus = yield* Effect.flip(store.setNoteStatus({ id: "absent", status: "accepted" }))
+      const onEdge = yield* Effect.flip(store.supersede({ namespace, supersederId: "same", targetId: "same" }))
+      const absent = yield* store.getNote({ namespace, id: "absent" })
+      const unknownStatus = yield* Effect.flip(store.setNoteStatus({ namespace, id: "absent", status: "accepted" }))
       return { onInsert, onEdge, absent, unknownStatus }
     }))
 
@@ -316,11 +325,11 @@ describe("MemoryStore notes", () => {
       yield* store.putFact({ namespace, key: "keep", value: "v", provenance: {} })
       yield* store.putNote({ namespace, id: "keep-me", text: "t", tags: [], provenance: {} })
       yield* store.putNote({ namespace, id: "drop-me", text: "t", tags: [], provenance: {} })
-      yield* store.appendMessage({ threadId: "thread", id: "m-0", role: "user", text: "a", at: 0 })
+      yield* store.appendMessage({ namespace, threadId: "thread", id: "m-0", role: "user", text: "a", at: 0 })
       return {
         facts: yield* store.listFacts({ namespace, limit: 0 }),
         notes: yield* store.listNotes({ namespace, limit: 0 }),
-        messages: yield* store.listMessages({ threadId: "thread", limit: 0 }),
+        messages: yield* store.listMessages({ namespace, threadId: "thread", limit: 0 }),
         prefixed: yield* store.listNotes({ namespace, prefix: "keep-" }),
         // An empty namespace ends the tag-filtered page walk on its first page.
         emptyPage: yield* store.listNotes({

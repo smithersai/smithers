@@ -9,7 +9,7 @@ Every typed failure is a `MemoryError` with a stable machine-readable `code`, a 
 
 ### `not_found`
 
-The addressed record does not exist. `setNoteStatus` raises it for an unknown note id.
+The addressed record does not exist. `setNoteStatus` raises it for a note id unknown in the namespace it names, including an id that exists only in another namespace.
 
 ### `fts_not_enabled`
 
@@ -35,7 +35,7 @@ A supersession request contradicts what is already stored: a note id reused with
 
 ### `idempotency_conflict`
 
-`createThread` rejects an existing id with different namespace, title, or metadata. `appendMessage` rejects an existing message id with different `role`, `text`, or `at`; `path` names the first differing field. These two operations accept identical retries as no-ops. `setNoteStatus` also rejects changing the status or `acceptedTodo` of a note already bound to a TODO; repeating `status: "accepted"` with the same TODO or with no `acceptedTodo` is a no-op.
+`createThread` rejects an id that already exists in the namespace with a different title or metadata. `appendMessage` rejects an existing message id with different `role`, `text`, or `at`; `path` names the first differing field. These two operations accept identical retries as no-ops. `setNoteStatus` also rejects changing the status or `acceptedTodo` of a note already bound to a TODO; repeating `status: "accepted"` with the same TODO or with no `acceptedTodo` is a no-op.
 
 `compactMessages` rejects an existing summary id even when the summary and source snapshot are identical. After a lost response, use `listMessages` to confirm that the exact summary (`threadId`, `id`, `role`, `text`, and `at`) exists and every source id is absent. Check all pages. Treat this as evidence of a committed compaction only if the summary id was unique to that operation and no other writer has reset or edited that history. The conflict alone does not prove success. Otherwise, read the current history and summarize it again with a fresh summary id.
 

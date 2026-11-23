@@ -124,17 +124,17 @@ export const createMemoryCli = () => {
           ))
     })
     .command("get", {
-      description: "Read one note by its globally unique ID",
+      description: "Read one note of a namespace by its ID",
       mcp: { annotations: { readOnlyHint: true } },
       args: z.object({ note: z.string() }),
-      options: z.object(localFields),
+      options,
       run: (context) =>
         execute(context, () =>
           withMemory(
             context.options,
             Effect.gen(function*() {
               const store = yield* MemoryStore.MemoryStore
-              const note = yield* store.getNote({ id: context.args.note })
+              const note = yield* store.getNote({ namespace: namespace(context.options), id: context.args.note })
               if (note === undefined) return yield* Effect.fail(refused(`Unknown note ${context.args.note}`))
               return note
             })
@@ -172,14 +172,18 @@ export const createMemoryCli = () => {
       description: "Accept, reject, or return a note to pending review",
       mcp: { annotations: { readOnlyHint: false } },
       args: z.object({ note: z.string(), status: noteStatus }),
-      options: z.object(localFields),
+      options,
       run: (context) =>
         execute(context, () =>
           withMemory(
             context.options,
             Effect.gen(function*() {
               const store = yield* MemoryStore.MemoryStore
-              yield* store.setNoteStatus({ id: context.args.note, status: context.args.status })
+              yield* store.setNoteStatus({
+                namespace: namespace(context.options),
+                id: context.args.note,
+                status: context.args.status
+              })
               return { id: context.args.note, status: context.args.status }
             })
           ))
@@ -188,14 +192,18 @@ export const createMemoryCli = () => {
       description: "Mark an older note superseded by an existing note",
       mcp: { annotations: { readOnlyHint: false } },
       args: z.object({ note: z.string(), replacement: z.string() }),
-      options: z.object(localFields),
+      options,
       run: (context) =>
         execute(context, () =>
           withMemory(
             context.options,
             Effect.gen(function*() {
               const store = yield* MemoryStore.MemoryStore
-              yield* store.supersede({ targetId: context.args.note, supersederId: context.args.replacement })
+              yield* store.supersede({
+                namespace: namespace(context.options),
+                targetId: context.args.note,
+                supersederId: context.args.replacement
+              })
               return { superseded: context.args.note, replacement: context.args.replacement }
             })
           ))
@@ -245,11 +253,12 @@ export const createMemoryCli = () => {
             context.options,
             Effect.gen(function*() {
               const store = yield* MemoryStore.MemoryStore
-              const thread = yield* store.getThread({ threadId: context.args.thread })
-              if (thread === undefined) return yield* Effect.fail(refused(`Unknown thread ${context.args.thread}`))
+              const thread = { namespace: namespace(context.options), threadId: context.args.thread }
+              const found = yield* store.getThread(thread)
+              if (found === undefined) return yield* Effect.fail(refused(`Unknown thread ${context.args.thread}`))
               return {
-                thread,
-                messages: yield* store.listMessages({ threadId: context.args.thread, limit: context.options.limit })
+                thread: found,
+                messages: yield* store.listMessages({ ...thread, limit: context.options.limit })
               }
             })
           ))
@@ -258,7 +267,7 @@ export const createMemoryCli = () => {
       description: "Delete one thread and its messages",
       mcp: { annotations: { readOnlyHint: false } },
       args: z.object({ thread: z.string() }),
-      options: z.object(localFields),
+      options,
       run: (context) =>
         execute(context, () =>
           withMemory(
@@ -267,7 +276,10 @@ export const createMemoryCli = () => {
               const store = yield* MemoryStore.MemoryStore
               return {
                 threadId: context.args.thread,
-                deleted: yield* store.deleteThread({ threadId: context.args.thread })
+                deleted: yield* store.deleteThread({
+                  namespace: namespace(context.options),
+                  threadId: context.args.thread
+                })
               }
             })
           ))
@@ -278,9 +290,7 @@ export const createMemoryCli = () => {
       description: "Read ordered messages with an optional exclusive cursor",
       mcp: { annotations: { readOnlyHint: true } },
       args: z.object({ thread: z.string() }),
-      options: z.object({
-        ...localFields,
-        limit: z.number().int().positive().max(10000).default(100),
+      options: limited.extend({
         afterId: z.string().optional(),
         afterAt: z.number().int().nonnegative().optional()
       }),
@@ -294,6 +304,7 @@ export const createMemoryCli = () => {
             Effect.gen(function*() {
               const store = yield* MemoryStore.MemoryStore
               return yield* store.listMessages({
+                namespace: namespace(context.options),
                 threadId: context.args.thread,
                 limit: context.options.limit,
                 cursor: context.options.afterId === undefined
@@ -308,8 +319,7 @@ export const createMemoryCli = () => {
       description: "Append a message idempotently using its message ID",
       mcp: { annotations: { readOnlyHint: false } },
       args: z.object({ thread: z.string(), text: z.string() }),
-      options: z.object({
-        ...localFields,
+      options: options.extend({
         role: z.enum(["user", "assistant", "system", "tool"]).default("user"),
         messageId: z.string().optional(),
         at: z.number().int().nonnegative().optional()
@@ -321,6 +331,7 @@ export const createMemoryCli = () => {
             Effect.gen(function*() {
               const store = yield* MemoryStore.MemoryStore
               return yield* store.appendMessageOnce({
+                namespace: namespace(context.options),
                 threadId: context.args.thread,
                 text: context.args.text,
                 role: context.options.role,
@@ -455,8 +466,7 @@ export const createMemoryCli = () => {
       description: "Replace selected thread messages with a supplied summary atomically",
       mcp: { annotations: { readOnlyHint: false } },
       args: z.object({ thread: z.string() }),
-      options: z.object({
-        ...localFields,
+      options: options.extend({
         summary: z.string().min(1),
         before: z.number().int().nonnegative().describe("Required exclusive cutoff in Unix epoch milliseconds"),
         keep: z.number().int().nonnegative().default(10),
@@ -468,10 +478,11 @@ export const createMemoryCli = () => {
             context.options,
             Effect.gen(function*() {
               const store = yield* MemoryStore.MemoryStore
-              if ((yield* store.getThread({ threadId: context.args.thread })) === undefined) {
+              const thread = { namespace: namespace(context.options), threadId: context.args.thread }
+              if ((yield* store.getThread(thread)) === undefined) {
                 return yield* Effect.fail(refused(`Unknown thread ${context.args.thread}`))
               }
-              const messages = yield* store.listMessages({ threadId: context.args.thread })
+              const messages = yield* store.listMessages(thread)
               const candidates = messages.slice(0, Math.max(0, messages.length - context.options.keep)).filter((
                 message
               ) => message.at < context.options.before)
@@ -492,7 +503,7 @@ export const createMemoryCli = () => {
                 at: candidates[candidates.length - 1]!.at
               }
               const removed = yield* store.compactMessages({
-                threadId: context.args.thread,
+                ...thread,
                 summary,
                 sourceMessages: candidates
               })

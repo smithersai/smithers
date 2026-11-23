@@ -4,15 +4,17 @@ import { expect, it } from "vitest"
 import * as MemoryStore from "../src/MemoryStore.ts"
 import { run } from "./fixtures/MemoryStoreHarness.ts"
 
+const namespace = { kind: "global", id: "history" } as const
+
 it("atomically defaults message time across later and overlapping appends while preserving conflicts", async () => {
   const result = await run(Effect.gen(function*() {
     const store = yield* MemoryStore.MemoryStore
     const input = { threadId: "history", id: "message", role: "user", text: "hello" }
-    const first = yield* store.appendMessageOnce(input)
+    const first = yield* store.appendMessageOnce({ namespace, ...input })
     yield* TestClock.adjust(100)
-    const later = yield* store.appendMessageOnce(input)
+    const later = yield* store.appendMessageOnce({ namespace, ...input })
     const overlapping = yield* Effect.all(
-      Array.from({ length: 8 }, () => store.appendMessageOnce({ ...input, id: "overlap" })),
+      Array.from({ length: 8 }, () => store.appendMessageOnce({ namespace, ...input, id: "overlap" })),
       { concurrency: "unbounded" }
     )
     const conflicts = yield* Effect.forEach([
@@ -20,16 +22,18 @@ it("atomically defaults message time across later and overlapping appends while 
       { ...input, role: "assistant" },
       { ...input, at: first.at + 1 },
       { ...input, at: -1 }
-    ], (entry) => Effect.flip(store.appendMessageOnce(entry)))
-    const missingAt = yield* store.appendMessage(input as MemoryStore.AppendMessageInput).pipe(Effect.flip)
-    yield* store.appendMessage({ ...input, at: first.at })
+    ], (entry) => Effect.flip(store.appendMessageOnce({ namespace, ...entry })))
+    const missingAt = yield* store.appendMessage({ namespace, ...input } as MemoryStore.AppendMessageInput).pipe(
+      Effect.flip
+    )
+    yield* store.appendMessage({ namespace, ...input, at: first.at })
     return {
       first,
       later,
       overlapping,
       conflicts,
       missingAt,
-      messages: yield* store.listMessages({ threadId: input.threadId })
+      messages: yield* store.listMessages({ namespace, threadId: input.threadId })
     }
   }))
   expect(result.first.at).toBe(0)

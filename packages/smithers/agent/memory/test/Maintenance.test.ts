@@ -23,6 +23,7 @@ const append = (store: MemoryStore.Service, threadId: string, count: number) =>
     Array.from({ length: count }, (_, index) => index),
     (index) =>
       store.appendMessage({
+        namespace,
         threadId,
         id: `${threadId}-message-${index}`,
         role: index % 2 === 0 ? "user" : "assistant",
@@ -271,11 +272,11 @@ describe("Maintenance", () => {
   it("deletes oldest history until the approximate token budget is met", async () => {
     const result = await run(Effect.gen(function*() {
       const store = yield* MemoryStore.MemoryStore
-      yield* store.appendMessage({ threadId: "thread", id: "one", role: "user", text: "1111", at: 1 })
-      yield* store.appendMessage({ threadId: "thread", id: "two", role: "assistant", text: "2222", at: 2 })
-      yield* store.appendMessage({ threadId: "thread", id: "three", role: "user", text: "3333", at: 3 })
+      yield* store.appendMessage({ namespace, threadId: "thread", id: "one", role: "user", text: "1111", at: 1 })
+      yield* store.appendMessage({ namespace, threadId: "thread", id: "two", role: "assistant", text: "2222", at: 2 })
+      yield* store.appendMessage({ namespace, threadId: "thread", id: "three", role: "user", text: "3333", at: 3 })
       const limited = yield* Maintenance.limitHistory({ maxTokens: 8, charsPerToken: 1 })
-      const messages = yield* store.listMessages({ threadId: "thread" })
+      const messages = yield* store.listMessages({ namespace, threadId: "thread" })
       return { limited, messages }
     }))
 
@@ -302,7 +303,7 @@ describe("Maintenance", () => {
         },
         makeSummaryId: () => "paged-summary"
       })
-      const remaining = yield* store.listMessages({ threadId: "paged" })
+      const remaining = yield* store.listMessages({ namespace, threadId: "paged" })
       return { withinBudget, compacted, remaining }
     }))
 
@@ -345,12 +346,12 @@ describe("Maintenance", () => {
       for (const threadId of ["boundary", "crossing"]) {
         // Reverse insertion order proves the store, not the insert order, sorts ties.
         for (const [index, id] of ids.map((id, index) => [index, id] as const).reverse()) {
-          yield* store.appendMessage({ threadId, id, role: "user", text: "x", at: Math.floor(index / 3) })
+          yield* store.appendMessage({ namespace, threadId, id, role: "user", text: "x", at: Math.floor(index / 3) })
         }
       }
       const boundary = yield* Maintenance.limitHistory({ maxTokens: 600 - 512, charsPerToken: 1 })
-      const afterBoundary = yield* store.listMessages({ threadId: "boundary" })
-      const crossing = yield* store.listMessages({ threadId: "crossing" })
+      const afterBoundary = yield* store.listMessages({ namespace, threadId: "boundary" })
+      const crossing = yield* store.listMessages({ namespace, threadId: "crossing" })
       return { boundary, afterBoundary, crossing }
     }))
 
@@ -361,10 +362,17 @@ describe("Maintenance", () => {
     const crossed = await run(Effect.gen(function*() {
       const store = yield* MemoryStore.MemoryStore
       for (const [index, id] of ids.entries()) {
-        yield* store.appendMessage({ threadId: "crossing", id, role: "user", text: "x", at: Math.floor(index / 3) })
+        yield* store.appendMessage({
+          namespace,
+          threadId: "crossing",
+          id,
+          role: "user",
+          text: "x",
+          at: Math.floor(index / 3)
+        })
       }
       const limited = yield* Maintenance.limitHistory({ maxTokens: 600 - 301, charsPerToken: 1 })
-      return { limited, remaining: yield* store.listMessages({ threadId: "crossing" }) }
+      return { limited, remaining: yield* store.listMessages({ namespace, threadId: "crossing" }) }
     }))
 
     expect(crossed.limited).toEqual({ deletedMessages: 301 })
@@ -376,11 +384,11 @@ describe("Maintenance", () => {
   it("measures history in JavaScript code units", async () => {
     const result = await run(Effect.gen(function*() {
       const store = yield* MemoryStore.MemoryStore
-      yield* store.appendMessage({ threadId: "emoji", id: "one", role: "user", text: "😀😀", at: 1 })
-      yield* store.appendMessage({ threadId: "emoji", id: "two", role: "user", text: "ab", at: 2 })
+      yield* store.appendMessage({ namespace, threadId: "emoji", id: "one", role: "user", text: "😀😀", at: 1 })
+      yield* store.appendMessage({ namespace, threadId: "emoji", id: "two", role: "user", text: "ab", at: 2 })
       const fits = yield* Maintenance.limitHistory({ maxTokens: 6, charsPerToken: 1 })
       const over = yield* Maintenance.limitHistory({ maxTokens: 5, charsPerToken: 1 })
-      return { fits, over, remaining: yield* store.listMessages({ threadId: "emoji" }) }
+      return { fits, over, remaining: yield* store.listMessages({ namespace, threadId: "emoji" }) }
     }))
 
     expect(result.fits).toEqual({ deletedMessages: 0 })
@@ -396,29 +404,37 @@ describe("Maintenance", () => {
       }
       const store = yield* MemoryStore.MemoryStore
       for (const id of ["e", "d", "c", "b", "a"]) {
-        yield* store.appendMessage({ threadId: "collation", id, role: "user", text: id, at: 0 })
+        yield* store.appendMessage({ namespace, threadId: "collation", id, role: "user", text: id, at: 0 })
       }
       const compact = Maintenance.compact({
-        threadId: "collation",
+        thread: { namespace, threadId: "collation" },
         keepRecent: 2,
         maxMessagesPerSummary: 2,
         summarizer: { summarize: ({ messages }) => Effect.succeed(messages.map((message) => message.text).join("+")) }
       })
       yield* compact
-      const messages = yield* store.listMessages({ threadId: "collation" })
-      const firstPage = yield* store.listMessages({ threadId: "collation", limit: 1 })
+      const messages = yield* store.listMessages({ namespace, threadId: "collation" })
+      const firstPage = yield* store.listMessages({ namespace, threadId: "collation", limit: 1 })
       const nextPage = yield* store.listMessages({
+        namespace,
         threadId: "collation",
         cursor: { at: firstPage[0]!.at, id: firstPage[0]!.id },
         limit: 1
       })
       const lastPage = yield* store.listMessages({
+        namespace,
         threadId: "collation",
         cursor: { at: nextPage[0]!.at, id: nextPage[0]!.id },
         limit: 1
       })
       const repeated = yield* compact
-      return { messages, nextPage, lastPage, repeated, after: yield* store.listMessages({ threadId: "collation" }) }
+      return {
+        messages,
+        nextPage,
+        lastPage,
+        repeated,
+        after: yield* store.listMessages({ namespace, threadId: "collation" })
+      }
     }))
     expect(result.messages.map((message) => message.text)).toEqual(["a+b+c", "d", "e"])
     expect(result.nextPage.map((message) => message.id)).toEqual(["d"])
@@ -438,9 +454,11 @@ describe("Maintenance", () => {
       const summarized: Array<ReadonlyArray<string>> = []
       return run(Effect.gen(function*() {
         const store = yield* MemoryStore.MemoryStore
-        for (const id of ids) yield* store.appendMessage({ threadId: "tied", id, role: "user", text: id, at: 0 })
+        for (const id of ids) {
+          yield* store.appendMessage({ namespace, threadId: "tied", id, role: "user", text: id, at: 0 })
+        }
         const compacted = yield* Maintenance.compact({
-          threadId: "tied",
+          thread: { namespace, threadId: "tied" },
           keepRecent: 2,
           maxMessagesPerSummary: 2,
           summarizer: {
@@ -452,9 +470,9 @@ describe("Maintenance", () => {
           },
           ...(makeSummaryId === undefined ? {} : { makeSummaryId })
         })
-        const remaining = yield* store.listMessages({ threadId: "tied" })
+        const remaining = yield* store.listMessages({ namespace, threadId: "tied" })
         const repeated = yield* Maintenance.compact({
-          threadId: "tied",
+          thread: { namespace, threadId: "tied" },
           keepRecent: 2,
           maxMessagesPerSummary: 2,
           summarizer: {
@@ -524,7 +542,7 @@ describe("Maintenance", () => {
       const store = yield* MemoryStore.MemoryStore
       yield* append(store, "windowed", 300)
       const compacted = yield* Maintenance.compact({
-        threadId: "windowed",
+        thread: { namespace, threadId: "windowed" },
         maxMessagesPerSummary: 100,
         summarizer: {
           summarize: ({ messages }) =>
@@ -535,7 +553,7 @@ describe("Maintenance", () => {
         },
         makeSummaryId: (_, messages) => `summary-of-${messages.at(-1)!.id}`
       })
-      return { compacted, remaining: yield* store.listMessages({ threadId: "windowed" }) }
+      return { compacted, remaining: yield* store.listMessages({ namespace, threadId: "windowed" }) }
     }))
 
     const original = (from: number, to: number) =>
@@ -583,7 +601,7 @@ describe("Maintenance", () => {
         },
         makeSummaryId: () => "summary-fixed"
       })
-      const messages = yield* store.listMessages({ threadId: "thread" })
+      const messages = yield* store.listMessages({ namespace, threadId: "thread" })
       return { compacted, messages }
     }))
 
@@ -603,7 +621,7 @@ describe("Maintenance", () => {
       const started = yield* Deferred.make<void>()
       const resume = yield* Deferred.make<void>()
       const fiber = yield* Effect.result(Maintenance.compact({
-        threadId: "thread",
+        thread: { namespace, threadId: "thread" },
         keepRecent: 1,
         summarizer: {
           summarize: ({ rendered }) =>
@@ -614,18 +632,19 @@ describe("Maintenance", () => {
         }
       })).pipe(Effect.forkChild({ startImmediately: true }))
       yield* Deferred.await(started)
-      yield* store.deleteThread({ threadId: "thread" })
+      yield* store.deleteThread({ namespace, threadId: "thread" })
       yield* store.appendMessage({
+        namespace,
         threadId: "thread",
         id: "thread-message-0",
         role: "user",
         text: "NEW INFORMATION NEVER SUMMARIZED",
         at: 100
       })
-      const before = yield* store.listMessages({ threadId: "thread" })
+      const before = yield* store.listMessages({ namespace, threadId: "thread" })
       yield* Deferred.succeed(resume, undefined)
       const compacted = yield* Fiber.join(fiber)
-      return { before, compacted, after: yield* store.listMessages({ threadId: "thread" }) }
+      return { before, compacted, after: yield* store.listMessages({ namespace, threadId: "thread" }) }
     }))
 
     expect(result.compacted).toMatchObject({ _tag: "Failure", failure: { code: "compaction_conflict" } })
@@ -640,7 +659,7 @@ describe("Maintenance", () => {
       const resume = yield* Deferred.make<void>()
       let frozen = false
       const fiber = yield* Maintenance.compact({
-        threadId: "thread",
+        thread: { namespace, threadId: "thread" },
         keepRecent: 1,
         makeSummaryId: () => "summary-fixed",
         summarizer: {
@@ -656,10 +675,10 @@ describe("Maintenance", () => {
       }).pipe(Effect.forkChild({ startImmediately: true }))
       yield* Deferred.await(started)
       const appended = { threadId: "thread", id: "new", role: "user", text: "new information", at: 100 }
-      yield* store.appendMessage(appended)
+      yield* store.appendMessage({ namespace, ...appended })
       yield* Deferred.succeed(resume, undefined)
       const compacted = yield* Fiber.join(fiber)
-      return { frozen, compacted, appended, messages: yield* store.listMessages({ threadId: "thread" }) }
+      return { frozen, compacted, appended, messages: yield* store.listMessages({ namespace, threadId: "thread" }) }
     }))
 
     expect(result.frozen).toBe(true)
@@ -674,7 +693,7 @@ describe("Maintenance", () => {
         const store = yield* MemoryStore.MemoryStore
         const sql = yield* Effect.service(SqlClient.SqlClient)
         yield* append(store, "thread", 903)
-        const before = JSON.stringify(yield* store.listMessages({ threadId: "thread" }))
+        const before = JSON.stringify(yield* store.listMessages({ namespace, threadId: "thread" }))
         const started = yield* Deferred.make<ReadonlyArray<{ readonly id: string }>>()
         let deletions = 0
         const pausedSql = new Proxy(sql, {
@@ -703,7 +722,7 @@ describe("Maintenance", () => {
         )
         const inside = yield* Deferred.await(started)
         yield* Fiber.interrupt(fiber)
-        const afterFailure = yield* store.listMessages({ threadId: "thread" })
+        const afterFailure = yield* store.listMessages({ namespace, threadId: "thread" })
         const retried = yield* Maintenance.compact(options)
         return { before, inside, afterFailure, retried }
       }).pipe(Effect.provide(TestMemory.layerWithDatabase))
@@ -725,7 +744,7 @@ describe("Maintenance", () => {
       const store = yield* MemoryStore.MemoryStore
       const sql = yield* Effect.service(SqlClient.SqlClient)
       yield* append(store, "thread", 903)
-      const before = JSON.stringify(yield* store.listMessages({ threadId: "thread" }))
+      const before = JSON.stringify(yield* store.listMessages({ namespace, threadId: "thread" }))
       yield* Dialect.trigger(sql, {
         name: `fail_compaction`,
         table: `memory_messages`,
@@ -740,10 +759,16 @@ describe("Maintenance", () => {
         makeSummaryId: () => "summary-fixed"
       }
       const failure = yield* Effect.flip(Maintenance.compact(options))
-      const afterFailure = yield* store.listMessages({ threadId: "thread" })
+      const afterFailure = yield* store.listMessages({ namespace, threadId: "thread" })
       yield* TestDatabase.dropTrigger(sql, "fail_compaction")
       const retried = yield* Maintenance.compact(options)
-      return { before, failure, afterFailure, retried, afterRetry: yield* store.listMessages({ threadId: "thread" }) }
+      return {
+        before,
+        failure,
+        afterFailure,
+        retried,
+        afterRetry: yield* store.listMessages({ namespace, threadId: "thread" })
+      }
     }))
 
     expect(result.failure.code).toBe("store")
@@ -763,14 +788,15 @@ describe("Maintenance", () => {
       yield* append(store, "summarizer-failure", 4)
       const summarizerExit = yield* Effect.exit(
         Maintenance.compact({
-          threadId: "summarizer-failure",
+          thread: { namespace, threadId: "summarizer-failure" },
           summarizer: { summarize: () => Effect.fail("summary unavailable") }
         })
       )
-      const afterSummarizerFailure = yield* store.listMessages({ threadId: "summarizer-failure" })
+      const afterSummarizerFailure = yield* store.listMessages({ namespace, threadId: "summarizer-failure" })
 
       yield* append(store, "write-failure", 4)
       yield* store.appendMessage({
+        namespace,
         threadId: "write-failure",
         id: "summary-conflict",
         role: "system",
@@ -779,12 +805,12 @@ describe("Maintenance", () => {
       })
       const writeExit = yield* Effect.exit(
         Maintenance.compact({
-          threadId: "write-failure",
+          thread: { namespace, threadId: "write-failure" },
           summarizer: { summarize: () => Effect.succeed("summary") },
           makeSummaryId: () => "summary-conflict"
         })
       )
-      const afterWriteFailure = yield* store.listMessages({ threadId: "write-failure" })
+      const afterWriteFailure = yield* store.listMessages({ namespace, threadId: "write-failure" })
       return { summarizerExit, afterSummarizerFailure, writeExit, afterWriteFailure }
     }))
 
@@ -811,14 +837,14 @@ describe("Maintenance", () => {
       yield* append(store, "thread", 4)
       const started = yield* Deferred.make<void>()
       const fiber = yield* Maintenance.compact({
-        threadId: "thread",
+        thread: { namespace, threadId: "thread" },
         summarizer: {
           summarize: () => Deferred.succeed(started, undefined).pipe(Effect.andThen(Effect.never))
         }
       }).pipe(Effect.forkChild({ startImmediately: true }))
       yield* Deferred.await(started)
       yield* Fiber.interrupt(fiber)
-      return yield* store.listMessages({ threadId: "thread" })
+      return yield* store.listMessages({ namespace, threadId: "thread" })
     }))
 
     expect(messages.map((message) => message.id)).toEqual([
@@ -858,11 +884,11 @@ describe("Maintenance", () => {
       yield* append(store, "one", 2)
       yield* append(store, "two", 1)
       const generous = yield* Maintenance.limitHistory({ maxTokens: 1_000 })
-      const kept = yield* store.listMessages({ threadId: "one" })
+      const kept = yield* store.listMessages({ namespace, threadId: "one" })
       const cleared = yield* Maintenance.limitHistory({ maxTokens: 0, charsPerToken: 1 })
       const remaining = yield* Effect.all([
-        store.countMessages({ threadId: "one" }),
-        store.countMessages({ threadId: "two" })
+        store.countMessages({ namespace, threadId: "one" }),
+        store.countMessages({ namespace, threadId: "two" })
       ])
       return { empty, generous, kept, cleared, remaining }
     }))
@@ -895,17 +921,24 @@ describe("Maintenance", () => {
       const emptyStore = yield* Maintenance.compact({ summarizer: { summarize: () => Effect.succeed("s") } })
       yield* append(store, "short", 2)
       const atKeepRecent = yield* Maintenance.compact({
-        threadId: "short",
+        thread: { namespace, threadId: "short" },
         summarizer: { summarize: () => Effect.succeed("s") }
       })
-      yield* store.appendMessage({ threadId: "system", id: "system-0", role: "system", text: "boot", at: 0 })
-      yield* store.appendMessage({ threadId: "system", id: "system-1", role: "user", text: "one", at: 1 })
-      yield* store.appendMessage({ threadId: "system", id: "system-2", role: "assistant", text: "two", at: 2 })
-      const systemOnly = yield* Maintenance.compact({
+      yield* store.appendMessage({ namespace, threadId: "system", id: "system-0", role: "system", text: "boot", at: 0 })
+      yield* store.appendMessage({ namespace, threadId: "system", id: "system-1", role: "user", text: "one", at: 1 })
+      yield* store.appendMessage({
+        namespace,
         threadId: "system",
+        id: "system-2",
+        role: "assistant",
+        text: "two",
+        at: 2
+      })
+      const systemOnly = yield* Maintenance.compact({
+        thread: { namespace, threadId: "system" },
         summarizer: { summarize: () => Effect.succeed("s") }
       })
-      const untouched = yield* store.listMessages({ threadId: "system" })
+      const untouched = yield* store.listMessages({ namespace, threadId: "system" })
       return { emptyStore, atKeepRecent, systemOnly, untouched }
     }))
 
@@ -920,17 +953,17 @@ describe("Maintenance", () => {
       const store = yield* MemoryStore.MemoryStore
       yield* append(store, "single", 3)
       const single = yield* Maintenance.compact({
-        threadId: "single",
+        thread: { namespace, threadId: "single" },
         summarizer: { summarize: () => Effect.succeed("older context") }
       })
-      const afterSingle = yield* store.listMessages({ threadId: "single" })
+      const afterSingle = yield* store.listMessages({ namespace, threadId: "single" })
       yield* append(store, "all", 2)
       const all = yield* Maintenance.compact({
-        threadId: "all",
+        thread: { namespace, threadId: "all" },
         keepRecent: 0,
         summarizer: { summarize: ({ messages }) => Effect.succeed(`summary of ${messages.length}`) }
       })
-      const afterAll = yield* store.listMessages({ threadId: "all" })
+      const afterAll = yield* store.listMessages({ namespace, threadId: "all" })
       return { single, afterSingle, all, afterAll }
     }))
 
@@ -953,7 +986,7 @@ describe("Maintenance", () => {
       const store = yield* MemoryStore.MemoryStore
       yield* append(store, "rendered", 4)
       yield* Maintenance.compact({
-        threadId: "rendered",
+        thread: { namespace, threadId: "rendered" },
         summarizer: {
           summarize: (input) =>
             Effect.sync(() => {
