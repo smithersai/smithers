@@ -5,9 +5,10 @@ import { makeWorkspace, rawHost } from "./fixtures/quickstartHost.ts"
 it.effect("refuses an ungranted read with the capability it needed", effect () => {
   const root = try Effect.try(() => makeWorkspace())
   provide rawHost(root) {
+    const readme = (try Path.Path).join(root, "README.md")
     expect(try unattended(root)).toEqual(Option.some(expect.objectContaining({
       code: "permission_required",
-      capability: expect.objectContaining({ action: "fs:read", resource: `${root}/README.md` }),
+      capability: expect.objectContaining({ action: "fs:read", resource: readme }),
       tier: "sealed"
     })))
   }
@@ -16,8 +17,9 @@ it.effect("refuses an ungranted read with the capability it needed", effect () =
 it.effect("parks the read on an attended store and resumes it on a reply", effect () => {
   const root = try Effect.try(() => makeWorkspace())
   provide rawHost(root) {
+    const readme = (try Path.Path).join(root, "README.md")
     const { capability, contents } = try attended(root)
-    expect(capability).toMatchObject({ action: "fs:read", resource: `${root}/README.md` })
+    expect(capability).toMatchObject({ action: "fs:read", resource: readme })
     expect(contents).toBe("# hello")
   }
 })

@@ -339,7 +339,7 @@ describe("proc:spawn grant identity", () => {
         const kept = yield* attended(false)
         expect(kept.exit._tag).toBe("Success")
         expect(kept.spawned.map((command) => (command as ChildProcess.StandardCommand).options.cwd)).toEqual([
-          NodeFs.realpathSync(directory)
+          NodeFs.realpathSync.native(directory)
         ])
         const swapped = yield* attended(true)
         expect(refused(swapped)).toBe(true)

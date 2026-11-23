@@ -32,7 +32,8 @@ use windows_sys::Win32::Storage::FileSystem::{
     FILE_ATTRIBUTE_DIRECTORY, FILE_ATTRIBUTE_READONLY, FILE_ATTRIBUTE_REPARSE_POINT,
     FILE_BASIC_INFO, FILE_GENERIC_READ, FILE_GENERIC_WRITE, FILE_LIST_DIRECTORY,
     FILE_READ_ATTRIBUTES, FILE_READ_DATA, FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE,
-    FILE_STANDARD_INFO, FILE_TRAVERSE, FILE_TYPE_DISK, FILE_WRITE_ATTRIBUTES, SYNCHRONIZE,
+    FILE_STANDARD_INFO, FILE_TRAVERSE, FILE_TYPE_DISK, FILE_WRITE_ATTRIBUTES, FILE_WRITE_DATA,
+    SYNCHRONIZE,
 };
 use windows_sys::Win32::System::Ioctl::FSCTL_GET_REPARSE_POINT;
 use windows_sys::Win32::System::SystemServices::{
@@ -511,31 +512,14 @@ fn reparse_target(bytes: &[u8]) -> io::Result<OsString> {
 pub(super) struct Directory(File);
 
 impl Directory {
-    /// Flush publication metadata through a writable handle to this pinned
-    /// directory. A refused flush is an error, never best-effort durability.
+    /// Flush publication metadata through this pinned directory handle.
+    /// Writable directories are opened with FILE_WRITE_DATA (FILE_ADD_FILE on
+    /// directories, the minimal right NtFlushBuffersFile requires) so flushing
+    /// never needs ReOpenFile escalation. A refused flush is an error, never
+    /// best-effort durability.
     pub(super) fn sync(&self) -> io::Result<()> {
-        use windows_sys::Win32::Foundation::INVALID_HANDLE_VALUE;
-        use windows_sys::Win32::Storage::FileSystem::{
-            ReOpenFile, FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_OPEN_REPARSE_POINT,
-        };
-        // SAFETY: reopen the live pinned object, without resolving a pathname.
-        let handle = unsafe {
-            ReOpenFile(
-                self.0.as_raw_handle(),
-                FILE_GENERIC_WRITE | FILE_READ_ATTRIBUTES,
-                FILE_SHARE_READ | FILE_SHARE_WRITE,
-                FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT,
-            )
-        };
-        if handle == INVALID_HANDLE_VALUE {
-            return Err(staged("reopen directory for flush")(
-                io::Error::last_os_error(),
-            ));
-        }
-        // SAFETY: ReOpenFile transfers a new owned handle on success.
-        let file = unsafe { File::from_raw_handle(handle) };
-        no_reparse(&file).map_err(staged("inspect directory for flush"))?;
-        file.sync_all().map_err(staged("flush directory"))
+        no_reparse(&self.0).map_err(staged("inspect directory for flush"))?;
+        self.0.sync_all().map_err(staged("flush directory"))
     }
 
     /// Recovery directories may be reused only with the exact private ACL we
@@ -547,7 +531,7 @@ impl Directory {
                 let file = open(
                     Some(&self.0),
                     name_units(name)?,
-                    FILE_LIST_DIRECTORY | FILE_TRAVERSE | 0x0002_0000, // READ_CONTROL
+                    FILE_LIST_DIRECTORY | FILE_TRAVERSE | FILE_WRITE_DATA | 0x0002_0000, // READ_CONTROL
                     true,
                     false,
                 )?;
@@ -568,7 +552,11 @@ impl Directory {
                 let file = open(
                     Some(&self.0),
                     name_units(name)?,
-                    FILE_LIST_DIRECTORY | FILE_TRAVERSE | 0x0002_0000 | 0x0004_0000,
+                    FILE_LIST_DIRECTORY
+                        | FILE_TRAVERSE
+                        | FILE_WRITE_DATA
+                        | 0x0002_0000
+                        | 0x0004_0000,
                     true,
                     false,
                 )?;
@@ -612,12 +600,21 @@ impl Directory {
             false,
         )?);
         no_reparse(&current.0)?;
+        let mut rest = Vec::new();
         for component in components {
             match component {
-                Component::Normal(name) => current = current.child(name)?,
+                Component::Normal(name) => rest.push(name),
                 Component::CurDir => {}
                 _ => return Err(denied(BoundaryError::InvalidPath)),
             }
+        }
+        let last = rest.len().saturating_sub(1);
+        for (index, name) in rest.into_iter().enumerate() {
+            current = if index == last {
+                current.child(name)?
+            } else {
+                current.child_readonly(name)?
+            };
         }
         Ok(current)
     }
@@ -630,7 +627,7 @@ impl Directory {
         info(&self.0)
     }
 
-    pub(super) fn child(&self, name: &OsStr) -> io::Result<Self> {
+    fn child_readonly(&self, name: &OsStr) -> io::Result<Self> {
         let file = open(
             Some(&self.0),
             name_units(name)?,
@@ -638,6 +635,29 @@ impl Directory {
             true,
             false,
         )?;
+        no_reparse(&file)?;
+        Ok(Self(file))
+    }
+
+    pub(super) fn child(&self, name: &OsStr) -> io::Result<Self> {
+        let units = name_units(name)?;
+        let file = match open(
+            Some(&self.0),
+            units.clone(),
+            FILE_LIST_DIRECTORY | FILE_TRAVERSE | FILE_WRITE_DATA,
+            true,
+            false,
+        ) {
+            Ok(file) => file,
+            Err(error) if error.kind() == io::ErrorKind::PermissionDenied => open(
+                Some(&self.0),
+                units,
+                FILE_LIST_DIRECTORY | FILE_TRAVERSE,
+                true,
+                false,
+            )?,
+            Err(error) => return Err(error),
+        };
         no_reparse(&file)?;
         Ok(Self(file))
     }
@@ -747,7 +767,7 @@ impl Directory {
         let file = open_with(
             Some(&self.0),
             name_units(name)?,
-            FILE_GENERIC_READ | FILE_TRAVERSE,
+            FILE_GENERIC_READ | FILE_WRITE_DATA | FILE_TRAVERSE,
             true,
             FILE_SHARE_READ | FILE_SHARE_WRITE,
             Some(&security),
@@ -1142,7 +1162,7 @@ mod tests {
                 open_with(
                     Some(&parent.0),
                     name_units(OsStr::new("probe")).unwrap(),
-                    FILE_GENERIC_READ | FILE_TRAVERSE,
+                    FILE_GENERIC_READ | FILE_WRITE_DATA | FILE_TRAVERSE,
                     true,
                     FILE_SHARE_READ | FILE_SHARE_WRITE,
                     Some(&probe),

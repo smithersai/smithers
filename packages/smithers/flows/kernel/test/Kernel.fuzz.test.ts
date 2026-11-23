@@ -2079,6 +2079,7 @@ describe("@smthrs/kernel HttpClient fuzz invariants", () => {
           "rawBool",
           "rawInvalid",
           "uint8",
+          "modelJson",
           "formData",
           "stream"
         ]),
@@ -2143,6 +2144,9 @@ describe("@smthrs/kernel HttpClient fuzz invariants", () => {
             if (bodyKind === "rawBool") return HttpBody.raw(true)
             if (bodyKind === "rawInvalid") return HttpBody.raw({ bad: true })
             if (bodyKind === "uint8") return HttpBody.uint8Array(new Uint8Array([5]), "application/octet-stream")
+            if (bodyKind === "modelJson") {
+              return HttpBody.uint8Array(new TextEncoder().encode(JSON.stringify({ model: "m/1" })), "application/json")
+            }
             if (bodyKind === "formData") {
               const fd = new FormData()
               fd.append("k", "v")
@@ -2179,14 +2183,15 @@ describe("@smthrs/kernel HttpClient fuzz invariants", () => {
               return Result.isFailure(res) && Option.isNone(HttpClient.fromHttpClientError(res.failure))
             }
 
-            const expectedAction = modelCall
+            const admittedModelCall = modelCall && method === "POST" && bodyKind === "modelJson"
+            const expectedAction = admittedModelCall
               ? "model:call"
               : (method === "GET" || method === "HEAD")
               ? "net:get"
               : "net:post"
             const expectedHost = `first.test${port}`
             const expectedBase = scheme === "https:" ? expectedHost : `${scheme}//${expectedHost}`
-            const expectedRes = modelCall ? `${expectedBase}/m/1` : expectedBase
+            const expectedRes = admittedModelCall ? `${expectedBase}/m/1` : expectedBase
             if (checks[0]?.action !== expectedAction || checks[0]?.resource !== expectedRes) return false
 
             if (redirectMode === "followDenied") {

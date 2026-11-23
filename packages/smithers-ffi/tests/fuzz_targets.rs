@@ -10,8 +10,8 @@
 use std::ffi::{CStr, CString};
 
 use smithers_ffi::live_document::{
-    ld_apply, ld_awareness, ld_close, ld_free, ld_open, ld_peer, ld_set_author, ld_state,
-    ld_sync1, ld_sync2, ld_text, LdResult,
+    ld_apply, ld_awareness, ld_close, ld_free, ld_open, ld_peer, ld_set_author, ld_state, ld_sync1,
+    ld_sync2, ld_text, LdResult,
 };
 use smithers_ffi::{smithers_free_string, smithers_wiki_document};
 use yrs::updates::encoder::Encode;
@@ -125,9 +125,8 @@ fn fuzz_live_document_c_abi_adversarial_bytes_never_panic() {
                     assert_ne!(st, 0, "unregistered client must be rejected");
                 }
                 1 => {
-                    let _ = take_ld_bytes(unsafe {
-                        ld_apply(h, 42, payload.as_ptr(), payload.len())
-                    });
+                    let _ =
+                        take_ld_bytes(unsafe { ld_apply(h, 42, payload.as_ptr(), payload.len()) });
                 }
                 2 => {
                     let _ = take_ld_bytes(unsafe { ld_peer(h, payload.as_ptr(), payload.len()) });
@@ -189,9 +188,11 @@ fn fuzz_live_document_multi_replica_crdt_convergence() {
         let mut client_docs: Vec<Doc> = [10u64, 20, 30]
             .iter()
             .map(|&cid| {
-                let mut opts = Options::default();
-                opts.client_id = yrs::ClientID::new(cid);
-                opts.offset_kind = yrs::OffsetKind::Utf16;
+                let opts = Options {
+                    client_id: yrs::ClientID::new(cid),
+                    offset_kind: yrs::OffsetKind::Utf16,
+                    ..Options::default()
+                };
                 Doc::with_options(opts)
             })
             .collect();
@@ -221,7 +222,11 @@ fn fuzz_live_document_multi_replica_crdt_convergence() {
                 if bounds.len() > 1 && rng.usize(3) == 0 {
                     let start_idx = rng.usize(bounds.len() - 1);
                     let end_idx = (start_idx + 1 + rng.usize(3)).min(bounds.len() - 1);
-                    text.remove_range(&mut txn, bounds[start_idx], bounds[end_idx] - bounds[start_idx]);
+                    text.remove_range(
+                        &mut txn,
+                        bounds[start_idx],
+                        bounds[end_idx] - bounds[start_idx],
+                    );
                 } else {
                     let pos = bounds[rng.usize(bounds.len())];
                     let s = alphabet[rng.usize(alphabet.len())];
@@ -260,7 +265,10 @@ fn fuzz_live_document_multi_replica_crdt_convergence() {
                     break;
                 }
             }
-            assert!(applied.iter().all(|&a| a), "causal retry must eventually admit every valid update");
+            assert!(
+                applied.iter().all(|&a| a),
+                "causal retry must eventually admit every valid update"
+            );
             // Replay every update a second time to verify idempotency
             for &idx in &order {
                 let (_, ref upd) = all_updates[idx];
@@ -318,7 +326,10 @@ fn fuzz_wiki_document_ffi_json_never_panics() {
     // NULL pointer must return valid JSON error envelope
     let null_ptr = smithers_wiki_document(std::ptr::null());
     assert!(!null_ptr.is_null());
-    let s = unsafe { CStr::from_ptr(null_ptr) }.to_str().unwrap().to_owned();
+    let s = unsafe { CStr::from_ptr(null_ptr) }
+        .to_str()
+        .unwrap()
+        .to_owned();
     unsafe { smithers_free_string(null_ptr) };
     let v: serde_json::Value = serde_json::from_str(&s).expect("NULL must return JSON");
     assert!(v.get("error").is_some());
