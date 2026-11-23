@@ -1,11 +1,15 @@
-import { BuildAndCheckTypeScriptPackage } from "@smthrs/repo-targets"
+import { BuildAndCheckTypeScriptPackage, WorkspaceSources } from "@smthrs/repo-targets"
 import { Smithers } from "@smthrs/targets"
 
 const cwd = "packages/smthrs-deprecation"
+const workspaceSources = WorkspaceSources({ cwd })
 
-const standard = BuildAndCheckTypeScriptPackage({ cwd })
+const standard = BuildAndCheckTypeScriptPackage({
+  cwd,
+  reads: [...Object.values(workspaceSources)]
+})
 
-const { check, circular, docs, docsFiles, fmt, lib, lint, test } = standard
+const { bench, check, circular, docs, docsFiles, fmt, lib, lint, test } = standard
 
 const securityReview = Smithers.SecurityReview({
   cwd,
@@ -49,5 +53,5 @@ const securityReview = Smithers.SecurityReview({
 })
 
 export const Package = Smithers.Package({
-  targets: { check, circular, docs, docsFiles, fmt, lib, lint, test, ...securityReview }
+  targets: { bench, check, circular, docs, docsFiles, fmt, lib, lint, test, ...securityReview, ...workspaceSources }
 })

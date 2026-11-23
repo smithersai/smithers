@@ -218,11 +218,14 @@ describe("BranchProjection", () => {
       entry({ seq: 2, payload: null }),
       entry({ seq: 3, payload: { participantId: "alice", name: "branch.say" } }),
       entry({ seq: 4, payload: { commandId: "c4", name: "branch.say" } }),
-      entry({ seq: 5, payload: { commandId: "c5", participantId: "alice" } })
+      entry({ seq: 5, payload: { commandId: "c5", participantId: "alice" } }),
+      entry({ seq: 6, payload: { commandId: "c6", participantId: "alice", name: "branch.say", args: 123 } }),
+      entry({ seq: 7, payload: { commandId: "c7", participantId: "alice", name: "branch.say", target: 123 } }),
+      entry({ seq: 8, payload: { commandId: "c8", participantId: "alice", name: "branch.say", capabilityId: 123 } })
     ]
     const state = BranchProjection.project(branchId, undecodable)
 
-    expect(state.seq).toBe(5)
+    expect(state.seq).toBe(8)
     expect(state.commands).toEqual([])
   })
 

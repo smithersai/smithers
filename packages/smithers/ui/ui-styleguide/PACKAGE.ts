@@ -159,6 +159,15 @@ const sourceFiles = Smithers.Filegroup({
   cwd
 })
 
+const bench = Smithers.NodeBench({
+  runtime: Smithers.Runtime.Bun({ version: ">=1.4.0" }),
+  entry: Smithers.file("bench/run.ts"),
+  srcs: [Smithers.glob("//packages/smithers/ui/ui-styleguide/src/**/*.ts"), Smithers.file("bench/run.ts")],
+  deps: [],
+  cache: true,
+  cwd
+})
+
 export const Package = Smithers.Package({
-  targets: { sourceFiles, check, docsFiles, shikiThemes, unitTests, ...securityReview }
+  targets: { bench, sourceFiles, check, docsFiles, shikiThemes, unitTests, ...securityReview }
 })

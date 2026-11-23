@@ -2,14 +2,19 @@ import {
   BuildAndCheckTypeScriptPackage,
   ImportRules,
   ReviewDocsAgainstCode,
-  ReviewJsdocAgainstCode
+  ReviewJsdocAgainstCode,
+  WorkspaceSources
 } from "@smthrs/repo-targets"
 /** Standard package targets plus package-owned documentation generation. */
 import { Smithers } from "@smthrs/targets"
 
-const { check, circular, docsFiles, fmt, lib, lint } = BuildAndCheckTypeScriptPackage({
+const cwd = "packages/smithers/agent"
+const workspaceSources = WorkspaceSources({ cwd })
+
+const { bench, check, circular, docsFiles, fmt, lib, lint } = BuildAndCheckTypeScriptPackage({
   deps: [],
-  cwd: "packages/smithers/agent",
+  reads: [...Object.values(workspaceSources)],
+  cwd,
   // examples/ is type-checked and formatted with the tests, and run by
   // test/examples/; each example is documentation users copy, so it is not
   // held to the library lint rules.
@@ -377,6 +382,7 @@ const securityReview = Smithers.SecurityReview({
 
 export const Package = Smithers.Package({
   targets: {
+    bench,
     check,
     circular,
     docs,
@@ -389,6 +395,7 @@ export const Package = Smithers.Package({
     reviewDocsAgainstCode,
     reviewJsdocAgainstCode,
     test,
-    ...securityReview
+    ...securityReview,
+    ...workspaceSources
   }
 })

@@ -26,18 +26,20 @@ import * as DeclarationSource from "./internal/DeclarationSource.ts"
  * `docs` is the documentation-parity verb. It remains independently
  * addressable and also participates in the aggregate `ci` command.
  *
- * `run` and `review` do not. `run` is the manual verb, and `review` is the
- * model-assisted one: a review target spawns a model CLI against the diff of
+ * `run`, `review`, and `bench` do not. `run` is the manual verb, `review` is the
+ * model-assisted one, and `bench` runs performance benchmarks incrementally:
+ * a review target spawns a model CLI against the diff of
  * the checkout it runs in, which is neither a reproducible function of its
  * inputs nor something a hosted runner has the binary or the credential for.
- * A target that declares `review` alone is therefore invisible to
+ * A target that declares `review` or `bench` alone is therefore invisible to
  * `lint`, `ci`, `test`, and `build` over a wildcard, and reachable only
- * through `smithers-build review` or its exact label.
+ * through its own verb (`smithers-build review`, `smithers-build bench`,
+ * `smithers-build affected bench`) or its exact label.
  *
  * @category models
  * @since 0.1.0
  */
-export const Kind = Schema.Literals(["build", "test", "lint", "run", "docs", "review"])
+export const Kind = Schema.Literals(["build", "test", "lint", "run", "docs", "review", "bench"])
 
 /**
  * CLI verbs a target can participate in.
@@ -48,7 +50,7 @@ export const Kind = Schema.Literals(["build", "test", "lint", "run", "docs", "re
 export type Kind = typeof Kind.Type
 
 /** Runtime membership check kept independent of schema internals. */
-const kindNames: ReadonlySet<string> = new Set(["build", "test", "lint", "run", "docs", "review"])
+const kindNames: ReadonlySet<string> = new Set(["build", "test", "lint", "run", "docs", "review", "bench"])
 
 const isKind = (value: unknown): value is Kind => typeof value === "string" && kindNames.has(value)
 

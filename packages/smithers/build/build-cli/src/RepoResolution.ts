@@ -222,7 +222,7 @@ const runProcess = (
 const tail = (value: string): string =>
   value.length <= diagnosticTail ? value : value.slice(value.length - diagnosticTail)
 
-const kindNames: ReadonlySet<string> = new Set(["build", "test", "lint", "run", "docs", "review"])
+const kindNames: ReadonlySet<string> = new Set(["build", "test", "bench", "lint", "run", "docs", "review"])
 
 const repositoryOf = (
   index: PackageIndex.PackageIndex,

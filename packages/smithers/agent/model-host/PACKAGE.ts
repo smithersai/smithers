@@ -2,7 +2,8 @@ import {
   BuildAndCheckTypeScriptPackage,
   ReviewDocsAgainstCode,
   ReviewJsdocAgainstCode,
-  SdkRules
+  SdkRules,
+  WorkspaceSources
 } from "@smthrs/repo-targets"
 /** Shared model host library targets and its coverage-gated protocol suite. */
 import { Smithers } from "@smthrs/targets"
@@ -15,6 +16,7 @@ import { Package as modelPackage } from "../model/PACKAGE.ts"
 import { Package as agentPackage } from "../PACKAGE.ts"
 
 const cwd = "packages/smithers/agent/model-host"
+const workspaceSources = WorkspaceSources({ cwd })
 const dependencies = [
   agentPackage.lib,
   flowPackage.lib,
@@ -24,7 +26,11 @@ const dependencies = [
   modelPackage.lib,
   rpcPackage.check
 ]
-const standard = BuildAndCheckTypeScriptPackage({ deps: dependencies, cwd })
+const standard = BuildAndCheckTypeScriptPackage({
+  deps: dependencies,
+  reads: [...Object.values(workspaceSources)],
+  cwd
+})
 
 /** The package documentation as a file group: the README, every docs page and the manifest. */
 const docsFiles = Smithers.Filegroup({
@@ -169,6 +175,7 @@ const securityReview = Smithers.SecurityReview({
 
 export const Package = Smithers.Package({
   targets: {
+    bench: standard.bench,
     check: standard.check,
     docs: standard.docs,
     docsFiles,
@@ -180,6 +187,7 @@ export const Package = Smithers.Package({
     reviewDocsAgainstCode,
     reviewJsdocAgainstCode,
     test: standard.test,
-    ...securityReview
+    ...securityReview,
+    ...workspaceSources
   }
 })

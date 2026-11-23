@@ -2,7 +2,8 @@ import {
   BuildAndCheckTypeScriptPackage,
   ReviewDocsAgainstCode,
   ReviewJsdocAgainstCode,
-  SdkRules
+  SdkRules,
+  WorkspaceSources
 } from "@smthrs/repo-targets"
 /** Standard package targets for generated views, its import rules, and a security review of the realm and frame. */
 import { Smithers } from "@smthrs/targets"
@@ -13,8 +14,11 @@ import { Package as flowPackage } from "../../flows/flow/PACKAGE.ts"
 
 const cwd = "packages/smithers/ui/views"
 
-const { check, circular, docs, docsFiles, fmt, lib, lint, test } = BuildAndCheckTypeScriptPackage({
+const workspaceSources = WorkspaceSources({ cwd })
+
+const { bench, check, circular, docs, docsFiles, fmt, lib, lint, test } = BuildAndCheckTypeScriptPackage({
   deps: [harnessPackage.lib, cryptoPackage.lib, flowPackage.lib],
+  reads: [...Object.values(workspaceSources)],
   sources: Input.glob("{src,examples}/**/*.ts"),
   cwd
 })
@@ -114,6 +118,7 @@ const securityReview = Smithers.SecurityReview({
 
 export const Package = Smithers.Package({
   targets: {
+    bench,
     check,
     circular,
     docs,
@@ -127,6 +132,7 @@ export const Package = Smithers.Package({
     reviewJsdocAgainstCode,
     sourceFiles,
     test,
+    ...workspaceSources,
     ...securityReview
   }
 })

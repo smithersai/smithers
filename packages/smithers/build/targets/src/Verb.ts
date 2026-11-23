@@ -111,6 +111,22 @@ export const ReviewVerb = Schema.Struct({ name: Schema.Literal("review") })
 export type ReviewVerb = typeof ReviewVerb.Type
 
 /**
+ * Schema for the `bench` verb.
+ *
+ * @category schemas
+ * @since 0.1.0
+ */
+export const BenchVerb = Schema.Struct({ name: Schema.Literal("bench") })
+
+/**
+ * The `bench` verb.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export type BenchVerb = typeof BenchVerb.Type
+
+/**
  * Schema for the aggregate `ci` verb.
  *
  * `ci` is not a {@link Target.Kind}: it is the CLI's own name for planning every
@@ -137,7 +153,7 @@ export type CiVerb = typeof CiVerb.Type
  * @category schemas
  * @since 0.1.0
  */
-export const Verb = Schema.Union([BuildVerb, TestVerb, LintVerb, DocsVerb, ReviewVerb])
+export const Verb = Schema.Union([BuildVerb, TestVerb, LintVerb, DocsVerb, ReviewVerb, BenchVerb])
 
 /**
  * One verb a generated pipeline may run.
@@ -204,6 +220,19 @@ export const Docs: DocsVerb = DocsVerb.make({ name: "docs" })
 export const Review: ReviewVerb = ReviewVerb.make({ name: "review" })
 
 /**
+ * Runs the performance benchmark targets in the pattern.
+ *
+ * Deliberately its own verb rather than a flavour of `test`: benchmarks are
+ * selected incrementally on changes via `smthrs affected bench //...` or run
+ * directly via `smthrs bench //...`, without slowing down the aggregate `ci`
+ * unit-test graph unless a pipeline explicitly declares a `Verb.Bench` step.
+ *
+ * @category constructors
+ * @since 0.1.0
+ */
+export const Bench: BenchVerb = BenchVerb.make({ name: "bench" })
+
+/**
  * The verbs the aggregate `ci` command runs, in the order it aggregates them.
  *
  * A pipeline declaring exactly this set is the aggregate `ci` command, so the
@@ -237,7 +266,7 @@ export const Ci: CiVerb = CiVerb.make({ name: "ci" })
  * @category schemas
  * @since 0.1.0
  */
-export const PipelineVerb = Schema.Union([BuildVerb, TestVerb, LintVerb, DocsVerb, ReviewVerb, CiVerb])
+export const PipelineVerb = Schema.Union([BuildVerb, TestVerb, LintVerb, DocsVerb, ReviewVerb, BenchVerb, CiVerb])
 
 /**
  * One verb a generated pipeline step may run, aggregate included.

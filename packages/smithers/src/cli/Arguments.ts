@@ -8,6 +8,7 @@ import * as Argv from "./Argv.ts"
 const targets = new Set([
   "build",
   "test",
+  "bench",
   "lint",
   "docs",
   "review",

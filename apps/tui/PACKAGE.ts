@@ -345,6 +345,15 @@ const securityReview = Smithers.SecurityReview({
   ]
 })
 
+const bench = Smithers.NodeBench({
+  runtime: Smithers.Runtime.Bun({ version: ">=1.4.0" }),
+  entry: Smithers.file("bench/run.ts"),
+  srcs: [...sources, Smithers.file("bench/run.ts")],
+  deps: [cli.nativeSources],
+  cache: true,
+  cwd
+})
+
 export const Package = Smithers.Package({
-  targets: { check, unitTests, e2eTests, importRules, lint, fmt, ...securityReview }
+  targets: { bench, check, unitTests, e2eTests, importRules, lint, fmt, ...securityReview }
 })

@@ -94,6 +94,7 @@
     "./NewPackage": "./src/NewPackage.ts",
     "./Nix": "./src/Nix.ts",
     "./NodeArtifact": "./src/NodeArtifact.ts",
+    "./NodeBench": "./src/NodeBench.ts",
     "./NodeBinary": "./src/NodeBinary.ts",
     "./NodeTest": "./src/NodeTest.ts",
     "./NpmPublish": "./src/NpmPublish.ts",
@@ -131,6 +132,7 @@
     "./TypedocDocumentation": "./src/TypedocDocumentation.ts",
     "./Verb": "./src/Verb.ts",
     "./Vitest": "./src/Vitest.ts",
+    "./VitestBench": "./src/VitestBench.ts",
     "./VitestCoverage": "./src/VitestCoverage.ts",
     "./VitestWatch": "./src/VitestWatch.ts",
     "./WorkspaceDeclaration": "./src/WorkspaceDeclaration.ts",
@@ -718,6 +720,16 @@
           "default": "./dist/cjs/NodeArtifact.js"
         }
       },
+      "./NodeBench": {
+        "import": {
+          "types": "./dist/esm/NodeBench.d.ts",
+          "default": "./dist/esm/NodeBench.js"
+        },
+        "require": {
+          "types": "./dist/cjs/NodeBench.d.ts",
+          "default": "./dist/cjs/NodeBench.js"
+        }
+      },
       "./NodeBinary": {
         "import": {
           "types": "./dist/esm/NodeBinary.d.ts",
@@ -1086,6 +1098,16 @@
         "require": {
           "types": "./dist/cjs/Vitest.d.ts",
           "default": "./dist/cjs/Vitest.js"
+        }
+      },
+      "./VitestBench": {
+        "import": {
+          "types": "./dist/esm/VitestBench.d.ts",
+          "default": "./dist/esm/VitestBench.js"
+        },
+        "require": {
+          "types": "./dist/cjs/VitestBench.d.ts",
+          "default": "./dist/cjs/VitestBench.js"
         }
       },
       "./VitestCoverage": {

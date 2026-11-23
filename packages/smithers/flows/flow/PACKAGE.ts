@@ -14,7 +14,8 @@ import {
   ImportRules,
   ReviewDocsAgainstCode,
   ReviewJsdocAgainstCode,
-  ReviewTagsMigrationsAndKeys
+  ReviewTagsMigrationsAndKeys,
+  WorkspaceSources
 } from "@smthrs/repo-targets"
 import { Smithers } from "@smthrs/targets"
 import { docsWriter, referenceStyle, rootInvariantsConfig, rootJSDocConfig } from "../../../../PACKAGE.ts"
@@ -32,6 +33,8 @@ const keys = keysPackage.lib
 const canonical = canonicalPackage.lib
 
 const cwd = "packages/smithers/flows/flow"
+const workspaceSources = WorkspaceSources({ cwd })
+const reads = Object.values(workspaceSources)
 const sources = Smithers.glob("src/**/*.ts")
 const tests = Smithers.glob("test/**/*.test.{ts,vibe}")
 const examples = Smithers.glob("examples/**/*.{ts,vibe}")
@@ -80,6 +83,24 @@ const test = Smithers.Vitest({
   config: Smithers.file("vitest.config.ts"),
   environment: "node",
   passWithNoTests: false,
+  cwd
+})
+
+const bench = Smithers.VitestBench({
+  benches: [Smithers.glob("test/**/*.bench.{ts,vibe}")],
+  sources: [
+    sources,
+    examples,
+    Smithers.glob("test/**/*.{ts,vibe}"),
+    Smithers.file("tsconfig.json"),
+    Smithers.file("tsconfig.test.json"),
+    Smithers.file("package.json")
+  ],
+  deps: [...reads],
+  config: Smithers.file("vitest.config.ts"),
+  environment: "node",
+  passWithNoTests: false,
+  cache: true,
   cwd
 })
 
@@ -319,6 +340,7 @@ const securityReview = Smithers.SecurityReview({
 
 export const Package = Smithers.Package({
   targets: {
+    bench,
     importRules,
     bunTest,
     check,
@@ -336,6 +358,7 @@ export const Package = Smithers.Package({
     reviewDocsAgainstCode,
     reviewJsdocAgainstCode,
     reviewTagsMigrationsAndKeys,
-    ...securityReview
+    ...securityReview,
+    ...workspaceSources
   }
 })

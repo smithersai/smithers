@@ -1,4 +1,9 @@
-import { BuildAndCheckTypeScriptPackage, ReviewDocsAgainstCode, ReviewJsdocAgainstCode } from "@smthrs/repo-targets"
+import {
+  BuildAndCheckTypeScriptPackage,
+  ReviewDocsAgainstCode,
+  ReviewJsdocAgainstCode,
+  WorkspaceSources
+} from "@smthrs/repo-targets"
 /**
  * Targets for the `@smthrs/build` package plus the declarations it
  * carried as a standalone workspace root:
@@ -14,11 +19,16 @@ import { BuildAndCheckTypeScriptPackage, ReviewDocsAgainstCode, ReviewJsdocAgain
 import { Smithers } from "@smthrs/targets"
 import { Package as infraPackage } from "./infra/PACKAGE.ts"
 
+const workspaceSources = WorkspaceSources({ cwd: "packages/smithers/build" })
+
 const standard = BuildAndCheckTypeScriptPackage({
+  reads: [...Object.values(workspaceSources)],
   sources: Smithers.glob("{src,examples}/**/*.ts"),
+  benchConfig: Smithers.file("vitest.bench.config.ts"),
   cwd: "packages/smithers/build"
 })
 
+const bench = standard.bench
 const lib = standard.lib
 const check = standard.check
 const fmt = standard.fmt
@@ -433,6 +443,7 @@ const reviewJsdocAgainstCode = ReviewJsdocAgainstCode({ cwd: "packages/smithers/
 
 export const Package = Smithers.Package({
   targets: {
+    bench,
     cacheService,
     cacheServicePostgres,
     cacheServicePostgresDatabase,
@@ -447,6 +458,7 @@ export const Package = Smithers.Package({
     reviewDocsAgainstCode,
     reviewJsdocAgainstCode,
     test,
+    ...workspaceSources,
     ...securityReview
   }
 })

@@ -1,12 +1,14 @@
-import { BuildAndCheckTypeScriptPackage, SdkRules } from "@smthrs/repo-targets"
+import { BuildAndCheckTypeScriptPackage, SdkRules, WorkspaceSources } from "@smthrs/repo-targets"
 /** Standard package targets for Code Storage over Effect, plus a security review of its credential handling. */
 import { Smithers } from "@smthrs/targets"
 import * as Input from "@smthrs/targets/Input"
 
 const cwd = "packages/effect-code-storage"
+const workspaceSources = WorkspaceSources({ cwd })
 
-const { check, circular, docs, docsFiles, fmt, lib, lint, test } = BuildAndCheckTypeScriptPackage({
+const { bench, check, circular, docs, docsFiles, fmt, lib, lint, test } = BuildAndCheckTypeScriptPackage({
   deps: [],
+  reads: [...Object.values(workspaceSources)],
   sources: Input.glob("src/**/*.ts"),
   cwd
 })
@@ -62,5 +64,19 @@ const securityReview = Smithers.SecurityReview({
 const { importRules, jevRules } = SdkRules({ cwd, role: "library" })
 
 export const Package = Smithers.Package({
-  targets: { check, circular, docs, docsFiles, fmt, importRules, jevRules, lib, lint, test, ...securityReview }
+  targets: {
+    bench,
+    check,
+    circular,
+    docs,
+    docsFiles,
+    fmt,
+    importRules,
+    jevRules,
+    lib,
+    lint,
+    test,
+    ...securityReview,
+    ...workspaceSources
+  }
 })

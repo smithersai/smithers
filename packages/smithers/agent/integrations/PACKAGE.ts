@@ -3,7 +3,8 @@ import {
   ImportRules,
   ReviewDocsAgainstCode,
   ReviewJsdocAgainstCode,
-  ReviewTagsMigrationsAndKeys
+  ReviewTagsMigrationsAndKeys,
+  WorkspaceSources
 } from "@smthrs/repo-targets"
 /**
  * Standard package targets.
@@ -13,9 +14,13 @@ import {
 import { Smithers } from "@smthrs/targets"
 import * as Input from "@smthrs/targets/Input"
 
-const { check, circular, docs, docsFiles, fmt, lib, lint, test } = BuildAndCheckTypeScriptPackage({
+const cwd = "packages/smithers/agent/integrations"
+const workspaceSources = WorkspaceSources({ cwd })
+
+const { bench, check, circular, docs, docsFiles, fmt, lib, lint, test } = BuildAndCheckTypeScriptPackage({
   testProgram: Smithers.file("//packages/smithers/flows/database/scripts/test-matrix.mjs"),
   deps: [],
+  reads: [...Object.values(workspaceSources)],
   // Examples are linted and type-checked with the sources and run by the suite.
   sources: Input.glob("{src,examples}/**/*.{ts,vibe}"),
   examples: [{
@@ -23,7 +28,7 @@ const { check, circular, docs, docsFiles, fmt, lib, lint, test } = BuildAndCheck
     example: Input.file("examples/quickstart.vibe"),
     test: Input.file("test/quickstart.test.vibe")
   }],
-  cwd: "packages/smithers/agent/integrations"
+  cwd
 })
 
 /**
@@ -195,6 +200,7 @@ const importRules = ImportRules({
 
 export const Package = Smithers.Package({
   targets: {
+    bench,
     importRules,
     check,
     circular,
@@ -207,6 +213,7 @@ export const Package = Smithers.Package({
     lib,
     lint,
     test,
-    ...securityReview
+    ...securityReview,
+    ...workspaceSources
   }
 })

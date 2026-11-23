@@ -74,7 +74,8 @@ export const makeMemory = (): Service => {
         yield* Effect.annotateCurrentSpan({ count: requested.length })
         const missing: Array<string> = []
         for (const digest of requested) {
-          if (!(yield* has(digest))) missing.push(digest)
+          const validated = yield* validateDigest(digest)
+          if (!blobs.has(validated)) missing.push(validated)
         }
         return missing
       })

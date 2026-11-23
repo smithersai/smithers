@@ -359,8 +359,18 @@ const securityReview = Smithers.SecurityReview({
  */
 const { importRules, jevRules } = SdkRules({ cwd, role: "components", tests: ["tests/**/*.test.{ts,tsx}"] })
 
+const bench = Smithers.NodeBench({
+  runtime: Smithers.Runtime.Bun({ version: ">=1.4.0" }),
+  entry: Smithers.file("bench/run.ts"),
+  srcs: [...sources, Smithers.file("bench/run.ts")],
+  deps: [viewsSources, cssSources],
+  cache: true,
+  cwd
+})
+
 export const Package = Smithers.Package({
   targets: {
+    bench,
     solidCodegenInputs,
     check,
     checkTests,

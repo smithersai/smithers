@@ -14,6 +14,9 @@ export default defineConfig({
     // this machine can survive beside them.
     include: ["test/**/*.test.{ts,vibe}"],
     exclude: [...configDefaults.exclude, "test/faults/**"],
+    benchmark: {
+      include: ["test/**/*.bench.{ts,vibe}"]
+    },
     environment: "node",
     // Keep real SQLite replay bounded while the complete coverage queue fits
     // its target deadline. Two workers leave the queue unfinished at 20 minutes.

@@ -36,6 +36,14 @@ const test = Smithers.NodeTest({
   cwd
 })
 
+const bench = Smithers.NodeBench({
+  entry: Smithers.file("bench/run.mjs"),
+  srcs: [...sources, Smithers.file("bench/run.mjs")],
+  deps: [],
+  cache: true,
+  cwd
+})
+
 export const Package = Smithers.Package({
-  targets: { test }
+  targets: { bench, test }
 })

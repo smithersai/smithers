@@ -130,12 +130,41 @@ export const fileChanges = (
  * @since 0.1.0
  */
 export const failureRates = (at: number, runs: ReadonlyArray<Observation>): Features["failureRates"] => {
-  const earlier = runs.filter((observation) => observation.at < at)
-  const rate = (days: number): number => {
-    const window = earlier.filter((observation) => at - observation.at <= days * day)
-    return window.length === 0 ? 0 : window.filter((observation) => observation.row.failed).length / window.length
+  let c7 = 0, f7 = 0
+  let c14 = 0, f14 = 0
+  let c28 = 0, f28 = 0
+  let c56 = 0, f56 = 0
+  const w7 = 7 * day
+  const w14 = 14 * day
+  const w28 = 28 * day
+  const w56 = 56 * day
+  for (let i = 0; i < runs.length; i++) {
+    const observation = runs[i]!
+    if (observation.at >= at) continue
+    const age = at - observation.at
+    if (age > w56) continue
+    const failed = observation.row.failed ? 1 : 0
+    c56++
+    f56 += failed
+    if (age <= w28) {
+      c28++
+      f28 += failed
+      if (age <= w14) {
+        c14++
+        f14 += failed
+        if (age <= w7) {
+          c7++
+          f7 += failed
+        }
+      }
+    }
   }
-  return { d7: rate(7), d14: rate(14), d28: rate(28), d56: rate(56) }
+  return {
+    d7: c7 === 0 ? 0 : f7 / c7,
+    d14: c14 === 0 ? 0 : f14 / c14,
+    d28: c28 === 0 ? 0 : f28 / c28,
+    d56: c56 === 0 ? 0 : f56 / c56
+  }
 }
 
 /**
@@ -172,7 +201,12 @@ export const graphDistances = (
   const dependents = new Map<string, Array<string>>()
   for (const target of plan?.targets ?? []) {
     for (const dependency of target.dependencies) {
-      dependents.set(dependency, [...(dependents.get(dependency) ?? []), target.label])
+      let list = dependents.get(dependency)
+      if (list === undefined) {
+        list = []
+        dependents.set(dependency, list)
+      }
+      list.push(target.label)
     }
   }
   const distances = new Map<string, number>()

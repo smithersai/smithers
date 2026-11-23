@@ -21,4 +21,13 @@ const test = Smithers.Shell.Test({
   timeout: "30m",
 })
 
-export const Package = Smithers.Package({ targets: { compilerSources, test } })
+const bench = Smithers.NodeBench({
+  runtime: Smithers.Runtime.Bun({ version: ">=1.4.0" }),
+  entry: Smithers.file("bench/run.ts"),
+  srcs: [Smithers.glob("tools/src/**/*"), Smithers.file("bench/run.ts")],
+  deps: [],
+  cache: true,
+  cwd: "packages/lemmascript"
+})
+
+export const Package = Smithers.Package({ targets: { bench, compilerSources, test } })

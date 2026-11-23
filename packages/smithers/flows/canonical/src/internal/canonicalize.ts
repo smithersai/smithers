@@ -57,21 +57,11 @@ export class CanonicalError extends TypeError {
 const propertyPath = (path: string, key: string): string =>
   /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(key) ? `${path}.${key}` : `${path}[${JSON.stringify(key)}]`
 
-const assertWellFormed = (value: string, path: string, position: "key" | "value"): string => {
-  for (let index = 0; index < value.length; index++) {
-    const code = value.charCodeAt(index)
-    if (code >= 0xd800 && code <= 0xdbff) {
-      const next = value.charCodeAt(index + 1)
-      if (index + 1 >= value.length || next < 0xdc00 || next > 0xdfff) {
-        throw new CanonicalError("canonical_lone_surrogate", `lone surrogate in ${position}`, path)
-      }
-      index++
-    } else if (code >= 0xdc00 && code <= 0xdfff) {
-      throw new CanonicalError("canonical_lone_surrogate", `lone surrogate in ${position}`, path)
-    }
-  }
-  return value
-}
+const isWellFormed = (value: string): boolean =>
+  (value as unknown as { readonly isWellFormed: () => boolean }).isWellFormed()
+
+const loneSurrogate = (path: string, position: "key" | "value"): CanonicalError =>
+  new CanonicalError("canonical_lone_surrogate", `lone surrogate in ${position}`, path)
 
 const constructorName = (name: unknown, fallback: string): string =>
   typeof name === "string" && name !== "" ? name.slice(0, 1024) : fallback
@@ -186,7 +176,7 @@ export const canonicalize = (
   input: unknown,
   options: { readonly loneSurrogates?: "escape" } = {}
 ): string => {
-  const text = options.loneSurrogates === "escape" ? (value: string) => value : assertWellFormed
+  const strict = options.loneSurrogates !== "escape"
   const root: Slot = {}
   const ancestors = new WeakSet<object>()
   const tasks: Array<Task> = [{ kind: "value", value: input, key: "", path: "$", depth: 0, slot: root }]
@@ -197,17 +187,32 @@ export const canonicalize = (
       continue
     }
     if (task.kind === "finishArray") {
-      task.slot.value = `[${task.slots.map((item) => item.value ?? "null").join(",")}]`
+      const slots = task.slots
+      const len = slots.length
+      if (len === 0) {
+        task.slot.value = "[]"
+      } else {
+        let out = `[${slots[0]!.value ?? "null"}`
+        for (let i = 1; i < len; i++) {
+          out += `,${slots[i]!.value ?? "null"}`
+        }
+        task.slot.value = `${out}]`
+      }
       continue
     }
     if (task.kind === "finishObject") {
-      task.slot.value = `{${
-        task.keys.flatMap((key, index) =>
-          task.slots[index]!.value === undefined
-            ? []
-            : `${JSON.stringify(text(key, task.path, "key"))}:${task.slots[index]!.value}`
-        ).join(",")
-      }}`
+      const keys = task.keys
+      const slots = task.slots
+      let out = "{"
+      let first = true
+      for (let i = 0; i < keys.length; i++) {
+        const rendered = slots[i]!.value
+        if (rendered === undefined) continue
+        if (first) first = false
+        else out += ","
+        out += `${JSON.stringify(keys[i]!)}:${rendered}`
+      }
+      task.slot.value = `${out}}`
       continue
     }
     if (task.kind === "read") {
@@ -230,22 +235,27 @@ export const canonicalize = (
         path
       )
     }
+    if (typeof value === "string") {
+      if (strict && !isWellFormed(value)) throw loneSurrogate(path, "value")
+      slot.value = JSON.stringify(value)
+      continue
+    }
     if (typeof value === "number") {
       if (Number.isNaN(value)) throw new CanonicalError("canonical_nan", "NaN", path)
       if (!Number.isFinite(value)) throw new CanonicalError("canonical_non_finite", String(value), path)
-      slot.value = JSON.stringify(value)
+      slot.value = Object.is(value, -0) ? "0" : String(value)
       continue
     }
-    if (typeof value === "bigint") throw new CanonicalError("canonical_bigint", "BigInt", path)
-    if (typeof value === "string") {
-      slot.value = JSON.stringify(text(value, path, "value"))
+    if (typeof value === "boolean") {
+      slot.value = value ? "true" : "false"
       continue
     }
-    if (value === null || typeof value === "boolean") {
-      slot.value = JSON.stringify(value)
+    if (value === null) {
+      slot.value = "null"
       continue
     }
     if (typeof value === "undefined" || typeof value === "symbol") continue
+    if (typeof value === "bigint") throw new CanonicalError("canonical_bigint", "BigInt", path)
 
     const object = value as object
     if (ancestors.has(object)) throw new CanonicalError("canonical_circular", "circular reference", path)
@@ -268,21 +278,6 @@ export const canonicalize = (
     }
     if (typeof value === "function") continue
 
-    try {
-      if (value instanceof Number) value = Number.prototype.valueOf.call(value)
-      else if (value instanceof String) value = String.prototype.valueOf.call(value)
-      else if (value instanceof Boolean) value = Boolean.prototype.valueOf.call(value)
-      else if (Object.prototype.toString.call(value) === "[object BigInt]") {
-        throw new CanonicalError("canonical_bigint", "boxed BigInt", path)
-      }
-    } catch (cause) {
-      if (cause instanceof CanonicalError) throw cause
-      throw caused("canonical_getter_threw", cause, path)
-    }
-    if (value !== object) {
-      tasks.push({ kind: "value", value, key, path, depth, slot })
-      continue
-    }
     if (Array.isArray(value)) {
       // `value.length` on a proxy runs its get trap and may return anything;
       // JSON.stringify applies ToLength once and reads the integer indices
@@ -298,7 +293,8 @@ export const canonicalize = (
       if (length > 0xffff_ffff) {
         throw new CanonicalError("canonical_unsupported_value", "array length exceeds 4,294,967,295", path)
       }
-      const slots = Array.from({ length }, (): Slot => ({}))
+      const slots = new Array<Slot>(length)
+      for (let index = 0; index < length; index++) slots[index] = {}
       tasks.push({ kind: "finishArray", slots, slot })
       for (let index = length - 1; index >= 0; index--) {
         tasks.push({
@@ -312,6 +308,23 @@ export const canonicalize = (
       }
       continue
     }
+
+    try {
+      if (value instanceof Number) value = Number.prototype.valueOf.call(value)
+      else if (value instanceof String) value = String.prototype.valueOf.call(value)
+      else if (value instanceof Boolean) value = Boolean.prototype.valueOf.call(value)
+      else if (Object.prototype.toString.call(value) === "[object BigInt]") {
+        throw new CanonicalError("canonical_bigint", "boxed BigInt", path)
+      }
+    } catch (cause) {
+      if (cause instanceof CanonicalError) throw cause
+      throw caused("canonical_getter_threw", cause, path)
+    }
+    if (value !== object) {
+      tasks.push({ kind: "value", value, key, path, depth, slot })
+      continue
+    }
+
     let unsupported: string | undefined
     try {
       unsupported = builtInName(object)
@@ -326,16 +339,19 @@ export const canonicalize = (
 
     let keys: Array<string>
     try {
-      keys = Object.keys(value).sort()
+      keys = Object.keys(value)
+      if (keys.length > 1) keys.sort()
     } catch (cause) {
       throw caused("canonical_getter_threw", cause, path)
     }
-    const slots = keys.map((): Slot => ({}))
+    const keyCount = keys.length
+    const slots = new Array<Slot>(keyCount)
+    for (let index = 0; index < keyCount; index++) slots[index] = {}
     tasks.push({ kind: "finishObject", keys, slots, slot, path })
-    for (let index = keys.length - 1; index >= 0; index--) {
+    for (let index = keyCount - 1; index >= 0; index--) {
       const member = keys[index]!
       const memberPath = propertyPath(path, member)
-      text(member, memberPath, "key")
+      if (strict && !isWellFormed(member)) throw loneSurrogate(memberPath, "key")
       tasks.push({
         kind: "read",
         parent: value as Record<string, unknown>,

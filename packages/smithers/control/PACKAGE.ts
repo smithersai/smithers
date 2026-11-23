@@ -1,4 +1,4 @@
-import { BuildAndCheckTypeScriptPackage, ImportRules } from "@smthrs/repo-targets"
+import { BuildAndCheckTypeScriptPackage, ImportRules, WorkspaceSources } from "@smthrs/repo-targets"
 /**
  * Standard package targets.
  *
@@ -7,7 +7,10 @@ import { BuildAndCheckTypeScriptPackage, ImportRules } from "@smthrs/repo-target
 import { Smithers } from "@smthrs/targets"
 import * as Input from "@smthrs/targets/Input"
 
-const { check, circular, docs, docsFiles, fmt, lib, lint, test } = BuildAndCheckTypeScriptPackage({
+const cwd = "packages/smithers/control"
+const workspaceSources = WorkspaceSources({ cwd })
+
+const { bench, check, circular, docs, docsFiles, fmt, lib, lint, test } = BuildAndCheckTypeScriptPackage({
   examples: [{
     page: Input.file("docs/quickstart.md"),
     example: Input.file("examples/quickstart.vibe"),
@@ -16,7 +19,8 @@ const { check, circular, docs, docsFiles, fmt, lib, lint, test } = BuildAndCheck
   sources: Input.glob("{src,examples}/**/*.{ts,vibe}"),
   testProgram: Smithers.file("//packages/smithers/flows/database/scripts/test-matrix.mjs"),
   deps: [],
-  cwd: "packages/smithers/control"
+  reads: [...Object.values(workspaceSources)],
+  cwd
 })
 
 /** Control remains host-free; these boundary regressions use no fixed waits. */
@@ -282,6 +286,7 @@ const securityReview = Smithers.SecurityReview({
 
 export const Package = Smithers.Package({
   targets: {
+    bench,
     check,
     importRules,
     circular,
@@ -293,6 +298,7 @@ export const Package = Smithers.Package({
     test,
     postgresInventory,
     signalMutations,
-    ...securityReview
+    ...securityReview,
+    ...workspaceSources
   }
 })

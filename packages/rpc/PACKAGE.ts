@@ -6,10 +6,11 @@
  *
  * @since 1.0.0
  */
-import { ReviewDocsAgainstCode, ReviewJsdocAgainstCode, SdkRules } from "@smthrs/repo-targets"
+import { ReviewDocsAgainstCode, ReviewJsdocAgainstCode, SdkRules, WorkspaceSources } from "@smthrs/repo-targets"
 import { Smithers } from "@smthrs/targets"
 
 const cwd = "packages/rpc"
+const workspaceSources = WorkspaceSources({ cwd })
 
 /** The contract sources both apps import. */
 const sources = Smithers.glob("//packages/rpc/src/**/*.ts")
@@ -61,6 +62,27 @@ const unitTests = Smithers.Vitest({
   config: Smithers.file("vitest.config.ts"),
   environment: "node",
   passWithNoTests: false,
+  cwd
+})
+
+/**
+ * Incremental performance benchmarks for wire-contract codecs and guards.
+ *
+ * @since 1.0.0
+ * @category bench
+ */
+const bench = Smithers.VitestBench({
+  benches: [Smithers.glob("test/**/*.bench.{ts,vibe}")],
+  sources: [
+    Smithers.glob("src/**/*.{ts,vibe}"),
+    Smithers.glob("test/**/*.{ts,vibe}"),
+    Smithers.file("tsconfig.json"),
+    Smithers.file("package.json")
+  ],
+  deps: Object.values(workspaceSources),
+  config: Smithers.file("vitest.config.ts"),
+  environment: "node",
+  cache: true,
   cwd
 })
 
@@ -229,6 +251,7 @@ const { importRules, jevRules } = SdkRules({
  */
 export const Package = Smithers.Package({
   targets: {
+    bench,
     check,
     unitTests,
     lint,
@@ -239,6 +262,7 @@ export const Package = Smithers.Package({
     jevRules,
     reviewDocsAgainstCode,
     reviewJsdocAgainstCode,
-    ...securityReview
+    ...securityReview,
+    ...workspaceSources
   }
 })

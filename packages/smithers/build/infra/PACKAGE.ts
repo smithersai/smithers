@@ -7,7 +7,7 @@
  * `pnpm run check` and `pnpm test` used to reach it only through the recursive
  * root scripts; these targets are the same gates as declarations.
  */
-import { ReviewDocsAgainstCode, ReviewJsdocAgainstCode } from "@smthrs/repo-targets"
+import { ReviewDocsAgainstCode, ReviewJsdocAgainstCode, WorkspaceSources } from "@smthrs/repo-targets"
 import { Smithers } from "@smthrs/targets"
 import { sourceFiles as cliSources, testHelpers as cliTestHelpers } from "../build-cli/SourceInputs.ts"
 
@@ -303,8 +303,22 @@ const securityReview = Smithers.SecurityReview({
   ]
 })
 
+const workspaceSources = WorkspaceSources({ cwd })
+
+const bench = Smithers.VitestBench({
+  benches: [Smithers.glob("worker/test/**/*.bench.{ts,vibe}")],
+  sources,
+  deps: [cliSources, ...Object.values(workspaceSources)],
+  config: Smithers.file("vitest.config.ts"),
+  environment: "node",
+  passWithNoTests: false,
+  cache: true,
+  cwd
+})
+
 export const Package = Smithers.Package({
   targets: {
+    bench,
     check,
     docs,
     docsFiles,
@@ -314,6 +328,7 @@ export const Package = Smithers.Package({
     reviewJsdocAgainstCode,
     suite,
     sourceFiles,
+    ...workspaceSources,
     ...securityReview
   }
 })

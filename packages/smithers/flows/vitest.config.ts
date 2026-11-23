@@ -15,6 +15,9 @@ export default defineConfig({
     ],
     include: ["test/**/*.test.{ts,vibe}"],
     exclude: [...configDefaults.exclude],
+    benchmark: {
+      include: ["test/**/*.bench.{ts,vibe}"]
+    },
     environment: "node",
     // These files launch process trees, guest runtimes, and containers. Keep
     // their host resources serial under coverage as well as ordinary tests;

@@ -159,8 +159,25 @@ const verifyBroken = Smithers.Shell.Test({
   timeout: "120m",
 })
 
+/** Fast deterministic core decision micro-benchmarks (`smthrs bench`). */
+const bench = Smithers.VitestBench({
+  benches: [Smithers.file("bench/micro.bench.ts")],
+  sources: [
+    Smithers.glob("src/core/**/*.vibe"),
+    Smithers.file("bench/micro.bench.ts"),
+    Smithers.file("bench/micro.config.ts"),
+    Smithers.file("package.json")
+  ],
+  deps: [],
+  config: Smithers.file("bench/micro.config.ts"),
+  environment: "node",
+  passWithNoTests: false,
+  cache: true,
+  cwd: "apps/vibelang"
+})
+
 /** Validated local observations and the 5% deterministic entry-read gate. */
-const bench = Smithers.Shell.Test({
+const benchFull = Smithers.Shell.Test({
   summary: "Benchmark the state machine, protocol, web, surfaces and workerd flows with correctness checks.",
   shell: "cd apps/vibelang && E2E_4503=4503 pnpm bench",
   data: sources,
@@ -207,4 +224,4 @@ const fuzzCoverage = Smithers.Shell.Test({
   exclusive: true
 })
 
-export const Package = Smithers.Package({ targets: { typecheck, test, coverage, browserCoverage, workerd, workerdCoverage, verify, verifyBroken, bench, benchCoverage, benchLive, fuzz, fuzzCoverage } })
+export const Package = Smithers.Package({ targets: { typecheck, test, coverage, browserCoverage, workerd, workerdCoverage, verify, verifyBroken, bench, benchFull, benchCoverage, benchLive, fuzz, fuzzCoverage } })

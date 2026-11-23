@@ -107,6 +107,7 @@ or pull-request operations. Use an implemented publication tool or CI job.
 | `Materialize`            | Compose           | run                | no               | no               | package executor |
 | `Memory.Retain`          | MemoryTarget      | run                | no               | no               | package executor |
 | `NewPackage`             | NewPackage        | run                | no               | no               | flow body        |
+| `NodeBench`              | NodeBench         | bench              | by attrs         | no               | flow body        |
 | `NodeBinary`             | NodeBinary        | build              | no               | no               | flow body        |
 | `NodeTest`               | NodeTest          | test               | by attrs         | no               | flow body        |
 | `Npm.Downstream`         | NpmTarget         | test               | yes              | no               | unsupported      |
@@ -140,10 +141,11 @@ or pull-request operations. Use an implemented publication tool or CI job.
 | `Typecheck`              | Typecheck         | build              | no               | no               | flow body        |
 | `TypedocDocs`            | TypedocDocs       | build              | no               | yes              | flow body        |
 | `Vitest`                 | Vitest            | test               | no               | no               | flow body        |
+| `VitestBench`            | VitestBench       | bench              | no               | no               | flow body        |
 | `VitestCoverage`         | VitestCoverage    | test               | no               | yes              | flow body        |
 | `VitestWatch`            | VitestWatch       | run                | no               | no               | flow body        |
 
-108 rules.
+110 rules.
 
 `PnpmWorkspace` declares `packages`, `allowBuilds`, and `linkWorkspacePackages`
 directly. Its `settings` field refuses those names so the generated YAML has

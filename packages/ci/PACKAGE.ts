@@ -45,7 +45,7 @@ const toolCaches = Smithers.Shell.Build({
   sandbox: "none"
 })
 
-const { check, circular, docs, docsFiles, fmt, lib, lint, test, testParts } = BuildAndCheckTypeScriptPackage({
+const { bench, check, circular, docs, docsFiles, fmt, lib, lint, test, testParts } = BuildAndCheckTypeScriptPackage({
   deps: [],
   reads: [...Object.values(sources), cacheModule],
   // test/docs.test.ts reads the docs pages and the splash page; test/cli runs bin/ and test/cli/program.mjs;
@@ -97,7 +97,7 @@ const { check, circular, docs, docsFiles, fmt, lib, lint, test, testParts } = Bu
 // The wall-time benchmarks, test/**/*.benchmark.test.ts. Each holds a time against another time of the same run, so
 // the machine's load decides it as much as the code does. The target is exclusive: `smthrs ci "//..."` leaves it out,
 // its label runs it, and it runs alone, after every other target of the run has ended.
-const bench = Smithers.Vitest({
+const benchHeavy = Smithers.Vitest({
   tests: [Smithers.glob("test/**/*.benchmark.test.ts")],
   sources: [
     Smithers.glob("src/**/*.{ts,vibe}"),
@@ -124,6 +124,7 @@ const bench = Smithers.Vitest({
 export const Package = Smithers.Package({
   targets: {
     bench,
+    benchHeavy,
     cacheModule,
     check,
     circular,

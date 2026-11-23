@@ -269,6 +269,18 @@ const securityReview = Smithers.SecurityReview({
   ]
 })
 
+const bench = Smithers.NodeBench({
+  entry: Smithers.file("bench/run.mjs"),
+  srcs: [
+    Smithers.file("bench/run.mjs"),
+    Smithers.file("lib/codex-tokens.mjs"),
+    Smithers.file("lib/format-money.mjs")
+  ],
+  deps: [],
+  cache: true,
+  cwd
+})
+
 export const Package = Smithers.Package({
-  targets: { check, lint, fmt, offline, prerequisites, ...securityReview }
+  targets: { bench, check, lint, fmt, offline, prerequisites, ...securityReview }
 })

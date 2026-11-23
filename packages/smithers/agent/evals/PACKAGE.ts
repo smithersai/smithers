@@ -2,15 +2,18 @@ import {
   BuildAndCheckTypeScriptPackage,
   ImportRules,
   ReviewDocsAgainstCode,
-  ReviewJsdocAgainstCode
+  ReviewJsdocAgainstCode,
+  WorkspaceSources
 } from "@smthrs/repo-targets"
 import { Smithers } from "@smthrs/targets"
 import * as Input from "@smthrs/targets/Input"
 
 const cwd = "packages/smithers/agent/evals"
+const workspaceSources = WorkspaceSources({ cwd })
 
 const standard = BuildAndCheckTypeScriptPackage({
   cwd,
+  reads: [...Object.values(workspaceSources)],
   sources: Input.glob("{src,examples}/**/*.{ts,vibe}"),
   examples: [{
     page: Input.file("docs/quickstart.md"),
@@ -19,7 +22,7 @@ const standard = BuildAndCheckTypeScriptPackage({
   }]
 })
 
-const { check, circular, docs, docsFiles, fmt, lib, lint, test } = standard
+const { bench, check, circular, docs, docsFiles, fmt, lib, lint, test } = standard
 
 /** Eval regressions synchronize on conditions instead of fixed sleeps. */
 const importRules = ImportRules({
@@ -145,6 +148,7 @@ const securityReview = Smithers.SecurityReview({
 
 export const Package = Smithers.Package({
   targets: {
+    bench,
     check,
     circular,
     docs,
@@ -156,6 +160,7 @@ export const Package = Smithers.Package({
     reviewDocsAgainstCode,
     reviewJsdocAgainstCode,
     test,
-    ...securityReview
+    ...securityReview,
+    ...workspaceSources
   }
 })

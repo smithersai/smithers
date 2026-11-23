@@ -8,10 +8,17 @@ import { JjInternalFault } from "./JjInternalFault.ts"
 
 /** Git's pathname quoting, rather than JSON's unsupported \u escapes. */
 const quotePath = (path: string): string => {
-  const characters = Array.from(path)
-  if (!characters.some((char) => char <= " " || char === "\x7f" || char === "\"" || char === "\\")) return path
+  let needsQuote = false
+  for (let index = 0; index < path.length; index++) {
+    const code = path.charCodeAt(index)
+    if (code <= 0x20 || code === 0x7f || code === 0x22 || code === 0x5c) {
+      needsQuote = true
+      break
+    }
+  }
+  if (!needsQuote) return path
   return `"${
-    characters.map((char) => {
+    Array.from(path, (char) => {
       switch (char) {
         case "\n":
           return "\\n"
@@ -29,6 +36,8 @@ const quotePath = (path: string): string => {
     }).join("")
   }"`
 }
+
+const metadataPattern = /(?:(?:new file|deleted file|old|new) mode [0-7]+|index [0-9a-f]+\.\.[0-9a-f]+(?: [0-7]+)?)\n/y
 
 /**
  * jj 0.39 emits literal paths in Git headers (jj-vcs/jj v0.39.0,
@@ -75,8 +84,8 @@ export const quoteGitPatchPaths = (patch: string, paths: string): string => {
     pathField("diff --git ", `a/${source}`, " ")
     pathField("", `b/${target}`)
     while (true) {
-      const metadata = /^(?:(?:new file|deleted file|old|new) mode [0-7]+|index [0-9a-f]+\.\.[0-9a-f]+(?: [0-7]+)?)\n/
-        .exec(patch.slice(cursor))
+      metadataPattern.lastIndex = cursor
+      const metadata = metadataPattern.exec(patch)
       if (metadata !== null) {
         consume(metadata[0])
         output.push(metadata[0])

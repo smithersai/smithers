@@ -855,8 +855,21 @@ const testStack = Smithers.Shell.Test({
   timeout: "10m"
 })
 
+const bench = Smithers.NodeBench({
+  entry: Smithers.file("bench/micro.ts"),
+  srcs: [
+    Smithers.file("bench/micro.ts"),
+    Smithers.file("bench/stats.ts"),
+    Smithers.file("src/features/issues/publicContent.mjs")
+  ],
+  deps: [],
+  cache: true,
+  cwd
+})
+
 export const Package = Smithers.Package({
   targets: {
+    bench,
     deploymentSources,
     workNotes,
     issueFileTreeSources,

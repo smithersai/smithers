@@ -26,4 +26,13 @@ const docsFiles = Smithers.Filegroup({
   cwd
 })
 
-export const Package = Smithers.Package({ targets: { sourceFiles, check, unitTests, docsFiles } })
+const bench = Smithers.NodeBench({
+  runtime: Smithers.Runtime.Bun({ version: ">=1.4.0" }),
+  entry: Smithers.file("bench/run.ts"),
+  srcs: [sources, Smithers.file("bench/run.ts")],
+  deps: [styleguide],
+  cache: true,
+  cwd
+})
+
+export const Package = Smithers.Package({ targets: { bench, sourceFiles, check, unitTests, docsFiles } })

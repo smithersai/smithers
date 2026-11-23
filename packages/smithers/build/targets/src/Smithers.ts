@@ -174,6 +174,8 @@ export { DtsBuild } from "./DtsBuild.ts"
 export { Typecheck } from "./Typecheck.ts"
 /** @category targets @since 0.1.0 */
 export { Vitest } from "./Vitest.ts"
+/** @category targets @since 1.0.0 */
+export { VitestBench } from "./VitestBench.ts"
 /** @category targets @since 0.1.0 */
 export { VitestCoverage } from "./VitestCoverage.ts"
 /** @category targets @since 0.1.0 */
@@ -262,6 +264,8 @@ export { ToolBuild } from "./ToolBuild.ts"
 /** @category targets @since 0.1.0 */
 export { ToolRun } from "./ToolRun.ts"
 /** @category targets @since 0.1.0 */
+/** @category targets @since 1.0.0 */
+export { NodeBench } from "./NodeBench.ts"
 /** @category targets @since 0.1.0 */
 export { NodeTest } from "./NodeTest.ts"
 /** @category constructors @since 0.1.0 */

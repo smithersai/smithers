@@ -29,6 +29,8 @@ const second = 1_000
 type Offset = (instant: number) => number
 
 const formatters = new Map<string, Intl.DateTimeFormat>()
+const offsetCaches = new Map<string, Map<number, number>>()
+const maxCachedOffsets = 2_048
 
 const formatter = (timeZone: string): Intl.DateTimeFormat => {
   let format = formatters.get(timeZone)
@@ -48,14 +50,51 @@ const formatter = (timeZone: string): Intl.DateTimeFormat => {
   return format
 }
 
-const named = (timeZone: string): Offset => (instant) => {
-  const whole = Math.floor(instant / second) * second
-  const fields = { year: 0, month: 1, day: 1, hour: 0, minute: 0, second: 0 }
-  for (const part of formatter(timeZone).formatToParts(whole)) {
-    if (part.type in fields) fields[part.type as keyof typeof fields] = Number(part.value)
+const named = (timeZone: string): Offset => {
+  const format = formatter(timeZone)
+  let cache = offsetCaches.get(timeZone)
+  if (cache === undefined) {
+    cache = new Map()
+    offsetCaches.set(timeZone, cache)
   }
-  const wall = Date.UTC(fields.year, fields.month - 1, fields.day, fields.hour, fields.minute, fields.second)
-  return wall - whole
+  return (instant) => {
+    const whole = Math.floor(instant / second) * second
+    const cached = cache.get(whole)
+    if (cached !== undefined) return cached
+    let year = 0
+    let month = 1
+    let dayOfMonth = 1
+    let hour = 0
+    let minute = 0
+    let sec = 0
+    for (const part of format.formatToParts(whole)) {
+      switch (part.type) {
+        case "year":
+          year = Number(part.value)
+          break
+        case "month":
+          month = Number(part.value)
+          break
+        case "day":
+          dayOfMonth = Number(part.value)
+          break
+        case "hour":
+          hour = Number(part.value)
+          break
+        case "minute":
+          minute = Number(part.value)
+          break
+        case "second":
+          sec = Number(part.value)
+          break
+      }
+    }
+    const wall = Date.UTC(year, month - 1, dayOfMonth, hour, minute, sec)
+    const result = wall - whole
+    if (cache.size >= maxCachedOffsets) cache.clear()
+    cache.set(whole, result)
+    return result
+  }
 }
 
 // Read on every call, so a host whose `TZ` changes is followed.

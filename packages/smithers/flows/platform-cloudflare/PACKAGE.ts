@@ -2,7 +2,8 @@ import {
   BuildAndCheckTypeScriptPackage,
   ReviewDocsAgainstCode,
   ReviewJsdocAgainstCode,
-  SdkRules
+  SdkRules,
+  WorkspaceSources
 } from "@smthrs/repo-targets"
 /**
  * Standard package targets.
@@ -14,9 +15,11 @@ import * as Input from "@smthrs/targets/Input"
 import { Package as flows } from "../../../../.smithers/flows/PACKAGE.ts"
 
 const cwd = "packages/smithers/flows/platform-cloudflare"
+const workspaceSources = WorkspaceSources({ cwd })
 
-const { check, circular, docsFiles, fmt, lib, lint } = BuildAndCheckTypeScriptPackage({
+const { bench, check, circular, docsFiles, fmt, lib, lint } = BuildAndCheckTypeScriptPackage({
   deps: [],
+  reads: Object.values(workspaceSources),
   sources: Input.glob("{src,examples}/**/*.{ts,vibe}"),
   cwd
 })
@@ -184,6 +187,7 @@ const { importRules, jevRules } = SdkRules({ cwd, role: "host" })
 
 export const Package = Smithers.Package({
   targets: {
+    bench,
     check,
     circular,
     docs,
@@ -197,6 +201,7 @@ export const Package = Smithers.Package({
     reviewJsdocAgainstCode,
     sandboxCli,
     test,
-    ...securityReview
+    ...securityReview,
+    ...workspaceSources
   }
 })

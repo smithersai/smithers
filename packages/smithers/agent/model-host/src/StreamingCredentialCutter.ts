@@ -20,32 +20,61 @@ export class StreamingCredentialCutter {
   /** The end of the returned text, one character shorter than the longest secret part. */
   private returned = ""
   private readonly parts: ReadonlyArray<string>
+  private readonly longest: number
   constructor(secret: string | undefined, additional: ReadonlyArray<string> = []) {
     this.parts = [secret ?? "", ...additional].flatMap(ConfiguredModel.modelCredentialParts)
+    let longest = 0
+    for (const part of this.parts) {
+      if (part.length > longest) longest = part.length
+    }
+    this.longest = longest
   }
   private cut(value: string): string {
     let kept = value
-    let previous: string
-    do {
-      previous = kept
-      for (const part of this.parts) kept = kept.split(part).join("")
-    } while (previous !== kept)
-    return kept
+    for (;;) {
+      let changed = false
+      for (let index = 0; index < this.parts.length; index++) {
+        const part = this.parts[index]!
+        if (kept.includes(part)) {
+          kept = kept.split(part).join("")
+          changed = true
+        }
+      }
+      if (!changed) return kept
+    }
   }
   push(value: string): string {
     if (this.parts.length === 0) return value
-    this.pending = this.cut(this.pending + value)
+    const pending = this.cut(this.pending + value)
+    this.pending = pending
+    const pendingLength = pending.length
     let held = 0
-    for (const part of this.parts) {
-      for (let size = Math.min(this.pending.length, part.length - 1); size > held; size -= 1) {
-        if (this.pending.endsWith(part.slice(0, size))) {
-          held = size
-          break
+    if (pendingLength > 0) {
+      const lastCode = pending.charCodeAt(pendingLength - 1)
+      for (let p = 0; p < this.parts.length; p++) {
+        const part = this.parts[p]!
+        const firstCode = part.charCodeAt(0)
+        const maxSize = Math.min(pendingLength, part.length - 1)
+        for (let size = maxSize; size > held; size -= 1) {
+          if (part.charCodeAt(size - 1) !== lastCode) continue
+          const offset = pendingLength - size
+          if (pending.charCodeAt(offset) !== firstCode) continue
+          let match = true
+          for (let k = 1; k < size - 1; k++) {
+            if (pending.charCodeAt(offset + k) !== part.charCodeAt(k)) {
+              match = false
+              break
+            }
+          }
+          if (match) {
+            held = size
+            break
+          }
         }
       }
     }
-    const emitted = this.pending.slice(0, this.pending.length - held)
-    this.pending = this.pending.slice(this.pending.length - held)
+    const emitted = held === 0 ? pending : pending.slice(0, pendingLength - held)
+    this.pending = held === 0 ? "" : pending.slice(pendingLength - held)
     return this.release(emitted)
   }
   finish(): string {
@@ -64,19 +93,27 @@ export class StreamingCredentialCutter {
     for (let joined = true; joined;) {
       joined = false
       const seam = this.returned.length
+      if (seam === 0 || kept.length === 0) break
       const combined = this.returned + kept
-      for (const part of parts) {
-        const index = combined.indexOf(part, Math.max(0, seam - part.length + 1))
-        if (index !== -1) {
-          kept = combined.slice(index + part.length)
+      for (let index = 0; index < parts.length; index++) {
+        const part = parts[index]!
+        const found = combined.indexOf(part, Math.max(0, seam - part.length + 1))
+        if (found !== -1) {
+          kept = combined.slice(found + part.length)
           joined = true
           break
         }
       }
     }
-    const longest = Math.max(0, ...parts.map((part) => part.length))
-    const combined = this.returned + kept
-    this.returned = combined.slice(Math.max(0, combined.length - (longest - 1)))
+    const tail = this.longest - 1
+    if (tail <= 0) {
+      this.returned = ""
+    } else if (kept.length >= tail) {
+      this.returned = kept.slice(kept.length - tail)
+    } else {
+      const combined = this.returned + kept
+      this.returned = combined.slice(Math.max(0, combined.length - tail))
+    }
     return kept
   }
 }

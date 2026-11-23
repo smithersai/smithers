@@ -197,6 +197,7 @@ export const build = async (
 const kindColor: Record<Target.Kind, keyof Ansi.Palette> = {
   build: "blue",
   test: "green",
+  bench: "cyan",
   lint: "yellow",
   run: "magenta",
   docs: "cyan",

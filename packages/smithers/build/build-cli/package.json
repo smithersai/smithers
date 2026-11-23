@@ -55,6 +55,7 @@
     "./Ansi": "./src/Ansi.ts",
     "./AnvilExec": "./src/AnvilExec.ts",
     "./Audience": "./src/Audience.ts",
+    "./BenchReport": "./src/BenchReport.ts",
     "./Cache": "./src/Cache.ts",
     "./CacheAdmin": "./src/CacheAdmin.ts",
     "./Cli": "./src/Cli.ts",
@@ -212,6 +213,16 @@
         "require": {
           "types": "./dist/cjs/Audience.d.ts",
           "default": "./dist/cjs/Audience.js"
+        }
+      },
+      "./BenchReport": {
+        "import": {
+          "types": "./dist/esm/BenchReport.d.ts",
+          "default": "./dist/esm/BenchReport.js"
+        },
+        "require": {
+          "types": "./dist/cjs/BenchReport.d.ts",
+          "default": "./dist/cjs/BenchReport.js"
         }
       },
       "./Cache": {

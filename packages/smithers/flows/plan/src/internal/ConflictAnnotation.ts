@@ -191,63 +191,62 @@ export const annotate = (
     // Cache transitive ancestors as bitsets. Adding an edge updates its source
     // immediately and invalidates only cached dependents. In particular, dense
     // writers never walk the growing dependency DAG for each conflicting pair.
-    const closure = (id: string): Effect.Effect<Uint32Array, Refusal> =>
-      Effect.gen(function*() {
-        const cached = ancestors.get(id)
-        if (cached !== undefined) return cached
-        const frame = (id: string) => {
-          const bits = new Uint32Array(words)
-          const ordinal = ordinals.get(id)!
-          bits[ordinal >>> 5]! |= 1 << (ordinal & 31)
-          return { id, bits, dependencies: Array.from(edges.get(id)!), next: 0 }
+    // Keep the bitset closure synchronous so hot inner pairs do not allocate
+    // Effect.gen frames; the outer loop yields at every checkpoint.
+    const closure = (id: string): Uint32Array => {
+      const cached = ancestors.get(id)
+      if (cached !== undefined) return cached
+      const frame = (nodeId: string) => {
+        const bits = new Uint32Array(words)
+        const ordinal = ordinals.get(nodeId)!
+        bits[ordinal >>> 5]! |= 1 << (ordinal & 31)
+        return { id: nodeId, bits, dependencies: Array.from(edges.get(nodeId)!), next: 0 }
+      }
+      const stack = [frame(id)]
+      while (stack.length > 0) {
+        const current = stack[stack.length - 1]!
+        const dependency = current.dependencies[current.next]
+        if (dependency === undefined) {
+          ancestors.set(current.id, current.bits)
+          stack.pop()
+          continue
         }
-        const stack = [frame(id)]
-        while (stack.length > 0) {
-          const current = stack[stack.length - 1]!
-          const dependency = current.dependencies[current.next]
-          if (dependency === undefined) {
-            ancestors.set(current.id, current.bits)
-            stack.pop()
-            continue
-          }
-          const bits = ancestors.get(dependency)
-          if (bits === undefined) {
-            stack.push(frame(dependency))
-            continue
-          }
-          for (let word = 0; word < words; word++) {
-            current.bits[word]! |= bits[word]!
-            if (++work >= nextYield) yield* checkpoint
-          }
-          current.next++
+        const bits = ancestors.get(dependency)
+        if (bits === undefined) {
+          stack.push(frame(dependency))
+          continue
         }
-        return ancestors.get(id)!
-      })
-    const reaches = (from: string, to: string) =>
-      Effect.gen(function*() {
-        const bits = yield* closure(from)
-        const ordinal = ordinals.get(to)!
-        return (bits[ordinal >>> 5]! & (1 << (ordinal & 31))) !== 0
-      })
-    const addEdge = (from: string, to: string) =>
-      Effect.gen(function*() {
-        const source = yield* closure(from)
-        const target = yield* closure(to)
         for (let word = 0; word < words; word++) {
-          source[word]! |= target[word]!
-          if (++work >= nextYield) yield* checkpoint
+          current.bits[word]! |= bits[word]!
         }
-        const stack = [from]
-        while (stack.length > 0) {
-          for (const dependent of dependents.get(stack.pop()!)!) {
-            if (++work >= nextYield) yield* checkpoint
-            if (!ancestors.delete(dependent)) continue
-            stack.push(dependent)
-          }
+        work += words
+        current.next++
+      }
+      return ancestors.get(id)!
+    }
+    const reaches = (from: string, to: string): boolean => {
+      const bits = closure(from)
+      const ordinal = ordinals.get(to)!
+      return (bits[ordinal >>> 5]! & (1 << (ordinal & 31))) !== 0
+    }
+    const addEdge = (from: string, to: string): void => {
+      const source = closure(from)
+      const target = closure(to)
+      for (let word = 0; word < words; word++) {
+        source[word]! |= target[word]!
+      }
+      work += words
+      const stack = [from]
+      while (stack.length > 0) {
+        for (const dependent of dependents.get(stack.pop()!)!) {
+          work++
+          if (!ancestors.delete(dependent)) continue
+          stack.push(dependent)
         }
-        edges.get(from)!.add(to)
-        dependents.get(to)!.add(from)
-      })
+      }
+      edges.get(from)!.add(to)
+      dependents.get(to)!.add(from)
+    }
     // Routes are only needed for explicit version sequencing and a cycle's
     // diagnostic. Bound and yield these walks too.
     const route = (
@@ -305,7 +304,10 @@ export const annotate = (
           if (work >= nextYield) yield* checkpoint
           const paths = overlap(earlierProduced, laterProduced, analysis.overlaps)
           if (paths.length === 0) continue
-          if (yield* reaches(later.id, earlier.id)) continue
+          if (reaches(later.id, earlier.id)) {
+            if (work >= nextYield) yield* checkpoint
+            continue
+          }
           const strategy = pairStrategy(earlier.strategy, later.strategy)
           const runtime = pairRuntime(earlier.runtime, later.runtime)
           if (strategy === "fail") {
@@ -327,8 +329,9 @@ export const annotate = (
             const added = ordering.get(later.id) ?? []
             added.push(earlier.id)
             ordering.set(later.id, added)
-            yield* addEdge(later.id, earlier.id)
+            addEdge(later.id, earlier.id)
           }
+          if (work >= nextYield) yield* checkpoint
         }
       }
       // Reader-after-writer. A node that READS a path another node WRITES was
@@ -357,23 +360,22 @@ export const annotate = (
         for (const writerIndex of matches) {
           if (writerIndex >= end) break
           pairs++
-          work += 32
-          if (work >= nextYield || pairs > 250_000) yield* checkpoint
           const writer = nodes[writerIndex]!
-          if (writer.id === reader.id) continue
-          const produced = expanded.get(writer.id)!.produced
-          work += reads.length * produced.length
-          if (work >= nextYield) yield* checkpoint
+          const same = writer.id === reader.id
+          const produced = same ? undefined : expanded.get(writer.id)!.produced
+          work += 32 + (produced === undefined ? 0 : reads.length * produced.length)
+          if (work >= nextYield || pairs > 250_000) yield* checkpoint
+          if (produced === undefined) continue
           const paths = readOverlap(reads, produced, analysis.overlaps)
           if (paths.length === 0) continue
           // Already ordered, by a material edge, a serialize edge, or a path
           // through either.
-          if (yield* reaches(reader.id, writer.id)) continue
+          if (reaches(reader.id, writer.id)) continue
           // Explicit sequencing selects the version being read. Do not reverse
           // it just because a later node writes the same path. Only declared
           // Ref/Pending paths establish this intent; a serialize edge or an
           // earlier inferred producer edge cannot silently select old bytes.
-          if (yield* reaches(writer.id, reader.id)) {
+          if (reaches(writer.id, reader.id)) {
             if ((yield* route(writer.id, reader.id, declaredEdges)) !== undefined) continue
             // Read-modify-write: when the reader itself writes every path of
             // the writer's that it reads, the pair is a write-write overlap the
@@ -399,7 +401,7 @@ export const annotate = (
           const added = ordering.get(reader.id) ?? []
           added.push(writer.id)
           ordering.set(reader.id, added)
-          yield* addEdge(reader.id, writer.id)
+          addEdge(reader.id, writer.id)
         }
       }
     }

@@ -2258,6 +2258,38 @@
         }
       },
       "reason": "Expose the root relay namespace by subpath, matching every sibling module."
+    },
+    {
+      "name": "@smthrs/build-cli",
+      "subpath": "./BenchReport",
+      "development": "./src/BenchReport.ts",
+      "published": {
+        "import": {
+          "types": "./dist/esm/BenchReport.d.ts",
+          "default": "./dist/esm/BenchReport.js"
+        },
+        "require": {
+          "types": "./dist/cjs/BenchReport.d.ts",
+          "default": "./dist/cjs/BenchReport.js"
+        }
+      },
+      "reason": "Unified benchmark output parser and summary table formatter for live and cached smthrs bench runs."
+    },
+    {
+      "name": "@smthrs/testing",
+      "subpath": "./FuzzV8Coverage",
+      "development": "./src/FuzzV8Coverage.ts",
+      "published": {
+        "import": {
+          "types": "./dist/esm/FuzzV8Coverage.d.ts",
+          "default": "./dist/esm/FuzzV8Coverage.js"
+        },
+        "require": {
+          "types": "./dist/cjs/FuzzV8Coverage.d.ts",
+          "default": "./dist/cjs/FuzzV8Coverage.js"
+        }
+      },
+      "reason": "V8 coverage helper for fuzz-only coverage runs (added in e33d9c8d1ce9)."
     }
   ],
   "removed": [

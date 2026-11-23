@@ -25,6 +25,7 @@ import * as SchemaIssue from "effect/SchemaIssue"
 import type * as Scope from "effect/Scope"
 import * as Os from "node:os"
 import * as NodeUtil from "node:util/types"
+import type * as BenchReport from "./BenchReport.ts"
 import { entryLimit, outputDepthLimit, outputMemberLimit } from "./Cache.ts"
 import * as Diagnostic from "./Diagnostic.ts"
 import { byCodeUnit } from "./internal/Text.ts"
@@ -83,6 +84,8 @@ export interface TargetReport {
    * (`store`). The rest of `durationMs` is in none of them.
    */
   readonly parts?: Parts | undefined
+  /** Benchmark rows parsed from a `VitestBench` or `NodeBench` target's output. */
+  readonly benchmarks?: ReadonlyArray<BenchReport.BenchmarkRow> | undefined
 }
 
 /**

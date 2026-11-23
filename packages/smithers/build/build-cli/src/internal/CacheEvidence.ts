@@ -24,7 +24,16 @@ import * as NodePath from "node:path"
  * @category policies
  * @since 1.0.0
  */
-export const rules: ReadonlySet<string> = new Set(["Vitest", "NodeTest", "Typecheck", "EsLint", "Dprint", "TsBuild"])
+export const rules: ReadonlySet<string> = new Set([
+  "Vitest",
+  "VitestBench",
+  "NodeTest",
+  "NodeBench",
+  "Typecheck",
+  "EsLint",
+  "Dprint",
+  "TsBuild"
+])
 
 /**
  * How a run gets its evidence.

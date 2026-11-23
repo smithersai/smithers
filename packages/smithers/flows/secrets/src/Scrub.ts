@@ -181,9 +181,20 @@ export const make = (targets: ReadonlyArray<Target>): Scrubber => {
     }
   }
   patterns.sort((left, right) => right.bytes.length - left.bytes.length)
-  const firsts = new Set(
-    patterns.flatMap((pattern) => pattern.tokens?.[0]!.map((bytes) => bytes[0]) ?? [pattern.bytes[0]])
-  )
+  const byFirstByte: Array<Array<Pattern> | undefined> = new Array(256)
+  for (const pattern of patterns) {
+    const firstBytes = pattern.tokens !== undefined
+      ? new Set(pattern.tokens[0]!.map((bytes) => bytes[0]!))
+      : new Set([pattern.bytes[0]!])
+    for (const byte of firstBytes) {
+      let bucket = byFirstByte[byte]
+      if (bucket === undefined) {
+        bucket = []
+        byFirstByte[byte] = bucket
+      }
+      bucket.push(pattern)
+    }
+  }
 
   /**
    * Scrubs `input` up to the first position where a form matches as far as `input` goes and could continue in the
@@ -194,12 +205,23 @@ export const make = (targets: ReadonlyArray<Target>): Scrubber => {
     const parts: Array<Uint8Array> = []
     let start = 0
     let at = 0
-    while (at < input.length) {
-      if (firsts.has(input[at])) {
+    const len = input.length
+    while (at < len) {
+      const candidates = byFirstByte[input[at]!]
+      if (candidates !== undefined) {
         let length = 0
         let replacement: Uint8Array | undefined
         let continues = false
-        for (const pattern of patterns) {
+        for (let i = 0; i < candidates.length; i++) {
+          const pattern = candidates[i]!
+          if (
+            pattern.tokens === undefined &&
+            pattern.bytes.length > 1 &&
+            at + 1 < len &&
+            input[at + 1] !== pattern.bytes[1]
+          ) {
+            continue
+          }
           const matched = matchedLength(input, at, pattern)
           if (matched === cut) {
             continues = true
@@ -217,6 +239,12 @@ export const make = (targets: ReadonlyArray<Target>): Scrubber => {
         }
       }
       at++
+    }
+    if (parts.length === 0) {
+      return {
+        done: at === len ? input : input.subarray(0, at),
+        held: at === len ? new Uint8Array(0) : input.slice(at)
+      }
     }
     parts.push(input.subarray(start, at))
     return { done: concat(parts), held: input.slice(at) }

@@ -1,5 +1,11 @@
 /** Standard package targets for the published build CLI. */
-import { CircularImports, ImportRules, ReviewDocsAgainstCode, ReviewJsdocAgainstCode } from "@smthrs/repo-targets"
+import {
+  CircularImports,
+  ImportRules,
+  ReviewDocsAgainstCode,
+  ReviewJsdocAgainstCode,
+  WorkspaceSources
+} from "@smthrs/repo-targets"
 import { Smithers } from "@smthrs/targets"
 import { rootInvariantsConfig, rootJSDocConfig } from "../../../../PACKAGE.ts"
 import { sourceFiles, testHelpers } from "./SourceInputs.ts"
@@ -411,8 +417,29 @@ const testObserve = Smithers.Vitest({
   cwd
 })
 
+const workspaceSources = WorkspaceSources({ cwd })
+
+const bench = Smithers.VitestBench({
+  benches: [Smithers.file("test/BuildCli.bench.ts")],
+  sources: [
+    sources,
+    javascript,
+    Smithers.glob("test/**/*.ts"),
+    Smithers.file("tsconfig.json"),
+    Smithers.file("tsconfig.test.json"),
+    Smithers.file("package.json")
+  ],
+  deps: Object.values(workspaceSources),
+  config: Smithers.file("vitest.bench.config.ts"),
+  environment: "node",
+  passWithNoTests: false,
+  cache: true,
+  cwd
+})
+
 export const Package = Smithers.Package({
   targets: {
+    bench,
     check,
     observe,
     testObserve,
@@ -428,6 +455,7 @@ export const Package = Smithers.Package({
     sourceFiles,
     testHelpers,
     test,
+    ...workspaceSources,
     ...securityReview
   }
 })

@@ -1,4 +1,4 @@
-import { BuildAndCheckTypeScriptPackage, SdkRules } from "@smthrs/repo-targets"
+import { BuildAndCheckTypeScriptPackage, SdkRules, WorkspaceSources } from "@smthrs/repo-targets"
 /**
  * Standard package targets.
  *
@@ -6,15 +6,19 @@ import { BuildAndCheckTypeScriptPackage, SdkRules } from "@smthrs/repo-targets"
  */
 import { Smithers } from "@smthrs/targets"
 
-const { check, circular, docs, docsFiles, fmt, lib, lint, test } = BuildAndCheckTypeScriptPackage({
+const cwd = "packages/smithers/flows/artifacts"
+const workspaceSources = WorkspaceSources({ cwd })
+
+const { bench, check, circular, docs, docsFiles, fmt, lib, lint, test } = BuildAndCheckTypeScriptPackage({
   deps: [],
+  reads: Object.values(workspaceSources),
   sources: Smithers.glob("{src,examples}/**/*.{ts,vibe}"),
   examples: [{
     page: Smithers.file("docs/quickstart.md"),
     example: Smithers.file("examples/quickstart.vibe"),
     test: Smithers.file("test/quickstart.test.vibe")
   }],
-  cwd: "packages/smithers/flows/artifacts"
+  cwd
 })
 
 /**
@@ -154,5 +158,20 @@ const securityReview = Smithers.SecurityReview({
 const { importRules, jevRules } = SdkRules({ cwd: "packages/smithers/flows/artifacts", role: "library" })
 
 export const Package = Smithers.Package({
-  targets: { bunTest, check, circular, docs, docsFiles, fmt, lib, lint, test, importRules, jevRules, ...securityReview }
+  targets: {
+    bench,
+    bunTest,
+    check,
+    circular,
+    docs,
+    docsFiles,
+    fmt,
+    lib,
+    lint,
+    test,
+    importRules,
+    jevRules,
+    ...securityReview,
+    ...workspaceSources
+  }
 })

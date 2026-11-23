@@ -1,5 +1,4 @@
-import { BuildAndCheckTypeScriptPackage } from "@smthrs/repo-targets"
-import { ReviewTagsMigrationsAndKeys } from "@smthrs/repo-targets"
+import { BuildAndCheckTypeScriptPackage, ReviewTagsMigrationsAndKeys, WorkspaceSources } from "@smthrs/repo-targets"
 /**
  * Standard package targets.
  *
@@ -7,10 +6,14 @@ import { ReviewTagsMigrationsAndKeys } from "@smthrs/repo-targets"
  */
 import { Smithers } from "@smthrs/targets"
 
-const { check, circular, docs, docsFiles, fmt, lib, lint, test } = BuildAndCheckTypeScriptPackage({
+const cwd = "packages/smithers/flows/time-travel"
+const workspaceSources = WorkspaceSources({ cwd })
+
+const { bench, check, circular, docs, docsFiles, fmt, lib, lint, test } = BuildAndCheckTypeScriptPackage({
   testProgram: Smithers.file("//packages/smithers/flows/database/scripts/test-matrix.mjs"),
   deps: [],
-  cwd: "packages/smithers/flows/time-travel"
+  reads: Object.values(workspaceSources),
+  cwd
 })
 
 /**
@@ -159,6 +162,7 @@ const securityReview = Smithers.SecurityReview({
 
 export const Package = Smithers.Package({
   targets: {
+    bench,
     check,
     circular,
     docs,
@@ -168,6 +172,7 @@ export const Package = Smithers.Package({
     lib,
     lint,
     test,
-    ...securityReview
+    ...securityReview,
+    ...workspaceSources
   }
 })

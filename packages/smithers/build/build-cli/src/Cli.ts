@@ -26,6 +26,7 @@ import * as NodePath from "node:path"
 import * as Affected from "./Affected.ts"
 import * as Ansi from "./Ansi.ts"
 import * as Audience from "./Audience.ts"
+import * as BenchReport from "./BenchReport.ts"
 import { publishNamespaceFromEnvironment } from "./Cache.ts"
 import * as CacheAdmin from "./CacheAdmin.ts"
 import * as Diagnostic from "./Diagnostic.ts"
@@ -922,7 +923,7 @@ const runGitHooks = async (
  * @since 0.1.0
  */
 export const runVerb = async (
-  verb: "build" | "test" | "lint" | "run" | "docs" | "review",
+  verb: "build" | "test" | "bench" | "lint" | "run" | "docs" | "review",
   patterns: ReadonlyArray<string>,
   flags: ExecutionFlags & ModeFlags,
   config: RuntimeConfig,
@@ -1300,7 +1301,7 @@ const writeResults = async (
   config: RuntimeConfig
 ): Promise<string | undefined> => {
   const results = summary.results.map((
-    { durationMs, key, label, status, blocking, failureDigest, notStored, notReused, parts, rights }
+    { durationMs, key, label, status, blocking, failureDigest, notStored, notReused, parts, rights, benchmarks }
   ) => ({
     label,
     status,
@@ -1312,7 +1313,8 @@ const writeResults = async (
     notStored,
     notReused,
     parts,
-    ...(rights === undefined ? {} : { rights })
+    ...(rights === undefined ? {} : { rights }),
+    ...(benchmarks === undefined ? {} : { benchmarks })
   }))
   try {
     await writeReceipt(
@@ -1428,6 +1430,14 @@ const executeWithResults = async <A extends Outcome>(
     outcome
   const lines = "knownRed" in judged ? KnownRed.describe((judged as KnownRed.JudgedSummary).knownRed) : []
   if (lines.length > 0) terminalsOf(config).stderr.write(`${lines.join("\n")}\n`)
+  if (policyFor(context, config).progress !== "silent") {
+    const { stderr } = terminalsOf(config)
+    const palette = rendererFor(context, config, "stderr") === "plain"
+      ? Ansi.none
+      : Ansi.palette(environmentOf(config), stderr.isTTY)
+    const benchTable = BenchReport.format(judged.results, palette)
+    if (benchTable !== undefined) stderr.write(`\n${benchTable}\n`)
+  }
   if (results !== undefined) {
     const failed = await writeResults(results, judged, config)
     if (failed !== undefined) return context.error({ code, exitCode: 1, message: failed })
@@ -1439,7 +1449,7 @@ const optionalPattern = z.object({ pattern: z.string().default("//...").describe
 const optionalPatterns = z.object({
   patterns: z.array(z.string()).default(["//..."]).describe("Target labels or recursive patterns; their union")
 })
-const targetKinds = ["build", "test", "lint", "docs", "review", "run", "ci"] as const
+const targetKinds = ["build", "test", "bench", "lint", "docs", "review", "run", "ci"] as const
 const selectionArgs = z.object({
   verb: z.enum(targetKinds).describe("Target verb to execute"),
   ...optionalPatterns.shape
@@ -1733,7 +1743,7 @@ const makeCommands = (config: RuntimeConfig) =>
           mcp: { annotations: { readOnlyHint: true } },
           args: z.object({ label: z.string() }),
           options: workspaceOption.extend({
-            verb: z.enum(["build", "test", "lint", "docs", "review", "run"]).optional()
+            verb: z.enum(["build", "test", "bench", "lint", "docs", "review", "run"]).optional()
           }),
           async run(context) {
             try {
@@ -1790,7 +1800,9 @@ const makeCommands = (config: RuntimeConfig) =>
       description: "Explain a target's actual planned cache key and local cache state",
       mcp: { annotations: { readOnlyHint: true } },
       args: z.object({ label: z.string() }),
-      options: workspaceOption.extend({ verb: z.enum(["build", "test", "lint", "docs", "review", "run"]).optional() }),
+      options: workspaceOption.extend({
+        verb: z.enum(["build", "test", "bench", "lint", "docs", "review", "run"]).optional()
+      }),
       async run(context) {
         try {
           return await showTarget(context.args.label, context.options, config)
@@ -2134,6 +2146,20 @@ const makeCommands = (config: RuntimeConfig) =>
           config,
           "test_failed",
           (reporter) => runVerb("test", context.args.patterns, context.options, config, reporter)
+        )
+    })
+    .command("bench", {
+      description: "Execute benchmark targets and report measured throughput and latency",
+      mcp: { annotations: { readOnlyHint: false } },
+      args: patternsArgument,
+      options: lifecycleOptions,
+      alias: executionAlias,
+      run: (context) =>
+        executeCommand(
+          context,
+          config,
+          "bench_failed",
+          (reporter) => runVerb("bench", context.args.patterns, context.options, config, reporter)
         )
     })
     .command("lint", {

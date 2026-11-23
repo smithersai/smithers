@@ -9,7 +9,8 @@ import {
   BuildAndCheckTypeScriptPackage,
   ReviewDocsAgainstCode,
   ReviewJsdocAgainstCode,
-  ReviewTagsMigrationsAndKeys
+  ReviewTagsMigrationsAndKeys,
+  WorkspaceSources
 } from "@smthrs/repo-targets"
 import { Smithers } from "@smthrs/targets"
 import * as Input from "@smthrs/targets/Input"
@@ -19,10 +20,13 @@ import { Package as flowPackage } from "../flow/PACKAGE.ts"
 
 import { engineSourceInputs } from "./SourceInputs.ts"
 
+const cwd = "packages/smithers/flows/engine"
+const workspaceSources = WorkspaceSources({ cwd })
 const flow = flowPackage.lib
 
 const standard = BuildAndCheckTypeScriptPackage({
   deps: [flow, capabilityPackage.lib],
+  reads: Object.values(workspaceSources),
   // Examples are type-checked and linted. test/examples.test.ts, test/examples/*.test.ts
   // and test/quickstart.test.vibe run them.
   sources: Input.glob("{src,examples}/**/*.{ts,vibe}"),
@@ -31,9 +35,10 @@ const standard = BuildAndCheckTypeScriptPackage({
     example: Input.file("examples/vibe/quickstart.vibe"),
     test: Input.file("test/quickstart.test.vibe")
   }],
-  cwd: "packages/smithers/flows/engine"
+  cwd
 })
 
+const bench = standard.bench
 const lib = standard.lib
 const check = standard.check
 const test = standard.test
@@ -238,6 +243,7 @@ const securityReview = Smithers.SecurityReview({
 
 export const Package = Smithers.Package({
   targets: {
+    bench,
     bunTest,
     check,
     circular,
@@ -256,6 +262,7 @@ export const Package = Smithers.Package({
     reviewDocsAgainstCode,
     reviewJsdocAgainstCode,
     reviewTagsMigrationsAndKeys,
-    ...securityReview
+    ...securityReview,
+    ...workspaceSources
   }
 })

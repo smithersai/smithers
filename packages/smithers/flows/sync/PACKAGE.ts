@@ -1,4 +1,9 @@
-import { BuildAndCheckTypeScriptPackage, ReviewDocsAgainstCode, ReviewJsdocAgainstCode } from "@smthrs/repo-targets"
+import {
+  BuildAndCheckTypeScriptPackage,
+  ReviewDocsAgainstCode,
+  ReviewJsdocAgainstCode,
+  WorkspaceSources
+} from "@smthrs/repo-targets"
 /**
  * Standard package targets.
  *
@@ -7,9 +12,11 @@ import { BuildAndCheckTypeScriptPackage, ReviewDocsAgainstCode, ReviewJsdocAgain
 import { Smithers } from "@smthrs/targets"
 
 const cwd = "packages/smithers/flows/sync"
+const workspaceSources = WorkspaceSources({ cwd })
 
-const { check, circular, docs, docsFiles, fmt, lib, lint, test } = BuildAndCheckTypeScriptPackage({
+const { bench, check, circular, docs, docsFiles, fmt, lib, lint, test } = BuildAndCheckTypeScriptPackage({
   deps: [],
+  reads: Object.values(workspaceSources),
   cwd,
   // examples/ is type-checked and formatted with the tests, and run by
   // test/examples/; each example is documentation users copy, so it is not
@@ -187,6 +194,7 @@ const securityReview = Smithers.SecurityReview({
 
 export const Package = Smithers.Package({
   targets: {
+    bench,
     check,
     circular,
     docs,
@@ -197,6 +205,7 @@ export const Package = Smithers.Package({
     lib,
     lint,
     test,
-    ...securityReview
+    ...securityReview,
+    ...workspaceSources
   }
 })

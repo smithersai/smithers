@@ -2,7 +2,8 @@ import {
   BuildAndCheckTypeScriptPackage,
   ImportRules,
   ReviewDocsAgainstCode,
-  ReviewJsdocAgainstCode
+  ReviewJsdocAgainstCode,
+  WorkspaceSources
 } from "@smthrs/repo-targets"
 /**
  * Standard package targets.
@@ -12,9 +13,11 @@ import {
 import { Smithers } from "@smthrs/targets"
 
 const cwd = "packages/smithers/flows/platform-node"
+const workspaceSources = WorkspaceSources({ cwd })
 
-const { check, circular, docs, docsFiles, fmt, lib, lint, test } = BuildAndCheckTypeScriptPackage({
+const { bench, check, circular, docs, docsFiles, fmt, lib, lint, test } = BuildAndCheckTypeScriptPackage({
   deps: [],
+  reads: Object.values(workspaceSources),
   sources: Smithers.glob("{src,examples}/**/*.{ts,vibe}"),
   examples: [{
     page: Smithers.file("docs/quickstart.md"),
@@ -330,6 +333,7 @@ const securityReview = Smithers.SecurityReview({
 
 export const Package = Smithers.Package({
   targets: {
+    bench,
     check,
     circular,
     docs,
@@ -341,6 +345,7 @@ export const Package = Smithers.Package({
     reviewDocsAgainstCode,
     reviewJsdocAgainstCode,
     test,
-    ...securityReview
+    ...securityReview,
+    ...workspaceSources
   }
 })

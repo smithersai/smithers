@@ -1792,7 +1792,7 @@ const visit = async (
   // runtime replaced without a version change still moves the content key.
   // This is necessary identity, not permission to cache: installed tools and
   // each rule's complete read/write contract must also be accounted for.
-  const catalogToolBody = ["TsBuild", "Typecheck", "Vitest", "EsLint", "Dprint"].includes(rule)
+  const catalogToolBody = ["TsBuild", "Typecheck", "Vitest", "VitestBench", "EsLint", "Dprint"].includes(rule)
   if (catalogToolBody) {
     const declared = targetToolchain(rule, attrs)
     const tools = [declared.runtime, declared.packageManager, declared.packageManager?.runtime]
@@ -2053,7 +2053,7 @@ const visit = async (
   // that runs: a link is followed to its file and a package-manager shim to
   // the program it starts, so one replaced in place moves the key. The run
   // finds each by its name in a directory that leads its `PATH`.
-  if (rule === "Vitest") {
+  if (rule === "Vitest" || rule === "VitestBench") {
     const searched = new Set(
       String(toolContext.environment["PATH"] ?? "").split(NodePath.delimiter)
         .filter((entry) => NodePath.isAbsolute(entry) && NodeFs.existsSync(entry))
@@ -2143,7 +2143,7 @@ const visit = async (
   let installedProblem: string | undefined
   // Links a tool finds its own host state through, in the run's private directories.
   const toolLinks: Array<{ readonly path: string; readonly target: string }> = []
-  if (catalogToolBody || rule === "NodeTest") {
+  if (catalogToolBody || rule === "NodeTest" || rule === "NodeBench") {
     // A catalog rule declares the directory its tool starts in. A custom
     // target that borrows a catalog name may not, and starts in its package.
     const declaredCwd = attrMember(attrs, "cwd")
@@ -3512,7 +3512,7 @@ const visit = async (
   // reuses no result as it is planned here.
   const uncachedBecause = evidenceDecision !== undefined && !CacheEvidence.isEvidence(evidenceDecision)
     ? evidenceDecision.reason
-    : !cacheable && (catalogToolBody || rule === "NodeTest")
+    : !cacheable && (catalogToolBody || rule === "NodeTest" || rule === "NodeBench")
     ? `${rule} results are not reused`
     : undefined
 
@@ -3600,7 +3600,7 @@ const visit = async (
     // A suite is shown no program it did not declare, so its runtime and
     // package manager are shown as themselves, not as the `PATH` directory
     // they sit in: `~/.local/bin` holds `pnpm` beside every other program.
-    const suite = rule === "Vitest"
+    const suite = rule === "Vitest" || rule === "VitestBench"
     const searched = new Set(
       suite
         ? String(spawnEnvironment["PATH"] ?? "").split(NodePath.delimiter)

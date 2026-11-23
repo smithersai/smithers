@@ -34,6 +34,27 @@ export const estimate = (config: Config, history: ReadonlyArray<Sample>, check: 
   return sorted[Math.floor(sorted.length / 2)] ?? config.defaultDuration
 }
 
+const estimateAll = (
+  config: Config,
+  history: ReadonlyArray<Sample>
+): Map<number, number> => {
+  const byCheck = new Map<number, Array<number>>()
+  for (const sample of history) {
+    let list = byCheck.get(sample.check)
+    if (list === undefined) {
+      list = []
+      byCheck.set(sample.check, list)
+    }
+    list.push(sample.duration)
+  }
+  const estimates = new Map<number, number>()
+  for (const [check, durations] of byCheck) {
+    durations.sort((left, right) => left - right)
+    estimates.set(check, durations[Math.floor(durations.length / 2)]!)
+  }
+  return estimates
+}
+
 /**
  * The required checks in the order to start them: slowest first, so the check
  * that decides how long the run takes starts at once. Ties keep the configured
@@ -42,8 +63,12 @@ export const estimate = (config: Config, history: ReadonlyArray<Sample>, check: 
  * @category durations
  * @since 0.1.0
  */
-export const schedule = (config: Config, history: ReadonlyArray<Sample>): ReadonlyArray<number> =>
-  [...config.required].sort((left, right) => estimate(config, history, right) - estimate(config, history, left))
+export const schedule = (config: Config, history: ReadonlyArray<Sample>): ReadonlyArray<number> => {
+  const estimates = estimateAll(config, history)
+  return [...config.required].sort(
+    (left, right) => (estimates.get(right) ?? config.defaultDuration) - (estimates.get(left) ?? config.defaultDuration)
+  )
+}
 
 /**
  * The checks of a run that have no result yet, in schedule order.
@@ -64,5 +89,13 @@ export const remaining = (
  * @category durations
  * @since 0.1.0
  */
-export const eta = (config: Config, history: ReadonlyArray<Sample>, results: ReadonlyArray<Result>): number =>
-  remaining(config, history, results).reduce((slowest, check) => Math.max(slowest, estimate(config, history, check)), 0)
+export const eta = (config: Config, history: ReadonlyArray<Sample>, results: ReadonlyArray<Result>): number => {
+  const estimates = estimateAll(config, history)
+  let slowest = 0
+  for (const check of config.required) {
+    if (answered(results, check)) continue
+    const predicted = estimates.get(check) ?? config.defaultDuration
+    if (predicted > slowest) slowest = predicted
+  }
+  return slowest
+}

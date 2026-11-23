@@ -504,6 +504,12 @@ const freezePlan = (plan: Plan): Plan => {
   return frozen
 }
 
+const isNodeKind = Schema.is(NodeKind)
+const isPairStrategy = Schema.is(PairStrategy)
+const isRuntimeStrategy = Schema.is(RuntimeStrategy)
+const decodeKeyMaterial = Schema.decodeUnknownEffect(KeyMaterial.KeyMaterial)
+const decodeNodeEffects = Schema.decodeUnknownEffect(NodeEffects)
+
 /**
  * Validates the runtime-only parts of `NodeDraft` without replacing effect
  * admission. Effect 4 Struct decoding strips excess properties and copies its
@@ -535,7 +541,7 @@ const validateDrafts = (
           })
         )
       }
-      if (draft.kind !== undefined && !Schema.is(NodeKind)(draft.kind)) {
+      if (draft.kind !== undefined && !isNodeKind(draft.kind)) {
         return yield* Effect.fail(
           new PlanError({
             code: "invalid_node",
@@ -543,7 +549,7 @@ const validateDrafts = (
           })
         )
       }
-      if (draft.conflictStrategy !== undefined && !Schema.is(PairStrategy)(draft.conflictStrategy)) {
+      if (draft.conflictStrategy !== undefined && !isPairStrategy(draft.conflictStrategy)) {
         return yield* Effect.fail(
           new PlanError({
             code: "invalid_node",
@@ -553,7 +559,7 @@ const validateDrafts = (
           })
         )
       }
-      if (draft.runtimeStrategy !== undefined && !Schema.is(RuntimeStrategy)(draft.runtimeStrategy)) {
+      if (draft.runtimeStrategy !== undefined && !isRuntimeStrategy(draft.runtimeStrategy)) {
         return yield* Effect.fail(
           new PlanError({
             code: "invalid_node",
@@ -563,7 +569,7 @@ const validateDrafts = (
           })
         )
       }
-      const decodedMaterial = yield* Schema.decodeUnknownEffect(KeyMaterial.KeyMaterial)(draft.material).pipe(
+      const decodedMaterial = yield* decodeKeyMaterial(draft.material).pipe(
         Effect.mapError((cause) =>
           new PlanError({
             code: "invalid_node",
@@ -571,7 +577,7 @@ const validateDrafts = (
           })
         )
       )
-      const decodedEffects = yield* Schema.decodeUnknownEffect(NodeEffects)(draft.effects).pipe(
+      const decodedEffects = yield* decodeNodeEffects(draft.effects).pipe(
         Effect.mapError((cause) =>
           new PlanError({
             code: "invalid_node",

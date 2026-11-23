@@ -2,18 +2,21 @@ import {
   BuildAndCheckTypeScriptPackage,
   ImportRules,
   ReviewDocsAgainstCode,
-  ReviewJsdocAgainstCode
+  ReviewJsdocAgainstCode,
+  WorkspaceSources
 } from "@smthrs/repo-targets"
 /** Standard package targets. */
 import { Smithers } from "@smthrs/targets"
 
 const cwd = "packages/smithers/flows"
+const workspaceSources = WorkspaceSources({ cwd })
 
 // examples/ is type-checked and formatted with the tests, and run by
 // test/examples/; each example is documentation users copy, so it is not held
 // to the library lint rules.
-const { check, circular, docs, docsFiles, fmt, lib, lint, test } = BuildAndCheckTypeScriptPackage({
+const { bench, check, circular, docs, docsFiles, fmt, lib, lint, test } = BuildAndCheckTypeScriptPackage({
   deps: [],
+  reads: Object.values(workspaceSources),
   cwd,
   testSources: Smithers.glob("{test,examples}/**/*.{ts,vibe}"),
   examples: [{
@@ -150,6 +153,7 @@ const securityReview = Smithers.SecurityReview({
 
 export const Package = Smithers.Package({
   targets: {
+    bench,
     check,
     circular,
     docs,
@@ -161,6 +165,7 @@ export const Package = Smithers.Package({
     lint,
     importRules,
     test,
-    ...securityReview
+    ...securityReview,
+    ...workspaceSources
   }
 })

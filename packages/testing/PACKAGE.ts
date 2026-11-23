@@ -1,13 +1,15 @@
-import { BuildAndCheckTypeScriptPackage } from "@smthrs/repo-targets"
+import { BuildAndCheckTypeScriptPackage, WorkspaceSources } from "@smthrs/repo-targets"
 import { Smithers } from "@smthrs/targets"
 import { Typecheck } from "@smthrs/targets/Typecheck"
 import { Package as fuzz } from "../fuzz/PACKAGE.ts"
 
 const cwd = "packages/testing"
+const workspaceSources = WorkspaceSources({ cwd })
 
 const standard = BuildAndCheckTypeScriptPackage({
   cwd,
   deps: [fuzz.lib],
+  reads: Object.values(workspaceSources),
   testData: ["test/__fuzz__/**"],
   // examples/ is type-checked and formatted with the tests, and run by
   // test/examples/; each example is documentation users copy, so it is not
@@ -15,7 +17,7 @@ const standard = BuildAndCheckTypeScriptPackage({
   testSources: Smithers.glob("{test,examples}/**/*.ts")
 })
 
-const { check, circular, docs, docsFiles, fmt, lib, lint, test } = standard
+const { bench, check, circular, docs, docsFiles, fmt, lib, lint, test } = standard
 
 // `smthrs-model-server` as an out-of-process test runs it from the checkout:
 // the bin imports the package's TypeScript sources through its exports.
@@ -146,5 +148,19 @@ const securityReview = Smithers.SecurityReview({
 })
 
 export const Package = Smithers.Package({
-  targets: { fuzzTypes, check, circular, docs, docsFiles, fmt, lib, lint, modelServer, test, ...securityReview }
+  targets: {
+    bench,
+    fuzzTypes,
+    check,
+    circular,
+    docs,
+    docsFiles,
+    fmt,
+    lib,
+    lint,
+    modelServer,
+    test,
+    ...securityReview,
+    ...workspaceSources
+  }
 })

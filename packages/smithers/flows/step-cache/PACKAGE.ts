@@ -1,11 +1,14 @@
-import { BuildAndCheckTypeScriptPackage } from "@smthrs/repo-targets"
-import { ReviewTagsMigrationsAndKeys } from "@smthrs/repo-targets"
+import { BuildAndCheckTypeScriptPackage, ReviewTagsMigrationsAndKeys, WorkspaceSources } from "@smthrs/repo-targets"
 /** Standard package targets plus package-owned documentation generation. */
 import { Smithers } from "@smthrs/targets"
 
-const { check, circular, docs, docsFiles, fmt, lib, lint, test } = BuildAndCheckTypeScriptPackage({
+const cwd = "packages/smithers/flows/step-cache"
+const workspaceSources = WorkspaceSources({ cwd })
+
+const { bench, check, circular, docs, docsFiles, fmt, lib, lint, test } = BuildAndCheckTypeScriptPackage({
   testProgram: Smithers.file("//packages/smithers/flows/database/scripts/test-matrix.mjs"),
   deps: [],
+  reads: Object.values(workspaceSources),
   sources: Smithers.glob("{src,examples}/**/*.{ts,vibe}"),
   examples: [{
     page: Smithers.file("docs/quickstart.md"),
@@ -15,7 +18,7 @@ const { check, circular, docs, docsFiles, fmt, lib, lint, test } = BuildAndCheck
   // Three suites assert on the README and the docs, and one executes the
   // artifact fixtures; an edit to any of them re-runs the suite.
   testData: ["README.md", "docs/**/*.md", "test/fixtures/*.mjs", "test/fixtures/*.cjs"],
-  cwd: "packages/smithers/flows/step-cache"
+  cwd
 })
 
 /**
@@ -114,5 +117,18 @@ const securityReview = Smithers.SecurityReview({
 })
 
 export const Package = Smithers.Package({
-  targets: { check, circular, docs, docsFiles, reviewTagsMigrationsAndKeys, fmt, lib, lint, test, ...securityReview }
+  targets: {
+    bench,
+    check,
+    circular,
+    docs,
+    docsFiles,
+    reviewTagsMigrationsAndKeys,
+    fmt,
+    lib,
+    lint,
+    test,
+    ...securityReview,
+    ...workspaceSources
+  }
 })

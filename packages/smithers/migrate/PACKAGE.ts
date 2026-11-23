@@ -1,4 +1,9 @@
-import { BuildAndCheckTypeScriptPackage, ReviewDocsAgainstCode, ReviewJsdocAgainstCode } from "@smthrs/repo-targets"
+import {
+  BuildAndCheckTypeScriptPackage,
+  ReviewDocsAgainstCode,
+  ReviewJsdocAgainstCode,
+  WorkspaceSources
+} from "@smthrs/repo-targets"
 /**
  * Standard package targets.
  *
@@ -7,12 +12,16 @@ import { BuildAndCheckTypeScriptPackage, ReviewDocsAgainstCode, ReviewJsdocAgain
 import { Smithers } from "@smthrs/targets"
 import * as Input from "@smthrs/targets/Input"
 
-const { check, circular, docs, docsFiles, fmt, lib, lint, test } = BuildAndCheckTypeScriptPackage({
+const cwd = "packages/smithers/migrate"
+const workspaceSources = WorkspaceSources({ cwd })
+
+const { bench, check, circular, docs, docsFiles, fmt, lib, lint, test } = BuildAndCheckTypeScriptPackage({
   deps: [],
+  reads: [...Object.values(workspaceSources)],
   sources: Input.glob("{src,examples}/**/*.ts"),
   // The shared builder declares the private Effect adapter validator as an
   // exact lib input; the test's lib dependency already keys its identity.
-  cwd: "packages/smithers/migrate"
+  cwd
 })
 
 /**
@@ -160,6 +169,7 @@ const securityReview = Smithers.SecurityReview({
 
 export const Package = Smithers.Package({
   targets: {
+    bench,
     check,
     circular,
     docs,
@@ -170,6 +180,7 @@ export const Package = Smithers.Package({
     reviewDocsAgainstCode,
     reviewJsdocAgainstCode,
     test,
-    ...securityReview
+    ...securityReview,
+    ...workspaceSources
   }
 })

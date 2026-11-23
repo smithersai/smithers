@@ -1,4 +1,9 @@
-import { BuildAndCheckTypeScriptPackage, ReviewDocsAgainstCode, ReviewJsdocAgainstCode } from "@smthrs/repo-targets"
+import {
+  BuildAndCheckTypeScriptPackage,
+  ReviewDocsAgainstCode,
+  ReviewJsdocAgainstCode,
+  WorkspaceSources
+} from "@smthrs/repo-targets"
 /**
  * Standard package targets.
  *
@@ -7,8 +12,12 @@ import { BuildAndCheckTypeScriptPackage, ReviewDocsAgainstCode, ReviewJsdocAgain
 import { Smithers } from "@smthrs/targets"
 import * as Input from "@smthrs/targets/Input"
 
-const { check, circular, docs, docsFiles, fmt, lib, lint, test } = BuildAndCheckTypeScriptPackage({
+const cwd = "packages/smithers/flows/platform-browser"
+const workspaceSources = WorkspaceSources({ cwd })
+
+const { bench, check, circular, docs, docsFiles, fmt, lib, lint, test } = BuildAndCheckTypeScriptPackage({
   deps: [],
+  reads: Object.values(workspaceSources),
   // Examples are type-checked, linted, and run by test/Examples.test.ts.
   sources: Input.glob("{src,examples}/**/*.{ts,vibe}"),
   examples: [{
@@ -16,7 +25,7 @@ const { check, circular, docs, docsFiles, fmt, lib, lint, test } = BuildAndCheck
     example: Input.file("examples/quickstart.vibe"),
     test: Input.file("test/quickstart.test.vibe")
   }],
-  cwd: "packages/smithers/flows/platform-browser"
+  cwd
 })
 
 /**
@@ -215,6 +224,7 @@ const securityReview = Smithers.SecurityReview({
 
 export const Package = Smithers.Package({
   targets: {
+    bench,
     browserTest,
     bunTest,
     check,
@@ -227,6 +237,7 @@ export const Package = Smithers.Package({
     reviewDocsAgainstCode,
     reviewJsdocAgainstCode,
     test,
-    ...securityReview
+    ...securityReview,
+    ...workspaceSources
   }
 })

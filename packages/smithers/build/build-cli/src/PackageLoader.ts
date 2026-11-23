@@ -671,10 +671,19 @@ const graphDigest = async (discovery: Discovery, scannedFiles: ReadonlyArray<str
     digests.push(`repo\0${repository.name}\0${repository.path}`)
   }
   for (const pruned of discovery.pruned) digests.push(`pruned\0${pruned}`)
-  for (const file of [...files].sort(byCodeUnit)) {
-    const digest = await SafeFs.digestFile(workspacePathOf(discovery.root, file), { what: file })
-    digests.push(`${file}\0${digest ?? "absent"}`)
+  const sortedFiles = [...files].sort(byCodeUnit)
+  const fileDigests = new Array<string>(sortedFiles.length)
+  let nextIndex = 0
+  const digestWorker = async (): Promise<void> => {
+    while (nextIndex < sortedFiles.length) {
+      const index = nextIndex++
+      const file = sortedFiles[index]!
+      const digest = await SafeFs.digestFile(workspacePathOf(discovery.root, file), { what: file })
+      fileDigests[index] = `${file}\0${digest ?? "absent"}`
+    }
   }
+  await Promise.all(Array.from({ length: Math.min(16, sortedFiles.length) }, digestWorker))
+  digests.push(...fileDigests)
   return createHash("sha256").update(digests.join("\n")).digest("hex")
 }
 

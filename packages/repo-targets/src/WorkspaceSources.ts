@@ -24,11 +24,36 @@
  * @since 0.1.0
  */
 
-import { existsSync } from "node:fs"
+import { existsSync, statSync } from "node:fs"
 import { join } from "node:path"
 import { Filegroup } from "@smthrs/targets/Filegroup"
 import * as Input from "@smthrs/targets/Input"
 import { repoRoot, workspacePackages } from "../scripts/workspace-packages.mjs"
+
+type Member = ReturnType<typeof workspacePackages>[number]
+
+const cachedMembers = new Map<
+  string,
+  { readonly mtimeMs: number; readonly size: number; readonly members: ReadonlyArray<Member> }
+>()
+
+type SourceEntry = Input.File | Input.Glob
+
+const cachedSrcs = new Map<string, ReadonlyArray<SourceEntry>>()
+
+const loadWorkspacePackages = (root: string): ReadonlyArray<Member> => {
+  const manifestPath = join(root, "pnpm-workspace.yaml")
+  const stat = statSync(manifestPath)
+  const hit = cachedMembers.get(root)
+  if (hit !== undefined && hit.mtimeMs === stat.mtimeMs && hit.size === stat.size) return hit.members
+  const members = workspacePackages(root)
+  cachedMembers.set(root, { mtimeMs: stat.mtimeMs, size: stat.size, members })
+  // Invalidate cached input lists for this root if workspace membership changed.
+  for (const key of cachedSrcs.keys()) {
+    if (key.startsWith(`${root}\0`)) cachedSrcs.delete(key)
+  }
+  return members
+}
 
 /**
  * Options accepted by {@link WorkspaceSources}.
@@ -52,8 +77,6 @@ export interface Options {
   readonly root?: string | undefined
 }
 
-type Member = ReturnType<typeof workspacePackages>[number]
-
 /**
  * One file group per workspace package reached from the package at `cwd`,
  * keyed by `sources-` and the package's directory with `/` as `-`. The
@@ -64,7 +87,7 @@ type Member = ReturnType<typeof workspacePackages>[number]
  */
 export const WorkspaceSources = (options: Options): Readonly<Record<string, ReturnType<typeof Filegroup>>> => {
   const root = options.root ?? repoRoot
-  const members = workspacePackages(root)
+  const members = loadWorkspacePackages(root)
   const byName = new Map(members.map((member) => [member.name, member]))
   const own = members.find((member) => member.dir === options.cwd)
   if (own === undefined) throw new TypeError(`WorkspaceSources: ${options.cwd} is not a workspace package`)
@@ -81,18 +104,25 @@ export const WorkspaceSources = (options: Options): Readonly<Record<string, Retu
   }
   visit(own.manifest, ["dependencies", "devDependencies", "peerDependencies"])
   const files = options.files ?? ["src/**", "bin/**", "package.json", "{tsconfig,jsconfig,vibe.config}.json"]
+  const filesKey = files.join("\0")
   const present = (member: Member, file: string): boolean => {
     const directory = /^([^*?{[]+)\/\*\*$/.exec(file)?.[1]
     return directory === undefined || existsSync(join(root, member.dir, directory))
   }
+  const srcsFor = (member: Member): ReadonlyArray<SourceEntry> => {
+    const cacheKey = `${root}\0${member.dir}\0${filesKey}`
+    let srcs = cachedSrcs.get(cacheKey)
+    if (srcs === undefined) {
+      srcs = files.filter((file) => present(member, file))
+        .map((file) => /[*?{[]/.test(file) ? Input.glob(file) : Input.file(file))
+      cachedSrcs.set(cacheKey, srcs)
+    }
+    return srcs
+  }
   return Object.fromEntries(
     [...reached.values()].sort((left, right) => left.dir < right.dir ? -1 : 1).map((member) => [
       `sources-${member.dir.replaceAll("/", "-")}`,
-      Filegroup({
-        srcs: files.filter((file) => present(member, file))
-          .map((file) => /[*?{[]/.test(file) ? Input.glob(file) : Input.file(file)),
-        cwd: member.dir
-      })
+      Filegroup({ srcs: srcsFor(member), cwd: member.dir })
     ])
   )
 }

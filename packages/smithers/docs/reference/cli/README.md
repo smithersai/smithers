@@ -16,6 +16,7 @@ run-kind targets; `flow start` starts durable flows.
 | `index <pattern>` | Read selected target declarations. |
 | `mcp add` | Register Smithers with a coding agent. |
 | `build/test/lint/docs/review/ci/run <patterns...>` | Execute the union of the selected target kinds; `ci` combines build, test, lint, and docs. |
+| `bench <patterns...>` | Execute declared benchmark targets and print a unified live/cached summary table (`--results-file` writes JSON). |
 | `target <labels...>` or `//package:target` | Execute exact declarations using their own kinds. |
 | `targets [pattern]` | List target labels and summaries. |
 | `show target <label>`, `show workspace`, `info` | Inspect inputs, outputs, dependencies, toolchains, and configuration. |

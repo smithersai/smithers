@@ -287,7 +287,7 @@ export const targetToolchain = (target: string, attrs: unknown): TargetToolchain
   const managerRecord = ownRecord(attrs, "packageManager")
   const runtime = TargetRuntime.isRuntime(runtimeRecord) ? runtimeRecord : undefined
   const declaredManager = TargetPackageManager.isPackageManager(managerRecord) ? managerRecord : undefined
-  const packageManager = target === "Vitest"
+  const packageManager = target === "Vitest" || target === "VitestBench"
     ? TargetPackageManager.under(declaredManager, runtime)
     : declaredManager
   return { runtime, packageManager }

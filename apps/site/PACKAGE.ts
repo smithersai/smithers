@@ -774,8 +774,17 @@ const smithersLinks = Smithers.NodeTest({
   deps: [build]
 })
 
+const bench = Smithers.NodeBench({
+  entry: Smithers.file("bench/run.mjs"),
+  srcs: [Smithers.file("bench/run.mjs"), Smithers.file("scripts/docs-text.mjs")],
+  deps: [],
+  cache: true,
+  cwd
+})
+
 export const Package = Smithers.Package({
   targets: {
+    bench,
     check,
     build,
     supportDocs,

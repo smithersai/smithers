@@ -2,7 +2,8 @@ import {
   BuildAndCheckTypeScriptPackage,
   ReviewDocsAgainstCode,
   ReviewJsdocAgainstCode,
-  ReviewTagsMigrationsAndKeys
+  ReviewTagsMigrationsAndKeys,
+  WorkspaceSources
 } from "@smthrs/repo-targets"
 /**
  * Standard package targets.
@@ -12,16 +13,20 @@ import {
 import { Smithers } from "@smthrs/targets"
 import * as Input from "@smthrs/targets/Input"
 
-const { check, circular, docs, docsFiles, fmt, lib, lint } = BuildAndCheckTypeScriptPackage({
+const cwd = "packages/smithers/flows/database"
+const workspaceSources = WorkspaceSources({ cwd })
+
+const { bench, check, circular, docs, docsFiles, fmt, lib, lint } = BuildAndCheckTypeScriptPackage({
   testProgram: Smithers.file("//packages/smithers/flows/database/scripts/test-matrix.mjs"),
   deps: [],
+  reads: Object.values(workspaceSources),
   sources: Input.glob("{src,examples}/**/*.{ts,vibe}"),
   examples: [{
     page: Input.file("docs/quickstart.md"),
     example: Input.file("examples/vibe/quickstart.vibe"),
     test: Input.file("test/quickstart.test.vibe")
   }],
-  cwd: "packages/smithers/flows/database",
+  cwd,
   tests: Smithers.glob("test/**/*.test.ts"),
   buildProgram: Smithers.file("//packages/repo-targets/scripts/build.mjs"),
   eslintConfigs: [
@@ -264,6 +269,7 @@ const securityReview = Smithers.SecurityReview({
 
 export const Package = Smithers.Package({
   targets: {
+    bench,
     bunTest,
     check,
     circular,
@@ -278,6 +284,7 @@ export const Package = Smithers.Package({
     test,
     adapterPostgresDatabase,
     adapterPgbouncer,
-    ...securityReview
+    ...securityReview,
+    ...workspaceSources
   }
 })

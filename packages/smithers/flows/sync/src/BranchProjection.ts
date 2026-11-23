@@ -24,17 +24,8 @@
 
 import * as JournalEvent from "@smthrs/journal/JournalEvent"
 import * as HashSet from "effect/HashSet"
-import * as Option from "effect/Option"
 import * as Schema from "effect/Schema"
-import {
-  BranchId,
-  branchRunId,
-  CommandEvent,
-  CommandEventPayload,
-  CommandId,
-  ParticipantId,
-  SayCommand
-} from "./BranchProtocol.ts"
+import { BranchId, branchRunId, CommandEvent, CommandId, ParticipantId, SayCommand } from "./BranchProtocol.ts"
 
 /**
  * One collaborative chat message in the branch timeline.
@@ -197,7 +188,59 @@ const indexCommands = (commands: ReadonlyArray<AppliedCommand>): HashSet.HashSet
   return index
 }
 
-const decodeCommand = Schema.decodeUnknownOption(CommandEventPayload)
+interface DecodedCommand {
+  readonly commandId: CommandId
+  readonly participantId: ParticipantId
+  readonly name: string
+  readonly args: string
+  readonly target: string
+  readonly capabilityId: string
+}
+
+/**
+ * Fast structural decoder equivalent to `Schema.decodeUnknownOption(CommandEventPayload)`.
+ * Validates every required non-empty string field and applies the exact empty-string
+ * defaults for omitted optional keys while rejecting non-string values for present keys.
+ */
+const decodeCommandFast = (payload: unknown): DecodedCommand | undefined => {
+  if (typeof payload !== "object" || payload === null) return undefined
+  const record = payload as Record<string, unknown>
+  const commandId = record["commandId"]
+  if (typeof commandId !== "string" || commandId.length === 0) return undefined
+  const participantId = record["participantId"]
+  if (typeof participantId !== "string" || participantId.length === 0) return undefined
+  const name = record["name"]
+  if (typeof name !== "string" || name.length === 0) return undefined
+  let args: string
+  if ("args" in record) {
+    if (typeof record["args"] !== "string") return undefined
+    args = record["args"]
+  } else {
+    args = ""
+  }
+  let target: string
+  if ("target" in record) {
+    if (typeof record["target"] !== "string") return undefined
+    target = record["target"]
+  } else {
+    target = ""
+  }
+  let capabilityId: string
+  if ("capabilityId" in record) {
+    if (typeof record["capabilityId"] !== "string") return undefined
+    capabilityId = record["capabilityId"]
+  } else {
+    capabilityId = ""
+  }
+  return {
+    commandId: commandId as CommandId,
+    participantId: participantId as ParticipantId,
+    name,
+    args,
+    target,
+    capabilityId
+  }
+}
 
 /**
  * Folds one journal entry into a branch projection.
@@ -215,9 +258,8 @@ export const apply = (state: State, entry: JournalEvent.Entry): State => {
   if (entry.runId !== branchRunId(state.branchId) || entry.seq === state.seq) return state
   const advanced = entry.seq < state.seq ? state : { ...state, seq: entry.seq }
   if (entry.eventType !== CommandEvent) return advanced
-  const decoded = decodeCommand(entry.payload)
-  if (Option.isNone(decoded)) return advanced
-  const commandSubmission = decoded.value
+  const commandSubmission = decodeCommandFast(entry.payload)
+  if (commandSubmission === undefined) return advanced
   const ids = indexCommands(state.commands)
   if (HashSet.has(ids, commandSubmission.commandId)) return advanced
   const command: AppliedCommand = { ...commandSubmission, seq: entry.seq }
@@ -261,21 +303,36 @@ export const apply = (state: State, entry: JournalEvent.Entry): State => {
 export const project = (branchId: BranchId, entries: Iterable<JournalEvent.Entry>): State => {
   const runId = branchRunId(branchId)
   let seq = -1
+  let lastCommandSeq = -1
+  let commandsOrdered = true
+  let lastMessageSeq = -1
+  let messagesOrdered = true
   const ids = new Set<CommandId>()
   const commands: Array<AppliedCommand> = []
   const messages: Array<Message> = []
   const fields = new Map<string, Field>()
   for (const entry of entries) {
     if (entry.runId !== runId || entry.seq === seq) continue
-    seq = Math.max(seq, entry.seq)
+    if (entry.seq > seq) seq = entry.seq
     if (entry.eventType !== CommandEvent) continue
-    const decoded = decodeCommand(entry.payload)
-    if (Option.isNone(decoded)) continue
-    const submission = decoded.value
+    const submission = decodeCommandFast(entry.payload)
+    if (submission === undefined) continue
     if (ids.has(submission.commandId)) continue
     ids.add(submission.commandId)
-    commands.push({ ...submission, seq: entry.seq })
+    if (entry.seq < lastCommandSeq) commandsOrdered = false
+    else lastCommandSeq = entry.seq
+    commands.push({
+      seq: entry.seq,
+      commandId: submission.commandId,
+      participantId: submission.participantId,
+      capabilityId: submission.capabilityId,
+      name: submission.name,
+      args: submission.args,
+      target: submission.target
+    })
     if (submission.name === SayCommand) {
+      if (entry.seq < lastMessageSeq) messagesOrdered = false
+      else lastMessageSeq = entry.seq
       messages.push({
         seq: entry.seq,
         commandId: submission.commandId,
@@ -295,14 +352,15 @@ export const project = (branchId: BranchId, entries: Iterable<JournalEvent.Entry
       fields.set(submission.target, resolveField(fields.get(submission.target), candidate))
     }
   }
-  commands.sort((left, right) => left.seq - right.seq)
-  messages.sort((left, right) => left.seq - right.seq)
-  commandIds.set(commands, HashSet.fromIterable(ids))
+  if (!commandsOrdered) commands.sort((left, right) => left.seq - right.seq)
+  if (!messagesOrdered) messages.sort((left, right) => left.seq - right.seq)
   return {
     branchId,
     seq,
     commands,
     messages,
-    fields: Array.from(fields.values()).sort((left, right) => left.target < right.target ? -1 : 1)
+    fields: fields.size === 0
+      ? []
+      : Array.from(fields.values()).sort((left, right) => left.target < right.target ? -1 : 1)
   }
 }

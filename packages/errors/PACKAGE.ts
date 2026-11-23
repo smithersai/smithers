@@ -1,12 +1,14 @@
-import { BuildAndCheckTypeScriptPackage } from "@smthrs/repo-targets"
+import { BuildAndCheckTypeScriptPackage, WorkspaceSources } from "@smthrs/repo-targets"
 /** Standard package targets. */
 import { Smithers } from "@smthrs/targets"
 import * as Input from "@smthrs/targets/Input"
 
 const cwd = "packages/errors"
+const workspaceSources = WorkspaceSources({ cwd })
 
-const { check, circular, docs, docsFiles, fmt, lib, lint, test } = BuildAndCheckTypeScriptPackage({
+const { bench, check, circular, docs, docsFiles, fmt, lib, lint, test } = BuildAndCheckTypeScriptPackage({
   deps: [],
+  reads: Object.values(workspaceSources),
   sources: Input.glob("{src,examples}/**/*.{ts,vibe}"),
   examples: [{
     page: Input.file("docs/quickstart.md"),
@@ -74,5 +76,5 @@ const securityReview = Smithers.SecurityReview({
 })
 
 export const Package = Smithers.Package({
-  targets: { check, circular, docs, docsFiles, fmt, lib, lint, test, ...securityReview }
+  targets: { bench, check, circular, docs, docsFiles, fmt, lib, lint, test, ...securityReview, ...workspaceSources }
 })

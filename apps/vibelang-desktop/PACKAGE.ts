@@ -8,4 +8,5 @@ const verify = Smithers.Shell.Test({ summary: "Prove local endpoint, model avail
 // Linux only: Xvfb, GTK 3, WebKitGTK 4.1 and flock (README). Only the test build opens the CDP port the suite drives.
 const e2e = Smithers.Shell.Test({ summary: "Run the native app under Xvfb: crash recovery, folder authority, the real picker and a local model.", shell: "cd apps/vibelang-desktop && VIBELANG_DESKTOP_TEST=1 pnpm build && pnpm e2e", data: sources, timeout: "30m", exclusive: true, sandbox: { network: "loopback" } })
 const verifyBroken = Smithers.Shell.Test({ summary: "Check that every mutation of a policy decision fails a proof obligation.", shell: "cd apps/vibelang-desktop && pnpm verify:broken", data: [...sources, web.verify], timeout: "30m" })
-export const Package = Smithers.Package({ targets: { typecheck, test, verify, e2e, verifyBroken } })
+const bench = Smithers.NodeBench({ runtime: Smithers.Runtime.Bun({ version: ">=1.4.0" }), entry: Smithers.file("bench/run.ts"), srcs: [Smithers.glob("src/**/*.vibe"), Smithers.file("bench/run.ts"), Smithers.file("bunfig.toml")], deps: [], cache: true, cwd: "apps/vibelang-desktop" })
+export const Package = Smithers.Package({ targets: { bench, typecheck, test, verify, e2e, verifyBroken } })

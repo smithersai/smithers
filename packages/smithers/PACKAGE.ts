@@ -2,7 +2,8 @@ import {
   BuildAndCheckTypeScriptPackage,
   ImportRules,
   ReviewDocsAgainstCode,
-  ReviewJsdocAgainstCode
+  ReviewJsdocAgainstCode,
+  WorkspaceSources
 } from "@smthrs/repo-targets"
 /** Standard package targets plus package-owned documentation generation. */
 import { Smithers } from "@smthrs/targets"
@@ -122,9 +123,14 @@ const tuiSources = Smithers.Filegroup({
   srcs: [Smithers.glob("src/**/*.ts"), Smithers.glob("src/**/*.tsx")]
 })
 
-const { check, circular, docs: readmeDocs, docsFiles, fmt, lib, lint } = BuildAndCheckTypeScriptPackage({
+const workspaceSources = WorkspaceSources({ cwd: "packages/smithers" })
+
+const { bench, check, circular, docs: readmeDocs, docsFiles, fmt, lib, lint } = BuildAndCheckTypeScriptPackage({
   deps: [tuiSources],
+  reads: [...Object.values(workspaceSources)],
   cwd: "packages/smithers",
+  benches: Smithers.glob("test/*.bench.{ts,vibe}"),
+  benchConfig: Smithers.file("vitest.bench.config.ts"),
   // On the Node 22 CI hosts this complete process-boundary suite took
   // 1166.5 s on macOS and was killed at 1200.1 s on Ubuntu. Keep its
   // aggregate coverage gate in one run, with twice the observed completed
@@ -600,6 +606,7 @@ export const Package = Smithers.Package({
     serveStartup,
     nodeRuntimeMatrix,
     tuiSources,
+    bench,
     check,
     circular,
     docs,
@@ -619,6 +626,7 @@ export const Package = Smithers.Package({
     test,
     historyPostgresDatabase,
     docsSources,
+    ...workspaceSources,
     ...securityReview
   }
 })

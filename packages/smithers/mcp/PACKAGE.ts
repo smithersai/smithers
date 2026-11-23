@@ -1,8 +1,9 @@
-import { BuildAndCheckTypeScriptPackage } from "@smthrs/repo-targets"
+import { BuildAndCheckTypeScriptPackage, WorkspaceSources } from "@smthrs/repo-targets"
 import { Smithers } from "@smthrs/targets"
 import * as Input from "@smthrs/targets/Input"
 
 const cwd = "packages/smithers/mcp"
+const workspaceSources = WorkspaceSources({ cwd })
 
 // Examples are type-checked, linted and run by `test/examples.test.ts`, so
 // they key the same targets as the sources; the server they spawn is test data.
@@ -13,11 +14,12 @@ const standard = BuildAndCheckTypeScriptPackage({
     test: Input.file("test/quickstart.test.vibe")
   }],
   cwd,
+  reads: [...Object.values(workspaceSources)],
   sources: Input.glob("{src,examples}/**/*.{ts,vibe}"),
   testData: ["examples/**/*.mjs"]
 })
 
-const { check, circular, docs, docsFiles, fmt, lib, lint, test } = standard
+const { bench, check, circular, docs, docsFiles, fmt, lib, lint, test } = standard
 
 /**
  * The MCP client spawns an untrusted server process or reaches a remote one
@@ -174,5 +176,5 @@ const securityReview = Smithers.SecurityReview({
 })
 
 export const Package = Smithers.Package({
-  targets: { check, circular, docs, docsFiles, fmt, lib, lint, test, ...securityReview }
+  targets: { bench, check, circular, docs, docsFiles, fmt, lib, lint, test, ...securityReview, ...workspaceSources }
 })

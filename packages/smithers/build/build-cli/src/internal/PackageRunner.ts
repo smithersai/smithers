@@ -39,6 +39,7 @@ import { performance } from "node:perf_hooks"
 import * as AgentFake from "../AgentFake.ts"
 import * as AgentSession from "../AgentSession.ts"
 import * as AnvilExec from "../AnvilExec.ts"
+import * as BenchReport from "../BenchReport.ts"
 import { ensureCacheDirectory, openCache } from "../Cache.ts"
 import * as Diagnostic from "../Diagnostic.ts"
 import * as DockerExec from "../DockerExec.ts"
@@ -1340,7 +1341,7 @@ const executeWith = (
      * fails naming itself where a confined run is not shown the host's own.
      */
     const suitePath = (node: PackageNode): Effect.Effect<((path: string) => string) | undefined, unknown> =>
-      node.rule !== "Vitest" ? Effect.succeed(undefined) : Effect.gen(function*() {
+      node.rule !== "Vitest" && node.rule !== "VitestBench" ? Effect.succeed(undefined) : Effect.gen(function*() {
         const parent = NodePath.join(root, ...cacheDirectory.split("/"), "tmp")
         const tools = (node.pathTools ?? []).map((tool) => ({
           name: tool.name,
@@ -2514,10 +2515,30 @@ const executeWith = (
 
     /** The outcome one node settles with; `runOne` reports it exactly once. */
     type Outcome =
-      | { readonly status: "hit" | "ran"; readonly error?: undefined; readonly blockedBy?: undefined }
-      | { readonly status: "failed" | "skipped"; readonly error: string; readonly blockedBy?: string }
+      | {
+        readonly status: "hit" | "ran"
+        readonly error?: undefined
+        readonly blockedBy?: undefined
+        readonly benchmarks?: ReadonlyArray<BenchReport.BenchmarkRow> | undefined
+      }
+      | {
+        readonly status: "failed" | "skipped"
+        readonly error: string
+        readonly blockedBy?: string
+        readonly benchmarks?: undefined
+      }
     const fail = (error: string): Outcome => ({ status: "failed", error })
-    const green = (status: "hit" | "ran"): Outcome => ({ status })
+    const green = (
+      status: "hit" | "ran",
+      benchmarks?: ReadonlyArray<BenchReport.BenchmarkRow> | undefined
+    ): Outcome => benchmarks === undefined || benchmarks.length === 0 ? { status } : { status, benchmarks }
+    const benchRowsOf = (node: PackageNode, output: unknown): ReadonlyArray<BenchReport.BenchmarkRow> | undefined => {
+      if (node.rule !== "VitestBench" && node.rule !== "NodeBench" && !node.kinds.includes("bench")) return undefined
+      const stdout = BenchReport.stdoutOf(output)
+      if (stdout === undefined) return undefined
+      const parsed = BenchReport.parse(stdout)
+      return parsed.length > 0 ? parsed : undefined
+    }
 
     /**
      * Whether a target failed because the model CLI it spawns is not installed.
@@ -5848,7 +5869,9 @@ const executeWith = (
               const cached = yield* cacheGet(node)
               if (cached !== undefined) {
                 if (node.evidence === undefined) {
-                  if (yield* answerTargetHit(node, cached.output)) return green("hit")
+                  if (yield* answerTargetHit(node, cached.output)) {
+                    return green("hit", benchRowsOf(node, cached.output))
+                  }
                 } else {
                   // The entry answers only while every dependency output its
                   // run could read still measures as it did then.
@@ -5856,7 +5879,9 @@ const executeWith = (
                   if (entry !== undefined) {
                     const reads = yield* dependencyReads(node)
                     if (JSON.stringify(entry.reads) === JSON.stringify(reads)) {
-                      if (yield* answerTargetHit(node, entry.result)) return green("hit")
+                      if (yield* answerTargetHit(node, entry.result)) {
+                        return green("hit", benchRowsOf(node, entry.result))
+                      }
                     } else {
                       const was = new Map(entry.reads)
                       const now = new Map(reads)
@@ -5960,7 +5985,7 @@ const executeWith = (
                     unstoredReasons.set(node.label, "its result cannot be written as a cache entry")
                     log(`smthrs: skipped the cache store for ${node.label}: ${encoded.reason}`)
                   }
-                  return green("ran")
+                  return green("ran", benchRowsOf(node, value))
                 }).pipe(Effect.catchCause((failure) =>
                   Effect.sync(() => {
                     const cause = Cause.squash(failure)
@@ -5969,7 +5994,7 @@ const executeWith = (
                   })
                 ))
               }
-              return green("ran")
+              return green("ran", benchRowsOf(node, exit.value))
             }
           }
         }).pipe(Effect.catchCause((failure) =>
@@ -6208,7 +6233,8 @@ const executeWith = (
           ...(notStored === undefined ? {} : { notStored }),
           ...(rightsLost.has(label) ? { rights: rightsLost.get(label) } : {}),
           ...(unreusedReasons.has(label) ? { notReused: unreusedReasons.get(label) } : {}),
-          ...(parts.of(label) === undefined ? {} : { parts: parts.of(label) })
+          ...(parts.of(label) === undefined ? {} : { parts: parts.of(label) }),
+          ...(outcome.benchmarks === undefined ? {} : { benchmarks: outcome.benchmarks })
         })
       })
     /**

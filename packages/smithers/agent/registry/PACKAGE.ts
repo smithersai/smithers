@@ -1,10 +1,13 @@
-import { BuildAndCheckTypeScriptPackage } from "@smthrs/repo-targets"
+import { BuildAndCheckTypeScriptPackage, WorkspaceSources } from "@smthrs/repo-targets"
 /**
  * Standard package targets plus package-owned documentation generation.
  *
  * `cwd` anchors every emitted tool run in this package directory.
  */
 import { Smithers } from "@smthrs/targets"
+
+const cwd = "packages/smithers/agent/registry"
+const workspaceSources = WorkspaceSources({ cwd })
 
 const migratedFixture = Smithers.Filegroup({
   srcs: [
@@ -24,8 +27,9 @@ const issueSweepSources = Smithers.Filegroup({
   ]
 })
 
-const { check, circular, docs, docsFiles, fmt, lib, lint, test } = BuildAndCheckTypeScriptPackage({
-  cwd: "packages/smithers/agent/registry",
+const { bench, check, circular, docs, docsFiles, fmt, lib, lint, test } = BuildAndCheckTypeScriptPackage({
+  cwd,
+  reads: [...Object.values(workspaceSources)],
   // The VibeLang example sits in its own directory: beside examples/quickstart.ts
   // both files would emit examples/quickstart.js.
   sources: Smithers.glob("{src,examples}/**/*.{ts,vibe}"),
@@ -168,6 +172,7 @@ const securityReview = Smithers.SecurityReview({
 
 export const Package = Smithers.Package({
   targets: {
+    bench,
     migratedFixture,
     issueSweepSources,
     check,
@@ -178,6 +183,7 @@ export const Package = Smithers.Package({
     lib,
     lint,
     test,
-    ...securityReview
+    ...securityReview,
+    ...workspaceSources
   }
 })

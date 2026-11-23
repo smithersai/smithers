@@ -1,5 +1,5 @@
 /** Standard package targets for the published target authoring surface. */
-import { CircularImports, ReviewDocsAgainstCode, ReviewJsdocAgainstCode } from "@smthrs/repo-targets"
+import { CircularImports, ReviewDocsAgainstCode, ReviewJsdocAgainstCode, WorkspaceSources } from "@smthrs/repo-targets"
 import { Smithers } from "@smthrs/targets"
 import { docsWriter, referenceStyle, rootInvariantsConfig, rootJSDocConfig } from "../../../../PACKAGE.ts"
 
@@ -298,8 +298,28 @@ const securityReview = Smithers.SecurityReview({
   ]
 })
 
+const workspaceSources = WorkspaceSources({ cwd })
+
+const bench = Smithers.VitestBench({
+  benches: [Smithers.glob("test/**/*.bench.{ts,vibe}")],
+  sources: [
+    sources,
+    Smithers.glob("test/**/*.ts"),
+    Smithers.file("tsconfig.json"),
+    Smithers.file("tsconfig.test.json"),
+    Smithers.file("package.json")
+  ],
+  deps: Object.values(workspaceSources),
+  config: Smithers.file("vitest.config.ts"),
+  environment: "node",
+  passWithNoTests: false,
+  cache: true,
+  cwd
+})
+
 export const Package = Smithers.Package({
   targets: {
+    bench,
     check,
     circular,
     docs,
@@ -319,6 +339,7 @@ export const Package = Smithers.Package({
     referencePages,
     reviewDocsAgainstCode,
     reviewJsdocAgainstCode,
+    ...workspaceSources,
     ...securityReview
   }
 })

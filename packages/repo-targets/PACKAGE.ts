@@ -1,6 +1,6 @@
 import { Smithers } from "@smthrs/targets"
 import { Package as registryPackage } from "../smithers/agent/registry/PACKAGE.ts"
-import { ReviewDocsAgainstCode, ReviewJsdocAgainstCode } from "./src/index.ts"
+import { ReviewDocsAgainstCode, ReviewJsdocAgainstCode, WorkspaceSources } from "./src/index.ts"
 import * as Input from "@smthrs/targets/Input"
 import { repoRoot } from "./scripts/workspace-packages.mjs"
 
@@ -891,4 +891,16 @@ const mvpDocs = Smithers.NodeTest({
   deps: [repositoryInputs]
 })
 
-export const Package = Smithers.Package({ targets: { ...repositoryPackages, repositoryInputs, registryTestInputs, testSupport, workflowSources, lockfileParity, lockfileParityUnit, dependencyBoundaries, dependencyBoundariesUnit, conformanceCheck, repositoryConformance, testScriptWiring, macDistribution, egressHttpClient, ciInventory, check, test, workspacePackages, conflictMarkers, mvpDocs, conflictMarkersUnit, coverageDirectories, coverageDirectoriesUnit, trackedHygiene, trackedHygieneUnit, toolchainPins, effectVersion, releaseContracts, privateEffectAdapters, driftJob, nativeWindowsWorkflow, runnerContract, webBundleContract, knownRedCoverage, bunCoverage, testPinRegister, contractsLint, packageContract, publicExportMaps, barrels, reliabilityWorkflow, faultSkips, machinePaths, scratchArtifacts, cliVerbs, reviewDocsAgainstCode, reviewJsdocAgainstCode, ...securityReview } })
+const workspaceSources = WorkspaceSources({ cwd })
+const bench = Smithers.VitestBench({
+  benches: [Smithers.glob("test/**/*.bench.{ts,vibe}")],
+  sources: [sources, ...testSupportFiles],
+  deps: [testSupport, ...Object.values(workspaceSources)],
+  config: Smithers.file("vitest.config.ts"),
+  environment: "node",
+  passWithNoTests: false,
+  cache: true,
+  cwd
+})
+
+export const Package = Smithers.Package({ targets: { ...repositoryPackages, ...workspaceSources, bench, repositoryInputs, registryTestInputs, testSupport, workflowSources, lockfileParity, lockfileParityUnit, dependencyBoundaries, dependencyBoundariesUnit, conformanceCheck, repositoryConformance, testScriptWiring, macDistribution, egressHttpClient, ciInventory, check, test, workspacePackages, conflictMarkers, mvpDocs, conflictMarkersUnit, coverageDirectories, coverageDirectoriesUnit, trackedHygiene, trackedHygieneUnit, toolchainPins, effectVersion, releaseContracts, privateEffectAdapters, driftJob, nativeWindowsWorkflow, runnerContract, webBundleContract, knownRedCoverage, bunCoverage, testPinRegister, contractsLint, packageContract, publicExportMaps, barrels, reliabilityWorkflow, faultSkips, machinePaths, scratchArtifacts, cliVerbs, reviewDocsAgainstCode, reviewJsdocAgainstCode, ...securityReview } })

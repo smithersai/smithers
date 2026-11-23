@@ -6,7 +6,7 @@
  * program, as a page load does, with TanStack DB's persistence sending
  * batches (`executeBatch`) or, as before batches, one request per statement.
  *
- * Run: `pnpm bench` in this package.
+ * Run: `pnpm exec vitest bench --run` in this package.
  */
 import * as Effect from "effect/Effect"
 import * as Fiber from "effect/Fiber"
@@ -41,22 +41,25 @@ afterAll(async () => {
   if (leader !== undefined) await Effect.runPromise(Fiber.interrupt(leader))
 })
 
-const measure = async (batching: Restore.Batching) => {
-  const { count, database } = Restore.counted(await SharedSqlite.open({ name }), { latencyMs: 2, batching })
+const restoreOnce = async (batching: Restore.Batching) => {
+  const { database } = Restore.counted(await SharedSqlite.open({ name }), { latencyMs: 2, batching })
   const reader = Restore.program(database, name, ids)
-  const started = performance.now()
   await reader.restore()
-  const elapsed = performance.now() - started
   if (JSON.stringify(reader.rows()) !== JSON.stringify(expected)) throw new Error("restored other rows")
   await reader.dispose()
   await database.close()
-  console.log(
-    `${batching}: ${ids.length} collections restored in ${elapsed.toFixed(0)} ms, ${count.requests} requests ` +
-      `(${(count.requests / ids.length).toFixed(1)} per collection), ${count.statements} statements`
-  )
 }
 
 describe("restoring 40 persisted collections with 2 ms round trips", () => {
-  test("one request per statement", () => measure("one request per statement"))
-  test("batched", () => measure("batched"))
+  test("one request per statement", async ({ bench }) => {
+    await bench("restore unbatched", async () => {
+      await restoreOnce("one request per statement")
+    }).run({ iterations: 1, warmupIterations: 0, time: 0, warmupTime: 0 })
+  })
+
+  test("batched", async ({ bench }) => {
+    await bench("restore batched", async () => {
+      await restoreOnce("batched")
+    }).run({ iterations: 1, warmupIterations: 0, time: 0, warmupTime: 0 })
+  })
 })

@@ -1,9 +1,12 @@
-import { BuildAndCheckTypeScriptPackage } from "@smthrs/repo-targets"
+import { BuildAndCheckTypeScriptPackage, WorkspaceSources } from "@smthrs/repo-targets"
 /** Standard package targets plus package-owned documentation generation. */
 import { Smithers } from "@smthrs/targets"
 import * as Input from "@smthrs/targets/Input"
 
-const { check, circular, docs, docsFiles, fmt, lib, lint, test } = BuildAndCheckTypeScriptPackage({
+const cwd = "packages/smithers/agent/triggers"
+const workspaceSources = WorkspaceSources({ cwd })
+
+const { bench, check, circular, docs, docsFiles, fmt, lib, lint, test } = BuildAndCheckTypeScriptPackage({
   examples: [{
     page: Input.file("docs/quickstart.md"),
     example: Input.file("examples/vibelang/quickstart.vibe"),
@@ -11,9 +14,10 @@ const { check, circular, docs, docsFiles, fmt, lib, lint, test } = BuildAndCheck
   }],
   testProgram: Smithers.file("//packages/smithers/flows/database/scripts/test-matrix.mjs"),
   deps: [],
+  reads: [...Object.values(workspaceSources)],
   sources: Input.glob("{src,examples}/**/*.{ts,vibe}"),
   tests: Smithers.glob("test/**/*.{ts,vibe}"),
-  cwd: "packages/smithers/agent/triggers"
+  cwd
 })
 
 const securityReview = Smithers.SecurityReview({
@@ -126,5 +130,5 @@ const securityReview = Smithers.SecurityReview({
 })
 
 export const Package = Smithers.Package({
-  targets: { check, circular, docs, docsFiles, fmt, lib, lint, test, ...securityReview }
+  targets: { bench, check, circular, docs, docsFiles, fmt, lib, lint, test, ...securityReview, ...workspaceSources }
 })

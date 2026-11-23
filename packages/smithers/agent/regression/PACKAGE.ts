@@ -196,6 +196,15 @@ const securityReview = Smithers.SecurityReview({
   ]
 })
 
+const bench = Smithers.NodeBench({
+  runtime: Smithers.Runtime.Bun({ version: ">=1.4.0" }),
+  entry: Smithers.file("bench/run.ts"),
+  srcs: [...characterSources, Smithers.file("bench/run.ts")],
+  deps: [],
+  cache: true,
+  cwd
+})
+
 export const Package = Smithers.Package({
-  targets: { character, characterUnit, check, test, ...securityReview }
+  targets: { bench, character, characterUnit, check, test, ...securityReview }
 })

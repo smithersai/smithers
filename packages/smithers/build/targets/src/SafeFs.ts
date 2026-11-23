@@ -154,7 +154,11 @@ export const defaultIo: Io = {
   readlink: defaultReadlink,
   lstat: (path) => Fs.lstat(path, { bigint: true }),
   readdir: async (path, limit = maximumDirectoryEntries) =>
-    readDirectory(await Fs.opendir(path), limit, `directory contains more than ${limit} entries: ${path}`),
+    readDirectory(
+      await Fs.opendir(path, { bufferSize: 256 }),
+      limit,
+      `directory contains more than ${limit} entries: ${path}`
+    ),
   open: async (path) => {
     const handle = await Fs.open(path, openFlags)
     return {

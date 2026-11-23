@@ -1583,8 +1583,21 @@ const moduleLint = Smithers.EsLint({
   fix: false
 })
 
+const bench = Smithers.NodeBench({
+  entry: Smithers.file("bench/run.mjs"),
+  srcs: [
+    Smithers.file("bench/run.mjs"),
+    Smithers.file("release/generate-changelog.mjs"),
+    Smithers.file("release/release-peer-ranges.mjs")
+  ],
+  deps: [],
+  cache: true,
+  cwd
+})
+
 export const Package = Smithers.Package({
   targets: {
+    bench,
     vibelangFuzzSources,
     issueClaim,
     evidenceBindings,

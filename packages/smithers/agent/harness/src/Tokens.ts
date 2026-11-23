@@ -56,6 +56,14 @@ export class Accounting extends Schema.Class<Accounting>("flows/harness/Tokens/A
  */
 export type Estimator = (text: string) => number
 
+/** Quarter-char weights: `\n` adds 1.5 chars (+6 quarters), code punctuation adds 0.75 (+3 quarters). */
+const charWeights = /* @__PURE__ */ (() => {
+  const table = new Uint8Array(128)
+  table[10] = 6
+  for (const ch of "{}()[];=<>`") table[ch.charCodeAt(0)] = 3
+  return table
+})()
+
 /**
  * Estimates tokens using four characters per token, with code punctuation and
  * newline density accounting for the typically shorter tokens in source text.
@@ -65,10 +73,14 @@ export type Estimator = (text: string) => number
  * @slop
  */
 export const estimate: Estimator = (text) => {
-  if (text.length === 0) return 0
-  const codeCharacters = (text.match(/[{}()[\];=<>`]/g) ?? []).length
-  const newlines = (text.match(/\n/g) ?? []).length
-  return Math.ceil((text.length + codeCharacters * 0.75 + newlines * 1.5) / 4)
+  const length = text.length
+  if (length === 0) return 0
+  let extra = 0
+  for (let index = 0; index < length; index++) {
+    const code = text.charCodeAt(index)
+    if (code < 128) extra += charWeights[code]!
+  }
+  return Math.ceil((length * 4 + extra) / 16)
 }
 
 /**

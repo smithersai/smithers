@@ -452,18 +452,7 @@ export const nodeModulesPaths = (
 }
 
 /** Reports whether UTF-8 encoding can preserve a string without replacement. */
-const isWellFormed = (value: string): boolean => {
-  for (let index = 0; index < value.length; index += 1) {
-    const unit = value.charCodeAt(index)
-    if (unit >= 0xd800 && unit <= 0xdbff) {
-      if (index + 1 >= value.length) return false
-      const next = value.charCodeAt(index + 1)
-      if (next < 0xdc00 || next > 0xdfff) return false
-      index += 1
-    } else if (unit >= 0xdc00 && unit <= 0xdfff) return false
-  }
-  return true
-}
+const isWellFormed = (value: string): boolean => value.isWellFormed()
 
 /**
  * Validates a revision passed to `git diff` as an operand rather than an
@@ -1250,14 +1239,17 @@ const walk = async (
   scan: Scan,
   opened: Opened,
   scopes: ReadonlyArray<IgnoreScope>,
-  bounded: boolean
+  bounded: boolean,
+  included?: Minimatch | undefined
 ): Promise<void> => {
   checkCancelled(scan)
   const relative = opened.relative
   if (bounded && scan.packageScoped && await isPackage(scan, relative, opened.entries)) return
   if (bounded && scan.sourceFilters && isRepository(opened.entries)) return
-  const matcher = await permitted(scan, () => readIgnore(scan, relative))
+  const hasIgnore = opened.entries.some((entry) => entry.name === ".gitignore")
+  const matcher = hasIgnore ? await permitted(scan, () => readIgnore(scan, relative)) : undefined
   const next = matcher === undefined ? scopes : [...scopes, { base: relative, matcher }]
+  const prune = included !== undefined && !included.negate
   // Classify this listing without I/O first, then open the children that need
   // it through the scan's permits. The walk is latency-bound on per-directory
   // opens and per-link stats rather than CPU-bound, so a serial descent costs
@@ -1283,9 +1275,16 @@ const walk = async (
       ) continue
     }
     if (isIgnored(next, child, directory)) continue
-    if (directory) directories.push(child)
-    else if (entry.isFile()) addFile(scan, child)
-    else if (entry.isSymbolicLink()) links.push(child)
+    if (directory) {
+      if (prune && !included.match(child, true)) continue
+      directories.push(child)
+    } else if (entry.isFile()) {
+      if (prune && !included.match(child)) continue
+      addFile(scan, child)
+    } else if (entry.isSymbolicLink()) {
+      if (prune && !included.match(child)) continue
+      links.push(child)
+    }
   }
   await branches(scan, [
     ...links.map((child) => async () => {
@@ -1293,7 +1292,7 @@ const walk = async (
     }),
     ...directories.map((child) => async () => {
       const below = await permitted(scan, () => openDirectory(scan, child))
-      if (below !== undefined) await walk(scan, below, next, true)
+      if (below !== undefined) await walk(scan, below, next, true, included)
     })
   ])
 }
@@ -1429,16 +1428,16 @@ export const expandGlob = async (
   for (const ancestor of chain.slice(0, -1)) {
     // Git never reads rules below an excluded directory, even for a static prefix.
     if (isIgnored(scopes, ancestor.relative, true) || skippedInstall(ancestor.relative)) return []
+    if (!ancestor.entries.some((entry) => entry.name === ".gitignore")) continue
     const matcher = await readIgnore(scan, ancestor.relative)
     if (matcher !== undefined) scopes.push({ base: ancestor.relative, matcher })
   }
   if (isIgnored(scopes, start, true) || skippedInstall(start)) return []
-  await walk(scan, chain[chain.length - 1]!, scopes, false)
-  // One matcher per pattern, not one per discovered path: these strings are
-  // constant across the expansion, so compiling them inside the filter repeats
-  // the same parse for every file a broad glob reached.
+  // One matcher per pattern, compiled before walking so directories that cannot
+  // match the pattern are pruned without descending into them.
   const included = new Minimatch(resolved, { dot: true })
   const excluded = excludes.map((exclude) => new Minimatch(exclude, { dot: true }))
+  await walk(scan, chain[chain.length - 1]!, scopes, false, included)
   const matched = scan.found
     .filter((path) => included.match(path) && !excluded.some((exclude) => exclude.match(path)))
     .sort()

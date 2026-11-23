@@ -1,12 +1,14 @@
-import { BuildAndCheckTypeScriptPackage, SdkRules } from "@smthrs/repo-targets"
+import { BuildAndCheckTypeScriptPackage, SdkRules, WorkspaceSources } from "@smthrs/repo-targets"
 /** Standard package targets for the TanStack DB Effect wrapper. */
 import { Smithers } from "@smthrs/targets"
 import * as Input from "@smthrs/targets/Input"
 
 const cwd = "packages/effect-tanstack-db"
+const workspaceSources = WorkspaceSources({ cwd })
 
-const { check, circular, docs, docsFiles, fmt, lib, lint, test } = BuildAndCheckTypeScriptPackage({
+const { bench, check, circular, docs, docsFiles, fmt, lib, lint, test } = BuildAndCheckTypeScriptPackage({
   deps: [],
+  reads: [...Object.values(workspaceSources)],
   sources: Input.glob("{src,examples}/**/*.ts"),
   cwd
 })
@@ -15,5 +17,5 @@ const { check, circular, docs, docsFiles, fmt, lib, lint, test } = BuildAndCheck
 const { importRules, jevRules } = SdkRules({ cwd, role: "library" })
 
 export const Package = Smithers.Package({
-  targets: { check, circular, docs, docsFiles, fmt, importRules, jevRules, lib, lint, test }
+  targets: { bench, check, circular, docs, docsFiles, fmt, importRules, jevRules, lib, lint, test, ...workspaceSources }
 })

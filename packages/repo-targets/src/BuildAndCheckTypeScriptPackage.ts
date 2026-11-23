@@ -10,6 +10,7 @@ import { EsLint } from "@smthrs/targets/EsLint"
 import { Suite } from "@smthrs/targets/Compose"
 import { Filegroup } from "@smthrs/targets/Filegroup"
 import * as Input from "@smthrs/targets/Input"
+import { NodeBench } from "@smthrs/targets/NodeBench"
 import { entrypoint, NodeTest } from "@smthrs/targets/NodeTest"
 import type * as PackageManager from "@smthrs/targets/PackageManager"
 import type * as Reference from "@smthrs/targets/Reference"
@@ -17,6 +18,7 @@ import type * as Target from "@smthrs/targets/Target"
 import { TsBuild } from "@smthrs/targets/TsBuild"
 import { Typecheck } from "@smthrs/targets/Typecheck"
 import { Vitest } from "@smthrs/targets/Vitest"
+import { VitestBench } from "@smthrs/targets/VitestBench"
 import { CircularImports } from "./CircularImports.ts"
 
 /** A host as `process.platform` names it. */
@@ -128,6 +130,34 @@ export interface Options {
   readonly testHosts?: readonly [Host, ...Array<Host>] | undefined
   /** Targets only the suite waits for, such as one that fills a tool's cache before the suite starts. */
   readonly testDeps?: ReadonlyArray<Target.AnyTarget> | undefined
+  /**
+   * The glob Vitest collects benchmark files from.
+   *
+   * @default test/**\/*.bench.{ts,vibe}
+   */
+  readonly benches?: Input.Glob | undefined
+  /** Optional Vitest configuration for the package benchmark target; defaults to `vitestConfig`. */
+  readonly benchConfig?: Input.File | null | undefined
+  /** Vitest environment for the package benchmark target. @default "node" */
+  readonly benchEnvironment?: string | undefined
+  /** Optional standalone entrypoint for packages whose benchmark runs via `NodeBench`. */
+  readonly benchProgram?: Input.File | undefined
+  /** Arguments forwarded to `benchProgram` when using `NodeBench`. */
+  readonly benchArgs?: ReadonlyArray<string> | undefined
+  /** Outer deadline for the package benchmark process. */
+  readonly benchTimeoutMs?: number | undefined
+  /** Host binaries declared for `VitestBench` targets. */
+  readonly benchTools?: ReadonlyArray<Reference.HostBin> | undefined
+  /** Explicit environment overrides for the package benchmark target. */
+  readonly benchEnv?: Readonly<Record<string, string>> | undefined
+  /** The hosts the benchmark target runs on; absent, every host. */
+  readonly benchHosts?: readonly [Host, ...Array<Host>] | undefined
+  /** Extra dependencies for the benchmark target beyond `reads`. */
+  readonly benchDeps?: ReadonlyArray<Target.AnyTarget> | undefined
+  /** Package-relative globs for extra data files read by benchmarks. */
+  readonly benchData?: readonly string[] | undefined
+  /** Whether the benchmark target caches green results under its declared inputs and `reads`. @default true */
+  readonly benchCache?: boolean | undefined
   readonly eslintConfigs?: ReadonlyArray<Input.File> | undefined
   /** Explicit environment overrides for the package lint target (e.g. NODE_OPTIONS). */
   readonly lintEnv?: Readonly<Record<string, string>> | undefined
@@ -179,6 +209,8 @@ export interface PackageTargets {
   readonly test: ReturnType<typeof Vitest> | ReturnType<typeof NodeTest> | ReturnType<typeof Suite>
   /** The parts `test` runs, when the package declares `testParts`. */
   readonly testParts: Readonly<Record<string, ReturnType<typeof Vitest>>>
+  /** Incremental performance benchmark target (`smthrs bench` / `smthrs affected bench`). */
+  readonly bench: ReturnType<typeof VitestBench> | ReturnType<typeof NodeBench>
   readonly lint: ReturnType<typeof EsLint>
   readonly fmt: ReturnType<typeof Dprint>
   readonly docs: ReturnType<typeof DocsParity>
@@ -361,6 +393,50 @@ export const BuildAndCheckTypeScriptPackage = (options: Options): PackageTargets
       timeout: `${options.testTimeoutMs ?? 1_200_000}ms`,
       cwd
     })
+  const benches = options.benches ?? Input.glob("test/**/*.bench.{ts,vibe}")
+  const benchConfig = options.benchConfig === undefined ? vitestConfig : options.benchConfig
+  const benchCache = options.benchCache ?? true
+  const bench = options.benchProgram === undefined
+    ? VitestBench({
+      ...(options.packageManager === undefined ? {} : { packageManager: options.packageManager }),
+      ...(options.benchTimeoutMs === undefined ? {} : { timeoutMs: options.benchTimeoutMs }),
+      ...(options.benchTools === undefined ? {} : { tools: options.benchTools }),
+      ...(options.benchEnv === undefined ? {} : { env: options.benchEnv }),
+      ...(options.benchHosts === undefined ? {} : { hosts: options.benchHosts }),
+      benches: [benches],
+      sources: [
+        sources,
+        testSources,
+        tsconfig,
+        testTsconfig,
+        Input.file("package.json"),
+        ...(options.benchData ?? []).map((pattern) => Input.glob(pattern))
+      ],
+      deps: [...reads, ...(options.benchDeps ?? [])],
+      config: benchConfig,
+      environment: options.benchEnvironment ?? "node",
+      passWithNoTests: false,
+      cache: benchCache,
+      cwd
+    })
+    : NodeBench({
+      ...(options.packageManager === undefined ? {} : { runtime: options.packageManager.runtime }),
+      entry: options.benchProgram,
+      ...(options.benchArgs === undefined ? {} : { args: options.benchArgs }),
+      srcs: [
+        sources,
+        testSources,
+        tsconfig,
+        testTsconfig,
+        Input.file("package.json"),
+        ...(options.benchData ?? []).map((pattern) => Input.glob(pattern))
+      ],
+      deps: [...reads, ...(options.benchDeps ?? [])],
+      ...(options.benchEnv === undefined ? {} : { env: options.benchEnv }),
+      timeout: `${options.benchTimeoutMs ?? 600_000}ms`,
+      cache: benchCache,
+      cwd
+    })
   const lint = EsLint({
     ...(options.packageManager === undefined ? {} : { packageManager: options.packageManager }),
     ...(options.lintEnv === undefined ? {} : { env: options.lintEnv }),
@@ -401,5 +477,5 @@ export const BuildAndCheckTypeScriptPackage = (options: Options): PackageTargets
     sources: [sources],
     cwd
   })
-  return { lib, check, test, testParts, lint, fmt, docs, circular, docsFiles }
+  return { lib, check, test, testParts, bench, lint, fmt, docs, circular, docsFiles }
 }
