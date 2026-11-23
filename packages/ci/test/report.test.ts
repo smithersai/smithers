@@ -1023,6 +1023,9 @@ describe("failed steps", () => {
     expect(text({ ...report, normalCpuMs: 0 }).split("\n")).toContain(
       "the steps used 26m 10s of CPU time as the baseline and 0ms in normal mode"
     )
+    expect(text({ ...report, baselineCpuMs: 0, normalCpuMs: 500 }).split("\n")).toContain(
+      "the steps used 0ms of CPU time as the baseline and 500ms in normal mode"
+    )
     expect(body(html(example))).toContain("10m 00s in normal mode (7.0× less) and 3m 30s in fast mode (20.0× less)")
     // On a machine whose processes could not be read there is no such line.
     for (const unread of [normalOnly(), { ...normalOnly(), baselineCpuMs: 1 }, { ...normalOnly(), normalCpuMs: 1 }]) {

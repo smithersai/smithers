@@ -491,7 +491,8 @@ describe("what a step becomes", () => {
       step("a:1", "npm ci", { runner }),
       step("a:2", "npm test", { runner }),
       step("a:3", "npm run lint", { runner, env: { GITHUB_SHA: "pinned", [eventsVariable]: "/elsewhere" } }),
-      step("a:4", "true")
+      step("a:4", "true"),
+      step("a:5", "npm run typecheck", { runner, env: { GITHUB_RUN_ID: "pinned" } })
     ])]))
     const run = JSON.stringify(runGiven)
     expect(runVariables).toEqual([
@@ -520,6 +521,12 @@ describe("what a step becomes", () => {
       `observe: { ignore: ${ignore}, env: ${
         JSON.stringify(runGiven.filter((name) => name !== "GITHUB_SHA"))
       }, quiet: ${quiet}, readAsData: ${data}, byValue: ["GITHUB_RUN_ID"] }`
+    )
+    // A step that pins GITHUB_RUN_ID itself omits byValue from observe.
+    expect(declaration(source, "a-5")).toContain(
+      `observe: { ignore: ${ignore}, env: ${
+        JSON.stringify(runGiven.filter((name) => name !== "GITHUB_RUN_ID"))
+      }, quiet: ${quiet}, readAsData: ${data} }`
     )
     // A step without runner text is given no runner variable it does not name.
     expect(declaration(source, "a-4")).toContain(`observe: { ignore: ${ignore} }`)

@@ -394,10 +394,10 @@ export const firstRunTime = (run: FirstRun): string => {
   return `the first run, with an empty cache, took ${listed}; it happens once and is in none of these times`
 }
 
-/** How a mode's CPU time compares with the baseline's: ` (6.5× less)`, or nothing when the mode used none. */
+/** How a mode's CPU time compares with the baseline's: ` (6.5× less)`, or nothing when either used none. */
 const beside = (baselineMs: number, modeMs: number): string => {
   const less = ratio(baselineMs, modeMs)
-  if (less === undefined) return ""
+  if (less === undefined || less <= 0) return ""
   return less >= 1 ? ` (${times(less)} less)` : ` (${times(1 / less)} more)`
 }
 
