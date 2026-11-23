@@ -10,10 +10,12 @@
  * captured evaluator output (`baseline/`, `reports/`, `fullbench/`, fixture
  * data) whose bytes are evidence of what a wave measured.
  */
+import { WorkspaceSources } from "@smthrs/repo-targets"
 import { Smithers } from "@smthrs/targets"
 import { Package as harborPackage } from "../harbor/PACKAGE.ts"
 
 const cwd = "packages/smithers/agent/harness/benchmarks/swebench"
+const workspaceSources = WorkspaceSources({ cwd })
 
 /**
  * Checks the scorecard generator and its price table against their tsconfig.
@@ -42,7 +44,8 @@ const code = [Smithers.glob("*.ts"), Smithers.glob("*.mjs"), Smithers.glob("lib/
 const lint = Smithers.EsLint({
   sources: code,
   configs: [Smithers.file("eslint.config.js"), Smithers.file("//eslint.invariants.js")],
-  deps: [],
+  deps: [...Object.values(workspaceSources)],
+  data: [Smithers.file("tsconfig.json"), Smithers.file("//tsconfig.base.json")],
   maxWarnings: 0,
   fix: false,
   cwd
@@ -282,5 +285,5 @@ const bench = Smithers.NodeBench({
 })
 
 export const Package = Smithers.Package({
-  targets: { bench, check, lint, fmt, offline, prerequisites, ...securityReview }
+  targets: { ...workspaceSources, bench, check, lint, fmt, offline, prerequisites, ...securityReview }
 })

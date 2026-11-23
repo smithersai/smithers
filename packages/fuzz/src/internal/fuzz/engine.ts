@@ -542,15 +542,27 @@ export const runTarget = Effect.fnUntraced(function*<A, E, R>(
     yield* save(
       "Failure",
       Tape.hashHex(`failure\u0000${signature}\u0000${content}`),
-      Format.encodeEntry({
-        kind: "failure",
-        revision: target.revision,
-        input,
-        signature,
-        path,
-        ...encoded,
-        note: `${signature}\n${encoded?.value ?? Formatter.format(value)}`
-      })
+      Format.encodeEntry(
+        encoded === undefined
+          ? {
+            kind: "failure",
+            revision: target.revision,
+            input,
+            signature,
+            path,
+            note: `${signature}\n${Formatter.format(value)}`
+          }
+          : {
+            kind: "failure",
+            revision: target.revision,
+            input,
+            signature,
+            path,
+            codec: encoded.codec,
+            value: encoded.value,
+            note: `${signature}\n${encoded.value}`
+          }
+      )
     )
     return { saved: encoded === undefined ? "Tape" : "Value", codecError }
   })

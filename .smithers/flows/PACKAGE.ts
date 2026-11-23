@@ -1,4 +1,5 @@
 /** Repository flows, release workflows, and the retained migration fixtures. */
+import { WorkspaceSources } from "@smthrs/repo-targets"
 import { Smithers } from "@smthrs/targets"
 import { existsSync, readdirSync } from "node:fs"
 import { Package as mvpPackage } from "../../apps/mvp/PACKAGE.ts"
@@ -7,6 +8,8 @@ import { libraryPackages, repoRoot } from "../../packages/repo-targets/scripts/w
 import { Package as testingPackage } from "../../packages/testing/PACKAGE.ts"
 import codingProject from "../coding-project.json" with { type: "json" }
 import { mutants as behavioralMutations } from "./bench/mutations/manifest.mjs"
+import { Package as reviewPackage } from "./review/PACKAGE.ts"
+import { Package as wikiPackage } from "./wiki/PACKAGE.ts"
 
 const pack = Smithers.NodeTest({
   runner: Smithers.testRunner([Smithers.file("//.smithers/flows/pack.test.mjs")]),
@@ -26,6 +29,7 @@ const vibelangFuzzSources = Smithers.Filegroup({
 })
 
 const cwd = ".smithers/flows"
+const workspaceSources = WorkspaceSources({ cwd })
 const sources = Smithers.glob("//.smithers/flows/**/*.ts")
 // The repository automation modules flows import and run (release, evidence,
 // issue claims, landing).
@@ -61,7 +65,6 @@ const suite = Smithers.NodeTest({
   ]),
   srcs: [
     sources,
-    Smithers.file("//.smithers/flows/review/flow.ts"),
     Smithers.file("//pnpm-workspace.yaml"),
     Smithers.file("//.smithers/flows/rollout/refuse-unqualified.mjs"),
     Smithers.file("//apps/bug-worker/package.json")
@@ -78,7 +81,25 @@ const lint = Smithers.EsLint({
     Smithers.file("//eslint.invariants.js"),
     Smithers.file("//eslint.jsdoc.js")
   ],
-  deps: [],
+  deps: [...Object.values(workspaceSources), reviewPackage.reviewSources, wikiPackage.wikiSources],
+  data: [
+    Smithers.file("tsconfig.json"),
+    Smithers.file("//tsconfig.base.json"),
+    Smithers.file("//.smithers/coding-project.json"),
+    Smithers.glob("**/*.json"),
+    Smithers.glob("**/*.mjs"),
+    Smithers.glob("**/*.vibe"),
+    Smithers.file("//.smithers/flows/review/flow.ts"),
+    Smithers.file("//.smithers/flows/review/PACKAGE.ts"),
+    Smithers.file("//packages/repo-targets/package.json"),
+    Smithers.file("//packages/repo-targets/src/index.ts"),
+    Smithers.file("//packages/repo-targets/PACKAGE.ts"),
+    Smithers.file("//packages/repo-targets/scripts/workspace-packages.mjs"),
+    Smithers.file("//apps/mvp/PACKAGE.ts"),
+    Smithers.file("//packages/testing/PACKAGE.ts"),
+    Smithers.file("//packages/rpc/src/FlowAuthoring.ts"),
+    Smithers.file("//packages/smithers/flows/engine-store/test/Sha256.ts")
+  ],
   maxWarnings: 0,
   fix: false,
   cwd
@@ -1577,7 +1598,11 @@ const releaseVersion = Smithers.NodeTest({
  */
 const moduleLint = Smithers.EsLint({
   sources: [Smithers.glob("//.smithers/flows/**/*.mjs")],
-  configs: [Smithers.file("//eslint.config.js")],
+  configs: [
+    Smithers.file("//eslint.config.js"),
+    Smithers.file("//eslint.jsdoc.js"),
+    Smithers.file("//eslint.invariants.js")
+  ],
   deps: [],
   maxWarnings: 0,
   fix: false
@@ -1597,6 +1622,7 @@ const bench = Smithers.NodeBench({
 
 export const Package = Smithers.Package({
   targets: {
+    ...workspaceSources,
     bench,
     vibelangFuzzSources,
     issueClaim,

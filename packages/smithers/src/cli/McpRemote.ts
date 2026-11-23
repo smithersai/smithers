@@ -5,6 +5,7 @@
  * @since 1.0.0
  */
 
+import * as Environment from "@smthrs/integrations/Environment"
 import { spawn } from "node:child_process"
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto"
 import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs"
@@ -21,7 +22,12 @@ const MAX_FRAME_BYTES = 10 * 1024 * 1024
 const REPO_PATTERN = /^[A-Za-z0-9](?:[A-Za-z0-9._-]{0,99})\/[A-Za-z0-9](?:[A-Za-z0-9._-]{0,99})$/
 const TOKEN_PATTERN = /^sma_[0-9a-f]{64}$/
 
-/** One stored MCP bearer token entry on disk (`0600`). */
+/**
+ * One stored MCP bearer token entry on disk (`0600`).
+ *
+ * @category mcp
+ * @since 1.0.0
+ */
 export interface StoredMcpToken {
   readonly origin: string
   readonly repo: string | null
@@ -36,7 +42,12 @@ interface TokenStoreFile {
   readonly tokens: Record<string, StoredMcpToken>
 }
 
-/** Validates and normalizes an MCP origin (`https:` or loopback `http:`). */
+/**
+ * Validates and normalizes an MCP origin (`https:` or loopback `http:`).
+ *
+ * @category mcp
+ * @since 1.0.0
+ */
 export const normalizeOrigin = (raw: string | undefined): string => {
   const input = (raw ?? DEFAULT_ORIGIN).trim()
   let parsed: URL
@@ -57,7 +68,12 @@ export const normalizeOrigin = (raw: string | undefined): string => {
   return parsed.origin
 }
 
-/** Validates an optional `owner/repo` string. */
+/**
+ * Validates an optional `owner/repo` string.
+ *
+ * @category mcp
+ * @since 1.0.0
+ */
 export const normalizeRepo = (raw: string | undefined): string | undefined => {
   if (raw === undefined || raw.trim() === "") return undefined
   const trimmed = raw.trim().replace(/^\/+|\/+$/g, "")
@@ -67,7 +83,12 @@ export const normalizeRepo = (raw: string | undefined): string | undefined => {
   return trimmed
 }
 
-/** Resolves the Streamable HTTP endpoint for `origin` and optional `owner/name`. */
+/**
+ * Resolves the Streamable HTTP endpoint for `origin` and optional `owner/name`.
+ *
+ * @category mcp
+ * @since 1.0.0
+ */
 export const mcpEndpointUrl = (origin: string, repo?: string): string => {
   const cleanOrigin = normalizeOrigin(origin)
   const cleanRepo = normalizeRepo(repo)
@@ -76,8 +97,15 @@ export const mcpEndpointUrl = (origin: string, repo?: string): string => {
   return `${cleanOrigin}/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/mcp`
 }
 
-/** Default path for stored MCP bearer tokens (`$XDG_CONFIG_HOME/smithers/mcp-tokens.json`). */
-export const tokenStorePath = (env: Record<string, string | undefined> = process.env): string => {
+/**
+ * Default path for stored MCP bearer tokens (`$XDG_CONFIG_HOME/smithers/mcp-tokens.json`).
+ *
+ * @category mcp
+ * @since 1.0.0
+ */
+export const tokenStorePath = (
+  env: Readonly<Record<string, string | undefined>> = Environment.ambientEnvironment()
+): string => {
   const xdg = env["XDG_CONFIG_HOME"]?.trim()
   const base = xdg && xdg.length > 0 ? xdg : join(env["HOME"] ?? homedir(), ".config")
   return join(base, "smithers", "mcp-tokens.json")
@@ -99,7 +127,12 @@ const readStoreFile = (filePath: string): TokenStoreFile => {
   return { version: 1, tokens: {} }
 }
 
-/** Writes one MCP token atomically with `0700` dir and `0600` file permissions. */
+/**
+ * Writes one MCP token atomically with `0700` dir and `0600` file permissions.
+ *
+ * @category mcp
+ * @since 1.0.0
+ */
 export const writeStoredToken = (filePath: string, entry: StoredMcpToken): void => {
   const dir = dirname(filePath)
   mkdirSync(dir, { recursive: true, mode: 0o700 })
@@ -116,7 +149,12 @@ export const writeStoredToken = (filePath: string, entry: StoredMcpToken): void 
   renameSync(tempPath, filePath)
 }
 
-/** Reads the most specific non-expired token for `(origin, repo)` (repo-pinned first, then global `*`). */
+/**
+ * Reads the most specific non-expired token for `(origin, repo)` (repo-pinned first, then global `*`).
+ *
+ * @category mcp
+ * @since 1.0.0
+ */
 export const readStoredToken = (
   filePath: string,
   origin: string,
@@ -162,6 +200,12 @@ const openInBrowser = (url: string): void => {
   }
 }
 
+/**
+ * Options for remote MCP OAuth 2.1 + PKCE login.
+ *
+ * @category mcp
+ * @since 1.0.0
+ */
 export interface McpLoginOptions {
   readonly origin?: string | undefined
   readonly repo?: string | undefined
@@ -177,6 +221,12 @@ export interface McpLoginOptions {
   readonly onAuthorizeUrl?: ((url: string) => void) | undefined
 }
 
+/**
+ * Result of a completed remote MCP OAuth login.
+ *
+ * @category mcp
+ * @since 1.0.0
+ */
 export interface McpLoginResult {
   readonly status: "authenticated"
   readonly origin: string
@@ -220,6 +270,9 @@ const discoverAuthServer = async (
 /**
  * Runs OAuth 2.1 + PKCE S256 login against a Smithers MCP server using an ephemeral loopback callback
  * and stores the resulting `sma_` bearer token (`0600`) on disk without ever printing the secret.
+ *
+ * @category mcp
+ * @since 1.0.0
  */
 export const loginMcpRemote = async (options: McpLoginOptions = {}): Promise<McpLoginResult> => {
   const origin = normalizeOrigin(options.origin)
@@ -436,6 +489,12 @@ export const loginMcpRemote = async (options: McpLoginOptions = {}): Promise<Mcp
   }
 }
 
+/**
+ * Options for the stdio-to-Streamable-HTTP MCP bridge.
+ *
+ * @category mcp
+ * @since 1.0.0
+ */
 export interface McpServeOptions {
   readonly origin?: string | undefined
   readonly repo?: string | undefined
@@ -457,6 +516,9 @@ const writeLine = (output: Writable, line: string): Promise<void> =>
 
 /**
  * Bridges newline-delimited JSON-RPC 2.0 on `stdin`/`stdout` to a remote Smithers Streamable HTTP MCP endpoint.
+ *
+ * @category mcp
+ * @since 1.0.0
  */
 export const serveMcpStdioBridge = async (options: McpServeOptions = {}): Promise<void> => {
   const origin = normalizeOrigin(options.origin)

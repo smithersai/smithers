@@ -11,6 +11,7 @@ import { rootInvariantsConfig, rootJSDocConfig } from "../../../../PACKAGE.ts"
 import { sourceFiles, testHelpers } from "./SourceInputs.ts"
 
 const cwd = "packages/smithers/build/build-cli"
+const workspaceSources = WorkspaceSources({ cwd })
 const sources = Smithers.glob("src/**/*.ts")
 const javascript = Smithers.glob("src/**/*.js")
 const tests = Smithers.glob("test/**/*.test.ts")
@@ -150,12 +151,18 @@ const test = Smithers.Vitest({
 
 const lint = Smithers.EsLint({
   sources: [sources, javascript, examples],
-  deps: [],
+  deps: [...Object.values(workspaceSources)],
   configs: [
     Smithers.file("eslint.config.js"),
     Smithers.file("tsconfig.lint.json"),
     rootJSDocConfig,
     rootInvariantsConfig
+  ],
+  data: [
+    Smithers.glob("test/**/*.ts"),
+    Smithers.file("tsconfig.json"),
+    Smithers.file("tsconfig.test.json"),
+    Smithers.file("//tsconfig.base.json")
   ],
   maxWarnings: 0,
   fix: false,
@@ -417,7 +424,6 @@ const testObserve = Smithers.Vitest({
   cwd
 })
 
-const workspaceSources = WorkspaceSources({ cwd })
 
 const bench = Smithers.VitestBench({
   benches: [Smithers.file("test/BuildCli.bench.ts")],

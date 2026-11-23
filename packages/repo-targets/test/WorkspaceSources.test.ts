@@ -29,11 +29,15 @@ const workspace = (
     }
     mkdirSync(join(root, "packages", dir), { recursive: true })
     writeFileSync(join(root, "packages", dir, "package.json"), JSON.stringify({ name: `@w/${dir}`, ...manifest }))
+    if (!(without[dir] ?? []).includes("tsconfig.json")) {
+      writeFileSync(join(root, "packages", dir, "tsconfig.json"), "{}\n")
+    }
   }
   return root
 }
 
-const sourcesOf = (group: Target.AnyTarget) => Filegroup.sources(Target.metadata(group).attrs as Filegroup.Attrs, context)
+const sourcesOf = (group: Target.AnyTarget) =>
+  Filegroup.sources(Target.metadata(group).attrs as Filegroup.Attrs, context)
 
 describe("WorkspaceSources", () => {
   it("names every package reached through the manifests, once each, and not the package itself", () => {
@@ -99,7 +103,9 @@ describe("WorkspaceSources", () => {
   })
 
   it("leaves out a directory pattern for a package without that directory", () => {
-    const root = workspace({ own: { dependencies: { "@w/runtime": "workspace:*" } }, runtime: {} }, { runtime: ["bin"] })
+    const root = workspace({ own: { dependencies: { "@w/runtime": "workspace:*" } }, runtime: {} }, {
+      runtime: ["bin"]
+    })
     expect(sourcesOf(WorkspaceSources({ cwd: "packages/own", root })["sources-packages-runtime"]!)).toEqual([
       { base: "", source: Input.glob("packages/runtime/src/**") },
       { base: "", source: Input.file("packages/runtime/package.json") },
@@ -107,10 +113,23 @@ describe("WorkspaceSources", () => {
     ])
   })
 
+  it("leaves out a config brace pattern for a package with none of those configs", () => {
+    const root = workspace(
+      { own: { dependencies: { "@w/runtime": "workspace:*" } }, runtime: {} },
+      { runtime: ["bin", "tsconfig.json"] }
+    )
+    expect(sourcesOf(WorkspaceSources({ cwd: "packages/own", root })["sources-packages-runtime"]!)).toEqual([
+      { base: "", source: Input.glob("packages/runtime/src/**") },
+      { base: "", source: Input.file("packages/runtime/package.json") }
+    ])
+  })
+
   it("names no missing directory among this repository's groups for packages/ci", () => {
     // `smthrs target //:targetIndex --write`, which a release cut runs, refused 46 `bin/**` patterns of these groups.
     const named = Object.values(WorkspaceSources({ cwd: "packages/ci" })).flatMap((group) =>
-      sourcesOf(group).flatMap(({ source }) => /^(.+)\/\*\*$/.exec("pattern" in source ? source.pattern : "")?.[1] ?? [])
+      sourcesOf(group).flatMap(({ source }) =>
+        /^(.+)\/\*\*$/.exec("pattern" in source ? source.pattern : "")?.[1] ?? []
+      )
     )
     expect(named.length).toBeGreaterThan(40)
     expect(named.filter((directory) => !existsSync(join(repoRoot, directory)))).toEqual([])
@@ -121,6 +140,13 @@ describe("WorkspaceSources", () => {
     expect(() => WorkspaceSources({ cwd: "packages/missing", root })).toThrow(
       "WorkspaceSources: packages/missing is not a workspace package"
     )
+  })
+
+  it("invalidates cached package input lists when pnpm-workspace.yaml changes", () => {
+    const root = workspace({ own: { dependencies: { "@w/runtime": "workspace:*" } }, runtime: {} })
+    expect(Object.keys(WorkspaceSources({ cwd: "packages/own", root }))).toEqual(["sources-packages-runtime"])
+    writeFileSync(join(root, "pnpm-workspace.yaml"), "packages:\n  - packages/*\n  # changed\n")
+    expect(Object.keys(WorkspaceSources({ cwd: "packages/own", root }))).toEqual(["sources-packages-runtime"])
   })
 
   it("reads this repository when no root is given", () => {

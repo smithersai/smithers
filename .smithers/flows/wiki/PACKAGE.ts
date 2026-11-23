@@ -113,4 +113,8 @@ const securityReview = S.SecurityReview({
     }
   ]
 })
-export const Package = S.Package({ targets: { preview, freshness, verify, ...securityReview } })
+const wikiSources = S.Filegroup({
+  srcs: [S.glob("*.ts")],
+  cwd: ".smithers/flows/wiki"
+})
+export const Package = S.Package({ targets: { preview, freshness, verify, wikiSources, ...securityReview } })

@@ -351,25 +351,27 @@ describe("BuildAndCheckTypeScriptPackage test data", () => {
   it("keys the registry suite on the discovered production issue-sweep import closure", async () => {
     const paths = await registryInputs()
     const root = resolve(import.meta.dirname, "../../..")
-    const modules = await Effect.runPromise(Effect.gen(function*() {
-      const fs = yield* FileSystem.FileSystem
-      const path = yield* Path.Path
-      const scan = yield* Discovery.make(fs, path).scan({
-        source: "project",
-        root: resolve(root, ".smithers/flows/issue-sweep"),
-        naming: "frontmatter"
-      })
-      const body = scan.entries.find((entry) => entry.name === "issue-sweep")?.body
-      expect(body?._tag).toBe("Module")
-      if (body?._tag !== "Module") throw new Error("Expected the production issue-sweep module")
-      return [
-        body.path,
-        ...(body.imports ?? []).map((module) => {
-          expect(module.contentDigest, module.path).toBeDefined()
-          return resolve(dirname(body.path), module.path)
+    const modules = await Effect.runPromise(
+      Effect.gen(function*() {
+        const fs = yield* FileSystem.FileSystem
+        const path = yield* Path.Path
+        const scan = yield* Discovery.make(fs, path).scan({
+          source: "project",
+          root: resolve(root, ".smithers/flows/issue-sweep"),
+          naming: "frontmatter"
         })
-      ].map((module) => relative(root, module).replaceAll("\\", "/"))
-    }).pipe(Effect.provide(Layer.mergeAll(NodeFileSystem.layer, NodePath.layer))))
+        const body = scan.entries.find((entry) => entry.name === "issue-sweep")?.body
+        expect(body?._tag).toBe("Module")
+        if (body?._tag !== "Module") throw new Error("Expected the production issue-sweep module")
+        return [
+          body.path,
+          ...(body.imports ?? []).map((module) => {
+            expect(module.contentDigest, module.path).toBeDefined()
+            return resolve(dirname(body.path), module.path)
+          })
+        ].map((module) => relative(root, module).replaceAll("\\", "/"))
+      }).pipe(Effect.provide(Layer.mergeAll(NodeFileSystem.layer, NodePath.layer)))
+    )
     expect(modules).toContain(".smithers/flows/coding/clip.ts")
     for (const module of modules) expect(paths.has(module), module).toBe(true)
   })
@@ -463,7 +465,7 @@ describe("BuildAndCheckTypeScriptPackage dependencies", () => {
     const reached = (target: Target.AnyTarget) =>
       Target.metadata(target).dependencies.filter(Filegroup.isFilegroup).map((group) => Target.metadata(group).attrs)
     expect(expected.map((group) => (Target.metadata(group).attrs as { readonly cwd: string }).cwd))
-      .toEqual(["packages/smithers/flows/canonical", "packages/smithers/flows/crypto"])
+      .toEqual(["packages/fuzz", "packages/smithers/flows/canonical", "packages/smithers/flows/crypto"])
     for (const name of ["lib", "check", "test", "lint"] as const) {
       expect(reached(targets[name])).toEqual(expected.map((group) => Target.metadata(group).attrs))
     }
@@ -474,7 +476,11 @@ describe("BuildAndCheckTypeScriptPackage dependencies", () => {
 
   it("keeps the reads a member names, an empty list included", () => {
     const group = Filegroup.Filegroup({ srcs: [Input.glob("src/**")], cwd: "packages/other" })
-    const named = BuildAndCheckTypeScriptPackage({ packageManager, cwd: "packages/smithers/flows/keys", reads: [group] })
+    const named = BuildAndCheckTypeScriptPackage({
+      packageManager,
+      cwd: "packages/smithers/flows/keys",
+      reads: [group]
+    })
     expect(Target.metadata(named.lint).dependencies).toEqual([group])
     const none = BuildAndCheckTypeScriptPackage({ packageManager, cwd: "packages/smithers/flows/keys", reads: [] })
     expect(Target.metadata(none.lint).dependencies).toEqual([])
@@ -490,12 +496,18 @@ describe("BuildAndCheckTypeScriptPackage dependencies", () => {
     const targets = BuildAndCheckTypeScriptPackage({
       packageManager,
       cwd: "packages/example",
-      testParts: { testCli: { config: Input.file("vitest.cli.config.ts") }, testRest: { config: Input.file("vitest.rest.config.ts") } }
+      testParts: {
+        testCli: { config: Input.file("vitest.cli.config.ts") },
+        testRest: { config: Input.file("vitest.rest.config.ts") }
+      }
     })
     expect(Object.keys(targets.testParts)).toEqual(["testCli", "testRest"])
     expect(Target.metadata(targets.testParts["testCli"]!).target).toBe("Vitest")
     expect(attrsOf<Vitest.Attrs>(targets.testParts["testCli"]!).config).toEqual(Input.file("vitest.cli.config.ts"))
-    expect(Target.metadata(targets.test).dependencies).toEqual([targets.testParts["testCli"], targets.testParts["testRest"]])
+    expect(Target.metadata(targets.test).dependencies).toEqual([
+      targets.testParts["testCli"],
+      targets.testParts["testRest"]
+    ])
   })
 
   it("runs the suite only on the hosts a package names, and on every host otherwise", () => {
@@ -545,7 +557,11 @@ describe("BuildAndCheckTypeScriptPackage lint and fmt gates", () => {
     ])
     // Typed rules load both tsconfigs and resolve the test tsconfig's program,
     // so the test tree keys the run without being linted.
-    expect(attrs.data).toEqual([Input.glob("test/**/*.{ts,vibe}"), Input.file("tsconfig.json"), Input.file("tsconfig.test.json")])
+    expect(attrs.data).toEqual([
+      Input.glob("test/**/*.{ts,vibe}"),
+      Input.file("tsconfig.json"),
+      Input.file("tsconfig.test.json")
+    ])
   })
 
   /**
@@ -562,7 +578,11 @@ describe("BuildAndCheckTypeScriptPackage lint and fmt gates", () => {
     })
     const attrs = attrsOf<EsLint.Attrs>(targets.lint)
     expect(attrs.configs).toEqual([Input.file("eslint.config.js"), Input.file("//eslint.package.js")])
-    expect(attrs.data).toEqual([Input.glob("test/**/*.{ts,vibe}"), Input.file("tsconfig.json"), Input.file("tsconfig.lint.json")])
+    expect(attrs.data).toEqual([
+      Input.glob("test/**/*.{ts,vibe}"),
+      Input.file("tsconfig.json"),
+      Input.file("tsconfig.lint.json")
+    ])
   })
 
   it("plans dprint in check mode over the sources and the test tree", () => {
@@ -794,4 +814,52 @@ it("forwards explicit lintEnv overrides to the package EsLint target", () => {
     lintEnv: { NODE_OPTIONS: "--max-old-space-size=4096" }
   })
   expect(attrsOf<EsLint.Attrs>(targets.lint).env).toEqual({ NODE_OPTIONS: "--max-old-space-size=4096" })
+})
+
+it("forwards explicit lintData entries to the package EsLint target data", () => {
+  const targets = BuildAndCheckTypeScriptPackage({
+    packageManager,
+    cwd: "packages/example",
+    lintData: [Input.glob("src/**/*.json")]
+  })
+  expect(attrsOf<EsLint.Attrs>(targets.lint).data).toContainEqual(Input.glob("src/**/*.json"))
+})
+
+it("forwards VitestBench options to the package bench target", () => {
+  const extraDep = Input.file("README.md")
+  const targets = BuildAndCheckTypeScriptPackage({
+    packageManager,
+    cwd: "packages/example",
+    benchConfig: Input.file("vitest.bench.config.ts"),
+    benchTimeoutMs: 120_000,
+    benchTools: [{ _tag: "HostBin", name: "git" }],
+    benchEnv: { BENCH_MODE: "fast" },
+    benchHosts: ["linux"],
+    benchData: ["fixtures/**"],
+    benchDeps: [],
+    benchEnvironment: "node",
+    benchCache: false,
+    readme: extraDep
+  })
+  expect(Target.metadata(targets.bench).target).toBe("VitestBench")
+})
+
+it("emits a NodeBench target when benchProgram is declared, with and without packageManager", () => {
+  const withMgr = BuildAndCheckTypeScriptPackage({
+    packageManager,
+    cwd: "packages/example",
+    benchProgram: Input.file("bench/run.mjs"),
+    benchArgs: ["--quick"],
+    benchData: ["fixtures/**"],
+    benchDeps: [],
+    benchEnv: { BENCH_MODE: "quick" },
+    benchTimeoutMs: 300_000,
+    benchCache: false
+  })
+  expect(Target.metadata(withMgr.bench).target).toBe("NodeBench")
+  const withoutMgr = BuildAndCheckTypeScriptPackage({
+    cwd: "packages/example",
+    benchProgram: Input.file("bench/run.mjs")
+  })
+  expect(Target.metadata(withoutMgr.bench).target).toBe("NodeBench")
 })

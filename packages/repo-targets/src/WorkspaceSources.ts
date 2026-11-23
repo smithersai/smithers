@@ -26,10 +26,10 @@
  * @since 0.1.0
  */
 
-import { existsSync, statSync } from "node:fs"
-import { join } from "node:path"
 import { Filegroup } from "@smthrs/targets/Filegroup"
 import * as Input from "@smthrs/targets/Input"
+import { existsSync, statSync } from "node:fs"
+import { join } from "node:path"
 import { repoRoot, workspacePackages } from "../scripts/workspace-packages.mjs"
 
 type Member = ReturnType<typeof workspacePackages>[number]
@@ -100,7 +100,9 @@ export const WorkspaceSources = (options: Options): Readonly<Record<string, Retu
  * @category macros
  * @since 0.1.0
  */
-export const reachedSources = (options: Options): Readonly<Record<string, ReturnType<typeof Filegroup>>> | undefined => {
+export const reachedSources = (
+  options: Options
+): Readonly<Record<string, ReturnType<typeof Filegroup>>> | undefined => {
   const root = options.root ?? repoRoot
   const members = loadWorkspacePackages(root)
   const byName = new Map(members.map((member) => [member.name, member]))
@@ -122,7 +124,14 @@ export const reachedSources = (options: Options): Readonly<Record<string, Return
   const filesKey = files.join("\0")
   const present = (member: Member, file: string): boolean => {
     const directory = /^([^*?{[]+)\/\*\*$/.exec(file)?.[1]
-    return directory === undefined || existsSync(join(root, member.dir, directory))
+    if (directory !== undefined) return existsSync(join(root, member.dir, directory))
+    const alternatives = /^\{([^}]+)\}([^*?{[]*)$/.exec(file)
+    if (alternatives !== null) {
+      return alternatives[1]!.split(",").some((part) =>
+        existsSync(join(root, member.dir, `${part}${alternatives[2]!}`))
+      )
+    }
+    return true
   }
   const srcsFor = (member: Member): ReadonlyArray<SourceEntry> => {
     const cacheKey = `${root}\0${member.dir}\0${filesKey}`

@@ -155,7 +155,8 @@ const { bench, check, circular, docs: readmeDocs, docsFiles, fmt, lib, lint } = 
     Smithers.file("tsconfig.lint.json")
   ],
   lintEnv: { NODE_OPTIONS: "--max-old-space-size=4096" },
-  sources: Smithers.glob("{src,examples}/**/*.ts")
+  sources: Smithers.glob("{src,examples}/**/*.ts"),
+  lintData: [Smithers.glob("src/**/*.json")]
 })
 
 /** Registered operator commands must remain in the package reference. */

@@ -4,6 +4,7 @@ import { Smithers } from "@smthrs/targets"
 import { docsWriter, referenceStyle, rootInvariantsConfig, rootJSDocConfig } from "../../../../PACKAGE.ts"
 
 const cwd = "packages/smithers/build/targets"
+const workspaceSources = WorkspaceSources({ cwd })
 const sources = Smithers.glob("src/**/*.ts")
 const tests = Smithers.glob("test/**/*.test.ts")
 const testSupportSources = Smithers.glob("test-support/**/*.ts")
@@ -42,8 +43,15 @@ const test = Smithers.Vitest({
 
 const lint = Smithers.EsLint({
   sources: [sources, examples],
-  deps: [],
+  deps: [...Object.values(workspaceSources)],
   configs: [Smithers.file("eslint.config.js"), rootJSDocConfig, rootInvariantsConfig],
+  data: [
+    Smithers.glob("test/**/*.ts"),
+    testSupportSources,
+    Smithers.file("tsconfig.json"),
+    Smithers.file("tsconfig.test.json"),
+    Smithers.file("//tsconfig.base.json")
+  ],
   maxWarnings: 0,
   fix: false,
   cwd
@@ -298,7 +306,6 @@ const securityReview = Smithers.SecurityReview({
   ]
 })
 
-const workspaceSources = WorkspaceSources({ cwd })
 
 const bench = Smithers.VitestBench({
   benches: [Smithers.glob("test/**/*.bench.{ts,vibe}")],

@@ -29,7 +29,9 @@ const measure = (suite: string, name: string, fn: () => void, durationMs = 150) 
   const p75Ms = samplesMs[Math.min(n - 1, Math.floor(n * 0.75))]!
   const p99Ms = samplesMs[Math.min(n - 1, Math.floor(n * 0.99))]!
   const hz = meanMs > 0 ? 1000 / meanMs : 0
-  console.log("BENCH_METRIC " + JSON.stringify({ suite, name, hz, minMs, maxMs, meanMs, p75Ms, p99Ms, samples: n }))
+  process.stdout.write(
+    "BENCH_METRIC " + JSON.stringify({ suite, name, hz, minMs, maxMs, meanMs, p75Ms, p99Ms, samples: n }) + "\n"
+  )
 }
 
 const diffLines = [
@@ -71,9 +73,36 @@ const sampleReviewOutput = {
 
 const filter = { include: ["src/**/*.ts"], exclude: ["**/*.generated.ts", "dist/**"] }
 const diffRecords = [
-  { oldPath: "src/auth.ts", newPath: "src/auth.ts", diff: sampleDiff, insertions: 36, deletions: 12, isNew: false, isDeleted: false, isBinary: false },
-  { oldPath: "src/schema.generated.ts", newPath: "src/schema.generated.ts", diff: "", insertions: 5, deletions: 0, isNew: false, isDeleted: false, isBinary: false },
-  { oldPath: "/dev/null", newPath: "assets/logo.png", diff: "", insertions: 0, deletions: 0, isNew: true, isDeleted: false, isBinary: true }
+  {
+    oldPath: "src/auth.ts",
+    newPath: "src/auth.ts",
+    diff: sampleDiff,
+    insertions: 36,
+    deletions: 12,
+    isNew: false,
+    isDeleted: false,
+    isBinary: false
+  },
+  {
+    oldPath: "src/schema.generated.ts",
+    newPath: "src/schema.generated.ts",
+    diff: "",
+    insertions: 5,
+    deletions: 0,
+    isNew: false,
+    isDeleted: false,
+    isBinary: false
+  },
+  {
+    oldPath: "/dev/null",
+    newPath: "assets/logo.png",
+    diff: "",
+    insertions: 0,
+    deletions: 0,
+    isNew: true,
+    isDeleted: false,
+    isBinary: true
+  }
 ]
 
 measure(".smithers/flows/review", "renderFallbackDiffHtml (12 hunks)", () => {
@@ -85,6 +114,6 @@ measure(".smithers/flows/review", "anchorFinding (12 hunks)", () => {
 })
 
 measure(".smithers/flows/review", "whyExcluded (3 files) + reviewVerdict", () => {
-  for (const record of diffRecords) whyExcluded(record as never, filter)
-  reviewVerdict(sampleReviewOutput as never)
+  for (const record of diffRecords) whyExcluded(record, filter)
+  reviewVerdict(sampleReviewOutput)
 })

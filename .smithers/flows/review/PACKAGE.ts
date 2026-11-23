@@ -92,4 +92,10 @@ const bench = Smithers.NodeBench({
   cache: true,
   cwd
 })
-export const Package = Smithers.Package({ targets: { bench, check, checkTests, unitTests, ...securityReview } })
+const reviewSources = Smithers.Filegroup({
+  srcs: [...sources],
+  cwd
+})
+export const Package = Smithers.Package({
+  targets: { bench, check, checkTests, unitTests, reviewSources, ...securityReview }
+})

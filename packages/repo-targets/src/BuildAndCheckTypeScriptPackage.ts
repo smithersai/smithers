@@ -4,10 +4,10 @@
  * @since 0.1.0
  */
 
+import { Suite } from "@smthrs/targets/Compose"
 import { DocsParity } from "@smthrs/targets/DocsParity"
 import { Dprint } from "@smthrs/targets/Dprint"
 import { EsLint } from "@smthrs/targets/EsLint"
-import { Suite } from "@smthrs/targets/Compose"
 import { Filegroup } from "@smthrs/targets/Filegroup"
 import * as Input from "@smthrs/targets/Input"
 import { NodeBench } from "@smthrs/targets/NodeBench"
@@ -195,6 +195,14 @@ export interface Options {
    */
   readonly buildInputs?: ReadonlyArray<Input.Glob | Input.File> | undefined
   /**
+   * Further files ESLint reads without linting (such as JSON files imported by
+   * sources). They are declared as key material on `lint.data` and never reach
+   * the ESLint argv.
+   *
+   * @default []
+   */
+  readonly lintData?: ReadonlyArray<Input.Declared> | undefined
+  /**
    * The circular-dependency guard this package runs. It defaults to the
    * repository's shared guard, `//packages/repo-targets/scripts/circular.mjs`
    * (see {@link CircularImports}), which is also what every package's
@@ -237,8 +245,7 @@ export interface PackageTargets {
  * workspace package the sources import, and the lint fails on
  * `import/no-unresolved` though the unconfined run passed.
  */
-const defaultReads = (cwd: string): ReadonlyArray<Target.AnyTarget> =>
-  Object.values(reachedSources({ cwd }) ?? {})
+const defaultReads = (cwd: string): ReadonlyArray<Target.AnyTarget> => Object.values(reachedSources({ cwd }) ?? {})
 
 /**
  * Expands one conventional package into `lib`, `check`, `test`, `lint`,
@@ -460,7 +467,7 @@ export const BuildAndCheckTypeScriptPackage = (options: Options): PackageTargets
     // Typed rules load both tsconfigs and the test tsconfig's whole program,
     // which includes the test tree. Without them a confined run's project
     // service finds no project for any source.
-    data: [testSources, tsconfig, testTsconfig],
+    data: [testSources, tsconfig, testTsconfig, ...(options.lintData ?? [])],
     maxWarnings: 0,
     fix: false,
     cwd

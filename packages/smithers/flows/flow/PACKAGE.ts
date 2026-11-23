@@ -106,8 +106,14 @@ const bench = Smithers.VitestBench({
 
 const lint = Smithers.EsLint({
   sources: [sources, examples],
-  deps: [],
+  deps: [...reads],
   configs: [Smithers.file("eslint.config.js"), rootJSDocConfig, rootInvariantsConfig],
+  data: [
+    Smithers.glob("test/**/*.ts"),
+    Smithers.file("tsconfig.json"),
+    Smithers.file("tsconfig.test.json"),
+    Smithers.file("//tsconfig.base.json")
+  ],
   maxWarnings: 0,
   fix: false,
   cwd
