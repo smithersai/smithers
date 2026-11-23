@@ -48,10 +48,21 @@
  *   nothing a reader keeps about the process. A second line (`= 0`) follows once `/proc/<process>/cmdline` shows
  *   the program's arguments at a later stop of that process.
  * - A socket counts as bound only once the socket itself says so (`getsockname` on a copy taken at the stop). The
- *   copy is let go as soon as the socket says so, at the next bind or connect of the run, before that call goes
- *   on: held longer, it would keep the port of a socket the run closed in use, and a program that listens on a
- *   port again (a lock made of a port, as eliza's build lock is) would find it taken. A copy whose socket is not
- *   bound yet is asked again then, and at the end of the run.
+ *   copy is let go as soon as the socket says so, at the next stop of the run or within a tick, before a bind or
+ *   connect goes on: held longer, it would keep the port of a socket the run closed in use, and a program that
+ *   listens on a port again (a lock made of a port, as eliza's build lock is) would find it taken. A copy whose
+ *   socket is not bound once its thread is past the call was a bind that failed, and is let go too. A socket bound
+ *   to port 0 is written with the port the kernel gave it, which the socket itself says. Only a socket of a family
+ *   a line is written for (a path, IPv4, IPv6) is copied.
+ * - This program holds descriptors of its own (those copies, and files of `/proc` it reads). It raises its limit
+ *   to the most it may have, and the command starts with the limit it was given. Where one of its own opens still
+ *   fails for want of a descriptor, the run is unrecorded and says so: no such failure is read as an answer.
+ *
+ * What a line says is read from the caller's memory at the stop (a path, an address, the flags of an `openat2`),
+ * and the call then goes on in the kernel, which reads that memory again. A program that changes the memory between
+ * the two, from another thread or another process that shares it, makes a call its line does not name: a record
+ * holds only for a run that does not race the arguments of its own calls. io_uring is refused for the same reason,
+ * where the kernel reads requests from shared memory as a matter of course.
  *
  * A signal must never cut a call short where it would not unrecorded. A call waiting for this supervisor can be
  * cut short until the call is received (`SECCOMP_FILTER_FLAG_WAIT_KILLABLE_RECV`), and a process whose handler
@@ -90,7 +101,10 @@
  * leaves running is followed, never killed. When the command ends, the trace of everything so far is written,
  * sealed, and then its exit status to the trace file's name with `.status` added (`<code> <pid>`), which ends the
  * step. The lines of what it left come after, appended to the trace file's name with `.kept` added as they are
- * made, until every process of the run has ended or the job's end kills this program.
+ * made, until every process of the run has ended or the job's end kills this program. A reason the run cannot be
+ * recorded, or a program that asks for rights, made after the step's trace was sealed is written there too, as the
+ * same line. A reader that needs every line so far on disk asks (`.ask`) and is answered (`.answered`) only once
+ * they are: lines that could not be written are lost, and no request is answered until `.kept` says so.
  */
 #define _GNU_SOURCE
 #include <dirent.h>
@@ -118,6 +132,7 @@
 #include <sys/ioctl.h>
 #include <sys/prctl.h>
 #include <sys/ptrace.h>
+#include <sys/resource.h>
 #include <sys/user.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
@@ -420,9 +435,12 @@ static int dropped;
 /* How many times the lines were taken (writeStep, writeKept): a place among them holds only in its own taking. */
 static uint64_t linesTaken;
 
-/* Reasons the run cannot be recorded, each once. */
-static char *reasons[16];
+/* Reasons the run cannot be recorded, each once. Written and read under `lock`; a reason is never freed, so one
+ * read under the lock may be written out after it. The last place holds only `manyReasons`. */
+#define REASONS 64
+static char *reasons[REASONS];
 static int reasonCount;
+static const char *manyReasons = "it could not be recorded for more reasons than the recorder lists";
 
 static void unrecorded(const char *reason) {
   pthread_mutex_lock(&lock);
@@ -431,8 +449,30 @@ static void unrecorded(const char *reason) {
       pthread_mutex_unlock(&lock);
       return;
     }
-  if (reasonCount < 16) reasons[reasonCount++] = strdup(reason);
+  if (reasonCount < REASONS) {
+    char *copy = strdup(reasonCount == REASONS - 1 ? manyReasons : reason);
+    /* No memory for the reason: the run is unrecorded all the same, as one whose line could not be kept. */
+    if (copy == NULL) __atomic_store_n(&dropped, 1, __ATOMIC_RELAXED);
+    else reasons[reasonCount++] = copy;
+  }
   pthread_mutex_unlock(&lock);
+}
+
+/*
+ * This program's own opens (a file of /proc, a copy of a socket) fail with EMFILE or ENFILE when it, or the machine,
+ * has no descriptor left. Such a failure says nothing of the run: read as an answer, a thread would count as gone, a
+ * bind as never made. The run is unrecorded instead. Set without `lock`, which a caller may hold; the reason is
+ * written with the lines (writeLines, writeKept).
+ */
+static int starved;
+static const char *starvedReason = "the recorder ran out of descriptors";
+static const char *droppedReason = "the recorder could not keep every line";
+
+/* Whether `error` says this program had no descriptor left; notes it when so. */
+static int starvedBy(int error) {
+  if (error != EMFILE && error != ENFILE) return 0;
+  __atomic_store_n(&starved, 1, __ATOMIC_RELAXED);
+  return 1;
 }
 
 /* A run that reached a file in a way no record can hold: `form` names the call, and the flag or form of it
@@ -449,8 +489,8 @@ static void refuse(const char *form) {
  * each one ran without what its file asks for, as it would not on a CI runner. The mount the file is on is not
  * asked: a jail that holds this program mounts every path `nosuid` itself.
  */
-static char *rightsNeeded[16];
-static int rightsCount;
+static char **rightsNeeded;
+static int rightsCount, rightsRoom;
 
 /* Whether a program's file asks for rights: 1 when it does, 0 when not or when it cannot be looked at. */
 static int asksRights(const char *program) {
@@ -468,7 +508,18 @@ static void rights(const char *program) {
       pthread_mutex_unlock(&lock);
       return;
     }
-  if (rightsCount < 16) rightsNeeded[rightsCount++] = strdup(program);
+  if (rightsCount == rightsRoom) {
+    int room = rightsRoom == 0 ? 16 : rightsRoom * 2;
+    char **grown = realloc(rightsNeeded, (size_t)room * sizeof *grown);
+    if (grown != NULL) {
+      rightsNeeded = grown;
+      rightsRoom = room;
+    }
+  }
+  char *copy = rightsCount < rightsRoom ? strdup(program) : NULL;
+  /* A program that cannot be listed is one the record would not name: the run is unrecorded instead. */
+  if (copy == NULL) __atomic_store_n(&dropped, 1, __ATOMIC_RELAXED);
+  else rightsNeeded[rightsCount++] = copy;
   pthread_mutex_unlock(&lock);
 }
 
@@ -489,7 +540,7 @@ static long keepIn(uint64_t id, uint32_t sub, struct text *t, uint64_t *taking) 
     size_t capacity = all.capacity == 0 ? 65536 : all.capacity * 2;
     struct line *items = realloc(all.items, capacity * sizeof *items);
     if (items == NULL) {
-      dropped = 1;
+      __atomic_store_n(&dropped, 1, __ATOMIC_RELAXED);
       pthread_mutex_unlock(&lock);
       free(t->data);
       return -1;
@@ -519,35 +570,174 @@ static long keepCallIn(uint64_t id, uint32_t sub, struct text *t, uint64_t *taki
 
 static long keepCall(uint64_t id, uint32_t sub, struct text *t) { return keepCallIn(id, sub, t, NULL); }
 
-/* A thread's process. A thread id is not given again while the thread lives, and the run's threads live while
- * they make calls, so a thread id read once stands for its process for the run. A thread that ended keeps its slot
- * until another thread needs it: where the slots near a thread's own are all taken, as after a run started many
- * thousands of threads, the thread takes its own slot. Without that, each call of every later thread read
- * /proc/<thread>/status again: 9 million reads, 38 s of shadcn-ui/ui's tests. */
+/* How many programs each process has been told to start, as a number no other process and no other program of the
+ * run has: a process seen for the first time, one that starts a program, and one whose id an earlier process had
+ * each take the next number. `started` is when the process began, as the kernel counts it, which tells a process
+ * from an earlier one of the same id. Read and written under `lock`. */
+#define GENERATIONS 8192
+static struct generation {
+  pid_t tgid;
+  unsigned count;
+  uint64_t started;
+  uint32_t checked; /* when `started` was last read, in milliseconds */
+} generations[GENERATIONS];
+static unsigned lastGeneration;
+
+/* The place of a process among them, made when it has none. Where the places near its own are all taken, as after a
+ * run of many thousands of processes, it takes its own place from the process there, which is given a number again
+ * when it is next seen: a number is never one another process had. Called with `lock` held. */
+static struct generation *generationOf(pid_t tgid) {
+  unsigned slot = (unsigned)tgid % GENERATIONS;
+  struct generation *g = NULL;
+  for (unsigned i = 0; i < 64 && g == NULL; i++) {
+    unsigned at = (slot + i) % GENERATIONS;
+    if (generations[at].tgid == tgid) return &generations[at];
+    if (generations[at].tgid == 0) g = &generations[at];
+  }
+  if (g == NULL) g = &generations[slot];
+  *g = (struct generation){tgid, ++lastGeneration, 0, 0};
+  return g;
+}
+
+/* A process starts a program, or is another process than the one that had its id. Called with `lock` held. */
+static void nextGeneration(pid_t tgid) { generationOf(tgid)->count = ++lastGeneration; }
+
+/* When a process began, in the kernel's clock ticks since the machine started (`/proc/<pid>/stat`, field 22); 0 when
+ * it cannot be read. */
+static uint64_t startedAt(pid_t tgid) {
+  char name[64], buffer[1024];
+  snprintf(name, sizeof name, "/proc/%d/stat", tgid);
+  int fd = open(name, O_RDONLY | O_CLOEXEC);
+  if (fd < 0) {
+    starvedBy(errno);
+    return 0;
+  }
+  ssize_t n = read(fd, buffer, sizeof buffer - 1);
+  close(fd);
+  if (n <= 0) return 0;
+  buffer[n] = 0;
+  /* The program's name, which may hold any byte, ends at the last `)`; the state is field 3. */
+  char *at = strrchr(buffer, ')');
+  if (at == NULL) return 0;
+  at++;
+  for (int field = 3; field < 22; field++) {
+    at = strchr(at + 1, ' ');
+    if (at == NULL) return 0;
+  }
+  return strtoull(at + 1, NULL, 10);
+}
+
+/*
+ * A thread's process. A thread id is not given again while the thread lives, but is once it ended: where ids wrap
+ * (`kernel.pid_max` is 32768 on many machines, and a process namespace starts again at 1), a thread of another
+ * process, or a new process, takes the id of a thread that ended. So what was read of a thread is held only while it
+ * still is that thread:
+ *
+ * - A thread this program saw end (the main loop reaps it, or is told it starts to end) is forgotten then (forget).
+ * - An id read `TGID_FRESH_MS` or longer ago is asked again: whether its process is still the one that began when
+ *   it did, and the thread still one of its threads (`/proc/<process>/task/<thread>`). An id is given again only
+ *   after every other id was, which takes far longer.
+ * - A process read anew is held against when it began: another process than the one that had the id takes a new
+ *   number, so nothing an earlier process asked counts as asked by it.
+ *
+ * A thread that ended keeps its slot until another thread needs it: where the slots near a thread's own are all
+ * taken, as after a run started many thousands of threads, the thread takes its own slot. Without that, each call of
+ * every later thread read /proc/<thread>/status again: 9 million reads, 38 s of shadcn-ui/ui's tests.
+ */
 #define TGIDS 8192
+#define TGID_GONE (-1) /* a slot whose thread was forgotten: a search goes on past it */
 static struct {
   pid_t tid, tgid;
+  uint32_t checked; /* when it was last known to be so, in milliseconds */
 } tgids[TGIDS];
 
 static void bornOf(pid_t tgid, pid_t parent);
+static void ownCwdEnded(pid_t tid);
+
+#define TGID_FRESH_MS 10
+
+/*
+ * Whether a process is still the one known by its id: it began when the one known did. Another process than the one
+ * that last had the id takes a new number, so it is another process to everything kept by process. What was read
+ * less than `TGID_FRESH_MS` ago stands: the threads of one process, started by the thousand, read it once.
+ */
+static int sameProcess(pid_t tgid, uint32_t now) {
+  pthread_mutex_lock(&lock);
+  struct generation *g = generationOf(tgid);
+  int fresh = g->started != 0 && now - g->checked < TGID_FRESH_MS;
+  pthread_mutex_unlock(&lock);
+  if (fresh) return 1;
+  uint64_t started = startedAt(tgid);
+  if (started == 0) return 0;
+  pthread_mutex_lock(&lock);
+  g = generationOf(tgid);
+  int same = g->started == started;
+  if (g->started != 0 && !same) g->count = ++lastGeneration;
+  g->started = started;
+  g->checked = now;
+  pthread_mutex_unlock(&lock);
+  return same;
+}
+
+static uint32_t nowMs(void) {
+  struct timespec now;
+  clock_gettime(CLOCK_MONOTONIC, &now);
+  return (uint32_t)((uint64_t)now.tv_sec * 1000u + (uint64_t)now.tv_nsec / 1000000u);
+}
+
+/* A thread ended: its id may be given to another. */
+static void forget(pid_t tid) {
+  unsigned slot = (unsigned)tid % TGIDS;
+  pthread_mutex_lock(&lock);
+  for (unsigned i = 0; i < 16; i++) {
+    unsigned at = (slot + i) % TGIDS;
+    if (tgids[at].tid == tid) tgids[at].tid = TGID_GONE;
+  }
+  pthread_mutex_unlock(&lock);
+  ownCwdEnded(tid);
+}
 
 static pid_t tgidOf(pid_t tid) {
   unsigned slot = (unsigned)tid % TGIDS;
+  uint32_t now = nowMs();
+  pid_t held = 0;
   pthread_mutex_lock(&lock);
   for (unsigned i = 0; i < 16; i++) {
     unsigned at = (slot + i) % TGIDS;
     if (tgids[at].tid == tid) {
       pid_t tgid = tgids[at].tgid;
-      pthread_mutex_unlock(&lock);
-      return tgid;
+      if (now - tgids[at].checked < TGID_FRESH_MS) {
+        pthread_mutex_unlock(&lock);
+        return tgid;
+      }
+      held = tgid;
+      break;
     }
     if (tgids[at].tid == 0) break;
   }
   pthread_mutex_unlock(&lock);
   char name[64], buffer[1024];
+  if (held != 0) {
+    /* Still a thread of the process it was, which began when it did: the id was not given again. */
+    snprintf(name, sizeof name, "/proc/%d/task/%d", held, tid);
+    if (sameProcess(held, now) && (held == tid || faccessat(AT_FDCWD, name, F_OK, 0) == 0)) {
+      pthread_mutex_lock(&lock);
+      for (unsigned i = 0; i < 16; i++) {
+        unsigned at = (slot + i) % TGIDS;
+        if (tgids[at].tid == tid && tgids[at].tgid == held) tgids[at].checked = now;
+      }
+      pthread_mutex_unlock(&lock);
+      return held;
+    }
+    /* The thread it was has ended, and so has what was known of it. */
+    forget(tid);
+  }
   snprintf(name, sizeof name, "/proc/%d/status", tid);
   int fd = open(name, O_RDONLY | O_CLOEXEC);
-  if (fd < 0) return tid;
+  if (fd < 0) {
+    starvedBy(errno);
+    return tid;
+  }
   ssize_t n = read(fd, buffer, sizeof buffer - 1);
   close(fd);
   if (n <= 0) return tid;
@@ -555,18 +745,29 @@ static pid_t tgidOf(pid_t tid) {
   char *at = strstr(buffer, "\nTgid:");
   pid_t tgid = at == NULL ? tid : (pid_t)strtol(at + 6, NULL, 10);
   char *parentAt = strstr(buffer, "\nPPid:");
+  (void)sameProcess(tgid, now);
   if (tgid == tid && parentAt != NULL) bornOf(tgid, (pid_t)strtol(parentAt + 6, NULL, 10));
   pthread_mutex_lock(&lock);
   unsigned place = slot;
-  for (unsigned i = 0; i < 16; i++) {
+  int placed = 0;
+  for (unsigned i = 0; i < 16 && !placed; i++) {
     unsigned at = (slot + i) % TGIDS;
-    if (tgids[at].tid == 0 || tgids[at].tid == tid) {
+    if (tgids[at].tid == tid) {
       place = at;
-      break;
+      placed = 1;
+    }
+    if (tgids[at].tid == 0) break;
+  }
+  for (unsigned i = 0; i < 16 && !placed; i++) {
+    unsigned at = (slot + i) % TGIDS;
+    if (tgids[at].tid == 0 || tgids[at].tid == TGID_GONE) {
+      place = at;
+      placed = 1;
     }
   }
   tgids[place].tid = tid;
   tgids[place].tgid = tgid;
+  tgids[place].checked = now;
   pthread_mutex_unlock(&lock);
   return tgid;
 }
@@ -599,26 +800,6 @@ struct forking {
 };
 static struct forking *forkings;
 
-/* How many programs each process has been told to start. */
-#define GENERATIONS 8192
-static struct {
-  pid_t tgid;
-  unsigned count;
-} generations[GENERATIONS];
-
-static unsigned *generationOf(pid_t tgid) {
-  unsigned slot = (unsigned)tgid % GENERATIONS;
-  for (unsigned i = 0; i < 64; i++) {
-    unsigned at = (slot + i) % GENERATIONS;
-    if (generations[at].tgid == tgid) return &generations[at].count;
-    if (generations[at].tgid == 0) {
-      generations[at].tgid = tgid;
-      return &generations[at].count;
-    }
-  }
-  return NULL;
-}
-
 /* Calls that make, remove, move, link a name or change its rights: a lookup after one may be answered otherwise. */
 static unsigned long namesChanged;
 
@@ -644,8 +825,9 @@ static pthread_mutex_t askedLock = PTHREAD_MUTEX_INITIALIZER;
  * question otherwise, so the next one that says the same is not written.
  */
 static int askedAgain(pid_t tgid, uint64_t how, const char *path, int error) {
-  unsigned *generation = generationOf(tgid);
-  if (generation == NULL) return 0;
+  pthread_mutex_lock(&lock);
+  unsigned generation = generationOf(tgid)->count;
+  pthread_mutex_unlock(&lock);
   unsigned long changed = __atomic_load_n(&namesChanged, __ATOMIC_ACQUIRE);
   uint64_t hash = 1469598103934665603ull ^ (uint64_t)tgid ^ (how << 32);
   for (const char *at = path; *at != 0; at++) hash = (hash ^ (unsigned char)*at) * 1099511628211ull;
@@ -657,15 +839,15 @@ static int askedAgain(pid_t tgid, uint64_t how, const char *path, int error) {
     found = found->next;
   }
   if (found != NULL) {
-    again = found->generation == *generation && found->changed == changed && found->error == error;
-    found->generation = *generation;
+    again = found->generation == generation && found->changed == changed && found->error == error;
+    found->generation = generation;
     found->changed = changed;
     found->error = error;
   } else if (askedCount < ASKED_MOST) {
     size_t length = strlen(path) + 1;
     struct asked *made = malloc(sizeof *made + length);
     if (made != NULL) {
-      *made = (struct asked){*bucket, tgid, *generation, changed, error, how};
+      *made = (struct asked){*bucket, tgid, generation, changed, error, how};
       memcpy(made->path, path, length);
       *bucket = made;
       askedCount++;
@@ -678,14 +860,16 @@ static int askedAgain(pid_t tgid, uint64_t how, const char *path, int error) {
 /* A socket a process asked to bind, with a copy of it, until the socket says it is bound or the run ends. */
 struct binding {
   uint64_t id;
+  pid_t tid, tgid;
+  int nr, fd;
   int copy;
-  struct sockaddr_storage asked;
+  struct sockaddr_storage asked, now; /* what the call asked for, and where the socket says it is bound */
   socklen_t askedLength;
-  char *line;
+  char *line; /* as the call asked; a port the kernel chose is written in its place (written) */
   struct binding *next;
 };
 static struct binding *bindings;
-static void settleBindings(void);
+static void settleBindings(pid_t stopped);
 
 /* ---- Reading the stopped thread ------------------------------------------------------------------------------ */
 
@@ -763,8 +947,11 @@ static int numberOf(const char *part, size_t length, long *out) {
  * under `/proc` or `/dev`, where no record looks. Answers 0 with `why` set when the path cannot be followed so: it
  * goes back up (`..`) inside `/proc` or `/dev`, or its link leads to a file that was removed.
  */
+static void rootedView(char *path);
+
 static int stepView(pid_t tid, char *path, size_t capacity, const char **why) {
   for (int hop = 0; hop < 40; hop++) {
+    rootedView(path);
     const char *at = path;
     size_t n = partOf(&at);
     long process = -1, thread = -1, fd = -1;
@@ -843,6 +1030,11 @@ static int stepView(pid_t tid, char *path, size_t capacity, const char **why) {
     ssize_t got = readlink(link, target, sizeof target - 1);
     /* No such process or descriptor: the call fails as the kernel answers it, and reads nothing. */
     if (got <= 0) return 1;
+    /* A name that fills the buffer may have been cut short. */
+    if ((size_t)got >= sizeof target - 1) {
+      *why = "long";
+      return 0;
+    }
     target[got] = 0;
     /* A pipe, a socket, an anonymous file the run made in memory: no file of the run. */
     if (target[0] != '/' || strncmp(target, "/memfd:", 7) == 0) return 1;
@@ -875,6 +1067,37 @@ static int stepView(pid_t tid, char *path, size_t capacity, const char **why) {
   }
   *why = "up";
   return 0;
+}
+
+/*
+ * A path that goes up to the root before it names `/proc` or `/dev` (`/tmp/../proc/self/fd/3`, or
+ * `../../proc/self/cwd/x` from a working directory) reaches the same links of a process, and looked at as written it
+ * would be followed in this program's view, not the caller's. Where the names before `proc` or `dev` lead back to
+ * the root, which one look at them says (they hold a link where they do not), the path is written from the root, and
+ * stepView follows it. A path with no `..` is left as it is, and so is one whose names lead elsewhere.
+ */
+static void rootedView(char *path) {
+  if (path[0] != '/' || strstr(path, "/..") == NULL) return;
+  int depth = 0, up = 0;
+  const char *at = path;
+  for (size_t n = partOf(&at); n > 0; at += n, n = partOf(&at)) {
+    if (partIs(at, n, "..")) {
+      if (depth > 0) depth--;
+      up = 1;
+      continue;
+    }
+    if (++depth != 1 || !up || !(partIs(at, n, "dev") || partIs(at, n, "proc"))) continue;
+    char before[PATH_MAX + 1];
+    size_t length = (size_t)(at - path);
+    if (length >= sizeof before) return;
+    memcpy(before, path, length);
+    before[length] = 0;
+    struct stat root, reached;
+    if (stat("/", &root) != 0 || stat(before, &reached) != 0) return;
+    if (root.st_dev != reached.st_dev || root.st_ino != reached.st_ino) return;
+    memmove(path + 1, at, strlen(at) + 1);
+    return;
+  }
 }
 
 /* A path a call names, made absolute from the directory it starts from, and followed in the caller's view through
@@ -1071,7 +1294,11 @@ struct statxAnswer {
   uint64_t spare2[14];
 };
 #ifndef SYS_statx
+#if defined(__aarch64__)
+#define SYS_statx 291
+#else
 #define SYS_statx 332
+#endif
 #endif
 
 /* Looks at a name without following a link at its end: 0 when something is there, or the error. */
@@ -1108,7 +1335,10 @@ static int sameFile(const struct ident *a, const struct ident *b) {
 /* Whether a directory holds anything: what rmdir answers. */
 static int holdsAnything(const char *path) {
   int fd = open(path, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC);
-  if (fd < 0) return 0;
+  if (fd < 0) {
+    starvedBy(errno);
+    return 0;
+  }
   char buffer[4096];
   int any = 0;
   long n;
@@ -1302,12 +1532,12 @@ static struct looking *lookStarts(pid_t tid, int nr, const char *spelled) {
 }
 
 /* Whether a thread is surely past a call: it waits in another call, or it is gone. A thread that runs may still be
- * in it. */
+ * in it, and so may one this program could not ask about for want of a descriptor. */
 static int pastCall(pid_t tid, int nr) {
   char name[64], text[64];
   snprintf(name, sizeof name, "/proc/%d/syscall", tid);
   int fd = open(name, O_RDONLY | O_CLOEXEC);
-  if (fd < 0) return 1;
+  if (fd < 0) return !starvedBy(errno);
   ssize_t n = read(fd, text, sizeof text - 1);
   close(fd);
   if (n <= 0) return 0;
@@ -1339,7 +1569,7 @@ static int setAnswer(uint64_t taking, long place, size_t at, const char *text) {
     l->text = data;
     l->length = (uint32_t)(at + length);
   } else {
-    dropped = 1;
+    __atomic_store_n(&dropped, 1, __ATOMIC_RELAXED);
   }
   pthread_mutex_unlock(&lock);
   return 1;
@@ -1793,10 +2023,18 @@ static int placeOpen(struct place *p) { return p->tid != 0 && !pastCall(p->tid, 
  */
 static pid_t ownCwds[PLACES];
 
-static void ownCwd(pid_t tid) { ownCwds[(unsigned)tid % PLACES] = tid; }
+static void ownCwd(pid_t tid) { __atomic_store_n(&ownCwds[(unsigned)tid % PLACES], tid, __ATOMIC_RELEASE); }
+
+/* A thread ended (forget): one that is given its id shares its process's working directory again. */
+static void ownCwdEnded(pid_t tid) {
+  pid_t held = tid;
+  __atomic_compare_exchange_n(&ownCwds[(unsigned)tid % PLACES], &held, 0, 0, __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE);
+}
 
 /* Who shares `tid`'s working directory: its process, or itself alone. */
-static pid_t cwdGroup(pid_t tid, pid_t tgid) { return ownCwds[(unsigned)tid % PLACES] == tid ? -tid : tgid; }
+static pid_t cwdGroup(pid_t tid, pid_t tgid) {
+  return __atomic_load_n(&ownCwds[(unsigned)tid % PLACES], __ATOMIC_ACQUIRE) == tid ? -tid : tgid;
+}
 
 /* A thread names a path from its working directory, which it found to be `cwd`. */
 static void fromCwd(pid_t tid, pid_t process, int nr, const char *cwd) {
@@ -1857,20 +2095,25 @@ static void openFlags(struct text *t, uint64_t flags) {
   if (flags & O_EXCL) puts_(t, "|O_EXCL");
   if (flags & O_TRUNC) puts_(t, "|O_TRUNC");
   if (flags & O_APPEND) puts_(t, "|O_APPEND");
-  if (flags & O_DIRECTORY) puts_(t, "|O_DIRECTORY");
+  /* O_TMPFILE holds O_DIRECTORY's bit: it is written alone, as strace writes it. */
+  if ((flags & O_DIRECTORY) && (flags & O_TMPFILE) != O_TMPFILE) puts_(t, "|O_DIRECTORY");
   if (flags & O_NOFOLLOW) puts_(t, "|O_NOFOLLOW");
   if ((flags & O_TMPFILE) == O_TMPFILE) puts_(t, "|O_TMPFILE");
   if (flags & O_PATH) puts_(t, "|O_PATH");
 }
 
-/* An address as strace writes it, for the families a reader asks about. */
-static void socketAddress(struct text *t, const struct sockaddr_storage *a, socklen_t length) {
+/* An address as strace writes it, for the families a reader asks about. `whole`, when not NULL, is a socket's path
+ * made whole from the working directory, written in place of the path the address holds: a whole path can be
+ * longer than an address holds (108 bytes), as one from a job's deep directory is. */
+static void socketAddress(struct text *t, const struct sockaddr_storage *a, socklen_t length, const char *whole) {
   if (a->ss_family == AF_UNIX) {
     const struct sockaddr_un *u = (const struct sockaddr_un *)a;
     size_t n = length > offsetof(struct sockaddr_un, sun_path) ? length - offsetof(struct sockaddr_un, sun_path) : 0;
     if (n > sizeof u->sun_path) n = sizeof u->sun_path;
     puts_(t, "{sa_family=AF_UNIX, sun_path=");
-    if (n > 0 && u->sun_path[0] == 0) {
+    if (whole != NULL) {
+      quotedz(t, whole);
+    } else if (n > 0 && u->sun_path[0] == 0) {
       puts_(t, "@");
       quoted(t, u->sun_path + 1, n - 1);
     } else {
@@ -1901,6 +2144,28 @@ static void socketAddress(struct text *t, const struct sockaddr_storage *a, sock
   } else {
     printf_(t, "{sa_family=%u}", (unsigned)a->ss_family);
   }
+}
+
+/*
+ * A socket's path named from the working directory (`a` is such an address when this answers 1), made whole in
+ * `whole` from the directory the thread is in. Answers 0 when the address names no such path, the directory cannot
+ * be read, or the whole path is longer than any path: the path is then written as the call gave it.
+ */
+static int wholeSocketPath(pid_t tid, pid_t tgid, int nr, const struct sockaddr_storage *a, socklen_t length,
+                           char *whole, size_t capacity) {
+  const struct sockaddr_un *u = (const struct sockaddr_un *)a;
+  if (a->ss_family != AF_UNIX || length <= offsetof(struct sockaddr_un, sun_path) || u->sun_path[0] == 0 ||
+      u->sun_path[0] == '/')
+    return 0;
+  size_t n = length - offsetof(struct sockaddr_un, sun_path);
+  if (n > sizeof u->sun_path) n = sizeof u->sun_path;
+  char here[PATH_MAX + 1];
+  if (!placeOf(tid, AT_FDCWD, here, sizeof here) || here[0] != '/') return 0;
+  int written = snprintf(whole, capacity, "%s/%.*s", strcmp(here, "/") == 0 ? "" : here, (int)strnlen(u->sun_path, n),
+                         u->sun_path);
+  if (written < 0 || (size_t)written >= capacity) return 0;
+  fromCwd(tid, tgid, nr, here);
+  return 1;
 }
 
 /* The most addresses of one sendmmsg a line holds; a call that sends to more is not followed. */
@@ -1954,34 +2219,21 @@ static int sendLine(struct text *t, pid_t tid, pid_t tgid, const struct call *c,
     }
     if (count == 0) return 0;
   }
-  char here[PATH_MAX + 1];
-  int placed = -1;
+  char whole[PATH_MAX + 1];
   begin(t, tgid, c->name);
   printf_(t, "%d, ", (int)req->data.args[0]);
   if (c->nr == SYS_sendmmsg) puts_(t, "[");
   for (int i = 0; i < count; i++) {
-    struct sockaddr_un *u = (struct sockaddr_un *)&to[i];
     /* A socket's path from the working directory is written whole, as every other path is. */
-    if (to[i].ss_family == AF_UNIX && lengths[i] > offsetof(struct sockaddr_un, sun_path) && u->sun_path[0] != 0 &&
-        u->sun_path[0] != '/') {
-      if (placed < 0) placed = placeOf(tid, AT_FDCWD, here, sizeof here);
-      char relative[sizeof u->sun_path + 1], whole[PATH_MAX + 1];
-      snprintf(relative, sizeof relative, "%.*s", (int)(lengths[i] - offsetof(struct sockaddr_un, sun_path)),
-               u->sun_path);
-      if (placed && snprintf(whole, sizeof whole, "%s/%s", here, relative) < (int)sizeof u->sun_path) {
-        memset(u->sun_path, 0, sizeof u->sun_path);
-        memcpy(u->sun_path, whole, strlen(whole));
-        lengths[i] = (socklen_t)(offsetof(struct sockaddr_un, sun_path) + strlen(whole) + 1);
-      }
-    }
+    const char *named = wholeSocketPath(tid, tgid, c->nr, &to[i], lengths[i], whole, sizeof whole) ? whole : NULL;
     if (c->nr == SYS_sendto) {
       puts_(t, "\"\", 0, 0, ");
-      socketAddress(t, &to[i], lengths[i]);
+      socketAddress(t, &to[i], lengths[i], named);
       printf_(t, ", %u", (unsigned)lengths[i]);
     } else {
       puts_(t, i == 0 ? "" : ", ");
       puts_(t, c->nr == SYS_sendmmsg ? "{msg_hdr={msg_name=" : "{msg_name=");
-      socketAddress(t, &to[i], lengths[i]);
+      socketAddress(t, &to[i], lengths[i], named);
       printf_(t, ", msg_namelen=%u}", (unsigned)lengths[i]);
       if (c->nr == SYS_sendmmsg) puts_(t, "}");
     }
@@ -2111,12 +2363,18 @@ static struct refused *refusedCall(pid_t tid, int nr, unsigned port, const char 
   return r;
 }
 
+/* Whether an address is on this machine: its loopback, or the unspecified address (`0.0.0.0`, `::`), which Linux
+ * connects to this machine itself (ObservedReads.loopback). */
 static int loopbackAddress(const struct sockaddr_storage *a) {
-  if (a->ss_family == AF_INET) return (ntohl(((const struct sockaddr_in *)a)->sin_addr.s_addr) >> 24) == 127;
+  if (a->ss_family == AF_INET) {
+    uint32_t host = ntohl(((const struct sockaddr_in *)a)->sin_addr.s_addr);
+    return (host >> 24) == 127 || host == 0;
+  }
   if (a->ss_family == AF_INET6) {
     const struct in6_addr *x = &((const struct sockaddr_in6 *)a)->sin6_addr;
-    if (IN6_IS_ADDR_LOOPBACK(x)) return 1;
-    return IN6_IS_ADDR_V4MAPPED(x) && x->s6_addr[12] == 127;
+    if (IN6_IS_ADDR_LOOPBACK(x) || IN6_IS_ADDR_UNSPECIFIED(x)) return 1;
+    return IN6_IS_ADDR_V4MAPPED(x) &&
+           (x->s6_addr[12] == 127 || (x->s6_addr[12] | x->s6_addr[13] | x->s6_addr[14] | x->s6_addr[15]) == 0);
   }
   return 0;
 }
@@ -2138,8 +2396,7 @@ static void bornOf(pid_t tgid, pid_t parent) {
     }
     if (earliest == NULL || (*at)->id < (*earliest)->id) earliest = at;
   }
-  unsigned *now = generationOf(parent);
-  if (earliest == NULL || ambiguous || now == NULL || *now != generation) {
+  if (earliest == NULL || ambiguous || generationOf(parent)->count != generation) {
     pthread_mutex_unlock(&lock);
     return;
   }
@@ -2175,6 +2432,14 @@ static void setWatched(pid_t tgid, int on) {
     }
     if (!on && watchedPids[i] == tgid) watchedPids[i] = 0;
   }
+}
+
+/* The main thread, for a process that ended or started another program. `watchedPids` is the serving thread's too
+ * (expose), so every read and write of it holds `seizing`. */
+static void unwatch(pid_t tgid) {
+  pthread_mutex_lock(&seizing);
+  setWatched(tgid, 0);
+  pthread_mutex_unlock(&seizing);
 }
 
 /* Asks the main thread, which alone may trace, to watch a process: answered before the handler is set. */
@@ -2249,6 +2514,7 @@ struct kept {
   int sent;              /* sent again */
   int received;          /* sent again once the restarted call was received: that wait cannot be cut short */
   int afterCall;         /* a fork: sent at its event, once it made the process (a fork gives way to any signal) */
+  int nr;                /* the call it cut short */
   struct timespec since; /* when it was kept */
   struct kept *next;
 };
@@ -2363,7 +2629,7 @@ static void signalStop(pid_t tid, int sig) {
 
 /* At a signal stop: whether the thread was cut short in a watched call that the kernel restarts when no signal is
  * delivered. Only reads: the call's number and its answer, or on aarch64 where the thread stands. */
-static int cutShort(pid_t tid, int *fork) {
+static int cutShort(pid_t tid, int *fork, int *call) {
 #if defined(__x86_64__)
   struct user_regs_struct r;
   if (ptrace(PTRACE_GETREGS, tid, 0, &r) != 0) return 0;
@@ -2389,6 +2655,7 @@ static int cutShort(pid_t tid, int *fork) {
   const struct call *c = callOf((int)nr);
   if (c == NULL || !restartable(c->kind)) return 0;
   *fork = c->kind == K_FORK;
+  *call = c->nr;
   return 1;
 }
 
@@ -2421,8 +2688,8 @@ static void sendAfterFork(pid_t tid) {
  * received. Otherwise a kept signal sent again is put back as it first came. */
 static int atSignal(pid_t tid, int sig) {
   signalStop(tid, sig);
-  int fork = 0;
-  if (cutShort(tid, &fork)) {
+  int fork = 0, call = 0;
+  if (cutShort(tid, &fork, &call)) {
     pthread_mutex_lock(&keeping);
     /* Sent once the call was received, so the call itself waited (a FIFO, a device) and was cut short there, as
      * it would be unrecorded: delivered, with what it first said. */
@@ -2443,6 +2710,7 @@ static int atSignal(pid_t tid, int sig) {
     for (struct kept *k = keptSignals; k != NULL; k = k->next) {
       if (k->tid == tid && k->sig == sig && sig < SIGRTMIN && !k->sent) {
         k->afterCall = k->afterCall || fork;
+        if (fork) k->nr = call;
         pthread_mutex_unlock(&keeping);
         return 0;
       }
@@ -2454,6 +2722,7 @@ static int atSignal(pid_t tid, int sig) {
     }
     k->info = info;
     k->afterCall = fork;
+    k->nr = call;
     k->tid = tid;
     k->tgid = tgidOf(tid);
     k->sig = sig;
@@ -2492,7 +2761,9 @@ static int waitingForUs(pid_t tid) {
 }
 
 /* A kept signal whose call never came back to the supervisor within 50 ms is sent again, once the thread no longer
- * waits for the supervisor. */
+ * waits for the supervisor. One kept for a fork is sent at the fork's event; a fork that failed (no process left to
+ * make, no memory) has no event, so its signal is sent once the thread is surely past the call: it waits in another
+ * call. Without that the thread never got the signal, and each later one of its kind was dropped as kept already. */
 static void sendStale(void) {
   struct timespec now;
   clock_gettime(CLOCK_MONOTONIC, &now);
@@ -2500,7 +2771,7 @@ static void sendStale(void) {
   for (struct kept **at = &keptSignals; *at != NULL;) {
     struct kept *k = *at;
     long ms = (now.tv_sec - k->since.tv_sec) * 1000 + (now.tv_nsec - k->since.tv_nsec) / 1000000;
-    if (!k->sent && !k->afterCall && ms >= 50 && !waitingForUs(k->tid)) {
+    if (!k->sent && ms >= 50 && (k->afterCall ? pastCall(k->tid, k->nr) : !waitingForUs(k->tid))) {
       k->sent = 1;
       if (syscall(SYS_tgkill, k->tgid, k->tid, k->sig) != 0) {
         /* The thread is gone: so is the signal, as the kernel would have it. */
@@ -2565,8 +2836,7 @@ static void startedYet(pid_t tid, pid_t tgid) {
     if (s->missing) {
       if (!setAnswer(s->taking, s->place, s->at, " = ?")) unrecorded(lateAnswer);
       pthread_mutex_lock(&lock);
-      unsigned *generation = generationOf(tgid);
-      if (generation != NULL) *generation += 1;
+      nextGeneration(tgid);
       pthread_mutex_unlock(&lock);
     }
     struct text t = {0};
@@ -2654,11 +2924,19 @@ static int nameOf(int fd, char *out, size_t capacity) {
  */
 static int resolvedOpen(pid_t tid, pid_t tgid, uint64_t id, const struct seccomp_notif *req, const struct how *how,
                         struct text *t, const char **why) {
-  if ((how->flags & ~(uint64_t)OPEN_FOLLOWED) || (how->resolve & ~(uint64_t)RESOLVE_FOLLOWED)) {
-    refuseFlags("openat2", (how->flags & ~(uint64_t)OPEN_FOLLOWED) | (how->resolve & ~(uint64_t)RESOLVE_FOLLOWED));
+  /* A flag of the open and a flag of the walk are named apart: their bits are not one set. */
+  if (how->flags & ~(uint64_t)OPEN_FOLLOWED) {
+    refuseFlags("openat2", how->flags & ~(uint64_t)OPEN_FOLLOWED);
     return 1;
   }
-  char given[PATH_MAX + 1], base[PATH_MAX + 1], opened[PATH_MAX + 1], link[64];
+  if (how->resolve & ~(uint64_t)RESOLVE_FOLLOWED) {
+    char form[96];
+    snprintf(form, sizeof form, "openat2 with 0x%llx",
+             (unsigned long long)(how->resolve & ~(uint64_t)RESOLVE_FOLLOWED));
+    refuse(form);
+    return 1;
+  }
+  char given[PATH_MAX + 1], base[PATH_MAX + 1], reachedFile[PATH_MAX + 1], link[64];
   if (!stringAt(tid, req->data.args[1], given, sizeof given)) {
     *why = "address";
     return 0;
@@ -2669,103 +2947,161 @@ static int resolvedOpen(pid_t tid, pid_t tgid, uint64_t id, const struct seccomp
   else
     snprintf(link, sizeof link, "/proc/%d/fd/%d", tid, dirfd);
   int from = open(link, O_PATH | O_CLOEXEC);
+  if (from < 0) starvedBy(errno);
   if (from < 0 || !placeOf(tid, dirfd, base, sizeof base) || base[0] != '/') {
     if (from >= 0) close(from);
     *why = "base";
     return 0;
   }
+  /* The walk starts from the working directory: a thread that changes it meanwhile makes the run unrecorded. */
+  if (dirfd == AT_FDCWD) fromCwd(tid, tgid, req->data.nr, base);
   struct how ours = {O_PATH | O_CLOEXEC | (how->flags & (O_NOFOLLOW | O_DIRECTORY)), 0,
                      how->resolve & ~(uint64_t)RESOLVE_CACHED};
-  int error = 0, directory = 0;
+  int unnamed = (how->flags & O_TMPFILE) == O_TMPFILE;
+  int creates = (how->flags & O_CREAT) && !unnamed;
+  int reading = (how->flags & (O_ACCMODE | O_CREAT | O_TRUNC)) == O_RDONLY && !unnamed;
+  int error = 0, directory = 0, named = 0;
+  struct ident before = {0};
   int fd = (int)syscall(SYS_openat2, from, given, &ours, sizeof ours);
   if (fd >= 0) {
     struct stat st;
-    if (!nameOf(fd, opened, sizeof opened) || fstat(fd, &st) != 0) {
+    if (!nameOf(fd, reachedFile, sizeof reachedFile) || fstat(fd, &st) != 0) {
       close(fd);
       close(from);
       refuse("openat2 of a file with no name");
       return 1;
     }
     close(fd);
+    named = 1;
     directory = S_ISDIR(st.st_mode);
     int writing = (how->flags & O_ACCMODE) != O_RDONLY || (how->flags & O_CREAT);
     if ((how->flags & (O_CREAT | O_EXCL)) == (O_CREAT | O_EXCL))
       error = EEXIST;
     else if (S_ISLNK(st.st_mode) && !(how->flags & O_PATH))
       error = ELOOP; /* O_NOFOLLOW at a link */
-    else if (directory && writing && (how->flags & O_TMPFILE) != O_TMPFILE)
+    else if (directory && writing && !unnamed)
       error = EISDIR;
   } else {
     error = errno;
-    if (error == ENOENT && (how->flags & O_CREAT) && (how->flags & O_TMPFILE) != O_TMPFILE) {
-      /* Nothing there: the call makes it in its directory, when that is there. */
-      char parent[PATH_MAX + 1];
-      snprintf(parent, sizeof parent, "%s", given);
-      char *slash = strrchr(parent, '/');
-      const char *name = slash == NULL ? parent : slash + 1;
+    if (starvedBy(error)) {
+      close(from);
+      return 1;
+    }
+    if (error == ENOENT && creates) {
+      /* Nothing there: the call makes it in its directory, when that is there. The name it makes and the directory
+       * are each a copy of their own: the path is cut in two, and neither half is the other's storage. */
+      char parent[PATH_MAX + 1], made[NAME_MAX + 1];
+      const char *slash = strrchr(given, '/');
+      const char *name = slash == NULL ? given : slash + 1;
+      size_t nameLength = strlen(name);
       if (slash == NULL)
         snprintf(parent, sizeof parent, ".");
-      else if (slash == parent)
-        parent[1] = 0;
+      else if (slash == given)
+        snprintf(parent, sizeof parent, "/");
       else
-        *slash = 0;
-      char made[NAME_MAX + 1];
-      snprintf(made, sizeof made, "%s", name);
+        snprintf(parent, sizeof parent, "%.*s", (int)(slash - given), given);
+      if (nameLength < sizeof made) memcpy(made, name, nameLength + 1);
       struct how up = {O_PATH | O_CLOEXEC | O_DIRECTORY, 0, ours.resolve};
-      int dir = made[0] == 0 ? -1 : (int)syscall(SYS_openat2, from, parent, &up, sizeof up);
-      if (made[0] == 0) {
+      if (nameLength == 0) {
         error = EISDIR;
-      } else if (dir < 0) {
-        error = errno;
+      } else if (nameLength >= sizeof made) {
+        /* A name longer than a directory holds is made nowhere: the line says so, and names no shorter one. */
+        error = ENAMETOOLONG;
       } else {
-        struct stat st;
-        if (fstatat(dir, made, &st, AT_SYMLINK_NOFOLLOW) == 0) {
-          /* A link that leads nowhere: the call makes the file it names, by the rules of the walk. */
+        int dir = (int)syscall(SYS_openat2, from, parent, &up, sizeof up);
+        if (dir < 0) {
+          error = errno;
+          if (starvedBy(error)) {
+            close(from);
+            return 1;
+          }
+        } else {
+          struct stat st;
+          if (fstatat(dir, made, &st, AT_SYMLINK_NOFOLLOW) == 0) {
+            /* A link that leads nowhere: the call makes the file it names, by the rules of the walk. */
+            close(dir);
+            close(from);
+            refuse("openat2 to make a file through a link");
+            return 1;
+          }
+          char place[PATH_MAX + 1];
+          /* A directory with no name was removed: nothing is made in it. */
+          if (!nameOf(dir, place, sizeof place))
+            error = ENOENT;
+          else if (strlen(place) + 1 + nameLength >= sizeof reachedFile)
+            error = ENAMETOOLONG;
+          else {
+            snprintf(reachedFile, sizeof reachedFile, "%s/%s", strcmp(place, "/") == 0 ? "" : place, made);
+            named = 1;
+            error = 0; /* made by the call */
+          }
           close(dir);
-          close(from);
-          refuse("openat2 to make a file through a link");
-          return 1;
         }
-        char place[PATH_MAX + 1];
-        /* A directory with no name was removed: nothing is made in it. */
-        if (!nameOf(dir, place, sizeof place))
-          error = ENOENT;
-        else if (strlen(place) + 1 + strlen(made) >= sizeof opened)
-          error = ENAMETOOLONG;
-        else
-          snprintf(opened, sizeof opened, "%s/%s", strcmp(place, "/") == 0 ? "" : place, made);
-        close(dir);
       }
     }
   }
   close(from);
+  /* The file the walk ends at is a name as any other: a call that makes it is looked at again once it has ended, and
+   * a lookup under way with such a call is uncertain, as an open's is. */
+  struct group *busy = NULL;
+  struct looking *looking = NULL;
+  struct answered *line = NULL;
+  struct change *change = NULL;
+  if (named && creates) {
+    settleName(reachedFile);
+    identify(reachedFile, &before);
+  } else if (named && !pseudo(reachedFile)) {
+    busy = busyOn(reachedFile);
+    if (reading) looking = lookStarts(tid, req->data.nr, reachedFile);
+  }
   begin(t, tgid, "openat2");
-  if (dirfd == AT_FDCWD)
-    puts_(t, "AT_FDCWD<");
-  else
-    printf_(t, "%d<", dirfd);
-  puts_(t, base);
-  puts_(t, ">, ");
+  puts_(t, dirfd == AT_FDCWD ? "AT_FDCWD" : "");
+  if (dirfd != AT_FDCWD) printf_(t, "%d", dirfd);
+  /* Each path is written as a descriptor's is: a newline, `<` or `>` in a name would otherwise end the line or the
+   * path, and a name could say what the run never did. */
+  angledz(t, base);
+  puts_(t, ", ");
   quotedz(t, given);
   puts_(t, ", {flags=");
   openFlags(t, how->flags);
   puts_(t, ", resolve=");
   resolveNames(t, how->resolve);
   puts_(t, "}, 24)");
+  if (named && creates && (line = calloc(1, sizeof *line)) != NULL) {
+    *line = (struct answered){0, -1, t->length, error, 0, 0};
+    change = changing(tid, req->data.nr, reachedFile, MAKES, (how->flags & O_EXCL) != 0, &before, line);
+    formOf(change, (how->flags & O_EXCL) ? F_EXCL : F_CREATE, S_IFREG);
+  }
+  uint64_t taking = 0;
+  long place, second = -1;
   if (error != 0) {
     answer(t, error);
-    keepCall(id, 2, t);
-    return 1;
+    place = keepCallIn(id, 2, t, &taking);
+  } else {
+    puts_(t, " = 0");
+    angledz(t, reachedFile);
+    place = keepCallIn(id, 2, t, &taking);
+    if (directory) {
+      /* A directory reachedFile is a directory listed, as an open's is. */
+      struct text listed = {0};
+      printf_(&listed, "%d getdents64(0", tgid);
+      angledz(&listed, reachedFile);
+      puts_(&listed, ", {...}, 32768) = 0");
+      second = keepCallIn(id, 3, &listed, &taking);
+    }
   }
-  printf_(t, " = 0<%s>", opened);
-  keepCall(id, 2, t);
-  if (directory) {
-    /* A directory opened is a directory listed, as an open's is. */
-    struct text listed = {0};
-    printf_(&listed, "%d getdents64(0<", tgid);
-    puts_(&listed, opened);
-    puts_(&listed, ">, {...}, 32768) = 0");
-    keepCall(id, 3, &listed);
+  uncertainIn(busy, taking, place);
+  uncertainIn(busy, taking, second);
+  if (looking != NULL) {
+    looking->taking = taking;
+    looking->place = place;
+    looking->place2 = second;
+  }
+  if (line != NULL) {
+    line->place = place;
+    line->taking = taking;
+    opened(change);
+    if (line->holders == 0) free(line);
   }
   return 1;
 }
@@ -2780,6 +3116,8 @@ static void serve(const struct seccomp_notif *req) {
   settlePlace(tid);
   lookEnded(tid);
   settleRefused(tid, 0);
+  /* The copy of a socket is let go before any call of the run goes on: a bind of this thread has ended. */
+  if (__atomic_load_n(&bindings, __ATOMIC_ACQUIRE) != NULL) settleBindings(tid);
   if (req->data.arch != NATIVE_ARCH || (req->data.nr & (int)X32_BIT) != 0) {
     unrecorded("a program of another architecture ran, whose calls this recorder does not read");
     return;
@@ -2970,8 +3308,7 @@ static void serve(const struct seccomp_notif *req) {
       if (error == 0) rights(path);
       if (error == 0) {
         pthread_mutex_lock(&lock);
-        unsigned *generation = generationOf(tgid);
-        if (generation != NULL) *generation += 1;
+        nextGeneration(tgid);
         pthread_mutex_unlock(&lock);
       }
       /* Looked at and started; what it starts as is known at a later stop. */
@@ -3084,10 +3421,21 @@ static void serve(const struct seccomp_notif *req) {
       int directory = 0, error = lookKind(path, nofollow, &directory);
       if (!pseudo(path)) looking = lookStarts(tid, c->nr, path);
       if (error == 0 && directory && c->nr == SYS_truncate && !pseudo(path)) error = EISDIR;
-      begin(&t, tgid, "fchmodat");
-      puts_(&t, "AT_FDCWD, ");
-      quotedz(&t, path);
-      puts_(&t, ", 0)");
+      /* Written by the call's own name, with each argument a reader asks about where the call has it: the
+       * directory (the path is whole, so AT_FDCWD), the path, and whether a link at its end is followed. A reader
+       * tells a call that changes what a file holds or whether it runs (chmod, truncate) from one that changes
+       * only its times, owner or attributes by the name, as it does in strace's lines. */
+      begin(&t, tgid, c->name);
+      int last = c->path > c->flags ? c->path : c->flags;
+      if (c->dir > last) last = c->dir;
+      for (int i = 0; i <= last; i++) {
+        if (i > 0) puts_(&t, ", ");
+        if (i == c->path) quotedz(&t, path);
+        else if (i == c->dir) puts_(&t, "AT_FDCWD");
+        else if (i == c->flags) puts_(&t, nofollow ? "AT_SYMLINK_NOFOLLOW" : "0");
+        else puts_(&t, "0");
+      }
+      puts_(&t, ")");
       answer(&t, error);
       break;
     }
@@ -3130,6 +3478,9 @@ static void serve(const struct seccomp_notif *req) {
         : parentThere(other, moving, ENOTDIR);
       dev_t above = error == 0 && !pseudo(path) && !pseudo(other) ? deviceAbove(other) : 0;
       if (above != 0 && above != source.dev) error = EXDEV;
+      /* A rename of a file onto another name of the same file does nothing and answers 0 (rename(2)): both names
+       * stay, so no look after could show the file gone from the old one. Its line stands as written. */
+      int onItself = c->kind == K_RENAME && !(renaming & 3) && from == 0 && to == 0 && sameFile(&source, &target);
       begin(&t, tgid, c->kind == K_RENAME ? "renameat2" : "linkat");
       puts_(&t, "AT_FDCWD, ");
       quotedz(&t, path);
@@ -3148,7 +3499,7 @@ static void serve(const struct seccomp_notif *req) {
         }
         puts_(&t, ")");
       }
-      if (!(renaming & 2) && (line = calloc(1, sizeof *line)) != NULL) {
+      if (!(renaming & 2) && !onItself && (line = calloc(1, sizeof *line)) != NULL) {
         *line = (struct answered){0, -1, t.length, error, 0, 0};
         changes[0] = changing(tid, c->nr, other, MAKES, c->kind == K_LINK, &target, line);
         formOf(changes[0], c->kind == K_LINK ? F_LINK : F_RENAME, source.type);
@@ -3168,7 +3519,7 @@ static void serve(const struct seccomp_notif *req) {
       break;
     }
     case K_SYMLINK: {
-      if (!stringAt(tid, req->data.args[c->nr == SYS_symlinkat ? 0 : 0], other, sizeof other)) {
+      if (!stringAt(tid, req->data.args[0], other, sizeof other)) {
         why = "address";
         break;
       }
@@ -3193,54 +3544,38 @@ static void serve(const struct seccomp_notif *req) {
     }
     case K_CONNECT:
     case K_BIND: {
-      settleBindings();
+      settleBindings(tid);
       struct sockaddr_storage a;
       memset(&a, 0, sizeof a);
       socklen_t length = (socklen_t)req->data.args[2];
       if (length > sizeof a) length = sizeof a;
       if (length < sizeof(sa_family_t) || !bytesAt(tid, req->data.args[1], &a, length)) break;
-      /* A socket's path from the working directory is written whole, as every other path is. */
-      struct sockaddr_storage shown = a;
-      socklen_t shownLength = length;
-      struct sockaddr_un *named = (struct sockaddr_un *)&shown;
-      if (a.ss_family == AF_UNIX && length > offsetof(struct sockaddr_un, sun_path) && named->sun_path[0] != 0 &&
-          named->sun_path[0] != '/') {
-        char relative[sizeof named->sun_path + 1], whole[PATH_MAX + 1];
-        snprintf(relative, sizeof relative, "%.*s", (int)(length - offsetof(struct sockaddr_un, sun_path)),
-                 named->sun_path);
-        int fits = placeOf(tid, AT_FDCWD, other, sizeof other) &&
-                   snprintf(whole, sizeof whole, "%s/%s", other, relative) < (int)sizeof named->sun_path;
-        if (fits) {
-          memset(named->sun_path, 0, sizeof named->sun_path);
-          memcpy(named->sun_path, whole, strlen(whole));
-          shownLength = (socklen_t)(offsetof(struct sockaddr_un, sun_path) + strlen(whole) + 1);
-        }
+      /* A socket's path: as the call gave it, zero-ended, and made whole from the working directory, as every other
+       * path is written. A whole path longer than an address holds is written whole all the same. */
+      const struct sockaddr_un *u = (const struct sockaddr_un *)&a;
+      char name[sizeof u->sun_path + 1], full[PATH_MAX + 1];
+      name[0] = full[0] = 0;
+      int relative = 0;
+      if (a.ss_family == AF_UNIX && length > offsetof(struct sockaddr_un, sun_path) && u->sun_path[0] != 0) {
+        size_t n = length - offsetof(struct sockaddr_un, sun_path);
+        if (n > sizeof u->sun_path) n = sizeof u->sun_path;
+        snprintf(name, sizeof name, "%.*s", (int)strnlen(u->sun_path, n), u->sun_path);
+        if (name[0] == '/') snprintf(full, sizeof full, "%s", name);
+        else relative = wholeSocketPath(tid, tgid, c->nr, &a, length, full, sizeof full);
+        if (name[0] != '/' && !relative) full[0] = 0;
       }
       begin(&t, tgid, c->name);
       printf_(&t, "%d, ", (int)req->data.args[0]);
-      socketAddress(&t, &shown, shownLength);
+      socketAddress(&t, &a, length, relative ? full : NULL);
       printf_(&t, ", %u)", (unsigned)length);
       if (c->kind == K_CONNECT) {
         int error = 0;
         if (a.ss_family == AF_UNIX) {
-          const struct sockaddr_un *u = (const struct sockaddr_un *)&a;
-          if (u->sun_path[0] != 0) {
-            char name[sizeof u->sun_path + 1];
-            snprintf(name, sizeof name, "%.*s", (int)sizeof u->sun_path, u->sun_path);
-            char full[PATH_MAX + 1];
-            if (name[0] == '/') {
-              snprintf(full, sizeof full, "%s", name);
-            } else if (placeOf(tid, AT_FDCWD, other, sizeof other)) {
-              snprintf(full, sizeof full, "%s/%s", other, name);
-            } else {
-              full[0] = 0;
-            }
-            /* Nothing there, or no socket there: the kernel refuses the connection, and the run learns which. */
-            struct stat st;
-            if (full[0] != 0 && !pseudo(full)) {
-              error = stat(full, &st) != 0 ? (errno == ENOENT ? ENOENT : 0) : S_ISSOCK(st.st_mode) ? 0 : ECONNREFUSED;
-              refusing = refusedCall(tid, c->nr, 0, full);
-            }
+          /* Nothing there, or no socket there: the kernel refuses the connection, and the run learns which. */
+          struct stat st;
+          if (full[0] != 0 && !pseudo(full)) {
+            error = stat(full, &st) != 0 ? (errno == ENOENT ? ENOENT : 0) : S_ISSOCK(st.st_mode) ? 0 : ECONNREFUSED;
+            refusing = refusedCall(tid, c->nr, 0, full);
           }
         } else if (loopbackAddress(&a)) {
           unsigned port = a.ss_family == AF_INET ? ntohs(((struct sockaddr_in *)&a)->sin_port)
@@ -3249,9 +3584,12 @@ static void serve(const struct seccomp_notif *req) {
           refusing = refusedCall(tid, c->nr, port, NULL);
         }
         if (refusing != NULL) {
-          /* A copy of the socket, to ask once the call has ended whether it connected. */
+          /* A copy of the socket, to ask once the call has ended whether it connected. With no descriptor left to
+           * copy it with, nothing could say a line written as refused was answered after all: the run is unrecorded. */
           int pidfd = (int)syscall(SYS_pidfd_open, tgid, 0);
+          if (pidfd < 0) starvedBy(errno);
           refusing->copy = pidfd < 0 ? -1 : (int)syscall(SYS_pidfd_getfd, pidfd, (int)req->data.args[0], 0);
+          if (pidfd >= 0 && refusing->copy < 0) starvedBy(errno);
           if (pidfd >= 0) close(pidfd);
           int flags = refusing->copy < 0 ? 0 : fcntl(refusing->copy, F_GETFL);
           refusing->inProgress = flags >= 0 && (flags & O_NONBLOCK) && a.ss_family != AF_UNIX;
@@ -3261,20 +3599,23 @@ static void serve(const struct seccomp_notif *req) {
         answer(&t, error);
         break;
       }
+      /* Only a socket bound to a path or to a port is written: its copy says once it is bound. A bind of another
+       * family (netlink, as the C library's getaddrinfo and getifaddrs make one each call; a packet socket) writes
+       * no line, so it is given no copy: held to the end of the run, thousands of them took every descriptor this
+       * program may have. */
+      if (a.ss_family != AF_UNIX && a.ss_family != AF_INET && a.ss_family != AF_INET6) {
+        free(t.data);
+        return;
+      }
       /* A socket bound to a path makes that name: calls on the name at once are in one group with it. */
-      if (a.ss_family == AF_UNIX && ((const struct sockaddr_un *)&a)->sun_path[0] != 0) {
-        const struct sockaddr_un *u = (const struct sockaddr_un *)&a;
-        char name[sizeof u->sun_path + 1], full[PATH_MAX + 1];
-        snprintf(name, sizeof name, "%.*s", (int)sizeof u->sun_path, u->sun_path);
-        if (name[0] == '/') snprintf(full, sizeof full, "%s", name);
-        else if (!placeOf(tid, AT_FDCWD, other, sizeof other)) full[0] = 0;
-        else snprintf(full, sizeof full, "%s/%s", other, name);
-        struct answered *making = full[0] == 0 ? NULL : calloc(1, sizeof *making);
+      if (full[0] != 0) {
+        struct answered *making = calloc(1, sizeof *making);
         if (making != NULL) {
           settleName(full);
           struct ident before;
           identify(full, &before);
-          *making = (struct answered){0, -1, 0, before.there ? EADDRINUSE : 0, 0, 0};
+          /* Where nothing is, the bind makes the name when the directory it goes in is there. */
+          *making = (struct answered){0, -1, 0, before.there ? EADDRINUSE : parentThere(full, 0, ENOENT), 0, 0};
           struct change *binding_ = changing(tid, c->nr, full, MAKES, 1, &before, making);
           formOf(binding_, F_BIND, S_IFSOCK);
           opened(binding_);
@@ -3282,28 +3623,36 @@ static void serve(const struct seccomp_notif *req) {
         }
       }
       /* A path there already is one the run found: the bind fails on it. One not there is the run's once bound. */
-      if (a.ss_family == AF_UNIX && named->sun_path[0] == '/' && !pseudo(named->sun_path) &&
-          look(named->sun_path, 1) == 0)
-        found(tgid, id, 0, named->sun_path);
-      /* A bind is written at the end of the run, when the socket says it is bound. */
+      if (full[0] != 0 && !pseudo(full) && look(full, 1) == 0) found(tgid, id, 0, full);
+      /* A bind is written once the socket says it is bound (settleBindings). */
+      /* With no descriptor left for the copy the bind's line is lost: the run is unrecorded (starvedBy), never
+       * short a line. */
       int pidfd = (int)syscall(SYS_pidfd_open, tgid, 0);
+      if (pidfd < 0) starvedBy(errno);
       int copy = pidfd < 0 ? -1 : (int)syscall(SYS_pidfd_getfd, pidfd, (int)req->data.args[0], 0);
-      int refused = copy < 0 && errno == EPERM;
+      int refused = pidfd >= 0 && copy < 0 && errno == EPERM;
+      if (pidfd >= 0 && copy < 0) starvedBy(errno);
       if (pidfd >= 0) close(pidfd);
       if (copy >= 0 && !t.failed) {
         struct binding *b = calloc(1, sizeof *b);
         if (b != NULL) {
           b->id = id;
+          b->tid = tid;
+          b->tgid = tgid;
+          b->nr = c->nr;
+          b->fd = (int)req->data.args[0];
           b->copy = copy;
           b->asked = a;
           b->askedLength = length;
           b->line = t.data;
           pthread_mutex_lock(&lock);
           b->next = bindings;
-          bindings = b;
+          __atomic_store_n(&bindings, b, __ATOMIC_RELEASE);
           pthread_mutex_unlock(&lock);
           return;
         }
+        /* No memory to hold the bind until its socket answers: its line is lost, and the run says so. */
+        __atomic_store_n(&dropped, 1, __ATOMIC_RELAXED);
         close(copy);
       } else if (copy >= 0) {
         close(copy);
@@ -3312,6 +3661,7 @@ static void serve(const struct seccomp_notif *req) {
         unrecorded("this machine refuses pidfd_getfd, which reads a socket the run bound; a container allows it with "
                    "CAP_SYS_PTRACE");
       }
+      if (t.failed) __atomic_store_n(&dropped, 1, __ATOMIC_RELAXED);
       free(t.data);
       return;
     }
@@ -3364,8 +3714,7 @@ static void serve(const struct seccomp_notif *req) {
       f->parent = tgid;
       f->id = id;
       pthread_mutex_lock(&lock);
-      unsigned *generation = generationOf(tgid);
-      f->generation = generation == NULL ? 0 : *generation;
+      f->generation = generationOf(tgid)->count;
       f->next = forkings;
       forkings = f;
       pthread_mutex_unlock(&lock);
@@ -3467,20 +3816,31 @@ static void serve(const struct seccomp_notif *req) {
   }
 }
 
+/*
+ * What the serving thread needs, made before the command is let go: a command whose first call waits for a thread
+ * that never came to serve waits for good, and this program with it.
+ */
+static struct seccomp_notif_sizes notifSizes;
+static struct seccomp_notif *servingReq;
+static struct seccomp_notif_resp *servingResp;
+
+static int readyToServe(void) {
+  if (syscall(SYS_seccomp, SECCOMP_GET_NOTIF_SIZES, 0, &notifSizes) != 0) return 0;
+  servingReq = calloc(1, notifSizes.seccomp_notif);
+  servingResp = calloc(1, notifSizes.seccomp_notif_resp);
+  return servingReq != NULL && servingResp != NULL;
+}
+
 static void *serving(void *unused) {
   (void)unused;
   sigset_t all_;
   sigfillset(&all_);
   sigdelset(&all_, SIGUSR1);
   pthread_sigmask(SIG_SETMASK, &all_, NULL);
-  struct seccomp_notif_sizes sizes;
-  if (syscall(SYS_seccomp, SECCOMP_GET_NOTIF_SIZES, 0, &sizes) != 0) return NULL;
-  struct seccomp_notif *req = calloc(1, sizes.seccomp_notif);
-  struct seccomp_notif_resp *resp = calloc(1, sizes.seccomp_notif_resp);
-  if (req == NULL || resp == NULL) {
-    __atomic_store_n(&dropped, 1, __ATOMIC_RELAXED);
-    return NULL;
-  }
+  /* What it receives into and answers from was made before the command was let go (readyToServe). */
+  struct seccomp_notif_sizes sizes = notifSizes;
+  struct seccomp_notif *req = servingReq;
+  struct seccomp_notif_resp *resp = servingResp;
   for (;;) {
     memset(req, 0, sizes.seccomp_notif);
     if (ioctl(listener, SECCOMP_IOCTL_NOTIF_RECV, req) != 0) {
@@ -3500,72 +3860,92 @@ static void *serving(void *unused) {
     /* A call whose thread ended or was interrupted meanwhile has no one to answer. */
     ioctl(listener, SECCOMP_IOCTL_NOTIF_SEND, resp);
   }
-  free(req);
-  free(resp);
   return NULL;
 }
 
 /* ---- Bound sockets ---------------------------------------------------------------------------------------------- */
 
-/* Whether the copy of a socket says it is bound where the process asked. */
-static int saysBound(const struct binding *b) {
-  struct sockaddr_storage now;
-  socklen_t length = sizeof now;
-  memset(&now, 0, sizeof now);
-  int bound = 0;
-  {
-    if (getsockname(b->copy, (struct sockaddr *)&now, &length) == 0 && now.ss_family == b->asked.ss_family) {
-      if (now.ss_family == AF_UNIX) {
-        /* A path is compared as a path, whatever length each side gave; an abstract name byte for byte. */
-        const char *at = ((struct sockaddr_un *)&now)->sun_path, *asked = ((struct sockaddr_un *)&b->asked)->sun_path;
-        size_t room = sizeof ((struct sockaddr_un *)&now)->sun_path;
-        size_t nowLength = length > offsetof(struct sockaddr_un, sun_path) ? length - offsetof(struct sockaddr_un, sun_path) : 0;
-        size_t askedLength = b->askedLength > offsetof(struct sockaddr_un, sun_path)
-                               ? b->askedLength - offsetof(struct sockaddr_un, sun_path)
-                               : 0;
-        if (nowLength > 0 && at[0] != 0)
-          bound = strncmp(at, asked, room) == 0;
-        else
-          bound = nowLength > 0 && nowLength == askedLength && memcmp(at, asked, nowLength) == 0;
-      } else if (now.ss_family == AF_INET || now.ss_family == AF_INET6) {
-        unsigned asked = now.ss_family == AF_INET ? ntohs(((struct sockaddr_in *)&b->asked)->sin_port)
-                                                  : ntohs(((struct sockaddr_in6 *)&b->asked)->sin6_port);
-        unsigned port = now.ss_family == AF_INET ? ntohs(((struct sockaddr_in *)&now)->sin_port)
-                                                 : ntohs(((struct sockaddr_in6 *)&now)->sin6_port);
-        bound = port != 0 && (asked == 0 || asked == port);
-      }
-    }
+/* Whether the copy of a socket says it is bound where the process asked; `now` is then where it is bound. */
+static int saysBound(const struct binding *b, struct sockaddr_storage *now) { /* `now` may be the binding's own */
+  socklen_t length = sizeof *now;
+  memset(now, 0, sizeof *now);
+  if (getsockname(b->copy, (struct sockaddr *)now, &length) != 0 || now->ss_family != b->asked.ss_family) return 0;
+  if (now->ss_family == AF_UNIX) {
+    /* A path is compared as a path, whatever length each side gave; an abstract name byte for byte. */
+    const char *at = ((struct sockaddr_un *)now)->sun_path, *asked = ((struct sockaddr_un *)&b->asked)->sun_path;
+    size_t room = sizeof ((struct sockaddr_un *)now)->sun_path;
+    size_t nowLength = length > offsetof(struct sockaddr_un, sun_path) ? length - offsetof(struct sockaddr_un, sun_path) : 0;
+    size_t askedLength = b->askedLength > offsetof(struct sockaddr_un, sun_path)
+                           ? b->askedLength - offsetof(struct sockaddr_un, sun_path)
+                           : 0;
+    if (nowLength > 0 && at[0] != 0) return strncmp(at, asked, room) == 0;
+    return nowLength > 0 && nowLength == askedLength && memcmp(at, asked, nowLength) == 0;
   }
-  return bound;
+  if (now->ss_family == AF_INET || now->ss_family == AF_INET6) {
+    unsigned asked = now->ss_family == AF_INET ? ntohs(((struct sockaddr_in *)&b->asked)->sin_port)
+                                               : ntohs(((struct sockaddr_in6 *)&b->asked)->sin6_port);
+    unsigned port = now->ss_family == AF_INET ? ntohs(((struct sockaddr_in *)now)->sin_port)
+                                              : ntohs(((struct sockaddr_in6 *)now)->sin6_port);
+    return port != 0 && (asked == 0 || asked == port);
+  }
+  return 0;
 }
 
-/* Writes the line of a bind the socket says was made, and lets the copy go. */
-static void written(struct binding *b, int bound) {
+/*
+ * Writes the line of a bind the socket says was made (`now`: where it is bound), and lets the copy go. A socket
+ * asked to bind to port 0 is bound to a port the kernel chose: the line names that port, in the address the call
+ * gave, as if the call had asked for it. A reader then knows the port as the run's own, and a connection to any
+ * other local port as one to a program outside the run; told only `htons(0)`, it could tell neither.
+ */
+static void written(struct binding *b, const struct sockaddr_storage *now) {
   close(b->copy);
-  if (bound) {
+  if (now != NULL) {
     struct text t = {0};
-    puts_(&t, b->line);
+    struct sockaddr_storage shown = b->asked;
+    int chosen = 0;
+    if (shown.ss_family == AF_INET && ((struct sockaddr_in *)&shown)->sin_port == 0) {
+      ((struct sockaddr_in *)&shown)->sin_port = ((const struct sockaddr_in *)now)->sin_port;
+      chosen = 1;
+    } else if (shown.ss_family == AF_INET6 && ((struct sockaddr_in6 *)&shown)->sin6_port == 0) {
+      ((struct sockaddr_in6 *)&shown)->sin6_port = ((const struct sockaddr_in6 *)now)->sin6_port;
+      chosen = 1;
+    }
+    if (chosen) {
+      printf_(&t, "%d bind(%d, ", b->tgid, b->fd);
+      socketAddress(&t, &shown, b->askedLength, NULL);
+      printf_(&t, ", %u)", (unsigned)b->askedLength);
+    } else {
+      puts_(&t, b->line);
+    }
     puts_(&t, " = 0");
     keep(b->id, 2, &t);
-  } else {
-    free(b->line);
   }
+  free(b->line);
   free(b);
 }
 
 /*
- * Lets go of the copy of every socket that already says it is bound, writing its line: called before a bind or a
- * connect goes on, so a port the run closed is free again for it, as it is unrecorded.
+ * Lets go of the copy of every socket that already says it is bound, writing its line, and of every one whose bind
+ * has surely ended without binding it (it failed: the port was taken, the path was there): called before a call of
+ * the run goes on and at each tick, so a port the run closed is free again for it, as it is unrecorded, and a
+ * socket it closed is closed. `stopped` is a thread that stopped again, whose binds have ended; 0 for none. Whether
+ * a bind has ended is asked before its socket is: a bind that ends between the two is then seen bound.
  */
-static void settleBindings(void) {
-  struct binding *settled = NULL;
+static void settleBindings(pid_t stopped) {
+  struct binding *settled = NULL, *failed = NULL;
   pthread_mutex_lock(&lock);
   for (struct binding **at = &bindings; *at != NULL;) {
     struct binding *b = *at;
-    if (saysBound(b)) {
-      *at = b->next;
-      b->next = settled;
-      settled = b;
+    int bound = saysBound(b, &b->now), over = 0;
+    if (!bound && (b->tid == stopped || pastCall(b->tid, b->nr))) {
+      over = 1;
+      bound = saysBound(b, &b->now);
+    }
+    if (bound || over) {
+      __atomic_store_n(at, b->next, __ATOMIC_RELEASE);
+      struct binding **list = bound ? &settled : &failed;
+      b->next = *list;
+      *list = b;
     } else {
       at = &b->next;
     }
@@ -3573,18 +3953,27 @@ static void settleBindings(void) {
   pthread_mutex_unlock(&lock);
   while (settled != NULL) {
     struct binding *next = settled->next;
-    written(settled, 1);
+    written(settled, &settled->now);
     settled = next;
+  }
+  while (failed != NULL) {
+    struct binding *next = failed->next;
+    written(failed, NULL);
+    failed = next;
   }
 }
 
 /* ---- The end of the run --------------------------------------------------------------------------------------- */
 
 static void boundSockets(void) {
-  while (bindings != NULL) {
-    struct binding *b = bindings;
-    bindings = b->next;
-    written(b, saysBound(b));
+  pthread_mutex_lock(&lock);
+  struct binding *left = bindings;
+  __atomic_store_n(&bindings, NULL, __ATOMIC_RELEASE);
+  pthread_mutex_unlock(&lock);
+  while (left != NULL) {
+    struct binding *b = left;
+    left = b->next;
+    written(b, saysBound(b, &b->now) ? &b->now : NULL);
   }
 }
 
@@ -3592,6 +3981,53 @@ static int byOrder(const void *a, const void *b) {
   const struct line *x = a, *y = b;
   if (x->id != y->id) return x->id < y->id ? -1 : 1;
   return x->sub < y->sub ? -1 : x->sub > y->sub ? 1 : 0;
+}
+
+/* A reason or a program, written on one line: a control byte in it (a name may hold a newline) would end the line,
+ * and what followed could read as a line of its own. */
+static void markerText(FILE *out, const char *text) {
+  for (const unsigned char *at = (const unsigned char *)text; *at != 0; at++) {
+    if (*at >= 0x20 && *at != 0x7f) fputc(*at, out);
+    else fprintf(out, "\\x%02x", *at);
+  }
+}
+
+/* How many reasons and programs that ask for rights were written already: a step's sealed trace holds them, and what
+ * comes after (writeKept) holds only those made since. */
+static int reasonsWritten, rightsWritten;
+
+/*
+ * Writes every reason the run cannot be recorded for and every program that asks for rights from `reasonsFrom` and
+ * `rightsFrom` on, as lines; `*reasonsTo` and `*rightsTo` are how many there are now. The reasons include a line
+ * that could not be kept and a descriptor this program lacked, each noted without the lock. What is written is read
+ * under `lock`: the serving thread adds to both while a step's trace is written (`--keep`).
+ */
+static void writeMarkers(FILE *out, int reasonsFrom, int rightsFrom, int *reasonsTo, int *rightsTo) {
+  if (__atomic_load_n(&dropped, __ATOMIC_RELAXED)) unrecorded(droppedReason);
+  if (__atomic_load_n(&starved, __ATOMIC_RELAXED)) unrecorded(starvedReason);
+  pthread_mutex_lock(&lock);
+  int reasonsNow = reasonCount, rightsNow = rightsCount;
+  char **theirs = rightsNow > rightsFrom ? malloc((size_t)(rightsNow - rightsFrom) * sizeof *theirs) : NULL;
+  /* The list of programs may move when it grows: its strings never do. */
+  int unlisted = theirs == NULL && rightsNow > rightsFrom;
+  if (theirs != NULL) memcpy(theirs, rightsNeeded + rightsFrom, (size_t)(rightsNow - rightsFrom) * sizeof *theirs);
+  else rightsNow = rightsFrom;
+  pthread_mutex_unlock(&lock);
+  /* No memory to list the programs: they are written the next time, and this trace says it is short. */
+  if (unlisted) fprintf(out, "%d +++ unrecorded: %s +++\n", rootPid, droppedReason);
+  for (int i = reasonsFrom; i < reasonsNow; i++) {
+    fprintf(out, "%d +++ unrecorded: ", rootPid);
+    markerText(out, reasons[i]);
+    fputs(" +++\n", out);
+  }
+  for (int i = rightsFrom; i < rightsNow; i++) {
+    fprintf(out, "%d +++ rights: ", rootPid);
+    markerText(out, theirs[i - rightsFrom]);
+    fputs(" +++\n", out);
+  }
+  free(theirs);
+  *reasonsTo = reasonsNow;
+  *rightsTo = rightsNow;
 }
 
 static int writeLines(const char *file, struct lines *lines) {
@@ -3607,9 +4043,8 @@ static int writeLines(const char *file, struct lines *lines) {
     fwrite(lines->items[i].text, 1, lines->items[i].length, out);
     fputc('\n', out);
   }
-  if (dropped) unrecorded("the recorder could not keep every line");
-  for (int i = 0; i < reasonCount; i++) fprintf(out, "%d +++ unrecorded: %s +++\n", rootPid, reasons[i]);
-  for (int i = 0; i < rightsCount; i++) fprintf(out, "%d +++ rights: %s +++\n", rootPid, rightsNeeded[i]);
+  int reasonsNow = 0, rightsNow = 0;
+  writeMarkers(out, 0, 0, &reasonsNow, &rightsNow);
   unsigned long stops = __atomic_load_n(&signalStops, __ATOMIC_RELAXED);
   if (stops > 0) fprintf(out, "%d +++ signal stops: %lu +++\n", rootPid, stops);
   fprintf(out, "%d +++ complete +++\n", rootPid);
@@ -3619,7 +4054,10 @@ static int writeLines(const char *file, struct lines *lines) {
     return 0;
   }
   if (fclose(out) != 0) return 0;
-  return rename(written, file) == 0;
+  if (rename(written, file) != 0) return 0;
+  reasonsWritten = reasonsNow;
+  rightsWritten = rightsNow;
+  return 1;
 }
 
 static int writeTrace(const char *file) { return writeLines(file, &all); }
@@ -3661,7 +4099,7 @@ static int writeWhole(const char *file, const char *text) {
  * then the command's exit status beside it, which ends the step.
  */
 static int writeStep(const char *file, int code) {
-  settleBindings();
+  settleBindings(0);
   lockServing();
   settlePast();
   struct lines taken = takeLines();
@@ -3678,11 +4116,24 @@ static int writeStep(const char *file, int code) {
 static long answered;
 
 /*
- * Appends the lines made since the step's trace, or since the last time, to the trace file's name with `.kept`.
- * A reader that has to know every line made so far is on disk writes a number to the name with `.ask`: once the
- * lines are written, the number is written to the name with `.answered`.
+ * Lines of what the step left that never reached `.kept`: the file could not be opened, or a write to it failed. They
+ * are gone, so what follows the step is unrecorded, and stays so: the reason is written to `.kept` as soon as a write
+ * there succeeds (`lostWritten`), and until then no request is answered. A reader that is told every line is on disk
+ * either has them all or has the reason.
  */
-static void writeKept(const char *file) {
+static int keptLost, lostWritten;
+static const char *lostReason = "the recorder could not write every line of what the step left running";
+
+/*
+ * Appends the lines made since the step's trace, or since the last time, to the trace file's name with `.kept`, and
+ * with them every reason the run cannot be recorded and every program that asks for rights made since the step's
+ * trace was sealed: a program the step left running that makes a namespace, uses a ring, or changes a name in a way
+ * its written line does not say, is unrecorded where the steps after it read of it. A reader that has to know every
+ * line made so far is on disk writes a number to the name with `.ask`: once the lines are written, the number is
+ * written to the name with `.answered`, and never before they are. Answers whether everything made so far is
+ * written, or is said to be lost.
+ */
+static int writeKept(const char *file) {
   char askFile[PATH_MAX + 32], text[64];
   snprintf(askFile, sizeof askFile, "%s.ask", file);
   long asked = 0;
@@ -3694,40 +4145,60 @@ static void writeKept(const char *file) {
       text[n] = 0;
       asked = strtol(text, NULL, 10);
     }
+  } else {
+    starvedBy(errno); /* a request that cannot be read waits, and the reason is written below */
   }
-  settleBindings();
+  settleBindings(0);
   lockServing();
   settlePast();
   struct lines taken = takeLines();
   pthread_mutex_unlock(&serving_lock);
-  if (taken.count == 0) {
-    freeLines(&taken);
-    if (asked > answered) {
-      char answeredFile[PATH_MAX + 32];
-      snprintf(answeredFile, sizeof answeredFile, "%s.answered", file);
-      snprintf(text, sizeof text, "%ld\n", asked);
-      if (writeWhole(answeredFile, text)) answered = asked;
+  if (__atomic_load_n(&dropped, __ATOMIC_RELAXED)) unrecorded(droppedReason);
+  if (__atomic_load_n(&starved, __ATOMIC_RELAXED)) unrecorded(starvedReason);
+  if (keptLost) unrecorded(lostReason);
+  pthread_mutex_lock(&lock);
+  int news = reasonCount > reasonsWritten || rightsCount > rightsWritten;
+  pthread_mutex_unlock(&lock);
+  if (taken.count > 0 || news) {
+    char keptFile[PATH_MAX + 32];
+    snprintf(keptFile, sizeof keptFile, "%s.kept", file);
+    FILE *out = fopen(keptFile, "ae");
+    int ok = out != NULL, reasonsNow = reasonsWritten, rightsNow = rightsWritten;
+    if (out != NULL) {
+      /* After a write that failed the file may end inside a line: what is written now starts on a line of its own. */
+      if (keptLost && !lostWritten) fputc('\n', out);
+      for (size_t i = 0; i < taken.count; i++) {
+        if (taken.items[i].sub & LEFT_OUT) continue;
+        fwrite(taken.items[i].text, 1, taken.items[i].length, out);
+        fputc('\n', out);
+      }
+      writeMarkers(out, reasonsWritten, rightsWritten, &reasonsNow, &rightsNow);
+      if (fflush(out) != 0 || ferror(out)) ok = 0;
+      if (fclose(out) != 0) ok = 0;
+    } else {
+      starvedBy(errno);
     }
-    return;
-  }
-  char keptFile[PATH_MAX + 32];
-  snprintf(keptFile, sizeof keptFile, "%s.kept", file);
-  FILE *out = fopen(keptFile, "ae");
-  if (out != NULL) {
-    for (size_t i = 0; i < taken.count; i++) {
-      if (taken.items[i].sub & LEFT_OUT) continue;
-      fwrite(taken.items[i].text, 1, taken.items[i].length, out);
-      fputc('\n', out);
+    if (ok) {
+      /* The reasons written include the one for lines lost before, when there was one. */
+      if (keptLost) lostWritten = 1;
+      reasonsWritten = reasonsNow;
+      rightsWritten = rightsNow;
+    } else if (!keptLost || lostWritten) {
+      /* These lines are lost, and the reasons with them are written again: the next write says so first. */
+      keptLost = 1;
+      lostWritten = 0;
     }
-    fclose(out);
   }
   freeLines(&taken);
+  /* Lines were lost and the file does not say so yet: no request is answered. */
+  if (keptLost && !lostWritten) return 0;
   if (asked > answered) {
     char answeredFile[PATH_MAX + 32];
     snprintf(answeredFile, sizeof answeredFile, "%s.answered", file);
     snprintf(text, sizeof text, "%ld\n", asked);
     if (writeWhole(answeredFile, text)) answered = asked;
   }
+  return 1;
 }
 
 /* Every process of the run is this program's child once its parent ended: kill those still running. */
@@ -3927,6 +4398,16 @@ int main(int argc, char **argv) {
   }
   const char *traceFile = argv[1];
   char **command = argv + 3;
+  /* This program holds descriptors of its own while the run goes on: it may have as many as it is allowed. The
+   * command starts with the limit this program was given (ownLimit). */
+  struct rlimit given;
+  int limited = getrlimit(RLIMIT_NOFILE, &given) == 0;
+  if (limited && given.rlim_cur < given.rlim_max) {
+    struct rlimit most = {given.rlim_max, given.rlim_max};
+    if (setrlimit(RLIMIT_NOFILE, &most) != 0) limited = 0;
+  } else {
+    limited = 0;
+  }
   /* Every process the command leaves behind comes to this program when its parent ends. */
   prctl(PR_SET_CHILD_SUBREAPER, 1, 0, 0, 0);
   int sv[2];
@@ -3950,6 +4431,7 @@ int main(int argc, char **argv) {
     if (read(sv[1], &c, 1) != 1) _exit(126);
     close(fd);
     close(sv[1]);
+    if (limited && setrlimit(RLIMIT_NOFILE, &given) != 0) _exit(126);
     execvp(command[0], command);
     fprintf(stderr, "smthrs-observe: %s: %s\n", command[0], strerror(errno));
     _exit(errno == ENOENT ? 127 : 126);
@@ -3987,6 +4469,7 @@ int main(int argc, char **argv) {
     if (child == 0) {
       if (prctl(PR_SET_PDEATHSIG, SIGKILL, 0, 0, 0) != 0) _exit(126);
       close(sv[0]);
+      if (limited && setrlimit(RLIMIT_NOFILE, &given) != 0) _exit(126);
       execvp(command[0], command);
       fprintf(stderr, "smthrs-observe: %s: %s\n", command[0], strerror(errno));
       _exit(errno == ENOENT ? 127 : 126);
@@ -4008,7 +4491,15 @@ int main(int argc, char **argv) {
    * processor time for the same wall time (measured on click's pre-commit and typing steps). */
   int threads = listener < 0 ? 0 : 1;
   pthread_t serving_[1];
-  for (int i = 0; i < threads; i++) pthread_create(&serving_[i], NULL, serving, NULL);
+  for (int i = 0; i < threads; i++) {
+    if (readyToServe() && pthread_create(&serving_[i], NULL, serving, NULL) == 0) continue;
+    /* Nothing would serve the command's calls: it is ended before it starts, and the step runs unrecorded. */
+    int ended;
+    kill(child, SIGKILL);
+    waitpid(child, &ended, 0);
+    fprintf(stderr, "smthrs-observe: cannot start the thread that serves the command's calls\n");
+    return 126;
+  }
   if (listener >= 0 && write(sv[0], "g", 1) != 1) return 125;
   close(sv[0]);
 
@@ -4028,8 +4519,9 @@ int main(int argc, char **argv) {
           /* A step of a job ends with its command: what it left runs on, and is followed. */
           if (keepLeft && !writeStep(traceFile, code)) fprintf(stderr, "smthrs-observe: could not write %s\n", traceFile);
         }
-        setWatched(pid, 0);
+        unwatch(pid);
         dropKept(pid);
+        forget(pid);
         continue;
       }
       if (!WIFSTOPPED(status)) continue;
@@ -4039,12 +4531,13 @@ int main(int argc, char **argv) {
         else ptrace(PTRACE_CONT, pid, 0, 0);
       } else if (event == PTRACE_EVENT_EXEC) {
         /* A new program starts with every handler at its default: nothing to watch until it sets one. */
-        setWatched(pid, 0);
+        unwatch(pid);
         ptrace(PTRACE_DETACH, pid, 0, 0);
       } else if (event == PTRACE_EVENT_EXIT) {
         /* A thread that starts to end is let go: once it ended, its parent reaps it, not this supervisor. */
-        setWatched(pid, 0);
+        unwatch(pid);
         dropKept(pid);
+        forget(pid);
         ptrace(PTRACE_DETACH, pid, 0, 0);
       } else if (event == PTRACE_EVENT_FORK || event == PTRACE_EVENT_VFORK || event == PTRACE_EVENT_CLONE) {
         sendAfterFork(pid);
@@ -4063,10 +4556,13 @@ int main(int argc, char **argv) {
       struct timespec now;
       clock_gettime(CLOCK_MONOTONIC, &now);
       /* A process the command left running is given a second to end, then stopped, as a sandbox stops it. */
-      if (keepLeft) writeKept(traceFile);
+      if (keepLeft) (void)writeKept(traceFile);
       else if (now.tv_sec > deadline.tv_sec || (now.tv_sec == deadline.tv_sec && now.tv_nsec >= deadline.tv_nsec)) endLeft();
     }
     sendStale();
+    /* A socket that says it is bound, or whose bind failed, is let go within a tick: a socket the run closed is
+     * closed then, and its peer is told. */
+    if (__atomic_load_n(&bindings, __ATOMIC_ACQUIRE) != NULL) settleBindings(0);
     /* A connection asked again once its thread is past it: the copy of its socket is let go within a tick. */
     if (__atomic_load_n(&refusedCalls, __ATOMIC_ACQUIRE) != NULL) {
       lockServing();
@@ -4106,11 +4602,19 @@ int main(int argc, char **argv) {
   fprintf(stderr, "storm-stats: most stops %u over %ld ms\n", mostStops, longestMs);
 #endif
   if (keepLeft && rootDone) {
-    /* Every process it followed has ended and every line is written: any request is answered, now and later. */
-    writeKept(traceFile);
+    /* Every process it followed has ended. Once every line is written, with each reason the run cannot be recorded,
+     * any request is answered, now and later; while they are not (the disk is full), none is, and a reader that
+     * asks learns the lines are not there. */
+    int everything = writeKept(traceFile);
+    for (int again = 0; !everything && again < 40; again++) {
+      struct timespec pause = {0, 50000000};
+      nanosleep(&pause, NULL);
+      everything = writeKept(traceFile);
+    }
     char answeredFile[PATH_MAX + 32];
     snprintf(answeredFile, sizeof answeredFile, "%s.answered", traceFile);
-    writeWhole(answeredFile, "9223372036854775807\n");
+    if (!everything || !writeWhole(answeredFile, "9223372036854775807\n"))
+      fprintf(stderr, "smthrs-observe: could not write %s.kept\n", traceFile);
   } else if (!writeTrace(traceFile)) {
     fprintf(stderr, "smthrs-observe: could not write %s\n", traceFile);
   }

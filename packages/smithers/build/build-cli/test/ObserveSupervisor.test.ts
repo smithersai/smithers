@@ -171,17 +171,13 @@ describe("smthrs-observe", () => {
         case "readlink":
         case "change":
         case "chdir": {
-          const call = kind === "open" || kind === "write"
-            ? "openat"
-            : kind === "change"
-            ? "fchmodat"
-            : kind === "chdir"
-            ? "chdir"
-            : "newfstatat"
+          const call = kind === "open" || kind === "write" ? "openat" : kind === "chdir" ? "chdir" : "newfstatat"
           const target = name === "access-file" ? "file" : name
           const flags = kind === "open" ? "O_RDONLY" : kind === "write" ? "O_WRONLY" : ""
+          // A change is written by the call's own name: node's chmod is `chmod` on x86_64 and `fchmodat` on aarch64.
+          const candidates = kind === "change" ? [...of("chmod", target), ...of("fchmodat", target)] : of(call, target)
           // The first line of the kind says what was there; a link's own look is the one that does not follow it.
-          const line = of(call, target).find((candidate) =>
+          const line = candidates.find((candidate) =>
             candidate.includes(flags) && (kind !== "lookLink" || candidate.includes("NOFOLLOW"))
           )
           expect(line, `${kind} ${name}`).toBeDefined()
@@ -969,4 +965,439 @@ while not os.path.exists(go): time.sleep(0.01)
     // 10,023 here: one for each of the 10,001 threads. Before, 60,022: the late thread read it at each of its calls.
     expect(reads).toBeLessThan(20_000)
   }, 180_000)
+})
+
+/** The lines of a trace file. */
+const linesOf = (file: string): ReadonlyArray<string> => NodeFs.readFileSync(file, "utf8").split("\n")
+
+/** Records `argv` in a new directory; answers the directory, the run and the trace's lines. */
+const record = async (
+  label: string,
+  argv: (base: string) => ReadonlyArray<string>,
+  prepare: (base: string) => Promise<void> = () => Promise.resolve(),
+  cwd?: (base: string) => string
+) => {
+  const base = await Fs.realpath(await Fs.mkdtemp(Path.join(Os.tmpdir(), `smthrs-observe-${label}-`)))
+  temporary.push(base)
+  await prepare(base)
+  const trace = Path.join(base, "trace")
+  const run = spawnSync(supervisor!, [trace, "--", ...argv(base)], { encoding: "utf8", cwd: cwd?.(base) ?? base })
+  expect(run.status, run.stderr).toBe(0)
+  return { base, run, lines: linesOf(trace) }
+}
+
+/** Waits until `done`, or throws `what` after `limitMs`. */
+const until = async (done: () => boolean, what: string, limitMs = 30_000): Promise<void> => {
+  const started = Date.now()
+  while (!done()) {
+    if (Date.now() - started > limitMs) throw new Error(what)
+    await new Promise((resolve) => setTimeout(resolve, 20))
+  }
+}
+
+/** Whether a kept step's recorder has ended: it answers every request. */
+const keptEnded = (trace: string): boolean =>
+  NodeFs.existsSync(`${trace}.answered`) &&
+  NodeFs.readFileSync(`${trace}.answered`, "utf8").startsWith("9223372036854775807")
+
+describe("smthrs-observe --keep, for what a step left running after its trace was sealed", () => {
+  // A reason the run cannot be recorded was written only with the sealed trace. One made after (a kept program that
+  // makes a namespace, uses a ring, or changes a name its line does not say) reached no file, and the steps after
+  // were stored as recorded.
+  supervised("writes a refusal a kept program causes after the seal beside the lines it follows", async () => {
+    const root = await Fs.realpath(await Fs.mkdtemp(Path.join(Os.tmpdir(), "observe-keep-refusal-")))
+    temporary.push(root)
+    const trace = Path.join(root, "trace")
+    // CLONE_NEWNS: the kernel refuses it without rights, and the recorder is told of the call all the same.
+    const unshare = "import ctypes; ctypes.CDLL(None, use_errno=True).unshare(0x20000)"
+    const script = `(while [ ! -e ${root}/go ]; do sleep 0.05; done; python3 -c '${unshare}') > /dev/null 2>&1 & exit 0`
+    const child = spawn(supervisor!, ["--keep", trace, "--", "sh", "-c", script], { detached: true, stdio: "ignore" })
+    child.unref()
+    try {
+      await until(() => NodeFs.existsSync(`${trace}.status`), "no status")
+      expect(ObservedReads.whole(trace)).toBe(true)
+      expect(NodeFs.readFileSync(trace, "utf8")).not.toContain("unrecorded")
+      await Fs.writeFile(Path.join(root, "go"), "")
+      await until(() => keptEnded(trace), "it did not end")
+      expect(await ObservedReads.askFlush(trace, 10_000)).toBe(true)
+      expect(NodeFs.readFileSync(`${trace}.kept`, "utf8")).toMatch(
+        /^\d+ \+\+\+ unrecorded: it made a namespace of its own \+\+\+$/m
+      )
+      // The reader holds the steps after to it.
+      const served = ObservedReads.servedBy(() => linesOf(trace), () => linesOf(`${trace}.kept`), root)
+      expect(served.refusals).toContain("it made a namespace of its own")
+    } finally {
+      try {
+        process.kill(-child.pid!, "SIGKILL")
+      } catch {
+        // Ended already.
+      }
+    }
+  }, 60_000)
+
+  // A write of the kept lines that failed was not noticed: the lines were freed and the request answered, so a reader
+  // was told lines were on disk that were not.
+  supervised("answers no request while kept lines are unwritten, and says they were lost once it can", async () => {
+    const root = await Fs.realpath(await Fs.mkdtemp(Path.join(Os.tmpdir(), "observe-keep-lost-")))
+    temporary.push(root)
+    await Fs.writeFile(Path.join(root, "later"), "2\n")
+    const trace = Path.join(root, "trace")
+    // A directory where the kept lines go: every write of them fails.
+    await Fs.mkdir(`${trace}.kept`)
+    const script = `(while [ ! -e ${root}/go ]; do sleep 0.05; done; cat ${root}/later > /dev/null; ` +
+      `while [ ! -e ${root}/end ]; do sleep 0.05; done) > /dev/null 2>&1 & exit 0`
+    const child = spawn(supervisor!, ["--keep", trace, "--", "sh", "-c", script], { detached: true, stdio: "ignore" })
+    child.unref()
+    try {
+      await until(() => NodeFs.existsSync(`${trace}.status`), "no status")
+      await Fs.writeFile(Path.join(root, "go"), "")
+      await new Promise((resolve) => setTimeout(resolve, 300))
+      expect(await ObservedReads.askFlush(trace, 1_000)).toBe(false)
+      expect(NodeFs.existsSync(`${trace}.answered`)).toBe(false)
+      // Once the lines can be written the loss is: the request is answered, and the reader refuses what followed.
+      await Fs.rmdir(`${trace}.kept`)
+      expect(await ObservedReads.askFlush(trace, 10_000)).toBe(true)
+      const lost = "the recorder could not write every line of what the step left running"
+      expect(NodeFs.readFileSync(`${trace}.kept`, "utf8")).toContain(`+++ unrecorded: ${lost} +++`)
+      expect(ObservedReads.servedBy(() => linesOf(trace), () => linesOf(`${trace}.kept`), root).refusals).toContain(
+        lost
+      )
+      await Fs.writeFile(Path.join(root, "end"), "")
+      await until(() => keptEnded(trace), "it did not end")
+    } finally {
+      try {
+        process.kill(-child.pid!, "SIGKILL")
+      } catch {
+        // Ended already.
+      }
+    }
+  }, 60_000)
+})
+
+describe("smthrs-observe and a socket bound to a port the kernel chooses", () => {
+  /**
+   * Listens on port 0 of `host`, then connects to the port given (one nothing of the run listens on). That
+   * connection is dropped, not ended: the test that listens there waits for this program, and answers nothing.
+   */
+  const chosen = String.raw`
+import * as net from "node:net"
+const [host, outside] = process.argv.slice(2)
+const server = net.createServer((socket) => socket.end())
+await new Promise((resolve) => server.listen({ host, port: 0 }, resolve))
+const port = server.address().port
+await new Promise((resolve) => net.connect({ host, port }, function () { this.end(); resolve() }))
+await new Promise((resolve) => {
+  const socket = net.connect({ host, port: Number(outside) })
+  socket.on("error", resolve)
+  socket.on("connect", () => { socket.destroy(); resolve() })
+})
+server.close()
+console.log(port)
+`
+  // The line said `htons(0)`, as the call asked, and a reader that saw one such bind could no longer tell a
+  // connection to the run's own port from one to a database of the machine: it let every local port by.
+  for (const [host, field] of [["127.0.0.1", "sin_port"], ["::1", "sin6_port"]] as const) {
+    supervised(
+      `writes the port the kernel chose for ${host}, so a reader knows the run's port from another`,
+      async () => {
+        // A program outside the run, listening on a port of its own.
+        const other = (await import("node:net")).createServer((socket) => socket.end())
+        await new Promise<void>((resolve) => other.listen({ host, port: 0 }, resolve))
+        const outside = (other.address() as { readonly port: number }).port
+        try {
+          const { base, lines, run } = await record(
+            "chosen",
+            (at) => [process.execPath, Path.join(at, "chosen.mjs"), host, String(outside)],
+            (at) => Fs.writeFile(Path.join(at, "chosen.mjs"), chosen)
+          )
+          const port = Number(run.stdout.trim())
+          const binds = lines.filter((line) => line.includes(" bind("))
+          expect(
+            binds.some((line) => line.includes(`${field}=htons(${port})`) && line.endsWith(" = 0")),
+            binds.join("\n")
+          )
+            .toBe(true)
+          expect(binds.filter((line) => line.includes("htons(0)"))).toEqual([])
+          const read = ObservedReads.read(() => lines, base)
+          expect(read.bound?.has(`port:${port}`)).toBe(true)
+          // Its own port is the run's; the other one is a program outside it, and the run is refused for it alone.
+          expect(read.refusals).toEqual([`it reached a program outside the run on local port ${outside}`])
+          expect(read.outside).toEqual([`it reached a program outside the run on local port ${outside}`])
+        } finally {
+          await new Promise((resolve) => other.close(resolve))
+        }
+      }
+    )
+  }
+
+  // Linux connects `0.0.0.0` to the machine itself, and the reader reads it so. The recorder did not, wrote a refused
+  // connection there as answered, and the run read as one that reached a program outside it.
+  supervised("writes a connection to 0.0.0.0 that nothing answered as refused", async () => {
+    const refused = "const net = require('node:net'); const s = net.createServer(); s.listen(0, '127.0.0.1', () => {" +
+      " const port = s.address().port; s.close(() => net.connect(port, '0.0.0.0').on('error', (e) => console.log(e.code))) })"
+    const { base, lines, run } = await record("unspecified", () => [process.execPath, "-e", refused])
+    expect(run.stdout.trim()).toBe("ECONNREFUSED")
+    const connects = lines.filter((line) => line.includes(" connect(") && line.includes("inet_addr(\"0.0.0.0\")"))
+    expect(connects.map(answerOf)).toEqual(["ECONNREFUSED"])
+    expect(ObservedReads.read(() => lines, base).outside).toEqual([])
+  })
+})
+
+describe("smthrs-observe and the descriptors it holds itself", () => {
+  /** Binds 1,600 netlink sockets and fails 1,600 binds to a taken port, then binds one more socket. */
+  const binds = String.raw`
+import socket
+held = socket.socket()
+held.bind(("127.0.0.1", 0))
+held.listen()
+taken = held.getsockname()[1]
+failed = 0
+for _ in range(1600):
+    route = socket.socket(socket.AF_NETLINK, socket.SOCK_RAW, 0)
+    route.bind((0, 0))
+    route.close()
+    again = socket.socket()
+    try:
+        again.bind(("127.0.0.1", taken))
+    except OSError:
+        failed += 1
+    again.close()
+last = socket.socket()
+last.bind(("127.0.0.1", 0))
+print(taken, last.getsockname()[1], failed)
+`
+  // The recorder kept a copy of every socket a bind named until the socket said it was bound: a netlink socket (the C
+  // library binds one for each getaddrinfo) and a bind that failed never say so, so their copies were held for the
+  // whole run. Past its own limit each of its opens failed, and it read the failures as answers: bind lines were
+  // lost, and the trace was still sealed whole.
+  supervised("lets go of a socket that will never say it is bound, under a limit of 256 descriptors", async () => {
+    const base = await Fs.realpath(await Fs.mkdtemp(Path.join(Os.tmpdir(), "smthrs-observe-binds-")))
+    temporary.push(base)
+    await Fs.writeFile(Path.join(base, "binds.py"), binds)
+    const trace = Path.join(base, "trace")
+    // The hard limit too: the recorder raises its own to the most it may have.
+    const run = spawnSync(
+      "sh",
+      ["-c", "ulimit -n 256 && exec \"$@\"", "sh", supervisor!, trace, "--", "python3", Path.join(base, "binds.py")],
+      { encoding: "utf8" }
+    )
+    expect(run.status, run.stderr).toBe(0)
+    const [taken, last, failed] = run.stdout.trim().split(" ").map(Number)
+    expect(failed).toBe(1600)
+    const lines = linesOf(trace)
+    expect(lines.filter((line) => line.includes("unrecorded"))).toEqual([])
+    expect(lines.filter((line) => line !== "").at(-1)).toMatch(/^\d+ \+\+\+ complete \+\+\+$/)
+    // The two binds that were made, each with its port; none of those that failed, and none of a netlink socket.
+    const written = lines.filter((line) => line.includes(" bind("))
+    expect(written.map((line) => /htons\((\d+)\)/.exec(line)?.[1]).map(Number)).toEqual([taken, last])
+    expect(written.every((line) => line.endsWith(" = 0"))).toBe(true)
+  }, 120_000)
+
+  supervised("starts the command with the limit of descriptors it was given itself", async () => {
+    const run = spawnSync("sh", [
+      "-c",
+      "ulimit -S -n 300 && exec \"$@\"",
+      "sh",
+      supervisor!,
+      "/dev/null",
+      "--",
+      "sh",
+      "-c",
+      "ulimit -S -n"
+    ], {
+      encoding: "utf8"
+    })
+    expect(run.stdout.trim()).toBe("300")
+  })
+})
+
+describe("smthrs-observe and openat2 with RESOLVE_* flags", () => {
+  /** Opens `argv[2]` (a directory), then makes one openat2 from it for each `flags:path` word after. */
+  const resolving = String.raw`
+import ctypes, os, struct, sys
+libc = ctypes.CDLL(None, use_errno=True)
+directory = os.open(sys.argv[1], os.O_RDONLY | os.O_DIRECTORY)
+for word in sys.argv[2:]:
+    flags, path = word.split(":", 1)
+    how = struct.pack("QQQ", int(flags, 8), 0o644 if int(flags, 8) & os.O_CREAT else 0, 0x08)  # RESOLVE_BENEATH
+    fd = libc.syscall(437, directory, os.fsencode(path), how, 24)
+    print(path[:20], "0" if fd >= 0 else os.strerror(ctypes.get_errno()))
+    if fd >= 0: os.close(fd)
+`
+  const made = (NodeFs.constants.O_WRONLY | NodeFs.constants.O_CREAT | NodeFs.constants.O_EXCL).toString(8)
+  /** A path as the recorder writes it between `<` and `>`. */
+  const angled = (path: string): string =>
+    path.replace(/["\\]/g, (c) => `\\${c}`).replace(/\n/g, "\\n").replace(/</g, "\\x3c").replace(/>/g, "\\x3e")
+
+  // A file made by a path of one name was written as a refusal or as found missing: the name was read from storage
+  // the directory's name had just overwritten, and a file the call made kept the ENOENT of the look before it.
+  supervised("writes a file the call makes by the path it has, and refuses a name no directory holds", async () => {
+    const long = "n".repeat(300)
+    const { base, lines, run } = await record(
+      "openat2",
+      (
+        at
+      ) => [
+        "python3",
+        Path.join(at, "resolving.py"),
+        Path.join(at, "d"),
+        "0:file",
+        `${made}:one`,
+        `${made}:sub/two`,
+        `${made}:${long}`
+      ],
+      async (at) => {
+        await Fs.mkdir(Path.join(at, "d", "sub"), { recursive: true })
+        await Fs.writeFile(Path.join(at, "d", "file"), "file\n")
+        await Fs.writeFile(Path.join(at, "resolving.py"), resolving)
+      }
+    )
+    expect(run.stdout.trim().split("\n")).toEqual([
+      "file 0",
+      "one 0",
+      "sub/two 0",
+      `${long.slice(0, 20)} File name too long`
+    ])
+    const directory = Path.join(base, "d")
+    const calls = lines.filter((line) => line.includes(" openat2("))
+    const flags = (creates: boolean) =>
+      `{flags=${creates ? "O_WRONLY|O_CREAT|O_EXCL" : "O_RDONLY"}, resolve=RESOLVE_BENEATH}, 24)`
+    // The C library the recorder is built with words an error its own way: its name is what a reader reads.
+    expect(calls.map((line) => line.replace(/^\d+ /, "").replace(/ \([A-Za-z ]+\)$/, ""))).toEqual([
+      `openat2(3<${directory}>, "file", ${flags(false)} = 0<${directory}/file>`,
+      `openat2(3<${directory}>, "one", ${flags(true)} = 0<${directory}/one>`,
+      `openat2(3<${directory}>, "sub/two", ${flags(true)} = 0<${directory}/sub/two>`,
+      `openat2(3<${directory}>, "${long}", ${flags(true)} = -1 ENAMETOOLONG`
+    ])
+    const read = ObservedReads.read(() => lines, base)
+    expect(read.refusals).toEqual([])
+    expect([...read.made.keys()].filter((path) => path.startsWith(directory)).sort()).toEqual([
+      Path.join(directory, "one"),
+      Path.join(directory, "sub/two")
+    ])
+  })
+
+  // The directory's path and the file's were written as they are: a newline in a name ended the line, and what
+  // followed it read as a line of the trace, so a name could say what the run never did.
+  supervised("writes each path so that no name ends its line or says another", async () => {
+    const odd = "a\n7 +++ complete +++\n7 unlinkat(AT_FDCWD, \"forged\", 0) = 0 <b> \"q\"\\"
+    const { base, lines } = await record(
+      "openat2-names",
+      (at) => ["python3", Path.join(at, "resolving.py"), Path.join(at, odd), "0:file", "0:.", `${made}:new`],
+      async (at) => {
+        await Fs.mkdir(Path.join(at, odd))
+        await Fs.writeFile(Path.join(at, odd, "file"), "file\n")
+        await Fs.writeFile(Path.join(at, "resolving.py"), resolving)
+      }
+    )
+    const directory = angled(Path.join(base, odd))
+    const written = lines.filter((line) => line !== "")
+    // Every line is one the recorder wrote whole: the trace is sealed once, at its end, and names no forged file.
+    expect(written.every((line) => /^\d+ /.test(line))).toBe(true)
+    expect(written.filter((line) => line.endsWith("+++ complete +++")).length).toBe(1)
+    expect(written.at(-1)).toMatch(/^\d+ \+\+\+ complete \+\+\+$/)
+    expect(written.filter((line) => /^\d+ unlinkat\(AT_FDCWD, "forged"/.test(line))).toEqual([])
+    const calls = written.filter((line) => line.includes(" openat2(")).map((line) => line.replace(/^\d+ /, ""))
+    expect(calls).toEqual([
+      `openat2(3<${directory}>, "file", {flags=O_RDONLY, resolve=RESOLVE_BENEATH}, 24) = 0<${directory}/file>`,
+      `openat2(3<${directory}>, ".", {flags=O_RDONLY, resolve=RESOLVE_BENEATH}, 24) = 0<${directory}>`,
+      `openat2(3<${directory}>, "new", {flags=O_WRONLY|O_CREAT|O_EXCL, resolve=RESOLVE_BENEATH}, 24) = 0<${directory}/new>`
+    ])
+    expect(written.some((line) => line.endsWith(` getdents64(0<${directory}>, {...}, 32768) = 0`))).toBe(true)
+  })
+})
+
+describe("smthrs-observe and calls that change a file but not what it holds", () => {
+  // Every such call was written as `fchmodat`, which a reader takes for a change of what the file holds or whether it
+  // runs: a step that only set a file's times read as one that changed the file.
+  supervised("writes a call that sets a file's times by its own name, as strace does", async () => {
+    const script = "const fs = require('node:fs'); fs.readFileSync('seen'); fs.utimesSync('seen', 1, 1);" +
+      " fs.lutimesSync('link', 1, 1); fs.chmodSync('mode', 0o600)"
+    const { base, lines } = await record("changes", () => [process.execPath, "-e", script], async (at) => {
+      await Fs.writeFile(Path.join(at, "seen"), "seen\n")
+      await Fs.writeFile(Path.join(at, "mode"), "mode\n")
+      await Fs.symlink("seen", Path.join(at, "link"))
+    })
+    const of = (name: string) =>
+      lines.filter((line) =>
+        line.includes(JSON.stringify(Path.join(base, name))) && !/ (?:openat|newfstatat)\(/.test(line)
+      )
+        .map((line) => line.replace(/^\d+ /, ""))
+    expect(of("seen")).toEqual([`utimensat(AT_FDCWD, ${JSON.stringify(Path.join(base, "seen"))}, 0, 0) = 0`])
+    expect(of("link")).toEqual([
+      `utimensat(AT_FDCWD, ${JSON.stringify(Path.join(base, "link"))}, 0, AT_SYMLINK_NOFOLLOW) = 0`
+    ])
+    expect(of("mode").length).toBe(1)
+    expect(of("mode")[0]).toMatch(/^f?chmod(?:at)?\(/)
+    const read = ObservedReads.read(() => lines, base)
+    expect(read.refusals).toEqual([])
+    expect(read.meta?.has(Path.join(base, "seen"))).toBe(true)
+    expect(read.changed.has(Path.join(base, "seen"))).toBe(false)
+    expect(read.changed.has(Path.join(base, "mode"))).toBe(true)
+  })
+
+  // The file is no longer at neither name after such a rename, so the look after it found the run unrecorded.
+  supervised("records a rename of a file onto another name of the same file, which does nothing", async () => {
+    const script = "const fs = require('node:fs'); fs.linkSync('a', 'b'); fs.renameSync('a', 'b'); fs.statSync('a')"
+    const { base, lines } = await record(
+      "same-file",
+      () => [process.execPath, "-e", script],
+      (at) => Fs.writeFile(Path.join(at, "a"), "a\n")
+    )
+    expect(lines.filter((line) => line.includes("unrecorded"))).toEqual([])
+    const renames = lines.filter((line) =>
+      line.includes(" renameat2(") && line.includes(JSON.stringify(Path.join(base, "a")))
+    )
+    expect(renames.map(answerOf)).toEqual(["0"])
+  })
+})
+
+describe("smthrs-observe and paths it makes whole", () => {
+  // `/proc/self/cwd` is the caller's directory only when the path starts with it. Reached past `..`, it was looked
+  // at as written, in the recorder's own view, and the file the call read was in no line.
+  supervised("follows a link of the process reached by going up to the root first", async () => {
+    const { base, lines } = await record(
+      "rooted",
+      (at) => {
+        const up = at.split("/").filter((part) => part !== "").map(() => "..").join("/")
+        return [
+          process.execPath,
+          "-e",
+          `require('node:fs').readFileSync(${JSON.stringify(`${at}/${up}/proc/self/cwd/file`)})`
+        ]
+      },
+      (at) => Fs.writeFile(Path.join(at, "file"), "file\n")
+    )
+    const opens = lines.filter((line) => line.includes(" openat(") && line.includes("/file\""))
+    expect(opens.map((line) => line.replace(/^\d+ /, ""))).toEqual([
+      `openat(AT_FDCWD, ${JSON.stringify(Path.join(base, "file"))}, O_RDONLY) = 0`
+    ])
+    expect(lines.filter((line) => line.includes("/proc/self/cwd") && !line.includes(" execve("))).toEqual([])
+  })
+
+  // A socket's path from the working directory was made whole only when the whole path fit an address (108 bytes).
+  // From a job's deep directory it never does, and the path was written as given, from a directory no line names.
+  supervised("writes a socket's path from a deep working directory whole", async () => {
+    const deep = (at: string) => Path.join(at, "d".repeat(80), "e".repeat(80))
+    const script =
+      "const net = require('node:net'); const s = net.createServer((c) => c.end()).listen('s.sock', () =>" +
+      " net.connect('s.sock', function () { this.end(); s.close() }))"
+    const { base, lines } = await record(
+      "deep-socket",
+      () => [process.execPath, "-e", script],
+      (at) => Fs.mkdir(deep(at), { recursive: true }).then(() => undefined),
+      deep
+    )
+    const whole = `sun_path=${JSON.stringify(Path.join(deep(base), "s.sock"))}`
+    expect(whole.length).toBeGreaterThan(108)
+    for (const call of ["bind", "connect"]) {
+      const written = lines.filter((line) => line.includes(` ${call}(`) && line.includes("AF_UNIX"))
+      expect(written.length, call).toBe(1)
+      expect(written[0], call).toContain(whole)
+      expect(answerOf(written[0]!), call).toBe("0")
+    }
+    const read = ObservedReads.read(() => lines, deep(base))
+    expect(read.refusals).toEqual([])
+    expect(read.outside).toEqual([])
+  })
 })
