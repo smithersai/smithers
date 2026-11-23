@@ -147,8 +147,7 @@ export const makeCli = (
             noOpen: c.options.noOpen,
             env: environment,
             stderr: config.stderr ?? process.stderr
-          })
-        )
+          }))
     }).command("serve", {
       description: "Bridge stdio MCP clients to a remote Smithers Streamable HTTP MCP endpoint",
       mcp: false,

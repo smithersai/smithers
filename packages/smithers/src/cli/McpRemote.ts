@@ -47,7 +47,9 @@ export const normalizeOrigin = (raw: string | undefined): string => {
   }
   const loopback = parsed.hostname === "localhost" || parsed.hostname === "127.0.0.1" || parsed.hostname === "[::1]"
   if (parsed.protocol !== "https:" && !(parsed.protocol === "http:" && loopback)) {
-    throw new CliError.UsageError({ message: "MCP origin must use https:// (or http://localhost for local development)" })
+    throw new CliError.UsageError({
+      message: "MCP origin must use https:// (or http://localhost for local development)"
+    })
   }
   if (parsed.username !== "" || parsed.password !== "") {
     throw new CliError.UsageError({ message: "MCP origin must not include credentials" })
@@ -119,7 +121,7 @@ export const readStoredToken = (
   filePath: string,
   origin: string,
   repo?: string,
-  nowMs = Date.now(),
+  nowMs = Date.now()
 ): StoredMcpToken | undefined => {
   const store = readStoreFile(filePath)
   const cleanOrigin = normalizeOrigin(origin)
@@ -192,22 +194,26 @@ interface AuthServerMetadata {
 
 const discoverAuthServer = async (
   origin: string,
-  fetchImpl: typeof globalThis.fetch,
+  fetchImpl: typeof globalThis.fetch
 ): Promise<AuthServerMetadata> => {
   const fallback: AuthServerMetadata = {
     authorization_endpoint: `${origin}/api/mcp/oauth/authorize`,
     token_endpoint: `${origin}/api/mcp/oauth/token`,
-    registration_endpoint: `${origin}/api/mcp/oauth/register`,
+    registration_endpoint: `${origin}/api/mcp/oauth/register`
   }
   const res = await fetchImpl(`${origin}/.well-known/oauth-authorization-server`, {
-    headers: { accept: "application/json", "user-agent": "smithers-cli/1.0" },
+    headers: { accept: "application/json", "user-agent": "smithers-cli/1.0" }
   })
   if (!res.ok) return fallback
   const body = (await res.json()) as Partial<AuthServerMetadata>
   return {
-    authorization_endpoint: typeof body.authorization_endpoint === "string" ? body.authorization_endpoint : fallback.authorization_endpoint,
+    authorization_endpoint: typeof body.authorization_endpoint === "string"
+      ? body.authorization_endpoint
+      : fallback.authorization_endpoint,
     token_endpoint: typeof body.token_endpoint === "string" ? body.token_endpoint : fallback.token_endpoint,
-    registration_endpoint: typeof body.registration_endpoint === "string" ? body.registration_endpoint : fallback.registration_endpoint,
+    registration_endpoint: typeof body.registration_endpoint === "string"
+      ? body.registration_endpoint
+      : fallback.registration_endpoint
   }
 }
 
@@ -255,25 +261,31 @@ export const loginMcpRemote = async (options: McpLoginOptions = {}): Promise<Mcp
     if (oauthError) {
       res.writeHead(400, { "content-type": "text/html; charset=utf-8" })
       res.end("<!doctype html><html><body><h2>Authorization denied</h2><p>You can close this tab.</p></body></html>")
-      rejectCallback(new CliError.Refused({
-        fault: "user",
-        code: "mcp_oauth_denied",
-        message: `Authorization failed (${oauthError})`,
-      }))
+      rejectCallback(
+        new CliError.Refused({
+          fault: "user",
+          code: "mcp_oauth_denied",
+          message: `Authorization failed (${oauthError})`
+        })
+      )
       return
     }
     if (!code) {
       res.writeHead(400, { "content-type": "text/plain; charset=utf-8" })
       res.end("Missing authorization code.")
-      rejectCallback(new CliError.Refused({
-        fault: "user",
-        code: "mcp_oauth_invalid",
-        message: "Callback did not include an authorization code",
-      }))
+      rejectCallback(
+        new CliError.Refused({
+          fault: "user",
+          code: "mcp_oauth_invalid",
+          message: "Callback did not include an authorization code"
+        })
+      )
       return
     }
     res.writeHead(200, { "content-type": "text/html; charset=utf-8" })
-    res.end("<!doctype html><html><body><h2>Connected to Smithers</h2><p>You can close this tab and return to your terminal.</p></body></html>")
+    res.end(
+      "<!doctype html><html><body><h2>Connected to Smithers</h2><p>You can close this tab and return to your terminal.</p></body></html>"
+    )
     resolveCallback({ code, state })
   })
 
@@ -285,11 +297,13 @@ export const loginMcpRemote = async (options: McpLoginOptions = {}): Promise<Mcp
   const timer = setTimeout(() => {
     if (!settled) {
       settled = true
-      rejectCallback(new CliError.Refused({
-        fault: "user",
-        code: "mcp_oauth_timeout",
-        message: "Timed out waiting for browser authorization",
-      }))
+      rejectCallback(
+        new CliError.Refused({
+          fault: "user",
+          code: "mcp_oauth_timeout",
+          message: "Timed out waiting for browser authorization"
+        })
+      )
     }
   }, timeoutMs)
 
@@ -307,14 +321,14 @@ export const loginMcpRemote = async (options: McpLoginOptions = {}): Promise<Mcp
       body: JSON.stringify({
         client_name: clientName,
         redirect_uris: [redirectUri],
-        token_endpoint_auth_method: "none",
-      }),
+        token_endpoint_auth_method: "none"
+      })
     })
     if (!regRes.ok) {
       throw new CliError.Refused({
         fault: "dependency",
         code: "mcp_dcr_failed",
-        message: `Dynamic client registration failed with HTTP ${regRes.status}`,
+        message: `Dynamic client registration failed with HTTP ${regRes.status}`
       })
     }
     const regBody = (await regRes.json()) as { readonly client_id?: unknown }
@@ -322,7 +336,7 @@ export const loginMcpRemote = async (options: McpLoginOptions = {}): Promise<Mcp
       throw new CliError.Refused({
         fault: "dependency",
         code: "mcp_dcr_invalid",
-        message: "Registration response did not include client_id",
+        message: "Registration response did not include client_id"
       })
     }
 
@@ -355,7 +369,7 @@ export const loginMcpRemote = async (options: McpLoginOptions = {}): Promise<Mcp
       throw new CliError.Refused({
         fault: "user",
         code: "mcp_oauth_state_mismatch",
-        message: "OAuth callback state did not match; aborting login",
+        message: "OAuth callback state did not match; aborting login"
       })
     }
 
@@ -364,22 +378,22 @@ export const loginMcpRemote = async (options: McpLoginOptions = {}): Promise<Mcp
       client_id: regBody.client_id,
       redirect_uri: redirectUri,
       code: callback.code,
-      code_verifier: codeVerifier,
+      code_verifier: codeVerifier
     })
     const tokenRes = await fetchImpl(metadata.token_endpoint, {
       method: "POST",
       headers: {
         "content-type": "application/x-www-form-urlencoded",
         accept: "application/json",
-        "user-agent": "smithers-cli/1.0",
+        "user-agent": "smithers-cli/1.0"
       },
-      body: form.toString(),
+      body: form.toString()
     })
     if (!tokenRes.ok) {
       throw new CliError.Refused({
         fault: "dependency",
         code: "mcp_token_exchange_failed",
-        message: `Token exchange failed with HTTP ${tokenRes.status}`,
+        message: `Token exchange failed with HTTP ${tokenRes.status}`
       })
     }
     const tokenBody = (await tokenRes.json()) as {
@@ -391,7 +405,7 @@ export const loginMcpRemote = async (options: McpLoginOptions = {}): Promise<Mcp
       throw new CliError.Refused({
         fault: "dependency",
         code: "mcp_token_invalid",
-        message: "Token endpoint returned an unexpected access_token format",
+        message: "Token endpoint returned an unexpected access_token format"
       })
     }
     const expiresAt = typeof tokenBody.expires_in === "number" && Number.isFinite(tokenBody.expires_in)
@@ -405,7 +419,7 @@ export const loginMcpRemote = async (options: McpLoginOptions = {}): Promise<Mcp
       token: tokenBody.access_token,
       scope: grantedScope,
       expiresAt,
-      updatedAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
     })
 
     return {
@@ -414,7 +428,7 @@ export const loginMcpRemote = async (options: McpLoginOptions = {}): Promise<Mcp
       repo,
       scope: grantedScope,
       expiresAt,
-      tokenStorePath: filePath,
+      tokenStorePath: filePath
     }
   } finally {
     clearTimeout(timer)
@@ -469,13 +483,16 @@ export const serveMcpStdioBridge = async (options: McpServeOptions = {}): Promis
     try {
       parsed = JSON.parse(trimmed) as { readonly id?: unknown }
     } catch {
-      await writeLine(output, JSON.stringify({ jsonrpc: "2.0", id: null, error: { code: -32700, message: "Parse error" } }))
+      await writeLine(
+        output,
+        JSON.stringify({ jsonrpc: "2.0", id: null, error: { code: -32700, message: "Parse error" } })
+      )
       return
     }
     const headers: Record<string, string> = {
       "content-type": "application/json",
       accept: "application/json",
-      "user-agent": "smithers-cli/1.0",
+      "user-agent": "smithers-cli/1.0"
     }
     const token = resolveToken()
     if (token !== undefined) headers["authorization"] = `Bearer ${token}`
@@ -486,7 +503,7 @@ export const serveMcpStdioBridge = async (options: McpServeOptions = {}): Promis
         method: "POST",
         headers,
         body: trimmed,
-        ...(options.signal === undefined ? {} : { signal: options.signal }),
+        ...(options.signal === undefined ? {} : { signal: options.signal })
       })
     } catch {
       if (parsed.id !== undefined) {
@@ -495,8 +512,8 @@ export const serveMcpStdioBridge = async (options: McpServeOptions = {}): Promis
           JSON.stringify({
             jsonrpc: "2.0",
             id: parsed.id ?? null,
-            error: { code: -32000, message: `Could not reach Smithers MCP endpoint at ${endpoint}` },
-          }),
+            error: { code: -32000, message: `Could not reach Smithers MCP endpoint at ${endpoint}` }
+          })
         )
       }
       return
@@ -517,9 +534,9 @@ export const serveMcpStdioBridge = async (options: McpServeOptions = {}): Promis
             error: {
               code: -32001,
               message: `Authentication required. Run "${hint}" to sign in.`,
-              data: { code: "authentication" },
-            },
-          }),
+              data: { code: "authentication" }
+            }
+          })
         )
       }
       return
@@ -539,11 +556,13 @@ export const serveMcpStdioBridge = async (options: McpServeOptions = {}): Promis
     const onData = (chunk: Buffer | string) => {
       const buf = typeof chunk === "string" ? Buffer.from(chunk, "utf8") : chunk
       if (pending.length + buf.length > MAX_FRAME_BYTES) {
-        reject(new CliError.Refused({
-          fault: "user",
-          code: "mcp_input_too_large",
-          message: "MCP stdio input exceeds 10 MiB buffer limit",
-        }))
+        reject(
+          new CliError.Refused({
+            fault: "user",
+            code: "mcp_input_too_large",
+            message: "MCP stdio input exceeds 10 MiB buffer limit"
+          })
+        )
         return
       }
       const combined = Buffer.concat([pending, buf])
