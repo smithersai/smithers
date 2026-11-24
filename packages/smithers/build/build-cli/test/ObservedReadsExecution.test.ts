@@ -1070,7 +1070,8 @@ const job = async (
       observe,
       data: [files, ...after] as never
     })
-  const installing = "/bin/cat registry.cfg > /dev/null\npython3 -c 'import os\ntry: os.mkdir(\"deps\")\nexcept FileExistsError: pass'\n/bin/cat lock.txt > deps/installed.txt"
+  const installing =
+    "/bin/cat registry.cfg > /dev/null\npython3 -c 'import os\ntry: os.mkdir(\"deps\")\nexcept FileExistsError: pass'\n/bin/cat lock.txt > deps/installed.txt"
   const install = step(
     "install",
     typeof settings.install === "function" ? settings.install(outside) : settings.install ?? installing,

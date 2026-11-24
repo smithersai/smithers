@@ -61,7 +61,11 @@ describe("@smthrs/targets Wave-7D: RemoteCache, Nix, Home, PackageJsonTemplate, 
 
     // Home sections happy path
     const hSec = Home.Home({
-      sections: [{ title: "Core", audience: "everyone", blocks: [Home.Markdown({ path: "README.md", title: "Hello" })] }],
+      sections: [{
+        title: "Core",
+        audience: "everyone",
+        blocks: [Home.Markdown({ path: "README.md", title: "Hello" })]
+      }],
       docs: "https://docs.example.com"
     })
     expect(hSec._tag).toBe("HomeDeclaration")
@@ -70,7 +74,9 @@ describe("@smthrs/targets Wave-7D: RemoteCache, Nix, Home, PackageJsonTemplate, 
     const tpl = PackageJsonTemplate.make({
       license: "MIT",
       engines: { node: ">=22.0.0" },
-      author: "Smithers", sideEffects: false, type: "module"
+      author: "Smithers",
+      sideEffects: false,
+      type: "module"
     })
     expect(PackageJsonTemplate.isTemplate(tpl)).toBe(true)
 
@@ -117,15 +123,25 @@ describe("@smthrs/targets Wave-7D: RemoteCache, Nix, Home, PackageJsonTemplate, 
     expect((tiMeta.forKind("build").attrs as TargetIndex.Attrs).mode).toBe("write")
 
     // Go rules & Toolchain
-    const goTc = Go.Toolchain({ mod: Input.file("go.mod"), sum: Input.file("go.sum"), versions: ds, cgo: false, experiments: ["arenas"] })
+    const goTc = Go.Toolchain({
+      mod: Input.file("go.mod"),
+      sum: Input.file("go.sum"),
+      versions: ds,
+      cgo: false,
+      experiments: ["arenas"]
+    })
     expect(goTc._tag).toBe("GoToolchain")
     expect(Go.ldflags({ strip: true, stamp: { "main.version": "1.0.0" } })).toContain("main.version")
     const goPkgs = Go.Packages({ pkgs: ["./..."] })
     expect(Target.isTarget(goPkgs)).toBe(true)
     expect(Target.isTarget(Go.Test({ pkgs: goPkgs }))).toBe(true)
     expect(Target.isTarget(Go.Binary({ pkg: "./cmd/app", out: "bin/app" }))).toBe(true)
-    expect(Target.isTarget(Go.ModDownload({ mod: Input.file("go.mod"), sum: Input.file("go.sum"), outDirs: ["vendor"] }))).toBe(true)
-    expect(Target.isTarget(Go.Lint({ config: Input.file(".golangci.yml"), version: "v2.0.0", pkgs: ["./..."] }))).toBe(true)
+    expect(
+      Target.isTarget(Go.ModDownload({ mod: Input.file("go.mod"), sum: Input.file("go.sum"), outDirs: ["vendor"] }))
+    ).toBe(true)
+    expect(Target.isTarget(Go.Lint({ config: Input.file(".golangci.yml"), version: "v2.0.0", pkgs: ["./..."] }))).toBe(
+      true
+    )
     expect(Target.isTarget(Go.Generate({ pkgs: goPkgs, changes: ["gen.go"] }))).toBe(true)
     expect(Target.isTarget(Go.Fuzz({ pkg: "./pkg", fuzz: "FuzzX", time: "5s" }))).toBe(true)
 
@@ -156,15 +172,24 @@ describe("@smthrs/targets Wave-7D: RemoteCache, Nix, Home, PackageJsonTemplate, 
       () => RemoteCache.make(symObj as never),
       () => RemoteCache.make({ endpoint: "https://a.example", extra: 1 } as never),
       () => RemoteCache.make(getterObj as never),
-      () => RemoteCache.make({ endpoint: "https://a.example", token: Secret.Secret("A"), read: Secret.Secret("B") } as never),
-      () => RemoteCache.make({ endpoint: "https://a.example", read: Secret.Secret("A"), publicReadToken: validPubTok } as never),
+      () =>
+        RemoteCache.make(
+          { endpoint: "https://a.example", token: Secret.Secret("A"), read: Secret.Secret("B") } as never
+        ),
+      () =>
+        RemoteCache.make(
+          { endpoint: "https://a.example", read: Secret.Secret("A"), publicReadToken: validPubTok } as never
+        ),
       // Nix errors
       () => Nix.DevShell(null as never),
       () => Nix.DevShell({ flake: Input.file("flake.nix"), lock: Input.file("flake.lock"), extra: 1 } as never),
       () => Nix.DevShell({ flake: "bad" as never, lock: Input.file("flake.lock") }),
       () => Nix.Environment(null as never),
       () => Nix.Environment({ flake: Input.file("flake.nix"), lock: Input.file("flake.lock"), attr: "9bad!" }),
-      () => Nix.Environment({ flake: Input.file("flake.nix"), lock: Input.file("flake.lock"), file: Input.file("shell.nix") } as never),
+      () =>
+        Nix.Environment(
+          { flake: Input.file("flake.nix"), lock: Input.file("flake.lock"), file: Input.file("shell.nix") } as never
+        ),
       () => Nix.Environment({ flake: Input.file("bad space.nix"), lock: Input.file("flake.lock") }),
       // Home errors
       () => Home.plainOptions("T", nonPlain, new Set()),
@@ -177,7 +202,8 @@ describe("@smthrs/targets Wave-7D: RemoteCache, Nix, Home, PackageJsonTemplate, 
       () => Home.Home({ sections: "nope" as never }),
       () => Home.Home({ sections: Array.from({ length: 50 }, () => ({ blocks: [] })) }),
       () => Home.Home({ sections: [{ blocks: "nope" as never }] }),
-      () => Home.Home({ sections: [{ blocks: Array.from({ length: 100 }, () => Home.Markdown({ path: "README.md" })) }] }),
+      () =>
+        Home.Home({ sections: [{ blocks: Array.from({ length: 100 }, () => Home.Markdown({ path: "README.md" })) }] }),
       // PackageJsonTemplate errors
       () => PackageJsonTemplate.make(null as never),
       () => PackageJsonTemplate.make({ unknownField: 1 } as never),
@@ -229,169 +255,199 @@ describe("@smthrs/targets Wave-7D: RemoteCache, Nix, Home, PackageJsonTemplate, 
     assertPassed(report)
   })
 
-  it("GeneratedFile.failureMessage, resolveOutputPath, writeGeneratedFile & checkGeneratedFile cover validation and edge failures", async () => {
-    expect(GeneratedFile.failureMessage(null)).toBe("unknown failure")
-    expect(GeneratedFile.failureMessage(new Proxy({}, {}))).toBe("unknown failure")
-    expect(GeneratedFile.failureMessage(42n)).toBe("42")
-    expect(GeneratedFile.failureMessage(Symbol("s"))).toContain("Symbol")
-    const throwMsg = {}
-    Object.defineProperty(throwMsg, "message", { get: () => { throw new Error("nope") }, enumerable: true })
-    expect(GeneratedFile.failureMessage(throwMsg)).toBe("unknown failure")
-
-    const arb = Arbitrary.schema(
-      Schema.Struct({
-        caseKind: Schema.Literals([
-          "abs-path",
-          "empty-path",
-          "deep-path",
-          "long-path",
-          "unpaired-surrogate",
-          "symlink-parent",
-          "write-and-check-ok",
-          "check-drift",
-          "symlink-write-check"
-        ])
+  it(
+    "GeneratedFile.failureMessage, resolveOutputPath, writeGeneratedFile & checkGeneratedFile cover validation and edge failures",
+    async () => {
+      expect(GeneratedFile.failureMessage(null)).toBe("unknown failure")
+      expect(GeneratedFile.failureMessage(new Proxy({}, {}))).toBe("unknown failure")
+      expect(GeneratedFile.failureMessage(42n)).toBe("42")
+      expect(GeneratedFile.failureMessage(Symbol("s"))).toContain("Symbol")
+      const throwMsg = {}
+      Object.defineProperty(throwMsg, "message", {
+        get: () => {
+          throw new Error("nope")
+        },
+        enumerable: true
       })
-    )
+      expect(GeneratedFile.failureMessage(throwMsg)).toBe("unknown failure")
 
-    const report = await Effect.runPromise(
-      Fuzz.run(
-        arb,
-        ({ caseKind }) =>
-          Effect.promise(async () => {
-            await withTempDir("smthrs-t7d-gf-", async (root) => {
-              if (caseKind === "abs-path") {
-                expect(() => GeneratedFile.resolveOutputPath("/etc/passwd")).toThrow()
-              } else if (caseKind === "empty-path") {
-                expect(() => GeneratedFile.resolveOutputPath(".")).toThrow()
-              } else if (caseKind === "deep-path") {
-                const deep = Array.from({ length: 260 }, (_, i) => `d${i}`).join("/") + "/f.txt"
-                const exit = await Effect.runPromise(
-                  Effect.exit(GeneratedFile.writeGeneratedFile(root, { path: deep, contents: "x" }))
-                )
-                expect(Exit.isFailure(exit)).toBe(true)
-              } else if (caseKind === "long-path") {
-                const longP = "a".repeat(17_000) + ".txt"
-                const exit = await Effect.runPromise(
-                  Effect.exit(GeneratedFile.writeGeneratedFile(root, { path: longP, contents: "x" }))
-                )
-                expect(Exit.isFailure(exit)).toBe(true)
-              } else if (caseKind === "unpaired-surrogate") {
-                const exit = await Effect.runPromise(
-                  Effect.exit(GeneratedFile.writeGeneratedFile(root, { path: "bad.txt", contents: "\uD800" }))
-                )
-                expect(Exit.isFailure(exit)).toBe(true)
-              } else if (caseKind === "symlink-parent") {
-                const realDir = NodePath.join(root, "real")
-                await Fs.mkdir(realDir)
-                await Fs.symlink(realDir, NodePath.join(root, "symdir"))
-                const exit = await Effect.runPromise(
-                  Effect.exit(GeneratedFile.writeGeneratedFile(root, { path: "symdir/a.txt", contents: "x" }))
-                )
-                expect(Exit.isFailure(exit)).toBe(true)
-              } else if (caseKind === "write-and-check-ok") {
-                await Effect.runPromise(GeneratedFile.writeGeneratedFile(root, { path: "nested/out.txt", contents: "ok\n" }))
-                await Effect.runPromise(GeneratedFile.checkGeneratedFile(root, { path: "nested/out.txt", contents: "ok\n" }))
-              } else if (caseKind === "check-drift") {
-                await Effect.runPromise(GeneratedFile.writeGeneratedFile(root, { path: "drift.txt", contents: "v1\n" }))
-                const exit = await Effect.runPromise(
-                  Effect.exit(GeneratedFile.checkGeneratedFile(root, { path: "drift.txt", contents: "v2\n" }))
-                )
-                expect(Exit.isFailure(exit)).toBe(true)
-              } else {
-                await Effect.runPromise(GeneratedFile.writeGeneratedFile(root, { path: "target.txt", contents: "hi" }))
-                await Effect.runPromise(GeneratedFile.writeGeneratedSymlink(root, { path: "link.txt", target: "target.txt" }))
-                await Effect.runPromise(GeneratedFile.checkGeneratedSymlink(root, { path: "link.txt", target: "target.txt" }))
-                const badExit = await Effect.runPromise(
-                  Effect.exit(GeneratedFile.checkGeneratedSymlink(root, { path: "link.txt", target: "other.txt" }))
-                )
-                expect(Exit.isFailure(badExit)).toBe(true)
-              }
-            })
-            return true
-          }),
-        { executions: Math.max(fsExecutions, 18), seed: seed + 1 }
+      const arb = Arbitrary.schema(
+        Schema.Struct({
+          caseKind: Schema.Literals([
+            "abs-path",
+            "empty-path",
+            "deep-path",
+            "long-path",
+            "unpaired-surrogate",
+            "symlink-parent",
+            "write-and-check-ok",
+            "check-drift",
+            "symlink-write-check"
+          ])
+        })
       )
-    )
-    assertPassed(report)
-  }, 30_000)
 
-  it("JevLint.review covers invalid payload, oversized file not-judged, judge error, unanswered rule & threshold findings", async () => {
-    const arb = Arbitrary.schema(
-      Schema.Struct({
-        mode: Schema.Literals(["bad-payload", "oversized", "judge-fail", "missing-answer", "finding-error", "clean"])
-      })
-    )
-    const report = await Effect.runPromise(
-      Fuzz.run(
-        arb,
-        ({ mode }) =>
-          Effect.promise(async () => {
-            await withTempDir("smthrs-t7d-jev-", async (root) => {
-              const targetFile = NodePath.join(root, "sample.ts")
-              await Fs.writeFile(
-                targetFile,
-                mode === "oversized" ? "x".repeat(JevLint.maximumJudgedFileBytes + 64) : "export const x = 1\n"
-              )
+      const report = await Effect.runPromise(
+        Fuzz.run(
+          arb,
+          ({ caseKind }) =>
+            Effect.promise(async () => {
+              await withTempDir("smthrs-t7d-gf-", async (root) => {
+                if (caseKind === "abs-path") {
+                  expect(() => GeneratedFile.resolveOutputPath("/etc/passwd")).toThrow()
+                } else if (caseKind === "empty-path") {
+                  expect(() => GeneratedFile.resolveOutputPath(".")).toThrow()
+                } else if (caseKind === "deep-path") {
+                  const deep = Array.from({ length: 260 }, (_, i) => `d${i}`).join("/") + "/f.txt"
+                  const exit = await Effect.runPromise(
+                    Effect.exit(GeneratedFile.writeGeneratedFile(root, { path: deep, contents: "x" }))
+                  )
+                  expect(Exit.isFailure(exit)).toBe(true)
+                } else if (caseKind === "long-path") {
+                  const longP = "a".repeat(17_000) + ".txt"
+                  const exit = await Effect.runPromise(
+                    Effect.exit(GeneratedFile.writeGeneratedFile(root, { path: longP, contents: "x" }))
+                  )
+                  expect(Exit.isFailure(exit)).toBe(true)
+                } else if (caseKind === "unpaired-surrogate") {
+                  const exit = await Effect.runPromise(
+                    Effect.exit(GeneratedFile.writeGeneratedFile(root, { path: "bad.txt", contents: "\uD800" }))
+                  )
+                  expect(Exit.isFailure(exit)).toBe(true)
+                } else if (caseKind === "symlink-parent") {
+                  const realDir = NodePath.join(root, "real")
+                  await Fs.mkdir(realDir)
+                  await Fs.symlink(realDir, NodePath.join(root, "symdir"))
+                  const exit = await Effect.runPromise(
+                    Effect.exit(GeneratedFile.writeGeneratedFile(root, { path: "symdir/a.txt", contents: "x" }))
+                  )
+                  expect(Exit.isFailure(exit)).toBe(true)
+                } else if (caseKind === "write-and-check-ok") {
+                  await Effect.runPromise(
+                    GeneratedFile.writeGeneratedFile(root, { path: "nested/out.txt", contents: "ok\n" })
+                  )
+                  await Effect.runPromise(
+                    GeneratedFile.checkGeneratedFile(root, { path: "nested/out.txt", contents: "ok\n" })
+                  )
+                } else if (caseKind === "check-drift") {
+                  await Effect.runPromise(
+                    GeneratedFile.writeGeneratedFile(root, { path: "drift.txt", contents: "v1\n" })
+                  )
+                  const exit = await Effect.runPromise(
+                    Effect.exit(GeneratedFile.checkGeneratedFile(root, { path: "drift.txt", contents: "v2\n" }))
+                  )
+                  expect(Exit.isFailure(exit)).toBe(true)
+                } else {
+                  await Effect.runPromise(
+                    GeneratedFile.writeGeneratedFile(root, { path: "target.txt", contents: "hi" })
+                  )
+                  await Effect.runPromise(
+                    GeneratedFile.writeGeneratedSymlink(root, { path: "link.txt", target: "target.txt" })
+                  )
+                  await Effect.runPromise(
+                    GeneratedFile.checkGeneratedSymlink(root, { path: "link.txt", target: "target.txt" })
+                  )
+                  const badExit = await Effect.runPromise(
+                    Effect.exit(GeneratedFile.checkGeneratedSymlink(root, { path: "link.txt", target: "other.txt" }))
+                  )
+                  expect(Exit.isFailure(badExit)).toBe(true)
+                }
+              })
+              return true
+            }),
+          { executions: Math.max(fsExecutions, 18), seed: seed + 1 }
+        )
+      )
+      assertPassed(report)
+    },
+    30_000
+  )
 
-              const payload: JevLint.Payload = {
-                rules: [
-                  {
-                    id: "no-bad",
-                    files: [Input.glob("sample.ts")],
-                    lookFor: "Does the file contain a bad pattern?",
-                    violation: "contains bad pattern",
-                    compliant: "no bad pattern",
-                    severity: "error"
-                  }
-                ],
-                threshold: 0.7,
-                failOn: "error",
-                model: "openai/gpt-5-mini"
-              }
+  it(
+    "JevLint.review covers invalid payload, oversized file not-judged, judge error, unanswered rule & threshold findings",
+    async () => {
+      const arb = Arbitrary.schema(
+        Schema.Struct({
+          mode: Schema.Literals(["bad-payload", "oversized", "judge-fail", "missing-answer", "finding-error", "clean"])
+        })
+      )
+      const report = await Effect.runPromise(
+        Fuzz.run(
+          arb,
+          ({ mode }) =>
+            Effect.promise(async () => {
+              await withTempDir("smthrs-t7d-jev-", async (root) => {
+                const targetFile = NodePath.join(root, "sample.ts")
+                await Fs.writeFile(
+                  targetFile,
+                  mode === "oversized" ? "x".repeat(JevLint.maximumJudgedFileBytes + 64) : "export const x = 1\n"
+                )
 
-              const fakeEvaluator = {
-                evaluate: () => {
-                  if (mode === "judge-fail") {
-                    return Effect.fail({ _tag: "JevError", message: "provider down" } as never)
-                  }
-                  if (mode === "missing-answer") {
-                    return Effect.succeed({ answers: {}, usage: { inputTokens: 10 } } as never)
-                  }
-                  if (mode === "finding-error") {
+                const payload: JevLint.Payload = {
+                  rules: [
+                    {
+                      id: "no-bad",
+                      files: [Input.glob("sample.ts")],
+                      lookFor: "Does the file contain a bad pattern?",
+                      violation: "contains bad pattern",
+                      compliant: "no bad pattern",
+                      severity: "error"
+                    }
+                  ],
+                  threshold: 0.7,
+                  failOn: "error",
+                  model: "openai/gpt-5-mini"
+                }
+
+                const fakeEvaluator = {
+                  evaluate: () => {
+                    if (mode === "judge-fail") {
+                      return Effect.fail({ _tag: "JevError", message: "provider down" } as never)
+                    }
+                    if (mode === "missing-answer") {
+                      return Effect.succeed({ answers: {}, usage: { inputTokens: 10 } } as never)
+                    }
+                    if (mode === "finding-error") {
+                      return Effect.succeed({
+                        answers: { "no-bad": { type: "boolean", value: true, probability: 0.95 } },
+                        usage: { inputTokens: 25 }
+                      } as never)
+                    }
                     return Effect.succeed({
-                      answers: { "no-bad": { type: "boolean", value: true, probability: 0.95 } },
-                      usage: { inputTokens: 25 }
+                      answers: { "no-bad": { type: "boolean", value: false, probability: 0.1 } },
+                      usage: { inputTokens: 15 }
                     } as never)
                   }
-                  return Effect.succeed({
-                    answers: { "no-bad": { type: "boolean", value: false, probability: 0.1 } },
-                    usage: { inputTokens: 15 }
-                  } as never)
                 }
-              }
 
-              const exit = await Effect.runPromise(
-                Effect.exit(
-                  JevLint.review(
-                    { workspaceRoot: root, judge: Layer.succeed(Evaluator.Evaluator, fakeEvaluator as never), concurrency: 2, timeoutMs: 5_000 },
-                    mode === "bad-payload" ? ({ rules: [] } as never) : payload
+                const exit = await Effect.runPromise(
+                  Effect.exit(
+                    JevLint.review(
+                      {
+                        workspaceRoot: root,
+                        judge: Layer.succeed(Evaluator.Evaluator, fakeEvaluator as never),
+                        concurrency: 2,
+                        timeoutMs: 5_000
+                      },
+                      mode === "bad-payload" ? ({ rules: [] } as never) : payload
+                    )
                   )
                 )
-              )
-              if (mode === "clean") {
-                expect(Exit.isSuccess(exit)).toBe(true)
-              } else {
-                expect(Exit.isFailure(exit)).toBe(true)
-              }
-            })
-            return true
-          }),
-        { executions: Math.max(fsExecutions, 12), seed: seed + 2 }
+                if (mode === "clean") {
+                  expect(Exit.isSuccess(exit)).toBe(true)
+                } else {
+                  expect(Exit.isFailure(exit)).toBe(true)
+                }
+              })
+              return true
+            }),
+          { executions: Math.max(fsExecutions, 12), seed: seed + 2 }
+        )
       )
-    )
-    assertPassed(report)
-  }, 30_000)
+      assertPassed(report)
+    },
+    30_000
+  )
 
   it("JobKeeper.childrenOf & allEnded cover Linux /proc and non-Linux signal paths", async () => {
     const arb = Arbitrary.schema(

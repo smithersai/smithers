@@ -184,7 +184,7 @@ describe("Affected.changedPaths jj workspace support", () => {
         { base: "HEAD" },
         async (request) => {
           calls.push({ command: request.command, args: request.args })
-          request.stdout?.('"packages/b/src/index.ts"\0"packages/a/src/index.ts"\0"packages/a/src/index.ts"\0')
+          request.stdout?.("\"packages/b/src/index.ts\"\0\"packages/a/src/index.ts\"\0\"packages/a/src/index.ts\"\0")
           return 0
         }
       )
@@ -196,7 +196,7 @@ describe("Affected.changedPaths jj workspace support", () => {
             "--color=never",
             "diff",
             "--template",
-            'if(status == "renamed", json(source.path()) ++ "\\0") ++ json(path) ++ "\\0"',
+            "if(status == \"renamed\", json(source.path()) ++ \"\\0\") ++ json(path) ++ \"\\0\"",
             "--from=@-",
             "--to=@"
           ]

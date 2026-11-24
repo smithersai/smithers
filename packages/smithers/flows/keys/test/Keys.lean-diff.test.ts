@@ -100,7 +100,7 @@ beforeAll(() => {
     if (built.status !== 0) throw new Error(`lake build failed in ${specDir}:\n${built.stdout}\n${built.stderr}`)
   }
   oracle = start()
-})
+}, 120_000)
 
 afterAll(() => {
   if (oracleReady) oracle.close()

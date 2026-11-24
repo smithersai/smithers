@@ -88,7 +88,11 @@
 import { spawnSync } from "node:child_process"
 import { createHash, randomUUID } from "node:crypto"
 import * as NodeFs from "node:fs"
-import { findPackageJSON } from "node:module"
+import * as NodeModule from "node:module"
+const findPackageJSON = (
+  specifier: string | URL,
+  base?: string | URL
+): string | undefined => NodeModule.findPackageJSON(specifier, base)
 import * as NodeOs from "node:os"
 import * as NodePath from "node:path"
 import * as Environment from "../Environment.ts"

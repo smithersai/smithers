@@ -1810,21 +1810,21 @@ Offers a payload to the queue under the name `DurableQueue/<name>`, attaches a t
 
 Creates the worker effect that processes items from the queue. It throws a `RangeError` when `concurrency` is not a positive safe integer.
 
-Each item runs as a durable execution named by the deferred it completes, `DurableQueue/<name>/item`: a `handle` step runs the handler and records its exit, then a `complete` step records that exit against the caller's deferred under `DurableQueue.completionRetryPolicy`, which never gives up. A completion the store refuses is retried on its own and never runs the handler again; the caller always receives the handler's exit once the store records it. Until the handler's exit is recorded, a crash runs the handler again. A handler that exits with interruption alone records nothing: the `handle` step runs it again, from 500 ms, growing by half, to a minute between tries, without a limit, while the worker keeps the item. The persisted queue never drops an item: a delivery whose execution could not start is redelivered on the queue's own schedule, and each delivery attaches to the same execution.
+Each item runs as a durable execution named by the deferred it completes, `DurableQueue/<name>/item`: a `handle` step runs the handler and records its exit, then a `complete` step records that exit against the caller's deferred under `DurableQueue.completionRetryPolicy`, for at most a day. When that day runs out the execution ends holding the exit, and each later delivery of the item records it against the caller's deferred until the store takes it; only then is the item acknowledged. A completion the store refuses is retried and never runs the handler again; the caller always receives the handler's exit once the store records it. Until the handler's exit is recorded, a crash runs the handler again. A handler that exits with interruption alone records nothing: the `handle` step runs it again, from 500 ms, growing by half, to a minute between tries, without a limit, while the worker keeps the item. The persisted queue never drops an item: a delivery whose execution could not start is redelivered on the queue's own schedule, and each delivery attaches to the same execution.
 
 ### `DurableQueue.CompletionUnavailable`
 
 - **Type:** `Schema.TaggedError` with field `queue: string`
 - **Since:** `1.0.0`
 
-The `complete` step's failure when the store refused to record a handler's exit. Its fault class is `infra`, and the step retries it.
+The `complete` step's failure when the store refused to record a handler's exit. Its fault class is `infra`, and the step retries it. The item's execution catches it once the retries run out, so no execution ends with it.
 
 ### `DurableQueue.completionRetryPolicy`
 
 - **Type:** `RetryPolicy.RetryPolicy`
 - **Since:** `1.0.0`
 
-How the `complete` step retries: from 500 ms, growing by half, to a minute between tries, without a limit.
+How the `complete` step retries: from 500 ms, growing by half, to a minute between tries, for at most a day.
 
 ### `DurableQueue.worker`
 
@@ -5908,7 +5908,7 @@ https://smithers.sh/docs/reference/api/agent/
 
 > **Related APIs:** [`@smthrs/capability`](/docs/reference/api/capability/) · [`@smthrs/control`](/docs/reference/api/control/) · [`@smthrs/core`](/docs/reference/api/core/) · [`@smthrs/engine-store`](/docs/reference/api/engine-store/) · [`@smthrs/flow`](/docs/reference/api/flow/) · [`@smthrs/harness`](/docs/reference/api/harness/) · [`@smthrs/journal`](/docs/reference/api/journal/) · [`@smthrs/kernel`](/docs/reference/api/kernel/) · [`@smthrs/memory`](/docs/reference/api/memory/) · [`@smthrs/model`](/docs/reference/api/model/) · [`@smthrs/notifications`](/docs/reference/api/notifications/) · [`@smthrs/observability`](/docs/reference/api/observability/) · [`@smthrs/plan`](/docs/reference/api/plan/) · [`@smthrs/plugin`](/docs/reference/api/plugin/) · [`@smthrs/registry`](/docs/reference/api/registry/) · [`@smthrs/run-store`](/docs/reference/api/run-store/) · [`@smthrs/std`](/docs/reference/api/std/)
 
-`@smthrs/agent` exports thirty-two modules from its root entry point, and each is
+`@smthrs/agent` exports thirty-three modules from its root entry point, and each is
 also importable from `@smthrs/agent/<Module>`:
 
 ```ts
@@ -8725,6 +8725,15 @@ the sandbox's separate content key, intentionally not equal to the durable
 activity key, which nests effects under the body and includes the composition
 digest.
 
+## ModelPolicy
+
+Vendor-neutral model selection policy enforced on an external agent session before any prompt turn is sent.
+
+- `ModelPolicy` — schema constraining `model`, `allowedPrefixes`, and `deniedPrefixes`.
+- `REFUSAL_REASONS` — `["missing_model", "denied_prefix", "not_allowed", "mismatch"]`.
+- `ModelPolicyRefused` — tagged error (`modelId`, `reason`) raised when a session model violates the policy.
+- `checkModel(policy, modelId)` — validates `modelId` against `policy`, failing closed with `ModelPolicyRefused`.
+
 ## ModelStep
 
 One model call as a durable, sealed flow step. It runs inside a flow body,
@@ -9867,10 +9876,10 @@ interface Service {
 }
 ```
 
-| Member | Behavior                                                                                                                                                                                                                                  |
-| ------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `get`  | The entry at `key`, or `None` on a miss. Every hit returns a new array. A stored entry over `maxEntryBytes` or `maxMetadataBytes` fails `corrupt`; its body is read up to the bound, then cancelled.                                      |
-| `put`  | Stores a copy of `entry` and answers `stored`. An entry with more than `maxEntryBytes` of bytes, or more than `maxMetadataBytes` (1,024) of UTF-8 JSON metadata, stores nothing and answers `too_large`. Storing a key again replaces it. |
+| Member | Behavior                                                                                                                                                                                                                                                                                                |
+| ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `get`  | The entry at `key`, or `None` on a miss. Every hit returns a new array. A stored entry over `maxEntryBytes` or `maxMetadataBytes` fails `corrupt`; its body is read up to the bound, then cancelled.                                                                                                    |
+| `put`  | Stores a copy of `entry` and answers `stored`. An entry with more than `maxEntryBytes` of bytes, or more than `maxMetadataBytes` (1,024) of UTF-8 JSON metadata, stores nothing and answers `too_large`, as does an entry the backend declines for its own size bound. Storing a key again replaces it. |
 
 `ImmutableCache` is the service tag, with identity
 `@smthrs/artifacts/ImmutableCache`.
@@ -9902,9 +9911,15 @@ Answers from the cache, else runs `compute`, stores its entry and answers it.
 ```ts
 interface WebCache {
   readonly match: (url: string) => Promise<Response | undefined>
-  readonly put: (url: string, response: Response) => Promise<void>
+  readonly put: (url: string, response: Response) => Promise<void | "too_large">
 }
 ```
+
+A `put` that resolves stored the response. A backend with its own size bound
+answers `"too_large"` when it declined the response and stored nothing, and the
+service's `put` then answers `too_large`; `makeMemoryWebCache` does so for an
+entry whose cost alone is over `maxTotalBytes`, and for every entry when
+`maxEntries` is under one.
 
 A browser's `caches.open(name)` and a Worker's `caches.default` both satisfy
 `WebCache`. The host layers are `EdgeCache.layer` in
@@ -10181,6 +10196,14 @@ per Git invocation, defaults to 60,000 milliseconds, and must be an integer
 from 1 through 86,400,000. Each output stream is limited to 16 MiB and decoded
 as strict UTF-8. Explicit files bypass Git. An already aborted signal refuses
 the call before discovery.
+
+A workspace that holds `.jj` and no `.git` is read through Jujutsu, where the
+base `HEAD` means `@-`. `baseTexts(root, { base, paths })` returns the text
+each path held at the base, with no entry for a path the base holds no file
+at. `baseFiles(root, { base })` lists every file the base holds; a Git
+submodule is another checkout and is left out. `select` reads a backslash as a separator only on Windows, or on the host
+its `platform` option names; every other host keeps it as a filename
+character.
 
 `AffectedGitError` carries `_tag` (`smithers-build/AffectedGitError`), `code`, the exact Git `args`, and `cause`.
 Codes distinguish `timed_out`, `cancelled`, `nonzero_exit`, `process_failed`,
@@ -10572,6 +10595,21 @@ declared cache directory or `undefined` on failure. Successful probes
 are reused only while the workspace declaration and its imported configuration
 have the same content digest. Failed probes are retried on the next call;
 `loadWorkspaceDeclaration` remains the rejecting, unmemoized loader.
+
+`PackageLoader.loadAt(checkout, { changed, texts, files }, boundaries)`
+evaluates the declaration graph a base revision held. It evaluates the base's
+workspace declaration first, and `boundaries` reads the cache directory, the
+child repositories and the `discovery.prune` paths off it.
+`PackageDiscovery.discoverAt(checkout, files, boundaries)` then finds the
+base's packages in `files`, the list of files the base holds, within those
+boundaries. The checkout's walk decides nothing, so a `CACHEDIR.TAG`, a nested
+checkout or a prune path added since removes no package. A package declaration
+added since is left out, and so is one that only the checkout holds because
+version control ignores it. Every changed module is read from `texts`, one
+deleted since included, and a changed module with no base text is refused.
+`owners --diff` resolves against this graph. `loadAt` repeats none of `load`'s
+static checks, and reads whatever a declaration takes from the file system from
+the checkout.
 
 ## Workspace
 
@@ -11184,7 +11222,15 @@ https://smithers.sh/docs/reference/api/canonical/
 The package provides canonical serialization, its schema and errors, collection sorting for durable identity, bounded JSON admission, and an array-excluding record guard.
 
 ```ts
-import { Canonical, CanonicalError, canonicalize, nativeBrand, sortCollections } from "@smthrs/canonical"
+import {
+  Canonical,
+  CanonicalError,
+  canonicalize,
+  isNativeUrl,
+  nativeBrand,
+  slotlessProxy,
+  sortCollections
+} from "@smthrs/canonical"
 import type { CanonicalErrorCode, NativeBrand } from "@smthrs/canonical"
 ```
 
@@ -11192,7 +11238,7 @@ The schema is also importable as `@smthrs/canonical/Canonical`. The shape guard 
 blocked in the export map.
 
 `@smthrs/canonical/Serializer` exports the same `canonicalize`, `CanonicalError`,
-`CanonicalErrorCode`, `nativeBrand` and `NativeBrand` without loading Effect. Wire contracts can use that
+`CanonicalErrorCode`, `nativeBrand`, `NativeBrand`, `isNativeUrl` and `slotlessProxy` without loading Effect. Wire contracts can use that
 entry point while retaining identical canonical bytes and error identities.
 
 The behavior every entry below shares is on
@@ -11390,6 +11436,46 @@ realm unboxes. Use it when another serializer must make the same decision.
 nativeBrand(Object.setPrototypeOf(new ArrayBuffer(4), null)) // "ArrayBuffer"
 nativeBrand(Object.create(Number.prototype)) // undefined
 ```
+
+A host that publishes `node:util/types` (Node, Bun, Cloudflare Workers) answers
+from its slot predicates, so an ordinary object costs no thrown error. On any
+other host, a browser included, each slot an object lacks costs one caught
+`TypeError`, paid once per object.
+
+## isNativeUrl
+
+```ts
+const isNativeUrl: (value: object) => boolean
+```
+
+`isNativeUrl(value)` is `true` only for a real `URL`, whatever its prototype.
+A `URL` keeps its address in internal slots and has no own keys, so one whose
+prototype was replaced has no `toJSON` and would serialize as `{}`.
+`canonicalize` refuses such a value as `canonical_unsupported_value: URL`; an
+ordinary `URL` still serializes through its `toJSON`.
+
+No host has a non-throwing `URL` predicate, so this check is separate from
+`nativeBrand`: an object that is not a `URL` costs one caught `TypeError`, once.
+`canonicalize` therefore runs it only for a record with no own enumerable keys
+or with a `null` prototype. A `URL` moved onto `Object.prototype` and then
+given own enumerable keys is not detected.
+
+```ts
+isNativeUrl(Object.setPrototypeOf(new URL("https://example.com/a"), null)) // true
+isNativeUrl({}) // false
+```
+
+## slotlessProxy
+
+```ts
+const slotlessProxy: <T extends object>(target: T, handler: ProxyHandler<T>) => T
+```
+
+Returns `new Proxy(target, handler)` and records that it has no internal
+slots, so `nativeBrand` and `isNativeUrl` answer for it without probing. A
+Proxy never has slots, whatever its target. Use it for a view that stands in
+for a value during canonicalization, so a host without slot predicates probes
+the value once and not its view as well.
 
 ## sortCollections
 
@@ -16677,7 +16763,10 @@ configure.
 ### postgresLocation
 
 ```ts
-const postgresLocation: (filename: string) => { readonly url: string; readonly schema: string } | undefined
+const postgresLocation: (
+  filename: string,
+  settings?: DatabaseSettings | undefined
+) => { readonly url: string; readonly schema: string } | undefined
 ```
 
 Where `layer` would open `filename` on PostgreSQL: the connection URL without
@@ -16687,6 +16776,11 @@ keeps. Invalid selection raises `UnsupportedDatabase` immediately here;
 checked only when opening the database.
 `postgres://…?schema=<schema>` opens that exact schema, so a caller that copies
 a store into another schema addresses the copy by URL.
+`settings` are the selection settings `layer` reads (`SMITHERS_BACKEND`,
+`SMITHERS_POSTGRES_URL`, `DATABASE_URL`, `SMITHERS_POSTGRES_SCHEMA`), typed
+`DatabaseSettings = Readonly<Record<string, string | undefined>>`. They default
+to the process environment; pass the same `settings` a layer was given to see
+where that layer opens.
 
 ### NodeDatabaseOptions
 
@@ -16697,16 +16791,18 @@ interface NodeDatabaseOptions {
   readonly busyTimeout?: Duration.Input | undefined
   readonly sqlite?: Omit<SqliteClient.SqliteClientConfig, "filename"> | undefined
   readonly readOnly?: boolean | undefined
+  readonly settings?: DatabaseSettings | undefined
 }
 ```
 
-| Field         | Meaning                                                                                                                                                                                                                                       |
-| ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `filename`    | The SQLite database filename. A `file:` URI is accepted, and `:memory:` opens a private in-memory database. The parent directory is not created.                                                                                              |
-| `mode`        | Creation permissions for a new plain-path database, masked by the process umask. Defaults to `0o600`; WAL and SHM sidecars inherit the main file's mode. Existing files, `file:` URIs, temporary databases and read-only opens are unchanged. |
-| `busyTimeout` | Synchronous SQLite lock wait. Defaults to `0` so open and durable-write retries wait cooperatively, and to one second for a read-only open. Overrides `sqlite.busyTimeout` when supplied.                                                     |
-| `sqlite`      | Additional driver configuration. WAL remains enabled unless explicitly disabled. An explicit `sqlite.busyTimeout` is honored when `busyTimeout` is absent.                                                                                    |
-| `readOnly`    | Opens an existing store for reading only. SQLite opens read-only without converting to WAL; PostgreSQL skips schema creation and runs every transaction `READ ONLY`. Nothing is created, migrated or locked for writing.                      |
+| Field         | Meaning                                                                                                                                                                                                                                                |
+| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `filename`    | The SQLite database filename. A `file:` URI is accepted, and `:memory:` opens a private in-memory database. The parent directory is not created.                                                                                                       |
+| `mode`        | Creation permissions for a new plain-path database, masked by the process umask. Defaults to `0o600`; WAL and SHM sidecars inherit the main file's mode. Existing files, `file:` URIs, temporary databases and read-only opens are unchanged.          |
+| `busyTimeout` | Synchronous SQLite lock wait. Defaults to `0` so open and durable-write retries wait cooperatively, and to one second for a read-only open. Overrides `sqlite.busyTimeout` when supplied.                                                              |
+| `sqlite`      | Additional driver configuration. WAL remains enabled unless explicitly disabled. An explicit `sqlite.busyTimeout` is honored when `busyTimeout` is absent.                                                                                             |
+| `readOnly`    | Opens an existing store for reading only. SQLite opens read-only without converting to WAL; PostgreSQL skips schema creation and runs every transaction `READ ONLY`. Nothing is created, migrated or locked for writing.                               |
+| `settings`    | Selects SQLite or PostgreSQL for this store. Defaults to the process environment, read when the layer is built. Two layers given different settings select independently in one process; the shared selection code never reads the environment itself. |
 
 ### UnsupportedDatabaseCode
 
@@ -16766,7 +16862,7 @@ failed-commit recovery as NodeDatabase. As on Node, `.raw` on a write without
 result columns returns `{ changes, lastInsertRowid }`, so `affectedRows` reads
 its count; the upstream `@effect/sql-sqlite-bun` client returns `[]` there.
 Options contain `filename`, optional `sqlite` settings from the bundled client,
-`busyTimeout`, and `readOnly`, which behave as on `NodeDatabase`.
+`busyTimeout`, `readOnly` and `settings`, which behave as on `NodeDatabase`.
 The synchronous `busyTimeout` defaults to `0` for writable opens and one
 second for read-only opens, including `sqlite.readonly`. A top-level
 `busyTimeout` overrides `sqlite.busyTimeout`; either accepts `Duration.Input`.
@@ -17450,7 +17546,9 @@ retry from a step `unsupported`.
 Every list read (`dueClocks`, `pendingClocks`, `completedDeferreds`,
 `waitingRuns`, `runParents`, `runChildren`, and `runChildrenOf`) skips a row that will not decode
 and logs a storage-integrity warning naming its primary key, so one corrupt row
-costs its own row and nothing else. The point reads `deferred`, `clock`, and
+costs its own row and nothing else. A paged `waitingRuns` read continues past
+such rows until its page is full or storage has no more, so a short page always
+means the end of the set. The point reads `deferred`, `clock`, and
 `waiting` still die on such a row: reporting "no row" for a completion or
 deadline that is durably recorded but unreadable would re-run work whose side
 effects already ran.
@@ -18716,7 +18814,9 @@ This package's own set creates deferred/clock state, selection beliefs, and the
 `flows_plan_input_legacy_runs` recovery tables. The plan set's block (`4000`)
 comes last. The database loader supports forward additions to an already
 installed lower block, so migrations `3003` and `3004` also run on existing installations
-whose global cursor reached `4003`; earlier holes remain refusals. See
+whose global cursor reached `4003`; earlier holes remain refusals. Migration
+`3011` indexes parked `flows_runs` rows in `run_id` order for the paged
+`waitingRuns` sweeps. See
 [`@smthrs/database`](/docs/reference/api/database/) for how namespaced sets compose without
 colliding.
 
@@ -29169,8 +29269,8 @@ smthrs migrate --apply --seat anthropic:claude-sonnet-4-5
 
 ## Import forms
 
-The root entry point exports the scanner modules, plus `Contract`, `Gate`, and
-`Options`, as namespaces. Each is also importable from its own subpath:
+The root entry point exports the scanner modules, plus `SqliteStore`,
+`Contract`, `Gate`, and `Options`, as namespaces. Each is also importable from its own subpath:
 
 ```ts
 import { Detect, Inventory, Mapping, Report, RunState, Scan, Units } from "@smthrs/migrate"
@@ -29191,7 +29291,8 @@ import * as Command from "@smthrs/migrate/flow/Command"
 map. `@smthrs/migrate/package.json` is exported.
 
 Every scanner is an Effect requiring `FileSystem.FileSystem` and `Path.Path`,
-and every one fails with `MigrateError`. See
+and every one fails with `MigrateError`. A scan that reads a 0.x database also
+needs a SQLite engine: see [`SqliteStore`](#sqlitestore). See
 [Read a project from your own script](https://github.com/smithersai/smithers/blob/main/packages/smithers/migrate/docs/guides/embed-the-scanners.md) for a
 runnable composition.
 
@@ -29895,16 +29996,16 @@ session and cache are released when the scan ends.
 
 ### Exports
 
-| Export                | Signature                                                                                                             | What it is                                                                             |
-| --------------------- | --------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
-| `scan`                | `(root: string, detection: Detection, options?: Options) => Effect<RunStateReport, MigrateError, FileSystem \| Path>` | The read-only run-state pass.                                                          |
-| `RunStateReport`      | `interface`                                                                                                           | The verdict, the databases, the backends, the state directories, and the instructions. |
-| `roots`               | `(report: RunStateReport) => ReadonlyArray<string>`                                                                   | Every project-relative directory run state lives in, nested ones folded in.            |
-| `instructionText`     | `{ live, parked, archive, backend }`                                                                                  | The four operator texts, rendered verbatim into the report and onto stderr.            |
-| `readDatabase`        | `(file, relativePath, siblings, now, liveWindowMs) => DatabaseFinding`                                                | Opens one SQLite file read only. A throw becomes `readable: false`.                    |
-| `terminalStatuses`    | `ReadonlyArray<string>`                                                                                               | `finished`, `failed`, `cancelled`, `continued`. Everything else blocks.                |
-| `defaultLiveWindowMs` | `number`                                                                                                              | How recent a heartbeat must be for a run to count as live: ten minutes.                |
-| `Options`             | `interface`                                                                                                           | The clock and the live window a scan uses.                                             |
+| Export                | Signature                                                                                                             | What it is                                                                                  |
+| --------------------- | --------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| `scan`                | `(root: string, detection: Detection, options?: Options) => Effect<RunStateReport, MigrateError, FileSystem \| Path>` | The read-only run-state pass.                                                               |
+| `RunStateReport`      | `interface`                                                                                                           | The verdict, the databases, the backends, the state directories, and the instructions.      |
+| `roots`               | `(report: RunStateReport) => ReadonlyArray<string>`                                                                   | Every project-relative directory run state lives in, nested ones folded in.                 |
+| `instructionText`     | `{ live, parked, archive, backend }`                                                                                  | The four operator texts, rendered verbatim into the report and onto stderr.                 |
+| `readDatabase`        | `(file, relativePath, siblings, now, liveWindowMs) => Effect<DatabaseFinding>`                                        | Reads one SQLite file read only through `SqliteStore`. A failure becomes `readable: false`. |
+| `terminalStatuses`    | `ReadonlyArray<string>`                                                                                               | `finished`, `failed`, `cancelled`, `continued`. Everything else blocks.                     |
+| `defaultLiveWindowMs` | `number`                                                                                                              | How recent a heartbeat must be for a run to count as live: ten minutes.                     |
+| `Options`             | `interface`                                                                                                           | The clock and the live window a scan uses.                                                  |
 
 The finding types are `RunRow`, `DatabaseFinding`, `ExternalDatabase`,
 `BackendSetting`, and `StateDir`.
@@ -29915,13 +30016,15 @@ file, and never connects to Postgres.
 
 It opens each candidate SQLite file (`smithers.db`, `.smithers/smithers.db`,
 every `dbPath:` literal in project source, every `SMITHERS_DB` value in a
-dotenv file) with `node:sqlite` in read-only mode and records the
+dotenv file) read only, through the host's [`SqliteStore`](#sqlitestore), and records the
 `_smithers_*` tables, the migration count and highest id, the runs grouped by
 status, and every row whose status is not `finished`, `failed`, `cancelled`, or
 `continued`. A row whose `heartbeat_at_ms` is within ten minutes of `now` is
 `live`; anything older is `parked`. A database that will not open is recorded
 as unreadable and blocks exactly as a live run does, because the tool cannot
 prove the project has no work in flight.
+A host that provides no SQLite engine is the same case: every database is
+unreadable, and the scan blocks.
 
 Postgres and PGlite are recorded from settings: `backend:` in
 `smithers.config.ts`, `createSmithersPostgres(`, `SMITHERS_BACKEND`,
@@ -29955,6 +30058,48 @@ found run state in: the state directories, and the parent of each database and
 gateway state file, with nested roots folded into their parents. A checkpoint
 records that list so `Checks.run` can prove nothing was added under any of
 them.
+
+## SqliteStore
+
+The SQLite seam. The run-state scan reads a 0.x database and an apply takes a
+SQLite writer lock, and both reach the engine through this service, so
+`import "@smthrs/migrate"` loads no SQLite module in a browser or a Worker.
+
+### Exports
+
+| Export        | Signature                                            | What it is                                                                           |
+| ------------- | ---------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| `SqliteStore` | `Context.Reference<Service>`                         | The host's SQLite engine. Its default fails every call with `reason: "unavailable"`. |
+| `Service`     | `interface`                                          | `read` and `lock`.                                                                   |
+| `Query`       | `(sql: string, ...parameters) => ReadonlyArray<Row>` | Runs one statement inside a `read`.                                                  |
+| `Row`         | `Readonly<Record<string, unknown>>`                  | One result row, by column name.                                                      |
+| `Lease`       | `{ release: Effect<void> }`                          | A held writer lock. Releasing twice does nothing.                                    |
+| `SqliteError` | `Data.TaggedError` with `reason` and `cause`         | `busy`, `failed`, or `unavailable`, with the engine's own error.                     |
+
+`Service.read(file, use)` opens `file` read only, calls `use` with a `Query`,
+and closes the database when `use` returns or throws. `Service.lock(file)`
+takes the reserved writer lock without waiting and fails with `busy` when
+another connection holds it.
+
+`SqliteStore` has a default, so no scanner gains a requirement. On Node,
+provide the engine from `@smthrs/migrate/SqliteStoreNode`, which is the one
+module in the package that imports `node:sqlite`:
+
+```ts
+import * as SqliteStoreNode from "@smthrs/migrate/SqliteStoreNode"
+
+const program = scan.pipe(Effect.provide(SqliteStoreNode.layer))
+```
+
+| Export    | Signature      | What it is                                 |
+| --------- | -------------- | ------------------------------------------ |
+| `layer`   | `Layer<never>` | Provides `SqliteStore` from `node:sqlite`. |
+| `service` | `Service`      | The same engine as a value.                |
+
+`Layers.layerNode`, `Layers.layerNodeScanned`, `Layers.layerPlan`, and
+`Layers.layerScripted` already provide it, so `Command.runNode` and the
+`smithers-migrate` binary need nothing more. Without it, a scan reports every
+database as unreadable and blocks, and `Lock.acquire` fails with `io`.
 
 ## Inventory
 
@@ -30427,7 +30572,8 @@ step refuse the same layouts.
 Import from `@smthrs/migrate/flow/Lock`. Every apply acquires one lock for the
 canonical project root, independently of its report directory. The authority
 is a SQLite writer transaction held until release, on the permanent file
-`.smithers-migrate/apply.lock.sqlite`. The adjacent JSON owner record is
+`.smithers-migrate/apply.lock.sqlite`, taken through the host's
+[`SqliteStore`](#sqlitestore). The adjacent JSON owner record is
 diagnostic: an incomplete record never authorizes a competing apply.
 
 | Export    | Signature                                                                 | What it is                                                                                                                                                            |
@@ -32315,14 +32461,15 @@ Neither failure holds the request, its url, a header or the destination.
 
 ### Service and layer
 
-| Export             | Signature                                                                                                      | What it is                                                                                                                                                                                                                                                                                                                                                           |
-| ------------------ | -------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `ChannelsService`  | `{ available: ReadonlyArray<Channel>; send: (destination, message) => Effect.Effect<Receipt, DeliveryError> }` | `available` lists the channels with a provider. `send` makes one request; a destination or message outside its schema is refused `rejected`, then a channel with no provider `unconfigured`, before any request.                                                                                                                                                     |
-| `Channels`         | `Context.Service` under `@smthrs/notifications/Channels`                                                       | The service tag.                                                                                                                                                                                                                                                                                                                                                     |
-| `layer`            | `(options: Options) => Layer<Channels>`                                                                        | Email through Resend when `options.email` is set, Telegram through the Bot API when `options.telegram` is. It owns its Fetch transport, keeps the host's `FetchHttpClient.RequestInit` but forces `redirect: "manual"`, and bounds each send by `options.timeout`. A provider url that isn't absolute `http:` or `https:` fails the layer as a defect naming no url. |
-| `Options`          | `{ email?: EmailProvider; telegram?: TelegramProvider; timeout?: Duration.Duration }`                          |                                                                                                                                                                                                                                                                                                                                                                      |
-| `EmailProvider`    | `{ apiKey: Redacted<string>; from: string; url?: string }`                                                     | A Resend API key, the sender (`Name <address>` on a domain Resend verified, or `onboarding@resend.dev` to reach only the account's own address), and Resend's origin.                                                                                                                                                                                                |
-| `TelegramProvider` | `{ token: Redacted<string>; url?: string }`                                                                    | A bot's token from @BotFather, and the Bot API's origin.                                                                                                                                                                                                                                                                                                             |
+| Export             | Signature                                                                                                      | What it is                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| ------------------ | -------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ChannelsService`  | `{ available: ReadonlyArray<Channel>; send: (destination, message) => Effect.Effect<Receipt, DeliveryError> }` | `available` lists the channels with a provider. `send` makes one request; a destination or message outside its schema is refused `rejected`, then a channel with no provider `unconfigured`, before any request.                                                                                                                                                                                                                                                        |
+| `Channels`         | `Context.Service` under `@smthrs/notifications/Channels`                                                       | The service tag.                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| `layer`            | `(options: Options) => Layer<Channels>`                                                                        | Email through Resend when `options.email` is set, Telegram through the Bot API when `options.telegram` is. It owns its Fetch transport, keeps the host's `FetchHttpClient.RequestInit` but forces `redirect: "manual"`, and bounds each send by `options.timeout`. Injected `HttpClient` layers are not used; a host with a client of its own composes `layerClient`. A provider url that isn't absolute `http:` or `https:` fails the layer as a defect naming no url. |
+| `layerClient`      | `(options: Options) => Layer<Channels, never, HttpClient.HttpClient>`                                          | `layer` over the `HttpClient` the host provides, so the host's destination policy, proxy, TLS and instrumentation apply to every send. The client must make one request and return its answer: each send sets the fetch redirect mode to `manual`, which `FetchHttpClient.layer` and the kernel's guarded client obey, and a 3xx is refused `rejected`. Do not provide a client that follows redirects regardless.                                                      |
+| `Options`          | `{ email?: EmailProvider; telegram?: TelegramProvider; timeout?: Duration.Duration }`                          |                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| `EmailProvider`    | `{ apiKey: Redacted<string>; from: string; url?: string }`                                                     | A Resend API key, the sender (`Name <address>` on a domain Resend verified, or `onboarding@resend.dev` to reach only the account's own address), and Resend's origin.                                                                                                                                                                                                                                                                                                   |
+| `TelegramProvider` | `{ token: Redacted<string>; url?: string }`                                                                    | A bot's token from @BotFather, and the Bot API's origin.                                                                                                                                                                                                                                                                                                                                                                                                                |
 
 | Export               | Value                         |
 | -------------------- | ----------------------------- |
@@ -37692,10 +37839,12 @@ declare const make: <E, R>(
   image's user when absent), in `options.workdir` unless the command names a `cwd`; a relative `cwd` is under the
   workdir. A deployed container's `exec` refuses a user name and runs a bare `uid` as root, so a session given anything
   but `uid:gid` fails every command with `ProviderError` code `spawn_error` before it reaches the container.
-- `options.env` reaches every command, under the command's own variables. A command inherits only `PATH` from the
-  image, so `env` carries the rest, such as `HOME`.
+- `options.env` reaches every command, under the command's own variables. An explicit command value of
+  `undefined` removes the variable from the merged environment and unsets it in the guest shell, including image defaults.
 - A command's input is fed beside its output, so one that writes before it has read all its input doesn't stall.
-- `readFile` and `writeFile` are commands (`cat`), so the container needs only `sh` and `cat`; `readFile` of an absent
+- `readFile` uses a bounded `head` command and collects at most `options.maxFileBytes` (default 4 MiB).
+  `writeFile` uses `cat` and waits for complete stdin delivery; an early-exiting ordinary command settles without waiting on stalled stdin.
+  The container needs `sh`, `cat` and `head`; `readFile` of an absent
   path or a directory fails `not_found`, and `writeFile` makes the file's directories.
 - `ping` runs `true`.
 - It starts nothing: wake the container (`SandboxObject.wake`) before handing the session out. A failure of the
@@ -39065,8 +39214,14 @@ stay closed. Networking opens only for unrestricted grants across all network
 actions. Closed networking blocks socket creation. Native agent commands keep
 host Unix sockets closed when IP networking opens, except the fixed macOS
 system DNS resolver endpoint.
-The launcher receives a minimal environment; the command's environment is
-restored inside confinement without putting its values in launcher arguments.
+Protected (`Redacted`) arguments and environment values are refused before
+preparation, including the explicit unconfined fallback. Use opaque secret
+references instead. The guest receives only explicit plain environment values,
+a fixed public `PATH` (`/usr/bin:/bin:/usr/sbin:/sbin`) unless overridden, and
+private temporary paths. Ambient host values never enter the guest, regardless
+of `extendEnv`. The launcher receives a minimal environment; explicit guest
+values are restored inside confinement without putting them in launcher arguments.
+Confinement errors identify only the executable, omitting all arguments.
 macOS also denies delegation through host IPC services. Runtime paths and
 private temporary storage are bootstrap permissions;
 known host credential locations stay masked. Workspace links do not grant
@@ -39081,7 +39236,8 @@ of each runtime and package manager on it, never the home directory, a
 credential location, or a parent of the workspace. Linux admits the
 `SOCK_SEQPACKET` socketpair beside the stream pair, because pnpm starts every
 script through one and neither can name a host endpoint; `socket(AF_UNIX)` and
-the datagram pair stay refused. Entries whose name starts with one of
+the datagram pair stay refused. Both modes refuse every non-`AF_UNIX`
+`socketpair` domain, including when IP networking is open. Entries whose name starts with one of
 `hiddenPrefixes`, in any ASCII case and at any depth, are closed for reads and
 writes; on Linux a workspace directory that cannot be listed refuses the run.
 `reads` lists absolute paths the operator opens: one outside the workspace is
@@ -43851,7 +44007,7 @@ const handler = HttpSandbox.serve({ provider: retained, token })
 const provider = HttpSandbox.make({ url: "https://sandboxes.example.com", token, client })
 ```
 
-`serve` turns a retained provider (`retained: true`, `attach`, `destroy`) into `(request: Request) => Effect<Response>`, and throws a `TypeError` for any other provider. It keeps nothing between requests: each request attaches the machine it names in a scope of its own. `provider` may be a function of the session's `ResourceLimits`, which every request carries, so one session always reaches the same provider. `make` is the provider a host constructs; closing its acquiring scope destroys the machine. `spawn` starts the command detached in the machine with one short request, its output and exit status in files under `processDirectory`, and polls them with short requests from a byte offset, so no request lasts as long as the command; closing the spawn's scope signals the command and its descendants. `writeFile` crosses in `chunkBytes` (16 MiB) requests appended by offset; `readFile` is one response. Every request is idempotent and a lost one (transport failure, `5xx`, `requestTimeout`) is sent again up to `retries` times before `unavailable`. A `ProviderError` crosses as `404` or `422` with its code and message, never its cause; a missing or wrong token is `401`. There is no `fork`. Proven by `SandboxConformance` over `serve` in process and a sticky `DirectorySandbox`, through an `HttpClient` that loses requests, answers `503` and cuts bodies. See [Reach sandboxes behind an HTTP service](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/sandbox/docs/guides/reach-sandboxes-behind-an-http-service.md) for the routes.
+`serve` turns a retained provider (`retained: true`, `attach`, `destroy`) into `(request: Request) => Effect<Response>`, and throws a `TypeError` for any other provider. It keeps nothing between requests: each request attaches the machine it names in a scope of its own. `provider` may be a function of the session's `ResourceLimits`, which every request carries, so one session always reaches the same provider. `make` is the provider a host constructs; closing its acquiring scope destroys the machine. `spawn` starts the command detached in the machine with one short request, its output and exit status in files under `processDirectory`, and polls them with short requests from a byte offset, so no request lasts as long as the command; closing the spawn's scope signals the command and its descendants. `writeFile` crosses in `chunkBytes` (16 MiB) requests staged by upload ID and offset, then atomically publishes once. Acquire advertises upload version 2 and the incarnation that authorizes ranges. The old PUT returns 426. Receipts live in the provider's session state directory or under `serve.processDirectory/uploads` and are reclaimed on destruction. In-progress bytes stage privately beside the destination. Atomic publication preserves the destination's owner, group and mode. Linux guests need util-linux `flock` 2.23+; BSD guests need `lockf -k -t`. `readFile` is one response bounded by server `maxFileBytes` (4 MiB) before guest base64 encoding; client `maxResponseBytes` independently limits the response. Disconnecting a request closes its provider scope. Every request is idempotent and a lost one (transport failure, `5xx`, `requestTimeout`) is sent again up to `retries` times before `unavailable`. A `ProviderError` crosses as `404` or `422` with its code and message, never its cause; a missing or wrong token is `401`. There is no `fork`. Proven by `SandboxConformance` over `serve` in process and a sticky `DirectorySandbox`, through an `HttpClient` that loses requests, answers `503` and cuts bodies. See [Reach sandboxes behind an HTTP service](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/sandbox/docs/guides/reach-sandboxes-behind-an-http-service.md) for the routes.
 
 ## Limits
 
@@ -48730,9 +48886,9 @@ a `Position`: a run id plus a `Frame`.
 The workspace a fork lands in is named after the child run id the fork mints,
 never supplied: `smithers-fork-` plus the sanitized id capped at 64 characters
 plus a short digest of the raw id. A frame forked twice therefore gets two
-lanes, and the lane is forgotten when the service scope is released. The scope
-tracks at most 256 lanes: a fork past that forgets the oldest tracked lane at
-once, so a long-lived service holds a bounded set and closes in bounded work.
+lanes, and the lane is forgotten when the service scope is released. No lane is
+forgotten before then: a later fork never deregisters the workspace an earlier
+fork's child run may still be executing in.
 
 The mint is a durable reservation, renewed immediately before `workspaceAdd`
 to restart its stale window. A reservation reclaimed while the fork stalled

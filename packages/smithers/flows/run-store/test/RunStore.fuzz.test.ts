@@ -324,7 +324,11 @@ describe("@smthrs/run-store SQLite lifecycle, ownership, and attempt fuzz invari
               return false
             }
             return true
-          }).pipe(Effect.provide(Layer.provideMerge(RunStore.layer, Layer.provideMerge(Migrations.layer, TestDatabase.sqliteLayer)))),
+          }).pipe(
+            Effect.provide(
+              Layer.provideMerge(RunStore.layer, Layer.provideMerge(Migrations.layer, TestDatabase.sqliteLayer))
+            )
+          ),
         { seed: seed + 1, executions: Math.min(executions, 30), execution: FuzzSimulation.execution() }
       )
     )

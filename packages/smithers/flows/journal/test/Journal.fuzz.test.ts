@@ -2440,168 +2440,172 @@ describe("@smthrs/journal SqlJournal fuzz invariants", () => {
     assertFuzz(report)
   })
 
-  it("SqlJournal auto-compaction (success, failure damping, timeout), JournalTestObserver, JournalGeneration.forget, JournalDigest fault, and sink failure", async () => {
-    const arb = Arbitrary.schema(
-      Schema.Struct({
-        threshold: Schema.Int.check(Schema.isBetween({ minimum: 2, maximum: 4 })),
-        captureMode: Schema.Literals(["ok", "fail", "timeout"]),
-        channel: Schema.Literals(["durable", "lossy"]),
-        testForgetAndDigestFault: Schema.Boolean
-      })
-    )
-    const report = await Effect.runPromise(
-      Fuzz.run(
-        arb,
-        ({ threshold, captureMode, channel, testForgetAndDigestFault }) =>
-          Effect.scoped(Effect.gen(function*() {
-            let obs: Observations | undefined
-            let drains = 0
-            const observerLayer = Layer.succeed(JournalTestObserver, {
-              opened: (o) => {
-                obs = o
-              },
-              drainRegistered: () => {
-                drains++
-              }
-            })
-            let captures = 0
-            const db = yield* Layer.build(migratedDb())
-            const sql = Context.get(db, SqlClient.SqlClient)
+  it(
+    "SqlJournal auto-compaction (success, failure damping, timeout), JournalTestObserver, JournalGeneration.forget, JournalDigest fault, and sink failure",
+    async () => {
+      const arb = Arbitrary.schema(
+        Schema.Struct({
+          threshold: Schema.Int.check(Schema.isBetween({ minimum: 2, maximum: 4 })),
+          captureMode: Schema.Literals(["ok", "fail", "timeout"]),
+          channel: Schema.Literals(["durable", "lossy"]),
+          testForgetAndDigestFault: Schema.Boolean
+        })
+      )
+      const report = await Effect.runPromise(
+        Fuzz.run(
+          arb,
+          ({ threshold, captureMode, channel, testForgetAndDigestFault }) =>
+            Effect.scoped(Effect.gen(function*() {
+              let obs: Observations | undefined
+              let drains = 0
+              const observerLayer = Layer.succeed(JournalTestObserver, {
+                opened: (o) => {
+                  obs = o
+                },
+                drainRegistered: () => {
+                  drains++
+                }
+              })
+              let captures = 0
+              const db = yield* Layer.build(migratedDb())
+              const sql = Context.get(db, SqlClient.SqlClient)
 
-            const jCtx = yield* Layer.build(
-              SqlJournal.layer({
-                capacity: 32,
-                batchSize: 1,
-                overflow: "reject",
-                compaction: {
-                  entryThreshold: threshold,
-                  capture: (_runId, upTo) => {
-                    captures++
-                    if (captureMode === "fail") return Effect.fail(new Error("capture failed"))
-                    if (captureMode === "timeout") return Effect.sleep(Duration.seconds(45)).pipe(Effect.as({ upTo }))
-                    return Effect.succeed({ capturedUpTo: upTo })
+              const jCtx = yield* Layer.build(
+                SqlJournal.layer({
+                  capacity: 32,
+                  batchSize: 1,
+                  overflow: "reject",
+                  compaction: {
+                    entryThreshold: threshold,
+                    capture: (_runId, upTo) => {
+                      captures++
+                      if (captureMode === "fail") return Effect.fail(new Error("capture failed"))
+                      if (captureMode === "timeout") return Effect.sleep(Duration.seconds(45)).pipe(Effect.as({ upTo }))
+                      return Effect.succeed({ capturedUpTo: upTo })
+                    }
                   }
-                }
-              }).pipe(
-                Layer.provide(observerLayer),
-                Layer.provide(Layer.succeedContext(db))
-              )
-            )
-            const j = Context.get(jCtx, Journal.Journal)
-
-            const acOwner = { hostId: "ac-fuzz", pid: 1, nonce: "ac-nonce" }
-            yield* Leases.hold(sql, asRun("ac-run"), acOwner)
-            const emitOne = (i: number) => {
-              const inp = mkInput("ac-run", "s1", "ev", { i }, { sourceSeq: i })
-              return channel === "durable" ? j.emitDurable(inp, acOwner) : j.emitLossy(inp)
-            }
-
-            if (captureMode === "timeout") {
-              // Emit threshold entries in a forked fiber and advance TestClock past 30s timeout
-              const f = yield* Effect.gen(function*() {
-                for (let i = 0; i < threshold; i++) {
-                  yield* emitOne(i)
-                }
-                if (channel === "lossy") {
-                  // #4555: lossy writes never compact; follow with a fenced owner write to trigger capture
-                  yield* j.flush
-                  yield* j.emitDurable(
-                    mkInput("ac-run", "s1", "ev", { i: threshold }, { sourceSeq: threshold }),
-                    acOwner
-                  )
-                }
-                yield* j.flush
-              }).pipe(Effect.forkChild({ startImmediately: true }))
-              // Advance virtual clock so 30s capture timeout fires cleanly
-              for (let step = 0; step < 5; step++) {
-                yield* TestClock.adjust(Duration.seconds(10))
-                yield* Effect.yieldNow
-              }
-              yield* Fiber.join(f)
-              if (captures < 1) return false
-            } else {
-              for (let i = 0; i < threshold + 1; i++) {
-                yield* emitOne(i)
-              }
-              yield* j.flush
-              if (channel === "lossy") {
-                // #4555: lossy bursts never compact on their own
-                if (captures !== 0) return false
-                yield* j.emitDurable(
-                  mkInput("ac-run", "s1", "ev", { i: threshold + 1 }, { sourceSeq: threshold + 1 }),
-                  acOwner
-                )
-                yield* j.flush
-              }
-              if (captureMode === "ok") {
-                const ckpt = yield* j.latestCheckpoint(asRun("ac-run"))
-                if (Option.isNone(ckpt) || ckpt.value.compactedAtMs === null) return false
-                if (obs === undefined || obs.barrierCount() !== 0) return false
-              } else {
-                // Failed capture is damped and never fails emit
-                if (captures < 1) return false
-              }
-            }
-
-            if (testForgetAndDigestFault) {
-              // Exercise JournalGeneration.forget after manual truncation (including flows_journal_dedup)
-              yield* sql`DELETE FROM flows_journal_events WHERE run_id = 'ac-run'`
-              yield* sql`DELETE FROM flows_journal_checkpoints WHERE run_id = 'ac-run'`
-              yield* sql`DELETE FROM flows_journal_dedup WHERE run_id = 'ac-run'`
-              yield* JournalGeneration.forget(["ac-run"]).pipe(Effect.provide(Layer.succeedContext(db)))
-              const afterForget = yield* j.emitDurableUnfenced(
-                mkInput("ac-run", "s1", "fresh", { after: true }, { sourceSeq: 0 })
-              )
-              if (afterForget._tag !== "Accepted" || afterForget.seq !== 0) {
-                throw new Error(`afterForget: ${JSON.stringify(afterForget)}`)
-              }
-
-              // Exercise JournalDigest failure
-              const badDigestCtx = yield* Layer.build(
-                SqlJournal.layer({ capacity: 8, overflow: "reject" }).pipe(
-                  Layer.provide(Layer.succeed(JournalDigest, {
-                    digest: () => Effect.fail(new Error("digest unavailable"))
-                  })),
+                }).pipe(
+                  Layer.provide(observerLayer),
                   Layer.provide(Layer.succeedContext(db))
                 )
               )
-              const badDigestJ = Context.get(badDigestCtx, Journal.Journal)
-              // Trigger contentFingerprint via duplicate comparison after cache miss
-              yield* badDigestJ.emitDurableUnfenced(mkInput("dig-run", "s1", "ev", { a: 1 }, { sourceSeq: 0 }))
-              const digRes = yield* Effect.result(
-                badDigestJ.emitDurableUnfenced(mkInput("dig-run", "s1", "ev", { a: 2 }, { sourceSeq: 0 }))
-              )
-              if (digRes._tag !== "Failure") throw new Error("digRes expected failure")
+              const j = Context.get(jCtx, Journal.Journal)
 
-              // Pre-seed floor for sink-run so DROP TABLE hits INSERT (sink_failed),
-              // while entries() hits read_failed.
-              yield* j.emitDurableUnfenced(mkInput("sink-run", "s1", "seed", { x: 0 }))
-              yield* sql`DROP TABLE flows_journal_events`
-              const readFail = yield* Effect.flip(
-                j.entries({ runId: asRun("unseen-run"), limit: 5 })
-              )
-              if (readFail.code !== "read_failed") throw new Error(`readFail: ${readFail.code}`)
-              const durFail = yield* Effect.flip(
-                j.emitDurableUnfenced(mkInput("sink-run", "s1", "ev", { x: 1 }))
-              )
-              if (durFail.code !== "sink_failed") throw new Error(`durFail: ${durFail.code}`)
-              yield* j.emitLossy(mkInput("sink-run", "s1", "ev", { x: 2 }))
-              const lossyFail = yield* Effect.flip(j.flush)
-              if (lossyFail.code !== "sink_failed") throw new Error(`lossyFail: ${lossyFail.code}`)
-            }
+              const acOwner = { hostId: "ac-fuzz", pid: 1, nonce: "ac-nonce" }
+              yield* Leases.hold(sql, asRun("ac-run"), acOwner)
+              const emitOne = (i: number) => {
+                const inp = mkInput("ac-run", "s1", "ev", { i }, { sourceSeq: i })
+                return channel === "durable" ? j.emitDurable(inp, acOwner) : j.emitLossy(inp)
+              }
 
-            void drains
-            return true
-          })).pipe(
-            Effect.provide(TestClock.layer()),
-            Effect.provideService(Metric.MetricRegistry, new Map()),
-            Effect.provide(silentLog)
-          ),
-        { seed: seed + 24, executions: 14 }
+              if (captureMode === "timeout") {
+                // Emit threshold entries in a forked fiber and advance TestClock past 30s timeout
+                const f = yield* Effect.gen(function*() {
+                  for (let i = 0; i < threshold; i++) {
+                    yield* emitOne(i)
+                  }
+                  if (channel === "lossy") {
+                    // #4555: lossy writes never compact; follow with a fenced owner write to trigger capture
+                    yield* j.flush
+                    yield* j.emitDurable(
+                      mkInput("ac-run", "s1", "ev", { i: threshold }, { sourceSeq: threshold }),
+                      acOwner
+                    )
+                  }
+                  yield* j.flush
+                }).pipe(Effect.forkChild({ startImmediately: true }))
+                // Advance virtual clock so 30s capture timeout fires cleanly
+                for (let step = 0; step < 5; step++) {
+                  yield* TestClock.adjust(Duration.seconds(10))
+                  yield* Effect.yieldNow
+                }
+                yield* Fiber.join(f)
+                if (captures < 1) return false
+              } else {
+                for (let i = 0; i < threshold + 1; i++) {
+                  yield* emitOne(i)
+                }
+                yield* j.flush
+                if (channel === "lossy") {
+                  // #4555: lossy bursts never compact on their own
+                  if (captures !== 0) return false
+                  yield* j.emitDurable(
+                    mkInput("ac-run", "s1", "ev", { i: threshold + 1 }, { sourceSeq: threshold + 1 }),
+                    acOwner
+                  )
+                  yield* j.flush
+                }
+                if (captureMode === "ok") {
+                  const ckpt = yield* j.latestCheckpoint(asRun("ac-run"))
+                  if (Option.isNone(ckpt) || ckpt.value.compactedAtMs === null) return false
+                  if (obs === undefined || obs.barrierCount() !== 0) return false
+                } else {
+                  // Failed capture is damped and never fails emit
+                  if (captures < 1) return false
+                }
+              }
+
+              if (testForgetAndDigestFault) {
+                // Exercise JournalGeneration.forget after manual truncation (including flows_journal_dedup)
+                yield* sql`DELETE FROM flows_journal_events WHERE run_id = 'ac-run'`
+                yield* sql`DELETE FROM flows_journal_checkpoints WHERE run_id = 'ac-run'`
+                yield* sql`DELETE FROM flows_journal_dedup WHERE run_id = 'ac-run'`
+                yield* JournalGeneration.forget(["ac-run"]).pipe(Effect.provide(Layer.succeedContext(db)))
+                const afterForget = yield* j.emitDurableUnfenced(
+                  mkInput("ac-run", "s1", "fresh", { after: true }, { sourceSeq: 0 })
+                )
+                if (afterForget._tag !== "Accepted" || afterForget.seq !== 0) {
+                  throw new Error(`afterForget: ${JSON.stringify(afterForget)}`)
+                }
+
+                // Exercise JournalDigest failure
+                const badDigestCtx = yield* Layer.build(
+                  SqlJournal.layer({ capacity: 8, overflow: "reject" }).pipe(
+                    Layer.provide(Layer.succeed(JournalDigest, {
+                      digest: () => Effect.fail(new Error("digest unavailable"))
+                    })),
+                    Layer.provide(Layer.succeedContext(db))
+                  )
+                )
+                const badDigestJ = Context.get(badDigestCtx, Journal.Journal)
+                // Trigger contentFingerprint via duplicate comparison after cache miss
+                yield* badDigestJ.emitDurableUnfenced(mkInput("dig-run", "s1", "ev", { a: 1 }, { sourceSeq: 0 }))
+                const digRes = yield* Effect.result(
+                  badDigestJ.emitDurableUnfenced(mkInput("dig-run", "s1", "ev", { a: 2 }, { sourceSeq: 0 }))
+                )
+                if (digRes._tag !== "Failure") throw new Error("digRes expected failure")
+
+                // Pre-seed floor for sink-run so DROP TABLE hits INSERT (sink_failed),
+                // while entries() hits read_failed.
+                yield* j.emitDurableUnfenced(mkInput("sink-run", "s1", "seed", { x: 0 }))
+                yield* sql`DROP TABLE flows_journal_events`
+                const readFail = yield* Effect.flip(
+                  j.entries({ runId: asRun("unseen-run"), limit: 5 })
+                )
+                if (readFail.code !== "read_failed") throw new Error(`readFail: ${readFail.code}`)
+                const durFail = yield* Effect.flip(
+                  j.emitDurableUnfenced(mkInput("sink-run", "s1", "ev", { x: 1 }))
+                )
+                if (durFail.code !== "sink_failed") throw new Error(`durFail: ${durFail.code}`)
+                yield* j.emitLossy(mkInput("sink-run", "s1", "ev", { x: 2 }))
+                const lossyFail = yield* Effect.flip(j.flush)
+                if (lossyFail.code !== "sink_failed") throw new Error(`lossyFail: ${lossyFail.code}`)
+              }
+
+              void drains
+              return true
+            })).pipe(
+              Effect.provide(TestClock.layer()),
+              Effect.provideService(Metric.MetricRegistry, new Map()),
+              Effect.provide(silentLog)
+            ),
+          { seed: seed + 24, executions: 14 }
+        )
       )
-    )
-    assertFuzz(report)
-  }, 180_000)
+      assertFuzz(report)
+    },
+    180_000
+  )
 })
 
 describe("@smthrs/journal deep edge-case & fault-injection fuzz invariants", () => {

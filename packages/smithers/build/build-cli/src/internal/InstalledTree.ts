@@ -499,7 +499,9 @@ interface PoolWorker {
   >
 }
 
-class InstalledTreeIoError extends Data.TaggedError("InstalledTreeIoError")<{ readonly message: string; readonly code?: string | undefined }> {}
+class InstalledTreeIoError
+  extends Data.TaggedError("InstalledTreeIoError")<{ readonly message: string; readonly code?: string | undefined }>
+{}
 class InstalledTreeWorkerError extends Data.TaggedError("InstalledTreeWorkerError")<{ readonly message: string }> {}
 
 const workerScript = `
@@ -664,7 +666,9 @@ const spawnPoolWorker = (): PoolWorker => {
   }
   worker.on("error", failAll)
   worker.on("exit", (code) => {
-    if (entry.pending.size > 0) failAll(new InstalledTreeWorkerError({ message: `installed-tree worker exited unexpectedly with code ${code}` }))
+    if (entry.pending.size > 0) {
+      failAll(new InstalledTreeWorkerError({ message: `installed-tree worker exited unexpectedly with code ${code}` }))
+    }
   })
   return entry
 }

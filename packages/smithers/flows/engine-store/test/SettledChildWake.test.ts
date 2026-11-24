@@ -1,6 +1,6 @@
 import * as DurableWriter from "@smthrs/database/DurableWriter"
-import * as SqlClient from "effect/sql/SqlClient"
 import type * as SecureRandom from "effect/crypto/SecureRandom"
+import * as SqlClient from "effect/sql/SqlClient"
 /**
  * A settling child records its waiting parents' wakes after its terminal
  * transition commits, in separate transactions (#4774). Neither an

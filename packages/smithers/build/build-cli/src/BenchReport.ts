@@ -1,4 +1,3 @@
-import * as Data from "effect/Data"
 /**
  * Parses benchmark output from `VitestBench` and `NodeBench` targets and
  * renders a compact summary table across all settled benchmark targets.
@@ -6,7 +5,10 @@ import * as Data from "effect/Data"
  * @since 1.0.0
  */
 
+import * as Data from "effect/Data"
 import * as Ansi from "./Ansi.ts"
+
+class BenchBaselineError extends Data.TaggedError("BenchBaselineError")<{ readonly message: string }> {}
 
 /**
  * One measured benchmark row extracted from a target's output.
@@ -248,8 +250,6 @@ const parseBaselineRow = (raw: unknown): BenchmarkRow | undefined => {
  * @category parsing
  * @since 1.0.0
  */
-class BenchBaselineError extends Data.TaggedError("BenchBaselineError")<{ readonly message: string }> {}
-
 export const loadBaseline = (raw: unknown): ReadonlyArray<TargetBenchmarks> => {
   const list = Array.isArray(raw)
     ? raw

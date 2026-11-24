@@ -263,7 +263,6 @@ jobs:
           fi
         shell: "bash"
       - name: "Install PostgreSQL"
-        id: setup
         run: |
           case "$(uname -s)" in
             Linux)
@@ -291,6 +290,12 @@ jobs:
           fi
           echo "$version"
           printf '%s\n' "$path_entry" >> "$GITHUB_PATH"
+        shell: "bash"
+      - name: "Install Playwright browsers"
+        id: setup
+        run: |
+          cd 'packages/smithers/ui'
+          pnpm exec playwright install --with-deps 'chromium'
         shell: "bash"
       - name: "Repository flows"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
@@ -998,7 +1003,7 @@ jobs:
         id: setup
         run: |
           if command -v apt-get >/dev/null 2>&1; then
-            sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends 'bubblewrap' 'strace' 'tmux'
+            sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends 'bubblewrap' 'ffmpeg' 'strace' 'tmux'
             if [ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]; then
               sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
             fi

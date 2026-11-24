@@ -1,4 +1,3 @@
-import * as SqliteStoreNode from "../src/SqliteStoreNode.ts"
 import { NodeServices } from "@effect/platform-node"
 import { Fuzz } from "@smthrs/fuzz"
 import { Arbitrary, Effect, Exit, Schema } from "effect"
@@ -17,6 +16,7 @@ import * as Mapping from "../src/Mapping.ts"
 import * as MigrateError from "../src/MigrateError.ts"
 import * as RunState from "../src/RunState.ts"
 import * as Scan from "../src/Scan.ts"
+import * as SqliteStoreNode from "../src/SqliteStoreNode.ts"
 
 const executions = Number(process.env.EFFECT_FUZZ_EXECUTIONS ?? (process.env.EFFECT_FUZZ ? "250" : "100"))
 const seed = Number(process.env.EFFECT_FUZZ_SEED ?? "20261127")

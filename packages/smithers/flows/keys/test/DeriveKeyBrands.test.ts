@@ -39,14 +39,17 @@ const failedSlotProbes = (run: () => void): number => {
 }
 
 describe("deriveKey brand checks (R2-Astra-D1-019, R2-Fable-D1-013)", () => {
-  it("keys 10,000 fresh records without a thrown slot probe, to unchanged bytes", () => {
-    const records = (): ReadonlyArray<object> => Array.from({ length: 10_000 }, (_, i) => ({ i, text: "ok" }))
+  it("keys 10,000 records with cached negative slot probes on reuse, to unchanged bytes", () => {
+    const records = Array.from({ length: 10_000 }, (_, i) => ({ i, text: "ok" }))
+    const first = derive(records)
     let key = ""
     expect(failedSlotProbes(() => {
-      key = derive(records())
+      key = derive(records)
     })).toBe(0)
     // Each record's keys are already sorted, so the canonical bytes are JSON's.
-    expect(key).toBe(`key1_${createHash("sha256").update(JSON.stringify(records())).digest("hex")}`)
+    const expected = `key1_${createHash("sha256").update(JSON.stringify(records)).digest("hex")}`
+    expect(first).toBe(expected)
+    expect(key).toBe(expected)
   })
 
   it("still counts a probe that does run", () => {

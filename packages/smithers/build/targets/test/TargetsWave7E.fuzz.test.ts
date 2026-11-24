@@ -1,5 +1,5 @@
-import { Fuzz } from "@smthrs/fuzz"
 import { Flow, FlowRuntime } from "@smthrs/flow"
+import { Fuzz } from "@smthrs/fuzz"
 import { Arbitrary, Effect, Exit, Latch, Layer, Schema } from "effect"
 import * as Fs from "node:fs/promises"
 import * as Os from "node:os"
@@ -12,8 +12,8 @@ import * as Filegroup from "../src/Filegroup.ts"
 import * as Input from "../src/Input.ts"
 import * as NewPackage from "../src/NewPackage.ts"
 import * as Owners from "../src/Owners.ts"
-import * as Target from "../src/Target.ts"
 import * as PackageJson from "../src/PackageJson.ts"
+import * as Target from "../src/Target.ts"
 
 const executions = Number(process.env["EFFECT_FUZZ_EXECUTIONS"] ?? (process.env["EFFECT_FUZZ"] ? "500" : "120"))
 const fsExecutions = Math.min(executions, 14)
@@ -34,15 +34,19 @@ const withTempDir = async <A>(prefix: string, fn: (dir: string) => Promise<A>): 
   }
 }
 
-
 const runExpandLive = (workspaceRoot: string, payload: Filegroup.Payload) => {
   type Reg = (p: Filegroup.Payload, id: string) => Effect.Effect<Filegroup.Files, Filegroup.FilegroupError>
   let registered: Reg | undefined
-  const runtime = FlowRuntime.FlowRuntime.of({
-    register: (_flow: unknown, execute: Reg) => Effect.sync(() => { registered = execute }),
-    actionExecute: (action: { readonly execute: Effect.Effect<unknown, unknown> }) =>
-      Effect.map(Effect.exit(action.execute), (exit) => new Flow.Complete({ exit }))
-  } as unknown as FlowRuntime.FlowRuntime["Service"])
+  const runtime = FlowRuntime.FlowRuntime.of(
+    {
+      register: (_flow: unknown, execute: Reg) =>
+        Effect.sync(() => {
+          registered = execute
+        }),
+      actionExecute: (action: { readonly execute: Effect.Effect<unknown, unknown> }) =>
+        Effect.map(Effect.exit(action.execute), (exit) => new Flow.Complete({ exit }))
+    } as unknown as FlowRuntime.FlowRuntime["Service"]
+  )
   return Effect.scoped(Effect.gen(function*() {
     yield* Layer.build(
       Filegroup.ExpandFilegroupLive({ workspaceRoot }).pipe(
@@ -128,7 +132,9 @@ describe("@smthrs/targets Wave-7E: DocsCheck, Cargo, Owners, Filegroup, NewPacka
     const profiles = ["dev", "release", "bench-custom"] as const
 
     // Valid manifestFacts with nested metadata & arrays
-    const facts = Cargo.manifestFacts(`[package]\nname = "demo"\n[package.metadata.smithers]\ntags = ["a", "b"]\n[package.metadata.smithers.nested]\nok = true\n`)
+    const facts = Cargo.manifestFacts(
+      `[package]\nname = "demo"\n[package.metadata.smithers]\ntags = ["a", "b"]\n[package.metadata.smithers.nested]\nok = true\n`
+    )
     expect(facts.name).toBe("demo")
     expect(facts.metadata).toBeDefined()
 
@@ -191,188 +197,252 @@ describe("@smthrs/targets Wave-7E: DocsCheck, Cargo, Owners, Filegroup, NewPacka
     assertPassed(report)
   })
 
-  it("Filegroup nested sources + ExpandFilegroupLive, NewPackage.scaffold templates, DocsParity.checkDocs & PackageJson.sync cover real FS & error paths", async () => {
-    const arb = Arbitrary.schema(
-      Schema.Struct({
-        caseKind: Schema.Literals([
-          "filegroup-ok",
-          "filegroup-escape",
-          "scaffold-template-ok",
-          "scaffold-template-missing",
-          "scaffold-template-symlink",
-          "scaffold-exists",
-          "docsparity-missing",
-          "docsparity-no-title",
-          "docsparity-short",
-          "docsparity-examples",
-          "pkgjson-sync-write-check",
-          "pkgjson-sync-bad-path",
-          "pkgjson-sync-dup-gen"
-        ])
-      })
-    )
-
-    const report = await Effect.runPromise(
-      Fuzz.run(
-        arb,
-        ({ caseKind }) =>
-          Effect.promise(async () => {
-            await withTempDir("smthrs-t7e-", async (root) => {
-              if (caseKind === "filegroup-ok") {
-                await Fs.mkdir(NodePath.join(root, "pkg", "sub"), { recursive: true })
-                await Fs.writeFile(NodePath.join(root, "pkg", "sub", "a.ts"), "export const a = 1\n")
-                const inner = Filegroup.Filegroup({
-                  cwd: "pkg",
-                  srcs: [Input.glob("sub/**/*.ts", { exclude: ["sub/**/*.bak"] })]
-                })
-                const outer = Filegroup.Filegroup({
-                  srcs: [inner, inner, Input.file("pkg/sub/a.ts")]
-                })
-                const srcs = Filegroup.sources(Target.metadata(outer).attrs as Filegroup.Attrs, { packageDirectory: "", sourceFile: "PACKAGE.ts" })
-                expect(srcs.length).toBeGreaterThan(0)
-                const expanded = await Effect.runPromise(runExpandLive(root, { sources: srcs }))
-                expect(expanded.length).toBeGreaterThan(0)
-              } else if (caseKind === "filegroup-escape") {
-                const exit = await Effect.runPromise(
-                  Effect.exit(runExpandLive(root, { sources: [{ base: "/outside/somewhere", source: Input.file("a.ts") }] }))
-                )
-                expect(Exit.isFailure(exit)).toBe(true)
-              } else if (caseKind === "scaffold-template-ok") {
-                await Fs.mkdir(NodePath.join(root, "templates", "basic", "src"), { recursive: true })
-                await Fs.writeFile(NodePath.join(root, "templates", "basic", "src", "index.ts"), "export const name = \"{{name}}\"\n")
-                const res = await Effect.runPromise(
-                  NewPackage.scaffold(
-                    { workspaceRoot: root, packageName: "@smthrs/demo" },
-                    { directory: "packages", template: "templates/basic", version: "0.1.0", license: "MIT", fields: {} }
-                  )
-                )
-                expect(res.directory).toContain("packages/demo")
-              } else if (caseKind === "scaffold-template-missing") {
-                const exit = await Effect.runPromise(
-                  Effect.exit(
-                    NewPackage.scaffold(
-                      { workspaceRoot: root, packageName: "@smthrs/demo" },
-                      { directory: "packages", template: "templates/nope", version: "0.1.0", license: "MIT", fields: {} }
-                    )
-                  )
-                )
-                expect(Exit.isFailure(exit)).toBe(true)
-              } else if (caseKind === "scaffold-template-symlink") {
-                await Fs.mkdir(NodePath.join(root, "templates", "bad"), { recursive: true })
-                await Fs.writeFile(NodePath.join(root, "real.txt"), "hi")
-                await Fs.symlink(NodePath.join(root, "real.txt"), NodePath.join(root, "templates", "bad", "sym.txt"))
-                const exit = await Effect.runPromise(
-                  Effect.exit(
-                    NewPackage.scaffold(
-                      { workspaceRoot: root, packageName: "@smthrs/demo" },
-                      { directory: "packages", template: "templates/bad", version: "0.1.0", license: "MIT", fields: {} }
-                    )
-                  )
-                )
-                expect(Exit.isFailure(exit)).toBe(true)
-              } else if (caseKind === "scaffold-exists") {
-                await Fs.mkdir(NodePath.join(root, "packages", "demo"), { recursive: true })
-                const exit = await Effect.runPromise(
-                  Effect.exit(
-                    NewPackage.scaffold(
-                      { workspaceRoot: root, packageName: "@smthrs/demo" },
-                      { directory: "packages", version: "0.1.0", license: "MIT", fields: {} }
-                    )
-                  )
-                )
-                expect(Exit.isFailure(exit)).toBe(true)
-              } else if (caseKind === "docsparity-missing") {
-                const exit = await Effect.runPromise(
-                  Effect.exit(DocsParity.checkDocs({ workspaceRoot: root }, { path: "README.md", minimumProseCharacters: 10, examples: [] }))
-                )
-                expect(Exit.isFailure(exit)).toBe(true)
-              } else if (caseKind === "docsparity-no-title") {
-                await Fs.writeFile(NodePath.join(root, "README.md"), "no heading here at all\n")
-                const exit = await Effect.runPromise(
-                  Effect.exit(DocsParity.checkDocs({ workspaceRoot: root }, { path: "README.md", minimumProseCharacters: 5, examples: [] }))
-                )
-                expect(Exit.isFailure(exit)).toBe(true)
-              } else if (caseKind === "docsparity-short") {
-                await Fs.writeFile(NodePath.join(root, "README.md"), "# Title\nshort\n")
-                const exit = await Effect.runPromise(
-                  Effect.exit(DocsParity.checkDocs({ workspaceRoot: root }, { path: "README.md", minimumProseCharacters: 500, examples: [] }))
-                )
-                expect(Exit.isFailure(exit)).toBe(true)
-              } else if (caseKind === "docsparity-examples") {
-                await Fs.writeFile(NodePath.join(root, "README.md"), "# Title\n\nThis package provides durable utilities for testing documentation parity cleanly.\n")
-                await Fs.writeFile(NodePath.join(root, "page.md"), "# Page\n```ts\nconst x = 1\n```\n")
-                await Fs.writeFile(NodePath.join(root, "ex.ts"), "const x = 2\n")
-                await Fs.writeFile(NodePath.join(root, "ex.test.ts"), "import ./ex.ts\n")
-                const exit = await Effect.runPromise(
-                  Effect.exit(
-                    DocsParity.checkDocs({ workspaceRoot: root }, {
-                      path: "README.md",
-                      minimumProseCharacters: 20,
-                      examples: [{ page: "page.md", example: "ex.ts", test: "ex.test.ts" }]
-                    })
-                  )
-                )
-                expect(Exit.isFailure(exit)).toBe(true)
-              } else if (caseKind === "pkgjson-sync-write-check") {
-                const payload: PackageJson.SyncPayload = {
-                  mode: "write",
-                  path: "package.json",
-                  fields: { name: "@smthrs/demo", version: "1.0.0", description: "Demo pkg" },
-                  generated: [],
-                  readme: null,
-                  sources: null,
-                  promptVersion: "v1",
-                  engine: "codex",
-                  model: "openai/gpt-5-mini"
-                }
-                await Effect.runPromise(PackageJson.sync({ workspaceRoot: root, cacheDirectory: NodePath.join(root, ".cache") }, payload))
-                await Effect.runPromise(PackageJson.sync({ workspaceRoot: root, cacheDirectory: NodePath.join(root, ".cache") }, { ...payload, mode: "check" }))
-                // Drift check
-                const driftExit = await Effect.runPromise(
-                  Effect.exit(PackageJson.sync({ workspaceRoot: root, cacheDirectory: NodePath.join(root, ".cache") }, { ...payload, mode: "check", fields: { ...payload.fields, version: "2.0.0" } }))
-                )
-                expect(Exit.isFailure(driftExit)).toBe(true)
-              } else if (caseKind === "pkgjson-sync-bad-path") {
-                const exit = await Effect.runPromise(
-                  Effect.exit(
-                    PackageJson.sync({ workspaceRoot: root, cacheDirectory: NodePath.join(root, ".cache") }, {
-                      mode: "check",
-                      path: "/etc/passwd",
-                      fields: { name: "x" },
-                      generated: [],
-                      readme: null,
-                      sources: null,
-                      promptVersion: "v1",
-                      engine: "codex",
-                      model: "openai/gpt-5-mini"
-                    })
-                  )
-                )
-                expect(Exit.isFailure(exit)).toBe(true)
-              } else {
-                const exit = await Effect.runPromise(
-                  Effect.exit(
-                    PackageJson.sync({ workspaceRoot: root, cacheDirectory: NodePath.join(root, ".cache") }, {
-                      mode: "write",
-                      path: "package.json",
-                      fields: { name: "x" },
-                      generated: ["description", "description"],
-                      readme: null,
-                      sources: null,
-                      promptVersion: "v1",
-                      engine: "codex",
-                      model: "openai/gpt-5-mini"
-                    })
-                  )
-                )
-                expect(Exit.isFailure(exit)).toBe(true)
-              }
-            })
-            return true
-          }),
-        { executions: Math.max(fsExecutions, 20), seed: seed + 2 }
+  it(
+    "Filegroup nested sources + ExpandFilegroupLive, NewPackage.scaffold templates, DocsParity.checkDocs & PackageJson.sync cover real FS & error paths",
+    async () => {
+      const arb = Arbitrary.schema(
+        Schema.Struct({
+          caseKind: Schema.Literals([
+            "filegroup-ok",
+            "filegroup-escape",
+            "scaffold-template-ok",
+            "scaffold-template-missing",
+            "scaffold-template-symlink",
+            "scaffold-exists",
+            "docsparity-missing",
+            "docsparity-no-title",
+            "docsparity-short",
+            "docsparity-examples",
+            "pkgjson-sync-write-check",
+            "pkgjson-sync-bad-path",
+            "pkgjson-sync-dup-gen"
+          ])
+        })
       )
-    )
-    assertPassed(report)
-  }, 30_000)
+
+      const report = await Effect.runPromise(
+        Fuzz.run(
+          arb,
+          ({ caseKind }) =>
+            Effect.promise(async () => {
+              await withTempDir("smthrs-t7e-", async (root) => {
+                if (caseKind === "filegroup-ok") {
+                  await Fs.mkdir(NodePath.join(root, "pkg", "sub"), { recursive: true })
+                  await Fs.writeFile(NodePath.join(root, "pkg", "sub", "a.ts"), "export const a = 1\n")
+                  const inner = Filegroup.Filegroup({
+                    cwd: "pkg",
+                    srcs: [Input.glob("sub/**/*.ts", { exclude: ["sub/**/*.bak"] })]
+                  })
+                  const outer = Filegroup.Filegroup({
+                    srcs: [inner, inner, Input.file("pkg/sub/a.ts")]
+                  })
+                  const srcs = Filegroup.sources(Target.metadata(outer).attrs as Filegroup.Attrs, {
+                    packageDirectory: "",
+                    sourceFile: "PACKAGE.ts"
+                  })
+                  expect(srcs.length).toBeGreaterThan(0)
+                  const expanded = await Effect.runPromise(runExpandLive(root, { sources: srcs }))
+                  expect(expanded.length).toBeGreaterThan(0)
+                } else if (caseKind === "filegroup-escape") {
+                  const exit = await Effect.runPromise(
+                    Effect.exit(
+                      runExpandLive(root, { sources: [{ base: "/outside/somewhere", source: Input.file("a.ts") }] })
+                    )
+                  )
+                  expect(Exit.isFailure(exit)).toBe(true)
+                } else if (caseKind === "scaffold-template-ok") {
+                  await Fs.mkdir(NodePath.join(root, "templates", "basic", "src"), { recursive: true })
+                  await Fs.writeFile(
+                    NodePath.join(root, "templates", "basic", "src", "index.ts"),
+                    "export const name = \"{{name}}\"\n"
+                  )
+                  const res = await Effect.runPromise(
+                    NewPackage.scaffold(
+                      { workspaceRoot: root, packageName: "@smthrs/demo" },
+                      {
+                        directory: "packages",
+                        template: "templates/basic",
+                        version: "0.1.0",
+                        license: "MIT",
+                        fields: {}
+                      }
+                    )
+                  )
+                  expect(res.directory).toContain("packages/demo")
+                } else if (caseKind === "scaffold-template-missing") {
+                  const exit = await Effect.runPromise(
+                    Effect.exit(
+                      NewPackage.scaffold(
+                        { workspaceRoot: root, packageName: "@smthrs/demo" },
+                        {
+                          directory: "packages",
+                          template: "templates/nope",
+                          version: "0.1.0",
+                          license: "MIT",
+                          fields: {}
+                        }
+                      )
+                    )
+                  )
+                  expect(Exit.isFailure(exit)).toBe(true)
+                } else if (caseKind === "scaffold-template-symlink") {
+                  await Fs.mkdir(NodePath.join(root, "templates", "bad"), { recursive: true })
+                  await Fs.writeFile(NodePath.join(root, "real.txt"), "hi")
+                  await Fs.symlink(NodePath.join(root, "real.txt"), NodePath.join(root, "templates", "bad", "sym.txt"))
+                  const exit = await Effect.runPromise(
+                    Effect.exit(
+                      NewPackage.scaffold(
+                        { workspaceRoot: root, packageName: "@smthrs/demo" },
+                        {
+                          directory: "packages",
+                          template: "templates/bad",
+                          version: "0.1.0",
+                          license: "MIT",
+                          fields: {}
+                        }
+                      )
+                    )
+                  )
+                  expect(Exit.isFailure(exit)).toBe(true)
+                } else if (caseKind === "scaffold-exists") {
+                  await Fs.mkdir(NodePath.join(root, "packages", "demo"), { recursive: true })
+                  const exit = await Effect.runPromise(
+                    Effect.exit(
+                      NewPackage.scaffold(
+                        { workspaceRoot: root, packageName: "@smthrs/demo" },
+                        { directory: "packages", version: "0.1.0", license: "MIT", fields: {} }
+                      )
+                    )
+                  )
+                  expect(Exit.isFailure(exit)).toBe(true)
+                } else if (caseKind === "docsparity-missing") {
+                  const exit = await Effect.runPromise(
+                    Effect.exit(
+                      DocsParity.checkDocs({ workspaceRoot: root }, {
+                        path: "README.md",
+                        minimumProseCharacters: 10,
+                        examples: []
+                      })
+                    )
+                  )
+                  expect(Exit.isFailure(exit)).toBe(true)
+                } else if (caseKind === "docsparity-no-title") {
+                  await Fs.writeFile(NodePath.join(root, "README.md"), "no heading here at all\n")
+                  const exit = await Effect.runPromise(
+                    Effect.exit(
+                      DocsParity.checkDocs({ workspaceRoot: root }, {
+                        path: "README.md",
+                        minimumProseCharacters: 5,
+                        examples: []
+                      })
+                    )
+                  )
+                  expect(Exit.isFailure(exit)).toBe(true)
+                } else if (caseKind === "docsparity-short") {
+                  await Fs.writeFile(NodePath.join(root, "README.md"), "# Title\nshort\n")
+                  const exit = await Effect.runPromise(
+                    Effect.exit(
+                      DocsParity.checkDocs({ workspaceRoot: root }, {
+                        path: "README.md",
+                        minimumProseCharacters: 500,
+                        examples: []
+                      })
+                    )
+                  )
+                  expect(Exit.isFailure(exit)).toBe(true)
+                } else if (caseKind === "docsparity-examples") {
+                  await Fs.writeFile(
+                    NodePath.join(root, "README.md"),
+                    "# Title\n\nThis package provides durable utilities for testing documentation parity cleanly.\n"
+                  )
+                  await Fs.writeFile(NodePath.join(root, "page.md"), "# Page\n```ts\nconst x = 1\n```\n")
+                  await Fs.writeFile(NodePath.join(root, "ex.ts"), "const x = 2\n")
+                  await Fs.writeFile(NodePath.join(root, "ex.test.ts"), "import ./ex.ts\n")
+                  const exit = await Effect.runPromise(
+                    Effect.exit(
+                      DocsParity.checkDocs({ workspaceRoot: root }, {
+                        path: "README.md",
+                        minimumProseCharacters: 20,
+                        examples: [{ page: "page.md", example: "ex.ts", test: "ex.test.ts" }]
+                      })
+                    )
+                  )
+                  expect(Exit.isFailure(exit)).toBe(true)
+                } else if (caseKind === "pkgjson-sync-write-check") {
+                  const payload: PackageJson.SyncPayload = {
+                    mode: "write",
+                    path: "package.json",
+                    fields: { name: "@smthrs/demo", version: "1.0.0", description: "Demo pkg" },
+                    generated: [],
+                    readme: null,
+                    sources: null,
+                    promptVersion: "v1",
+                    engine: "codex",
+                    model: "openai/gpt-5-mini"
+                  }
+                  await Effect.runPromise(
+                    PackageJson.sync({ workspaceRoot: root, cacheDirectory: NodePath.join(root, ".cache") }, payload)
+                  )
+                  await Effect.runPromise(
+                    PackageJson.sync({ workspaceRoot: root, cacheDirectory: NodePath.join(root, ".cache") }, {
+                      ...payload,
+                      mode: "check"
+                    })
+                  )
+                  // Drift check
+                  const driftExit = await Effect.runPromise(
+                    Effect.exit(
+                      PackageJson.sync({ workspaceRoot: root, cacheDirectory: NodePath.join(root, ".cache") }, {
+                        ...payload,
+                        mode: "check",
+                        fields: { ...payload.fields, version: "2.0.0" }
+                      })
+                    )
+                  )
+                  expect(Exit.isFailure(driftExit)).toBe(true)
+                } else if (caseKind === "pkgjson-sync-bad-path") {
+                  const exit = await Effect.runPromise(
+                    Effect.exit(
+                      PackageJson.sync({ workspaceRoot: root, cacheDirectory: NodePath.join(root, ".cache") }, {
+                        mode: "check",
+                        path: "/etc/passwd",
+                        fields: { name: "x" },
+                        generated: [],
+                        readme: null,
+                        sources: null,
+                        promptVersion: "v1",
+                        engine: "codex",
+                        model: "openai/gpt-5-mini"
+                      })
+                    )
+                  )
+                  expect(Exit.isFailure(exit)).toBe(true)
+                } else {
+                  const exit = await Effect.runPromise(
+                    Effect.exit(
+                      PackageJson.sync({ workspaceRoot: root, cacheDirectory: NodePath.join(root, ".cache") }, {
+                        mode: "write",
+                        path: "package.json",
+                        fields: { name: "x" },
+                        generated: ["description", "description"],
+                        readme: null,
+                        sources: null,
+                        promptVersion: "v1",
+                        engine: "codex",
+                        model: "openai/gpt-5-mini"
+                      })
+                    )
+                  )
+                  expect(Exit.isFailure(exit)).toBe(true)
+                }
+              })
+              return true
+            }),
+          { executions: Math.max(fsExecutions, 20), seed: seed + 2 }
+        )
+      )
+      assertPassed(report)
+    },
+    30_000
+  )
 })

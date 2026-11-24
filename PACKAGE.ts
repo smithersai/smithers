@@ -489,6 +489,7 @@ const ci = Smithers.GithubCiGen({
         jj,
         ripgrep,
         apt: bubblewrap,
+        playwright: Smithers.CiToolchain.Playwright({ cwd: "packages/smithers/ui", browsers: ["chromium"] }),
         go,
         zig,
         foundry,

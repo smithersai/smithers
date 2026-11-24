@@ -178,6 +178,60 @@ Note that a failed execution is recorded too. After restoring `allowWorkspaceRea
 > **Q: What if I edit the flow code before resuming an incomplete execution?**
 > A: Resuming an existing execution with a modified plan refuses with `plan_changed`; start a new `executionId` for the new plan. Wrap callbacks with [`Node.capture`](../core/docs/concepts/identity.md) to give closed-over values stable identities across restarts, and read [Change a flow and keep the work](./guides/change-a-flow-and-keep-the-work.md) to reuse completed steps across edits.
 
+## VibeLang version
+
+The same flow written in VibeLang (`examples/quickstart.vibe`):
+
+```vibe
+import { Action, Capability, Flow, Interpreter } from "@smthrs/flows"
+import { NodeRuntime } from "@smthrs/platform-node"
+
+/** One recorded step: read a file through the host the engine guards. */
+export const ReadNote = Action.make("quickstart/ReadNote", {
+  payload: { path: Schema.String },
+  success: Schema.String
+})
+
+/** The flow: a graph of one action, planned before any of it runs. */
+export const ReadNoteFlow = Flow.make("quickstart/ReadNoteFlow", {
+  payload: { path: Schema.String },
+  success: Schema.String,
+  body: (payload) => ReadNote.call(payload)
+})
+
+/** The registration phase: the implementation, then the flow's interpreter. */
+const flows = (workspaceRoot: string) =>
+  Interpreter.layer(ReadNoteFlow).pipe(
+    Layer.provideMerge(ReadNote.toLayer(effect ({ path }) => {
+      // Under `layerHost`, FileSystem is the kernel's guarded host surface, not raw Node.
+      const files = try FileSystem.FileSystem
+      return try orDie(files.readFileString(`${workspaceRoot}/${path}`))
+    })),
+    Layer.provideMerge(Action.layerImplementations)
+  )
+
+/** The one capability the body needs: `fs:read` under the workspace, and nothing else. */
+const allowWorkspaceReads = (workspaceRoot: string) =>
+  new Capability.Permission.Rule({
+    effect: "allow",
+    pattern: new Capability.Capability.CapabilityPattern({ action: "fs:read", resource: `${workspaceRoot}/**` })
+  })
+
+/** Stands the durable host up over `<workspaceRoot>/.flows/engine.db` and runs one execution. */
+export effect function main(workspaceRoot: string, executionId: string) {
+  const host = NodeRuntime.layerHost(
+    {
+      filename: `${workspaceRoot}/.flows/engine.db`,
+      workspaceRoot,
+      owner: { hostId: "quickstart" },
+      rules: [allowWorkspaceReads(workspaceRoot)]
+    },
+    flows(workspaceRoot)
+  )
+  return try scoped(Effect.provide(ReadNoteFlow.execute({ path: "note.txt" }, { executionId }), host))
+}
+```
+
 ## Next steps
 
 - Understand the plan, step keys, and safe cache reuse: [How Smithers Flows works](./concepts/how-it-works.md).

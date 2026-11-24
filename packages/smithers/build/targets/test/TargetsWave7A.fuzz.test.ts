@@ -52,9 +52,16 @@ describe("@smthrs/targets Wave-7A: GithubWorkflow parser/shell scanner, GithubCi
   it("GithubWorkflow.parseWorkflow refuses every malformed YAML/trigger/job/step/needs shape with WorkflowParseError", async () => {
     const cases: ReadonlyArray<{ readonly yaml: string; readonly reason: GithubWorkflow.WorkflowParseReason }> = [
       // Too large (> 1 MiB)
-      { yaml: "on: push\njobs:\n  a:\n    runs-on: ubuntu-latest\n    steps:\n      - run: " + "x".repeat(GithubWorkflow.maximumWorkflowBytes + 32), reason: "too_large" },
+      {
+        yaml: "on: push\njobs:\n  a:\n    runs-on: ubuntu-latest\n    steps:\n      - run: " +
+          "x".repeat(GithubWorkflow.maximumWorkflowBytes + 32),
+        reason: "too_large"
+      },
       // Non-scalar mapping key
-      { yaml: "on: push\njobs:\n  [a, b]:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo ok\n", reason: "unsupported" },
+      {
+        yaml: "on: push\njobs:\n  [a, b]:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo ok\n",
+        reason: "unsupported"
+      },
       // Top-level scalar
       { yaml: "just-a-scalar\n", reason: "invalid_shape" },
       // Top-level sequence
@@ -66,59 +73,128 @@ describe("@smthrs/targets Wave-7A: GithubWorkflow parser/shell scanner, GithubCi
       // Jobs is a sequence
       { yaml: "on: push\njobs:\n  - a\n", reason: "invalid_shape" },
       // Duplicate job id
-      { yaml: "on: push\njobs:\n  a:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo 1\n  a:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo 2\n", reason: "duplicate" },
+      {
+        yaml:
+          "on: push\njobs:\n  a:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo 1\n  a:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo 2\n",
+        reason: "duplicate"
+      },
       // Invalid event name shape
-      { yaml: "on: 123-bad!\njobs:\n  a:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo ok\n", reason: "invalid_shape" },
+      {
+        yaml: "on: 123-bad!\njobs:\n  a:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo ok\n",
+        reason: "invalid_shape"
+      },
       // Duplicate event in trigger map
-      { yaml: "on:\n  push:\n  push:\njobs:\n  a:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo ok\n", reason: "duplicate" },
+      {
+        yaml: "on:\n  push:\n  push:\njobs:\n  a:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo ok\n",
+        reason: "duplicate"
+      },
       // Duplicate event in trigger sequence
-      { yaml: "on: [push, push]\njobs:\n  a:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo ok\n", reason: "duplicate" },
+      {
+        yaml: "on: [push, push]\njobs:\n  a:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo ok\n",
+        reason: "duplicate"
+      },
       // Empty trigger sequence
-      { yaml: "on: []\njobs:\n  a:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo ok\n", reason: "missing" },
+      {
+        yaml: "on: []\njobs:\n  a:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo ok\n",
+        reason: "missing"
+      },
       // Empty trigger scalar
-      { yaml: "on: \"\"\njobs:\n  a:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo ok\n", reason: "missing" },
+      {
+        yaml: "on: \"\"\njobs:\n  a:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo ok\n",
+        reason: "missing"
+      },
       // Job value is sequence
       { yaml: "on: push\njobs:\n  a:\n    - bad\n", reason: "invalid_shape" },
       // Job value is scalar
       { yaml: "on: push\njobs:\n  a: scalar\n", reason: "invalid_shape" },
       // Invalid job id
-      { yaml: "on: push\njobs:\n  \"99bad!\":\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo ok\n", reason: "invalid_shape" },
+      {
+        yaml: "on: push\njobs:\n  \"99bad!\":\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo ok\n",
+        reason: "invalid_shape"
+      },
       // Duplicate key in job
-      { yaml: "on: push\njobs:\n  a:\n    runs-on: ubuntu-latest\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo ok\n", reason: "duplicate" },
+      {
+        yaml:
+          "on: push\njobs:\n  a:\n    runs-on: ubuntu-latest\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo ok\n",
+        reason: "duplicate"
+      },
       // Inherited << merge in job
-      { yaml: "on: push\njobs:\n  a:\n    \"<<\": foo\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo ok\n", reason: "unsupported" },
+      {
+        yaml: "on: push\njobs:\n  a:\n    \"<<\": foo\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo ok\n",
+        reason: "unsupported"
+      },
       // Non-sequence steps
       { yaml: "on: push\njobs:\n  a:\n    runs-on: ubuntu-latest\n    steps: echo ok\n", reason: "invalid_shape" },
       // Reusable job with empty uses
       { yaml: "on: push\njobs:\n  a:\n    uses: \"   \"\n", reason: "invalid_shape" },
       // Reusable job with runs-on
-      { yaml: "on: push\njobs:\n  a:\n    uses: org/repo/.github/workflows/x.yml@main\n    runs-on: ubuntu-latest\n", reason: "invalid_shape" },
+      {
+        yaml: "on: push\njobs:\n  a:\n    uses: org/repo/.github/workflows/x.yml@main\n    runs-on: ubuntu-latest\n",
+        reason: "invalid_shape"
+      },
       // Reusable job with steps
-      { yaml: "on: push\njobs:\n  a:\n    uses: org/repo/.github/workflows/x.yml@main\n    steps:\n      - run: echo ok\n", reason: "invalid_shape" },
+      {
+        yaml:
+          "on: push\njobs:\n  a:\n    uses: org/repo/.github/workflows/x.yml@main\n    steps:\n      - run: echo ok\n",
+        reason: "invalid_shape"
+      },
       // Missing runs-on
       { yaml: "on: push\njobs:\n  a:\n    steps:\n      - run: echo ok\n", reason: "missing" },
       // Missing steps
       { yaml: "on: push\njobs:\n  a:\n    runs-on: ubuntu-latest\n", reason: "missing" },
       // Step is not a mapping
-      { yaml: "on: push\njobs:\n  a:\n    runs-on: ubuntu-latest\n    steps:\n      - not-a-map\n", reason: "invalid_shape" },
+      {
+        yaml: "on: push\njobs:\n  a:\n    runs-on: ubuntu-latest\n    steps:\n      - not-a-map\n",
+        reason: "invalid_shape"
+      },
       // Duplicate key in step
-      { yaml: "on: push\njobs:\n  a:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo 1\n        run: echo 2\n", reason: "duplicate" },
+      {
+        yaml:
+          "on: push\njobs:\n  a:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo 1\n        run: echo 2\n",
+        reason: "duplicate"
+      },
       // YAML merge << in step
-      { yaml: "on: push\njobs:\n  a:\n    runs-on: ubuntu-latest\n    steps:\n      - \"<<\": x\n        run: echo 1\n", reason: "unsupported" },
+      {
+        yaml: "on: push\njobs:\n  a:\n    runs-on: ubuntu-latest\n    steps:\n      - \"<<\": x\n        run: echo 1\n",
+        reason: "unsupported"
+      },
       // Step declares both uses and run
-      { yaml: "on: push\njobs:\n  a:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@v4\n        run: echo 1\n", reason: "invalid_shape" },
+      {
+        yaml:
+          "on: push\njobs:\n  a:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@v4\n        run: echo 1\n",
+        reason: "invalid_shape"
+      },
       // Step declares neither uses nor run
-      { yaml: "on: push\njobs:\n  a:\n    runs-on: ubuntu-latest\n    steps:\n      - name: empty\n", reason: "invalid_shape" },
+      {
+        yaml: "on: push\njobs:\n  a:\n    runs-on: ubuntu-latest\n    steps:\n      - name: empty\n",
+        reason: "invalid_shape"
+      },
       // Step declares empty run
-      { yaml: "on: push\njobs:\n  a:\n    runs-on: ubuntu-latest\n    steps:\n      - run: \"   \"\n", reason: "invalid_shape" },
+      {
+        yaml: "on: push\njobs:\n  a:\n    runs-on: ubuntu-latest\n    steps:\n      - run: \"   \"\n",
+        reason: "invalid_shape"
+      },
       // Step declares empty uses
-      { yaml: "on: push\njobs:\n  a:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: \"   \"\n", reason: "invalid_shape" },
+      {
+        yaml: "on: push\njobs:\n  a:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: \"   \"\n",
+        reason: "invalid_shape"
+      },
       // Step declares empty shell
-      { yaml: "on: push\njobs:\n  a:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo ok\n        shell: \"  \"\n", reason: "invalid_shape" },
+      {
+        yaml:
+          "on: push\njobs:\n  a:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo ok\n        shell: \"  \"\n",
+        reason: "invalid_shape"
+      },
       // Invalid needs scalar
-      { yaml: "on: push\njobs:\n  a:\n    needs: 123\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo ok\n", reason: "invalid_shape" },
+      {
+        yaml: "on: push\njobs:\n  a:\n    needs: 123\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo ok\n",
+        reason: "invalid_shape"
+      },
       // Empty needs sequence
-      { yaml: "on: push\njobs:\n  a:\n    needs: []\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo ok\n", reason: "invalid_shape" }
+      {
+        yaml: "on: push\njobs:\n  a:\n    needs: []\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo ok\n",
+        reason: "invalid_shape"
+      }
     ]
 
     const arb = Arbitrary.schema(
@@ -126,7 +202,7 @@ describe("@smthrs/targets Wave-7A: GithubWorkflow parser/shell scanner, GithubCi
         idx: Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: cases.length - 1 }))
       })
     )
-    for (const c of cases) { expect(() => GithubWorkflow.parseWorkflow(c.yaml)).toThrow() }
+    for (const c of cases) expect(() => GithubWorkflow.parseWorkflow(c.yaml)).toThrow()
     const report = await Effect.runPromise(
       Fuzz.run(
         arb,
@@ -142,7 +218,8 @@ describe("@smthrs/targets Wave-7A: GithubWorkflow parser/shell scanner, GithubCi
             expect(caught).toBeInstanceOf(GithubWorkflow.WorkflowParseError)
             const parseErr = caught as GithubWorkflow.WorkflowParseError
             expect(parseErr.reason).toBe(c.reason)
-            expect(parseErr.message).toContain(`line ${parseErr.line}:`); return true
+            expect(parseErr.message).toContain(`line ${parseErr.line}:`)
+            return true
           }),
         { executions: Math.max(executions, cases.length * 3), seed }
       )
@@ -202,7 +279,8 @@ describe("@smthrs/targets Wave-7A: GithubWorkflow parser/shell scanner, GithubCi
             }
             const inst = installCases[iIdx]!
             const detected = GithubWorkflow.supportedInstallOf(inst)
-            expect(GithubWorkflow.isSupportedInstall(inst)).toBe(detected !== undefined); return true
+            expect(GithubWorkflow.isSupportedInstall(inst)).toBe(detected !== undefined)
+            return true
           }),
         { executions: Math.max(executions, 80), seed: seed + 1 }
       )
@@ -222,7 +300,8 @@ describe("@smthrs/targets Wave-7A: GithubWorkflow parser/shell scanner, GithubCi
       () => GithubCiGen.render(baseAttrs({ jobs: [] })),
       () => GithubCiGen.render(baseAttrs({ pushBranches: [], pullRequest: false, workflowDispatch: false })),
       () => GithubCiGen.render(baseAttrs({ concurrency: "bogus" as unknown as "ref" })),
-      () => GithubCiGen.render(baseAttrs({ gates: [{ name: "missing-gate", verb: Verb.Lint, pattern: "//other:lint" }] })),
+      () =>
+        GithubCiGen.render(baseAttrs({ gates: [{ name: "missing-gate", verb: Verb.Lint, pattern: "//other:lint" }] })),
       () => GithubCiGen.render(baseAttrs({ requiredJobs: ["ci", "ghost"] })),
       // scalar control char / GitHub expression / bad runner
       () => GithubCiGen.render(baseAttrs({ workflowName: "bad\u0007name" })),
@@ -231,27 +310,121 @@ describe("@smthrs/targets Wave-7A: GithubWorkflow parser/shell scanner, GithubCi
       () => GithubCiGen.render(baseAttrs({ jobs: [baseJob({ runsOn: "{group: g}" })] })),
       // stepCommand errors
       () => GithubCiGen.stepCommand(baseAttrs(), { name: "Review", verb: Verb.Review, pattern: "//..." }),
-      () => GithubCiGen.stepCommand(baseAttrs(), { name: "CI", verb: Verb.Ci, pattern: "//..." }, { installer: "determinate", environment: { flake: "/bad/abs", attr: "default" } as unknown as Nix.Environment }),
+      () =>
+        GithubCiGen.stepCommand(baseAttrs(), { name: "CI", verb: Verb.Ci, pattern: "//..." }, {
+          installer: "determinate",
+          environment: { flake: "/bad/abs", attr: "default" } as unknown as Nix.Environment
+        }),
       // validateJobRunners errors
       () => GithubCiGen.render(baseAttrs({ jobs: [baseJob({ matrixNameSuffix: "os" })] })),
-      () => GithubCiGen.render(baseAttrs({ jobs: [baseJob({ runsOn: undefined, shards: 2, matrix: [{ os: "ubuntu-latest", advisory: false }] })] })),
+      () =>
+        GithubCiGen.render(
+          baseAttrs({
+            jobs: [baseJob({ runsOn: undefined, shards: 2, matrix: [{ os: "ubuntu-latest", advisory: false }] })]
+          })
+        ),
       () => GithubCiGen.render(baseAttrs({ jobs: [baseJob({ runsOn: undefined, matrix: undefined })] })),
-      () => GithubCiGen.render(baseAttrs({ jobs: [baseJob({ runsOn: "ubuntu-latest", matrix: [{ os: "ubuntu-latest", advisory: false }] })] })),
-      () => GithubCiGen.render(baseAttrs({ jobs: [baseJob({ runsOn: undefined, continueOnError: true, matrix: [{ os: "ubuntu-latest", advisory: false }] })] })),
+      () =>
+        GithubCiGen.render(
+          baseAttrs({
+            jobs: [baseJob({ runsOn: "ubuntu-latest", matrix: [{ os: "ubuntu-latest", advisory: false }] })]
+          })
+        ),
+      () =>
+        GithubCiGen.render(
+          baseAttrs({
+            jobs: [
+              baseJob({ runsOn: undefined, continueOnError: true, matrix: [{ os: "ubuntu-latest", advisory: false }] })
+            ]
+          })
+        ),
       () => GithubCiGen.render(baseAttrs({ jobs: [baseJob({ runsOn: undefined, matrix: [] })] })),
-      () => GithubCiGen.render(baseAttrs({ jobs: [baseJob({ runsOn: undefined, matrix: [{ os: "bad runner!", advisory: false }] })] })),
-      () => GithubCiGen.render(baseAttrs({ jobs: [baseJob({ runsOn: undefined, matrix: [{ os: "ubuntu-latest", advisory: false }, { os: "ubuntu-latest", advisory: true }] })] })),
+      () =>
+        GithubCiGen.render(
+          baseAttrs({ jobs: [baseJob({ runsOn: undefined, matrix: [{ os: "bad runner!", advisory: false }] })] })
+        ),
+      () =>
+        GithubCiGen.render(
+          baseAttrs({
+            jobs: [
+              baseJob({
+                runsOn: undefined,
+                matrix: [{ os: "ubuntu-latest", advisory: false }, { os: "ubuntu-latest", advisory: true }]
+              })
+            ]
+          })
+        ),
       // validatePublishing errors
       () => GithubCiGen.render(baseAttrs({ cacheWriteRepository: "org/repo" })),
       () => GithubCiGen.render(baseAttrs({ cacheWriteEnvironment: "cache-writer" })),
       () => GithubCiGen.render(baseAttrs({ jobs: [baseJob({ publishesToCache: true })] })),
-      () => GithubCiGen.render(baseAttrs({ cacheWriteTokenSecret: writeSecret, cacheWriteRepository: "org/repo", cacheWriteEnvironment: "cache-writer" })),
-      () => GithubCiGen.render(baseAttrs({ cacheWriteTokenSecret: writeSecret, cacheWriteRepository: "not-a-repo", cacheWriteEnvironment: "cache-writer", jobs: [baseJob({ publishesToCache: true })] })),
-      () => GithubCiGen.render(baseAttrs({ cacheWriteTokenSecret: writeSecret, cacheWriteRepository: "org/repo", cacheWriteEnvironment: "bad env!", jobs: [baseJob({ publishesToCache: true })] })),
-      () => GithubCiGen.render(baseAttrs({ cacheTokenSecret: writeSecret, cacheWriteTokenSecret: writeSecret, cacheWriteRepository: "org/repo", cacheWriteEnvironment: "cache-writer", jobs: [baseJob({ publishesToCache: true })] })),
-      () => GithubCiGen.render(baseAttrs({ cacheUrlSecret: writeSecret, cacheWriteTokenSecret: writeSecret, cacheWriteRepository: "org/repo", cacheWriteEnvironment: "cache-writer", jobs: [baseJob({ publishesToCache: true })] })),
-      () => GithubCiGen.render(baseAttrs({ pushBranches: [], pullRequest: true, cacheWriteTokenSecret: writeSecret, cacheWriteRepository: "org/repo", cacheWriteEnvironment: "cache-writer", jobs: [baseJob({ publishesToCache: true })] })),
-      () => GithubCiGen.render(baseAttrs({ pushBranches: ["main*"], cacheWriteTokenSecret: writeSecret, cacheWriteRepository: "org/repo", cacheWriteEnvironment: "cache-writer", jobs: [baseJob({ publishesToCache: true })] })),
+      () =>
+        GithubCiGen.render(
+          baseAttrs({
+            cacheWriteTokenSecret: writeSecret,
+            cacheWriteRepository: "org/repo",
+            cacheWriteEnvironment: "cache-writer"
+          })
+        ),
+      () =>
+        GithubCiGen.render(
+          baseAttrs({
+            cacheWriteTokenSecret: writeSecret,
+            cacheWriteRepository: "not-a-repo",
+            cacheWriteEnvironment: "cache-writer",
+            jobs: [baseJob({ publishesToCache: true })]
+          })
+        ),
+      () =>
+        GithubCiGen.render(
+          baseAttrs({
+            cacheWriteTokenSecret: writeSecret,
+            cacheWriteRepository: "org/repo",
+            cacheWriteEnvironment: "bad env!",
+            jobs: [baseJob({ publishesToCache: true })]
+          })
+        ),
+      () =>
+        GithubCiGen.render(
+          baseAttrs({
+            cacheTokenSecret: writeSecret,
+            cacheWriteTokenSecret: writeSecret,
+            cacheWriteRepository: "org/repo",
+            cacheWriteEnvironment: "cache-writer",
+            jobs: [baseJob({ publishesToCache: true })]
+          })
+        ),
+      () =>
+        GithubCiGen.render(
+          baseAttrs({
+            cacheUrlSecret: writeSecret,
+            cacheWriteTokenSecret: writeSecret,
+            cacheWriteRepository: "org/repo",
+            cacheWriteEnvironment: "cache-writer",
+            jobs: [baseJob({ publishesToCache: true })]
+          })
+        ),
+      () =>
+        GithubCiGen.render(
+          baseAttrs({
+            pushBranches: [],
+            pullRequest: true,
+            cacheWriteTokenSecret: writeSecret,
+            cacheWriteRepository: "org/repo",
+            cacheWriteEnvironment: "cache-writer",
+            jobs: [baseJob({ publishesToCache: true })]
+          })
+        ),
+      () =>
+        GithubCiGen.render(
+          baseAttrs({
+            pushBranches: ["main*"],
+            cacheWriteTokenSecret: writeSecret,
+            cacheWriteRepository: "org/repo",
+            cacheWriteEnvironment: "cache-writer",
+            jobs: [baseJob({ publishesToCache: true })]
+          })
+        ),
       // validateJobs errors
       () => GithubCiGen.render(baseAttrs({ requiredJobs: ["ci"], jobs: [baseJob({ continueOnError: true })] })),
       () => GithubCiGen.render(baseAttrs({ requiredJobs: [], jobs: [baseJob({ id: "99bad!" })] })),
@@ -260,13 +433,45 @@ describe("@smthrs/targets Wave-7A: GithubWorkflow parser/shell scanner, GithubCi
       () => GithubCiGen.render(baseAttrs({ jobs: [baseJob({ toolchain: { ...baseToolchain(), install: false } })] })),
       () => GithubCiGen.render(baseAttrs({ jobs: [baseJob({ timeoutMinutes: 0 })] })),
       () => GithubCiGen.render(baseAttrs({ jobs: [baseJob({ timeoutMinutes: 999 })] })),
-      () => GithubCiGen.render(baseAttrs({ jobs: [baseJob({ steps: [{ name: "Dup", verb: Verb.Ci, pattern: "//...", additionalPatterns: ["//..."] }] })] })),
-      () => GithubCiGen.render(baseAttrs({ jobs: [baseJob({ steps: [{ name: "BadPat", verb: Verb.Ci, pattern: "not-a-pattern" }] })] })),
-      () => GithubCiGen.render(baseAttrs({ jobs: [baseJob({ steps: [{ name: "BadVerb", verb: "run" as unknown as typeof Verb.Ci, pattern: "//..." }] })] })),
-      () => GithubCiGen.render(baseAttrs({ jobs: [baseJob({ steps: [{ name: "BadPar", verb: Verb.Ci, pattern: "//...", parallelism: 0 }] })] })),
+      () =>
+        GithubCiGen.render(
+          baseAttrs({
+            jobs: [
+              baseJob({ steps: [{ name: "Dup", verb: Verb.Ci, pattern: "//...", additionalPatterns: ["//..."] }] })
+            ]
+          })
+        ),
+      () =>
+        GithubCiGen.render(
+          baseAttrs({ jobs: [baseJob({ steps: [{ name: "BadPat", verb: Verb.Ci, pattern: "not-a-pattern" }] })] })
+        ),
+      () =>
+        GithubCiGen.render(
+          baseAttrs({
+            jobs: [
+              baseJob({ steps: [{ name: "BadVerb", verb: "run" as unknown as typeof Verb.Ci, pattern: "//..." }] })
+            ]
+          })
+        ),
+      () =>
+        GithubCiGen.render(
+          baseAttrs({
+            jobs: [baseJob({ steps: [{ name: "BadPar", verb: Verb.Ci, pattern: "//...", parallelism: 0 }] })]
+          })
+        ),
       () => GithubCiGen.render(baseAttrs({ knownRed: "../escape.json" })),
       // Bad diagnostic text in preflight
-      () => GithubCiGen.render(baseAttrs({ jobs: [baseJob({ toolchain: { ...baseToolchain(), rust: { toolchain: "1.82.0" as never, cache: true } }, steps: [{ name: "CI", verb: Verb.Ci, pattern: "//..." }] })] }))
+      () =>
+        GithubCiGen.render(
+          baseAttrs({
+            jobs: [
+              baseJob({
+                toolchain: { ...baseToolchain(), rust: { toolchain: "1.82.0" as never, cache: true } },
+                steps: [{ name: "CI", verb: Verb.Ci, pattern: "//..." }]
+              })
+            ]
+          })
+        )
     ]
 
     const arb = Arbitrary.schema(
@@ -293,7 +498,9 @@ describe("@smthrs/targets Wave-7A: GithubWorkflow parser/shell scanner, GithubCi
               // Happy paths: publishing + shards + cache secrets + nix (determinate & cachix) + cargoBinaries + uv + continueOnError + artifactSteps
               const yaml = GithubCiGen.render(
                 baseAttrs({
-                  packageManager: pkgMgr === "pnpm" ? packageManager : PackageManager.BunPackages({ runtime: Runtime.Bun({ version: "1.2.0" }) }),
+                  packageManager: pkgMgr === "pnpm"
+                    ? packageManager
+                    : PackageManager.BunPackages({ runtime: Runtime.Bun({ version: "1.2.0" }) }),
                   cacheUrlSecret: urlSecret,
                   cacheTokenSecret: readSecret,
                   cacheWriteTokenSecret: writeSecret,
@@ -310,10 +517,20 @@ describe("@smthrs/targets Wave-7A: GithubWorkflow parser/shell scanner, GithubCi
                       publishesToCache: true,
                       timeoutMinutes: 30,
                       toolchain: CiToolchain.Needs({
-                        runtimes: [pkgMgr === "pnpm" ? CiToolchain.Node({ release: "26.4.0" }) : CiToolchain.Bun({ release: "1.4.1" })],
+                        runtimes: [
+                          pkgMgr === "pnpm"
+                            ? CiToolchain.Node({ release: "26.4.0" })
+                            : CiToolchain.Bun({ release: "1.4.1" })
+                        ],
                         rust: CiToolchain.Rust({ cache: true }),
                         cargoBinaries: [
-                          { package: "smthrs-obs", binary: "smthrs-obs", toolchain: "1.98.0", environment: "SMTHRS_OBS", platforms: ["linux", "darwin", "win32"] }
+                          {
+                            package: "smthrs-obs",
+                            binary: "smthrs-obs",
+                            toolchain: "1.98.0",
+                            environment: "SMTHRS_OBS",
+                            platforms: ["linux", "darwin", "win32"]
+                          }
                         ],
                         uv: { release: "0.8.22" }
                       }),
@@ -326,7 +543,11 @@ describe("@smthrs/targets Wave-7A: GithubWorkflow parser/shell scanner, GithubCi
                       toolchain: CiToolchain.Needs({
                         nix: {
                           installer,
-                          environment: Nix.Environment({ flake: Input.file("flake.nix"), lock: Input.file("flake.lock"), attr: "default" }),
+                          environment: Nix.Environment({
+                            flake: Input.file("flake.nix"),
+                            lock: Input.file("flake.lock"),
+                            attr: "default"
+                          }),
                           substituter: nixSub,
                           publicKey: nixKey
                         }
@@ -436,7 +657,8 @@ describe("@smthrs/targets Wave-7A: GithubWorkflow parser/shell scanner, GithubCi
         ({ bIdx, tIdx }) =>
           Effect.sync(() => {
             expect(() => Schema.decodeUnknownSync(Shell.BuildAttrs)(buildBadCases[bIdx])).toThrow()
-            expect(() => Schema.decodeUnknownSync(Shell.TestAttrs)(testBadCases[tIdx])).toThrow(); return true
+            expect(() => Schema.decodeUnknownSync(Shell.TestAttrs)(testBadCases[tIdx])).toThrow()
+            return true
           }),
         { executions: Math.max(executions, 60), seed: seed + 3 }
       )

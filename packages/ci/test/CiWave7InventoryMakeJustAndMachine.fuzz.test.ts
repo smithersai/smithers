@@ -1,6 +1,6 @@
 import * as NodeServices from "@effect/platform-node/NodeServices"
-import { Fuzz } from "@smthrs/fuzz"
 import { describe, expect, it } from "@effect/vitest"
+import { Fuzz } from "@smthrs/fuzz"
 import { Arbitrary, Effect, Schema } from "effect"
 import type { Inventory } from "../src/contract/Inventory.vibe"
 import * as GithubActions from "../src/inventory/GithubActions.vibe"
@@ -232,7 +232,9 @@ describe("packages/ci Wave-7 Makefile, Justfile, MachineChanges, LeftRunning, To
             ]
             for (let i = 0; i < scripts.length; i++) {
               const cmd = scripts[(salt + i) % scripts.length]!
-              const env: Record<string, string> = i % 2 === 0 ? { PIP_BREAK_SYSTEM_PACKAGES: "1" } : { GEM_HOME: "/tmp/gem" }
+              const env: Record<string, string> = i % 2 === 0
+                ? { PIP_BREAK_SYSTEM_PACKAGES: "1" }
+                : { GEM_HOME: "/tmp/gem" }
               const ch = MachineChanges.changesIn(cmd, env)
               expect(Array.isArray(ch)).toBe(true)
               MachineChanges.installsOf(cmd)
@@ -305,7 +307,9 @@ describe("packages/ci Wave-7 Makefile, Justfile, MachineChanges, LeftRunning, To
               { repository: `acme/${tag}` }
             )
             const inv: Inventory = {
-              version: 1, repository: `acme/${tag}`, commit: "0".repeat(40),
+              version: 1,
+              repository: `acme/${tag}`,
+              commit: "0".repeat(40),
               jobs: parsed.jobs,
               toolchains: parsed.toolchains,
               unsupported: parsed.unsupported

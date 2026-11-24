@@ -1,3 +1,9 @@
+/**
+ * Internal process-exit seam for native signal shutdown handlers.
+ *
+ * @since 1.0.0
+ */
+
 import * as Context from "effect/Context"
 
 /**

@@ -1,9 +1,9 @@
-import { Fuzz } from "@smthrs/fuzz"
 import { describe, expect, it } from "@effect/vitest"
+import { Fuzz } from "@smthrs/fuzz"
 import { Arbitrary, Effect, Schema } from "effect"
+import type { Facts } from "../src/inventory/Contexts.vibe"
 import * as Expression from "../src/inventory/Expression.ts"
 import * as GithubActions from "../src/inventory/GithubActions.vibe"
-import type { Facts } from "../src/inventory/Contexts.vibe"
 import * as Setup from "../src/inventory/Setup.vibe"
 
 const seed = 7071
@@ -14,7 +14,9 @@ const SeedSchema = Schema.Struct({
   tag: Schema.String.check(Schema.isPattern(/^[a-z][a-z0-9_-]{1,8}$/))
 })
 
-const workflowScenarios = (tag: string): ReadonlyArray<{ readonly file: string; readonly yaml: string; readonly facts: Facts }> => {
+const workflowScenarios = (
+  tag: string
+): ReadonlyArray<{ readonly file: string; readonly yaml: string; readonly facts: Facts }> => {
   const localFiles: Record<string, string> = {
     ".github/workflows/called.yml": [
       "on:",

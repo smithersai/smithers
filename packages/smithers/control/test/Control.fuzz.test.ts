@@ -573,398 +573,406 @@ describe("@smthrs/control Monitor, Lineage, Steering, Health, JevSessionChecker,
 })
 
 describe("@smthrs/control durable & full-stack fuzz invariants", () => {
-  it("Differential fuzz: ControlLive over SqlControlRuntime (real SQLite) matches ControlRuntime.layerMemory across full lifecycle + Monitor.run", { timeout: 120_000 }, async () => {
-    const cmdArb = Schema.Union([
-      Schema.Struct({ _tag: Schema.Literal("plan"), suffix: Schema.Literals(["a", "b"]) }),
-      Schema.Struct({
-        _tag: Schema.Literal("approve"),
-        planIdx: Schema.Literals([0, 1]),
-        badDigest: Schema.Boolean,
-        badEnvelope: Schema.Boolean
-      }),
-      Schema.Struct({
-        _tag: Schema.Literal("deny"),
-        planIdx: Schema.Literals([0, 1])
-      }),
-      Schema.Struct({
-        _tag: Schema.Literal("run"),
-        planIdx: Schema.Literals([0, 1]),
-        badDigest: Schema.Boolean,
-        dupKey: Schema.Boolean
-      }),
-      Schema.Struct({
-        _tag: Schema.Literal("steer"),
-        runIdx: Schema.Literals([0, 1]),
-        body: Schema.Literals(["focus", "stop"])
-      }),
-      Schema.Struct({
-        _tag: Schema.Literal("signal"),
-        runIdx: Schema.Literals([0, 1]),
-        name: Schema.Literals(["ping", "go"])
-      }),
-      Schema.Struct({
-        _tag: Schema.Literal("cancel"),
-        runIdx: Schema.Literals([0, 1])
-      }),
-      Schema.Struct({
-        _tag: Schema.Literal("resume"),
-        runIdx: Schema.Literals([0, 1])
-      }),
-      Schema.Struct({
-        _tag: Schema.Literal("registerNodeApproval"),
-        runIdx: Schema.Literals([0, 1]),
-        decide: Schema.Literals(["approve", "deny"])
-      }),
-      Schema.Struct({
-        _tag: Schema.Literal("list"),
-        kind: Schema.Literals(["runs", "flows", "plans", "triggers", "fires"])
-      })
-    ])
+  it(
+    "Differential fuzz: ControlLive over SqlControlRuntime (real SQLite) matches ControlRuntime.layerMemory across full lifecycle + Monitor.run",
+    { timeout: 120_000 },
+    async () => {
+      const cmdArb = Schema.Union([
+        Schema.Struct({ _tag: Schema.Literal("plan"), suffix: Schema.Literals(["a", "b"]) }),
+        Schema.Struct({
+          _tag: Schema.Literal("approve"),
+          planIdx: Schema.Literals([0, 1]),
+          badDigest: Schema.Boolean,
+          badEnvelope: Schema.Boolean
+        }),
+        Schema.Struct({
+          _tag: Schema.Literal("deny"),
+          planIdx: Schema.Literals([0, 1])
+        }),
+        Schema.Struct({
+          _tag: Schema.Literal("run"),
+          planIdx: Schema.Literals([0, 1]),
+          badDigest: Schema.Boolean,
+          dupKey: Schema.Boolean
+        }),
+        Schema.Struct({
+          _tag: Schema.Literal("steer"),
+          runIdx: Schema.Literals([0, 1]),
+          body: Schema.Literals(["focus", "stop"])
+        }),
+        Schema.Struct({
+          _tag: Schema.Literal("signal"),
+          runIdx: Schema.Literals([0, 1]),
+          name: Schema.Literals(["ping", "go"])
+        }),
+        Schema.Struct({
+          _tag: Schema.Literal("cancel"),
+          runIdx: Schema.Literals([0, 1])
+        }),
+        Schema.Struct({
+          _tag: Schema.Literal("resume"),
+          runIdx: Schema.Literals([0, 1])
+        }),
+        Schema.Struct({
+          _tag: Schema.Literal("registerNodeApproval"),
+          runIdx: Schema.Literals([0, 1]),
+          decide: Schema.Literals(["approve", "deny"])
+        }),
+        Schema.Struct({
+          _tag: Schema.Literal("list"),
+          kind: Schema.Literals(["runs", "flows", "plans", "triggers", "fires"])
+        })
+      ])
 
-    const arb = Arbitrary.schema(
-      Schema.Struct({
-        cmds: Schema.Array(cmdArb).pipe(Schema.check(Schema.isMinLength(4)), Schema.check(Schema.isMaxLength(14))),
-        acceptLaunches: Schema.Boolean,
-        signalMode: Schema.Literals(["delivered", "no-match", "refused", "unknown"]),
-        cancelMode: Schema.Literals(["recorded", "already-requested", "unknown"]),
-        resumeMode: Schema.Literals(["resuming", "unknown"])
-      })
-    )
+      const arb = Arbitrary.schema(
+        Schema.Struct({
+          cmds: Schema.Array(cmdArb).pipe(Schema.check(Schema.isMinLength(4)), Schema.check(Schema.isMaxLength(14))),
+          acceptLaunches: Schema.Boolean,
+          signalMode: Schema.Literals(["delivered", "no-match", "refused", "unknown"]),
+          cancelMode: Schema.Literals(["recorded", "already-requested", "unknown"]),
+          resumeMode: Schema.Literals(["resuming", "unknown"])
+        })
+      )
 
-    const report = await Effect.runPromise(
-      Fuzz.run(
-        arb,
-        ({ cmds, acceptLaunches, signalMode, cancelMode, resumeMode }) =>
-          Effect.gen(function*() {
-            const makeExec = () =>
-              acceptLaunches
-                ? ControlExecutor.make({
-                  launch: () => Effect.succeed("accepted"),
-                  requestCancel: () => Effect.succeed(cancelMode),
-                  deliverSignal: () => Effect.succeed(signalMode),
-                  resumeRun: () => Effect.succeed(resumeMode),
-                  settleCancelledPark: () => Effect.void,
-                  readExecution: () =>
-                    Effect.succeed({
-                      _tag: "Observed" as const,
-                      status: "running" as const,
-                      roundOrdinal: 1
-                    }),
-                  readExecutions: ({ executionIds }) =>
-                    Effect.succeed({
-                      executions: executionIds.map((executionId) => ({
-                        executionId,
-                        status: "running" as const
-                      })),
-                      missing: []
-                    } as never),
-                  retryStep: () => Effect.succeed({ _tag: "Step" as const, nodeId: "step-1" })
-                })
-                : ControlExecutor.makeNoop()
-
-            const runStack = <R extends Control.Control | ControlRuntime.ControlRuntime | Journal.Journal, E>(
-              stackLayer: Layer.Layer<R, E>
-            ) =>
-              Effect.scoped(
-                Effect.gen(function*() {
-                  const control = yield* Control.Control
-                  const runtime = yield* ControlRuntime.ControlRuntime
-                  const journal = yield* Journal.Journal
-                  const plans: Array<ControlSchema.PlanCard> = []
-                  const runs: Array<string> = []
-                  const trace: Array<string> = []
-                  let keySeq = 0
-
-                  // Seed with a guaranteed planned + approved + launched run so every fuzz iteration exercises live runs
-                  const seedCard = yield* control.plan({ flowId: "system/test", input: { seed: true } })
-                  plans.push(seedCard)
-                  yield* control.approve({
-                    target: {
-                      _tag: "Plan",
-                      planId: seedCard.planId,
-                      digest: seedCard.digest,
-                      envelope: seedCard.envelope
-                    },
-                    scope: seedCard.approval.scope,
-                    idempotencyKey: "seed-approve"
+      const report = await Effect.runPromise(
+        Fuzz.run(
+          arb,
+          ({ cmds, acceptLaunches, signalMode, cancelMode, resumeMode }) =>
+            Effect.gen(function*() {
+              const makeExec = () =>
+                acceptLaunches
+                  ? ControlExecutor.make({
+                    launch: () => Effect.succeed("accepted"),
+                    requestCancel: () => Effect.succeed(cancelMode),
+                    deliverSignal: () => Effect.succeed(signalMode),
+                    resumeRun: () => Effect.succeed(resumeMode),
+                    settleCancelledPark: () => Effect.void,
+                    readExecution: () =>
+                      Effect.succeed({
+                        _tag: "Observed" as const,
+                        status: "running" as const,
+                        roundOrdinal: 1
+                      }),
+                    readExecutions: ({ executionIds }) =>
+                      Effect.succeed({
+                        executions: executionIds.map((executionId) => ({
+                          executionId,
+                          status: "running" as const
+                        })),
+                        missing: []
+                      } as never),
+                    retryStep: () => Effect.succeed({ _tag: "Step" as const, nodeId: "step-1" })
                   })
-                  const seedRun = yield* control.run({
-                    _tag: "Plan",
-                    planId: seedCard.planId,
-                    digest: seedCard.digest,
-                    envelope: seedCard.envelope,
-                    idempotencyKey: "seed-run"
-                  })
-                  if (seedRun._tag === "Accepted" && seedRun.runId !== undefined) {
-                    runs.push(seedRun.runId)
-                    // Duplicate idempotency replay should return AlreadyApplied
-                    const dupRun = yield* control.run({
+                  : ControlExecutor.makeNoop()
+
+              const runStack = <R extends Control.Control | ControlRuntime.ControlRuntime | Journal.Journal, E>(
+                stackLayer: Layer.Layer<R, E>
+              ) =>
+                Effect.scoped(
+                  Effect.gen(function*() {
+                    const control = yield* Control.Control
+                    const runtime = yield* ControlRuntime.ControlRuntime
+                    const journal = yield* Journal.Journal
+                    const plans: Array<ControlSchema.PlanCard> = []
+                    const runs: Array<string> = []
+                    const trace: Array<string> = []
+                    let keySeq = 0
+
+                    // Seed with a guaranteed planned + approved + launched run so every fuzz iteration exercises live runs
+                    const seedCard = yield* control.plan({ flowId: "system/test", input: { seed: true } })
+                    plans.push(seedCard)
+                    yield* control.approve({
+                      target: {
+                        _tag: "Plan",
+                        planId: seedCard.planId,
+                        digest: seedCard.digest,
+                        envelope: seedCard.envelope
+                      },
+                      scope: seedCard.approval.scope,
+                      idempotencyKey: "seed-approve"
+                    })
+                    const seedRun = yield* control.run({
                       _tag: "Plan",
                       planId: seedCard.planId,
                       digest: seedCard.digest,
                       envelope: seedCard.envelope,
                       idempotencyKey: "seed-run"
                     })
-                    trace.push(`dupRun:${dupRun._tag}`)
-                  }
+                    if (seedRun._tag === "Accepted" && seedRun.runId !== undefined) {
+                      runs.push(seedRun.runId)
+                      // Duplicate idempotency replay should return AlreadyApplied
+                      const dupRun = yield* control.run({
+                        _tag: "Plan",
+                        planId: seedCard.planId,
+                        digest: seedCard.digest,
+                        envelope: seedCard.envelope,
+                        idempotencyKey: "seed-run"
+                      })
+                      trace.push(`dupRun:${dupRun._tag}`)
+                    }
 
-                  for (const cmd of cmds) {
-                    const k = `ik-${++keySeq}`
-                    switch (cmd._tag) {
-                      case "plan": {
-                        const card = yield* control.plan({
-                          flowId: "system/test",
-                          input: { suffix: cmd.suffix }
-                        })
-                        plans.push(card)
-                        trace.push(`plan:${card.flowId}`)
-                        break
-                      }
-                      case "approve": {
-                        const card = plans[cmd.planIdx]
-                        if (card === undefined) {
+                    for (const cmd of cmds) {
+                      const k = `ik-${++keySeq}`
+                      switch (cmd._tag) {
+                        case "plan": {
+                          const card = yield* control.plan({
+                            flowId: "system/test",
+                            input: { suffix: cmd.suffix }
+                          })
+                          plans.push(card)
+                          trace.push(`plan:${card.flowId}`)
+                          break
+                        }
+                        case "approve": {
+                          const card = plans[cmd.planIdx]
+                          if (card === undefined) {
+                            const r = yield* Effect.result(
+                              control.approve({
+                                target: {
+                                  _tag: "Plan",
+                                  planId: "missing-plan",
+                                  digest: "d",
+                                  envelope: { capabilities: [], flows: [], budget: {} }
+                                },
+                                scope: "run",
+                                idempotencyKey: k
+                              })
+                            )
+                            trace.push(Result.isFailure(r) ? `appErr:${r.failure._tag}` : `app:${r.success._tag}`)
+                            break
+                          }
                           const r = yield* Effect.result(
                             control.approve({
                               target: {
                                 _tag: "Plan",
-                                planId: "missing-plan",
-                                digest: "d",
-                                envelope: { capabilities: [], flows: [], budget: {} }
+                                planId: card.planId,
+                                digest: cmd.badDigest ? "wrong-digest" : card.digest,
+                                envelope: cmd.badEnvelope
+                                  ? { capabilities: ["extra"], flows: [], budget: {} }
+                                  : card.envelope
                               },
-                              scope: "run",
+                              scope: card.approval.scope,
                               idempotencyKey: k
                             })
                           )
                           trace.push(Result.isFailure(r) ? `appErr:${r.failure._tag}` : `app:${r.success._tag}`)
                           break
                         }
-                        const r = yield* Effect.result(
-                          control.approve({
-                            target: {
-                              _tag: "Plan",
-                              planId: card.planId,
-                              digest: cmd.badDigest ? "wrong-digest" : card.digest,
-                              envelope: cmd.badEnvelope
-                                ? { capabilities: ["extra"], flows: [], budget: {} }
-                                : card.envelope
-                            },
-                            scope: card.approval.scope,
-                            idempotencyKey: k
-                          })
-                        )
-                        trace.push(Result.isFailure(r) ? `appErr:${r.failure._tag}` : `app:${r.success._tag}`)
-                        break
-                      }
-                      case "deny": {
-                        const card = plans[cmd.planIdx]
-                        if (card === undefined) break
-                        const r = yield* Effect.result(
-                          control.deny({
-                            target: {
-                              _tag: "Plan",
-                              planId: card.planId,
-                              digest: card.digest,
-                              envelope: card.envelope
-                            },
-                            scope: card.approval.scope,
-                            idempotencyKey: k
-                          })
-                        )
-                        trace.push(Result.isFailure(r) ? `denyErr:${r.failure._tag}` : `deny:${r.success._tag}`)
-                        break
-                      }
-                      case "run": {
-                        const card = plans[cmd.planIdx]
-                        if (card === undefined) {
+                        case "deny": {
+                          const card = plans[cmd.planIdx]
+                          if (card === undefined) break
                           const r = yield* Effect.result(
-                            control.run({
-                              _tag: "Plan",
-                              planId: "no-plan",
-                              digest: "d",
-                              envelope: { capabilities: [], flows: [], budget: {} },
+                            control.deny({
+                              target: {
+                                _tag: "Plan",
+                                planId: card.planId,
+                                digest: card.digest,
+                                envelope: card.envelope
+                              },
+                              scope: card.approval.scope,
                               idempotencyKey: k
                             })
                           )
-                          trace.push(Result.isFailure(r) ? `runErr:${r.failure._tag}` : `run:${r.success._tag}`)
+                          trace.push(Result.isFailure(r) ? `denyErr:${r.failure._tag}` : `deny:${r.success._tag}`)
                           break
                         }
-                        const runKey = cmd.dupKey ? `run-dup:${cmd.planIdx}` : k
-                        const r = yield* Effect.result(
-                          control.run({
-                            _tag: "Plan",
-                            planId: card.planId,
-                            digest: cmd.badDigest ? "wrong-digest" : card.digest,
-                            envelope: card.envelope,
-                            idempotencyKey: runKey
-                          })
-                        )
-                        if (Result.isFailure(r)) {
-                          trace.push(`runErr:${r.failure._tag}`)
-                        } else {
-                          trace.push(`run:${r.success._tag}`)
-                          if (r.success._tag === "Accepted" && r.success.runId !== undefined) {
-                            runs.push(r.success.runId)
+                        case "run": {
+                          const card = plans[cmd.planIdx]
+                          if (card === undefined) {
+                            const r = yield* Effect.result(
+                              control.run({
+                                _tag: "Plan",
+                                planId: "no-plan",
+                                digest: "d",
+                                envelope: { capabilities: [], flows: [], budget: {} },
+                                idempotencyKey: k
+                              })
+                            )
+                            trace.push(Result.isFailure(r) ? `runErr:${r.failure._tag}` : `run:${r.success._tag}`)
+                            break
                           }
+                          const runKey = cmd.dupKey ? `run-dup:${cmd.planIdx}` : k
+                          const r = yield* Effect.result(
+                            control.run({
+                              _tag: "Plan",
+                              planId: card.planId,
+                              digest: cmd.badDigest ? "wrong-digest" : card.digest,
+                              envelope: card.envelope,
+                              idempotencyKey: runKey
+                            })
+                          )
+                          if (Result.isFailure(r)) {
+                            trace.push(`runErr:${r.failure._tag}`)
+                          } else {
+                            trace.push(`run:${r.success._tag}`)
+                            if (r.success._tag === "Accepted" && r.success.runId !== undefined) {
+                              runs.push(r.success.runId)
+                            }
+                          }
+                          break
                         }
-                        break
-                      }
-                      case "steer": {
-                        const runId = runs[cmd.runIdx] ?? "missing-run"
-                        const r = yield* Effect.result(
-                          control.steer({
-                            runId,
-                            message: {
-                              messageId: `msg-${k}`,
+                        case "steer": {
+                          const runId = runs[cmd.runIdx] ?? "missing-run"
+                          const r = yield* Effect.result(
+                            control.steer({
                               runId,
-                              principal: { id: "local", kind: "local", stampedAt: 1 },
-                              createdAt: 1,
-                              body: cmd.body
-                            },
-                            idempotencyKey: k
-                          })
-                        )
-                        trace.push(Result.isFailure(r) ? `steerErr:${r.failure._tag}` : `steer:${r.success._tag}`)
-                        break
-                      }
-                      case "signal": {
-                        const runId = runs[cmd.runIdx] ?? "missing-run"
-                        const r = yield* Effect.result(
-                          control.signal({
+                              message: {
+                                messageId: `msg-${k}`,
+                                runId,
+                                principal: { id: "local", kind: "local", stampedAt: 1 },
+                                createdAt: 1,
+                                body: cmd.body
+                              },
+                              idempotencyKey: k
+                            })
+                          )
+                          trace.push(Result.isFailure(r) ? `steerErr:${r.failure._tag}` : `steer:${r.success._tag}`)
+                          break
+                        }
+                        case "signal": {
+                          const runId = runs[cmd.runIdx] ?? "missing-run"
+                          const r = yield* Effect.result(
+                            control.signal({
+                              runId,
+                              signal: { name: cmd.name, payload: { ok: true } },
+                              idempotencyKey: k
+                            })
+                          )
+                          trace.push(Result.isFailure(r) ? `sigErr:${r.failure._tag}` : `sig:${r.success._tag}`)
+                          break
+                        }
+                        case "cancel": {
+                          const runId = runs[cmd.runIdx] ?? "missing-run"
+                          const r = yield* Effect.result(control.cancel({ runId, idempotencyKey: k }))
+                          trace.push(Result.isFailure(r) ? `cancelErr:${r.failure._tag}` : `cancel:${r.success._tag}`)
+                          break
+                        }
+                        case "resume": {
+                          const runId = runs[cmd.runIdx] ?? "missing-run"
+                          const r = yield* Effect.result(control.resume({ runId, idempotencyKey: k }))
+                          trace.push(Result.isFailure(r) ? `resumeErr:${r.failure._tag}` : `resume:${r.success._tag}`)
+                          break
+                        }
+                        case "registerNodeApproval": {
+                          const runId = runs[cmd.runIdx]
+                          if (runId === undefined) break
+                          const target = {
+                            _tag: "Node" as const,
                             runId,
-                            signal: { name: cmd.name, payload: { ok: true } },
-                            idempotencyKey: k
-                          })
-                        )
-                        trace.push(Result.isFailure(r) ? `sigErr:${r.failure._tag}` : `sig:${r.success._tag}`)
-                        break
-                      }
-                      case "cancel": {
-                        const runId = runs[cmd.runIdx] ?? "missing-run"
-                        const r = yield* Effect.result(control.cancel({ runId, idempotencyKey: k }))
-                        trace.push(Result.isFailure(r) ? `cancelErr:${r.failure._tag}` : `cancel:${r.success._tag}`)
-                        break
-                      }
-                      case "resume": {
-                        const runId = runs[cmd.runIdx] ?? "missing-run"
-                        const r = yield* Effect.result(control.resume({ runId, idempotencyKey: k }))
-                        trace.push(Result.isFailure(r) ? `resumeErr:${r.failure._tag}` : `resume:${r.success._tag}`)
-                        break
-                      }
-                      case "registerNodeApproval": {
-                        const runId = runs[cmd.runIdx]
-                        if (runId === undefined) break
-                        const target = {
-                          _tag: "Node" as const,
-                          runId,
-                          requestId: `req-${keySeq}`,
-                          digest: `dig-${keySeq}`,
-                          envelope: { capabilities: [], flows: [], budget: {} }
+                            requestId: `req-${keySeq}`,
+                            digest: `dig-${keySeq}`,
+                            envelope: { capabilities: [], flows: [], budget: {} }
+                          }
+                          const reg = yield* Effect.result(runtime.registerApproval(target))
+                          if (Result.isSuccess(reg)) {
+                            const dec = cmd.decide === "approve"
+                              ? yield* Effect.result(control.approve({ target, scope: "once", idempotencyKey: k }))
+                              : yield* Effect.result(control.deny({ target, scope: "once", idempotencyKey: k }))
+                            trace.push(
+                              Result.isFailure(dec) ? `nodeErr:${dec.failure._tag}` : `node:${dec.success._tag}`
+                            )
+                          }
+                          break
                         }
-                        const reg = yield* Effect.result(runtime.registerApproval(target))
-                        if (Result.isSuccess(reg)) {
-                          const dec = cmd.decide === "approve"
-                            ? yield* Effect.result(control.approve({ target, scope: "once", idempotencyKey: k }))
-                            : yield* Effect.result(control.deny({ target, scope: "once", idempotencyKey: k }))
-                          trace.push(Result.isFailure(dec) ? `nodeErr:${dec.failure._tag}` : `node:${dec.success._tag}`)
+                        case "list": {
+                          const r = yield* Effect.result(control.list({ _tag: cmd.kind } as Control.ListInput))
+                          trace.push(
+                            Result.isFailure(r) ? `listErr:${cmd.kind}:${r.failure._tag}` : `list:${r.success._tag}`
+                          )
+                          break
                         }
-                        break
-                      }
-                      case "list": {
-                        const r = yield* Effect.result(control.list({ _tag: cmd.kind } as Control.ListInput))
-                        trace.push(
-                          Result.isFailure(r) ? `listErr:${cmd.kind}:${r.failure._tag}` : `list:${r.success._tag}`
-                        )
-                        break
                       }
                     }
-                  }
 
-                  // Exercise watch + composite cursor + invalid cursor + pagePlanIds + queryPlans + Monitor.run on first run
-                  if (runs[0] !== undefined) {
-                    const runId = runs[0]
-                    yield* journal.emitDurableUnfenced(
-                      new JournalEvent.Input({
-                        runId: JournalEvent.RunId.make(runId),
-                        sourceId: JournalEvent.SourceId.make("/fuzz"),
-                        eventType: "flows/notifications/Promoted",
-                        payload: { boundary: "turn", ids: ["s1", "s2"] }
+                    // Exercise watch + composite cursor + invalid cursor + pagePlanIds + queryPlans + Monitor.run on first run
+                    if (runs[0] !== undefined) {
+                      const runId = runs[0]
+                      yield* journal.emitDurableUnfenced(
+                        new JournalEvent.Input({
+                          runId: JournalEvent.RunId.make(runId),
+                          sourceId: JournalEvent.SourceId.make("/fuzz"),
+                          eventType: "flows/notifications/Promoted",
+                          payload: { boundary: "turn", ids: ["s1", "s2"] }
+                        })
+                      )
+                      const events = yield* control.watch({ runId, follow: false }).pipe(Stream.runCollect)
+                      if (events.length > 0 && events[0]?.cursor !== undefined) {
+                        yield* control.watch({ runId, follow: false, afterCursor: events[0].cursor }).pipe(
+                          Stream.runCollect
+                        )
+                      }
+                      const badWatch = yield* Effect.result(
+                        control.watch({ runId, follow: false, afterSequence: 1, afterCursor: { sequence: 1 } }).pipe(
+                          Stream.runCollect
+                        )
+                      )
+                      if (Result.isSuccess(badWatch)) return { ok: false, trace }
+
+                      // Live Monitor.run with autoHeal & healthCheck over this run!
+                      const monReg = Health.makeRegistry({}, "run")
+                      yield* Monitor.run({
+                        runId,
+                        intervalMs: 0,
+                        maxChecks: 3,
+                        stallBeats: 1,
+                        retainBeats: 2,
+                        autoHeal: ["stalled", "failing"],
+                        healthCheck: monReg.resolve("run")
                       })
-                    )
-                    const events = yield* control.watch({ runId, follow: false }).pipe(Stream.runCollect)
-                    if (events.length > 0 && events[0]?.cursor !== undefined) {
-                      yield* control.watch({ runId, follow: false, afterCursor: events[0].cursor }).pipe(
-                        Stream.runCollect
+
+                      // Direct ControlRuntime reads/signals/resumes/pages/fibers
+                      yield* runtime.getRun(runId)
+                      yield* runtime.pageRunIds({ limit: 5 })
+                      yield* runtime.queryRuns({ limit: 5 })
+                      yield* runtime.listFlows
+                      yield* runtime.admitSignal("cmd-sig-1", runId, { name: "ev", payload: { n: 1 } })
+                      yield* runtime.signalCommand("cmd-sig-1")
+                      yield* runtime.querySignals({ runId, limit: 5 })
+                      yield* runtime.pendingSignals
+                      yield* runtime.bindSignal("cmd-sig-1", "tok-1")
+                      yield* runtime.settleSignal("cmd-sig-1", "delivered")
+                      yield* runtime.deliveredSignals(runId)
+                      const resSeq = yield* Effect.result(runtime.requestResume(runId, { consent: 1 }))
+                      yield* runtime.pendingResumes
+                      if (Result.isSuccess(resSeq)) {
+                        yield* runtime.clearResume(runId, resSeq.success)
+                      }
+                      yield* Effect.result(
+                        control.list({ _tag: "runs", filters: { runId, flowId: "system/test" }, limit: 1 })
+                      )
+                      yield* Effect.result(
+                        control.list({ _tag: "plans", filters: { flowId: "system/test" }, limit: 1 })
+                      )
+                      yield* Effect.result(control.list({ _tag: "executions", runId, executionIds: [runId] }))
+                      yield* Effect.result(control.run({ _tag: "Resume", runId, idempotencyKey: "run-resume-1" }))
+                      const bgFiber = yield* Effect.never.pipe(Effect.forkChild)
+                      yield* Effect.result(runtime.registerFiber(runId, bgFiber))
+                      yield* Effect.result(runtime.interrupt(runId))
+                      // Retry after run has been settled/cancelled!
+                      yield* Effect.result(
+                        control.run({ _tag: "Retry", runId, step: "step-1", idempotencyKey: "run-retry-1" })
                       )
                     }
-                    const badWatch = yield* Effect.result(
-                      control.watch({ runId, follow: false, afterSequence: 1, afterCursor: { sequence: 1 } }).pipe(
-                        Stream.runCollect
-                      )
-                    )
-                    if (Result.isSuccess(badWatch)) return { ok: false, trace }
 
-                    // Live Monitor.run with autoHeal & healthCheck over this run!
-                    const monReg = Health.makeRegistry({}, "run")
-                    yield* Monitor.run({
-                      runId,
-                      intervalMs: 0,
-                      maxChecks: 3,
-                      stallBeats: 1,
-                      retainBeats: 2,
-                      autoHeal: ["stalled", "failing"],
-                      healthCheck: monReg.resolve("run")
-                    })
+                    yield* runtime.pagePlanIds({ limit: 5 })
+                    yield* runtime.queryPlans({ limit: 5 })
 
-                    // Direct ControlRuntime reads/signals/resumes/pages/fibers
-                    yield* runtime.getRun(runId)
-                    yield* runtime.pageRunIds({ limit: 5 })
-                    yield* runtime.queryRuns({ limit: 5 })
-                    yield* runtime.listFlows
-                    yield* runtime.admitSignal("cmd-sig-1", runId, { name: "ev", payload: { n: 1 } })
-                    yield* runtime.signalCommand("cmd-sig-1")
-                    yield* runtime.querySignals({ runId, limit: 5 })
-                    yield* runtime.pendingSignals
-                    yield* runtime.bindSignal("cmd-sig-1", "tok-1")
-                    yield* runtime.settleSignal("cmd-sig-1", "delivered")
-                    yield* runtime.deliveredSignals(runId)
-                    const resSeq = yield* Effect.result(runtime.requestResume(runId, { consent: 1 }))
-                    yield* runtime.pendingResumes
-                    if (Result.isSuccess(resSeq)) {
-                      yield* runtime.clearResume(runId, resSeq.success)
-                    }
-                    yield* Effect.result(
-                      control.list({ _tag: "runs", filters: { runId, flowId: "system/test" }, limit: 1 })
-                    )
-                    yield* Effect.result(control.list({ _tag: "plans", filters: { flowId: "system/test" }, limit: 1 }))
-                    yield* Effect.result(control.list({ _tag: "executions", runId, executionIds: [runId] }))
-                    yield* Effect.result(control.run({ _tag: "Resume", runId, idempotencyKey: "run-resume-1" }))
-                    const bgFiber = yield* Effect.never.pipe(Effect.forkChild)
-                    yield* Effect.result(runtime.registerFiber(runId, bgFiber))
-                    yield* Effect.result(runtime.interrupt(runId))
-                    // Retry after run has been settled/cancelled!
-                    yield* Effect.result(
-                      control.run({ _tag: "Retry", runId, step: "step-1", idempotencyKey: "run-retry-1" })
-                    )
-                  }
+                    return { ok: true, trace }
+                  }).pipe(Effect.provide(Layer.mergeAll(stackLayer, silentLogger)))
+                )
 
-                  yield* runtime.pagePlanIds({ limit: 5 })
-                  yield* runtime.queryPlans({ limit: 5 })
-
-                  return { ok: true, trace }
-                }).pipe(Effect.provide(Layer.mergeAll(stackLayer, silentLogger)))
-              )
-
-            const sqlRes = yield* runStack(durable({ executor: makeExec() }))
-            const memRes = yield* runStack(TestControl.layer(undefined, makeExec()).pipe(Layer.orDie))
-            return sqlRes.ok && memRes.ok && JSON.stringify(sqlRes.trace) === JSON.stringify(memRes.trace)
-          }),
-        { seed: seed + 20, executions: fastExecutions }
+              const sqlRes = yield* runStack(durable({ executor: makeExec() }))
+              const memRes = yield* runStack(TestControl.layer(undefined, makeExec()).pipe(Layer.orDie))
+              return sqlRes.ok && memRes.ok && JSON.stringify(sqlRes.trace) === JSON.stringify(memRes.trace)
+            }),
+          { seed: seed + 20, executions: fastExecutions }
+        )
       )
-    )
-    const failure = Fuzz.formatReport(report)
-    if (failure !== undefined) throw new Error(failure)
-    expect(report._tag).toBe("Passed")
-  })
+      const failure = Fuzz.formatReport(report)
+      if (failure !== undefined) throw new Error(failure)
+      expect(report._tag).toBe("Passed")
+    }
+  )
 
   it("Differential fuzz: SqlCredentialStore (real SQLite) matches CredentialStore.makeMemory across create/resolve/rotate/revoke/authorize", async () => {
     const opArb = Schema.Union([

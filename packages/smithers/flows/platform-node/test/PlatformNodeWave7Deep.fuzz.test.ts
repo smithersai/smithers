@@ -129,7 +129,11 @@ describe("@smthrs/platform-node Wave 7 deep fuzz (ProcessReaper, DestinationProx
               },
               ownGroup: () => (scenario === "ownGroupUnknown" ? null : 4242),
               bootedAtMs: () => bootMs,
-              refuseTarget: () => (scenario === "noGroup" ? "no-group" : scenario === "invalidRecord" ? "invalid-record" : undefined),
+              refuseTarget: () => (scenario === "noGroup"
+                ? "no-group"
+                : scenario === "invalidRecord"
+                ? "invalid-record"
+                : undefined),
               killTree: () =>
                 scenario === "killFailed" ? "failed" : scenario === "killAlreadyGone" ? "already-gone" : "signalled"
             }
@@ -160,230 +164,276 @@ describe("@smthrs/platform-node Wave 7 deep fuzz (ProcessReaper, DestinationProx
     assertPassed(report)
   }, 45_000)
 
-  it("DestinationProxy.open enforces proxy auth, destination allowlist, HTTP forwarding, and CONNECT tunneling", async () => {
-    const arb = Arbitrary.schema(
-      Schema.Struct({
-        mode: Schema.Literals([
-          "httpAllowed",
-          "httpDeniedHost",
-          "httpMissingAuth",
-          "httpWrongAuth",
-          "httpUserInfoDenied",
-          "connectAllowed",
-          "connectDeniedHost",
-          "connectMissingAuth",
-          "connectBadAuthority"
-        ]),
-        token: Schema.Literals(["tok-alpha-1", "tok-beta-2"])
-      })
-    )
-
-    const upstream = Http.createServer((req, res) => {
-      res.writeHead(200, { "content-type": "text/plain" })
-      res.end(`ok:${req.url}`)
-    })
-    await new Promise<void>((resolve) => upstream.listen(0, "127.0.0.1", () => resolve()))
-    const addr = upstream.address()
-    const port = typeof addr === "object" && addr !== null ? addr.port : 0
-
-    try {
-      const report = await Effect.runPromise(
-        Fuzz.run(
-          arb,
-          ({ mode, token }) =>
-            Effect.gen(function*() {
-              const dir = mkdtempSync(join(tmpdir(), "dest-proxy-w7-"))
-              const sock = join(dir, "proxy.sock")
-              const goodAuth = "Basic " + Buffer.from(`broker:${token}`).toString("base64")
-              const wrongAuth = "Basic " + Buffer.from("broker:wrong-token").toString("base64")
-              try {
-                yield* Effect.scoped(
-                  Effect.gen(function*() {
-                    yield* DestinationProxy.open(sock, [`127.0.0.1:${port}`], token)
-                    if (mode === "httpAllowed") {
-                      const res = yield* Effect.promise(() => httpOverSocket(sock, `http://127.0.0.1:${port}/ping`, goodAuth))
-                      expect(res.status).toBe(200)
-                      expect(res.body).toBe("ok:/ping")
-                    } else if (mode === "httpDeniedHost") {
-                      const res = yield* Effect.promise(() => httpOverSocket(sock, "http://blocked.example.com/", goodAuth))
-                      expect(res.status).toBe(403)
-                    } else if (mode === "httpMissingAuth") {
-                      const res = yield* Effect.promise(() => httpOverSocket(sock, `http://127.0.0.1:${port}/ping`))
-                      expect(res.status).toBe(407)
-                    } else if (mode === "httpWrongAuth") {
-                      const res = yield* Effect.promise(() => httpOverSocket(sock, `http://127.0.0.1:${port}/ping`, wrongAuth))
-                      expect(res.status).toBe(407)
-                    } else if (mode === "httpUserInfoDenied") {
-                      const res = yield* Effect.promise(() => httpOverSocket(sock, `http://user:pass@127.0.0.1:${port}/`, goodAuth))
-                      expect(res.status).toBe(403)
-                    } else if (mode === "connectAllowed") {
-                      const out = yield* Effect.promise(() => connectOverSocket(sock, `127.0.0.1:${port}`, goodAuth))
-                      expect(out).toContain("200")
-                    } else if (mode === "connectDeniedHost") {
-                      const out = yield* Effect.promise(() => connectOverSocket(sock, "blocked.example.com:443", goodAuth))
-                      expect(out).toContain("403")
-                    } else if (mode === "connectMissingAuth") {
-                      const out = yield* Effect.promise(() => connectOverSocket(sock, `127.0.0.1:${port}`))
-                      expect(out).toContain("407")
-                    } else {
-                      const out = yield* Effect.promise(() => connectOverSocket(sock, "not-a-valid-authority", goodAuth))
-                      expect(out).toMatch(/400|403/)
-                    }
-                  })
-                )
-                return true
-              } finally {
-                rmSync(dir, { recursive: true, force: true })
-              }
-            }),
-          { executions: Math.min(executions, 35), seed: seed + 1 }
-        )
+  it(
+    "DestinationProxy.open enforces proxy auth, destination allowlist, HTTP forwarding, and CONNECT tunneling",
+    async () => {
+      const arb = Arbitrary.schema(
+        Schema.Struct({
+          mode: Schema.Literals([
+            "httpAllowed",
+            "httpDeniedHost",
+            "httpMissingAuth",
+            "httpWrongAuth",
+            "httpUserInfoDenied",
+            "connectAllowed",
+            "connectDeniedHost",
+            "connectMissingAuth",
+            "connectBadAuthority"
+          ]),
+          token: Schema.Literals(["tok-alpha-1", "tok-beta-2"])
+        })
       )
-      assertPassed(report)
-    } finally {
-      await new Promise<void>((resolve) => upstream.close(() => resolve()))
-    }
-  }, 60_000)
 
-  it("PipedProcess.spawn/refuseNul/failure, ScopedProcess.spawn/status, FetchTransport.observe, ProcessConfinement & ProcessSupervisor helpers", async () => {
-    const arb = Arbitrary.schema(
-      Schema.Struct({
-        mode: Schema.Literals([
-          "nulInCommand",
-          "nulInArg",
-          "nulInCwd",
-          "nulInEnvVal",
-          "injectedSpawnError",
-          "injectedThrow",
-          "realEchoAndExit",
-          "scopedSpawnStatus",
-          "fetchTransportObserve",
-          "supervisorAndConfinement"
-        ]),
-        exitCode: Schema.Literals([0, 1, 42]),
-        errCode: Schema.Literals(["ENOENT", "EACCES", "EAGAIN", "UNKNOWN"])
+      const upstream = Http.createServer((req, res) => {
+        res.writeHead(200, { "content-type": "text/plain" })
+        res.end(`ok:${req.url}`)
       })
-    )
+      await new Promise<void>((resolve) => upstream.listen(0, "127.0.0.1", () => resolve()))
+      const addr = upstream.address()
+      const port = typeof addr === "object" && addr !== null ? addr.port : 0
 
-    const upstream = Http.createServer((_req, res) => {
-      res.writeHead(200)
-      res.end("pong")
-    })
-    await new Promise<void>((resolve) => upstream.listen(0, "127.0.0.1", () => resolve()))
-    const addr = upstream.address()
-    const port = typeof addr === "object" && addr !== null ? addr.port : 0
-
-    try {
-      const report = await Effect.runPromise(
-        Fuzz.run(
-          arb,
-          ({ mode, exitCode, errCode }) =>
-            Effect.gen(function*() {
-              if (mode === "nulInCommand") {
-                const ex = yield* PipedProcess.refuseNul(ChildProcess.make("bad\0cmd", [])).pipe(Effect.exit)
-                expect(Exit.isFailure(ex)).toBe(true)
-              } else if (mode === "nulInArg") {
-                const ex = yield* PipedProcess.refuseNul(ChildProcess.make("echo", ["ok", "bad\0arg"])).pipe(Effect.exit)
-                expect(Exit.isFailure(ex)).toBe(true)
-              } else if (mode === "nulInCwd") {
-                const ex = yield* PipedProcess.refuseNul(ChildProcess.make("echo", [Redacted.make("secret\0val")])).pipe(Effect.exit)
-                expect(Exit.isFailure(ex)).toBe(true)
-              } else if (mode === "nulInEnvVal") {
-                const ex = yield* PipedProcess.refuseNul(ChildProcess.make("echo", [], { env: { X: "a\0b" } })).pipe(Effect.exit)
-                expect(Exit.isFailure(ex)).toBe(true)
-              } else if (mode === "injectedSpawnError") {
-                const faulty: PipedProcess.NativeSpawn = () => {
-                  const child = Object.assign(new EventEmitter(), {
-                    pid: undefined,
-                    stdin: new PassThrough(),
-                    stdout: new PassThrough(),
-                    stderr: new PassThrough(),
-                    kill: () => true
-                  })
-                  queueMicrotask(() => child.emit("error", Object.assign(new Error(`err:${errCode}`), { code: errCode })))
-                  return child as never
-                }
-                const ex = yield* Effect.scoped(PipedProcess.spawn(ChildProcess.make("echo", ["hi"]), false)).pipe(
-                  Effect.provideService(PipedProcess.NativeSpawn, faulty),
-                  Effect.exit
-                )
-                expect(Exit.isFailure(ex)).toBe(true)
-              } else if (mode === "injectedThrow") {
-                const throwing: PipedProcess.NativeSpawn = () => {
-                  throw Object.assign(new Error(`sync:${errCode}`), { code: errCode })
-                }
-                const ex = yield* Effect.scoped(PipedProcess.spawn(ChildProcess.make("echo", ["hi"]), false)).pipe(
-                  Effect.provideService(PipedProcess.NativeSpawn, throwing),
-                  Effect.exit
-                )
-                expect(Exit.isFailure(ex)).toBe(true)
-                const fErr = PipedProcess.failure("spawn", Object.assign(new Error("boom"), { code: errCode }))
-                expect(fErr._tag).toBe("PlatformError")
-              } else if (mode === "realEchoAndExit") {
-                yield* Effect.scoped(
-                  Effect.gen(function*() {
-                    const handle = yield* PipedProcess.spawn(
-                      ChildProcess.make(process.execPath, ["-e", `process.stdout.write("hi"); process.exit(${exitCode})`]),
-                      false
-                    )
-                    expect(PipedProcess.standardFdsOf(handle)).toBeUndefined()
-                    const code = yield* handle.exitCode
-                    expect(Number(code)).toBe(exitCode)
-                  })
-                )
-              } else if (mode === "scopedSpawnStatus") {
-                yield* Effect.scoped(
-                  Effect.gen(function*() {
-                    const handle = yield* ScopedProcess.spawn({
-                      command: process.execPath,
-                      args: ["-e", `process.exit(${exitCode})`]
-                    })
-                    const st = yield* ScopedProcess.status(handle)
-                    expect(st.code).toBe(exitCode)
-                  })
-                )
-              } else if (mode === "fetchTransportObserve") {
-                const origin = `http://127.0.0.1:${port}`
-                const obs = FetchTransport.observe(origin)
+      try {
+        const report = await Effect.runPromise(
+          Fuzz.run(
+            arb,
+            ({ mode, token }) =>
+              Effect.gen(function*() {
+                const dir = mkdtempSync(join(tmpdir(), "dest-proxy-w7-"))
+                const sock = join(dir, "proxy.sock")
+                const goodAuth = "Basic " + Buffer.from(`broker:${token}`).toString("base64")
+                const wrongAuth = "Basic " + Buffer.from("broker:wrong-token").toString("base64")
                 try {
-                  const att = obs.begin()
-                  const body = yield* Effect.promise(() =>
-                    att.run(async () => {
-                      const r = await fetch(`${origin}/ping`)
-                      return await r.text()
+                  yield* Effect.scoped(
+                    Effect.gen(function*() {
+                      yield* DestinationProxy.open(sock, [`127.0.0.1:${port}`], token)
+                      if (mode === "httpAllowed") {
+                        const res = yield* Effect.promise(() =>
+                          httpOverSocket(sock, `http://127.0.0.1:${port}/ping`, goodAuth)
+                        )
+                        expect(res.status).toBe(200)
+                        expect(res.body).toBe("ok:/ping")
+                      } else if (mode === "httpDeniedHost") {
+                        const res = yield* Effect.promise(() =>
+                          httpOverSocket(sock, "http://blocked.example.com/", goodAuth)
+                        )
+                        expect(res.status).toBe(403)
+                      } else if (mode === "httpMissingAuth") {
+                        const res = yield* Effect.promise(() => httpOverSocket(sock, `http://127.0.0.1:${port}/ping`))
+                        expect(res.status).toBe(407)
+                      } else if (mode === "httpWrongAuth") {
+                        const res = yield* Effect.promise(() =>
+                          httpOverSocket(sock, `http://127.0.0.1:${port}/ping`, wrongAuth)
+                        )
+                        expect(res.status).toBe(407)
+                      } else if (mode === "httpUserInfoDenied") {
+                        const res = yield* Effect.promise(() =>
+                          httpOverSocket(sock, `http://user:pass@127.0.0.1:${port}/`, goodAuth)
+                        )
+                        expect(res.status).toBe(403)
+                      } else if (mode === "connectAllowed") {
+                        const out = yield* Effect.promise(() => connectOverSocket(sock, `127.0.0.1:${port}`, goodAuth))
+                        expect(out).toContain("200")
+                      } else if (mode === "connectDeniedHost") {
+                        const out = yield* Effect.promise(() =>
+                          connectOverSocket(sock, "blocked.example.com:443", goodAuth)
+                        )
+                        expect(out).toContain("403")
+                      } else if (mode === "connectMissingAuth") {
+                        const out = yield* Effect.promise(() => connectOverSocket(sock, `127.0.0.1:${port}`))
+                        expect(out).toContain("407")
+                      } else {
+                        const out = yield* Effect.promise(() =>
+                          connectOverSocket(sock, "not-a-valid-authority", goodAuth)
+                        )
+                        expect(out).toMatch(/400|403/)
+                      }
                     })
                   )
-                  expect(body).toBe("pong")
-                  const fields = att.fields()
-                  expect(typeof fields).toBe("object")
+                  return true
                 } finally {
-                  obs.close()
-                  obs.close()
+                  rmSync(dir, { recursive: true, force: true })
                 }
-                // After close, begin() still returns an attempt safely
-                const after = obs.begin()
-                expect(typeof after.fields()).toBe("object")
-              } else {
-                const args1 = yield* ProcessSupervisor.bootstrapArguments({ bun: false, main: "/app/main.js", sea: false })
-                const args2 = yield* ProcessSupervisor.bootstrapArguments({ bun: true, main: "/app/main.js", sea: false })
-                const args3Ex = yield* ProcessSupervisor.bootstrapArguments({ bun: false, main: "/app/main.js", sea: true }).pipe(Effect.exit)
-                expect(Array.isArray(args1)).toBe(true)
-                expect(Array.isArray(args2)).toBe(true)
-                expect(Exit.isFailure(args3Ex)).toBe(true)
-                expect(ProcessSupervisor.runtimeDescription({ bun: false, main: "/app/main.js" })).toBeDefined()
-                const supErr = ProcessSupervisor.failure("spawn", "echo", Object.assign(new Error("fail"), { code: errCode }))
-                expect(supErr._tag).toBe("PlatformError")
-                const conf = ProcessConfinement.make()
-                expect(typeof conf).toBe("object")
-              }
-              return true
-            }),
-          { executions: Math.min(executions, 45), seed: seed + 2 }
+              }),
+            { executions: Math.min(executions, 35), seed: seed + 1 }
+          )
         )
+        assertPassed(report)
+      } finally {
+        await new Promise<void>((resolve) => upstream.close(() => resolve()))
+      }
+    },
+    60_000
+  )
+
+  it(
+    "PipedProcess.spawn/refuseNul/failure, ScopedProcess.spawn/status, FetchTransport.observe, ProcessConfinement & ProcessSupervisor helpers",
+    async () => {
+      const arb = Arbitrary.schema(
+        Schema.Struct({
+          mode: Schema.Literals([
+            "nulInCommand",
+            "nulInArg",
+            "nulInCwd",
+            "nulInEnvVal",
+            "injectedSpawnError",
+            "injectedThrow",
+            "realEchoAndExit",
+            "scopedSpawnStatus",
+            "fetchTransportObserve",
+            "supervisorAndConfinement"
+          ]),
+          exitCode: Schema.Literals([0, 1, 42]),
+          errCode: Schema.Literals(["ENOENT", "EACCES", "EAGAIN", "UNKNOWN"])
+        })
       )
-      assertPassed(report)
-    } finally {
-      await new Promise<void>((resolve) => upstream.close(() => resolve()))
-    }
-  }, 60_000)
+
+      const upstream = Http.createServer((_req, res) => {
+        res.writeHead(200)
+        res.end("pong")
+      })
+      await new Promise<void>((resolve) => upstream.listen(0, "127.0.0.1", () => resolve()))
+      const addr = upstream.address()
+      const port = typeof addr === "object" && addr !== null ? addr.port : 0
+
+      try {
+        const report = await Effect.runPromise(
+          Fuzz.run(
+            arb,
+            ({ mode, exitCode, errCode }) =>
+              Effect.gen(function*() {
+                if (mode === "nulInCommand") {
+                  const ex = yield* PipedProcess.refuseNul(ChildProcess.make("bad\0cmd", [])).pipe(Effect.exit)
+                  expect(Exit.isFailure(ex)).toBe(true)
+                } else if (mode === "nulInArg") {
+                  const ex = yield* PipedProcess.refuseNul(ChildProcess.make("echo", ["ok", "bad\0arg"])).pipe(
+                    Effect.exit
+                  )
+                  expect(Exit.isFailure(ex)).toBe(true)
+                } else if (mode === "nulInCwd") {
+                  const ex = yield* PipedProcess.refuseNul(ChildProcess.make("echo", [Redacted.make("secret\0val")]))
+                    .pipe(Effect.exit)
+                  expect(Exit.isFailure(ex)).toBe(true)
+                } else if (mode === "nulInEnvVal") {
+                  const ex = yield* PipedProcess.refuseNul(ChildProcess.make("echo", [], { env: { X: "a\0b" } })).pipe(
+                    Effect.exit
+                  )
+                  expect(Exit.isFailure(ex)).toBe(true)
+                } else if (mode === "injectedSpawnError") {
+                  const faulty: PipedProcess.NativeSpawn = () => {
+                    const child = Object.assign(new EventEmitter(), {
+                      pid: undefined,
+                      stdin: new PassThrough(),
+                      stdout: new PassThrough(),
+                      stderr: new PassThrough(),
+                      kill: () => true
+                    })
+                    queueMicrotask(() =>
+                      child.emit("error", Object.assign(new Error(`err:${errCode}`), { code: errCode }))
+                    )
+                    return child as never
+                  }
+                  const ex = yield* Effect.scoped(PipedProcess.spawn(ChildProcess.make("echo", ["hi"]), false)).pipe(
+                    Effect.provideService(PipedProcess.NativeSpawn, faulty),
+                    Effect.exit
+                  )
+                  expect(Exit.isFailure(ex)).toBe(true)
+                } else if (mode === "injectedThrow") {
+                  const throwing: PipedProcess.NativeSpawn = () => {
+                    throw Object.assign(new Error(`sync:${errCode}`), { code: errCode })
+                  }
+                  const ex = yield* Effect.scoped(PipedProcess.spawn(ChildProcess.make("echo", ["hi"]), false)).pipe(
+                    Effect.provideService(PipedProcess.NativeSpawn, throwing),
+                    Effect.exit
+                  )
+                  expect(Exit.isFailure(ex)).toBe(true)
+                  const fErr = PipedProcess.failure("spawn", Object.assign(new Error("boom"), { code: errCode }))
+                  expect(fErr._tag).toBe("PlatformError")
+                } else if (mode === "realEchoAndExit") {
+                  yield* Effect.scoped(
+                    Effect.gen(function*() {
+                      const handle = yield* PipedProcess.spawn(
+                        ChildProcess.make(process.execPath, [
+                          "-e",
+                          `process.stdout.write("hi"); process.exit(${exitCode})`
+                        ]),
+                        false
+                      )
+                      expect(PipedProcess.standardFdsOf(handle)).toBeUndefined()
+                      const code = yield* handle.exitCode
+                      expect(Number(code)).toBe(exitCode)
+                    })
+                  )
+                } else if (mode === "scopedSpawnStatus") {
+                  yield* Effect.scoped(
+                    Effect.gen(function*() {
+                      const handle = yield* ScopedProcess.spawn({
+                        command: process.execPath,
+                        args: ["-e", `process.exit(${exitCode})`]
+                      })
+                      const st = yield* ScopedProcess.status(handle)
+                      expect(st.code).toBe(exitCode)
+                    })
+                  )
+                } else if (mode === "fetchTransportObserve") {
+                  const origin = `http://127.0.0.1:${port}`
+                  const obs = FetchTransport.observe(origin)
+                  try {
+                    const att = obs.begin()
+                    const body = yield* Effect.promise(() =>
+                      att.run(async () => {
+                        const r = await fetch(`${origin}/ping`)
+                        return await r.text()
+                      })
+                    )
+                    expect(body).toBe("pong")
+                    const fields = att.fields()
+                    expect(typeof fields).toBe("object")
+                  } finally {
+                    obs.close()
+                    obs.close()
+                  }
+                  // After close, begin() still returns an attempt safely
+                  const after = obs.begin()
+                  expect(typeof after.fields()).toBe("object")
+                } else {
+                  const args1 = yield* ProcessSupervisor.bootstrapArguments({
+                    bun: false,
+                    main: "/app/main.js",
+                    sea: false
+                  })
+                  const args2 = yield* ProcessSupervisor.bootstrapArguments({
+                    bun: true,
+                    main: "/app/main.js",
+                    sea: false
+                  })
+                  const args3Ex = yield* ProcessSupervisor.bootstrapArguments({
+                    bun: false,
+                    main: "/app/main.js",
+                    sea: true
+                  }).pipe(Effect.exit)
+                  expect(Array.isArray(args1)).toBe(true)
+                  expect(Array.isArray(args2)).toBe(true)
+                  expect(Exit.isFailure(args3Ex)).toBe(true)
+                  expect(ProcessSupervisor.runtimeDescription({ bun: false, main: "/app/main.js" })).toBeDefined()
+                  const supErr = ProcessSupervisor.failure(
+                    "spawn",
+                    "echo",
+                    Object.assign(new Error("fail"), { code: errCode })
+                  )
+                  expect(supErr._tag).toBe("PlatformError")
+                  const conf = ProcessConfinement.make()
+                  expect(typeof conf).toBe("object")
+                }
+                return true
+              }),
+            { executions: Math.min(executions, 45), seed: seed + 2 }
+          )
+        )
+        assertPassed(report)
+      } finally {
+        await new Promise<void>((resolve) => upstream.close(() => resolve()))
+      }
+    },
+    60_000
+  )
 })

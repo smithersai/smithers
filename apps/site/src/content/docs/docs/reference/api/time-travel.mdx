@@ -238,9 +238,9 @@ a `Position`: a run id plus a `Frame`.
 The workspace a fork lands in is named after the child run id the fork mints,
 never supplied: `smithers-fork-` plus the sanitized id capped at 64 characters
 plus a short digest of the raw id. A frame forked twice therefore gets two
-lanes, and the lane is forgotten when the service scope is released. The scope
-tracks at most 256 lanes: a fork past that forgets the oldest tracked lane at
-once, so a long-lived service holds a bounded set and closes in bounded work.
+lanes, and the lane is forgotten when the service scope is released. No lane is
+forgotten before then: a later fork never deregisters the workspace an earlier
+fork's child run may still be executing in.
 
 The mint is a durable reservation, renewed immediately before `workspaceAdd`
 to restart its stale window. A reservation reclaimed while the fork stalled

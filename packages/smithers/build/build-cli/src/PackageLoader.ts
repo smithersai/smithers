@@ -35,7 +35,9 @@ import * as Target from "@smthrs/targets/Target"
 import type * as WorkspaceDeclaration from "@smthrs/targets/WorkspaceDeclaration"
 import { createHash } from "node:crypto"
 import * as Fs from "node:fs/promises"
-import { isBuiltin, registerHooks } from "node:module"
+import * as NodeModule from "node:module"
+const { isBuiltin } = NodeModule
+const registerHooks = (hooks: Parameters<typeof NodeModule.registerHooks>[0]) => NodeModule.registerHooks(hooks)
 import * as NodePath from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
 import * as Diagnostic from "./Diagnostic.ts"

@@ -161,8 +161,8 @@ describe("@smthrs/platform-bun BunFileReplacement, BunDesktop, BunHost & BunRunt
         openExternal: () => true,
         openFileDialog: () => Promise.reject(new Error("dialog-failed"))
       }
-    } as unknown as Parameters<typeof BunDesktop.layerWith>[0]["load"] extends
-      Effect.Effect<infer A, any, any> ? A : never
+    } as unknown as Parameters<typeof BunDesktop.layerWith>[0]["load"] extends Effect.Effect<infer A, any, any> ? A :
+      never
     const brokenLayer = BunDesktop.layerWith({ load: Effect.succeed(brokenNative) })
     const brokenRes = await Effect.runPromise(
       Effect.scoped(
@@ -197,8 +197,8 @@ describe("@smthrs/platform-bun BunFileReplacement, BunDesktop, BunHost & BunRunt
         },
         openFileDialog: async () => []
       }
-    } as unknown as Parameters<typeof BunDesktop.layerWith>[0]["load"] extends
-      Effect.Effect<infer A, any, any> ? A : never
+    } as unknown as Parameters<typeof BunDesktop.layerWith>[0]["load"] extends Effect.Effect<infer A, any, any> ? A :
+      never
     const brokenMethodsLayer = BunDesktop.layerWith({ load: Effect.succeed(brokenMethodsNative) })
     let observedResults: { rulesErr: boolean; badUrlErr: boolean; extThrowErr: boolean } | undefined
     const methodExit = await Effect.runPromise(

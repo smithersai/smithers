@@ -398,7 +398,10 @@ describe("FixtureStore", () => {
         yield* okStore.flush()
         expect(Option.getOrThrow(yield* okStore.load()).calls).toHaveLength(1)
 
-        const exit = yield* FixtureStore.makeFile(join(linkSub, "escape.json")).pipe(Effect.provide(rootedPath), Effect.exit)
+        const exit = yield* FixtureStore.makeFile(join(linkSub, "escape.json")).pipe(
+          Effect.provide(rootedPath),
+          Effect.exit
+        )
         expect(exit._tag).toBe("Failure")
       })
     ))

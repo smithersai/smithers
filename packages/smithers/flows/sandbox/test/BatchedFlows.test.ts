@@ -158,9 +158,9 @@ const leftovers = (directory: string) => readdirSync(directory).filter((name) =>
 const foreignGroup = (() => {
   const candidates = process.getuid?.() === 0
     ? [4242]
-    : spawnSync("id", ["-G"], { encoding: "utf8" }).stdout.trim().split(/\s+/).filter(Boolean).map(Number).filter((gid) =>
-      Number.isInteger(gid) && gid !== process.getgid?.()
-    )
+    : spawnSync("id", ["-G"], { encoding: "utf8" }).stdout.trim().split(/\s+/).filter(Boolean).map(Number).filter((
+      gid
+    ) => Number.isInteger(gid) && gid !== process.getgid?.())
   if (candidates.length === 0) return undefined
   const probeDir = mkdtempSync(join(tmpdir(), "smthrs-batched-gid-"))
   const probe = join(probeDir, "probe")

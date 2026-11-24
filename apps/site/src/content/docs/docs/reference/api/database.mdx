@@ -568,7 +568,10 @@ configure.
 ### postgresLocation
 
 ```ts
-const postgresLocation: (filename: string) => { readonly url: string; readonly schema: string } | undefined
+const postgresLocation: (
+  filename: string,
+  settings?: DatabaseSettings | undefined
+) => { readonly url: string; readonly schema: string } | undefined
 ```
 
 Where `layer` would open `filename` on PostgreSQL: the connection URL without
@@ -578,6 +581,11 @@ keeps. Invalid selection raises `UnsupportedDatabase` immediately here;
 checked only when opening the database.
 `postgres://…?schema=<schema>` opens that exact schema, so a caller that copies
 a store into another schema addresses the copy by URL.
+`settings` are the selection settings `layer` reads (`SMITHERS_BACKEND`,
+`SMITHERS_POSTGRES_URL`, `DATABASE_URL`, `SMITHERS_POSTGRES_SCHEMA`), typed
+`DatabaseSettings = Readonly<Record<string, string | undefined>>`. They default
+to the process environment; pass the same `settings` a layer was given to see
+where that layer opens.
 
 ### NodeDatabaseOptions
 
@@ -588,16 +596,18 @@ interface NodeDatabaseOptions {
   readonly busyTimeout?: Duration.Input | undefined
   readonly sqlite?: Omit<SqliteClient.SqliteClientConfig, "filename"> | undefined
   readonly readOnly?: boolean | undefined
+  readonly settings?: DatabaseSettings | undefined
 }
 ```
 
-| Field         | Meaning                                                                                                                                                                                                                                       |
-| ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `filename`    | The SQLite database filename. A `file:` URI is accepted, and `:memory:` opens a private in-memory database. The parent directory is not created.                                                                                              |
-| `mode`        | Creation permissions for a new plain-path database, masked by the process umask. Defaults to `0o600`; WAL and SHM sidecars inherit the main file's mode. Existing files, `file:` URIs, temporary databases and read-only opens are unchanged. |
-| `busyTimeout` | Synchronous SQLite lock wait. Defaults to `0` so open and durable-write retries wait cooperatively, and to one second for a read-only open. Overrides `sqlite.busyTimeout` when supplied.                                                     |
-| `sqlite`      | Additional driver configuration. WAL remains enabled unless explicitly disabled. An explicit `sqlite.busyTimeout` is honored when `busyTimeout` is absent.                                                                                    |
-| `readOnly`    | Opens an existing store for reading only. SQLite opens read-only without converting to WAL; PostgreSQL skips schema creation and runs every transaction `READ ONLY`. Nothing is created, migrated or locked for writing.                      |
+| Field         | Meaning                                                                                                                                                                                                                                                |
+| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `filename`    | The SQLite database filename. A `file:` URI is accepted, and `:memory:` opens a private in-memory database. The parent directory is not created.                                                                                                       |
+| `mode`        | Creation permissions for a new plain-path database, masked by the process umask. Defaults to `0o600`; WAL and SHM sidecars inherit the main file's mode. Existing files, `file:` URIs, temporary databases and read-only opens are unchanged.          |
+| `busyTimeout` | Synchronous SQLite lock wait. Defaults to `0` so open and durable-write retries wait cooperatively, and to one second for a read-only open. Overrides `sqlite.busyTimeout` when supplied.                                                              |
+| `sqlite`      | Additional driver configuration. WAL remains enabled unless explicitly disabled. An explicit `sqlite.busyTimeout` is honored when `busyTimeout` is absent.                                                                                             |
+| `readOnly`    | Opens an existing store for reading only. SQLite opens read-only without converting to WAL; PostgreSQL skips schema creation and runs every transaction `READ ONLY`. Nothing is created, migrated or locked for writing.                               |
+| `settings`    | Selects SQLite or PostgreSQL for this store. Defaults to the process environment, read when the layer is built. Two layers given different settings select independently in one process; the shared selection code never reads the environment itself. |
 
 ### UnsupportedDatabaseCode
 
@@ -657,7 +667,7 @@ failed-commit recovery as NodeDatabase. As on Node, `.raw` on a write without
 result columns returns `{ changes, lastInsertRowid }`, so `affectedRows` reads
 its count; the upstream `@effect/sql-sqlite-bun` client returns `[]` there.
 Options contain `filename`, optional `sqlite` settings from the bundled client,
-`busyTimeout`, and `readOnly`, which behave as on `NodeDatabase`.
+`busyTimeout`, `readOnly` and `settings`, which behave as on `NodeDatabase`.
 The synchronous `busyTimeout` defaults to `0` for writable opens and one
 second for read-only opens, including `sqlite.readonly`. A top-level
 `busyTimeout` overrides `sqlite.busyTimeout`; either accepts `Duration.Input`.

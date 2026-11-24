@@ -61,7 +61,7 @@ test("the release smoke row names the exact runtimes that certify the candidate 
   const workflow = parseWorkflow(read(".github/workflows/release.yml"))
   // The publish job runs the smoke through pack-gates.mjs, on the node its step asserts.
   assert.ok(
-    read(".smithers/flows/release/pack-gates.mjs").includes('".smithers/flows/release/smoke-release.mjs"'),
+    read(".smithers/flows/release/pack-gates.mjs").includes("\".smithers/flows/release/smoke-release.mjs\""),
     "pack-gates.mjs runs the install smoke"
   )
   const smokeSteps = workflow.jobs.publish.steps.filter((step) =>
@@ -157,18 +157,23 @@ test("operator docs describe the PR evidence upload and factory operator", () =>
 })
 
 test("the API index and current RC notes describe the durable Bun and browser hosts", () => {
-  for (const path of [
-    "apps/site/docs/reference/api/index.mdx",
-    "apps/site/src/content/docs/docs/reference/api/index.mdx",
-    "apps/site/docs/changelogs/1.0.0-rc.0.mdx",
-    "apps/site/src/content/docs/changelogs/1.0.0-rc.0.mdx"
-  ]) {
+  for (
+    const path of [
+      "apps/site/docs/reference/api/index.mdx",
+      "apps/site/src/content/docs/docs/reference/api/index.mdx",
+      "apps/site/docs/changelogs/1.0.0-rc.0.mdx",
+      "apps/site/src/content/docs/changelogs/1.0.0-rc.0.mdx"
+    ]
+  ) {
     const docs = read(path)
     for (const term of ["BunRuntime", "BrowserRuntime", "OPFS", "Web Lock"]) {
       assert.ok(docs.includes(term), `${path}: ${term}`)
     }
     assert.match(docs, /[Aa]ll tabs closed/)
-    assert.doesNotMatch(docs, /Browser coverage establishes bundling only|limited non-durable package scope|does not establish durable browser/)
+    assert.doesNotMatch(
+      docs,
+      /Browser coverage establishes bundling only|limited non-durable package scope|does not establish durable browser/
+    )
   }
 })
 
@@ -177,10 +182,12 @@ test("current RC Effect pins match installation metadata and exact public peers"
   for (const pkg of ["flow", "engine"]) {
     assert.equal(JSON.parse(read(`packages/smithers/flows/${pkg}/package.json`)).peerDependencies.effect, expected)
   }
-  for (const path of [
-    "apps/site/docs/changelogs/1.0.0-rc.0.mdx",
-    "apps/site/src/content/docs/changelogs/1.0.0-rc.0.mdx"
-  ]) {
+  for (
+    const path of [
+      "apps/site/docs/changelogs/1.0.0-rc.0.mdx",
+      "apps/site/src/content/docs/changelogs/1.0.0-rc.0.mdx"
+    ]
+  ) {
     const docs = read(path)
     const installPin = docs.match(/Effect and its platform packages are pinned to exactly `([^`]+)`/)
     const compatibilityPin = docs.match(/and Effect `([^`]+)`/)

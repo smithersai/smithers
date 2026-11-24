@@ -10,7 +10,11 @@
  */
 
 import { readFileSync, realpathSync } from "node:fs"
-import { findPackageJSON } from "node:module"
+import * as NodeModule from "node:module"
+const findPackageJSON = (
+  specifier: string | URL,
+  base?: string | URL
+): string | undefined => NodeModule.findPackageJSON(specifier, base)
 import { dirname } from "node:path"
 import { pathToFileURL } from "node:url"
 import * as Diagnostic from "../Diagnostic.ts"

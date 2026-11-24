@@ -1,9 +1,9 @@
-import { ROUTE_PATHS } from "../../mvp/src/routePaths.ts"
 import assert from "node:assert/strict"
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { dirname, join, resolve } from "node:path"
 import test from "node:test"
+import { ROUTE_PATHS } from "../../mvp/src/routePaths.ts"
 import {
   ASSET_HEADERS,
   checkAssetHeaders,
@@ -265,10 +265,10 @@ test("origin robots allows crawlers and advertises the sitemap", () => {
   assert.doesNotMatch(robots, /^Disallow: \/$/m)
 })
 
-
 test("the bug door can link to the app-owned report route, but unknown app paths still fail", (t) => {
   const root = fixture(t, {
-    "bug/index.html": '<a href="/app/bugs/report">Report a bug</a><a href="https://smithers.sh/app/bugs/report">Report</a>',
+    "bug/index.html":
+      "<a href=\"/app/bugs/report\">Report a bug</a><a href=\"https://smithers.sh/app/bugs/report\">Report</a>"
   })
   const contract = readFileSync(new URL("../../mvp/src/features/bugs/contract.ts", import.meta.url), "utf8")
   assert.match(contract, /export const BUG_FORM_PATH = "\/app\/bugs\/report"/)
@@ -279,7 +279,8 @@ test("the bug door can link to the app-owned report route, but unknown app paths
 
 test("personal-flow and settings guides can link to declared app routes without allowing unknown routes", (t) => {
   const root = fixture(t, {
-    "docs/guide/index.html": '<a href="https://smithers.sh/app/flows">Flows</a><a href="https://smithers.sh/app/settings">Settings</a>'
+    "docs/guide/index.html":
+      "<a href=\"https://smithers.sh/app/flows\">Flows</a><a href=\"https://smithers.sh/app/settings\">Settings</a>"
   })
   const router = readFileSync(new URL("../../mvp/src/router.tsx", import.meta.url), "utf8")
   for (const [name, path] of [["flows", "/app/flows"], ["settings", "/app/settings"]]) {

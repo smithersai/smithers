@@ -457,7 +457,9 @@ retry from a step `unsupported`.
 Every list read (`dueClocks`, `pendingClocks`, `completedDeferreds`,
 `waitingRuns`, `runParents`, `runChildren`, and `runChildrenOf`) skips a row that will not decode
 and logs a storage-integrity warning naming its primary key, so one corrupt row
-costs its own row and nothing else. The point reads `deferred`, `clock`, and
+costs its own row and nothing else. A paged `waitingRuns` read continues past
+such rows until its page is full or storage has no more, so a short page always
+means the end of the set. The point reads `deferred`, `clock`, and
 `waiting` still die on such a row: reporting "no row" for a completion or
 deadline that is durably recorded but unreadable would re-run work whose side
 effects already ran.
@@ -1723,7 +1725,9 @@ This package's own set creates deferred/clock state, selection beliefs, and the
 `flows_plan_input_legacy_runs` recovery tables. The plan set's block (`4000`)
 comes last. The database loader supports forward additions to an already
 installed lower block, so migrations `3003` and `3004` also run on existing installations
-whose global cursor reached `4003`; earlier holes remain refusals. See
+whose global cursor reached `4003`; earlier holes remain refusals. Migration
+`3011` indexes parked `flows_runs` rows in `run_id` order for the paged
+`waitingRuns` sweeps. See
 [`@smthrs/database`](/docs/reference/api/database/) for how namespaced sets compose without
 colliding.
 

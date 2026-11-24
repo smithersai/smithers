@@ -151,8 +151,6 @@ describe("native brands on a host without slot predicates", () => {
     expect(missed(() => expect(portable.nativeBrand(new Proxy(new Map(), {}))).toBeUndefined())).toBe(probeCount)
   })
 
-
-
   it("lets a failure that is not a missing slot escape, and does not cache it", () => {
     const real = Map.prototype.has
     const cause = new RangeError("Maximum call stack size exceeded")
