@@ -83,6 +83,33 @@ describe("recorded input identity", () => {
   const record = (root: string, lines: ReadonlyArray<string>) =>
     Reads.record(Reads.read(() => lines, root), { root, ignore: [], startedMs: Infinity, held: () => new Set() })
 
+  it("records an ordinary read beside an overlong name and pseudo-filesystem metadata", () => {
+    const root = directory()
+    const file = join(root, "source")
+    Fs.writeFileSync(file, "data")
+    const trace = Reads.read(() => [
+      "10 openat(AT_FDCWD, \"overlong\"..., O_RDONLY) = -1 ENAMETOOLONG (File name too long)",
+      "10 openat(AT_FDCWD, \"source\", O_RDONLY) = 3"
+    ], root)
+    const result = Reads.record({ ...trace, meta: new Set(["/proc/self/status"]) }, {
+      root,
+      ignore: [],
+      startedMs: Infinity
+    })
+    expect(result).toMatchObject({ reads: [["source", Reads.measure(file)]], lists: [] })
+  })
+
+  it("returns the outside peer reason to the caller that requested a record", () => {
+    const root = directory()
+    const trace = Reads.read(() => ["10 connect(3, {sa_family=AF_UNIX, sun_path=\"peer\"}, 16) = 0"], root)
+    const reason = "it reached a program outside the run through the socket \"peer\""
+    expect(trace.outside).toEqual([reason])
+    expect(Reads.observe(trace, { root, ignore: [], startedMs: Infinity })).toEqual({
+      refusal: reason,
+      outside: reason
+    })
+  })
+
   it("requires a prior regularly read file to be the one vouched for by the opened descriptor", () => {
     const root = directory()
     const file = join(root, "source")

@@ -213,7 +213,7 @@ def Node.entryType : Node → String
   | .regular .. => "f"
   | .dir _ => "d"
   | .symlink _ => "l"
-  | .other _ => "o"
+  | .other kind => "o:" ++ toString kind
 
 abbrev Mounts := List (String × String)
 

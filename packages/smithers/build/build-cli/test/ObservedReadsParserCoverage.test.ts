@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto"
 import * as Fs from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -128,6 +129,22 @@ it("uses strace's unversioned recorder key when strace is explicitly selected", 
     vi.unstubAllEnvs()
   }
 })
+
+const bundledObserver = ObservedReads.supervisorPath(process.platform, process.arch, {})
+it.skipIf(bundledObserver === undefined)(
+  "keys the selected native recorder by the bytes of the installed binary",
+  async () => {
+    vi.resetModules()
+    vi.stubEnv(ObservedReads.recorderVariable, "smthrs-observe")
+    try {
+      const fresh = await import("../src/internal/ObservedReads.ts")
+      const digest = createHash("sha256").update(Fs.readFileSync(bundledObserver!)).digest("hex")
+      expect(fresh.recorderKey()).toEqual({ recorder: `smthrs-observe:${digest}` })
+    } finally {
+      vi.unstubAllEnvs()
+    }
+  }
+)
 
 it("rejects a kept checkpoint when the recorder never acknowledges its flush", async () => {
   const path = join(directory(), "trace")

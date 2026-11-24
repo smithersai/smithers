@@ -281,6 +281,29 @@ console.log(JSON.stringify({ port, again, connect, other }))
 `
 
 describe("smthrs-observe and sockets", () => {
+  supervised("identifies UDP binds, connects and addressed sends as the same local transport", async () => {
+    const script = `
+import socket
+with socket.socket(type=socket.SOCK_DGRAM) as receiver, socket.socket(type=socket.SOCK_DGRAM) as sender:
+    receiver.bind(("127.0.0.1", 0))
+    peer = receiver.getsockname()
+    sender.sendto(b"a", peer)
+    sender.connect(peer)
+    sender.send(b"b")
+    assert [receiver.recv(1), receiver.recv(1)] == [b"a", b"b"]
+    print(peer[1])
+`
+    const { base, lines, run } = await record("local-udp", () => ["python3", "-c", script])
+    const port = run.stdout.trim()
+    const peer = lines.filter((line) => line.includes(`sin_port=htons(${port})`))
+    for (const call of ["bind", "sendto", "connect"]) {
+      expect(peer.some((line) => line.includes(` ${call}(`) && line.includes(" /* smthrs: udp */"))).toBe(true)
+    }
+    const reads = ObservedReads.read(() => lines, base)
+    expect(reads.bound?.has(`udp:inet:${port}:127.0.0.1`)).toBe(true)
+    expect(reads.outside).toEqual([])
+  })
+
   supervised("frees a port the run closed, for the run itself and a process it starts", async () => {
     const base = await Fs.realpath(await Fs.mkdtemp(Path.join(Os.tmpdir(), "smthrs-observe-sockets-")))
     temporary.push(base)
@@ -1011,6 +1034,59 @@ const keptEnded = (trace: string): boolean =>
   NodeFs.readFileSync(`${trace}.answered`, "utf8").startsWith("9223372036854775807")
 
 describe("smthrs-observe --keep, for what a step left running after its trace was sealed", () => {
+  supervised("makes an empty continuation readable when the command exits", async () => {
+    const root = await Fs.realpath(await Fs.mkdtemp(Path.join(Os.tmpdir(), "observe-keep-idle-")))
+    temporary.push(root)
+    const trace = Path.join(root, "trace")
+    const result = spawnSync(supervisor!, ["--keep", trace, "--", "true"], { encoding: "utf8" })
+    expect(result.status, result.stderr).toBe(0)
+    const step = ObservedReads.keptStep("idle", "step", root, trace, true)
+    expect(await step.flush()).toBe(true)
+    expect([...step.after()]).toEqual([])
+  })
+
+  supervised("records a daemon's repeated lookup once in each acknowledged window", async () => {
+    const root = await Fs.realpath(await Fs.mkdtemp(Path.join(Os.tmpdir(), "observe-keep-repeat-")))
+    temporary.push(root)
+    const trace = Path.join(root, "trace")
+    const input = Path.join(root, "input")
+    await Fs.writeFile(input, "hello")
+    const script = `
+import os, sys
+r, w = os.pipe()
+if os.fork():
+    os.close(w)
+    os.read(r, 1)
+    os._exit(0)
+os.stat(sys.argv[1])
+os.write(w, b"r")
+while os.read(0, 1):
+    os.stat(sys.argv[1])
+    os.stat(sys.argv[1])
+    os.write(1, b"r")
+`
+    const child = spawn(supervisor!, ["--keep", trace, "--", "python3", "-c", script, input], {
+      stdio: ["pipe", "pipe", "ignore"]
+    })
+    let replies = 0
+    child.stdout.on("data", (chunk: Buffer) => replies += chunk.length)
+    const lookups = (file: string) =>
+      linesOf(file).filter((line) => line.includes(` newfstatat(AT_FDCWD, ${JSON.stringify(input)},`))
+    try {
+      await until(() => NodeFs.existsSync(`${trace}.status`), "no status")
+      expect(lookups(trace)).toHaveLength(1)
+      for (const count of [1, 2]) {
+        child.stdin.write("r")
+        await until(() => replies === count, "no lookup reply")
+        expect(await ObservedReads.askFlush(trace, 10_000)).toBe(true)
+        expect(lookups(`${trace}.kept`)).toHaveLength(count)
+      }
+    } finally {
+      child.stdin.end()
+      await until(() => keptEnded(trace), "daemon did not end")
+    }
+  })
+
   // A reason the run cannot be recorded was written only with the sealed trace. One made after (a kept program that
   // makes a namespace, uses a ring, or changes a name its line does not say) reached no file, and the steps after
   // were stored as recorded.
@@ -1179,7 +1255,7 @@ console.log(port)
             .toBe(true)
           expect(binds.filter((line) => line.includes("htons(0)"))).toEqual([])
           const read = ObservedReads.read(() => lines, base)
-          expect(read.bound?.has(`${field === "sin_port" ? "inet" : "inet6"}:${port}:${host}`)).toBe(true)
+          expect(read.bound?.has(`tcp:${field === "sin_port" ? "inet" : "inet6"}:${port}:${host}`)).toBe(true)
           // Its own port is the run's; the other one is a program outside it, and the run is refused for it alone.
           expect(read.refusals).toEqual([`it reached a program outside the run on local port ${outside}`])
           expect(read.outside).toEqual([`it reached a program outside the run on local port ${outside}`])

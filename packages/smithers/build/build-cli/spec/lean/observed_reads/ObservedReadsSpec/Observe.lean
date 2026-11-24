@@ -41,6 +41,9 @@ structure Entry where
 /-- What `read` makes of a trace: each path with the line that first said so. -/
 structure Trace where
   found : List (String × Nat) := []
+  unfollowed : List (String × Nat) := []
+  renamed : List String := []
+  transientLinks : List String := []
   missing : List (String × Nat) := []
   listed : List (String × Nat) := []
   made : List (String × Nat) := []
@@ -69,6 +72,8 @@ structure Trail where
   links : List String
   /-- The real path; none when the path passes through too many links. -/
   ended : Option String
+  /-- Each component visited, with whether the walk continued below it. -/
+  visited : List (String × Bool)
 
 /--
 Walks a path as `observe` does: by the names in `queue` from the real directory `shown`. A name nothing is at
@@ -77,18 +82,22 @@ walked next. The walk gives up after `maximumLinks` links, so it ends on every t
 -/
 def trail (fs : Node) (hops : Nat) (shown : List String) (queue : List String) : Trail :=
   match queue with
-  | [] => ⟨[], some (renderPath shown)⟩
+  | [] => ⟨[], some (renderPath shown), []⟩
   | part :: rest =>
     if part = ".." then trail fs hops shown.dropLast rest
     else
-      match lstat fs (renderPath (shown ++ [part])) with
-      | .error _ => ⟨[], some (renderPath (normalizeNames (shown ++ [part]) rest))⟩
+      let here := renderPath (shown ++ [part])
+      let visit := (here, !rest.isEmpty)
+      match lstat fs here with
+      | .error _ => ⟨[], some (renderPath (normalizeNames (shown ++ [part]) rest)), [visit]⟩
       | .ok (.symlink target) =>
-        if maximumLinks ≤ hops then ⟨[], none⟩
+        if maximumLinks ≤ hops then ⟨[], none, [visit]⟩
         else
           let next := trail fs (hops + 1) (if target.startsWith "/" then [] else shown) (parts target ++ rest)
-          ⟨renderPath (shown ++ [part]) :: next.links, next.ended⟩
-      | .ok _ => trail fs hops (shown ++ [part]) rest
+          ⟨here :: next.links, next.ended, visit :: next.visited⟩
+      | .ok _ =>
+        let next := trail fs hops (shown ++ [part]) rest
+        { next with visited := visit :: next.visited }
 termination_by (maximumLinks - hops, queue.length)
 decreasing_by
   all_goals simp_wf
@@ -119,14 +128,14 @@ def splitLast (path : String) : String × String :=
 def namedPath (fs : Node) (path : String) : Trail :=
   let (parent, name) := splitLast path
   let walked := realPath fs parent
-  ⟨walked.links, walked.ended.map fun real => if real = "/" then "/" ++ name else real ++ "/" ++ name⟩
+  ⟨walked.links, walked.ended.map fun real => if real = "/" then "/" ++ name else real ++ "/" ++ name, walked.visited⟩
 
 /-- The directory a walk that gave up was asked for. -/
 def refusedPath (named : Bool) (path : String) : String := if named then (splitLast path).1 else path
 
 /-- A path the kernel makes up, which no record holds. -/
 def pseudo (path : String) : Bool :=
-  !(path == "/dev/shm" || path.startsWith "/dev/shm/") &&
+  !(parts path).contains ".." && !(path == "/dev/shm" || path.startsWith "/dev/shm/") &&
     ["/proc", "/sys", "/dev"].any fun top => path = top || path.startsWith (top ++ "/")
 
 /-- What `observe` is told besides the trace. -/
@@ -166,6 +175,7 @@ structure Gathered where
   /-- The names the run removed or moved away, and those it took away unseen. -/
   removed : List String := []
   unlinked : List String := []
+  contentReads : List String := []
   truncated : List String := []
   emptyBefore : List String := []
   renamedOver : List String := []
@@ -191,6 +201,7 @@ def follow (state : Gathered) (asked : String) (walked : Trail) : Gathered :=
 /-- What the trace says of one path at one line. -/
 inductive Event where
   | found
+  | name
   | missing
   | made
   | emptied
@@ -203,7 +214,7 @@ def step (fs : Node) (state : Gathered) (event : Event × String) : Gathered :=
   let (kind, raw) := event
   if pseudo raw then state
   else
-    let named := kind = .made ∨ kind = .missing
+    let named := kind = .made ∨ kind = .missing ∨ kind = .name
     let walked := if named then namedPath fs raw else realPath fs raw
     let state := follow state (refusedPath named raw) walked
     match walked.ended with
@@ -225,7 +236,8 @@ def step (fs : Node) (state : Gathered) (event : Event × String) : Gathered :=
           | .made => .made
           | .emptied => .made
           | _ => .found
-        { state with entries := touch state.entries path how }
+        { state with entries := touch state.entries path how
+                     contentReads := if kind = .found then path :: state.contentReads else state.contentReads }
 
 /-- A path the run wrote: the name, and the file a link under that name leads to. -/
 def written (u3 : Bool) (fs : Node) (trace : Trace) (state : Gathered) (raw : String) : Gathered :=
@@ -257,6 +269,7 @@ def written (u3 : Bool) (fs : Node) (trace : Trace) (state : Gathered) (raw : St
 def eventsOf (trace : Trace) : List (Event × String) :=
   let all : List (Nat × Event × String) :=
     trace.found.map (fun (path, line) => (line, .found, path)) ++
+    trace.unfollowed.map (fun (path, line) => (line, .name, path)) ++
     trace.missing.map (fun (path, line) => (line, .missing, path)) ++
     trace.required.map (fun (path, line) => (line, .required, path)) ++
     trace.made.map (fun (path, line) => (line, .made, path)) ++
@@ -315,6 +328,15 @@ def goneOf (fs : Node) (trace : Trace) (root : String) (entries : List Entry) : 
 
 /-- What the run did with each path of its trace, or why it stores nothing. -/
 def gather (rules : Rules) (fs : Node) (trace : Trace) (options : Options) : Except String Gathered :=
+  let replaced := fun (visit : String × Bool) =>
+    trace.transientLinks.contains visit.1 || (visit.2 && trace.renamed.contains visit.1)
+  let changedAncestor := if trace.renamed.isEmpty && trace.transientLinks.isEmpty then none else
+    (trace.found ++ trace.listed).findSome? fun (path, _) =>
+    let names := parts path
+    let prefixes := (List.range names.length).reverse.map fun index =>
+      (renderPath (names.take (index + 1)), decide (index + 1 < names.length))
+    ((prefixes ++ (realPath fs path).visited).find? replaced).map (·.1)
+  if let some path := changedAncestor then .error (path ++ " was replaced while it was used") else
   let state := (eventsOf trace).foldl (step fs) {}
   let state := trace.changed.foldl (written rules.u3 fs trace) state
   match state.refusal with
@@ -404,9 +426,8 @@ stands where the measurement cannot hold the path as the run found it: nothing w
 something; it could not be read; it was a directory that is none now, whose names and count of directories `d`
 does not say; or the run listed it and it is no directory now, so what it listed there cannot be measured again.
 -/
-def priorOf (fallback before state : String) (listed : Bool) : String :=
-  if before = absent ∨ unread before = true ∨ listed = true ∨ (before = directory ∧ state ≠ directory) ∨
-      (before.startsWith "l:" ∧ before ≠ state) then fallback
+def priorOf (fallback before : String) (listed : Bool) : String :=
+  if before = absent ∨ unread before = true ∨ listed = true ∨ before = directory ∨ before.startsWith "l:" then fallback
   else before
 
 /-- The run proved it removed an empty directory, and its replacement is empty as well. -/
@@ -436,14 +457,13 @@ def readRow (rules : Rules) (fs : Node) (options : Options) (gathered : Gathered
       ¬(state = directory ∧ ¬(entry.made = true ∨ entry.path ∈ gathered.removed)) then
     let fallback := if rules.u2 then unmeasured else state
     let before :=
-      if state == directory && knownEmpty fs gathered entry.path then directory
-      else if entry.path ∈ gathered.truncated then
+      if entry.path ∈ gathered.truncated then
         let original := if entry.path ∈ gathered.made ∨ entry.path ∈ gathered.removed then options.found.lookup entry.path else some state
         if (original.map (·.startsWith "f:")).getD false then regularOnly else fallback
-      else if entry.path ∈ gathered.renamedOver then (if state = directory then fallback else nameOnly)
-      else if state = absent ∧ entry.path ∈ gathered.unlinked then nameOnly
+      else if entry.path ∈ gathered.renamedOver ∧ entry.path ∉ gathered.contentReads then (if state = directory then fallback else nameOnly)
+      else if state = absent ∧ entry.path ∈ gathered.unlinked ∧ entry.path ∉ gathered.contentReads then nameOnly
       else (options.found.lookup entry.path).getD fallback
-    .ok ⟨name, state, some (priorOf fallback before state entry.listed)⟩
+    .ok ⟨name, state, some (if state == directory && knownEmpty fs gathered entry.path then directory else priorOf fallback before entry.listed)⟩
   else .ok ⟨name, state, none⟩
 
 /-- Maps a list with a function that may refuse; the first refusal is the answer. -/
@@ -731,7 +751,7 @@ theorem recordOf_holds (rules : Rules) (fs : Node) (options : Options) (gathered
       split at made
       · cases made
       · obtain ⟨digest, listed, rfl⟩ := Option.map_eq_some_iff.mp made
-        simp [listVerdict, pending, worldOf, back, listed, addedVerdict]
+        simp [listVerdict, pending, worldOf, back, listed]
 
 /-- Theorem 1 for `observe`: the hypotheses are asked of what `gather` made of the trace. -/
 theorem no_false_miss (rules : Rules) (fs : Node) (trace : Trace) (options : Options) (record : Record)

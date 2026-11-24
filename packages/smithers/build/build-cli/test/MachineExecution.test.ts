@@ -740,13 +740,19 @@ describe("an observed target on a machine", () => {
         }
       }
       const first = await fixture(targets)
-      expect(await first.run(["test"])).toEqual({ install: "ran", test: "ran" })
+      expect(await first.run(["test"]), first.logs.join("\n")).toEqual({ install: "ran", test: "ran" })
       const second = await fixture(targets)
       expect(second.kept).not.toBe(first.kept)
       await Fs.cp(Path.join(first.root, ".flows"), Path.join(second.root, ".flows"), { recursive: true })
-      expect(await second.run(["test"])).toEqual({ install: "hit", test: "hit" })
+      expect(await second.run(["test"]), [...first.logs, ...second.logs].join("\n")).toEqual({
+        install: "hit",
+        test: "hit"
+      })
       await second.write("b.txt", "b, changed\n")
-      expect(await second.run(["test"])).toEqual({ install: "hit", test: "ran" })
+      expect(await second.run(["test"]), [...first.logs, ...second.logs].join("\n")).toEqual({
+        install: "hit",
+        test: "ran"
+      })
       expect(second.logs).toContain("//:install  what it left is put back for //:test")
     }
   )

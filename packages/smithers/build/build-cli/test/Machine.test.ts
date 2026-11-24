@@ -397,6 +397,30 @@ describe("the configuration of a machine's repository", () => {
     expect(Machine.withoutCredentials("")).toBe("")
   })
 
+  it("removes escaped URL userinfo and authenticated proxies without a scheme", () => {
+    const input = [
+      "[remote \"origin\"]",
+      String.raw`url = "https://CORP\\alice:private@host/repo"`,
+      String.raw`[url "https://CORP\\alice:private@host/"]`,
+      "insteadOf = internal:",
+      "[http \"https://host\"] Proxy = \"account:private@proxy.example:8080\"",
+      "proxy = account:pri\\",
+      "vate@proxy.example:8080",
+      "proxy = proxy.example:8888",
+      "proxy = https://gateway.example",
+      "[remote \"mirror\"]",
+      "proxy = user:private@proxy.example"
+    ]
+    expect(Machine.withoutCredentials(input.join("\n")).split("\n")).toEqual([
+      "[remote \"origin\"]",
+      "url = \"https://host/repo\"",
+      "[http \"https://host\"]",
+      "proxy = proxy.example:8888",
+      "proxy = https://gateway.example",
+      "[remote \"mirror\"]"
+    ])
+  })
+
   it("preserves empty query parameters that carry no credentials", () => {
     const config = "[remote \"origin\"]\nurl = https://example.invalid/path?&public=x"
     expect(Machine.withoutCredentials(config)).toBe(config)

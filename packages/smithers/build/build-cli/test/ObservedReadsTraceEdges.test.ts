@@ -30,10 +30,74 @@ describe("trace socket endpoints", () => {
   it("uses IPv4 identity for mapped IPv6 addresses", () => {
     const mapped = connect(v6("::ffff:127.0.0.1"))
     const mappedClient = stream("AF_INET6", "4<socket:[9]>")
-    expect(read([bind(v4("127.0.0.1")), mapped]).outside).toEqual([])
-    expect(read([bind(v4("127.0.0.2")), mapped]).outside).toEqual(outside)
+    expect(read([stream("AF_INET", "3<socket:[8]>"), bind(v4("127.0.0.1")), mappedClient, mapped]).outside).toEqual([])
+    expect(read([stream("AF_INET", "3<socket:[8]>"), bind(v4("127.0.0.2")), mappedClient, mapped]).outside).toEqual(
+      outside
+    )
     expect(read([server, option(1), bind(v6("::")), mappedClient, mapped]).outside).toEqual(outside)
     expect(read([server, option(0), bind(v6("::")), mappedClient, mapped]).outside).toEqual([])
+  })
+
+  it("separates TCP and UDP listeners and requires a bind before the connection completes", () => {
+    const address = v4("127.0.0.1")
+    const udp = "100 socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP) = 3<socket:[8]>"
+    const tcp = stream("AF_INET", "3<socket:[8]>")
+    expect(read([udp, bind(address), client, connect(address)]).outside).toEqual(outside)
+    expect(read([tcp, client, connect(address), bind(address)]).outside).toEqual(outside)
+    expect(
+      read([
+        tcp,
+        client,
+        bind(address).replace(") = 0", " <unfinished ...>"),
+        connect(address).replace(/^100/, "101"),
+        "100 <... bind resumed>) = 0"
+      ]).outside
+    ).toEqual([])
+    expect(read([bind(address), connect(address)]).outside).toEqual(outside)
+  })
+
+  it("matches each native message address using the transport recorded for its descriptor", () => {
+    const address = v4("127.0.0.1")
+    const send = `100 sendmsg(3, {msg_name=${address} /* smthrs: udp */, msg_namelen=16}, 0) = ?`
+    const run = (transport: string) =>
+      read([
+        "100 +++ smthrs-observe 1 +++",
+        bind(`${address} /* smthrs: ${transport} */`),
+        send,
+        "100 +++ complete +++"
+      ])
+    expect(run("tcp").outside).toEqual(outside)
+    expect(run("udp").outside).toEqual([])
+  })
+
+  it("resolves a filesystem socket in the caller's working directory", () => {
+    const peer = "{sa_family=AF_UNIX, sun_path=\"server.sock\"}"
+    const at = (dir: string) => `100 chdir("${dir}") = 0`
+    expect(read([at("/one"), bind(peer), connect(peer)]).outside).toEqual([])
+    expect(read([at("/one"), bind(peer), at("/two"), connect(peer)]).outside).toEqual([
+      "it reached a program outside the run through the socket \"server.sock\""
+    ])
+  })
+
+  it("withholds ownership for incomplete addresses and missing socket evidence", () => {
+    const malformed = "{sa_family=AF_INET, sin_port=htons(5077)}"
+    expect(read([server, bind(malformed)]).bound).toEqual(new Set())
+    expect(read(["100 socket() = 3<socket:[8]>", bind(v6("::"))]).bound).toEqual(new Set())
+    const unnamed = "{sa_family=AF_UNIX, sun_path=\"\"}"
+    expect(read([connect(unnamed)]).outside).toEqual([
+      "it reached a program outside the run through the socket it was given"
+    ])
+    const relative = "{sa_family=AF_UNIX, sun_path=\"socket\"}"
+    expect(read(["100 fchdir(9) = 0", bind(relative), connect(relative)]).outside).toEqual([
+      "it reached a program outside the run through the socket it was given"
+    ])
+    expect(
+      read([
+        "100 +++ smthrs-observe 1 +++",
+        `100 bind(3, ${v4("127.0.0.1", 0)} /* smthrs: udp */, 16) = 0`,
+        "100 +++ complete +++"
+      ]).bound
+    ).toEqual(new Set())
   })
 
   it("requires a known TCP client and a successful dual-stack option", () => {

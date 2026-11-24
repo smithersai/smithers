@@ -800,8 +800,9 @@ struct forking {
 };
 static struct forking *forkings;
 
-/* Calls that make, remove, move, link a name or change its rights: a lookup after one may be answered otherwise. */
-static unsigned long namesChanged;
+/* Repeat-suppression generation. A changed name can change the answer. A sealed observation window
+ * needs its own record even when the answer stays the same. */
+static unsigned long lookupEpoch;
 
 /* A lookup or an open to read already written: by which process and program, how, and what it was told. */
 struct asked {
@@ -828,7 +829,7 @@ static int askedAgain(pid_t tgid, uint64_t how, const char *path, int error) {
   pthread_mutex_lock(&lock);
   unsigned generation = generationOf(tgid)->count;
   pthread_mutex_unlock(&lock);
-  unsigned long changed = __atomic_load_n(&namesChanged, __ATOMIC_ACQUIRE);
+  unsigned long changed = __atomic_load_n(&lookupEpoch, __ATOMIC_ACQUIRE);
   uint64_t hash = 1469598103934665603ull ^ (uint64_t)tgid ^ (how << 32);
   for (const char *at = path; *at != 0; at++) hash = (hash ^ (unsigned char)*at) * 1099511628211ull;
   struct asked **bucket = &asked[hash % ASKED_BUCKETS];
@@ -955,6 +956,21 @@ static int partIs(const char *part, size_t length, const char *word) {
   return strlen(word) == length && strncmp(part, word, length) == 0;
 }
 
+/* Whether an actual path component goes up, even after an otherwise ordinary kernel name. */
+static int hasDotDot(const char *path) {
+  if (strstr(path, "..") == NULL) return 0;
+  for (size_t n = partOf(&path); n > 0; path += n, n = partOf(&path))
+    if (partIs(path, n, "..")) return 1;
+  return 0;
+}
+
+/* A non-magic path in procfs or devtmpfs can leave that filesystem through a later parent component. */
+static int plainKernelPath(const char *rest, const char **why) {
+  if (!hasDotDot(rest)) return 1;
+  *why = "up";
+  return 0;
+}
+
 /* A part that is a decimal number below a billion, as a process id or a descriptor is. */
 static int numberOf(const char *part, size_t length, long *out) {
   if (length == 0 || length > 9) return 0;
@@ -981,7 +997,7 @@ static int numberOf(const char *part, size_t length, long *out) {
  * A link of a process named by its number is followed only for a process of the run (ofRun). One of a process the
  * run did not start leads wherever that process is or has open, which no line of the trace shows: followed, the line
  * would name the file as if the run had found it by its path, and a record would hold the file and never which file
- * the other process chose. Its path is left as the run named it, under `/proc/<pid>`, and the reader refuses it.
+ * the other process chose. A refusal is recorded, and the path is left as the run named it, under `/proc/<pid>`.
  */
 static void rootedView(char *path);
 
@@ -1033,7 +1049,7 @@ static int stepViewed(pid_t tid, char *path, size_t capacity, const char **why, 
         at += n;
         n = partOf(&at);
         if (partIs(at, n, "..")) break;
-        if (!numberOf(at, n, &fd)) return 1;
+        if (!numberOf(at, n, &fd)) return plainKernelPath(at, why);
       } else if (partIs(at, n, "stdin")) {
         fd = 0;
       } else if (partIs(at, n, "stdout")) {
@@ -1041,11 +1057,11 @@ static int stepViewed(pid_t tid, char *path, size_t capacity, const char **why, 
       } else if (partIs(at, n, "stderr")) {
         fd = 2;
       } else {
-        return 1;
+        return plainKernelPath(at, why);
       }
       at += n;
       process = tgid;
-    } else if (partIs(at, n, "proc")) {
+    } else {
       at += n;
       n = partOf(&at);
       if (partIs(at, n, "self")) {
@@ -1056,7 +1072,7 @@ static int stepViewed(pid_t tid, char *path, size_t capacity, const char **why, 
       } else if (partIs(at, n, "..")) {
         break;
       } else if (!numberOf(at, n, &process)) {
-        return 1;
+        return plainKernelPath(at, why);
       } else {
         numbered = 1;
       }
@@ -1066,7 +1082,7 @@ static int stepViewed(pid_t tid, char *path, size_t capacity, const char **why, 
         at += n;
         n = partOf(&at);
         if (partIs(at, n, "..")) break;
-        if (!numberOf(at, n, &thread)) return 1;
+        if (!numberOf(at, n, &thread)) return plainKernelPath(at, why);
         at += n;
         n = partOf(&at);
       }
@@ -1077,19 +1093,20 @@ static int stepViewed(pid_t tid, char *path, size_t capacity, const char **why, 
         at += n;
         n = partOf(&at);
         if (partIs(at, n, "..")) break;
-        if (!numberOf(at, n, &fd)) return 1;
+        if (!numberOf(at, n, &fd)) return plainKernelPath(at, why);
         at += n;
       } else if (partIs(at, n, "..")) {
         break;
       } else {
-        return 1; /* what the process is, not a file it reaches */
+        return plainKernelPath(at, why); /* what the process is, not a file it reaches */
       }
-    } else {
-      return 1;
     }
     if (linked != NULL) *linked = 1;
-    /* A link of a process outside the run: left as the run named it. */
-    if (numbered && process != tgid && !ofRun((pid_t)process)) return 1;
+    /* Record the refusal at the stop: a later process of the run can be given this same PID. */
+    if (numbered && process != tgid && !ofRun((pid_t)process)) {
+      unrecorded("it named a file through a link of a process outside the run");
+      return 1;
+    }
     char link[96], target[PATH_MAX + 1], rest[PATH_MAX + 1];
     if (thread >= 0 && fd >= 0)
       snprintf(link, sizeof link, "/proc/%ld/task/%ld/fd/%ld", process, thread, fd);
@@ -1161,17 +1178,21 @@ static int stepView(pid_t tid, char *path, size_t capacity, const char **why) {
  */
 static void rootedView(char *path) {
   if (path[0] != '/' || strstr(path, "/..") == NULL) return;
-  int up = 0, first = 1;
+  int up = 0, first = 1, sys = 0;
   const char *at = path;
   for (size_t n = partOf(&at); n > 0; at += n, n = partOf(&at)) {
     int kernel = partIs(at, n, "dev") || partIs(at, n, "proc");
-    if (first && kernel) return;
-    first = 0;
+    if (first) {
+      if (kernel) return;
+      sys = partIs(at, n, "sys");
+      first = 0;
+    }
     if (partIs(at, n, "..")) {
       up = 1;
       continue;
     }
-    if (!up || !kernel) continue;
+    /* A path leaving /sys can reach an ordinary file as well as a process link. */
+    if (!up || !(kernel || sys)) continue;
     char before[PATH_MAX + 1];
     size_t length = (size_t)(at - path);
     if (length >= sizeof before) return;
@@ -1233,6 +1254,7 @@ static int pathOf(pid_t tid, const struct seccomp_notif *req, int dirIndex, int 
  * read as it reads any other input (ObservedReads.pseudo).
  */
 static int pseudo(const char *path) {
+  if (hasDotDot(path)) return 0;
   if (strncmp(path, "/dev/shm", 8) == 0 && (path[8] == 0 || path[8] == '/')) return 0;
   return strncmp(path, "/proc", 5) == 0 && (path[5] == 0 || path[5] == '/') ? 1
        : strncmp(path, "/dev", 4) == 0 && (path[4] == 0 || path[4] == '/')  ? 1
@@ -2230,8 +2252,8 @@ static void socketAddress(struct text *t, const struct sockaddr_storage *a, sock
     char host[INET6_ADDRSTRLEN];
     inet_ntop(AF_INET6, &i->sin6_addr, host, sizeof host);
     printf_(t, "{sa_family=AF_INET6, sin6_port=htons(%u), sin6_flowinfo=htonl(0), inet_pton(AF_INET6, \"%s\", "
-               "&sin6_addr), sin6_scope_id=0}",
-            ntohs(i->sin6_port), host);
+               "&sin6_addr), sin6_scope_id=%u}",
+            ntohs(i->sin6_port), host, i->sin6_scope_id);
   } else if (a->ss_family == AF_UNSPEC) {
     puts_(t, "{sa_family=AF_UNSPEC}");
   } else if (a->ss_family == AF_NETLINK) {
@@ -2266,6 +2288,35 @@ static int wholeSocketPath(pid_t tid, pid_t tgid, int nr, const struct sockaddr_
   if (written < 0 || (size_t)written >= capacity) return 0;
   fromCwd(tid, tgid, nr, here);
   return 1;
+}
+
+/* The type and protocol on a copy of the stopped process's IP socket. */
+static const char *transportMark(int fd);
+
+static int copySocket(pid_t tgid, int fd) {
+  int pidfd = (int)syscall(SYS_pidfd_open, tgid, 0);
+  if (pidfd < 0) {
+    starvedBy(errno);
+    return -1;
+  }
+  int copy = (int)syscall(SYS_pidfd_getfd, pidfd, fd, 0);
+  int error = errno;
+  close(pidfd);
+  if (copy < 0) {
+    starvedBy(error);
+    errno = error;
+  }
+  return copy;
+}
+
+/* A bind succeeds only on a previously unbound socket. */
+static int unboundSocket(int fd, int family) {
+  struct sockaddr_storage before;
+  socklen_t length = sizeof before;
+  if (getsockname(fd, (struct sockaddr *)&before, &length) != 0 || before.ss_family != family) return 0;
+  if (family == AF_INET) return ((struct sockaddr_in *)&before)->sin_port == 0;
+  if (family == AF_INET6) return ((struct sockaddr_in6 *)&before)->sin6_port == 0;
+  return length == offsetof(struct sockaddr_un, sun_path);
 }
 
 /* The most addresses of one sendmmsg a line holds; a call that sends to more is not followed. */
@@ -2319,6 +2370,14 @@ static int sendLine(struct text *t, pid_t tid, pid_t tgid, const struct call *c,
     }
     if (count == 0) return 0;
   }
+  const char *transport = "";
+  for (int i = 0; i < count; i++) {
+    if (to[i].ss_family != AF_INET && to[i].ss_family != AF_INET6) continue;
+    int copy = copySocket(tgid, (int)req->data.args[0]);
+    transport = transportMark(copy);
+    if (copy >= 0) close(copy);
+    break;
+  }
   char whole[PATH_MAX + 1];
   begin(t, tgid, c->name);
   printf_(t, "%d, ", (int)req->data.args[0]);
@@ -2329,11 +2388,13 @@ static int sendLine(struct text *t, pid_t tid, pid_t tgid, const struct call *c,
     if (c->nr == SYS_sendto) {
       puts_(t, "\"\", 0, 0, ");
       socketAddress(t, &to[i], lengths[i], named);
+      if (to[i].ss_family == AF_INET || to[i].ss_family == AF_INET6) puts_(t, transport);
       printf_(t, ", %u", (unsigned)lengths[i]);
     } else {
       puts_(t, i == 0 ? "" : ", ");
       puts_(t, c->nr == SYS_sendmmsg ? "{msg_hdr={msg_name=" : "{msg_name=");
       socketAddress(t, &to[i], lengths[i], named);
+      if (to[i].ss_family == AF_INET || to[i].ss_family == AF_INET6) puts_(t, transport);
       printf_(t, ", msg_namelen=%u}", (unsigned)lengths[i]);
       if (c->nr == SYS_sendmmsg) puts_(t, "}");
     }
@@ -2405,6 +2466,13 @@ static int socketOptionIs(int fd, int level, int option, int expected) {
 static int tcpSocket(int fd) {
   return socketOptionIs(fd, SOL_SOCKET, SO_TYPE, SOCK_STREAM) &&
          socketOptionIs(fd, SOL_SOCKET, SO_PROTOCOL, IPPROTO_TCP);
+}
+
+static const char *transportMark(int fd) {
+  if (tcpSocket(fd)) return " /* smthrs: tcp */";
+  if (socketOptionIs(fd, SOL_SOCKET, SO_TYPE, SOCK_DGRAM) && socketOptionIs(fd, SOL_SOCKET, SO_PROTOCOL, IPPROTO_UDP))
+    return " /* smthrs: udp */";
+  return "";
 }
 
 static void refusedEnded(struct refused *r) {
@@ -3110,7 +3178,11 @@ static int resolvedOpen(pid_t tid, pid_t tgid, uint64_t id, const struct seccomp
   else
     snprintf(link, sizeof link, "/proc/%d/fd/%d", tid, dirfd);
   int from = open(link, O_PATH | O_CLOEXEC);
-  if (from < 0) starvedBy(errno);
+  if (from < 0) {
+    int error = errno;
+    starvedBy(error);
+    linkRefused(error);
+  }
   if (from < 0 || !placeOf(tid, dirfd, base, sizeof base) || base[0] != '/') {
     if (from >= 0) close(from);
     *why = "base";
@@ -3360,7 +3432,7 @@ static void serve(const struct seccomp_notif *req) {
   struct looking *looking = NULL;
   if (c->kind == K_MKDIR || c->kind == K_REMOVE || c->kind == K_RENAME || c->kind == K_LINK || c->kind == K_SYMLINK ||
       c->kind == K_CHANGE) {
-    __atomic_add_fetch(&namesChanged, 1, __ATOMIC_ACQ_REL);
+    __atomic_add_fetch(&lookupEpoch, 1, __ATOMIC_ACQ_REL);
   }
   switch (c->kind) {
     case K_OPEN: {
@@ -3378,7 +3450,7 @@ static void serve(const struct seccomp_notif *req) {
         struct how how = {0, 0, 0};
         if (req->data.args[3] < sizeof how || !bytesAt(tid, req->data.args[2], &how, sizeof how)) break;
         if (how.resolve != 0 || (how.flags & ~(uint64_t)OPEN_FOLLOWED)) {
-          if (!reading) __atomic_add_fetch(&namesChanged, 1, __ATOMIC_ACQ_REL);
+          if (!reading) __atomic_add_fetch(&lookupEpoch, 1, __ATOMIC_ACQ_REL);
           if (resolvedOpen(tid, tgid, id, req, &how, &t, &why)) return;
           break;
         }
@@ -3386,7 +3458,7 @@ static void serve(const struct seccomp_notif *req) {
       if (!pathOf(tid, req, c->dir, c->path, path, sizeof path, &why)) break;
       int error, directory = 0, makes = 0;
       struct ident before = {0};
-      if (!reading) __atomic_add_fetch(&namesChanged, 1, __ATOMIC_ACQ_REL);
+      if (!reading) __atomic_add_fetch(&lookupEpoch, 1, __ATOMIC_ACQ_REL);
       if ((flags & O_TMPFILE) == O_TMPFILE) {
         /* An unnamed file in a directory: the directory is looked at, and no name is made. */
         error = look(path, 0);
@@ -3790,18 +3862,12 @@ static void serve(const struct seccomp_notif *req) {
         if (refusing != NULL) {
           /* A copy of the socket, to ask once the call has ended whether it connected. With no descriptor left to
            * copy it with, nothing could say a line written as refused was answered after all: the run is unrecorded. */
-          int pidfd = (int)syscall(SYS_pidfd_open, tgid, 0);
-          if (pidfd < 0) starvedBy(errno);
-          refusing->copy = pidfd < 0 ? -1 : (int)syscall(SYS_pidfd_getfd, pidfd, (int)req->data.args[0], 0);
-          if (pidfd >= 0 && refusing->copy < 0) starvedBy(errno);
-          if (pidfd >= 0) close(pidfd);
+          refusing->copy = copySocket(tgid, (int)req->data.args[0]);
           int flags = refusing->copy < 0 ? 0 : fcntl(refusing->copy, F_GETFL);
           refusing->inProgress = flags >= 0 && (flags & O_NONBLOCK) && a.ss_family != AF_UNIX;
           refusing->predicted = error;
         }
-        if (refusing != NULL && a.ss_family != AF_UNIX && tcpSocket(refusing->copy)) {
-          puts_(&t, " /* smthrs: tcp */");
-        }
+        if (refusing != NULL && a.ss_family != AF_UNIX) puts_(&t, transportMark(refusing->copy));
         printf_(&t, ", %u)", (unsigned)length);
         if (refusing != NULL) refusing->at = t.length;
         answer(&t, error);
@@ -3836,13 +3902,9 @@ static void serve(const struct seccomp_notif *req) {
       /* A bind is written once the socket says it is bound (settleBindings). */
       /* With no descriptor left for the copy the bind's line is lost: the run is unrecorded (starvedBy), never
        * short a line. */
-      int pidfd = (int)syscall(SYS_pidfd_open, tgid, 0);
-      if (pidfd < 0) starvedBy(errno);
-      int copy = pidfd < 0 ? -1 : (int)syscall(SYS_pidfd_getfd, pidfd, (int)req->data.args[0], 0);
-      int refused = pidfd >= 0 && copy < 0 && errno == EPERM;
-      if (pidfd >= 0 && copy < 0) starvedBy(errno);
-      if (pidfd >= 0) close(pidfd);
-      if (copy >= 0 && !t.failed) {
+      int copy = copySocket(tgid, (int)req->data.args[0]);
+      int refused = copy < 0 && errno == EPERM;
+      if (copy >= 0 && !t.failed && unboundSocket(copy, a.ss_family)) {
         struct binding *b = calloc(1, sizeof *b);
         if (b != NULL) {
           b->id = id;
@@ -3993,7 +4055,7 @@ static void serve(const struct seccomp_notif *req) {
       char rel[PATH_MAX + 1];
       if (at < 0 || !stringAt(tid, req->data.args[at], rel, sizeof rel)) rel[0] = 0;
       printf_(&t, "%d openat(%d, ", tgid, dir >= 0 ? (int)req->data.args[dir] : -1);
-      quotedz(&t, rel[0] == 0 ? "." : rel);
+      quotedz(&t, rel[0] == 0 || rel[0] == '/' ? "." : rel);
       puts_(&t, ", O_RDONLY) = -1 EBADF (Bad file descriptor)");
     }
   }
@@ -4091,6 +4153,14 @@ static int saysBound(const struct binding *b, struct sockaddr_storage *now) { /*
     return nowLength > 0 && nowLength == askedLength && memcmp(at, asked, nowLength) == 0;
   }
   if (now->ss_family == AF_INET || now->ss_family == AF_INET6) {
+    if (now->ss_family == AF_INET) {
+      const struct sockaddr_in *got = (const struct sockaddr_in *)now, *want = (const struct sockaddr_in *)&b->asked;
+      if (got->sin_addr.s_addr != want->sin_addr.s_addr) return 0;
+    } else {
+      const struct sockaddr_in6 *got = (const struct sockaddr_in6 *)now, *want = (const struct sockaddr_in6 *)&b->asked;
+      if (!IN6_ARE_ADDR_EQUAL(&got->sin6_addr, &want->sin6_addr) || got->sin6_scope_id != want->sin6_scope_id)
+        return 0;
+    }
     unsigned asked = now->ss_family == AF_INET ? ntohs(((struct sockaddr_in *)&b->asked)->sin_port)
                                                : ntohs(((struct sockaddr_in6 *)&b->asked)->sin6_port);
     unsigned port = now->ss_family == AF_INET ? ntohs(((struct sockaddr_in *)now)->sin_port)
@@ -4113,6 +4183,8 @@ static void written(struct binding *b, const struct sockaddr_storage *now) {
             IN6_IS_ADDR_UNSPECIFIED(&((const struct sockaddr_in6 *)&b->asked)->sin6_addr) &&
             tcpSocket(b->copy) && socketOptionIs(b->copy, IPPROTO_IPV6, IPV6_V6ONLY, 0) &&
             socketOptionIs(b->copy, SOL_SOCKET, SO_REUSEPORT, 0);
+  const char *transport = now != NULL && (now->ss_family == AF_INET || now->ss_family == AF_INET6)
+                            ? transportMark(b->copy) : "";
   close(b->copy);
   if (now != NULL) {
     struct text t = {0};
@@ -4125,10 +4197,10 @@ static void written(struct binding *b, const struct sockaddr_storage *now) {
       ((struct sockaddr_in6 *)&shown)->sin6_port = ((const struct sockaddr_in6 *)now)->sin6_port;
       chosen = 1;
     }
-    if (chosen || dual) {
+    if (chosen || *transport != 0) {
       printf_(&t, "%d bind(%d, ", b->tgid, b->fd);
       socketAddress(&t, &shown, b->askedLength, NULL);
-      if (dual) puts_(&t, " /* smthrs: tcp dual-stack */");
+      puts_(&t, dual ? " /* smthrs: tcp dual-stack */" : transport);
       printf_(&t, ", %u)", (unsigned)b->askedLength);
     } else {
       puts_(&t, b->line);
@@ -4310,6 +4382,9 @@ static int writeWhole(const char *file, const char *text) {
   return rename(written, file) == 0;
 }
 
+/* A failure to create or append the kept trace must be visible before a flush is acknowledged. */
+static int keptLost, lostWritten;
+
 /*
  * The trace of a step whose command has ended while what it left runs on (`--keep`): every line so far, sealed, and
  * then the command's exit status beside it, which ends the step.
@@ -4318,11 +4393,20 @@ static int writeStep(const char *file, int code) {
   settleBindings(0);
   lockServing();
   settlePast();
+  /* A lookup suppressed in this step must appear again in the next step's observations. */
+  __atomic_add_fetch(&lookupEpoch, 1, __ATOMIC_ACQ_REL);
   struct lines taken = takeLines();
   pthread_mutex_unlock(&serving_lock);
   int ok = writeLines(file, &taken);
   freeLines(&taken);
-  char status[64], statusFile[PATH_MAX + 32];
+  char keptFile[PATH_MAX + 32], status[64], statusFile[PATH_MAX + 32];
+  snprintf(keptFile, sizeof keptFile, "%s.kept", file);
+  int kept = open(keptFile, O_WRONLY | O_CREAT | O_CLOEXEC, 0644);
+  if (kept < 0 || close(kept) != 0) {
+    starvedBy(errno);
+    keptLost = 1;
+    ok = 0;
+  }
   snprintf(status, sizeof status, "%d %d\n", code, (int)getpid());
   snprintf(statusFile, sizeof statusFile, "%s.status", file);
   return writeWhole(statusFile, status) && ok;
@@ -4337,7 +4421,6 @@ static long answered;
  * there succeeds (`lostWritten`), again after each later loss, and until then no request is answered. A reader that is told every line is on disk
  * either has them all or has the reason.
  */
-static int keptLost, lostWritten;
 static const char *lostReason = "the recorder could not write every line of what the step left running";
 
 /*
@@ -4367,6 +4450,8 @@ static int writeKept(const char *file) {
   settleBindings(0);
   lockServing();
   settlePast();
+  /* A flush seals an observation window. Periodic disk writes within that window do not. */
+  if (asked > answered) __atomic_add_fetch(&lookupEpoch, 1, __ATOMIC_ACQ_REL);
   struct lines taken = takeLines();
   pthread_mutex_unlock(&serving_lock);
   if (__atomic_load_n(&dropped, __ATOMIC_RELAXED)) unrecorded(droppedReason);
@@ -4454,8 +4539,13 @@ static int probe(void) {
   int sv[2];
   if (socketpair(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0, sv) != 0) return 126;
   pid_t child = fork();
-  if (child < 0) return 126;
+  if (child < 0) {
+    close(sv[0]);
+    close(sv[1]);
+    return 126;
+  }
   if (child == 0) {
+    close(sv[0]);
     int fd = install();
     int said = fd >= 0 ? 0 : errno;
     (void)write(sv[1], &said, sizeof said);
@@ -4464,6 +4554,8 @@ static int probe(void) {
     (void)read(sv[1], &go, 1);
     _exit(said == 0 ? 0 : 1);
   }
+  /* sv[1] is still the number of the child's descriptor for pidfd_getfd. */
+  close(sv[1]);
   int said = -1;
   if (read(sv[0], &said, sizeof said) != (ssize_t)sizeof said) said = EIO;
   int copied = 0, readable = 0;
@@ -4480,7 +4572,8 @@ static int probe(void) {
     ssize_t n = process_vm_readv(child, &local, 1, &remote, 1, 0);
     if (n != (ssize_t)sizeof word || memcmp(word, probed, sizeof word) != 0) readable = n < 0 ? errno : EIO;
   }
-  (void)write(sv[0], "", 1);
+  /* EOF releases the child even when it could only send a partial status. */
+  close(sv[0]);
   int status = 0;
   waitpid(child, &status, 0);
   if (said != 0) {

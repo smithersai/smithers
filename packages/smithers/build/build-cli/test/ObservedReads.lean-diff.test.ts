@@ -201,6 +201,7 @@ type Tree =
   | { readonly f: string; readonly x: boolean }
   | { readonly d: { readonly [name: string]: Tree } }
   | { readonly l: string }
+  | { readonly o: number }
 
 const childOf = (node: Tree, part: string): Tree | undefined =>
   "d" in node && Object.prototype.hasOwnProperty.call(node.d, part) ? node.d[part] : undefined
@@ -255,7 +256,7 @@ const memory = (root: Tree): Reads.Io => ({
       ino: 1,
       ctimeMs: 1,
       mtimeMs: 1,
-      mode: "f" in node ? 0o100000 | (node.x ? 0o755 : 0o644) : "l" in node ? 0o120777 : 0o40755,
+      mode: "f" in node ? 0o100000 | (node.x ? 0o755 : 0o644) : "l" in node ? 0o120777 : "o" in node ? node.o : 0o40755,
       nlink: linksOf(node),
       size: "f" in node ? Buffer.byteLength(node.f) : 0,
       isFile: () => "f" in node,
@@ -636,7 +637,7 @@ const throughJson = (value: unknown): unknown =>
 const fullRecord = (label: string, path: string) => {
   const body = {
     reads: [[path, "state", "-"], [`${path}2`, "d"]],
-    lists: [["dir", "digest", ["own"], [["entry", 0]]], ["other", "digest", []]],
+    lists: [["dir", "digest", ["own"], [["entry", 0, "f"]]], ["other", "digest", []]],
     links: [["dir", 3, ["own"], [["entry", 0]]], ["other", 2, []]],
     from: [[label, "prior"]],
     given: [[path, "state", 0], [path, "changed", 0, "prior"]],
@@ -896,6 +897,18 @@ describe("measuring a file system", () => {
     )
   )
 
+  check("distinguishes FIFO, socket, character device and block device entries", async () => {
+    const digests = new Set<string>()
+    for (const mode of [0o010000, 0o140000, 0o020000, 0o060000]) {
+      const fs: Tree = { d: { child: { o: mode } } }
+      const digest = Reads.listing("/", [], memory(fs))!
+      expect(digest).toBe(await oracle.ask({ op: "listing", fs, path: "/", own: [] }))
+      digests.add(digest)
+      cases += 1
+    }
+    expect(digests.size).toBe(4)
+  })
+
   check("includes entry types and visible direct and nested mounts in the listing", async () => {
     const fs: Tree = {
       d: {
@@ -1002,6 +1015,7 @@ describe("measuring a file system", () => {
         NodeFs.symlinkSync(target, path)
         return { l: target }
       }
+      if ("o" in node) return fail("ENOTSUP")
       NodeFs.writeFileSync(path, node.f, { mode: node.x ? 0o755 : 0o644 })
       NodeFs.chmodSync(path, node.x ? 0o755 : 0o644)
       return node
@@ -1185,7 +1199,7 @@ describe("holding a record against a file system", () => {
             : "0".repeat(64)
           return added === undefined
             ? [inside(path), digest, own] as const
-            : [inside(path), digest, own, added] as const
+            : [inside(path), digest, own, added.map(([name, place]) => [name, place, "f"] as const)] as const
         }),
         links: input.links.map((row) => {
           const { added, all, own, path } = directory(row)
@@ -1370,6 +1384,41 @@ describe("holding a record against a file system", () => {
     expect(hold(grown)).toBe(rules.u3 ? "d gained or lost a subdirectory" : null)
   })
 
+  check("refuses a listed producer entry whose kind changes after its producer reruns", async () => {
+    const fs: Tree = { d: { w: { d: { generated: { d: {} } } } } }
+    const io = memory(fs)
+    const record = {
+      id: "listing",
+      reads: [],
+      from: [["build", "1"]],
+      lists: [[".", Reads.listing("/w", ["generated"], io)!, [], [["generated", 0, "f"]]]]
+    } as const
+    const changed = Reads.changed(record, "/w", undefined, io)
+    expect(changed).toBe("generated changed type")
+    expect(await oracle.ask({ op: "changed", rules, record, world: { fs, root: "/w" } })).toBe(changed)
+    cases += 1
+  })
+
+  check("refuses a read below a renamed directory reached through a stable link", async () => {
+    const fs: Tree = { d: { w: { d: { dir: { d: { data: { f: "", x: false } } }, link: { l: "dir" } } } } }
+    const trace = {
+      ...Reads.read(() => ["10 open(\"/w/link/data\", O_RDONLY) = 3"], "/w"),
+      renamed: new Set(["/w/dir"])
+    }
+    const actual = Reads.observe(trace, { root: "/w", ignore: [], startedMs: Infinity, io: memory(fs) })
+    expect(actual).toEqual({ refusal: "/w/dir was replaced while it was used" })
+    expect(
+      await oracle.ask({
+        op: "observe",
+        rules,
+        fs,
+        trace: { found: [...trace.found], renamed: [...trace.renamed] },
+        options: { root: "/w" }
+      })
+    ).toEqual(actual)
+    cases += 1
+  })
+
   check("records emptiness proved by rmdir before recreating a directory", async () => {
     const tree: Tree = { d: { w: { d: { dir: { d: {} } } } } }
     const io = memory(tree)
@@ -1388,7 +1437,7 @@ describe("holding a record against a file system", () => {
         rules,
         fs: tree,
         trace: {
-          found: [...trace.unfollowed ?? []],
+          unfollowed: [...trace.unfollowed ?? []],
           made: [...trace.made],
           changed: [...trace.changed],
           removed: [...trace.removed],

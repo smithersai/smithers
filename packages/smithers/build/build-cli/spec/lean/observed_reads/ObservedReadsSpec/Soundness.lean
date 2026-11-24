@@ -288,7 +288,12 @@ def listVerdict (world : World) (record : Record) (row : ListRow) : Option Strin
   else
     let added := row.added.getD []
     if listing world.fs (absolute world.root row.path) (row.own ++ added.map (·.1)) world.mounts = some row.digest then
-      addedVerdict world record row.path (absolute world.root row.path) added
+      added.findSome? fun (name, place, kind) =>
+        let path := (if row.path = "." then "" else row.path ++ "/") ++ name
+        match lstat world.fs (joinPath (absolute world.root row.path) name) with
+        | .ok node => if node.entryType = kind then none else some (path ++ " changed type")
+        | .error .ENOENT => if again world record place then none else some (path ++ " is gone")
+        | .error _ => some (path ++ " cannot be inspected")
     else some (row.path ++ " gained or lost an entry")
 
 def listsVerdict (world : World) (record : Record) : Option String :=

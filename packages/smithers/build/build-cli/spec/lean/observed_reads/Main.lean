@@ -76,6 +76,9 @@ def timedOf (value : Json) (key : String) : List (String × Nat) :=
 
 def traceOf (value : Json) : Trace where
   found := timedOf value "found"
+  unfollowed := timedOf value "unfollowed"
+  renamed := names value "renamed"
+  transientLinks := names value "transientLinks"
   missing := timedOf value "missing"
   listed := timedOf value "listed"
   made := timedOf value "made"
@@ -112,7 +115,7 @@ def recordJson (record : Record) : Json :=
         Json.arr ((#[.str row.path, .str row.state] : Array Json) ++ (row.other.map Json.str).toArray)).toArray),
       ("lists", .arr (record.lists.map fun row =>
         Json.arr ((#[.str row.path, .str row.digest, toJson row.own] : Array Json) ++
-          (row.added.map addedJson).toArray)).toArray)] ++
+          (row.added.map (fun entries => Json.arr ((entries.map fun (name, place, kind) => Json.arr #[.str name, toJson place, .str kind]).toArray))).toArray)).toArray)] ++
     (match record.links with
       | none => []
       | some links => [("links", .arr (links.map fun row =>

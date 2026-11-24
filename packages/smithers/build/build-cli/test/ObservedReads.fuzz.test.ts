@@ -522,7 +522,7 @@ const schema = S.Struct({
   lists: S.Array(
     S.Union([
       S.Tuple([S.String, S.String, strings]),
-      S.Tuple([S.String, S.String, strings, S.Array(S.Tuple([S.String, place]))])
+      S.Tuple([S.String, S.String, strings, S.Array(S.Tuple([S.String, place, S.String]))])
     ])
   ),
   given: S.optional(S.Array(S.Tuple([S.String, S.String, place]))),
@@ -544,7 +544,7 @@ const conforms = (value: unknown) => {
 const fullRecord = (label: string, path: string): Reads.Record => {
   const body = {
     reads: [[path, "state", "-"]],
-    lists: [["dir", "digest", ["own"], [["entry", 0]]]],
+    lists: [["dir", "digest", ["own"], [["entry", 0, "f"]]]],
     from: [[label, "prior"]],
     given: [[path, "state", 0]],
     left: true,

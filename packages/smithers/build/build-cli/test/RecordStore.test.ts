@@ -30,7 +30,7 @@ const store = async (): Promise<string> => {
 
 const full: ObservedReads.Record = {
   reads: [["src/b.ts", "f:00"], ["node_modules/a.js", "-", "f:01"], ["src/a.ts", "f:02"]],
-  lists: [["src", "00", ["a.ts"], [["made-by-a-step", 0]]], [".", "01", []]],
+  lists: [["src", "00", ["a.ts"], [["made-by-a-step", 0, "f"]]], [".", "01", []]],
   from: [["//:install", "i1"]],
   given: [["node_modules/z.js", "f:03", 0, "f:05"], ["node_modules/y.js", "f:04", 0]],
   left: true,
@@ -49,7 +49,7 @@ const plain: ObservedReads.Record = { reads: [["b", "-"], ["a", "f:00"]], lists:
 const sorted: ObservedReads.Record = {
   ...full,
   reads: [["node_modules/a.js", "-", "f:01"], ["src/a.ts", "f:02"], ["src/b.ts", "f:00"]],
-  lists: [[".", "01", []], ["src", "00", ["a.ts"], [["made-by-a-step", 0]]]],
+  lists: [[".", "01", []], ["src", "00", ["a.ts"], [["made-by-a-step", 0, "f"]]]],
   given: [["node_modules/y.js", "f:04", 0], ["node_modules/z.js", "f:03", 0, "f:05"]]
 }
 
@@ -62,6 +62,7 @@ describe("the records of reads in the content store", () => {
     const entry = await RecordStore.save(cas, ObservedReads.store(full, [plain])!)
     expect(entry.kind).toBe("observed")
     expect(entry.format).toBe(ObservedReads.format)
+    expect(await RecordStore.load(cas, { ...entry, format: "smthrs-observed-reads/6" })).toEqual([])
     expect(entry.records.map((reference) => reference.paths)).toEqual([7, 2])
     for (const reference of entry.records) {
       expect(reference.digest).toMatch(/^[0-9a-f]{64}$/)

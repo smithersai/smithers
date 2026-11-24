@@ -984,7 +984,7 @@ const copyIfThere = async (from: string, to: string): Promise<void> => {
 
 /** Strip userinfo and credential query parameters while preserving the spelling of public URL components. */
 const publicUrls = (line: string): string =>
-  line.replace(/[a-z][a-z0-9+.-]*:\/\/[^\s"\\]+/gi, (url) => {
+  line.replace(/[a-z][a-z0-9+.-]*:\/\/(?:\\.|[^\s"\\])+/gi, (url) => {
     const clean = url.replace(/^([^:]+:\/\/)[^/?#]*@/, "$1")
     return clean.replace(/\?([^#]*)/, (_query, value: string) => {
       const keep = value.split("&").filter((parameter) => {
@@ -1049,7 +1049,11 @@ export const withoutCredentials = (config: string): string => {
     if (dropped) continue
     const setting = line.slice(header?.[0].length ?? 0)
     const key = /^\s*([A-Za-z][A-Za-z0-9-]*)/.exec(setting)?.[1]
-    if (key !== undefined && credentialKey.test(key)) {
+    // A proxy may omit its scheme. Drop an authenticated value in that form as a whole,
+    // including quoted or continued credentials that a URL parser cannot safely split.
+    const privateProxy = /^\s*proxy\s*=/i.test(setting) && setting.includes("@") &&
+      !/^\s*proxy\s*=\s*"?[a-z][a-z0-9+.-]*:\/\//i.test(setting)
+    if (privateProxy || (key !== undefined && credentialKey.test(key))) {
       if (header !== null) kept.push(publicUrls(header[0]))
     } else if (clean !== line) kept.push(clean)
     else for (let n = first; n <= at; n++) kept.push(lines[n]!)

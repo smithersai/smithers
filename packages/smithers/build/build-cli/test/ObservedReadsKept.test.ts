@@ -55,7 +55,7 @@ describe("what a program a step left read while the steps after it ran", () => {
   const server = (root: string): ReadonlyArray<string> => [
     "20 +++ smthrs-observe 1 +++",
     `20 openat(AT_FDCWD, "${root}/tool.py", O_RDONLY) = 3`,
-    `20 bind(3, {sa_family=AF_INET, sin_port=htons(8767), sin_addr=inet_addr("127.0.0.1")}, 16) = 0`,
+    `20 bind(3, {sa_family=AF_INET, sin_port=htons(8767), sin_addr=inet_addr("127.0.0.1")} /* smthrs: tcp */, 16) = 0`,
     "20 +++ complete +++"
   ]
 
@@ -67,15 +67,15 @@ describe("what a program a step left read while the steps after it ran", () => {
       `20 newfstatat(AT_FDCWD, "${root}/site/gone.txt", 0x1, 0) = -1 ENOENT (No such file or directory)`
     ]
     const served = ObservedReads.servedBy(() => server(root), () => after, root)
-    expect([...served.found.keys()]).toEqual([`${root}/site/x.txt`])
+    expect([...served.found]).toEqual([[`${root}/tool.py`, 4], [`${root}/site/x.txt`, 5]])
     expect([...served.missing.keys()]).toEqual([`${root}/site/gone.txt`])
-    expect([...served.bound]).toEqual(["inet:8767:127.0.0.1"])
+    expect([...served.bound]).toEqual(["tcp:inet:8767:127.0.0.1"])
     expect(served.refusals).toEqual([])
     // A step that talks to it on its port reaches its job, not outside the run.
     const asked = ObservedReads.read(
       () => [
         "30 +++ smthrs-observe 1 +++",
-        `30 connect(3, {sa_family=AF_INET, sin_port=htons(8767), sin_addr=inet_addr("127.0.0.1")}, 16) = 0`,
+        `30 connect(3, {sa_family=AF_INET, sin_port=htons(8767), sin_addr=inet_addr("127.0.0.1")} /* smthrs: tcp */, 16) = 0`,
         `30 openat(AT_FDCWD, "${root}/got.txt", O_WRONLY|O_CREAT|O_TRUNC, 0666) = 3`,
         "30 +++ complete +++"
       ],
@@ -86,13 +86,13 @@ describe("what a program a step left read while the steps after it ran", () => {
     expect(asked.refusals).toEqual([])
     const alone = ObservedReads.read(() => [
       "30 +++ smthrs-observe 1 +++",
-      `30 connect(3, {sa_family=AF_INET, sin_port=htons(8767), sin_addr=inet_addr("127.0.0.1")}, 16) = 0`,
+      `30 connect(3, {sa_family=AF_INET, sin_port=htons(8767), sin_addr=inet_addr("127.0.0.1")} /* smthrs: tcp */, 16) = 0`,
       "30 +++ complete +++"
     ], root)
     expect(alone.refusals).toEqual(["it reached a program outside the run on local port 8767"])
     // Joined, the program's reads are the step's, after its own lines: a path the step made stays its own.
     const joined = ObservedReads.withServed(asked, [served])
-    expect([...joined.found.keys()]).toEqual([`${root}/site/x.txt`])
+    expect([...joined.found.keys()]).toEqual([`${root}/tool.py`, `${root}/site/x.txt`])
     // The step's own trace is four lines long.
     expect(joined.found.get(`${root}/site/x.txt`)! > 4).toBe(true)
     expect([...joined.missing.keys()]).toEqual([`${root}/site/gone.txt`])
@@ -105,6 +105,44 @@ describe("what a program a step left read while the steps after it ran", () => {
     )
     expect(unseen.refusals).toEqual(["it read through io_uring"])
     expect(ObservedReads.withServed(asked, [unseen]).refusals).toEqual(["it read through io_uring"])
+  })
+
+  it("records the first observation of each path again in a new step", () => {
+    const calls = [
+      "execve(\"/usr/bin/npm\", [\"npm\", \"ci\"], 0x1) = 0",
+      "lstat(\"link\", {st_mode=S_IFLNK}) = 0",
+      "stat(\"missing\", 0x1) = -1 ENOENT (No such file)",
+      "getdents64(3</w/dir>, 0x1, 64) = 0",
+      "openat(AT_FDCWD, \"truncated\", O_WRONLY|O_TRUNC) = 4",
+      "symlink(\"target\", \"scratch\") = 0",
+      "unlink(\"scratch\") = 0",
+      "unlink(\"pidfile\") = 0",
+      "utimensat(AT_FDCWD, \"stamp\", NULL, 0) = 0"
+    ].map((call) => `20 ${call}`)
+    const served = ObservedReads.servedBy(() => calls, () => [...calls, ...calls], "/w")
+    const at = (index: number) => calls.length + index + 1
+    expect([...served.started]).toEqual([["/usr/bin/npm", at(0)]])
+    expect(served.unfollowed?.get("/w/link")).toBe(at(1))
+    expect(served.missing.get("/w/missing")).toBe(at(2))
+    expect(served.listed.get("/w/dir")).toBe(at(3))
+    expect(served.emptied.get("/w/truncated")).toBe(at(4))
+    expect(served.required?.get("/w/truncated")).toBe(at(4))
+    expect(served.made.get("/w/scratch")).toBe(at(5))
+    expect(served.exclusive?.get("/w/scratch")).toBe(at(5))
+    expect(served.transientLinks).toEqual(new Set(["/w/scratch"]))
+    expect(served.unlinked).toEqual(new Set(["/w/pidfile"]))
+    expect(served.meta).toEqual(new Set(["/w/stamp"]))
+    expect(served.fetched).toContain("/w/truncated")
+  })
+
+  it("keeps the completed observation of a call still pending at the seal", () => {
+    const served = ObservedReads.servedBy(
+      () => ["20 openat(AT_FDCWD, \"input\", O_RDONLY <unfinished ...>"],
+      () => ["20 <... openat resumed>) = 3</w/input>"],
+      "/w"
+    )
+    expect([...served.found]).toEqual([["/w/input", 2]])
+    expect(served.refusals).toEqual([])
   })
 
   it("reads a trace that was not sealed, as strace writes it", () => {
@@ -154,15 +192,15 @@ describe("a step that left a program running, as the steps after it read it", ()
 })
 
 describe("a run that asks a server of its own before the server listens", () => {
-  it("reaches nothing outside the run, on a port or a socket it binds later; one it never binds is outside", () => {
+  it("allows a refused readiness probe and credits its later connection only after a bind", () => {
     const lines = (address: string, bound: boolean): Array<string> => [
       "10 +++ smthrs-observe 1 +++",
-      `11 connect(3, ${address}, 16) = -1 EINPROGRESS (Operation now in progress)`,
+      `11 connect(3, ${address}, 16) = -1 ECONNREFUSED (Connection refused)`,
       ...(bound ? [`12 bind(4, ${address}, 16) = 0`] : []),
       `11 connect(5, ${address}, 16) = 0`,
       "10 +++ complete +++"
     ]
-    const port = "{sa_family=AF_INET, sin_port=htons(8768), sin_addr=inet_addr(\"127.0.0.1\")}"
+    const port = "{sa_family=AF_INET, sin_port=htons(8768), sin_addr=inet_addr(\"127.0.0.1\")} /* smthrs: tcp */"
     const socket = "{sa_family=AF_UNIX, sun_path=\"/tmp/s.sock\"}"
     for (const address of [port, socket]) {
       expect(ObservedReads.read(() => lines(address, true), "/w").refusals).toEqual([])

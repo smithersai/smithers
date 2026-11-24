@@ -15,7 +15,7 @@ namespace ObservedReadsSpec
 open Lean (Json)
 
 /-- The format tag of a stored set of records. -/
-def format : String := "smthrs-observed-reads/6"
+def format : String := "smthrs-observed-reads/7"
 
 /-- Records kept for one declaration. -/
 def maximumRecords : Nat := 4
@@ -43,7 +43,7 @@ structure ListRow where
   path : String
   digest : String
   own : List String
-  added : Option (List (String × Nat))
+  added : Option (List (String × Nat × String))
   deriving Repr, DecidableEq
 
 /-- A directory the run looked at: its link count, the names the run wrote, and the names a step before it wrote. -/
@@ -149,19 +149,20 @@ def isKept : Option Json → Bool
   | some _ => false
 
 /-- The fourth part of a `lists` or `links` row: the names steps before the run wrote, each with a place in `from`. -/
-def isAdded (count : Nat) (value : Json) : Bool :=
+def isAdded (listed : Bool) (count : Nat) (value : Json) : Bool :=
   match elements value with
   | some rows => rows.all fun row =>
     match elements row with
-    | some [name, place] => isText name && isPlace count place
+    | some [name, place] => !listed && isText name && isPlace count place
+    | some [name, place, kind] => listed && isText name && isPlace count place && isText kind
     | _ => false
   | none => false
 
 /-- A row of `lists` (`text` digest) or of `links` (integer count). -/
-def isDirectoryRow (count : Nat) (second : Json → Bool) (row : Json) : Bool :=
+def isDirectoryRow (listed : Bool) (count : Nat) (second : Json → Bool) (row : Json) : Bool :=
   match elements row with
   | some [path, held, own] => isText path && second held && isNames own
-  | some [path, held, own, added] => isText path && second held && isNames own && isAdded count added
+  | some [path, held, own, added] => isText path && second held && isNames own && isAdded listed count added
   | _ => false
 
 /--
@@ -192,8 +193,8 @@ def isRecordShape (rules : Rules) (value : Json) : Bool :=
         | some [path, state, place, prior] => isText path && isText state && isPlace origin.length place && isText prior
         | some [path, state, place] => isText path && isText state && isPlace origin.length place
         | _ => false) &&
-      links.all (isDirectoryRow origin.length (fun count => (integer? count).isSome)) &&
-      lists.all (isDirectoryRow origin.length isText)
+      links.all (isDirectoryRow false origin.length (fun count => (integer? count).isSome)) &&
+      lists.all (isDirectoryRow true origin.length isText)
     | _, _, _, _, _, _, _ => false
   | _ => false
 
@@ -243,10 +244,16 @@ def readRowOf (row : Json) : ReadRow :=
   | some [path, state, other] => ⟨textOf path, textOf state, some (textOf other)⟩
   | _ => ⟨"", "", none⟩
 
+def listedAddedOf (value : Json) : List (String × Nat × String) :=
+  ((elements value).getD []).map fun row =>
+    match elements row with
+    | some [name, place, kind] => (textOf name, placeOf place, textOf kind)
+    | _ => ("", 0, "")
+
 def listRowOf (row : Json) : ListRow :=
   match elements row with
   | some [path, digest, own] => ⟨textOf path, textOf digest, namesOf own, none⟩
-  | some [path, digest, own, added] => ⟨textOf path, textOf digest, namesOf own, some (addedOf added)⟩
+  | some [path, digest, own, added] => ⟨textOf path, textOf digest, namesOf own, some (listedAddedOf added)⟩
   | _ => ⟨"", "", [], none⟩
 
 def linkRowOf (row : Json) : LinkRow :=
@@ -291,7 +298,8 @@ def ReadRow.json (row : ReadRow) : String :=
   jsonArray ([jsonString row.path, jsonString row.state] ++ (row.other.map jsonString).toList)
 
 def ListRow.json (row : ListRow) : String :=
-  jsonArray ([jsonString row.path, jsonString row.digest, jsonStrings row.own] ++ (row.added.map jsonAdded).toList)
+  jsonArray ([jsonString row.path, jsonString row.digest, jsonStrings row.own] ++ (row.added.map fun entries =>
+    jsonArray (entries.map fun (name, place, kind) => jsonArray [jsonString name, toString place, jsonString kind])).toList)
 
 def LinkRow.json (row : LinkRow) : String :=
   jsonArray ([jsonString row.path, toString row.count, jsonStrings row.own] ++ (row.added.map jsonAdded).toList)
