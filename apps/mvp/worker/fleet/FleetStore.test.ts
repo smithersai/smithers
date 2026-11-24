@@ -29,7 +29,8 @@ beforeAll(() => runtime.runPromise(scrubFleetTranscripts))
 beforeEach(() =>
   runtime.runPromise(
     Effect.flatMap(SqlClient.SqlClient, (sql) =>
-      sql`TRUNCATE host_nodes, observed_sessions, provider_accounts, sandbox_generations, fleet_session_snapshot_keys CASCADE`
+      sql`TRUNCATE host_nodes, observed_sessions, provider_accounts, sandbox_generations,
+        fleet_session_snapshot_keys, fleet_session_snapshot_receipts CASCADE`
     ),
   )
 )
@@ -896,6 +897,43 @@ describe("fleet replacement snapshots through the MCP HTTP boundary", () => {
     expect(await ended()).toEqual(["node-big:claude:stale"])
     expect(await rows(`SELECT active_sessions FROM host_nodes WHERE node_id = 'node-big'`)).toEqual([{ active_sessions: 40 }])
     expect(await rows(`SELECT count(*)::int AS staged FROM fleet_session_snapshot_keys`)).toEqual([{ staged: 0 }])
+  })
+
+  test("replaying a finalized snapshot returns its receipt and keeps sessions from every chunk active", async () => {
+    const post = await openMcp()
+    const nodeId = "node-big"
+    const report = (args: unknown) => post("fleet_sessions_report", args)
+    const snapshot = { nodeId, mode: "replace", snapshotId: "two-chunks", totalChunks: 2 }
+    const session = (sessionKey: string) => ({ sessionKey, harness: "claude", status: "working" })
+    const first = { ...snapshot, chunkIndex: 0, sessions: [session("a"), session("b")] }
+    const last = { ...snapshot, chunkIndex: 1, sessions: [session("c")] }
+    expect((await post("fleet_heartbeat", { nodeId, name: "Busy host", kind: "bare-metal" })).isError).toBe(false)
+    expect((await report(first)).answer).toMatchObject({ reported: 2, active: 2, final: false })
+    const completed = (await report(last)).answer
+    expect(completed).toEqual({ nodeId, snapshotId: snapshot.snapshotId, reported: 1, active: 3, final: true })
+    expect(await active()).toEqual(["a", "b", "c"])
+
+    // C reports a newer status while the final response is lost.
+    expect((await report({ nodeId, sessions: [{ ...session("c"), status: "idle" }] })).answer).toMatchObject({ active: 3 })
+    expect((await report(last)).answer).toEqual(completed)
+    expect(await active()).toEqual(["a", "b", "c"])
+    expect(await rows(`SELECT active_sessions FROM host_nodes WHERE node_id = 'node-big'`)).toEqual([{ active_sessions: 3 }])
+    expect(await rows(`SELECT status FROM observed_sessions WHERE session_key = 'c'`)).toEqual([{ status: "idle" }])
+    expect((await report(first)).answer).toEqual(completed)
+    expect(await rows(`SELECT count(*)::int AS staged FROM fleet_session_snapshot_keys`)).toEqual([{ staged: 0 }])
+  })
+
+  test("hosts finalize the same snapshot ID independently and reports prune old receipts", async () => {
+    const post = await openMcp()
+    const snapshot = { mode: "replace", snapshotId: "shared", final: true }
+    const session = { sessionKey: "a", harness: "claude", status: "working" }
+    expect((await post("fleet_sessions_report", { ...snapshot, nodeId: "one", sessions: [session] })).answer)
+      .toEqual({ nodeId: "one", snapshotId: "shared", final: true, reported: 1, active: 1 })
+    expect((await post("fleet_sessions_report", { ...snapshot, nodeId: "two", sessions: [] })).answer)
+      .toEqual({ nodeId: "two", snapshotId: "shared", final: true, reported: 0, active: 0 })
+    await rows(`UPDATE fleet_session_snapshot_receipts SET completed_at = now() - interval '8 days' WHERE node_id = 'one'`)
+    expect((await post("fleet_sessions_report", { nodeId: "two", sessions: [] })).isError).toBe(false)
+    expect(await rows(`SELECT node_id, snapshot_id FROM fleet_session_snapshot_receipts`)).toEqual([{ node_id: "two", snapshot_id: "shared" }])
   })
 
   test("a snapshot abandoned before its final chunk ends nothing, and the next whole snapshot still reconciles", async () => {

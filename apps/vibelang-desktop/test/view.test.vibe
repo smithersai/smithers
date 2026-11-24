@@ -238,3 +238,28 @@ it("keeps the selected local model and stream after an older same-conversation r
   expect(settled.folderOps).toBe(0)
   expect(canSend(settled)).toBe(true)
 })
+
+it("refreshes the current conversation when a pending folder change finishes after a newer read", () => {
+  const start = initial()
+  const opening = update(start, Message.OpenFolder()).model
+  const moved = update(opening, Message.ClickedLearnMore())
+  const { conversation, settingsRequest: generation } = moved.model
+  expect(conversation).not.toBe(start.conversation)
+  expect(moved.commands?.at(-1)?.args).toEqual({ conversation, generation })
+  const oldRead = Message.Snapshot({ conversation, generation, state: start.desktop })
+  const before = update(moved.model, oldRead).model
+  expect(before.folderOps).toBe(1)
+  const folder = { path: "/project", files: 3, token: "token", identity: "identity" }
+  const state = { ...start.desktop, folder }
+  const settled = update(before, Message.Snapshot({ operation: "open", generation: opening.settingsRequest, state }))
+  expect(settled.model.folderOps).toBe(0)
+  expect(settled.model.desktop.folder).toBeNull()
+  const fresh = generation + 1
+  expect(settled.model.settingsRequest).toBe(fresh)
+  expect(settled.commands).toMatchObject([{ name: "Desktop.Refresh", args: { conversation, generation: fresh } }])
+  const current = update(settled.model, Message.Snapshot({ conversation, generation: fresh, state })).model
+  expect(current.desktop.folder).toEqual(folder)
+  const stale = update(current, oldRead)
+  expect(stale.model).toBe(current)
+  expect(stale.commands ?? []).toHaveLength(0)
+})

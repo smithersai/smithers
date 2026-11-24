@@ -205,9 +205,13 @@ const append = (file: string, text: string): void => {
 
 const text = (value: string): string => String(Redaction.redact(value))
 
-/** `value` as JSON with every string redacted. */
+/** `value` as JSON with string values and property names redacted. */
 const strings = (value: unknown): string =>
-  JSON.stringify(value, (_, each: unknown) => (typeof each === "string" ? text(each) : each))
+  JSON.stringify(value, (_, each: unknown) => {
+    if (typeof each === "string") return text(each)
+    if (each === null || typeof each !== "object" || Array.isArray(each)) return each
+    return Object.fromEntries(Object.entries(each).map(([key, item]) => [text(key), item]))
+  })
 
 /** A tab's or a flow run's result text, redacted; the rest of it is what a retry relaunches. */
 const said = <A extends { readonly answer?: string; readonly message?: string }>(value: A): A => ({
@@ -216,7 +220,7 @@ const said = <A extends { readonly answer?: string; readonly message?: string }>
   ...(value.message === undefined ? {} : { message: text(value.message) })
 })
 
-/** `value` with every string redacted. */
+/** `value` with string values and property names redacted. */
 const redacted = <A>(value: A): A => JSON.parse(strings(value)) as A
 
 /** Whether redaction leaves `value` byte for byte. */

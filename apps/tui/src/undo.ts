@@ -27,7 +27,7 @@ export type Failure =
     readonly path: string
     readonly message: string
     readonly restored: boolean
-    /** Files rollback left alone because another writer changed them after this undo wrote them. */
+    /** Files left alone because another writer changed them. */
     readonly kept?: ReadonlyArray<string>
   }
 
@@ -435,7 +435,19 @@ export const commit = async (
   const rollback = async (failed: File | undefined) => {
     let restored = true
     const kept: Array<string> = []
-    for (const done of [...(failed === undefined ? [] : [failed]), ...applied.toReversed()]) {
+    if (failed !== undefined) {
+      const path = resolve(cwd, failed.path)
+      try {
+        if (outside(cwd, failed.path)) restored = false
+        else if ((await read(path)) !== failed.current || (await modeOf(path)) !== modes.get(failed.path)) {
+          kept.push(failed.path)
+          restored = false
+        }
+      } catch {
+        restored = false
+      }
+    }
+    for (const done of applied.toReversed()) {
       const path = resolve(cwd, done.path)
       const mode = modes.get(done.path)
       try {
@@ -476,7 +488,6 @@ export const commit = async (
       await write(path, file.next, file.mode)
       applied.push(file)
     } catch (error) {
-      // The failed write published nothing, or everything: rollback checks which.
       const { restored, kept } = await rollback(file)
       return {
         _tag: "WriteFailed",

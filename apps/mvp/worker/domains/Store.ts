@@ -215,7 +215,8 @@ export const withdraw = (write: {
     return yield* sql.withTransaction(Effect.gen(function* () {
       if ((yield* authorized(write.authority)) !== "held") return "stale" as const
       const [receipt] = yield* sql<{ readonly id: string }>`
-        SELECT id FROM domain_events WHERE invocation_key = ${write.invocationKey}`
+        SELECT id FROM domain_events WHERE invocation_key = ${write.invocationKey} AND action = 'remove'
+          AND hostname = ${write.hostname} AND repo_id = ${write.repoId}`
       if (receipt !== undefined) {
         // The first try marked its row and recorded `remove` together. Its row is still removing, or erased: a row
         // claimed since (`add` after the receipt) is another registration.
@@ -226,10 +227,11 @@ export const withdraw = (write: {
               SELECT 1 FROM domain_events WHERE hostname = ${write.hostname} AND action = 'add' AND id > ${receipt.id})`
         return Option.fromUndefinedOr(marked)
       }
+      if (write.pollId == null) return Option.none()
       const [row] = yield* sql<Pick<Row, "repoId" | "pollId" | "providerId">>`
         UPDATE domains SET state = 'removing', updated_by = ${write.actorId}, updated_at = now()
         WHERE hostname = ${write.hostname} AND repo_id = ${write.repoId}
-          AND ${write.pollId === undefined ? sql`TRUE` : sql`poll_id = ${write.pollId}`}
+          AND poll_id = ${write.pollId}
         RETURNING repo_id AS "repoId", poll_id AS "pollId", provider_id AS "providerId"`
       if (row === undefined) return Option.none()
       yield* sql`

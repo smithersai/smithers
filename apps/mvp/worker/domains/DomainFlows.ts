@@ -14,7 +14,7 @@ import * as Store from "./Store.ts"
 //   domain/Verify { repoId, hostname, actorId, pollId }        a poll: one round per attempt, a durable wait between
 //     attempt 1: domain/Claim ─ the row, `add` or `refresh`      a row another poll owns, or removed, ends it
 //     every attempt: domain/Check ─ ensure at the provider, read its verdict, write the row
-//   domain/Remove { repoId, hostname, actorId }
+//   domain/Remove { repoId, hostname, actorId, pollId }
 //     domain/Release ─ mark the row removing, forget it at the provider, delete the row
 //
 // Every payload carries `authority`, the session and role scope the route admitted (`WriteAuthority.protectedOf`). A
@@ -111,6 +111,7 @@ export const Cleanup = Action.make("domain/Cleanup", {
 export const Release = Action.make("domain/Release", {
   payload: {
     authority: WriteAuthority.Admission, repoId: Schema.String, hostname: Schema.String, actorId: Schema.String,
+    // Older runs can omit the generation. Only a withdrawal receipt can resume such a removal.
     pollId: Schema.optional(Schema.NullOr(Schema.String)),
   },
   success: Schema.Struct({ change: Schema.Literals(["released", "missing", "stale", "superseded"]) }),

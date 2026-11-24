@@ -486,7 +486,7 @@ describe("the steps", () => {
     expect(await rows(runtime)).toMatchObject([{ state: "active", providerId: "cf-1", pollId: "poll-1" }])
     const forgotten: Array<string> = []
     provider.use({ remove: (id) => Effect.sync(() => void forgotten.push(id)) })
-    expect(await keyed(release({ repoId: REPO_ID, hostname: "docs.example.com", authority: null, actorId: "p" }), "step-2")).toEqual({
+    expect(await keyed(release(input), "step-2")).toEqual({
       change: "released",
     })
     expect(forgotten).toEqual(["cf-1"])
@@ -511,22 +511,25 @@ describe("the steps", () => {
     expect(await rows(runtime)).toMatchObject([{ problem: "unreachable" }])
   })
 
-  test("a release the provider can't do fails to be retried, and the row stays removing", async () => {
+  test("a legacy release with a withdrawal receipt finishes after the provider recovers", async () => {
     const { release } = DomainFlows.steps(await database())
     await seed(runtime, { hostname: "docs.example.com", providerId: "cf-1", state: "active" })
     provider.use({ remove: () => Effect.fail(new ProviderUnavailable({ code: "http_500" })) })
     const exit = await Effect.runPromiseExit(
-      release({ repoId: REPO_ID, hostname: "docs.example.com", authority: null, actorId: "p" }).pipe(
+      release({ repoId: REPO_ID, hostname: "docs.example.com", authority: null, actorId: "p", pollId: "poll-seed" }).pipe(
         Effect.provideService(Action.CurrentInvocationKey, "step-1"),
         Effect.provide(provider.layer),
       ),
     )
     expect(JSON.stringify(exit)).toContain("@smthrs/mvp/domains/ReleaseUnavailable")
     expect(await rows(runtime)).toMatchObject([{ state: "removing" }])
-    provider.reset()
+    const forgotten: Array<string> = []
+    provider.use({ remove: (id) => Effect.sync(() => void forgotten.push(id)) })
     expect(await keyed(release({ repoId: REPO_ID, hostname: "docs.example.com", authority: null, actorId: "p" }))).toEqual({
       change: "released",
     })
+    expect(forgotten).toEqual(["cf-1"])
+    expect(await rows(runtime)).toEqual([])
     expect((await events(runtime)).map((event) => event.action)).toEqual(["remove"])
     expect(await keyed(release({ repoId: REPO_ID, hostname: "docs.example.com", authority: null, actorId: "p" }))).toEqual({
       change: "missing",
@@ -539,7 +542,7 @@ describe("the steps", () => {
     await seed(runtime, { hostname: "docs.example.com", providerId: "cf-1", state: "active" })
     const forgotten: Array<string> = []
     provider.use({ remove: (id) => Effect.sync(() => void forgotten.push(id)) })
-    const removal = { repoId: REPO_ID, hostname: "docs.example.com", authority: null, actorId: "p" }
+    const removal = { repoId: REPO_ID, hostname: "docs.example.com", authority: null, actorId: "p", pollId: "poll-seed" }
     expect(await keyed(release(removal))).toEqual({ change: "released" })
     // The step erased the row but the engine never sealed it; the domain is added again before the retry.
     expect(await keyed(claim({ ...input, pollId: "poll-2" }), "step-2")).toEqual({ change: "add" })
@@ -568,7 +571,7 @@ describe("the steps", () => {
     await seed(runtime, { hostname: "new.example.com" })
     const off = (hostname: string) =>
       Effect.runPromiseExit(
-        release({ repoId: REPO_ID, hostname, authority: null, actorId: "p" }).pipe(
+        release({ repoId: REPO_ID, hostname, authority: null, actorId: "p", pollId: "poll-seed" }).pipe(
           Effect.provideService(Action.CurrentInvocationKey, `step-${hostname}`),
           Effect.provide(DomainProvider.off),
         ),
@@ -669,7 +672,7 @@ describe("the steps", () => {
       .toContain("@smthrs/mvp/domains/ReleaseUnavailable")
     expect(forgotten).toEqual([])
     // The new poll is removed before its check can adopt the registration.
-    expect(await keyed(release({ repoId: REPO_ID, hostname: input.hostname, authority: null, actorId: "p" }), "remove-new"))
+    expect(await keyed(release(input), "remove-new"))
       .toEqual({ change: "released" })
     expect(await keyed(cleanup(pending))).toEqual({ satisfied: true, output: "superseded" })
     expect(forgotten).toEqual(["cf-replacement"])
@@ -722,7 +725,7 @@ describe("the steps", () => {
     await keyed(claim(input))
     provider.use({
       ensure: () => Effect.gen(function* () {
-        yield* Store.withdraw({ hostname: input.hostname, repoId: REPO_ID, authority: null, actorId: "p", invocationKey: "removing" })
+        yield* Store.withdraw({ ...input, invocationKey: "removing" })
           .pipe(Effect.provide(db), Effect.orDie)
         return { id: "cf-new", records: [], verification: "pending", certificate: "pending" } as const
       }),
@@ -876,6 +879,28 @@ describe("authority held through the flows", () => {
     expect(await rows(runtime)).toEqual([])
   })
 
+  test("a delayed legacy removal without a withdrawal receipt leaves a reclaimed hostname active", async () => {
+    const who = await person("maintainer")
+    const legacy = { authority: who.authority, actorId: who.id, repoId: REPO_ID, hostname }
+    await seed(runtime, { hostname, pollId: "original", providerId: "cf-original", state: "active" })
+    const calls = counting()
+    const h = await open({ actor: who.actor })
+    expect((await h.fetch(domainRoute(REPO.owner, REPO.name, hostname), remove)).status).toBe(202)
+    expect((await h.fetch(path, add(hostname))).status).toBe(202)
+    const replacement = await rows(runtime)
+    expect(replacement).toMatchObject([{ state: "active", providerId: `cf-${hostname}` }])
+
+    for (const binding of [{}, { pollId: null }, { pollId: "original" }]) {
+      await Effect.runPromise(host.starter.start(DomainFlows.Remove, {
+        executionId: crypto.randomUUID(), payload: { ...legacy, ...binding },
+      }))
+      expect(host.exits.at(-1)).toMatchObject({ _tag: "Success", value: { change: "missing" } })
+    }
+    expect(calls.remove).toBe(1)
+    expect(await rows(runtime)).toEqual(replacement)
+    expect((await events(runtime)).map((event) => event.action)).toEqual(["remove", "add", "check"])
+  })
+
   test("a Maintainer demoted after domain/Verify started: the next check ends the poll and never asks the provider", async () => {
     const who = await person("maintainer")
     const { claim, check } = DomainFlows.steps(await database())
@@ -978,7 +1003,7 @@ describe("authority held through the flows", () => {
     const who = await person("maintainer")
     await seed(runtime, { hostname, providerId: "cf-1", state: "active" })
     const { release } = DomainFlows.steps(await database())
-    const removal = { authority: who.authority, repoId: REPO_ID, hostname, actorId: who.id }
+    const removal = { authority: who.authority, repoId: REPO_ID, hostname, actorId: who.id, pollId: "poll-seed" }
     let asked = 0
     provider.use({ remove: () => Effect.suspend(() => (asked++, Effect.fail(new ProviderUnavailable({ code: "http_500" })))) })
     const exit = await Effect.runPromiseExit(

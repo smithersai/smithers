@@ -694,6 +694,40 @@ describe("credentials in a saved session", () => {
       ])
     }
 
+    it("removes credentialed nested property names from executable actions and saved runs", () => {
+      const input = { env: [{ headers: { [pat]: "ordinary" } }] }
+      const action = { ...ordinary, input }
+      const writer = Session.create(mkdtempSync(join(tmpdir(), "tui-cwd-")))
+      writer.append({
+        type: "panel",
+        panel: {
+          ...panel,
+          rows: [
+            { id: "unsafe", label: "Deploy", details: [], action: { label: "Run", action } },
+            panel.rows[4]!
+          ]
+        }
+      })
+      writer.append({
+        type: "flow",
+        run: { id: "r", flow: "open", by: "user", input, requested: "open", status: "requested", startedAt: 1 }
+      })
+      writer.append({ type: "user", at: 2, text: "next" })
+      const [turn] = Session.turns(Session.load(writer.file))
+      const fork = Session.fork(writer.file, mkdtempSync(join(tmpdir(), "tui-cwd-")), turn!)
+      if (fork._tag !== "Forked") throw new Error(fork._tag)
+      for (const file of [writer.file, fork.writer.file]) {
+        expect(readFileSync(file, "utf8")).not.toContain(pat)
+        const restored = Session.restore(Session.load(file))
+        expect(pressed(restored.workspace.panels[0]!)).toEqual([[], [["perform", ordinary]]])
+        expect(restored.flows[0]).toMatchObject({
+          status: "failed",
+          redacted: true,
+          input: { env: [{ headers: { "[REDACTED]": "ordinary" } }] }
+        })
+      }
+    })
+
     it("holds no credential from a prompt or a nested flow input, and restores only the untouched actions", () => {
       const writer = Session.create(mkdtempSync(join(tmpdir(), "tui-cwd-")))
       for (const record of records) writer.append(record)

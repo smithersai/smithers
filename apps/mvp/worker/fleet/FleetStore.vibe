@@ -249,7 +249,8 @@ export effect function upsertHostNode(input: HostHeartbeatInput) {
  *
  * A chunk of a replacement snapshot that is not its final one ends nothing: it stores its sessions and stages their
  * keys under the `snapshotId`. The final chunk ends the host's active sessions that no chunk of the snapshot named.
- * A snapshot abandoned before its final chunk ends nothing either; its staged keys are dropped an hour later.
+ * Replaying a completed snapshot returns its recorded counts. Receipts expire alongside ended sessions.
+ * An abandoned snapshot ends nothing and its staged keys are dropped an hour later.
  *
  * Each report also deletes the sessions that ended more than `ENDED_SESSION_RETENTION_DAYS` ago, on any host, so the
  * table holds the fleet's recent history rather than every session it ever ran (R2-Fable-D4-011).
@@ -264,8 +265,15 @@ export effect function reportSessions(input: SessionsReportInput) {
   const final = input.final ?? (
     input.chunkIndex === undefined || input.totalChunks === undefined || input.chunkIndex >= input.totalChunks - 1
   )
-  const active = try sql.withTransaction(effect {
+  return try sql.withTransaction(effect {
     try sql`SELECT pg_advisory_xact_lock(hashtextextended(${`fleet-sessions:${input.nodeId}`}, 0))`
+    if (snapshotId !== undefined) {
+      const [receipt] = try sql<{ reported: number; active: number }>`
+        SELECT reported, active FROM fleet_session_snapshot_receipts
+        WHERE node_id = ${input.nodeId} AND snapshot_id = ${snapshotId}
+      `
+      if (receipt !== undefined) return { nodeId: input.nodeId, ...receipt, snapshotId, final: true }
+    }
     for (const s of byKey.values()) {
       const title = scrubText(s.title, 160)
       const lane = scrubText(s.lane, 120)
@@ -363,6 +371,10 @@ export effect function reportSessions(input: SessionsReportInput) {
         OR updated_at < now() - make_interval(days => ${ENDED_SESSION_RETENTION_DAYS}::integer)
       )
     `
+    try sql`
+      DELETE FROM fleet_session_snapshot_receipts
+      WHERE completed_at < now() - make_interval(days => ${ENDED_SESSION_RETENTION_DAYS}::integer)
+    `
     const counted = try sql<{ active: number }>`
       SELECT count(*)::int AS active FROM observed_sessions
       WHERE node_id = ${input.nodeId} AND status <> 'ended'
@@ -373,11 +385,16 @@ export effect function reportSessions(input: SessionsReportInput) {
       SET active_sessions = ${activeCount}, seen_at = now(), updated_at = now()
       WHERE node_id = ${input.nodeId}
     `
-    return activeCount
+    const result = { nodeId: input.nodeId, reported: seenKeys.length, active: activeCount }
+    if (snapshotId === undefined) return result
+    if (final) {
+      try sql`
+        INSERT INTO fleet_session_snapshot_receipts (node_id, snapshot_id, reported, active)
+        VALUES (${input.nodeId}, ${snapshotId}, ${result.reported}, ${result.active})
+      `
+    }
+    return { ...result, snapshotId, final }
   })
-  return snapshotId === undefined
-    ? { nodeId: input.nodeId, reported: seenKeys.length, active }
-    : { nodeId: input.nodeId, reported: seenKeys.length, active, snapshotId, final }
 }
 
 /**

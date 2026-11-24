@@ -124,7 +124,9 @@ export function update(model: Model, message: Message): Update.Return<Model, Mes
     case "Snapshot": {
       if (message.conversation !== undefined && message.conversation !== model.conversation) return { model }
       if (message.generation < model.settingsApplied) {
-        return { model: message.operation === undefined ? model : { ...model, ...counted(model, message.operation, -1) } }
+        if (message.operation === undefined) return { model }
+        const settingsRequest = model.settingsRequest + 1
+        return { model: { ...model, settingsRequest, ...counted(model, message.operation, -1) }, commands: [Refresh({ conversation: model.conversation, generation: settingsRequest })] }
       }
       const refresh = message.conversation === undefined
       const settingsRequest = model.settingsRequest + (refresh ? 1 : 0)

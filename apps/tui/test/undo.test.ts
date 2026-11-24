@@ -1387,6 +1387,28 @@ describe("undo commit against intervening writers", () => {
     expect(get(cwd, "a.ts")).toBe("after a\n")
   })
 
+  it("keeps a concurrent deletion between the final read and unlink", async () => {
+    const cwd = scratch()
+    put(cwd, "created", "new")
+    const result = await Undo.commit(
+      cwd,
+      [{ path: "created", current: "new", next: null }],
+      undefined,
+      async (path, content) => {
+        if (content === null) unlinkSync(path)
+        await Undo.put(path, content)
+      }
+    )
+    expect(existsSync(join(cwd, "created"))).toBe(false)
+    expect(result).toEqual({
+      _tag: "WriteFailed",
+      path: "created",
+      message: "ENOENT",
+      restored: false,
+      kept: ["created"]
+    })
+  })
+
   it("rollback keeps a file another writer changed after undo wrote it", async () => {
     const cwd = scratch()
     put(cwd, "a.ts", "after a\n")
