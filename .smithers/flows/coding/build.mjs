@@ -118,9 +118,9 @@ export const bundle = async (entryPoint, outfile) => {
   // A repository's file flows share the host's own modules (host-modules.ts).
   // The probe learns which modules the host runs; the build then serves
   // exactly those, so sharing adds no module of its own.
-  // vibelang-unplugin compiles the `.vibe` modules of the workspace packages
-  // the host bundles from source, each with its own package's tsconfig.
-  const vibe = () => vibelang({ root: fileURLToPath(new URL(".", import.meta.url)) })
+  // The flows tsconfig owns coding/. Workspace dependencies compile with
+  // their own tsconfigs when the host bundles their .vibe sources.
+  const vibe = () => vibelang({ root: fileURLToPath(new URL("../", import.meta.url)) })
   const probe = await build({ ...options, metafile: true, plugins: [desktopUnavailable, vibe(), lazyBunSqlite] })
   // Only modules the host evaluates at start: sharing a module the host only
   // imports dynamically (Bun's platform layers) would evaluate it eagerly.

@@ -1,10 +1,39 @@
 import assert from "node:assert/strict"
-import { readdir, readFile } from "node:fs/promises"
+import type { ChildProcess } from "node:child_process"
+import { channel } from "node:diagnostics_channel"
+import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises"
 import { join } from "node:path"
 import { test } from "node:test"
-import { fileURLToPath } from "node:url"
+import { fileURLToPath, pathToFileURL } from "node:url"
+import { bundle } from "../coding/build.mjs"
 
 const root = fileURLToPath(new URL("../../..", import.meta.url))
+
+test("the coding host compiles a native module with the flows project", { timeout: 300_000 }, async (t) => {
+  const fixture = await mkdtemp(join(root, ".smithers/flows/coding/bundle-fixture-"))
+  t.after(() => rm(fixture, { recursive: true, force: true }))
+  const entry = join(fixture, "entry.ts")
+  await writeFile(join(fixture, "answer.vibe"), "export const answer = do { 40 + 2 }\n")
+  await writeFile(entry, "export { answer } from \"./answer.vibe\"\n")
+
+  // VibeLang can recover from a missing project and still emit the right value.
+  // Check which projects the bundler actually asks the compiler to emit.
+  const projects = new Set<string>()
+  const spawns = channel("tracing:child_process.spawn:start")
+  const collect = (event: unknown) => {
+    const { spawnargs } = (event as { process: ChildProcess }).process
+    if (spawnargs.includes("--project-emit")) projects.add(spawnargs[spawnargs.indexOf("--project") + 1]!)
+  }
+  spawns.subscribe(collect)
+  t.after(() => {
+    spawns.unsubscribe(collect)
+  })
+
+  const output = join(fixture, "host.mjs")
+  await bundle(entry, output)
+  assert.deepEqual([...projects], [join(root, ".smithers/flows/tsconfig.json")])
+  assert.equal((await import(pathToFileURL(output).href)).answer, 42)
+})
 
 /** Every TypeScript source the coding host may bundle. */
 const sources = async function*(dir: string): AsyncGenerator<string> {
