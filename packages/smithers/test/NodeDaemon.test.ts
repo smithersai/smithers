@@ -672,3 +672,18 @@ describe("NodeDaemon fleet snapshot byte budget & chunking (R2-Astra-D4-011)", (
     expect(countPlanned[1]!.snapshotId).toBe("snap-count")
   })
 })
+
+describe("NodeDaemon chunkSessionsByBytes", () => {
+  it("splits large session payloads under the MCP byte limit", () => {
+    const mk = (i: number) => ({
+      sessionKey: "k-" + i,
+      harness: "claude" as const,
+      status: "working" as const,
+      summary: "x".repeat(400),
+    })
+    const sessions = Array.from({ length: 12 }, (_, i) => mk(i))
+    const chunks = NodeDaemon.chunkSessionsByBytes(sessions, 1_500)
+    expect(chunks.length).toBeGreaterThan(1)
+    expect(chunks.flat().map((s) => s.sessionKey)).toEqual(sessions.map((s) => s.sessionKey))
+  })
+})

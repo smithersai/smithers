@@ -119,6 +119,49 @@ effect function reportSessionsSnapshot(
   }
 }
 
+
+/** Max UTF-8 bytes per fleet_sessions_report chunk (safely below MCP_MAX_REQUEST_BYTES = 256 KiB). */
+export const MAX_SESSIONS_REPORT_CHUNK_BYTES = 180_000
+
+/** Splits session snapshots into byte-bounded chunks so each MCP RPC stays under 256 KiB. */
+export function chunkSessionsByBytes(
+  sessions: ReadonlyArray<SessionSnapshot>,
+  maxBytes: number = MAX_SESSIONS_REPORT_CHUNK_BYTES
+): ReadonlyArray<ReadonlyArray<SessionSnapshot>> {
+  if (sessions.length === 0) return [[]]
+  const chunks: Array<Array<SessionSnapshot>> = []
+  let current: Array<SessionSnapshot> = []
+  let currentBytes = 0
+  for (const s of sessions) {
+    const encoded = new TextEncoder().encode(JSON.stringify(s)).byteLength + 2
+    if (current.length > 0 && currentBytes + encoded > maxBytes) {
+      chunks.push(current)
+      current = [s]
+      currentBytes = encoded
+    } else {
+      current.push(s)
+      currentBytes += encoded
+    }
+  }
+  if (current.length > 0) chunks.push(current)
+  return chunks
+}
+
+effect function reportSessionsChunked(
+  mcp: McpClient.McpClientConfig,
+  nodeId: string,
+  sessions: ReadonlyArray<SessionSnapshot>
+): void!McpClient.McpCallError!HttpClient.HttpClient {
+  const chunks = chunkSessionsByBytes(sessions)
+  for (let i = 0; i < chunks.length; i++) {
+    try McpClient.callTool(mcp, "fleet_sessions_report", {
+      nodeId,
+      replaceActive: i === 0,
+      sessions: chunks[i]!,
+    })
+  }
+}
+
 /** Runs one full host + session sync cycle over BYOA MCP-over-HTTP. */
 export effect function syncHostOnce(
   mcp: McpClient.McpClientConfig
