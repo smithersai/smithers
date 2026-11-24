@@ -7,6 +7,7 @@ import * as AgentEvent from "../src/AgentEvent.ts"
 import * as CallLedger from "../src/CallLedger.ts"
 import * as CellTurn from "../src/CellTurn.ts"
 import * as EngineLike from "../src/EngineLike.ts"
+import * as UnobservedCall from "../src/internal/unobservedCall.ts"
 import * as Monitor from "../src/Monitor.ts"
 import * as QuickJSSandbox from "../src/QuickJSSandbox.ts"
 import * as RealmFlow from "../src/RealmFlow.ts"
@@ -14,7 +15,6 @@ import * as Relevance from "../src/Relevance.ts"
 import * as Sandbox from "../src/Sandbox.ts"
 import * as Steering from "../src/Steering.ts"
 import * as Supervisor from "../src/Supervisor.ts"
-import * as UnobservedCall from "../src/internal/unobservedCall.ts"
 import { descriptor, emits, pattern, runEffect as runCellTurn, window as baseWindow } from "./fixtures/cellTurn.ts"
 import * as ScriptedEngine from "./fixtures/scriptedEngine.ts"
 import * as ScriptedModel from "./fixtures/scriptedModel.ts"
@@ -49,126 +49,150 @@ const mkState = (overrides: Partial<Parameters<typeof CellTurn.make>[0]> = {}) =
   })
 
 describe("@smthrs/harness Wave10 Boost4 Fuzz", () => {
-  it("CellTurn checkpoint mint/exhaust, runaway guard, maxFrames budget, openRealm fail, suspended interrupt, and failing supervisor memory", async () => {
-    const cases = [
-      "checkpoint-mint-and-exhaust",
-      "checkpoint-cap-zero",
-      "runaway-failure-frames",
-      "max-frames-exhausted",
-      "open-realm-failure",
-      "interrupt-while-suspended",
-      "supervisor-memory-failure"
-    ] as const
+  it(
+    "CellTurn checkpoint mint/exhaust, runaway guard, maxFrames budget, openRealm fail, suspended interrupt, and failing supervisor memory",
+    async () => {
+      const cases = [
+        "checkpoint-mint-and-exhaust",
+        "checkpoint-cap-zero",
+        "runaway-failure-frames",
+        "max-frames-exhausted",
+        "open-realm-failure",
+        "interrupt-while-suspended",
+        "supervisor-memory-failure"
+      ] as const
 
-    const arb = Arbitrary.schema(
-      Schema.Struct({
-        idx: Schema.Int.pipe(Schema.check(Schema.isBetween({ minimum: 0, maximum: cases.length - 1 })))
-      })
-    )
-
-    const report = await Effect.runPromise(
-      Fuzz.run(
-        arb,
-        ({ idx }) =>
-          Effect.gen(function*() {
-            const c = cases[idx]!
-            if (c === "checkpoint-mint-and-exhaust") {
-              const out = yield* runCellTurn({
-                state: mkState({ checkpointCap: 1 }),
-                pins: true,
-                script: [
-                  emits(`const a = await ctx.checkpoint(); const b = await ctx.checkpoint(); console.log(a, b); ctx.done("ok")`)
-                ]
-              })
-              expect(out.events.some((e) => e._tag === "checkpoint-minted")).toBe(true)
-            } else if (c === "checkpoint-cap-zero") {
-              const out = yield* runCellTurn({
-                state: mkState({ checkpointCap: 0 }),
-                pins: true,
-                script: [emits(`const a = await ctx.checkpoint(); console.log(a); ctx.done("ok")`)]
-              })
-              expect(out.events.length).toBeGreaterThan(0)
-            } else if (c === "runaway-failure-frames") {
-              const st = new CellTurn.State({ ...mkState(), failureFrames: 5, failureKey: "same-err" })
-              const out = yield* runCellTurn({ state: st, script: [] })
-              expect(out.failure !== undefined).toBe(true)
-            } else if (c === "max-frames-exhausted") {
-              const st = new CellTurn.State({ ...mkState({ maxFrames: 2 }), frame: 2 })
-              const out = yield* runCellTurn({ state: st, script: [] })
-              expect(out.events.some((e) => e._tag === "resolved")).toBe(true)
-            } else if (c === "open-realm-failure") {
-              const model = ScriptedModel.make([emits(`ctx.done("x")`)])
-              const engine = ScriptedEngine.make(model.model, [])
-              const badSandbox = Sandbox.layer({
-                capabilities: { timeMs: true, memoryBytes: true, steps: true, calls: true },
-                openRealm: () => Effect.fail(new Sandbox.SandboxError({ code: "runtime_failed", message: "cannot open" }))
-              })
-              const res = yield* Effect.result(
-                CellTurn.run({ state: mkState(), flows: [] }).pipe(
-                  Stream.runDrain,
-                  Effect.provide(Layer.mergeAll(engine.layer, badSandbox, Steering.layerNoop(), Evaluator.layerUnavailable()))
-                )
-              )
-              expect(Result.isFailure(res)).toBe(true)
-            } else if (c === "interrupt-while-suspended") {
-              const started = yield* Deferred.make<void>()
-              const model = ScriptedModel.make([emits(`await ctx.call("slow", {}); ctx.done("x")`)])
-              const engine = ScriptedEngine.make(model.model, [])
-              const suspEngine = EngineLike.layer({
-                ...engine.engine,
-                isSuspended: Effect.succeed(true),
-                call: () => Deferred.succeed(started, undefined).pipe(Effect.andThen(Effect.never))
-              })
-              const events: Array<AgentEvent.AgentEvent> = []
-              const fiber = yield* Effect.forkChild(
-                CellTurn.run({ state: mkState(), flows: [descriptor("slow")] }).pipe(
-                  Stream.runDrain,
-                  Effect.provideService(AgentEvent.Observer, (e) => Effect.sync(() => void events.push(e))),
-                  Effect.provide(Layer.mergeAll(suspEngine, QuickJSSandbox.layer, Steering.layerNoop(), Evaluator.layerUnavailable()))
-                )
-              )
-              yield* Deferred.await(started).pipe(Effect.timeoutOption("1 second"))
-              yield* Fiber.interrupt(fiber)
-              expect(events.some((e) => e._tag === "turn-closed" && e.outcome === "suspended")).toBe(true)
-            } else if (c === "supervisor-memory-failure") {
-              const failingMem = Supervisor.Memory.of({
-                bound: true,
-                recall: () => Effect.fail({ detail: "db down" }),
-                remember: () => Effect.fail({ detail: "write failed" })
-              })
-              const evalLayer = Evaluator.layerScripted((req) => {
-                if (Object.hasOwn(req.questions, "complete")) {
-                  return { complete: { probability: 0.99 }, overclaims: { probability: 0.01 }, invented: { probability: 0.01 } }
-                }
-                return Object.fromEntries(
-                  Object.entries(req.questions).map(([id, q]) => [
-                    id,
-                    q.type === "boolean" ? { probability: 0.9 } : q.type === "score" ? { score: 0.9 } : { choice: "none" }
-                  ])
-                )
-              })
-              const out = yield* runCellTurn({
-                state: mkState({ maxFrames: 4 }),
-                judged: true,
-                monitors: Monitor.defaults(),
-                memory: failingMem,
-                evaluator: evalLayer,
-                flows: [descriptor("fs/read")],
-                script: [
-                  emits(`const a = await ctx.call("fs/read", {}); console.log(a)`),
-                  emits(`ctx.done("ok")`)
-                ],
-                calls: [{ _tag: "Success", value: "v" }]
-              })
-              expect(out.events.length).toBeGreaterThan(0)
-            }
-            return true
-          }),
-        { executions: medExec, seed }
+      const arb = Arbitrary.schema(
+        Schema.Struct({
+          idx: Schema.Int.pipe(Schema.check(Schema.isBetween({ minimum: 0, maximum: cases.length - 1 })))
+        })
       )
-    )
-    assertPassed(report)
-  }, 90_000)
+
+      const report = await Effect.runPromise(
+        Fuzz.run(
+          arb,
+          ({ idx }) =>
+            Effect.gen(function*() {
+              const c = cases[idx]!
+              if (c === "checkpoint-mint-and-exhaust") {
+                const out = yield* runCellTurn({
+                  state: mkState({ checkpointCap: 1 }),
+                  pins: true,
+                  script: [
+                    emits(
+                      `const a = await ctx.checkpoint(); const b = await ctx.checkpoint(); console.log(a, b); ctx.done("ok")`
+                    )
+                  ]
+                })
+                expect(out.events.some((e) => e._tag === "checkpoint-minted")).toBe(true)
+              } else if (c === "checkpoint-cap-zero") {
+                const out = yield* runCellTurn({
+                  state: mkState({ checkpointCap: 0 }),
+                  pins: true,
+                  script: [emits(`const a = await ctx.checkpoint(); console.log(a); ctx.done("ok")`)]
+                })
+                expect(out.events.length).toBeGreaterThan(0)
+              } else if (c === "runaway-failure-frames") {
+                const st = new CellTurn.State({ ...mkState(), failureFrames: 5, failureKey: "same-err" })
+                const out = yield* runCellTurn({ state: st, script: [] })
+                expect(out.failure !== undefined).toBe(true)
+              } else if (c === "max-frames-exhausted") {
+                const st = new CellTurn.State({ ...mkState({ maxFrames: 2 }), frame: 2 })
+                const out = yield* runCellTurn({ state: st, script: [] })
+                expect(out.events.some((e) => e._tag === "resolved")).toBe(true)
+              } else if (c === "open-realm-failure") {
+                const model = ScriptedModel.make([emits(`ctx.done("x")`)])
+                const engine = ScriptedEngine.make(model.model, [])
+                const badSandbox = Sandbox.layer({
+                  capabilities: { timeMs: true, memoryBytes: true, steps: true, calls: true },
+                  openRealm: () =>
+                    Effect.fail(new Sandbox.SandboxError({ code: "runtime_failed", message: "cannot open" }))
+                })
+                const res = yield* Effect.result(
+                  CellTurn.run({ state: mkState(), flows: [] }).pipe(
+                    Stream.runDrain,
+                    Effect.provide(
+                      Layer.mergeAll(engine.layer, badSandbox, Steering.layerNoop(), Evaluator.layerUnavailable())
+                    )
+                  )
+                )
+                expect(Result.isFailure(res)).toBe(true)
+              } else if (c === "interrupt-while-suspended") {
+                const started = yield* Deferred.make<void>()
+                const model = ScriptedModel.make([emits(`await ctx.call("slow", {}); ctx.done("x")`)])
+                const engine = ScriptedEngine.make(model.model, [])
+                const suspEngine = EngineLike.layer({
+                  ...engine.engine,
+                  isSuspended: Effect.succeed(true),
+                  call: () => Deferred.succeed(started, undefined).pipe(Effect.andThen(Effect.never))
+                })
+                const events: Array<AgentEvent.AgentEvent> = []
+                const fiber = yield* Effect.forkChild(
+                  CellTurn.run({ state: mkState(), flows: [descriptor("slow")] }).pipe(
+                    Stream.runDrain,
+                    Effect.provideService(AgentEvent.Observer, (e) => Effect.sync(() => void events.push(e))),
+                    Effect.provide(
+                      Layer.mergeAll(
+                        suspEngine,
+                        QuickJSSandbox.layer,
+                        Steering.layerNoop(),
+                        Evaluator.layerUnavailable()
+                      )
+                    )
+                  )
+                )
+                yield* Deferred.await(started).pipe(Effect.timeoutOption("1 second"))
+                yield* Fiber.interrupt(fiber)
+                expect(events.some((e) => e._tag === "turn-closed" && e.outcome === "suspended")).toBe(true)
+              } else if (c === "supervisor-memory-failure") {
+                const failingMem = Supervisor.Memory.of({
+                  bound: true,
+                  recall: () => Effect.fail({ detail: "db down" }),
+                  remember: () => Effect.fail({ detail: "write failed" })
+                })
+                const evalLayer = Evaluator.layerScripted((req) => {
+                  if (Object.hasOwn(req.questions, "complete")) {
+                    return {
+                      complete: { probability: 0.99 },
+                      overclaims: { probability: 0.01 },
+                      invented: { probability: 0.01 }
+                    }
+                  }
+                  return Object.fromEntries(
+                    Object.entries(req.questions).map(([id, q]) => [
+                      id,
+                      q.type === "boolean"
+                        ? { probability: 0.9 }
+                        : q.type === "score"
+                        ? { score: 0.9 }
+                        : { choice: "none" }
+                    ])
+                  )
+                })
+                const out = yield* runCellTurn({
+                  state: mkState({ maxFrames: 4 }),
+                  judged: true,
+                  monitors: Monitor.defaults(),
+                  memory: failingMem,
+                  evaluator: evalLayer,
+                  flows: [descriptor("fs/read")],
+                  script: [
+                    emits(`const a = await ctx.call("fs/read", {}); console.log(a)`),
+                    emits(`ctx.done("ok")`)
+                  ],
+                  calls: [{ _tag: "Success", value: "v" }]
+                })
+                expect(out.events.length).toBeGreaterThan(0)
+              }
+              return true
+            }),
+          { executions: medExec, seed }
+        )
+      )
+      assertPassed(report)
+    },
+    90_000
+  )
 
   it("UnobservedCall complex ASTs, CallLedger bound/clipping/types, and Monitor.validate/skills/gate", async () => {
     const astCells = [
@@ -204,7 +228,9 @@ describe("@smthrs/harness Wave10 Boost4 Fuzz", () => {
 
             const settlements: Array<CallLedger.Settlement> = Array.from({ length: count }, (_, k) => ({
               flow: k === 0 ? "Z".repeat(200) : `tool/${k}`,
-              input: k % 3 === 0 ? { nested: { a: [1, 2, 3, 4, 5, 6, 7], b: "x".repeat(400) } } : { path: `src/f${k}.ts` },
+              input: k % 3 === 0
+                ? { nested: { a: [1, 2, 3, 4, 5, 6, 7], b: "x".repeat(400) } }
+                : { path: `src/f${k}.ts` },
               ok: k % 2 === 0,
               value: k % 2 === 0 ? { items: Array.from({ length: 10 }, (__, j) => j) } : null,
               ...(k % 2 === 1 ? { message: "err ".repeat(120) } : {}),
@@ -241,20 +267,56 @@ describe("@smthrs/harness Wave10 Boost4 Fuzz", () => {
                 { frame: 1, cell: "await ctx.call('a', {})", prints: "hit1\nhit2", calls: [], prose: "still" }
               ],
               skills: [{ name: "triage", path: "skills/triage/SKILL.md", description: "Triage bugs" }],
-              signals: { frame: 3, checksFailing: 1, failuresUnanswered: 1, repeatFrames: 2, readOnlyFrames: 2, callsFailed: 1, callsSettled: 2, mutations: 1 }
+              signals: {
+                frame: 3,
+                checksFailing: 1,
+                failuresUnanswered: 1,
+                repeatFrames: 2,
+                readOnlyFrames: 2,
+                callsFailed: 1,
+                callsSettled: 2,
+                mutations: 1
+              }
             } as any
             const skillMons = Monitor.skills(snap)
             const allMons = [...Monitor.defaults(), Monitor.useJev(), ...skillMons]
             const ev = Monitor.evaluate({
               monitors: allMons,
-              reading: { onTarget: 0.2, thrashing: 0.9, suspect: 0.9, outdatedContext: 0.85, irrelevantContext: 0.8, confidence: 0.2, summary: "stuck", monitors: {}, emotions: { confident: "strong", frustrated: "moderate", stuck: "strong", rushed: "none", cautious: "none" } } as any,
+              reading: {
+                onTarget: 0.2,
+                thrashing: 0.9,
+                suspect: 0.9,
+                outdatedContext: 0.85,
+                irrelevantContext: 0.8,
+                confidence: 0.2,
+                summary: "stuck",
+                monitors: {},
+                emotions: {
+                  confident: "strong",
+                  frustrated: "moderate",
+                  stuck: "strong",
+                  rushed: "none",
+                  cautious: "none"
+                }
+              } as any,
               snapshot: snap,
-              values: Object.fromEntries(allMons.filter((m): m is Monitor.Questioned => m._tag === "Questioned").map((m) => [m.id, 0.95]))
+              values: Object.fromEntries(
+                allMons.filter((m): m is Monitor.Questioned => m._tag === "Questioned").map((m) => [m.id, 0.95])
+              )
             })
-            const gated = Monitor.gate({ rows: ev.rows, candidates: ev.candidates, monitors: allMons, ledger: {}, frame: 3 })
+            const gated = Monitor.gate({
+              rows: ev.rows,
+              candidates: ev.candidates,
+              monitors: allMons,
+              ledger: {},
+              frame: 3
+            })
             expect(gated).toBeDefined()
             expect(typeof Supervisor.prose("Hello\n```cell\n1\n```\nWorld")).toBe("string")
-            const chunks = Relevance.chunks([{ path: "a.md", text: "# H1\n\nPara 1\n\n```ts\nconst x = 1\n```\n\n- item 1\n- item 2\n\n## H2\n\nPara 2" }])
+            const chunks = Relevance.chunks([{
+              path: "a.md",
+              text: "# H1\n\nPara 1\n\n```ts\nconst x = 1\n```\n\n- item 1\n- item 2\n\n## H2\n\nPara 2"
+            }])
             expect(chunks.length).toBeGreaterThan(0)
             return true
           }),

@@ -67,7 +67,7 @@ const stores = Layer.mergeAll(
 const stack = ControlLive.layer.pipe(
   Layer.provideMerge(
     Layer.mergeAll(
-      SqlControlRuntime.layer({ owner }).pipe(Layer.orDie),
+      SqlControlRuntime.layer({ owner, approvalAuthority: { authorize: () => Effect.void } }).pipe(Layer.orDie),
       NotificationQueue.layer,
       ControlExecutor.layer(ControlExecutor.makeNoop()),
       Registry.layerNoop()

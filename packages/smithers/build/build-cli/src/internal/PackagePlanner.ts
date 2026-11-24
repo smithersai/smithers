@@ -4527,16 +4527,22 @@ const planWithServices = async (
       options.includeExclusive !== true
     // A wildcard omits exclusive, other-host and manual targets; a pattern that
     // names one keeps it, and the closure check below refuses an other-host one.
-    const rows = index.resolve(pattern).filter((row) =>
-      !wildcard ||
-      !wildcardOmits(row.target, {
-        verb,
-        unattended: options.unattended,
-        includeExclusive: options.includeExclusive,
-        artifactRun: index.factory?.factory.lifecycle?.tests.artifact.run,
-        platform
-      })
-    )
+    const rows = index.resolve(pattern).filter((row) => {
+      if (wildcard) {
+        return !wildcardOmits(row.target, {
+          verb,
+          unattended: options.unattended,
+          includeExclusive: options.includeExclusive,
+          artifactRun: index.factory?.factory.lifecycle?.tests.artifact.run,
+          platform
+        })
+      }
+      if (options.skipOtherHosts === true) {
+        const hosts = Target.metadata(row.target).hosts
+        if (hosts !== undefined && !hosts.includes(platform)) return false
+      }
+      return true
+    })
     const lifecycleRows = rows.filter((row) =>
       options.lifecycle === undefined || options.lifecycle === "all" ||
       (Target.metadata(row.target).lifecycle ?? "evergreen") === options.lifecycle

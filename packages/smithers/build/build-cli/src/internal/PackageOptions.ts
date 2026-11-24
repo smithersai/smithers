@@ -121,6 +121,8 @@ export interface RunOptions {
   readonly lifecycle?: "evergreen" | "artifact" | "all" | undefined
   /** Opts wildcard test and CI selections into the exclusive tier. */
   readonly includeExclusive?: boolean | undefined
+  /** Omits explicitly named targets whose declared `hosts` exclude `platform`. */
+  readonly skipOtherHosts?: boolean | undefined
   /**
    * The host platform a target's declared `hosts` is checked against.
    * Defaults to `process.platform`; tests inject one.

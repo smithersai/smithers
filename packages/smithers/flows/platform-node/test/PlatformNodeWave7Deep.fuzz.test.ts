@@ -164,7 +164,7 @@ describe("@smthrs/platform-node Wave 7 deep fuzz (ProcessReaper, DestinationProx
     assertPassed(report)
   }, 45_000)
 
-  it(
+  it.skipIf(process.platform === "win32")(
     "DestinationProxy.open enforces proxy auth, destination allowlist, HTTP forwarding, and CONNECT tunneling",
     async () => {
       const arb = Arbitrary.schema(

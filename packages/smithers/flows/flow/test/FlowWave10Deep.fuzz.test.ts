@@ -1,4 +1,3 @@
-import * as BoundedJson from "../src/internal/BoundedJson.ts"
 import { FlowEngine } from "@smthrs/engine"
 import { Fuzz } from "@smthrs/fuzz"
 import { Node } from "@smthrs/plan"
@@ -38,6 +37,7 @@ import {
   SpanFailure,
   WaitFor
 } from "../src/index.ts"
+import * as BoundedJson from "../src/internal/BoundedJson.ts"
 import { withCrypto } from "./Crypto.ts"
 import { layerMemory, layerMemoryOver, layerWired, makeInstance, makeMemoryState } from "./MemoryFlowRuntime.ts"
 
@@ -46,7 +46,8 @@ const baseExecutions = Number(process.env.EFFECT_FUZZ_EXECUTIONS ?? "100")
 const fastExec = Math.max(30, Math.min(baseExecutions, 80))
 const ioExec = Math.max(10, Math.min(Math.ceil(baseExecutions / 6), 24))
 
-const runFuzz = <A, E, R>(eff: Effect.Effect<Fuzz.Report<A, E>, unknown, R>) => Effect.runPromise(eff as Effect.Effect<Fuzz.Report<A, E>, unknown, never>)
+const runFuzz = <A, E, R>(eff: Effect.Effect<Fuzz.Report<A, E>, unknown, R>) =>
+  Effect.runPromise(eff as Effect.Effect<Fuzz.Report<A, E>, unknown, never>)
 const assertPassed = <A, E>(report: Fuzz.Report<A, E>): void => {
   expect(report._tag, Fuzz.formatReport(report)).toBe("Passed")
 }
@@ -68,38 +69,40 @@ const DummyFlow = Flow.make("wave10/dummy", {
 })
 
 describe("@smthrs/flow Wave 10 deep fuzzing", () => {
-  it("validates HumanTask schemas/bounds/surrogates, Poll/ExternalJob/DurableClock/Deadline/Sleep/WaitFor/Result/Outcome/Fault invariants", async () => {
-    const arb = Arbitrary.schema(
-      Schema.Struct({
-        schemaCase: Schema.Literals([
-          "tooDeep",
-          "tooManyNodes",
-          "enumNotArray",
-          "enumEmpty",
-          "dupRequired",
-          "badNullable",
-          "badTitle",
-          "deepEnumMatch",
-          "deepEnumMismatch"
-        ]),
-        surrogateKind: Schema.Literals(["validPair", "loneHigh", "loneLow", "ctrlChars"]),
-        invalidChoice: Schema.Literals([
-          "pollReservedAttempt",
-          "pollNegInterval",
-          "pollZeroAttempts",
-          "pollHugeWait",
-          "extJobZeroTimeout",
-          "extJobNegEvery",
-          "clockBadStr",
-          "clockNeg",
-          "clockTooLong",
-          "queueBadConcurrency"
-        ]),
-        numericSeed: Schema.Int.pipe(Schema.check(Schema.isBetween({ minimum: 1, maximum: 50 })))
-      })
-    )
+  it(
+    "validates HumanTask schemas/bounds/surrogates, Poll/ExternalJob/DurableClock/Deadline/Sleep/WaitFor/Result/Outcome/Fault invariants",
+    async () => {
+      const arb = Arbitrary.schema(
+        Schema.Struct({
+          schemaCase: Schema.Literals([
+            "tooDeep",
+            "tooManyNodes",
+            "enumNotArray",
+            "enumEmpty",
+            "dupRequired",
+            "badNullable",
+            "badTitle",
+            "deepEnumMatch",
+            "deepEnumMismatch"
+          ]),
+          surrogateKind: Schema.Literals(["validPair", "loneHigh", "loneLow", "ctrlChars"]),
+          invalidChoice: Schema.Literals([
+            "pollReservedAttempt",
+            "pollNegInterval",
+            "pollZeroAttempts",
+            "pollHugeWait",
+            "extJobZeroTimeout",
+            "extJobNegEvery",
+            "clockBadStr",
+            "clockNeg",
+            "clockTooLong",
+            "queueBadConcurrency"
+          ]),
+          numericSeed: Schema.Int.pipe(Schema.check(Schema.isBetween({ minimum: 1, maximum: 50 })))
+        })
+      )
 
-    const report = await runFuzz(Fuzz.run(
+      const report = await runFuzz(Fuzz.run(
         arb,
         ({ schemaCase, surrogateKind, invalidChoice, numericSeed }) =>
           Effect.gen(function*() {
@@ -114,10 +117,10 @@ describe("@smthrs/flow Wave 10 deep fuzzing", () => {
             const sampleText = surrogateKind === "validPair"
               ? `ok-\ud83d\ude00-${numericSeed}`
               : surrogateKind === "loneHigh"
-                ? `hi-\ud83d-x`
-                : surrogateKind === "loneLow"
-                  ? `lo-\ude00-x`
-                  : `ctrl-\u007f-\u0085-\u009f`
+              ? `hi-\ud83d-x`
+              : surrogateKind === "loneLow"
+              ? `lo-\ude00-x`
+              : `ctrl-\u007f-\u0085-\u009f`
             const jsonNoSchemaRes = HumanTask.validate({ text: sampleText }, {
               kind: "json"
             })
@@ -134,9 +137,11 @@ describe("@smthrs/flow Wave 10 deep fuzzing", () => {
             })
             expect(typeof loneHighDiag).toBe("string")
 
-            expect(typeof HumanTask.validate(Number.NaN, {
-              kind: "json"
-            })).toBe("string")
+            expect(
+              typeof HumanTask.validate(Number.NaN, {
+                kind: "json"
+              })
+            ).toBe("string")
 
             // 3. JsonSchemaSubset edge validations (JsonSchemaSubset.ts L170-182, 324-360)
             if (schemaCase === "tooDeep") {
@@ -182,7 +187,9 @@ describe("@smthrs/flow Wave 10 deep fuzzing", () => {
             }
 
             // 4. HumanTask.decode invocation & DecodeIdentityError (HumanTask.ts L1189, L1197)
-            const decNode = HumanTask.decode(Schema.Struct({ count: Schema.Number }))(Node.succeed({ count: numericSeed }))
+            const decNode = HumanTask.decode(Schema.Struct({ count: Schema.Number }))(
+              Node.succeed({ count: numericSeed })
+            )
             expect(Node.isNode(decNode)).toBe(true)
             const unidentifiable = Schema.Any.pipe(Schema.refine((x): x is string => typeof x === "string"))
             try {
@@ -233,8 +240,11 @@ describe("@smthrs/flow Wave 10 deep fuzzing", () => {
                   check: () => Effect.succeed(Option.some("ok")) as any
                 })
               ).toThrow(RangeError)
-              expect(Poll.delayMillis({ intervalMs: Number.MAX_VALUE, backoff: "exponential", attempt: 5 })).toBeGreaterThan(Number.MAX_SAFE_INTEGER)
-              expect(Poll.delayMillis({ intervalMs: 10, backoff: "exponential", attempt: -1 })).toBe(Number.POSITIVE_INFINITY)
+              expect(Poll.delayMillis({ intervalMs: Number.MAX_VALUE, backoff: "exponential", attempt: 5 }))
+                .toBeGreaterThan(Number.MAX_SAFE_INTEGER)
+              expect(Poll.delayMillis({ intervalMs: 10, backoff: "exponential", attempt: -1 })).toBe(
+                Number.POSITIVE_INFINITY
+              )
             } else if (invalidChoice === "extJobZeroTimeout") {
               expect(() =>
                 ExternalJob.make("wave10/ej-zero", {
@@ -264,8 +274,24 @@ describe("@smthrs/flow Wave 10 deep fuzzing", () => {
             } else if (invalidChoice === "clockTooLong") {
               expect(() => DurableClock.make({ name: "c3", duration: Duration.days(200_000_000) })).toThrow(RangeError)
             } else if (invalidChoice === "queueBadConcurrency") {
-              const q = DurableQueue.make({ name: "wave10/q-bad", payload: { n: Schema.Number }, idempotencyKey: ({ n }) => String(n), success: Schema.Number })
-              const badConc = yield* Effect.exit(Effect.scoped(DurableQueue.makeWorker(q, ({ n }) => Effect.succeed(n), { concurrency: 0 })).pipe(Effect.provide(Layer.mergeAll(PersistedQueue.layer.pipe(Layer.provideMerge(PersistedQueue.layerStoreMemory)), layerMemory, silentLog)), withCrypto))
+              const q = DurableQueue.make({
+                name: "wave10/q-bad",
+                payload: { n: Schema.Number },
+                idempotencyKey: ({ n }) => String(n),
+                success: Schema.Number
+              })
+              const badConc = yield* Effect.exit(
+                Effect.scoped(DurableQueue.makeWorker(q, ({ n }) => Effect.succeed(n), { concurrency: 0 })).pipe(
+                  Effect.provide(
+                    Layer.mergeAll(
+                      PersistedQueue.layer.pipe(Layer.provideMerge(PersistedQueue.layerStoreMemory)),
+                      layerMemory,
+                      silentLog
+                    )
+                  ),
+                  withCrypto
+                )
+              )
               expect(Exit.isFailure(badConc)).toBe(true)
             }
 
@@ -338,41 +364,47 @@ describe("@smthrs/flow Wave 10 deep fuzzing", () => {
             return true
           }),
         { seed, executions: fastExec }
+      ))
+      assertPassed(report)
+    },
+    60_000
+  )
+
+  it(
+    "fuzzes Action.once adoption/failure, Action.retry cursor restoration, Flow.retryFrom/resume/withRollback, DurableClock, Deadline, Sleep & Poll exhaustion",
+    async () => {
+      const arb = Arbitrary.schema(
+        Schema.Struct({
+          mode: Schema.Literals([
+            "onceAdopt",
+            "onceLandedFail",
+            "onceCleanFail",
+            "onceNoContext",
+            "retryNestedCursors",
+            "infraInterrupt",
+            "retryFromAndResume",
+            "clockZeroAndShort",
+            "deadlineInvalid",
+            "sleepInvalid",
+            "pollExhausted"
+          ]),
+          n: Schema.Int.pipe(Schema.check(Schema.isBetween({ minimum: 1, maximum: 20 })))
+        })
       )
-    )
-    assertPassed(report)
-  }, 60_000)
 
-  it("fuzzes Action.once adoption/failure, Action.retry cursor restoration, Flow.retryFrom/resume/withRollback, DurableClock, Deadline, Sleep & Poll exhaustion", async () => {
-    const arb = Arbitrary.schema(
-      Schema.Struct({
-        mode: Schema.Literals([
-          "onceAdopt",
-          "onceLandedFail",
-          "onceCleanFail",
-          "onceNoContext",
-          "retryNestedCursors",
-          "infraInterrupt",
-          "retryFromAndResume",
-          "clockZeroAndShort",
-          "deadlineInvalid",
-          "sleepInvalid",
-          "pollExhausted"
-        ]),
-        n: Schema.Int.pipe(Schema.check(Schema.isBetween({ minimum: 1, maximum: 20 })))
-      })
-    )
-
-    const report = await runFuzz(Fuzz.run(
+      const report = await runFuzz(Fuzz.run(
         arb,
         ({ mode, n }) =>
           Effect.gen(function*() {
             if (mode === "onceNoContext") {
               const exit = yield* Effect.exit(
-                Action.once("outside", Action.keyed({
-                  find: () => Effect.succeed(Option.none()),
-                  perform: () => Effect.succeed("v")
-                }))
+                Action.once(
+                  "outside",
+                  Action.keyed({
+                    find: () => Effect.succeed(Option.none()),
+                    perform: () => Effect.succeed("v")
+                  })
+                )
               )
               expect(Exit.isFailure(exit)).toBe(true)
               return true
@@ -424,7 +456,9 @@ describe("@smthrs/flow Wave 10 deep fuzzing", () => {
                 Layer.provideMerge(silentLog),
                 Layer.provideMerge(TestClock.layer())
               )
-              const exit = yield* Effect.exit(OnceFlow.execute({ n }).pipe(Effect.provide(layer as Layer.Layer<any, never, never>), withCrypto))
+              const exit = yield* Effect.exit(
+                OnceFlow.execute({ n }).pipe(Effect.provide(layer as Layer.Layer<any, never, never>), withCrypto)
+              )
               if (mode === "onceAdopt") {
                 expect(Exit.isSuccess(exit)).toBe(true)
                 expect(performCount).toBe(1)
@@ -522,14 +556,20 @@ describe("@smthrs/flow Wave 10 deep fuzzing", () => {
                 Effect.map(FlowRuntime.FlowRuntime, (rt) =>
                   FlowRuntime.FlowRuntime.of({
                     ...rt,
-                    retryFrom: (_flow, opts) => Effect.sync(() => { asked.push(opts) })
-                  })
-                )
+                    retryFrom: (_flow, opts) =>
+                      Effect.sync(() => {
+                        asked.push(opts)
+                      })
+                  }))
               ).pipe(Layer.provide(layerMemory))
               const layer = Layer.mergeAll(
                 Step.toLayer(({ n }) => Effect.succeed(n)),
                 Interpreter.layer(RfFlow)
-              ).pipe(Layer.provideMerge(Action.layerImplementations), Layer.provideMerge(customRuntime), Layer.provideMerge(silentLog))
+              ).pipe(
+                Layer.provideMerge(Action.layerImplementations),
+                Layer.provideMerge(customRuntime),
+                Layer.provideMerge(silentLog)
+              )
 
               const execId = yield* RfFlow.retryFrom(`src-${n}`, { step: "s1" }).pipe(
                 Effect.provide(layer),
@@ -552,7 +592,10 @@ describe("@smthrs/flow Wave 10 deep fuzzing", () => {
               const rbExit = yield* Effect.exit(
                 Flow.withRollback(
                   Effect.fail("abort"),
-                  () => Effect.sync(() => { rolledBack = true })
+                  () =>
+                    Effect.sync(() => {
+                      rolledBack = true
+                    })
                 ).pipe(
                   Effect.provideService(FlowRuntime.FlowInstance, makeInstance(DummyFlow, `rb-${n}`)),
                   Effect.provide(layerMemory)
@@ -564,7 +607,10 @@ describe("@smthrs/flow Wave 10 deep fuzzing", () => {
             }
 
             if (mode === "clockZeroAndShort") {
-              const ClockAct = Action.make("wave10/clock-act", { payload: { n: Schema.Number }, success: Schema.Number })
+              const ClockAct = Action.make("wave10/clock-act", {
+                payload: { n: Schema.Number },
+                success: Schema.Number
+              })
               const ClockFlow = Flow.make("wave10/clock-flow", {
                 payload: { n: Schema.Number },
                 success: Schema.Number,
@@ -663,25 +709,28 @@ describe("@smthrs/flow Wave 10 deep fuzzing", () => {
             return true
           }),
         { seed: seed + 1, executions: ioExec }
+      ))
+      assertPassed(report)
+    },
+    90_000
+  )
+
+  it(
+    "fuzzes Interpreter joins (race/any/quorum) with journal replay, paging & refusals, and Graph complex topologies",
+    async () => {
+      const arb = Arbitrary.schema(
+        Schema.Struct({
+          joinMode: Schema.Literals(["race", "any", "quorum"]),
+          firstFails: Schema.Boolean,
+          secondFails: Schema.Boolean,
+          thirdFails: Schema.Boolean,
+          replay: Schema.Boolean,
+          pagingMode: Schema.Literals(["normal", "tightPages", "tooLarge", "nodeFail", "missingImpl"]),
+          v: Schema.Int.pipe(Schema.check(Schema.isBetween({ minimum: 1, maximum: 50 })))
+        })
       )
-    )
-    assertPassed(report)
-  }, 90_000)
 
-  it("fuzzes Interpreter joins (race/any/quorum) with journal replay, paging & refusals, and Graph complex topologies", async () => {
-    const arb = Arbitrary.schema(
-      Schema.Struct({
-        joinMode: Schema.Literals(["race", "any", "quorum"]),
-        firstFails: Schema.Boolean,
-        secondFails: Schema.Boolean,
-        thirdFails: Schema.Boolean,
-        replay: Schema.Boolean,
-        pagingMode: Schema.Literals(["normal", "tightPages", "tooLarge", "nodeFail", "missingImpl"]),
-        v: Schema.Int.pipe(Schema.check(Schema.isBetween({ minimum: 1, maximum: 50 })))
-      })
-    )
-
-    const report = await runFuzz(Fuzz.run(
+      const report = await runFuzz(Fuzz.run(
         arb,
         ({ joinMode, firstFails, secondFails, thirdFails, replay, pagingMode, v }) =>
           Effect.gen(function*() {
@@ -749,8 +798,8 @@ describe("@smthrs/flow Wave 10 deep fuzzing", () => {
               const joinNode = joinMode === "race"
                 ? Node.race(members)
                 : joinMode === "any"
-                  ? Node.any(members)
-                  : Node.quorum(2, members)
+                ? Node.any(members)
+                : Node.quorum(2, members)
               const inst1 = makeInstance(DummyFlow, `join-replay-${v}`)
               const r1 = yield* Interpreter.interpret(joinNode).pipe(
                 Effect.provideService(FlowRuntime.FlowInstance, inst1),
@@ -821,33 +870,39 @@ describe("@smthrs/flow Wave 10 deep fuzzing", () => {
             return true
           }),
         { seed: seed + 2, executions: ioExec }
+      ))
+      assertPassed(report)
+    },
+    90_000
+  )
+
+  it(
+    "fuzzes DurableQueue failure/defect/store-error paths, DurableDeferred interrupt/replay, HumanTask timeout/rejections & ExternalJob lifecycle",
+    async () => {
+      const arb = Arbitrary.schema(
+        Schema.Struct({
+          scenario: Schema.Literals([
+            "queueProgDefect",
+            "queueTransientDefect",
+            "queueInterrupt",
+            "queueStoreFailure",
+            "deferredInterruptReplay",
+            "humanTaskTimeoutAndReject",
+            "externalJobFastAndCancel"
+          ]),
+          n: Schema.Int.pipe(Schema.check(Schema.isBetween({ minimum: 1, maximum: 30 })))
+        })
       )
-    )
-    assertPassed(report)
-  }, 90_000)
 
-  it("fuzzes DurableQueue failure/defect/store-error paths, DurableDeferred interrupt/replay, HumanTask timeout/rejections & ExternalJob lifecycle", async () => {
-    const arb = Arbitrary.schema(
-      Schema.Struct({
-        scenario: Schema.Literals([
-          "queueProgDefect",
-          "queueTransientDefect",
-          "queueInterrupt",
-          "queueStoreFailure",
-          "deferredInterruptReplay",
-          "humanTaskTimeoutAndReject",
-          "externalJobFastAndCancel"
-        ]),
-        n: Schema.Int.pipe(Schema.check(Schema.isBetween({ minimum: 1, maximum: 30 })))
-      })
-    )
-
-    const report = await runFuzz(Fuzz.run(
+      const report = await runFuzz(Fuzz.run(
         arb,
         ({ scenario, n }) =>
           Effect.gen(function*() {
-            if (scenario === "queueProgDefect" || scenario === "queueTransientDefect" || scenario === "queueInterrupt") {
-              const Q = DurableQueue.make({ name: `wave10/q-${scenario}-${n}`,
+            if (
+              scenario === "queueProgDefect" || scenario === "queueTransientDefect" || scenario === "queueInterrupt"
+            ) {
+              const Q = DurableQueue.make({
+                name: `wave10/q-${scenario}-${n}`,
                 payload: { n: Schema.Number },
                 idempotencyKey: ({ n: v }) => String(v),
                 success: Schema.Number,
@@ -858,11 +913,11 @@ describe("@smthrs/flow Wave 10 deep fuzzing", () => {
 
               const program = Effect.gen(function*() {
                 const workerFiber = yield* DurableQueue.makeWorker(Q, () =>
-                    scenario === "queueProgDefect"
-                      ? Effect.die(new Action.EffectKeyUnavailable({ name: "x", message: "prog" }))
-                      : scenario === "queueTransientDefect"
-                        ? Effect.die(new Error(`transient-${n}`))
-                        : Effect.interrupt, { concurrency: 1 }).pipe(Effect.forkChild)
+                  scenario === "queueProgDefect"
+                    ? Effect.die(new Action.EffectKeyUnavailable({ name: "x", message: "prog" }))
+                    : scenario === "queueTransientDefect"
+                    ? Effect.die(new Error(`transient-${n}`))
+                    : Effect.interrupt, { concurrency: 1 }).pipe(Effect.forkChild)
 
                 const callFiber = yield* DurableQueue.process(Q, { n }).pipe(
                   Effect.provideService(FlowRuntime.FlowInstance, makeInstance(DummyFlow, `q-exec-${n}`)),
@@ -878,7 +933,8 @@ describe("@smthrs/flow Wave 10 deep fuzzing", () => {
             }
 
             if (scenario === "queueStoreFailure") {
-              const Q = DurableQueue.make({ name: `wave10/q-storefail-${n}`,
+              const Q = DurableQueue.make({
+                name: `wave10/q-storefail-${n}`,
                 payload: { n: Schema.Number },
                 idempotencyKey: ({ n: v }) => String(v),
                 success: Schema.Number
@@ -907,7 +963,9 @@ describe("@smthrs/flow Wave 10 deep fuzzing", () => {
               const wExit = yield* Effect.exit(
                 Effect.scoped(
                   Effect.gen(function*() {
-                    const wf = yield* DurableQueue.makeWorker(Q, ({ n }) => Effect.succeed(n), { concurrency: 1 }).pipe(Effect.forkChild)
+                    const wf = yield* DurableQueue.makeWorker(Q, ({ n }) => Effect.succeed(n), { concurrency: 1 }).pipe(
+                      Effect.forkChild
+                    )
                     yield* Effect.sleep("30 millis")
                     yield* Fiber.interrupt(wf)
                   })
@@ -932,13 +990,21 @@ describe("@smthrs/flow Wave 10 deep fuzzing", () => {
                 executionId: inst.executionId
               })
               const intExit = yield* Effect.exit(
-                DurableDeferred.into(Effect.interrupt, D).pipe(Effect.provideService(FlowRuntime.FlowInstance, inst), Effect.provide(layer), withCrypto)
+                DurableDeferred.into(Effect.interrupt, D).pipe(
+                  Effect.provideService(FlowRuntime.FlowInstance, inst),
+                  Effect.provide(layer),
+                  withCrypto
+                )
               )
               expect(Exit.isFailure(intExit)).toBe(true)
 
               const mixedCause = Cause.combine(Cause.interrupt(1), Cause.fail("typed-err"))
               const mixedExit = yield* Effect.exit(
-                DurableDeferred.into(Effect.failCause(mixedCause), D).pipe(Effect.provideService(FlowRuntime.FlowInstance, inst), Effect.provide(layer), withCrypto)
+                DurableDeferred.into(Effect.failCause(mixedCause), D).pipe(
+                  Effect.provideService(FlowRuntime.FlowInstance, inst),
+                  Effect.provide(layer),
+                  withCrypto
+                )
               )
               expect(Exit.isFailure(mixedExit)).toBe(true)
 
@@ -1011,7 +1077,20 @@ describe("@smthrs/flow Wave 10 deep fuzzing", () => {
               timeout: "5 seconds"
             })
             // negative wait throws RangeError
-            const badWaitExit = yield* Effect.exit(Effect.suspend(() => Job.run({ id: "x" }, { executionId: `bad-${n}`, operations: { start: () => Effect.succeed("h"), status: () => Effect.succeed({ _tag: "Exited", exitCode: 0 }), collect: () => Effect.succeed("c"), cancel: () => Effect.void }, wait: -1 as any })).pipe(Effect.provide(FlowEngine.layerMemory), withCrypto))
+            const badWaitExit = yield* Effect.exit(
+              Effect.suspend(() =>
+                Job.run({ id: "x" }, {
+                  executionId: `bad-${n}`,
+                  operations: {
+                    start: () => Effect.succeed("h"),
+                    status: () => Effect.succeed({ _tag: "Exited", exitCode: 0 }),
+                    collect: () => Effect.succeed("c"),
+                    cancel: () => Effect.void
+                  },
+                  wait: -1 as any
+                })
+              ).pipe(Effect.provide(FlowEngine.layerMemory), withCrypto)
+            )
             expect(Exit.isFailure(badWaitExit)).toBe(true)
 
             const ops: ExternalJob.Operations<{ readonly id: string }, string, string, ProviderErr, never> = {
@@ -1035,7 +1114,9 @@ describe("@smthrs/flow Wave 10 deep fuzzing", () => {
             const fullLayer = Layer.mergeAll(
               Job.toLayer(ops),
               Sleep.layer,
-              StepAct.toLayer((({ id }: any) => Job.run({ id }, { executionId: id, operations: ops, wait: "500 millis" })) as any),
+              StepAct.toLayer(
+                (({ id }: any) => Job.run({ id }, { executionId: id, operations: ops, wait: "500 millis" })) as any
+              ),
               Interpreter.layer(CallerFlow)
             ).pipe(
               Layer.provideMerge(Action.layerImplementations),
@@ -1048,42 +1129,45 @@ describe("@smthrs/flow Wave 10 deep fuzzing", () => {
             return true
           }),
         { seed: seed + 3, executions: ioExec }
+      ))
+      assertPassed(report)
+    },
+    120_000
+  )
+
+  it(
+    "fuzzes Graph inert payload/envelope narrowing/duplicate node, HumanTask options/timeout/token-mismatch/decode & ExternalJob start/collect timeouts",
+    async () => {
+      const arb = Arbitrary.schema(
+        Schema.Struct({
+          graphCase: Schema.Literals([
+            "proxyBadProto",
+            "proxyBadOwnProps",
+            "arrayAccessor",
+            "objectAccessor",
+            "symbolKey",
+            "cyclicPayload",
+            "deepPayload",
+            "envelopeOutsidePath",
+            "envelopeModeWidening",
+            "envelopeTierWidening",
+            "envelopeOversizedPath",
+            "duplicateNodeId"
+          ]),
+          humanCase: Schema.Literals([
+            "emptyOptions",
+            "dupRankOptions",
+            "badTokenNoHash",
+            "badTokenBadSuffix",
+            "timeoutExpires",
+            "decodeIdentityError",
+            "decodeVersionedExec"
+          ]),
+          jobTimeoutCase: Schema.Literals(["startTimeout", "collectTimeout", "cancelErrorRollback"])
+        })
       )
-    )
-    assertPassed(report)
-  }, 120_000)
 
-  it("fuzzes Graph inert payload/envelope narrowing/duplicate node, HumanTask options/timeout/token-mismatch/decode & ExternalJob start/collect timeouts", async () => {
-    const arb = Arbitrary.schema(
-      Schema.Struct({
-        graphCase: Schema.Literals([
-          "proxyBadProto",
-          "proxyBadOwnProps",
-          "arrayAccessor",
-          "objectAccessor",
-          "symbolKey",
-          "cyclicPayload",
-          "deepPayload",
-          "envelopeOutsidePath",
-          "envelopeModeWidening",
-          "envelopeTierWidening",
-          "envelopeOversizedPath",
-          "duplicateNodeId"
-        ]),
-        humanCase: Schema.Literals([
-          "emptyOptions",
-          "dupRankOptions",
-          "badTokenNoHash",
-          "badTokenBadSuffix",
-          "timeoutExpires",
-          "decodeIdentityError",
-          "decodeVersionedExec"
-        ]),
-        jobTimeoutCase: Schema.Literals(["startTimeout", "collectTimeout", "cancelErrorRollback"])
-      })
-    )
-
-    const report = await runFuzz(Fuzz.run(
+      const report = await runFuzz(Fuzz.run(
         arb,
         ({ graphCase, humanCase, jobTimeoutCase }) =>
           Effect.gen(function*() {
@@ -1104,9 +1188,17 @@ describe("@smthrs/flow Wave 10 deep fuzzing", () => {
             ) {
               let badPayload: unknown
               if (graphCase === "proxyBadProto") {
-                badPayload = new Proxy({}, { getPrototypeOf() { throw new Error("no proto") } })
+                badPayload = new Proxy({}, {
+                  getPrototypeOf() {
+                    throw new Error("no proto")
+                  }
+                })
               } else if (graphCase === "proxyBadOwnProps") {
-                badPayload = new Proxy({}, { ownKeys() { throw new Error("no keys") } })
+                badPayload = new Proxy({}, {
+                  ownKeys() {
+                    throw new Error("no keys")
+                  }
+                })
               } else if (graphCase === "arrayAccessor") {
                 const arr: any = [1]
                 Object.defineProperty(arr, "0", { get: () => 1, enumerable: true })
@@ -1143,14 +1235,19 @@ describe("@smthrs/flow Wave 10 deep fuzzing", () => {
               graphCase === "envelopeTierWidening" ||
               graphCase === "envelopeOversizedPath"
             ) {
-              const childEffects: any =
-                graphCase === "envelopeOutsidePath"
-                  ? { reads: ["b/**"], writes: [], mode: "hermetic", onConflict: "serialize", tier: "sealed" }
-                  : graphCase === "envelopeModeWidening"
-                    ? { reads: ["a/**"], writes: [], mode: "expected", onConflict: "serialize", tier: "sealed" }
-                    : graphCase === "envelopeTierWidening"
-                      ? { reads: ["a/**"], writes: [], mode: "hermetic", onConflict: "serialize", tier: "irreversible" }
-                      : { reads: ["a/" + "x".repeat(600)], writes: [], mode: "hermetic", onConflict: "serialize", tier: "sealed" }
+              const childEffects: any = graphCase === "envelopeOutsidePath"
+                ? { reads: ["b/**"], writes: [], mode: "hermetic", onConflict: "serialize", tier: "sealed" }
+                : graphCase === "envelopeModeWidening"
+                ? { reads: ["a/**"], writes: [], mode: "expected", onConflict: "serialize", tier: "sealed" }
+                : graphCase === "envelopeTierWidening"
+                ? { reads: ["a/**"], writes: [], mode: "hermetic", onConflict: "serialize", tier: "irreversible" }
+                : {
+                  reads: ["a/" + "x".repeat(600)],
+                  writes: [],
+                  mode: "hermetic",
+                  onConflict: "serialize",
+                  tier: "sealed"
+                }
               const ChildF = Flow.make("w10/child-eff", {
                 payload: Schema.Struct({ x: Schema.Number }),
                 success: Schema.Number,
@@ -1294,14 +1391,14 @@ describe("@smthrs/flow Wave 10 deep fuzzing", () => {
                 jobTimeoutCase === "startTimeout"
                   ? Effect.sleep("200 millis").pipe(Effect.as(`h:${id}`))
                   : Effect.succeed(`h:${id}`),
-              
+
               status: () => Effect.succeed({ _tag: "Exited" as const, exitCode: 0 }),
               collect: (handle) =>
                 jobTimeoutCase === "collectTimeout"
                   ? Effect.sleep("200 millis").pipe(Effect.as(`out:${handle}`))
                   : jobTimeoutCase === "cancelErrorRollback"
-                    ? Effect.fail("collect-failed")
-                    : Effect.succeed(`out:${handle}`),
+                  ? Effect.fail("collect-failed")
+                  : Effect.succeed(`out:${handle}`),
               cancel: () => {
                 cancelCalls++
                 return jobTimeoutCase === "cancelErrorRollback"
@@ -1334,26 +1431,29 @@ describe("@smthrs/flow Wave 10 deep fuzzing", () => {
             return true
           }),
         { seed: seed + 4, executions: ioExec }
+      ))
+      assertPassed(report)
+    },
+    120_000
+  )
+
+  it(
+    "fuzzes Flow/Runtime concurrent suspending siblings & cleanup causes, DurableQueue mismatched token/programming defect & BoundedJson scalarPrefix/admit",
+    async () => {
+      const arb = Arbitrary.schema(
+        Schema.Struct({
+          siblingMode: Schema.Literals(["suspendAndSiblingCompletes", "siblingFailsWithCleanup"]),
+          queueMode: Schema.Literals(["tokenDeferredMismatch", "programmingDefect", "transientDefect"]),
+          textSample: Schema.Literals([
+            "plain ascii text",
+            "emoji 😀🚀🔥 end",
+            "lone high \ud83d surrogate",
+            "lone low \udc00 surrogate"
+          ])
+        })
       )
-    )
-    assertPassed(report)
-  }, 120_000)
 
-  it("fuzzes Flow/Runtime concurrent suspending siblings & cleanup causes, DurableQueue mismatched token/programming defect & BoundedJson scalarPrefix/admit", async () => {
-    const arb = Arbitrary.schema(
-      Schema.Struct({
-        siblingMode: Schema.Literals(["suspendAndSiblingCompletes", "siblingFailsWithCleanup"]),
-        queueMode: Schema.Literals(["tokenDeferredMismatch", "programmingDefect", "transientDefect"]),
-        textSample: Schema.Literals([
-          "plain ascii text",
-          "emoji 😀🚀🔥 end",
-          "lone high \ud83d surrogate",
-          "lone low \udc00 surrogate"
-        ])
-      })
-    )
-
-    const report = await runFuzz(Fuzz.run(
+      const report = await runFuzz(Fuzz.run(
         arb,
         ({ siblingMode, queueMode, textSample }) =>
           Effect.gen(function*() {
@@ -1388,23 +1488,22 @@ describe("@smthrs/flow Wave 10 deep fuzzing", () => {
               payload: Schema.Struct({ tag: Schema.String }),
               success: Schema.Unknown,
               error: Schema.String,
-              body: () =>
-                (Node.all({
-                  left: (Node as any).effect(() =>
-                    Effect.gen(function*() {
-                      const tok = yield* DurableDeferred.token(Def)
-                      return yield* DurableDeferred.await(Def)
-                    }).pipe(Effect.ensuring(Effect.void))
-                  ),
-                  right: (Node as any).effect(() =>
-                    siblingMode === "siblingFailsWithCleanup"
-                      ? Effect.sleep("5 millis").pipe(
-                          Effect.andThen(Effect.fail("sib-boom")),
-                          Effect.ensuring(Effect.die("cleanup-defect").pipe(Effect.ignore))
-                        )
-                      : Effect.sleep("10 millis").pipe(Effect.as("right-done"))
-                  )
-                }) as any)
+              body: () => (Node.all({
+                left: (Node as any).effect(() =>
+                  Effect.gen(function*() {
+                    const tok = yield* DurableDeferred.token(Def)
+                    return yield* DurableDeferred.await(Def)
+                  }).pipe(Effect.ensuring(Effect.void))
+                ),
+                right: (Node as any).effect(() =>
+                  siblingMode === "siblingFailsWithCleanup"
+                    ? Effect.sleep("5 millis").pipe(
+                      Effect.andThen(Effect.fail("sib-boom")),
+                      Effect.ensuring(Effect.die("cleanup-defect").pipe(Effect.ignore))
+                    )
+                    : Effect.sleep("10 millis").pipe(Effect.as("right-done"))
+                )
+              }) as any)
             })
             const sibLayer = Interpreter.layer(SibFlow).pipe(
               Layer.provideMerge(Action.layerImplementations),
@@ -1451,13 +1550,13 @@ describe("@smthrs/flow Wave 10 deep fuzzing", () => {
                   name: `w10-q-${queueMode}`,
                   schema: Schema.Any
                 })
-                const badToken =
-                  queueMode === "tokenDeferredMismatch"
-                    ? `exec-1:${"wrong-deferred-".repeat(12)}`
-                    : "exec-1:DurableQueue/w10-q-" + queueMode
-                yield* rawQ.offer({ payload: { x: 1 }, token: badToken }, { id: `id-${queueMode}-${Math.random()}` }).pipe(
-                  Effect.ignore
-                )
+                const badToken = queueMode === "tokenDeferredMismatch"
+                  ? `exec-1:${"wrong-deferred-".repeat(12)}`
+                  : "exec-1:DurableQueue/w10-q-" + queueMode
+                yield* rawQ.offer({ payload: { x: 1 }, token: badToken }, { id: `id-${queueMode}-${Math.random()}` })
+                  .pipe(
+                    Effect.ignore
+                  )
                 yield* Effect.sleep("25 millis")
               }).pipe(Effect.provide(qFullLayer), withCrypto)
             ).pipe(Effect.ignore)
@@ -1465,21 +1564,24 @@ describe("@smthrs/flow Wave 10 deep fuzzing", () => {
             return true
           }),
         { seed: seed + 5, executions: ioExec }
+      ))
+      assertPassed(report)
+    },
+    120_000
+  )
+
+  it(
+    "fuzzes Flow start/ensure/executionId, Flow.Result JSON codec errors, Action.once concurrent adoption & SpanFailure defects",
+    async () => {
+      const arb = Arbitrary.schema(
+        Schema.Struct({
+          n: Schema.Int.pipe(Schema.check(Schema.isBetween({ minimum: 1, maximum: 20 }))),
+          key: Schema.Literals(["k-a", "k-b", "k-c"]),
+          failKind: Schema.Literals(["ok", "fail", "die"])
+        })
       )
-    )
-    assertPassed(report)
-  }, 120_000)
 
-  it("fuzzes Flow start/ensure/executionId, Flow.Result JSON codec errors, Action.once concurrent adoption & SpanFailure defects", async () => {
-    const arb = Arbitrary.schema(
-      Schema.Struct({
-        n: Schema.Int.pipe(Schema.check(Schema.isBetween({ minimum: 1, maximum: 20 }))),
-        key: Schema.Literals(["k-a", "k-b", "k-c"]),
-        failKind: Schema.Literals(["ok", "fail", "die"])
-      })
-    )
-
-    const report = await runFuzz(Fuzz.run(
+      const report = await runFuzz(Fuzz.run(
         arb,
         ({ n, key, failKind }) =>
           Effect.gen(function*() {
@@ -1510,7 +1612,10 @@ describe("@smthrs/flow Wave 10 deep fuzzing", () => {
             const decoded = yield* Schema.decodeUnknownEffect(jsonCodec)(encoded)
             expect(decoded._tag).toBe("Complete")
             const badRes = yield* Effect.exit(
-              Schema.decodeUnknownEffect(resSchema)({ _tag: "Complete", exit: { _tag: "Success", value: "not-a-number" } })
+              Schema.decodeUnknownEffect(resSchema)({
+                _tag: "Complete",
+                exit: { _tag: "Success", value: "not-a-number" }
+              })
             )
             expect(Exit.isFailure(badRes)).toBe(true)
 
@@ -1520,7 +1625,11 @@ describe("@smthrs/flow Wave 10 deep fuzzing", () => {
               find: () => Effect.succeed(created ? Option.some(n) : Option.none()),
               perform: () =>
                 Effect.sleep("10 millis").pipe(
-                  Effect.tap(() => Effect.sync(() => { created = true })),
+                  Effect.tap(() =>
+                    Effect.sync(() => {
+                      created = true
+                    })
+                  ),
                   Effect.as(n)
                 )
             }, { key: `k-${key}-${n}` })
@@ -1529,20 +1638,20 @@ describe("@smthrs/flow Wave 10 deep fuzzing", () => {
             expect(r2).toBe(n)
 
             // 4. SpanFailure.withSpan across success/failure/defect (SpanFailure.ts L76, L134-136)
-            const spanEff =
-              failKind === "ok"
-                ? Effect.succeed(n)
-                : failKind === "fail"
-                  ? Effect.fail({ _tag: "Err", code: "bad" })
-                  : Effect.die(new Error("boom"))
+            const spanEff = failKind === "ok"
+              ? Effect.succeed(n)
+              : failKind === "fail"
+              ? Effect.fail({ _tag: "Err", code: "bad" })
+              : Effect.die(new Error("boom"))
             const spEx = yield* Effect.exit(spanEff.pipe(SpanFailure.withSpan("w10.span")))
             expect(Exit.isSuccess(spEx)).toBe(failKind === "ok")
 
             return true
           }),
         { seed: seed + 6, executions: Math.min(fastExec, 40) }
-      )
-    )
-    assertPassed(report)
-  }, 90_000)
+      ))
+      assertPassed(report)
+    },
+    90_000
+  )
 })

@@ -26,7 +26,7 @@ const baseExecutions = Number(process.env.EFFECT_FUZZ_EXECUTIONS ?? "100")
 const fastExec = Math.max(30, Math.min(baseExecutions, 100))
 const httpExec = Math.max(12, Math.min(Math.ceil(baseExecutions / 6), 30))
 
-const assertPassed = <A>(report: Fuzz.Report<A>): void => {
+const assertPassed = <A, E = unknown>(report: Fuzz.Report<A, E>): void => {
   expect(report._tag, Fuzz.formatReport(report)).toBe("Passed")
 }
 
@@ -282,7 +282,7 @@ describe("Control Wave 9 deep fuzzing", () => {
 
             const cancelExit = yield* Effect.exit(svc.requestCancel({ runId: "run-1" }))
             const signalExit = yield* Effect.exit(
-              svc.deliverSignal({ runId: "run-1", name: waitName, payload: null, receiptId: "r-1" })
+              svc.deliverSignal({ runId: "run-1", commandId: "r-1", signal: { name: waitName, payload: null } })
             )
             const settleExit = yield* Effect.exit(svc.settleCancelledPark({ runId: "run-1" }))
             if (execMode === "observing") {
@@ -377,7 +377,7 @@ describe("Control Wave 9 deep fuzzing", () => {
                     Layer.provideMerge(NodeHttpServer.layer(createServer, { host: "127.0.0.1", port: 0 }))
                   )
                 )
-                const server = serverCtx.mapUnsafe.get(HttpServer.HttpServer.key) as HttpServer.HttpServer
+                const server = serverCtx.mapUnsafe.get(HttpServer.HttpServer.key) as HttpServer.HttpServer["Service"]
                 if (server.address._tag !== "InetAddressV4") throw new Error("expected TCP server")
                 const url = `http://127.0.0.1:${server.address.port}`
 

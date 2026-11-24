@@ -116,7 +116,15 @@ export const usableExecutable = (configured: string, boundaryRoot: string | unde
     })
   }
   accessSync(resolved, constants.X_OK)
-  if (boundaryRoot !== undefined && inside(boundaryRoot, resolved)) {
+  let canonicalBoundary = boundaryRoot
+  if (canonicalBoundary !== undefined) {
+    try {
+      canonicalBoundary = realpathSync.native(canonicalBoundary)
+    } catch {
+      // Keep the lexical boundary when the directory does not exist yet.
+    }
+  }
+  if (canonicalBoundary !== undefined && inside(canonicalBoundary, resolved)) {
     throw new AtomicHelperError({
       code: "helper_inside_workspace",
       message: `atomic helper executable must live outside the confined workspace: ${resolved}`

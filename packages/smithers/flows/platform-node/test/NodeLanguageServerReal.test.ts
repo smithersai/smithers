@@ -3,6 +3,7 @@ import { Effect } from "effect"
 import { cpSync, existsSync, mkdtempSync, readFileSync, realpathSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { delimiter, join } from "node:path"
+import { fileURLToPath } from "node:url"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
 import * as NodeLanguageServer from "../src/NodeLanguageServer.ts"
 
@@ -30,7 +31,7 @@ const errorLines = (report: unknown): ReadonlyArray<number> =>
     .filter((item) => item.severity === 1)
     .map((item) => item.range.start.line + 1)
 
-const fixture = new URL("./fixtures/lsp/ts", import.meta.url).pathname
+const fixture = fileURLToPath(new URL("./fixtures/lsp/ts", import.meta.url))
 const PROBE = "\nexport const probe: string = 1\n"
 
 describe.skipIf(!available)("NodeLanguageServer with a real typescript-language-server", () => {

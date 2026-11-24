@@ -318,22 +318,42 @@ describe("@smthrs/platform-node SandboxedFlow, AtomicFileSystem batch/protocol, 
             Effect.gen(function*() {
               const spawner = yield* ChildProcessSpawner
               if (tc.mode === "echo") {
-                const out = yield* spawner.string(ChildProcess.make("printf", ["%s", tc.payload]))
+                const out = yield* spawner.string(
+                  ChildProcess.make(process.execPath, ["-e", "process.stdout.write(process.argv[1])", tc.payload])
+                )
                 expect(out).toBe(tc.payload)
                 return true
               }
               if (tc.mode === "pipe2") {
-                const piped = ChildProcess.make("printf", ["%s", tc.payload]).pipe(
-                  ChildProcess.pipeTo(ChildProcess.make("tr", ["a-z", "A-Z"]))
+                const piped = ChildProcess.make(
+                  process.execPath,
+                  ["-e", "process.stdout.write(process.argv[1])", tc.payload]
+                ).pipe(
+                  ChildProcess.pipeTo(
+                    ChildProcess.make(process.execPath, [
+                      "-e",
+                      "process.stdin.on('data',c=>process.stdout.write(c.toString().toUpperCase()))"
+                    ])
+                  )
                 )
                 const out = yield* spawner.string(piped)
                 expect(out).toBe(tc.payload.toUpperCase())
                 return true
               }
               if (tc.mode === "pipe3") {
-                const piped = ChildProcess.make("printf", ["%s\n", tc.payload]).pipe(
-                  ChildProcess.pipeTo(ChildProcess.make("cat", [])),
-                  ChildProcess.pipeTo(ChildProcess.make("wc", ["-c"]))
+                const piped = ChildProcess.make(
+                  process.execPath,
+                  ["-e", "process.stdout.write(process.argv[1]+String.fromCharCode(10))", tc.payload]
+                ).pipe(
+                  ChildProcess.pipeTo(
+                    ChildProcess.make(process.execPath, ["-e", "process.stdin.pipe(process.stdout)"])
+                  ),
+                  ChildProcess.pipeTo(
+                    ChildProcess.make(process.execPath, [
+                      "-e",
+                      "let n=0;process.stdin.on('data',c=>n+=c.length);process.stdin.on('end',()=>process.stdout.write(String(n)))"
+                    ])
+                  )
                 )
                 const out = yield* spawner.string(piped)
                 expect(Number(out.trim())).toBeGreaterThan(0)
@@ -341,7 +361,7 @@ describe("@smthrs/platform-node SandboxedFlow, AtomicFileSystem batch/protocol, 
               }
               if (tc.mode === "stdin-cat") {
                 const handle = yield* spawner.spawn(
-                  ChildProcess.make("cat", [], {
+                  ChildProcess.make(process.execPath, ["-e", "process.stdin.pipe(process.stdout)"], {
                     stdin: Stream.make(new TextEncoder().encode(tc.payload))
                   })
                 )

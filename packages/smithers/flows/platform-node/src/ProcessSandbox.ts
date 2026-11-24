@@ -440,7 +440,7 @@ export const host = (env?: Readonly<Record<string, string | undefined>>): Host =
   // A relative entry names a directory below whatever the current directory
   // is, often the workspace a confined run may write; it is never searched.
   const entries = (env["PATH"] ?? "").split(pathSeparator(platform)).filter((entry) => NodePath.isAbsolute(entry))
-  const extensions = platform === "win32" ? (env["PATHEXT"] ?? ".EXE;.CMD;.BAT").split(";") : [""]
+  const extensions = platform === "win32" ? [...(env["PATHEXT"] ?? ".EXE;.CMD;.BAT").split(";"), ""] : [""]
   return {
     platform,
     developerDirectory,
@@ -632,8 +632,22 @@ export const select = (
 
 // A plan can describe a foreign host. Absolute paths carry their dialect;
 // resolving a POSIX root with win32 would silently add the current drive.
-const pathDelimiter = (searchPath: string): string =>
-  /^[A-Za-z]:[\\/]/.test(searchPath) || searchPath.includes(";") ? ";" : ":"
+const splitSearchPath = (searchPath: string): ReadonlyArray<string> => {
+  if (searchPath.includes(";")) return searchPath.split(";")
+  const entries: Array<string> = []
+  let start = 0
+  for (let i = 0; i < searchPath.length; i++) {
+    if (searchPath[i] !== ":") continue
+    const next = searchPath[i + 1]
+    if (i - start === 1 && /[A-Za-z]/.test(searchPath[start]!) && (next === "\\" || next === "/")) {
+      continue
+    }
+    entries.push(searchPath.slice(start, i))
+    start = i + 1
+  }
+  entries.push(searchPath.slice(start))
+  return entries
+}
 
 const pathApi = (path: string): typeof NodePath.posix =>
   /^(?:[a-z]:[\\/]|\\\\)/i.test(path) ? NodePath.win32 : NodePath.posix
@@ -1147,7 +1161,7 @@ export const launcher = (
     ? hostFacts.executable(program)
     : searchPath === undefined
     ? hostFacts.executable(program)
-    : searchPath.split(pathDelimiter(searchPath)).filter((entry) => pathApi(entry).isAbsolute(entry))
+    : splitSearchPath(searchPath).filter((entry) => pathApi(entry).isAbsolute(entry))
       .map((entry) => hostFacts.executable(pathApi(entry).join(entry, program)))
       .find((candidate) => candidate !== undefined)
   if (found === undefined) return unchanged
@@ -1241,7 +1255,7 @@ export const toolchainReads = (
     !closed.some((kept) => insideRoot(path, kept)) &&
     !credentials.some((kept) => insideRoot(kept, path))
   const found: Array<string> = []
-  for (const entry of (searchPath ?? "").split(pathDelimiter(searchPath ?? ""))) {
+  for (const entry of splitSearchPath(searchPath ?? "")) {
     if (entry === "" || !pathApi(entry).isAbsolute(entry) || !hostFacts.isDirectory(entry)) continue
     found.push(entry, hostFacts.realpath?.(entry) ?? entry)
   }
@@ -1471,7 +1485,7 @@ export const toolchain = (
   const visited = new Set<string>()
   const drives = hostFacts.windowsDrives ?? []
   const onDrive = (path: string): boolean => drives.some((drive) => insideRoot(drive, path))
-  for (const entry of (searchPath ?? "").split(pathDelimiter(searchPath ?? ""))) {
+  for (const entry of splitSearchPath(searchPath ?? "")) {
     // WSL appends the Windows `PATH`; listing it over the drive mount took
     // minutes, for programs the run could not start.
     if (entry === "" || !api.isAbsolute(entry) || onDrive(entry) || !hostFacts.isDirectory(entry)) continue
@@ -2159,7 +2173,7 @@ export const wrap = (
 const denialPatterns: ReadonlyArray<{ readonly pattern: RegExp; readonly write: boolean }> = [
   {
     pattern:
-      /(?:^|\n)(?:mkdir|touch): ['"]?([^'":\n]+?)['"]?: (?:Operation not permitted|Permission denied|Read-only file system)/g,
+      /(?:^|\n)(?:mkdir|touch): ['"]?((?:[A-Za-z]:)?[^'":\n]+?)['"]?: (?:Operation not permitted|Permission denied|Read-only file system)/g,
     write: true
   },
 

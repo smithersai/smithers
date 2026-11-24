@@ -47,6 +47,7 @@ import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import { join, resolve } from "node:path"
+import { fileURLToPath } from "node:url"
 import { CaseExecutor, EvalError, Runner, Suite, Trials } from "../../evals/src/index.ts"
 import {
   Binding,
@@ -74,7 +75,7 @@ const option = (name: string): string | undefined => {
   return index < 0 ? undefined : argv[index + 1]
 }
 
-const suiteDir = resolve(option("suite") ?? new URL("./example", import.meta.url).pathname)
+const suiteDir = resolve(option("suite") ?? fileURLToPath(new URL("./example", import.meta.url)))
 const live = flag("live")
 const calibrate = flag("calibrate")
 const judging = flag("judge") || calibrate

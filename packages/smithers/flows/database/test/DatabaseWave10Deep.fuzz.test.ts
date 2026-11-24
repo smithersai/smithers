@@ -1,16 +1,6 @@
 import * as Pg from "@effect/sql-pg"
 import { Fuzz } from "@smthrs/fuzz"
-import {
-  Arbitrary,
-  Deferred,
-  Duration,
-  Effect,
-  Exit,
-  Fiber,
-  Logger,
-  Schema,
-  Stream
-} from "effect"
+import { Arbitrary, Deferred, Duration, Effect, Exit, Fiber, Logger, Schema, Stream } from "effect"
 import * as Reactivity from "effect/reactivity/Reactivity"
 import * as SqlClient from "effect/sql/SqlClient"
 import type { Connection } from "effect/sql/SqlConnection"
@@ -46,8 +36,7 @@ const assertPassed = (report: Parameters<typeof Fuzz.formatReport>[0]) => {
   expect(report._tag).toBe("Passed")
 }
 
-const tempSchema = (prefix: string) =>
-  `w10_${prefix}_${randomUUID().replaceAll("-", "").slice(0, 12)}`
+const tempSchema = (prefix: string) => `w10_${prefix}_${randomUUID().replaceAll("-", "").slice(0, 12)}`
 
 const withPgSchema = async <A>(
   prefix: string,
@@ -179,85 +168,89 @@ const makeFakePgDriver = (opts: {
 }
 
 describe("Database Wave10 Deep Fuzzing", () => {
-  it("fuzzes QualifiedRead edge cases: escape strings, doubled quotes, commas, parens, subqueries, stray tables", async () => {
-    const arb = Arbitrary.schema(
-      Schema.Struct({
-        schema: Schema.Literals(["s1", "smithers_flows", "app_tenant_9"]),
-        variant: Schema.Literals([
-          "escape_string",
-          "doubled_quote",
-          "from_comma",
-          "unmatched_rparen",
-          "nested_parens",
-          "subquery_select",
-          "subquery_non_select",
-          "non_flows_table",
-          "stray_flows_ref",
-          "valid_join"
-        ])
-      })
-    )
-    const report = await Effect.runPromise(
-      Fuzz.run(
-        arb,
-        ({ schema, variant }) =>
-          Effect.sync(() => {
-            switch (variant) {
-              case "escape_string":
-                expect(QualifiedRead.qualify("SELECT E'foo\\'bar' FROM flows_runs", schema)).toBeUndefined()
-                break
-              case "doubled_quote":
-                expect(QualifiedRead.qualify("SELECT 'it''s' FROM flows_runs", schema)).toContain(
-                  `"${schema}".flows_runs`
-                )
-                break
-              case "from_comma":
-                expect(QualifiedRead.qualify("SELECT * FROM flows_a, flows_b", schema)).toBeUndefined()
-                break
-              case "unmatched_rparen":
-                expect(QualifiedRead.qualify("SELECT 1) FROM flows_runs", schema)).toBeUndefined()
-                break
-              case "nested_parens":
-                expect(
-                  QualifiedRead.qualify("SELECT count(id) FROM flows_runs WHERE (id IN (1, 2))", schema)
-                ).toContain(`"${schema}".flows_runs`)
-                break
-              case "subquery_select":
-                expect(
-                  QualifiedRead.qualify("SELECT * FROM (SELECT id FROM flows_runs) sub", schema)
-                ).toContain(`"${schema}".flows_runs`)
-                break
-              case "subquery_non_select":
-                expect(
-                  QualifiedRead.qualify("SELECT * FROM (flows_runs) sub", schema)
-                ).toBeUndefined()
-                break
-              case "non_flows_table":
-                expect(
-                  QualifiedRead.qualify("SELECT * FROM other_table", schema)
-                ).toBeUndefined()
-                break
-              case "stray_flows_ref":
-                expect(
-                  QualifiedRead.qualify("SELECT flows_runs FROM flows_runs", schema)
-                ).toBeUndefined()
-                break
-              case "valid_join":
-                expect(
-                  QualifiedRead.qualify(
-                    "SELECT flows_a.id FROM flows_a JOIN flows_b ON flows_a.id = flows_b.id",
-                    schema
-                  )
-                ).toContain(`"${schema}".flows_b`)
-                break
-            }
-            return true
-          }),
-        { executions: Math.min(executions, 80), seed }
+  it(
+    "fuzzes QualifiedRead edge cases: escape strings, doubled quotes, commas, parens, subqueries, stray tables",
+    async () => {
+      const arb = Arbitrary.schema(
+        Schema.Struct({
+          schema: Schema.Literals(["s1", "smithers_flows", "app_tenant_9"]),
+          variant: Schema.Literals([
+            "escape_string",
+            "doubled_quote",
+            "from_comma",
+            "unmatched_rparen",
+            "nested_parens",
+            "subquery_select",
+            "subquery_non_select",
+            "non_flows_table",
+            "stray_flows_ref",
+            "valid_join"
+          ])
+        })
       )
-    )
-    assertPassed(report)
-  }, 60_000)
+      const report = await Effect.runPromise(
+        Fuzz.run(
+          arb,
+          ({ schema, variant }) =>
+            Effect.sync(() => {
+              switch (variant) {
+                case "escape_string":
+                  expect(QualifiedRead.qualify("SELECT E'foo\\'bar' FROM flows_runs", schema)).toBeUndefined()
+                  break
+                case "doubled_quote":
+                  expect(QualifiedRead.qualify("SELECT 'it''s' FROM flows_runs", schema)).toContain(
+                    `"${schema}".flows_runs`
+                  )
+                  break
+                case "from_comma":
+                  expect(QualifiedRead.qualify("SELECT * FROM flows_a, flows_b", schema)).toBeUndefined()
+                  break
+                case "unmatched_rparen":
+                  expect(QualifiedRead.qualify("SELECT 1) FROM flows_runs", schema)).toBeUndefined()
+                  break
+                case "nested_parens":
+                  expect(
+                    QualifiedRead.qualify("SELECT count(id) FROM flows_runs WHERE (id IN (1, 2))", schema)
+                  ).toContain(`"${schema}".flows_runs`)
+                  break
+                case "subquery_select":
+                  expect(
+                    QualifiedRead.qualify("SELECT * FROM (SELECT id FROM flows_runs) sub", schema)
+                  ).toContain(`"${schema}".flows_runs`)
+                  break
+                case "subquery_non_select":
+                  expect(
+                    QualifiedRead.qualify("SELECT * FROM (flows_runs) sub", schema)
+                  ).toBeUndefined()
+                  break
+                case "non_flows_table":
+                  expect(
+                    QualifiedRead.qualify("SELECT * FROM other_table", schema)
+                  ).toBeUndefined()
+                  break
+                case "stray_flows_ref":
+                  expect(
+                    QualifiedRead.qualify("SELECT flows_runs FROM flows_runs", schema)
+                  ).toBeUndefined()
+                  break
+                case "valid_join":
+                  expect(
+                    QualifiedRead.qualify(
+                      "SELECT flows_a.id FROM flows_a JOIN flows_b ON flows_a.id = flows_b.id",
+                      schema
+                    )
+                  ).toContain(`"${schema}".flows_b`)
+                  break
+              }
+              return true
+            }),
+          { executions: Math.min(executions, 80), seed }
+        )
+      )
+      assertPassed(report)
+    },
+    60_000
+  )
 
   it("fuzzes WriteRetry classification, uninspectable getters, SQLite errcodes, and IO defects", async () => {
     const arb = Arbitrary.schema(
@@ -516,9 +509,7 @@ describe("Database Wave10 Deep Fuzzing", () => {
                   break
                 }
                 case "missing_parent_dir": {
-                  expect(() =>
-                    SqliteOpen.createDatabaseFile(join(dir, "no-such-dir", "db.sqlite"), true)
-                  ).toThrow()
+                  expect(() => SqliteOpen.createDatabaseFile(join(dir, "no-such-dir", "db.sqlite"), true)).toThrow()
                   break
                 }
                 case "memory_uri": {
@@ -624,498 +615,516 @@ describe("Database Wave10 Deep Fuzzing", () => {
     }
   }, 60_000)
 
-  it("exercises Dialect, Migrations, TestDatabase, PostgresDatabase savepoints/partitions, and PostgresSelection against real Postgres 18", async () => {
-    await withPgSchema("dialect", (schema, sql) =>
-      Effect.gen(function*() {
-        expect(Dialect.isPostgres(sql)).toBe(true)
-        yield* sql`CREATE TABLE items (id INTEGER PRIMARY KEY, val TEXT)`
-        const tbls = yield* Dialect.tables(sql)
-        expect(tbls.some((t) => t.name === "items")).toBe(true)
-        const cols = yield* Dialect.columns(sql, "items")
-        expect(cols.map((c) => c.name)).toContain("val")
-
-        yield* Dialect.trigger(sql, {
-          name: "trg_reject",
-          event: "BEFORE INSERT",
-          table: "items",
-          when: "NEW.val = 'forbidden'",
-          reject: "forbidden value"
-        })
-        const rejExit = yield* Effect.exit(sql`INSERT INTO items VALUES (1, 'forbidden')`)
-        expect(Exit.isFailure(rejExit)).toBe(true)
-        yield* Dialect.dropTrigger(sql, "trg_reject", "items")
-
-        yield* Dialect.trigger(sql, {
-          name: "trg_ignore",
-          event: "BEFORE INSERT",
-          table: "items",
-          when: "NEW.val = 'skip'",
-          ignore: true
-        })
-        yield* sql`INSERT INTO items VALUES (2, 'skip')`
-        yield* Dialect.dropTrigger(sql, "trg_ignore", "items")
-
-        yield* Dialect.trigger(sql, {
-          name: "trg_del",
-          event: "AFTER DELETE",
-          table: "items",
-          body: "PERFORM 1;"
-        })
-        yield* sql`INSERT INTO items VALUES (3, 'keep')`
-        yield* sql`DELETE FROM items WHERE id = 3`
-        yield* Dialect.dropTrigger(sql, "trg_del", "items")
-
-        yield* Dialect.setTriggerMode(sql, [], "IMMEDIATE")
-        yield* Dialect.flushDeferredTriggers(sql, [])
-        yield* sql.withTransaction(
-          Effect.gen(function*() {
-            yield* Dialect.setTriggerMode(sql, [["items", "no_such_trg"]], "IMMEDIATE")
-            yield* Dialect.flushDeferredTriggers(sql, [["items", "no_such_trg"]])
-          })
-        )
-
-        yield* sql`INSERT INTO items VALUES (10, 'hello')`
-        const qRows = yield* Dialect.query<{ readonly val: string }>(
-          sql,
-          "SELECT val FROM items WHERE id = ?",
-          [10]
-        )
-        expect(qRows[0]?.val).toBe("hello")
-
-        const rtOk = yield* Dialect.readTransaction(sql, sql`SELECT val FROM items WHERE id = 10`)
-        expect(rtOk.length).toBe(1)
-        const rtFail = yield* Effect.exit(
-          Dialect.readTransaction(sql, Effect.fail("boom-rt"))
-        )
-        expect(Exit.isFailure(rtFail)).toBe(true)
-        const nestedRt = yield* sql.withTransaction(
-          Dialect.readTransaction(sql, sql`SELECT val FROM items WHERE id = 10`)
-        )
-        expect(nestedRt.length).toBe(1)
-
-        yield* sql`CREATE TABLE p_parent (id INTEGER PRIMARY KEY CHECK (id > 0))`
-        yield* sql`CREATE TABLE p_child (id INTEGER PRIMARY KEY, pid INTEGER REFERENCES p_parent(id))`
-        yield* TestDatabase.checks(sql, false)
-        yield* TestDatabase.checks(sql, true)
-        yield* TestDatabase.foreignKeys(sql, false)
-        yield* TestDatabase.foreignKeys(sql, true)
-
-        yield* Effect.scoped(
-          Effect.gen(function*() {
-            const conn = yield* sql.reserve
-            yield* conn.executeValuesUnprepared("SELECT 1", [])
-            yield* conn.executeUnprepared("SELECT 1", [], undefined)
-          })
-        )
-        yield* sql.withTransaction(
-          Effect.gen(function*() {
-            const [conn] = (yield* Effect.serviceOption(sql.transactionService)).pipe(
-              (o) => (o._tag === "Some" ? o.value : (() => { throw new Error("no tx") })())
-            )
-            yield* conn.executeValues("SELECT 1", [])
-            yield* conn.executeValuesUnprepared("SELECT 1", [])
-            const streamed = yield* Stream.runCollect(conn.executeStream("SELECT 1 AS n", [], undefined))
-            expect(streamed.length).toBe(1)
-          })
-        )
-
-        // Nested partition join + widen + savepoint rollback releasing schema and partition locks
-        const writer = DurableWriter.make(sql)
-        yield* writer.write(
-          Effect.gen(function*() {
-            // Join second partition inside p1, then roll back savepoint
-            yield* Effect.exit(
-              writer.write(
-                Effect.andThen(sql`SELECT 1`, Effect.fail("rollback-p2")),
-                { partition: "p2" }
-              )
-            )
-            // Widen to whole schema lock, then roll back savepoint
-            yield* Effect.exit(
-              writer.write(
-                Effect.andThen(sql`SELECT 1`, Effect.fail("rollback-wide"))
-              )
-            )
-          }),
-          { partition: "p1" }
-        )
-        expect(schema.length).toBeGreaterThan(0)
-      })
-    )
-
-    await withPgSchema("mig", (_schema, sql) =>
-      Effect.gen(function*() {
-        const set1: Migrations.MigrationSet = {
-          namespace: "w10",
-          idOffset: 0,
-          immediateTriggers: [["w10_tbl", "w10_trg"]],
-          migrations: {
-            "0001_init": Effect.gen(function*() {
-              const s = yield* SqlClient.SqlClient
-              yield* s`CREATE TABLE w10_tbl (id INTEGER PRIMARY KEY)`
-            })
-          }
-        }
-        const setHigh: Migrations.MigrationSet = {
-          namespace: "w10b",
-          idOffset: 1000,
-          migrations: {
-            "0001_hi": Effect.void
-          }
-        }
-        const first = yield* Migrations.run([set1, setHigh])
-        expect(first.length).toBe(2)
-
-        // Forward addition in earlier block via Migrations.loader (exercises loader's onLoaderApplied callback & block upgrade)
-        const set1Extended: Migrations.MigrationSet = {
-          namespace: "w10",
-          idOffset: 0,
-          migrations: {
-            "0001_init": Effect.void,
-            "0002_extra": Effect.void
-          }
-        }
-        const loadedExtended = yield* Migrations.loader([set1Extended, setHigh])
-        expect(loadedExtended.length).toBe(3)
-
-        // Forward addition in earlier block that FAILS (exercises Migrations.ts line 307)
-        const set1Fail: Migrations.MigrationSet = {
-          namespace: "w10",
-          idOffset: 0,
-          migrations: {
-            "0001_init": Effect.void,
-            "0002_extra": Effect.void,
-            "0003_boom": Effect.fail(new Error("block-upgrade-boom"))
-          }
-        }
-        const failUpgrade = yield* Effect.exit(Migrations.loader([set1Fail, setHigh]))
-        expect(Exit.isFailure(failUpgrade)).toBe(true)
-
-        const second = yield* Migrations.run([set1Extended, setHigh])
-        expect(second).toEqual([])
-
-        const setRenamed: Migrations.MigrationSet = {
-          namespace: "w10",
-          idOffset: 0,
-          previousNames: { "0001_init_v2": ["init"] },
-          migrations: {
-            "0001_init_v2": Effect.void,
-            "0002_extra": Effect.void
-          }
-        }
-        const third = yield* Migrations.run([setRenamed, setHigh])
-        expect(third).toEqual([])
-
-        const fourth = yield* sql.withTransaction(Migrations.run([set1Extended, setHigh]))
-        expect(fourth).toEqual([])
-
-        const badOffset = yield* Effect.exit(
-          Migrations.run([{ namespace: "bad", idOffset: 1.5, migrations: { "0001_a": Effect.void } }])
-        )
-        expect(Exit.isFailure(badOffset)).toBe(true)
-      })
-    )
-
-    // Invalid URL syntax in PostgresSelection
-    const invalidUrlExit = await Effect.runPromiseExit(
-      Effect.scoped(
+  it(
+    "exercises Dialect, Migrations, TestDatabase, PostgresDatabase savepoints/partitions, and PostgresSelection against real Postgres 18",
+    async () => {
+      await withPgSchema("dialect", (schema, sql) =>
         Effect.gen(function*() {
-          return yield* SqlClient.SqlClient
-        }).pipe(
-          Effect.provide(
-            NodeDatabase.layer({
-              filename: "/tmp/x.sqlite",
-              settings: { SMITHERS_POSTGRES_URL: "postgres://[::1" }
+          expect(Dialect.isPostgres(sql)).toBe(true)
+          yield* sql`CREATE TABLE items (id INTEGER PRIMARY KEY, val TEXT)`
+          const tbls = yield* Dialect.tables(sql)
+          expect(tbls.some((t) => t.name === "items")).toBe(true)
+          const cols = yield* Dialect.columns(sql, "items")
+          expect(cols.map((c) => c.name)).toContain("val")
+
+          yield* Dialect.trigger(sql, {
+            name: "trg_reject",
+            event: "BEFORE INSERT",
+            table: "items",
+            when: "NEW.val = 'forbidden'",
+            reject: "forbidden value"
+          })
+          const rejExit = yield* Effect.exit(sql`INSERT INTO items VALUES (1, 'forbidden')`)
+          expect(Exit.isFailure(rejExit)).toBe(true)
+          yield* Dialect.dropTrigger(sql, "trg_reject", "items")
+
+          yield* Dialect.trigger(sql, {
+            name: "trg_ignore",
+            event: "BEFORE INSERT",
+            table: "items",
+            when: "NEW.val = 'skip'",
+            ignore: true
+          })
+          yield* sql`INSERT INTO items VALUES (2, 'skip')`
+          yield* Dialect.dropTrigger(sql, "trg_ignore", "items")
+
+          yield* Dialect.trigger(sql, {
+            name: "trg_del",
+            event: "AFTER DELETE",
+            table: "items",
+            body: "PERFORM 1;"
+          })
+          yield* sql`INSERT INTO items VALUES (3, 'keep')`
+          yield* sql`DELETE FROM items WHERE id = 3`
+          yield* Dialect.dropTrigger(sql, "trg_del", "items")
+
+          yield* Dialect.setTriggerMode(sql, [], "IMMEDIATE")
+          yield* Dialect.flushDeferredTriggers(sql, [])
+          yield* sql.withTransaction(
+            Effect.gen(function*() {
+              yield* Dialect.setTriggerMode(sql, [["items", "no_such_trg"]], "IMMEDIATE")
+              yield* Dialect.flushDeferredTriggers(sql, [["items", "no_such_trg"]])
             })
           )
-        )
-      )
-    )
-    expect(Exit.isFailure(invalidUrlExit)).toBe(true)
 
-    const selSchema = tempSchema("sel")
-    try {
-      await Effect.runPromise(
-        Effect.scoped(
-          Effect.gen(function*() {
-            const sql = yield* SqlClient.SqlClient
-            const rows = yield* sql`SELECT basename FROM flows_store_owner WHERE id = 1`
-            expect(rows).toEqual([{ basename: "store-1.sqlite" }])
-          }).pipe(
-            Effect.provide(
-              NodeDatabase.layer({
-                filename: "/tmp/dir1/store-1.sqlite",
-                settings: {
-                  SMITHERS_POSTGRES_URL: PG_URL,
-                  SMITHERS_POSTGRES_SCHEMA: selSchema
-                }
-              })
-            )
+          yield* sql`INSERT INTO items VALUES (10, 'hello')`
+          const qRows = yield* Dialect.query<{ readonly val: string }>(
+            sql,
+            "SELECT val FROM items WHERE id = ?",
+            [10]
           )
-        )
-      )
-      await Effect.runPromise(
-        Effect.scoped(
-          Effect.gen(function*() {
-            const sql = yield* SqlClient.SqlClient
-            const rows = yield* sql`SELECT 1 AS ok`
-            expect(rows.length).toBe(1)
-          }).pipe(
-            Effect.provide(
-              NodeDatabase.layer({
-                filename: "/tmp/dir2/store-1.sqlite",
-                readOnly: true,
-                settings: {
-                  SMITHERS_POSTGRES_URL: PG_URL,
-                  SMITHERS_POSTGRES_SCHEMA: selSchema
-                }
-              })
-            )
+          expect(qRows[0]?.val).toBe("hello")
+
+          const rtOk = yield* Dialect.readTransaction(sql, sql`SELECT val FROM items WHERE id = 10`)
+          expect(rtOk.length).toBe(1)
+          const rtFail = yield* Effect.exit(
+            Dialect.readTransaction(sql, Effect.fail("boom-rt"))
           )
-        )
-      )
-      const collisionExit = await Effect.runPromiseExit(
+          expect(Exit.isFailure(rtFail)).toBe(true)
+          const nestedRt = yield* sql.withTransaction(
+            Dialect.readTransaction(sql, sql`SELECT val FROM items WHERE id = 10`)
+          )
+          expect(nestedRt.length).toBe(1)
+
+          yield* sql`CREATE TABLE p_parent (id INTEGER PRIMARY KEY CHECK (id > 0))`
+          yield* sql`CREATE TABLE p_child (id INTEGER PRIMARY KEY, pid INTEGER REFERENCES p_parent(id))`
+          yield* TestDatabase.checks(sql, false)
+          yield* TestDatabase.checks(sql, true)
+          yield* TestDatabase.foreignKeys(sql, false)
+          yield* TestDatabase.foreignKeys(sql, true)
+
+          yield* Effect.scoped(
+            Effect.gen(function*() {
+              const conn = yield* sql.reserve
+              yield* conn.executeValuesUnprepared("SELECT 1", [])
+              yield* conn.executeUnprepared("SELECT 1", [], undefined)
+            })
+          )
+          yield* sql.withTransaction(
+            Effect.gen(function*() {
+              const [conn] = (yield* Effect.serviceOption(sql.transactionService)).pipe(
+                (o) => (o._tag === "Some" ? o.value : (() => {
+                  throw new Error("no tx")
+                })())
+              )
+              yield* conn.executeValues("SELECT 1", [])
+              yield* conn.executeValuesUnprepared("SELECT 1", [])
+              const streamed = yield* Stream.runCollect(conn.executeStream("SELECT 1 AS n", [], undefined))
+              expect(streamed.length).toBe(1)
+            })
+          )
+
+          // Nested partition join + widen + savepoint rollback releasing schema and partition locks
+          const writer = DurableWriter.make(sql)
+          yield* writer.write(
+            Effect.gen(function*() {
+              // Join second partition inside p1, then roll back savepoint
+              yield* Effect.exit(
+                writer.write(
+                  Effect.andThen(sql`SELECT 1`, Effect.fail("rollback-p2")),
+                  { partition: "p2" }
+                )
+              )
+              // Widen to whole schema lock, then roll back savepoint
+              yield* Effect.exit(
+                writer.write(
+                  Effect.andThen(sql`SELECT 1`, Effect.fail("rollback-wide"))
+                )
+              )
+            }),
+            { partition: "p1" }
+          )
+          expect(schema.length).toBeGreaterThan(0)
+        }))
+
+      await withPgSchema("mig", (_schema, sql) =>
+        Effect.gen(function*() {
+          const set1: Migrations.MigrationSet = {
+            namespace: "w10",
+            idOffset: 0,
+            immediateTriggers: [["w10_tbl", "w10_trg"]],
+            migrations: {
+              "0001_init": Effect.gen(function*() {
+                const s = yield* SqlClient.SqlClient
+                yield* s`CREATE TABLE w10_tbl (id INTEGER PRIMARY KEY)`
+              })
+            }
+          }
+          const setHigh: Migrations.MigrationSet = {
+            namespace: "w10b",
+            idOffset: 1000,
+            migrations: {
+              "0001_hi": Effect.void
+            }
+          }
+          const first = yield* Migrations.run([set1, setHigh])
+          expect(first.length).toBe(2)
+
+          // Forward addition in earlier block via Migrations.loader (exercises loader's onLoaderApplied callback & block upgrade)
+          const set1Extended: Migrations.MigrationSet = {
+            namespace: "w10",
+            idOffset: 0,
+            migrations: {
+              "0001_init": Effect.void,
+              "0002_extra": Effect.void
+            }
+          }
+          const loadedExtended = yield* Migrations.loader([set1Extended, setHigh])
+          expect(loadedExtended.length).toBe(3)
+
+          // Forward addition in earlier block that FAILS (exercises Migrations.ts line 307)
+          const set1Fail: Migrations.MigrationSet = {
+            namespace: "w10",
+            idOffset: 0,
+            migrations: {
+              "0001_init": Effect.void,
+              "0002_extra": Effect.void,
+              "0003_boom": Effect.fail(new Error("block-upgrade-boom"))
+            }
+          }
+          const failUpgrade = yield* Effect.exit(Migrations.loader([set1Fail, setHigh]))
+          expect(Exit.isFailure(failUpgrade)).toBe(true)
+
+          const second = yield* Migrations.run([set1Extended, setHigh])
+          expect(second).toEqual([])
+
+          const setRenamed: Migrations.MigrationSet = {
+            namespace: "w10",
+            idOffset: 0,
+            previousNames: { "0001_init_v2": ["init"] },
+            migrations: {
+              "0001_init_v2": Effect.void,
+              "0002_extra": Effect.void
+            }
+          }
+          const third = yield* Migrations.run([setRenamed, setHigh])
+          expect(third).toEqual([])
+
+          const fourth = yield* sql.withTransaction(Migrations.run([set1Extended, setHigh]))
+          expect(fourth).toEqual([])
+
+          const badOffset = yield* Effect.exit(
+            Migrations.run([{ namespace: "bad", idOffset: 1.5, migrations: { "0001_a": Effect.void } }])
+          )
+          expect(Exit.isFailure(badOffset)).toBe(true)
+        }))
+
+      // Invalid URL syntax in PostgresSelection
+      const invalidUrlExit = await Effect.runPromiseExit(
         Effect.scoped(
           Effect.gen(function*() {
             return yield* SqlClient.SqlClient
           }).pipe(
             Effect.provide(
               NodeDatabase.layer({
-                filename: "/tmp/dir2/store_1.sqlite",
-                settings: {
-                  SMITHERS_POSTGRES_URL: PG_URL,
-                  SMITHERS_POSTGRES_SCHEMA: selSchema
-                }
+                filename: "/tmp/x.sqlite",
+                settings: { SMITHERS_POSTGRES_URL: "postgres://[::1" }
               })
             )
           )
         )
       )
-      expect(Exit.isFailure(collisionExit)).toBe(true)
+      expect(Exit.isFailure(invalidUrlExit)).toBe(true)
 
-      await Effect.runPromise(
+      const selSchema = tempSchema("sel")
+      try {
+        await Effect.runPromise(
+          Effect.scoped(
+            Effect.gen(function*() {
+              const sql = yield* SqlClient.SqlClient
+              const rows = yield* sql`SELECT basename FROM flows_store_owner WHERE id = 1`
+              expect(rows).toEqual([{ basename: "store-1.sqlite" }])
+            }).pipe(
+              Effect.provide(
+                NodeDatabase.layer({
+                  filename: "/tmp/dir1/store-1.sqlite",
+                  settings: {
+                    SMITHERS_POSTGRES_URL: PG_URL,
+                    SMITHERS_POSTGRES_SCHEMA: selSchema
+                  }
+                })
+              )
+            )
+          )
+        )
+        await Effect.runPromise(
+          Effect.scoped(
+            Effect.gen(function*() {
+              const sql = yield* SqlClient.SqlClient
+              const rows = yield* sql`SELECT 1 AS ok`
+              expect(rows.length).toBe(1)
+            }).pipe(
+              Effect.provide(
+                NodeDatabase.layer({
+                  filename: "/tmp/dir2/store-1.sqlite",
+                  readOnly: true,
+                  settings: {
+                    SMITHERS_POSTGRES_URL: PG_URL,
+                    SMITHERS_POSTGRES_SCHEMA: selSchema
+                  }
+                })
+              )
+            )
+          )
+        )
+        const collisionExit = await Effect.runPromiseExit(
+          Effect.scoped(
+            Effect.gen(function*() {
+              return yield* SqlClient.SqlClient
+            }).pipe(
+              Effect.provide(
+                NodeDatabase.layer({
+                  filename: "/tmp/dir2/store_1.sqlite",
+                  settings: {
+                    SMITHERS_POSTGRES_URL: PG_URL,
+                    SMITHERS_POSTGRES_SCHEMA: selSchema
+                  }
+                })
+              )
+            )
+          )
+        )
+        expect(Exit.isFailure(collisionExit)).toBe(true)
+
+        await Effect.runPromise(
+          Effect.scoped(
+            Effect.gen(function*() {
+              const sql = yield* SqlClient.SqlClient
+              const rows = yield* sql`SELECT 1 AS ok`
+              expect(rows.length).toBe(1)
+            }).pipe(
+              Effect.provide(
+                NodeDatabase.layer({
+                  filename: PG_URL,
+                  settings: { SMITHERS_POSTGRES_SCHEMA: selSchema }
+                })
+              )
+            )
+          )
+        )
+      } finally {
+        await Effect.runPromise(
+          Effect.scoped(
+            Effect.gen(function*() {
+              const sql = yield* SqlClient.SqlClient
+              yield* TestDatabase.dropSchema(sql, selSchema)
+              yield* TestDatabase.dropSchema(sql, `${selSchema}_store_1_sqlite`)
+            }).pipe(Effect.provide(PostgresDatabase.layer({ url: PG_URL, driver: Pg, schema: selSchema })))
+          )
+        )
+      }
+
+      const prevPgUrl = process.env.SMITHERS_TEST_PG_URL
+      try {
+        delete process.env.SMITHERS_TEST_PG_URL
+        await Effect.runPromise(
+          Effect.scoped(
+            Effect.gen(function*() {
+              const sql = yield* SqlClient.SqlClient
+              expect(Dialect.isPostgres(sql)).toBe(false)
+            }).pipe(Effect.provide(TestDatabase.layer))
+          )
+        )
+        process.env.SMITHERS_TEST_PG_URL = PG_URL
+        await Effect.runPromise(
+          Effect.scoped(
+            Effect.gen(function*() {
+              const sql = yield* SqlClient.SqlClient
+              expect(Dialect.isPostgres(sql)).toBe(true)
+            }).pipe(Effect.provide(TestDatabase.layer))
+          )
+        )
+      } finally {
+        if (prevPgUrl === undefined) delete process.env.SMITHERS_TEST_PG_URL
+        else process.env.SMITHERS_TEST_PG_URL = prevPgUrl
+      }
+    },
+    60_000
+  )
+
+  it(
+    "fuzzes Migrations validation errors, failing body, bigint ids, PostgresDatabase lock errors, and SlowNetwork flush",
+    async () => {
+      const invalidSets: ReadonlyArray<Migrations.MigrationSet> = [
+        { namespace: "n", idOffset: 1.5, migrations: { "0001_a": Effect.void } },
+        { namespace: "n", idOffset: Number.MAX_SAFE_INTEGER + 2, migrations: { "0001_a": Effect.void } },
+        { namespace: "n", idOffset: 2_147_484_000, migrations: { "0001_a": Effect.void } },
+        {
+          namespace: "n",
+          idOffset: 0,
+          previousNames: { "0002_missing": ["old"] },
+          migrations: { "0001_a": Effect.void }
+        },
+        {
+          namespace: "n",
+          idOffset: 0,
+          previousNames: { "0001_a": [" untrimmed "] },
+          migrations: { "0001_a": Effect.void }
+        },
+        { namespace: "n", idOffset: 2_147_483_000, migrations: { "0999_overflow": Effect.void } }
+      ]
+      for (const set of invalidSets) {
+        const exit = await Effect.runPromiseExit(
+          Effect.scoped(
+            Migrations.run([set]).pipe(Effect.provide(TestDatabase.sqliteLayer), Effect.provide(silentLogger))
+          )
+        )
+        expect(Exit.isFailure(exit)).toBe(true)
+      }
+
+      const failBodyExit = await Effect.runPromiseExit(
+        Effect.scoped(
+          Migrations.run([
+            {
+              namespace: "failns",
+              idOffset: 0,
+              migrations: { "0001_boom": Effect.fail(new Error("migration exploded")) }
+            }
+          ]).pipe(Effect.provide(TestDatabase.sqliteLayer), Effect.provide(silentLogger))
+        )
+      )
+      expect(Exit.isFailure(failBodyExit)).toBe(true)
+
+      const bigintExit = await Effect.runPromiseExit(
+        Effect.scoped(
+          Migrations.run([
+            { namespace: "ns", idOffset: 0, migrations: { "0001_init": Effect.void } }
+          ]).pipe(
+            Effect.provide(
+              PostgresDatabase.layer({
+                url: PG_URL,
+                driver: makeFakePgDriver({ returnBigintMigration: true }),
+                writerLockTimeout: Duration.infinity,
+                writerLockAttempts: 0
+              })
+            ),
+            Effect.provide(silentLogger)
+          )
+        )
+      )
+      expect(Exit.isSuccess(bigintExit)).toBe(true)
+
+      // to_regclass failing in installed()
+      const regclassFailExit = await Effect.runPromiseExit(
+        Effect.scoped(
+          Migrations.run([
+            { namespace: "ns", idOffset: 0, migrations: { "0001_init": Effect.void } }
+          ]).pipe(
+            Effect.provide(
+              PostgresDatabase.layer({
+                url: PG_URL,
+                driver: makeFakePgDriver({ failRegclass: true, failSelect: true })
+              })
+            ),
+            Effect.provide(silentLogger)
+          )
+        )
+      )
+      expect(Exit.isFailure(regclassFailExit)).toBe(true)
+
+      const badStateExit = await Effect.runPromiseExit(
+        Effect.scoped(
+          Migrations.run([
+            { namespace: "ns", idOffset: 0, migrations: { "0001_init": Effect.void } }
+          ]).pipe(
+            Effect.provide(
+              PostgresDatabase.layer({
+                url: PG_URL,
+                driver: makeFakePgDriver({ failSelect: true })
+              })
+            ),
+            Effect.provide(silentLogger)
+          )
+        )
+      )
+      expect(Exit.isFailure(badStateExit)).toBe(true)
+
+      const unknownLockExit = await Effect.runPromiseExit(
         Effect.scoped(
           Effect.gen(function*() {
             const sql = yield* SqlClient.SqlClient
-            const rows = yield* sql`SELECT 1 AS ok`
-            expect(rows.length).toBe(1)
+            yield* sql.withTransaction(sql`SELECT 1`)
           }).pipe(
             Effect.provide(
-              NodeDatabase.layer({
-                filename: PG_URL,
-                settings: { SMITHERS_POSTGRES_SCHEMA: selSchema }
+              PostgresDatabase.layer({
+                url: PG_URL,
+                driver: makeFakePgDriver({ lockFailure: "unknown" }),
+                writerLockTimeout: Duration.millis(5),
+                writerLockAttempts: 2
               })
-            )
+            ),
+            Effect.provide(silentLogger)
           )
         )
       )
-    } finally {
-      await Effect.runPromise(
+      expect(Exit.isFailure(unknownLockExit)).toBe(true)
+
+      const timeoutExhaustExit = await Effect.runPromiseExit(
         Effect.scoped(
           Effect.gen(function*() {
             const sql = yield* SqlClient.SqlClient
-            yield* TestDatabase.dropSchema(sql, selSchema)
-            yield* TestDatabase.dropSchema(sql, `${selSchema}_store_1_sqlite`)
-          }).pipe(Effect.provide(PostgresDatabase.layer({ url: PG_URL, driver: Pg, schema: selSchema })))
+            yield* sql.withTransaction(sql`SELECT 1`)
+          }).pipe(
+            Effect.provide(
+              PostgresDatabase.layer({
+                url: PG_URL,
+                driver: makeFakePgDriver({ lockFailure: "timeout" }),
+                writerLockTimeout: Duration.millis(1),
+                writerLockAttempts: 1
+              })
+            ),
+            Effect.provide(silentLogger)
+          )
         )
       )
-    }
+      expect(Exit.isFailure(timeoutExhaustExit)).toBe(true)
 
-    const prevPgUrl = process.env.SMITHERS_TEST_PG_URL
-    try {
-      delete process.env.SMITHERS_TEST_PG_URL
-      await Effect.runPromise(
-        Effect.scoped(
-          Effect.gen(function*() {
-            const sql = yield* SqlClient.SqlClient
-            expect(Dialect.isPostgres(sql)).toBe(false)
-          }).pipe(Effect.provide(TestDatabase.layer))
-        )
-      )
-      process.env.SMITHERS_TEST_PG_URL = PG_URL
-      await Effect.runPromise(
-        Effect.scoped(
-          Effect.gen(function*() {
-            const sql = yield* SqlClient.SqlClient
-            expect(Dialect.isPostgres(sql)).toBe(true)
-          }).pipe(Effect.provide(TestDatabase.layer))
-        )
-      )
-    } finally {
-      if (prevPgUrl === undefined) delete process.env.SMITHERS_TEST_PG_URL
-      else process.env.SMITHERS_TEST_PG_URL = prevPgUrl
-    }
-  }, 60_000)
+      expect(SlowNetworkTarget.endpoint("postgres://user:pass@127.0.0.1/db")).toEqual({
+        host: "127.0.0.1",
+        port: 5432
+      })
+      expect(SlowNetworkTarget.endpoint("postgres://user:pass@127.0.0.1:54321/db")).toEqual({
+        host: "127.0.0.1",
+        port: 54321
+      })
 
-  it("fuzzes Migrations validation errors, failing body, bigint ids, PostgresDatabase lock errors, and SlowNetwork flush", async () => {
-    const invalidSets: ReadonlyArray<Migrations.MigrationSet> = [
-      { namespace: "n", idOffset: 1.5, migrations: { "0001_a": Effect.void } },
-      { namespace: "n", idOffset: Number.MAX_SAFE_INTEGER + 2, migrations: { "0001_a": Effect.void } },
-      { namespace: "n", idOffset: 2_147_484_000, migrations: { "0001_a": Effect.void } },
-      { namespace: "n", idOffset: 0, previousNames: { "0002_missing": ["old"] }, migrations: { "0001_a": Effect.void } },
-      { namespace: "n", idOffset: 0, previousNames: { "0001_a": [" untrimmed "] }, migrations: { "0001_a": Effect.void } },
-      { namespace: "n", idOffset: 2_147_483_000, migrations: { "0999_overflow": Effect.void } }
-    ]
-    for (const set of invalidSets) {
-      const exit = await Effect.runPromiseExit(
-        Effect.scoped(
-          Migrations.run([set]).pipe(Effect.provide(TestDatabase.sqliteLayer), Effect.provide(silentLogger))
-        )
-      )
-      expect(Exit.isFailure(exit)).toBe(true)
-    }
-
-    const failBodyExit = await Effect.runPromiseExit(
-      Effect.scoped(
-        Migrations.run([
-          {
-            namespace: "failns",
-            idOffset: 0,
-            migrations: { "0001_boom": Effect.fail(new Error("migration exploded")) }
-          }
-        ]).pipe(Effect.provide(TestDatabase.sqliteLayer), Effect.provide(silentLogger))
-      )
-    )
-    expect(Exit.isFailure(failBodyExit)).toBe(true)
-
-    const bigintExit = await Effect.runPromiseExit(
-      Effect.scoped(
-        Migrations.run([
-          { namespace: "ns", idOffset: 0, migrations: { "0001_init": Effect.void } }
-        ]).pipe(
-          Effect.provide(
-            PostgresDatabase.layer({
-              url: PG_URL,
-              driver: makeFakePgDriver({ returnBigintMigration: true }),
-              writerLockTimeout: Duration.infinity,
-              writerLockAttempts: 0
-            })
-          ),
-          Effect.provide(silentLogger)
-        )
-      )
-    )
-    expect(Exit.isSuccess(bigintExit)).toBe(true)
-
-    // to_regclass failing in installed()
-    const regclassFailExit = await Effect.runPromiseExit(
-      Effect.scoped(
-        Migrations.run([
-          { namespace: "ns", idOffset: 0, migrations: { "0001_init": Effect.void } }
-        ]).pipe(
-          Effect.provide(
-            PostgresDatabase.layer({
-              url: PG_URL,
-              driver: makeFakePgDriver({ failRegclass: true, failSelect: true })
-            })
-          ),
-          Effect.provide(silentLogger)
-        )
-      )
-    )
-    expect(Exit.isFailure(regclassFailExit)).toBe(true)
-
-    const badStateExit = await Effect.runPromiseExit(
-      Effect.scoped(
-        Migrations.run([
-          { namespace: "ns", idOffset: 0, migrations: { "0001_init": Effect.void } }
-        ]).pipe(
-          Effect.provide(
-            PostgresDatabase.layer({
-              url: PG_URL,
-              driver: makeFakePgDriver({ failSelect: true })
-            })
-          ),
-          Effect.provide(silentLogger)
-        )
-      )
-    )
-    expect(Exit.isFailure(badStateExit)).toBe(true)
-
-    const unknownLockExit = await Effect.runPromiseExit(
-      Effect.scoped(
-        Effect.gen(function*() {
-          const sql = yield* SqlClient.SqlClient
-          yield* sql.withTransaction(sql`SELECT 1`)
-        }).pipe(
-          Effect.provide(
-            PostgresDatabase.layer({
-              url: PG_URL,
-              driver: makeFakePgDriver({ lockFailure: "unknown" }),
-              writerLockTimeout: Duration.millis(5),
-              writerLockAttempts: 2
-            })
-          ),
-          Effect.provide(silentLogger)
-        )
-      )
-    )
-    expect(Exit.isFailure(unknownLockExit)).toBe(true)
-
-    const timeoutExhaustExit = await Effect.runPromiseExit(
-      Effect.scoped(
-        Effect.gen(function*() {
-          const sql = yield* SqlClient.SqlClient
-          yield* sql.withTransaction(sql`SELECT 1`)
-        }).pipe(
-          Effect.provide(
-            PostgresDatabase.layer({
-              url: PG_URL,
-              driver: makeFakePgDriver({ lockFailure: "timeout" }),
-              writerLockTimeout: Duration.millis(1),
-              writerLockAttempts: 1
-            })
-          ),
-          Effect.provide(silentLogger)
-        )
-      )
-    )
-    expect(Exit.isFailure(timeoutExhaustExit)).toBe(true)
-
-    expect(SlowNetworkTarget.endpoint("postgres://user:pass@127.0.0.1/db")).toEqual({
-      host: "127.0.0.1",
-      port: 5432
-    })
-    expect(SlowNetworkTarget.endpoint("postgres://user:pass@127.0.0.1:54321/db")).toEqual({
-      host: "127.0.0.1",
-      port: 54321
-    })
-
-    const echoServer = Net.createServer((socket) => {
-      socket.on("data", (chunk) => socket.write(chunk))
-      socket.on("end", () => socket.end())
-    })
-    await new Promise<void>((resolve) => echoServer.listen(0, "127.0.0.1", resolve))
-    try {
-      const addr = echoServer.address() as Net.AddressInfo
-      await Effect.runPromise(
-        Effect.scoped(
-          Effect.gen(function*() {
-            const proxyUrl = yield* SlowNetwork.proxy(`postgres://u:p@127.0.0.1:${addr.port}/db`, {
-              delayMs: 5
-            })
-            const ep = SlowNetworkTarget.endpoint(proxyUrl)
-            const reply = yield* Effect.promise(
-              () =>
-                new Promise<string>((resolve, reject) => {
-                  const client = Net.connect(ep.port, ep.host, () => {
-                    client.write("ping")
+      const echoServer = Net.createServer((socket) => {
+        socket.on("data", (chunk) => socket.write(chunk))
+        socket.on("end", () => socket.end())
+      })
+      await new Promise<void>((resolve) => echoServer.listen(0, "127.0.0.1", resolve))
+      try {
+        const addr = echoServer.address() as Net.AddressInfo
+        await Effect.runPromise(
+          Effect.scoped(
+            Effect.gen(function*() {
+              const proxyUrl = yield* SlowNetwork.proxy(`postgres://u:p@127.0.0.1:${addr.port}/db`, {
+                delayMs: 5
+              })
+              const ep = SlowNetworkTarget.endpoint(proxyUrl)
+              const reply = yield* Effect.promise(
+                () =>
+                  new Promise<string>((resolve, reject) => {
+                    const client = Net.connect(ep.port, ep.host, () => {
+                      client.write("ping")
+                    })
+                    const chunks: Array<Uint8Array> = []
+                    client.on("data", (c) => {
+                      chunks.push(typeof c === "string" ? Buffer.from(c) : c)
+                      client.end()
+                    })
+                    client.on("close", () => resolve(Buffer.concat(chunks).toString("utf8")))
+                    client.on("error", reject)
                   })
-                  const chunks: Array<Uint8Array> = []
-                  client.on("data", (c) => {
-                    chunks.push(typeof c === "string" ? Buffer.from(c) : c)
-                    client.end()
-                  })
-                  client.on("close", () => resolve(Buffer.concat(chunks).toString("utf8")))
-                  client.on("error", reject)
-                })
-            )
-            expect(reply).toBe("ping")
-          })
+              )
+              expect(reply).toBe("ping")
+            })
+          )
         )
-      )
-    } finally {
-      await new Promise<void>((resolve) => echoServer.close(() => resolve()))
-    }
-  }, 60_000)
+      } finally {
+        await new Promise<void>((resolve) => echoServer.close(() => resolve()))
+      }
+    },
+    60_000
+  )
 })

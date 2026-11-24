@@ -46,7 +46,15 @@ const state = (root: string) => {
   const db = new DatabaseSync(join(root, ".flows", "engine.db"), { readOnly: true })
   try {
     return {
-      runs: db.prepare("select run_id, status, waiting_reason, state_json from flows_runs order by run_id").all(),
+      runs: db.prepare("select run_id, status, waiting_reason, state_json from flows_runs order by run_id").all()
+        .filter(
+          (row) => {
+            const flowName = typeof row.state_json === "string"
+              ? (JSON.parse(row.state_json) as { flowName?: string }).flowName
+              : undefined
+            return !(flowName?.startsWith("smithers/memory/") || flowName?.startsWith("smithers/health/"))
+          }
+        ),
       attempts: db.prepare(
         "select run_id, step_key_digest, attempt, state from flows_attempts order by run_id, step_key_digest, attempt"
       ).all(),

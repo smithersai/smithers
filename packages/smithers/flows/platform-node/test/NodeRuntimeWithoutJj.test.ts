@@ -120,7 +120,7 @@ describe("NodeRuntime.layerHost without jj", () => {
         rules: [
           new Permission.Rule({
             effect: "allow",
-            pattern: new Capability.CapabilityPattern({ action: "fs:read", resource: `${workspace()}/**` })
+            pattern: new Capability.CapabilityPattern({ action: "fs:read", resource: join(workspace(), "**") })
           }),
           new Permission.Rule({
             effect: "allow",

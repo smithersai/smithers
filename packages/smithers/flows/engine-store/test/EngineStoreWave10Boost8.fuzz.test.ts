@@ -6,20 +6,7 @@ import { Fuzz } from "@smthrs/fuzz"
 import { CallFact, Journal, JournalEvent } from "@smthrs/journal"
 import { KeyMaterial, Plan } from "@smthrs/plan"
 import { Ownership, RunStore } from "@smthrs/run-store"
-import {
-  Arbitrary,
-  Clock,
-  Context,
-  Duration,
-  Effect,
-  Exit,
-  Fiber,
-  Latch,
-  Layer,
-  Logger,
-  Option,
-  Schema
-} from "effect"
+import { Arbitrary, Clock, Context, Duration, Effect, Exit, Fiber, Latch, Layer, Logger, Option, Schema } from "effect"
 import * as SqlClient from "effect/sql/SqlClient"
 import * as TestClock from "effect/testing/TestClock"
 import { describe, expect, it } from "vitest"
@@ -47,81 +34,96 @@ const assertPassed = <A, E>(report: Fuzz.Report<A, E>): void => {
 }
 
 describe("EngineStore Wave 10 Boost8: RetentionOps direct deleteRuns pinning & unmanaged-tx refusal", () => {
-  it("fuzzes RetentionOps.deleteRuns ancestor pinning, flows_run_parents pins, unmanaged-tx refusal & scan_failed", async () => {
-    const arb = Arbitrary.schema(
-      Schema.Struct({
-        dryRun: Schema.Boolean,
-        includeRunParentPin: Schema.Boolean
-      })
-    )
-    const report = await Effect.runPromise(
-      Fuzz.run(
-        arb,
-        (input) =>
-          Effect.scoped(
-            Effect.gen(function*() {
-              const sql = yield* SqlClient.SqlClient
-              const runs = yield* RunStore.RunStore
-              const state = yield* DurableEngineState.DurableEngineState
-
-              // Family: gp-1 -> p-1 -> c-1 (c-1 is NOT in candidates so gp-1 and p-1 MUST be pinned!)
-              // Also: lp-1 <- lc-1 via flows_run_parents (lc-1 NOT in candidates so lp-1 MUST be pinned!)
-              // Also: orphan-1 (unpinned, MUST be deleted!)
-              yield* runs.create("gp-1", "{}")
-              yield* runs.create("p-1", "{}", { parentRunId: "gp-1" })
-              yield* runs.create("c-1", "{}", { parentRunId: "p-1" })
-              yield* runs.create("lp-1", "{}")
-              yield* runs.create("lc-1", "{}")
-              yield* runs.create("orphan-1", "{}")
-              yield* runs.create("unmanaged-1", "{}")
-
-              if (input.includeRunParentPin) {
-                yield* state.recordRunParent("lc-1", "lp-1")
-              }
-
-              // 1. Unmanaged transaction (no DurableWriter, no Journal in context) -> MUST refuse (!registered)!
-              const unmanagedExit = yield* sql.withTransaction(
-                RetentionOps.deleteRuns(sql, [{ runId: "unmanaged-1", parentRunId: null }], { dryRun: false, assumeLadder: false })
-              ).pipe(Effect.exit)
-              expect(Exit.isFailure(unmanagedExit)).toBe(true)
-
-              // 2. Managed DurableWriter transaction with gp-1, p-1, lp-1, orphan-1 as candidates
-              const res = yield* DurableWriter.make(sql).write(
-                RetentionOps.deleteRuns(sql, [{ runId: "gp-1", parentRunId: null }, { runId: "p-1", parentRunId: "gp-1" }, { runId: "lp-1", parentRunId: null }, { runId: "orphan-1", parentRunId: null }], {
-                  dryRun: input.dryRun,
-                  assumeLadder: false
-                })
-              )
-              // gp-1 and p-1 are pinned by non-candidate child c-1
-              expect(res.runIds).not.toContain("gp-1")
-              expect(res.runIds).not.toContain("p-1")
-              expect(res.runIds).toContain("orphan-1")
-              // Also mark lp-1 terminal & run RetentionOps.make().retain to exercise edgePinnedIn (L942-943)!
-              yield* TestDatabase.checks(sql, false)
-              yield* sql`UPDATE flows_runs SET status = 'completed', started_at_ms = 1, finished_at_ms = 10 WHERE run_id = 'lp-1'`
-              yield* TestDatabase.checks(sql, true)
-              const ops = yield* RetentionOps.make()
-              const opsRep = yield* ops.retain({ olderThanMs: 0, dryRun: true })
-              expect(opsRep.dryRun).toBe(true)
-
-              // 3. scan_failed when flows_runs is dropped on a disposable SQLite connection
-              const badScan = yield* RetentionOps.deleteRuns(sql, [{ runId: "x", parentRunId: null }], { dryRun: true, assumeLadder: false }).pipe(
-                Effect.map(() => "ok"),
-                Effect.exit
-              )
-              expect(Exit.isSuccess(badScan)).toBe(true)
-
-              return true
-            }).pipe(
-              Effect.provide(TestStores.layerAt(":memory:")),
-              withCrypto
-            )
-          ),
-        { executions: Math.min(executions, 16), seed }
+  it(
+    "fuzzes RetentionOps.deleteRuns ancestor pinning, flows_run_parents pins, unmanaged-tx refusal & scan_failed",
+    async () => {
+      const arb = Arbitrary.schema(
+        Schema.Struct({
+          dryRun: Schema.Boolean,
+          includeRunParentPin: Schema.Boolean
+        })
       )
-    )
-    assertPassed(report)
-  }, 60_000)
+      const report = await Effect.runPromise(
+        Fuzz.run(
+          arb,
+          (input) =>
+            Effect.scoped(
+              Effect.gen(function*() {
+                const sql = yield* SqlClient.SqlClient
+                const runs = yield* RunStore.RunStore
+                const state = yield* DurableEngineState.DurableEngineState
+
+                // Family: gp-1 -> p-1 -> c-1 (c-1 is NOT in candidates so gp-1 and p-1 MUST be pinned!)
+                // Also: lp-1 <- lc-1 via flows_run_parents (lc-1 NOT in candidates so lp-1 MUST be pinned!)
+                // Also: orphan-1 (unpinned, MUST be deleted!)
+                yield* runs.create("gp-1", "{}")
+                yield* runs.create("p-1", "{}", { parentRunId: "gp-1" })
+                yield* runs.create("c-1", "{}", { parentRunId: "p-1" })
+                yield* runs.create("lp-1", "{}")
+                yield* runs.create("lc-1", "{}")
+                yield* runs.create("orphan-1", "{}")
+                yield* runs.create("unmanaged-1", "{}")
+
+                if (input.includeRunParentPin) {
+                  yield* state.recordRunParent("lc-1", "lp-1")
+                }
+
+                // 1. Unmanaged transaction (no DurableWriter, no Journal in context) -> MUST refuse (!registered)!
+                const unmanagedExit = yield* sql.withTransaction(
+                  RetentionOps.deleteRuns(sql, [{ runId: "unmanaged-1", parentRunId: null }], {
+                    dryRun: false,
+                    assumeLadder: false
+                  })
+                ).pipe(Effect.exit)
+                expect(Exit.isFailure(unmanagedExit)).toBe(true)
+
+                // 2. Managed DurableWriter transaction with gp-1, p-1, lp-1, orphan-1 as candidates
+                const res = yield* DurableWriter.make(sql).write(
+                  RetentionOps.deleteRuns(sql, [
+                    { runId: "gp-1", parentRunId: null },
+                    { runId: "p-1", parentRunId: "gp-1" },
+                    { runId: "lp-1", parentRunId: null },
+                    { runId: "orphan-1", parentRunId: null }
+                  ], {
+                    dryRun: input.dryRun,
+                    assumeLadder: false
+                  })
+                )
+                // gp-1 and p-1 are pinned by non-candidate child c-1
+                expect(res.runIds).not.toContain("gp-1")
+                expect(res.runIds).not.toContain("p-1")
+                expect(res.runIds).toContain("orphan-1")
+                // Also mark lp-1 terminal & run RetentionOps.make().retain to exercise edgePinnedIn (L942-943)!
+                yield* TestDatabase.checks(sql, false)
+                yield* sql`UPDATE flows_runs SET status = 'completed', started_at_ms = 1, finished_at_ms = 10 WHERE run_id = 'lp-1'`
+                yield* TestDatabase.checks(sql, true)
+                const ops = yield* RetentionOps.make()
+                const opsRep = yield* ops.retain({ olderThanMs: 0, dryRun: true })
+                expect(opsRep.dryRun).toBe(true)
+
+                // 3. scan_failed when flows_runs is dropped on a disposable SQLite connection
+                const badScan = yield* RetentionOps.deleteRuns(sql, [{ runId: "x", parentRunId: null }], {
+                  dryRun: true,
+                  assumeLadder: false
+                }).pipe(
+                  Effect.map(() => "ok"),
+                  Effect.exit
+                )
+                expect(Exit.isSuccess(badScan)).toBe(true)
+
+                return true
+              }).pipe(
+                Effect.provide(TestStores.layerAt(":memory:")),
+                withCrypto
+              )
+            ),
+          { executions: Math.min(executions, 16), seed }
+        )
+      )
+      assertPassed(report)
+    },
+    60_000
+  )
 })
 
 describe("EngineStore Wave 10 Boost8: ActionPersistence CallFacts settled & replay", () => {
@@ -365,7 +367,9 @@ describe("EngineStore Wave 10 Boost8: PlanScheduler recoveredMerges & PlanMergeS
           yield* activate("ps-b8-run")
           const sql = yield* SqlClient.SqlClient
           const merges = yield* PlanMergeStore.PlanMergeStore
-          yield* sql`INSERT INTO flows_plan_input_heads (run_id, plan_id, base_digest, environment_digest, merge_state_version, generation) VALUES (${"ps-b8-run"}, ${"ps-b8-rec"}, ${plan.baseDigest}, ${"0".repeat(64)}, ${1}, ${0})`
+          yield* sql`INSERT INTO flows_plan_input_heads (run_id, plan_id, base_digest, environment_digest, merge_state_version, generation) VALUES (${"ps-b8-run"}, ${"ps-b8-rec"}, ${plan.baseDigest}, ${
+            "0".repeat(64)
+          }, ${1}, ${0})`
           // Pre-record an intent for n1 without completion -> scheduler MUST recover it!
           yield* merges.intend(
             { runId: "ps-b8-run", planId: "ps-b8-rec", baseDigest: plan.baseDigest, environmentDigest: "0".repeat(64) },

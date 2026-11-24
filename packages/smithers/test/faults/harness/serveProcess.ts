@@ -216,7 +216,8 @@ export const controlClient = (
   )
   const layer = ControlClient.layer({
     url: `${options.url.replace(/\/+$/, "")}/rpc`,
-    ...(options.credential === undefined ? {} : { credential: options.credential })
+    ...(options.credential === undefined ? {} : { credential: options.credential }),
+    watchTransport: "socket"
   }).pipe(
     Layer.provide([NodeHttpClient.layerUndici, websocket, RpcSerialization.layerNdjson])
   )

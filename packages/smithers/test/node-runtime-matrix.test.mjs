@@ -1,3 +1,4 @@
+import { fileURLToPath } from "node:url"
 import assert from "node:assert/strict"
 import { createHash } from "node:crypto"
 import { spawn, execFileSync } from "node:child_process"
@@ -45,7 +46,7 @@ for (const kind of ["tarball", "directory"]) test("the " + kind + " matrix runs 
   t.after(() => { registry.closeAllConnections(); registry.close() })
   const output = join(root, "results")
   const result = await new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, [new URL("./node-runtime-matrix.mjs", import.meta.url).pathname, candidate], {
+    const child = spawn(process.execPath, [fileURLToPath(new URL("./node-runtime-matrix.mjs", import.meta.url)), candidate], {
       env: {
         ...process.env,
         MATRIX_OUTPUT: output, MATRIX_VERSIONS: "22.4.1,26.4.0",

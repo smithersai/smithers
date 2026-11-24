@@ -2816,6 +2816,15 @@ describe("a staged workspace", () => {
     }
     const reads = ProcessSandbox.toolchainReads("C:\\tools;C:\\other", "C:\\work", winHost)
     expect(reads).toContain("C:\\tools")
+    const mixedReads = ProcessSandbox.toolchainReads("C:\\tools:/usr/bin", "C:\\work", winHost)
+    expect(mixedReads).toContain("C:\\tools")
+    const slashHost = {
+      ...host("linux", { bwrap: "/usr/bin/bwrap" }, [], ["C:/tools", "C:/work"]),
+      entries: (candidate: string) => (candidate === "C:/tools" ? ["mytool"] : []),
+      realpath: (candidate: string) => candidate
+    }
+    const slashReads = ProcessSandbox.toolchainReads("C:/tools:/usr/bin", "C:/work", slashHost)
+    expect(slashReads).toContain("C:/tools")
     const found = ProcessSandbox.plan(
       {
         command: "mytool",

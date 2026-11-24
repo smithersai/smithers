@@ -2,10 +2,11 @@ import { describe, expect, test } from "bun:test"
 import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import { fileURLToPath } from "node:url"
 import * as Profile from "./profile.ts"
 import * as Suite from "./suite.ts"
 
-const example = new URL("./example", import.meta.url).pathname
+const example = fileURLToPath(new URL("./example", import.meta.url))
 
 describe("profile", () => {
   test("composes the suite's flow.mdx: model, effort, name and skills from its frontmatter", () => {

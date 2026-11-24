@@ -509,12 +509,15 @@ describe("@smthrs/platform-node fuzz invariants", () => {
                     })
                 )
                 const target = join(tempRoot, `priv-${safeTag}`)
-                const pinned = yield* svc.directory(tempRoot, target)
-                yield* svc.write(tempRoot, join(target, "a.bin"), new Uint8Array([1, 2, 3]))
-                yield* svc.append(join(tempRoot, "log.txt"), safeTag)
+                const canonicalTempRoot = nodeFs.realpathSync(tempRoot)
+                const pinned = yield* svc.directory(canonicalTempRoot, join(canonicalTempRoot, `priv-${safeTag}`))
+                yield* svc.write(canonicalTempRoot, join(pinned, "a.bin"), new Uint8Array([1, 2, 3]))
+                yield* svc.append(join(canonicalTempRoot, "log.txt"), safeTag)
                 const beforeEscape = seen.length
-                const escExit = yield* Effect.exit(svc.directory(tempRoot, join(tempRoot, "..", "escape")))
-                return pinned.startsWith(tempRoot) && Exit.isFailure(escExit) && seen.length === beforeEscape
+                const escExit = yield* Effect.exit(
+                  svc.directory(canonicalTempRoot, join(canonicalTempRoot, "..", "escape"))
+                )
+                return pinned.startsWith(canonicalTempRoot) && Exit.isFailure(escExit) && seen.length === beforeEscape
               }
 
               if (input.mode === "gc_collect") {

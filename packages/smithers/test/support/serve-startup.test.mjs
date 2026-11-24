@@ -1,3 +1,4 @@
+import { fileURLToPath } from "node:url"
 import assert from "node:assert/strict"
 import { spawn } from "node:child_process"
 import { once } from "node:events"
@@ -5,7 +6,7 @@ import { test } from "node:test"
 import { waitForServe } from "./serve-startup.ts"
 
 const launch = async (t, mode) => {
-  const child = spawn(process.execPath, [new URL("../fixtures/readiness-server.mjs", import.meta.url).pathname, mode], {
+  const child = spawn(process.execPath, [fileURLToPath(new URL("../fixtures/readiness-server.mjs", import.meta.url)), mode], {
     stdio: ["ignore", "pipe", "pipe", "ipc"],
   })
   t.after(async () => {
@@ -61,7 +62,7 @@ test("an early child exit fails promptly with the exit code", async t => {
 })
 
 test("spawn errors are reported after the failed child closes", async () => {
-  const child = spawn(process.execPath, [], { cwd: new URL("./missing-directory", import.meta.url).pathname })
+  const child = spawn(process.execPath, [], { cwd: fileURLToPath(new URL("./missing-directory", import.meta.url)) })
   await assert.rejects(waitForServe(child, {
     port: 1, timeoutMs: 5_000, command: "missing cwd", output: () => "",
   }), /ENOENT/)

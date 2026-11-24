@@ -57,6 +57,11 @@
             "description": "Include exclusive targets in wildcard ci/test selections; explicit labels already include them",
             "type": "boolean"
           },
+          "skipOtherHosts": {
+            "default": false,
+            "description": "Omit explicitly named targets whose declared hosts exclude this platform",
+            "type": "boolean"
+          },
           "cache": {
             "default": true,
             "description": "Consult the result cache before running; --no-cache bypasses reads",
@@ -101,6 +106,7 @@
           "verbose",
           "plan",
           "includeExclusive",
+          "skipOtherHosts",
           "cache",
           "failFast",
           "sweep"

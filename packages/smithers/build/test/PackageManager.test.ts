@@ -1838,6 +1838,25 @@ describe("PackageManager file reads", () => {
     })
   }, 5_000)
 
+  it("refuses an .npmrc that grows past the size limit between stat and open", async () => {
+    await withFixture("package-manager-npmrc-grow-limit", async (root) => {
+      const npmrc = NodePath.join(root, ".npmrc")
+      await Fs.writeFile(npmrc, "registry=https://registry.npmjs.org/\n", "utf8")
+      const fileSystem = await hookedFileSystem({
+        afterStat: () => Fs.writeFile(npmrc, "a".repeat(PackageManager.maximumNpmrcBytes + 1), "utf8")
+      })
+      const error = await Effect.runPromise(
+        PackageManager.npmrcDigest(root).pipe(
+          Effect.flip,
+          Effect.provideService(FileSystem.FileSystem, fileSystem),
+          Effect.provide(ExecutableFixture.layer)
+        )
+      )
+      expect(error.code).toBe("manifest_unreadable")
+      expect(error.message).toMatch(/expected a regular file no larger than/)
+    })
+  })
+
   it.skipIf(process.platform === "win32")("refuses a directory swapped in before opening a lockfile", async () => {
     await withFixture("package-manager-lockfile-directory-swap", async (root) => {
       const lockfile = NodePath.join(root, "pnpm-lock.yaml")

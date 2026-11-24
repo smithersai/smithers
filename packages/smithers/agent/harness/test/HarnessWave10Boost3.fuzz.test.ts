@@ -8,10 +8,10 @@ import * as CellTurn from "../src/CellTurn.ts"
 import * as ContextWindow from "../src/ContextWindow.ts"
 import * as EngineLike from "../src/EngineLike.ts"
 import * as ExternalTranscript from "../src/ExternalTranscript.ts"
-import * as Monitor from "../src/Monitor.ts"
-import * as NarrowedCheck from "../src/NarrowedCheck.ts"
 import * as CellPrompt from "../src/internal/cellPrompt.ts"
 import * as Frame from "../src/internal/frame.ts"
+import * as Monitor from "../src/Monitor.ts"
+import * as NarrowedCheck from "../src/NarrowedCheck.ts"
 import { descriptor, emits, pattern, runEffect as runCellTurn, window as baseWindow } from "./fixtures/cellTurn.ts"
 
 const executions = Number(process.env.EFFECT_FUZZ_EXECUTIONS ?? "80")
@@ -105,7 +105,11 @@ describe("@smthrs/harness Wave10 Boost3 Fuzz", () => {
             const observedCall: Frame.ObservedCall = {
               ordinal: 0,
               flow: "test",
-              input: { command: sc === "narrowed-check" || sc === "narrow-only-check" ? "pytest -k only_one tests/suite.py" : "pytest tests/suite.py" },
+              input: {
+                command: sc === "narrowed-check" || sc === "narrow-only-check"
+                  ? "pytest -k only_one tests/suite.py"
+                  : "pytest tests/suite.py"
+              },
               ok: true,
               value: { exitCode: 0, stdout: "1 passed" },
               summary: "1 passed",
@@ -209,15 +213,31 @@ describe("@smthrs/harness Wave10 Boost3 Fuzz", () => {
                 }
                 if (Object.hasOwn(req.questions, "complete")) {
                   if (sc === "claim-stands-with-last-check") {
-                    return { complete: { probability: 0.99 }, overclaims: { probability: 0.01 }, invented: { probability: 0.01 } }
+                    return {
+                      complete: { probability: 0.99 },
+                      overclaims: { probability: 0.01 },
+                      invented: { probability: 0.01 }
+                    }
                   }
                   if (sc === "claim-unproven-no-room") {
-                    return { complete: { probability: 0.05 }, overclaims: { probability: 0.95 }, invented: { probability: 0.99 } }
+                    return {
+                      complete: { probability: 0.05 },
+                      overclaims: { probability: 0.95 },
+                      invented: { probability: 0.99 }
+                    }
                   }
                   if (sc === "claim-unfinished-work") {
-                    return { complete: { probability: 0.05 }, overclaims: { probability: 0.1 }, invented: { probability: 0.05 } }
+                    return {
+                      complete: { probability: 0.05 },
+                      overclaims: { probability: 0.1 },
+                      invented: { probability: 0.05 }
+                    }
                   }
-                  return { complete: { probability: 0.1 }, overclaims: { probability: 0.95 }, invented: { probability: 0.1 } }
+                  return {
+                    complete: { probability: 0.1 },
+                    overclaims: { probability: 0.95 },
+                    invented: { probability: 0.1 }
+                  }
                 }
                 return {}
               })
@@ -324,8 +344,14 @@ describe("@smthrs/harness Wave10 Boost3 Fuzz", () => {
             expect(Result.isSuccess(extractedMulti) || Result.isFailure(extractedMulti)).toBe(true)
             const extractedTs = Cell.extract("```cell ts\nconst x: number = 1; ctx.done('ok')\n```")
             expect(Result.isSuccess(extractedTs)).toBe(true)
-            expect(Cell.failureKind({ code: "permission_denied" }, { codes: ["permission_denied"] }).code).toBe("permission_denied")
-            expect(Cell.callFailure(Cell.CallResult.new({ outcome: "failure", value: null, code: "flow_failed", message: "err" }))).toBeDefined()
+            expect(Cell.failureKind({ code: "permission_denied" }, { codes: ["permission_denied"] }).code).toBe(
+              "permission_denied"
+            )
+            expect(
+              Cell.callFailure(
+                Cell.CallResult.new({ outcome: "failure", value: null, code: "flow_failed", message: "err" })
+              )
+            ).toBeDefined()
 
             return true
           }),
@@ -335,60 +361,71 @@ describe("@smthrs/harness Wave10 Boost3 Fuzz", () => {
     assertPassed(report)
   }, 60_000)
 
-  it("CellTurn structured output validation, instructions relevance + restore, stance, and skills monitor", async () => {
-    const modes = ["structured-output-bounce-then-ok", "relevance-withhold-and-restore", "stance-and-skills"] as const
-    const arb = Arbitrary.schema(Schema.Struct({ i: Schema.Literals([0, 1, 2]) }))
-    const report = await Effect.runPromise(
-      Fuzz.run(
-        arb,
-        ({ i }) =>
-          Effect.gen(function*() {
-            const mode = modes[i]!
-            if (mode === "structured-output-bounce-then-ok") {
-              const out = yield* runCellTurn({
-                state: mkState({ maxFrames: 4, claimCap: 0 }),
-                output: { cap: 1, check: (_out, corrected) => Effect.succeed(corrected === 0 ? "Expected JSON object" : undefined) },
-                script: [
-                  emits(`ctx.done("not-an-object")`),
-                  emits(`ctx.done({ answer: 42 })`)
-                ]
-              })
-              expect(out.events.length).toBeGreaterThan(0)
-            } else if (mode === "relevance-withhold-and-restore") {
-              const evalLayer = Evaluator.layerScripted((req) => {
-                const ans: Record<string, any> = {}
-                for (const [k, q] of Object.entries(req.questions)) {
-                  ans[k] = q.type === "boolean" ? { probability: 0.05 } : q.type === "score" ? { score: 0.1 } : { choice: "none" }
-                }
-                return ans
-              })
-              const out = yield* runCellTurn({
-                state: mkState({ maxFrames: 4, claimCap: 0 }),
-                judged: true,
-                evaluator: evalLayer,
-                flows: [descriptor("fs/read"), descriptor("rare/tool")],
-                pinned: ["fs/read"],
-                instructions: [{ path: "docs/guide.md", text: "Guide text." }],
-                script: [
-                  emits(`await ctx.call("rare/tool", {}); ctx.done("ok")`)
-                ],
-                calls: [{ _tag: "Success", value: "ran" }]
-              })
-              expect(out.events.length).toBeGreaterThan(0)
-            } else {
-              const out = yield* runCellTurn({
-                state: mkState({ maxFrames: 3, claimCap: 0 }),
-                stance: "paranoid",
-                monitors: [Monitor.useJev(), ...Monitor.defaults()],
-                script: [emits(`ctx.done("ok")`)]
-              })
-              expect(out.events.length).toBeGreaterThan(0)
-            }
-            return true
-          }),
-        { executions: medExec, seed: seed + 2 }
+  it(
+    "CellTurn structured output validation, instructions relevance + restore, stance, and skills monitor",
+    async () => {
+      const modes = ["structured-output-bounce-then-ok", "relevance-withhold-and-restore", "stance-and-skills"] as const
+      const arb = Arbitrary.schema(Schema.Struct({ i: Schema.Literals([0, 1, 2]) }))
+      const report = await Effect.runPromise(
+        Fuzz.run(
+          arb,
+          ({ i }) =>
+            Effect.gen(function*() {
+              const mode = modes[i]!
+              if (mode === "structured-output-bounce-then-ok") {
+                const out = yield* runCellTurn({
+                  state: mkState({ maxFrames: 4, claimCap: 0 }),
+                  output: {
+                    cap: 1,
+                    check: (_out, corrected) => Effect.succeed(corrected === 0 ? "Expected JSON object" : undefined)
+                  },
+                  script: [
+                    emits(`ctx.done("not-an-object")`),
+                    emits(`ctx.done({ answer: 42 })`)
+                  ]
+                })
+                expect(out.events.length).toBeGreaterThan(0)
+              } else if (mode === "relevance-withhold-and-restore") {
+                const evalLayer = Evaluator.layerScripted((req) => {
+                  const ans: Record<string, any> = {}
+                  for (const [k, q] of Object.entries(req.questions)) {
+                    ans[k] = q.type === "boolean"
+                      ? { probability: 0.05 }
+                      : q.type === "score"
+                      ? { score: 0.1 }
+                      : { choice: "none" }
+                  }
+                  return ans
+                })
+                const out = yield* runCellTurn({
+                  state: mkState({ maxFrames: 4, claimCap: 0 }),
+                  judged: true,
+                  evaluator: evalLayer,
+                  flows: [descriptor("fs/read"), descriptor("rare/tool")],
+                  pinned: ["fs/read"],
+                  instructions: [{ path: "docs/guide.md", text: "Guide text." }],
+                  script: [
+                    emits(`await ctx.call("rare/tool", {}); ctx.done("ok")`)
+                  ],
+                  calls: [{ _tag: "Success", value: "ran" }]
+                })
+                expect(out.events.length).toBeGreaterThan(0)
+              } else {
+                const out = yield* runCellTurn({
+                  state: mkState({ maxFrames: 3, claimCap: 0 }),
+                  stance: "paranoid",
+                  monitors: [Monitor.useJev(), ...Monitor.defaults()],
+                  script: [emits(`ctx.done("ok")`)]
+                })
+                expect(out.events.length).toBeGreaterThan(0)
+              }
+              return true
+            }),
+          { executions: medExec, seed: seed + 2 }
+        )
       )
-    )
-    assertPassed(report)
-  }, 60_000)
+      assertPassed(report)
+    },
+    60_000
+  )
 })

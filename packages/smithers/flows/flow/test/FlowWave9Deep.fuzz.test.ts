@@ -13,7 +13,7 @@ const baseExecutions = Number(process.env.EFFECT_FUZZ_EXECUTIONS ?? "100")
 const fastExec = Math.max(30, Math.min(baseExecutions, 100))
 const ioExec = Math.max(12, Math.min(Math.ceil(baseExecutions / 6), 28))
 
-const assertPassed = <A>(report: Fuzz.Report<A>): void => {
+const assertPassed = <A, E = unknown>(report: Fuzz.Report<A, E>): void => {
   expect(report._tag, Fuzz.formatReport(report)).toBe("Passed")
 }
 
@@ -54,17 +54,15 @@ describe("@smthrs/flow Wave 9 deep fuzzing", () => {
               expect(HumanTask.validateSchema({ $ref: "#/defs/evil" })).toBeDefined()
 
               const baseReq: HumanTask.Request = kind === "ask"
-                ? { kind: "ask", name: "q1", prompt: "Tell me" }
+                ? { kind: "ask" }
                 : kind === "confirm"
-                ? { kind: "confirm", name: "q2", prompt: "Sure?" }
+                ? { kind: "confirm" }
                 : kind === "select"
-                ? { kind: "select", name: "q3", prompt: "Pick", options: ["a", "b", "c"] }
+                ? { kind: "select", options: ["a", "b", "c"] }
                 : kind === "rank"
-                ? { kind: "rank", name: "q4", prompt: "Order", options: ["a", "b", "c"] }
+                ? { kind: "rank", options: ["a", "b", "c"] }
                 : {
                   kind: "json",
-                  name: "q5",
-                  prompt: "Data",
                   schema: { type: "object", properties: { n: { type: "number" } }, required: ["n"] }
                 }
 
@@ -98,7 +96,7 @@ describe("@smthrs/flow Wave 9 deep fuzzing", () => {
               }
 
               const allowedList = allowedMode === "none" ? undefined : [allowedMode]
-              const isAllowed = HumanTask.isPrincipalAllowed(principal || undefined, allowedList)
+              const isAllowed = HumanTask.isPrincipalAllowed(principal, allowedList)
               if (allowedList === undefined) {
                 expect(isAllowed).toBe(true)
               } else {

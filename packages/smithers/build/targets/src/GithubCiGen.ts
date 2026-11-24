@@ -119,7 +119,13 @@ export const TargetStep = Schema.Struct({
    */
   parallelism: Schema.optional(
     Schema.Int.check(Schema.isGreaterThanOrEqualTo(1), Schema.isLessThanOrEqualTo(maximumParallelism))
-  )
+  ),
+  /**
+   * Omit explicitly named targets whose declared `hosts` exclude the runner's
+   * platform, rendered as `--skip-other-hosts`. Used by multi-OS matrix shards
+   * that select split-package labels alongside wildcard packages.
+   */
+  skipOtherHosts: Schema.optional(Schema.Boolean)
 })
 
 /**
@@ -829,6 +835,7 @@ export const stepCommand = (
     ...(attrs.knownRed === undefined ? [] : ["--known-red", shellArgument(attrs.knownRed)]),
     // GITHUB_ACTION is unique per step within a job, so no two steps share a file.
     ...(attrs.results === true ? ["--results-file", `"$RUNNER_TEMP/${resultsDirectory}/$GITHUB_ACTION.json"`] : []),
+    ...(step.skipOtherHosts === true ? ["--skip-other-hosts"] : []),
     "--verbose"
   ].join(" ")
 }

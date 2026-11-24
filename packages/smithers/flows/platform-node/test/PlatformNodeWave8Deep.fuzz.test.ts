@@ -53,10 +53,10 @@ describe("@smthrs/platform-node Wave 8 deep fuzz (PipedProcess fd bounds, Atomic
               return true
             }
             const cmd = v.mode === "normal-fd3"
-              ? ChildProcess.make("/bin/sh", ["-c", "echo ok"], {
+              ? ChildProcess.make(process.execPath, ["-e", "process.stdout.write('ok')"], {
                 additionalFds: { fd3: { type: "output" } } as any
               })
-              : ChildProcess.make("/bin/sh", ["-c", "true"], { stdin: "ignore", stdout: "ignore", stderr: "ignore" })
+              : ChildProcess.make(process.execPath, ["-e", ""], { stdin: "ignore", stdout: "ignore", stderr: "ignore" })
             const ex = yield* Effect.exit(Effect.scoped(PipedProcess.spawn(cmd as any, undefined)))
             expect(Exit.isSuccess(ex)).toBe(true)
             return true

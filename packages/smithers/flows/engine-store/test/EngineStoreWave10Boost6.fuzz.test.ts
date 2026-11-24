@@ -5,15 +5,7 @@ import { Fuzz } from "@smthrs/fuzz"
 import { Journal, SqlJournal } from "@smthrs/journal"
 import { Jj } from "@smthrs/kernel"
 import { Ownership, RunStore } from "@smthrs/run-store"
-import {
-  Arbitrary,
-  Effect,
-  Exit,
-  Layer,
-  Logger,
-  Option,
-  Schema
-} from "effect"
+import { Arbitrary, Effect, Exit, Layer, Logger, Option, Schema } from "effect"
 import { SqlClient } from "effect/sql/SqlClient"
 import * as TestClock from "effect/testing/TestClock"
 import { describe, expect, it } from "vitest"
@@ -111,120 +103,124 @@ describe("EngineStore Wave 10 Boost6: RunDriver pending-cancellation sweep races
 })
 
 describe("EngineStore Wave 10 Boost6: ActionPersistence isolated WorkspaceSandbox copy-back, deviations & EffectDispatcher", () => {
-  it("fuzzes ActionPersistence over WorkspaceSandbox.makeMemory with changed files, undeclared deviations, queued effects & replay convergence", async () => {
-    const arb = Arbitrary.schema(
-      Schema.Struct({
-        mode: Schema.Literals(["expected", "hard"]),
-        writeDeviation: Schema.Boolean,
-        queueDuplicateEffect: Schema.Boolean
-      })
-    )
-    const report = await Effect.runPromise(
-      Fuzz.run(
-        arb,
-        (input) =>
-          Effect.scoped(
-            Effect.gen(function*() {
-              const dispatched: Array<string> = []
-              const { service: memBox } = yield* WorkspaceSandbox.makeMemory({ "in.txt": "hello" })
-              const boxLayer = Layer.succeed(WorkspaceSandbox.WorkspaceSandbox, memBox)
-              const dispLayer = WorkspaceSandbox.layerDispatcher({
-                dispatch: (eff) =>
-                  Effect.sync(() => {
-                    dispatched.push(eff.idempotencyKey)
-                  })
-              })
-
-              const desc: ActionPersistence.BoundaryMetadata = {
-                readSet: [{ path: "in.txt", digest: "sha256:in" }],
-                writeSet: ["out.txt"],
-                boundaryMode: input.mode
-              }
-
-              const isoAct = Action.make({
-                name: `w10b6/iso-${input.mode}`,
-                success: Schema.String,
-                error: Schema.Never,
-                tier: "sealed",
-                execute: Effect.succeed("unused")
-              })
-
-              const body = () =>
-                Effect.gen(function*() {
-                  const wsOpt = yield* Effect.serviceOption(WorkspaceSandbox.Workspace)
-                  if (Option.isNone(wsOpt)) return "no-ws"
-                  const ws = wsOpt.value
-                  yield* ws.writeFile("out.txt", new TextEncoder().encode("out-bytes"))
-                  if (input.writeDeviation) {
-                    yield* ws.writeFile("extra-dev.txt", new TextEncoder().encode("dev-bytes"))
-                  }
-                  if (input.queueDuplicateEffect) {
-                    yield* ws.queueEffect({ protocol: "webhook", idempotencyKey: "idem-1", payload: { n: 1 } })
-                    yield* ws.queueEffect({ protocol: "webhook", idempotencyKey: "idem-1", payload: { n: 1 } })
-                    yield* ws.queueEffect({ protocol: "webhook", idempotencyKey: "idem-2", payload: { n: 2 } })
-                  }
-                  return "iso-done"
+  it(
+    "fuzzes ActionPersistence over WorkspaceSandbox.makeMemory with changed files, undeclared deviations, queued effects & replay convergence",
+    async () => {
+      const arb = Arbitrary.schema(
+        Schema.Struct({
+          mode: Schema.Literals(["expected", "hard"]),
+          writeDeviation: Schema.Boolean,
+          queueDuplicateEffect: Schema.Boolean
+        })
+      )
+      const report = await Effect.runPromise(
+        Fuzz.run(
+          arb,
+          (input) =>
+            Effect.scoped(
+              Effect.gen(function*() {
+                const dispatched: Array<string> = []
+                const { service: memBox } = yield* WorkspaceSandbox.makeMemory({ "in.txt": "hello" })
+                const boxLayer = Layer.succeed(WorkspaceSandbox.WorkspaceSandbox, memBox)
+                const dispLayer = WorkspaceSandbox.layerDispatcher({
+                  dispatch: (eff) =>
+                    Effect.sync(() => {
+                      dispatched.push(eff.idempotencyKey)
+                    })
                 })
 
-              yield* activate("iso-run-1")
-              const exec = ActionPersistence.make({
-                runId: "iso-run-1",
-                owner: cpOwner,
-                sourceId: "w10b6-iso",
-                execute: body
-              })
-
-              const key = `iso-k-${input.mode}-${input.writeDeviation}-${input.queueDuplicateEffect}`
-              const res1 = yield* exec({
-                key,
-                tier: "sealed",
-                attempt: 1,
-                action: isoAct,
-                metadata: desc
-              }).pipe(
-                Effect.provide(Layer.merge(boxLayer, dispLayer)),
-                Effect.exit
-              )
-
-              if (input.mode === "hard" && input.writeDeviation) {
-                // Hard mode invalidates undeclared writes and dispatches zero effects
-                expect(Exit.isFailure(res1)).toBe(true)
-                expect(dispatched.length).toBe(0)
-              } else {
-                expect(Exit.isSuccess(res1)).toBe(true)
-                if (input.queueDuplicateEffect) {
-                  // Deduplicated by idempotencyKey!
-                  expect(dispatched).toEqual(["idem-1", "idem-2"])
+                const desc: ActionPersistence.BoundaryMetadata = {
+                  readSet: [{ path: "in.txt", digest: "sha256:in" }],
+                  writeSet: ["out.txt"],
+                  boundaryMode: input.mode
                 }
-                // Replay in a second executor over the same run converges journal (ExpectedSetDeviation re-emit!)
-                const exec2 = ActionPersistence.make({
+
+                const isoAct = Action.make({
+                  name: `w10b6/iso-${input.mode}`,
+                  success: Schema.String,
+                  error: Schema.Never,
+                  tier: "sealed",
+                  execute: Effect.succeed("unused")
+                })
+
+                const body = () =>
+                  Effect.gen(function*() {
+                    const wsOpt = yield* Effect.serviceOption(WorkspaceSandbox.Workspace)
+                    if (Option.isNone(wsOpt)) return "no-ws"
+                    const ws = wsOpt.value
+                    yield* ws.writeFile("out.txt", new TextEncoder().encode("out-bytes"))
+                    if (input.writeDeviation) {
+                      yield* ws.writeFile("extra-dev.txt", new TextEncoder().encode("dev-bytes"))
+                    }
+                    if (input.queueDuplicateEffect) {
+                      yield* ws.queueEffect({ protocol: "webhook", idempotencyKey: "idem-1", payload: { n: 1 } })
+                      yield* ws.queueEffect({ protocol: "webhook", idempotencyKey: "idem-1", payload: { n: 1 } })
+                      yield* ws.queueEffect({ protocol: "webhook", idempotencyKey: "idem-2", payload: { n: 2 } })
+                    }
+                    return "iso-done"
+                  })
+
+                yield* activate("iso-run-1")
+                const exec = ActionPersistence.make({
                   runId: "iso-run-1",
                   owner: cpOwner,
-                  sourceId: "w10b6-iso-replay",
+                  sourceId: "w10b6-iso",
                   execute: body
                 })
-                const res2 = yield* exec2({
+
+                const key = `iso-k-${input.mode}-${input.writeDeviation}-${input.queueDuplicateEffect}`
+                const res1 = yield* exec({
                   key,
                   tier: "sealed",
                   attempt: 1,
                   action: isoAct,
                   metadata: desc
-                }).pipe(Effect.provide(Layer.merge(boxLayer, dispLayer)))
-                expect(res2).toBe("iso-done")
-              }
+                }).pipe(
+                  Effect.provide(Layer.merge(boxLayer, dispLayer)),
+                  Effect.exit
+                )
 
-              // Also check Journal entries were recorded
-              const j = yield* Journal.Journal
-              expect(j).toBeDefined()
-              return true
-            }).pipe(
-              Effect.provide(Layer.mergeAll(TestStores.layerAt(":memory:"), cpJj, boundary())),
-              withCrypto
-            )
-          ),
-        { executions: Math.min(executions, 20), seed: seed + 1 }
+                if (input.mode === "hard" && input.writeDeviation) {
+                  // Hard mode invalidates undeclared writes and dispatches zero effects
+                  expect(Exit.isFailure(res1)).toBe(true)
+                  expect(dispatched.length).toBe(0)
+                } else {
+                  expect(Exit.isSuccess(res1)).toBe(true)
+                  if (input.queueDuplicateEffect) {
+                    // Deduplicated by idempotencyKey!
+                    expect(dispatched).toEqual(["idem-1", "idem-2"])
+                  }
+                  // Replay in a second executor over the same run converges journal (ExpectedSetDeviation re-emit!)
+                  const exec2 = ActionPersistence.make({
+                    runId: "iso-run-1",
+                    owner: cpOwner,
+                    sourceId: "w10b6-iso-replay",
+                    execute: body
+                  })
+                  const res2 = yield* exec2({
+                    key,
+                    tier: "sealed",
+                    attempt: 1,
+                    action: isoAct,
+                    metadata: desc
+                  }).pipe(Effect.provide(Layer.merge(boxLayer, dispLayer)))
+                  expect(res2).toBe("iso-done")
+                }
+
+                // Also check Journal entries were recorded
+                const j = yield* Journal.Journal
+                expect(j).toBeDefined()
+                return true
+              }).pipe(
+                Effect.provide(Layer.mergeAll(TestStores.layerAt(":memory:"), cpJj, boundary())),
+                withCrypto
+              )
+            ),
+          { executions: Math.min(executions, 20), seed: seed + 1 }
+        )
       )
-    )
-    assertPassed(report)
-  }, 60_000)
+      assertPassed(report)
+    },
+    60_000
+  )
 })

@@ -521,137 +521,140 @@ describe("@smthrs/platform-node ProcessSandbox, DestinationProxy, ProcessReaper 
     expect(report._tag).toBe("Passed")
   })
 
-  it("DestinationProxy.open enforces proxy authentication, exact host allowlist, CONNECT rejection, and strips hop-by-hop headers", async () => {
-    const tmpBase = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "dp-")))
-    const socketPath = path.join(tmpBase, "broker.sock")
-    const token = "fuzz-broker-secret-token"
-    let lastHeaders: http.IncomingHttpHeaders = {}
-    const upstream = http.createServer((req, res) => {
-      lastHeaders = req.headers
-      res.writeHead(200, { "content-type": "text/plain" }).end("UPSTREAM_OK")
-    })
-    await new Promise<void>((resolve) => upstream.listen(0, "127.0.0.1", () => resolve()))
-    const addr = upstream.address() as net.AddressInfo
-    const port = addr.port
-
-    const rawHttpOverUnix = (raw: string): Promise<string> =>
-      new Promise((resolve, reject) => {
-        const sock = net.connect(socketPath)
-        let data = ""
-        sock.setTimeout(2000)
-        sock.on("data", (chunk) => {
-          data += chunk.toString("utf8")
-        })
-        sock.on("end", () => resolve(data))
-        sock.on("timeout", () => {
-          sock.destroy()
-          resolve(data)
-        })
-        sock.on("error", reject)
-        sock.write(raw)
+  it.skipIf(process.platform === "win32")(
+    "DestinationProxy.open enforces proxy authentication, exact host allowlist, CONNECT rejection, and strips hop-by-hop headers",
+    async () => {
+      const tmpBase = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "dp-")))
+      const socketPath = path.join(tmpBase, "broker.sock")
+      const token = "fuzz-broker-secret-token"
+      let lastHeaders: http.IncomingHttpHeaders = {}
+      const upstream = http.createServer((req, res) => {
+        lastHeaders = req.headers
+        res.writeHead(200, { "content-type": "text/plain" }).end("UPSTREAM_OK")
       })
+      await new Promise<void>((resolve) => upstream.listen(0, "127.0.0.1", () => resolve()))
+      const addr = upstream.address() as net.AddressInfo
+      const port = addr.port
 
-    try {
-      const authOk = "Basic " + Buffer.from("broker:" + token).toString("base64")
-      const arb = Arbitrary.schema(
-        Schema.Struct({
-          kind: Schema.Literals([
-            "missing_auth",
-            "wrong_auth",
-            "bad_url",
-            "disallowed_host",
-            "userinfo_url",
-            "https_plain_get",
-            "allowed_get",
-            "connect_missing_auth",
-            "connect_disallowed",
-            "connect_with_path"
-          ])
+      const rawHttpOverUnix = (raw: string): Promise<string> =>
+        new Promise((resolve, reject) => {
+          const sock = net.connect(socketPath)
+          let data = ""
+          sock.setTimeout(2000)
+          sock.on("data", (chunk) => {
+            data += chunk.toString("utf8")
+          })
+          sock.on("end", () => resolve(data))
+          sock.on("timeout", () => {
+            sock.destroy()
+            resolve(data)
+          })
+          sock.on("error", reject)
+          sock.write(raw)
         })
-      )
-      await Effect.runPromise(
-        Effect.scoped(
-          Effect.gen(function*() {
-            yield* DestinationProxy.open(socketPath, [`127.0.0.1:${port}`], token)
-            const report = yield* Fuzz.run(
-              arb,
-              ({ kind }) =>
-                Effect.promise(async () => {
-                  lastHeaders = {}
-                  if (kind === "missing_auth") {
-                    const resp = await rawHttpOverUnix(
-                      `GET http://127.0.0.1:${port}/ HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n`
-                    )
-                    return resp.startsWith("HTTP/1.1 407 ")
-                  }
-                  if (kind === "wrong_auth") {
-                    const resp = await rawHttpOverUnix(
-                      `GET http://127.0.0.1:${port}/ HTTP/1.1\r\nHost: 127.0.0.1\r\nProxy-Authorization: Basic Zm9vOmJhcg==\r\nConnection: close\r\n\r\n`
-                    )
-                    return resp.startsWith("HTTP/1.1 407 ")
-                  }
-                  if (kind === "bad_url") {
-                    const resp = await rawHttpOverUnix(
-                      `GET /relative-path HTTP/1.1\r\nHost: 127.0.0.1\r\nProxy-Authorization: ${authOk}\r\nConnection: close\r\n\r\n`
-                    )
-                    return resp.startsWith("HTTP/1.1 400 ")
-                  }
-                  if (kind === "disallowed_host") {
-                    const resp = await rawHttpOverUnix(
-                      `GET http://evil.example.com/ HTTP/1.1\r\nHost: evil.example.com\r\nProxy-Authorization: ${authOk}\r\nConnection: close\r\n\r\n`
-                    )
-                    return resp.startsWith("HTTP/1.1 403 ")
-                  }
-                  if (kind === "userinfo_url") {
-                    const resp = await rawHttpOverUnix(
-                      `GET http://user:pass@127.0.0.1:${port}/ HTTP/1.1\r\nHost: 127.0.0.1\r\nProxy-Authorization: ${authOk}\r\nConnection: close\r\n\r\n`
-                    )
-                    return resp.startsWith("HTTP/1.1 403 ")
-                  }
-                  if (kind === "https_plain_get") {
-                    const resp = await rawHttpOverUnix(
-                      `GET https://127.0.0.1:${port}/ HTTP/1.1\r\nHost: 127.0.0.1\r\nProxy-Authorization: ${authOk}\r\nConnection: close\r\n\r\n`
-                    )
-                    return resp.startsWith("HTTP/1.1 403 ")
-                  }
-                  if (kind === "allowed_get") {
-                    const resp = await rawHttpOverUnix(
-                      `GET http://127.0.0.1:${port}/ok HTTP/1.1\r\nHost: spoofed.invalid\r\nProxy-Authorization: ${authOk}\r\nProxy-Connection: keep-alive\r\nConnection: close\r\n\r\n`
-                    )
-                    if (!resp.startsWith("HTTP/1.1 200 ") || !resp.includes("UPSTREAM_OK")) return false
-                    if (lastHeaders["proxy-authorization"] !== undefined) return false
-                    if (lastHeaders["proxy-connection"] !== undefined) return false
-                    if (lastHeaders["host"] !== `127.0.0.1:${port}`) return false
-                    return true
-                  }
-                  if (kind === "connect_missing_auth") {
-                    const resp = await rawHttpOverUnix(
-                      `CONNECT 127.0.0.1:${port} HTTP/1.1\r\nHost: 127.0.0.1:${port}\r\n\r\n`
-                    )
-                    return resp.startsWith("HTTP/1.1 407 ")
-                  }
-                  if (kind === "connect_disallowed") {
-                    const resp = await rawHttpOverUnix(
-                      `CONNECT evil.example.com:443 HTTP/1.1\r\nHost: evil.example.com:443\r\nProxy-Authorization: ${authOk}\r\n\r\n`
-                    )
-                    return resp.startsWith("HTTP/1.1 403 ")
-                  }
-                  const resp = await rawHttpOverUnix(
-                    `CONNECT 127.0.0.1:${port}/extra HTTP/1.1\r\nHost: 127.0.0.1:${port}\r\nProxy-Authorization: ${authOk}\r\n\r\n`
-                  )
-                  return resp.startsWith("HTTP/1.1 403 ")
-                }),
-              { seed: seed + 4, executions: Math.min(executions, 40) }
-            )
-            const failure = Fuzz.formatReport(report)
-            if (failure !== undefined) throw new Error(failure)
-            expect(report._tag).toBe("Passed")
+
+      try {
+        const authOk = "Basic " + Buffer.from("broker:" + token).toString("base64")
+        const arb = Arbitrary.schema(
+          Schema.Struct({
+            kind: Schema.Literals([
+              "missing_auth",
+              "wrong_auth",
+              "bad_url",
+              "disallowed_host",
+              "userinfo_url",
+              "https_plain_get",
+              "allowed_get",
+              "connect_missing_auth",
+              "connect_disallowed",
+              "connect_with_path"
+            ])
           })
         )
-      )
-    } finally {
-      upstream.close()
-      fs.rmSync(tmpBase, { recursive: true, force: true })
+        await Effect.runPromise(
+          Effect.scoped(
+            Effect.gen(function*() {
+              yield* DestinationProxy.open(socketPath, [`127.0.0.1:${port}`], token)
+              const report = yield* Fuzz.run(
+                arb,
+                ({ kind }) =>
+                  Effect.promise(async () => {
+                    lastHeaders = {}
+                    if (kind === "missing_auth") {
+                      const resp = await rawHttpOverUnix(
+                        `GET http://127.0.0.1:${port}/ HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n`
+                      )
+                      return resp.startsWith("HTTP/1.1 407 ")
+                    }
+                    if (kind === "wrong_auth") {
+                      const resp = await rawHttpOverUnix(
+                        `GET http://127.0.0.1:${port}/ HTTP/1.1\r\nHost: 127.0.0.1\r\nProxy-Authorization: Basic Zm9vOmJhcg==\r\nConnection: close\r\n\r\n`
+                      )
+                      return resp.startsWith("HTTP/1.1 407 ")
+                    }
+                    if (kind === "bad_url") {
+                      const resp = await rawHttpOverUnix(
+                        `GET /relative-path HTTP/1.1\r\nHost: 127.0.0.1\r\nProxy-Authorization: ${authOk}\r\nConnection: close\r\n\r\n`
+                      )
+                      return resp.startsWith("HTTP/1.1 400 ")
+                    }
+                    if (kind === "disallowed_host") {
+                      const resp = await rawHttpOverUnix(
+                        `GET http://evil.example.com/ HTTP/1.1\r\nHost: evil.example.com\r\nProxy-Authorization: ${authOk}\r\nConnection: close\r\n\r\n`
+                      )
+                      return resp.startsWith("HTTP/1.1 403 ")
+                    }
+                    if (kind === "userinfo_url") {
+                      const resp = await rawHttpOverUnix(
+                        `GET http://user:pass@127.0.0.1:${port}/ HTTP/1.1\r\nHost: 127.0.0.1\r\nProxy-Authorization: ${authOk}\r\nConnection: close\r\n\r\n`
+                      )
+                      return resp.startsWith("HTTP/1.1 403 ")
+                    }
+                    if (kind === "https_plain_get") {
+                      const resp = await rawHttpOverUnix(
+                        `GET https://127.0.0.1:${port}/ HTTP/1.1\r\nHost: 127.0.0.1\r\nProxy-Authorization: ${authOk}\r\nConnection: close\r\n\r\n`
+                      )
+                      return resp.startsWith("HTTP/1.1 403 ")
+                    }
+                    if (kind === "allowed_get") {
+                      const resp = await rawHttpOverUnix(
+                        `GET http://127.0.0.1:${port}/ok HTTP/1.1\r\nHost: spoofed.invalid\r\nProxy-Authorization: ${authOk}\r\nProxy-Connection: keep-alive\r\nConnection: close\r\n\r\n`
+                      )
+                      if (!resp.startsWith("HTTP/1.1 200 ") || !resp.includes("UPSTREAM_OK")) return false
+                      if (lastHeaders["proxy-authorization"] !== undefined) return false
+                      if (lastHeaders["proxy-connection"] !== undefined) return false
+                      if (lastHeaders["host"] !== `127.0.0.1:${port}`) return false
+                      return true
+                    }
+                    if (kind === "connect_missing_auth") {
+                      const resp = await rawHttpOverUnix(
+                        `CONNECT 127.0.0.1:${port} HTTP/1.1\r\nHost: 127.0.0.1:${port}\r\n\r\n`
+                      )
+                      return resp.startsWith("HTTP/1.1 407 ")
+                    }
+                    if (kind === "connect_disallowed") {
+                      const resp = await rawHttpOverUnix(
+                        `CONNECT evil.example.com:443 HTTP/1.1\r\nHost: evil.example.com:443\r\nProxy-Authorization: ${authOk}\r\n\r\n`
+                      )
+                      return resp.startsWith("HTTP/1.1 403 ")
+                    }
+                    const resp = await rawHttpOverUnix(
+                      `CONNECT 127.0.0.1:${port}/extra HTTP/1.1\r\nHost: 127.0.0.1:${port}\r\nProxy-Authorization: ${authOk}\r\n\r\n`
+                    )
+                    return resp.startsWith("HTTP/1.1 403 ")
+                  }),
+                { seed: seed + 4, executions: Math.min(executions, 40) }
+              )
+              const failure = Fuzz.formatReport(report)
+              if (failure !== undefined) throw new Error(failure)
+              expect(report._tag).toBe("Passed")
+            })
+          )
+        )
+      } finally {
+        upstream.close()
+        fs.rmSync(tmpBase, { recursive: true, force: true })
+      }
     }
-  })
+  )
 })

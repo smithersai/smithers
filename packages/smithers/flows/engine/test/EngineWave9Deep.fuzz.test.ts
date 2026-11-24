@@ -9,7 +9,7 @@ const seed = Number(process.env.EFFECT_FUZZ_SEED ?? "20261190")
 const baseExecutions = Number(process.env.EFFECT_FUZZ_EXECUTIONS ?? "100")
 const fastExec = Math.max(40, Math.min(baseExecutions, 120))
 
-const assertPassed = <A>(report: Fuzz.Report<A>): void => {
+const assertPassed = <A, E = unknown>(report: Fuzz.Report<A, E>): void => {
   expect(report._tag, Fuzz.formatReport(report)).toBe("Passed")
 }
 
@@ -114,8 +114,8 @@ describe("@smthrs/engine Wave 9 deep ActionKey & cache-key isolation fuzzing", (
                 }
 
                 // ordinalScope determinism
-                const os1 = ActionKey.ordinalScope(scope, ordinal)
-                const os2 = ActionKey.ordinalScope(scope, ordinal + 1)
+                const os1 = yield* ActionKey.ordinalScope(baseAction, `${scope}:${ordinal}`)
+                const os2 = yield* ActionKey.ordinalScope(baseAction, `${scope}:${ordinal + 1}`)
                 expect(os1).not.toBe(os2)
 
                 // uncanonicalKey wraps SchemaError into Flow.Complete(Exit.die(UncanonicalIdempotencyKey))

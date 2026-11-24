@@ -221,57 +221,61 @@ describe("NodeHost.layerContained", () => {
       }
     }))
 
-  it.live("kills the group a cancelled `jj` leads, grandchildren included", () =>
-    Effect.gen(function*() {
-      // The reason `layerContained` builds jj over its own spawner rather than
-      // letting `NodeJj.layer` start its own children: a jj that ignores
-      // `SIGTERM`, or that left something running behind it, is contained by
-      // the host's policy like any other child instead of being a process
-      // nothing on the machine can account for.
-      const directory = realpathSync.native(mkdtempSync(join(tmpdir(), "flows-contained-jj-cancel-")))
-      const marker = join(directory, "flows-jj-cancel-shim")
-      const pidFile = join(directory, "background.pid")
-      writeFileSync(marker, "process.on('SIGTERM',()=>{});process.send('ready');setInterval(()=>{},1000)")
-      writeJj(
-        directory,
-        `
+  it.live.skipIf(process.platform === "win32")(
+    "kills the group a cancelled `jj` leads, grandchildren included",
+    () =>
+      Effect.gen(function*() {
+        // The reason `layerContained` builds jj over its own spawner rather than
+        // letting `NodeJj.layer` start its own children: a jj that ignores
+        // `SIGTERM`, or that left something running behind it, is contained by
+        // the host's policy like any other child instead of being a process
+        // nothing on the machine can account for.
+        const directory = realpathSync.native(mkdtempSync(join(tmpdir(), "flows-contained-jj-cancel-")))
+        const marker = join(directory, "flows-jj-cancel-shim")
+        const pidFile = join(directory, "background.pid")
+        writeFileSync(marker, "process.on('SIGTERM',()=>{});process.send('ready');setInterval(()=>{},1000)")
+        writeJj(
+          directory,
+          `
         process.on('SIGTERM',()=>{});
         const child=require('node:child_process').spawn(${JSON.stringify(process.execPath)},[${JSON.stringify(marker)}],
           {stdio:['ignore','ignore','ignore','ipc']});
         child.once('message',()=>require('node:fs').writeFileSync(${JSON.stringify(pidFile)},String(child.pid)));
         setInterval(()=>{},1000);`
-      )
-      const previousPath = process.env["PATH"]
-      // Prepended, not replaced: the survivor scan runs `ps`.
-      process.env["PATH"] = `${directory}${delimiter}${previousPath ?? ""}`
-
-      try {
-        const graceMs = 400
-        const ledger = yield* ProcessLedger.makeMemory({ hostId: "cancelled-jj", ownerPid: process.pid })
-        const host = NodeHost.layerContained({ graceMs }).pipe(
-          Layer.provide(Layer.succeed(ProcessLedger.ProcessLedger)(ledger))
         )
-        const fiber = yield* Effect.forkChild(
-          Effect.exit(Effect.flatMap(Jj, (jj) => jj.status())).pipe(Effect.provide(host), Effect.scoped),
-          { startImmediately: true }
-        )
+        const previousPath = process.env["PATH"]
+        // Prepended, not replaced: the survivor scan runs `ps`.
+        process.env["PATH"] = `${directory}${delimiter}${previousPath ?? ""}`
 
-        yield* Effect.promise(() => waitForFile(pidFile))
-        expect(survivors(marker).length).toBeGreaterThan(0)
+        try {
+          const graceMs = 400
+          const ledger = yield* ProcessLedger.makeMemory({ hostId: "cancelled-jj", ownerPid: process.pid })
+          const host = NodeHost.layerContained({ graceMs }).pipe(
+            Layer.provide(Layer.succeed(ProcessLedger.ProcessLedger)(ledger))
+          )
+          const fiber = yield* Effect.forkChild(
+            Effect.exit(Effect.flatMap(Jj, (jj) => jj.status())).pipe(Effect.provide(host), Effect.scoped),
+            { startImmediately: true }
+          )
 
-        const before = Date.now()
-        yield* Fiber.interrupt(fiber)
+          yield* Effect.promise(() => waitForFile(pidFile))
+          expect(survivors(marker).length).toBeGreaterThan(0)
 
-        // The background process is the one nothing held a handle for, and
-        // `trap "" TERM` means only the escalation could have ended it.
-        expect(yield* Effect.promise(() => waitForNoSurvivor(marker, graceMs + 1_000))).toEqual([])
-        // Windows terminates SIGTERM targets unconditionally. POSIX must
-        // preserve the requested grace before escalating stubborn children.
-        if (process.platform !== "win32") expect(Date.now() - before).toBeGreaterThanOrEqual(graceMs)
-        expect(yield* ledger.live).toEqual([])
-      } finally {
-        process.env["PATH"] = previousPath
-        rmSync(directory, { recursive: true, force: true })
-      }
-    }), 30_000)
+          const before = Date.now()
+          yield* Fiber.interrupt(fiber)
+
+          // The background process is the one nothing held a handle for, and
+          // `trap "" TERM` means only the escalation could have ended it.
+          expect(yield* Effect.promise(() => waitForNoSurvivor(marker, graceMs + 1_000))).toEqual([])
+          // Windows terminates SIGTERM targets unconditionally. POSIX must
+          // preserve the requested grace before escalating stubborn children.
+          if (process.platform !== "win32") expect(Date.now() - before).toBeGreaterThanOrEqual(graceMs)
+          expect(yield* ledger.live).toEqual([])
+        } finally {
+          process.env["PATH"] = previousPath
+          rmSync(directory, { recursive: true, force: true })
+        }
+      }),
+    30_000
+  )
 })

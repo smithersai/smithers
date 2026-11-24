@@ -17,7 +17,7 @@ const baseExecutions = Number(process.env.EFFECT_FUZZ_EXECUTIONS ?? "100")
 const fastExec = Math.max(30, Math.min(baseExecutions, 100))
 const schedExec = Math.max(20, Math.min(Math.ceil(baseExecutions / 3), 50))
 
-const assertPassed = <A>(report: Fuzz.Report<A>): void => {
+const assertPassed = <A, E = unknown>(report: Fuzz.Report<A, E>): void => {
   expect(report._tag, Fuzz.formatReport(report)).toBe("Passed")
 }
 
@@ -140,7 +140,17 @@ describe("@smthrs/triggers Wave 9 deep Scheduler & Webhook fuzzing", () => {
                         inputSummary: "in",
                         envelope: { capabilities: [], flows: [], budget: {} },
                         deployClass: false,
-                        nodes: []
+                        nodes: [],
+                        approval: {
+                          target: {
+                            _tag: "Plan" as const,
+                            planId: "p1",
+                            digest: "d1",
+                            envelope: { capabilities: [], flows: [], budget: {} }
+                          },
+                          scope: "once" as const,
+                          idempotencyKey: "k1"
+                        }
                       }
                     }),
                   run: () =>
@@ -157,7 +167,7 @@ describe("@smthrs/triggers Wave 9 deep Scheduler & Webhook fuzzing", () => {
                       return { _tag: "Accepted" as const, receiptId: "sg" }
                     }),
                   cancel: () =>
-                    Effect.succeed({ _tag: "Terminal" as const, receiptId: "c", status: "cancelled" as const }),
+                    Effect.succeed({ _tag: "Terminal" as const, runId: "run-1", status: "cancelled" as const }),
                   pause: () => Effect.succeed({ _tag: "Accepted" as const, receiptId: "p" }),
                   resume: () => Effect.succeed({ _tag: "Accepted" as const, receiptId: "r" }),
                   list: () => Effect.succeed({ _tag: "runs" as const, items: [] }),
@@ -236,7 +246,7 @@ describe("@smthrs/triggers Wave 9 deep Scheduler & Webhook fuzzing", () => {
                   start: (input) => {
                     starts.push(input)
                     if (startFails) {
-                      return Effect.fail(new TriggerError({ code: "runner_failed", message: "boom" }))
+                      return Effect.fail(new TriggerError({ code: "runner", message: "boom" }))
                     }
                     return Effect.succeed(`run-${starts.length}`)
                   },
@@ -256,7 +266,10 @@ describe("@smthrs/triggers Wave 9 deep Scheduler & Webhook fuzzing", () => {
                 const ticked = yield* Scheduler.tick({ host: "host-w9", concurrency: 2 }).pipe(
                   Effect.provideService(Scheduler.Runner, runner)
                 )
-                expect(ticked.nextWakeMs === undefined || typeof ticked.nextWakeMs === "number").toBe(true)
+                expect(
+                  typeof ticked.at === "number" &&
+                    (ticked.watermark === undefined || typeof ticked.watermark === "number")
+                ).toBe(true)
 
                 const hist = yield* store.history({ triggerId: decl.id })
                 expect(hist.items.length).toBeGreaterThanOrEqual(1)

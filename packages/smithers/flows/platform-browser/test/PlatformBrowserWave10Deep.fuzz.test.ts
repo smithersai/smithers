@@ -1,6 +1,6 @@
 import { SQLITE_IOERR, SQLITE_OK, SQLITE_OPEN_WAL } from "@journeyapps/wa-sqlite"
-import { Fuzz } from "@smthrs/fuzz"
 import { Flow, RetryPolicy } from "@smthrs/flow"
+import { Fuzz } from "@smthrs/fuzz"
 import { Node } from "@smthrs/plan"
 import { TerminalProtocol } from "@smthrs/sandbox"
 import * as Arbitrary from "effect/Arbitrary"
@@ -13,6 +13,8 @@ import * as Fiber from "effect/Fiber"
 import * as Layer from "effect/Layer"
 import * as Option from "effect/Option"
 import * as Path from "effect/Path"
+import { ChildProcess } from "effect/process"
+import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 import * as Queue from "effect/Queue"
 import * as Schedule from "effect/Schedule"
 import * as Schema from "effect/Schema"
@@ -21,9 +23,18 @@ import * as Sink from "effect/Sink"
 import * as Socket from "effect/socket/Socket"
 import * as SqlClient from "effect/sql/SqlClient"
 import * as Stream from "effect/Stream"
-import { ChildProcess } from "effect/process"
-import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
-import { closeSync, fstatSync, fsyncSync, ftruncateSync, mkdtempSync, openSync, readSync, rmSync, writeFileSync, writeSync } from "node:fs"
+import {
+  closeSync,
+  fstatSync,
+  fsyncSync,
+  ftruncateSync,
+  mkdtempSync,
+  openSync,
+  readSync,
+  rmSync,
+  writeFileSync,
+  writeSync
+} from "node:fs"
 import * as NodeFsPromises from "node:fs/promises"
 import { createRequire } from "node:module"
 import { tmpdir } from "node:os"
@@ -245,7 +256,11 @@ describe("PlatformBrowser Wave 10 deep fuzzing", () => {
                     expect(Option.isSome(gotChanges)).toBe(true)
 
                     // Exercise runs() stream with within + every (multi-page readWindow)
-                    const windowChunks = yield* eng.runs({ limit: 1, within: Duration.hours(1), every: Duration.millis(10) }).pipe(Stream.take(1), Stream.runCollect)
+                    const windowChunks = yield* eng.runs({
+                      limit: 1,
+                      within: Duration.hours(1),
+                      every: Duration.millis(10)
+                    }).pipe(Stream.take(1), Stream.runCollect)
                     expect(windowChunks.length).toBe(1)
                     expect(windowChunks[0]!.runs.length).toBeGreaterThanOrEqual(3)
 
@@ -266,7 +281,11 @@ describe("PlatformBrowser Wave 10 deep fuzzing", () => {
                     // Exercise retry on completed Step
                     const firstId = windowChunks[0]!.runs[0]!.runId
                     const retryExit = yield* Effect.exit(
-                      eng.retry(Steps, { source: firstId, step: "step", executionId: `retry-${crypto.randomUUID().slice(0, 6)}` })
+                      eng.retry(Steps, {
+                        source: firstId,
+                        step: "step",
+                        executionId: `retry-${crypto.randomUUID().slice(0, 6)}`
+                      })
                     )
                     expect(retryExit).toBeDefined()
                   } finally {
@@ -299,7 +318,9 @@ describe("PlatformBrowser Wave 10 deep fuzzing", () => {
                   const responder = yield* Stream.fromQueue(sub).pipe(
                     Stream.runForEach((raw) => {
                       const req = Protocol.decode(raw)
-                      if (req === undefined || !("client" in req) || req._tag === "Replied" || req._tag === "Refused") return Effect.void
+                      if (
+                        req === undefined || !("client" in req) || req._tag === "Replied" || req._tag === "Refused"
+                      ) return Effect.void
                       return port.post(
                         Protocol.encode({
                           _tag: "Replied",
@@ -426,7 +447,10 @@ describe("PlatformBrowser Wave 10 deep fuzzing", () => {
                 }
 
                 // Prepare without SqlConnection returns "skipped"
-                const skipped = yield* Prepare.run({ epoch: "e1", run: () => Effect.void } as any, Context.empty() as any)
+                const skipped = yield* Prepare.run(
+                  { epoch: "e1", run: () => Effect.void } as any,
+                  Context.empty() as any
+                )
                 expect(skipped).toBeUndefined()
 
                 return true
@@ -512,11 +536,13 @@ describe("PlatformBrowser Wave 10 deep fuzzing", () => {
                     })
 
                     // Unsupported call hierarchy methods
-                    for (const eff of [
-                      client.prepareCallHierarchy({ path: "/src/main.ts", line: 0, character: 0 }),
-                      client.callHierarchyIncoming({ path: "/src/main.ts", line: 0, character: 0 }),
-                      client.callHierarchyOutgoing({ path: "/src/main.ts", line: 0, character: 0 })
-                    ]) {
+                    for (
+                      const eff of [
+                        client.prepareCallHierarchy({ path: "/src/main.ts", line: 0, character: 0 }),
+                        client.callHierarchyIncoming({ path: "/src/main.ts", line: 0, character: 0 }),
+                        client.callHierarchyOutgoing({ path: "/src/main.ts", line: 0, character: 0 })
+                      ]
+                    ) {
                       const err = yield* Effect.flip(eff)
                       expect(err.code).toBe("unsupported")
                     }
@@ -581,13 +607,23 @@ describe("PlatformBrowser Wave 10 deep fuzzing", () => {
                     const replies: Array<any> = []
                     channel.port1.addEventListener("message", (ev) => replies.push(ev.data))
                     yield* Effect.sleep("15 millis")
-                    channel.port1.postMessage({ _tag: "Request", id: 1, method: "diagnostics", params: { path: "/a.ts" } })
+                    channel.port1.postMessage({
+                      _tag: "Request",
+                      id: 1,
+                      method: "diagnostics",
+                      params: { path: "/a.ts" }
+                    })
                     yield* Effect.sleep("25 millis")
                     expect(replies.some((r) => r._tag === "Refuse" && r.id === 1)).toBe(true)
 
                     // Open then trigger compiler defect
                     channel.port1.postMessage({ _tag: "Open", paths: ["src/a.ts"] })
-                    channel.port1.postMessage({ _tag: "Request", id: 2, method: "diagnostics", params: { path: "/src/a.ts" } })
+                    channel.port1.postMessage({
+                      _tag: "Request",
+                      id: 2,
+                      method: "diagnostics",
+                      params: { path: "/src/a.ts" }
+                    })
                     yield* Effect.sleep("35 millis")
                     // Also send Cancel for nonexistent/active id
                     channel.port1.postMessage({ _tag: "Cancel", id: 2 })
@@ -640,7 +676,17 @@ describe("PlatformBrowser Wave 10 deep fuzzing", () => {
                   const lastReq = posted.filter((m) => m?._tag === "Request").at(-1)
                   if (lastReq !== undefined) {
                     for (const fn of msgListeners) {
-                      fn(new MessageEvent("message", { data: { _tag: "Refuse", id: lastReq.id, code: "invalid_input", message: "bad", method: "diagnostics" } }))
+                      fn(
+                        new MessageEvent("message", {
+                          data: {
+                            _tag: "Refuse",
+                            id: lastReq.id,
+                            code: "invalid_input",
+                            message: "bad",
+                            method: "diagnostics"
+                          }
+                        })
+                      )
                     }
                   }
                   const reqExit = yield* Fiber.await(pendingReq)
@@ -677,7 +723,7 @@ describe("PlatformBrowser Wave 10 deep fuzzing", () => {
 
                 // scenario === "byte-limit-and-read-fail"
                 const channel = new MessageChannel()
-                  channel.port1.start()
+                channel.port1.start()
                 const serverFiber = yield* Effect.forkChild(
                   BrowserLanguageServer.program({
                     typescript: ts,
@@ -757,7 +803,10 @@ describe("PlatformBrowser Wave 10 deep fuzzing", () => {
                   return true
                 }
 
-                if (mode === "unsupported-frame" || mode === "oversized-frame" || mode === "backlog-overflow" || mode === "onOutput-defect") {
+                if (
+                  mode === "unsupported-frame" || mode === "oversized-frame" || mode === "backlog-overflow" ||
+                  mode === "onOutput-defect"
+                ) {
                   const makeFakeWsLayer = (onOpen: (dispatch: (type: string, ev: any) => void) => void) =>
                     Layer.succeed(Socket.WebSocketConstructor)(() => {
                       const map = new Map<string, Array<(e: any) => void>>()
@@ -936,7 +985,10 @@ describe("PlatformBrowser Wave 10 deep fuzzing", () => {
                     // Also exercise Leader without SqlConnection -> DatabaseUnavailable
                     const noAppName = Engines.name()
                     const noAppDb = yield* MemorySqlite.open
-                    const noAppLdr = yield* Engines.leader(noAppName, Engines.engine(noAppName, noAppDb, Engines.steps()))
+                    const noAppLdr = yield* Engines.leader(
+                      noAppName,
+                      Engines.engine(noAppName, noAppDb, Engines.steps())
+                    )
                     try {
                       const noAppTab = yield* Engines.sharedTab(noAppName)
                       const unavailErr = yield* Effect.flip(noAppTab.execute("SELECT 1"))
@@ -998,7 +1050,9 @@ describe("PlatformBrowser Wave 10 deep fuzzing", () => {
                   // Test ReceiptFailed -> TransactionUnrecorded when receipt tables are absent
                   const bareDb = yield* MemorySqlite.open
                   const bareConn = yield* SqlConnection.make(bareDb)
-                  const unrecNoTbl = yield* Effect.flip(bareConn.run("o1", "BEGIN", [], false, { id: 1, at: 1000, undecided: false }))
+                  const unrecNoTbl = yield* Effect.flip(
+                    bareConn.run("o1", "BEGIN", [], false, { id: 1, at: 1000, undecided: false })
+                  )
                   expect(unrecNoTbl._tag).toBe("@smthrs/platform-browser/TransactionUnrecorded")
 
                   const db = yield* MemorySqlite.open
@@ -1017,7 +1071,9 @@ describe("PlatformBrowser Wave 10 deep fuzzing", () => {
                   expect(pragmaExit).toBeDefined()
 
                   // VACUUM -> VacuumUnsupported
-                  const vacErr = yield* Effect.flip(conn.run("o1", "VACUUM", [], false, { id: 99, at: 1000, undecided: false }))
+                  const vacErr = yield* Effect.flip(
+                    conn.run("o1", "VACUUM", [], false, { id: 99, at: 1000, undecided: false })
+                  )
                   expect(vacErr._tag).toBe("@smthrs/platform-browser/VacuumUnsupported")
 
                   // continuing: true when no tx is held -> TransactionLost
@@ -1032,13 +1088,21 @@ describe("PlatformBrowser Wave 10 deep fuzzing", () => {
                   yield* conn.run("o1", "RELEASE sp1", [], true)
                   const waiter = yield* Effect.forkChild(conn.run("o2", "SELECT count(*) AS n FROM s", [], false))
                   yield* Effect.sleep("15 millis")
-                  yield* conn.run("o1", "INSERT INTO s (id) VALUES (2) RETURNING id", [], true, { id: 2, at: 1001, undecided: false })
+                  yield* conn.run("o1", "INSERT INTO s (id) VALUES (2) RETURNING id", [], true, {
+                    id: 2,
+                    at: 1001,
+                    undecided: false
+                  })
                   yield* conn.run("o1", "COMMIT", [], true, { id: 3, at: 1002, undecided: false })
                   const waitRes = yield* Fiber.await(waiter)
                   expect(Exit.isSuccess(waitRes)).toBe(true)
                   // Clean receipted transaction with RETURNING rows to cover writeReply
                   yield* conn.run("o1", "BEGIN", [], false, { id: 10, at: 1010, undecided: false })
-                  yield* conn.run("o1", "INSERT INTO s (id) VALUES (3) RETURNING id", [], true, { id: 11, at: 1011, undecided: false })
+                  yield* conn.run("o1", "INSERT INTO s (id) VALUES (3) RETURNING id", [], true, {
+                    id: 11,
+                    at: 1011,
+                    undecided: false
+                  })
                   yield* conn.run("o1", "COMMIT", [], true, { id: 12, at: 1012, undecided: false })
 
                   // Poison via authorizer refusing ROLLBACK on abandon
@@ -1225,7 +1289,9 @@ describe("PlatformBrowser Wave 10 deep fuzzing", () => {
                       }
                     }
                     const layer = BrowserChildProcessSpawner.layer(bash).pipe(
-                      Layer.provide(BrowserFileSystem.layer(NodeFsPromises as unknown as BrowserFileSystem.ZenFsPromisesLike)),
+                      Layer.provide(
+                        BrowserFileSystem.layer(NodeFsPromises as unknown as BrowserFileSystem.ZenFsPromisesLike)
+                      ),
                       Layer.provide(Path.layer)
                     )
                     const spawner = yield* ChildProcessSpawner.pipe(Effect.provide(layer))
@@ -1236,7 +1302,9 @@ describe("PlatformBrowser Wave 10 deep fuzzing", () => {
                       ChildProcess.pipeTo(ChildProcess.make("echo", ["a"]), ChildProcess.make("cat")),
                       ChildProcess.make("cat", [], { stdin: Stream.empty }),
                       ChildProcess.make("cat", [], { stdin: { stream: Stream.empty } }),
-                      ChildProcess.make("echo", [], { additionalFds: { fd3: { type: "input", stream: Stream.empty } } }),
+                      ChildProcess.make("echo", [], {
+                        additionalFds: { fd3: { type: "input", stream: Stream.empty } }
+                      }),
                       ChildProcess.make("echo", [], { shell: "/bin/sh" }),
                       ChildProcess.make("echo", [], { detached: true }),
                       ChildProcess.make("echo", [], { forceKillAfter: Duration.millis(10) })
@@ -1247,7 +1315,9 @@ describe("PlatformBrowser Wave 10 deep fuzzing", () => {
                     }
 
                     // Valid spawn with stdout: "ignore", stderr: "inherit", and Sink transducing + handle methods
-                    const h1 = yield* spawner.spawn(ChildProcess.make("echo", ["hi"], { stdout: "ignore", stderr: "inherit" }))
+                    const h1 = yield* spawner.spawn(
+                      ChildProcess.make("echo", ["hi"], { stdout: "ignore", stderr: "inherit" })
+                    )
                     expect(yield* Stream.runCollect(h1.stdout)).toEqual([])
                     expect(yield* Stream.runCollect(h1.stderr)).toEqual([])
                     expect(typeof (yield* h1.isRunning)).toBe("boolean")
@@ -1295,7 +1365,9 @@ describe("PlatformBrowser Wave 10 deep fuzzing", () => {
                   // realPath without backend realpath
                   expect((yield* Effect.flip(fsSvc.realPath("/a"))).reason._tag).toBe("PermissionDenied")
                   // recursive readDirectory exceeds maximumDepth on unbounded backend
-                  expect((yield* Effect.flip(fsSvc.readDirectory("/root", { recursive: true }))).reason._tag).toBe("BadResource")
+                  expect((yield* Effect.flip(fsSvc.readDirectory("/root", { recursive: true }))).reason._tag).toBe(
+                    "BadResource"
+                  )
 
                   // Cycle detection when realpath returns same canonical path
                   const cycleFs = BrowserFileSystem.make({
@@ -1317,16 +1389,21 @@ describe("PlatformBrowser Wave 10 deep fuzzing", () => {
                       isSymbolicLink: () => false
                     })
                   })
-                  for (const opts of [
-                    { offset: -1 },
-                    { bytesToRead: -1 },
-                    { chunkSize: 0 },
-                    { chunkSize: 100_000_000 }
-                  ] as const) {
-                    expect((yield* Effect.flip(Stream.runCollect(fileFs.stream("/f", opts)))).reason._tag).toBe("BadArgument")
+                  for (
+                    const opts of [
+                      { offset: -1 },
+                      { bytesToRead: -1 },
+                      { chunkSize: 0 },
+                      { chunkSize: 100_000_000 }
+                    ] as const
+                  ) {
+                    expect((yield* Effect.flip(Stream.runCollect(fileFs.stream("/f", opts)))).reason._tag).toBe(
+                      "BadArgument"
+                    )
                   }
                   expect(yield* Stream.runCollect(fileFs.stream("/f", { bytesToRead: 0 }))).toEqual([])
-                  expect((yield* Effect.flip(Stream.runCollect(fileFs.stream("/f", { chunkSize: 4 })))).reason._tag).toBe("BadResource")
+                  expect((yield* Effect.flip(Stream.runCollect(fileFs.stream("/f", { chunkSize: 4 })))).reason._tag)
+                    .toBe("BadResource")
                   return true
                 }
 

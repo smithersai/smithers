@@ -83,4 +83,27 @@ describe("declared platforms", () => {
       "//packages/a:linuxOnly runs only on linux; this host is darwin"
     )
   })
+
+  it("omits an explicitly named other-host target when skipOtherHosts is set", async () => {
+    const skipped = await PackageExec.plan({
+      index,
+      cacheDirectory: ".flows",
+      verb: "test",
+      patterns: ["//packages/a:linuxOnly", "//packages/a:unit"],
+      plan: true,
+      platform: "darwin",
+      skipOtherHosts: true
+    })
+    expect(skipped.roots).toEqual(["//packages/a:unit"])
+    const kept = await PackageExec.plan({
+      index,
+      cacheDirectory: ".flows",
+      verb: "test",
+      patterns: ["//packages/a:linuxOnly", "//packages/a:unit"],
+      plan: true,
+      platform: "linux",
+      skipOtherHosts: true
+    })
+    expect(kept.roots).toEqual(["//packages/a:linuxOnly", "//packages/a:unit"])
+  })
 })

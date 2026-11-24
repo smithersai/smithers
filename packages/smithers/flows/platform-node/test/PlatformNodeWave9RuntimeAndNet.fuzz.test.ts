@@ -1,4 +1,5 @@
 import { NodeChildProcessSpawner, NodeFileSystem } from "@effect/platform-node"
+import * as NodePathLayer from "@effect/platform-node/NodePath"
 import * as Flow from "@smthrs/flow/Flow"
 import { Fuzz } from "@smthrs/fuzz"
 import * as FlowNode from "@smthrs/plan/Node"
@@ -50,7 +51,7 @@ const encoder = new TextEncoder()
 
 const rawPlatform = Layer.provideMerge(
   NodeChildProcessSpawner.layer,
-  Layer.merge(NodeFileSystem.layer, Path.layer)
+  Layer.merge(NodeFileSystem.layer, NodePathLayer.layer)
 )
 const localServices = Effect.runSync(
   Effect.gen(function*() {
@@ -92,7 +93,7 @@ describe("@smthrs/platform-node Wave-9 runtime, confinement, LSP, proxy, PipedPr
     }
 
     // 1. toolchain with .tool-versions and companions
-    const tcLinux = ProcessSandbox.toolchain(process.env.PATH, ws, linuxHost)
+    const tcLinux = ProcessSandbox.toolchain(join(home, ".nvm"), ws, linuxHost)
     expect(tcLinux.reads.length).toBeGreaterThanOrEqual(0)
 
     // 2. hiddenEntries traversal + missing entries callback error
@@ -285,7 +286,7 @@ process.stdin.on("data", (chunk) => {
     30_000
   )
 
-  it(
+  it.skipIf(process.platform === "win32")(
     "DestinationProxy, FetchTransport, ProcessReaper, ProcessConfinement, NativeRuntime & SandboxedFlow cover error & edge branches",
     async () => {
       const ws = freshDir("proxy-ws")

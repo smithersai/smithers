@@ -967,6 +967,7 @@ smthrs run <patterns...> [options] | <command>
 | `--plan` | boolean | `false` | no | Print the inert plan instead of executing |
 | `--jobs`, `-j` | integer, minimum 1 |  | no | Maximum concurrent targets; defaults to host parallelism. Exclusive targets run alone after ready ordinary work |
 | `--include-exclusive` | boolean | `false` | no | Include exclusive targets in wildcard ci/test selections; explicit labels already include them |
+| `--skip-other-hosts` | boolean | `false` | no | Omit explicitly named targets whose declared hosts exclude this platform |
 | `--cache` | boolean | `true` | no | Consult the result cache before running; `--no-cache` bypasses reads |
 | `--known-red` | string |  | no | JSON list of targets already red, with owner and expiry; their failures are reported but fail only when newly red |
 | `--fail-fast` | boolean | `false` | no | Stop at the first failure that fails the run: start nothing new, cancel running targets, report, exit 1 |

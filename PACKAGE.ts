@@ -771,7 +771,7 @@ const ci = Smithers.GithubCiGen({
       }),
       // Match the workspace gate's bound: each suite also runs Vitest workers,
       // so host-sized package concurrency multiplies process and memory load.
-      steps: [{ name: "Package test targets", verb: Smithers.Verb.Test, ...shardStep(index) }]
+      steps: [{ name: "Package test targets", verb: Smithers.Verb.Test, ...shardStep(index), skipOtherHosts: true }]
     }))
   ]
 })

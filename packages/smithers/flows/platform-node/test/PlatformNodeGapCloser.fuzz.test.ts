@@ -8,6 +8,7 @@ import { HttpClient, HttpClientRequest } from "effect/http"
 import { chmodSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs"
 import { createServer as createHttpServer, type Server as HttpServer } from "node:http"
 import { tmpdir } from "node:os"
+import { delimiter as pathDelimiter } from "node:path"
 import { join } from "node:path"
 import { afterAll, describe, expect, it } from "vitest"
 import * as AtomicFileSystem from "../src/AtomicFileSystem.ts"
@@ -331,7 +332,7 @@ process.stdin.on("data", (chunk) => {
     expect(ProcessSandbox.windowsDrives(join(base, "missing-mountinfo"))).toEqual([])
 
     // Exercise host() methods directly
-    const realHost = ProcessSandbox.host({ PATH: `${toolBin}:/usr/bin:/bin`, HOME: home })
+    const realHost = ProcessSandbox.host({ PATH: `${toolBin}${pathDelimiter}/usr/bin${pathDelimiter}/bin`, HOME: home })
     expect(realHost.executable(myScript)).toBe(myScript)
     expect(realHost.executable("mytool")).toBe(myScript)
     expect(realHost.executable("definitely-missing-xyz-bin")).toBeUndefined()

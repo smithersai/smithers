@@ -17,7 +17,7 @@ const seed = Number(process.env.EFFECT_FUZZ_SEED ?? "20261185")
 const baseExecutions = Number(process.env.EFFECT_FUZZ_EXECUTIONS ?? "100")
 const fastExec = Math.max(30, Math.min(baseExecutions, 100))
 
-const assertPassed = <A>(report: Fuzz.Report<A>): void => {
+const assertPassed = <A, E = unknown>(report: Fuzz.Report<A, E>): void => {
   expect(report._tag, Fuzz.formatReport(report)).toBe("Passed")
 }
 
@@ -40,7 +40,7 @@ const makeReq = (modelId: string, withTools: boolean, withReasoning: boolean) =>
       ]
       : [],
     params: ModelRequest.GenerationParams.make({
-      maxOutputTokens: 256,
+      maxTokens: 256,
       ...(withReasoning ? { reasoningEffort: "medium" as const } : {})
     })
   })
@@ -202,25 +202,27 @@ describe("@smthrs/model Wave 9 deep Route, RequestExecutor & OpenAIResponses fuz
             Effect.gen(function*() {
               const secret = "sk-secret-token-1234567890"
               const apiKey = Redacted.make(secret)
-              const route = Result.getOrThrow(
-                routeKind === "anthropic"
-                  ? Route.anthropic({ apiKey })
-                  : routeKind === "openai"
-                  ? Route.openai({ apiKey })
-                  : routeKind === "openai-responses-compat"
-                  ? Route.openaiResponsesCompatible({
+              const route: Route.Route<any, any, any, any> = routeKind === "anthropic"
+                ? Result.getOrThrow(Route.anthropic({ apiKey }))
+                : routeKind === "openai"
+                ? Result.getOrThrow(Route.openai({ apiKey }))
+                : routeKind === "openai-responses-compat"
+                ? Result.getOrThrow(
+                  Route.openaiResponsesCompatible({
                     id: "compat-resp",
                     providerName: "compat",
                     baseUrl: "https://api.example.test",
                     apiKey
                   })
-                  : Route.openaiChatCompatible({
+                )
+                : Result.getOrThrow(
+                  Route.openaiChatCompatible({
                     id: "compat-chat",
                     providerName: "compat",
                     baseUrl: "https://api.example.test",
                     apiKey
                   })
-              )
+                )
 
               const req = makeReq("test-model", false, false)
               const prepared = yield* Route.prepare(route, req)
@@ -265,7 +267,7 @@ describe("@smthrs/model Wave 9 deep Route, RequestExecutor & OpenAIResponses fuz
               const execLayer = Layer.effect(
                 RequestExecutor.RequestExecutor,
                 RequestExecutor.makeWith(RequestExecutor.fixed(client), {
-                  retries: 0,
+                  maxRetries: 0,
                   responseStartMs: 2_000
                 })
               )
@@ -291,7 +293,7 @@ describe("@smthrs/model Wave 9 deep Route, RequestExecutor & OpenAIResponses fuz
               )
               const sanitizer = yield* RequestExecutor.errorSanitizer(authReq)
               const cleaned = sanitizer(
-                new ModelError({ code: "provider_internal", message: `Bearer ${secret} failed`, retryable: false })
+                new ModelError({ code: "provider_internal", message: `Bearer ${secret} failed` })
               )
               expect(cleaned.message).not.toContain(secret)
               return true

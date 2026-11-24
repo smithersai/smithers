@@ -191,7 +191,9 @@ describe("@smthrs/platform-node Wave 6 deep fuzz (ProcessReaper, ProcSnapshot, R
                   ? dir
                   : path.join(dir, "missing.txt")
 
-                const opened = yield* Effect.scoped(RegularFile.open(plat, target)).pipe(
+                const opened = yield* Effect.scoped(
+                  RegularFile.open(process.platform === "win32" ? "win32" : plat, target)
+                ).pipe(
                   Effect.provide(NodePlatform),
                   Effect.exit
                 )
@@ -209,8 +211,8 @@ describe("@smthrs/platform-node Wave 6 deep fuzz (ProcessReaper, ProcSnapshot, R
               const statusResult = yield* Effect.scoped(
                 Effect.gen(function*() {
                   const handle = yield* ScopedProcess.spawn({
-                    command: "sh",
-                    args: ["-c", `exit ${exitCode}`],
+                    command: process.execPath,
+                    args: ["-e", `process.exit(${exitCode})`],
                     env: { PATH: process.env.PATH ?? "/usr/bin:/bin" }
                   })
                   const code = yield* handle.exitCode

@@ -241,7 +241,12 @@ export const makeFileSystem = (
    * durability tolerates sync refusals, but still requires exclusive creation.
    */
   const syncPath = (target: string, flag: "r" | "r+"): Effect.Effect<void, ArtifactStoreError> => {
-    const sync = Effect.scoped(Effect.flatMap(fs.open(target, { flag }), (file) => file.sync)).pipe(
+    const sync = Effect.scoped(
+      Effect.flatMap(fs.open(target, { flag }), (file) =>
+        flag === "r"
+          ? file.sync.pipe(Effect.catchIf(isPermissionDenied, () => Effect.void))
+          : file.sync)
+    ).pipe(
       Effect.mapError(hostFailure)
     )
     return durability === "best-effort" ? Effect.ignore(sync) : sync

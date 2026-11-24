@@ -1324,3 +1324,28 @@ it.effect("stops ancestor sync walk when an ancestor refuses sync with Permissio
     const stored = yield* withCrypto(ArtifactStore.makeFileSystem(fs, hostPath).put(bytes(artifact)))
     expect(stored).toMatch(/^[0-9a-f]{64}$/)
   }))
+
+it.effect("tolerates PermissionDenied when fsyncing a directory handle (Windows NTFS)", () =>
+  Effect.gen(function*() {
+    const host = memoryFs()
+    const fs = {
+      ...host.fs,
+      open: (path: string, options?: Parameters<typeof host.fs.open>[1]) =>
+        host.fs.open(path, options).pipe(
+          Effect.map((file) =>
+            options?.flag === "r"
+              ? {
+                ...file,
+                sync: Effect.fail(PlatformError.systemError({
+                  _tag: "PermissionDenied",
+                  module: "test",
+                  method: "sync"
+                }))
+              }
+              : file
+          )
+        )
+    }
+    const stored = yield* withCrypto(ArtifactStore.makeFileSystem(fs, hostPath).put(bytes(artifact)))
+    expect(stored).toMatch(/^[0-9a-f]{64}$/)
+  }))

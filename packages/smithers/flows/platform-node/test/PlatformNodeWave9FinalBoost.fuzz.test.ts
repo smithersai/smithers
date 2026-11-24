@@ -447,29 +447,31 @@ describe("Wave9 Final Boost — flows/platform-node deep coverage", () => {
 
     // Trigger real SIGUSR2 twice while scoped with injected ProcessExit so exit codes are recorded without exiting!
     const exitCodes: Array<number> = []
-    await Effect.runPromise(
-      Effect.scoped(
-        Effect.gen(function*() {
-          const scope = yield* Scope.make()
-          yield* NodeRuntime.layerHost({
-            ...baseHost,
-            signals: ["SIGUSR2"],
-            shutdownTimeoutMs: 50
-          }, Layer.empty).pipe(
-            Layer.buildWithScope(scope),
-            Effect.provideService(ProcessExit.ProcessExit, (code) => {
-              exitCodes.push(code)
-            }),
-            Effect.exit
-          )
-          // Fire SIGUSR2 twice to exercise first close + immediate second signal leave(signal)
-          process.emit("SIGUSR2" as any)
-          process.emit("SIGUSR2" as any)
-          yield* Effect.sleep(Duration.millis(70))
-          yield* Scope.close(scope, Exit.void)
-        })
-      ).pipe(Effect.provide(silentLogger))
-    )
+    if (process.platform !== "win32") {
+      await Effect.runPromise(
+        Effect.scoped(
+          Effect.gen(function*() {
+            const scope = yield* Scope.make()
+            yield* NodeRuntime.layerHost({
+              ...baseHost,
+              signals: ["SIGUSR2"],
+              shutdownTimeoutMs: 50
+            }, Layer.empty).pipe(
+              Layer.buildWithScope(scope),
+              Effect.provideService(ProcessExit.ProcessExit, (code) => {
+                exitCodes.push(code)
+              }),
+              Effect.exit
+            )
+            // Fire SIGUSR2 twice to exercise first close + immediate second signal leave(signal)
+            process.emit("SIGUSR2" as any)
+            process.emit("SIGUSR2" as any)
+            yield* Effect.sleep(Duration.millis(70))
+            yield* Scope.close(scope, Exit.void)
+          })
+        ).pipe(Effect.provide(silentLogger))
+      )
+    }
     expect(exitCodes.length).toBeGreaterThanOrEqual(0)
 
     // 3. ProcessSandbox darwin developerDirectory, toolchain companions/.tool-versions, nested hiddenEntries, broker alias refusal
@@ -579,196 +581,203 @@ describe("Wave9 Final Boost — flows/platform-node deep coverage", () => {
     )
   })
 
-  it("fuzzes DestinationProxy, EgressHttpClient proxy/lookup, and FetchTransport diagnostics", async () => {
-    const dir = makeTmp("dp-")
-    const sock = nodePath.join(dir, "p.sock")
-    const token = "wave9-secret-token"
-    const authHeader = `Basic ${Buffer.from(`broker:${token}`).toString("base64")}`
+  it.skipIf(process.platform === "win32")(
+    "fuzzes DestinationProxy, EgressHttpClient proxy/lookup, and FetchTransport diagnostics",
+    async () => {
+      const dir = makeTmp("dp-")
+      const sock = nodePath.join(dir, "p.sock")
+      const token = "wave9-secret-token"
+      const authHeader = `Basic ${Buffer.from(`broker:${token}`).toString("base64")}`
 
-    // 1. DestinationProxy.open on invalid socket path -> BrokerError
-    const badSock = await Effect.runPromise(
-      Effect.exit(
-        Effect.scoped(DestinationProxy.open(nodePath.join(dir, "missing", "sub", "p.sock"), [], token))
+      // 1. DestinationProxy.open on invalid socket path -> BrokerError
+      const badSock = await Effect.runPromise(
+        Effect.exit(
+          Effect.scoped(DestinationProxy.open(nodePath.join(dir, "missing", "sub", "p.sock"), [], token))
+        )
       )
-    )
-    expect(Exit.isFailure(badSock)).toBe(true)
+      expect(Exit.isFailure(badSock)).toBe(true)
 
-    // 2. DestinationProxy.isolated inside workspaceRoot -> BrokerError
-    const isoInside = await Effect.runPromise(
-      Effect.exit(Effect.scoped(DestinationProxy.isolated([], os.tmpdir(), os.tmpdir())))
-    )
-    expect(Exit.isFailure(isoInside)).toBe(true)
+      // 2. DestinationProxy.isolated inside workspaceRoot -> BrokerError
+      const isoInside = await Effect.runPromise(
+        Effect.exit(Effect.scoped(DestinationProxy.isolated([], os.tmpdir(), os.tmpdir())))
+      )
+      expect(Exit.isFailure(isoInside)).toBe(true)
 
-    // 3. DestinationProxy real UDS server exercising publicAddress IPv4, DNS error 502, malformed CONNECT 400
-    await Effect.runPromise(
-      Effect.scoped(
-        Effect.gen(function*() {
-          yield* DestinationProxy.open(sock, ["localhost:80", "nonexistent.invalid", "nonexistent.invalid:443"], token)
-
-          const rawReq = (payload: string) =>
-            Effect.promise(
-              () =>
-                new Promise<string>((resolve) => {
-                  const s = Net.connect(sock, () => {
-                    s.write(payload)
-                  })
-                  let out = ""
-                  s.on("data", (d) => {
-                    out += d.toString("utf8")
-                  })
-                  s.on("end", () => resolve(out))
-                  s.on("close", () => resolve(out))
-                  s.on("error", () => resolve(out))
-                  setTimeout(() => {
-                    s.destroy()
-                    resolve(out)
-                  }, 400)
-                })
+      // 3. DestinationProxy real UDS server exercising publicAddress IPv4, DNS error 502, malformed CONNECT 400
+      await Effect.runPromise(
+        Effect.scoped(
+          Effect.gen(function*() {
+            yield* DestinationProxy.open(
+              sock,
+              ["localhost:80", "nonexistent.invalid", "nonexistent.invalid:443"],
+              token
             )
 
-          // Authenticated GET to localhost (resolves to 127.0.0.1 -> non-public IPv4 -> 403)
-          const rLocal = yield* rawReq(
-            `GET http://localhost/test HTTP/1.1\r\nHost: localhost\r\nProxy-Authorization: ${authHeader}\r\nConnection: close\r\n\r\n`
-          )
-          // Authenticated GET to nonexistent.invalid (DNS throws -> 502)
-          const rDns = yield* rawReq(
-            `GET http://nonexistent.invalid/test HTTP/1.1\r\nHost: nonexistent.invalid\r\nProxy-Authorization: ${authHeader}\r\nConnection: close\r\n\r\n`
-          )
-          // Authenticated CONNECT malformed authority -> 400
-          const rBadConnect = yield* rawReq(
-            `CONNECT [bad-host HTTP/1.1\r\nHost: [bad-host\r\nProxy-Authorization: ${authHeader}\r\n\r\n`
-          )
-          // Authenticated CONNECT nonexistent.invalid:443 -> 502
-          const rDnsConnect = yield* rawReq(
-            `CONNECT nonexistent.invalid:443 HTTP/1.1\r\nHost: nonexistent.invalid:443\r\nProxy-Authorization: ${authHeader}\r\n\r\n`
-          )
-          expect({ rLocal, rDns, rBadConnect, rDnsConnect }).toBeTruthy()
-          expect(rLocal).toContain("403")
-          expect(rBadConnect).toContain("400")
-        })
+            const rawReq = (payload: string) =>
+              Effect.promise(
+                () =>
+                  new Promise<string>((resolve) => {
+                    const s = Net.connect(sock, () => {
+                      s.write(payload)
+                    })
+                    let out = ""
+                    s.on("data", (d) => {
+                      out += d.toString("utf8")
+                    })
+                    s.on("end", () => resolve(out))
+                    s.on("close", () => resolve(out))
+                    s.on("error", () => resolve(out))
+                    setTimeout(() => {
+                      s.destroy()
+                      resolve(out)
+                    }, 400)
+                  })
+              )
+
+            // Authenticated GET to localhost (resolves to 127.0.0.1 -> non-public IPv4 -> 403)
+            const rLocal = yield* rawReq(
+              `GET http://localhost/test HTTP/1.1\r\nHost: localhost\r\nProxy-Authorization: ${authHeader}\r\nConnection: close\r\n\r\n`
+            )
+            // Authenticated GET to nonexistent.invalid (DNS throws -> 502)
+            const rDns = yield* rawReq(
+              `GET http://nonexistent.invalid/test HTTP/1.1\r\nHost: nonexistent.invalid\r\nProxy-Authorization: ${authHeader}\r\nConnection: close\r\n\r\n`
+            )
+            // Authenticated CONNECT malformed authority -> 400
+            const rBadConnect = yield* rawReq(
+              `CONNECT [bad-host HTTP/1.1\r\nHost: [bad-host\r\nProxy-Authorization: ${authHeader}\r\n\r\n`
+            )
+            // Authenticated CONNECT nonexistent.invalid:443 -> 502
+            const rDnsConnect = yield* rawReq(
+              `CONNECT nonexistent.invalid:443 HTTP/1.1\r\nHost: nonexistent.invalid:443\r\nProxy-Authorization: ${authHeader}\r\n\r\n`
+            )
+            expect({ rLocal, rDns, rBadConnect, rDnsConnect }).toBeTruthy()
+            expect(rLocal).toContain("403")
+            expect(rBadConnect).toContain("400")
+          })
+        )
       )
-    )
 
-    // 4. EgressHttpClient with real loopback target & proxy server
-    const targetServer = Http.createServer((_req, res) => {
-      res.writeHead(200, { "content-type": "text/plain" })
-      res.end("target-ok")
-    })
-    await new Promise<void>((resolve) => targetServer.listen(0, "127.0.0.1", () => resolve()))
-    const targetPort = (targetServer.address() as Net.AddressInfo).port
+      // 4. EgressHttpClient with real loopback target & proxy server
+      const targetServer = Http.createServer((_req, res) => {
+        res.writeHead(200, { "content-type": "text/plain" })
+        res.end("target-ok")
+      })
+      await new Promise<void>((resolve) => targetServer.listen(0, "127.0.0.1", () => resolve()))
+      const targetPort = (targetServer.address() as Net.AddressInfo).port
 
-    const proxyServer = Http.createServer((req, res) => {
-      res.writeHead(200, { "content-type": "text/plain" })
-      res.end(`proxied:${req.url}`)
-    })
-    proxyServer.on("connect", (_req, clientSocket) => {
-      clientSocket.write("HTTP/1.1 502 Bad Gateway\r\n\r\n")
-      clientSocket.end()
-    })
-    await new Promise<void>((resolve) => proxyServer.listen(0, "127.0.0.1", () => resolve()))
-    const proxyPort = (proxyServer.address() as Net.AddressInfo).port
+      const proxyServer = Http.createServer((req, res) => {
+        res.writeHead(200, { "content-type": "text/plain" })
+        res.end(`proxied:${req.url}`)
+      })
+      proxyServer.on("connect", (_req, clientSocket) => {
+        clientSocket.write("HTTP/1.1 502 Bad Gateway\r\n\r\n")
+        clientSocket.end()
+      })
+      await new Promise<void>((resolve) => proxyServer.listen(0, "127.0.0.1", () => resolve()))
+      const proxyPort = (proxyServer.address() as Net.AddressInfo).port
 
-    try {
-      const prevProxy = process.env["HTTP_PROXY"]
-      const prevHttpsProxy = process.env["HTTPS_PROXY"]
-      process.env["HTTP_PROXY"] = `http://127.0.0.1:${proxyPort}`
-      process.env["HTTPS_PROXY"] = `http://127.0.0.1:${proxyPort}`
       try {
-        const layer = EgressHttpClient.layer({
-          HTTP_PROXY: `http://127.0.0.1:${proxyPort}`,
-          HTTPS_PROXY: `http://127.0.0.1:${proxyPort}`
-        })
-        const directLayer = EgressHttpClient.layer({})
+        const prevProxy = process.env["HTTP_PROXY"]
+        const prevHttpsProxy = process.env["HTTPS_PROXY"]
+        process.env["HTTP_PROXY"] = `http://127.0.0.1:${proxyPort}`
+        process.env["HTTPS_PROXY"] = `http://127.0.0.1:${proxyPort}`
+        try {
+          const layer = EgressHttpClient.layer({
+            HTTP_PROXY: `http://127.0.0.1:${proxyPort}`,
+            HTTPS_PROXY: `http://127.0.0.1:${proxyPort}`
+          })
+          const directLayer = EgressHttpClient.layer({})
 
-        // HTTP request through proxy & direct pinned request & HTTPS connect failure (triggers lookup + proxy.connect + pinned.destroy!)
-        await Effect.runPromise(
-          Effect.gen(function*() {
-            const client = yield* HttpClient.HttpClient
-            yield* Effect.exit(
-              client.execute(HttpClientRequest.get(`http://example.test:${targetPort}/a`)).pipe(
-                Effect.provideService(Destination, {
-                  origin: `http://example.test:${targetPort}`,
-                  addresses: ["127.0.0.1"]
-                })
+          // HTTP request through proxy & direct pinned request & HTTPS connect failure (triggers lookup + proxy.connect + pinned.destroy!)
+          await Effect.runPromise(
+            Effect.gen(function*() {
+              const client = yield* HttpClient.HttpClient
+              yield* Effect.exit(
+                client.execute(HttpClientRequest.get(`http://example.test:${targetPort}/a`)).pipe(
+                  Effect.provideService(Destination, {
+                    origin: `http://example.test:${targetPort}`,
+                    addresses: ["127.0.0.1"]
+                  })
+                )
               )
-            )
-            yield* Effect.exit(
-              client.execute(HttpClientRequest.get(`https://example.test:${targetPort}/b`)).pipe(
-                Effect.provideService(Destination, {
-                  origin: `https://example.test:${targetPort}`,
-                  addresses: ["127.0.0.1"]
-                })
+              yield* Effect.exit(
+                client.execute(HttpClientRequest.get(`https://example.test:${targetPort}/b`)).pipe(
+                  Effect.provideService(Destination, {
+                    origin: `https://example.test:${targetPort}`,
+                    addresses: ["127.0.0.1"]
+                  })
+                )
               )
-            )
-            // Bad pinned destination (mismatch origin) + invalid proxy env
-            yield* Effect.exit(
-              client.execute(HttpClientRequest.get(`http://other.test:${targetPort}/c`)).pipe(
-                Effect.provideService(Destination, {
-                  origin: `http://example.test:${targetPort}`,
-                  addresses: ["127.0.0.1"]
-                })
+              // Bad pinned destination (mismatch origin) + invalid proxy env
+              yield* Effect.exit(
+                client.execute(HttpClientRequest.get(`http://other.test:${targetPort}/c`)).pipe(
+                  Effect.provideService(Destination, {
+                    origin: `http://example.test:${targetPort}`,
+                    addresses: ["127.0.0.1"]
+                  })
+                )
               )
-            )
-          }).pipe(Effect.provide(Layer.mergeAll(layer, silentLogger)))
-        )
-        await Effect.runPromise(
-          Effect.gen(function*() {
-            const client = yield* HttpClient.HttpClient
-            yield* Effect.exit(
-              client.execute(HttpClientRequest.get(`http://example.test:${targetPort}/direct`)).pipe(
-                Effect.provideService(Destination, {
-                  origin: `http://example.test:${targetPort}`,
-                  addresses: ["127.0.0.1"]
-                })
+            }).pipe(Effect.provide(Layer.mergeAll(layer, silentLogger)))
+          )
+          await Effect.runPromise(
+            Effect.gen(function*() {
+              const client = yield* HttpClient.HttpClient
+              yield* Effect.exit(
+                client.execute(HttpClientRequest.get(`http://example.test:${targetPort}/direct`)).pipe(
+                  Effect.provideService(Destination, {
+                    origin: `http://example.test:${targetPort}`,
+                    addresses: ["127.0.0.1"]
+                  })
+                )
               )
-            )
-            // IPv6-only address when server listens on IPv4 -> triggers family mismatch / connect failure + pinned.destroy()
-            yield* Effect.exit(
-              client.execute(HttpClientRequest.get(`http://example.test:${targetPort}/v6`)).pipe(
-                Effect.provideService(Destination, {
-                  origin: `http://example.test:${targetPort}`,
-                  addresses: ["::1"]
-                })
+              // IPv6-only address when server listens on IPv4 -> triggers family mismatch / connect failure + pinned.destroy()
+              yield* Effect.exit(
+                client.execute(HttpClientRequest.get(`http://example.test:${targetPort}/v6`)).pipe(
+                  Effect.provideService(Destination, {
+                    origin: `http://example.test:${targetPort}`,
+                    addresses: ["::1"]
+                  })
+                )
               )
-            )
-          }).pipe(Effect.provide(Layer.mergeAll(directLayer, silentLogger)))
-        )
+            }).pipe(Effect.provide(Layer.mergeAll(directLayer, silentLogger)))
+          )
+        } finally {
+          if (prevProxy === undefined) delete process.env["HTTP_PROXY"]
+          else process.env["HTTP_PROXY"] = prevProxy
+          if (prevHttpsProxy === undefined) delete process.env["HTTPS_PROXY"]
+          else process.env["HTTPS_PROXY"] = prevHttpsProxy
+        }
+
+        // 5. FetchTransport real undici failure to closed port and invalid host (triggers diagnostics_channel error paths)
+        const closedServer = Net.createServer()
+        await new Promise<void>((resolve) => closedServer.listen(0, "127.0.0.1", () => resolve()))
+        const closedPort = (closedServer.address() as Net.AddressInfo).port
+        await new Promise<void>((resolve) => closedServer.close(() => resolve()))
+
+        const obs1 = FetchTransport.observe(`http://127.0.0.1:${closedPort}`)
+        const a1 = obs1.begin()
+        await a1.run(() => fetch(`http://127.0.0.1:${closedPort}/fail`).catch(() => undefined))
+        expect(a1.fields()).toBeDefined()
+        obs1.close()
+        expect(obs1.begin().fields()).toBeDefined()
+
+        const obs2 = FetchTransport.observe(`http://127.0.0.1:${targetPort}`)
+        const a2 = obs2.begin()
+        await a2.run(() => fetch(`http://127.0.0.1:${targetPort}/ok`).then((r) => r.text()).catch(() => undefined))
+        expect(a2.fields()).toBeDefined()
+        obs2.close()
+
+        const obs3 = FetchTransport.observe("http://nonexistent.invalid")
+        const a3 = obs3.begin()
+        await a3.run(() => fetch("http://nonexistent.invalid/fail").catch(() => undefined))
+        expect(a3.fields()).toBeDefined()
+        obs3.close()
       } finally {
-        if (prevProxy === undefined) delete process.env["HTTP_PROXY"]
-        else process.env["HTTP_PROXY"] = prevProxy
-        if (prevHttpsProxy === undefined) delete process.env["HTTPS_PROXY"]
-        else process.env["HTTPS_PROXY"] = prevHttpsProxy
+        await new Promise<void>((resolve) => targetServer.close(() => resolve()))
+        await new Promise<void>((resolve) => proxyServer.close(() => resolve()))
       }
-
-      // 5. FetchTransport real undici failure to closed port and invalid host (triggers diagnostics_channel error paths)
-      const closedServer = Net.createServer()
-      await new Promise<void>((resolve) => closedServer.listen(0, "127.0.0.1", () => resolve()))
-      const closedPort = (closedServer.address() as Net.AddressInfo).port
-      await new Promise<void>((resolve) => closedServer.close(() => resolve()))
-
-      const obs1 = FetchTransport.observe(`http://127.0.0.1:${closedPort}`)
-      const a1 = obs1.begin()
-      await a1.run(() => fetch(`http://127.0.0.1:${closedPort}/fail`).catch(() => undefined))
-      expect(a1.fields()).toBeDefined()
-      obs1.close()
-      expect(obs1.begin().fields()).toBeDefined()
-
-      const obs2 = FetchTransport.observe(`http://127.0.0.1:${targetPort}`)
-      const a2 = obs2.begin()
-      await a2.run(() => fetch(`http://127.0.0.1:${targetPort}/ok`).then((r) => r.text()).catch(() => undefined))
-      expect(a2.fields()).toBeDefined()
-      obs2.close()
-
-      const obs3 = FetchTransport.observe("http://nonexistent.invalid")
-      const a3 = obs3.begin()
-      await a3.run(() => fetch("http://nonexistent.invalid/fail").catch(() => undefined))
-      expect(a3.fields()).toBeDefined()
-      obs3.close()
-    } finally {
-      await new Promise<void>((resolve) => targetServer.close(() => resolve()))
-      await new Promise<void>((resolve) => proxyServer.close(() => resolve()))
     }
-  })
+  )
 
   it("fuzzes ProcessSupervisor Control/prepare edges, PipedProcess closed stdin, and AtomicFileSystemExecutable/Protocol", async () => {
     // 1. ProcessSupervisor.Control protocol frames (invalid started pid, spawn_error, fault, invalid exit)

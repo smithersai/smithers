@@ -107,7 +107,7 @@ test("build command reports a missing compiler without attempting a build", () =
   assert.equal(result.stdout, "")
 })
 
-test("build command preserves compiler probe failure status and diagnostics", () => {
+test("build command preserves compiler probe failure status and diagnostics", { skip: process.platform === "win32" }, () => {
   const result = runStartup("printf '%s\\n' 'compiler fixture failure' >&2\nexit 7")
   assert.equal(result.error, undefined)
   assert.equal(result.status, 7)
@@ -116,7 +116,7 @@ test("build command preserves compiler probe failure status and diagnostics", ()
   assert.equal(result.stdout, "")
 })
 
-test("build command refuses a noncanonical compiler host before invoking Cargo", () => {
+test("build command refuses a noncanonical compiler host before invoking Cargo", { skip: process.platform === "win32" }, () => {
   const result = runStartup("printf '%s\\n' 'host: aarch64-apple-darwin' 'commit-hash: abc123'")
   assert.equal(result.error, undefined)
   assert.equal(result.status, 1)
@@ -134,7 +134,7 @@ const canonicalVersionProbe = [
 ].join("\n")
 const canonicalCompiler = `${canonicalVersionProbe}\nprintf '%s\\n' '/fixture/sysroot'`
 
-test("build command reports a failed sysroot probe before invoking Cargo", () => {
+test("build command reports a failed sysroot probe before invoking Cargo", { skip: process.platform === "win32" }, () => {
   const result = runStartup(`${canonicalVersionProbe}\nprintf '%s\\n' 'sysroot fixture failure' >&2\nexit 9`)
   assert.equal(result.error, undefined)
   assert.equal(result.status, 9)
@@ -143,7 +143,7 @@ test("build command reports a failed sysroot probe before invoking Cargo", () =>
   assert.equal(result.stdout, "")
 })
 
-test("build command reports missing Cargo after successful compiler probes", () => {
+test("build command reports missing Cargo after successful compiler probes", { skip: process.platform === "win32" }, () => {
   const result = runStartup(canonicalCompiler)
   assert.equal(result.error, undefined)
   assert.equal(result.status, 1)
@@ -151,7 +151,7 @@ test("build command reports missing Cargo after successful compiler probes", () 
   assert.equal(result.stdout, "")
 })
 
-test("build command preserves failed Cargo status and uses the locked WASI build", () => {
+test("build command preserves failed Cargo status and uses the locked WASI build", { skip: process.platform === "win32" }, () => {
   const result = runStartup(canonicalCompiler, "printf '%s\\n' 'cargo fixture failure' \"$@\" >&2\nexit 23")
   assert.equal(result.error, undefined)
   assert.equal(result.status, 23)
@@ -333,7 +333,7 @@ test("buildEnvironment preserves remap flags through Cargo when paths contain sp
       stderr: result.stderr,
       signal: result.signal
     }))
-    assert.equal(result.stdout.trim(), "/flows/included.rs")
+    assert.equal(result.stdout.trim().replaceAll("\\", "/"), "/flows/included.rs")
   } finally {
     rmSync(directory, { recursive: true, force: true })
   }

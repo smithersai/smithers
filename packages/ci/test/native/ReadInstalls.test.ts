@@ -47,7 +47,10 @@ describe("a repository whose targets need a tool a sub-package installs", { time
     // Normal mode reuses the cache when nothing a target reads changed. Smithers build may still run a target that
     // nothing confines when a target that waits for it runs, so only the use of the cache is asserted.
     expect(unchanged?.normal.counts).toMatchObject({ failed: 0, skipped: 0 })
-    expect(unchanged?.normal.counts.hit).toBeGreaterThan(0)
+    expect(
+      unchanged?.normal.counts.hit,
+      JSON.stringify({ changed: changed?.normal, unchanged: unchanged?.normal, stderr: outcome.stderr })
+    ).toBeGreaterThan(0)
     expect(report.speedup).toBeGreaterThan(0)
     expect(report.notReplayed ?? []).toEqual([])
   })

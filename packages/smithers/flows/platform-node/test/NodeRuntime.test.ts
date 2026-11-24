@@ -253,7 +253,7 @@ const completedValue = (result: Option.Option<Flow.Result<unknown, unknown>>): u
     : undefined
 
 describe("the supported Node SQLite composition", () => {
-  it.each([
+  it.skipIf(process.platform === "win32").each([
     ["omitted", {}],
     ["null", { owner: null }]
   ])("refuses a host owner that is %s before constructing the default liveness probe", (_, owner) => {
@@ -822,7 +822,7 @@ describe("the Node host composition", () => {
               rules: [[
                 new Permission.Rule({
                   effect: "allow",
-                  pattern: new Capability.CapabilityPattern({ action: "fs:read", resource: `${hostRoot}/**` })
+                  pattern: new Capability.CapabilityPattern({ action: "fs:read", resource: join(hostRoot, "**") })
                 })
               ]]
             },
@@ -908,7 +908,7 @@ describe("the Node host composition", () => {
               rules: [[
                 new Permission.Rule({
                   effect: "allow",
-                  pattern: new Capability.CapabilityPattern({ action: "fs:read", resource: `${hostRoot}/**` })
+                  pattern: new Capability.CapabilityPattern({ action: "fs:read", resource: join(hostRoot, "**") })
                 })
               ]]
             },
@@ -926,40 +926,44 @@ describe("the Node host composition", () => {
     expect(value).toBe("host note")
   }, 60_000)
 
-  it("grants from a later ruleset but keeps the first ruleset's deny a veto", async () => {
-    // A nested `rules` value is not a flat list with extra brackets.
-    // `@smthrs/capability`'s `evaluate` gives `rulesets[0]` — the CONFIGURED
-    // policy — a hard veto and then applies last-match-wins across the rest,
-    // so a deny in the first ruleset and a deny in the second behave
-    // differently. The single-ruleset cases above cannot see that asymmetry.
-    const spawn = (effect: "allow" | "deny") =>
-      new Permission.Rule({
-        effect,
-        pattern: new Capability.CapabilityPattern({ action: "proc:spawn", resource: "*" })
-      })
-    const attempt = (hostId: string, executionId: string, rules: NodeRuntime.HostOptions["rules"]) =>
-      Effect.runPromise(
-        Host.execute({ what: "spawn" }, { executionId }).pipe(
-          Effect.provide(
-            NodeRuntime.layerHost({
-              filename: hostFile,
-              workspaceRoot: directory,
-              owner: { hostId },
-              signals: [],
-              rules
-            }, hostFlows)
-          ),
-          Effect.scoped
+  it.skipIf(process.platform === "win32")(
+    "grants from a later ruleset but keeps the first ruleset's deny a veto",
+    async () => {
+      // A nested `rules` value is not a flat list with extra brackets.
+      // `@smthrs/capability`'s `evaluate` gives `rulesets[0]` — the CONFIGURED
+      // policy — a hard veto and then applies last-match-wins across the rest,
+      // so a deny in the first ruleset and a deny in the second behave
+      // differently. The single-ruleset cases above cannot see that asymmetry.
+      const spawn = (effect: "allow" | "deny") =>
+        new Permission.Rule({
+          effect,
+          pattern: new Capability.CapabilityPattern({ action: "proc:spawn", resource: "*" })
+        })
+      const attempt = (hostId: string, executionId: string, rules: NodeRuntime.HostOptions["rules"]) =>
+        Effect.runPromise(
+          Host.execute({ what: "spawn" }, { executionId }).pipe(
+            Effect.provide(
+              NodeRuntime.layerHost({
+                filename: hostFile,
+                workspaceRoot: directory,
+                owner: { hostId },
+                signals: [],
+                rules
+              }, hostFlows)
+            ),
+            Effect.scoped
+          )
         )
-      )
 
-    // Nothing in the configured ruleset matches, so the grant in the second
-    // ruleset is what decides — and it is honored.
-    expect(await attempt("host-rules-later", "host-rules-later", [[], [spawn("allow")]])).toMatch(/^ran:/)
-    // The same allow, behind a configured deny, cannot lift it.
-    expect(await attempt("host-rules-veto", "host-rules-veto", [[spawn("deny")], [spawn("allow")]]))
-      .toMatch(/^refused:/)
-  }, 60_000)
+      // Nothing in the configured ruleset matches, so the grant in the second
+      // ruleset is what decides — and it is honored.
+      expect(await attempt("host-rules-later", "host-rules-later", [[], [spawn("allow")]])).toMatch(/^ran:/)
+      // The same allow, behind a configured deny, cannot lift it.
+      expect(await attempt("host-rules-veto", "host-rules-veto", [[spawn("deny")], [spawn("allow")]]))
+        .toMatch(/^refused:/)
+    },
+    60_000
+  )
 
   it("installs the shutdown signals it was not told about, and removes them again", async () => {
     const before = process.listenerCount("SIGTERM")
@@ -989,7 +993,7 @@ describe("the Node host composition", () => {
     const rules = [
       new Permission.Rule({
         effect: "allow",
-        pattern: new Capability.CapabilityPattern({ action: "fs:read", resource: `${hostRoot}/**` })
+        pattern: new Capability.CapabilityPattern({ action: "fs:read", resource: join(hostRoot, "**") })
       })
     ]
     const configured = {
@@ -1238,112 +1242,116 @@ describe("the Node host composition", () => {
     expect(NodeRuntime.signalExitCode("SIGNOTASIGNAL" as NodeJS.Signals)).toBe(143)
   })
 
-  it("releases the run it owns when a shutdown signal arrives, and kills what it spawned", async () => {
-    // Every precondition the shutdown is read against is RECORDED here and
-    // asserted after the run, because the block below ends in `Effect.exit`:
-    // an `expect` inside it is a caught defect, ordinary scope cleanup still
-    // releases the run and kills its group on the way out, and the durable
-    // checks at the bottom then pass on a closure no signal caused.
-    const observed: {
-      status: string | undefined
-      spawned: number
-      aliveBeforeSignal: boolean
-      signalSent: boolean
-      settled: Exit.Exit<unknown, unknown> | undefined
-    } = { status: undefined, spawned: 0, aliveBeforeSignal: false, signalSent: false, settled: undefined }
+  it.skipIf(process.platform === "win32")(
+    "releases the run it owns when a shutdown signal arrives, and kills what it spawned",
+    async () => {
+      // Every precondition the shutdown is read against is RECORDED here and
+      // asserted after the run, because the block below ends in `Effect.exit`:
+      // an `expect` inside it is a caught defect, ordinary scope cleanup still
+      // releases the run and kills its group on the way out, and the durable
+      // checks at the bottom then pass on a closure no signal caused.
+      const observed: {
+        status: string | undefined
+        spawned: number
+        aliveBeforeSignal: boolean
+        signalSent: boolean
+        settled: Exit.Exit<unknown, unknown> | undefined
+      } = { status: undefined, spawned: 0, aliveBeforeSignal: false, signalSent: false, settled: undefined }
 
-    const outcome = await Effect.runPromise(
-      Effect.gen(function*() {
-        const runs = yield* RunStore.RunStore
-        const running = yield* Effect.forkChild(
-          Effect.exit(Host.execute({ what: "sleep" }, { executionId: "host-signal" })),
-          { startImmediately: true }
-        )
-        let row = yield* runs.get("host-signal")
-        for (let attempt = 0; attempt < 400 && (row.status !== "running" || spawned.length === 0); attempt++) {
-          yield* Effect.sleep("25 millis")
-          row = yield* runs.get("host-signal")
-        }
-        yield* Effect.sync(() => {
-          observed.status = row.status
-          // The action really did start an OS process tree, so the kill
-          // assertion at the bottom is about a process that existed.
-          observed.spawned = spawned.length
-          observed.aliveBeforeSignal = spawned.length === 1 && groupIsAlive(spawned[0]!)
-        })
-        // SIGUSR2 is the one user signal Node does not reserve — SIGUSR1
-        // starts the inspector — so the handler under test is the only
-        // listener this raise reaches.
-        yield* Effect.sync(() => {
-          process.kill(process.pid, "SIGUSR2")
-          observed.signalSent = true
-        })
-        observed.settled = yield* Effect.exit(Fiber.join(running))
-      }).pipe(
-        Effect.provide(
-          NodeRuntime.layerHost(
-            {
-              filename: hostFile,
-              workspaceRoot: directory,
-              owner: { hostId: "host-d" },
-              signals: ["SIGUSR2"],
-              rules: [[
-                new Permission.Rule({
-                  effect: "allow",
-                  pattern: new Capability.CapabilityPattern({ action: "proc:spawn", resource: "*" })
-                })
-              ]]
-            },
-            hostFlows
+      const outcome = await Effect.runPromise(
+        Effect.gen(function*() {
+          const runs = yield* RunStore.RunStore
+          const running = yield* Effect.forkChild(
+            Effect.exit(Host.execute({ what: "sleep" }, { executionId: "host-signal" })),
+            { startImmediately: true }
           )
-        ),
-        Effect.scoped,
-        Effect.exit
+          let row = yield* runs.get("host-signal")
+          for (let attempt = 0; attempt < 400 && (row.status !== "running" || spawned.length === 0); attempt++) {
+            yield* Effect.sleep("25 millis")
+            row = yield* runs.get("host-signal")
+          }
+          yield* Effect.sync(() => {
+            observed.status = row.status
+            // The action really did start an OS process tree, so the kill
+            // assertion at the bottom is about a process that existed.
+            observed.spawned = spawned.length
+            observed.aliveBeforeSignal = spawned.length === 1 && groupIsAlive(spawned[0]!)
+          })
+          // SIGUSR2 is the one user signal Node does not reserve — SIGUSR1
+          // starts the inspector — so the handler under test is the only
+          // listener this raise reaches.
+          yield* Effect.sync(() => {
+            process.kill(process.pid, "SIGUSR2")
+            observed.signalSent = true
+          })
+          observed.settled = yield* Effect.exit(Fiber.join(running))
+        }).pipe(
+          Effect.provide(
+            NodeRuntime.layerHost(
+              {
+                filename: hostFile,
+                workspaceRoot: directory,
+                owner: { hostId: "host-d" },
+                signals: ["SIGUSR2"],
+                rules: [[
+                  new Permission.Rule({
+                    effect: "allow",
+                    pattern: new Capability.CapabilityPattern({ action: "proc:spawn", resource: "*" })
+                  })
+                ]]
+              },
+              hostFlows
+            )
+          ),
+          Effect.scoped,
+          Effect.exit
+        )
       )
-    )
 
-    // A defect is the composition's failure, so it is rethrown with its own
-    // message rather than folded into a boolean. The block may end
-    // INTERRUPTED — the signal closes the runtime scope underneath it — but
-    // it may not die.
-    if (Exit.isFailure(outcome) && Cause.hasDies(outcome.cause)) throw Cause.squash(outcome.cause)
-    expect(Exit.isSuccess(outcome) || Cause.hasInterruptsOnly(outcome.cause)).toBe(true)
+      // A defect is the composition's failure, so it is rethrown with its own
+      // message rather than folded into a boolean. The block may end
+      // INTERRUPTED — the signal closes the runtime scope underneath it — but
+      // it may not die.
+      if (Exit.isFailure(outcome) && Cause.hasDies(outcome.cause)) throw Cause.squash(outcome.cause)
+      expect(Exit.isSuccess(outcome) || Cause.hasInterruptsOnly(outcome.cause)).toBe(true)
 
-    // What the shutdown was read against: a run this host was really driving,
-    // one live process group, and a signal that was really raised. Without
-    // these three the checks below prove only that a scope closed.
-    expect(observed.status).toBe("running")
-    expect(observed.spawned).toBe(1)
-    expect(observed.aliveBeforeSignal).toBe(true)
-    expect(observed.signalSent).toBe(true)
-    // The caller settles with the released run rather than waiting on it, and
-    // a release is an interruption of the fiber that was driving it. The
-    // forked effect is itself `Effect.exit`-wrapped, so the interruption is
-    // whichever of the two levels caught it.
-    expect(observed.settled).toBeDefined()
-    const settled = observed.settled !== undefined && Exit.isSuccess(observed.settled)
-      ? observed.settled.value as Exit.Exit<unknown, unknown>
-      : observed.settled
-    expect(settled !== undefined && Exit.isFailure(settled) && Cause.hasInterrupts(settled.cause)).toBe(true)
+      // What the shutdown was read against: a run this host was really driving,
+      // one live process group, and a signal that was really raised. Without
+      // these three the checks below prove only that a scope closed.
+      expect(observed.status).toBe("running")
+      expect(observed.spawned).toBe(1)
+      expect(observed.aliveBeforeSignal).toBe(true)
+      expect(observed.signalSent).toBe(true)
+      // The caller settles with the released run rather than waiting on it, and
+      // a release is an interruption of the fiber that was driving it. The
+      // forked effect is itself `Effect.exit`-wrapped, so the interruption is
+      // whichever of the two levels caught it.
+      expect(observed.settled).toBeDefined()
+      const settled = observed.settled !== undefined && Exit.isSuccess(observed.settled)
+        ? observed.settled.value as Exit.Exit<unknown, unknown>
+        : observed.settled
+      expect(settled !== undefined && Exit.isFailure(settled) && Cause.hasInterrupts(settled.cause)).toBe(true)
 
-    // The run is reclaimable, not abandoned: `suspended` with the reason the
-    // engine parks a released run under, and no owner still holding it.
-    expect(
-      readHostBack((database) =>
-        database.prepare("SELECT status, waiting_reason, owner_host_id FROM flows_runs WHERE run_id = 'host-signal'")
-          .get()
-      )
-    ).toMatchObject({ status: "suspended", waiting_reason: "released", owner_host_id: null })
+      // The run is reclaimable, not abandoned: `suspended` with the reason the
+      // engine parks a released run under, and no owner still holding it.
+      expect(
+        readHostBack((database) =>
+          database.prepare("SELECT status, waiting_reason, owner_host_id FROM flows_runs WHERE run_id = 'host-signal'")
+            .get()
+        )
+      ).toMatchObject({ status: "suspended", waiting_reason: "released", owner_host_id: null })
 
-    // Containment is what makes the release complete: the action's scope closed
-    // with the run, and closing it took the whole process group with it rather
-    // than leaving a `sleep` behind for nobody.
-    const deadline = Date.now() + 10_000
-    while (groupIsAlive(spawned[0]!) && Date.now() < deadline) {
-      await new Promise((resolve) => setTimeout(resolve, 50))
-    }
-    expect(groupIsAlive(spawned[0]!)).toBe(false)
-  }, 60_000)
+      // Containment is what makes the release complete: the action's scope closed
+      // with the run, and closing it took the whole process group with it rather
+      // than leaving a `sleep` behind for nobody.
+      const deadline = Date.now() + 10_000
+      while (groupIsAlive(spawned[0]!) && Date.now() < deadline) {
+        await new Promise((resolve) => setTimeout(resolve, 50))
+      }
+      expect(groupIsAlive(spawned[0]!)).toBe(false)
+    },
+    60_000
+  )
 
   it("takes a compensable pre-image privately without granting action-facing Jj", async () => {
     if (!existsSync(join(hostRoot, ".jj"))) execFileSync("jj", ["git", "init", hostRoot], { stdio: "ignore" })

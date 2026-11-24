@@ -15,7 +15,7 @@ const baseExecutions = Number(process.env.EFFECT_FUZZ_EXECUTIONS ?? "100")
 const fastExec = Math.max(20, Math.min(baseExecutions, 60))
 const httpExec = Math.max(8, Math.min(Math.ceil(baseExecutions / 15), 14))
 
-const assertPassed = <A>(report: Fuzz.Report<A, unknown>): void => {
+const assertPassed = <A, E = unknown>(report: Fuzz.Report<A, E>): void => {
   expect(report._tag, Fuzz.formatReport(report)).toBe("Passed")
 }
 
@@ -129,8 +129,8 @@ describe("Flows Engine Wave 8 deep fuzzing", () => {
                   )
                 )
 
-                const runOnA = <A, E, R>(eff: Effect.Effect<A, E, R>) =>
-                  Effect.provide(eff as Effect.Effect<A, E, never>, clientCtx)
+                const runOnA = <A, E, R>(eff: Effect.Effect<A, E, R | FlowRuntime.FlowRuntime>) =>
+                  Effect.provide(eff, clientCtx)
 
                 if (mode === "execute") {
                   const res = yield* runOnA(LocalParent.execute({ version }, { executionId: `exec-${version}` }))
@@ -140,7 +140,9 @@ describe("Flows Engine Wave 8 deep fuzzing", () => {
                     FlowRuntime.FlowRuntime.key
                   ) as FlowRuntime.FlowRuntime["Service"]
                   const id = yield* runOnA(
-                    RemoteRelease.execute({ version }, { executionId: `disc-${version}`, discard: true })
+                    RemoteRelease.execute({ version }, { executionId: `disc-${version}`, discard: true }).pipe(
+                      Effect.provide(Step.toLayer(() => Effect.succeed("ok")))
+                    )
                   )
                   expect(id).toBe(`disc-${version}`)
                   const res = yield* runOnA(engine.resume(RemoteRelease, `disc-${version}`, { poll: true }))
@@ -158,7 +160,11 @@ describe("Flows Engine Wave 8 deep fuzzing", () => {
                     FlowRuntime.FlowRuntime.key
                   ) as FlowRuntime.FlowRuntime["Service"]
                   const fib = yield* Effect.forkChild(
-                    runOnA(RemoteRelease.execute({ version }, { executionId: `int-${version}` }))
+                    runOnA(
+                      RemoteRelease.execute({ version }, { executionId: `int-${version}` }).pipe(
+                        Effect.provide(Step.toLayer(() => Effect.succeed("ok")))
+                      )
+                    )
                   )
                   yield* Deferred.await(started)
                   yield* runOnA(engine.interrupt(RemoteRelease, `int-${version}`))
@@ -246,22 +252,35 @@ describe("Flows Engine Wave 8 deep fuzzing", () => {
                   success: Schema.Number,
                   body: ({ n: x }) => Node.succeed(x * 3)
                 })
+                const WaitStep = Action.make("w8-mem/wait-step", { payload: {}, success: Schema.String })
                 const WaitFlow = Flow.make("w8-mem/wait", {
                   payload: { n: Schema.Number },
                   success: Schema.String,
-                  body: () => Action.make("w8-mem/wait-step", { payload: {}, success: Schema.String }).call({})
+                  body: () => WaitStep.call({})
                 })
 
                 if (scenario === "identity-conflict-flow") {
                   yield* engine.register(FlowA, ({ n: x }) => Effect.succeed(x + 1))
                   yield* engine.register(FlowB, ({ n: x }) => Effect.succeed(x * 3))
-                  expect(yield* FlowA.execute({ n }, { executionId: `id-${n}` })).toBe(n + 1)
+                  expect(
+                    yield* FlowA.execute({ n }, { executionId: `id-${n}` }).pipe(
+                      Effect.provide(Work.toLayer(({ n: x }) => Effect.succeed(x * 2)))
+                    )
+                  ).toBe(n + 1)
                   const conflict = yield* Effect.exit(FlowB.execute({ n }, { executionId: `id-${n}` }))
                   expect(Exit.isFailure(conflict)).toBe(true)
                 } else if (scenario === "identity-conflict-payload") {
                   yield* engine.register(FlowA, ({ n: x }) => Effect.succeed(x + 1))
-                  expect(yield* FlowA.execute({ n }, { executionId: `pay-${n}` })).toBe(n + 1)
-                  const conflict = yield* Effect.exit(FlowA.execute({ n: n + 1 }, { executionId: `pay-${n}` }))
+                  expect(
+                    yield* FlowA.execute({ n }, { executionId: `pay-${n}` }).pipe(
+                      Effect.provide(Work.toLayer(({ n: x }) => Effect.succeed(x * 2)))
+                    )
+                  ).toBe(n + 1)
+                  const conflict = yield* Effect.exit(
+                    FlowA.execute({ n: n + 1 }, { executionId: `pay-${n}` }).pipe(
+                      Effect.provide(Work.toLayer(({ n: x }) => Effect.succeed(x * 2)))
+                    )
+                  )
                   expect(Exit.isFailure(conflict)).toBe(true)
                 } else if (scenario === "capability-conflict") {
                   const err1 = FlowEngine.capabilityConflict(`cap-${n}`)
@@ -282,7 +301,11 @@ describe("Flows Engine Wave 8 deep fuzzing", () => {
                       })
                   )
                   const id = `wait-${n}`
-                  const fib = yield* Effect.forkChild(WaitFlow.execute({ n }, { executionId: id }))
+                  const fib = yield* Effect.forkChild(
+                    WaitFlow.execute({ n }, { executionId: id }).pipe(
+                      Effect.provide(WaitStep.toLayer(() => Effect.succeed("ok")))
+                    )
+                  )
                   const tok = yield* Deferred.await(tokD)
                   if (n % 2 === 0) {
                     yield* DurableDeferred.done(Gate, { token: tok, exit: Exit.succeed(`done-${n}`) })
@@ -295,7 +318,11 @@ describe("Flows Engine Wave 8 deep fuzzing", () => {
                   }
                 } else if (scenario === "undeclared-failure-redaction") {
                   yield* engine.register(FlowA, () => Effect.fail("secret-internal-error" as never))
-                  const ex = yield* Effect.exit(FlowA.execute({ n }, { executionId: `undec-${n}` }))
+                  const ex = yield* Effect.exit(
+                    FlowA.execute({ n }, { executionId: `undec-${n}` }).pipe(
+                      Effect.provide(Work.toLayer(({ n: x }) => Effect.succeed(x * 2)))
+                    )
+                  )
                   expect(Exit.isFailure(ex)).toBe(true)
                 } else if (scenario === "retryFrom-replay") {
                   const ctx = yield* Layer.build(
@@ -317,7 +344,7 @@ describe("Flows Engine Wave 8 deep fuzzing", () => {
                         source: "does-not-exist",
                         executionId: `retry-miss-${n}`,
                         step: "0"
-                      })
+                      }).pipe(Effect.provide(ctx))
                     )
                     expect(Exit.isFailure(bad)).toBe(true)
                   }
@@ -325,7 +352,7 @@ describe("Flows Engine Wave 8 deep fuzzing", () => {
 
                 return true
               }).pipe(Effect.provide(FlowEngine.layerMemory))
-            ).pipe(withCrypto as <A, E, R>(e: Effect.Effect<A, E, R>) => Effect.Effect<A, E>),
+            ).pipe(withCrypto),
           { seed: seed + 1, executions: fastExec }
         )
       )

@@ -81,10 +81,12 @@ describe("case25 approval scope denial", () => {
       expect((yield* Effect.flip(control.deny(card.approval)))._tag).toBe("/control/Unauthorized")
       return card
     }))
-    // Every refusal is on disk: who asked, for which target, under which scope, and when.
-    const rows = refusals(suite.server().root, `plan:${card.planId}`)
+    // Every refusal is on disk in the dedicated approval audit stream: who asked,
+    // for which validated target identity (without echoing tampered input), under which scope, and when.
+    const rows = refusals(suite.server().root, "audit:approval").filter((row) =>
+      row.payload.target?.planId === card.planId
+    )
     expect(rows).toHaveLength(7)
-    const targets = rows.map((row) => row.payload.target)
     expect(rows.map((row) => row.payload.decision)).toEqual([
       "approved",
       "denied",
@@ -94,9 +96,8 @@ describe("case25 approval scope denial", () => {
       "denied",
       "denied"
     ])
-    expect(targets[2].digest).toBe(`${card.digest}-tampered`)
-    expect(targets[4].envelope.capabilities).toContain("fs:write *")
     for (const row of rows) {
+      expect(row.payload.target).toEqual({ planId: card.planId })
       expect(row.payload.principal).toMatchObject({ id: expect.any(String), kind: expect.any(String) })
       expect(row.payload.principal.kind).not.toBe("operator")
       expect(row.payload.scope).toBe(card.approval.scope)

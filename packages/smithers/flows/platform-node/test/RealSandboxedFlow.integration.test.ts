@@ -40,7 +40,7 @@ const spawner = Effect.gen(function*() {
 // Session keys are suite-unique so a concurrently running vitest worker
 // cannot collide on container names. A normal completion removes the
 // container; the force-removal below covers a run that died mid-acquire.
-const engineAvailable = docker(["info"]).status === 0
+const engineAvailable = process.platform !== "win32" && docker(["info"]).status === 0
 const containerKeys = {
   node: `flows-sandboxed-it-${process.pid}-node`,
   bare: `flows-sandboxed-it-${process.pid}-bare`

@@ -110,6 +110,9 @@ const executionOptions = workspaceOption.extend({
   includeExclusive: z.boolean().default(false).describe(
     "Include exclusive targets in wildcard ci/test selections; explicit labels already include them"
   ),
+  skipOtherHosts: z.boolean().default(false).describe(
+    "Omit explicitly named targets whose declared hosts exclude this platform"
+  ),
   cache: z.boolean().default(true).describe("Consult the result cache before running; --no-cache bypasses reads"),
   knownRed: z.string().optional().describe(
     "JSON list of targets already red, with owner and expiry; their failures are reported but fail only when newly red"
@@ -214,6 +217,7 @@ export interface ExecutionFlags extends WorkspaceFlags {
   readonly jobs?: number | undefined
   readonly lifecycle?: "evergreen" | "artifact" | "all" | undefined
   readonly includeExclusive?: boolean | undefined
+  readonly skipOtherHosts?: boolean | undefined
   readonly cache: boolean
   readonly failFast?: boolean | undefined
   readonly knownRed?: string | undefined
@@ -899,6 +903,7 @@ export const runPackageVerb = async (
       fix: flags.fix,
       plan: flags.plan,
       includeExclusive: flags.includeExclusive,
+      skipOtherHosts: flags.skipOtherHosts,
       lifecycle: flags.lifecycle,
       jobs: flags.jobs,
       readCache: flags.cache,
@@ -1088,6 +1093,7 @@ const runCi = async (
                   patterns: remaining,
                   plan: flags.plan,
                   includeExclusive: flags.includeExclusive,
+                  skipOtherHosts: flags.skipOtherHosts,
                   lifecycle: flags.lifecycle,
                   jobs: flags.jobs,
                   readCache: flags.cache,
@@ -1634,6 +1640,7 @@ const runSelected = async (
     environment: config.environment,
     plan: flags.plan,
     includeExclusive: flags.includeExclusive,
+    skipOtherHosts: flags.skipOtherHosts,
     lifecycle: flags.lifecycle,
     approvals: config.approvals
   }

@@ -363,7 +363,6 @@ export const BuildAndCheckTypeScriptPackage = (options: Options): PackageTargets
       ...(options.testTools === undefined ? {} : { tools: options.testTools }),
       ...(options.testEnv === undefined ? {} : { env: options.testEnv }),
       ...(options.testHosts === undefined ? {} : { hosts: options.testHosts }),
-      ...(options.testHosts === undefined ? {} : { hosts: options.testHosts }),
       tests: [tests],
       sources: [
         sources,

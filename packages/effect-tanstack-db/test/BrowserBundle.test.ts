@@ -1,10 +1,11 @@
 import { build } from "esbuild"
+import { fileURLToPath } from "node:url"
 import { expect, test } from "vitest"
 
 // The root entry bundles for a browser and a Worker with no Node built-in, so the package runs anywhere Effect does.
 test("the root entry bundles for the browser without Node built-ins", async () => {
   const result = await build({
-    entryPoints: [new URL("../src/index.ts", import.meta.url).pathname],
+    entryPoints: [fileURLToPath(new URL("../src/index.ts", import.meta.url))],
     bundle: true,
     platform: "browser",
     conditions: ["workerd", "worker", "browser", "import", "default"],

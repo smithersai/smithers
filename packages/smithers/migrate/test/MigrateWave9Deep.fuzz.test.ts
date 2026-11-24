@@ -19,7 +19,7 @@ const baseExecutions = Number(process.env.EFFECT_FUZZ_EXECUTIONS ?? "100")
 const fastExec = Math.max(20, Math.min(baseExecutions, 60))
 const ioExec = Math.max(12, Math.min(Math.ceil(baseExecutions / 6), 30))
 
-const assertPassed = <A>(report: Fuzz.Report<A>): void => {
+const assertPassed = <A, E = unknown>(report: Fuzz.Report<A, E>): void => {
   expect(report._tag, Fuzz.formatReport(report)).toBe("Passed")
 }
 
@@ -121,9 +121,15 @@ describe("Migrate Wave 9 deep fuzzing", () => {
                     root,
                     scan: mode === "scan",
                     apply: false,
+                    seat: undefined,
+                    allowUnsafe: undefined,
                     allowNoVcs: true,
                     acknowledgeRunState: true,
                     keepOldSources: false,
+                    unit: undefined,
+                    maxRepairRounds: undefined,
+                    reportDir: undefined,
+                    flowsDir: undefined,
                     verifyInstall: withVerifyFlags ? "true" : undefined,
                     verifyFormat: withVerifyFlags ? "true" : undefined,
                     verifyTypecheck: withVerifyFlags ? [""] : [],
@@ -246,7 +252,7 @@ describe("Migrate Wave 9 deep fuzzing", () => {
                   Effect.provide(NodeServices.layer),
                   Effect.provide(SqliteStoreNode.layer)
                 )
-                const decs = Scan.decisions(scanRes.inventory, scanRes.runState, scanRes.detection)
+                const decs = Scan.decisions(scanRes.inventory)
                 expect(Array.isArray(decs)).toBe(true)
                 const rep = Scan.toReport(scanRes, "plan", "2026-11-24T00:00:00.000Z")
                 expect(rep.mode).toBe("plan")
@@ -255,7 +261,7 @@ describe("Migrate Wave 9 deep fuzzing", () => {
                 if (unit !== undefined) {
                   const opDecs = Scan.operatorDecisions(unit)
                   expect(Array.isArray(opDecs)).toBe(true)
-                  const outlined = Transform.outline(scanRes, unit, {})
+                  const outlined = Transform.outline(scanRes, unit, { root, mode: "plan" })
                   expect(outlined.id).toBe(unit.id)
                   const checkResults = yield* Checks.run(
                     root,

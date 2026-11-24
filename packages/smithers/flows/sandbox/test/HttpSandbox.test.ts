@@ -344,6 +344,26 @@ describe("HttpSandbox", () => {
       expect(existsSync(next.workdir)).toBe(true)
     })), 30_000)
 
+  it.live("reports absent session when workdir disappears before guarded acquire or delete", () =>
+    Effect.scoped(Effect.gen(function*() {
+      const actual = machines()
+      const handler = HttpSandbox.serve({
+        token,
+        provider: {
+          ...actual,
+          acquire: (key) =>
+            actual.acquire(key).pipe(
+              Effect.tap((session) => Effect.sync(() => rmSync(session.workdir, { recursive: true, force: true })))
+            )
+        }
+      })
+      const acquired = yield* raw(handler, "POST", "/v1/sessions", {
+        body: JSON.stringify({ key: "absent", uploadVersion: 2 })
+      })
+      expect(acquired.status).toBe(404)
+      expect(JSON.parse(acquired.body)).toMatchObject({ code: "not_found", message: "session is absent" })
+    })))
+
   it.live("private staging preserves the destination owner, group and mode on publication", () =>
     Effect.scoped(Effect.gen(function*() {
       const session = yield* machines().acquire("upload-mode")

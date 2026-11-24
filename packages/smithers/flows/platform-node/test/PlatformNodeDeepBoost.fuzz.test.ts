@@ -312,56 +312,59 @@ describe("@smthrs/platform-node deep boost: sqliteObjectStorage, SandboxedFlowGu
     if (failure !== undefined) throw new Error(failure)
   })
 
-  it("AtomicFileSystemTransport.spawnHelper fuzzes valid frames, overflow, timeout, non-zero exit, malformed frames & stderr truncation", async () => {
-    const program = atomicHelperProgram()
-    const limits = { ...defaultLimits, response: 256, stderr: 16 }
-    const req = { operation: "exists", path: "/a" } as const
-    const frame = (value: unknown) => {
-      const body = JSON.stringify(value)
-      return `flows-atomic/1 ${Buffer.byteLength(body)}\n${body}`
-    }
+  it.skipIf(process.platform === "win32")(
+    "AtomicFileSystemTransport.spawnHelper fuzzes valid frames, overflow, timeout, non-zero exit, malformed frames & stderr truncation",
+    async () => {
+      const program = atomicHelperProgram()
+      const limits = { ...defaultLimits, response: 256, stderr: 16 }
+      const req = { operation: "exists", path: "/a" } as const
+      const frame = (value: unknown) => {
+        const body = JSON.stringify(value)
+        return `flows-atomic/1 ${Buffer.byteLength(body)}\n${body}`
+      }
 
-    const arb = Arbitrary.schema(
-      Schema.Struct({
-        mode: Schema.Literals(["ok", "overflow", "timeout", "bad-exit", "bad-frame", "stderr-cap"])
-      })
-    )
-
-    const report = await Effect.runPromise(
-      Fuzz.run(
-        arb,
-        ({ mode }) =>
-          Effect.gen(function*() {
-            const dir = freshDir("transport")
-            const body = mode === "ok"
-              ? `process.stdout.write(${JSON.stringify(frame({ ok: true, value: true }))});`
-              : mode === "overflow"
-              ? `process.stdout.write("flows-atomic/1 9999\\n" + "x".repeat(400));`
-              : mode === "timeout"
-              ? `setTimeout(() => {}, 10000);`
-              : mode === "bad-exit"
-              ? `process.stderr.write("err"); process.exit(5);`
-              : mode === "bad-frame"
-              ? `process.stdout.write("garbage-no-frame");`
-              : `process.stderr.write("0123456789abcdefghijklmnopqrstuvwxyz"); process.exit(2);`
-            const exe = yield* Effect.promise(() => program(dir, body))
-            const exit = yield* spawnHelper(req, exe, Buffer.from("req"), {
-              limits,
-              timeoutMs: mode === "timeout" ? 60 : 5000
-            }).pipe(Effect.exit)
-            if (mode === "ok") {
-              expect(Exit.isSuccess(exit)).toBe(true)
-            } else {
-              expect(Exit.isFailure(exit)).toBe(true)
-            }
-            return true
-          }).pipe(Effect.provide(silentLogger)),
-        { seed: seed + 3, executions: ioExecutions }
+      const arb = Arbitrary.schema(
+        Schema.Struct({
+          mode: Schema.Literals(["ok", "overflow", "timeout", "bad-exit", "bad-frame", "stderr-cap"])
+        })
       )
-    )
-    const failure = Fuzz.formatReport(report)
-    if (failure !== undefined) throw new Error(failure)
-  })
+
+      const report = await Effect.runPromise(
+        Fuzz.run(
+          arb,
+          ({ mode }) =>
+            Effect.gen(function*() {
+              const dir = freshDir("transport")
+              const body = mode === "ok"
+                ? `process.stdout.write(${JSON.stringify(frame({ ok: true, value: true }))});`
+                : mode === "overflow"
+                ? `process.stdout.write("flows-atomic/1 9999\\n" + "x".repeat(400));`
+                : mode === "timeout"
+                ? `setTimeout(() => {}, 10000);`
+                : mode === "bad-exit"
+                ? `process.stderr.write("err"); process.exit(5);`
+                : mode === "bad-frame"
+                ? `process.stdout.write("garbage-no-frame");`
+                : `process.stderr.write("0123456789abcdefghijklmnopqrstuvwxyz"); process.exit(2);`
+              const exe = yield* Effect.promise(() => program(dir, body))
+              const exit = yield* spawnHelper(req, exe, Buffer.from("req"), {
+                limits,
+                timeoutMs: mode === "timeout" ? 60 : 5000
+              }).pipe(Effect.exit)
+              if (mode === "ok") {
+                expect(Exit.isSuccess(exit)).toBe(true)
+              } else {
+                expect(Exit.isFailure(exit)).toBe(true)
+              }
+              return true
+            }).pipe(Effect.provide(silentLogger)),
+          { seed: seed + 3, executions: ioExecutions }
+        )
+      )
+      const failure = Fuzz.formatReport(report)
+      if (failure !== undefined) throw new Error(failure)
+    }
+  )
 
   it("ProcessReaper.reap/report/systems, ProcessSupervisor helpers, PipedProcess.refuseNul & ProcessSandbox.docker/diagnose fuzz", async () => {
     const arb = Arbitrary.schema(

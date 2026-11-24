@@ -390,7 +390,7 @@ describe("SandboxedFlow.execute on a scratch machine", () => {
       expect(attempts[0]).not.toBe(attempts[1])
     }), 60_000)
 
-  it.live(
+  it.live.skipIf(process.platform === "win32")(
     "captures a link the guest planted as a link instead of reading its target",
     () =>
       Effect.gen(function*() {

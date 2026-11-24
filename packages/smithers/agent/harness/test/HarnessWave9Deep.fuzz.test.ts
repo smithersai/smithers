@@ -13,7 +13,7 @@ const seed = Number(process.env.EFFECT_FUZZ_SEED ?? "20261143")
 const baseExecutions = Number(process.env.EFFECT_FUZZ_EXECUTIONS ?? "100")
 const fastExec = Math.max(40, Math.min(baseExecutions, 120))
 
-const assertPassed = <A>(report: Fuzz.Report<A>): void => {
+const assertPassed = <A, E = unknown>(report: Fuzz.Report<A, E>): void => {
   expect(report._tag, Fuzz.formatReport(report)).toBe("Passed")
 }
 
@@ -36,7 +36,7 @@ describe("Harness Wave 9 deep fuzzing", () => {
         ({ prob, evalFails, withEarlierUsage, refusalCode, limitMs, withOutput }) =>
           Effect.gen(function*() {
             const evalLayer = evalFails
-              ? Evaluator.layerUnavailable("down")
+              ? Evaluator.layerUnavailable()
               : Layer.succeed(Evaluator.Evaluator)(Evaluator.Evaluator.of({
                 evaluate: () =>
                   Effect.succeed({ answers: { unfinished: { type: "boolean", probability: prob } }, latencyMs: 2 })

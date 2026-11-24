@@ -1,15 +1,16 @@
 import type { ControlSchema } from "@smthrs/control"
 import { Fuzz } from "@smthrs/fuzz"
-import type { JournalRecord } from "@smthrs/journal"
 import { Arbitrary, Effect, Schema } from "effect"
 import { describe, expect, it } from "vitest"
 import { Diagnosis, EngineTrace } from "../src/index.ts"
+
+type TraceRecord = Parameters<typeof EngineTrace.engineTraceFromJournal>[0][number]
 
 const seed = Number(process.env.EFFECT_FUZZ_SEED ?? "20261142")
 const baseExecutions = Number(process.env.EFFECT_FUZZ_EXECUTIONS ?? "100")
 const fastExec = Math.max(40, Math.min(baseExecutions, 120))
 
-const assertPassed = <A>(report: Fuzz.Report<A>): void => {
+const assertPassed = <A, E = unknown>(report: Fuzz.Report<A, E>): void => {
   expect(report._tag, Fuzz.formatReport(report)).toBe("Passed")
 }
 
@@ -175,15 +176,15 @@ describe("Gateway Wave 9 deep fuzzing", () => {
             Effect.sync(() => {
               const rootId = "exec-root-1"
               let seq = 1
-              const rec = (eventType: string, payload: unknown, sourceId = rootId): JournalRecord => ({
+              const rec = (kind: string, payload: unknown, runId = rootId): TraceRecord => ({
+                runId,
                 sequence: seq++,
-                sourceId,
-                eventType,
+                kind,
                 payload: JSON.stringify(payload),
-                recordedAtMs: 1_750_000_000_000 + seq * 100
+                occurredAt: 1_750_000_000_000 + seq * 100
               })
 
-              const records: Array<JournalRecord> = [
+              const records: Array<TraceRecord> = [
                 rec("flows.engine.plan-recorded", {
                   executionId: rootId,
                   flowName: "demo/flow",
@@ -248,17 +249,17 @@ describe("Gateway Wave 9 deep fuzzing", () => {
               }
               if (includeMalformed) {
                 records.push({
+                  runId: rootId,
                   sequence: seq++,
-                  sourceId: rootId,
-                  eventType: "flows.engine.node-settled",
+                  kind: "flows.engine.node-settled",
                   payload: "{not-json",
-                  recordedAtMs: 1_750_000_000_999
+                  occurredAt: 1_750_000_000_999
                 })
               }
 
               const traces = EngineTrace.engineTraceFromJournal(records)
               expect(Array.isArray(traces)).toBe(true)
-              const execEv = EngineTrace.engineExecutionEvidence(records, rootId)
+              const execEv = EngineTrace.engineExecutionEvidence(records)
               expect(execEv).toBeDefined()
               const runEv = EngineTrace.engineRunEvidence(records, rootId, records.length)
               expect(runEv).toBeDefined()

@@ -54,8 +54,8 @@ const execute = (name, config, pattern) => {
   const report = join(artifacts, `${name}.json`)
   rmSync(report, { force: true })
   rmSync(join(artifacts, name, "signal-inbox-20260904.json"), { force: true })
-  const result = spawnSync("pnpm", [
-    "exec", "vitest", "run", "test/SignalInboxModel.test.ts", "--config", config,
+  const result = spawnSync(process.execPath, [
+    join(root, "node_modules", "vitest", "vitest.mjs"), "run", "test/SignalInboxModel.test.ts", "--config", config,
     "--testNamePattern", pattern, "--reporter=json", `--outputFile=${report}`
   ], {
     cwd: root,

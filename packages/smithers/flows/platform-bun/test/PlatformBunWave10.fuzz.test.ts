@@ -18,82 +18,88 @@ const executions = Number(process.env.EFFECT_FUZZ_EXECUTIONS ?? "250")
 const seed = Number(process.env.EFFECT_FUZZ_SEED ?? "20261124")
 
 describe("@smthrs/platform-bun Wave 10 deep fuzz", () => {
-  it("BunHost refuses long, control-heavy, and NUL-containing roots with bounded preview and builds layerContained", async () => {
-    const arb = Arbitrary.schema(
-      Schema.Struct({
-        kind: Schema.Literals(["longRelative", "controlFlood", "absoluteNul", "longAbsoluteNul", "surrogateLong"]),
-        repeat: Schema.Int.check(Schema.isBetween({ minimum: 20, maximum: 90 })),
-        useContainedAt: Schema.Boolean
-      })
-    )
-    const report = await Effect.runPromise(
-      Fuzz.run(
-        arb,
-        ({ kind, repeat, useContainedAt }) =>
-          Effect.sync(() => {
-            let root: string
-            switch (kind) {
-              case "longRelative":
-                root = `rel/${"a".repeat(repeat + 60)}`
-                break
-              case "controlFlood":
-                root = `rel/${"\u0001\u0002\n\r\t".repeat(repeat)}`
-                break
-              case "absoluteNul":
-                root = `/tmp/repo\0tail${repeat}`
-                break
-              case "longAbsoluteNul":
-                root = `/tmp/${"\u0001".repeat(repeat + 50)}\0end`
-                break
-              case "surrogateLong":
-                root = `rel/${"😀".repeat(repeat + 50)}`
-                break
-            }
-            try {
-              if (useContainedAt) {
-                BunHost.layerContainedAt(root)
-              } else {
-                BunHost.layerAt(root)
-              }
-              return false
-            } catch (err) {
-              if (!(err instanceof BunHost.BunHostError)) return false
-              if (err.code !== "invalid_repository_root") return false
-              if (err.message.length > 255) return false
-              if (err.message.includes("\n")) return false
-              if (kind === "absoluteNul" || kind === "longAbsoluteNul") {
-                if (!err.message.includes("without NUL")) return false
-              } else {
-                if (!err.message.includes("absolute repository root")) return false
-              }
-              return true
-            }
-          }),
-        { seed, executions }
+  it(
+    "BunHost refuses long, control-heavy, and NUL-containing roots with bounded preview and builds layerContained",
+    async () => {
+      const arb = Arbitrary.schema(
+        Schema.Struct({
+          kind: Schema.Literals(["longRelative", "controlFlood", "absoluteNul", "longAbsoluteNul", "surrogateLong"]),
+          repeat: Schema.Int.check(Schema.isBetween({ minimum: 20, maximum: 90 })),
+          useContainedAt: Schema.Boolean
+        })
       )
-    )
-    const failure = Fuzz.formatReport(report)
-    if (failure !== undefined) throw new Error(failure)
-
-    // Exercise BunHost.layerContained() with and without options
-    const built = await Effect.runPromise(
-      Effect.gen(function*() {
-        const ledger = yield* ProcessLedger.makeMemory({ hostId: "wave10-contained", ownerPid: process.pid })
-        const r1 = yield* Effect.scoped(
-          Layer.build(BunHost.layerContained().pipe(Layer.provide(Layer.succeed(ProcessLedger.ProcessLedger, ledger))))
+      const report = await Effect.runPromise(
+        Fuzz.run(
+          arb,
+          ({ kind, repeat, useContainedAt }) =>
+            Effect.sync(() => {
+              let root: string
+              switch (kind) {
+                case "longRelative":
+                  root = `rel/${"a".repeat(repeat + 60)}`
+                  break
+                case "controlFlood":
+                  root = `rel/${"\u0001\u0002\n\r\t".repeat(repeat)}`
+                  break
+                case "absoluteNul":
+                  root = `/tmp/repo\0tail${repeat}`
+                  break
+                case "longAbsoluteNul":
+                  root = `/tmp/${"\u0001".repeat(repeat + 50)}\0end`
+                  break
+                case "surrogateLong":
+                  root = `rel/${"😀".repeat(repeat + 50)}`
+                  break
+              }
+              try {
+                if (useContainedAt) {
+                  BunHost.layerContainedAt(root)
+                } else {
+                  BunHost.layerAt(root)
+                }
+                return false
+              } catch (err) {
+                if (!(err instanceof BunHost.BunHostError)) return false
+                if (err.code !== "invalid_repository_root") return false
+                if (err.message.length > 255) return false
+                if (err.message.includes("\n")) return false
+                if (kind === "absoluteNul" || kind === "longAbsoluteNul") {
+                  if (!err.message.includes("without NUL")) return false
+                } else {
+                  if (!err.message.includes("absolute repository root")) return false
+                }
+                return true
+              }
+            }),
+          { seed, executions }
         )
-        const r2 = yield* Effect.scoped(
-          Layer.build(
-            BunHost.layerContained({ graceMs: 50, ownerPid: process.pid }).pipe(
-              Layer.provide(Layer.succeed(ProcessLedger.ProcessLedger, ledger))
+      )
+      const failure = Fuzz.formatReport(report)
+      if (failure !== undefined) throw new Error(failure)
+
+      // Exercise BunHost.layerContained() with and without options
+      const built = await Effect.runPromise(
+        Effect.gen(function*() {
+          const ledger = yield* ProcessLedger.makeMemory({ hostId: "wave10-contained", ownerPid: process.pid })
+          const r1 = yield* Effect.scoped(
+            Layer.build(
+              BunHost.layerContained().pipe(Layer.provide(Layer.succeed(ProcessLedger.ProcessLedger, ledger)))
             )
           )
-        )
-        return r1 !== undefined && r2 !== undefined
-      }).pipe(Effect.provide(Logger.layer([])))
-    )
-    expect(built).toBe(true)
-  }, 60_000)
+          const r2 = yield* Effect.scoped(
+            Layer.build(
+              BunHost.layerContained({ graceMs: 50, ownerPid: process.pid }).pipe(
+                Layer.provide(Layer.succeed(ProcessLedger.ProcessLedger, ledger))
+              )
+            )
+          )
+          return r1 !== undefined && r2 !== undefined
+        }).pipe(Effect.provide(Logger.layer([])))
+      )
+      expect(built).toBe(true)
+    },
+    60_000
+  )
 
   it("BunFileReplacement detects TOCTOU race between write and rename via injected FileSystem wrapper", async () => {
     const tmpRoot = await Fs.realpath(await Fs.mkdtemp(Path.join(Os.tmpdir(), "smthrs-pbun-w10-")))

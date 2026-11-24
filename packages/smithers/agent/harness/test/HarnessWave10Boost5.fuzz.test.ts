@@ -8,11 +8,11 @@ import * as Compaction from "../src/Compaction.ts"
 import * as ContextWindow from "../src/ContextWindow.ts"
 import * as DoneText from "../src/DoneText.ts"
 import * as FailedCall from "../src/FailedCall.ts"
+import * as CompactionMarks from "../src/internal/compactionMarks.ts"
+import * as SchemaSignature from "../src/internal/schemaSignature.ts"
 import * as NarrowedCheck from "../src/NarrowedCheck.ts"
 import * as Tokens from "../src/Tokens.ts"
 import * as TruncatedOutput from "../src/TruncatedOutput.ts"
-import * as CompactionMarks from "../src/internal/compactionMarks.ts"
-import * as SchemaSignature from "../src/internal/schemaSignature.ts"
 
 const EXECUTIONS = Number(process.env.FUZZ_EXECUTIONS ?? "80")
 
@@ -315,7 +315,8 @@ describe("@smthrs/harness Wave10 Boost5 Fuzz", () => {
             if (found) expect(NarrowedCheck.demand(found).length).toBeGreaterThan(0)
 
             expect(NarrowedCheck.findOnly({ ledger: [], frame: [], before: [], taught: [] })).toBeUndefined()
-            expect(NarrowedCheck.findOnly({ ledger: [], frame: [priorCovering], before: [], taught: [] })).toBeUndefined()
+            expect(NarrowedCheck.findOnly({ ledger: [], frame: [priorCovering], before: [], taught: [] }))
+              .toBeUndefined()
             expect(
               NarrowedCheck.findOnly({
                 ledger: [priorCovering],
@@ -335,7 +336,12 @@ describe("@smthrs/harness Wave10 Boost5 Fuzz", () => {
             if (foundOnly) expect(NarrowedCheck.demandOnly(foundOnly).length).toBeGreaterThan(0)
 
             const mkCount = (v: number) => new Tokens.Count({ value: v, estimated: false })
-            expect(Compaction.shouldCompact({ total: { value: Number.NaN, estimated: false } as Tokens.Count, contextWindow: 1000 })).toBe(false)
+            expect(
+              Compaction.shouldCompact({
+                total: { value: Number.NaN, estimated: false } as Tokens.Count,
+                contextWindow: 1000
+              })
+            ).toBe(false)
             expect(Compaction.shouldCompact({ total: mkCount(100), contextWindow: 0 })).toBe(false)
             expect(
               Compaction.shouldCompact(
@@ -350,47 +356,60 @@ describe("@smthrs/harness Wave10 Boost5 Fuzz", () => {
             const resMsg = ModelRequest.Message.tool([
               ModelRequest.ToolResultPart.make({ toolCallId: "tc-1", content: "ok" })
             ])
-            const seg0 = ContextWindow.makeSegment({ kind: "summary", zone: "tail", content: [ModelRequest.Message.user("sum")] })
-            const seg1 = ContextWindow.makeSegment({ kind: "steering", zone: "tail", content: [ModelRequest.Message.user("steer")] })
+            const seg0 = ContextWindow.makeSegment({
+              kind: "summary",
+              zone: "tail",
+              content: [ModelRequest.Message.user("sum")]
+            })
+            const seg1 = ContextWindow.makeSegment({
+              kind: "steering",
+              zone: "tail",
+              content: [ModelRequest.Message.user("steer")]
+            })
             const seg2 = ContextWindow.makeSegment({ kind: "transcript", zone: "tail", content: [callMsg] })
             const seg3 = ContextWindow.makeSegment({ kind: "transcript", zone: "tail", content: [resMsg] })
-            const seg4 = ContextWindow.makeSegment({ kind: "transcript", zone: "tail", content: [ModelRequest.Message.user("u4")] })
-            const seg5 = ContextWindow.makeSegment({ kind: "transcript", zone: "tail", content: [ModelRequest.Message.user("u5")] })
+            const seg4 = ContextWindow.makeSegment({
+              kind: "transcript",
+              zone: "tail",
+              content: [ModelRequest.Message.user("u4")]
+            })
+            const seg5 = ContextWindow.makeSegment({
+              kind: "transcript",
+              zone: "tail",
+              content: [ModelRequest.Message.user("u5")]
+            })
             const segs = [seg0, seg1, seg2, seg3, seg4, seg5]
 
-            const factsList: ReadonlyArray<CompactionMarks.Facts | undefined> =
-              mode % 3 === 0
-                ? [
-                  undefined,
-                  undefined,
-                  { frame: 2, person: false, mutated: true, checks: [] },
-                  { frame: 3, person: false, mutated: false, checks: [] },
-                  { frame: 4, person: false, mutated: false, checks: ["test:a"] },
-                  { frame: 5, person: true, mutated: false, checks: [] }
-                ]
-                : mode % 3 === 1
-                ? [
-                  undefined,
-                  undefined,
-                  { frame: 2, person: false, mutated: false, checks: [] },
-                  { frame: 3, person: false, mutated: false, checks: [] },
-                  { frame: 4, person: false, mutated: true, checks: [] },
-                  undefined
-                ]
-                : [
-                  undefined,
-                  undefined,
-                  { frame: 2, person: true, mutated: false, checks: [] },
-                  { frame: 3, person: false, mutated: false, checks: [] },
-                  undefined,
-                  undefined
-                ]
+            const factsList: ReadonlyArray<CompactionMarks.Facts | undefined> = mode % 3 === 0
+              ? [
+                undefined,
+                undefined,
+                { frame: 2, person: false, mutated: true, checks: [] },
+                { frame: 3, person: false, mutated: false, checks: [] },
+                { frame: 4, person: false, mutated: false, checks: ["test:a"] },
+                { frame: 5, person: true, mutated: false, checks: [] }
+              ]
+              : mode % 3 === 1
+              ? [
+                undefined,
+                undefined,
+                { frame: 2, person: false, mutated: false, checks: [] },
+                { frame: 3, person: false, mutated: false, checks: [] },
+                { frame: 4, person: false, mutated: true, checks: [] },
+                undefined
+              ]
+              : [
+                undefined,
+                undefined,
+                { frame: 2, person: true, mutated: false, checks: [] },
+                { frame: 3, person: false, mutated: false, checks: [] },
+                undefined,
+                undefined
+              ]
 
             const pinned = CompactionMarks.pins(segs, 6, factsList, ["test:a"])
             const asked = CompactionMarks.unpinned(pinned)
-            const answers = asked.map((_, i) =>
-              i === 0 ? { keep: 0.9, remove: 0.05 } : { keep: 0.1, remove: 0.9 }
-            )
+            const answers = asked.map((_, i) => i === 0 ? { keep: 0.9, remove: 0.05 } : { keep: 0.1, remove: 0.9 })
             const resolved = CompactionMarks.resolve(
               answers,
               pinned,

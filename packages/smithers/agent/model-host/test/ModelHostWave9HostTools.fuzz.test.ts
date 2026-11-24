@@ -12,7 +12,7 @@ const seed = Number(process.env.EFFECT_FUZZ_SEED ?? "20261172")
 const baseExecutions = Number(process.env.EFFECT_FUZZ_EXECUTIONS ?? "100")
 const fastExec = Math.max(20, Math.min(Math.ceil(baseExecutions / 4), 48))
 
-const assertPassed = <A>(report: Fuzz.Report<A, any>): void => {
+const assertPassed = <A, E = unknown>(report: Fuzz.Report<A, E>): void => {
   expect(report._tag, Fuzz.formatReport(report)).toBe("Passed")
 }
 

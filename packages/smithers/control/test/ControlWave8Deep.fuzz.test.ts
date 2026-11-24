@@ -66,9 +66,14 @@ describe("@smthrs/control Wave 8 deep fuzz (ApprovalAuthority, ControlLive error
               const deniedByEmpty = yield* Effect.exit(
                 emptyDel.authorize({
                   principal: { id: "alice", kind: "person", stampedAt: 1 },
-                  decision: "approved",
                   scope: "once",
-                  target: { _tag: "Plan", planId: "p1", digest: "a".repeat(64), envelope: { capabilities: [], flows: [], budget: {} } },
+                  target: {
+                    _tag: "Plan",
+                    planId: "p1",
+                    digest: "d1",
+                    envelope: { capabilities: [], flows: [], budget: {} }
+                  },
+                  decision: "approved"
                 })
               )
               expect(Exit.isFailure(deniedByEmpty)).toBe(true)

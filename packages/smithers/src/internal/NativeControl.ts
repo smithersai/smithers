@@ -2211,6 +2211,10 @@ export const make = (
           )
         }
         const session = AgentSession.make({
+          confirmParkHostDead: AgentSession.parkHostDead(
+            { hostId: hostname(), pid: process.pid, nonce: "control-executor" },
+            HostLiveness.sameHostPidProbe
+          ),
           reenterModules: native.reenterModules,
           reentryCheckpoint: native.reentryCheckpoint,
           sandbox,

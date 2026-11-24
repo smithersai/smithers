@@ -1083,11 +1083,14 @@ describe("BrowserFileSystem operations over node:fs/promises", () => {
         reason: { _tag: "PermissionDenied", method: "access", pathOrDescriptor: path("ro.txt") }
       })
       expect(Exit.isFailure(outcome.writableOnReadOnly)).toBe(true)
-      // The browser contract checks mode bits even when the Node test process can bypass them.
-      expect(Exit.isFailure(outcome.readableOnWriteOnly)).toBe(true)
-      expect(yield* (Effect.flip(fileSystem.access(path("wo.txt"), { readable: true })))).toMatchObject({
-        reason: { _tag: "PermissionDenied", method: "access", pathOrDescriptor: path("wo.txt") }
-      })
+      // Windows NTFS does not have a write-only POSIX mode bit; check on POSIX hosts.
+      if (process.platform !== "win32") {
+        // The browser contract checks mode bits even when the Node test process can bypass them.
+        expect(Exit.isFailure(outcome.readableOnWriteOnly)).toBe(true)
+        expect(yield* (Effect.flip(fileSystem.access(path("wo.txt"), { readable: true })))).toMatchObject({
+          reason: { _tag: "PermissionDenied", method: "access", pathOrDescriptor: path("wo.txt") }
+        })
+      }
     }))
 
   /**

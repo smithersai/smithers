@@ -19,6 +19,14 @@ import * as ApplyPatch from "../src/ApplyPatch.ts"
 import * as Edit from "../src/Edit.ts"
 import * as ExaWebSearch from "../src/ExaWebSearch.ts"
 import * as Grep from "../src/Grep.ts"
+import * as EnvelopePrecheck from "../src/internal/EnvelopePrecheck.ts"
+import * as Html from "../src/internal/Html.ts"
+import * as Http from "../src/internal/Http.ts"
+import * as HttpNetwork from "../src/internal/HttpNetwork.ts"
+import * as Ignore from "../src/internal/Ignore.ts"
+import * as Preserve from "../src/internal/Preserve.ts"
+import * as TestReport from "../src/internal/TestReport.ts"
+import * as Text from "../src/internal/Text.ts"
 import * as LanguageServer from "../src/LanguageServer.ts"
 import * as Ls from "../src/Ls.ts"
 import * as Lsp from "../src/Lsp.ts"
@@ -29,14 +37,6 @@ import * as StdError from "../src/StdError.ts"
 import * as TestRun from "../src/TestRun.ts"
 import * as TestRunner from "../src/TestRunner.ts"
 import * as WebSearch from "../src/WebSearch.ts"
-import * as EnvelopePrecheck from "../src/internal/EnvelopePrecheck.ts"
-import * as Html from "../src/internal/Html.ts"
-import * as Http from "../src/internal/Http.ts"
-import * as HttpNetwork from "../src/internal/HttpNetwork.ts"
-import * as Ignore from "../src/internal/Ignore.ts"
-import * as Preserve from "../src/internal/Preserve.ts"
-import * as TestReport from "../src/internal/TestReport.ts"
-import * as Text from "../src/internal/Text.ts"
 
 const executions = Number(process.env.EFFECT_FUZZ_EXECUTIONS ?? "80")
 const fastExec = Math.max(40, Math.min(executions, 120))
@@ -111,20 +111,23 @@ describe("@smthrs/std Wave10 Deep Fuzz", () => {
             expect(typeof Html.toMarkdown(html)).toBe("string")
 
             const scope = Ignore.parse("/repo", ignoreRules[0]!)
-            for (const cand of [
-              { p: "/repo/a.log", dir: false },
-              { p: "/repo/keep.log", dir: false },
-              { p: "/repo/build", dir: true },
-              { p: "/repo/build", dir: false },
-              { p: "/repo/rootonly.txt", dir: false },
-              { p: "/repo/sub/rootonly.txt", dir: false },
-              { p: "/repo/x/deep/a.tmp", dir: false },
-              { p: "/repo/file1.txt", dir: false },
-              { p: "/repo/b.dat", dir: false },
-              { p: "/repo/#literal", dir: false }
-            ]) {
+            for (
+              const cand of [
+                { p: "/repo/a.log", dir: false },
+                { p: "/repo/keep.log", dir: false },
+                { p: "/repo/build", dir: true },
+                { p: "/repo/build", dir: false },
+                { p: "/repo/rootonly.txt", dir: false },
+                { p: "/repo/sub/rootonly.txt", dir: false },
+                { p: "/repo/x/deep/a.tmp", dir: false },
+                { p: "/repo/file1.txt", dir: false },
+                { p: "/repo/b.dat", dir: false },
+                { p: "/repo/#literal", dir: false }
+              ]
+            ) {
               expect(
-                typeof Ignore.ignored([scope], cand.p, pathSvc.basename(cand.p), cand.dir, (a, b) => pathSvc.relative(a, b))
+                typeof Ignore.ignored([scope], cand.p, pathSvc.basename(cand.p), cand.dir, (a, b) =>
+                  pathSvc.relative(a, b))
               ).toBe("boolean")
             }
 
@@ -275,9 +278,12 @@ describe("@smthrs/std Wave10 Deep Fuzz", () => {
                 svc.search({
                   query: "smithers",
                   numResults: 3,
-                  ...(mode === "200-ok-day" ? { freshness: "day" as const } : mode === "200-ok-week" ? { freshness: "week" as const } : {})
-                })
-              ).pipe(Effect.provide(exaLayer))
+                  ...(mode === "200-ok-day"
+                    ? { freshness: "day" as const }
+                    : mode === "200-ok-week"
+                    ? { freshness: "week" as const }
+                    : {})
+                })).pipe(Effect.provide(exaLayer))
             )
             expect(Result.isSuccess(exaRes)).toBe(mode === "200-ok-day" || mode === "200-ok-week")
 
@@ -298,7 +304,9 @@ describe("@smthrs/std Wave10 Deep Fuzz", () => {
               expect(Http.requestError("https://example.com", wrapped).code).toBe("invalid_input")
               const badTimeout = yield* Effect.result(Http.withDeadline(Effect.void, "https://example.com", -1))
               expect(Result.isFailure(badTimeout)).toBe(true)
-              const timedOut = yield* Effect.result(Http.withDeadline(Effect.sleep("200 millis"), "https://example.com", 0.01))
+              const timedOut = yield* Effect.result(
+                Http.withDeadline(Effect.sleep("200 millis"), "https://example.com", 0.01)
+              )
               expect(Result.isFailure(timedOut)).toBe(true)
               const boundedFail = yield* Effect.result(
                 Http.readBounded(Stream.fromIterable([new Uint8Array(6 * 1024 * 1024)]), "https://example.com")
@@ -314,7 +322,10 @@ describe("@smthrs/std Wave10 Deep Fuzz", () => {
               const guarded = HttpNetwork.guarded(pinnedClient, false)
               const grantLayer = netMode === "localhost-granted" || netMode === "public-ip-ok"
                 ? GrantStore.layerNoop
-                : Layer.succeed(GrantStore.GrantStore, { ...GrantStore.makeNoop, check: () => Effect.fail({ _tag: "GrantDenied" } as any) })
+                : Layer.succeed(GrantStore.GrantStore, {
+                  ...GrantStore.makeNoop,
+                  check: () => Effect.fail({ _tag: "GrantDenied" } as any)
+                })
               const resolveLayer = Layer.succeed(
                 KernelHttpClient.ResolveHost,
                 (hostname: string) => {
@@ -353,213 +364,230 @@ describe("@smthrs/std Wave10 Deep Fuzz", () => {
     assertPassed(report)
   }, 60_000)
 
-  it("Lsp operations, Preserve, ApplyPatch, Edit, PortableSearch/NativeSearch/Grep/Ls, and TestRun against base", async () => {
-    const tmpRoot = fs.realpathSync(fs.mkdtempSync(nodePath.join(os.tmpdir(), "smthrs-std-w10-")))
-    try {
-      const lspOps = [
-        "definition",
-        "references",
-        "hover",
-        "documentSymbols",
-        "workspaceSymbols",
-        "diagnostics",
-        "implementation",
-        "prepareCallHierarchy",
-        "callHierarchyIncoming",
-        "callHierarchyOutgoing"
-      ] as const
+  it(
+    "Lsp operations, Preserve, ApplyPatch, Edit, PortableSearch/NativeSearch/Grep/Ls, and TestRun against base",
+    async () => {
+      const tmpRoot = fs.realpathSync(fs.mkdtempSync(nodePath.join(os.tmpdir(), "smthrs-std-w10-")))
+      try {
+        const lspOps = [
+          "definition",
+          "references",
+          "hover",
+          "documentSymbols",
+          "workspaceSymbols",
+          "diagnostics",
+          "implementation",
+          "prepareCallHierarchy",
+          "callHierarchyIncoming",
+          "callHierarchyOutgoing"
+        ] as const
 
-      const arb = Arbitrary.schema(
-        Schema.Struct({
-          opIdx: Schema.Int.pipe(Schema.check(Schema.isBetween({ minimum: 0, maximum: lspOps.length - 1 }))),
-          lspFails: Schema.Boolean,
-          fsMode: Schema.Literals([
-            "preserve-and-edit-edges",
-            "apply-patch-edges",
-            "search-and-ls-edges",
-            "test-run-base-missing-root",
-            "test-run-base-git-repo"
-          ])
-        })
-      )
+        const arb = Arbitrary.schema(
+          Schema.Struct({
+            opIdx: Schema.Int.pipe(Schema.check(Schema.isBetween({ minimum: 0, maximum: lspOps.length - 1 }))),
+            lspFails: Schema.Boolean,
+            fsMode: Schema.Literals([
+              "preserve-and-edit-edges",
+              "apply-patch-edges",
+              "search-and-ls-edges",
+              "test-run-base-missing-root",
+              "test-run-base-git-repo"
+            ])
+          })
+        )
 
-      const report = await Effect.runPromise(
-        Fuzz.run(
-          arb,
-          ({ opIdx, lspFails, fsMode }) =>
-            Effect.gen(function*() {
-              const dir = fs.mkdtempSync(nodePath.join(tmpRoot, "case-"))
-              const op = lspOps[opIdx]!
-              const lspInput: typeof Lsp.Input.Type = {
-                operation: op,
-                path: nodePath.join(dir, "a.ts"),
-                line: 1,
-                character: 1,
-                query: "foo"
-              }
-              expect(Lsp.effectsFor(lspInput)).toBeDefined()
+        const report = await Effect.runPromise(
+          Fuzz.run(
+            arb,
+            ({ opIdx, lspFails, fsMode }) =>
+              Effect.gen(function*() {
+                const dir = fs.mkdtempSync(nodePath.join(tmpRoot, "case-"))
+                const op = lspOps[opIdx]!
+                const lspInput: typeof Lsp.Input.Type = {
+                  operation: op,
+                  path: nodePath.join(dir, "a.ts"),
+                  line: 1,
+                  character: 1,
+                  query: "foo"
+                }
+                expect(Lsp.effectsFor(lspInput)).toBeDefined()
 
-              const mockLsp = lspFails
-                ? LanguageServer.layerNoop
-                : Layer.succeed(
-                  LanguageServer.LanguageServer,
-                  LanguageServer.make({
-                    ...LanguageServer.makeNoop(),
-                    definition: () => Effect.succeed([]),
-                    references: () => Effect.succeed([]),
-                    hover: () => Effect.succeed("hover text"),
-                    documentSymbols: () => Effect.succeed([]),
-                    workspaceSymbols: () => Effect.succeed([]),
-                    diagnostics: () => Effect.succeed([]),
-                    implementation: () => Effect.succeed([]),
-                    prepareCallHierarchy: () => Effect.succeed([]),
-                    callHierarchyIncoming: () => Effect.succeed([]),
-                    callHierarchyOutgoing: () => Effect.succeed([])
-                  })
-                )
-              const lspRes = yield* Effect.result(Lsp.run(lspInput).pipe(Effect.provide(mockLsp)))
-              expect(Result.isSuccess(lspRes) || Result.isFailure(lspRes)).toBe(true)
-
-              if (fsMode === "preserve-and-edit-edges") {
-                const fsSvc = yield* FileSystem.FileSystem
-                const target = nodePath.join(dir, "pres.txt")
-                yield* Preserve.writeFileString(fsSvc, target, "line1\r\nline2\r\n")
-                yield* Preserve.writeFile(fsSvc, target, enc.encode("line1\r\nline3\r\n"))
-                const e1 = yield* Effect.result(
-                  Edit.run({ path: target, oldString: "missing", newString: "x" }).pipe(Effect.provide(LanguageServer.layerNoop))
-                )
-                expect(Result.isFailure(e1)).toBe(true)
-                const e2 = yield* Effect.result(
-                  Edit.run({ path: target, oldString: "line1", newString: "line1" }).pipe(Effect.provide(LanguageServer.layerNoop))
-                )
-                expect(Result.isSuccess(e2) || Result.isFailure(e2)).toBe(true)
-                fs.writeFileSync(target, "dup\ndup\n")
-                const e3 = yield* Effect.result(
-                  Edit.run({ path: target, oldString: "dup", newString: "one" }).pipe(Effect.provide(LanguageServer.layerNoop))
-                )
-                expect(Result.isFailure(e3)).toBe(true)
-                const e4 = yield* Edit.run({ path: target, oldString: "dup", newString: "one", replaceAll: true }).pipe(
-                  Effect.provide(LanguageServer.layerNoop)
-                )
-                expect(e4.replacements).toBe(2)
-              } else if (fsMode === "apply-patch-edges") {
-                const upd = nodePath.join(dir, "upd.txt")
-                const mov = nodePath.join(dir, "moved.txt")
-                const del = nodePath.join(dir, "del.txt")
-                const add = nodePath.join(dir, "added.txt")
-                fs.writeFileSync(upd, "alpha\nbeta\ngamma\n")
-                fs.writeFileSync(del, "bye\n")
-                const patch = [
-                  "*** Begin Patch",
-                  `*** Add File: ${add}`,
-                  "+hello",
-                  "+world",
-                  `*** Update File: ${upd}`,
-                  `*** Move to: ${mov}`,
-                  "@@",
-                  " alpha",
-                  "-beta",
-                  "+BETA",
-                  " gamma",
-                  `*** Delete File: ${del}`,
-                  "*** End Patch"
-                ].join("\n")
-                const applied = yield* ApplyPatch.run({ input: patch }).pipe(Effect.provide(LanguageServer.layerNoop))
-                expect(applied.added.length + applied.modified.length + applied.deleted.length).toBeGreaterThanOrEqual(2)
-                const bad1 = yield* Effect.result(
-                  ApplyPatch.run({ input: `*** Begin Patch\n*** Update File: ${nodePath.join(dir, "nope.txt")}\n@@\n-a\n+b\n*** End Patch` }).pipe(
-                    Effect.provide(LanguageServer.layerNoop)
+                const mockLsp = lspFails
+                  ? LanguageServer.layerNoop
+                  : Layer.succeed(
+                    LanguageServer.LanguageServer,
+                    LanguageServer.make({
+                      ...LanguageServer.makeNoop(),
+                      definition: () => Effect.succeed([]),
+                      references: () => Effect.succeed([]),
+                      hover: () => Effect.succeed("hover text"),
+                      documentSymbols: () => Effect.succeed([]),
+                      workspaceSymbols: () => Effect.succeed([]),
+                      diagnostics: () => Effect.succeed([]),
+                      implementation: () => Effect.succeed([]),
+                      prepareCallHierarchy: () => Effect.succeed([]),
+                      callHierarchyIncoming: () => Effect.succeed([]),
+                      callHierarchyOutgoing: () => Effect.succeed([])
+                    })
                   )
-                )
-                expect(Result.isFailure(bad1)).toBe(true)
-              } else if (fsMode === "search-and-ls-edges") {
-                fs.writeFileSync(nodePath.join(dir, ".gitignore"), "ignored.txt\n")
-                fs.writeFileSync(nodePath.join(dir, "ignored.txt"), "needle\n")
-                fs.writeFileSync(nodePath.join(dir, "keep.ts"), "export const needle = 42\n// second needle\n")
-                fs.writeFileSync(nodePath.join(dir, "bin.dat"), Buffer.from([0, 1, 2, 0, 65, 66]))
-                const portRes = yield* Effect.flatMap(Search.Search, (s) =>
-                  s.grep({
-                    pattern: "needle",
-                    root: dir,
-                    fixedStrings: false,
-                    ignoreCase: true,
-                    smartCase: false,
-                    globs: ["*.ts"],
-                    beforeContext: 0,
-                    afterContext: 0,
-                    filesWithMatches: false,
-                    hidden: false,
-                    symbols: false,
-                    limit: 50
-                  })
-                ).pipe(Effect.provide(PortableSearch.layer))
-                expect(portRes.matches.length).toBeGreaterThan(0)
-                const invalidRe = yield* Effect.exit(
-                  Effect.flatMap(Search.Search, (s) =>
+                const lspRes = yield* Effect.result(Lsp.run(lspInput).pipe(Effect.provide(mockLsp)))
+                expect(Result.isSuccess(lspRes) || Result.isFailure(lspRes)).toBe(true)
+
+                if (fsMode === "preserve-and-edit-edges") {
+                  const fsSvc = yield* FileSystem.FileSystem
+                  const target = nodePath.join(dir, "pres.txt")
+                  yield* Preserve.writeFileString(fsSvc, target, "line1\r\nline2\r\n")
+                  yield* Preserve.writeFile(fsSvc, target, enc.encode("line1\r\nline3\r\n"))
+                  const e1 = yield* Effect.result(
+                    Edit.run({ path: target, oldString: "missing", newString: "x" }).pipe(
+                      Effect.provide(LanguageServer.layerNoop)
+                    )
+                  )
+                  expect(Result.isFailure(e1)).toBe(true)
+                  const e2 = yield* Effect.result(
+                    Edit.run({ path: target, oldString: "line1", newString: "line1" }).pipe(
+                      Effect.provide(LanguageServer.layerNoop)
+                    )
+                  )
+                  expect(Result.isSuccess(e2) || Result.isFailure(e2)).toBe(true)
+                  fs.writeFileSync(target, "dup\ndup\n")
+                  const e3 = yield* Effect.result(
+                    Edit.run({ path: target, oldString: "dup", newString: "one" }).pipe(
+                      Effect.provide(LanguageServer.layerNoop)
+                    )
+                  )
+                  expect(Result.isFailure(e3)).toBe(true)
+                  const e4 = yield* Edit.run({ path: target, oldString: "dup", newString: "one", replaceAll: true })
+                    .pipe(
+                      Effect.provide(LanguageServer.layerNoop)
+                    )
+                  expect(e4.replacements).toBe(2)
+                } else if (fsMode === "apply-patch-edges") {
+                  const upd = nodePath.join(dir, "upd.txt")
+                  const mov = nodePath.join(dir, "moved.txt")
+                  const del = nodePath.join(dir, "del.txt")
+                  const add = nodePath.join(dir, "added.txt")
+                  fs.writeFileSync(upd, "alpha\nbeta\ngamma\n")
+                  fs.writeFileSync(del, "bye\n")
+                  const patch = [
+                    "*** Begin Patch",
+                    `*** Add File: ${add}`,
+                    "+hello",
+                    "+world",
+                    `*** Update File: ${upd}`,
+                    `*** Move to: ${mov}`,
+                    "@@",
+                    " alpha",
+                    "-beta",
+                    "+BETA",
+                    " gamma",
+                    `*** Delete File: ${del}`,
+                    "*** End Patch"
+                  ].join("\n")
+                  const applied = yield* ApplyPatch.run({ input: patch }).pipe(Effect.provide(LanguageServer.layerNoop))
+                  expect(applied.added.length + applied.modified.length + applied.deleted.length)
+                    .toBeGreaterThanOrEqual(2)
+                  const bad1 = yield* Effect.result(
+                    ApplyPatch.run({
+                      input: `*** Begin Patch\n*** Update File: ${
+                        nodePath.join(dir, "nope.txt")
+                      }\n@@\n-a\n+b\n*** End Patch`
+                    }).pipe(
+                      Effect.provide(LanguageServer.layerNoop)
+                    )
+                  )
+                  expect(Result.isFailure(bad1)).toBe(true)
+                } else if (fsMode === "search-and-ls-edges") {
+                  fs.writeFileSync(nodePath.join(dir, ".gitignore"), "ignored.txt\n")
+                  fs.writeFileSync(nodePath.join(dir, "ignored.txt"), "needle\n")
+                  fs.writeFileSync(nodePath.join(dir, "keep.ts"), "export const needle = 42\n// second needle\n")
+                  fs.writeFileSync(nodePath.join(dir, "bin.dat"), Buffer.from([0, 1, 2, 0, 65, 66]))
+                  const portRes = yield* Effect.flatMap(Search.Search, (s) =>
                     s.grep({
-                      pattern: "[unclosed",
+                      pattern: "needle",
                       root: dir,
                       fixedStrings: false,
-                      ignoreCase: false,
+                      ignoreCase: true,
                       smartCase: false,
-                      globs: [],
+                      globs: ["*.ts"],
                       beforeContext: 0,
                       afterContext: 0,
                       filesWithMatches: false,
                       hidden: false,
                       symbols: false,
                       limit: 50
-                    })
-                  ).pipe(Effect.provide(PortableSearch.layer))
-                )
-                expect(invalidRe._tag).toBe("Failure")
-                if (invalidRe._tag === "Failure") {
-                  const reason = invalidRe.cause.reasons[0]
-                  expect(reason?._tag).toBe("Fail")
-                  if (reason?._tag === "Fail") expect(reason.error.code).toBe("invalid_pattern")
-                }
-                const grepOut = yield* Grep.run({ pattern: "needle", root: dir }).pipe(
-                  Effect.provide(NativeSearch.layer)
-                )
-                expect(grepOut.matches.length).toBeGreaterThan(0)
-                const lsOut = yield* Ls.run({ path: dir, offset: 0, limit: 10 })
-                expect(lsOut.entries.length).toBeGreaterThan(0)
-              } else if (fsMode === "test-run-base-missing-root") {
-                const runnerLayer = TestRunner.layer({
-                  command: `${process.execPath} -e "console.log('1 pass')"`
-                })
-                const r = yield* Effect.result(
-                  TestRun.run({ against: "base" }).pipe(
+                    })).pipe(Effect.provide(PortableSearch.layer))
+                  expect(portRes.matches.length).toBeGreaterThan(0)
+                  const invalidRe = yield* Effect.exit(
+                    Effect.flatMap(Search.Search, (s) =>
+                      s.grep({
+                        pattern: "[unclosed",
+                        root: dir,
+                        fixedStrings: false,
+                        ignoreCase: false,
+                        smartCase: false,
+                        globs: [],
+                        beforeContext: 0,
+                        afterContext: 0,
+                        filesWithMatches: false,
+                        hidden: false,
+                        symbols: false,
+                        limit: 50
+                      })).pipe(Effect.provide(PortableSearch.layer))
+                  )
+                  expect(invalidRe._tag).toBe("Failure")
+                  if (invalidRe._tag === "Failure") {
+                    const reason = invalidRe.cause.reasons[0]
+                    expect(reason?._tag).toBe("Fail")
+                    if (reason?._tag === "Fail") expect(reason.error.code).toBe("invalid_pattern")
+                  }
+                  const grepOut = yield* Grep.run({ pattern: "needle", root: dir }).pipe(
+                    Effect.provide(NativeSearch.layer)
+                  )
+                  expect(grepOut.matches.length).toBeGreaterThan(0)
+                  const lsOut = yield* Ls.run({ path: dir, offset: 0, limit: 10 })
+                  expect(lsOut.entries.length).toBeGreaterThan(0)
+                } else if (fsMode === "test-run-base-missing-root") {
+                  const runnerLayer = TestRunner.layer({
+                    command: `${process.execPath} -e "console.log('1 pass')"`
+                  })
+                  const r = yield* Effect.result(
+                    TestRun.run({ against: "base" }).pipe(
+                      Effect.provide(Layer.mergeAll(runnerLayer, Evaluator.layerUnavailable()))
+                    )
+                  )
+                  expect(Result.isFailure(r)).toBe(true)
+                } else if (fsMode === "test-run-base-git-repo") {
+                  cp.execFileSync("git", ["init", "-q"], { cwd: dir })
+                  cp.execFileSync("git", ["config", "user.email", "w10@example.com"], { cwd: dir })
+                  cp.execFileSync("git", ["config", "user.name", "W10"], { cwd: dir })
+                  fs.writeFileSync(
+                    nodePath.join(dir, "check.mjs"),
+                    "console.log('Test Files  1 passed (1)\\n     Tests  1 passed (1)')\n"
+                  )
+                  cp.execFileSync("git", ["add", "."], { cwd: dir })
+                  cp.execFileSync("git", ["commit", "-q", "-m", "init"], { cwd: dir })
+                  const runnerLayer = TestRunner.layer({
+                    root: dir,
+                    cwd: dir,
+                    command: `${process.execPath} check.mjs`
+                  })
+                  const res = yield* TestRun.run({ against: "base" }).pipe(
                     Effect.provide(Layer.mergeAll(runnerLayer, Evaluator.layerUnavailable()))
                   )
-                )
-                expect(Result.isFailure(r)).toBe(true)
-              } else if (fsMode === "test-run-base-git-repo") {
-                cp.execFileSync("git", ["init", "-q"], { cwd: dir })
-                cp.execFileSync("git", ["config", "user.email", "w10@example.com"], { cwd: dir })
-                cp.execFileSync("git", ["config", "user.name", "W10"], { cwd: dir })
-                fs.writeFileSync(nodePath.join(dir, "check.mjs"), "console.log('Test Files  1 passed (1)\\n     Tests  1 passed (1)')\n")
-                cp.execFileSync("git", ["add", "."], { cwd: dir })
-                cp.execFileSync("git", ["commit", "-q", "-m", "init"], { cwd: dir })
-                const runnerLayer = TestRunner.layer({
-                  root: dir,
-                  cwd: dir,
-                  command: `${process.execPath} check.mjs`
-                })
-                const res = yield* TestRun.run({ against: "base" }).pipe(
-                  Effect.provide(Layer.mergeAll(runnerLayer, Evaluator.layerUnavailable()))
-                )
-                expect(res.exitCode).toBe(0)
-                expect(res.base).toBeDefined()
-              }
-              return true
-            }).pipe(Effect.provide(realHost)),
-          { executions: ioExec, seed: seed + 2 }
+                  expect(res.exitCode).toBe(0)
+                  expect(res.base).toBeDefined()
+                }
+                return true
+              }).pipe(Effect.provide(realHost)),
+            { executions: ioExec, seed: seed + 2 }
+          )
         )
-      )
-      assertPassed(report)
-    } finally {
-      fs.rmSync(tmpRoot, { recursive: true, force: true })
-    }
-  }, 90_000)
+        assertPassed(report)
+      } finally {
+        fs.rmSync(tmpRoot, { recursive: true, force: true })
+      }
+    },
+    90_000
+  )
 })

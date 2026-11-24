@@ -2,12 +2,14 @@
 import { Effect, FileSystem } from 'effect'
 import { NodeHost } from '@smthrs/platform-node'
 import { createHash } from 'node:crypto'
+import { isAbsolute, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { gunzipSync } from 'node:zlib'
 import { analyze, render } from './analysis.mjs'
 const root = fileURLToPath(new URL('.',import.meta.url))
 const out = process.argv[2]
-if (!out?.startsWith(root)) throw new Error('Expected campaign path under this benchmark directory')
+const rel = out === undefined ? '..' : relative(resolve(root), resolve(out))
+if (out === undefined || rel === '..' || rel.startsWith('..') || isAbsolute(rel)) throw new Error('Expected campaign path under this benchmark directory')
 await Effect.runPromise(Effect.gen(function*() {
   const fs = yield* FileSystem.FileSystem
   const read = name => fs.readFileString(`${out}/${name}`)

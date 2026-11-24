@@ -492,6 +492,7 @@ describe("the declaration surface", () => {
       "name",
       "parallelism",
       "pattern",
+      "skipOtherHosts",
       "verb"
     ])
     // A gate is a target invocation too, not a command to match in the text.
@@ -2480,4 +2481,18 @@ describe("toolchain schema admission", () => {
       })
     ).toThrow()
   })
+})
+
+it("renders --skip-other-hosts on a TargetStep when skipOtherHosts is true", () => {
+  const rendered = render({
+    ...goldenAttrs,
+    gates: [],
+    jobs: [{
+      id: "test",
+      runsOn: "windows-latest",
+      toolchain: CiToolchain.Needs({ runtimes: [node] }),
+      steps: [{ verb: Verb.Test, pattern: "//packages/a:linuxOnly", skipOtherHosts: true }]
+    }]
+  })
+  expect(rendered).toContain("--skip-other-hosts --verbose")
 })

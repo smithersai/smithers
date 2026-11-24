@@ -6,7 +6,7 @@ import { failureOf, invalidModule, makeRoute, visibleModule } from "./helpers.vi
 
 describe("Route boundary", () => {
   it.effect("loads a canonical tagged flow and projects its schemas", effect () => {
-    const modulePath = new URL("./fixtures/three-projections/flows/review/flow.ts", import.meta.url).pathname
+    const modulePath = new URL("./fixtures/three-projections/flows/review/flow.ts", import.meta.url).pathname.replace(/^\/([A-Za-z]:\/)/, "$1")
     const loaded = try Route.load(makeRoute("review", modulePath))
     expect(loaded.name).toBe("review")
     expect(loaded.description).toBeUndefined()

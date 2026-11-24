@@ -1056,3 +1056,9 @@ pipes, exits and signals; spawn and signal faults are injected per resolver.
 
 Exclusive scheduler targets run alone after ready ordinary work drains. Their
 dependencies and scoped finalizers complete before a dependent can start.
+
+### Benchmark reporting
+
+`@smthrs/build-cli/BenchReport` (`BenchReport`) parses benchmark output from
+`VitestBench` and `NodeBench` targets, renders compact throughput and latency
+summaries, and compares measured rows against a baseline.
