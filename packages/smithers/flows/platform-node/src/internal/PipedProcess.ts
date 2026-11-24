@@ -161,7 +161,8 @@ const descriptorConfig = (options: ChildProcess.CommandOptions) => {
 export const spawn = (
   command: ChildProcess.StandardCommand,
   windowsVerbatimArguments: boolean | undefined,
-  owner = false
+  owner = false,
+  platform: NodeJS.Platform = process.platform
 ): Effect.Effect<ChildProcessHandle, PlatformError.PlatformError, Scope.Scope> =>
   Effect.gen(function*() {
     yield* refuseNul(command)
@@ -173,7 +174,7 @@ export const spawn = (
     const standardFds: Array<number | "ignore"> = [0, 1, 2]
     const physicalFds = [0, 1, 2]
     const stdio: Array<Native.IOType | number> = [...descriptors.stdio]
-    if (owner && process.platform === "win32") {
+    if (owner && platform === "win32") {
       const first = stdio.length
       for (const fd of [0, 1, 2]) {
         const mode = stdio[fd]!
@@ -430,6 +431,6 @@ export const spawn = (
         })
       })
     })
-    if (owner && process.platform === "win32") ownerDescriptors.set(handle, standardFds)
+    if (owner && platform === "win32") ownerDescriptors.set(handle, standardFds)
     return handle
   })

@@ -109,12 +109,18 @@ describe("a resolved mise launcher", () => {
       "toolchains: [S.Mise({ config: S.file(\"//mise.toml\") })],"
     )
     const bin = Path.join(root, "host-bin")
-    await write(root, "host-bin/mise", "#!/bin/sh\necho \"2099.1.1 linux-x64\"\n")
+    await write(root, "host-bin/go", "#!/bin/sh\nexit 0\n")
+    await Fs.chmod(Path.join(bin, "go"), 0o755)
+    await write(
+      root,
+      "host-bin/mise",
+      `#!/bin/sh\nif [ "$1" = "which" ]; then echo "${Path.join(bin, "go")}"; else echo "2099.1.1 linux-x64"; fi\n`
+    )
     await Fs.chmod(Path.join(bin, "mise"), 0o755)
     const plan = await PackageExec.plan({ ...options, environment: { PATH: `${bin}:/usr/bin:/bin` } })
     const node = plan.nodes.get("//:command")!
     expect(node.refusal).toBeUndefined()
-    expect(node.argv).toEqual([Path.join(bin, "mise")])
+    expect(node.argv).toEqual([Path.join(bin, "go")])
     expect((node.keyMaterial.inputs as { readonly toolchain?: unknown }).toolchain).toMatchObject([{
       resolution: {
         tag: "MiseBin",
@@ -123,7 +129,7 @@ describe("a resolved mise launcher", () => {
         path: Path.join(bin, "mise"),
         probe: { exitCode: 0, output: "2099.1.1 linux-x64\n" }
       },
-      binary: { _tag: "Executable", source: "{smthrs:root}/host-bin/mise" }
+      binary: { _tag: "Executable", source: "{smthrs:root}/host-bin/go" }
     }])
   })
 })

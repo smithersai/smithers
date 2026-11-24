@@ -62,7 +62,9 @@
  */
 import { createHash } from "node:crypto"
 import { existsSync } from "node:fs"
-import { createRequire, isBuiltin, registerHooks } from "node:module"
+import * as NodeModule from "node:module"
+const { createRequire, isBuiltin } = NodeModule
+const registerHooks = (hooks) => NodeModule.registerHooks(hooks)
 import * as NodePath from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
 import { register as registerCommonJs } from "tsx/cjs/api"

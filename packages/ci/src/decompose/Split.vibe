@@ -8,7 +8,7 @@
  * @since 0.1.0
  */
 
-import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
+import type { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 import { type Ci, type Job, type Step, withSteps } from "../contract/Inventory.vibe"
 import type { Decompose, Failure } from "../contract/Parts.vibe"
 import { withoutAliases } from "./Aliases.vibe"

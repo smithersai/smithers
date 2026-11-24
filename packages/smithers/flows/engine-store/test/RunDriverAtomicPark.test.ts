@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest"
-import { DatabaseError, DurableWriter } from "@smthrs/database/DurableWriter"
+import { afterCommit, DatabaseError, DurableWriter } from "@smthrs/database/DurableWriter"
 import * as TestDatabase from "@smthrs/database/test/TestDatabase"
 import { Flow, FlowRuntime } from "@smthrs/flow"
 import { Journal, JournalEvent, SqlJournal } from "@smthrs/journal"
@@ -293,34 +293,41 @@ for (const adapter of ["sql", "memory"] as const) {
             const running = yield* Deferred.make<void>()
             let captures = 0
             let readCount = 0
-            const journal = Context.get(
-              yield* Layer.build(SqlJournal.layer({
-                capacity: 1024,
-                overflow: "reject",
-                compaction: {
-                  entryThreshold: 1,
-                  capture: (runId) =>
+            const baseJournal = Context.get(
+              yield* Layer.build(SqlJournal.layer({ capacity: 1024, overflow: "reject" })),
+              Journal.Journal
+            )
+            let publishedWaiting: Option.Option<DurableEngineState.WaitingRow> = Option.none()
+            const journal: Journal.Service = {
+              ...baseJournal,
+              emitDurableUnfenced: (input) =>
+                Effect.gen(function*() {
+                  const receipt = yield* baseJournal.emitDurableUnfenced(input)
+                  const runId = String(input.runId)
+                  if (runId !== executionId) return receipt
+                  yield* afterCommit(
                     Effect.gen(function*() {
                       const row = yield* store.get(runId)
-                      if (row.status !== "suspended") return {}
+                      if (row.status !== "suspended") return
                       captures++
                       expect(Option.isNone(yield* Effect.serviceOption(sql.transactionService))).toBe(true)
                       expect(row.owner).toBeNull()
                       yield* Deferred.succeed(capturing, undefined)
                       const waiting = yield* state.transaction(state.waiting(runId))
                       readCount++
+                      publishedWaiting = waiting
                       expect(waiting).toEqual(Option.some({
                         runId,
                         reason: settlement === "suspend" ? "event" : "released",
                         token: null,
                         wakeAt: null
                       }))
-                      return { waiting }
-                    })
-                }
-              })),
-              Journal.Journal
-            )
+                    }).pipe(Effect.orDie),
+                    sql
+                  )
+                  return receipt
+                })
+            }
             const driverScope = yield* Scope.make()
             const driver = yield* RunDriver.make({ owner: firstOwner, journalSource: "capture-read", engine }).pipe(
               Effect.provideService(Journal.Journal, journal),
@@ -356,19 +363,12 @@ for (const adapter of ["sql", "memory"] as const) {
             yield* Fiber.await(execution)
             yield* Scope.close(driverScope, Exit.void)
             expect(observed).toEqual({ captures: 1, readCount: 1, elapsed: 0 })
-            const checkpoint = Option.getOrThrow(yield* journal.latestCheckpoint(JournalEvent.RunId.make(executionId)))
-            expect(checkpoint.state).toEqual({
-              waiting: {
-                _id: "Option",
-                _tag: "Some",
-                value: {
-                  runId: executionId,
-                  reason: settlement === "suspend" ? "event" : "released",
-                  token: null,
-                  wakeAt: null
-                }
-              }
-            })
+            expect(publishedWaiting).toEqual(Option.some({
+              runId: executionId,
+              reason: settlement === "suspend" ? "event" : "released",
+              token: null,
+              wakeAt: null
+            }))
           })).pipe(Effect.provide(TestStores.matrixLayer()))
         ))
     }
@@ -383,31 +383,38 @@ for (const adapter of ["sql", "memory"] as const) {
             const state = adapter === "sql" ? sqlState : DurableEngineState.makeMemory()
             const capturing = yield* Deferred.make<void>()
             const finishedCapture = yield* Deferred.make<void>()
-            const journal = Context.get(
-              yield* Layer.build(SqlJournal.layer({
-                capacity: 1024,
-                overflow: "reject",
-                compaction: {
-                  entryThreshold: 1,
-                  capture: (runId) =>
-                    Effect.gen(function*() {
-                      const row = yield* store.get(runId)
-                      if (row.status !== "suspended") return {}
-                      // This is real automatic maintenance, after SQL COMMIT. Read
-                      // through the actual connection before permitting shutdown.
-                      expect(Option.isNone(yield* Effect.serviceOption(sql.transactionService))).toBe(true)
-                      expect(row.owner).toBeNull()
-                      // Signal inside the guarded region: shutdown may interrupt
-                      // the capture the moment `capturing` wakes the case.
-                      return yield* Deferred.succeed(capturing, undefined).pipe(
-                        Effect.andThen(interruption === "shutdown" ? Effect.never : Effect.interrupt),
-                        Effect.ensuring(Deferred.succeed(finishedCapture, undefined))
-                      )
-                    })
-                }
-              })),
+            const baseJournal = Context.get(
+              yield* Layer.build(SqlJournal.layer({ capacity: 1024, overflow: "reject" })),
               Journal.Journal
             )
+            const journal: Journal.Service = {
+              ...baseJournal,
+              emitDurableUnfenced: (input) =>
+                Effect.uninterruptibleMask((restore) =>
+                  Effect.gen(function*() {
+                    const receipt = yield* baseJournal.emitDurableUnfenced(input)
+                    const runId = String(input.runId)
+                    if (runId !== executionId) return receipt
+                    yield* afterCommit(
+                      restore(
+                        Effect.gen(function*() {
+                          const row = yield* store.get(runId)
+                          if (row.status !== "suspended") return
+                          // Real post-commit maintenance, after SQL COMMIT.
+                          expect(Option.isNone(yield* Effect.serviceOption(sql.transactionService))).toBe(true)
+                          expect(row.owner).toBeNull()
+                          return yield* Deferred.succeed(capturing, undefined).pipe(
+                            Effect.andThen(interruption === "shutdown" ? Effect.never : Effect.interrupt),
+                            Effect.ensuring(Deferred.succeed(finishedCapture, undefined))
+                          )
+                        }).pipe(Effect.orDie)
+                      ),
+                      sql
+                    )
+                    return receipt
+                  })
+                )
+            }
             const driverScope = yield* Scope.make()
             const driver = yield* RunDriver.make({ owner: firstOwner, journalSource: "publication", engine }).pipe(
               Effect.provideService(Journal.Journal, journal),

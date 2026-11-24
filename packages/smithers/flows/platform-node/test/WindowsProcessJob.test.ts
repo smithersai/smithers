@@ -244,4 +244,17 @@ describe("Windows native job connection", () => {
       await expect(job.settled.promise).rejects.toMatchObject({ code: "cleanup_unverified" })
     }
   )
+
+  it("ignores trailing stdout chunks that arrive after a protocol failure", async () => {
+    const job = jobFor(`
+      process.stdin.removeAllListeners("end");
+      process.stdout.write("not-json\\n");
+      setTimeout(() => {
+        process.stdout.write(${JSON.stringify(JSON.stringify(ready) + "\n")}, () => process.exit(0));
+      }, 30);
+    `)
+    await expect(job.ready.promise).rejects.toBeInstanceOf(SyntaxError)
+    await expect(job.settled.promise).rejects.toBeInstanceOf(SyntaxError)
+    await expectStopped(job)
+  })
 })

@@ -499,6 +499,9 @@ interface PoolWorker {
   >
 }
 
+class InstalledTreeIoError extends Data.TaggedError("InstalledTreeIoError")<{ readonly message: string; readonly code?: string | undefined }> {}
+class InstalledTreeWorkerError extends Data.TaggedError("InstalledTreeWorkerError")<{ readonly message: string }> {}
+
 const workerScript = `
 import { parentPort } from "node:worker_threads";
 import * as NodeFs from "node:fs";
@@ -521,15 +524,11 @@ const scanUnit = (unitRoot, knownFingerprint, limits, settledNs) => {
 
   const visit = (absolute, relative, depth) => {
     if (depth > limits.depth) {
-      const err = new Error("installed tree is deeper than " + limits.depth + " directories: " + absolute);
-      err.refused = true;
-      throw err;
+      throw { refused: true, message: "installed tree is deeper than " + limits.depth + " directories: " + absolute };
     }
     entriesCount += 1;
     if (entriesCount > limits.entries) {
-      const err = new Error("installed tree holds more than " + limits.entries + " entries");
-      err.refused = true;
-      throw err;
+      throw { refused: true, message: "installed tree holds more than " + limits.entries + " entries" };
     }
     const stats = NodeFs.lstatSync(absolute, { bigint: true });
     if (stats.ctimeNs > latest) latest = stats.ctimeNs;
@@ -624,7 +623,7 @@ parentPort.on("message", ({ id, directory, tasks, limits, settledNs }) => {
       id,
       error: {
         refused: Boolean(cause && cause.refused),
-        message: cause instanceof Error ? cause.message : String(cause),
+        message: cause instanceof Error ? cause.message : (cause && typeof cause.message === "string" ? cause.message : String(cause)),
         code: cause && typeof cause.code === "string" ? cause.code : undefined
       }
     });
@@ -649,9 +648,7 @@ const spawnPoolWorker = (): PoolWorker => {
       if (msg.error.refused) {
         waiter.reject(new InstalledTreeRefused({ message: msg.error.message }))
       } else {
-        const err = new Error(msg.error.message) as NodeJS.ErrnoException
-        if (msg.error.code !== undefined) err.code = msg.error.code
-        waiter.reject(err)
+        waiter.reject(new InstalledTreeIoError({ message: msg.error.message, code: msg.error.code }))
       }
       return
     }
@@ -667,7 +664,7 @@ const spawnPoolWorker = (): PoolWorker => {
   }
   worker.on("error", failAll)
   worker.on("exit", (code) => {
-    if (entry.pending.size > 0) failAll(new Error(`installed-tree worker exited unexpectedly with code ${code}`))
+    if (entry.pending.size > 0) failAll(new InstalledTreeWorkerError({ message: `installed-tree worker exited unexpectedly with code ${code}` }))
   })
   return entry
 }

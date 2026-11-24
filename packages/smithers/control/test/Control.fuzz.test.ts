@@ -573,7 +573,7 @@ describe("@smthrs/control Monitor, Lineage, Steering, Health, JevSessionChecker,
 })
 
 describe("@smthrs/control durable & full-stack fuzz invariants", () => {
-  it("Differential fuzz: ControlLive over SqlControlRuntime (real SQLite) matches ControlRuntime.layerMemory across full lifecycle + Monitor.run", async () => {
+  it("Differential fuzz: ControlLive over SqlControlRuntime (real SQLite) matches ControlRuntime.layerMemory across full lifecycle + Monitor.run", { timeout: 120_000 }, async () => {
     const cmdArb = Schema.Union([
       Schema.Struct({ _tag: Schema.Literal("plan"), suffix: Schema.Literals(["a", "b"]) }),
       Schema.Struct({

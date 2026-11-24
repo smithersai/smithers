@@ -35,6 +35,8 @@ it("CI runs the package pattern that holds the coverage-enabled test target and 
       { _tag: "Glob", pattern: "test/**/*.ts", exclude: [] },
       { _tag: "Glob", pattern: "test-utils/**", exclude: [] },
       { _tag: "File", path: "//packages/smithers/flows/database/src/TestSchemas.ts" },
+      { _tag: "File", path: "//packages/ci/dprint.json" },
+      { _tag: "File", path: "//.smithers/flows/package.json" },
       { _tag: "Glob", pattern: "scripts/**", exclude: [] },
       { _tag: "Glob", pattern: "ci/**", exclude: [] },
       { _tag: "File", path: "PACKAGE.ts" }

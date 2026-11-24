@@ -696,11 +696,6 @@ export const layer: Layer.Layer<
       Effect.uninterruptibleMask((restore) =>
         Effect.gen(function*() {
           const id = launch.run.runId
-          const alreadyAccepted = pendingAcceptances.get(id)
-          if (alreadyAccepted !== undefined) {
-            yield* acknowledge(id, alreadyAccepted.nonce, alreadyAccepted.acceptance)
-            return
-          }
           const nonce = yield* runtime.takeLaunch(id, includeLegacy)
           if (nonce === undefined) return
           const acceptance = yield* (

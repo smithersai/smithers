@@ -83,6 +83,8 @@ const test = Smithers.NodeTest({
     Smithers.glob("src/**/*.{ts,vibe}"),
     Smithers.glob("test/**/*.{ts,vibe}"),
     Smithers.glob("examples/**/*.ts"),
+    Smithers.file("tsconfig.json"),
+    Smithers.file("tsconfig.test.json"),
     Smithers.file("package.json"),
     Smithers.file("vitest.config.ts"),
     Smithers.file("eslint.config.js"),

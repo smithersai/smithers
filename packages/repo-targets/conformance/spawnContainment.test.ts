@@ -269,7 +269,21 @@ describe("child-process containment conformance", () => {
       + "output, cancellation and timeout policies; some commands have no timeout. "
       + "This exemption does not promise durable process-ledger recovery. Target execution "
       + "and service supervision instead use the contained platform adapter."
-    ])
+    ]),
+    [
+      "ci/src/replay/DiskSpace.ts",
+      "Bounded `/usr/bin/perl` physical-block counter for deep replay trees (runs outside a flow host, "
+      + "with empty `env: {}` and caller `AbortSignal`)."
+    ],
+    [
+      "smithers/build/build-cli/src/FoundryExec.ts",
+      "Bounded `mise which <name>` toolchain probe during build planning (10s timeout, 1 MiB maxBuffer; "
+      + "same build-planner boundary as `PackageTree.ts`)."
+    ],
+    [
+      "smithers/src/node/Collectors.ts",
+      "Read-only local node-daemon host collectors (`smthrs node serve`, 4s timeout, outside flow execution)."
+    ]
   ])
 
   const isDirectory = (path: string) => {

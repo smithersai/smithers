@@ -383,3 +383,123 @@ it("reconciles pre-0011 legacy owned accepted rows: redispatches stranded handof
     expect(launched).toEqual(mode === "stranded" ? ["dispatch:stranded-caller-reservation"] : [])
   }
 })
+
+it("promotes a launch_pending=1 stranded run without relaunching when durable execution is already observed", async () => {
+  const filename = join(directory, "pending-observed.sqlite")
+  const planned = await run(stack(filename, 101, ControlExecutor.makeNoop()), admit)
+  if (!Exit.isSuccess(planned)) throw new Error("plan failed")
+  const card = planned.value
+
+  // Crash during launch so launch_pending remains 1 and handing_nonce is released.
+  const crashed = await run(
+    stack(filename, 101, ControlExecutor.makeNoop({ launch: () => Effect.interrupt })),
+    retry(card)
+  )
+  expect(Exit.isFailure(crashed)).toBe(true)
+
+  const launched: Array<string> = []
+  const peerExecutor = ControlExecutor.makeNoop({
+    readExecution: () => Effect.succeed({ _tag: "Observed", status: "running" } as const),
+    launch: (input) => Effect.sync(() => launched.push(input.run.runId)).pipe(Effect.as("accepted" as const))
+  })
+  const recovered = await run(
+    stack(filename, 202, peerExecutor),
+    Effect.gen(function*() {
+      const receipt = yield* retry(card)
+      const status = (yield* (yield* ControlRuntime).getRun("dispatch:stranded-caller-reservation")).status
+      return { receipt, status }
+    })
+  )
+  if (!Exit.isSuccess(recovered)) throw new Error(String(recovered.cause))
+  expect(recovered.value.receipt).toMatchObject({ _tag: "AlreadyApplied", receiptId: "run:stranded" })
+  expect(recovered.value.status).toBe("running")
+  expect(launched).toEqual([])
+})
+
+it("memory ControlRuntime.takeLaunch accepts legacy includeLegacy=true when no pending launch exists", async () => {
+  const result = await Effect.runPromise(
+    Effect.gen(function*() {
+      const runtime = yield* ControlRuntime
+      expect(yield* runtime.takeLaunch("legacy-run", false)).toBeUndefined()
+      const nonce = yield* runtime.takeLaunch("legacy-run", true)
+      expect(nonce).toBeDefined()
+      yield* runtime.finishLaunch("legacy-run", nonce!, false)
+    }).pipe(Effect.provide(live({ executor: ControlExecutor.makeNoop() })))
+  )
+  expect(result).toBeUndefined()
+})
+
+it("releases pending handoff when acknowledging a queued launch fails, and skips observed promotion if launch nonce is already held", async () => {
+  // 1. Failing acknowledge on a "pending" launch releases the launch fence via finishLaunch(id, nonce, true).
+  const pendingFilename = join(directory, "pending-ack-failure.sqlite")
+  let failReleaseOnce = true
+  const base = stack(
+    pendingFilename,
+    101,
+    ControlExecutor.makeNoop({ launch: () => Effect.succeed("pending" as const) })
+  )
+  const faultyRuntime = Layer.effect(
+    ControlRuntime,
+    Effect.map(ControlRuntime, (runtime) => ({
+      ...runtime,
+      releasePending: (runId, fence) =>
+        Effect.suspend(() => {
+          if (failReleaseOnce) {
+            failReleaseOnce = false
+            return Effect.fail(new PersistenceError({ operation: "release pending", message: "transient failure" }))
+          }
+          return runtime.releasePending(runId, fence)
+        })
+    }))
+  ).pipe(Layer.provideMerge(base))
+
+  const pendingResult = await run(
+    Layer.provideMerge(Layer.fresh(ControlLive.layer), Layer.merge(faultyRuntime, Registry.layerNoop())),
+    Effect.gen(function*() {
+      const card = yield* admit
+      expect(Exit.isFailure(yield* Effect.exit(retry(card)))).toBe(true)
+      const runtime = yield* ControlRuntime
+      // Fence was released back to pending so retry completes cleanly and releases the owner.
+      const receipt = yield* retry(card)
+      expect(receipt._tag).toBe("AlreadyApplied")
+      const runRow = yield* runtime.getRun("dispatch:stranded-caller-reservation")
+      expect(runRow.status).toBe("accepted")
+      expect(runRow.ownerId).toBeUndefined()
+    })
+  )
+  if (!Exit.isSuccess(pendingResult)) throw new Error(String(pendingResult.cause))
+
+  // 2. When launch_pending = 1 and another caller holds the launch nonce, observed promotion exits cleanly without double-ack.
+  const filename = join(directory, "pending-observed-contended.sqlite")
+  const planned = await run(stack(filename, 101, ControlExecutor.makeNoop()), admit)
+  if (!Exit.isSuccess(planned)) throw new Error("plan failed")
+  const card = planned.value
+  const crashed = await run(
+    stack(filename, 101, ControlExecutor.makeNoop({ launch: () => Effect.interrupt })),
+    retry(card)
+  )
+  expect(Exit.isFailure(crashed)).toBe(true)
+
+  const peerExecutor = ControlExecutor.makeNoop({
+    readExecution: () => Effect.succeed({ _tag: "Observed", status: "running" } as const)
+  })
+  const contendedBase = stack(filename, 202, peerExecutor)
+  const contendedRuntime = Layer.effect(
+    ControlRuntime,
+    Effect.map(ControlRuntime, (runtime) => ({
+      ...runtime,
+      takeLaunch: () => Effect.succeed(undefined)
+    }))
+  ).pipe(Layer.provideMerge(contendedBase))
+  const contended = await run(
+    Layer.provideMerge(Layer.fresh(ControlLive.layer), Layer.merge(contendedRuntime, Registry.layerNoop())),
+    Effect.gen(function*() {
+      const runtime = yield* ControlRuntime
+      const receipt = yield* retry(card)
+      expect(receipt._tag).toBe("AlreadyApplied")
+      // Status remains accepted because takeLaunch returned undefined while held.
+      expect((yield* runtime.getRun("dispatch:stranded-caller-reservation")).status).toBe("accepted")
+    })
+  )
+  if (!Exit.isSuccess(contended)) throw new Error(String(contended.cause))
+})

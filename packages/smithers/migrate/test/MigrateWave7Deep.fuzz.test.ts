@@ -1,3 +1,4 @@
+import * as SqliteStoreNode from "../src/SqliteStoreNode.ts"
 import { NodeServices } from "@effect/platform-node"
 import { Fuzz } from "@smthrs/fuzz"
 import { Arbitrary, Effect, Exit, Schema } from "effect"
@@ -223,7 +224,7 @@ describe("@smthrs/migrate Wave 7 deep fuzz (Mapping snippets/escalations, RunSta
                 }
 
                 if (dbMode !== "missing") {
-                  const finding = RunState.readDatabase(
+                  const finding = yield* RunState.readDatabase(
                     dbPath,
                     "smithers.db",
                     dbMode === "corrupt" ? ["smithers.db-wal"] : [],
@@ -271,7 +272,7 @@ describe("@smthrs/migrate Wave 7 deep fuzz (Mapping snippets/escalations, RunSta
               } finally {
                 rmSync(root, { recursive: true, force: true })
               }
-            }),
+            }).pipe(Effect.provide(SqliteStoreNode.layer)),
           { executions: Math.min(executions, 35), seed: seed + 1 }
         )
       )

@@ -772,4 +772,41 @@ if [ -e "${lock}" ]; then : > "${root}/held"; else rm -f "${root}/held"; fi
         expect(existsSync(join(root, ".jj", "smithers.lock"))).toBe(false)
       })
     ))
+
+  it.live("dates lock owners and detects reused PIDs via /proc/<pid>/stat on any OS", () =>
+    fixture((root) =>
+      Effect.gen(function*() {
+        const fakeStat = (start: string) =>
+          `42 (node (v26)) S 1 42 42 0 -1 4194304 0 0 0 0 0 0 0 0 20 0 1 0 ${start} 0 0`
+        const lockDir = join(root, ".jj", "smithers.lock")
+        yield* Effect.promise(() => mkdir(lockDir, { recursive: true }))
+        yield* Effect.promise(() => writeFile(join(lockDir, `${hostname()}-${process.pid}-s111-reused`), ""))
+        yield* Effect.promise(() => writeFile(join(lockDir, `${hostname()}-${process.pid}-s222-same`), ""))
+
+        // First: valid /proc/self/stat + reused PID (current start 222 !== recorded 111) vs same start 222.
+        const hostWithProc = {
+          ...nodeHost,
+          readFile: async (path: string) => {
+            if (path === "/proc/self/stat") return fakeStat("999")
+            if (path === `/proc/${process.pid}/stat`) return fakeStat("222")
+            return nodeHost.readFile(path)
+          }
+        }
+        const jjWithProc = yield* Effect.provide(Jj, NodeJj.layerAt(root))
+        // Reclaim runs on lock acquisition; s111-reused is removed while s222-same blocks until removed.
+        yield* Effect.promise(() => rm(join(lockDir, `${hostname()}-${process.pid}-s222-same`)))
+        yield* jjWithProc.snapshot("proc-dated").pipe(Effect.provideService(NodeJjHost, hostWithProc))
+        expect(existsSync(join(lockDir, `${hostname()}-${process.pid}-s111-reused`))).toBe(false)
+
+        // Second: malformed /proc/self/stat returns undefined start time without throwing.
+        const hostMalformed = {
+          ...nodeHost,
+          readFile: async (path: string) => {
+            if (path.startsWith("/proc/")) return "malformed-stat-line"
+            return nodeHost.readFile(path)
+          }
+        }
+        yield* jjWithProc.snapshot("proc-malformed").pipe(Effect.provideService(NodeJjHost, hostMalformed))
+      })
+    ))
 })

@@ -184,14 +184,22 @@ describe("Affected.changedPaths jj workspace support", () => {
         { base: "HEAD" },
         async (request) => {
           calls.push({ command: request.command, args: request.args })
-          request.stdout?.("packages/b/src/index.ts\npackages/a/src/index.ts\npackages/a/src/index.ts\n")
+          request.stdout?.('"packages/b/src/index.ts"\0"packages/a/src/index.ts"\0"packages/a/src/index.ts"\0')
           return 0
         }
       )
       expect(calls).toEqual([
         {
           command: "jj",
-          args: ["--no-pager", "--color=never", "diff", "--name-only", "--from=@-", "--to=@"]
+          args: [
+            "--no-pager",
+            "--color=never",
+            "diff",
+            "--template",
+            'if(status == "renamed", json(source.path()) ++ "\\0") ++ json(path) ++ "\\0"',
+            "--from=@-",
+            "--to=@"
+          ]
         }
       ])
       expect(paths).toEqual(["packages/a/src/index.ts", "packages/b/src/index.ts"])

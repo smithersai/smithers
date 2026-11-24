@@ -277,10 +277,12 @@ const resolveHooksDirectory = async (root: string): Promise<string> => {
 }
 
 /** Read the opened regular file only. A missing hook is the sole recoverable read error. */
+class GitHookReadError extends Data.TaggedError("GitHookReadError")<{ readonly message: string }> {}
+
 const readHook = async (path: string): Promise<{ bytes: Buffer; mode: number } | undefined> => {
   try {
     const prior = await Fs.lstat(path)
-    if (!prior.isFile()) throw new Error(`expected a regular hook at ${path}`)
+    if (!prior.isFile()) throw new GitHookReadError({ message: `expected a regular hook at ${path}` })
     const handle = await Fs.open(
       path,
       Fs.constants.O_RDONLY | (Fs.constants.O_NOFOLLOW ?? 0) | (Fs.constants.O_NONBLOCK ?? 0)
@@ -288,7 +290,7 @@ const readHook = async (path: string): Promise<{ bytes: Buffer; mode: number } |
     try {
       const opened = await handle.stat()
       if (!opened.isFile() || opened.dev !== prior.dev || opened.ino !== prior.ino) {
-        throw new Error(`hook changed at ${path}`)
+        throw new GitHookReadError({ message: `hook changed at ${path}` })
       }
       return { bytes: await handle.readFile(), mode: opened.mode & 0o777 }
     } finally {

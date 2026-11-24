@@ -18,7 +18,7 @@ form; for the behavior behind each command, see the
 Commands: [`cache`](#cache), [`show`](#show), [`targets`](#targets),
 [`info`](#show), [`explain`](#show), [`affected`](#affected), [`units`](#units),
 [`clean`](#clean), [`watch`](#watch), [`install`](#install),
-[`build`](#build), [`test`](#test),
+[`build`](#build), [`bench`](#bench), [`test`](#test),
 [`lint`](#lint), [`docs`](#docs), [`review`](#review), [`run`](#run),
 [`target`](#target), [`git-hooks`](#git-hooks), [`ci`](#ci),
 [`query`](#query), [`index`](#index), [`owners`](#owners), and [`graph`](#graph). An argv whose
@@ -308,6 +308,17 @@ The `targets_failed` message reads `<n> of <m> targets failed`, with
 `(<k> skipped)` appended when anything was skipped.
 
 ---
+
+## bench
+
+Run benchmark targets selected by one or more label patterns (`kind: "bench"`), and optionally compare against a saved `--results-file` baseline:
+
+```sh
+smthrs bench //packages/...
+smthrs bench //packages/... --results-file bench-results.json
+```
+
+Benchmark runs are never served from the action cache and report per-target timing summaries.
 
 ## test
 

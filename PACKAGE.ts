@@ -664,7 +664,7 @@ const ci = Smithers.GithubCiGen({
         runtimes: [node, bun],
         jj,
         ripgrep,
-        apt: Smithers.CiToolchain.Apt({ packages: ["bubblewrap", "strace", "tmux"] }),
+        apt: Smithers.CiToolchain.Apt({ packages: ["bubblewrap", "ffmpeg", "strace", "tmux"] }),
         artifacts: Smithers.CiToolchain.Artifacts({
           artifact: "apps-e2e-artifacts",
           sources: [

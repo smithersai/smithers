@@ -4595,21 +4595,43 @@ const authorizeControl = (
  * recreate a deleted round.
  */
 const compactedTip = (driver: Driver, executionId: string): Effect.Effect<Option.Option<RunStore.RunMetadata>> =>
-  driver.store.lineage(executionId, { includeState: false }).pipe(
-    Effect.map((rounds) => {
-      const latest = rounds[rounds.length - 1]
-      if (
-        latest === undefined ||
-        latest.runId === executionId ||
-        (latest.roundOrdinal ?? 0) <= 1 ||
-        rounds.some((row) => row.roundOrdinal === 1)
-      ) {
-        return Option.none()
-      }
-      return Option.some(latest)
-    }),
-    Effect.catch((error) => error.code === "not_found_row" ? Effect.succeed(Option.none()) : Effect.die(error))
-  )
+  Effect.gen(function*() {
+    const root = yield* driver.store.get(executionId).pipe(
+      Effect.catch((error) => error.code === "not_found_row" ? Effect.succeed(undefined) : Effect.die(error))
+    )
+    if (root === undefined || root.status !== "completed" || (root.roundOrdinal ?? 0) !== 0) {
+      return Option.none()
+    }
+    const state = yield* decodeState(root.stateJson)
+    const handoff = state.result
+    if (
+      handoff === undefined ||
+      typeof handoff !== "object" ||
+      handoff === null ||
+      (handoff as { readonly _tag?: unknown })._tag !== "Handoff" ||
+      typeof (handoff as { readonly flow?: unknown }).flow !== "string"
+    ) {
+      return Option.none()
+    }
+    const round1 = yield* FlowEngine.Round.next(
+      FlowEngine.Round.initial(root.lineageId ?? executionId),
+      { flowName: (handoff as { readonly flow: string }).flow, maxRounds: undefined }
+    ).pipe(Effect.provideContext(driver.crypto), Effect.orDie)
+    // Only a missing round 1 indicates pruning; an existing (even malformed)
+    // middle round must not trigger a lineage walk or skip ordinary resolution.
+    const round1Exists = yield* driver.store.get(round1.executionId).pipe(
+      Effect.as(true),
+      Effect.catch((error) => error.code === "not_found_row" ? Effect.succeed(false) : Effect.succeed(true))
+    )
+    if (round1Exists) return Option.none()
+    const latest = yield* driver.store.latestRound(executionId).pipe(
+      Effect.catch((error) => error.code === "not_found_row" ? Effect.succeed(undefined) : Effect.die(error))
+    )
+    if (latest === undefined || latest.runId === executionId || (latest.roundOrdinal ?? 0) <= 1) {
+      return Option.none()
+    }
+    return Option.some(latest)
+  })
 
 const poll = Effect.fn("FlowEngine.poll")((driver: Driver, flow: Flow.Any, executionId: string) =>
   Effect.gen(function*() {

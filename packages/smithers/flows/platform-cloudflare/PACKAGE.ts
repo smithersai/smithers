@@ -13,6 +13,7 @@ import {
 import { Smithers } from "@smthrs/targets"
 import * as Input from "@smthrs/targets/Input"
 import { Package as flows } from "../../../../.smithers/flows/PACKAGE.ts"
+import { Package as buildCli } from "../../build/build-cli/PACKAGE.ts"
 
 const cwd = "packages/smithers/flows/platform-cloudflare"
 const workspaceSources = WorkspaceSources({ cwd })
@@ -46,7 +47,7 @@ const sandboxCli = Smithers.NodeBinary({
   srcs: [],
   // As with releasePack, library builds are explicit graph dependencies.
   // NodeBinary always assembles the current manifests, bins and other published assets.
-  deps: [flows.automationModules, Smithers.Target.subtree("//packages/...", "lib")],
+  deps: [flows.automationModules, buildCli.observe, Smithers.Target.subtree("//packages/...", "lib")],
   timeout: "5m"
 })
 

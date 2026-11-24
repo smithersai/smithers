@@ -420,10 +420,9 @@ describe("an observed test", () => {
     async () => {
       const uv = [
         "set -e",
-        "/bin/mkdir cache cache/archive",
-        "/bin/mkdir cache/.tmp \"cache/.tmp/pkg/\"",
+        "python3 -c 'import os; os.mkdir(\"cache\"); os.mkdir(\"cache/archive\"); os.mkdir(\"cache/.tmp\"); os.mkdir(\"cache/.tmp/pkg/\")'",
         "echo one > cache/.tmp/pkg/RECORD",
-        "/bin/mv cache/.tmp cache/archive/one",
+        "python3 -c 'import os; os.rename(\"cache/.tmp\", \"cache/archive/one\")'",
         "/bin/cat cache/archive/one/pkg/RECORD input.txt > /dev/null"
       ].join("\n")
       const { reasons, run, write } = await fixture({ check: uv })
@@ -1071,7 +1070,7 @@ const job = async (
       observe,
       data: [files, ...after] as never
     })
-  const installing = "/bin/cat registry.cfg > /dev/null\n(/bin/mkdir deps 2>/dev/null || true)\n/bin/cat lock.txt > deps/installed.txt"
+  const installing = "/bin/cat registry.cfg > /dev/null\npython3 -c 'import os\ntry: os.mkdir(\"deps\")\nexcept FileExistsError: pass'\n/bin/cat lock.txt > deps/installed.txt"
   const install = step(
     "install",
     typeof settings.install === "function" ? settings.install(outside) : settings.install ?? installing,

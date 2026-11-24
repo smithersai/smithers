@@ -66,6 +66,7 @@ import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { DatabaseSync } from "node:sqlite"
+import { ProcessExit } from "../src/internal/ProcessExit.ts"
 import * as NodeRuntime from "../src/NodeRuntime.ts"
 
 const { StepBoundary, WorkspaceSandbox } = EngineStorePackage
@@ -1692,4 +1693,46 @@ describe("shared-store execution routing", () => {
     expect(result).toBe("activation-host:alpha")
     expect(executedBy.slice(before)).toEqual(["activation-host"])
   }, 60_000)
+
+  it("invokes ProcessExit on a second shutdown signal and on shutdown deadline expiry", async () => {
+    const exited: Array<number> = []
+    const root = join(directory, "signal-escape-host")
+    mkdirSync(root, { recursive: true })
+    let unblock!: () => void
+    const blocked = new Promise<void>((resolve) => {
+      unblock = resolve
+    })
+    const slowFinalizer = Layer.effectDiscard(
+      Effect.addFinalizer(() => Effect.promise(() => blocked))
+    )
+    const hostLayer = NodeRuntime.layerHost(
+      {
+        filename: join(root, "escape.sqlite"),
+        workspaceRoot: root,
+        owner: { hostId: "escape-host" },
+        signals: [listenerSignal],
+        shutdownTimeoutMs: 25
+      },
+      slowFinalizer
+    )
+    await Effect.runPromise(
+      Effect.gen(function*() {
+        // First signal starts graceful shutdown; second signal triggers immediate escape.
+        process.emit(listenerSignal)
+        process.emit(listenerSignal)
+        // Wait past shutdownTimeoutMs (25ms) so the deadline callback also fires.
+        yield* Effect.sleep("60 millis")
+        unblock()
+      }).pipe(
+        Effect.provide(hostLayer),
+        Effect.provideService(ProcessExit, (code) => {
+          exited.push(code)
+        }),
+        Effect.scoped
+      )
+    )
+    const expected = NodeRuntime.signalExitCode(listenerSignal)
+    expect(exited.length).toBeGreaterThanOrEqual(2)
+    expect(exited.every((code) => code === expected)).toBe(true)
+  }, 30_000)
 })

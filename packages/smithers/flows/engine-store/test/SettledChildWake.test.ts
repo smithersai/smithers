@@ -1,3 +1,5 @@
+import * as DurableWriter from "@smthrs/database/DurableWriter"
+import * as SqlClient from "effect/sql/SqlClient"
 import type * as SecureRandom from "effect/crypto/SecureRandom"
 /**
  * A settling child records its waiting parents' wakes after its terminal
@@ -244,25 +246,34 @@ describe("a settled child wakes its parked parent (#4774)", () => {
       const store = yield* RunStore.RunStore
       const capturing = yield* Deferred.make<void>()
       let armed = false
-      // Journal maintenance runs after the commit, inside the drive: the
-      // child's terminal one waits there until the process shuts down.
-      const journal = Context.get(
-        yield* Layer.build(SqlJournal.layer({
-          capacity: 1024,
-          overflow: "reject",
-          compaction: {
-            entryThreshold: 1,
-            capture: (runId) =>
-              Effect.gen(function*() {
-                if (!armed || runId !== "child" || (yield* store.get(runId)).status !== "completed") return {}
-                armed = false
-                yield* Deferred.succeed(capturing, undefined)
-                return yield* Effect.never
-              })
-          }
-        })),
+      const sql = yield* SqlClient.SqlClient
+      // Post-commit journal maintenance runs after SQL COMMIT, inside the drive:
+      // the child's terminal one waits there until the process shuts down.
+      const baseJournal = Context.get(
+        yield* Layer.build(SqlJournal.layer({ capacity: 1024, overflow: "reject" })),
         Journal.Journal
       )
+      const journal: Journal.Service = {
+        ...baseJournal,
+        emitDurableUnfenced: (input) =>
+          Effect.uninterruptibleMask((restore) =>
+            Effect.gen(function*() {
+              const receipt = yield* baseJournal.emitDurableUnfenced(input)
+              if (armed && String(input.runId) === "child") {
+                const hook = restore(
+                  Effect.gen(function*() {
+                    if (!armed || (yield* store.get("child")).status !== "completed") return
+                    armed = false
+                    yield* Deferred.succeed(capturing, undefined)
+                    return yield* Effect.never
+                  }).pipe(Effect.orDie)
+                )
+                yield* DurableWriter.afterCommit(hook, sql)
+              }
+              return receipt
+            })
+          )
+      }
       // The heartbeat repair would record the same wake while the commit's
       // maintenance is held open. It reads nothing here, so the wake asserted
       // below can only be the interrupted settlement's own.

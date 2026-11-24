@@ -22,7 +22,7 @@ const previous = Target.metadata(old.test)
 // The matrix adds the tested examples, coverage-lint configuration and process fixtures to the stock inputs.
 const srcs = [...previous.attrs.srcs]
 srcs.splice(2, 0, Smithers.glob("examples/**/*.ts"))
-srcs.splice(5, 0,
+srcs.splice(7, 0,
   Smithers.file("eslint.config.js"),
   Smithers.file("//eslint.invariants.js"),
   Smithers.file("//eslint.jsdoc.js"),

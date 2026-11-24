@@ -10,7 +10,7 @@ import * as ChildProcess from "effect/process/ChildProcess"
 import * as ChildProcessSpawnerModule from "effect/process/ChildProcessSpawner"
 import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 import { execFileSync } from "node:child_process"
-import { chmodSync, linkSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
+import { chmodSync, mkdirSync, linkSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterAll, describe, expect, it, vi } from "vitest"
@@ -491,7 +491,7 @@ describe.skipIf(!jjInstalled)("the target as a jj bookmark", { timeout: 120_000 
   it("quotes a bookmark containing a double quote in revsets", async () => {
     const repo = repository()
     const bookmark = "release\"one"
-    repo.jj("bookmark", "create", bookmark, "-r", "main")
+    repo.jj("bookmark", "create", JSON.stringify(bookmark), "-r", "main")
     const queue = await run(JjRepository.make({ ...repo.options, bookmark }))
     expect(await run(queue.tip)).toEqual([])
   })
@@ -579,11 +579,17 @@ describe.skipIf(!jjInstalled)("the target as a jj bookmark", { timeout: 120_000 
       }).pipe(Effect.provide(broken))
     )
     expect(cannotSpawn).toContain("jj could not run")
-    const readOnly = join(repo.path, "read-only.json")
+    const readOnlyDir = join(repo.path, "read-only-dir")
+    mkdirSync(readOnlyDir)
+    const readOnly = join(readOnlyDir, "read-only.json")
     const frozen = await run(JjRepository.make({ ...repo.options, ledger: readOnly }))
     await run(frozen.tip)
-    chmodSync(readOnly, 0o444)
-    expect(await detail(frozen.register({ id: 1, rev: 0 }, "x"))).not.toBe("")
+    chmodSync(readOnlyDir, 0o555)
+    try {
+      expect(await detail(frozen.register({ id: 1, rev: 0 }, "x"))).not.toBe("")
+    } finally {
+      chmodSync(readOnlyDir, 0o755)
+    }
     const ledgerIsDirectory = await run(JjRepository.make({ ...repo.options, ledger: repo.path }))
     expect(await detail(ledgerIsDirectory.tip)).not.toBe("")
     // A jj whose `duplicate` prints nothing the queue can read: the real spawner, with that one command replaced.

@@ -1,3 +1,4 @@
+import * as Data from "effect/Data"
 /**
  * Parses benchmark output from `VitestBench` and `NodeBench` targets and
  * renders a compact summary table across all settled benchmark targets.
@@ -247,6 +248,8 @@ const parseBaselineRow = (raw: unknown): BenchmarkRow | undefined => {
  * @category parsing
  * @since 1.0.0
  */
+class BenchBaselineError extends Data.TaggedError("BenchBaselineError")<{ readonly message: string }> {}
+
 export const loadBaseline = (raw: unknown): ReadonlyArray<TargetBenchmarks> => {
   const list = Array.isArray(raw)
     ? raw
@@ -254,7 +257,9 @@ export const loadBaseline = (raw: unknown): ReadonlyArray<TargetBenchmarks> => {
     ? (raw as { readonly results: ReadonlyArray<unknown> }).results
     : undefined
   if (list === undefined) {
-    throw new Error("benchmark baseline must be a --results-file JSON object with a results array or a target array")
+    throw new BenchBaselineError({
+      message: "benchmark baseline must be a --results-file JSON object with a results array or a target array"
+    })
   }
   const targets: Array<TargetBenchmarks> = []
   for (const entry of list) {

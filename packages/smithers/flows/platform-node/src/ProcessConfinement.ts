@@ -118,10 +118,7 @@ interface Opened {
  * spawned stage no longer asks for one.
  */
 const argvOf = (command: ChildProcess.StandardCommand): ReadonlyArray<string> => {
-  const args = command.args.map((arg) => {
-    if (typeof arg !== "string") throw new Error("protected arguments require opaque secret references")
-    return arg
-  })
+  const args = command.args as ReadonlyArray<string>
   const shell = command.options.shell
   if (shell === undefined || shell === false) return [command.command, ...args]
   return [shell === true ? "/bin/sh" : shell, "-c", [command.command, ...args].join(" ")]

@@ -41,6 +41,12 @@ const makeStoreLayer = () =>
     Layer.provideMerge(Migrations.layer, TestDatabase.layer)
   ).pipe(Layer.provideMerge(NodeCrypto.layer))
 
+const makeSqliteStoreLayer = () =>
+  Layer.provideMerge(
+    PlanStore.layer,
+    Layer.provideMerge(Migrations.layer, TestDatabase.sqliteLayer)
+  ).pipe(Layer.provideMerge(NodeCrypto.layer))
+
 const SafeId = Schema.String.check(Schema.isPattern(/^[a-z][a-z0-9_-]{0,12}$/))
 
 const OpSchema = Schema.Union([
@@ -223,7 +229,7 @@ describe("@smthrs/plan-store fuzz", () => {
           const finalStored = Option.getOrThrow(yield* store.get(v.planId))
           expect(finalStored.generation).toBe(1)
           return true
-        }).pipe(Effect.provide(makeStoreLayer())),
+        }).pipe(Effect.provide(makeSqliteStoreLayer())),
       { seed: seed + 2, executions: simExecutions, execution: FuzzSimulation.execution() }
     )
   })

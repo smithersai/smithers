@@ -81,9 +81,20 @@ const sdk: CloudflareSandbox.Sdk<FakeBinding> = {
         }
       },
       exec: (command, commandOptions) => runSh(command, commandOptions?.cwd, commandOptions?.env),
-      startProcess: () => Promise.reject(new Error("the service runs commands in exec mode")),
+      startProcess: async (command, commandOptions) => {
+        const result = runSh(command, commandOptions?.cwd, commandOptions?.env)
+        return {
+          waitForExit: async () => ({ exitCode: (await result).exitCode }),
+          getLogs: async () => {
+            const { stdout, stderr } = await result
+            return { stdout, stderr }
+          },
+          kill: async () => undefined
+        }
+      },
       destroy: async () => {
         binding.destroyed.push(id)
+        rmSync(workdir, { recursive: true, force: true })
       }
     }
   }

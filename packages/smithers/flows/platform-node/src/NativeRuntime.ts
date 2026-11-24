@@ -48,6 +48,7 @@ import { mkdirSync } from "node:fs"
 import { constants } from "node:os"
 import { dirname, join, resolve } from "node:path"
 import * as HostLiveness from "./HostLiveness.ts"
+import { ProcessExit } from "./internal/ProcessExit.ts"
 import type * as NodeHost from "./NodeHost.ts"
 import type * as ProcessReaper from "./ProcessReaper.ts"
 
@@ -386,10 +387,11 @@ export const make = (platform: Platform) => {
     timeoutMs: number
   ): Effect.Effect<void, never, Scope.Scope> =>
     Effect.gen(function*() {
+      const exit = yield* ProcessExit
       let closing = false
       let deadline: NodeJS.Timeout | undefined
       const leave = (signal: NodeJS.Signals) => {
-        process.exit(signalExitCode(signal))
+        exit(signalExitCode(signal))
       }
       const handlers = signals.map((signal) => {
         const handler = () => {
@@ -400,16 +402,17 @@ export const make = (platform: Platform) => {
             return
           }
           closing = true
-          deadline = setTimeout(() => leave(signal), timeoutMs)
+          const timer = setTimeout(() => leave(signal), timeoutMs)
+          deadline = timer
           // A shutdown that finishes on time must not be held open by its own
           // deadline timer.
-          deadline.unref()
+          timer.unref()
           // The caller's scope can stay open after the runtime is released.
           // Disarm this runtime's deadline as soon as its finalizers finish.
           Effect.runFork(
             Scope.close(runtime, Exit.void).pipe(
               Effect.ensuring(Effect.sync(() => {
-                if (deadline !== undefined) clearTimeout(deadline)
+                clearTimeout(timer)
               }))
             )
           )

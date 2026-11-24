@@ -248,7 +248,8 @@ export const main = (filename: string): Effect.Effect<Summary> =>
         Layer.mergeAll(
           SqlControlRuntime.layer({
             flows,
-            owner: { hostId: "examples-approval", pid: 1, nonce: "approval" }
+            owner: { hostId: "examples-approval", pid: 1, nonce: "approval" },
+            principal: { id: "local", kind: "operator" }
           }).pipe(Layer.orDie),
           NotificationQueue.layer,
           executor,

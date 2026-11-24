@@ -516,4 +516,37 @@ describe("native pipe adapter", () => {
       expect(child[pipe].listenerCount("error")).toBeGreaterThan(0)
     })
   })
+
+  it("remaps Windows owner standard descriptors off fds 0, 1, and 2 across pipe, inherit, and ignore", async () => {
+    const observedStdio: Array<ReadonlyArray<unknown>> = []
+    const makeChild = () => {
+      const base = faultyChild()
+      const extra = [new PassThrough(), new PassThrough(), new PassThrough()]
+      return Object.assign(base, {
+        get stdio(): Array<PassThrough | null> {
+          return [null, null, null, extra[0]!, extra[1]!, extra[2]!]
+        }
+      })
+    }
+    const nativeSpawn: PipedProcess.NativeSpawn = (_cmd, _args, options) => {
+      observedStdio.push(options.stdio as ReadonlyArray<unknown>)
+      const c = makeChild()
+      queueMicrotask(() => {
+        c.emit("spawn")
+        c.emit("exit", 0, null)
+      })
+      return c as unknown as ReturnType<PipedProcess.NativeSpawn>
+    }
+    const run = injected(nativeSpawn)
+    const handle = await run.promise(Effect.scoped(Effect.gen(function*() {
+      return yield* PipedProcess.spawn(
+        ChildProcess.make("fixture", { stdin: "ignore", stdout: "inherit", stderr: "pipe" }),
+        undefined,
+        true,
+        "win32"
+      )
+    })))
+    expect(observedStdio).toEqual([["ignore", "ignore", "ignore", "ignore", 1, "pipe"]])
+    expect(PipedProcess.standardFdsOf(handle)).toEqual(["ignore", 4, 5])
+  })
 })

@@ -910,13 +910,7 @@ describe("coverage conformance", () => {
       // which does not run V8 coverage.
       "smithers/flows/platform-bun/src/BunGarbageCollector.ts": 1,
       "smithers/flows/platform-bun/src/BunRuntime.ts": 1,
-      "smithers/flows/platform-node/src/internal/AtomicFileSystemExecutable.ts": 1,
-      // The fixture engine's three unreachable arms (`d1012596b6`): registered
-      // execution bodies settle only after run or resume arms their
-      // settlement, the registered execute function runs every subject flow so
-      // the declarative body is never interpreted, and every path to
-      // awaitResult arms a settlement after recording execution metadata.
-      "testing/src/FlowEngineLike.ts": 3
+      "smithers/flows/platform-node/src/internal/AtomicFileSystemExecutable.ts": 1
     }
     const found: Record<string, number> = {}
     for (const name of packages) {

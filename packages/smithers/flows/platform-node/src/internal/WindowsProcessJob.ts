@@ -82,10 +82,11 @@ export class WindowsProcessJob {
     })
     // Drain diagnostics without retaining unbounded native output.
     this.child.stderr.resume()
-    this.child.once("error", (cause) => this.fail(cause))
-    this.child.stdin.on("error", (cause) => this.fail(cause))
-    this.child.stdout.on("error", (cause) => this.fail(cause))
-    this.child.stderr.on("error", (cause) => this.fail(cause))
+    const onError = (cause: unknown) => this.fail(cause)
+    this.child.once("error", onError)
+    this.child.stdin.on("error", onError)
+    this.child.stdout.on("error", onError)
+    this.child.stderr.on("error", onError)
     this.child.once("close", (code, signal) => {
       if (!this.failed && code === 0 && signal === null && this.receivedSettled && buffer === "") {
         this.settled.resolve()

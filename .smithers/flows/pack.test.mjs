@@ -727,8 +727,11 @@ describe("discovery over the project flows directory", () => {
       "release/publish",
       "release/rehearsal",
       "release/restore",
+      "release/runbook",
       "release/smoke",
-      "release/version"
+      "release/version",
+      "telegram-inbox",
+      "vibelang-fuzz"
     ]
     // `checks/wiki` still delegates, and its own file says why: the host binds
     // its reviewer policy to a descriptor by the `flows:` list, and the capture
@@ -742,7 +745,11 @@ describe("discovery over the project flows directory", () => {
     const hostBound = {
       "learning": "missing_service learning/Binding",
       "memory/mine": "missing_service memory/mine/Binding",
-      "review": "missing_service @smthrs/agent/AgentAction/Host"
+      "merge-queue": "layer_failed",
+      "release": "missing_service @smthrs/agent/SeatResolver",
+      "release-content": "missing_service @smthrs/agent/SeatResolver",
+      "review": "missing_service @smthrs/agent/AgentAction/Host",
+      "telegram-inbox": "missing_service effect/sql/SqlClient"
     }
     // The runners, schedules and registration steps are the host's to start,
     // never a model's tool.
@@ -786,8 +793,11 @@ describe("discovery over the project flows directory", () => {
       "release/publish",
       "release/rehearsal",
       "release/restore",
+      "release/runbook",
       "release/smoke",
-      "release/version"
+      "release/version",
+      "telegram-inbox",
+      "vibelang-fuzz"
     ]
     // These named payloads cannot be safely reduced to a static document.
     // Keep this inventory independent of discovery's emitted warning list.
@@ -838,8 +848,11 @@ describe("discovery over the project flows directory", () => {
       "release/publish",
       "release/rehearsal",
       "release/restore",
+      "release/runbook",
       "release/smoke",
-      "release/version"
+      "release/version",
+      "telegram-inbox",
+      "vibelang-fuzz"
     ]
     for (const name of unavailablePayloads) {
       const descriptor = scan.entries.find((entry) => entry.name === name)
@@ -856,6 +869,7 @@ describe("discovery over the project flows directory", () => {
       "proc:spawn:gh api *",
       "proc:spawn:node /*/flows/issue-claim/github-proxy.mjs --ensure",
       "proc:spawn:node /*/flows/issue-claim/issue-claim.mjs *",
+      "proc:spawn:node /*/flows/land/review.mjs --require *",
       "proc:spawn:jj -R *",
       "proc:spawn:lockf *",
       "proc:spawn:pnpm *",

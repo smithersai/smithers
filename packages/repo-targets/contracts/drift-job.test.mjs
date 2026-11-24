@@ -147,7 +147,7 @@ test('API baseline and docs drift targets are check-only and independent of rele
   assert.ok(api, 'apiBaseline must use NodeBinary')
   assert.match(api, /check-api-baseline\.mjs/)
   assert.match(api, /--build-declarations/)
-  assert.match(api, /deps:\s*\[\]/)
+  assert.match(api, /deps:\s*\[Smithers\.Target\.subtree\("\/\/packages\/\.\.\.",\s*"lib"\)\]/)
   assert.doesNotMatch(api, /releasePack/)
   const release = source.match(/const releasePack\s*=\s*Smithers\.NodeBinary\(\{([\s\S]*?)\n\}\)/)?.[1]
   assert.ok(release, 'releasePack must use NodeBinary')
@@ -381,6 +381,10 @@ test('CLI combines declaration build and baseline update from current source', a
     }))
     await write(root, 'packages/example/src/index.ts', 'export function value(input: string): string { return input }\n')
     await cp(join(repositoryRoot, '.smithers/flows/release/check-api-baseline.mjs'), cli)
+    await cp(
+      join(repositoryRoot, '.smithers/flows/release/set-release-version.mjs'),
+      join(root, '.smithers/flows/release/set-release-version.mjs')
+    )
     await cp(join(repositoryRoot, 'packages/repo-targets/scripts/workspace-packages.mjs'), join(root, 'packages/repo-targets/scripts/workspace-packages.mjs'))
     await cp(join(repositoryRoot, 'packages/repo-targets/scripts/build-library.mjs'), join(root, 'packages/repo-targets/scripts/build-library.mjs'))
     await cp(join(repositoryRoot, 'packages/repo-targets/scripts/private-effect-adapters.mjs'), join(root, 'packages/repo-targets/scripts/private-effect-adapters.mjs'))

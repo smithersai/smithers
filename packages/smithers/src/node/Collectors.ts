@@ -6,7 +6,7 @@
  * and Antigravity IDE sessions without wrappers or mutation, while the running Smithers
  * node client gives full observability (model, account, canonical project, branch/lane,
  * repo, cwd, human-readable summary, structured scrubbed transcript, status, PID,
- * CPU seconds, tokens) locally and synced to `https://smithers.sh/app/fleet` over BYOA
+ * CPU seconds, tokens) locally and synced to the Fleet view in the Smithers app over BYOA
  * MCP-over-HTTP.
  *
  * OBS-5: every title, summary, command, and transcript entry is scrubbed before returning
