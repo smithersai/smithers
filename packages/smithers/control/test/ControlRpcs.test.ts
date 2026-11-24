@@ -1,6 +1,7 @@
 import { NotificationQueue } from "@smthrs/notifications"
-import { Effect, Layer, Stream } from "effect"
+import { Deferred, Effect, Layer, Stream } from "effect"
 import { RpcTest } from "effect/rpc"
+import { TestClock } from "effect/testing"
 import { describe, expect, it } from "vitest"
 import { Control } from "../src/Control.ts"
 import { isControlError } from "../src/ControlClient.ts"
@@ -42,6 +43,27 @@ const plan = (rpc: ControlRpcClient) =>
   rpc.Plan({ flowId: "system/release", input: { release: true }, idempotencyKey: "plan" })
 
 describe("ControlRpcs", () => {
+  it("returns resource_limit when one RPC client holds sixteen watches", async () => {
+    await Effect.runPromise(client((rpc) =>
+      Effect.scoped(Effect.gen(function*() {
+        yield* plan(rpc)
+        yield* Effect.forEach(Array.from({ length: 16 }), () =>
+          Effect.gen(function*() {
+            const ready = yield* Deferred.make<void>()
+            yield* rpc.Watch({ follow: true }).pipe(
+              Stream.tap(() => Deferred.succeed(ready, undefined)),
+              Stream.runDrain,
+              Effect.forkScoped
+            )
+            yield* Deferred.await(ready)
+          }))
+        expect(yield* rpc.Watch({ follow: true }).pipe(Stream.runDrain, Effect.flip)).toMatchObject({
+          code: "resource_limit"
+        })
+      }))
+    ))
+  })
+
   it("authenticates exactly the configured bearer token", async () => {
     const authenticator = bearerAuthenticator({
       token: "alpha-secret",
@@ -67,6 +89,28 @@ describe("ControlRpcs", () => {
     expect(refused.every((error) => error instanceof Unauthorized)).toBe(true)
   })
 
+  it("resolves the durable owner of run and plan addresses and refuses missing ones", async () => {
+    await Effect.runPromise(
+      Effect.gen(function*() {
+        const control = yield* Control
+        const card = yield* control.plan({ flowId: "system/test", input: {} })
+        yield* control.approve(card.approval)
+        const receipt = yield* control.run({
+          _tag: "Plan",
+          planId: card.planId,
+          digest: card.digest,
+          envelope: card.envelope,
+          idempotencyKey: "owner"
+        })
+        if (receipt._tag !== "Accepted" || !receipt.runId) return yield* Effect.die("expected an admitted run")
+        expect(yield* control.flowLookup!.ofPlan(card.planId)).toBe(card.flowId)
+        expect(yield* control.flowLookup!.ofRun(receipt.runId)).toBe(card.flowId)
+        expect(yield* control.flowLookup!.ofPlan("missing")).toBeUndefined()
+        expect(yield* control.flowLookup!.ofRun("missing")).toBeUndefined()
+      }).pipe(Effect.provide(durable()), Effect.scoped)
+    )
+  })
+
   it("stamps the host clock when the composition names none", async () => {
     // `now` is a seam for deterministic suites. A host that omits it still owes
     // every authenticated principal a real stamp, because the stamp is what
@@ -76,11 +120,13 @@ describe("ControlRpcs", () => {
       principal: { id: "alpha", kind: "bearer" }
     })
 
-    const before = Date.now()
-    const authenticated = await Effect.runPromise(authenticator.authenticate({ authorization: "Bearer alpha-secret" }))
-
-    expect(authenticated.stampedAt).toBeGreaterThanOrEqual(before)
-    expect(authenticated.stampedAt).toBeLessThanOrEqual(Date.now())
+    const authenticated = await Effect.runPromise(
+      Effect.gen(function*() {
+        yield* TestClock.adjust(5)
+        return yield* authenticator.authenticate({ authorization: "Bearer alpha-secret" })
+      }).pipe(Effect.provide(TestClock.layer()))
+    )
+    expect(authenticated.stampedAt).toBe(5)
   })
 
   it("fails closed when the configured bearer token is empty", async () => {
@@ -220,11 +266,23 @@ describe("ControlRpcs", () => {
           signal: { name: "coding-clarification#1", payload: "yes, proceed" },
           idempotencyKey: "signal"
         }))
-        return { approve, deny, run, signal }
+        const resume = yield* Effect.flip(rpc.Resume({ runId: "run-1", idempotencyKey: "resume" }))
+        const retry = yield* Effect.flip(rpc.Run({ _tag: "Retry", runId: "run-1", idempotencyKey: "retry" }))
+        const runResume = yield* Effect.flip(rpc.Run({ _tag: "Resume", runId: "run-1", idempotencyKey: "run-resume" }))
+        return { approve, deny, run, signal, resume, retry, runResume }
       }).pipe(Effect.provide(anonymous), Effect.scoped)
     )
 
-    for (const refused of [observed.approve, observed.deny, observed.signal]) {
+    for (
+      const refused of [
+        observed.approve,
+        observed.deny,
+        observed.signal,
+        observed.resume,
+        observed.retry,
+        observed.runResume
+      ]
+    ) {
       expect(refused).toBeInstanceOf(Unauthorized)
       expect((refused as Unauthorized).message).toBe("An operator credential is required")
     }

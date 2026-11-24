@@ -131,7 +131,9 @@ const rawServer = (status: number, body: string): Promise<{
     })
   })
 
-const calls = (control: Control["Service"]): Record<keyof Control["Service"], Effect.Effect<unknown, ControlError>> => {
+const calls = (
+  control: Control["Service"]
+): Record<Exclude<keyof Control["Service"], "flowLookup">, Effect.Effect<unknown, ControlError>> => {
   const approval = {
     target: {
       _tag: "Plan" as const,
@@ -173,8 +175,8 @@ describe("ControlClient", () => {
       : T extends Stream.Stream<infer _A, infer E, infer _R> ? E
       : never
     const boundaryErrors: {
-      [K in keyof Control["Service"]]: TransportError | Unauthorized extends Errors<ReturnType<Control["Service"][K]>>
-        ? true
+      [K in Exclude<keyof Control["Service"], "flowLookup">]: TransportError | Unauthorized extends
+        Errors<ReturnType<Control["Service"][K]>> ? true
         : false
     } = {
       plan: true,

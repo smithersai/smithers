@@ -96,6 +96,80 @@ describe("project skill discovery boundaries", () => {
     )
   })
 
+  // R1-Fable-D2-057: the project flow source is confined to the project root.
+  it("refuses a project flow directory linked from outside the project", async () => {
+    const root = await fixture()
+    const outside = await fixture()
+    await write(outside, "host/flow.mdx", "---\ndescription: A host directory's text.\n---\nHost body.\n")
+    await write(root, ".smithers/flows/local/flow.mdx", "---\ndescription: A project flow.\n---\nLocal body.\n")
+    await Fs.symlink(Path.join(outside, "host"), Path.join(root, ".smithers", "flows", "x"))
+    await Effect.runPromise(
+      Effect.gen(function*() {
+        const registry = yield* Registry.Registry
+        expect((yield* registry.list()).map((entry) => entry.name)).toEqual(["local"])
+        const refused = (yield* registry.warnings()).filter((item) => item.code === "outside_root")
+        expect(refused.map((item) => item.path)).toEqual([Path.join(root, ".smithers", "flows", "x")])
+        expect(JSON.stringify(yield* registry.warnings())).not.toContain("A host directory's text.")
+      }).pipe(Effect.provide(Registry.layerProject({ root })), Effect.provide(platform))
+    )
+  })
+
+  it("refuses a project flows directory that is itself a link out of the project", async () => {
+    const root = await fixture()
+    const outside = await fixture()
+    await write(outside, "host/flow.mdx", "---\ndescription: A host directory's text.\n---\nHost body.\n")
+    await Fs.mkdir(Path.join(root, ".smithers"))
+    await Fs.symlink(outside, Path.join(root, ".smithers", "flows"))
+    await Effect.runPromise(
+      Effect.gen(function*() {
+        const registry = yield* Registry.Registry
+        expect(yield* registry.list()).toEqual([])
+        expect((yield* registry.warnings()).map((item) => item.code)).toEqual(["outside_root"])
+      }).pipe(Effect.provide(Registry.layerProject({ root })), Effect.provide(platform))
+    )
+  })
+
+  // R1-Fable-D2-059: a pack or a skill library that leaves `capabilities` out
+  // receives none; a project's own flow keeps the documented wildcard.
+  it("defaults undeclared capabilities to none for packs and skill libraries, and to all for project flows", async () => {
+    const root = await fixture()
+    const packDir = await fixture()
+    await write(root, ".smithers/flows/own/flow.mdx", "---\ndescription: A project flow.\n---\nOwn body.\n")
+    await write(root, "Skills/library/SKILL.md", skill("library"))
+    await write(packDir, "flows/packed/flow.mdx", "---\ndescription: A pack flow.\n---\nPacked body.\n")
+    await write(
+      packDir,
+      "flows/declared/flow.mdx",
+      "---\ndescription: A pack flow.\ncapabilities: [\"fs:read:**\"]\n---\nDeclared body.\n"
+    )
+    await Effect.runPromise(
+      Effect.gen(function*() {
+        const registry = yield* Registry.Registry
+        const capabilities = Object.fromEntries(
+          (yield* registry.list()).map((entry) => [entry.name, entry.capabilities])
+        )
+        expect(capabilities).toEqual({ own: ["*"], library: [], declared: ["fs:read:**"], packed: [] })
+        const silent = (yield* registry.warnings()).filter((item) => item.code === "unprojectable_authority")
+        expect(silent.map((item) => [Path.basename(Path.dirname(item.path)), item.message.includes("no capability")]))
+          .toEqual([["own", false], ["library", true], ["packed", true]])
+      }).pipe(
+        Effect.provide(Registry.layerProject({
+          root,
+          skills: ["Skills"],
+          packs: {
+            runtimeVersion: "1.0.0-rc.0",
+            installed: [{
+              dir: packDir,
+              origin: "installed",
+              manifest: { name: "acme/review", version: "1.0.0", flows: ["flows"] } as never
+            }]
+          }
+        })),
+        Effect.provide(platform)
+      )
+    )
+  })
+
   it("refuses library links escaping the project", async () => {
     const root = await fixture()
     const outside = await fixture()

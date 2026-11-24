@@ -30,7 +30,15 @@ const credentialRules = new Set([
 ])
 const credentialPatterns = defaultRules
   .filter((rule) => credentialRules.has(rule.id))
-  .map((rule) => ({ id: rule.id, pattern: new RegExp(rule.pattern.source, rule.pattern.flags.replace("g", "")) }))
+  .map((rule) => ({
+    id: rule.id,
+    pattern: new RegExp(
+      rule.id === "bearer-token"
+        ? `(?:${rule.pattern.source}|\\bauthorization\\s*:\\s*bearer\\s+[A-Za-z0-9._~+/-]{4,}=*)`
+        : rule.pattern.source,
+      rule.pattern.flags.replace("g", "")
+    )
+  }))
 
 /**
  * The ids of the credential shapes found in `text`; empty when it holds none.

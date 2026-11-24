@@ -4,7 +4,7 @@ import { act, type ReactElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { ApprovalCard, ApprovalNote, ApprovalResources, ApprovalRisk } from "../src/approvals/ApprovalCard";
 import { SMITHERS_UI_STYLE_ATTR } from "../src/styles";
-import { safeHref } from "../src/internal/safeHref";
+import { safeHref, safeImageSrc } from "../src/internal/safeHref";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -170,6 +170,22 @@ describe("safeHref", () => {
     expect(safeHref("data:text/html;base64,x")).toBeUndefined();
     expect(safeHref("vbscript:x")).toBeUndefined();
     expect(safeHref("file:///etc/passwd")).toBeUndefined();
+  });
+
+  test("rejects protocol-relative links, which leave the origin without naming a scheme", () => {
+    for (const href of ["//evil.example/x", "\\\\evil.example/x", "/\\evil.example", "\\/evil.example", "  //evil.example"]) {
+      expect([href, safeHref(href)]).toEqual([href, undefined]);
+    }
+    expect(safeHref("/ok//double")).toBe("/ok//double");
+    expect(safeHref("./a")).toBe("./a");
+  });
+
+  test("an image source is what safeHref allows, less mailto", () => {
+    expect(safeImageSrc("https://avatars.example/u/1")).toBe("https://avatars.example/u/1");
+    expect(safeImageSrc("/avatar.png")).toBe("/avatar.png");
+    for (const src of ["mailto:a@b.c", "MAILTO:a@b.c", "javascript:alert(1)", "data:image/svg+xml,x", "//evil.example/p.gif"]) {
+      expect([src, safeImageSrc(src)]).toEqual([src, undefined]);
+    }
   });
 
   test("rejects control characters that browser URL parsing would strip", () => {

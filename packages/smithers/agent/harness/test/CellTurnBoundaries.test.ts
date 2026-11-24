@@ -741,7 +741,14 @@ describe("CellTurn call classification", () => {
     const { events, failure } = await collect({ state: state(), flows: [lister] }, { engine: engine.layer })
 
     expect(failure).toMatchObject({ code: "engine_failed" })
-    expect(of(events, "cell-call-settled")).toEqual([])
+    // R1-Fable-D2-048: the call started, so it settles in the journal, as a failure that records no success.
+    const settled = of(events, "cell-call-settled")
+    expect(settled.map((event) => event.identity)).toEqual(
+      of(events, "cell-call-started").map(({ call }) => call.identity)
+    )
+    expect(settled.map((event) => event.result)).toMatchObject([
+      { outcome: "failure", value: null, message: "Flow fs/list ended without an answer." }
+    ])
     expect(messagesOf(model, 1)).toBe("[]")
   })
 
@@ -1783,6 +1790,17 @@ describe("CellTurn interruption", () => {
         outcome: "aborted",
         time: { [`${component}Ms`]: millis, wallMs: millis, otherMs: 0 }
       }])
+      // R1-Fable-D2-048: an interrupt inside a flow call leaves no started call without its settlement.
+      const begun = of(observed.events, "cell-call-started")
+      const settled = of(observed.events, "cell-call-settled")
+      expect(begun).toHaveLength(component === "cell" ? 1 : 0)
+      expect(settled.map((event) => event.identity)).toEqual(begun.map(({ call }) => call.identity))
+      expect(settled.map(({ durationMillis, result }) => ({ durationMillis, ...result }))).toEqual(begun.map(() => ({
+        durationMillis: millis,
+        outcome: "failure",
+        value: null,
+        message: "Flow fs/list was interrupted before it answered."
+      })))
       expect(clock.currentTimeMillisUnsafe()).toBe(millis + 500)
     }
   )

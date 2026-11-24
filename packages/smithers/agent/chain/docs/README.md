@@ -36,8 +36,8 @@ package address that:
   in a fresh QuickJS realm with memory, stack, and step limits, and without
   `Date` or `Math.random`, so time and randomness are journaled calls and
   replay stays deterministic.
-- **A policy seam per call.** Mount `Authorize` and every call is decided
-  against the capabilities its entry declares. A call that needs approval
+- **A policy seam per call.** `Chain.run` requires `Authorize`, and every
+  call is decided against the capabilities its entry declares. A call that needs approval
   parks the run in place and re-asks after you grant it.
 
 You own the model seat, the entries, and the storage. This package owns the
@@ -58,7 +58,7 @@ a mock author supplies the script, an in-memory journal records the events,
 and the production QuickJS runner executes it.
 
 ````ts
-import { Author, Catalog, Chain, Journal, QuickJsRunner } from "@smthrs/chain"
+import { Author, Authorize, Catalog, Chain, Journal, QuickJsRunner } from "@smthrs/chain"
 import { Effect, Layer } from "effect"
 
 const grep: Catalog.Entry = {
@@ -76,6 +76,7 @@ const script = [
 
 const layers = Layer.mergeAll(
   Journal.layerMemory(),
+  Authorize.layerAllowAll,
   Author.layerMock([script]),
   QuickJsRunner.layer(),
   Catalog.layer(Catalog.withSystem([grep]))
@@ -87,8 +88,8 @@ const outcome = await Effect.runPromise(
 // { _tag: "Done", value: { matched: 2 } }
 ````
 
-Swap `Author.layerMock` for `ModelAuthor.layer(config)` over a real model and
-the same four layers drive a real agent. The
+Swap `Author.layerMock` for `ModelAuthor.layer(config)` over your host's
+durable model step and the same layers drive a real agent. The
 [Quickstart](./quickstart.md) extends this run to two links, reads the
 journal it wrote, and replays it.
 

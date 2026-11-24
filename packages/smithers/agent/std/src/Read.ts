@@ -278,9 +278,14 @@ export const run = Effect.fn("Read.run")(function*(
     read: [input.path],
     maxBytes: MAX_READ_FILE_BYTES
   }).pipe(Effect.map((snapshots) => snapshots[0]!), Effect.catch(statFailure))
-  const info = seen === undefined
-    ? yield* fileSystem.stat(input.path).pipe(Effect.catch(statFailure))
-    : yield* Effect.fromResult(seen.info).pipe(Effect.catch(statFailure))
+  // One `yield*` after the choice, not one in each arm: V8 attributes the
+  // statements after a conditional whose arms both yield to the second arm's
+  // resumption, and reports the `if` below as a branch never taken.
+  const described: Effect.Effect<
+    { readonly type: FileSystem.File.Type; readonly size: number | bigint },
+    PlatformError.PlatformError
+  > = seen === undefined ? fileSystem.stat(input.path) : Effect.fromResult(seen.info)
+  const info = yield* described.pipe(Effect.catch(statFailure))
   if (info.type === "Directory") {
     return yield* Effect.fail(
       new StdError.StdError({

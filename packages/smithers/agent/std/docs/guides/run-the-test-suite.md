@@ -161,3 +161,8 @@ nor `cwd` fails with `invalid_input`.
 30,000 bytes of it, so `tail` holds the part of a long run that says what
 failed. A timeout is a `timeout` failure, not a result; its `output` carries
 the last 30,000 bytes of each stream the runner printed before it was stopped.
+
+A runner in a container is stopped inside the container. The run goes through
+the same wrapper a containerised `bash` call does, which sends the runner
+`TERM` at the limit, rounded up to a whole second, and `KILL` two seconds
+later, so a suite that hung does not run on beside the next one.

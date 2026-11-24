@@ -14,6 +14,7 @@ import {
   MODEL_CALL_STATE_MAX_BYTES,
   MODEL_CALL_TEMPERATURE_MAX,
   MODEL_CALL_TEXT_MAX,
+  MODEL_CREDENTIAL_CUT_MIN,
   MODEL_CREDENTIAL_ENV_PREFIX,
   MODEL_CREDENTIALS,
   MODEL_FIELD_KEY,
@@ -621,6 +622,20 @@ describe("the test result", () => {
     expect(cutModelCredential("your key is  sk-abc \n", "sk-abc")).toBe("your key is   \n")
     expect(cutModelCredential("sk-sk-abcabc", "sk-abc")).toBe("")
     expect(cutModelCredential("  ok \n", "")).toBe("  ok \n")
+  })
+
+  test("a credential part too short to be a secret is left in the text, so ordinary words survive", () => {
+    expect(MODEL_CREDENTIAL_CUT_MIN).toBe(6)
+    // A loopback model's placeholder key.
+    expect(cutModelCredential("explain xml", "x")).toBe("explain xml")
+    expect(cutModelCredential("explain xml syntax", "x")).toBe("explain xml syntax")
+    expect(scrubModelSample("explain xml syntax", "x")).toBe("explain xml syntax")
+    // The boundary: five characters stay, six are cut.
+    expect(cutModelCredential("the token is short", "token")).toBe("the token is short")
+    expect(cutModelCredential("the tokens are short", "tokens")).toBe("the  are short")
+    // A structured credential's short account id stays; its long token and its whole value are still cut.
+    const access = JSON.stringify({ accessToken: "private-access", accountId: "acme" })
+    expect(cutModelCredential(`acme said private-access and ${access}`, access)).toBe("acme said  and ")
   })
 
   test("a row's test state is running while asked, then what the last result says", () => {

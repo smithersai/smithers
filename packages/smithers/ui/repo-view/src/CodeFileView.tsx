@@ -3,12 +3,12 @@ import { getFiletypeFromFileName, type FileOptions, type LineAnnotation } from "
 import { File, WorkerPoolContext, useStableCallback } from "@pierre/diffs/react";
 import { type ResolvedPalette, useResolvedPalette, useResolvedTheme } from "@smthrs/ui";
 import { cn, tokens as t } from "@smthrs/ui-css";
-import { type FocusEvent as ReactFocusEvent, type KeyboardEvent as ReactKeyboardEvent, useId, useMemo, useRef, useSyncExternalStore, type ReactNode } from "react";
+import { type FocusEvent as ReactFocusEvent, type KeyboardEvent as ReactKeyboardEvent, useId, useMemo, useRef, type ReactNode } from "react";
 import { diffsThemeForMode, type PierreDiffMode } from "./PierreDiffView";
 import { useInjectRepoViewCss } from "./styles";
 import { type CodeSymbol, CURSOR_KEYS, type CursorKey, isSymbolText, moveCursor } from "./symbols";
 import { registerVibe } from "./vibe";
-import { codeViewThemeKey, codeViewWorkerPool, currentCodeViewPool, subscribeCodeViewPool } from "./workerPool";
+import { codeViewThemeKey, useCodeViewWorkerPool } from "./workerPool";
 
 registerVibe();
 
@@ -306,15 +306,14 @@ export function CodeFileView({
   const theme = diffsThemeForMode(resolvedMode, resolvedPalette);
 
   /*
-   * The worker pool for this view's theme, started on the first view with it
+   * The worker pool for this view's theme, started by the first view with it
    * (pierre renders every pooled file with the pool's theme, so each theme
-   * has its own). The live state is an external store: a pool that fails its
-   * probe flips the state to failed, and the `key` below remounts pierre on
-   * the main thread; a theme change remounts it onto that theme's pool.
+   * has its own). A pool that fails its probe flips the state to failed, and
+   * the `key` below remounts pierre on the main thread; a theme change
+   * remounts it onto that theme's pool. Until the effect has started the
+   * pool, only the plain text shows.
    */
-  const themed = codeViewWorkerPool(theme);
-  const pool = useSyncExternalStore(subscribeCodeViewPool, currentCodeViewPool, currentCodeViewPool);
-  const manager = pool.state === "starting" || pool.state === "ready" ? themed.manager : undefined;
+  const { manager, waiting } = useCodeViewWorkerPool(theme);
 
   /*
    * The anchor last scrolled to. pierre calls onPostRender on the passes
@@ -487,17 +486,19 @@ export function CodeFileView({
       onPointerDown={keyboard ? () => void (pointerFocus.current = true) : undefined}
     >
       <pre className="sui-code-view-plain">{contents}</pre>
-      <WorkerPoolContext.Provider value={manager}>
-        <File<AnnotationMeta, undefined>
-          key={manager === undefined ? "main-thread" : `worker:${codeViewThemeKey(theme)}`}
-          file={file}
-          selectedLines={selectedLines}
-          options={options}
-          lineAnnotations={lineAnnotations}
-          renderAnnotation={renderAnnotation}
-          disableWorkerPool={manager === undefined}
-        />
-      </WorkerPoolContext.Provider>
+      {waiting ? null : (
+        <WorkerPoolContext.Provider value={manager}>
+          <File<AnnotationMeta, undefined>
+            key={manager === undefined ? "main-thread" : `worker:${codeViewThemeKey(theme)}`}
+            file={file}
+            selectedLines={selectedLines}
+            options={options}
+            lineAnnotations={lineAnnotations}
+            renderAnnotation={renderAnnotation}
+            disableWorkerPool={manager === undefined}
+          />
+        </WorkerPoolContext.Provider>
+      )}
       <span key={line ?? "unanchored"} hidden ref={revealFromSentinel} data-slot="code-view-anchor" />
       <span key={marksCss} hidden ref={marksFromSentinel} data-slot="code-view-marks-anchor" />
       {hover === undefined ? null : (

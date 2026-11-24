@@ -1,4 +1,4 @@
-import { Author, Catalog, Chain, type Event, Journal, QuickJsRunner, ScriptRunner } from "@smthrs/chain"
+import { Author, Authorize, Catalog, Chain, type Event, Journal, QuickJsRunner, ScriptRunner } from "@smthrs/chain"
 
 /** The bootstrap script: search, then ask the author for a successor. */
 const l1 = [
@@ -35,6 +35,7 @@ const entries = Catalog.withSystem([grep, edit])
 export effect function runChain() {
   provide Layer.mergeAll(
     Journal.layerMemory(),
+    Authorize.layerAllowAll,
     Author.layerMock([l1, l2]),
     QuickJsRunner.layer(),
     Catalog.layer(entries)
@@ -49,6 +50,7 @@ export effect function runChain() {
 export effect function replayChain(events: ReadonlyArray<Event.Event>) {
   provide Layer.mergeAll(
     Journal.layerMemory(events),
+    Authorize.layerAllowAll,
     Author.layerMock([]),
     ScriptRunner.layerNoop(),
     Catalog.layer(entries)

@@ -21,8 +21,25 @@
   `Load.load` refuses a manifest whose schemas inline to more than 65,536 bytes
   together.
 
+- `Load.maximumCandidates` (1,024): one `Load.load` keeps candidates by tier and
+  then input order and refuses the rest `invalid` before decoding them.
+- Spans `Plugins.hook`, `Plugins.resolve` and `Plugins.load`, with `error.code`
+  on failure, and the counters `smithers_plugin_hook_runs`,
+  `smithers_plugin_resolutions` and `smithers_plugin_loads`.
+
 ### Fixed
 
+- A candidate refused at decode or at `requires.api` still holds its id, so a
+  repository or personal plugin named like a built-in that stopped loading
+  refuses `conflict` instead of taking the namespace.
+- `JsonSchema.property` and `JsonSchema.at` answer with every `oneOf` and
+  `anyOf` member that declares a step, so literal args for a payload
+  discriminated on a property validate against the member that admits them.
+- `Load.load` orders dependencies with an iterative heap-based pass and finds
+  cycles without recursion; a chain of thousands of manifests ending in a cycle
+  returns refusals instead of throwing `RangeError`.
+- `Load` imports `@smthrs/registry/Pack` instead of the registry root, so the
+  built ESM and CJS artifacts load without a `.vibe` loader.
 - A view's `path` must be empty or a `RelativePath`, so `Host.pathOf` never
   leaves the plugin's own path, and two views sharing a `scope` and `path`
   refuse `conflict`.

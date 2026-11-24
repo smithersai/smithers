@@ -262,6 +262,15 @@ describe("subscription storage and owner input", () => {
     await auth["auth connect"]!(c, { provider: "codex" }, { "config-dir": "missing" }).catch(() => undefined)
     expect(legacy()).toHaveLength(1)
   })
+  it("reads split UTF-8 bytes from stdin", async () => {
+    const { c } = await fixture()
+    const bytes = Buffer.from("🎈")
+    Object.defineProperty(process, "stdin", {
+      configurable: true,
+      value: Readable.from([bytes.subarray(0, 2), bytes.subarray(2)])
+    })
+    expect(await c.stdin("Text")).toBe("🎈")
+  })
   it.each(["hello", "", " ", "x".repeat(4 * 1024 * 1024 + 1)].map((value) => ({ value, size: value.length })))(
     "bounds stdin input ($size bytes)",
     async ({ value }) => {

@@ -36,7 +36,7 @@ author supplies the script, an in-memory journal records the events, and the
 production QuickJS runner executes it.
 
 ````ts
-import { Author, Catalog, Chain, Journal, QuickJsRunner } from "@smthrs/chain"
+import { Author, Authorize, Catalog, Chain, Journal, QuickJsRunner } from "@smthrs/chain"
 import { Effect, Layer } from "effect"
 
 const grep: Catalog.Entry = {
@@ -54,6 +54,7 @@ const script = [
 
 const layers = Layer.mergeAll(
   Journal.layerMemory(),
+  Authorize.layerAllowAll,
   Author.layerMock([script]),
   QuickJsRunner.layer(),
   Catalog.layer(Catalog.withSystem([grep]))
@@ -70,8 +71,11 @@ over a real model AND pass the model its instructions: neither `Chain` nor
 `ModelAuthor` writes a prompt, so read the mounted catalog and call
 `Chain.run({ goal, prefix: Prompt.forCatalog(catalog, "concierge") })`. The
 [Quickstart](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/chain/docs/quickstart.md) shows that composition.
-`Chain.run` requires `Journal`, `Catalog`, `Author`, and `ScriptRunner`, and
-picks up the optional `Authorize` and `Steering` seams when they are mounted.
+`ModelAuthor` runs each model call through its durable `ModelAuthor.Step`
+port, which the host binds to its durable engine.
+`Chain.run` requires `Journal`, `Catalog`, `Author`, `ScriptRunner`, and
+`Authorize`, and picks up the optional `Steering` seam when it is mounted. A
+host with no policy mounts `Authorize.layerAllowAll` by name.
 A catalog layer that itself needs those services, such as `SubChains`, must
 be built over the SAME instances the chain runs on.
 

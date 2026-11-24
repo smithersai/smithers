@@ -110,7 +110,7 @@ A stdio entry:
 | `handshakeTimeoutMs`, `requestTimeoutMs`                            | Optional positive integers.                                                                                                 |
 | `queueCapacity`, `maxFrameBytes`, `maxOutboundFrameBytes`           | Optional positive integers.                                                                                                 |
 | `maxStderrBytes`, `maxTools`, `maxToolNameBytes`, `maxCatalogPages` | Optional positive integers.                                                                                                 |
-| `maxToolDocumentBytes`                                              | Optional positive integer.                                                                                                  |
+| `maxToolDocumentBytes`, `maxCatalogDocumentBytes`                   | Optional positive integers.                                                                                                 |
 
 An HTTP entry:
 
@@ -121,7 +121,8 @@ An HTTP entry:
 | `bearerTokenEnv`                                                           | Optional environment variable name, set and non-empty at startup.   |
 | `handshakeTimeoutMs`, `requestTimeoutMs`, `maxFrameBytes`                  | Optional positive integers.                                         |
 | `maxOutboundFrameBytes`, `maxTools`, `maxToolNameBytes`, `maxCatalogPages` | Optional positive integers.                                         |
-| `maxToolDocumentBytes`                                                     | Optional positive integer.                                          |
+| `maxToolDocumentBytes`, `maxCatalogDocumentBytes`                          | Optional positive integers.                                         |
+| `maxEventStreamBytes`, `maxServerRequests`                                 | Optional positive integers.                                         |
 
 Four failures are usage errors that name the path: the file is missing, it
 cannot be read, it is not valid JSON, or it is not an array of entries accepted

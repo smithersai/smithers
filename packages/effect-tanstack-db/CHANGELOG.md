@@ -9,6 +9,14 @@
   The API reference includes pending writes, query publication, outbox holds
   and ordering, and stored collection discovery.
 
+- A stored `parked:*` value that isn't a parked write, such as one cut short,
+  no longer fails `Outbox.layer` as a defect: it is skipped, logged as
+  `outbox parked write unreadable`, and never treated as a handoff tombstone.
+  `Outbox.withdraw` and `Outbox.handoff` take the mutation's `name`, so one of
+  two mutations queued under one idempotency key can be taken back; without a
+  name such a key fails with the new `NotWithdrawn` reason `ambiguous` instead
+  of taking back whichever write was queued first.
+
 - Outbox payload migrations preserve dates, Temporal values and marker-shaped
   user objects instead of parking valid rows or losing their value types.
 

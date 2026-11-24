@@ -67,7 +67,7 @@ describe("keyless host startup", processBudget, () => {
     [["runs", "list", "--json"]],
     [["approvals", "list", "--json"]],
     [["doctor", "--json"]],
-    [["gc", "--json"]],
+    [["gc", "--dry-run", "--json"]],
     [["down", "--json"]],
     [["runs", "cancel-all", "--json"]]
   ])("runs %j with no gateway key at all", (args) => {

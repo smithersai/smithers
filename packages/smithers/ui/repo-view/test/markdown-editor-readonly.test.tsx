@@ -66,3 +66,17 @@ test("read-only empty badge links have accessible names", async () => {
   expect(content.querySelector("a")?.getAttribute("aria-label")).toBe("package");
 });
 
+
+test("a read-only javascript: link renders without its href and a click on it never navigates", async () => {
+  const content = await mount("[Install](javascript:window.__pwned=1) [Docs](docs/guide.md)");
+  const [install, docs] = [...content.querySelectorAll("a")];
+  expect(install?.textContent).toBe("Install");
+  expect(install?.getAttribute("href") ?? "").not.toContain("javascript");
+  expect(docs?.getAttribute("href")).toBe("docs/guide.md");
+  // Whatever href the renderer leaves, the host's click handler is the last guard.
+  install!.setAttribute("href", "javascript:window.__pwned=1");
+  const click = new MouseEvent("click", { bubbles: true, cancelable: true });
+  install!.dispatchEvent(click);
+  expect(click.defaultPrevented).toBe(true);
+  expect((globalThis as { __pwned?: unknown }).__pwned).toBeUndefined();
+});

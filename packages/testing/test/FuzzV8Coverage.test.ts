@@ -1,7 +1,9 @@
 import { Fuzz } from "@smthrs/fuzz"
 import { Arbitrary, Effect, Exit, Schema } from "effect"
+import { build } from "esbuild"
 import { execFileSync } from "node:child_process"
 import { fileURLToPath } from "node:url"
+import { runInNewContext } from "node:vm"
 import { describe, expect, it } from "vitest"
 import * as FuzzV8Coverage from "../src/FuzzV8Coverage.ts"
 import { makeMethods } from "../src/internal/FuzzRegistration.ts"
@@ -44,6 +46,35 @@ const makeScriptedSession = (
 }
 
 describe("FuzzV8Coverage", () => {
+  it("loads a portable helper through the package root without resolving the inspector", async () => {
+    const result = await build({
+      stdin: {
+        contents: "import { FuzzV8Coverage } from \"./src/index.ts\"; globalThis.bucket = FuzzV8Coverage.hitBucket(7)",
+        resolveDir: process.cwd()
+      },
+      bundle: true,
+      platform: "browser",
+      format: "esm",
+      write: false,
+      packages: "external",
+      plugins: [{
+        name: "inspector-boundary",
+        setup(build) {
+          build.onResolve({ filter: /^node:inspector$/ }, () => ({ errors: [{ text: "static inspector import" }] }))
+        }
+      }]
+    })
+    const bundle = await build({
+      stdin: { contents: result.outputFiles[0]!.text, resolveDir: process.cwd() },
+      platform: "browser",
+      bundle: true,
+      format: "iife",
+      write: false
+    })
+    const context = { TextEncoder, TextDecoder, URL, AbortController, performance, queueMicrotask, bucket: 0 }
+    runInNewContext(bundle.outputFiles[0]!.text, context)
+    expect(context.bucket).toBe(4)
+  })
   it("buckets positive hit counts into AFL-style tiers", () => {
     expect(FuzzV8Coverage.hitBucket(1)).toBe(1)
     expect(FuzzV8Coverage.hitBucket(2)).toBe(2)

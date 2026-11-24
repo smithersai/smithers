@@ -21,6 +21,17 @@
  * transport failure is a `502` and a deadline a `504`, which a caller treats
  * as an unknown outcome for a write.
  *
+ * **People approve and merge; agents never do.** The proxy answers `403` with
+ * reason {@link PEOPLE_ONLY}, and calls neither the credential nor GitHub, for
+ * a request that merges a pull request or a branch, sends a pull request
+ * review other than a comment, dismisses a review, or does any of these
+ * through GraphQL. Only {@link ProxyOptions.forwardPeopleActions} lifts that,
+ * for a proxy no agent can reach.
+ *
+ * A request body larger than {@link ProxyOptions.maxBodyBytes} is answered
+ * `413`, and one the caller never finished sending `400`; neither reached
+ * GitHub.
+ *
  * The proxy calls GitHub through the `HttpClient` in context, which the caller
  * provides through a layer, usually `FetchHttpClient.layer` from
  * `effect/http`. A redirect from GitHub is answered to the caller, never
@@ -32,11 +43,12 @@
  * @since 1.0.0
  */
 
-import { Clock, Duration, Effect, Exit, HashMap, Layer, Option, SynchronizedRef } from "effect"
+import { ByteSize, Clock, Duration, Effect, Exit, HashMap, Layer, Option, SynchronizedRef } from "effect"
 import * as Headers from "effect/http/Headers"
 import * as HttpBody from "effect/http/HttpBody"
 import * as HttpClient from "effect/http/HttpClient"
 import * as HttpClientRequest from "effect/http/HttpClientRequest"
+import * as HttpIncomingMessage from "effect/http/HttpIncomingMessage"
 import * as HttpServer from "effect/http/HttpServer"
 import * as HttpServerRequest from "effect/http/HttpServerRequest"
 import * as HttpServerResponse from "effect/http/HttpServerResponse"
@@ -45,6 +57,7 @@ import { type IntegrationError, isIntegrationError } from "../core/IntegrationEr
 import { constantTimeEqual } from "../core/Signature.ts"
 import { DEFAULT_API_BASE_URL, DEFAULT_REQUEST_TIMEOUT } from "./Config.ts"
 import { isRateLimitResponse, PROXY_REASON, PROXY_RETRY_AT } from "./GitHubClient.ts"
+import { refusal } from "./internal/proxyPolicy.ts"
 import * as RateLimit from "./RateLimit.ts"
 
 export { PROXY_REASON, PROXY_RETRY_AT } from "./GitHubClient.ts"
@@ -90,6 +103,21 @@ export interface ProxyOptions {
   readonly maxWait?: Duration.Input | undefined
   /** Deadline for one upstream exchange. Defaults to 30 seconds. */
   readonly requestTimeout?: Duration.Input | undefined
+  /** The largest request body the proxy reads, in bytes. Defaults to {@link DEFAULT_MAX_BODY_BYTES}. */
+  readonly maxBodyBytes?: number | undefined
+  /**
+   * The origin callers reach the proxy at, such as `https://github-proxy.example`.
+   * Pagination `Link` headers name it. Set it behind a TLS frontend, which the
+   * proxy cannot see; without it a `Link` names `http://` and the request's
+   * `Host`, and a request whose `Host` is not a host name and port is refused.
+   */
+  readonly publicOrigin?: string | undefined
+  /**
+   * Forward merges, approvals, change requests, and dismissals. Off by
+   * default: people approve and merge, agents never do. Turn it on only for a
+   * proxy that serves a person's own actions and that no agent can reach.
+   */
+  readonly forwardPeopleActions?: boolean | undefined
 }
 
 /**
@@ -99,6 +127,27 @@ export interface ProxyOptions {
  * @since 1.0.0
  */
 export const CONTROL_PREFIX = "/_smithers/"
+
+/**
+ * The `reason` of the `403` the proxy answers for an action only a person
+ * takes: a merge, an approval, a change request, or a dismissal.
+ *
+ * @category constants
+ * @since 1.0.0
+ */
+export const PEOPLE_ONLY = "people-only"
+
+/**
+ * The largest request body the proxy reads unless
+ * {@link ProxyOptions.maxBodyBytes} says otherwise: 32 MiB.
+ *
+ * @category constants
+ * @since 1.0.0
+ */
+export const DEFAULT_MAX_BODY_BYTES = 32 * 1024 * 1024
+
+// A host name, IPv4 address, or bracketed IPv6 address, with an optional port.
+const HOST = /^(?:[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?|\[[0-9a-f:.]+\])(?::\d{1,5})?$/i
 
 // Hop-by-hop headers, and the encoding headers the HTTP client has already undone.
 const DROPPED_RESPONSE_HEADERS = new Set([
@@ -124,13 +173,15 @@ const FORWARDED_REQUEST_HEADERS = [
 ]
 
 /**
- * The `owner/name` a REST path addresses, or undefined.
+ * The `owner/name` a REST path addresses, or undefined. The `/repos/` prefix
+ * matches in any case, as GitHub routes it, so `/REPOS/o/r` selects the
+ * credential of `o/r`.
  *
  * @category getters
  * @since 1.0.0
  */
 export const repositoryOf = (path: string): string | undefined => {
-  const match = /^\/repos\/([\w.-]+)\/([\w.-]+)(?:[/?]|$)/.exec(path)
+  const match = /^\/repos\/([\w.-]+)\/([\w.-]+)(?:[/?]|$)/i.exec(path)
   return match === null ? undefined : `${match[1]}/${match[2]}`
 }
 
@@ -178,6 +229,35 @@ export const make = (
     const maxWait = Duration.fromInputUnsafe(options.maxWait ?? RateLimit.DEFAULT_MAX_WAIT)
     const timeout = Duration.fromInputUnsafe(options.requestTimeout ?? DEFAULT_REQUEST_TIMEOUT)
     const limits = options.limits ?? RateLimit.DEFAULT_LIMITS
+    const maxBodyBytes = options.maxBodyBytes ?? DEFAULT_MAX_BODY_BYTES
+    const publicOrigin = options.publicOrigin === undefined ? undefined : new URL(options.publicOrigin).origin
+
+    // Where a pagination link points: the configured origin, else the request's
+    // own Host, else (a request with no Host) the path alone, which a caller
+    // resolves against the URL it called.
+    const linkOrigin = (request: HttpServerRequest.HttpServerRequest): string | undefined => {
+      if (publicOrigin !== undefined) return publicOrigin
+      const host = request.headers["host"]
+      if (host === undefined) return ""
+      return HOST.test(host) ? `http://${host}` : undefined
+    }
+
+    // The whole body, or why it was not read. The server refuses a declared
+    // length past the limit before a byte is buffered, and counts the bytes of
+    // a body that declared none or lied.
+    const readBody = (request: HttpServerRequest.HttpServerRequest) =>
+      request.arrayBuffer.pipe(
+        Effect.map((bytes) => new Uint8Array(bytes)),
+        Effect.provideService(HttpIncomingMessage.MaxBodySize, ByteSize.bytes(maxBodyBytes)),
+        Effect.catch((error) =>
+          Effect.succeed(
+            error.reason._tag === "RequestParseError" && error.reason.reason === "BodyTooLarge"
+              ? "too-large" as const
+              : "unfinished" as const
+          )
+        )
+      )
+
     const limiters = yield* SynchronizedRef.make(HashMap.empty<string, RateLimit.RateLimiter>())
 
     const limiterFor = (principal: string) =>
@@ -241,13 +321,22 @@ export const make = (
     const forward = (request: HttpServerRequest.HttpServerRequest, url: URL) =>
       Effect.gen(function*() {
         if (!authorized(request)) return json(401, { message: "GitHub proxy capability required" })
-        const path = `${url.pathname}${url.search}`
-        const credential = yield* options.credential(repositoryOf(url.pathname))
+        const origin = linkOrigin(request)
+        if (origin === undefined) return json(400, { message: "The Host header must be a host name and port" })
+        // GitHub routes `/REPOS/` as `/repos/`; the proxy forwards the one form its budget and credential read.
+        const path = `${url.pathname.replace(/^\/repos\//i, "/repos/")}${url.search}`
+        const body = request.method === "GET" || request.method === "HEAD" ? undefined : yield* readBody(request)
+        if (body === "too-large") {
+          return json(413, { message: `The request body is larger than ${maxBodyBytes} bytes` })
+        }
+        // A body the caller never finished sending ends the exchange; nothing reached GitHub.
+        if (body === "unfinished") return json(400, { message: "The request body could not be read" })
+        if (options.forwardPeopleActions !== true) {
+          const message = refusal(request.method, url.pathname, body ?? new Uint8Array())
+          if (message !== undefined) return json(403, { message, reason: PEOPLE_ONLY })
+        }
+        const credential = yield* options.credential(repositoryOf(path))
         const limiter = yield* limiterFor(credential.principal)
-        const body = request.method === "GET" || request.method === "HEAD"
-          ? undefined
-          // A body the caller never finished sending ends the exchange; nothing reached GitHub.
-          : new Uint8Array(yield* Effect.orDie(request.arrayBuffer))
         const headers: Record<string, string> = {}
         for (const name of FORWARDED_REQUEST_HEADERS) {
           const value = request.headers[name]
@@ -282,7 +371,7 @@ export const make = (
           const forwarded: Record<string, string> = {}
           answer.headers.forEach((value, name) => {
             if (DROPPED_RESPONSE_HEADERS.has(name)) return
-            forwarded[name] = name === "link" ? value.replaceAll(upstream, `http://${request.headers["host"]}`) : value
+            forwarded[name] = name === "link" ? value.replaceAll(upstream, origin) : value
           })
           return HttpServerResponse.uint8Array(answer.body, {
             status: answer.status,
@@ -313,7 +402,9 @@ export const make = (
 
     return Effect.gen(function*() {
       const request = yield* HttpServerRequest.HttpServerRequest
-      const url = new URL(request.url, "http://proxy.invalid")
+      // Appended, not resolved: `//repos/o/r` resolved against a base names the host `repos`,
+      // and the path GitHub would then see is not the one the proxy judged.
+      const url = new URL(`http://proxy.invalid${request.url}`)
       return yield* url.pathname.startsWith(CONTROL_PREFIX) ? control(request, url) : forward(request, url)
     })
   })

@@ -212,7 +212,11 @@ it.live("client exchange accepts only valid identities from the configured serve
   const server = try promise(() => startFixture((_request, response) => json(response, status, answer)))
   const client = try Broker.site({ origin, brokerOrigin: server.origin, secret, localDevelopment: true })
   const good = try Effect.provide(client.exchange("signed-private"), FetchHttpClient.layer)
-  for (const body of [{ id: 0, login: "ada" }, { id: 0.5, login: "ada" }, { id: 7, login: "bad login" }, { id: 7, login: "" }, { login: "ada" }]) {
+  // Fable D2-087: an Enterprise Managed User's login is `handle_shortcode`, one underscore between two names.
+  answer = { id: 8, login: "ada_acme" }
+  const managed = try Effect.provide(client.exchange("signed-private"), FetchHttpClient.layer)
+  try Effect.try(() => expect(managed).toEqual({ id: 8, login: "ada_acme" }))
+  for (const body of [{ id: 0, login: "ada" }, { id: 0.5, login: "ada" }, { id: 7, login: "bad login" }, { id: 7, login: "" }, { login: "ada" }, { id: 7, login: "_ada" }, { id: 7, login: "ada__acme" }, { id: 7, login: "ada_" }, { id: 7, login: "a".repeat(40) }, { id: 7, login: "ada/../x" }]) {
     answer = body
     const refused = try exit(Effect.provide(client.exchange("signed-private"), FetchHttpClient.layer))
     try Effect.try(() => expect(refused._tag).toBe("Failure"))
@@ -440,6 +444,21 @@ it.live("redacts OAuth state, signed return_to and codes in the real server HTTP
   }, catch: error => error })
 }))
 
+
+// Fable D2-087: the broker's own pattern had no underscore, so a managed user was refused at every sign-in.
+it.effect("signs in an Enterprise Managed User, whose login carries one underscore", () => effect {
+  const base = try fixture()
+  const f = try fixture(undefined, undefined, { ...base.github, user: () => succeed({ id: 8, login: "ada_acme" }) })
+  const location = try f.broker.callback(f.state, "code", f.start.cookie)
+  const code = new URLSearchParams(new URL(location).hash.slice(1)).get("code")!
+  const person = try f.broker.exchange(origin, try f.client.redemption(f.pending, code))
+  const malformed = try fixture(undefined, undefined, { ...base.github, user: () => succeed({ id: 8, login: "ada__acme" }) })
+  const refused = try exit(malformed.broker.callback(malformed.state, "code", malformed.start.cookie))
+  try Effect.try(() => {
+    expect(person).toEqual({ id: 8, login: "ada_acme" })
+    expect(refused._tag).toBe("Failure")
+  })
+})
 
 it.live("twelve hosted sign-ins revoke their temporary pairs and preserve the person's kept token", () => effect {
   const service = try tokenService()

@@ -5,8 +5,11 @@ sidebar:
   order: 2
 ---
 
-Gate 4 is optional: a chain without the `Authorize` service runs every call.
-Mount it to decide each call against the capabilities its entry declares. The
+Gate 4 is required: `Chain.run` needs the `Authorize` service, and a chain
+composed without it does not compile. Mount `Authorize.layerRules` to decide
+each call against the capabilities its entry declares, or mount
+`Authorize.layerAllowAll` by name when your host enforces policy elsewhere.
+A sub-chain runs under the seam its root runs under. The
 check runs outside the journal on purpose: a permission requirement must be
 re-decidable against a later grant, so a parked chain re-asks on resume
 instead of replaying a refusal forever.

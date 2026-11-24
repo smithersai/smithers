@@ -25,12 +25,20 @@ export type Kind = typeof Kind.Type
 /**
  * Structured memory namespace.
  *
+ * The id is non-empty and holds no U+0000. PostgreSQL cannot store that
+ * character in text, so it is refused here for every backend rather than
+ * accepted by SQLite and failed as a database error by PostgreSQL.
+ *
  * @category schemas
  * @since 0.1.0
  */
 export const Namespace = Schema.Struct({
   kind: Kind,
-  id: Schema.NonEmptyString
+  id: Schema.NonEmptyString.pipe(
+    Schema.check(
+      Schema.makeFilter((id) => id.includes("\u0000") ? "memory namespace id must not contain U+0000" : undefined)
+    )
+  )
 })
 
 /**

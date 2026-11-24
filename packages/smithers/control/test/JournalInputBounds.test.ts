@@ -2,7 +2,7 @@ import { Effect, Layer, Schema, Stream } from "effect"
 import { RpcTest } from "effect/rpc"
 import { describe, expect, it } from "vitest"
 import { Control } from "../src/Control.ts"
-import { InvalidInput, PersistenceError, Unauthorized } from "../src/ControlError.ts"
+import { InvalidInput, Unauthorized } from "../src/ControlError.ts"
 import { ControlRpcs, layerNoopAuth } from "../src/ControlRpcs.ts"
 import { type ApprovalTarget, WatchFilter } from "../src/ControlSchema.ts"
 import * as ControlServer from "../src/ControlServer.ts"
@@ -96,6 +96,26 @@ describe("journal input bounds", () => {
     expect((error as InvalidInput).issue).toContain("runId")
   })
 
+  it("returns a typed persistence failure for an unrepresentable reserved journal partition", async () => {
+    await Effect.runPromise(
+      Effect.gen(function*() {
+        const control = yield* Control
+        const card = yield* control.plan({ flowId: "system/test", input: {} })
+        yield* control.approve(card.approval)
+        const error = yield* Effect.flip(
+          control.run({
+            _tag: "Plan",
+            planId: card.planId,
+            digest: card.digest,
+            envelope: card.envelope,
+            idempotencyKey: "bad-partition",
+            reservedRunId: "a".repeat(1025)
+          })
+        )
+        expect(error).toMatchObject({ code: "persistence_failed", operation: "control.run.accepted" })
+      }).pipe(Effect.provide(live()), Effect.scoped)
+    )
+  })
   const envelope = { capabilities: [], flows: [], budget: {} }
   const targets: ReadonlyArray<{ readonly label: string; readonly target: ApprovalTarget }> = [
     ...invalidRunIds.filter(({ label }) => !label.includes("surrogate")).map(({ label, value }) => ({
@@ -108,6 +128,26 @@ describe("journal input bounds", () => {
     }
   ]
 
+  it("records an unknown node refusal only in the audit partition", async () => {
+    await Effect.runPromise(
+      Effect.gen(function*() {
+        const control = yield* Control
+        const denied = yield* Effect.flip(
+          control.approve({
+            principal: { id: "agent", kind: "agent", stampedAt: 1 },
+            scope: "once",
+            idempotencyKey: "ghost",
+            target: { _tag: "Node", runId: "ghost", requestId: "arbitrary", digest: "private", envelope }
+          })
+        )
+        expect(denied).toBeInstanceOf(Unauthorized)
+        expect(yield* control.watch({ runId: "ghost", follow: false }).pipe(Stream.runCollect)).toEqual([])
+        const audit = yield* control.watch({ runId: "audit:approval", follow: false }).pipe(Stream.runCollect)
+        expect(audit[0]?.payload).toMatchObject({ target: { unknown: true } })
+        expect(JSON.stringify(audit)).not.toContain("private")
+      }).pipe(Effect.provide(live()), Effect.scoped)
+    )
+  })
   const validTargets: ReadonlyArray<{ readonly label: string; readonly target: ApprovalTarget }> = [
     {
       label: "maximum node partition",
@@ -120,10 +160,10 @@ describe("journal input bounds", () => {
   ]
 
   for (const decision of ["approve", "deny"] as const) {
-    it.each(targets)(
-      `returns PersistenceError when ${decision} cannot build a refusal audit for $label`,
+    it.each([...targets, ...validTargets])(
+      `preserves Unauthorized after ${decision} journals a $label refusal`,
       async ({ target }) => {
-        const error = await Effect.runPromise(
+        await Effect.runPromise(
           Effect.gen(function*() {
             const control = yield* Control
             const error = yield* Effect.flip(control[decision]({
@@ -132,38 +172,17 @@ describe("journal input bounds", () => {
               idempotencyKey: "refused-decision",
               principal: { id: "untrusted", kind: "agent", stampedAt: 0 }
             }))
-            return error
+            expect(error).toBeInstanceOf(Unauthorized)
+            const runId = "audit:approval"
+            const events = yield* Stream.runCollect(control.watch({ runId, follow: false }))
+            expect(events).toHaveLength(1)
+            expect(events[0]).toMatchObject({
+              kind: "control.approval.refused",
+              payload: { decision: decision === "approve" ? "approved" : "denied" }
+            })
           }).pipe(Effect.provide(live()), Effect.scoped)
         )
-        expect(error).toBeInstanceOf(PersistenceError)
-        expect(error).toMatchObject({
-          operation: "control.approval.refused",
-          message: "Failed to persist control.approval.refused",
-          cause: expect.anything()
-        })
       }
     )
-
-    it.each(validTargets)(`preserves Unauthorized after ${decision} journals a $label refusal`, async ({ target }) => {
-      await Effect.runPromise(
-        Effect.gen(function*() {
-          const control = yield* Control
-          const error = yield* Effect.flip(control[decision]({
-            target,
-            scope: "once",
-            idempotencyKey: "refused-decision",
-            principal: { id: "untrusted", kind: "agent", stampedAt: 0 }
-          }))
-          expect(error).toBeInstanceOf(Unauthorized)
-          const runId = target._tag === "Plan" ? `plan:${target.planId}` : target.runId
-          const events = yield* Stream.runCollect(control.watch({ runId, follow: false }))
-          expect(events).toHaveLength(1)
-          expect(events[0]).toMatchObject({
-            kind: "control.approval.refused",
-            payload: { decision: decision === "approve" ? "approved" : "denied" }
-          })
-        }).pipe(Effect.provide(live()), Effect.scoped)
-      )
-    })
   }
 })

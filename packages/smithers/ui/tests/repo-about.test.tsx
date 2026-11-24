@@ -108,6 +108,19 @@ describe("RepoAbout", () => {
     ]);
   });
 
+  test("an avatar loads only from http(s) or this origin; an unsafe one leaves the image without a source", async () => {
+    const avatars = ["https://avatars.example/u/1", "/me.png", "javascript:alert(1)", "data:image/svg+xml,x", "//evil.example/p.gif", "mailto:a@b.c"];
+    await render(<RepoAbout contributors={avatars.map((avatarUrl, index) => ({ login: `p${index}`, avatarUrl }))} />);
+    expect(all(".sui-repo-about-avatar").map((img) => img.getAttribute("src"))).toEqual(["https://avatars.example/u/1", "/me.png", null, null, null, null]);
+    expect(all(".sui-repo-about-avatar").map((img) => img.getAttribute("alt"))).toEqual(["p0", "p1", "p2", "p3", "p4", "p5"]);
+  });
+
+  test("a language named like an Object member is a language without a color", () => {
+    for (const name of ["constructor", "toString", "__proto__", "hasOwnProperty"]) {
+      expect([name, languageShares([{ name, bytes: 1 }])[0]!.color]).toEqual([name, "var(--text-faint, #6c655a)"]);
+    }
+  });
+
   test("counts and shares as GitHub writes them; a language under 0.1% folds into Other", () => {
     expect([formatCount(0), formatCount(908), formatCount(14126), formatCount(1_200_000)]).toEqual(["0", "908", "14.1k", "1.2m"]);
     expect(languageShares([])).toEqual([]);

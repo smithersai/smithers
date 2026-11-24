@@ -800,7 +800,12 @@ describe("@smthrs/chain fuzz invariants", () => {
             )
             const authorRes = yield* Effect.result(
               Effect.flatMap(Author.Author, (a) => a.author({ prefix: "sys", context: ["goal"] })).pipe(
-                Effect.provide(ModelAuthor.layer({ modelId: "test:model" }).pipe(Layer.provide(modelLayer)))
+                Effect.provide(
+                  ModelAuthor.layer({ modelId: "test:model" }).pipe(
+                    Layer.provide(ModelAuthor.layerStepUnsealed),
+                    Layer.provide(modelLayer)
+                  )
+                )
               )
             )
             if (modelFails ? Result.isSuccess(authorRes) : Result.isFailure(authorRes)) {

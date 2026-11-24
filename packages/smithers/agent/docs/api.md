@@ -263,8 +263,21 @@ resuming a module named in `reenterModules`, including a child still waiting
 for an answer. Its failure prevents entry.
 
 `abandonedParkAfter?: Duration.Duration` sets how long a foreign host's resume
-delegation must stand before adoption. The default is
-`Ownership.heartbeatStaleAfter` (30 seconds); adoption starts at the cutoff.
+delegation must stand before this host asks whether that host is dead. The
+default is `Ownership.heartbeatStaleAfter` (30 seconds); the cutoff is
+inclusive. Age alone adopts nothing: it compares two hosts' clocks.
+
+`orderTerminalStatusWithin?: Duration.Duration` (since 1.0.0) bounds how long
+a terminal status waits on `orderTerminalStatus`. The default is 30 seconds.
+Past it the status is written without the ordering and the lapse is logged.
+
+`confirmParkHostDead?: (runId, parkedBy) => Effect<boolean>` (since 1.0.0)
+confirms that the host that parked a run is dead. A delegation at the cutoff is
+adopted only when it answers `true`. Without it a foreign park is never
+adopted, and a run whose host is gone needs an explicit resume.
+`AgentSession.parkHostDead(owner, isAlive)` builds one from the host's own
+`Ownership.LivenessCheck`: dead only when the park's fence names an owner on
+`owner`'s host that `isAlive` says is gone.
 
 | Field              | Type                                                                      | What it decides                                                                                                                                     |
 | ------------------ | ------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -295,8 +308,13 @@ const make: (
 ```
 
 Constructs the production executor. It must be built in a scope: the scope owns
-the registered agent flow, every forked run driver, and the resume bridge that
-follows the journal. Its requirements are `Agent`, `ControlRuntime`,
+the registered agent flow, every forked run driver, every detached terminal
+write, and the resume bridge that follows the journal. Closing it interrupts and
+awaits each of those fibers. The resume bridge is supervised: a resume event
+whose take-up fails is logged and skipped, and a journal subscription that
+fails or ends is replaced after one second. `AgentSession.resumeBridgeStops`
+(`smithers_agent_resume_bridge_stops`) counts each replacement. Every cause the
+executor logs is redacted first. Its requirements are `Agent`, `ControlRuntime`,
 `(EffectDigest.Digest | SecureRandom.SecureRandom)`, `DurableEngineState`, `FlowRuntime`, `Journal`,
 `NotificationQueue`, `Registry`, `RunStore`, and `SeatResolver`.
 
@@ -949,7 +967,9 @@ of 128,000 for models the catalog has not met. Never zero.
 
 ## SeatRouter
 
-Routes a run by the maintainer's routing graph. A declared seat always wins
+Routes a run by a routing graph: the host's own, which its `Catalog` carries
+as a `Graph`, or the maintainer's (`defaultGraph`) when the catalog names
+none. A declared seat always wins
 and asks nothing. A run that declares `auto` asks Jev once, at its start, the
 graph's edge questions and the system-prompt variant in one call; a pure
 table picks the seat, its backups, and, for important plans and reviews, a
@@ -965,8 +985,8 @@ const phases: readonly ["plan", "implement", "review", "ui", "tool", "other"]
 type Phase = typeof phases[number]
 ```
 
-The graph's seats, by their `Providers.seatAliases` names, and its phases of
-work.
+The default graph's seats, by their `Providers.seatAliases` names, and the
+phases of work every graph routes by.
 
 ### SeatRouter.plan, SeatRouter.backupsOf
 
@@ -977,15 +997,15 @@ const Answers: Schema.Struct<{
   clarity: Schema.Literals<["clear", "unknowns"]>
   binary: Schema.Boolean
 }>
-interface Planned {
-  readonly seat: GraphSeat
-  readonly panel?: { readonly seats: ReadonlyArray<GraphSeat>; readonly merger: GraphSeat }
+interface Planned<Seat extends string = GraphSeat> {
+  readonly seat: Seat
+  readonly panel?: { readonly seats: ReadonlyArray<Seat>; readonly merger: Seat }
 }
 const plan: (answers: Answers) => Planned
 const backupsOf: (seat: GraphSeat, phase: Phase) => ReadonlyArray<GraphSeat>
 ```
 
-`plan` is the graph; the panel is Opus, Fable, and Sol, merged by Fable.
+`plan` is the default graph; the panel is Opus, Fable, and Sol, merged by Fable.
 
 | Phase       | Pick                                                                     |
 | ----------- | ------------------------------------------------------------------------ |
@@ -1000,6 +1020,35 @@ Writing code never runs on Luna. `backupsOf` is the failover order: Fable to
 Sol; Opus to Sol, or Kimi then Sol for `ui`; Kimi to none; every other seat
 to Kimi.
 
+### SeatRouter.Graph, SeatRouter.defaultGraph
+
+```ts
+interface Graph {
+  readonly seats: ReadonlyArray<string>
+  readonly plan: (answers: Answers) => Planned<string>
+  readonly backupsOf: (seat: string, phase: Phase) => ReadonlyArray<string>
+}
+const defaultGraph: Graph
+```
+
+A routing graph: the seats it names, its pick for one set of answers, and each
+seat's failover order. `defaultGraph` is `seats`, `plan` and `backupsOf`
+above. A host whose seats have other names passes its own graph as
+`Service.graph`:
+
+```ts
+const graph: SeatRouter.Graph = {
+  seats: ["a", "b"],
+  plan: (answers) => ({ seat: answers.size === "important" ? "a" : "b" }),
+  backupsOf: (seat) => seat === "a" ? ["b"] : ["a"]
+}
+const catalog = SeatRouter.layer({
+  candidates: Effect.succeed(graph.seats),
+  variants: SeatRouter.defaultVariants,
+  graph
+})
+```
+
 ### SeatRouter.fit, SeatRouter.Route
 
 ```ts
@@ -1009,11 +1058,17 @@ const RouteSchema: Schema.Struct<{
   panel: Schema.optionalKey<typeof AgentEvent.SeatPanel>
 }>
 type Route = typeof RouteSchema.Type
-const fit: (planned: Planned, phase: Phase, available: ReadonlyArray<string>) => Route | undefined
+const fit: (
+  planned: Planned<string>,
+  phase: Phase,
+  available: ReadonlyArray<string>,
+  graph?: Pick<Graph, "backupsOf">
+) => Route | undefined
 ```
 
 Keeps the available seats of a pick. Each seat becomes the first available of
-itself and its backups, and the rest available are its backups. Panel members
+itself and its backups in `graph` (`defaultGraph` unless given), and the rest
+available are its backups. Panel members
 that land on one seat are one member with the union of their backups, in
 order, less the seats on the panel. A panel left with one member is that
 member's seat and backups alone. `undefined` when
@@ -1038,13 +1093,16 @@ Jev reads each `description`; a run picked for a variant is given its
 interface Service {
   readonly candidates: Effect.Effect<ReadonlyArray<string>, Seat.SeatUnresolved>
   readonly variants: ReadonlyArray<Variant>
+  readonly graph?: Graph | undefined
 }
 class Catalog extends Context.Service<Catalog, Service>()("@smthrs/agent/SeatRouter/Catalog")
 const layer: (implementation: Service) => Layer.Layer<Catalog>
 ```
 
-What the host offers: the graph seats its `SeatResolver` runs here, and the
-variants.
+What the host offers: the graph seats its `SeatResolver` runs here, the
+variants, and the routing graph its `auto` runs route by. Without `graph` they
+route by `defaultGraph`, so a catalog whose seats that graph does not name
+must carry its own or every pick fails `no_candidates`.
 
 ### SeatRouter.defaultVariants
 
@@ -2244,17 +2302,26 @@ The execution id a labelled child runs under:
 UTF-16 code units. Both components are delimited, including labels containing
 `/child/`. Treat the returned id as opaque.
 Derived rather than minted, so a parent that is re-driven spawns the same child
-rather than a second one.
+rather than a second one. A label names one flow and one input. `spawn` under a
+label a child already holds answers that child when the flow and the input are
+the same, and fails `failed` when either differs: the new work was not
+started, and it needs a label of its own.
 
 ### EngineChildren.ChildState
 
 ```ts
-const ChildState = Schema.Struct({ flowName: Schema.String })
+const ChildState = Schema.Struct({
+  flowName: Schema.String,
+  payload: Schema.optionalKey(Schema.Unknown)
+})
 ```
 
-The one key this port reads out of a child run's state document: the name of
-the flow the child is running, because `FlowRuntime.poll` addresses an
-execution by declaration and a cell only ever has the child's id.
+What this port reads out of a child run's state document. `flowName` is the
+flow the child is running, because `FlowRuntime.poll` addresses an execution by
+declaration and a cell only ever has the child's id. `payload` is the input the
+child was admitted with, as the flow's identity snapshot, which `spawn` compares
+to refuse a label that already names other work. A runtime that records no
+`payload` is compared by flow name alone.
 
 ## CellPlugin
 
@@ -3296,7 +3363,21 @@ What a runner sends its host of an external agent's session as it happens.
   a long message chunk is split, any other long string cut, ending `CUT`.
 - `scrubber(secrets)`: replaces each secret value of at least 4 characters,
   longest first, then every `SHAPES` match (API keys, bearer credentials, GitHub
-  tokens, JWTs, email addresses), with `REDACTED`.
+  tokens, JWTs, email addresses), with `REDACTED`. It scrubs one string at a
+  time and keeps nothing between calls, which is what a host scrubbing stored
+  events needs.
+- `streamScrubber(secrets)`: the same scrubber for one session's updates in
+  order, which also scrubs a secret written across the chunks of a message.
+  `prepare` given it holds back the end of each text chunk (at most `MAX_HELD`,
+  4096 characters: the last run of credential characters, or the beginning of
+  a secret value) until the next chunk of the same message completes or clears
+  it. A chunk can therefore answer no event, and the first update that is not
+  a chunk of the same message is preceded by one more chunk carrying what was
+  held. Make one for each session; a runner's spool takes it wherever it takes
+  a `scrubber`.
+- A string other than a message's text that is longer than `MAX_EVENT_BYTES`
+  characters is cut to that before it is scrubbed, dropping an ending a secret
+  could still be open in.
 - `MAX_BATCH_BYTES` (64 KiB a request) and `MAX_RUN_BYTES` (64 MiB a run).
 
 ## ExternalAgent
@@ -3322,8 +3403,13 @@ outcome and traces `agent.external.<operation>` spans; neither carries the task.
 `Acp.make(transport, options)` is a client of one Agent Client Protocol agent.
 `transport` is `{ incoming, send }`: the agent's stdout as a stream of lines,
 and a function that writes one line to its stdin. `options.onUpdate` runs for
-each `session/update` in order; `options.permission` (`allow` unless set)
-answers permission requests. The client offers the agent no file system and no
+each `session/update` in order; `options.permission` answers permission
+requests. `allow` picks `allow_once`, or `allow_always` when the request offers
+nothing narrower; `reject` picks `reject_once` or `reject_always`. Unset, the
+client grants one request at a time: it picks `allow_once` and never
+`allow_always`, so a grant for the rest of the session needs an explicit
+`allow`. Each answer is logged as `acp.permission` with the policy and the kind
+chosen, never the request. The client offers the agent no file system and no
 terminal, and answers any other request from the agent method-not-found.
 
 The client has `initialize` (`{ protocolVersion, loadSession, steering }`),

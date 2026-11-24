@@ -13,7 +13,8 @@ import { Rule } from "@smthrs/capability/Permission"
 import * as GrantStore from "@smthrs/kernel/GrantStore"
 import * as KernelHttpClient from "@smthrs/kernel/HttpClient"
 import * as Workspace from "@smthrs/kernel/Workspace"
-import { Cause, Effect, Exit, Fiber, Layer, Logger, Redacted, References, Scope, Tracer } from "effect"
+import { Cause, Effect, Exit, Fiber, Layer, Logger, Redacted, References, Result, Scope, Tracer } from "effect"
+import * as FetchHttpClient from "effect/http/FetchHttpClient"
 import * as HttpClient from "effect/http/HttpClient"
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http"
 import type { AddressInfo } from "node:net"
@@ -525,7 +526,15 @@ describe("McpClient over Streamable HTTP", () => {
 
   it("rejects non-positive transport limits before sending anything", async () => {
     const remote = await listen()
-    for (const name of ["requestTimeoutMs", "maxFrameBytes", "maxOutboundFrameBytes"] as const) {
+    for (
+      const name of [
+        "requestTimeoutMs",
+        "maxFrameBytes",
+        "maxOutboundFrameBytes",
+        "maxEventStreamBytes",
+        "maxServerRequests"
+      ] as const
+    ) {
       const error = await failure(connect(remote.url, { [name]: 0 }))
       expect(error.message).toBe(`MCP option "${name}" must be a positive integer`)
     }
@@ -775,9 +784,248 @@ describe("McpClient over Streamable HTTP", () => {
   })
 })
 
+describe("Streamable HTTP hardening", () => {
+  /** A server that answers one method itself and everything else as `listen` does. */
+  const answering = (method: string | undefined, write: (message: Message, response: ServerResponse) => void) =>
+    listen({
+      override: (message, response) => {
+        if (message.method !== method) return false
+        write(message, response)
+        return true
+      }
+    })
+  const json = (response: ServerResponse, body: unknown) =>
+    response.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify(body))
+  const five = (message: Message) => ({
+    jsonrpc: "2.0",
+    id: message.id,
+    result: { content: [{ type: "text", text: "5" }] }
+  })
+  /** Two calls on one session, each as its failure or its result. */
+  const twice = (url: string) =>
+    run(Effect.gen(function*() {
+      const client = yield* connect(url)
+      const first = yield* Effect.result(client.callTool("add", { a: 2, b: 3 }))
+      const second = yield* Effect.result(client.callTool("add", { a: 2, b: 3 }))
+      return [first, second] as const
+    }))
+  const calls = (hits: ReadonlyArray<Hit>) => rpcs(hits).filter((rpc) => rpc === "POST tools/call").length
+
+  // R1-Fable-D2-002: a followed redirect re-sends the bearer token, the session
+  // id and the tool arguments to an address the caller never named.
+  it("answers a redirect as a refusal and sends nothing to its target", async () => {
+    const target = await listen()
+    const remote = await answering("tools/call", (_, response) => {
+      response.writeHead(307, { location: target.url }).end()
+    })
+    const authProvider: McpClient.AuthProvider = { token: Effect.succeed(Redacted.make("bearer-secret")) }
+    const refusal = {
+      code: "protocol_error",
+      message: "MCP server \"remote\" answered tools/call with an HTTP 307 redirect, which is not followed"
+    }
+    // The kernel's guarded client follows a redirect to any granted origin
+    // unless the caller asks for one hop; both origins are granted here.
+    const guarded = KernelHttpClient.layer.pipe(
+      Layer.provide(NodeHttpClient.layerUndici),
+      Layer.provide(Layer.effect(
+        GrantStore.GrantStore,
+        GrantStore.make({
+          attended: false,
+          rules: [remote.origin, target.origin].map((resource) =>
+            new Rule({ effect: "allow", pattern: new CapabilityPattern({ action: "net:post", resource }) })
+          )
+        })
+      )),
+      Layer.provide(Workspace.layer("/workspace"))
+    )
+    expect(
+      await Effect.runPromise(
+        Effect.scoped(Effect.flip(add(remote.url, { authProvider }))).pipe(Effect.provide(guarded))
+      )
+    ).toMatchObject(refusal)
+    // Fetch follows redirects by default, re-sending the request headers.
+    expect(
+      await Effect.runPromise(
+        Effect.scoped(Effect.flip(add(remote.url, { authProvider }))).pipe(Effect.provide(FetchHttpClient.layer))
+      )
+    ).toMatchObject(refusal)
+    expect(calls(remote.hits)).toBe(2)
+    expect(target.hits).toEqual([])
+  })
+
+  // R1-Astra-D2-011: a notification is accepted with 202 and no body, nothing else.
+  it("fails a notification the server answers with anything but an empty 202", async () => {
+    const rejected = await answering("notifications/initialized", (_, response) => {
+      json(response, { jsonrpc: "2.0", id: null, error: { code: -32_600, message: "private-ack-body" } })
+    })
+    const wordy = await answering("notifications/initialized", (_, response) => {
+      response.writeHead(202, { "content-type": "text/plain" }).end("private-ack-body")
+    })
+    const reports: Array<Diagnostics.Event> = []
+    const failed = (url: string) =>
+      run(Effect.flip(connect(url)).pipe(Effect.provide(Diagnostics.layer((event) => reports.push(event)))))
+    const status = await failed(rejected.url)
+    expect(status).toMatchObject({
+      code: "protocol_error",
+      message: "MCP server \"remote\" answered notifications/initialized with HTTP 200, not the 202 that accepts it"
+    })
+    const body = await failed(wordy.url)
+    expect(body).toMatchObject({
+      code: "protocol_error",
+      message: "MCP server \"remote\" accepted notifications/initialized with a body; an acceptance carries none"
+    })
+    // The catalog is never requested after a refused handshake notification.
+    expect(rpcs(rejected.hits)).not.toContain("POST tools/list")
+    expect(rpcs(wordy.hits)).not.toContain("POST tools/list")
+    const disclosed = [status, body].map((error) => inspect(error)).join("\n") +
+      reports.map((report) => Redacted.value(report.detail)).join("\n")
+    expect(disclosed).not.toContain("private-ack-body")
+  })
+
+  it("fails a call when the server answers the client's reply to its request with a body", async () => {
+    const remote = await listen({
+      override: (message, response) => {
+        if (message.method === "tools/call") {
+          response.writeHead(200, { "content-type": "text/event-stream" })
+          response.end(event({ jsonrpc: "2.0", id: "ping-1", method: "ping" }) + event(five(message)))
+          return true
+        }
+        if (message.method !== undefined) return false
+        json(response, { jsonrpc: "2.0", id: null, error: { code: -32_600, message: "no" } })
+        return true
+      }
+    })
+    expect(await failure(add(remote.url))).toMatchObject({
+      code: "protocol_error",
+      message: "MCP server \"remote\" answered server-response with HTTP 200, not the 202 that accepts it"
+    })
+  })
+
+  // R1-Fable-D2-065: "every later call fails with that error".
+  it("fails every later call with the ended session's error and sends nothing more", async () => {
+    const expired = await answering("tools/call", (_, response) => {
+      response.writeHead(404).end()
+    })
+    const [first, second] = await twice(expired.url)
+    expect(Result.isFailure(first) && first.failure).toMatchObject({
+      code: "connection_closed",
+      message: "MCP server \"remote\" ended the session; reconnect to continue"
+    })
+    expect(Result.isFailure(second) && Result.isFailure(first) && second.failure === first.failure).toBe(true)
+    expect(calls(expired.hits)).toBe(1)
+    // The dead session id is not sent again, not even to end it.
+    expect(rpcs(expired.hits)).not.toContain("DELETE")
+  })
+
+  it("fails every later call with a protocol violation's error, and still ends the session", async () => {
+    const broken = await answering("tools/call", (message, response) => {
+      json(response, { jsonrpc: "1.0", id: message.id, result: {} })
+    })
+    const [first, second] = await twice(broken.url)
+    expect(Result.isFailure(first) && first.failure).toMatchObject({
+      code: "protocol_error",
+      message: "MCP server \"remote\" sent a malformed JSON-RPC reply: a JSON-RPC message must carry jsonrpc \"2.0\""
+    })
+    expect(Result.isFailure(second) && Result.isFailure(first) && second.failure === first.failure).toBe(true)
+    expect(calls(broken.hits)).toBe(1)
+    expect(rpcs(broken.hits).at(-1)).toBe("DELETE")
+  })
+
+  it("keeps the session after the server's own error reply or a failing status", async () => {
+    for (
+      const refuse of [
+        (message: Message, response: ServerResponse) =>
+          void json(response, { jsonrpc: "2.0", id: message.id, error: { code: -32_000, message: "boom" } }),
+        (_: Message, response: ServerResponse) => void response.writeHead(503).end()
+      ]
+    ) {
+      let refused = false
+      const remote = await listen({
+        override: (message, response) => {
+          if (message.method !== "tools/call" || refused) return false
+          refused = true
+          refuse(message, response)
+          return true
+        }
+      })
+      const [first, second] = await twice(remote.url)
+      expect(Result.isFailure(first)).toBe(true)
+      expect(Result.isSuccess(second) && second.success.content).toEqual([{ type: "text", text: "5" }])
+      expect(calls(remote.hits)).toBe(2)
+    }
+  })
+
+  // R1-Fable-D2-066: MCP 2025-03-26 lets a server answer with a JSON-RPC batch.
+  it("reads the reply out of a JSON-RPC batch, in a JSON body or an event", async () => {
+    const progress = { jsonrpc: "2.0", method: "notifications/progress", params: { progress: 1 } }
+    const body = await answering("tools/call", (message, response) => {
+      json(response, [progress, five(message), progress])
+    })
+    expect((await run(add(body.url))).content).toEqual([{ type: "text", text: "5" }])
+    const stream = await answering("tools/call", (message, response) => {
+      response.writeHead(200, { "content-type": "text/event-stream" }).end(event([progress, five(message)]))
+    })
+    expect((await run(add(stream.url))).content).toEqual([{ type: "text", text: "5" }])
+    const empty = await answering("tools/call", (_, response) => {
+      json(response, [])
+    })
+    expect((await failure(add(empty.url))).message).toBe("MCP server \"remote\" sent a message that is not JSON-RPC")
+  })
+
+  // R1-Neon-D2-016: per-event bounds alone let comments and discarded events run without end.
+  it("bounds the bytes of one event-stream response", async () => {
+    const padded = await answering("tools/call", (message, response) => {
+      response.writeHead(200, { "content-type": "text/event-stream" })
+      response.end(": keep-alive\n".repeat(100) + event(five(message)))
+    })
+    expect((await run(add(padded.url, { maxEventStreamBytes: 4_096 }))).content).toEqual([{ type: "text", text: "5" }])
+    expect(await failure(add(padded.url, { maxEventStreamBytes: 512 }))).toMatchObject({
+      code: "protocol_error",
+      message: "MCP server \"remote\" sent an event stream longer than 512 bytes"
+    })
+    expect(McpClient.defaultMaxEventStreamBytes).toBe(16 * 1024 * 1024)
+  })
+
+  it("bounds the server requests answered while one request awaits its reply", async () => {
+    const pinging = await answering("tools/call", (message, response) => {
+      response.writeHead(200, { "content-type": "text/event-stream" })
+      response.end(
+        [1, 2, 3].map((id) => event({ jsonrpc: "2.0", id: `ping-${id}`, method: "ping" })).join("") +
+          event(five(message))
+      )
+    })
+    const replies = () => pinging.hits.filter((hit) => hit.method === "POST" && hit.rpc === undefined).length
+    expect((await run(add(pinging.url, { maxServerRequests: 3 }))).content).toEqual([{ type: "text", text: "5" }])
+    expect(replies()).toBe(3)
+    expect(await failure(add(pinging.url, { maxServerRequests: 2 }))).toMatchObject({
+      code: "protocol_error",
+      message: "MCP server \"remote\" sent more than 2 requests while answering tools/call"
+    })
+    // Two more answers went out, and the third request was refused unanswered.
+    expect(replies()).toBe(5)
+    expect(McpClient.defaultMaxServerRequests).toBe(32)
+  })
+})
+
 describe("HttpTransport", () => {
   const open = (url: string, overrides: Partial<HttpTransport.ConnectOptions> = {}) =>
     HttpTransport.connect({ server: "remote", url, ...overrides })
+
+  // R1-Neon-D2-016: a message JSON cannot carry is a typed failure, not a defect.
+  it("fails with McpError when a message cannot be encoded", async () => {
+    const remote = await listen()
+    const exit = await run(Effect.gen(function*() {
+      const transport = yield* open(remote.url)
+      return yield* Effect.exit(transport.request("tools/call", { count: 1n }))
+    }))
+    expect(Exit.isFailure(exit) && Cause.squash(exit.cause)).toMatchObject({
+      _tag: "flows/mcp/McpError",
+      code: "protocol_error",
+      message: "MCP server \"remote\" could not encode a tools/call frame"
+    })
+    expect(Exit.isFailure(exit) && exit.cause.reasons.some(Cause.isDieReason)).toBe(false)
+    expect(remote.hits).toEqual([])
+  })
 
   it("validates per-call deadlines and outbound size before sending", async () => {
     const remote = await listen()

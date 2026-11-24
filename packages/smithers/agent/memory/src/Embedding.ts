@@ -53,6 +53,12 @@ export type EmbedMany = (
  * @since 0.1.0
  */
 export interface Service {
+  /**
+   * The identity of the vector space this provider embeds into. Semantic
+   * recall stamps it on every projection and compares only vectors that carry
+   * it. Absent, `RecallSemantic.Options.model` names the space.
+   */
+  readonly model?: string | undefined
   readonly embed: (input: string) => Effect.Effect<EmbedResponse, MemoryError.MemoryError>
   readonly embedMany: (inputs: ReadonlyArray<string>) => Effect.Effect<EmbedManyResponse, MemoryError.MemoryError>
 }
@@ -91,13 +97,17 @@ const validate = (
 }
 
 /**
- * Builds the service from an injectable batch provider.
+ * Builds the service from an injectable batch provider. `options.model` names
+ * the provider's vector space; a provider swapped for one that names another
+ * space then fails semantic recall with `vector_model_mismatch` instead of
+ * comparing unrelated vectors.
  *
  * @category constructors
  * @since 0.1.0
  */
-export const make = (embedMany: EmbedMany): Service => {
+export const make = (embedMany: EmbedMany, options: { readonly model?: string | undefined } = {}): Service => {
   const service: Service = {
+    ...(options.model === undefined ? {} : { model: options.model }),
     embed: (input) =>
       service.embedMany([input]).pipe(
         // Validation guarantees exactly one embedding for this one-input batch.
@@ -117,7 +127,10 @@ export const make = (embedMany: EmbedMany): Service => {
  * @category layers
  * @since 0.1.0
  */
-export const layer = (embedMany: EmbedMany): Layer.Layer<Embedding> => Layer.succeed(Embedding)(make(embedMany))
+export const layer = (
+  embedMany: EmbedMany,
+  options: { readonly model?: string | undefined } = {}
+): Layer.Layer<Embedding> => Layer.succeed(Embedding)(make(embedMany, options))
 
 /**
  * Constructs a provider that reports unavailable embeddings.
@@ -184,7 +197,8 @@ export const inProcessVector = (input: string): ReadonlyArray<number> => {
  * @category constructors
  * @since 0.1.0
  */
-export const makeInProcess = (): Service => make((inputs) => Effect.succeed(inputs.map(inProcessVector)))
+export const makeInProcess = (): Service =>
+  make((inputs) => Effect.succeed(inputs.map(inProcessVector)), { model: inProcessModel })
 
 /**
  * Provides deterministic in-process embeddings with no provider dependency.

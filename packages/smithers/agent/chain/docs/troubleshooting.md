@@ -48,7 +48,7 @@ fix the cause and resume to re-enter the child's settled prefix.
 | ----------------------- | -------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
 | `denied`                | Gate 4 denied the model seat itself (catalog-call denials are journaled observations instead).           | Cover `model:call:author` (`Chain.authorCapability`) in the ruleset.                 |
 | `approval_required`     | A claim matched no `allow` rule, so the seam asks. The run returns `ApprovalWait` without a `LinkEnded`. | Grant the claim and run again; resume re-asks the seam under the new grant.          |
-| `authorize_unavailable` | The seam is mounted but unreachable. Always propagates.                                                  | Mount a working seam, or `Authorize.layerAllowAll` when enforcement lives elsewhere. |
+| `authorize_unavailable` | The seam is unreachable. Always propagates.                                                              | Mount a working seam, or `Authorize.layerAllowAll` when enforcement lives elsewhere. |
 
 ## SteeringError
 

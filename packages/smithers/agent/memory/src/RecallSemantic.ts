@@ -4,8 +4,10 @@
  * V1 intentionally brute-forces cosine similarity over the selected banks;
  * sqlite-vec is deferred to an optimization ticket. Projection is advisory:
  * authoritative MemoryStore writes complete first, projection failures retry
- * once, time out after `Options.projectionTimeout`, and are logged without
- * changing the write result. The vector upsert checks projected text against
+ * once, time out after `Options.projectionTimeout`, and are logged and counted
+ * on {@link projectionFailures} without changing the write result;
+ * {@link reconcile} repairs the projections such a failure left missing or
+ * stale. The vector upsert checks projected text against
  * the authoritative row in the writer transaction, even when write clocks
  * collide or regress.
  *
@@ -18,6 +20,7 @@ import * as Clock from "effect/Clock"
 import type * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
+import * as Metric from "effect/Metric"
 import * as Option from "effect/Option"
 import * as RcMap from "effect/RcMap"
 import type * as Scope from "effect/Scope"
@@ -88,6 +91,12 @@ export interface VectorStore {
  */
 export interface Options {
   readonly vectorStore: VectorStore
+  /**
+   * The embedding model vectors are stamped with and filtered by. Absent, the
+   * `Embedding` service's own `model` is used, then {@link defaultModel}. When
+   * both name a model and they differ, recall and {@link reconcile} fail with
+   * `vector_model_mismatch` and a projection is counted as failed.
+   */
   readonly model?: string
   readonly halfLifeMs?: number
   /**
@@ -360,6 +369,38 @@ const mismatch = (message: string): MemoryError.MemoryError =>
 const vectorMismatch = (message: string): MemoryError.MemoryError =>
   new MemoryError.MemoryError({ code: "vector_model_mismatch", message })
 
+// The vector space is named by the declaration, else by the provider. Two
+// different names mean the stored vectors and the provider's vectors are
+// unrelated spaces, so nothing is compared or written under either.
+const resolveModel = (
+  options: Options,
+  embedding: Embedding.Service
+): Effect.Effect<string, MemoryError.MemoryError> =>
+  options.model !== undefined && embedding.model !== undefined && options.model !== embedding.model
+    ? Effect.fail(
+      vectorMismatch(
+        `semantic memory is configured for embedding model "${options.model}" ` +
+          `but the Embedding service embeds with "${embedding.model}"`
+      )
+    )
+    : Effect.succeed(options.model ?? embedding.model ?? defaultModel)
+
+/**
+ * Semantic projections that failed, after the retry, and left a row without a
+ * current vector until {@link reconcile} repairs it.
+ *
+ * @category metrics
+ * @since 1.0.0
+ */
+export const projectionFailures = Metric.counter("smithers_memory_projection_failures", {
+  description: "Semantic memory projections that failed and left a row without a current vector"
+})
+
+const projectionFailed = (cause: unknown): Effect.Effect<void> =>
+  Metric.update(projectionFailures, 1).pipe(
+    Effect.andThen(Effect.logWarning(`memory semantic projection failed: ${String(cause)}`))
+  )
+
 /**
  * Computes a semantic recall result from a vector projection and authoritative
  * rows. Foreign-model rows are skipped and matching-model dimension
@@ -376,7 +417,7 @@ export const recall = (
     const embedding = yield* Embedding.Embedding
     const store = yield* MemoryStore.MemoryStore
     const banks = yield* resolveBanks(input.banks)
-    const model = options.model ?? defaultModel
+    const model = yield* resolveModel(options, embedding)
     const limit = budgetLimits[input.budget ?? "mid"]
     const query = yield* embedding.embed(input.query)
     const now = yield* Clock.currentTimeMillis
@@ -446,6 +487,28 @@ export interface ProjectionInput {
   readonly updatedAtMs: number
 }
 
+// One embedding and one vector write, with every failure typed.
+const projectOnce = (
+  options: Options,
+  model: string,
+  row: ProjectionInput
+): Effect.Effect<void, MemoryError.MemoryError, Embedding.Embedding> =>
+  Effect.gen(function*() {
+    const embedding = yield* Embedding.Embedding
+    const response = yield* embedding.embed(row.text)
+    yield* options.vectorStore.upsert({
+      bank: row.bank,
+      recordKind: row.recordKind,
+      recordId: row.recordId,
+      model,
+      contentDigest: digest(row.text),
+      text: row.text,
+      dimensions: response.vector.length,
+      vector: response.vector,
+      updatedAtMs: row.updatedAtMs
+    })
+  })
+
 /**
  * Per-record serialized semantic projection coordinator.
  *
@@ -482,7 +545,6 @@ export const makeProjector = (options: Options): Effect.Effect<Projector, never,
     })
     const project = (row: ProjectionInput) =>
       Effect.suspend(() => {
-        const model = options.model ?? defaultModel
         const snapshot = Object.freeze({
           bank: row.bank,
           recordKind: row.recordKind,
@@ -490,30 +552,105 @@ export const makeProjector = (options: Options): Effect.Effect<Projector, never,
           text: row.text,
           updatedAtMs: row.updatedAtMs
         })
-        const task = Effect.gen(function*() {
+        return Effect.gen(function*() {
           const embedding = yield* Embedding.Embedding
-          const response = yield* embedding.embed(snapshot.text)
-          yield* options.vectorStore.upsert({
-            bank: snapshot.bank,
-            recordKind: snapshot.recordKind,
-            recordId: snapshot.recordId,
-            model,
-            contentDigest: digest(snapshot.text),
-            text: snapshot.text,
-            dimensions: response.vector.length,
-            vector: response.vector,
-            updatedAtMs: snapshot.updatedAtMs
-          })
-        }).pipe(
-          Effect.retry({ times: 1 }),
-          Effect.timeout(options.projectionTimeout ?? defaultProjectionTimeout),
-          Effect.catch((cause) => Effect.logWarning(`memory semantic projection failed: ${String(cause)}`)),
-          Effect.asVoid
-        )
-        const identity = `${model}\u0000${snapshot.bank}\u0000${snapshot.recordKind}\u0000${snapshot.recordId}`
-        return Effect.scoped(Effect.flatMap(RcMap.get(locks, identity), (lock) => lock.withPermit(task)))
+          const model = yield* resolveModel(options, embedding)
+          const task = projectOnce(options, model, snapshot).pipe(
+            Effect.retry({ times: 1 }),
+            Effect.timeout(options.projectionTimeout ?? defaultProjectionTimeout)
+          )
+          const identity = `${model}\u0000${snapshot.bank}\u0000${snapshot.recordKind}\u0000${snapshot.recordId}`
+          yield* Effect.scoped(Effect.flatMap(RcMap.get(locks, identity), (lock) => lock.withPermit(task)))
+        }).pipe(Effect.catch(projectionFailed))
       })
     return { project, activeKeys: () => active }
+  })
+
+/**
+ * What one {@link reconcile} pass did.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export interface ReconcileResult {
+  /** Accepted rows read from the selected banks. */
+  readonly examined: number
+  /** Rows whose missing or stale vector was projected again. */
+  readonly repaired: number
+  /** Rows whose projection failed again; the next pass retries them. */
+  readonly failed: number
+}
+
+const reconcilePageSize = 256
+
+/**
+ * Repairs the semantic projections of `banks`.
+ *
+ * A projection that failed after a write is logged and dropped, which leaves
+ * the row with no vector or with one whose digest no longer matches, and
+ * recall skips both. This pass reads every accepted row of each bank in pages
+ * and projects again each row whose vector under the resolved model is missing
+ * or stale. A row whose projection fails again is counted in `failed` and on
+ * {@link projectionFailures}, and the pass continues. A store or vector-scan
+ * failure fails the pass.
+ *
+ * The pass holds one content digest per stored vector of the bank it is
+ * reading, never the vectors themselves.
+ *
+ * @category constructors
+ * @since 1.0.0
+ */
+export const reconcile = (
+  banks: ReadonlyArray<string>,
+  options: Options
+): Effect.Effect<ReconcileResult, MemoryError.MemoryError, MemoryStore.MemoryStore | Embedding.Embedding> =>
+  Effect.gen(function*() {
+    const embedding = yield* Embedding.Embedding
+    const store = yield* MemoryStore.MemoryStore
+    const model = yield* resolveModel(options, embedding)
+    let examined = 0
+    let repaired = 0
+    let failed = 0
+    for (const { bank, namespace } of yield* resolveBanks(banks)) {
+      const digests = new Map<string, string>()
+      yield* Stream.runForEach(options.vectorStore.scan([bank], model), (page) =>
+        Effect.sync(() => {
+          for (const vector of page) digests.set(`${vector.recordKind}\u0000${vector.recordId}`, vector.contentDigest)
+        }))
+      for (const kind of ["fact", "note"] as const) {
+        let after: MemoryStore.SearchRow | undefined
+        let page: ReadonlyArray<MemoryStore.SearchRow>
+        do {
+          page = yield* store.searchRows({
+            namespace,
+            status: "accepted",
+            kinds: [kind],
+            limit: reconcilePageSize,
+            ...(after === undefined ? {} : { after })
+          })
+          for (const row of page) {
+            examined++
+            const text = searchableText(row.text)
+            if (digests.get(`${row.kind}\u0000${row.id}`) === digest(text)) continue
+            const projected = yield* projectOnce(options, model, {
+              bank,
+              recordKind: row.kind,
+              recordId: row.id,
+              text,
+              updatedAtMs: row.updatedAtMs
+            }).pipe(
+              Effect.timeout(options.projectionTimeout ?? defaultProjectionTimeout),
+              Effect.as(true),
+              Effect.catch((cause) => Effect.as(projectionFailed(cause), false))
+            )
+            if (projected) repaired++
+            else failed++
+          }
+          after = page.at(-1)
+        } while (page.length === reconcilePageSize)
+      }
+    }
+    return { examined, repaired, failed }
   })
 
 /**

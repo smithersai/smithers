@@ -16,6 +16,7 @@ import * as Capability from "@smthrs/capability/Capability"
 import * as Effects from "@smthrs/core/Effects"
 import * as FlowBinding from "@smthrs/harness/FlowBinding"
 import { Effect, Exit, Schema, Scope } from "effect"
+import * as RemoteText from "./internal/RemoteText.ts"
 import * as McpClient from "./McpClient.ts"
 import { McpError } from "./McpError.ts"
 
@@ -107,10 +108,14 @@ const toolBinding = (
     flow: {
       name: `${prefix}/${toolName}`,
       // The server authors this text, so it is attributed as remote content
-      // rather than read as if the host had written it. The client bounds it.
+      // rather than read as if the host had written it. The client bounds it
+      // and removes its control and format characters; they are removed here
+      // too, since a client need not come from `McpClient.connect`.
       description: tool.description === undefined
         ? `MCP tool "${toolName}" on server "${client.server}"`
-        : `MCP tool "${toolName}" on server "${client.server}". Server-supplied description: ${tool.description}`,
+        : `MCP tool "${toolName}" on server "${client.server}". Server-supplied description: ${
+          RemoteText.visible(tool.description)
+        }`,
       capabilities,
       effects,
       input: Args,
@@ -145,14 +150,19 @@ const toolBinding = (
  * client here.
  *
  * This constructor is total: it applies exact filters to the catalog it is
- * given. Use {@link connected} when unknown `include` or `exclude` names and an empty
- * `namePrefix` must fail loudly against a freshly fetched catalog.
+ * given, and an empty `namePrefix` names nothing, so the default prefix is
+ * used in its place. Use {@link connected} when unknown `include` or `exclude`
+ * names and an empty `namePrefix` must fail loudly against a freshly fetched
+ * catalog.
  *
  * @category constructors
  * @since 1.0.0-rc.0
  */
 export const mcp = (client: McpClient.McpClient, options: ProjectionOptions = {}): FlowBinding.Source => {
-  const prefix = options.namePrefix ?? `mcp/${client.server}`
+  // An empty prefix would name every flow "/<tool>".
+  const prefix = options.namePrefix === undefined || options.namePrefix === ""
+    ? `mcp/${client.server}`
+    : options.namePrefix
   const include = options.include === undefined
     ? undefined
     : new Set(options.include)

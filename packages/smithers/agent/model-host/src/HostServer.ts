@@ -9,7 +9,7 @@ import type { ModelStep } from "@smthrs/agent"
 import { digestSync } from "@smthrs/crypto"
 import { type Model, ModelError } from "@smthrs/model"
 import { AgentContext, AgentTurnJournal, ContextPreflight, type DocsPages, type NativeAgent } from "@smthrs/rpc"
-import { Cause, Effect, Exit, Metric, Option } from "effect"
+import { Cause, Clock, Effect, Exit, Metric, Option } from "effect"
 import { HttpServerRequest, HttpServerResponse } from "effect/http"
 import { z } from "zod"
 import type { CallbackTransportObserver } from "./CallbackTransport.ts"
@@ -185,7 +185,7 @@ const turnRequest = (value: unknown): NativeAgent.StartAgentTurnRequest | undefi
   return value as NativeAgent.StartAgentTurnRequest
 }
 
-const decodeGrant = (value: unknown, callbackBaseUrl: string): DurableChatGrant | undefined => {
+const decodeGrant = (value: unknown, callbackBaseUrl: string, now: number): DurableChatGrant | undefined => {
   const parsed = WireGrantSchema.safeParse(value)
   if (!parsed.success) return undefined
   const wire = parsed.data
@@ -199,7 +199,7 @@ const decodeGrant = (value: unknown, callbackBaseUrl: string): DurableChatGrant 
   if (
     request === undefined || request.runId !== wire.runId || wire.cursor.runId !== wire.runId ||
     wire.cursor.legId !== wire.legId || producerBaseUrl !== callbackBaseUrl ||
-    !Number.isFinite(Date.parse(wire.expiresAt)) || Date.parse(wire.expiresAt) <= Date.now()
+    !Number.isFinite(Date.parse(wire.expiresAt)) || Date.parse(wire.expiresAt) <= now
   ) return undefined
   return {
     turnId: wire.turnId,
@@ -236,8 +236,9 @@ const streamRequest = (value: unknown): NativeAgent.StartAgentTurnRequest | unde
   if (!z.array(MessageSchema).safeParse(body.messages).success) return undefined
   if (body.tools !== undefined && !ToolsSchema.safeParse(body.tools).success) return undefined
   if (!validContext(body.context)) return undefined
+  const { selectedContext: _untrustedSelection, ...request } = body
   return {
-    ...body,
+    ...request,
     instructions: typeof body.instructions === "string" ? body.instructions : ""
   } as NativeAgent.StartAgentTurnRequest
 }
@@ -446,9 +447,10 @@ export const createModelTurnHandler = (
         const body = streamRequest(yield* Effect.interruptible(boundedJson(request)))
         if (body === undefined) return refused("request_invalid", 400)
         const wireBody = body as unknown as Record<string, unknown>
-        const ownerId = typeof wireBody.ownerId === "number" && Number.isSafeInteger(wireBody.ownerId)
-          ? wireBody.ownerId :
-          0
+        const ownerId = wireBody.ownerId
+        if (typeof ownerId !== "number" || !Number.isSafeInteger(ownerId) || ownerId <= 0) {
+          return refused("request_invalid", 400)
+        }
         const grant: DurableChatGrant = {
           turnId: `model-stream-${body.runId}`,
           ownerId,
@@ -457,7 +459,7 @@ export const createModelTurnHandler = (
           generation: 1,
           token: "model_stream_model_stream_model_stream_1234",
           cursor: { version: 1, runId: body.runId, legId: body.runId, batch: 0, position: 0, hash: "0".repeat(64) },
-          expiresAt: new Date(Date.now() + 60_000).toISOString(),
+          expiresAt: new Date((yield* Clock.currentTimeMillis) + 60_000).toISOString(),
           request: body,
           producerBaseUrl: callbackBaseUrl
         }
@@ -502,7 +504,7 @@ export const createModelTurnHandler = (
           generation: 1,
           token: "context_selection_context_selection_12",
           cursor: { version: 1, runId, legId: runId, batch: 0, position: 0, hash: "0".repeat(64) },
-          expiresAt: new Date(Date.now() + 60_000).toISOString(),
+          expiresAt: new Date((yield* Clock.currentTimeMillis) + 60_000).toISOString(),
           request: { runId, instructions: "", messages: [] },
           producerBaseUrl: callbackBaseUrl
         }
@@ -517,16 +519,27 @@ export const createModelTurnHandler = (
                   })
                 )
                 : runContextPreflight(contextSelection, preflight.model, preflight.options)
-            )
+            ),
+            Effect.tapCause((cause) => Effect.annotateCurrentSpan("model_host.failure", classify(cause).failure)),
+            Effect.withSpan("model_host.context_select")
           )
         ))
         if (Exit.isSuccess(exit)) return json(exit.value.result)
-        return refused(classify(exit.cause).response, 502)
+        const failure = classify(exit.cause)
+        yield* Metric.update(
+          Metric.withAttributes(turnFailures, { failure: failure.failure, operation: "context_select" }),
+          1
+        )
+        return refused(failure.response, 502)
       }
       if (pathname !== MODEL_HOST_TURN_PATH) return HttpServerResponse.text("Not found", { status: 404 })
       if (request.method !== "POST") return methodNotAllowed()
       if (!authorized(presented)) return forbidden()
-      const grant = decodeGrant(yield* Effect.interruptible(boundedJson(request)), callbackBaseUrl)
+      const grant = decodeGrant(
+        yield* Effect.interruptible(boundedJson(request)),
+        callbackBaseUrl,
+        yield* Clock.currentTimeMillis
+      )
       if (grant === undefined) return refused("request_invalid", 400)
       const started = performance.now()
       const exit = yield* Effect.exit(Effect.interruptible(

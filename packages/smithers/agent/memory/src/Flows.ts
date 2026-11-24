@@ -301,7 +301,8 @@ const validatePolicyBank = (bank: string, policy: WithMemory.Policy): Effect.Eff
  *
  * An empty bank list uses all `policy.banks`; every explicit bank must match
  * one of them by resolved kind and id or the entire request fails before recall
- * runs. The policy budget is a default the caller may override. `recall: "none"`
+ * runs. The policy budget is a ceiling: a caller may ask for less, and a larger
+ * `maxTokens` is lowered to it. `recall: "none"`
  * returns no rows before bank validation or any call to the recall service.
  * A flow that carries no policy fails with `invalid_namespace` before recall
  * runs; `runRecall` is the explicitly unscoped call.
@@ -322,7 +323,7 @@ export const runRecallFor = (
     return yield* runRecall({
       ...input,
       banks,
-      maxTokens: input.maxTokens ?? policy.maxTokens
+      maxTokens: Math.min(input.maxTokens ?? policy.maxTokens, policy.maxTokens)
     })
   })
 }

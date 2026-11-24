@@ -7,9 +7,8 @@
  * installs, and got it wrong often enough that the honest answer is to print
  * the command for the package manager the operator actually uses.
  *
- * A release candidate publishes under the `next` tag, so the comparison is
- * against `next` first and `latest` second: an rc.0 install told about a 0.35
- * `latest` would be told to downgrade.
+ * Both dist-tags participate in SemVer order so a newer stable release is
+ * offered even when the next tag still points at a release candidate.
  *
  * @since 1.0.0
  */
@@ -120,9 +119,10 @@ export const compare = (current: string, tags: Readonly<Record<string, string>>)
     ["next", tags["next"]],
     ["latest", tags["latest"]]
   ]
+  let best: Status = { current, available: undefined, tag: undefined, upToDate: true, install: undefined }
   for (const [tag, version] of candidates) {
-    if (typeof version === "string" && semver.test(version) && isNewer(version, current)) {
-      return {
+    if (typeof version === "string" && semver.test(version) && isNewer(version, best.available ?? current)) {
+      best = {
         current,
         available: version,
         tag,
@@ -131,7 +131,7 @@ export const compare = (current: string, tags: Readonly<Record<string, string>>)
       }
     }
   }
-  return { current, available: undefined, tag: undefined, upToDate: true, install: undefined }
+  return best
 }
 
 /**

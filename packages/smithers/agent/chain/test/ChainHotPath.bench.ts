@@ -2,6 +2,7 @@ import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import { describe, test } from "vitest"
 import * as Author from "../src/Author.ts"
+import * as Authorize from "../src/Authorize.ts"
 import * as CallKey from "../src/CallKey.ts"
 import * as Catalog from "../src/Catalog.ts"
 import * as Chain from "../src/Chain.ts"
@@ -77,6 +78,7 @@ describe("chain hot paths", () => {
     await bench("run 2-link chain with in-memory journal", async () => {
       const layer = Layer.mergeAll(
         Journal.layerMemory(),
+        Authorize.layerAllowAll,
         Catalog.layer(catalogEntries),
         Author.layerMock([link1, link2]),
         ScriptRunner.layerInProcess

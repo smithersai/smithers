@@ -12,6 +12,15 @@ const Hash = z.string().regex(/^[0-9a-f]{64}$/)
 const Position = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER)
 const Identity = z.string().min(1).max(160)
 
+/**
+ * The most batches one journal read asks for, and so the most one reply page carries: a longer
+ * page did not come from a journal answering this contract.
+ *
+ * @since 1.0.0
+ * @category constants
+ */
+export const AGENT_TURN_READ_LIMIT_MAX = 16
+
 /** A committed batch boundary, never a count of bytes received from a socket.
  * @since 1.0.0
  * @category schemas
@@ -143,7 +152,7 @@ export const AgentTurnJournalCommandSchema = z.discriminatedUnion("operation", [
     ownerHash: Hash,
     accessHash: Hash,
     after: AgentTurnCursorSchema.nullable(),
-    limit: z.number().int().min(1).max(16)
+    limit: z.number().int().min(1).max(AGENT_TURN_READ_LIMIT_MAX)
   }).strict(),
   z.object({ operation: z.literal("retire"), ownerHash: Hash, accessHash: Hash }).strict(),
   z.object({ operation: z.literal("erase"), runId: Identity, legId: Identity, accessHash: Hash }).strict()
@@ -218,7 +227,7 @@ export const AgentTurnJournalReplySchema: z.ZodType<AgentTurnJournalReply> = z.u
     head: AgentTurnCursorSchema,
     terminal: z.boolean(),
     more: z.boolean(),
-    batches: z.array(AgentTurnBatchSchema)
+    batches: z.array(AgentTurnBatchSchema).max(AGENT_TURN_READ_LIMIT_MAX)
   }).strict(),
   z.object({ status: z.literal("retired") }).strict(),
   z.object({ status: z.literal("error"), code: AgentTurnJournalErrorCodeSchema }).strict()
@@ -337,7 +346,7 @@ export const AgentConversationReplaySchema = z.object({
     head: AgentTurnCursorSchema,
     terminal: z.boolean(),
     more: z.boolean(),
-    batches: z.array(AgentConversationBatchSchema)
+    batches: z.array(AgentConversationBatchSchema).max(AGENT_TURN_READ_LIMIT_MAX)
   }).strict()
 }).strict()
 /** Verified committed output plus its visible conversation identity.

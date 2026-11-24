@@ -7,6 +7,7 @@ import { reservationLease } from "./0002_reservation_lease.ts"
 import { schedulerHeartbeat } from "./0003_heartbeat.ts"
 import { fireRunIndex } from "./0004_fire_run_index.ts"
 import { registeredAt } from "./0005_registered_at.ts"
+import { fireNewestIndex } from "./0006_fire_newest_index.ts"
 
 /**
  * The migration record {@link run} applies, keyed by migration file name.
@@ -22,7 +23,8 @@ export const migrations = {
   "0002_reservation_lease": reservationLease,
   "0003_heartbeat": schedulerHeartbeat,
   "0004_fire_run_index": fireRunIndex,
-  "0005_registered_at": registeredAt
+  "0005_registered_at": registeredAt,
+  "0006_fire_newest_index": fireNewestIndex
 }
 
 /**

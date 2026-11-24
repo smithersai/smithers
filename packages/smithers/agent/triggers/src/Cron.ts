@@ -21,7 +21,8 @@
  * offset, so a daily 02:30 fires at 03:30 daylight time. A wall time that fall
  * back repeats fires once, at its first instant, unless the hour field is every
  * hour, in which case both passes fire. Occurrences are whole seconds in UTC,
- * whatever the host's zone.
+ * whatever the host's zone, and an expression with no timezone is a UTC
+ * schedule.
  *
  * @since 0.1.0
  */
@@ -163,6 +164,29 @@ export const occurrencesBetween = (
   })
 
 /**
+ * How many parsed expressions {@link parse} remembers. A scheduler parses
+ * every trigger's expression on every tick, and each parse built a fresh
+ * Effect cron, so the wall-clock compile cache, keyed by that object, never
+ * hit. The bound keeps a host that parses unbounded caller text from growing
+ * the memo without limit: a full memo is emptied and filled again.
+ */
+const maxParsed = 1_024
+
+const parsedByText = new Map<string, ReturnType<typeof EffectCron.parse>>()
+
+/** The Effect cron of an expression in a timezone, parsed once per text. */
+const parsedFields = (expression: string, timezone: string | undefined): ReturnType<typeof EffectCron.parse> => {
+  // The pair as JSON, so no expression can spell another pair's key.
+  const key = JSON.stringify([expression, timezone ?? null])
+  const known = parsedByText.get(key)
+  if (known !== undefined) return known
+  const parsed = EffectCron.parse(expression, timezone)
+  if (parsedByText.size >= maxParsed) parsedByText.clear()
+  parsedByText.set(key, parsed)
+  return parsed
+}
+
+/**
  * Parses a cron expression in an optional timezone, reporting a malformed one
  * as `invalid_cron` and one the calendar never satisfies as
  * `unsatisfiable_cron`.
@@ -171,12 +195,17 @@ export const occurrencesBetween = (
  * the same search every tick performs, so an expression that survives parsing
  * is one the scheduler can keep answering.
  *
+ * The parsed fields of an expression are remembered, so parsing the same text
+ * and timezone again answers a cron with the same `value` and the occurrence
+ * searches reuse what they compiled for it. The probe still runs on every
+ * call, because it depends on the current instant.
+ *
  * @category constructors
  * @since 0.1.0
  */
 export const parse = (expression: string, timezone?: string): Effect.Effect<Cron, TriggerError> =>
   Effect.gen(function*() {
-    const parsed = EffectCron.parse(expression, timezone)
+    const parsed = parsedFields(expression, timezone)
     if (Result.isFailure(parsed)) {
       return yield* Effect.fail(
         new TriggerError({ code: "invalid_cron", message: parsed.failure.message, cause: parsed.failure })

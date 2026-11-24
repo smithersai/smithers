@@ -255,7 +255,12 @@ describe("SubChains", () => {
         return Effect.succeed(flow(`return done("recovered")`))
       }
     })
-    const base = Layer.mergeAll(Journal.layerMemory(), Layer.succeed(Author.Author)(author), runner)
+    const base = Layer.mergeAll(
+      Journal.layerMemory(),
+      Layer.succeed(Author.Author)(author),
+      runner,
+      Authorize.layerAllowAll
+    )
     const layers = Layer.mergeAll(base, SubChains.layer({ entries: [] }).pipe(Layer.provide(base)))
     await Effect.runPromise(
       Effect.gen(function*() {
@@ -500,5 +505,105 @@ describe("SubChains", () => {
       .not.toBe(SubChains.contractDigest({ entries: [], maxLinks: 3, prefix: "CHILD PREFIX" }))
     expect(SubChains.contractDigest({ entries: [] }))
       .not.toBe(SubChains.contractDigest({ entries: [], maxDepth: 2 }))
+  })
+
+  // R1-Fable-D2-090: one budget for the whole tree. A child is not a fresh
+  // 32 links of 64 calls; it spends what its root has left.
+  const spendingParent = flow(
+    `const child = await ctx.call("agent", { goal: "spend" })`,
+    `await ctx.call("grep", {})`,
+    `return done(child)`
+  )
+  const spendingChild = flow(
+    `for (let i = 0; i < 10; i++) await ctx.call("grep", {})`,
+    `return done("spent")`
+  )
+  const treeQuota = (max: number) => ({
+    _tag: "Park",
+    reason: { code: "quota", message: `the chain tree exhausted its budget of ${max} calls` }
+  })
+
+  it.each(["", "root-a"])("parks a nested run with quota at the root budget under root scope %s", async (chain) => {
+    const grep = countingEntry("grep", { files: [] })
+    const { events, outcome } = await runChain({
+      chain,
+      author: Author.layerMock([spendingParent, spendingChild]),
+      catalog: SubChains.layer({ entries: [grep.entry] }),
+      maxTotalCalls: 5
+    })
+    // Root author, agent, child author and two greps spend the five calls.
+    // The child's third grep is refused, so the child parks; the parent's
+    // own next call is refused by the same budget, so the root parks too.
+    expect(outcome).toEqual(treeQuota(5))
+    expect(grep.count()).toBe(2)
+    const settled = events.filter((event): event is Event.CallSettled => event._tag === "CallSettled")
+    expect(settled).toHaveLength(5)
+    expect(settled.find((event) => event.name === "agent")?.result).toEqual(treeQuota(5))
+    const child = chain === "" ? "1.0" : `${chain}/1.0`
+    expect(Event.terminal(events, child)).toEqual(treeQuota(5))
+  })
+
+  it.each(["", "root-a"])(
+    "starts a resumed tree from the calls its journal settled under root scope %s",
+    async (chain) => {
+      const grep = countingEntry("grep", { files: [] })
+      const first = await runChain({
+        chain,
+        author: Author.layerMock([spendingParent, spendingChild]),
+        catalog: SubChains.layer({ entries: [grep.entry] })
+      })
+      expect(grep.count()).toBe(11)
+      const child = chain === "" ? "1.0" : `${chain}/1.0`
+      // Cut the journal after the child's first grep: the tree has settled
+      // the root author, the child author and one grep. The spawning call
+      // is still open.
+      const cut = first.events.findIndex((event) =>
+        event._tag === "CallSettled" && event.chain === child && event.name === "grep"
+      )
+      const interrupted = first.events.slice(0, cut + 1)
+      // Another root's settled calls share the journal and are not this tree's.
+      const foreign = await runChain({
+        chain: "other",
+        author: Author.layerMock([flow(`await ctx.call("grep", {})`, `return done(1)`)]),
+        entries: [countingEntry("grep", 1).entry]
+      })
+      const resumedGrep = countingEntry("grep", { files: [] })
+      const resumed = await runChain({
+        chain,
+        author: Author.layerMock([]),
+        catalog: SubChains.layer({ entries: [resumedGrep.entry] }),
+        initial: [...foreign.events, ...interrupted],
+        maxTotalCalls: 4
+      })
+      // Three calls were already spent, so the budget of four admits the
+      // spawning call and nothing after it. Counting the other root's calls
+      // would refuse the spawn; forgetting the child's would run a grep.
+      expect(resumed.outcome).toEqual(treeQuota(4))
+      expect(resumedGrep.count()).toBe(0)
+      const agent = resumed.events.find((event): event is Event.CallSettled =>
+        event._tag === "CallSettled" && event.name === "agent"
+      )
+      expect(agent?.result).toEqual(treeQuota(4))
+    }
+  )
+
+  it("refuses a slot no running chain issued: it carries no seam and no tree budget", async () => {
+    const layers = Layer.mergeAll(
+      Journal.layerMemory(),
+      Author.layerMock([flow(`return done("ran unguarded")`)]),
+      ScriptRunner.layerInProcess
+    )
+    const { error, events } = await Effect.runPromise(
+      Effect.gen(function*() {
+        const catalog = yield* SubChains.make({ entries: [] })
+        const agent = catalog.lookup(SubChains.agentName)
+        const error = yield* Effect.flip(
+          (agent as NonNullable<typeof agent>).handler({ goal: "forged" }, { chain: "", link: 1, ordinal: 0 })
+        )
+        return { error, events: yield* (yield* Journal.Journal).read }
+      }).pipe(Effect.provide(layers), Effect.orDie)
+    )
+    expect(error.message).toContain("requires a call slot")
+    expect(events).toEqual([])
   })
 })

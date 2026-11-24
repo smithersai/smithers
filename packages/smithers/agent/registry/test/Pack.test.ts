@@ -351,8 +351,20 @@ describe("Pack.sources", () => {
         yield* fs.makeDirectory(path.join(root, "skills/review"), { recursive: true })
         const pack = installed(root, { ...localManifest, flows: ["a/b"], skills: ["skills/review"] }, "installed")
         expect(yield* Pack.sources(pack, path)).toEqual([
-          { source: "pack:acme/review", root: path.join(root, "a/b"), confinementRoot: root, naming: "path" },
-          { source: "pack:acme/review", root: path.join(root, "skills/review"), confinementRoot: root, naming: "path" }
+          {
+            source: "pack:acme/review",
+            root: path.join(root, "a/b"),
+            confinementRoot: root,
+            naming: "path",
+            undeclaredCapabilities: "none"
+          },
+          {
+            source: "pack:acme/review",
+            root: path.join(root, "skills/review"),
+            confinementRoot: root,
+            naming: "path",
+            undeclaredCapabilities: "none"
+          }
         ])
       }).pipe(Effect.scoped, Effect.provide(Layer.merge(NodeFileSystem.layer, NodePath.layer)))
     )

@@ -55,8 +55,9 @@ export interface HarnessHost {
  * developer's CLIs actually live, so the candidate dirs are searched first.
  * `~/.opencode/bin` is where the opencode installer puts its binary; the rest
  * follow the contract. A relative home contributes no candidate dirs or nvm listing.
- * Path formatting follows `host.platform` when supplied; callers omitting it
- * retain the native path convention.
+ * Path formatting follows `host.platform` when supplied; a caller omitting it
+ * gets the convention `home` is written in (a drive or backslash UNC home is
+ * Windows, anything else POSIX).
  *
  * @category detection
  * @since 0.1.0
@@ -64,7 +65,7 @@ export interface HarnessHost {
 export const harnessCandidateDirs = (
   host: Pick<HarnessHost, "home" | "listDir"> & Partial<Pick<HarnessHost, "platform">>
 ): ReadonlyArray<string> => {
-  const { join } = hostPath(host)
+  const { join, sep } = hostPath(host)
   const hasHome = isAbsoluteHostPath(host, host.home)
   const nvmRoot = join(host.home, ".nvm", "versions", "node")
   const nvm = [...(hasHome ? host.listDir(nvmRoot) : [])]
@@ -75,7 +76,7 @@ export const harnessCandidateDirs = (
   return [
     ...(hasHome ? [join(host.home, ".local", "bin"), join(host.home, ".bun", "bin")] : []),
     // Homebrew and the POSIX local prefix do not exist on Windows.
-    ...(host.platform === "win32" ? [] : ["/opt/homebrew/bin", "/usr/local/bin"]),
+    ...(sep === "\\" ? [] : ["/opt/homebrew/bin", "/usr/local/bin"]),
     ...nvm,
     ...(hasHome ? [join(host.home, ".cargo", "bin"), join(host.home, ".opencode", "bin")] : [])
   ]

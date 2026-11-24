@@ -122,8 +122,10 @@ the nearest scrolling ancestor; changing it moves the mark and scrolls again.
 Until the highlighter has painted, the component renders a plain `<pre>`, so
 there is no blank frame.
 
-`CodeFileView` automatically starts the worker pool for its theme on first use. The
-package supplies Bun and browser worker factories, with a 15-second
+`CodeFileView` and `PierreDiffView` start the worker pool for their theme on
+first use, from an effect after the first commit, so a server render or a
+render React discards starts no worker. Each theme's pool reports its own
+state. The package supplies Bun and browser worker factories, with a 15-second
 initialization deadline (`CODE_VIEW_POOL_DEADLINE_MS`). Highlighting falls back
 to the main thread only when workers are unavailable or the pool fails: a
 worker error or a missed initialization deadline.

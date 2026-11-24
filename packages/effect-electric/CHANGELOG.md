@@ -4,6 +4,24 @@
 
 ### Fixed
 
+- A shape with `rowAccess` is never kept by a browser or CDN. `cache: "public"`
+  beside a guard used to pass Electric's `cache-control: public` and `etag`
+  through on the filtered 200 and on bodyless polls, so a shared cache could
+  answer the next person with rows the guard approved for another. Every
+  response of a guarded shape is now `private, no-store` without Electric's
+  validators; its handle, offset and cursor headers stay.
+- A no-store shape also drops Electric's `last-modified` and `age`.
+- A guarded request that Electric, or a cache in front of it, answers with a
+  success other than a 200 JSON log or a bodyless 204, 205 or 304 (a 206, for
+  one) is a bodyless 502. It used to stream back unfiltered with its cursor.
+- No message of a guarded shape carries `old_value`. With `replica=full` a
+  delete kept the whole earlier row, and an update the values of a row the
+  person could not read before. A batch member that is itself an array is 502.
+- A request target that does not parse as a URL is a recorded 400 instead of
+  a defect.
+- The HTTP client's span for the call to Electric, and a failed call's error,
+  show `where` and each `params[n]` as `REDACTED`, as they do `secret`.
+  Electric still receives the values.
 - Row-access guards refuse every SSE opt-in except a first value of `false`,
   including on public shapes. Abandoned guarded reads and validations now
   record one abort; validation defects return a recorded 500 with a request id.

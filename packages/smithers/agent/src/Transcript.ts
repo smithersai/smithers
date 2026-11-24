@@ -13,7 +13,10 @@
  * the agent's configuration rather than its work, replaces every secret value
  * and credential shape in its strings ({@link scrubber}), and bounds it to
  * {@link MAX_EVENT_BYTES}: long message text is split into several events,
- * and any other long string is cut. Nothing here names an agent vendor.
+ * and any other long string is cut. A message arrives as many chunks, so a
+ * runner scrubs it with a {@link streamScrubber}, which holds back the end of
+ * each chunk until the next shows whether a secret was being written across
+ * the two. Nothing here names an agent vendor.
  *
  * @since 1.0.0
  */
@@ -108,8 +111,67 @@ export const SHAPES: ReadonlyArray<RegExp> = [
   /\bgh[pousr]_[A-Za-z0-9]{8,}/g,
   /\bgithub_pat_[A-Za-z0-9_]{8,}/g,
   /\beyJ[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{4,}/g,
-  /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/g
+  // Anchored on the start of the local part's run, not on every word boundary in it: a long dotted string with
+  // no `@` is then read once, not once from each of its dots.
+  /(?<![A-Za-z0-9._%+-])[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/g
 ]
+
+/**
+ * The most characters a {@link streamScrubber} holds back between two chunks
+ * of one message: a secret value or credential longer than this, written
+ * across chunks, is scrubbed only as far as each chunk shows it.
+ *
+ * @category constants
+ * @since 1.0.0
+ */
+export const MAX_HELD = 4096
+
+/** The longest known values first, each at least 4 characters. */
+const known = (secrets: Iterable<string>) =>
+  [...new Set(secrets)].filter((value) => value.length >= 4).sort((a, b) => b.length - a.length)
+
+const scrubValues = (text: string, values: ReadonlyArray<string>) => {
+  let scrubbed = text
+  for (const value of values) scrubbed = scrubbed.split(value).join(REDACTED)
+  return scrubbed
+}
+
+const scrubShapes = (text: string) => {
+  let scrubbed = text
+  for (const shape of SHAPES) scrubbed = scrubbed.replace(shape, REDACTED)
+  return scrubbed
+}
+
+/** Whether a UTF-16 unit can be part of a credential shape: a word character or one of `.~+/=%@-`. */
+const credentialUnit = (unit: number) =>
+  (unit >= 48 && unit <= 57) || (unit >= 65 && unit <= 90) || (unit >= 97 && unit <= 122) || unit === 95 ||
+  unit === 46 || unit === 126 || unit === 43 || unit === 47 || unit === 61 || unit === 37 || unit === 64 || unit === 45
+
+const SCHEME = /\b(?:Bearer|Basic)\s+$/
+
+/**
+ * Where a secret still being written could begin at the end of `text`: the
+ * start of its last run of credential characters, of the `Bearer` or `Basic`
+ * before that run, or of the longest ending that begins one of `values`,
+ * whichever is first. At most {@link MAX_HELD} characters from the end, and
+ * `text.length` when nothing is open.
+ */
+const openFrom = (text: string, values: ReadonlyArray<string>) => {
+  const floor = Math.max(0, text.length - MAX_HELD)
+  let start = text.length
+  while (start > floor && credentialUnit(text.charCodeAt(start - 1))) start--
+  const scheme = SCHEME.exec(text.slice(Math.max(floor, start - 16), start))
+  if (scheme !== null) start -= scheme[0].length
+  for (const value of values) {
+    for (let length = Math.min(value.length - 1, text.length - floor); length > text.length - start; length--) {
+      if (text.endsWith(value.slice(0, length))) {
+        start = text.length - length
+        break
+      }
+    }
+  }
+  return start
+}
 
 /**
  * A scrubber over `secrets`, the values known to be secret: each value of at
@@ -119,14 +181,126 @@ export const SHAPES: ReadonlyArray<RegExp> = [
  * @category constructors
  * @since 1.0.0
  */
-export const scrubber = (secrets: Iterable<string> = []) => {
-  const values = [...new Set(secrets)].filter((value) => value.length >= 4).sort((a, b) => b.length - a.length)
-  return (text: string): string => {
-    let scrubbed = text
-    for (const value of values) scrubbed = scrubbed.split(value).join(REDACTED)
-    for (const shape of SHAPES) scrubbed = scrubbed.replace(shape, REDACTED)
-    return scrubbed
+export const scrubber = (secrets: Iterable<string> = []): Scrubber => {
+  const values = known(secrets)
+  return Object.assign((text: string) => scrubShapes(scrubValues(text, values)), {
+    closed: (text: string) => text.slice(0, openFrom(text, values))
+  })
+}
+
+/**
+ * What {@link scrubber} makes: called as a function it scrubs one whole
+ * string.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export interface Scrubber {
+  (text: string): string
+  /**
+   * `text` without an ending a secret could still be open in (its last run
+   * of credential characters, or the beginning of a secret value): what a
+   * string cut at its end may keep.
+   */
+  readonly closed: (text: string) => string
+}
+
+/**
+ * The message a text chunk belongs to, as a {@link StreamScrubber} keeps it:
+ * `key` tells one message from the next, and `kind` and `update` (the chunk
+ * with its text empty) are what a held ending is sent in.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export interface StreamMessage {
+  readonly key: string
+  readonly kind: string
+  readonly update: Readonly<Record<string, unknown>>
+}
+
+/**
+ * A scrubber for one session's updates in order ({@link streamScrubber}).
+ * Called as a function it scrubs one whole string, as {@link scrubber} does.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export interface StreamScrubber extends Scrubber {
+  /**
+   * Takes the next chunk of `message` and answers the text that may leave
+   * now, each with the message it belongs to: first what was held of an
+   * earlier message, then this one's text up to where a secret could still
+   * be open. Empty text is left out.
+   */
+  readonly take: (message: StreamMessage, text: string) => ReadonlyArray<readonly [StreamMessage, string]>
+  /** Ends the message in flight: what was held of it, scrubbed, if anything. */
+  readonly end: () => ReadonlyArray<readonly [StreamMessage, string]>
+}
+
+/**
+ * A scrubber over `secrets` for one session, which also scrubs a secret
+ * written across the chunks of a message. {@link prepare} given it holds back
+ * the end of each text chunk (at most {@link MAX_HELD} characters: the last
+ * run of credential characters, or the beginning of a secret value) until
+ * the next chunk of the same message completes or clears it, and sends what
+ * it still holds, as one more chunk of that message, before the first update
+ * that is not one. Make one for each session: it remembers the message in
+ * flight.
+ *
+ * @example
+ * ```ts
+ * import { Transcript } from "@smthrs/agent"
+ *
+ * const scrub = Transcript.streamScrubber(["hunter2-token"])
+ * const chunk = (text: string) =>
+ *   Transcript.prepare("agent_message_chunk", { messageId: "m1", content: { type: "text", text } }, scrub)
+ * // The value is split across two chunks; neither half leaves.
+ * const sent = [...chunk("key hunter2-"), ...chunk("token "), ...Transcript.prepare("_smithers/turn", {}, scrub)]
+ * ```
+ *
+ * @category constructors
+ * @since 1.0.0
+ */
+export const streamScrubber = (secrets: Iterable<string> = []): StreamScrubber => {
+  const values = known(secrets)
+  let message: StreamMessage | undefined
+  let held = ""
+  // Set while a credential longer than `MAX_HELD` is being written: its start left as `REDACTED`, so the rest of
+  // its run is dropped, not sent as text no shape matches.
+  let swallowing = false
+  const end = (): ReadonlyArray<readonly [StreamMessage, string]> => {
+    const ended = message
+    const text = scrubShapes(held)
+    message = undefined
+    held = ""
+    swallowing = false
+    return ended === undefined || text === "" ? [] : [[ended, text]]
   }
+  const take = (next: StreamMessage, chunk: string) => {
+    const before = message !== undefined && message.key !== next.key ? end() : []
+    message = next
+    let text = chunk
+    if (swallowing) {
+      let run = 0
+      while (run < text.length && credentialUnit(text.charCodeAt(run))) run++
+      text = text.slice(run)
+      swallowing = text === ""
+    }
+    const joined = scrubValues(held + text, values)
+    const start = openFrom(joined, values)
+    const head = joined.slice(0, start)
+    const sent = scrubShapes(head)
+    held = joined.slice(start)
+    // The held run is as long as may be held and still open at its start: a shape that reached the end of what
+    // was sent goes on into it.
+    if (held.length === MAX_HELD && credentialUnit(joined.charCodeAt(start - 1)) && sent.endsWith(REDACTED)) {
+      held = ""
+      swallowing = true
+    }
+    return sent === "" ? before : [...before, [next, sent] as const]
+  }
+  return Object.assign(scrubber(values), { take, end })
 }
 
 /**
@@ -224,24 +398,11 @@ const cut = (update: Record<string, unknown>, size: number) =>
     (text) => text.length > size ? text.slice(0, boundary(text, size)) + CUT : text
   ) as Record<string, unknown>
 
-/**
- * One update made ready to leave the runner: none for a {@link DROPPED_KINDS}
- * kind; otherwise the update with every string scrubbed by `scrub`, as one or
- * more events' `{ kind, update }` each at most {@link MAX_EVENT_BYTES} as JSON.
- * A message chunk (a `content` of type `text`) too long for one event becomes
- * several chunks of the same message; any other update too long has its long
- * strings cut, ending {@link CUT}.
- *
- * @category constructors
- * @since 1.0.0
- */
-export const prepare = (
+/** The events of one scrubbed update: itself when it fits, else its message split or its long strings cut. */
+const bounded = (
   kind: string,
-  update: Readonly<Record<string, unknown>>,
-  scrub: (text: string) => string
+  clean: Record<string, unknown>
 ): ReadonlyArray<{ readonly kind: string; readonly update: Record<string, unknown> }> => {
-  if (DROPPED_KINDS.has(kind)) return []
-  const clean = mapStrings(update, scrub) as Record<string, unknown>
   if (bytes(clean) <= MAX_EVENT_BYTES) return [{ kind, update: clean }]
   const content = clean.content as { readonly type?: unknown; readonly text?: unknown } | undefined
   if (content?.type === "text" && typeof content.text === "string") {
@@ -255,10 +416,74 @@ export const prepare = (
     }
   }
   let size = 4096
-  let bounded = cut(clean, size)
-  while (bytes(bounded) > MAX_EVENT_BYTES && size > 16) {
+  let bound = cut(clean, size)
+  while (bytes(bound) > MAX_EVENT_BYTES && size > 16) {
     size = Math.floor(size / 2)
-    bounded = cut(clean, size)
+    bound = cut(clean, size)
   }
-  return bytes(bounded) <= MAX_EVENT_BYTES ? [{ kind, update: bounded }] : [{ kind, update: { cut: true } }]
+  return bytes(bound) <= MAX_EVENT_BYTES ? [{ kind, update: bound }] : [{ kind, update: { cut: true } }]
 }
+
+const isStream = (scrub: (text: string) => string): scrub is StreamScrubber => "take" in scrub
+
+/** A cut string's ending a credential shape could be open in, for a scrubber that can't say for its own values. */
+const closedShapes = scrubber().closed
+
+/** The text of an update that is a chunk of a message, with the update around it. */
+const textChunk = (update: Readonly<Record<string, unknown>>) => {
+  const content = update.content
+  if (content === null || typeof content !== "object") return undefined
+  const { text, type } = content as { readonly type?: unknown; readonly text?: unknown }
+  return type === "text" && typeof text === "string" ? { content: content as Record<string, unknown>, text } : undefined
+}
+
+/**
+ * One update made ready to leave the runner: none for a {@link DROPPED_KINDS}
+ * kind; otherwise the update with every string scrubbed by `scrub`, as one or
+ * more events' `{ kind, update }` each at most {@link MAX_EVENT_BYTES} as JSON.
+ * A message chunk (a `content` of type `text`) too long for one event becomes
+ * several chunks of the same message; any other update too long has its long
+ * strings cut, ending {@link CUT}. A string other than a message's text that
+ * is longer than {@link MAX_EVENT_BYTES} characters is cut to that before it
+ * is scrubbed, so scrubbing reads a bounded string.
+ *
+ * Given a {@link StreamScrubber}, a message chunk's ending that a secret could
+ * still be open in is held for the next call: a chunk can then answer no
+ * event, and the first update that is not a chunk of the same message is
+ * preceded by one more chunk of it, carrying what was held.
+ *
+ * @category constructors
+ * @since 1.0.0
+ */
+export const prepare = (
+  kind: string,
+  update: Readonly<Record<string, unknown>>,
+  scrub: ((text: string) => string) | Scrubber | StreamScrubber
+): ReadonlyArray<{ readonly kind: string; readonly update: Record<string, unknown> }> => {
+  if (DROPPED_KINDS.has(kind)) return []
+  const closed = "closed" in scrub ? scrub.closed : closedShapes
+  // Bounded before it is scrubbed. The cut drops an ending a secret could be open in, so no part of one is left
+  // where the scrubber would not know it.
+  const short = (text: string) =>
+    text.length <= MAX_EVENT_BYTES ? scrub(text) : scrub(closed(text.slice(0, boundary(text, MAX_EVENT_BYTES)))) + CUT
+  const chunk = textChunk(update)
+  if (chunk === undefined) {
+    const ended = isStream(scrub) ? scrub.end() : []
+    return [
+      ...ended.flatMap(([message, text]) => bounded(message.kind, withText(message.update, text))),
+      ...bounded(kind, mapStrings(update, short) as Record<string, unknown>)
+    ]
+  }
+  const around = mapStrings({ ...update, content: { ...chunk.content, text: "" } }, short) as Record<string, unknown>
+  if (!isStream(scrub)) return bounded(kind, withText(around, scrub(chunk.text)))
+  const key = `${kind}\u0000${typeof update.messageId === "string" ? update.messageId : ""}`
+  return scrub.take({ key, kind, update: around }, chunk.text).flatMap(([message, text]) =>
+    bounded(message.kind, withText(message.update, text))
+  )
+}
+
+/** `update`, a text chunk, with `text` as its text. */
+const withText = (update: Readonly<Record<string, unknown>>, text: string): Record<string, unknown> => ({
+  ...update,
+  content: { ...update.content as Record<string, unknown>, text }
+})

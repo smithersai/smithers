@@ -459,7 +459,11 @@ export interface SearchFtsInput extends Omit<SearchRowsInput, "kinds" | "after">
 }
 
 /**
- * An authoritative FTS result with raw SQLite BM25 rank.
+ * An authoritative FTS result. `rank` is the row's 1-based position among its
+ * namespace's passing matches, best first and shared by ties, and `score` is
+ * `1 / rank`. Neither
+ * is the raw BM25 value: one FTS table indexes every namespace of a kind, so a
+ * raw value would move with another namespace's writes.
  *
  * @category models
  * @since 0.1.0

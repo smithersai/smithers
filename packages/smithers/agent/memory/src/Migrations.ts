@@ -15,6 +15,7 @@ import { indexes } from "./internal/MemoryIndexes.ts"
 import { initial } from "./internal/MemorySchema.ts"
 import { namespaceKeys } from "./internal/NamespaceKeys.ts"
 import { noteLifecycle } from "./internal/NoteLifecycle.ts"
+import { recallOrderIndex } from "./internal/RecallOrderIndex.ts"
 
 /**
  * Memory's authoritative schema, in the block following the control plane.
@@ -30,7 +31,8 @@ export const set: DatabaseMigrations.MigrationSet = {
     "0002_indexes": indexes,
     "0003_fts_fold": ftsFold,
     "0004_note_lifecycle": noteLifecycle,
-    "0005_namespace_keys": namespaceKeys
+    "0005_namespace_keys": namespaceKeys,
+    "0006_recall_order_index": recallOrderIndex
   }
 }
 

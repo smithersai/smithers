@@ -148,8 +148,10 @@ describe("ContainerRecording", () => {
       expect(calls[12]!.output).toEqual({ stdout: "", stderr: "", exitCode: 1 })
       expect(recorded.read).toEqual({ stdout: "saved", stderr: "", code: 0 })
 
-      const text = yield* ContainerRecording.encode({ label: "journey", calls })
-      const replayed = ContainerRecording.replay<Box>(ContainerRecording.decode(text))
+      const secrets = [Redacted.make("keep.tx")]
+      const text = yield* ContainerRecording.encode({ label: "journey", calls }, secrets)
+      expect(text).not.toContain("keep.tx")
+      const replayed = ContainerRecording.replay<Box>(ContainerRecording.decode(text), { secrets })
       const hits = live.state.hits
       expect(yield* journey(replayed.container)).toEqual({
         ...recorded,
@@ -400,6 +402,9 @@ describe("ContainerRecording", () => {
       expect(shaped.message).not.toContain(LIVE_TOKEN)
       const named = yield* Effect.flip(ContainerRecording.encode({ label: secret, calls }, [secret]))
       expect(named.rules).toEqual(["live-secret"])
+      const escaped = "a\"b"
+      const leaked = yield* Effect.flip(ContainerRecording.encode({ label: escaped, calls }, [escaped]))
+      expect(leaked.rules).toEqual(["live-secret"])
       expect(() => ContainerRecording.decode(`{"calls":[{"operation":"reboot","input":null}]}`)).toThrow()
     }))
 })

@@ -212,7 +212,7 @@ describe("FixtureStore file persistence", () => {
           const result = yield* Effect.exit(
             Effect.gen(function*() {
               const store = yield* FixtureStore.makeFile(path)
-              if (mode === "append") yield* store.append(call)
+              if (mode !== "read") yield* store.append(call)
             }).pipe(Effect.provideService(FileSystem.FileSystem, faulty))
           )
           expect(Exit.isFailure(result)).toBe(true)
@@ -245,7 +245,7 @@ describe("FixtureStore file persistence", () => {
         yield* store.append(call)
         yield* store.flush()
         expect(JSON.parse(readFileSync(path, "utf8")).calls).toEqual([call])
-        expect(attempts).toEqual([true, undefined, true, undefined])
+        expect(attempts).toEqual([true, undefined])
       })
     ))
 
@@ -486,6 +486,22 @@ describe("FixtureStore flush and recovery", () => {
       })
     ))
 
+  it.effect("allows concurrent readers while a writer holds the fixture lock", () =>
+    withFile((path) =>
+      Effect.gen(function*() {
+        const writer = yield* FixtureStore.makeFile(path)
+        yield* writer.append(call)
+        const read = Effect.gen(function*() {
+          const reader = yield* FixtureStore.makeFile(path)
+          expect(Option.getOrThrow(yield* reader.load()).calls).toHaveLength(1)
+          yield* reader.flush()
+        })
+        yield* Effect.all([read, read], { concurrency: 2 })
+        expect(existsSync(path)).toBe(false)
+        yield* writer.flush()
+      })
+    ))
+
   it.effect("does not create an empty fixture when flushing an unused store", () =>
     withFile((path) =>
       Effect.gen(function*() {
@@ -505,7 +521,7 @@ describe("FixtureStore flush and recovery", () => {
           Buffer.concat([Buffer.from(line + "{\"index\":1,\"text\":\""), Buffer.from([0xe2, 0x82])])
         )
         const store = yield* FixtureStore.makeFile(path)
-        expect(readFileSync(`${path}.journal`, "utf8")).toBe(line)
+        expect(readFileSync(`${path}.journal`, "utf8")).toContain(line + "{")
         expect(Option.getOrThrow(yield* store.load()).calls).toHaveLength(1)
         yield* store.append(call)
         yield* store.flush()
@@ -521,7 +537,7 @@ describe("FixtureStore flush and recovery", () => {
         const store = yield* FixtureStore.makeFile(path)
         expect(Option.getOrThrow(yield* store.load()).calls).toHaveLength(2)
         yield* store.flush()
-        expect(JSON.parse(readFileSync(path, "utf8")).calls).toHaveLength(2)
+        expect(JSON.parse(readFileSync(path, "utf8")).calls).toHaveLength(1)
       })
     ))
 
@@ -593,7 +609,7 @@ describe("FixtureStore flush and recovery", () => {
         const recovered = yield* FixtureStore.makeFile(path)
         expect(Option.getOrThrow(yield* recovered.load()).calls).toHaveLength(2)
         yield* recovered.flush()
-        expect(JSON.parse(readFileSync(path, "utf8")).calls).toHaveLength(2)
+        expect(JSON.parse(readFileSync(path, "utf8")).calls).toHaveLength(1)
       })
     ))
 
@@ -691,7 +707,7 @@ describe("FixtureStore flush and recovery", () => {
         const store = yield* FixtureStore.makeFile(path)
         expect(Option.getOrThrow(yield* store.load()).calls).toHaveLength(2)
         yield* store.flush()
-        expect(JSON.parse(readFileSync(path, "utf8")).calls).toHaveLength(2)
+        expect(JSON.parse(readFileSync(path, "utf8")).calls).toHaveLength(1)
       })
     ))
 })

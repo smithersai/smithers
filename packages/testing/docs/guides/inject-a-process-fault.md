@@ -82,9 +82,8 @@ cross a deadline should move the clock rather than wait:
 ```ts
 import { skewClock } from "@smthrs/testing/Faults"
 
-const clock = skewClock(60_000)
+using clock = skewClock(60_000)
 clock.advance(30_000)
-clock.restore()
 ```
 
 `skewClock` patches `Date.now`, `Date()`, and a bare `new Date()` **for this
@@ -96,8 +95,7 @@ skew instead.
 Each skew is relative to the real clock, and the latest installation controls
 the global clock. Restoring any live handle reinstalls the Date constructor and
 `Date.now` captured at module load, including when handles are restored out of
-order. `restore` is idempotent and does not resume an earlier skew. Use
-`try`/`finally` to restore the clock when an assertion fails.
+order. `restore` is idempotent and does not resume an earlier skew. A `using` declaration restores the clock when its block exits. In an Effect scope, `yield* skewClockScoped(ms)` restores it on success, failure, or interruption.
 
 ## Where a fault suite has to live
 

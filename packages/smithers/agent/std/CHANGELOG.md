@@ -20,6 +20,50 @@
 
 ### Fixed
 
+- `bash` and every other buffered execution return when the command exits,
+  not when its pipes close. `server & echo started` exits 0 at once, but the
+  background process holds both pipes, so the call waited its whole timeout
+  and reported `timeout`. Once the command has exited, the capture now ends at
+  the first 100 ms with no output, and after one second at the latest.
+
+- Host commands the library starts on its own account have a deadline. Host
+  git, `rg` (`NativeSearch.TIMEOUT_MS`), and a remote search's shell
+  (`RemoteSearch.TIMEOUT_MS`) fail with `timeout` after ten minutes instead of
+  hanging on a stalled mount, and host git refuses more than 16 MiB of output
+  instead of buffering it. A containerised `test` run and a containerised
+  checkpoint's git scripts are stopped inside the container at their limit
+  (`ContainerOptions.gitTimeoutMs`, ten minutes by default); before, only the
+  host's transport process was killed and the command ran on.
+
+- A checkpoint's commit is read from `.git/config`, which the agent can write,
+  and is now refused with `invalid_input` unless it is a full object name.
+  Host `git read-tree` takes it after `--end-of-options`.
+
+- `apply_patch` inserts a chunk that only adds lines after its `@@` context
+  line. It used to find the context and then append at the end of the file,
+  reporting success. A chunk with no context still appends.
+
+- A line-anchored `edit` keeps CRLF endings. When every replaced line ends in
+  `\r`, each line of `newString` is written with `\r\n` and the last with
+  `\r`; a `newString` that already carries those bytes is unchanged. Before,
+  `{ startLine: 2, endLine: 2, newString: "TWO" }` left an LF-only line in a
+  CRLF file.
+
+- An Exa result's `snippet` is cut on a character boundary. A cut at 2,000
+  UTF-16 units could leave half of a surrogate pair, which the canonical
+  encoder refuses.
+
+- The in-process search peer stops reading a file whose line passes
+  `PortableSearch.MAX_LINE_UNITS` (8 MiB) instead of buffering it whole; a
+  walk counts the file in `skippedBinary` and a named file fails with
+  `response_too_large`. It names no symbols for a file over
+  `PortableSearch.MAX_SYMBOL_SOURCE_BYTES` (64 MiB) instead of loading it a
+  second time. `PortableSearch.make` takes lower `Limits`.
+
+- The hermetic `bash` pre-check exempts only process plumbing under `/dev/`
+  (`null`, `zero`, `full`, `random`, `urandom`, `tty`, `stdin`, `stdout`,
+  `stderr`, `fd/N`). `cat secret > /dev/shm/x` used to pass with `writes: []`.
+
 - `write` reports an overwritten file as `created: false` even when an
   existence probe is unavailable. Only a `NotFound` inspection means a new
   file; other inspection failures refuse the write on ordinary and batched hosts.

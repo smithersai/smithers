@@ -344,14 +344,18 @@ export const makeCli = (
     })
     .command("gc", {
       description: "Collect old terminal runs and compact their journals; separate from target caches",
-      mcp: { annotations: { readOnlyHint: false } },
+      mcp: false,
       destructive: true,
-      options: options.extend({ olderThan: z.string().default("30d"), dryRun: z.boolean().default(false) }),
+      options: options.extend({
+        yes: z.boolean().default(false),
+        olderThan: z.string().default("30d"),
+        dryRun: z.boolean().default(false)
+      }),
       run: (c) =>
         Presentation.guard(c, async () => {
           localRoot(c.options)
           const swept = await Bridge.local(
-            GcCmd.sweep({ olderThan: c.options.olderThan, dryRun: c.options.dryRun }, globalsOf()),
+            GcCmd.sweep({ olderThan: c.options.olderThan, dryRun: c.options.dryRun, yes: c.options.yes }, globalsOf()),
             c.options,
             config
           )
@@ -520,7 +524,7 @@ export const makeCli = (
     })
     .command("bug", {
       description: "Submit a redacted bug report to the configured endpoint",
-      mcp: { annotations: { readOnlyHint: false } },
+      mcp: false,
       args: z.object({ summary: z.array(z.string()).min(1) }),
       options: options.extend({
         run: z.string().optional(),
@@ -875,7 +879,7 @@ export const makeCli = (
     const suggestion = await Bridge.run(
       DidYouMean.didYouMean(
         typed,
-        parsed.rest.slice(offset + 1),
+        [],
         DidYouMean.commands(documentation.humanHelp ? humanDiscovery : discovery)
       ).pipe(
         Effect.provide(evaluator(environment))

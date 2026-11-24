@@ -217,7 +217,11 @@ export interface Page {
 }
 
 const pageOf = (alert: Alerts.Alert): Page => ({
-  alertId: Alerts.alertId({ coalescingKey: alert.coalescingKey, since: alert.since }),
+  alertId: Alerts.alertId({
+    coalescingKey: alert.coalescingKey,
+    since: alert.since,
+    ...(alert.opening === undefined ? {} : { opening: alert.opening })
+  }),
   condition: alert.condition,
   severity: alert.severity,
   since: new Date(alert.since).toISOString(),

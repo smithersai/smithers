@@ -34,15 +34,15 @@ export const copyScript = (upload: boolean, path: string, name: string, contents
     return guard +
       `test -e ${quote(clean)} || { echo 'remote path not found' >&2; exit 44; }; tar -cf - -C ${
         quote(contents ? clean : parent)
-      } ${quote(contents ? "." : posix.basename(clean))}`
+      } -- ${quote(contents ? "." : posix.basename(clean))}`
   }
-  if (contents || path.endsWith("/")) return guard + `mkdir -p ${quote(clean)} && tar -o -xf - -C ${quote(clean)}`
+  if (contents || path.endsWith("/")) return guard + `mkdir -p -- ${quote(clean)} && tar -o -xf - -C ${quote(clean)}`
   return guard +
-    `if [ -d ${quote(clean)} ]; then tar -o -xf - -C ${quote(clean)}; else mkdir -p ${quote(parent)} && t=$(mktemp -d ${
-      quote(posix.join(parent, ".smithers-cp.XXXXXX"))
-    }) && tar -o -xf - -C "$t" && rm -rf ${quote(clean)} && mv "$t/"${quote(name)} ${
+    `if [ -d ${quote(clean)} ]; then tar -o -xf - -C ${quote(clean)}; else mkdir -p -- ${
+      quote(parent)
+    } && t=$(mktemp -d -- ${quote(posix.join(parent, ".smithers-cp.XXXXXX"))}) && tar -o -xf - -C "$t" && rm -rf -- ${
       quote(clean)
-    }; rc=$?; rm -rf "$t"; exit $rc; fi`
+    } && mv -- "$t/"${quote(name)} ${quote(clean)}; rc=$?; rm -rf -- "$t"; exit $rc; fi`
 }
 /** @private
  * @since 1.0.0
@@ -78,10 +78,16 @@ const exists = async (path: string) => {
 const merge = async (source: string, destination: string) => {
   const info = await lstat(source), old = await exists(destination)
   if (old?.isSymbolicLink() && !info.isSymbolicLink()) throw symlinkRefused()
+  if (old && old.isDirectory() !== info.isDirectory()) {
+    throw new Refused({
+      fault: "user",
+      code: "copy_type_conflict",
+      message: "Cannot replace a directory with a file or a file with a directory"
+    })
+  }
   if (info.isDirectory() && old?.isDirectory()) {
     for (const child of await readdir(source)) await merge(join(source, child), join(destination, child))
   } else {
-    if (old) await rm(destination, { recursive: true })
     await rename(source, destination)
   }
 }

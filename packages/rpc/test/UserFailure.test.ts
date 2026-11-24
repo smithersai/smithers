@@ -102,6 +102,37 @@ describe("presentUserFailure", () => {
     expect(shown).toMatchObject({ tag: null, ...fallback })
   })
 
+  test("a registered formatter that throws gives the unknown copy and reports the original value once", () => {
+    // Carries the tag but not the fields the formatter reads: one field is absent, the other a throwing getter.
+    const throwing: UserFailureRegistry<Known> = {
+      Busy: (failure) => ({ fault: "infra", sentence: failure.tab.toUpperCase(), actions: ["use-here"] }),
+      Gone: (failure) => ({ fault: "user", sentence: failure.message, actions: ["sign-in"] })
+    }
+    const malformed = [
+      { _tag: "Busy", note: "SECRET no tab" },
+      Object.defineProperty({ _tag: "Gone" }, "message", {
+        get: () => {
+          throw new Error("SECRET getter")
+        }
+      }),
+      new Error("wrapper", { cause: { _tag: "Busy" } })
+    ]
+    for (const value of malformed) {
+      const reported: Array<unknown> = []
+      const shown = presentUserFailure(throwing, value, { onUnknown: (error) => reported.push(error) })
+      expect(shown).toEqual({ tag: null, ...UNKNOWN_FAILURE, detail: "[REDACTED]" })
+      expect(reported).toHaveLength(1)
+      expect(reported[0]).toBe(value)
+    }
+    // The same registry still presents a well-formed failure, and reports nothing.
+    const reported: Array<unknown> = []
+    expect(presentUserFailure(throwing, new Busy("a"), { onUnknown: (error) => reported.push(error) })).toMatchObject({
+      tag: "Busy",
+      sentence: "A"
+    })
+    expect(reported).toEqual([])
+  })
+
   test("a cause cycle stops", () => {
     const a = new Error("a") as Error & { cause?: unknown }
     const b = new Error("b", { cause: a })

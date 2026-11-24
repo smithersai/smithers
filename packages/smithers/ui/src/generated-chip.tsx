@@ -1,6 +1,7 @@
 /** @jsxImportSource react */
 import { Badge } from "./badge";
 import { isPlainNavigationClick } from "./internal/navigationClick";
+import { safeHref } from "./internal/safeHref";
 import { Popover, PopoverContent, PopoverTrigger } from "./popover";
 import { useInjectUiCss } from "./styles";
 
@@ -26,7 +27,8 @@ function Row({ label, link, onNavigate }: {
   readonly link: GeneratedChipLink;
   readonly onNavigate: GeneratedChipProps["onNavigate"];
 }) {
-  const { href } = link;
+  // A link whose scheme is not http(s) or mailto shows as its plain label.
+  const href = link.href === undefined ? undefined : safeHref(link.href);
   return (
     <li className="sui-generated-row">
       <span className="sui-generated-label">{label}</span>

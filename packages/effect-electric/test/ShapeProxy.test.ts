@@ -4,6 +4,7 @@ import { TestSchemas } from "@smthrs/database"
 import { ConfigProvider, Effect, Fiber, Layer, Logger, Metric, Redacted, References, Tracer } from "effect"
 import { FetchHttpClient, HttpEffect, HttpServerRequest } from "effect/http"
 import { SqlClient } from "effect/sql"
+import { inspect } from "node:util"
 import { afterAll, beforeAll, describe, expect, test, vi } from "vitest"
 import { ShapeProxy } from "../src/index.ts"
 
@@ -53,7 +54,12 @@ const postgresUp = electricUp &&
 type Fault =
   | { readonly _tag: "down" }
   | { readonly _tag: "empty"; readonly status: number }
-  | { readonly _tag: "answer"; readonly headers: Record<string, string>; readonly body?: string }
+  | {
+    readonly _tag: "answer"
+    readonly headers: Record<string, string>
+    readonly body?: string
+    readonly status?: number
+  }
   | { readonly _tag: "hold" }
   | { readonly _tag: "breakBody" }
   | { readonly _tag: "endlessBody" }
@@ -97,7 +103,10 @@ const harness = (options: Partial<ShapeProxy.Options<HttpServerRequest.HttpServe
           { status: 200, headers: { "content-type": "application/json" } }
         )
       case "answer":
-        return new Response(fault.body ?? "[]", { status: 200, headers: fault.headers })
+        return new Response([204, 205, 304].includes(fault.status ?? 200) ? null : fault.body ?? "[]", {
+          status: fault.status ?? 200,
+          headers: fault.headers
+        })
       case "endlessBody":
         return new Response(
           new ReadableStream({
@@ -152,6 +161,15 @@ const harness = (options: Partial<ShapeProxy.Options<HttpServerRequest.HttpServe
       fault = next
     },
     request: (search: string, init?: RequestInit) => handler(new Request(`http://app.test/api/shape${search}`, init)),
+    /** The handler given a request target as a server hands it over, which need not parse as a URL. */
+    target: (url: string) =>
+      Effect.runPromise(
+        Effect.provideService(
+          program,
+          HttpServerRequest.HttpServerRequest,
+          HttpServerRequest.fromWeb(new Request("http://app.test/api/shape")).modify({ url })
+        )
+      ),
     /** The route as a browser's `fetch` reaches it, for an Electric client. */
     fetch: (input: RequestInfo | URL, init?: RequestInit) => handler(new Request(input, init)),
     /** The handler as a host runs it, in a fiber the host interrupts when the browser goes away. */
@@ -242,6 +260,7 @@ describe("refusals: no Electric needed", () => {
       ["an object instead of a batch", "{}", ["id"]],
       ["no declared keys", "[]", []],
       ["a null message", "[null]", ["id"]],
+      ["a nested batch", "[[{\"value\":{\"id\":\"a\",\"text\":\"SENTINEL\"}}]]", ["id"]],
       ["a primitive message", "[1]", ["id"]],
       ["a null value", "[{\"value\":null}]", ["id"]],
       ["a primitive value", "[{\"value\":1}]", ["id"]],
@@ -1079,6 +1098,10 @@ describe.skipIf(!electricUp)("through Electric", () => {
           expect((await replay.json() as Array<{ value?: unknown }>).filter((message) => message.value)).toHaveLength(4)
         } else {
           expect(response.headers.get("electric-offset")).not.toBeNull()
+          expect(response.headers.get("electric-handle")).not.toBeNull()
+          // Electric marks this answer `public` with an `etag`; a row-filtered body is never kept, opted in or not.
+          expect(response.headers.get("cache-control")).toBe("private, no-store")
+          expect(response.headers.get("etag")).toBeNull()
           expect((await response.json() as Array<{ value?: unknown }>).filter((message) => message.value)).toHaveLength(
             4
           )
@@ -1149,6 +1172,201 @@ describe.skipIf(!electricUp)("through Electric", () => {
       }
     })
   })
+})
+
+describe("row access fails closed: no Electric needed", () => {
+  // What Electric, or a cache between it and the proxy, sends to let a browser or CDN keep or revalidate an answer.
+  const kept = {
+    "cache-control": "public, max-age=604800, s-maxage=3600, stale-while-revalidate=2629746",
+    etag: "\"h-1:0_0:0_1\"",
+    "last-modified": "Mon, 23 Nov 2026 00:00:00 GMT",
+    age: "12",
+    expires: "Mon, 30 Nov 2026 00:00:00 GMT",
+    "surrogate-control": "max-age=3600",
+    "cdn-cache-control": "max-age=3600"
+  }
+  const cursor = { "electric-handle": "h-1", "electric-offset": "0_1", "electric-cursor": "77" }
+
+  test.each([200, 204, 205, 304])(
+    "a guarded shape opted in as public is never kept: a %i is private, no-store with no validator",
+    async (status) => {
+      const h = harness({ cache: "public", rowAccess: { keyColumns: ["id"], allows: () => true } })
+      h.fault({
+        _tag: "answer",
+        status,
+        headers: { "content-type": "application/json", ...kept, ...cursor },
+        body: JSON.stringify([{ value: { id: "a" } }])
+      })
+      const response = await h.request("?handle=h-1&offset=0_0&live=true")
+      expect(response.status).toBe(status)
+      expect(response.headers.get("cache-control")).toBe("private, no-store")
+      for (const name of Object.keys(kept).slice(1)) expect([name, response.headers.get(name)]).toEqual([name, null])
+      for (const [name, value] of Object.entries(cursor)) expect(response.headers.get(name)).toBe(value)
+      expect(await response.text()).toBe(status === 200 ? "[{\"value\":{\"id\":\"a\"}}]" : "")
+    }
+  )
+
+  test("a guarded shape opted in as public keeps none of the proxy's own answers either", async () => {
+    const h = harness({ cache: "public", rowAccess: { keyColumns: ["id"], allows: () => true } })
+    expect((await h.request("", { method: "POST" })).headers.get("cache-control")).toBe("private, no-store")
+    h.fault({ _tag: "down" })
+    expect((await h.request("")).headers.get("cache-control")).toBe("private, no-store")
+    // Electric's own error body carries no rows and streams back, without its caching headers.
+    h.fault({ _tag: "answer", status: 409, headers: { ...kept, ...cursor }, body: "[{\"headers\":{}}]" })
+    const refetch = await h.request("")
+    expect(refetch.status).toBe(409)
+    expect(refetch.headers.get("cache-control")).toBe("private, no-store")
+    expect(refetch.headers.get("etag")).toBeNull()
+    expect(await refetch.text()).toBe("[{\"headers\":{}}]")
+  })
+
+  test.each([201, 202, 203, 206, 226])(
+    "a guarded request answered %i is a bodyless 502: no row, cursor or validator leaves unchecked",
+    async (status) => {
+      let authorized = 0
+      let validated = 0
+      const h = harness({
+        cache: "public",
+        rowAccess: {
+          keyColumns: ["id"],
+          allows: () => {
+            authorized++
+            return true
+          },
+          validate: Effect.sync(() => {
+            validated++
+            return true
+          })
+        }
+      })
+      h.fault({
+        _tag: "answer",
+        status,
+        headers: {
+          "content-type": "application/json",
+          "content-range": "bytes 0-40/400",
+          ...kept,
+          ...cursor
+        },
+        body: JSON.stringify([{ value: { id: "private-row", text: "SENTINEL" } }])
+      })
+      const response = await h.request("?handle=h-1&offset=0_0")
+      expect(response.status).toBe(502)
+      expect(await response.text()).toBe("")
+      expect(response.headers.get("cache-control")).toBe("private, no-store")
+      for (const name of [...Object.keys(kept).slice(1), ...Object.keys(cursor), "content-range"]) {
+        expect([name, response.headers.get(name)]).toEqual([name, null])
+      }
+      // The guard is neither asked nor credited: nothing it could approve is sent.
+      expect([authorized, validated]).toEqual([0, 0])
+      expect(h.logs).toHaveLength(1)
+      expect(h.line()?.annotations).toMatchObject({ status: 502, upstream: "electric", outcome: "failed", bytes: 0 })
+      expect(JSON.stringify(h.logs)).not.toContain("SENTINEL")
+    }
+  )
+
+  test("an unguarded shape still streams a partial answer: the 502 belongs to the guard", async () => {
+    const h = harness()
+    h.fault({ _tag: "answer", status: 206, headers: cursor, body: "[{\"value\":{\"id\":\"a\"}}]" })
+    const response = await h.request("")
+    expect(response.status).toBe(206)
+    expect(await response.text()).toBe("[{\"value\":{\"id\":\"a\"}}]")
+  })
+
+  test("no message carries old_value: not a delete, an update, an insert, nor one without a value", async () => {
+    const seen: Array<Readonly<Record<string, unknown>>> = []
+    const h = harness({
+      rowAccess: {
+        keyColumns: ["id"],
+        allows: (value) => {
+          seen.push(value)
+          return value["owner"] === "me"
+        }
+      }
+    })
+    const old_value = { id: "x", owner: "them", text: "OLD_SENTINEL" }
+    h.fault({
+      _tag: "answer",
+      headers: cursor,
+      body: JSON.stringify([
+        {
+          key: "k1",
+          headers: { operation: "delete" },
+          value: { id: "a", owner: "them", text: "OLD_SENTINEL" },
+          old_value
+        },
+        // The row moved from another owner to this one: its earlier values were never this person's to read.
+        { key: "k2", headers: { operation: "update" }, value: { id: "b", owner: "me", text: "new" }, old_value },
+        { key: "k3", headers: { operation: "insert" }, value: { id: "c", owner: "me" }, old_value },
+        { key: "k4", headers: { operation: "update" }, value: { id: "d", owner: "them" }, old_value },
+        { key: "k5", headers: { operation: "delete" }, old_value },
+        { headers: { control: "up-to-date" }, old_value }
+      ])
+    })
+    const response = await h.request("")
+    expect(response.status).toBe(200)
+    const body = await response.text()
+    expect(JSON.parse(body)).toEqual([
+      { key: "k1", headers: { operation: "delete" }, value: { id: "a" } },
+      { key: "k2", headers: { operation: "update" }, value: { id: "b", owner: "me", text: "new" } },
+      { key: "k3", headers: { operation: "insert" }, value: { id: "c", owner: "me" } },
+      { key: "k5", headers: { operation: "delete" } },
+      { headers: { control: "up-to-date" } }
+    ])
+    expect(body).not.toContain("old_value")
+    expect(body).not.toContain("OLD_SENTINEL")
+    // The guard judges current values only.
+    expect(seen.map((value) => value["id"])).toEqual(["b", "c", "d"])
+    expect(response.headers.get("electric-offset")).toBe("0_1")
+  })
+
+  test.each(["http://[", "//[::1", "http://app.test:port/api/shape?offset=-1"])(
+    "a request target that is no URL (%s) is a recorded 400, not a defect, and never reaches Electric",
+    async (target) => {
+      for (const options of [{}, { cache: "public" as const }]) {
+        const h = harness(options)
+        const response = await h.target(target)
+        expect(response.status).toBe(400)
+        expect(response.headers["cache-control"]).toBe("private, no-store")
+        expect(response.headers["x-request-id"]).toBe(h.span().spanId)
+        expect(response.body._tag).toBe("Empty")
+        expect(h.upstream).toHaveLength(0)
+        expect(h.logs).toHaveLength(1)
+        expect(h.line()).toMatchObject({ level: "Warn", annotations: { status: 400, upstream: "proxy", bytes: 0 } })
+        expect(h.count(ShapeProxy.defaultMetric, { status: "400", live: "false" })).toBe(1)
+      }
+    }
+  )
+
+  test.each(["answered", "down"] as const)(
+    "the predicate and its values reach Electric and no span, error or log: Electric %s",
+    async (outcome) => {
+      const where = "\"owner\" = $1 and \"note\" <> 'WHERE_SENTINEL'"
+      const h = harness({ shape: { table: "items", where, params: { "1": "PARAM_SENTINEL" } } })
+      h.fault(outcome === "down" ? { _tag: "down" } : { _tag: "answer", headers: {} })
+      const response = await h.request("?offset=-1")
+      expect(response.status).toBe(outcome === "down" ? 502 : 200)
+      await response.text()
+      await until(() => expect(h.logs).toHaveLength(1))
+      expect(h.upstream).toHaveLength(1)
+      expect(h.upstream[0]!.searchParams.get("where")).toBe(where)
+      expect(h.upstream[0]!.searchParams.get("params[1]")).toBe("PARAM_SENTINEL")
+      const client = h.spans.find(({ kind }) => kind === "client")!
+      expect(client.attributes.get("url.full")).toContain("where=REDACTED")
+      expect(client.attributes.get("url.query")).toContain("params%5B1%5D=REDACTED")
+      // Everything a tracer or logger could export: attributes, events, and a failed call's error with its request.
+      const telemetry = inspect([h.spans, h.logs], { depth: 12, breakLength: Infinity }) +
+        JSON.stringify(
+          h.spans.map((span) => [[...span.attributes], span.events, span.status]),
+          (_, value: unknown) => typeof value === "bigint" ? String(value) : value
+        ) +
+        JSON.stringify(h.logs)
+      expect(client.status._tag).toBe("Ended")
+      expect(telemetry).toContain("REDACTED")
+      expect(telemetry).not.toContain("WHERE_SENTINEL")
+      expect(telemetry).not.toContain("PARAM_SENTINEL")
+    }
+  )
 })
 
 describe("config", () => {

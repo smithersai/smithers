@@ -216,7 +216,9 @@ const securityReview = Smithers.SecurityReview({
         "src/calendar/Calendar.tsx",
         "src/approvals/ApprovalCard.tsx",
         "src/artifacts/PackageInfo.tsx",
-        "src/vault/wikilinks.ts"
+        "src/vault/wikilinks.ts",
+        "src/generated-chip.tsx",
+        "src/file-tabs.tsx"
       ]
     },
     {

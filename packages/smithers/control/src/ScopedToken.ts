@@ -270,7 +270,15 @@ const namedRun = (payload: unknown): unknown =>
     field(honoredFilters(payload), "runId")
 
 /** The flow a payload names. */
-const namedFlow = (payload: unknown): unknown => field(payload, "flowId") ?? field(honoredFilters(payload), "flowId")
+const namedFlow = (call: Call): unknown => {
+  const payload = call.payload
+  if (call.rpc === "Projection.Snapshot" || call.rpc === "Projection.Subscribe") {
+    const selector = field(payload, "selector")
+    const tag = field(selector, "_tag")
+    return tag === "workspace-runs" || tag === "flow-durations" ? field(selector, "flowId") : undefined
+  }
+  return field(payload, "flowId") ?? field(honoredFilters(payload), "flowId")
+}
 
 /** The plan a payload names: a `Run` of a plan card, or a plan approval target. */
 const namedPlan = (payload: unknown): unknown => field(payload, "planId") ?? field(field(payload, "target"), "planId")
@@ -293,7 +301,7 @@ const permits = (claims: Claims, call: Call): boolean =>
  * @since 1.0.0
  */
 export const authorizes = (claims: Claims, call: Call): boolean =>
-  permits(claims, call) && (claims.flowId === undefined || namedFlow(call.payload) === claims.flowId)
+  permits(claims, call) && (claims.flowId === undefined || namedFlow(call) === claims.flowId)
 
 /**
  * The host's answer to which flow a run or a plan belongs to.
@@ -314,7 +322,7 @@ export interface FlowLookup {
  * its run, or failing that its plan, to.
  */
 const actedFlow = (call: Call, flows: FlowLookup): Effect.Effect<unknown> => {
-  const named = namedFlow(call.payload)
+  const named = namedFlow(call)
   if (named !== undefined) return Effect.succeed(named)
   const run = namedRun(call.payload)
   if (typeof run === "string") return flows.ofRun(run)
@@ -373,16 +381,11 @@ export const authenticator = (options: AuthenticatorOptions): Authenticator => (
     if (credential === undefined || !isScopedToken(credential)) return refused("A valid scoped token is required")
     return Effect.gen(function*() {
       const now = options.now === undefined ? yield* Clock.currentTimeMillis : options.now()
-      return yield* verify(options.key, credential, now).pipe(
-        Effect.flatMap((claims) =>
-          call === undefined ? Effect.void : admits(claims, call, options.flows).pipe(
-            Effect.flatMap((admitted) =>
-              admitted ? Effect.void : refused(`The scoped token does not authorize ${call.rpc}`)
-            )
-          )
-        ),
-        Effect.as({ ...options.principal, stampedAt: now })
-      )
+      const claims = yield* verify(options.key, credential, now)
+      if (call !== undefined && !(yield* admits(claims, call, options.flows))) {
+        return yield* refused(`The scoped token does not authorize ${call.rpc}`)
+      }
+      return { ...options.principal, stampedAt: now, expiresAt: claims.exp }
     })
   }
 })

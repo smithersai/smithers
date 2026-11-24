@@ -289,7 +289,11 @@ export const stack = (implementation: (path: string) => Effect.Effect<string>) =
           executor.pipe(
             Layer.provideMerge(
               Layer.mergeAll(
-                SqlControlRuntime.layer({ flows: [durableFlow] }).pipe(Layer.orDie),
+                SqlControlRuntime.layer({
+                  // This fixture runs commands as the explicitly configured local operator.
+                  principal: { id: "local", kind: "operator" },
+                  flows: [durableFlow]
+                }).pipe(Layer.orDie),
                 NotificationQueue.layer,
                 Registry.layerNoop(),
                 Drives.layer

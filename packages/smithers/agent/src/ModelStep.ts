@@ -32,6 +32,15 @@
  *   effort, so a model that thinks longer gets longer.
  * - **Streaming.** `onEvent` receives each provider event while the call runs.
  *   A replay hands it the recorded events, without calling the provider.
+ * - **Budget.** When the flow has a `Budget` in context, the step spends from
+ *   it as the agent loop's model calls do: each fresh attempt reserves its
+ *   forecast before the provider is called, and a refusal fails the step with
+ *   a `model_failed` `HarnessError` whose cause is the budget's failure,
+ *   without a retry. What the provider reports is recorded under the step's
+ *   key, and an attempt that left no sealed answer records what it paid under
+ *   a receipt of its own. A replay reserves nothing and is charged once. A
+ *   `park` ceiling refuses here as `fail` does: no approval host parks this
+ *   step. Without a `Budget` in context the step accounts nothing.
  *
  * Delivery is at least once. A process that dies, or a fiber cut off, after
  * the provider accepted a call but before the step sealed its answer leaves
@@ -43,12 +52,16 @@
  */
 
 import { type FlowRuntime, RetryPolicy } from "@smthrs/flow"
-import { CellTurn } from "@smthrs/harness"
-import { type Model, ModelError, type ModelEvent, type ModelRequest } from "@smthrs/model"
+import { CellTurn, HarnessError } from "@smthrs/harness"
+import { type Model, ModelError, ModelEvent, type ModelRequest } from "@smthrs/model"
+import * as Cause from "effect/Cause"
 import type * as EffectDigest from "effect/crypto/Digest"
-import type * as SecureRandom from "effect/crypto/SecureRandom"
+import * as SecureRandom from "effect/crypto/SecureRandom"
 import * as Effect from "effect/Effect"
+import * as Option from "effect/Option"
+import * as Scope from "effect/Scope"
 import * as Stream from "effect/Stream"
+import * as Budget from "./Budget.ts"
 import type { RouteResolver } from "./FlowEngineLike.ts"
 import * as Internal from "./internal/ModelStep.ts"
 
@@ -201,6 +214,74 @@ export const heartbeatTimeoutMsFor = (effort: ModelRequest.ReasoningEffort | und
  */
 export const callTimeoutMsFor: (effort: ModelRequest.ReasoningEffort | undefined) => number = CellTurn.modelCallMsFor
 
+/** A budget that cannot account the run cannot say what the step may spend. */
+const accountingFailed = (cause: Budget.AccountingUnavailable): HarnessError.HarnessError =>
+  Internal.engineFailed(cause.message, cause)
+
+/**
+ * The budget hooks of one step: admission of each fresh attempt, the charge of
+ * an attempt that seals nothing, and the charge of the sealed answer.
+ */
+const spending = (
+  budget: Budget.Service,
+  key: string,
+  options: Options,
+  reservation: Scope.Scope,
+  random: SecureRandom.SecureRandom["Service"]
+) => {
+  // The engine stores an action's failure encoded, which would flatten the
+  // budget's typed failure in `cause`. The caller is handed the live one.
+  let refusal: HarnessError.HarnessError | undefined
+  const policy = options.retryPolicy ?? defaultRetryPolicy
+  return {
+    refused: <E>(error: E): E | HarnessError.HarnessError => refusal ?? error,
+    // Inside the step only these hooks fail with a `HarnessError`, and no
+    // retry changes a budget's answer: another attempt would ask the provider
+    // again against an allowance nothing is holding.
+    retryPolicy: {
+      ...policy,
+      nonRetryable: [...(policy.nonRetryable ?? []), "/harness/HarnessError"]
+    } satisfies RetryPolicy.RetryPolicy,
+    admit: budget.reserve(key).pipe(
+      Effect.provideService(Scope.Scope, reservation),
+      Effect.mapError(accountingFailed),
+      Effect.flatMap((verdict) =>
+        verdict._tag === "refuse"
+          ? Effect.fail(
+            new HarnessError.HarnessError({
+              code: "model_failed",
+              message: verdict.failure.message,
+              cause: verdict.failure
+            })
+          )
+          : Effect.void
+      ),
+      Effect.tapError((error) =>
+        Effect.sync(() => {
+          refusal = error
+        })
+      )
+    ),
+    // A receipt per attempt, as the agent loop's steps take: an attempt that
+    // sealed nothing is fresh provider work, and charging it under the step's
+    // key would mark every later attempt paid.
+    unsealedUsage: random.uuidV4().pipe(
+      Effect.catchCause((cause) =>
+        Effect.fail(Internal.engineFailed("Could not allocate a model usage receipt", Cause.squash(cause)))
+      ),
+      Effect.map((receipt) => (usage: ModelEvent.Usage, quality?: { readonly unreported?: true }) =>
+        budget.record(`unsealed-model/${key}/${receipt}`, usage, options.request.modelId, quality).pipe(
+          Effect.mapError(accountingFailed)
+        )
+      )
+    ),
+    sealed: (events: ReadonlyArray<ModelEvent.ModelEvent>) =>
+      budget.record(key, ModelEvent.ModelEvent.settledMessage(events).usage, options.request.modelId).pipe(
+        Effect.mapError(accountingFailed)
+      )
+  }
+}
+
 /**
  * Calls a model as one durable, sealed step of the running flow.
  *
@@ -236,23 +317,33 @@ export const run = (
     const key = yield* Internal.key(Internal.material(options.request), prepared)
     const effort = options.request.params.reasoningEffort
     const heartbeatTimeoutMs = options.heartbeatTimeoutMs ?? heartbeatTimeoutMsFor(effort)
+    // A fresh attempt's reservation is held until the sealed answer is charged.
+    const budget = yield* Effect.serviceOption(Budget.Budget)
+    const spend = Option.isNone(budget)
+      ? undefined
+      : spending(budget.value, key, options, yield* Effect.scope, yield* SecureRandom.SecureRandom)
     const { recorded, replayed } = yield* Internal.dispatch({
       name: options.name,
       key,
       request: options.request,
       model: options.model,
-      retryPolicy: options.retryPolicy ?? defaultRetryPolicy,
+      retryPolicy: spend?.retryPolicy ?? options.retryPolicy ?? defaultRetryPolicy,
       heartbeatTimeoutMs: heartbeatTimeoutMs === 0 ? undefined : heartbeatTimeoutMs,
       callTimeoutMs: options.callTimeoutMs ?? callTimeoutMsFor(effort),
       // No quota controller parks this step, so a refusal no wait clears is its answer.
       sealTerminal: true,
-      onEvent: options.onEvent
-    })
+      onEvent: options.onEvent,
+      admit: spend?.admit,
+      unsealedUsage: spend?.unsealedUsage
+    }).pipe(Effect.mapError((error) => spend?.refused(error) ?? error))
+    // Charged after the step settles, live or replayed: the ledger is keyed by
+    // the step, so it holds the answer once.
+    if (spend !== undefined) yield* spend.sealed(recorded.events)
     if (replayed && options.onEvent !== undefined) {
       yield* Effect.forEach(recorded.events, options.onEvent, { discard: true })
     }
     return { events: recorded.events, ...(recorded.error === undefined ? {} : { error: recorded.error }), replayed }
-  })
+  }).pipe(Effect.scoped)
 
 /**
  * The services a model step runs on: the engine, the running execution and

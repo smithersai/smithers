@@ -660,13 +660,13 @@ describe("Registry", () => {
     })
   })
 
-  it("fails construction when either colliding source is system", async () => {
+  it("fails construction when a system source arrives after a source that already claimed its name", async () => {
     const error = await Effect.runPromise(
       Effect.gen(function*() {
         const registry = yield* Registry.Registry
         return yield* registry.list()
       }).pipe(
-        Effect.provide(Registry.layer({ sources: [{ ...project, system: true }, foreign] })),
+        Effect.provide(Registry.layer({ sources: [foreign, { ...project, system: true }] })),
         Effect.provide(Discovery.layer),
         Effect.provide(platformLayer),
         Effect.flip
@@ -676,14 +676,45 @@ describe("Registry", () => {
     expect(error.code).toBe("system_collision")
   })
 
-  it("fails construction when a pack redefines a system flow name", async () => {
-    const discovery = Discovery.makeNoop({
-      scan: () => Effect.succeed(new SourceScan({ entries: [descriptor("review")], warnings: [] }))
-    })
-    const error = await Effect.runPromise(
+  // R1-Fable-D2-061: a later source that names a flow like a system flow loses
+  // that flow; it must not deny the whole catalog.
+  it("drops a later source's flow that collides with a system flow and keeps the rest", async () => {
+    const [entries, warnings] = await Effect.runPromise(
       Effect.gen(function*() {
-        yield* Registry.Registry
+        const registry = yield* Registry.Registry
+        return [yield* registry.list(), yield* registry.warnings()] as const
       }).pipe(
+        Effect.provide(Registry.layer({ sources: [{ ...project, system: true }, foreign] })),
+        Effect.provide(Discovery.layer),
+        Effect.provide(platformLayer)
+      )
+    )
+
+    const collisions = warnings.filter((warning) => warning.message.includes("belongs to the system namespace"))
+    expect(collisions.length).toBeGreaterThan(0)
+    for (const collision of collisions) {
+      expect(collision.code).toBe("duplicate_name")
+      expect(collision.path.startsWith(foreignRoot)).toBe(true)
+      // The system flow is the one listed.
+      const kept = entries.find((entry) => entry.name === collision.name)
+      expect(kept?.path.startsWith(projectRoot)).toBe(true)
+    }
+    // The foreign source's other flows are still listed.
+    expect(entries.some((entry) => entry.path.startsWith(foreignRoot))).toBe(true)
+  })
+
+  it("drops a pack flow that redefines a system flow name and lists the pack's other flows", async () => {
+    const systemPlan = descriptor("plan", { path: join(fixtures, "system", "plan.md") })
+    const packPlan = descriptor("plan", { path: join(fixtures, "pack", "plan.md") })
+    const packOther = descriptor("other", { path: join(fixtures, "pack", "other.md") })
+    const discovery = Discovery.makeNoop({
+      scan: (source) =>
+        Effect.succeed(
+          new SourceScan({ entries: source.system === true ? [systemPlan] : [packPlan, packOther], warnings: [] })
+        )
+    })
+    const pipeline = <A, E>(effect: Effect.Effect<A, E, Registry.Registry>) =>
+      effect.pipe(
         Effect.provide(Registry.layer({
           sources: [{ ...project, system: true }],
           packs: {
@@ -698,12 +729,27 @@ describe("Registry", () => {
           }
         })),
         Effect.provide(Layer.succeed(Discovery.Discovery)(discovery)),
-        Effect.provide(platformLayer),
-        Effect.flip
+        Effect.provide(platformLayer)
       )
-    )
+    const [entries, warnings] = await Effect.runPromise(pipeline(Effect.gen(function*() {
+      const registry = yield* Registry.Registry
+      // A refresh takes the same fold, so it must not fail either.
+      yield* registry.refresh()
+      return [yield* registry.list(), yield* registry.warnings()] as const
+    })))
 
-    expect(error.code).toBe("system_collision")
+    expect(entries.map((entry) => [entry.name, entry.path])).toEqual([
+      ["plan", systemPlan.path],
+      ["other", packOther.path]
+    ])
+    expect(warnings).toEqual([
+      expect.objectContaining({
+        code: "duplicate_name",
+        name: "plan",
+        path: packPlan.path,
+        message: `Flow name "plan" belongs to the system namespace; keeping the system flow from "${systemPlan.path}"`
+      })
+    ])
   })
 
   it("defers body reads until loadBody and returns a typed read failure", async () => {
@@ -1176,7 +1222,9 @@ describe("project source lifecycle", () => {
       root: join("/repo", ".smithers", "flows"),
       naming: "path",
       optionalRoot: true,
+      confinementRoot: "/repo",
       lockfileRoot: "/repo",
+      undeclaredCapabilities: "all",
       retiredRoot: join("/repo", "flows")
     })
   })

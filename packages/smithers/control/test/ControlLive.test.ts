@@ -203,9 +203,9 @@ describe("ControlLive", () => {
     )
   })
 
-  it.each([false, true])(
-    "hands a resume to the live host that parked the run (allowCodeDrift=%s)",
-    async (allowCodeDrift) => {
+  it.each([[false, "operator"], [true, "operator"], [false, "monitor"]] as const)(
+    "hands a resume to the live host that parked the run (allowCodeDrift=%s, principal=%s)",
+    async (allowCodeDrift, kind) => {
       const runId = "parked-live-host"
       const host = { hostId: "mac", pid: 101 }
       const refusal = new ClaimLost({ runId, reason: "The host that parked this run is still alive", parkedBy: host })
@@ -226,7 +226,13 @@ describe("ControlLive", () => {
       await Effect.runPromise(
         Effect.gen(function*() {
           const control = yield* Control
-          const input = { runId, idempotencyKey: "resume-live-host", allowCodeDrift, reason: "lease lapsed" }
+          const input = {
+            principal: { id: "actor", kind, stampedAt: 0 },
+            runId,
+            idempotencyKey: "resume-live-host",
+            allowCodeDrift,
+            reason: "lease lapsed"
+          }
           expect(yield* control.resume(input)).toEqual({
             _tag: "Accepted",
             receiptId: "resume-live-host",
@@ -240,7 +246,7 @@ describe("ControlLive", () => {
           expect(resumes).toHaveLength(1)
           expect(resumes[0]!.payload).toMatchObject({ runId, status: "parked", handedTo: host, reason: "lease lapsed" })
           // The delegation carries the journaled resume as the operator's consent.
-          expect(delegations).toEqual([{ runId, consent: resumes[0]!.seq }])
+          expect(delegations).toEqual([{ runId, consent: kind === "monitor" ? undefined : resumes[0]!.seq }])
           // Replaying the key answers the recorded receipt and delegates nothing new.
           expect((yield* control.resume(input))._tag).toBe("AlreadyApplied")
           expect(delegations).toHaveLength(1)

@@ -175,8 +175,8 @@ above are empty there.
 A `steer` whose `message.runId` disagrees with the run the call names is
 refused with `InvalidInput` before anything is admitted to the queue.
 
-Approval and denial default to the exact identity `local/operator`, for both
-plan and node targets and all grant scopes. The memory adapter's own default
+The default approval policy delegates the exact identity `local/operator`, for both
+plan and node targets and all grant scopes. A trusted local composition supplies that principal explicitly. An unnamed SQL caller is anonymous. The memory adapter's own default
 also delegates its `memory/test` identity. Authentication
 and approval authority are independent: a custom operator identity has no
 authority until the host explicitly delegates it. Hosts may delegate exact
@@ -195,6 +195,8 @@ Catch-up uses the library catalog's `@smthrs/journal` entry, bounded journal pag
 and the existing snapshot cursors. Recovered entries increment
 `smithers.control.watch.recovered_entries`, emit a debug log, and carry a
 `Control.watch.recover` span. Compaction before a read still requires resync.
+
+Refused approvals go to the `audit:approval` partition. Unknown targets share a redacted identity. Scoped credentials expire during followed watches and subscriptions. Released parks keep steering messages queued until an explicit resume. Each new run records a pending executor handoff at admission and consumes it before the executor is called. Replaying a key after handoff returns its receipt. Pre-migration runs with an uncertain handoff require explicit recovery.
 
 A cancellation returning `Conflict` performs no executor settlement or terminal
 reconciliation. Signal rejection outcomes persist with their command: replay of

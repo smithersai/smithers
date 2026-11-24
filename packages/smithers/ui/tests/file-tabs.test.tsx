@@ -84,6 +84,14 @@ describe("FileTabs", () => {
     expect(container!.innerHTML).toBe("");
   });
 
+  test("a tab whose href could run script has no href, and a plain click still opens it in the app", async () => {
+    const opened: string[] = [];
+    await render(<FileTabs tabs={[{ ...tab("x.ts"), href: "java\tscript:alert(1)" }, tab("y.ts")]} onOpen={(t) => opened.push(t.key)} onClose={() => {}} />);
+    expect(tabs().map((el) => el.getAttribute("href"))).toEqual([null, "/maya/tinyhttp/blob/main/y.ts"]);
+    await act(async () => void tabs()[0]!.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, button: 0 })));
+    expect(opened).toEqual(["x.ts"]);
+  });
+
   test("a plain click opens in the app; a modified or secondary click is the browser's; × closes", async () => {
     const seen: Array<string> = [];
     await render(

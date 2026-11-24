@@ -42,16 +42,20 @@ handlers apply:
 These are exported constants, so a host can read them and a caller can raise or
 lower what it passes:
 
-| Constant                                 | Value      | Applies to                                                  |
-| ---------------------------------------- | ---------- | ----------------------------------------------------------- |
-| `Bash.DEFAULT_TIMEOUT_MS`                | 600,000    | one `bash` call with no `timeoutMs`                         |
-| `TestRun.DEFAULT_TIMEOUT_MS`             | 600,000    | one `test` call with no `timeoutMs`                         |
-| `TestRun.MAX_CAPTURE_BYTES`              | 8,000,000  | runner output one `test` call holds in memory               |
-| `ShellCommand.DEFAULT_TIMEOUT_MS`        | 10,000     | one `shell_command` call with no `timeout_ms`               |
-| `ShellCommand.MAX_CAPTURE_BYTES`         | 8,000,000  | command output one `shell_command` call holds in memory     |
-| `ShellCommand.DEFAULT_MAX_OUTPUT_TOKENS` | 10,000     | the Codex token budget the output is shaped to              |
-| `ShellCommand.TIMEOUT_EXIT_CODE`         | 124        | the exit code a timed-out `shell_command` reports           |
-| `NativeSearch.MAX_CAPTURE_BYTES`         | 67,108,864 | one `rg` invocation's captured output, refused past the cap |
+| Constant                                 | Value      | Applies to                                                   |
+| ---------------------------------------- | ---------- | ------------------------------------------------------------ |
+| `Bash.DEFAULT_TIMEOUT_MS`                | 600,000    | one `bash` call with no `timeoutMs`                          |
+| `TestRun.DEFAULT_TIMEOUT_MS`             | 600,000    | one `test` call with no `timeoutMs`                          |
+| `TestRun.MAX_CAPTURE_BYTES`              | 8,000,000  | runner output one `test` call holds in memory                |
+| `ShellCommand.DEFAULT_TIMEOUT_MS`        | 10,000     | one `shell_command` call with no `timeout_ms`                |
+| `ShellCommand.MAX_CAPTURE_BYTES`         | 8,000,000  | command output one `shell_command` call holds in memory      |
+| `ShellCommand.DEFAULT_MAX_OUTPUT_TOKENS` | 10,000     | the Codex token budget the output is shaped to               |
+| `ShellCommand.TIMEOUT_EXIT_CODE`         | 124        | the exit code a timed-out `shell_command` reports            |
+| `NativeSearch.MAX_CAPTURE_BYTES`         | 67,108,864 | one `rg` invocation's captured output, refused past the cap  |
+| `NativeSearch.TIMEOUT_MS`                | 600,000    | one `rg` process, failed with `timeout` past it              |
+| `RemoteSearch.TIMEOUT_MS`                | 600,000    | one round trip to the machine, failed with `timeout` past it |
+| `PortableSearch.MAX_LINE_UNITS`          | 8,388,608  | one line held while scanning; the file is skipped past it    |
+| `PortableSearch.MAX_SYMBOL_SOURCE_BYTES` | 67,108,864 | a file loaded whole to name symbols; none are named past it  |
 
 The language-server client's frame, queue and request bounds belong to
 `NodeLanguageServer` in [`@smthrs/platform-node`](/api/platform-node).

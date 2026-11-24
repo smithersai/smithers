@@ -282,6 +282,9 @@ describe("GitHub device sign-in, for a CLI or MCP server acting as a person's ag
       const authorized = try auth.deviceToken(signIn.deviceCode)
       answer = { access_token: "ghu_second", token_type: "bearer" }
       const timeless = try auth.deviceToken(signIn.deviceCode)
+      // Fable D2-087: the device grant of an App with expiring tokens carries the refresh token a CLI needs past eight hours.
+      answer = { access_token: "ghu_third", token_type: "bearer", expires_in: 28800, refresh_token: "ghr_device", refresh_token_expires_in: 15897600 }
+      const renewable = try auth.deviceToken(signIn.deviceCode)
       try Effect.try(() => {
         expect(Redacted.value(signIn.deviceCode)).toBe("device-private")
         expect(signIn.userCode).toBe("ABCD-EFGH")
@@ -297,6 +300,11 @@ describe("GitHub device sign-in, for a CLI or MCP server acting as a person's ag
         }
         expect(timeless.status).toBe("authorized")
         if (timeless.status === "authorized") expect(timeless.tokens.expiresAt).toBeNull()
+        expect(renewable.status).toBe("authorized")
+        if (renewable.status === "authorized") {
+          expect(renewable.tokens.refreshToken === null ? null : Redacted.value(renewable.tokens.refreshToken)).toBe("ghr_device")
+          expect(JSON.stringify(renewable)).not.toContain("ghr_device")
+        }
         const [start, ...polls] = fixture.requests
         const startForm = new URLSearchParams(start!.body)
         expect([start!.method, start!.url]).toEqual(["POST", "/login/device/code"])
@@ -310,7 +318,7 @@ describe("GitHub device sign-in, for a CLI or MCP server acting as a person's ag
           expect(form.get("client_id")).toBe("Iv1.example")
           expect(form.get("client_secret")).toBeNull()
         }
-        expect(polls.length).toBe(4)
+        expect(polls.length).toBe(5)
       })
     }
     try promise(() => fixture.close())

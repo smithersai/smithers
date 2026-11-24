@@ -197,8 +197,23 @@ export const render = (options: RenderOptions): Request => {
   return { system, prompt }
 }
 
-/** The first balanced, string-aware `{...}` span starting at `from`. */
-const span = (text: string, from: number): string | undefined => {
+/**
+ * The most characters {@link objects} scans over one reply.
+ *
+ * Each `{` that opens no JSON object costs a scan to its closing brace, or to
+ * the end of the reply when there is none, so the scan is quadratic in the
+ * number of such braces: 50,000 of them cost about 1.25e9 steps. An honest
+ * reply holds a handful. A reply that spends the budget is refused whole,
+ * never read in part: a partial read could return a forged verdict and miss
+ * the judge's own object after it.
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const maxParseScan = 1 << 24
+
+/** The end (exclusive) of the first balanced, string-aware `{...}` span starting at `from`, else the reply's length. */
+const spanEnd = (text: string, from: number): number => {
   let depth = 0
   let quoted = false
   for (let at = from; at < text.length; at++) {
@@ -208,9 +223,9 @@ const span = (text: string, from: number): string | undefined => {
       else if (char === "\"") quoted = false
     } else if (char === "\"") quoted = true
     else if (char === "{") depth++
-    else if (char === "}" && --depth === 0) return text.slice(from, at + 1)
+    else if (char === "}" && --depth === 0) return at + 1
   }
-  return undefined
+  return text.length
 }
 
 /** A parsed top-level object and the `[start, end)` span it was read from. */
@@ -223,18 +238,22 @@ interface Found {
 /**
  * Every top-level JSON object in `text`, left to right. A parsed object's span
  * is skipped, so an object quoted inside another (or inside its strings) is not
- * a separate candidate.
+ * a separate candidate. Undefined when the scan exceeds {@link maxParseScan}.
  */
-const objects = (text: string): ReadonlyArray<Found> => {
+const objects = (text: string): ReadonlyArray<Found> | undefined => {
   const found: Array<Found> = []
+  let scanned = 0
   for (let at = text.indexOf("{"); at !== -1;) {
-    const candidate = span(text, at)
+    const end = spanEnd(text, at)
+    scanned += end - at
+    if (scanned > maxParseScan) return undefined
     let next = at + 1
     try {
-      const value: unknown = JSON.parse(candidate ?? "")
+      // An unbalanced span runs to the end of the reply and does not parse.
+      const value: unknown = JSON.parse(text.slice(at, end))
       if (typeof value === "object" && value !== null && !Array.isArray(value)) {
-        next = at + candidate!.length
-        found.push({ value: value as Record<string, unknown>, start: at, end: next })
+        next = end
+        found.push({ value: value as Record<string, unknown>, start: at, end })
       }
     } catch {
       // Not JSON; try the next opening brace.
@@ -262,13 +281,15 @@ const scoresKey = /"scores"\s*:/g
  * read when the judge's own object is invalid or cut off. Every criterion id
  * needs an integer score from 1 to 5; extra keys are ignored and a missing
  * `reason` reads as empty. Scores are read from own keys only, so a criterion
- * id such as `__proto__` or `toString` is scored like any other.
+ * id such as `__proto__` or `toString` is scored like any other. A reply whose
+ * braces cost more than {@link maxParseScan} characters to scan is refused.
  *
  * @category parsing
  * @since 0.1.0
  */
 export const parse = (text: string, criteria: ReadonlyArray<Criterion>): Result.Result<Judgement, string> => {
   const found = objects(text)
+  if (found === undefined) return Result.fail("too many unmatched braces to parse")
   if (found.length === 0) return Result.fail("no JSON object found")
   const scored = found.filter((object) => "scores" in object.value)
   if (scored.length > 1) return Result.fail("more than one JSON object with \"scores\"")

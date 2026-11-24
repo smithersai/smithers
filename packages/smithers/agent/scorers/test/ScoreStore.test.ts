@@ -981,7 +981,7 @@ describe("ScoreStore", () => {
     // the bound grows past it. The store truncates instead of refusing: the
     // alternative loses exactly the diagnostic that carried the credential.
     it("keeps a reason the scrub lengthens inside the byte bound", async () => {
-      const short = "Bearer abcd"
+      const short = "Bearer ab12"
       const reason = `${short} ${"x".repeat(ScoreStore.maxReasonBytes - short.length - 1)}`
       expect(Buffer.byteLength(reason, "utf8")).toBe(ScoreStore.maxReasonBytes)
       const output = await run(Effect.gen(function*() {
@@ -991,7 +991,7 @@ describe("ScoreStore", () => {
       }))
       const stored = output[0]?.kind === "score" ? output[0].reason ?? "" : ""
       expect(stored.startsWith("Bearer [REDACTED_TOKEN] ")).toBe(true)
-      expect(stored).not.toContain("abcd")
+      expect(stored).not.toContain("ab12")
       expect(Buffer.byteLength(stored, "utf8")).toBe(ScoreStore.maxReasonBytes)
     })
 
@@ -999,7 +999,7 @@ describe("ScoreStore", () => {
     // measured on the stored text and a payload the scrub grows past it is
     // refused rather than stored oversized or silently emptied.
     it("refuses metadata the scrub grows past the byte bound", async () => {
-      const short = "Bearer abcd"
+      const short = "Bearer ab12"
       const meta = Object.fromEntries(Array.from({ length: 2_400 }, (_value, index) => [`k${index}`, short]))
       expect(Buffer.byteLength(JSON.stringify(meta), "utf8")).toBeLessThan(ScoreStore.maxMetadataBytes)
       const failure = await failed(Effect.gen(function*() {

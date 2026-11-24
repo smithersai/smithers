@@ -10,7 +10,7 @@
  * @since 1.1.0
  */
 
-import { Pack } from "@smthrs/registry"
+import * as Pack from "@smthrs/registry/Pack"
 import * as Effect from "effect/Effect"
 import * as Option from "effect/Option"
 import * as EffectPath from "effect/Path"
@@ -29,6 +29,7 @@ import {
   type Tier,
   type View
 } from "./Contribution.ts"
+import * as Instrument from "./internal/Instrument.ts"
 import * as Path from "./internal/path.ts"
 import * as Patterns from "./internal/patterns.ts"
 import * as JsonSchema from "./JsonSchema.ts"
@@ -134,6 +135,16 @@ export interface Loaded {
  */
 export const maximumHeaderEntries = 6
 
+/**
+ * The most candidates one `load` considers. Past it, candidates are kept by
+ * tier (`built-in`, `repository`, `personal`) and then input order; the rest
+ * refuse `invalid` before their manifests are decoded.
+ *
+ * @category limits
+ * @since 1.1.0
+ */
+export const maximumCandidates = 1_024
+
 const digits = [0, 1, 2, 3, 4, 5, 6, 7, 8]
 const folded: ReadonlySet<Point> = new Set(loadablePoints)
 const otherPoints = ["cards", "settings", "triggers", "hooks", "taps", "modelRoles", "records"] as const
@@ -232,27 +243,123 @@ const withoutConflicts = (
   return plugins.filter((plugin) => !rejected.has(plugin))
 }
 
-/** Dependency order, ties by tier then id, and the plugins in or behind a cycle. */
+const precedes = (left: Decoded, right: Decoded): boolean =>
+  (byTier(left, right) || (left.manifest.id < right.manifest.id ? -1 : 1)) < 0
+
+/** Adds to a binary heap whose top is the plugin `precedes` puts first. */
+const push = (heap: Array<Decoded>, plugin: Decoded): void => {
+  let index = heap.length
+  heap.push(plugin)
+  while (index > 0) {
+    const parent = (index - 1) >> 1
+    if (!precedes(plugin, heap[parent]!)) break
+    heap[index] = heap[parent]!
+    index = parent
+  }
+  heap[index] = plugin
+}
+
+/** Removes the top of a non-empty heap. */
+const pop = (heap: Array<Decoded>): Decoded => {
+  const top = heap[0]!
+  const last = heap.pop()!
+  const size = heap.length
+  let index = 0
+  for (;;) {
+    let child = 2 * index + 1
+    if (child >= size) break
+    if (child + 1 < size && precedes(heap[child + 1]!, heap[child]!)) child += 1
+    if (!precedes(heap[child]!, last)) break
+    heap[index] = heap[child]!
+    index = child
+  }
+  if (size > 0) heap[index] = last
+  return top
+}
+
+/**
+ * The ids on a dependency cycle: every member of a strongly connected
+ * component with more than one plugin, and a plugin requiring itself. Tarjan's
+ * algorithm with its own stack, so a long chain cannot overflow the call stack.
+ */
+const onCycle = (waiting: ReadonlyMap<string, ReadonlySet<string>>): ReadonlySet<string> => {
+  const found = new Map<string, number>()
+  const low = new Map<string, number>()
+  const open: Array<string> = []
+  const opened = new Set<string>()
+  const cyclic = new Set<string>()
+  const frames: Array<{ readonly id: string; readonly deps: Iterator<string> }> = []
+  const visit = (id: string): void => {
+    found.set(id, found.size)
+    low.set(id, found.get(id)!)
+    open.push(id)
+    opened.add(id)
+    frames.push({ id, deps: waiting.get(id)!.values() })
+  }
+  for (const root of waiting.keys()) {
+    if (found.has(root)) continue
+    visit(root)
+    while (frames.length > 0) {
+      const frame = frames[frames.length - 1]!
+      const step = frame.deps.next()
+      if (step.done !== true) {
+        if (!found.has(step.value)) visit(step.value)
+        else if (opened.has(step.value)) low.set(frame.id, Math.min(low.get(frame.id)!, found.get(step.value)!))
+        continue
+      }
+      frames.pop()
+      const parent = frames[frames.length - 1]
+      if (parent !== undefined) low.set(parent.id, Math.min(low.get(parent.id)!, low.get(frame.id)!))
+      if (low.get(frame.id) !== found.get(frame.id)) continue
+      const members: Array<string> = []
+      for (;;) {
+        const member = open.pop()!
+        opened.delete(member)
+        members.push(member)
+        if (member === frame.id) break
+      }
+      if (members.length > 1 || waiting.get(frame.id)!.has(frame.id)) {
+        for (const member of members) cyclic.add(member)
+      }
+    }
+  }
+  return cyclic
+}
+
+/**
+ * Dependency order, ties by tier then id, and the plugins in or behind a cycle.
+ * Kahn's algorithm over a heap of ready plugins: linear in plugins and
+ * requirements but for the heap's logarithm, and never recursive.
+ */
 const order = (plugins: ReadonlyArray<Decoded>) => {
   const byId = new Map(plugins.map((plugin) => [plugin.manifest.id, plugin]))
-  const deps = (plugin: Decoded) => Object.keys(plugin.manifest.requires.plugins ?? {}).filter((id) => byId.has(id))
-  const waiting = new Map(plugins.map((plugin) => [plugin.manifest.id, new Set(deps(plugin))]))
-  const sorted: Array<Decoded> = []
-  for (;;) {
-    const ready = [...waiting].filter(([, pending]) => pending.size === 0).map(([id]) => id).sort((a, b) =>
-      byTier(byId.get(a)!, byId.get(b)!) || (a < b ? -1 : 1)
-    )
-    const next = ready[0]
-    if (next === undefined) break
-    waiting.delete(next)
-    for (const pending of waiting.values()) pending.delete(next)
-    sorted.push(byId.get(next)!)
+  const waiting = new Map<string, Set<string>>()
+  const dependents = new Map<string, Array<string>>()
+  const ready: Array<Decoded> = []
+  for (const plugin of plugins) {
+    const deps = new Set(Object.keys(plugin.manifest.requires.plugins ?? {}).filter((id) => byId.has(id)))
+    waiting.set(plugin.manifest.id, deps)
+    for (const dep of deps) {
+      const group = dependents.get(dep) ?? []
+      group.push(plugin.manifest.id)
+      dependents.set(dep, group)
+    }
+    if (deps.size === 0) push(ready, plugin)
   }
-  const reaches = (from: string, target: string, seen: Set<string>): boolean =>
-    [...waiting.get(from)!].some((dep) =>
-      dep === target || (!seen.has(dep) && (seen.add(dep), reaches(dep, target, seen)))
-    )
-  const left = [...waiting.keys()].sort().map((id) => ({ plugin: byId.get(id)!, cyclic: reaches(id, id, new Set()) }))
+  const sorted: Array<Decoded> = []
+  while (ready.length > 0) {
+    const next = pop(ready)
+    const id = next.manifest.id
+    waiting.delete(id)
+    sorted.push(next)
+    for (const dependent of dependents.get(id) ?? []) {
+      const pending = waiting.get(dependent)!
+      pending.delete(id)
+      if (pending.size === 0) push(ready, byId.get(dependent)!)
+    }
+  }
+  const cyclic = onCycle(waiting)
+  const left = [...waiting.keys()].sort().map((id) => ({ plugin: byId.get(id)!, cyclic: cyclic.has(id) }))
   return { sorted, left }
 }
 
@@ -623,6 +730,15 @@ const bySlot = (left: Slot, right: Slot): number =>
  * `requires.plugins` (ties by tier then id), then check and fold
  * each plugin against the host and the plugins before it.
  *
+ * A candidate refused at decode, at `requires.api` or past the maximum still
+ * holds its id: a plugin of the same or a lower tier sharing it refuses
+ * `conflict`, so a built-in that stops loading never hands its namespace to a
+ * repository or personal plugin. At most
+ * {@link maximumCandidates} candidates are considered.
+ *
+ * Runs in a `Plugins.load` span carrying the candidate, loaded and refused
+ * counts, and counts every outcome on `smithers_plugin_loads`.
+ *
  * @category loading
  * @since 1.1.0
  */
@@ -631,15 +747,44 @@ export const load = (host: HostFacts, candidates: ReadonlyArray<Candidate>): Eff
     const path = yield* EffectPath.Path
     const refused: Array<Refusal> = []
     const decoded: Array<Decoded> = []
-    for (const candidate of candidates) {
+    // The highest tier among the refused candidates that named each id.
+    const held = new Map<string, Tier>()
+    const hold = (id: string | undefined, tier: Tier): void => {
+      if (id === undefined) return
+      const holder = held.get(id)
+      if (holder === undefined || tiers[tier] < tiers[holder]) held.set(id, tier)
+    }
+    const excess = new Set(
+      candidates.length > maximumCandidates
+        ? candidates.map((_, index) => index).sort((left, right) =>
+          tiers[candidates[left]!.tier] - tiers[candidates[right]!.tier] || left - right
+        ).slice(maximumCandidates)
+        : []
+    )
+    for (const [index, candidate] of candidates.entries()) {
+      if (excess.has(index)) {
+        const id = readableId(candidate.manifest)
+        hold(id, candidate.tier)
+        refused.push(
+          new Refusal({
+            ...(id === undefined ? {} : { plugin: id }),
+            reason: "invalid",
+            detail: `one load considers at most ${maximumCandidates} plugins`
+          })
+        )
+        continue
+      }
       const result = yield* Effect.result(Manifest.decode(candidate.manifest))
       if (Result.isFailure(result)) {
-        refused.push(withPlugin(result.failure, readableId(candidate.manifest)))
+        const id = readableId(candidate.manifest)
+        hold(id, candidate.tier)
+        refused.push(withPlugin(result.failure, id))
         continue
       }
       const manifest = result.success
       const verdict = yield* compatible(path, manifest.requires.api, host.api)
       if (verdict !== undefined) {
+        hold(manifest.id, candidate.tier)
         refused.push(refusal(manifest.id, verdict, "requires.api", incompatibility(verdict, "plugin API")))
         continue
       }
@@ -655,7 +800,20 @@ export const load = (host: HostFacts, candidates: ReadonlyArray<Candidate>): Eff
       refused.push(refusal(manifest.id, "invalid", "flows", `an owned flow tag must start with ${manifest.id}/`))
       return false
     })
-    const uniqueIds = withoutConflicts(namespaced, ({ manifest }) => [manifest.id], "id", refused)
+    // A candidate refused at decode, at `requires.api` or past the maximum keeps its id against its own tier and
+    // the tiers below it. One refused for a flow tag outside its namespace does not: it never held the id's flows.
+    const unheld = namespaced.filter(({ candidate, manifest }) => {
+      const holder = held.get(manifest.id)
+      if (holder === undefined || tiers[holder] > tiers[candidate.tier]) return true
+      refused.push(refusal(
+        manifest.id,
+        "conflict",
+        "id",
+        `${candidate.tier} plugin ${manifest.id} shares its id with a refused ${holder} plugin`
+      ))
+      return false
+    })
+    const uniqueIds = withoutConflicts(unheld, ({ manifest }) => [manifest.id], "id", refused)
     const uniqueFlows = withoutConflicts(
       uniqueIds,
       ({ candidate }) => (candidate.flows ?? []).map(({ tag }) => tag),
@@ -725,5 +883,14 @@ export const load = (host: HostFacts, candidates: ReadonlyArray<Candidate>): Eff
         return a < b ? -1 : a > b ? 1 : left.index - right.index
       })
       .map(({ entry }) => entry)
+    yield* Effect.annotateCurrentSpan({
+      "plugin.candidates": candidates.length,
+      "plugin.loaded": state.plugins.length,
+      "plugin.refused": ordered.length
+    })
+    yield* Instrument.countLoads("loaded", state.plugins.length)
+    const reasons = new Map<Reason, number>()
+    for (const { reason } of ordered) reasons.set(reason, (reasons.get(reason) ?? 0) + 1)
+    for (const [reason, amount] of reasons) yield* Instrument.countLoads(reason, amount)
     return { contributions, refused: ordered }
-  }).pipe(Effect.provide(EffectPath.layer))
+  }).pipe(Effect.withSpan("Plugins.load"), Effect.provide(EffectPath.layer))

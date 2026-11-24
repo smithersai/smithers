@@ -150,6 +150,9 @@ const opened = [
  */
 const bound = [...opened, ...opened]
 
+/** A commit as a stored checkpoint names it: a full object name. */
+const stored = "abc123".padEnd(40, "0")
+
 const init = "git init --quiet --bare --template= --object-format=sha1 <shadow>"
 
 const checkout = (path: string, commit: string) => {
@@ -159,7 +162,7 @@ const checkout = (path: string, commit: string) => {
     "chmod -- 700 <shadow>",
     `sh -c ${measureScript} sh /work/repo/.flows-checkpoints <shadow> /work ${cacheRoot}`,
     `sh -c set -eC; mkdir -- "$2" "$2/.git" "$2/.git/objects" "$2/.git/objects/info" "$2/.git/refs"; printf '%s\\n' "$3" > "$2/.git/HEAD"; printf '%s\\n' "$4" > "$2/.git/objects/info/alternates"; printf '%s' "$5" > "$2/.git/config" sh <shadow> <shadow>/${name} ${commit} ../../../../.git/objects [core]\n\trepositoryformatversion = 0\n\tbare = false\n`,
-    `${shadow} --work-tree=<shadow>/${name} ${guarded} read-tree --reset -u ${commit}`,
+    `${shadow} --work-tree=<shadow>/${name} ${guarded} read-tree --reset -u --end-of-options ${commit}`,
     `sh -c set -C; cat -- "$1" > "$2" sh <shadow>/index <shadow>/${name}/.git/index`,
     `sh -c ${publishScript} sh <shadow>/${name} ${path.slice(0, path.lastIndexOf("/"))} ${name} /work/repo`,
     "rm -rf -- <shadow>"
@@ -427,7 +430,7 @@ describe("Checkpoints.makeGit materialize", () => {
   it("checks the tree out beside the repository from a shadow GIT_DIR and removes it however the call ends", async () => {
     const spawns: Array<ReadonlyArray<string>> = []
     const seen = await Effect.runPromise(Effect.gen(function*() {
-      const checkpoints = yield* store(spawns, [["--get flows-checkpoint", { stdout: "abc123\n" }]])
+      const checkpoints = yield* store(spawns, [["--get flows-checkpoint", { stdout: `${stored}\n` }]])
       return yield* checkpoints.materialize("cp-0-1", (found) => Effect.succeed(found))
     }))
 
@@ -443,7 +446,7 @@ describe("Checkpoints.makeGit materialize", () => {
     expect(lines(spawns)).toEqual([
       ...bound,
       `${configFile} --get flows-checkpoint.cp-0-1`,
-      ...checkout(checkoutPath(spawns), "abc123"),
+      ...checkout(checkoutPath(spawns), stored),
       `rm -rf -- ${checkoutPath(spawns)}`
     ])
   })
@@ -456,7 +459,7 @@ describe("Checkpoints.makeGit materialize", () => {
     // no stamp to repair.
     const spawns: Array<ReadonlyArray<string>> = []
     await Effect.runPromise(Effect.gen(function*() {
-      const checkpoints = yield* store(spawns, [["--get flows-checkpoint", { stdout: "abc123\n" }]])
+      const checkpoints = yield* store(spawns, [["--get flows-checkpoint", { stdout: `${stored}\n` }]])
       return yield* checkpoints.materialize("cp-0-1", () => Effect.void)
     }))
 
@@ -468,7 +471,7 @@ describe("Checkpoints.makeGit materialize", () => {
   it("allocates a new path each time the same materialization effect runs", async () => {
     const spawns: Array<ReadonlyArray<string>> = []
     const paths = await Effect.runPromise(Effect.gen(function*() {
-      const checkpoints = yield* store(spawns, [["--get flows-checkpoint", { stdout: "abc123\n" }]])
+      const checkpoints = yield* store(spawns, [["--get flows-checkpoint", { stdout: `${stored}\n` }]])
       const read = checkpoints.materialize("cp-0-1", (found) => Effect.succeed(found.host))
       return [yield* read, yield* read]
     }))
@@ -481,7 +484,7 @@ describe("Checkpoints.makeGit materialize", () => {
     const spawns: Array<ReadonlyArray<string>> = []
     const caller = ChildProcessSpawner.makeNoop()
     const seen = await Effect.runPromise(Effect.gen(function*() {
-      const checkpoints = yield* store(spawns, [["--get flows-checkpoint", { stdout: "abc123\n" }]])
+      const checkpoints = yield* store(spawns, [["--get flows-checkpoint", { stdout: `${stored}\n` }]])
       return yield* checkpoints.materialize("cp-0-1", () => ChildProcessSpawner.ChildProcessSpawner).pipe(
         Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, caller)
       )
@@ -492,7 +495,7 @@ describe("Checkpoints.makeGit materialize", () => {
   it("removes the checkout when the call inside it fails", async () => {
     const spawns: Array<ReadonlyArray<string>> = []
     const exit = await Effect.runPromise(Effect.exit(Effect.gen(function*() {
-      const checkpoints = yield* store(spawns, [["--get flows-checkpoint", { stdout: "abc123\n" }]])
+      const checkpoints = yield* store(spawns, [["--get flows-checkpoint", { stdout: `${stored}\n` }]])
       return yield* checkpoints.materialize("cp-0-1", () => Effect.fail("the call failed"))
     })))
 
@@ -505,7 +508,7 @@ describe("Checkpoints.makeGit materialize", () => {
   it("gives the container's name for the directory when the host declared one", async () => {
     const spawns: Array<ReadonlyArray<string>> = []
     const seen = await Effect.runPromise(Effect.gen(function*() {
-      const checkpoints = yield* store(spawns, [["--get flows-checkpoint", { stdout: "abc123\n" }]], {
+      const checkpoints = yield* store(spawns, [["--get flows-checkpoint", { stdout: `${stored}\n` }]], {
         root: "/work/repo",
         cwd: "/testbed"
       })
@@ -601,7 +604,7 @@ describe("Checkpoints.makeGit materialize", () => {
     const spawns: Array<ReadonlyArray<string>> = []
     const exit = await Effect.runPromise(Effect.exit(Effect.gen(function*() {
       const checkpoints = yield* store(spawns, [
-        ["--get flows-checkpoint", { stdout: "abc123\n" }],
+        ["--get flows-checkpoint", { stdout: `${stored}\n` }],
         [fragment, { exitCode: 128 }]
       ])
       return yield* checkpoints.materialize("cp-0-1", () => Effect.void)
@@ -622,7 +625,7 @@ describe("Checkpoints.makeGit staging", () => {
     const spawns: Array<ReadonlyArray<string>> = []
     const exit = await Effect.runPromise(Effect.exit(Effect.gen(function*() {
       const checkpoints = yield* store(spawns, [
-        ["--get flows-checkpoint", { stdout: "abc123\n" }],
+        ["--get flows-checkpoint", { stdout: `${stored}\n` }],
         ["stat -c %d", { stdout: "1\n2\n3\n" }]
       ])
       return yield* checkpoints.materialize("cp-0-1", () => Effect.void)
@@ -636,7 +639,7 @@ describe("Checkpoints.makeGit staging", () => {
     const spawns: Array<ReadonlyArray<string>> = []
     await Effect.runPromise(Effect.gen(function*() {
       const checkpoints = yield* store(spawns, [
-        ["--get flows-checkpoint", { stdout: "abc123\n" }],
+        ["--get flows-checkpoint", { stdout: `${stored}\n` }],
         ["stat -c %d", { stdout: "1\n2\nunwritable\n1\n" }]
       ])
       return yield* checkpoints.materialize("cp-0-1", () => Effect.void)
@@ -650,7 +653,7 @@ describe("Checkpoints.makeGit staging", () => {
     const refused: Array<ReadonlyArray<string>> = []
     const exit = await Effect.runPromise(Effect.exit(Effect.gen(function*() {
       const checkpoints = yield* store(refused, [
-        ["--get flows-checkpoint", { stdout: "abc123\n" }],
+        ["--get flows-checkpoint", { stdout: `${stored}\n` }],
         ["stat -c %d", { stdout: "1\n2\nunwritable\n\n" }]
       ])
       return yield* checkpoints.materialize("cp-0-1", () => Effect.void)
@@ -662,7 +665,7 @@ describe("Checkpoints.makeGit staging", () => {
     const spawns: Array<ReadonlyArray<string>> = []
     await Effect.runPromise(Effect.gen(function*() {
       const checkpoints = yield* store(spawns, [
-        ["--get flows-checkpoint", { stdout: "abc123\n" }],
+        ["--get flows-checkpoint", { stdout: `${stored}\n` }],
         ["stat -c %d", { stdout: "1\n2\n1\n" }]
       ])
       return yield* checkpoints.materialize("cp-0-1", () => Effect.void)
@@ -790,7 +793,7 @@ describe("Checkpoints.makeGit host faults", () => {
     const seen = await Effect.runPromise(
       Effect.gen(function*() {
         const checkpoints = yield* store(spawns, [
-          ["--get flows-checkpoint", { stdout: "abc123\n" }],
+          ["--get flows-checkpoint", { stdout: `${stored}\n` }],
           ["rm -rf --", { exitCode: 1 }]
         ])
         return yield* checkpoints.materialize("cp-0-1", (found) => Effect.succeed(found.host))
@@ -854,7 +857,7 @@ describe("Checkpoints.makeGit host edges", () => {
       const checkpoints = yield* store(spawns, [
         ["--show-toplevel", { stdout: "/work/repo\n/work/repo/.git\n/work/repo/.git/index\nsha256\n" }],
         ["--get-regexp", { stdout: "core.filemode false\n" }],
-        ["--get flows-checkpoint", { stdout: "abc123\n" }]
+        ["--get flows-checkpoint", { stdout: `${stored}\n` }]
       ])
       return yield* checkpoints.materialize("cp-0-1", () => Effect.void)
     }))
@@ -869,14 +872,14 @@ describe("Checkpoints.makeGit host edges", () => {
     const spawns: Array<ReadonlyArray<string>> = []
     const exit = await Effect.runPromise(Effect.exit(Effect.gen(function*() {
       const checkpoints = yield* store(spawns, [
-        ["--get flows-checkpoint", { stdout: "abc123\n" }],
+        ["--get flows-checkpoint", { stdout: `${stored}\n` }],
         ["stat -c %d", { stdout: "\n\n\n\n" }]
       ])
       return yield* checkpoints.materialize("cp-0-1", () => Effect.void)
     })))
 
     expect(failureOf(exit)?.message).toBe(
-      `Could not check out abc123: neither ${shadowPath(spawns)} nor /work nor ${cacheRoot} is on the filesystem of `
+      `Could not check out ${stored}: neither ${shadowPath(spawns)} nor /work nor ${cacheRoot} is on the filesystem of `
         + "/work/repo/.flows-checkpoints"
     )
     expect(lines(spawns).some((line) => /mkdir -- |read-tree/.test(line))).toBe(false)
@@ -891,7 +894,7 @@ describe("Checkpoints.makeGit host edges", () => {
     const spawns: Array<ReadonlyArray<string>> = []
     const exit = await Effect.runPromise(Effect.exit(Effect.gen(function*() {
       const checkpoints = yield* store(spawns, [
-        ["--get flows-checkpoint", { stdout: "abc123\n" }],
+        ["--get flows-checkpoint", { stdout: `${stored}\n` }],
         ["stat -c %d", { stdout: "1\n2\n3\n\n" }]
       ])
       return yield* checkpoints.materialize("cp-0-1", () => Effect.void)

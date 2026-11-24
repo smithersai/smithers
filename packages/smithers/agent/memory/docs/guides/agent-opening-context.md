@@ -15,8 +15,11 @@ Call `Source.declared` with a source and an input. The answer is the exact `{ ro
 import * as Source from "@smthrs/memory/Source"
 import { Effect } from "effect"
 
+// One source per host scope: its memo is what freezes a retry's rows.
+const source = Source.make()
+
 const opening = Effect.gen(function*() {
-  const memory = yield* Source.declared(Source.source, {
+  const memory = yield* Source.declared(source, {
     lineageId: "run-42",
     iteration: 0,
     banks: ["flow-release-notes"],
@@ -33,7 +36,7 @@ const opening = Effect.gen(function*() {
 
 The input extends the recall input, so `banks`, `query`, `tagGroups`, `maxTokens`, and `budget` all behave as they do for the `recall` flow. Two fields are new:
 
-- `lineageId` and `iteration` form the retry identity. The first successful read for an identity fetches; later reads answer the frozen rows. A failed read remains retryable.
+- `lineageId` and `iteration` form the retry identity. The first successful read for an identity and its banks fetches; later reads answer the frozen rows. A failed read remains retryable.
 - `maxBytes` caps the complete fenced render, defaulting to 16,384. It is a separate ceiling from `maxTokens`, which caps only the recalled rows. A cap too small for the fence and the first row's label yields no rows. Non-finite caps use the default.
 
 Primer banks default to `banks` when omitted. Each bank reads a newest-first window of notes through `searchRows` with `kinds: ["note"]`, with a row limit derived from `maxBytes`, the fence size, and the minimum rendered primer label size. Only accepted, non-superseded notes render as primers. Facts never enter the window, so a bank that keeps receiving facts still renders its primers.
@@ -52,7 +55,7 @@ const layers = Layer.provideMerge(RecallKeyword.layer, TestMemory.layer)
 
 ## What the freeze promises
 
-Every source has an in-process memo (`Source.make` accepts a `capacity`, defaulting to 1,024 identities). With no recorder in context, that memo is the whole guarantee: reads of one identity through one source return the same rows while that identity stays within the capacity. The memo evicts the least recently used identity once it holds more than `capacity`, and the next read of an evicted identity fetches current memory. A second source always refetches live memory. Supply a durable `SnapshotRecorder` for retry stability beyond the memo's lifetime. Only the first read for an identity honors the banks, query, tag groups, primer banks, and budgets; a later read that changes them logs a warning naming the changed fields and answers the frozen rows.
+Every source has an in-process memo (`Source.make` accepts a `capacity`, defaulting to 1,024 identities). With no recorder in context, that memo is the whole guarantee: reads of one identity through one source return the same rows while that identity stays within the capacity. The memo evicts the least recently used identity once it holds more than `capacity`, and the next read of an evicted identity fetches current memory. A second source always refetches live memory. Supply a durable `SnapshotRecorder` for retry stability beyond the memo's lifetime. The memo is keyed by `banks` and `primerBanks` as well as the identity, so a read that names other banks fetches those banks and never answers another bank's frozen rows. Only the first read for an identity and its banks honors the query, tag groups, and budgets; a later read that changes them logs a warning naming the changed fields and answers the frozen rows. A recorder holds one value per identity: when it replays a value whose rows name a bank the read did not request, the read fails with `invalid_namespace`.
 
 A read fails typed rather than answering empty rows: one that exceeds two seconds fails with `TimeoutError`, and a store or recall failure fails with its `MemoryError`. The host decides what a run without its memory does. Fiber interruption propagates unchanged, so cancellation still cancels.
 

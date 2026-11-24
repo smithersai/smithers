@@ -167,15 +167,22 @@ export const make = (options: {
         const deadline = start + maxWaitMs
         const resource = Budget.resourceOf(path)
 
-        // Books a write slot at `now`, giving back `previous` first: a write
+        // The write slot this request has booked and not yet given back, and
+        // whether its attempt began. Both change in the same synchronous step
+        // as the state they describe, so an interrupt never finds them apart.
+        let held: number | undefined
+        let started = false
+
+        // Books a write slot at `now`, giving back the held one first: a write
         // that waited out a pause rebooks behind the writes waiting with it,
         // so they do not all start at the pause's end.
-        const space = (now: number, previous: number | undefined) =>
+        const space = (now: number) =>
           Effect.gen(function*() {
             const slot = yield* Ref.modify(state, (current) => {
-              const kept = previous === undefined ? current : Budget.releaseWrite(current, previous)
+              const kept = held === undefined ? current : Budget.releaseWrite(current, held)
               const booked = Budget.reserveWrites(kept, now, 1, limits)
               const at = booked.slots[0]!
+              held = at > deadline ? undefined : at
               return at > deadline ? [at, kept] : [at, booked.state]
             })
             if (slot > deadline) return yield* rateLimited(slot, "write spacing", method, path)
@@ -183,12 +190,22 @@ export const make = (options: {
               yield* counted("spacing")
               yield* Effect.sleep(Duration.millis(slot - now))
             }
-            return slot
           })
 
-        let slot = Budget.isWrite(method) ? yield* space(start, undefined) : undefined
+        // A write that was refused or interrupted before its attempt began
+        // sent nothing, so its slot goes back. Left booked, it would count
+        // toward the minute and the hour and hold real writes back.
+        const release = Ref.update(
+          state,
+          (current) => started || held === undefined ? current : Budget.releaseWrite(current, held)
+        )
 
-        return yield* Semaphore.withPermits(permits, 1)(Effect.gen(function*() {
+        const admitted = Effect.gen(function*() {
+          if (Budget.isWrite(method)) yield* space(start)
+          return yield* Semaphore.withPermits(permits, 1)(waited)
+        })
+
+        const waited = Effect.gen(function*() {
           for (;;) {
             const now = yield* Clock.currentTimeMillis
             const admission = yield* Ref.modify(state, (current) => {
@@ -210,9 +227,13 @@ export const make = (options: {
               })
             )
             yield* Effect.sleep(Duration.millis(admission.until - now))
-            if (slot !== undefined) slot = yield* space(yield* Clock.currentTimeMillis, slot)
+            if (held !== undefined) yield* space(yield* Clock.currentTimeMillis)
           }
-          return yield* attempt.pipe(Effect.onExit((exit) =>
+          const begun = Effect.suspend(() => {
+            started = true
+            return attempt
+          })
+          return yield* begun.pipe(Effect.onExit((exit) =>
             Effect.gen(function*() {
               const observed = observe(exit)
               const now = yield* Clock.currentTimeMillis
@@ -232,7 +253,9 @@ export const make = (options: {
               )
             })
           ))
-        }))
+        })
+
+        return yield* Effect.onExit(admitted, () => release)
       })
 
     const earliestStart: RateLimiter["earliestStart"] = (writes, path) =>

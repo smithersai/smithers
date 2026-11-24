@@ -9,7 +9,7 @@
  */
 
 import { Effect } from "effect"
-import type * as CliError from "../CliError.ts"
+import * as CliError from "../CliError.ts"
 import * as Gc from "../Gc.ts"
 import * as Project from "../Project.ts"
 import * as Globals from "./Globals.ts"
@@ -21,6 +21,7 @@ import * as Globals from "./Globals.ts"
  */
 export interface Options {
   readonly olderThan: string
+  readonly yes?: boolean
   readonly dryRun: boolean
 }
 
@@ -38,6 +39,11 @@ export const sweep = (
 > =>
   Effect.gen(function*() {
     yield* Globals.guard(globals)
+    if (!options.dryRun && !options.yes) {
+      return yield* Effect.fail(
+        new CliError.UsageError({ message: "Pass --yes to collect runs or --dry-run to preview" })
+      )
+    }
     const projectRoot = yield* Project.ProjectRoot
     return yield* Gc.sweep(projectRoot, { olderThan: options.olderThan, dryRun: options.dryRun })
   })

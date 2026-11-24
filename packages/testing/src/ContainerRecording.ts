@@ -402,6 +402,8 @@ export const record = <C extends Container<any, any>>(
  * @since 1.0.0
  */
 export interface ReplayOptions {
+  /** Named values scrubbed when the recording was encoded. */
+  readonly secrets?: ReadonlyArray<string | Redacted.Redacted<string>>
   readonly normalize?: Normalize | undefined
   /**
    * Operations a timer may call more or fewer times than the recorded run
@@ -437,12 +439,13 @@ export const replay = <C extends Container<any, any>>(
   // The index after the last unpolled call claimed: a polled call the recording lacks is answered from here on.
   let since = 0
   const normalize = options.normalize ?? ((_operation: Operation, input: unknown) => input)
+  const secrets = secretValues(options.secrets ?? [])
   const polled = new Set<Operation>(options.polled ?? [])
   const matches = (call: Call, operation: Operation, key: string) =>
-    call.operation === operation && canonical(call.input) === key
+    call.operation === operation && canonical(redact(replaceSecrets(call.input, secrets))) === key
   const claim = (operation: Operation, input: unknown): Effect.Effect<Call> =>
     Effect.suspend(() => {
-      const key = canonical(normalize(operation, data(input)))
+      const key = canonical(redact(replaceSecrets(data(normalize(operation, data(input))), secrets)))
       // Recorded polled calls before the next unpolled one may be passed over.
       let stop = next
       while (stop < recording.calls.length) {
@@ -513,7 +516,7 @@ export const replay = <C extends Container<any, any>>(
  * @category models
  * @since 1.0.0
  */
-export interface Options<C> extends RecordOptions {
+export interface Options<C> extends RecordOptions, ReplayOptions {
   readonly mode: Mode
   /** The real container. Required for `passthrough` and `record`; `replay` never touches it. */
   readonly live?: C | undefined
@@ -536,6 +539,11 @@ export const make = <C extends Container<any, any>>(options: Options<C>): C => {
   if (options.live === undefined) throw new Error(`ContainerRecording ${options.mode} needs the live container`)
   return options.mode === "record" ? record(options.live, options).container : options.live
 }
+
+const secretValues = (secrets: ReadonlyArray<string | Redacted.Redacted<string>>) =>
+  secrets.map((secret) => typeof secret === "string" ? secret : Redacted.value(secret)).filter((secret) =>
+    secret.length > 0
+  )
 
 const replaceSecrets = (value: unknown, secrets: ReadonlyArray<string>): unknown => {
   if (secrets.length === 0) return value
@@ -562,12 +570,12 @@ export const encode = (
   recording: Recording,
   secrets: ReadonlyArray<string | Redacted.Redacted<string>> = []
 ): Effect.Effect<string, CredentialInRecordingError> => {
-  const values = secrets.map((secret) => typeof secret === "string" ? secret : Redacted.value(secret))
-    .filter((secret) => secret.length >= 8)
+  const values = secretValues(secrets)
   const calls = recording.calls.map((call) => redact(replaceSecrets(call, values)))
   const head = recording.label === undefined ? "" : `"label":${JSON.stringify(recording.label)},`
   const body = `{${head}"calls":[\n${calls.map((call) => JSON.stringify(call)).join(",\n")}\n]}\n`
-  const rules = [...scan(body), ...(values.some((secret) => body.includes(secret)) ? ["live-secret"] : [])]
+  const containsSecret = values.some((secret) => body.includes(JSON.stringify(secret).slice(1, -1)))
+  const rules = [...scan(body), ...(containsSecret ? ["live-secret"] : [])]
   return rules.length === 0 ? Effect.succeed(body) : Effect.fail(new CredentialInRecordingError({ rules }))
 }
 

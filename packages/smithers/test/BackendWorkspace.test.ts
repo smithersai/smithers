@@ -22,7 +22,7 @@ afterEach(async () => {
   for (const dir of dirs.splice(0)) await rm(dir, { recursive: true, force: true })
 })
 const success = (stdout = "", code = 0) => ({ code, stdout: Buffer.from(stdout), stderr: Buffer.alloc(0) })
-const fixture = async (environment: Record<string, string> = {}) => {
+const clientFixture = async (environment: Record<string, string> = {}) => {
   const home = await mkdtemp(join(tmpdir(), "one-cli-box-"))
   dirs.push(home)
   const exit = vi.fn(), controller = new AbortController()
@@ -37,6 +37,10 @@ const fixture = async (environment: Record<string, string> = {}) => {
     exit,
     signal: controller.signal
   })
+  return { c, home, exit, controller }
+}
+const fixture = async (environment: Record<string, string> = {}) => {
+  const { c, home, exit, controller } = await clientFixture(environment)
   const request = vi.spyOn(c, "request").mockImplementation(async (method, path) => {
     if (method === "GET" && path.endsWith("/ssh")) return { ssh_command: "ssh guest", host_keys: [hostKey] }
     if (method === "POST" && path.endsWith("/command-runs")) return { operationId: "generated" }
@@ -376,7 +380,9 @@ describe("box remote execution", () => {
         return
       }
       sockets.handleUpgrade(incoming, socket, head, (connected) => {
-        connected.send(Buffer.from("hello"), { binary: true })
+        const bytes = Buffer.from("hello 🎈")
+        connected.send(bytes.subarray(0, 7), { binary: true })
+        connected.send(bytes.subarray(7), { binary: true })
         connected.send("not json")
         connected.send(JSON.stringify({ type: "status", status: terminal }))
       })
@@ -384,16 +390,15 @@ describe("box remote execution", () => {
     await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve))
     try {
       const origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
-      const { c, request, exit } = await fixture({ SMITHERS_API_ORIGIN: origin })
-      request.mockRestore()
+      const { c, exit } = await clientFixture({ SMITHERS_API_ORIGIN: origin })
       const output = vi.spyOn(process.stdout, "write")
       const before = process.stdout.listenerCount("resize")
       const run = workspaces["workspace shell"]!(c, { id: "box" }, { ...options, cols: 100, rows: 40 })
       if (terminal === "error") await expect(run).rejects.toThrow("Unexpected server response: 503")
       else {
         await run
-        expect(output).toHaveBeenCalledWith("hello")
-        expect(output).toHaveBeenCalledWith("not json")
+        const bytes = output.mock.calls.map(([chunk]) => chunk).filter(Buffer.isBuffer)
+        expect(Buffer.concat(bytes).toString("utf8")).toBe("hello 🎈not json")
       }
       expect(observedUrl).toBe("/api/repos/owner/repo/workspace/sessions/terminal/terminal")
       expect(observedHeaders).toMatchObject({ authorization: "token login-secret", origin })

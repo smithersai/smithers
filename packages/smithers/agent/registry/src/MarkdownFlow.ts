@@ -82,7 +82,23 @@ export interface FromMarkdownOptions {
   readonly name: Option.Option<string>
   readonly dirBasename: string
   readonly provenance: Provenance
+  /**
+   * What an omitted `capabilities` field grants: the wildcard (`"all"`, the
+   * default) or nothing (`"none"`, which discovery passes for pack sources and
+   * project skill libraries).
+   */
+  readonly undeclaredCapabilities?: "all" | "none" | undefined
 }
+
+/**
+ * The longest description a descriptor carries, in code points: the Agent
+ * Skills limit. The description enters the model's catalog on every turn, so
+ * a longer one is cut here rather than shipped.
+ *
+ * @category constants
+ * @since 1.0.0
+ */
+export const maximumDescriptionLength = 1024
 
 /**
  * The metadata result of markdown flow discovery.
@@ -105,10 +121,10 @@ export const fromMarkdown = (options: FromMarkdownOptions): FromMarkdownResult =
   const parsed = Frontmatter.parse({ text: options.text, path: options.path })
   const warnings = [...parsed.warnings]
   const fields = parsed.fields
-  const description = fields.description
+  const declaredDescription = fields.description
   const name = deriveName(options, fields, warnings)
 
-  if (typeof description !== "string" || description.trim() === "") {
+  if (typeof declaredDescription !== "string" || declaredDescription.trim() === "") {
     warnings.push({
       code: "missing_description",
       path: options.path,
@@ -117,19 +133,31 @@ export const fromMarkdown = (options: FromMarkdownOptions): FromMarkdownResult =
     })
     return { descriptor: Option.none(), warnings }
   }
-  if ([...description].length > 1024) {
+  // Cut by code point, so the kept text never ends in half a surrogate pair.
+  const codePoints = [...declaredDescription]
+  const description = codePoints.length > maximumDescriptionLength
+    ? codePoints.slice(0, maximumDescriptionLength).join("")
+    : declaredDescription
+  if (description !== declaredDescription) {
     warnings.push({
       code: "invalid_description",
       path: options.path,
       name,
-      message: "Frontmatter description exceeds the 1024-character Agent Skills limit"
+      message:
+        `Frontmatter description exceeds the ${maximumDescriptionLength}-character Agent Skills limit; it was truncated`
     })
   }
 
   validateStandardFields(fields, options.path, warnings)
   const flows = deriveFlows(fields, options.path, warnings)
   const delegation = flows.length === 0 ? undefined : unprojectableDelegation()
-  const capabilities = deriveCapabilities(fields, delegation, options.path, warnings)
+  const capabilities = deriveCapabilities(
+    fields,
+    delegation,
+    options.undeclaredCapabilities ?? "all",
+    options.path,
+    warnings
+  )
   if (capabilities === undefined) return { descriptor: Option.none(), warnings }
   const modelInvocable = deriveModelInvocable(fields, options.path, warnings)
   const effects = deriveEffects(fields, capabilities, options.path, warnings)
@@ -243,8 +271,11 @@ export const renderPrompt = (body: FlowBodyPrompt, input: { readonly args: strin
  * `/core/Markdown`. This is the deliberate registry-to-core adapter
  * boundary; metadata is not independently reinterpreted downstream.
  *
- * An omitted capability declaration stays omitted; a declared list, including
- * `[]`, remains the native flow and action ceiling.
+ * An omitted capability declaration that discovery read as the wildcard stays
+ * omitted; a declared list, including `[]`, remains the native flow and action
+ * ceiling. So does the empty list discovery gives an undeclared flow from a
+ * source whose `undeclaredCapabilities` is `"none"`: it is a denial, and
+ * leaving it out here would turn it back into inherited authority.
  *
  * Every limit the author declared crosses it: `modelInvocable`, the budget's
  * ceilings, its `deadline` (the descriptor folds it into `budget`; core takes
@@ -259,7 +290,9 @@ export const toCoreFrontmatter = (descriptor: FlowDescriptorType): CoreMarkdown.
     name: descriptor.name,
     description: descriptor.description,
     flows: descriptor.flows,
-    capabilities: Object.hasOwn(descriptor.frontmatter, "capabilities") ? descriptor.capabilities : undefined,
+    capabilities: Object.hasOwn(descriptor.frontmatter, "capabilities") || !descriptor.capabilities.includes("*")
+      ? descriptor.capabilities
+      : undefined,
     effects: descriptor.effects,
     ...(Option.getOrUndefined(descriptor.model) === undefined
       ? {}
@@ -298,10 +331,23 @@ const deriveName = (
 const deriveCapabilities = (
   fields: Record<string, unknown>,
   delegation: ReturnType<typeof unprojectableDelegation> | undefined,
+  undeclared: "all" | "none",
   path: string,
   warnings: Array<DiscoveryWarning>
 ): ReadonlyArray<string> | undefined => {
   if (!Object.hasOwn(fields, "capabilities")) {
+    // Silence widens authority only where the source says it may. A pack or a
+    // skill library is someone else's text, so leaving the field out there
+    // grants nothing instead of everything.
+    if (undeclared === "none") {
+      warnings.push({
+        code: "unprojectable_authority",
+        path,
+        message:
+          "Markdown authority is not declared; the flow receives no capability. Declare `capabilities` to grant some"
+      })
+      return []
+    }
     warnings.push({
       code: "unprojectable_authority",
       path,

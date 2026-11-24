@@ -371,6 +371,16 @@ const gitStore = (
           )
         )
       }
+      // The config file is the agent's to write. What it holds becomes an
+      // argument to host git, so it is an object name or it is refused.
+      if (!objectName.test(commit)) {
+        return yield* Effect.fail(
+          failed(
+            `The checkpoint stored under ${id} in ${root} is not a commit id. Take the reading on the live tree instead.`,
+            "invalid_input"
+          )
+        )
+      }
       return commit
     })
 
@@ -453,7 +463,15 @@ export interface ContainerOptions {
   readonly container: string
   /** A directory of the repository inside it; absent is the container's own working directory. */
   readonly cwd?: string | undefined
+  /**
+   * How long one git script may run inside the container, in milliseconds,
+   * rounded up to a whole second. The default is ten minutes.
+   */
+  readonly gitTimeoutMs?: number | undefined
 }
+
+/** A full object name, SHA-1 or SHA-256: the only thing a stored checkpoint may hold. */
+const objectName = /^[0-9a-f]{40,64}$/
 
 /**
  * `$1` is the id. Records the working tree with `stash create` over a copy of
@@ -516,6 +534,25 @@ const removeScript = [
  */
 const containerGitTimeoutMs = 600_000
 
+/**
+ * Runs the script `$2` with the arguments after it under a deadline of `$1`
+ * seconds, enforced where the script runs. Killing the host's transport
+ * process stops nothing inside the container, so a git that hung there would
+ * run on beside every later call. A container without a `timeout` that takes
+ * `-k` runs the script unbounded, and the host's clock is the only bound.
+ */
+const deadlineScript = [
+  "d=$1; s=$2; shift 2",
+  "if timeout -k 1 1 true >/dev/null 2>&1; then exec timeout -k 5 \"$d\" sh -c \"$s\" sh \"$@\"; fi",
+  "exec sh -c \"$s\" sh \"$@\""
+].join("\n")
+
+/** The status `timeout` exits with when it stopped its command. */
+const deadlineStatus = 124
+
+/** Seconds past the container's own deadline the host waits: the kill grace, and one transport round trip. */
+const containerGitOverrunMs = 20_000
+
 /** Bytes kept per stream of one git script: two paths, or a commit and git's complaint. */
 const containerGitCaptureBytes = 64 * 1024
 
@@ -541,11 +578,12 @@ export const makeContainer = (
   Effect.gen(function*() {
     const spawner = yield* ChildProcessSpawner
     const transport = yield* Container.Container
+    const limitMillis = options.gitTimeoutMs ?? containerGitTimeoutMs
     const sh = (script: string, args: ReadonlyArray<string>) =>
       transport.exec({
         container: options.container,
         file: "sh",
-        args: ["-c", script, "sh", ...args],
+        args: ["-c", deadlineScript, "sh", String(Math.max(1, Math.ceil(limitMillis / 1000))), script, ...args],
         cwd: options.cwd,
         stdin: false
       }).pipe(
@@ -553,7 +591,7 @@ export const makeContainer = (
           Exec.exec(plan.file, {
             args: plan.args,
             env: plan.env,
-            timeoutMs: containerGitTimeoutMs,
+            timeoutMs: limitMillis + containerGitOverrunMs,
             maxCaptureBytes: containerGitCaptureBytes
           }).pipe(
             Effect.mapError((error) => Exec.toStdError(plan.file, error))
@@ -562,7 +600,15 @@ export const makeContainer = (
         Effect.flatMap((result) =>
           result.exitCode === 0
             ? Effect.succeed(result.stdout.trim().split("\n"))
-            : Effect.fail(failed(`git in container ${options.container} failed: ${result.stderr.trim()}`))
+            : Effect.fail(
+              result.exitCode === deadlineStatus
+                ? new StdError.StdError({
+                  code: "timeout",
+                  message: `git in container ${options.container} timed out`,
+                  limitMillis
+                })
+                : failed(`git in container ${options.container} failed: ${result.stderr.trim()}`)
+            )
         ),
         Effect.provideService(ChildProcessSpawner, spawner)
       )

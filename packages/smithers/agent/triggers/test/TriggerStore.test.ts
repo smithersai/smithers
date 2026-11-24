@@ -1,5 +1,6 @@
 import * as Dialect from "@smthrs/database/Dialect"
 import * as TestDatabase from "@smthrs/database/test/TestDatabase"
+import * as SecureRandom from "effect/crypto/SecureRandom"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as Result from "effect/Result"
@@ -7,6 +8,7 @@ import * as SqlClient from "effect/sql/SqlClient"
 import { TestClock } from "effect/testing"
 import { describe, expect, it } from "vitest"
 import * as SqlTriggerStore from "../src/SqlTriggerStore.ts"
+import * as TestTriggers from "../src/test/TestTriggers.ts"
 import * as TriggerStore from "../src/TriggerStore.ts"
 import { storeConformance } from "./StoreConformance.ts"
 
@@ -60,6 +62,44 @@ describe("TriggerStore", () => {
       }).pipe(Effect.provide(layerWithSql))
     )
     expect(plan.map((row) => row.detail).join("\n")).toContain("flows_trigger_fires_run_id")
+  })
+
+  // An unfiltered fires page sorted the whole ledger to answer its first rows.
+  it("reads a newest-first history page through the newest-first index", async () => {
+    const plan = await Effect.runPromise(
+      Effect.gen(function*() {
+        const sql = yield* SqlClient.SqlClient
+        yield* TriggerStore.TriggerStore
+        return yield* TestDatabase.explain(
+          sql,
+          sql`SELECT trigger_id, occurrence_at_ms FROM flows_trigger_fires
+            ORDER BY occurrence_at_ms DESC, trigger_id DESC LIMIT 51`
+        )
+      }).pipe(Effect.provide(layerWithSql))
+    )
+    expect(plan.map((row) => row.detail).join("\n")).toContain("flows_trigger_fires_newest")
+  })
+
+  // The reservation id read `globalThis.crypto.randomUUID()` whatever the
+  // composition provided, so no test could determine it.
+  it.each(
+    [
+      ["in SQL", layer],
+      ["in memory", TestTriggers.layer]
+    ] as const
+  )("draws a reservation's attempt id from the SecureRandom the composition provides %s", async (_name, stores) => {
+    const sevens = Layer.succeed(SecureRandom.SecureRandom)(SecureRandom.make((size) => new Uint8Array(size).fill(7)))
+    const claim = Effect.gen(function*() {
+      const store = yield* TriggerStore.TriggerStore
+      const registered = yield* store.register(trigger)
+      yield* store.claimFire({ triggerId: trigger.id, occurrence: 1, expectedRevision: registered.revision })
+      return (yield* store.inspect(trigger.id)).activeRunId!
+    })
+    const injected = await Effect.runPromise(claim.pipe(Effect.provide(stores), Effect.provide(sevens)))
+    const platform = await Effect.runPromise(claim.pipe(Effect.provide(stores)))
+    expect(injected).toBe(TriggerStore.reservationId(trigger.id, 1, "07070707-0707-4707-8707-070707070707"))
+    expect(TriggerStore.isReservation(platform)).toBe(true)
+    expect(platform).not.toBe(injected)
   })
 
   it("prunes buffered and unsettled rows a newer occurrence replaced before they were settled", async () => {

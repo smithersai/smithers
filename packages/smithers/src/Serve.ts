@@ -142,8 +142,8 @@ export class GatewayHost extends Context.Service<GatewayHost, GatewayHostService
  * @category references
  * @since 1.0.0
  */
-export const Ready = Context.Reference<Effect.Effect<void>>("/cli/Serve/Ready", {
-  defaultValue: () => Effect.void
+export const Ready = Context.Reference<(address: string) => Effect.Effect<void>>("/cli/Serve/Ready", {
+  defaultValue: () => () => Effect.void
 })
 
 /**
@@ -200,8 +200,10 @@ export const health = (root: string): GatewayServer.Health => ({
  * @category constructors
  * @since 1.0.0
  */
-export const banner = (bind: Bind): string => {
-  const base = `http://${bind.host.includes(":") ? `[${bind.host}]` : bind.host}:${bind.port}`
+export const banner = (
+  bind: Bind,
+  base = `http://${bind.host.includes(":") ? `[${bind.host}]` : bind.host}:${bind.port}`
+): string => {
   const socket = base.replace(/^http/, "ws")
   const width = Math.max(...mounts.map((mount) => mount.path.length))
   return [
@@ -209,7 +211,7 @@ export const banner = (bind: Bind): string => {
     ...mounts.map((mount) =>
       `  ${mount.path.padEnd(width)}  ${mount.protocol === "ws" ? socket : base}${mount.path}  ${mount.serves}`
     ),
-    bind.credential === undefined
+    !bind.credential
       ? "  auth  anonymous reads (loopback Host; loopback browser Origin); approval token required"
       : "  auth  bearer token"
   ].join("\n")

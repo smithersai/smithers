@@ -96,7 +96,8 @@ See [Troubleshooting](../troubleshooting.md).
 
 ## When the alerter is refused
 
-`Alerts` implements exactly this contract. A tick whose admission is refused
-returns the alert in `Alerts.Tick.refused`, journals the refusal, and does not
-call the sink, because paging about an alert the run will never read would send
-an operator looking in the wrong place. The next tick tries again.
+`Alerts` reads the same receipt. A tick whose admission is refused returns the
+alert in `Alerts.Tick.refused`, journals the refusal, and pages the sink all the
+same: a run that has stopped draining its inbox is the run a person most needs
+to hear about. The alert is also in `Tick.delivered` or `Tick.failed`. Once the
+page is delivered the alert is not admitted again.

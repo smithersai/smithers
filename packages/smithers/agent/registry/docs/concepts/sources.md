@@ -91,11 +91,14 @@ The canonical order is system, project, plugin, then foreign sources. The first
 descriptor to claim a name keeps it; a later one of the same name is dropped
 and reported as a `duplicate_name` warning naming the file that won.
 
-One collision is not a warning. A source declared `system: true` owns its
-names outright, so a name that collides with a system source fails
-construction with `RegistryError { code: "system_collision" }` in either
-direction. A project cannot shadow a system flow, and a system source cannot
-quietly take a name a project already used.
+A source declared `system: true` owns its names outright. A later source or a
+pack that reuses a system flow's name loses that one flow, with a
+`duplicate_name` warning that names the system flow kept; its other flows are
+listed, so an untrusted pack cannot deny the catalog by naming one flow like a
+system flow. One collision is not a warning: a system source scanned after
+another source already claimed one of its names fails construction with
+`RegistryError { code: "system_collision" }`, because a system flow is never
+shadowed.
 
 Packs merge under a different rule, because caller order is the wrong authority
 for a set of installed directories. See [Load workflow packs](../guides/load-packs.md).

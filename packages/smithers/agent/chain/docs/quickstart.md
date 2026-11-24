@@ -79,11 +79,12 @@ For capabilities, declaration digests, and failure behavior, see
 ## 4. Compose the layers and run
 
 ```ts
-import { Author, Catalog, Chain, Journal, QuickJsRunner } from "@smthrs/chain"
+import { Author, Authorize, Catalog, Chain, Journal, QuickJsRunner } from "@smthrs/chain"
 import { Effect, Layer } from "effect"
 
 const layers = Layer.mergeAll(
   Journal.layerMemory(),
+  Authorize.layerAllowAll,
   Author.layerMock([l1, l2]),
   QuickJsRunner.layer(),
   Catalog.layer(Catalog.withSystem([grep, edit]))
@@ -132,10 +133,11 @@ Run the same program again over the journal you just read, with an empty
 author mock and a runner that cannot execute:
 
 ```ts
-import { ScriptRunner } from "@smthrs/chain"
+import { Authorize, ScriptRunner } from "@smthrs/chain"
 
 const replay = Layer.mergeAll(
   Journal.layerMemory(events),
+  Authorize.layerAllowAll,
   Author.layerMock([]),
   ScriptRunner.layerNoop(),
   Catalog.layer(Catalog.withSystem([grep, edit]))
@@ -163,7 +165,7 @@ This is `examples/quickstart.vibe`. `test/quickstart.test.vibe` runs it, and
 the package's docs check fails if this block and the file differ.
 
 ````vibe
-import { Author, Catalog, Chain, type Event, Journal, QuickJsRunner, ScriptRunner } from "@smthrs/chain"
+import { Author, Authorize, Catalog, Chain, type Event, Journal, QuickJsRunner, ScriptRunner } from "@smthrs/chain"
 
 /** The bootstrap script: search, then ask the author for a successor. */
 const l1 = [
@@ -200,6 +202,7 @@ const entries = Catalog.withSystem([grep, edit])
 export effect function runChain() {
   provide Layer.mergeAll(
     Journal.layerMemory(),
+    Authorize.layerAllowAll,
     Author.layerMock([l1, l2]),
     QuickJsRunner.layer(),
     Catalog.layer(entries)
@@ -214,6 +217,7 @@ export effect function runChain() {
 export effect function replayChain(events: ReadonlyArray<Event.Event>) {
   provide Layer.mergeAll(
     Journal.layerMemory(events),
+    Authorize.layerAllowAll,
     Author.layerMock([]),
     ScriptRunner.layerNoop(),
     Catalog.layer(entries)
@@ -225,10 +229,11 @@ export effect function replayChain(events: ReadonlyArray<Event.Event>) {
 
 ## 7. Drive it with a model
 
-Swap the scripted author for `ModelAuthor.layer(config)` over a `Model.Model`
-layer from the [@smthrs/model package](/api/model). The model layer goes
-UNDER the author layer with `Layer.provide`: siblings in one `Layer.mergeAll`
-cannot satisfy each other.
+Swap the scripted author for `ModelAuthor.layer(config)` over the durable
+`ModelAuthor.Step` port. Your host binds that port to its durable engine
+(`ModelStep.run` from `@smthrs/agent`), so every author call is one retried,
+sealed step. The step layer goes UNDER the author layer with `Layer.provide`:
+siblings in one `Layer.mergeAll` cannot satisfy each other.
 
 Neither `Chain` nor `ModelAuthor` writes a prompt. `Chain.run` defaults
 `prefix` to the empty string and `ModelAuthor` sends no system part for an
@@ -238,15 +243,16 @@ with `Prompt.forCatalog` so the entries the model reads are the entries the
 chain dispatches:
 
 ```ts
-import { Catalog, Chain, Journal, ModelAuthor, Prompt, QuickJsRunner } from "@smthrs/chain"
+import { Authorize, Catalog, Chain, Journal, ModelAuthor, Prompt, QuickJsRunner } from "@smthrs/chain"
 import { Effect, Layer } from "effect"
 
 const author = ModelAuthor.layer({ modelId: "claude-opus-5" }).pipe(
-  Layer.provide(modelLayer)
+  Layer.provide(stepLayer)
 )
 
 const layers = Layer.mergeAll(
   Journal.layerMemory(),
+  Authorize.layerAllowAll,
   author,
   QuickJsRunner.layer(),
   Catalog.layer(Catalog.withSystem([grep, edit]))

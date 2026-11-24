@@ -590,6 +590,9 @@ const isDeclared = (
     resolvePath(path, cwd, source)
   )
 
+/** The /dev paths that hold no file of their own: sinks, sources, and the process's own descriptors. */
+const processPlumbing = /^\/dev\/(?:null|zero|full|random|urandom|tty|stdin|stdout|stderr|fd\/\d+)$/
+
 /**
  * The refusal shell text earns by naming a path outside its declared
  * envelope, or `undefined` when every path it names is declared.
@@ -641,10 +644,12 @@ export const outsideEnvelope = (
       })
     }
     const resolved = resolvePath(path, cwd, reference.value)
-    // /dev/* is the process plumbing every shell one-liner leans on:
-    // `2>/dev/null`, `cat /dev/stdin`. Normalize first so a dot-dot segment
-    // cannot disguise an ordinary filesystem path as process plumbing.
-    if (resolved.startsWith("/dev/")) continue
+    // Process plumbing is what every shell one-liner leans on: `2>/dev/null`,
+    // `cat /dev/stdin`. Normalize first so a dot-dot segment cannot disguise
+    // an ordinary filesystem path as process plumbing. The rest of /dev is
+    // not plumbing: /dev/shm is a writable filesystem, and a block device is
+    // a disk, so those are declared or refused like any other path.
+    if (processPlumbing.test(resolved)) continue
     const declared = reference.access === "write" ? input.writes : input.reads
     if (!isDeclared(path, cwd, declared, resolved)) {
       const code = reference.access === "write" ? "outside_declared_writes" : "outside_declared_reads"

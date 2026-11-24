@@ -1970,7 +1970,14 @@ describe("delegated public API transport", () => {
       .toEqual({ status: 200, body: { plain: "[redacted]", escaped: "[redacted]" } })
   })
   test("refuses redirects, empty responses and invalid UTF-8", async () => {
-    const redirected = Response.json({})
+    let cancelled = false
+    const redirected = new Response(
+      new ReadableStream({
+        cancel() {
+          cancelled = true
+        }
+      })
+    )
     Object.defineProperty(redirected, "redirected", { value: true })
     for (
       const [response, code] of [
@@ -1983,6 +1990,7 @@ describe("delegated public API transport", () => {
       expect(await Effect.runPromise(apiCaller("http://callback.test", install, async () => response)("/api/todos")))
         .toEqual({ code })
     }
+    expect(cancelled).toBe(true)
   })
   test("bounds decoded API bodies at four MiB and cancels an oversized stream", async () => {
     const boundary = JSON.stringify("x".repeat(4 * 1024 * 1024 - 2))

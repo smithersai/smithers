@@ -644,6 +644,51 @@ const stripUndefined = (value: unknown): unknown => {
   return stripped
 }
 
+/**
+ * The index just past the member that starts at `from` in canonical JSON: past
+ * its key, its value however deeply nested, and the comma that follows.
+ */
+const nextMember = (json: string, from: number): number => {
+  let depth = 0
+  let quoted = false
+  let at = from
+  for (; at < json.length; at++) {
+    const code = json.charCodeAt(at)
+    if (quoted) {
+      // A backslash escapes the next character, an escaped quote included.
+      if (code === 92) at++
+      else if (code === 34) quoted = false
+    } else if (code === 34) quoted = true
+    else if (code === 123 || code === 91) depth++
+    else if (code === 125 || code === 93) depth--
+    else if (code === 44 && depth === 0) break
+  }
+  return at + 1
+}
+
+/**
+ * The index of the value `path` names in canonical JSON, found by walking the
+ * objects on the way to it. Strings are skipped whole, so a caller-owned
+ * string or key that spells the same member is never mistaken for it.
+ */
+const memberOffset = (json: string, path: ReadonlyArray<string>): number => {
+  let at = 0
+  for (const name of path) {
+    const member = `${JSON.stringify(name)}:`
+    // Past the object's opening brace, then over the members before `name`.
+    at++
+    while (at < json.length && !json.startsWith(member, at)) at = nextMember(json, at)
+    at += member.length
+  }
+  return at
+}
+
+/** Where `StepKey` puts the prepared request's body in the JSON it hashes. */
+const wireBodyPath = ["body", "declaration", "request", "body"]
+
+/** The canonical JSON of the empty string that stands in for the wire body. */
+const wireBodyPlaceholder = "\"\""
+
 interface ModelCallDeclaration {
   readonly _tag: "ModelCall"
   readonly request: ModelRequest.ModelRequest
@@ -716,32 +761,26 @@ export const key = Effect.fn("ModelStep.key")(function*(
   // `Digest.provideSync` supplies a synchronous SHA-256 proven byte-identical
   // to the platform service, so a key needs no `Crypto` from its caller.
   const crypto = yield* Digest.provideSync(EffectDigest.Digest)
-  for (let ordinal = 0;; ordinal++) {
-    sealed.body.request.body = `flows/agent/wire-body/${ordinal}`
-    const marker = JSON.stringify(sealed.body.request.body)
-    let collision = false
-    const derived = yield* StepKey.fromKeyMaterial(sealed, {}).pipe(
-      Effect.provideService(EffectDigest.Digest, {
-        ...crypto,
-        digest: (algorithm, data) => {
-          const canonical = new TextDecoder().decode(data)
-          const offset = canonical.indexOf(marker)
-          // Caller material can contain the same literal. Retry with another
-          // marker rather than replacing any caller-owned value. No marker is
-          // ever part of the returned key's bytes.
-          collision = offset < 0 || canonical.indexOf(marker, offset + marker.length) !== -1
-          return crypto.digest(
-            algorithm,
-            collision ? data : new TextEncoder().encode(
-              canonical.slice(0, offset) + wire + canonical.slice(offset + marker.length)
-            )
+  // One canonicalization and one digest per key, whatever the caller's
+  // material holds. The body's place in the hashed JSON is found by its path,
+  // not by searching for a marker string a declaration could also contain, so
+  // no caller-owned value is ever replaced and nothing is derived twice.
+  return yield* StepKey.fromKeyMaterial(sealed, {}).pipe(
+    Effect.provideService(EffectDigest.Digest, {
+      ...crypto,
+      digest: (algorithm, data) => {
+        const canonical = new TextDecoder().decode(data)
+        const offset = memberOffset(canonical, wireBodyPath)
+        return crypto.digest(
+          algorithm,
+          new TextEncoder().encode(
+            canonical.slice(0, offset) + wire + canonical.slice(offset + wireBodyPlaceholder.length)
           )
-        }
-      }),
-      Effect.mapError((cause) => engineFailed("The prepared model request could not be sealed", cause))
-    )
-    if (!collision) return derived
-  }
+        )
+      }
+    }),
+    Effect.mapError((cause) => engineFailed("The prepared model request could not be sealed", cause))
+  )
 })
 
 /** Provider calls model steps made, by how each call ended. */

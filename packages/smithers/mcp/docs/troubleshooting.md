@@ -139,6 +139,76 @@ exceeded `maxToolDocumentBytes` (65536 by default).
 raise `maxToolDocumentBytes` for a server you trust. The text is authored by the
 server and read by a model, so it is bounded like the rest of the catalog.
 
+## ... returned a catalog whose descriptions and inputSchemas are longer than N bytes
+
+**Code.** `invalid_response`.
+
+**What happened.** Every tool's description plus its JSON-encoded `inputSchema`,
+summed across every catalog page, exceeded `maxCatalogDocumentBytes` (1048576
+by default).
+
+**What to change.** Narrow what the server offers, or raise
+`maxCatalogDocumentBytes` for a server you trust. `include` does not help
+here: the bound applies to the catalog as fetched, before projection.
+
+## MCP option "server" must be a name of at most 128 bytes ...
+
+**Code.** `protocol_error`.
+
+**What happened.** The `server` name is a segment of every flow name,
+`mcp/<server>/<tool>`, so it follows the tool-name rules: not `.` or `..`, NFC,
+and no `/`, leading, trailing or doubled space, or invisible or control
+character.
+
+**What to change.** Rename the entry, for example `github` or `issue-tracker`.
+
+## ... answered METHOD with an HTTP 3NN redirect, which is not followed
+
+**Code.** `protocol_error`.
+
+**What happened.** The Streamable HTTP endpoint answered with a redirect.
+Following it would send the bearer token, the session id and the message to an
+address the configuration never named, so the client does not.
+
+**What to change.** Set `url` to the address the redirect points at, after
+checking that it is the server you mean to reach.
+
+## ... answered METHOD with HTTP N, not the 202 that accepts it
+
+**Code.** `protocol_error`.
+
+**What happened.** A notification, or the client's reply to a server request,
+was answered with something other than `202 Accepted`, for example a `200`
+carrying a JSON-RPC error. The related message `accepted METHOD with a body; an
+acceptance carries none` reports a `202` that carried a body. The body is not
+reported. The session ends.
+
+**What to change.** Fix the server: MCP Streamable HTTP requires `202 Accepted`
+with no body for input that is only notifications or responses.
+
+## ... sent an event stream longer than N bytes
+
+**Code.** `protocol_error`.
+
+**What happened.** One `text/event-stream` response passed
+`maxEventStreamBytes` (16777216 by default). The related message `sent more
+than N requests while answering METHOD` reports a response that carried more
+server requests than `maxServerRequests` (32 by default). The session ends.
+
+**What to change.** Raise the limit for a server you trust whose tools stream
+long progress, or fix a server that never sends its reply.
+
+## ... returned no structuredContent for a tool that declares an outputSchema
+
+**Code.** `invalid_response`.
+
+**What happened.** The tool declared an `outputSchema` and returned a result
+that is not an error without `structuredContent`.
+
+**What to change.** Fix the server to return `structuredContent`, or to set
+`isError: true` when the tool is reporting a failure. See
+[Validate structured output](./guides/validate-structured-output.md).
+
 ## ... did not answer METHOD within Nms
 
 **Code.** `timeout`.

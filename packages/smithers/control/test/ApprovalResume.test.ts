@@ -80,7 +80,10 @@ const hostingBridge = (taken: Array<string>) =>
 const hostedPlane = (taken: Array<string>) => {
   // One layer VALUE, so `ControlLive` and the executor bridge share exactly
   // one runtime instance rather than each building its own.
-  const runtime = SqlControlRuntime.layer({}).pipe(Layer.orDie)
+  const runtime = SqlControlRuntime.layer({
+    // This fixture runs commands as the explicitly configured local operator.
+    principal: { id: "local", kind: "operator" }
+  }).pipe(Layer.orDie)
   return ControlLive.layer.pipe(
     Layer.provide(hostingBridge(taken)),
     Layer.provideMerge(Layer.mergeAll(runtime, NotificationQueue.layer, Registry.layerNoop())),

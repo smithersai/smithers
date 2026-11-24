@@ -111,7 +111,7 @@ describe("Scoring observation persistence", () => {
     ["oversized", () => ({ note: "x".repeat(ScoreStore.maxMetadataBytes) })],
     [
       "oversized after redaction",
-      () => Object.fromEntries(Array.from({ length: 2_400 }, (_value, index) => [`k${index}`, "Bearer abcd"]))
+      () => Object.fromEntries(Array.from({ length: 2_400 }, (_value, index) => [`k${index}`, "Bearer ab12"]))
     ]
   ]
 
@@ -169,7 +169,7 @@ describe("Scoring observation persistence", () => {
   })
 
   it("accepts metadata exactly at its encoded byte bound and truncates a scrub-grown reason", async () => {
-    const short = "Bearer abcd"
+    const short = "Bearer ab12"
     const longReason = `${short} ${"é".repeat(ScoreStore.maxReasonBytes)}`
     const meta = "é".repeat((ScoreStore.maxMetadataBytes - 2) / 2)
     const output = await run(Effect.gen(function*() {

@@ -1090,6 +1090,10 @@ console.log(kept)`
     expect(outcome._tag).toBe("Failure")
     expect(of(events, "aborted")).toHaveLength(0)
     expect(of(events, "turn-closed").at(-1)).toMatchObject({ stopReason: "error", outcome: "suspended" })
+    // R1-Fable-D2-048: a park is not an end. The call is still owed its answer, so it is not settled as a
+    // failure: the frame closing `suspended` is its row, and the resumed run settles it under the same identity.
+    expect(of(events, "cell-call-started")).toHaveLength(1)
+    expect(of(events, "cell-call-settled")).toHaveLength(0)
   })
 })
 

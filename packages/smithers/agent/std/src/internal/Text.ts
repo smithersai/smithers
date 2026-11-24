@@ -194,3 +194,17 @@ export const slice = (
  */
 export const notice = (unit: string, shown: number, total: number): string =>
   `Showing ${shown} of ${total} ${unit}; output was truncated.`
+
+/**
+ * The first `maxUnits` UTF-16 code units of `text`, or one fewer when the cut
+ * would fall between the two halves of a surrogate pair. A lone surrogate is
+ * not well-formed Unicode, and a canonical encoder refuses the string.
+ *
+ * @category bounds
+ * @since 1.0.0-rc.18
+ */
+export const clipUnits = (text: string, maxUnits: number): string => {
+  if (text.length <= maxUnits) return text
+  const last = text.charCodeAt(maxUnits - 1)
+  return text.slice(0, last >= 0xd800 && last <= 0xdbff ? maxUnits - 1 : maxUnits)
+}

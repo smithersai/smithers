@@ -51,6 +51,26 @@ export const acknowledgedEventType = "flows.alerts.acknowledged"
 export const maxSummaryLength = 500
 
 /**
+ * The first `max` UTF-16 code units of a text, without half a character at
+ * the end.
+ *
+ * A cut that lands between the two halves of a surrogate pair keeps one unit
+ * fewer, so the result is as well formed as the text it came from. A lone
+ * high surrogate is ill-formed UTF-16, which strict JSON, SQLite and the
+ * journal's identifier rule each treat differently.
+ *
+ * @param text the text to shorten
+ * @param max the most code units to keep
+ * @private
+ * @since 1.0.0
+ */
+export const truncated = (text: string, max: number): string => {
+  if (text.length <= max) return text
+  const last = text.charCodeAt(max - 1)
+  return text.slice(0, last >= 0xD800 && last <= 0xDBFF ? max - 1 : max)
+}
+
+/**
  * How loud an alert is.
  *
  * @category models
@@ -78,7 +98,8 @@ export type Severity = typeof Severity.Type
  *
  * `summary` names a payload key whose string, on the entry that opened the
  * condition, rides on the alert as the line a person reads. Only the first
- * {@link maxSummaryLength} characters are kept.
+ * {@link maxSummaryLength} UTF-16 code units are kept, and one fewer when the
+ * cut would split a character in two.
  *
  * @category models
  * @since 0.1.0
@@ -197,6 +218,13 @@ export interface Open {
   readonly condition: string
   /** The journal time of the entry that opened the condition. */
   readonly since: number
+  /**
+   * The journal sequence of the entry that opened the condition, when the
+   * caller read it off a journal. {@link conditions} is a function of journal
+   * time alone and leaves it out; the alert runtime sets it, because two
+   * openings of one condition can share a millisecond and never a sequence.
+   */
+  readonly opening?: number | undefined
   /** What the opening entry said, when its detector names a summary field. */
   readonly summary?: string | undefined
 }
@@ -211,6 +239,12 @@ export interface Alert {
   readonly runId: string
   readonly condition: string
   readonly since: number
+  /**
+   * The journal sequence of the entry that opened the condition, carried from
+   * {@link Open.opening}. It is part of {@link alertId}, so a condition that
+   * clears and re-opens inside one millisecond is two alerts.
+   */
+  readonly opening?: number | undefined
   /**
    * The journal instant the condition outlived its delay: `since` plus the
    * rule's `afterMs`, never the wall clock of whichever tick noticed.
@@ -272,6 +306,14 @@ export const coalescingKey = (runId: string, condition: string): string =>
  * re-opens is a NEW alert, because the second approval wait is not the first
  * one, and a key without the time would suppress it forever.
  *
+ * The opening entry's journal sequence follows the time as `:s<seq>` when the
+ * alert carries one, which every alert the runtime raises does. A journal
+ * allocates a sequence once, so a condition that clears and re-opens inside
+ * one millisecond still gets an id of its own: a receiver that dedupes on the
+ * id sends the second page, and an acknowledgement of the first opening does
+ * not silence the second. An alert without a sequence has the id this package
+ * wrote before it carried one, `alert:<key>:<since>`.
+ *
  * A repeat of the page is a page of its own, so its id ends in `:r<n>` and a
  * sink that dedupes on the id still sends it. The id without that ending
  * names the alert itself, and is what a person acknowledges.
@@ -280,8 +322,10 @@ export const coalescingKey = (runId: string, condition: string): string =>
  * @category getters
  * @since 0.1.0
  */
-export const alertId = (alert: Pick<Alert, "coalescingKey" | "since" | "reminder">): string =>
-  `alert:${alert.coalescingKey}:${alert.since}${alert.reminder === undefined ? "" : `:r${alert.reminder}`}`
+export const alertId = (alert: Pick<Alert, "coalescingKey" | "since" | "opening" | "reminder">): string =>
+  `alert:${alert.coalescingKey}:${alert.since}${alert.opening === undefined ? "" : `:s${alert.opening}`}${
+    alert.reminder === undefined ? "" : `:r${alert.reminder}`
+  }`
 
 /**
  * The detectors one policy decides with: the four this package ships, with
@@ -361,7 +405,7 @@ export const observe = (
       const summary = key !== undefined && Object.hasOwn(payload, key) ? payload[key] : undefined
       open.set(condition, {
         since: entry.emittedAtMs,
-        ...(typeof summary === "string" ? { summary: summary.slice(0, maxSummaryLength) } : {})
+        ...(typeof summary === "string" ? { summary: truncated(summary, maxSummaryLength) } : {})
       })
     } else {
       open.delete(condition)
@@ -437,6 +481,7 @@ export const decide = (
       runId: condition.runId,
       condition: condition.condition,
       since: condition.since,
+      ...(condition.opening === undefined ? {} : { opening: condition.opening }),
       // Derived from the journal, not read off the clock. The alert id is
       // stable across ticks, and the queue refuses a reused id whose content
       // changed, so an alert stamped with the reading time would become

@@ -63,6 +63,11 @@ export const resolveNamespace = (
   if (input.length === 0) {
     return Effect.fail(new MemoryError({ code: "invalid_namespace", message: "memory bank must not be empty" }))
   }
+  // PostgreSQL cannot store U+0000 in text. Refusing it here gives SQLite and
+  // PostgreSQL one typed answer in place of a backend-specific database error.
+  if (input.includes("\u0000")) {
+    return Effect.fail(new MemoryError({ code: "invalid_namespace", message: "memory bank must not contain U+0000" }))
+  }
   return Effect.succeed({ namespace: namespaceForBank(input), bank: input })
 }
 

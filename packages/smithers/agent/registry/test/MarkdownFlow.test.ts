@@ -213,6 +213,66 @@ describe("MarkdownFlow", () => {
     expect(Option.isSome(atLimit.descriptor)).toBe(true)
     expect(atLimit.warnings).not.toContainEqual(expect.objectContaining({ code: "invalid_description" }))
     expect(overLimit.warnings).toContainEqual(expect.objectContaining({ code: "invalid_description" }))
+    expect(Option.getOrThrow(atLimit.descriptor).description).toBe("a".repeat(1024))
+  })
+
+  // R1-Fable-D2-060: the description enters the model catalog every turn, so
+  // an over-long one is cut at the limit instead of shipped whole.
+  it("truncates an over-long description at the limit, on a code-point boundary", () => {
+    const long = fromMarkdown(`---\ndescription: ${"d".repeat(2000)}\n---\nbody`)
+    expect(Option.getOrThrow(long.descriptor).description).toBe("d".repeat(MarkdownFlow.maximumDescriptionLength))
+    expect(long.warnings).toContainEqual(expect.objectContaining({
+      code: "invalid_description",
+      name: "review",
+      message: "Frontmatter description exceeds the 1024-character Agent Skills limit; it was truncated"
+    }))
+
+    // An astral character is one code point: 1024 of them are at the limit,
+    // and the cut after the 1024th never splits a surrogate pair.
+    const astral = fromMarkdown(`---\ndescription: ${"a".repeat(1023)}${"😀".repeat(3)}\n---\nbody`)
+    const kept = Option.getOrThrow(astral.descriptor).description
+    expect(kept).toBe(`${"a".repeat(1023)}😀`)
+    // `encodeURIComponent` throws on a lone surrogate.
+    expect(() => encodeURIComponent(kept)).not.toThrow()
+    const atLimit = fromMarkdown(`---\ndescription: ${"😀".repeat(1024)}\n---\nbody`)
+    expect(Option.getOrThrow(atLimit.descriptor).description).toBe("😀".repeat(1024))
+    expect(atLimit.warnings).not.toContainEqual(expect.objectContaining({ code: "invalid_description" }))
+  })
+
+  // R1-Fable-D2-059: silence grants nothing where the source is foreign text.
+  it("gives an undeclared flow no capability when its source grants none by default", () => {
+    const text = "---\nname: review\ndescription: Review a pull request\n---\nbody"
+    const none = fromMarkdown(text, { undeclaredCapabilities: "none" })
+    const descriptor = Option.getOrThrow(none.descriptor)
+    expect(descriptor.capabilities).toEqual([])
+    expect(none.warnings).toContainEqual(expect.objectContaining({
+      code: "unprojectable_authority",
+      message:
+        "Markdown authority is not declared; the flow receives no capability. Declare `capabilities` to grant some"
+    }))
+    // The denial reaches the core flow as a ceiling; it is not left out to be inherited.
+    expect(MarkdownFlow.toCoreFrontmatter(descriptor).capabilities).toEqual([])
+
+    // A delegating flow's grant is the wildcard only where silence may widen.
+    const delegating = fromMarkdown(
+      "---\nname: review\ndescription: Review a pull request\nflows: [other]\n---\nbody",
+      { undeclaredCapabilities: "none" }
+    )
+    expect(Option.getOrThrow(delegating.descriptor).capabilities).toEqual([])
+
+    // A declaration is read the same either way.
+    const declared = fromMarkdown(
+      "---\nname: review\ndescription: Review a pull request\ncapabilities: [\"fs:read:**\"]\n---\nbody",
+      { undeclaredCapabilities: "none" }
+    )
+    expect(Option.getOrThrow(declared.descriptor).capabilities).toEqual(["fs:read:**"])
+
+    // The default, and an explicit "all", keep the wildcard and leave the core declaration omitted.
+    for (const result of [fromMarkdown(text), fromMarkdown(text, { undeclaredCapabilities: "all" })]) {
+      const wide = Option.getOrThrow(result.descriptor)
+      expect(wide.capabilities).toEqual(["*"])
+      expect(MarkdownFlow.toCoreFrontmatter(wide).capabilities).toBeUndefined()
+    }
   })
 
   it.each([

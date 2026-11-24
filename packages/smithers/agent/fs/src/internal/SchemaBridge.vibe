@@ -37,6 +37,8 @@ export interface Assembly {
 export interface CommandSchema {
   args: z.ZodObject<any> | undefined
   options: z.ZodObject<any> | undefined
+  /** Option names whose type is boolean: a bare `--name` takes no value token. */
+  flags: ReadonlySet<string>
   assemble: (args: Positional, options: Readonly<Record<string, unknown>>) => Assembly
   decode: (assembly: Assembly) => unknown!FsError
 }
@@ -222,6 +224,14 @@ const objectDescriptors = effect (
   }
 }
 
+const noFlags: ReadonlySet<string> = new Set()
+const inputFlag: ReadonlySet<string> = new Set(["input"])
+
+const isBoolean = (schema: unknown): boolean => record(schema)?.type === "boolean"
+
+const booleanNames = (properties: JsonSchema): ReadonlySet<string> =>
+  new Set(Object.entries(properties).filter(([, property]) => isBoolean(property)).map(([name]) => name))
+
 const positionalRecord = (args: Positional): Readonly<Record<string, unknown>> => {
   if (!Array.isArray(args)) return args as Readonly<Record<string, unknown>>
   return args.length === 0 ? {} : { args }
@@ -293,12 +303,14 @@ export effect function decodeInput(schema: Schema.Top, value: unknown): unknown!
 const projectSchema = effect (schema: Schema.Top): CommandSchema!FsError => {
   const { definitions, root } = try construct(() => documentOf(schema))
   const resolved = try resolveReference(root, definitions)
-  if (record(resolved.properties) !== undefined) {
+  const properties = record(resolved.properties)
+  if (properties !== undefined) {
     const descriptors = try objectDescriptors(resolved, definitions)
     const command = descriptors.options
     const projected: CommandSchema = {
       args: descriptors.args,
       options: descriptors.options,
+      flags: booleanNames(properties),
       assemble: (args, options) => Object.freeze({ value: { ...positionalRecord(args), ...options } }),
       decode: (assembly) => decodeWith(schema, command, assembly)
     }
@@ -310,6 +322,7 @@ const projectSchema = effect (schema: Schema.Top): CommandSchema!FsError => {
   const projected: CommandSchema = {
     args: try construct(() => z.object({ input: value.optional() })),
     options: try construct(() => z.object({ input: value.optional() }).strict()),
+    flags: isBoolean(resolved) ? inputFlag : noFlags,
     assemble: (args, options) => Object.freeze({ value: scalarRecord(args, options) }),
     decode: effect (assembly) => {
       const parsed = try Effect.try({ try: () => command.safeParse(assembly.value), catch: () => schemaFailure("decode_failed", "SchemaBridge.decodeInput") })
@@ -340,6 +353,7 @@ export effect function toCommandSchema(ref: Descriptor.SchemaRef, schema: Schema
       // A schema-free command takes nothing, so it advertises no positionals.
       args: undefined,
       options: empty,
+      flags: noFlags,
       assemble: (args, options) => Object.freeze({ value: { ...positionalRecord(args), ...options } }),
       decode: effect (assembly) => {
         if (Object.keys(assembly.value as Record<string, unknown>).length !== 0) {
@@ -355,6 +369,7 @@ export effect function toCommandSchema(ref: Descriptor.SchemaRef, schema: Schema
     const markdown: CommandSchema = {
       args: try construct(() => z.object({ args: z.array(z.string()).optional() })),
       options: try construct(() => z.object({}).strict()),
+      flags: noFlags,
       assemble: (args, options) => Object.freeze({ value: { args: positionalText(args), ...options } }),
       decode: (assembly) => decodeWith(schema, command, assembly)
     }

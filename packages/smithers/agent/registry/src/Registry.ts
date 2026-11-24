@@ -225,12 +225,15 @@ const snapshotFrom = (
 /**
  * The one first-found fold both registry constructors use.
  *
- * A collision between two ordinary sources keeps the first entry and reports
- * one `duplicate_name` warning; a collision involving a system source is a
- * refusal the caller owns. `fold` returns that refusal rather than failing, so
- * {@link layerFromDescriptors} shares this dedupe and its wording without
- * acquiring a failure channel it can never use: its batch is never a system
- * source, so it cannot collide that way.
+ * A collision keeps the first entry and reports one `duplicate_name` warning.
+ * That holds when the first entry is a system flow too: the later entry is
+ * dropped, so a pack or project that names a flow like a system flow loses
+ * that one flow and cannot deny the whole catalog. Only a system source that
+ * arrives second is a refusal, because a system flow must never be shadowed;
+ * the caller owns that refusal. `fold` returns it rather than failing, so
+ * {@link layerFromDescriptors} and the pack fold share this dedupe and its
+ * wording without acquiring a failure channel they can never use: their batch
+ * is never a system source, so it cannot collide that way.
  */
 const firstFound = (): {
   readonly entries: ReadonlyArray<FlowDescriptor>
@@ -252,7 +255,7 @@ const firstFound = (): {
           continue
         }
 
-        if (existing.system || system) {
+        if (system) {
           return registryError({
             code: "system_collision",
             method: "make",
@@ -265,7 +268,9 @@ const firstFound = (): {
             code: "duplicate_name",
             path: entry.path,
             name: entry.name,
-            message: `Duplicate flow name "${entry.name}"; keeping first entry from "${existing.descriptor.path}"`
+            message: existing.system
+              ? `Flow name "${entry.name}" belongs to the system namespace; keeping the system flow from "${existing.descriptor.path}"`
+              : `Duplicate flow name "${entry.name}"; keeping first entry from "${existing.descriptor.path}"`
           })
         )
       }
@@ -367,12 +372,13 @@ const scanSources = (
     // through the same first-found rule, so a project flow shadows a pack flow
     // of the same name and reports it as a duplicate. Precedence AMONG packs is
     // the pack's origin, which is `Pack.merge`'s rule and reports `shadowed`
-    // naming both packs; a pack is never a system source.
+    // naming both packs; a pack is never a system source, so `fold` cannot
+    // report a collision here: a pack flow named like a system flow is dropped
+    // with a warning.
     if (config.packs !== undefined) {
       const packed = yield* scanPacks(config.packs, discovery)
       folded.warnings.push(...packed.warnings)
-      const collision = folded.fold(packed.entries, false)
-      if (collision !== undefined) return yield* Effect.fail(collision)
+      folded.fold(packed.entries, false)
     }
 
     return snapshotFrom(folded.entries, folded.warnings)
@@ -586,8 +592,11 @@ export interface ProjectOptions {
 /**
  * The registry source for a project's own flows: `<root>/.smithers/flows`,
  * path-named and optional, with the retired `<root>/flows` probed for the one
- * `retired_root` warning. Every host that discovers a project's flows builds
- * its source here.
+ * `retired_root` warning. Discovery is confined to the real path of `root`: a
+ * flow directory, entry file or imported module that a symbolic link carries
+ * outside the project is refused with `outside_root`, so an untrusted clone
+ * cannot publish a host directory's description. Every host that discovers a
+ * project's flows builds its source here.
  *
  * @category constructors
  * @since 1.0.0
@@ -600,7 +609,9 @@ export const projectSource = (
   root: path.join(root, projectFlowsDirectory),
   naming: "path",
   optionalRoot: true,
+  confinementRoot: root,
   lockfileRoot: root,
+  undeclaredCapabilities: "all",
   retiredRoot: path.join(root, retiredProjectFlowsDirectory)
 })
 
@@ -629,6 +640,7 @@ export const projectSources = (
       root: path.join(options.root, ...root.trim().split(/[/\\]/)),
       naming: "frontmatter",
       skills: true,
+      undeclaredCapabilities: "none",
       confinementRoot: options.root,
       lockfileRoot: options.root
     }

@@ -1,7 +1,9 @@
 import { AGENT_ROLES } from "@smthrs/rpc/AgentRoles"
 import { HARNESS_IDS, HarnessSchema } from "@smthrs/rpc/LocalApp"
 import { execFileSync } from "node:child_process"
+import { readdirSync, readFileSync } from "node:fs"
 import { delimiter, join, posix, win32 } from "node:path"
+import { fileURLToPath } from "node:url"
 import { describe, expect, test } from "vitest"
 import {
   decodeJwtClaims,
@@ -18,7 +20,7 @@ import {
   VERSION_TIMEOUT_MS
 } from "../src/index.ts"
 import type { HarnessHost } from "../src/index.ts"
-import { envDir } from "../src/internal/Read.ts"
+import { envDir, hostPath, isAbsoluteHostPath } from "../src/internal/Read.ts"
 
 /*
  * The detection table over a fake host: files, binaries and env are data,
@@ -413,8 +415,86 @@ describe("the candidate dirs", () => {
     expect(dirs[0]).toContain("v24.1.0")
   })
 
-  test("callers without a platform keep the native path convention", () => {
-    expect(harnessCandidateDirs({ home: HOME, listDir: () => [] })[0]).toBe(join(HOME, ".local", "bin"))
+  test("callers without a platform get the convention their home is written in", () => {
+    expect(harnessCandidateDirs({ home: HOME, listDir: () => [] })[0]).toBe(posix.join(HOME, ".local", "bin"))
+    // A drive or backslash UNC home is Windows on any runner: no runtime global is read.
+    for (const home of ["C:\\Users\\u", "\\\\server\\share\\u"]) {
+      const dirs = harnessCandidateDirs({ home, listDir: () => [] })
+      expect(dirs[0]).toBe(win32.join(home, ".local", "bin"))
+      expect(dirs).not.toContain("/opt/homebrew/bin")
+    }
+    // A POSIX home that begins with two slashes is not a UNC share.
+    expect(harnessCandidateDirs({ home: "//srv/share/u", listDir: () => [] })).toContain("/opt/homebrew/bin")
+    // probeEnv has no home: Windows always sets OS=Windows_NT.
+    expect(probeEnv({ OS: "Windows_NT", Path: "D:\\bin;.;relative" })).toEqual({ NO_COLOR: "1", PATH: "D:\\bin" })
+    expect(probeEnv({ OS: "Windows_NT", PATH: "/usr/bin:/bin" })).toEqual({ NO_COLOR: "1" })
+  })
+
+  test("the package imports no node module (R1-Neon-D2-015)", () => {
+    const src = fileURLToPath(new URL("../src", import.meta.url))
+    const files = readdirSync(src, { recursive: true, encoding: "utf8" }).filter((file) => file.endsWith(".ts"))
+    expect(files.length).toBeGreaterThan(5)
+    for (const file of files) {
+      const text = readFileSync(join(src, file), "utf8")
+      expect({ file, node: /from\s+"node:|require\(|\bprocess\.(?:env|platform|cwd|argv)\b/.test(text) })
+        .toEqual({ file, node: false })
+    }
+  })
+
+  test("portable path rules match node:path for every call detection makes (R1-Neon-D2-015)", () => {
+    const segments = ["", ".", "..", "a", "b c", ".nvm", "x.y"]
+    const posixPaths = [
+      "/Users/u",
+      "/",
+      "//a//b/",
+      "/a/../..",
+      "",
+      ".",
+      "..",
+      "relative/home",
+      "/a/./b/",
+      "a/../..",
+      "../x/"
+    ]
+    const win32Paths = [
+      "C:\\Users\\u",
+      "C:\\",
+      "c:/Users/u/",
+      "\\\\server\\share\\x",
+      "\\\\server\\share",
+      "//server/share/x/..",
+      "\\rooted",
+      "/rooted",
+      "",
+      ".",
+      "..",
+      "relative/home",
+      "D:\\a\\..\\..\\b\\",
+      "\\\\server",
+      "..\\x\\",
+      "C:\\a\\.\\b",
+      "C:relative",
+      "C:"
+    ]
+    for (const [node, paths, platform] of [[posix, posixPaths, "linux"], [win32, win32Paths, "win32"]] as const) {
+      const ours = hostPath({ platform })
+      expect([ours.sep, ours.delimiter]).toEqual([node.sep, node.delimiter])
+      for (const path of paths) {
+        expect({ path, absolute: ours.isAbsolute(path) }).toEqual({ path, absolute: node.isAbsolute(path) })
+        for (const first of segments) {
+          for (const second of segments) {
+            expect({ path, first, second, joined: ours.join(path, first, second) })
+              .toEqual({ path, first, second, joined: node.join(path, first, second) })
+          }
+        }
+        // `resolve` is only ever given a path isAbsoluteHostPath accepted.
+        if (isAbsoluteHostPath({ platform }, path)) {
+          expect({ path, resolved: ours.resolve(path) }).toEqual({ path, resolved: node.resolve(path) })
+        }
+      }
+    }
+    // A device namespace keeps its first two components as the root, so `..` cannot leave it.
+    expect(hostPath({ platform: "win32" }).join("\\\\?\\C:\\x", "..", "..")).toBe("\\\\?\\C:\\")
   })
 
   test("Windows host paths and PATH separators do not depend on the runner", () => {
@@ -931,6 +1011,13 @@ describe("helpers", () => {
     expect(parseVersionLine("x".repeat(10_000))).toHaveLength(64)
     expect(parseVersionLine(`1.${"9".repeat(10_000)}`)).toHaveLength(64)
     expect(parseVersionLine("\u001b[2J\u0007")).toBeNull()
+  })
+
+  test("parseVersionLine cuts between code points (R1-Fable-D2-118)", () => {
+    // The emoji's two units sit at 63 and 64: a cut at 64 would keep half of it.
+    expect(parseVersionLine(`${"x".repeat(63)}😀tail`)).toBe("x".repeat(63))
+    expect(parseVersionLine(`${"x".repeat(62)}😀tail`)).toBe(`${"x".repeat(62)}😀`)
+    expect(parseVersionLine(`${"x".repeat(63)}😀tail`)?.isWellFormed()).toBe(true)
   })
 
   test("decodeJwtClaims never verifies and never throws", () => {

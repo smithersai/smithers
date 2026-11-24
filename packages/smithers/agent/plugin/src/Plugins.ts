@@ -12,6 +12,10 @@
  * Cancellation is fiber interruption via scope closure; nothing here threads an
  * `AbortSignal`.
  *
+ * Every handler runs in a `Plugins.hook` span carrying `plugin.name`,
+ * `plugin.hook` and, on failure, `error.code`; the `smithers_plugin_hook_runs`
+ * counter records each run by hook and outcome.
+ *
  * @since 1.0.0-rc.0
  */
 
@@ -24,6 +28,7 @@ import * as Option from "effect/Option"
 import type { ArgsOf, ContextOf, HookKind, KeysOfKind, SuccessOf } from "./Hooks.ts"
 import { engineHooks } from "./Hooks.ts"
 import type { FlowsHooks } from "./index.ts"
+import * as Instrument from "./internal/Instrument.ts"
 import { PluginError } from "./PluginError.ts"
 import { defaultHandlerTimeout, defaultParallelConcurrency, type HandlerRecord, type Resolved } from "./Resolve.ts"
 
@@ -76,7 +81,7 @@ const runHandler = (
       })
     )
 
-  return Effect.sync(() => record.handler(...args)).pipe(
+  const handled = Effect.sync(() => record.handler(...args)).pipe(
     Effect.catchCause(onCause),
     Effect.flatMap((result) =>
       Effect.isEffect(result)
@@ -102,6 +107,13 @@ const runHandler = (
           })
         )
     })
+  )
+  return Instrument.observe(
+    "Plugins.hook",
+    Instrument.hookRuns,
+    { "plugin.name": record.plugin, "plugin.hook": record.hook },
+    { hook: record.hook },
+    handled
   )
 }
 

@@ -169,11 +169,24 @@ describe("NodeLoadGuard", () => {
       })
     ))
 
-  it.effect("loads an installed package beneath the root as a static package import does", () =>
+  // R1-Fable-D2-058: a `node_modules` directory committed beneath the source
+  // root is outside the measured closure, so it must not load unmeasured.
+  it.effect("refuses a node_modules file beneath the root, by package name and by path", () =>
     guarded(({ module, root }) =>
       Effect.sync(() => {
         const installed = module(join(root, "node_modules", "dep", "index.js"))
-        expect(load(join(root, "load", "flow.ts"), "dep")).toBe(installed)
+        expectRefused(refusal(() => load(join(root, "load", "flow.ts"), "dep")), installed, root)
+        const nested = module(join(root, "a", "node_modules", "x.js"))
+        expectRefused(refusal(() => load(join(root, "a", "flow.ts"), "./node_modules/x.js")), nested, root)
+      })
+    ))
+
+  it.effect("loads a node_modules file beneath the root only as a measured copy", () =>
+    guarded(({ module, root }, guard) =>
+      Effect.gen(function*() {
+        const copy = module(join(root, "a", "node_modules", "measured.js"))
+        yield* guard.permit(copy)
+        expect(load(join(root, "a", "flow.ts"), "./node_modules/measured.js")).toBe(copy)
       })
     ))
 

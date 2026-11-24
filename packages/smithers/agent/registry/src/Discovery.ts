@@ -456,7 +456,8 @@ export const make = (fs: FileSystem.FileSystem, path: Path.Path): Discovery =>
               naming: source.naming,
               name: pathName,
               dirBasename: path.basename(directory),
-              provenance
+              provenance,
+              undeclaredCapabilities: source.undeclaredCapabilities
             })
           }
 

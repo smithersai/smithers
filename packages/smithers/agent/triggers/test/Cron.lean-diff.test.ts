@@ -7,8 +7,10 @@
  * line. An expression crosses as a JSON string, a schedule as its six sets and its `and` flag, and an instant as a
  * whole number of milliseconds.
  *
- * A machine with neither the built oracle nor `lake` skips the file; a machine with `lake` builds the oracle first,
- * and builds it again when a source of the specification is newer than it.
+ * A developer's machine with neither the built oracle nor `lake` skips the differential cases; a machine with `lake`
+ * builds the oracle first, and builds it again when a source of the specification is newer than it. CI may not skip
+ * them: with `CI` set and no oracle the suite fails, because a green run that answered no differential case says
+ * nothing about the specification.
  */
 import { Fuzz } from "@smthrs/fuzz"
 import { Arbitrary, Cron as EffectCron, Effect, Result, Schema } from "effect"

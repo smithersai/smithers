@@ -35,7 +35,10 @@ instead of one alert per occurrence.
 The first `failing` report opens the condition. Later `failing` reports leave
 its clock and its summary alone, and an `ok` report closes it. A step that
 retries may report twice: the second report changes nothing. `summary` is the
-line a person reads in the page; the first 500 characters are kept.
+line a person reads in the page; the first 500 UTF-16 code units are kept, and
+one fewer when the cut would split a character. A report the journal cannot
+record, such as one with an empty probe name, fails with a `NotificationError`
+whose code is `notification_invalid`.
 
 ## Name the probes in the policy
 
@@ -111,7 +114,9 @@ export const page = (ownerRunId: string) => Effect.flatMap(Alerts.AlertRuntime, 
 
 The tick admits the alert to the owning run's notification queue, sends the
 message, and journals the delivery. A channel that fails comes back in
-`tick.failed` and is sent on the next tick. Telegram takes no idempotency key,
+`tick.failed` and is sent on the next tick. A send the provider refused, as a
+revoked bot token is, is not sent again for that page, and a rate-limited
+provider is left alone for the wait it named. Telegram takes no idempotency key,
 so a process that dies between an accepted send and the delivery record sends
 the same message again.
 

@@ -271,6 +271,11 @@ describe("OpenAIResponses", () => {
     ])).toEqual([])
   })
 
+  it.each(["constructor", "toString", "__proto__"])("rejects an unknown inherited item id %s", (item_id) => {
+    expect(replayDataError([JSON.stringify({ type: "response.function_call_arguments.delta", item_id, delta: "{}" })]))
+      .toMatchObject({ code: "invalid_provider_output" })
+  })
+
   it("completes a call named only by its item id and one whose arguments arrive whole", () => {
     expect(replayData([
       "{\"type\":\"response.output_item.added\",\"item_id\":\"fc\",\"item\":{\"type\":\"function_call\",\"id\":\"call_by_item\",\"name\":\"read\",\"arguments\":\"{\\\"path\\\":\\\"a\\\"}\"}}",

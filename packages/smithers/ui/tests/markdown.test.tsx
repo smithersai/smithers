@@ -438,6 +438,21 @@ describe("Markdown (document mode)", () => {
     expect([...dom.querySelectorAll("p")].at(-1)?.textContent).toBe("A <tag> and &amp;");
   });
 
+  test("an entity named like an Object member stays as written", () => {
+    const dom = documentDom("<p>&constructor; &toString; &valueOf; &__proto__; &hasOwnProperty; &amp;</p>");
+    expect(dom.querySelector("p")?.textContent).toBe("&constructor; &toString; &valueOf; &__proto__; &hasOwnProperty; &");
+    expect(dom.textContent).not.toContain("native code");
+  });
+
+  test("an ordered list that resumes after a code block keeps its numbers, in chat and document mode", () => {
+    for (const variant of ["chat", "document"] as const) {
+      const dom = documentDom("1. Install\n\n```sh\npnpm i\n```\n\n2. Run\n3. Test", variant);
+      const lists = [...dom.querySelectorAll("ol")];
+      expect([variant, lists.map((list) => list.getAttribute("start"))]).toEqual([variant, [null, "2"]]);
+      expect(lists.map((list) => list.textContent)).toEqual(["Install", "RunTest"]);
+    }
+  });
+
   test("chat mode is unchanged: HTML stays text and each line keeps its break", () => {
     const chat = renderToStaticMarkup(<Markdown content={README} />);
     expect(renderToStaticMarkup(<Markdown content={README} variant="chat" />)).toBe(chat);

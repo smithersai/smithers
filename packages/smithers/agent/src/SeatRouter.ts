@@ -1,12 +1,19 @@
 /**
- * Routes a run to seats by the maintainer's routing graph: Jev classifies the
- * task, and a pure table picks the seats.
+ * Routes a run to seats by a routing graph: Jev classifies the task, and a
+ * pure table picks the seats.
+ *
+ * The graph is the host's: a {@link Catalog} carries the {@link Graph} its
+ * runs route by, with the seats it names, the pick for each set of answers
+ * and each seat's failover order. A catalog that carries none routes by
+ * {@link defaultGraph}, the maintainer's graph over the seats {@link seats}
+ * names, so a host with other seats supplies its own graph rather than being
+ * left with no candidate.
  *
  * A declared seat always wins: {@link route} asks nothing unless the flow
  * declared {@link Seat.auto}. An `auto` run asks Jev once, at its start, the
  * graph's edge questions (phase, size, clarity, binary success) and the
- * system-prompt variant in one call. {@link plan} maps the answers to a seat
- * or a panel, {@link backupsOf} gives each seat's failover order, and
+ * system-prompt variant in one call. The graph's `plan` maps the answers to a
+ * seat or a panel, its `backupsOf` gives each seat's failover order, and
  * {@link fit} keeps the seats the host's {@link Catalog} has available. A
  * judge that cannot answer, or a pick whose seats are all unavailable, fails
  * the run as {@link Seat.SeatUnrouted}: no default seat is ever picked instead.
@@ -41,8 +48,8 @@ export interface Variant {
 }
 
 /**
- * What the host offers: the graph {@link seats} its `SeatResolver` can run
- * here, and the variants.
+ * What the host offers: the seats of its routing graph its `SeatResolver`
+ * can run here, the variants, and the graph itself.
  *
  * @category services
  * @since 1.0.0-rc.0
@@ -50,6 +57,44 @@ export interface Variant {
 export interface Service {
   readonly candidates: Effect.Effect<ReadonlyArray<string>, Seat.SeatUnresolved>
   readonly variants: ReadonlyArray<Variant>
+  /**
+   * The routing graph this host's `auto` runs route by. {@link defaultGraph}
+   * when the host names none: a host whose seats are not the default graph's
+   * names its own here, or every pick finds no candidate.
+   */
+  readonly graph?: Graph | undefined
+}
+
+/**
+ * A routing graph: the seats it names, the seat or panel it picks for one set
+ * of answers, and the seats each seat fails over to, in order. `plan` and
+ * `backupsOf` are pure, and name only seats in `seats`.
+ *
+ * @example
+ * ```ts
+ * import { SeatRouter } from "@smthrs/agent"
+ * import * as Effect from "effect/Effect"
+ *
+ * // A host with two seats of its own: hard work on `a`, the rest on `b`, each failing over to the other.
+ * const graph: SeatRouter.Graph = {
+ *   seats: ["a", "b"],
+ *   plan: (answers) => ({ seat: answers.size === "important" ? "a" : "b" }),
+ *   backupsOf: (seat) => seat === "a" ? ["b"] : ["a"]
+ * }
+ * const catalog = SeatRouter.layer({
+ *   candidates: Effect.succeed(graph.seats),
+ *   variants: SeatRouter.defaultVariants,
+ *   graph
+ * })
+ * ```
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export interface Graph {
+  readonly seats: ReadonlyArray<string>
+  readonly plan: (answers: Answers) => Planned<string>
+  readonly backupsOf: (seat: string, phase: Phase) => ReadonlyArray<string>
 }
 
 /**
@@ -124,7 +169,8 @@ export const State = Schema.Struct({
 export type State = typeof State.Type
 
 /**
- * The seats the routing graph names, by their `Providers.seatAliases` names.
+ * The seats {@link defaultGraph} names, by their `Providers.seatAliases`
+ * names. A host's own {@link Graph} names its own.
  *
  * @category constants
  * @since 1.0.0-rc.0
@@ -179,21 +225,22 @@ export const Answers = Schema.Struct({
 export type Answers = typeof Answers.Type
 
 /**
- * What the graph picks for one set of answers: a seat, or a panel whose
- * members answer in parallel and whose merger, `seat`, merges them.
+ * What a graph picks for one set of answers: a seat, or a panel whose
+ * members answer in parallel and whose merger, `seat`, merges them. `Seat`
+ * is the graph's seat names: {@link GraphSeat} for {@link defaultGraph}.
  *
  * @category models
  * @since 1.0.0-rc.0
  */
-export interface Planned {
-  readonly seat: GraphSeat
-  readonly panel?: { readonly seats: ReadonlyArray<GraphSeat>; readonly merger: GraphSeat }
+export interface Planned<Seat extends string = GraphSeat> {
+  readonly seat: Seat
+  readonly panel?: { readonly seats: ReadonlyArray<Seat>; readonly merger: Seat }
 }
 
 const panel: Planned = { seat: "fable", panel: { seats: ["opus", "fable", "sol"], merger: "fable" } }
 
 /**
- * The routing graph: the seat or panel one set of answers runs on. Writing
+ * The default routing graph: the seat or panel one set of answers runs on. Writing
  * code never runs on Luna; Luna takes only trivial, clear tool work whose
  * success is binary. Work the graph does not list runs on Opus.
  *
@@ -228,7 +275,8 @@ export const plan = (answers: Answers): Planned => {
 }
 
 /**
- * The seats `seat` fails over to, in order, when its provider fails.
+ * The seats `seat` fails over to in the default routing graph, in order, when
+ * its provider fails.
  *
  * @category constructors
  * @since 1.0.0-rc.0
@@ -241,6 +289,20 @@ export const backupsOf = (seat: GraphSeat, phase: Phase): ReadonlyArray<GraphSea
     : seat === "kimi"
     ? []
     : ["kimi"]
+
+/**
+ * The maintainer's routing graph, which a {@link Catalog} that names no graph
+ * routes by: {@link seats}, {@link plan} and {@link backupsOf}.
+ *
+ * @category constants
+ * @since 1.0.0
+ */
+export const defaultGraph: Graph = {
+  seats,
+  plan,
+  // A seat the default graph does not name fails over as its unlisted seats do.
+  backupsOf: (seat, phase) => backupsOf(seat as GraphSeat, phase)
+}
 
 /**
  * The JSON form of one {@link Route}.
@@ -266,7 +328,8 @@ export type Route = typeof RouteSchema.Type
 
 /**
  * Keeps the available seats of a {@link Planned} pick: each seat becomes the
- * first available of itself and its {@link backupsOf}, the rest available
+ * first available of itself and its backups in `graph` ({@link defaultGraph}
+ * unless given), the rest available
  * are its backups, and panel members that land on one seat are one member
  * with the union of their backups, in order, less the seats on the panel. A
  * panel left with one member is that member's seat and backups alone. `undefined` when the pick's
@@ -275,9 +338,14 @@ export type Route = typeof RouteSchema.Type
  * @category constructors
  * @since 1.0.0-rc.0
  */
-export const fit = (planned: Planned, phase: Phase, available: ReadonlyArray<string>): Route | undefined => {
-  const chain = (seat: GraphSeat) => {
-    const [first, ...backups] = [seat, ...backupsOf(seat, phase)].filter((id) => available.includes(id))
+export const fit = (
+  planned: Planned<string>,
+  phase: Phase,
+  available: ReadonlyArray<string>,
+  graph: Pick<Graph, "backupsOf"> = defaultGraph
+): Route | undefined => {
+  const chain = (seat: string) => {
+    const [first, ...backups] = [seat, ...graph.backupsOf(seat, phase)].filter((id) => available.includes(id))
     return first === undefined ? undefined : { seat: first, backups }
   }
   const merger = chain(planned.seat)
@@ -443,8 +511,9 @@ export interface Input {
  *
  * A declared seat is kept and nothing is asked. Otherwise Jev answers the
  * edge questions and, in the same call, the variant among two or more; the
- * route is {@link fit} of {@link plan} over the catalog's seats, without the
- * panel when {@link Input.panel} is `false`.
+ * route is {@link fit} of the pick of the catalog's graph ({@link defaultGraph}
+ * when it names none) over the catalog's seats, without the panel when
+ * {@link Input.panel} is `false`.
  *
  * @category constructors
  * @since 1.0.0-rc.0
@@ -483,12 +552,13 @@ export const route = (input: Input): Effect.Effect<Decision, Seat.SeatUnrouted, 
       clarity: choice("clarity"),
       binary: (read.binary as Classifier.BooleanAnswer).value
     })
-    const planned = plan(answers)
-    const routed = fit(input.panel === false ? { seat: planned.seat } : planned, answers.phase, candidates)
+    const graph = catalog.graph ?? defaultGraph
+    const planned = graph.plan(answers)
+    const routed = fit(input.panel === false ? { seat: planned.seat } : planned, answers.phase, candidates, graph)
     if (routed === undefined) {
       return yield* unrouted(
         "no_candidates",
-        `None of ${[planned.seat, ...backupsOf(planned.seat, answers.phase)].join(", ")} is available here`
+        `None of ${[planned.seat, ...graph.backupsOf(planned.seat, answers.phase)].join(", ")} is available here`
       )
     }
     const { latencyMs, ...asked } = reading.asked

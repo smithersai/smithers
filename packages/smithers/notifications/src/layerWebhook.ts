@@ -61,7 +61,9 @@ const webhookUrl = (raw: string): Effect.Effect<string, AlertError> =>
  * The request carries whatever credential the deployment put in `headers`,
  * and a transport that follows a 3xx re-sends those headers to an origin the
  * deployment never named. Every other fetch default the composition set is
- * kept; only the redirect mode is forced. A 3xx therefore surfaces to the
+ * kept; only the redirect mode is forced. A host's own client reads the same
+ * setting: the kernel's guarded client follows redirects unless the caller
+ * asked for `manual`. A 3xx therefore surfaces to the
  * status rule, which calls it `sink_rejected`: a redirecting pager endpoint
  * is a misconfiguration to fix, not an address to forward credentials to.
  */
@@ -140,47 +142,40 @@ const withoutRequest = (tracer: Tracer.Tracer): Tracer.Tracer =>
     }
   })
 
+/** What both webhook layers take: the endpoint, any headers it needs, and how long to wait. */
+interface WebhookOptions {
+  readonly url: string
+  readonly headers?: Readonly<Record<string, string>> | undefined
+  readonly timeout?: Duration.Duration | undefined
+}
+
 /**
- * A sink that POSTs each alert to one webhook.
+ * A sink that POSTs each alert to one webhook through the host's own
+ * `HttpClient`.
  *
- * The body is the alert plus its {@link alertId}, and the same id is sent as
- * an `Idempotency-Key` header, because the package requires the receiver to
- * dedupe on it and a body without it cannot. The header is set after the
- * caller's headers, so it is the one this sink sends.
+ * This is {@link layerWebhook} without a transport of its own. The request
+ * goes through whichever `HttpClient` the composition provides, so a host's
+ * destination policy, credential proxy and instrumentation apply to a page as
+ * they do to every other outbound request, and a client that denies the
+ * endpoint denies the page: it fails as `sink_unreachable` and nothing is
+ * sent anywhere else.
  *
- * The endpoint must be an absolute `http:` or `https:` URL, checked when the
- * layer is built, and the request is made with redirect following disabled:
- * the caller's headers can carry a credential, and a followed redirect would
- * re-send them to an origin the deployment never named. A 3xx answer is a
- * refusal like any other non-2xx, not a forwarding instruction. The sink owns
- * its Fetch transport; an externally supplied `HttpClient` is not used.
- * Each delivery has its own scope, which aborts the request and releases any
- * unread response body on completion, failure, timeout, or interruption.
+ * The client must make one request and return its answer. The sink asks for
+ * that by setting the fetch redirect mode to `manual` on every delivery,
+ * which `FetchHttpClient.layer` and the kernel's guarded client both obey,
+ * and it calls a 3xx answer a refusal. A client that follows redirects
+ * regardless, such as one wrapped in `HttpClient.followRedirects`, re-sends
+ * the caller's headers to wherever the endpoint points, and the sink cannot
+ * see it do so. Do not hand it one.
  *
- * The url is treated as a credential, because a webhook's secret usually is
- * its path or query. The delivery's HTTP span is named for the method and
- * records the scheme, host, port and answering status, never the path, the
- * query or userinfo, and it fails with the same url-free reason the sink
- * returns. A host that records HTTP headers on spans gets every name in
- * `headers`, and a redirect's `location`, as `<redacted>`.
- *
- * A non-2xx response is a failure, not a delivery, and an endpoint that never
- * answers is a failure after `timeout`. Paging is exactly the case where a
- * silently dropped request is worse than a retry, and a hung request is worse
- * than either: it is indistinguishable from silence, so it must not be
- * possible to wait on one forever.
+ * Everything else is as {@link layerWebhook} describes: the id, the timeout,
+ * the redaction and the answers that count as delivered.
  *
  * @param options the endpoint, any headers it needs, and how long to wait
  * @category layers
- * @since 0.1.0
+ * @since 1.0.0
  */
-export const layerWebhook = (
-  options: {
-    readonly url: string
-    readonly headers?: Readonly<Record<string, string>> | undefined
-    readonly timeout?: Duration.Duration | undefined
-  }
-): Layer.Layer<Sink> =>
+export const layerWebhookClient = (options: WebhookOptions): Layer.Layer<Sink, never, HttpClient.HttpClient> =>
   Layer.effect(
     Sink,
     Effect.gen(function*() {
@@ -236,4 +231,43 @@ export const layerWebhook = (
           )
       }
     })
-  ).pipe(Layer.provide(FetchHttpClient.layer))
+  )
+
+/**
+ * A sink that POSTs each alert to one webhook.
+ *
+ * The body is the alert plus its {@link alertId}, and the same id is sent as
+ * an `Idempotency-Key` header, because the package requires the receiver to
+ * dedupe on it and a body without it cannot. The header is set after the
+ * caller's headers, so it is the one this sink sends.
+ *
+ * The endpoint must be an absolute `http:` or `https:` URL, checked when the
+ * layer is built, and the request is made with redirect following disabled:
+ * the caller's headers can carry a credential, and a followed redirect would
+ * re-send them to an origin the deployment never named. A 3xx answer is a
+ * refusal like any other non-2xx, not a forwarding instruction. The sink owns
+ * its Fetch transport; an externally supplied `HttpClient` is not used. A host
+ * that sends its outbound requests through a client of its own composes
+ * {@link layerWebhookClient} instead, which is this sink over that client.
+ * Each delivery has its own scope, which aborts the request and releases any
+ * unread response body on completion, failure, timeout, or interruption.
+ *
+ * The url is treated as a credential, because a webhook's secret usually is
+ * its path or query. The delivery's HTTP span is named for the method and
+ * records the scheme, host, port and answering status, never the path, the
+ * query or userinfo, and it fails with the same url-free reason the sink
+ * returns. A host that records HTTP headers on spans gets every name in
+ * `headers`, and a redirect's `location`, as `<redacted>`.
+ *
+ * A non-2xx response is a failure, not a delivery, and an endpoint that never
+ * answers is a failure after `timeout`. Paging is exactly the case where a
+ * silently dropped request is worse than a retry, and a hung request is worse
+ * than either: it is indistinguishable from silence, so it must not be
+ * possible to wait on one forever.
+ *
+ * @param options the endpoint, any headers it needs, and how long to wait
+ * @category layers
+ * @since 0.1.0
+ */
+export const layerWebhook = (options: WebhookOptions): Layer.Layer<Sink> =>
+  layerWebhookClient(options).pipe(Layer.provide(FetchHttpClient.layer))

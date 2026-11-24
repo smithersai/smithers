@@ -227,7 +227,7 @@ Add `-d` to detach into a background child process that prints the run ID and lo
 ```bash
 smthrs runs cancel-all                 # idempotent: safe to run twice
 smthrs gc --older-than 1s --dry-run    # preview retention deletions
-smthrs gc --older-than 1s              # delete terminal records older than 1s
+smthrs gc --older-than 1s --yes        # delete terminal records older than 1s
 ```
 
 `gc` refuses `--older-than 0s` to prevent accidental wipeouts.

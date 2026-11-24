@@ -5,7 +5,7 @@
  */
 
 import type { ModelStep } from "@smthrs/agent"
-import { type Model, ModelError, type ModelEvent, ModelRequest } from "@smthrs/model"
+import { type Model, ModelError, type ModelEvent, ModelProxy, ModelRequest } from "@smthrs/model"
 import { Effect, Metric, Stream } from "effect"
 import type { HostModelRoute } from "./ConfiguredModelRoute.ts"
 import { durableModelStream } from "./DurableModelCall.ts"
@@ -42,7 +42,8 @@ const notificationTimeouts = Metric.counter("smithers_model_host_fallback_notifi
 export const fastModelFallback = (
   sources: ReadonlyArray<ModelSource>,
   onFallback?: (index: number) => Effect.Effect<void>,
-  name = "model-host/fallback"
+  name = "model-host/fallback",
+  onSource?: (modelId: string) => void
 ): {
   readonly stream: (
     request: ModelRequest.ModelRequest
@@ -57,6 +58,7 @@ export const fastModelFallback = (
         index: number
       ): Stream.Stream<ModelEvent.ModelEvent, Model.ModelFailure, ModelStep.Requirements> => {
         const source = sources[index]!
+        onSource?.(source.modelId)
         let emitted = false
         const { maxTokens: _maxTokens, ...unlimited } = request.params
         return durableModelStream(
@@ -86,9 +88,9 @@ export const fastModelFallback = (
               Effect.withSpan("model_host.fallback_notification")
             )
         ).pipe(
-          Stream.tap(() =>
+          Stream.tap((event) =>
             Effect.sync(() => {
-              emitted = true
+              if (ModelProxy.producesOutput(event)) emitted = true
             })
           ),
           Stream.catch((error) => {

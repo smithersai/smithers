@@ -25,7 +25,7 @@
 import { Clock, Duration, Effect, Option, Redacted } from "effect"
 import * as HttpClient from "effect/http/HttpClient"
 import * as HttpClientRequest from "effect/http/HttpClientRequest"
-import { forCredentials, MAX_RETRY_AFTER_MS } from "../core/CredentialHttp.ts"
+import { forCredentials, isSecureEndpoint, MAX_RETRY_AFTER_MS } from "../core/CredentialHttp.ts"
 import type { ExternalEvent } from "../core/ExternalEvent.ts"
 import { IntegrationError } from "../core/IntegrationError.ts"
 import * as SignalName from "../core/SignalName.ts"
@@ -169,7 +169,11 @@ export interface Options {
   readonly pollTimeoutSeconds?: number | undefined
   /** The deadline for one request beyond the poll's own hold. Defaults to 10 seconds. */
   readonly requestTimeout?: Duration.Input | undefined
-  /** An http: or https: origin to send to instead of the public host, for a fixture server. */
+  /**
+   * An origin to send to instead of the public host. The bot token is part of
+   * every request's path, so the origin must be `https:`; `http:` is accepted
+   * only on loopback, for a fixture server.
+   */
   readonly apiBaseUrl?: string | undefined
 }
 
@@ -195,7 +199,8 @@ const originOf = (raw: string): string | null => {
     return null
   }
   const plain = url.username === "" && url.password === "" && url.search === "" && url.hash === ""
-  return (url.protocol === "https:" || url.protocol === "http:") && plain ? raw.replace(/\/+$/u, "") : null
+  // The token rides in the path of every request, so cleartext HTTP beyond loopback would publish it.
+  return isSecureEndpoint(url) && plain ? raw.replace(/\/+$/u, "") : null
 }
 
 const parseBody = (text: string): unknown => {
@@ -265,9 +270,12 @@ export const make = (
     const origin = originOf(options.apiBaseUrl ?? DEFAULT_API_BASE_URL)
     if (origin === null) {
       // The message names no URL: a misconfigured one may hold a credential.
-      return yield* invalid("Telegram apiBaseUrl must be an http: or https: origin with no credentials or query.", {
-        sourceId
-      })
+      return yield* invalid(
+        "Telegram apiBaseUrl must be an https: origin, or http: on loopback, with no credentials or query.",
+        {
+          sourceId
+        }
+      )
     }
     const configured = options.botToken ?? env[TOKEN_ENV]
     const token = Redacted.isRedacted(configured) ? Redacted.value(configured) : configured

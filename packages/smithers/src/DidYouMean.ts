@@ -82,8 +82,7 @@ const meant = (candidates: ReadonlyArray<Command>) =>
     description:
       "Judge one unknown command line against the commands smthrs serves: which one, if any, the person meant.",
     state: Schema.Struct({
-      typed: Schema.String.annotate({ description: "The command the person typed, which the parser refused" }),
-      args: Schema.String.annotate({ description: "The rest of the command line, as they typed it" })
+      typed: Schema.String.annotate({ description: "The command the person typed, which the parser refused" })
     }),
     // Jev permits 255 options per question; include none in every partition.
     // One request still evaluates the entire public command tree.
@@ -114,7 +113,7 @@ const meant = (candidates: ReadonlyArray<Command>) =>
  */
 export const didYouMean = (
   typed: string,
-  args: ReadonlyArray<string>,
+  _args: ReadonlyArray<string>,
   candidates: ReadonlyArray<Command>
 ): Effect.Effect<string | undefined, never, Evaluator.Evaluator> => {
   if (
@@ -123,7 +122,7 @@ export const didYouMean = (
   ) {
     return Effect.succeed(undefined)
   }
-  return meant(candidates).evaluate({ typed, args: args.join(" ") }).pipe(
+  return meant(candidates).evaluate({ typed }).pipe(
     Effect.map((answers) => {
       const matches = Object.values(answers).filter((answer) => answer.value !== none && answer.confidence >= floor)
         .sort((left, right) => right.confidence - left.confidence)

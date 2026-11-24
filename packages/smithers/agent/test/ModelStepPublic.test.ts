@@ -6,8 +6,10 @@ import { Action, Flow, FlowRuntime, RetryPolicy } from "@smthrs/flow"
 import { HarnessError } from "@smthrs/harness"
 import { ModelError, ModelEvent } from "@smthrs/model"
 import { Node } from "@smthrs/plan"
-import { Cause, Deferred, Effect, Exit, Layer, Schema, Scope, Stream } from "effect"
+import { Cause, Deferred, Effect, Exit, Layer, PlatformError, Schema, Scope, Stream } from "effect"
+import * as SecureRandom from "effect/crypto/SecureRandom"
 import { describe, expect, it } from "vitest"
+import * as Budget from "../src/Budget.ts"
 import { ModelStep } from "../src/index.ts"
 import * as Internal from "../src/internal/ModelStep.ts"
 import { ask, reply, scripted, through } from "./fixtures/model-step-stack.ts"
@@ -136,6 +138,109 @@ describe("ModelStep public boundary", () => {
     }
     expect(provider.calls).toHaveLength(0)
   })
+
+  it("fails before the provider is called when the budget in context is spent", async () => {
+    const provider = scripted(() => Stream.fromIterable(reply("answer")))
+    const result = await drive(Effect.gen(function*() {
+      const budget = yield* Budget.make({ tokens: { max: 0 } })
+      return yield* ModelStep.run({ name: "broke", request: ask(["question"]), ...through(provider.model) }).pipe(
+        Effect.provideService(Budget.Budget, budget)
+      )
+    }))
+    expect(Exit.isFailure(result)).toBe(true)
+    if (Exit.isFailure(result)) {
+      const failure = Cause.squash(result.cause) as HarnessError.HarnessError
+      expect(failure).toMatchObject({ code: "model_failed", cause: { scope: "tokens", max: 0 } })
+      // The budget's own failure, not its encoding.
+      expect(failure.cause).toBeInstanceOf(Budget.BudgetExceeded)
+    }
+    expect(provider.calls).toHaveLength(0)
+  })
+
+  it("charges a sealed answer to the budget in context once, its replays included", async () => {
+    const provider = scripted(() => Stream.fromIterable(reply("answer")))
+    const result = unwrap(
+      await drive(Effect.gen(function*() {
+        const budget = yield* Budget.make({ tokens: { max: 1_000 } })
+        const options = { name: "accounted", request: ask(["question"]), ...through(provider.model) }
+        const first = yield* ModelStep.run(options).pipe(Effect.provideService(Budget.Budget, budget))
+        const second = yield* ModelStep.run(options).pipe(Effect.provideService(Budget.Budget, budget))
+        return { replayed: [first.replayed, second.replayed], usage: yield* budget.usage }
+      }))
+    )
+    expect(result).toEqual({ replayed: [false, true], usage: { tokens: 6, calls: 1, largestCall: 6 } })
+    expect(provider.calls).toHaveLength(1)
+  })
+
+  it("charges an attempt that sealed nothing, then refuses its retry without asking the provider again", async () => {
+    const provider = scripted((call) =>
+      call === 1
+        ? Stream.concat(
+          Stream.fromIterable([ModelEvent.ModelEvent.Usage({ inputTokens: 90, outputTokens: 10 })]),
+          Stream.fail(new ModelError.ModelError({ code: "transport", message: "reset" }))
+        )
+        : Stream.fromIterable(reply("answer"))
+    )
+    const result = unwrap(
+      await drive(Effect.gen(function*() {
+        const budget = yield* Budget.make({ tokens: { max: 150 } })
+        const exit = yield* ModelStep.run({
+          name: "retried",
+          request: ask(["question"]),
+          ...through(provider.model),
+          retryPolicy: RetryPolicy.make({ initialMs: 1, factor: 1, maxMs: 1, maxAttempts: 3 })
+        }).pipe(Effect.provideService(Budget.Budget, budget), Effect.exit)
+        return { exit, usage: yield* budget.usage }
+      }))
+    )
+    expect(result.usage).toEqual({ tokens: 100, calls: 1, largestCall: 100 })
+    expect(Exit.isFailure(result.exit)).toBe(true)
+    if (Exit.isFailure(result.exit)) {
+      expect(Cause.squash(result.exit.cause)).toMatchObject({
+        code: "model_failed",
+        cause: { scope: "tokens", used: 100, next: 100, max: 150 }
+      })
+    }
+    expect(provider.calls).toHaveLength(1)
+  })
+
+  it.each(["receipt", "ledger"] as const)(
+    "fails the step once, before the provider, when the budget's %s is unavailable",
+    async (broken) => {
+      const provider = scripted(() => Stream.fromIterable(reply("answer")))
+      const result = await drive(Effect.gen(function*() {
+        const random = yield* SecureRandom.SecureRandom
+        const budget: Budget.Service = broken === "receipt" ? yield* Budget.make({}) : {
+          ...Budget.makeUnbounded(),
+          reserve: () =>
+            Effect.fail(
+              new Budget.AccountingUnavailable({ phase: "recover", runId: "public-model", message: "ledger down" })
+            )
+        }
+        return yield* ModelStep.run({ name: broken, request: ask(["question"]), ...through(provider.model) }).pipe(
+          Effect.provideService(Budget.Budget, budget),
+          Effect.provideService(SecureRandom.SecureRandom, {
+            ...random,
+            uuidV4: () =>
+              broken === "ledger" ? random.uuidV4() : Effect.die(PlatformError.systemError({
+                module: "Crypto",
+                method: "randomUUIDv4",
+                _tag: "Unknown",
+                description: "injected entropy failure"
+              }))
+          })
+        )
+      }))
+      expect(Exit.isFailure(result)).toBe(true)
+      if (Exit.isFailure(result)) {
+        expect(Cause.squash(result.cause)).toMatchObject({
+          code: "engine_failed",
+          message: broken === "receipt" ? "Could not allocate a model usage receipt" : "ledger down"
+        })
+      }
+      expect(provider.calls).toHaveLength(0)
+    }
+  )
 
   it("preserves a host permission refusal without retrying the provider", async () => {
     const denied = Permission.PermissionDenied.new({

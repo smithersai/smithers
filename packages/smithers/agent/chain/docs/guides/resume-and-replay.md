@@ -33,6 +33,7 @@ process exits, or persist them in your own journal binding):
 ```ts
 const resumed = Layer.mergeAll(
   Journal.layerMemory(priorEvents),
+  Authorize.layerAllowAll,
   authorLayer,
   QuickJsRunner.layer(),
   Catalog.layer(Catalog.withSystem(entries))

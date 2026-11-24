@@ -573,19 +573,20 @@ export const host = async (bind: Serve.Bind, options: ConnectionOptions, runtime
   const root = Project.root(config.root, process.cwd())
   const host = Layer.merge(control, layerTriggerScheduler(root).pipe(Layer.provide(control)))
   const { output, policy } = display(options, runtime)
-  const ready = Effect.gen(function*() {
-    if (bind.operatorTokenFile !== undefined) {
-      yield* Effect.promise(() => writeOperatorTokenFile(bind.operatorTokenFile!, operatorToken ?? bind.credential!))
-    }
-    if (policy.progress !== "silent") {
-      yield* Effect.sync(() => {
-        output.write(`${Serve.banner(servedBind)}\n`)
-        if (operatorToken !== undefined && bind.operatorTokenFile === undefined) {
-          output.write(`  approval token  ${operatorToken}\n`)
-        }
-      })
-    }
-  })
+  const ready = (address: string) =>
+    Effect.gen(function*() {
+      if (bind.operatorTokenFile !== undefined) {
+        yield* Effect.promise(() => writeOperatorTokenFile(bind.operatorTokenFile!, operatorToken ?? bind.credential!))
+      }
+      if (policy.progress !== "silent") {
+        yield* Effect.sync(() => {
+          output.write(`${Serve.banner(servedBind, address)}\n`)
+          if (operatorToken !== undefined && bind.operatorTokenFile === undefined) {
+            output.write(`  approval token  ${operatorToken}\n`)
+          }
+        })
+      }
+    })
   await settle(
     Serve.host(servedBind, root).pipe(
       Effect.provideService(Serve.Ready, ready),

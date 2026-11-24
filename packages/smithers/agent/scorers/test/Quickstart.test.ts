@@ -21,7 +21,12 @@ it("runs the documented quickstart twice over the same real journal", async () =
   writeFileSync(script, source)
   try {
     for (let attempt = 0; attempt < 2; attempt += 1) {
-      execFileSync(process.execPath, [script], { cwd: directory, timeout: 20_000, stdio: "pipe" })
+      // The workspace resolves dependencies to their sources, some of them `.vibe`.
+      execFileSync(process.execPath, ["--import", import.meta.resolve("vibelang/register"), script], {
+        cwd: directory,
+        timeout: 20_000,
+        stdio: "pipe"
+      })
     }
     const aggregate = await Effect.runPromise(
       Effect.gen(function*() {

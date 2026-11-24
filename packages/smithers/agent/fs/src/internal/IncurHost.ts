@@ -16,6 +16,7 @@ import type * as CommandTree from "../CommandTree.vibe"
 import type * as FlowInvoker from "../FlowInvoker.vibe"
 import { FsError } from "../FsError.vibe"
 import type * as Route from "../Route.vibe"
+import * as CommandLine from "./CommandLine.vibe"
 import type * as SchemaBridge from "./SchemaBridge.vibe"
 
 /**
@@ -122,11 +123,62 @@ export interface Programs {
   readonly select: (tokens: ReadonlyArray<string>, dispatchTokens: ReadonlyArray<string>) => Effect.Effect<Outcome>
 }
 
+/**
+ * The process facts a served CLI reads and the channels it writes.
+ *
+ * A library never reads `process` itself: the platform that hosts the CLI
+ * supplies these, so the same projection runs where no `process` exists.
+ *
+ * @private
+ * @since 0.1.0
+ */
+export interface Host {
+  /** The command line after the executable and script names. */
+  readonly argv: () => ReadonlyArray<string>
+  /** One environment variable, or `undefined` when it is unset. */
+  readonly env: (name: string) => string | undefined
+  /** Writes text to standard output. */
+  readonly stdout: (text: string) => void
+  /** Ends the process with an exit code. */
+  readonly exit: (code: number) => void
+}
+
+type AmbientProcess = {
+  readonly argv: ReadonlyArray<string>
+  readonly env: Readonly<Record<string, string | undefined>>
+  readonly stdout: { readonly write: (text: string) => unknown }
+  readonly exit: (code: number) => unknown
+}
+
+// Read on every call, never captured: a host without `process` (a Worker or a
+// browser) gets an empty command line, no environment, and inert channels
+// instead of a `ReferenceError`.
+const ambientProcess = (): AmbientProcess | undefined =>
+  (globalThis as { readonly process?: AmbientProcess | undefined }).process
+
+/**
+ * The host used when none is provided: the ambient `process` when the runtime
+ * has one, and an empty, inert host when it does not.
+ *
+ * @private
+ * @since 0.1.0
+ */
+export const ambientHost: Host = Object.freeze({
+  argv: () => ambientProcess()?.argv.slice(2) ?? [],
+  env: (name: string) => ambientProcess()?.env[name],
+  stdout: (text: string) => {
+    ambientProcess()?.stdout.write(text)
+  },
+  exit: (code: number) => {
+    ambientProcess()?.exit(code)
+  }
+})
+
 const discoveryFlags = new Set(["--help", "-h", "--llms", ["--llms", "full"].join("-"), "--schema", "--version"])
 
-const isDiscovery = (argv: ReadonlyArray<string>): boolean =>
+const isDiscovery = (argv: ReadonlyArray<string>, host: Host): boolean =>
   // Incur itself tests truthiness, so `COMPLETE=""` must not divert a run.
-  Boolean(process.env.COMPLETE) || argv.includes("--mcp") || argv.some((token) => discoveryFlags.has(token))
+  Boolean(host.env("COMPLETE")) || argv.includes("--mcp") || argv.some((token) => discoveryFlags.has(token))
 
 const isFetchDiscovery = (pathname: string): boolean =>
   pathname === "/mcp" || pathname === "/openapi.json" || pathname === "/openapi.yml" ||
@@ -134,16 +186,9 @@ const isFetchDiscovery = (pathname: string): boolean =>
 
 const descriptionOf = (route: Route.Route): string | undefined => Option.getOrUndefined(route.description)
 
-const normalizeArgv = (argv: ReadonlyArray<string>): ReadonlyArray<string> => {
-  const first = argv[0]
-  return first === undefined || !first.includes("/")
-    ? argv
-    : Object.freeze([...first.split("/"), ...argv.slice(1)])
-}
-
 const commandTokens = (argv: ReadonlyArray<string>): ReadonlyArray<string> => {
   const tokens: Array<string> = []
-  for (const token of normalizeArgv(argv)) {
+  for (const token of argv) {
     if (token.startsWith("-")) break
     tokens.push(token)
   }
@@ -184,15 +229,14 @@ const malformedPath = (): FsError =>
 const errorEnvelope = (error: FsError): string =>
   JSON.stringify({ ok: false, error: { code: error.code, message: error.description } }, null, 2)
 
-const reportServe = (error: FsError, options: IncurCli.serve.Options): void => {
-  const write = options.stdout ?? ((value: string) => {
-    process.stdout.write(value)
-  })
-  write(`${errorEnvelope(error)}\n`)
-  const exit = options.exit ?? ((code: number) => {
-    process.exit(code)
-  })
-  exit(1)
+type Channels = {
+  readonly stdout: (text: string) => void
+  readonly exit: (code: number) => void
+}
+
+const reportServe = (error: FsError, channels: Channels): void => {
+  channels.stdout(`${errorEnvelope(error)}\n`)
+  channels.exit(1)
 }
 
 const reportFetch = (error: FsError): Response =>
@@ -296,8 +340,9 @@ export const mount = (options: {
   readonly tree: CommandTree.CommandTree
   readonly run: Run
   readonly programs: Programs
+  readonly host: Host
 }): IncurCli.Cli & { readonly close: () => Promise<void> } => {
-  const { name, programs, run, tree } = options
+  const { host, name, programs, run, tree } = options
   const cli = IncurCli.create(name)
 
   // Dispatch CLIs are short-lived; the metadata CLI also receives guards
@@ -356,16 +401,19 @@ export const mount = (options: {
     options?: { readonly signal: AbortSignal } | undefined
   ): Promise<Outcome> => run(programs.select(tokens, dispatchTokens), options)
 
-  cli.serve = async (argv = process.argv.slice(2), options = {}) => {
+  cli.serve = async (argv = [...host.argv()], options = {}) => {
     lifetime.signal.throwIfAborted()
-    if (isDiscovery(argv)) return (await metadataSurface()).serve(argv, options)
-    const normalized = normalizeArgv(argv)
+    // Incur falls back to `process` for a channel it is not handed, so every
+    // delegated call carries the host's.
+    const served = { ...options, stdout: options.stdout ?? host.stdout, exit: options.exit ?? host.exit }
+    if (isDiscovery(argv, host)) return (await metadataSurface()).serve(argv, served)
+    const normalized = CommandLine.splitName(argv)
     const tokens = commandTokens(normalized)
     const outcome = await select(tokens, tokens)
-    if (outcome._tag === "Error") return reportServe(outcome.error, options)
+    if (outcome._tag === "Error") return reportServe(outcome.error, served)
     return Option.isNone(outcome.selection)
-      ? (await metadataSurface()).serve([...normalized], options)
-      : guarded(dispatchCli(name, outcome.selection.value, run, programs)).serve([...normalized], options)
+      ? (await metadataSurface()).serve([...normalized], served)
+      : guarded(dispatchCli(name, outcome.selection.value, run, programs)).serve([...normalized], served)
   }
 
   cli.fetch = async (request) => {

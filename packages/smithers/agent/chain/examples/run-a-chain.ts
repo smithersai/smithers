@@ -5,6 +5,7 @@
  * "Run a chain" example; `test/examples.test.ts` runs it.
  */
 import * as Author from "@smthrs/chain/Author"
+import * as Authorize from "@smthrs/chain/Authorize"
 import * as Catalog from "@smthrs/chain/Catalog"
 import * as Chain from "@smthrs/chain/Chain"
 import * as Journal from "@smthrs/chain/Journal"
@@ -26,6 +27,7 @@ const script = [
 
 const layers = Layer.mergeAll(
   Journal.layerMemory(),
+  Authorize.layerAllowAll,
   Author.layerMock([script]),
   QuickJsRunner.layer(),
   Catalog.layer(Catalog.withSystem([grep]))

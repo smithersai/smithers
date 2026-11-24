@@ -15,6 +15,24 @@ import * as Route from "./Route.vibe"
 
 export { selfSegment } from "./internal/IncurHost.ts"
 
+/**
+ * The process facts a served CLI reads and the channels it writes: the
+ * command line `serve()` defaults to, the `COMPLETE` environment variable,
+ * standard output, and process exit.
+ *
+ * The package never reads `process` on its own. Without a provided host it
+ * uses the ambient `process` when the runtime has one, and an empty, inert
+ * host when it does not, so `createCli` and `serve` also run on a Worker or in
+ * a browser. Provide this service to run the CLI against another host:
+ * `Layer.succeed(Incur.Host, { argv, env, stdout, exit })`.
+ *
+ * @category services
+ * @since 0.1.0
+ */
+export service Host: IncurHost.Host {
+  static readonly defaultValue = () => IncurHost.ambientHost
+}
+
 // Incur's callbacks throw transport control signals, so settle outside the
 // program whose typed failures are sanitized.
 effect function refuse(context: IncurHost.Context, error: FsError): never!! {
@@ -140,9 +158,11 @@ export effect function createCli(
   const tree = try CommandTree.make(executable)
   const grouped = try groupedRoutes(tree)
   const services = try Effect.context<FlowInvoker.FlowInvoker>()
+  const host = try Host
   return try sync(() => IncurHost.mount({
     name,
     tree,
+    host,
     run: Effect.runPromiseWith(services),
     programs: {
       execute,

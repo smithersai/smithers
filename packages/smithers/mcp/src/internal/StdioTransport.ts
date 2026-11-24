@@ -335,68 +335,69 @@ export const connect = (
       Effect.forkScoped
     )
 
-    // Reader: one line of stdout is one JSON-RPC message. A validated reply
+    // Reader: one line of stdout is one JSON-RPC message or batch. A validated reply
     // resolves its pending request by id; malformed tagged messages close the
     // whole connection, while stdout noise, notifications, and unknown ids drop.
     yield* frames(options.server, maxFrameBytes, handle.stdout).pipe(
+      // A line is one message, or a JSON-RPC batch whose messages are handled
+      // in order as if each had its own line.
       Stream.runForEach((line) =>
-        Effect.gen(function*() {
-          const message = Rpc.parse(line)
-          if (message === undefined) return
-          const jsonIssue = JsonLimits.checkParsed(message)
-          if (jsonIssue !== undefined) {
-            return yield* Effect.fail(
-              Limits.protocolError(options.server, `MCP server "${options.server}" sent invalid JSON: ${jsonIssue}`)
-            )
-          }
-          const reply = Rpc.classify(message)
-          if (reply._tag === "Notification") return
-          if (reply._tag === "Request") {
-            const response: Rpc.OutboundMessage = reply.method === "ping"
-              ? { jsonrpc: "2.0", id: reply.id, result: {} }
-              : { jsonrpc: "2.0", id: reply.id, error: { code: -32_601, message: "Method not found" } }
-            // Opposite-direction ids are independent, even when they equal an
-            // active tool request's id. Responses share the bounded writer and
-            // size guard, never creating another pending request of our own.
-            return yield* frameOf("server-response", response).pipe(
-              Effect.flatMap((frame) => enqueue({ frame })),
-              Effect.timeoutOrElse({
-                duration: requestTimeoutMs,
-                orElse: () =>
-                  Effect.fail(Transport.timeout(options.server, "server-response admission", requestTimeoutMs))
-              })
-            )
-          }
-          if (reply._tag === "Malformed") {
-            return yield* Effect.fail(
-              Limits.protocolError(
-                options.server,
-                `MCP server "${options.server}" sent a malformed JSON-RPC reply: ${reply.reason}`
+        Effect.forEach(Rpc.parseFrame(line), (message) =>
+          Effect.gen(function*() {
+            const jsonIssue = JsonLimits.checkParsed(message)
+            if (jsonIssue !== undefined) {
+              return yield* Effect.fail(
+                Limits.protocolError(options.server, `MCP server "${options.server}" sent invalid JSON: ${jsonIssue}`)
               )
-            )
-          }
-          if (reply._tag === "UncorrelatedError") {
-            diagnostic("remote-error", { code: reply.code, message: reply.message, data: reply.data })
-            return
-          }
-          const pending = yield* Ref.modify(state, (current) => {
-            if (current._tag === "Closed") return [Option.none<Pending>(), current] as const
-            return [
-              HashMap.get(current.pending, reply.id),
-              { ...current, pending: HashMap.remove(current.pending, reply.id) }
-            ] as const
-          })
-          if (Option.isNone(pending)) return
-          if (reply._tag === "Error") {
-            diagnostic("remote-error", { code: reply.code, message: reply.message, data: reply.data })
-            yield* Deferred.fail(
-              pending.value.deferred,
-              Transport.replyError(options.server, pending.value.method, reply)
-            )
-          } else {
-            yield* Deferred.succeed(pending.value.deferred, reply.result)
-          }
-        })
+            }
+            const reply = Rpc.classify(message)
+            if (reply._tag === "Notification") return
+            if (reply._tag === "Request") {
+              const response: Rpc.OutboundMessage = reply.method === "ping"
+                ? { jsonrpc: "2.0", id: reply.id, result: {} }
+                : { jsonrpc: "2.0", id: reply.id, error: { code: -32_601, message: "Method not found" } }
+              // Opposite-direction ids are independent, even when they equal an
+              // active tool request's id. Responses share the bounded writer and
+              // size guard, never creating another pending request of our own.
+              return yield* frameOf("server-response", response).pipe(
+                Effect.flatMap((frame) => enqueue({ frame })),
+                Effect.timeoutOrElse({
+                  duration: requestTimeoutMs,
+                  orElse: () =>
+                    Effect.fail(Transport.timeout(options.server, "server-response admission", requestTimeoutMs))
+                })
+              )
+            }
+            if (reply._tag === "Malformed") {
+              return yield* Effect.fail(
+                Limits.protocolError(
+                  options.server,
+                  `MCP server "${options.server}" sent a malformed JSON-RPC reply: ${reply.reason}`
+                )
+              )
+            }
+            if (reply._tag === "UncorrelatedError") {
+              diagnostic("remote-error", { code: reply.code, message: reply.message, data: reply.data })
+              return
+            }
+            const pending = yield* Ref.modify(state, (current) => {
+              if (current._tag === "Closed") return [Option.none<Pending>(), current] as const
+              return [
+                HashMap.get(current.pending, reply.id),
+                { ...current, pending: HashMap.remove(current.pending, reply.id) }
+              ] as const
+            })
+            if (Option.isNone(pending)) return
+            if (reply._tag === "Error") {
+              diagnostic("remote-error", { code: reply.code, message: reply.message, data: reply.data })
+              yield* Deferred.fail(
+                pending.value.deferred,
+                Transport.replyError(options.server, pending.value.method, reply)
+              )
+            } else {
+              yield* Deferred.succeed(pending.value.deferred, reply.result)
+            }
+          }), { discard: true })
       ),
       Effect.matchEffect({
         onFailure: (error) =>

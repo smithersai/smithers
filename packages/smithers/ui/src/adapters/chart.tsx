@@ -70,18 +70,18 @@ export type ChartConfig = {
  * in fixed order — the common case for "one config entry per series".
  */
 export function chartConfig(series: ReadonlyArray<{ key: string; label?: ReactNode; }>): ChartConfig {
-  const config: ChartConfig = {};
-  series.forEach((entry, index) => {
-    config[entry.key] = {
-      label: entry.label ?? entry.key,
-      theme: {
-        light: chartSeriesColor(index, "light"),
-        dark: chartSeriesColor(index, "dark"),
-      },
-    };
-  });
-  return config;
+  // Defined, not assigned: a series named "__proto__" is an entry like any other, not this object's prototype.
+  return Object.fromEntries(series.map((entry, index) => [entry.key, {
+    label: entry.label ?? entry.key,
+    theme: {
+      light: chartSeriesColor(index, "light"),
+      dark: chartSeriesColor(index, "dark"),
+    },
+  }])) as ChartConfig;
 }
+
+/** A series' entry by its own key only: a missing "constructor" is missing, not Object's. */
+const entryOf = (config: ChartConfig, key: string): ChartConfig[string] | undefined => (Object.hasOwn(config, key) ? config[key] : undefined);
 
 type ChartContextValue = { config: ChartConfig; };
 
@@ -196,7 +196,7 @@ function itemConfig(config: ChartConfig, item: TooltipItem, key: string): ChartC
   const payloadKey = item.payload?.[key];
   const itemKey = item[key as keyof TooltipItem];
   const configKey = typeof payloadKey === "string" ? payloadKey : typeof itemKey === "string" ? itemKey : key;
-  return config[configKey] ?? config[key];
+  return entryOf(config, configKey) ?? entryOf(config, key);
 }
 
 export function ChartTooltipContent({
@@ -303,7 +303,7 @@ export function ChartLegendContent({
     >
       {payload.map((item, index) => {
         const key = String(nameKey ?? item.value ?? item.dataKey ?? index);
-        const entry = itemConfig(config, item, key) ?? config[String(item.dataKey ?? "")];
+        const entry = itemConfig(config, item, key) ?? entryOf(config, String(item.dataKey ?? ""));
         return (
           <span key={`${String(item.payload?.[key] ?? item.value ?? key)}-${index}`} style={{ display: "flex", alignItems: "center", gap: 6 }}>
             <span aria-hidden style={{ width: 8, height: 8, borderRadius: 2, background: item.color, flexShrink: 0 }} />

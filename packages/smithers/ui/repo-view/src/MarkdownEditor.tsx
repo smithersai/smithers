@@ -10,6 +10,7 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
 } from "react";
+import { navigableLink } from "./linkPolicy";
 import { markdownLinkNames } from "./markdownLinkNames";
 import { markdownAlerts } from "./markdownAlerts";
 import { markdownCode } from "./markdownCode";
@@ -632,10 +633,12 @@ export const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorPro
   const followLink = (event: ReactMouseEvent<HTMLDivElement>): void => {
     // `auxclick` fires for every non-primary button; only the middle one follows a link, a right click opens the menu.
     if (event.type === "auxclick" && event.button !== 1) return;
-    if (!onLinkClick || !(event.target instanceof Element)) return;
+    if (!(event.target instanceof Element)) return;
     const anchor = event.target.closest("a[href]");
     if (anchor === null || !event.currentTarget.contains(anchor)) return;
-    if (onLinkClick(anchor.getAttribute("href") ?? "")) event.preventDefault();
+    const href = anchor.getAttribute("href") ?? "";
+    // A scheme other than http(s) or mailto never navigates, whoever rendered the anchor.
+    if (!navigableLink(href) || onLinkClick?.(href) === true) event.preventDefault();
   };
 
   const onFallbackInput = (next: string) => {

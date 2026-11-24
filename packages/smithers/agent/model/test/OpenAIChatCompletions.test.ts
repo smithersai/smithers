@@ -600,13 +600,11 @@ describe("OpenAIChatCompletions.protocol.stream terminal reason", () => {
     // so the choice-less usage chunk is the last frame the protocol can see.
     const decode = Schema.decodeUnknownSync(OpenAIChatCompletions.protocol.stream.event)
     const terminal = OpenAIChatCompletions.protocol.stream.terminal
-    expect(terminal).toBeDefined()
-    expect(
-      terminal?.(decode("{\"choices\":[],\"usage\":{\"prompt_tokens\":3,\"completion_tokens\":1,\"total_tokens\":4}}"))
-    ).toBe(true)
-    expect(terminal?.(decode("{\"usage\":{\"prompt_tokens\":3,\"completion_tokens\":1,\"total_tokens\":4}}"))).toBe(
-      true
-    )
+    for (const choices of [undefined, []]) {
+      const chunk = decode(JSON.stringify({ choices, usage: { total_tokens: 4 } }))
+      expect(terminal?.(chunk, false)).toBe(false)
+      expect(terminal?.(chunk, true)).toBe(true)
+    }
     expect(terminal?.(decode(finish("stop")))).toBe(false)
     expect(terminal?.(decode("{\"choices\":[],\"usage\":null}"))).toBe(false)
     expect(
@@ -692,4 +690,20 @@ describe("OpenAIChatCompletions.protocol.classifyError", () => {
     expect(error.code).toBe("provider_internal")
     expect(error.message).toBe("Chat Completions request failed with HTTP 500")
   })
+})
+
+it("accepts explicit nulls in compatible streaming deltas", () => {
+  const events = replayData([
+    JSON.stringify({ id: null, choices: [{ index: null, delta: { role: null, content: "hi", tool_calls: null } }] }),
+    JSON.stringify({
+      choices: [{ delta: { tool_calls: [{ id: null, index: null, function: { name: "lookup", arguments: null } }] } }]
+    }),
+    JSON.stringify({ choices: [{ delta: { tool_calls: [{ index: 0, function: { name: null, arguments: "{}" } }] } }] })
+  ])
+  expect(events).toContainEqual({ type: "text-delta", id: "text-0", text: "hi" })
+  expect(events).toContainEqual({ type: "tool-call-delta", id: "tool-0", arguments: "{}" })
+})
+
+it("preserves a compatible provider's string error", () => {
+  expect(() => replayData([JSON.stringify({ error: "temporarily unavailable" })])).toThrow("temporarily unavailable")
 })

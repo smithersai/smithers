@@ -20,7 +20,7 @@
 import { Journal, JournalEvent } from "@smthrs/journal"
 import { NotificationEvent } from "@smthrs/notifications"
 import type { Scope } from "effect"
-import { Duration, Effect, Fiber, Random, Stream } from "effect"
+import { Clock, Duration, Effect, Fiber, Random, Stream } from "effect"
 import { Control } from "./Control.ts"
 import type { ControlError } from "./ControlError.ts"
 import { InvalidInput, PersistenceError } from "./ControlError.ts"
@@ -410,16 +410,23 @@ const beatLoop = (
     // nothing, and journaled a heal. The nonce makes each key this call's own.
     const invocation = (yield* Random.nextIntBetween(0, Number.MAX_SAFE_INTEGER)).toString(36)
     const heal = options.heal ?? ((input) =>
-      input.remedy === "resume"
-        ? control.resume({
-          runId: input.runId,
-          idempotencyKey: `monitor:${monitorId}:resume:${input.runId}:${invocation}:${input.beat}`
-        })
-        : control.cancel({
-          runId: input.runId,
-          reason: `monitor:${input.health}`,
-          idempotencyKey: `monitor:${monitorId}:cancel:${input.runId}:${invocation}:${input.beat}`
-        }))
+      Effect.gen(function*() {
+        const principal = { id: monitorId, kind: "monitor", stampedAt: yield* Clock.currentTimeMillis }
+        return yield* (
+          input.remedy === "resume"
+            ? control.resume({
+              principal,
+              runId: input.runId,
+              idempotencyKey: `monitor:${monitorId}:resume:${input.runId}:${invocation}:${input.beat}`
+            })
+            : control.cancel({
+              principal,
+              runId: input.runId,
+              reason: `monitor:${input.health}`,
+              idempotencyKey: `monitor:${monitorId}:cancel:${input.runId}:${invocation}:${input.beat}`
+            })
+        )
+      }))
 
     const emit = (
       eventType: string,

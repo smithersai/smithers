@@ -132,6 +132,8 @@ const DeviceCodeAnswer = Schema.Struct({
 const DeviceGrantAnswer = Schema.Struct({
   access_token: Schema.NonEmptyString,
   expires_in: Schema.optional(Schema.Number),
+  // An App whose user tokens expire answers a `ghr_` refresh token; without it the token dies in eight hours.
+  refresh_token: Schema.optional(Schema.NonEmptyString),
 })
 
 const DeviceErrorAnswer = Schema.Struct({
@@ -349,7 +351,7 @@ const make = effect (options: {
         const tokens: Tokens = {
           accessToken: Redacted.make(decoded.access_token),
           expiresAt: decoded.expires_in === undefined ? null : now + decoded.expires_in * 1000,
-          refreshToken: null,
+          refreshToken: decoded.refresh_token === undefined ? null : Redacted.make(decoded.refresh_token),
         }
         return { status: "authorized", tokens } as DevicePoll
       }) |> Effect.provide(%, context),

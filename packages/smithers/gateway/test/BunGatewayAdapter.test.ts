@@ -36,7 +36,7 @@ it("serves the gateway through the supplied Bun address options", async () => {
       const response = yield* Effect.promise(() => fetch(url))
       expect(response.status).toBe(200)
       expect(yield* Effect.promise(() => response.json())).toMatchObject(health)
-      expect(addresses).toEqual([{ hostname: "127.0.0.1", port: 0 }])
+      expect(addresses).toEqual([{ hostname: "127.0.0.1", port: 0, websocket: { maxPayloadLength: 1024 * 1024 } }])
     }).pipe(Effect.scoped)
   )
 })
@@ -72,7 +72,7 @@ for (const defect of ["unexpected defect", null, { message: "no code" }, { code:
     const exit = await Effect.runPromiseExit(Layer.build(served(server, {})).pipe(Effect.scoped))
     expect(Exit.isFailure(exit)).toBe(true)
     if (Exit.isFailure(exit)) expect(Cause.squash(exit.cause)).toBe(defect)
-    expect(addresses).toEqual([{ hostname: "127.0.0.1", port: 7331 }])
+    expect(addresses).toEqual([{ hostname: "127.0.0.1", port: 7331, websocket: { maxPayloadLength: 1024 * 1024 } }])
   })
 }
 
@@ -84,5 +84,5 @@ it("preserves interrupted startup with default options", async () => {
   }
   const exit = await Effect.runPromiseExit(Layer.build(served(server)).pipe(Effect.scoped))
   expect(Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause)).toBe(true)
-  expect(addresses).toEqual([{ hostname: "127.0.0.1", port: 7331 }])
+  expect(addresses).toEqual([{ hostname: "127.0.0.1", port: 7331, websocket: { maxPayloadLength: 1024 * 1024 } }])
 })

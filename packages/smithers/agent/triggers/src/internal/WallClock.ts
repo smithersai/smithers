@@ -13,7 +13,9 @@
  *   an hourly or minutely schedule keeps running through the repeated hour.
  *
  * Instants are whole seconds in UTC, so millisecond zeroing never reads the
- * host's zone.
+ * host's zone. A cron with no zone is a UTC schedule: reading the host's zone
+ * for it made two hosts on one store compute different instants for the same
+ * occurrence, so the dedup key differed and the trigger fired twice.
  *
  * @since 1.0.0-rc.1
  */
@@ -97,11 +99,11 @@ const named = (timeZone: string): Offset => {
   }
 }
 
-// Read on every call, so a host whose `TZ` changes is followed.
-const host: Offset = (instant) => -new Date(instant).getTimezoneOffset() * 60_000
+// A schedule that names no zone is in UTC on every host.
+const utc: Offset = () => 0
 
 const offsetOf = (zone: Option.Option<DateTime.TimeZone>): Offset => {
-  if (Option.isNone(zone)) return host
+  if (Option.isNone(zone)) return utc
   const value = zone.value
   if (DateTime.isTimeZoneOffset(value)) return () => value.offset
   return named(value.id)

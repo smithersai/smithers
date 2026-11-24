@@ -509,6 +509,12 @@ test("a provider refusal retains retry timing while removing credential echoes",
             new ModelError.ModelError({
               code: "rate_limited",
               message: "secret retry later",
+              resetAtEpochMillis: 42000,
+              resetSource: "secretreset",
+              quotaScope: "model",
+              providerCode: "secretquota",
+              requestId: "secretid",
+              path: "secretpath",
               httpStatus: 429,
               retryAfterMillis: 500
             })
@@ -525,6 +531,12 @@ test("a provider refusal retains retry timing while removing credential echoes",
     failure: {
       code: "rate_limited",
       message: " retry later",
+      resetAtEpochMillis: 42000,
+      resetSource: "reset",
+      quotaScope: "model",
+      providerCode: "quota",
+      requestId: "id",
+      path: "path",
       httpStatus: 429,
       retryAfterMillis: 500
     }

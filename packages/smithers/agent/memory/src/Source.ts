@@ -51,7 +51,7 @@ import * as Option from "effect/Option"
 import { canonicalJson } from "./internal/Canonical.ts"
 import { digest } from "./internal/Digest.ts"
 import { resolveBanks } from "./internal/ResolveNamespace.ts"
-import type { MemoryError } from "./MemoryError.ts"
+import { MemoryError } from "./MemoryError.ts"
 import * as MemoryStore from "./MemoryStore.ts"
 import * as Recall from "./Recall.ts"
 import * as SnapshotRecorder from "./SnapshotRecorder.ts"
@@ -59,9 +59,10 @@ import * as SnapshotRecorder from "./SnapshotRecorder.ts"
 /**
  * Source input and retry identity.
  *
- * `lineageId` and `iteration` alone select the frozen snapshot. Banks, query,
- * tag groups, primer banks, and both budgets are honored only by the first
- * read for that identity; later differences are warned and ignored.
+ * `lineageId`, `iteration`, `banks`, and `primerBanks` select the frozen
+ * snapshot, so a read that names other banks never receives another bank's
+ * rows. Query, tag groups, and both budgets are honored only by the first read
+ * for that selection; later differences are warned and ignored.
  * `maxTokens` caps recalled rows in conservative UTF-8 bytes, while
  * `maxBytes` caps the complete fenced snapshot {@link render} writes.
  *
@@ -248,6 +249,11 @@ export const readRows = (
  * identity. The first execution freezes the inputs; constructing a read does
  * not occupy or evict a memo entry. A failed read is neither memoized nor recorded.
  *
+ * The memo is keyed by the requested banks as well as the identity. A recorder
+ * holds one value per identity, so a value it replays is checked: when any of
+ * its rows names a bank this read did not request, the read fails with
+ * `invalid_namespace` instead of returning another bank's rows.
+ *
  * @category constructors
  * @since 0.1.0
  */
@@ -263,12 +269,10 @@ export const make = (options: { readonly capacity?: number | undefined } = {}): 
   }
   const snapshots = new Map<string, Entry>()
   const fields = (input: Input): Readonly<Record<string, string>> => ({
-    banks: canonicalJson(input.banks),
     query: canonicalJson(input.query),
     tagGroups: canonicalJson(input.tagGroups),
     maxTokens: canonicalJson(input.maxTokens),
     budget: canonicalJson(input.budget),
-    primerBanks: canonicalJson(input.primerBanks),
     maxBytes: canonicalJson(input.maxBytes)
   })
   const reuse = (key: string, existing: Entry, input: Input): Read => {
@@ -285,7 +289,8 @@ export const make = (options: { readonly capacity?: number | undefined } = {}): 
   return {
     read: (input) =>
       Effect.suspend(() => {
-        const key = `${input.lineageId}\u0000${input.iteration}`
+        const key = canonicalJson([input.lineageId, input.iteration, input.banks, input.primerBanks ?? null])
+        const requested = new Set([...input.banks, ...(input.primerBanks ?? [])])
         const existing = snapshots.get(key)
         if (existing !== undefined) return reuse(key, existing, input)
         const identity: SnapshotRecorder.Identity = {
@@ -304,15 +309,33 @@ export const make = (options: { readonly capacity?: number | undefined } = {}): 
                     // failures outside that boundary and cancel its pending
                     // read, so a failure is never recorded.
                     const failed = yield* Deferred.make<never, MemoryError | Cause.TimeoutError>()
-                    return yield* Effect.raceFirst(
+                    let live = false
+                    const snapshot = yield* Effect.raceFirst(
                       recorder.record(
                         identity,
                         readRows(input).pipe(
+                          Effect.tap(() =>
+                            Effect.sync(() => {
+                              live = true
+                            })
+                          ),
                           Effect.catch((cause) => Deferred.fail(failed, cause).pipe(Effect.andThen(Effect.never)))
                         )
                       ),
                       Deferred.await(failed)
                     )
+                    // A recorder holds one value per `(lineageId, iteration)`.
+                    // A value it replayed for a read naming other banks is
+                    // another bank's memory, so it is refused, never returned.
+                    if (!live && snapshot.rows.some((row) => !requested.has(row.bank))) {
+                      return yield* Effect.fail(
+                        new MemoryError({
+                          code: "invalid_namespace",
+                          message: "recorded memory snapshot names a bank this read did not request"
+                        })
+                      )
+                    }
+                    return snapshot
                   })
               })
             }).pipe(
@@ -336,14 +359,6 @@ export const make = (options: { readonly capacity?: number | undefined } = {}): 
       })
   }
 }
-
-/**
- * The default source value.
- *
- * @category instances
- * @since 0.1.0
- */
-export const source = make()
 
 /**
  * Rows a host already holds as the exact {@link Declared} shape

@@ -343,7 +343,9 @@ workspaces["workspace shell"] = async (c, a, o) => {
             }
           } catch { /* terminal text */ }
         }
-        process.stdout.write(data.toString())
+        process.stdout.write(
+          Array.isArray(data) ? Buffer.concat(data) : data instanceof ArrayBuffer ? Buffer.from(data) : data
+        )
       })
       socket.once("close", () => resolve())
       process.stdin.once("end", abort)

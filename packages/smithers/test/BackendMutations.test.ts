@@ -402,6 +402,13 @@ describe("remaining read and update contracts", () => {
       name: "new",
       target_change_id: "change" in o ? o.change : null
     })
+    expect(exec.mock.calls[0]).toEqual(["jj", [
+      "bookmark",
+      "create",
+      ...("change" in o ? ["-r", o.change] : []),
+      "--",
+      "new"
+    ]])
     exec.mockResolvedValue("new\tchange\tcommit")
     expect(await local["bookmark create"]!(c, { name: "new" }, o)).toMatchObject({ target_commit_id: "commit" })
     exec.mockResolvedValue("empty\t\t")

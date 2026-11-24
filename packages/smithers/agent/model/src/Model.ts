@@ -10,11 +10,11 @@
 
 import type { Permission } from "@smthrs/capability"
 import { SpanFailure } from "@smthrs/flow"
-import { Context, Effect, Layer, Stream } from "effect"
+import { Clock, Context, Effect, Layer, Stream } from "effect"
 import * as CallTiming from "./internal/CallTiming.ts"
 import type { ModelError } from "./ModelError.ts"
 import { ModelError as ModelErrorClass } from "./ModelError.ts"
-import type { ModelEvent, Usage } from "./ModelEvent.ts"
+import { type ModelEvent, Usage } from "./ModelEvent.ts"
 import type { ModelRequest } from "./ModelRequest.ts"
 import * as Pricing from "./Pricing.ts"
 
@@ -150,16 +150,14 @@ export const withGenAiSpan =
               usage = {}
               return Effect.void
             case "usage": {
-              const { type: _, ...counters } = event
-              usage = {
-                ...usage,
-                ...Object.fromEntries(Object.entries(counters).filter(([, value]) => value !== undefined))
-              }
-              const cost = Pricing.cost(usage, request.modelId)
-              return Effect.annotateCurrentSpan({
-                ...(event.inputTokens === undefined ? {} : { "gen_ai.usage.input_tokens": event.inputTokens }),
-                ...(event.outputTokens === undefined ? {} : { "gen_ai.usage.output_tokens": event.outputTokens }),
-                ...(cost === undefined ? {} : { "gen_ai.usage.cost": cost.costUsd })
+              usage = Usage.merge(usage, event)
+              return Effect.flatMap(Clock.currentTimeMillis, (at) => {
+                const cost = Pricing.cost(usage, request.modelId, { at })
+                return Effect.annotateCurrentSpan({
+                  ...(event.inputTokens === undefined ? {} : { "gen_ai.usage.input_tokens": event.inputTokens }),
+                  ...(event.outputTokens === undefined ? {} : { "gen_ai.usage.output_tokens": event.outputTokens }),
+                  ...(cost === undefined ? {} : { "gen_ai.usage.cost": cost.costUsd })
+                })
               })
             }
             case "settle":

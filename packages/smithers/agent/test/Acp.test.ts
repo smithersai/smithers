@@ -6,7 +6,7 @@
  * transport value, which is the client's whole input.
  */
 import { Acp } from "@smthrs/agent"
-import { Cause, Effect, Exit, Fiber, Option, Queue, Stream } from "effect"
+import { Cause, Effect, Exit, Fiber, Logger, Option, Queue, References, Stream } from "effect"
 import { spawn } from "node:child_process"
 import { mkdtempSync, readFileSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
@@ -176,7 +176,7 @@ describe("Acp against the test agent", () => {
       return texts(updates)
     }))
     expect(allow).toContain("permission: allow_once-0")
-    expect(allow).toContain("permission: allow_always-1")
+    expect(allow).toContain("permission: allow_once-2")
     expect(allow).toContain("permission: cancelled")
     const reject = await run(Effect.gen(function*() {
       const { client, updates } = yield* connect({ permission: "reject" })
@@ -187,6 +187,45 @@ describe("Acp against the test agent", () => {
     }))
     expect(reject).toContain("permission: reject_once-1")
     expect(reject).toContain("permission: reject_always-1")
+  })
+
+  test("regression R1-Fable-D2-046: a session-wide grant needs an explicit allow, and every answer is logged by kind", async () => {
+    const logged: Array<Record<string, unknown>> = []
+    const capture = Logger.layer([
+      Logger.make<unknown, void>((entry) => {
+        if (JSON.stringify(entry.message).includes("acp.permission")) {
+          logged.push(Object.fromEntries(Object.entries(entry.fiber.getRef(References.CurrentLogAnnotations))))
+        }
+      })
+    ])
+    const ask = (permission: Acp.Permission | undefined) =>
+      run(
+        Effect.gen(function*() {
+          const { client, updates } = yield* connect(permission === undefined ? {} : { permission })
+          yield* client.initialize
+          const session = yield* client.newSession(root)
+          yield* client.prompt(
+            session,
+            "ask permission allow_always,allow_once\nask permission allow_always,reject_once"
+          )
+          return texts(updates)
+        }).pipe(Effect.provide(capture))
+      )
+    // Unset: a single grant when offered, and never the session-wide one.
+    const unset = await ask(undefined)
+    expect(unset).toContain("permission: allow_once-1")
+    expect(unset).toContain("permission: cancelled")
+    expect(unset.join(" ")).not.toContain("allow_always")
+    // Explicit allow: still a single grant first, the session-wide one only when nothing narrower is offered.
+    const explicit = await ask("allow")
+    expect(explicit).toContain("permission: allow_once-1")
+    expect(explicit).toContain("permission: allow_always-0")
+    expect(logged).toEqual([
+      { policy: "allow_once", outcome: "allow_once" },
+      { policy: "allow_once", outcome: "cancelled" },
+      { policy: "allow", outcome: "allow_once" },
+      { policy: "allow", outcome: "allow_always" }
+    ])
   })
 
   test("refuses file system requests as method not found, and passes leaked text on unchanged", async () => {

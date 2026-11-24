@@ -12,6 +12,13 @@
 - Relative config overrides use the default directory, and Codex account claims
   decode without Node's `Buffer` global.
 
+- The package imports no `node:*` module: path rules are pure string
+  functions, so detection loads in a browser or a Worker. A caller that omits
+  `platform` gets the rules its `home` is written in (`probeEnv` reads
+  `OS=Windows_NT`) instead of the runtime's native rules.
+- `parseVersionLine` cuts a long banner on a code-point boundary, so a version
+  never ends in a lone surrogate.
+
 ### Security
 
 - `findBinary` and `probeEnv` skip relative `PATH` entries, so a binary or

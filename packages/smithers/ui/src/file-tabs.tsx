@@ -3,6 +3,7 @@ import type { ComponentProps, KeyboardEvent, MouseEvent } from "react";
 import { useLayoutEffect, useRef } from "react";
 import { cn } from "@smthrs/ui-css";
 import { isPlainNavigationClick } from "./internal/navigationClick";
+import { safeHref } from "./internal/safeHref";
 import { useInjectUiCss } from "./styles";
 
 /** One open file in a {@link FileTabs} strip. */
@@ -121,7 +122,7 @@ export function FileTabs({ tabs, onOpen, onClose, onFocusLifecycle, className, "
         <span key={tab.key} className="sui-file-tab" data-active={tab.active ? "true" : undefined}>
           <a
             role="tab"
-            href={tab.href}
+            href={safeHref(tab.href)}
             title={tab.title}
             aria-selected={tab.active}
             tabIndex={index === focusable ? 0 : -1}

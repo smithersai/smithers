@@ -85,8 +85,8 @@ describe("the status", () => {
     expect(status.install).toBe("npm install -g @smthrs/cli@1.0.0-rc.1")
   })
 
-  it("falls through to latest when the next tag has nothing newer", () => {
-    expect(Update.compare("1.0.0-rc.0", { latest: "1.0.0", next: "1.0.0-rc.0" }))
+  it("offers the newer stable version even when both tags are upgrades", () => {
+    expect(Update.compare("1.0.0-rc.0", { latest: "1.0.0", next: "1.0.0-rc.1" }))
       .toMatchObject({ available: "1.0.0", tag: "latest" })
   })
 

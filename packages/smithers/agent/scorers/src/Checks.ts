@@ -120,7 +120,20 @@ export interface ScorerOptions {
 
 const maxDetail = 200
 
-const clip = (detail: string): string => detail.length > maxDetail ? `${detail.slice(0, maxDetail - 1)}…` : detail
+/**
+ * At most `maxDetail` UTF-16 units, cut between code points: half a surrogate
+ * pair is not canonical JSON, and the observation that carried it would be
+ * recorded as inconclusive instead of failed.
+ */
+const clip = (detail: string): string => {
+  if (detail.length <= maxDetail) return detail
+  let head = ""
+  for (const point of detail) {
+    if (head.length + point.length >= maxDetail) break
+    head += point
+  }
+  return `${head}…`
+}
 
 const check = (id: string, pass: boolean, detail: string): Check => ({ id, pass, detail: clip(detail) })
 

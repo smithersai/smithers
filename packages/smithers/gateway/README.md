@@ -69,11 +69,11 @@ const refusal = NodeGateway.bindRefusal({ host: "0.0.0.0", port: 7331 })
 
 A credential-less loopback host also requires a loopback `Host`. On every
 host, a supplied browser `Origin` must be a canonical HTTP(S) origin whose host
-and port equal the request's `Host`, so a browser client is served from the
+and port equal the request's `Host` and whose scheme matches the external request scheme, so a browser client is served from the
 gateway's own origin or through a same-origin proxy. Origin-less CLI requests
 remain accepted. Refusals
 are typed `GatewayError` bodies with stable `invalid_host` or `invalid_origin`
-codes, and the same rule runs on HTTP and WebSocket upgrades.
+codes, and the same rule runs on HTTP and WebSocket upgrades. Watch and projection mounts admit up to 16 streams per client and 128 per mounted service. Native WebSocket messages are limited to 1 MiB. Oversized events retain their cursor and carry a truncation marker. When a terminal result exceeds the inspection budget, the bridge reports `run.resultUnavailable` as `resource_limit` and continues paging events.
 
 ## Recovery at 1.0.0-rc.0
 

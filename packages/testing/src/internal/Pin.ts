@@ -12,6 +12,7 @@
  * @since 0.0.0
  */
 
+import * as Context from "effect/Context"
 import * as Effect from "effect/Effect"
 import type * as Exit from "effect/Exit"
 import type * as Fiber from "effect/Fiber"
@@ -70,6 +71,13 @@ export const invoke = <A, E>(
   Effect.suspend(evaluate).pipe(Effect.withSpan(`testing.${operation}`, { attributes: { pin } }))
 
 /**
+ * Live time budget in milliseconds shared by conformance waits.
+ * @since 1.0.0
+ * @category configuration
+ */
+export const WaitBudget = Context.Reference<number>("@smthrs/testing/Pin/WaitBudget", { defaultValue: () => 1000 })
+
+/**
  * Polls `probe` on a bounded live-clock schedule and returns its first defined
  * value, failing the pin rather than hanging when no value arrives.
  *
@@ -85,9 +93,14 @@ export const pollUntil = <A>(
     const value = probe()
     return value === undefined ? Effect.fail(undefined) : Effect.succeed(value)
   }).pipe(
-    Effect.retry({ schedule: Schedule.spaced("10 millis"), times: 99 }),
-    TestClock.withLive,
-    Effect.catch(() => fail(pin, message, "settlement within one second of live time", "still pending"))
+    Effect.retry({ schedule: Schedule.spaced("10 millis") }),
+    (wait) =>
+      Effect.flatMap(WaitBudget, (ms) =>
+        wait.pipe(
+          Effect.timeout(ms),
+          Effect.catch(() => fail(pin, message, `settlement within ${ms} ms of live time`, "still pending"))
+        )),
+    TestClock.withLive
   )
 
 /**

@@ -18,11 +18,12 @@ plus the system entries. It needs the same `Journal`, `Author`, and
 construction. Build it over the same base layers with `Layer.provide`:
 
 ```ts
-import { Author, Journal, QuickJsRunner, ScriptRunner, SubChains } from "@smthrs/chain"
+import { Author, Authorize, Journal, QuickJsRunner, ScriptRunner, SubChains } from "@smthrs/chain"
 import { Layer } from "effect"
 
 const base = Layer.mergeAll(
   Journal.layerMemory(),
+  Authorize.layerAllowAll,
   authorLayer,
   QuickJsRunner.layer()
 )
@@ -69,10 +70,17 @@ contract digest (`SubChains.contractDigest`), so redeclaring the child
 budgets, prefix, or depth bound re-keys every settled spawn. A spawn deeper
 than the bound fails the call with a `CallError`.
 
+A child is not a fresh budget. The root run and every chain it spawns spend
+one tree budget, `Chain.Options.maxTotalCalls`, which defaults to the root's
+`maxLinks` times `maxCallsPerLink`. The per-child budgets only narrow what
+one child may take from it. A child that meets the tree budget parks with
+`quota`, and so does each ancestor on its next live call. A resumed tree
+starts from the settled calls its journal already holds.
+
 Spawning is a process-spawn-shaped authority: the entry claims
 `proc:spawn:agent` (`SubChains.agentCapability`), which your authorization
-rules must cover when gate 4 is mounted. The child's own calls are gated
-individually by the same seam.
+rules must cover. The child's own calls are gated individually by the seam
+its root runs under.
 
 ## What the child's terminal becomes
 

@@ -1,4 +1,4 @@
-import { ConfigProvider, Effect, Exit, Fiber, Layer, Option, Redacted, Stream } from "effect"
+import { Cause, ConfigProvider, Effect, Exit, Fiber, Layer, Option, Redacted, Stream } from "effect"
 import { beforeAll, describe, expect, test } from "vitest"
 import { CodeStorage } from "../src/index.ts"
 import {
@@ -706,6 +706,22 @@ describe("layers", () => {
     expect(service.seen[0]!.url.origin).toBe("https://storage.internal")
   })
 
+  test("layerConfig reads the git origin, so gitRemote follows a deployment that isn't production", async () => {
+    const provider = ConfigProvider.fromUnknown({
+      CODE_STORAGE_ORG: ORG,
+      CODE_STORAGE_KEY: pem,
+      CODE_STORAGE_API_URL: "https://api.staging.internal",
+      CODE_STORAGE_GIT_URL: "https://git.staging.internal"
+    })
+    const remote = await Effect.runPromise(
+      Effect.flatMap(CodeStorage.CodeStorage, (client) => client.gitRemote("github/o/r")).pipe(
+        Effect.provide(CodeStorage.CodeStorage.layerConfig.pipe(Layer.provide(httpClient(globalThis.fetch)))),
+        Effect.provide(ConfigProvider.layer(provider))
+      )
+    )
+    expect(remote.url).toBe("https://git.staging.internal/github/o/r.git")
+  })
+
   test("without an API origin it calls api.<org>.code.storage", async () => {
     const service = codeStorage(publicKey)
     const provider = ConfigProvider.fromUnknown({ CODE_STORAGE_ORG: ORG, CODE_STORAGE_KEY: pem })
@@ -741,6 +757,80 @@ describe("gitRemote", () => {
     const h = harness()
     const upstream = await h.run((client) => client.gitRemote("github/o/a b"))
     expect(upstream.url).toBe(`https://${ORG}.code.storage/github/o/a%20b.git`)
+  })
+
+  test.each(["https://git.staging.internal", "https://git.staging.internal/"])(
+    "builds on the configured git origin %s, and the API origin alone leaves it on production",
+    async (gitUrl) => {
+      const client = (credentials: Partial<CodeStorage.Credentials>) =>
+        Effect.runPromise(
+          CodeStorage.CodeStorage.use((client) => client.gitRemote("github/o/r", "ephemeral")).pipe(
+            Effect.provide(
+              CodeStorage.CodeStorage.layer({ org: ORG, key: Redacted.make(pem), ...credentials }).pipe(
+                Layer.provide(httpClient(globalThis.fetch))
+              )
+            )
+          )
+        )
+      const staged = await client({ apiUrl: "https://api.staging.internal", gitUrl })
+      expect(staged.url).toBe("https://git.staging.internal/github/o/r+ephemeral.git")
+      expect(decodeClaims(atob(Redacted.value(staged.authorization!).slice(6)).slice(2)).repo).toBe("github/o/r")
+      expect((await client({ apiUrl: "https://api.staging.internal" })).url).toBe(
+        `https://${ORG}.code.storage/github/o/r+ephemeral.git`
+      )
+    }
+  )
+
+  test.each(["", ".", "..", "a/../b", "a/./b", "a//b", "/a", "a/", "\ud800"])(
+    "a malformed repository name %j is a defect that carries no part of the name, and signs nothing",
+    async (repo) => {
+      const h = harness()
+      const exit = await Effect.runPromiseExit(
+        h.provide(CodeStorage.CodeStorage.use((client) => client.gitRemote(repo)).pipe(Effect.provide(h.layer)))
+      )
+      expect(Exit.isFailure(exit) && Cause.squash(exit.cause)).toEqual(new CodeStorage.CodeStorageInvalidRepository())
+      expect(new CodeStorage.CodeStorageInvalidRepository().message).toBe(
+        "Code Storage gitRemote: invalid repository name"
+      )
+      expect(h.seen).toEqual([])
+    }
+  )
+})
+
+describe("redirects", () => {
+  const moved = (status: number) => () =>
+    new Response("moved", { status, headers: { location: "https://elsewhere.example/api/repos/r" } })
+
+  test.each(
+    [
+      ["301", moved(301)],
+      ["302", moved(302)],
+      ["307", moved(307)],
+      ["308", moved(308)],
+      ["an opaque status 0", () => Response.error()]
+    ] as const
+  )("never follows %s with the token: the call fails redirect after one request", async (_name, answer) => {
+    const h = harness()
+    const redirects: Array<RequestRedirect | undefined> = []
+    const layer = CodeStorage.CodeStorage.layer({ org: ORG, key: Redacted.make(pem) }).pipe(
+      Layer.provide(httpClient((input, init) => {
+        redirects.push(init?.redirect)
+        return h.fetch(input, init)
+      }))
+    )
+    h.faults.push(answer)
+    const error = await Effect.runPromise(
+      h.provide(Effect.flip(CodeStorage.CodeStorage.use((client) => client.listFiles("r"))).pipe(Effect.provide(layer)))
+    )
+    expect(error).toMatchObject({ operation: "listFiles", code: "redirect" })
+    expect(error.status).toBe(_name.startsWith("an") ? 0 : Number(_name))
+    expect(CodeStorage.isTransient(error)).toBe(false)
+    // One request, to the configured origin, with following switched off at the transport.
+    expect(h.seen).toHaveLength(1)
+    expect(h.seen[0]!.url.origin).toBe(BASE)
+    expect(redirects).toEqual(["manual"])
+    expect(h.count(CodeStorage.requests, { operation: "listFiles", outcome: "redirect" })).toBe(1)
+    expect(h.count(CodeStorage.bytesRead, { operation: "listFiles" })).toBe(0)
   })
 })
 

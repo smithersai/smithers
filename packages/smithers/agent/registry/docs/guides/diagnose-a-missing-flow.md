@@ -74,13 +74,13 @@ for the grammar. Use the descriptor's `name` for lookup. For example, `name: Rev
 These codes explain unexpected authority and refused capability declarations.
 [Declared authority](../concepts/authority.md) explains the fallbacks.
 
-| Code                          | What happened                                                                                                                                                                                 |
-| ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `unprojectable_authority`     | A markdown flow declared no `capabilities`, so the wildcard was used. Declared `capabilities` narrow the grant of collaborator `flows`.                                                       |
-| `invalid_capabilities`        | A space-separated `capabilities` string is accepted with this warning. A mapping or an array containing non-strings is refused; the markdown flow is not discovered.                          |
-| `invalid_effect_declaration`  | `effects` is not an object, or `effects.reads`, `effects.writes`, `effects.mode`, or `effects.onConflict` is not a value the schema allows. The conservative reading was used.                |
-| `invalid_effect_tier`         | A declared `effects.tier` under-classifies the authority the capabilities imply, or is not one of the three tiers. The conservative tier was used.                                            |
-| `unsupported_module_metadata` | A module declaration could not be read statically: a non-literal `capabilities` or `effects`, an object spread, a computed property, or an unreadable default export. The message says which. |
+| Code                          | What happened                                                                                                                                                                                             |
+| ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `unprojectable_authority`     | A markdown flow declared no `capabilities`. A project or system flow received the wildcard; a pack or skill-library flow received none. Declared `capabilities` narrow the grant of collaborator `flows`. |
+| `invalid_capabilities`        | A space-separated `capabilities` string is accepted with this warning. A mapping or an array containing non-strings is refused; the markdown flow is not discovered.                                      |
+| `invalid_effect_declaration`  | `effects` is not an object, or `effects.reads`, `effects.writes`, `effects.mode`, or `effects.onConflict` is not a value the schema allows. The conservative reading was used.                            |
+| `invalid_effect_tier`         | A declared `effects.tier` under-classifies the authority the capabilities imply, or is not one of the three tiers. The conservative tier was used.                                                        |
+| `unsupported_module_metadata` | A module declaration could not be read statically: a non-literal `capabilities` or `effects`, an object spread, a computed property, or an unreadable default export. The message says which.             |
 
 ## The declaration had a key discovery did not use
 
@@ -97,7 +97,7 @@ These codes explain unexpected authority and refused capability declarations.
 | `invalid_license`          | `license` is not a string.                                                                                                                                                                                                                                           |
 | `invalid_compatibility`    | `compatibility` is not a string of at most 500 characters.                                                                                                                                                                                                           |
 | `invalid_metadata`         | `metadata` is not a string-to-string mapping.                                                                                                                                                                                                                        |
-| `invalid_description`      | The description is longer than the 1024-character Agent Skills limit. The entry is still produced.                                                                                                                                                                   |
+| `invalid_description`      | The description is longer than the 1024-character Agent Skills limit. The entry is produced with the description cut to 1024 characters.                                                                                                                             |
 | `unsupported_input_schema` | A markdown flow declared `input` or `schema`. A markdown flow's input is always `{ args: string }` and its output is always a string.                                                                                                                                |
 | `unknown_pack_key`         | A `pack.json` holds a key outside `name`, `version`, `flows`, `skills`, and `requires`. A misspelled `requires` would otherwise disable the compatibility gate in silence.                                                                                           |
 

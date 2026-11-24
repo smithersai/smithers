@@ -1040,7 +1040,13 @@ describe("RecallSemantic", () => {
           text: "edited text",
           updatedAtMs: 3
         })
-      }).pipe(Effect.provideService(Embedding.Embedding, Embedding.makeInProcess()))
+      }).pipe(
+        // A provider that names the declared model; one naming another is refused.
+        Effect.provideService(
+          Embedding.Embedding,
+          Embedding.make((inputs) => Effect.succeed(inputs.map(Embedding.inProcessVector)), { model: "test-model" })
+        )
+      )
     )
 
     expect(upserted.map((vector) => vector.model)).toEqual(["test-model", "test-model", "test-model"])

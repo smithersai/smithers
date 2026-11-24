@@ -135,6 +135,23 @@ export effect function lex(commandString: string): ReadonlyArray<string>!FsError
   return Object.freeze(argv)
 }
 
+/**
+ * Splits a slash-joined command name in the first token into its segments.
+ *
+ * A first token that begins with `-` is an option, never a command name, so
+ * it is left whole: `--config=/etc/app.json` stays one token.
+ *
+ * @private
+ * @since 0.1.0
+ */
+export const splitName = (argv: ReadonlyArray<string>): ReadonlyArray<string> => {
+  const first = argv[0]
+  if (first === undefined || first.startsWith("-") || !first.includes("/")) return argv
+  return Object.freeze([...first.split("/"), ...argv.slice(1)])
+}
+
+const noFlags: ReadonlySet<string> = new Set()
+
 const validFlagName = (name: string): boolean => flagName.test(name) && !reservedNames.has(name)
 
 const append = effect (options: Record<string, unknown>, name: string, value: unknown): void!FsError => {
@@ -146,10 +163,18 @@ const append = effect (options: Record<string, unknown>, name: string, value: un
 /**
  * Parses long options from an argv tail using a small deterministic grammar.
  *
+ * `flags` names the options whose type is boolean. A bare `--name` for one of
+ * them is `true` and never takes the next token, so `--force prod` keeps
+ * `prod` positional; `--name=false` and `--no-name` still spell `false`. Any
+ * other bare option takes the next token as its value when one follows.
+ *
  * @private
  * @since 0.1.0
  */
-export effect function parseFlags(input: ReadonlyArray<string>): ParsedFlags!FsError {
+export effect function parseFlags(
+  input: ReadonlyArray<string>,
+  flags: ReadonlySet<string> = noFlags
+): ParsedFlags!FsError {
   const captured = try sync(() => Boundary.stringArray(input, {
     maxItems: maximumCommandTokens,
     maxLength: maximumTokenLength,
@@ -191,7 +216,7 @@ export effect function parseFlags(input: ReadonlyArray<string>): ParsedFlags!FsE
       continue
     }
     const next = captured.value[index + 1]
-    if (next !== undefined && !next.startsWith("--")) {
+    if (!flags.has(flag) && next !== undefined && !next.startsWith("--")) {
       try append(options, flag, next)
       index += 1
     } else {

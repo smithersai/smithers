@@ -15,6 +15,35 @@ describe("Rpc.encode", () => {
   })
 })
 
+describe("Rpc.parseFrame", () => {
+  const reply = { jsonrpc: "2.0", id: 1, result: {} }
+  const notification = { jsonrpc: "2.0", method: "notifications/progress" }
+
+  it("reads one message from a JSON-RPC object", () => {
+    expect(Rpc.parseFrame(JSON.stringify(reply))).toEqual([reply])
+  })
+
+  it("reads every tagged element of a batch in order and drops the rest as noise", () => {
+    expect(Rpc.parseFrame(JSON.stringify([notification, 7, null, { hello: "world" }, [reply], reply]))).toEqual([
+      notification,
+      reply
+    ])
+  })
+
+  it("reads nothing from noise, an empty batch, or a blank line", () => {
+    for (const line of ["", "  ", "not json", "42", "null", "[]", "[1,2", `{"hello":"world"}`]) {
+      expect(Rpc.parseFrame(line)).toEqual([])
+    }
+  })
+
+  it("agrees with parse on every single-message line", () => {
+    for (const line of [JSON.stringify(reply), `{"jsonrpc":"1.0"}`, "log line", `"text"`]) {
+      const parsed = Rpc.parse(line)
+      expect(Rpc.parseFrame(line)).toEqual(parsed === undefined ? [] : [parsed])
+    }
+  })
+})
+
 describe("Rpc.parse", () => {
   it("parses a well-formed reply", () => {
     const message = Rpc.parse(`{"jsonrpc":"2.0","id":1,"result":{"tools":[]}}`)

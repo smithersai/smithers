@@ -25,7 +25,7 @@ import type * as Evaluator from "@smthrs/model/Evaluator"
 import * as ModelError from "@smthrs/model/ModelError"
 import * as Pricing from "@smthrs/model/Pricing"
 import { Descriptor } from "@smthrs/registry"
-import { Clock, Effect, Option, Queue, Result, Schema, Stream } from "effect"
+import { Cause, Clock, Effect, Exit, Option, Queue, Result, Schema, Stream } from "effect"
 import * as AgentEvent from "./AgentEvent.ts"
 import * as CallLedger from "./CallLedger.ts"
 import * as Cell from "./Cell.ts"
@@ -2511,6 +2511,42 @@ const callHandler = (
         ),
       replaying,
       call
+    ).pipe(
+      // A started call that ends settles in the journal. A failure or an
+      // interrupt leaves `issued` before the settlement below is emitted, and
+      // a consumer pairing the two events would hold that call as running
+      // for ever. A park is the one exit that is not an end: the call is
+      // still owed its answer, the park's own row (`permission-required`, or
+      // the frame closing `suspended`) says what it waits on, and the resumed
+      // run settles it under the same identity. Settling it here would record
+      // a failure for a call that goes on to succeed.
+      Effect.onExit((exit) =>
+        Exit.isSuccess(exit) ? Effect.void : Effect.gen(function*() {
+          const interrupted = Cause.hasInterruptsOnly(exit.cause)
+          const parked = interrupted
+            ? yield* engine.isSuspended ?? Effect.succeed(false)
+            : exit.cause.reasons.some((reason) =>
+              Cause.isFailReason(reason) &&
+              (permissionRequired(reason.error) !== undefined ||
+                (reason.error instanceof HarnessError && reason.error.code === "suspended"))
+            )
+          if (parked) return
+          yield* emit(
+            new AgentEvent.CellCallSettled({
+              eventType: eventType.cellCallSettled,
+              flowName: call.flowName,
+              identity: call.identity,
+              result: refusal(
+                undefined,
+                interrupted
+                  ? `Flow ${call.flowName} was interrupted before it answered.`
+                  : `Flow ${call.flowName} ended without an answer.`
+              ),
+              durationMillis: elapsed(issuedAt, yield* Clock.currentTimeMillis)
+            })
+          )
+        })
+      )
     )
     const durationMillis = elapsed(issuedAt, yield* Clock.currentTimeMillis)
     took.callMs += durationMillis

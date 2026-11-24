@@ -9,8 +9,7 @@
  * Back them with `CachedModel` and `CachedEvaluator` and the endpoint records
  * real calls once and replays them on every later run.
  *
- * A request the backing model has no answer for (a replay miss: the model dies
- * rather than fails) is answered `501` with `type: "unrecorded"` and logged at
+ * A request the backing model rejects with `UnscriptedModelError` is answered `501` with `type: "unrecorded"` and logged at
  * warning level, naming the model and the message count, never the text. If
  * streaming already started, the stream ends with the same error as an SSE
  * chunk instead; HTTP headers cannot change once sent.
@@ -26,9 +25,10 @@ import type { ModelError } from "@smthrs/model/ModelError"
 import type * as ModelEvent from "@smthrs/model/ModelEvent"
 import { type Message, ModelRequest } from "@smthrs/model/ModelRequest"
 import * as OpenAIChatCompletions from "@smthrs/model/OpenAIChatCompletions"
-import { Cause, Effect, Exit, FiberSet, Schema, type Scope, Stream } from "effect"
+import { Cause, Effect, Exit, type Fiber, FiberSet, Schema, type Scope, Stream } from "effect"
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http"
 import type { AddressInfo } from "node:net"
+import { UnscriptedModelError } from "./TestingError.ts"
 import type * as TurnGate from "./TurnGate.ts"
 import type * as TurnLog from "./TurnLog.ts"
 
@@ -295,20 +295,19 @@ const chat = (options: Options, request: IncomingMessage, response: ServerRespon
       response.write(chunk)
     }
     // SSE comments keep a silent answer alive through a proxy's idle timeout.
-    let heartbeat = setTimeout(function beat() {
-      write(": held\n\n")
-      heartbeat = setTimeout(beat, heartbeatMs)
-    }, heartbeatMs)
+    const heartbeat = setInterval(() => write(": held\n\n"), heartbeatMs)
     const exit = yield* Stream.runForEach(
       Stream.suspend(() => options.model.stream(lifted)),
       (event) =>
         Effect.sync(() => {
           for (const chunk of encode(event)) write(`data: ${JSON.stringify(chunk)}\n\n`)
         })
-    ).pipe(Effect.ensuring(Effect.sync(() => clearTimeout(heartbeat))), Effect.exit)
+    ).pipe(Effect.ensuring(Effect.sync(() => clearInterval(heartbeat))), Effect.exit)
     if (Exit.isSuccess(exit)) return void response.end(write("data: [DONE]\n\n"))
     const failure = Cause.findErrorOption(exit.cause)
     if (failure._tag === "None") {
+      const defect = Cause.squash(exit.cause)
+      if (!(defect instanceof UnscriptedModelError)) return yield* Effect.die(defect)
       return yield* unrecorded(response, `model ${lifted.modelId}, messages: ${lifted.messages.length}`)
     }
     const error = failure.value as ModelError
@@ -347,6 +346,8 @@ const evaluation = (
     }
     const failure = Cause.findErrorOption(exit.cause)
     if (failure._tag === "None") {
+      const defect = Cause.squash(exit.cause)
+      if (!(defect instanceof UnscriptedModelError)) return yield* Effect.die(defect)
       return yield* unrecorded(response, `evaluation, questions: ${Object.keys(decoded.success.questions).join(", ")}`)
     }
     json(response, evaluationStatus(failure.value), { error: failure.value.message })
@@ -398,17 +399,17 @@ export const make = (options: Options): Effect.Effect<ModelServer, never, Scope.
     // is abandoned, never recorded into a fixture already published.
     const requests = yield* FiberSet.make()
     const fork = yield* FiberSet.runtime(requests)()
-    return yield* serve(options, (handler) => void fork(handler))
+    return yield* serve(options, (handler) => fork(handler))
   })
 
 const serve = (
   options: Options,
-  fork: (handler: Effect.Effect<void>) => void
+  fork: (handler: Effect.Effect<void>) => Fiber.Fiber<void>
 ): Effect.Effect<ModelServer, never, Scope.Scope> =>
   Effect.acquireRelease(
     Effect.callback<ReturnType<typeof createServer>>((resume) => {
-      const server = createServer((request, response) =>
-        fork(
+      const server = createServer((request, response) => {
+        const fiber = fork(
           Effect.suspend(() => route(options, request, response)).pipe(
             Effect.onExit((exit) =>
               Effect.sync(() => {
@@ -422,7 +423,10 @@ const serve = (
             )
           )
         )
-      )
+        response.once("close", () => {
+          if (!response.writableEnded) fiber.interruptUnsafe()
+        })
+      })
       const hostname = options.hostname ?? "127.0.0.1"
       server.once("error", (error) => resume(Effect.die(error)))
       server.listen(options.port ?? 0, hostname, () => resume(Effect.succeed(server)))

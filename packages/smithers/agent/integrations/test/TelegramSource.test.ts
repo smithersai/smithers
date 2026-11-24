@@ -252,6 +252,9 @@ describe("Telegram.Source.make", () => {
     ["a poll timeout past the Bot API's limit", { pollTimeoutSeconds: 51 }],
     ["a URL that does not parse", { apiBaseUrl: "not a url" }],
     ["a non-HTTP origin", { apiBaseUrl: "ftp://example.invalid" }],
+    // Fable D2-089: the bot token is in the request path, so plain HTTP to another host would send it in cleartext.
+    ["a cleartext origin beyond loopback", { apiBaseUrl: "http://bot-api.internal.example" }],
+    ["a cleartext origin that only starts like loopback", { apiBaseUrl: "http://127.0.0.1.example.invalid" }],
     ["an origin with credentials", { apiBaseUrl: "https://user:pass@example.invalid" }],
     ["an origin with a query", { apiBaseUrl: "https://example.invalid?token=x" }],
     ["an origin with a fragment", { apiBaseUrl: "https://example.invalid#x" }],

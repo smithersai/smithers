@@ -50,8 +50,44 @@ const preview = (line: string): string => {
   return truncateBytes(head, 500, { keep: "head" }).text
 }
 
+/**
+ * The longest line, in UTF-16 code units, this peer holds while it scans a
+ * file. A line is accumulated until its newline arrives, so without a bound a
+ * file with no newline is buffered whole. A file with a longer line is skipped
+ * and counted in `skippedBinary`, as a file with a NUL byte is, or refused with
+ * `response_too_large` when the search root names it.
+ *
+ * @category constants
+ * @since 1.0.0-rc.18
+ */
+export const MAX_LINE_UNITS = 8 * 1024 * 1024
+
+/**
+ * The largest file, in bytes, whose whole text this peer loads to name the
+ * symbols around its matches: the bound `read` puts on one file. A larger
+ * file's matches are returned without symbols.
+ *
+ * @category constants
+ * @since 1.0.0-rc.18
+ */
+export const MAX_SYMBOL_SOURCE_BYTES = 64 * 1024 * 1024
+
+/**
+ * The bounds {@link make} takes, for a host that has less memory to give.
+ *
+ * @category models
+ * @since 1.0.0-rc.18
+ */
+export interface Limits {
+  /** Defaults to {@link MAX_LINE_UNITS}. */
+  readonly maxLineUnits?: number | undefined
+  /** Defaults to {@link MAX_SYMBOL_SOURCE_BYTES}. */
+  readonly maxSymbolSourceBytes?: number | undefined
+}
+
 const grep = (
-  input: Search.GrepInput
+  input: Search.GrepInput,
+  limits: Limits
 ): Effect.Effect<Search.GrepOutput, StdError.StdError, FileSystem.FileSystem | Path.Path> =>
   Effect.gen(function*() {
     const fileSystem = yield* FileSystem.FileSystem
@@ -59,6 +95,8 @@ const grep = (
     const includedByGlobs = (relative: string, basename: string) =>
       Contract.includedByGlobs(input.globs, relative, basename)
     const walked = yield* Walk.files(fileSystem, path, input.root, input.hidden, input.noIgnore, includedByGlobs)
+    const maxLineUnits = limits.maxLineUnits ?? MAX_LINE_UNITS
+    const maxSymbolSourceBytes = limits.maxSymbolSourceBytes ?? MAX_SYMBOL_SOURCE_BYTES
     const insensitive = input.ignoreCase || (input.smartCase && !/[A-Z]/.test(input.pattern))
     const regex = LinearRegex.compile(
       input.fixedStrings ? escapeRegex(input.pattern) : input.pattern,
@@ -129,6 +167,8 @@ const grep = (
       // Stream.splitLines also treats a standalone CR as a delimiter.
       const decoder = new TextDecoder()
       let fragments: Array<string> = []
+      let held = 0
+      let size = 0
       const consume = (chunk: string) =>
         Effect.gen(function*() {
           let from = 0
@@ -137,11 +177,25 @@ const grep = (
             fragments.push(chunk.slice(from, newline))
             const line = fragments.join("")
             fragments = []
+            held = 0
             yield* scanLine(line.endsWith("\r") ? line.slice(0, -1) : line)
             from = newline + 1
             newline = chunk.indexOf("\n", from)
           }
-          if (from < chunk.length) fragments.push(chunk.slice(from))
+          if (from < chunk.length) {
+            held += chunk.length - from
+            // Stop reading rather than hold a line no newline ever ends.
+            if (held > maxLineUnits) {
+              return yield* Effect.fail(
+                new StdError.StdError({
+                  code: "response_too_large",
+                  message: `Cannot search ${file}: it holds a line longer than ${maxLineUnits} characters`,
+                  path: file
+                })
+              )
+            }
+            fragments.push(chunk.slice(from))
+          }
         })
       const scanned = yield* Effect.gen(function*() {
         let started = false
@@ -153,6 +207,7 @@ const grep = (
           Stream.catch((error) => started ? Stream.fail(error) : Stream.fromEffect(fileSystem.readFile(file))),
           Stream.runForEach((bytes) => {
             started = true
+            size += bytes.length
             if (bytes.includes(0)) {
               return Effect.fail(
                 new StdError.StdError({
@@ -187,7 +242,7 @@ const grep = (
       // Source is needed only for returned symbols, and is released before
       // moving to the next file. Overflow files never load symbol source.
       const contents = new Map<string, ReadonlyArray<string>>()
-      if (input.symbols) {
+      if (input.symbols && size <= maxSymbolSourceBytes) {
         const source = yield* fileSystem.readFileString(file).pipe(Effect.orElseSucceed(() => undefined))
         if (source !== undefined) contents.set(file, Grouping.sourceLines(source))
       }
@@ -273,9 +328,12 @@ export const searched = (
  * @category constructors
  * @since 1.0.0
  */
-export const make = (services: Context.Context<FileSystem.FileSystem | Path.Path>): Search.Search =>
+export const make = (
+  services: Context.Context<FileSystem.FileSystem | Path.Path>,
+  limits: Limits = {}
+): Search.Search =>
   Search.make({
-    grep: (input) => Effect.provide(grep(input), services),
+    grep: (input) => Effect.provide(grep(input, limits), services),
     glob: (input) => Effect.provide(glob(input), services)
   })
 

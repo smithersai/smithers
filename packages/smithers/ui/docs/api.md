@@ -32,21 +32,16 @@ it takes an explicit props bag instead.
 | `@smthrs/ui/flow-form` | Schema-driven fields, drafts, submissions, and command assembly | None |
 | `@smthrs/ui/diff-paginate` | Diff pagination and limits | None |
 | `@smthrs/ui/flow-arguments` | `parseArgs` for file-flow input | None |
-| `@smthrs/ui/app-operations` | Operation declarations and metadata | None |
-| `@smthrs/ui/app-operations/wiki` | Wiki operation declarations and person-only reasons | None |
-| `@smthrs/ui/app-operations/http` | `httpProjections` operation declarations | None |
 | `@smthrs/ui/command-line` | Command parsing and submission routing | None |
 | `@smthrs/ui/run-command` | Source-card argument parsing | None |
 | `@smthrs/ui/clock` | External-store clocks and React hooks | None |
 | `@smthrs/ui/notification-policy` | Notification timing and retention | None |
 | `@smthrs/ui/copy` | Clipboard helpers and result types | None |
 | `@smthrs/ui/adapters/code-editor` | `CodeEditorView`, `minimalChange`, and editor contracts | `@codemirror/*` and Lezer |
-| `@smthrs/ui/app-operations/controls` | `pendingControls` operation declarations | None |
 
-The light subpaths provide focused imports. Operation catalogs, command
-parsers, form helpers and clocks also expose helpers that are absent from the
-root; import each from its listed specifier. Adapter exports live only on
-their adapter subpath.
+The light subpaths provide focused imports. Command parsers, form helpers and
+clocks also expose helpers that are absent from the root; import each from its
+listed specifier. Adapter exports live only on their adapter subpath.
 
 The repository views (`RepoView`, `CodeFileView`, `PierreDiffView`,
 `MarkdownEditor`) are `@smthrs/repo-view`'s, and `TerminalFrame` is
@@ -796,28 +791,6 @@ tick can exceed the budget. Unmounting or changing the graph cancels pending
 batches. `scheduleSettle` replaces the yield
 (`requestIdleCallback`, falling back to `setTimeout`) and `loadPhysics`
 replaces the lazy `d3-force` import; a rejecting loader renders the hub list.
-
-## App operations
-
-`@smthrs/ui/app-operations` declares Smithers acts apart from any host that
-runs them. It is not on the root barrel.
-
-An `Operation` is a name, an Effect Schema `input`, and the rules every host
-applies: `summary`, `args`, `requires`, `confirm`, `userOnly` with its
-`userOnlyReason`, `runtime`, `hosts`, and `form` hints. It has no handler.
-`operation(declaration)` returns the declaration with its literal type, so a
-host binding reads the exact input schema. `NoInput` is the input of an
-operation that takes nothing.
-
-A host binds its own implementation to each operation. The app binds
-controller calls with an exhaustive handler map, so an operation without a
-handler does not compile. A user-only operation is never offered to a model
-or a robot; a consequential one sets `confirm` instead, so a model may ask and
-the human confirms.
-
-`@smthrs/ui/app-operations/wiki` exports `wikiSurfaceOperations` and
-`wikiOperations`, the Wiki acts in registration order, with
-`WIKI_DISPLAY_NAME` and the user-only reasons they quote.
 
 ## Generated views
 
@@ -1647,10 +1620,6 @@ the root only re-exports a subset.
 | `@smthrs/ui/run-command` | `splitRunSource` separates `sourceCard=` from opaque arguments. |
 | `@smthrs/ui/clock` | `createClock(sample, intervalMs, enabled)` returns external-store `snapshot` and `subscribe` functions and stops its timer after the last unsubscribe; `useClock` returns wall time; `useObservedClock` extends a recorded timestamp by elapsed monotonic time while running. |
 | `@smthrs/ui/notification-policy` | `WORK_NOTICE_DELAY_MS` is 300; `NOTICE_SETTLE_MS` is 4000; `shouldShowSettlement(failed, shown)` retains failures and suppresses unseen successes. |
-| `@smthrs/ui/app-operations` | `OperationPayload` is the input schema constraint; `OperationMetadata` declares access and projection metadata; `debugApiOperation` is the person-only raw API declaration. These declarations grant no authority by themselves. |
-| `@smthrs/ui/app-operations/wiki` | `WIKI_HEADING_USER_ONLY_REASON`, `WIKI_ATTACH_USER_ONLY_REASON` and `WIKI_ASK_USER_ONLY_REASON` explain the viewport, file-dialog and question gestures reserved to the person. |
-| `@smthrs/ui/app-operations/http` | `httpProjections` declares HTTP operations from the shared catalog; authorization remains with the host. |
-| `@smthrs/ui/app-operations/controls` | `pendingControls` declares in-card operations and their access rules. |
 
 ### Form assembly (`@smthrs/ui/flow-form`)
 

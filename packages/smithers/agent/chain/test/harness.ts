@@ -1,6 +1,6 @@
 import { Effect, Layer, type Scope } from "effect"
 import type * as Author from "../src/Author.ts"
-import type * as Authorize from "../src/Authorize.ts"
+import * as Authorize from "../src/Authorize.ts"
 import * as Catalog from "../src/Catalog.ts"
 import * as Chain from "../src/Chain.ts"
 import type * as Event from "../src/Event.ts"
@@ -29,11 +29,13 @@ export interface RunOptions {
   readonly initial?: ReadonlyArray<Event.Event>
   readonly runner?: Layer.Layer<ScriptRunner.ScriptRunner, ScriptRunner.ScriptFailure>
   readonly steering?: Layer.Layer<Steering.Steering>
+  /** The authorization seam; `Authorize.layerAllowAll` when unset, since `Chain.run` requires one. */
   readonly authorize?: Layer.Layer<Authorize.Authorize>
   readonly envelope?: unknown
   readonly prefix?: string
   readonly maxLinks?: number
   readonly maxCallsPerLink?: number
+  readonly maxTotalCalls?: number
 }
 
 export interface RunResult {
@@ -53,7 +55,7 @@ const layersOf = (options: RunOptions) => {
     options.author,
     options.runner ?? ScriptRunner.layerInProcess,
     ...(options.steering === undefined ? [] : [options.steering]),
-    ...(options.authorize === undefined ? [] : [options.authorize])
+    options.authorize ?? Authorize.layerAllowAll
   )
   const catalog = (options.catalog ?? Catalog.layer(options.entries ?? [])).pipe(Layer.provide(base))
   return Layer.mergeAll(base, catalog)
@@ -65,7 +67,8 @@ const chainOptions = (options: RunOptions): Chain.Options => ({
   envelope: options.envelope as Chain.Options["envelope"],
   prefix: options.prefix,
   maxLinks: options.maxLinks,
-  maxCallsPerLink: options.maxCallsPerLink
+  maxCallsPerLink: options.maxCallsPerLink,
+  maxTotalCalls: options.maxTotalCalls
 })
 
 /**

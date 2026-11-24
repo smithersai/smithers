@@ -11,7 +11,7 @@ import { Effect } from "effect"
  */
 import { spawn } from "node:child_process"
 import { getEventListeners } from "node:events"
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, describe, expect, it } from "vitest"
@@ -157,12 +157,20 @@ describe("launching", () => {
        setTimeout(() => {}, 200)`
     )
 
-    const result = await Detached.launch({ root, payload: "{}", entry, intervalMs: 10, admission: admitAll })
+    const result = await Detached.launch({
+      root,
+      payload: "{}",
+      entry,
+      intervalMs: 10,
+      admission: admitAll,
+      timeoutMs: 2_147_483_648
+    })
 
     expect(Detached.isLaunched(result)).toBe(true)
     const launched = result as Detached.Launched
     expect(launched.runId).toBe("run-7")
     expect(launched.logFile).toBe(Project.logFile(root, "run-7"))
+    expect(statSync(launched.logFile).mode & 0o777).toBe(0o600)
     expect(readFileSync(launched.logFile, "utf8")).toContain("runId=run-7")
     expect(typeof launched.pid).toBe("number")
   }, 30_000)

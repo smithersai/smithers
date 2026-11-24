@@ -18,7 +18,7 @@ import * as Authorize from "./Authorize.ts"
 import * as CallKey from "./CallKey.ts"
 import * as Catalog from "./Catalog.ts"
 import * as Event from "./Event.ts"
-import { childRun } from "./internal/childRun.ts"
+import { childRun, type Tree } from "./internal/childRun.ts"
 import { ChildRunError } from "./internal/ChildRunError.ts"
 import * as Unicode from "./internal/unicode.ts"
 import * as Journal from "./Journal.ts"
@@ -111,6 +111,16 @@ export interface Options {
    * `invalid_journal` before it writes anything.
    */
   readonly maxCallsPerLink?: number | undefined
+  /**
+   * The call budget of the whole tree: this run and every sub-chain it
+   * spawns, at any depth, spend from it. It defaults to `maxLinks` times
+   * `maxCallsPerLink`, the most this run could spend alone, so spawning
+   * sub-chains never buys more calls. A live call past it is rejected as a
+   * `fuel` observation, which parks the chain that made it with `quota`.
+   * Must be a non-negative integer; any other value fails the run with
+   * `invalid_journal` before it writes anything. A sub-chain ignores it.
+   */
+  readonly maxTotalCalls?: number | undefined
   /** Caller-supplied context lines appended after the goal in harness-driven author calls. */
   readonly context?: ReadonlyArray<string> | undefined
   /**
@@ -119,7 +129,7 @@ export interface Options {
    */
   readonly chain?: string | undefined
   /** @internal Set only by SubChains for derived child scopes. */
-  readonly [childRun]?: true
+  readonly [childRun]?: Tree
 }
 
 /**
@@ -232,7 +242,21 @@ type RunError =
   | Steering.SteeringError
   | Authorize.AuthorizeError
 
-type Services = Journal.Journal | Catalog.Catalog | Author.Author | ScriptRunner.ScriptRunner
+type Services =
+  | Journal.Journal
+  | Catalog.Catalog
+  | Author.Author
+  | ScriptRunner.ScriptRunner
+  | Authorize.Authorize
+
+// A root's tree is its own scope plus every scope derived from it. The
+// unnamed root's children start with a derived `<link>.<ordinal>` segment.
+const inTree = (event: Event.Event, root: string): boolean => {
+  const scope = event.chain ?? ""
+  return root === ""
+    ? scope === "" || /^\d+\.\d+(\/|$)/.test(scope)
+    : scope === root || scope.startsWith(`${root}/`)
+}
 
 /**
  * Runs a chain to a terminal outcome or an in-place approval wait,
@@ -240,6 +264,10 @@ type Services = Journal.Journal | Catalog.Catalog | Author.Author | ScriptRunner
  * returns its terminal without executing
  * anything, and a half-finished link replays its settled calls by ordinal
  * before running live.
+ *
+ * The {@link Authorize} seam is required: a host with no policy mounts
+ * `Authorize.layerAllowAll` and says so, and a chain built without any seam
+ * does not compile.
  *
  * @category execution
  * @since 0.1.0
@@ -252,7 +280,8 @@ export const run = (options: Options): Effect.Effect<Outcome.RunResult, RunError
     const author = yield* Author.Author
     const runner = yield* ScriptRunner.ScriptRunner
     const chainId = options.chain ?? ""
-    const isRoot = options[childRun] !== true
+    const inherited = options[childRun]
+    const isRoot = inherited === undefined
     if (isRoot && (chainId.includes("/") || /^\d+\.\d+$/.test(chainId))) {
       return yield* new ChainError({
         code: "invalid_journal",
@@ -262,18 +291,26 @@ export const run = (options: Options): Effect.Effect<Outcome.RunResult, RunError
     // Steering is optional context: a chain without the service runs
     // unchanged and journals identically. It is also the ROOT's channel
     // only — a sub-chain never drains, so an instruction meant for the
-    // root can never be consumed by an unattended child. The envelope
-    // seam is optional the same way — end-state it is the kernel's job.
+    // root can never be consumed by an unattended child.
     const steering = isRoot
       ? yield* Effect.serviceOption(Steering.Steering)
       : Option.none<Steering.Service>()
-    const authorize = yield* Effect.serviceOption(Authorize.Authorize)
+    // The authorization seam is required, never optional: a run with no
+    // seam would execute every handler a model-authored script names. A
+    // child is handed its root's seam by SubChains.
+    const authorize = yield* Authorize.Authorize
     const maxLinks = options.maxLinks ?? defaultMaxLinks
     const maxCalls = options.maxCallsPerLink ?? defaultMaxCallsPerLink
     // Every budget comparison is `>=`, which NaN never satisfies: a NaN,
     // negative, fractional, or infinite budget would silently remove the
     // bound instead of enforcing one.
-    for (const [budget, value] of [["maxLinks", maxLinks], ["maxCallsPerLink", maxCalls]] as const) {
+    for (
+      const [budget, value] of [
+        ["maxLinks", maxLinks],
+        ["maxCallsPerLink", maxCalls],
+        ["maxTotalCalls", options.maxTotalCalls ?? 0]
+      ] as const
+    ) {
       if (!Number.isSafeInteger(value) || value < 0) {
         return yield* new ChainError({
           code: "invalid_journal",
@@ -292,6 +329,17 @@ export const run = (options: Options): Effect.Effect<Outcome.RunResult, RunError
     const events: Array<Event.Event> = initial.filter((event) => Event.inChain(event, chainId))
 
     const existing = Event.terminal(events, chainId)
+
+    // One budget for the whole tree. A child spends its root's; a root
+    // starts from the settled calls the journal already holds for its tree,
+    // so resuming never refills the budget.
+    const tree: Tree = inherited ?? {
+      authorize,
+      fuel: {
+        max: options.maxTotalCalls ?? maxLinks * maxCalls,
+        spent: initial.filter((event) => event._tag === "CallSettled" && inTree(event, chainId)).length
+      }
+    }
 
     // `position` is the journal length this run last observed. A run cannot
     // simply trust it: a sub-chain legitimately appends to the same journal
@@ -415,6 +463,18 @@ export const run = (options: Options): Effect.Effect<Outcome.RunResult, RunError
                 Observation.make("fuel", `link ${link} exceeded its budget of ${maxCalls} calls`)
               )
             }
+            if (prior === undefined) {
+              // The tree budget is spent on admission, so a call that is
+              // still running (a spawning call waiting on its child) is
+              // already counted when its descendants ask.
+              if (tree.fuel.spent >= tree.fuel.max) {
+                return yield* reject(
+                  ordinal,
+                  Observation.make("fuel", `the chain tree exhausted its budget of ${tree.fuel.max} calls`)
+                )
+              }
+              tree.fuel.spent++
+            }
             const payloadBoundary = JsonBoundary.jsonBoundary(payload)
             if (payloadBoundary._tag === "Refused") {
               return yield* reject(
@@ -477,18 +537,16 @@ export const run = (options: Options): Effect.Effect<Outcome.RunResult, RunError
               return prior.result
             }
             if (name === authorName) {
-              if (Option.isSome(authorize)) {
-                // The model seat is inside the envelope too: a deny-all
-                // envelope must not burn model tokens routing around its
-                // own denials. A denied seat is unrecoverable by
-                // re-authoring, so it propagates typed instead of
-                // journaling an observation; an ask parks in place.
-                yield* authorizeSlot(
-                  authorize.value,
-                  { capabilities: [AuthorDeclaration.authorCapability], name, slot: { chain: chainId, link, ordinal } },
-                  Effect.fail
-                )
-              }
+              // The model seat is inside the envelope too: a deny-all
+              // envelope must not burn model tokens routing around its
+              // own denials. A denied seat is unrecoverable by
+              // re-authoring, so it propagates typed instead of
+              // journaling an observation; an ask parks in place.
+              yield* authorizeSlot(
+                authorize,
+                { capabilities: [AuthorDeclaration.authorCapability], name, slot: { chain: chainId, link, ordinal } },
+                Effect.fail
+              )
               const promoted = yield* steeringFor(ordinal)
               const context = [
                 ...Author.contextOf(jsonPayload),
@@ -531,12 +589,12 @@ export const run = (options: Options): Effect.Effect<Outcome.RunResult, RunError
             // An undeclared entry claims everything; an explicit empty
             // claim set claims no external authority and skips the seam.
             const claims = entry.capabilities ?? ["*"]
-            if (Option.isSome(authorize) && claims.length > 0) {
+            if (claims.length > 0) {
               // Gate 4, live calls only: replayed settled calls already
               // ran, and the check stays out of the journal so a later
               // grant is re-decidable (see the Authorize.ts module comment).
               yield* authorizeSlot(
-                authorize.value,
+                authorize,
                 { capabilities: claims, name, slot: { chain: chainId, link, ordinal } },
                 (error) => reject(ordinal, Observation.make("denied", error.message))
               )
@@ -544,7 +602,14 @@ export const run = (options: Options): Effect.Effect<Outcome.RunResult, RunError
             const key = CallKey.make(link, scriptDigest, ordinal, Catalog.entryDigest(entry))
             const settle = (signal?: AbortSignal) =>
               Effect.gen(function*() {
-                const result = yield* entry.handler(jsonPayload, { chain: chainId, link, ordinal, key, signal }).pipe(
+                const result = yield* entry.handler(jsonPayload, {
+                  chain: chainId,
+                  link,
+                  ordinal,
+                  key,
+                  signal,
+                  [childRun]: tree
+                }).pipe(
                   Effect.catchTag("/chain/CallError", (error) =>
                     Effect.gen(function*() {
                       // Run failures stay typed and un-settled, through every

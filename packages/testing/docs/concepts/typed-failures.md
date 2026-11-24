@@ -65,7 +65,7 @@ package:
 - Every polling loop is bounded, so exhaustion is a typed failure rather than a
   hang. `FlowEngineLike` gives a runtime 1000 scheduler passes to publish a
   result whose body has already exited, then fails typed. Conformance pins wait
-  on a bounded live-clock schedule, roughly one second, then fail.
+  up to one second by default. Provide `Conformance.WaitBudget` to set the live deadline in milliseconds.
 
 ## No unbounded payloads
 

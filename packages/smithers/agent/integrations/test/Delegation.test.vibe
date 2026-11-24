@@ -295,6 +295,32 @@ it.effect("GitHub's revocation event ends the connection without calling GitHub"
   const after = try f.call("perform", create)
   try Effect.try(() => { expect(after).toBe("connect"); expect(f.world.revoked).toEqual([]) })
 })
+// Neon D2-005: an unchecked cast threw on the first malformed row, so every later site stayed connected.
+it.effect("GitHub's revocation event ends every readable delegation when a stored row is malformed", () => effect {
+  const f = try fixture()
+  try f.server.install({ origin: other, login: "ada", tokens: { accessToken: Redacted.make("t"), refreshToken: null, expiresAt: 999_999_999 } })
+  try f.store.put("delegation/a-corrupt-null", null)
+  try f.store.put("delegation/a-corrupt-shape", { origin: 7 })
+  const outcomes: Array<Readonly<Record<string, unknown>>> = []
+  const logger = Logger.make((entry) => {
+    if (entry.message === "github.delegation" || Array.isArray(entry.message) && entry.message.includes("github.delegation")) outcomes.push(entry.fiber.getRef(References.CurrentLogAnnotations))
+  })
+  provide Logger.CurrentLoggers = new Set([logger]) {
+    try f.server.revokedAtGitHub()
+  }
+  const left = try f.store.list("delegation/")
+  const credential = try f.store.get("credential")
+  const connections = try f.server.connections()
+  try Effect.try(() => {
+    expect(left).toEqual([null, { origin: 7 }])
+    expect(credential).toBeUndefined()
+    expect(connections).toEqual([])
+    expect(outcomes.filter((outcome) => outcome["outcome"] === "corrupt")).toEqual([{ step: "webhook", outcome: "corrupt" }, { step: "webhook", outcome: "corrupt" }])
+    expect(outcomes).toContainEqual({ step: "webhook", outcome: "accepted" })
+    // Only the second install's replacement of the first token; the event itself calls GitHub for nothing.
+    expect(f.world.revoked).toEqual(["stored-token"])
+  })
+})
 it.effect("refresh: no refresh token and a corrupt row answer connect, an outage answers unavailable, a null answer stores no refresh token", () => effect {
   const none = try fixture(blank(), true)
   try TestClock.adjust(28_800_000 - 60_000)

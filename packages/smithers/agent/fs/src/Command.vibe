@@ -94,12 +94,6 @@ effect function validateDecoded(schema: Schema.Top, value: unknown, field: "inpu
   return try snapshotDecoded(decoded)
 }
 
-const routeArgv = (argv: ReadonlyArray<string>): ReadonlyArray<string> => {
-  const first = argv[0]
-  if (first === undefined || !first.includes("/")) return argv
-  return Object.freeze([...first.split("/"), ...argv.slice(1)])
-}
-
 /**
  * Constructs a command surface from routes.
  *
@@ -116,10 +110,10 @@ export effect function make(routes: ReadonlyArray<Route.Route>): CommandSurface!
 
   const prepare = effect (commandString: string): Prepared!FsError => {
     const argv = try CommandLine.lex(commandString)
-    const resolved = try CommandTree.resolve(tree, routeArgv(argv))
+    const resolved = try CommandTree.resolve(tree, CommandLine.splitName(argv))
     const flow = try Route.load(resolved.route)
     const schema = try SchemaBridge.toCommandSchema(resolved.route.input, flow.input)
-    const parsed = try CommandLine.parseFlags(resolved.rest)
+    const parsed = try CommandLine.parseFlags(resolved.rest, schema.flags)
     const input = try schema.decode(schema.assemble(parsed.args, parsed.options))
     return Object.freeze({ route: resolved.route, flow, argv, input })
   }

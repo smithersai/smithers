@@ -115,3 +115,18 @@ describe.each(cases)("a tool call the output budget cuts off on $name", ({ proto
     expect(JSON.stringify(body)).not.toContain("call_1")
   })
 })
+
+it.each(cases)("drops only results of abandoned tool calls on $name", ({ protocol, modelId }) => {
+  const call = (id: string) => ({ type: "tool-call" as const, id, name: "read", arguments: "{}" })
+  const result = (id: string) => ({ type: "tool-result" as const, toolCallId: id, content: id, addedToolNames: [] })
+  const history = [
+    Message.user("read"),
+    Message.assistant([call("abandoned"), call("reused")], { stopReason: "aborted" }),
+    Message.tool(result("abandoned")),
+    Message.assistant([call("reused")], { stopReason: "tool-calls" }),
+    Message.tool([result("abandoned"), result("reused")])
+  ]
+  const lowered = Effect.runSync(protocol.body.from(request(modelId, history), { native: false }))
+  expect(JSON.stringify(lowered)).not.toContain("abandoned")
+  expect(JSON.stringify(lowered)).toContain("reused")
+})

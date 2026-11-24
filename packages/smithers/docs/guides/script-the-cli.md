@@ -152,7 +152,7 @@ a Plan decision has no run to wait for.
 - Use `smthrs runs cancel-all --root "$project_root" --json` in an always-run
   step, with `project_root` set to the job's project directory. It reads every
   page and cancels every nonterminal run through one control connection. Use
-  `smthrs gc --older-than <duration>` to bound how much the databases keep.
+  `smthrs gc --older-than <duration> --yes` to bound how much the databases keep.
 
 ## See also
 

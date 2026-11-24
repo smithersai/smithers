@@ -5,12 +5,14 @@ import { expect, it } from "@effect/vitest"
 import * as Model from "@smthrs/model/Model"
 import { Deferred, Effect, Logger, Stream } from "effect"
 import * as ModelServer from "../src/ModelServer.ts"
+import { UnscriptedModelError } from "../src/TestingError.ts"
 import * as TurnGate from "../src/TurnGate.ts"
 
+const miss = new UnscriptedModelError({ modelId: "m", messageCount: 1, toolNames: [] })
 it.live("ends a replay miss after the heartbeat opens the stream", () =>
   Effect.gen(function*() {
     const gate = yield* TurnGate.make()
-    const missing = Model.make({ stream: () => Stream.die(new Error("private fixture detail")) })
+    const missing = Model.make({ stream: () => Stream.die(miss) })
     const server = yield* ModelServer.make({
       model: TurnGate.model(missing, { gate, key: () => "missing" }),
       heartbeatMs: 5
@@ -70,7 +72,7 @@ for (const disconnect of [false, true]) {
         throw new Error("private logger detail")
       })
       const server = yield* ModelServer.make({
-        model: TurnGate.model(Model.make({ stream: () => Stream.die("missing") }), {
+        model: TurnGate.model(Model.make({ stream: () => Stream.die(miss) }), {
           gate,
           key: () => "missing"
         }),
@@ -86,9 +88,13 @@ for (const disconnect of [false, true]) {
       )
       const reader = response.body!.getReader()
       yield* Effect.tryPromise(() => reader.read())
-      if (disconnect) controller.abort()
-      yield* gate.release("missing")
-      yield* Deferred.await(reported)
+      if (disconnect) {
+        controller.abort()
+        yield* gate.held().pipe(Effect.repeat({ until: (keys) => keys.length === 0 }))
+      } else {
+        yield* gate.release("missing")
+        yield* Deferred.await(reported)
+      }
       if (!disconnect) {
         const body = yield* Effect.tryPromise(async () => {
           let text = ""
@@ -123,9 +129,9 @@ it.live("answers a model that throws before constructing its stream", () =>
         signal: AbortSignal.timeout(2_000)
       })
     )
-    expect(response.status).toBe(501)
+    expect(response.status).toBe(500)
     const body = yield* Effect.promise(() => response.text())
-    expect(JSON.parse(body)).toMatchObject({ error: { type: "unrecorded" } })
+    expect(JSON.parse(body)).toMatchObject({ error: { type: "internal_error" } })
     expect(body).not.toContain("private")
     const health = yield* Effect.promise(() => fetch(`${server.url}${ModelServer.paths.health}`))
     expect(health.status).toBe(200)

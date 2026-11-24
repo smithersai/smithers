@@ -1199,6 +1199,15 @@ describe("Sandbox.callLimit", () => {
     expect(Sandbox.callLimit(600_000, { input: { timeoutMs: 1_000, timeoutSeconds: 2 } })).toBe(602_000)
   })
 
+  it("holds the time a call names to one hour, whatever the model wrote and whether or not the frame keeps a clock", () => {
+    // R1-Fable-D2-044: the input is model-written, and a flow that pauses the frame backstop has no `remainingMs`.
+    expect(Sandbox.callLimit(120_000, { input: { timeoutSeconds: 1e9 }, remainingMs: undefined })).toBe(3_720_000)
+    expect(Sandbox.callLimit(120_000, { input: { timeoutMs: Number.MAX_VALUE } })).toBe(3_720_000)
+    expect(Sandbox.callLimit(120_000, { input: { timeoutMs: 3_600_000 } })).toBe(3_720_000)
+    expect(Sandbox.callLimit(120_000, { input: { timeoutMs: 3_599_999 } })).toBe(3_719_999)
+    expect(Sandbox.callLimit(120_000, { input: { timeoutSeconds: 1e9 }, remainingMs: 900_000 })).toBe(899_000)
+  })
+
   it("holds a request to what the frame has left, less a second to read the timeout, never under callMs", () => {
     expect(Sandbox.callLimit(1_000, { input: { timeoutMs: 60_000 }, remainingMs: 10_000 })).toBe(9_000)
     expect(Sandbox.callLimit(1_000, { input: { timeoutMs: 60_000 }, remainingMs: 1_500 })).toBe(1_000)

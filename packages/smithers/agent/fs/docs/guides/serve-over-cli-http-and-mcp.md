@@ -41,9 +41,11 @@ a route that also has children fails with `duplicate_route`.
 
 ## Serve a shell command
 
-`serve` takes an argv, defaulting to `process.argv.slice(2)`. The command
-name resolves from the tokens ahead of the first flag, with a slash-joined or
-spaced first token:
+`serve` takes an argv, defaulting to the command line of the `Incur.Host`
+service, which is `process.argv.slice(2)` unless a host is provided. The
+command name resolves from the tokens ahead of the first flag, with a
+slash-joined or spaced first token. A first token that begins with `-` is an
+option and is never split on slashes:
 
 ```ts
 await cli.serve(["review", "--number", "42", "--format", "json"])

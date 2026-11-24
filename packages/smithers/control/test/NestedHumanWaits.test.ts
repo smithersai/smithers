@@ -163,7 +163,7 @@ const plane = (options: SqlControlRuntime.Options = {}) =>
   Layer.provideMerge(
     ControlLive.layer,
     Layer.mergeAll(
-      SqlControlRuntime.layer(options).pipe(Layer.orDie),
+      SqlControlRuntime.layer({ principal: { id: "local", kind: "operator" }, ...options }).pipe(Layer.orDie),
       NotificationQueue.layer,
       signalBridge,
       Registry.layerNoop()

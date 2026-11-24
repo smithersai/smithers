@@ -28,7 +28,7 @@ export interface Protocol<Body, Frame, Event, State> {
   readonly supportsDeferred: (modelId: string) => boolean
   readonly body: ProtocolBody<Body>
   readonly stream: ProtocolStream<Frame, Event, State>
-  readonly classifyError: (status: number, body: string) => ModelError
+  readonly classifyError: (status: number, body: string, now?: number) => ModelError
   /**
    * Public headers derived from one request, merged over the route's static
    * headers. They enter the prepared request, and so the sealed-step key,
@@ -76,7 +76,7 @@ export interface ProtocolStream<Frame, Event, State> {
     event: Event
   ) => Effect.Effect<readonly [State, ReadonlyArray<ModelEvent>], ModelError>
   readonly onHalt?: ((state: State) => ReadonlyArray<ModelEvent>) | undefined
-  readonly terminal?: ((event: Event) => boolean) | undefined
+  readonly terminal?: ((event: Event, settled?: boolean) => boolean) | undefined
 }
 
 /**

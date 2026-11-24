@@ -398,6 +398,47 @@ describe("SeatRouter.route", () => {
     }
   })
 
+  it("regression R1-Fable-D2-021: routes by the graph the catalog carries, over seats the default graph never names", async () => {
+    const graph: SeatRouter.Graph = {
+      seats: ["a", "b", "c"],
+      plan: (answers) =>
+        answers.phase === "review" ? { seat: "c", panel: { seats: ["a", "b"], merger: "c" } } : { seat: "a" },
+      backupsOf: (seat) => seat === "a" ? ["b"] : seat === "c" ? ["a"] : []
+    }
+    const custom = (offered: ReadonlyArray<string>) =>
+      SeatRouter.layer({ candidates: Effect.succeed(offered), variants: [], graph })
+    const routed = await run(auto().pipe(Effect.provide(answering([]))), custom(["a", "b"]))
+    expect(Exit.isSuccess(routed) ? routed.value : undefined).toMatchObject({
+      seat: "a",
+      backups: ["b"],
+      candidates: ["a", "b"]
+    })
+    // The same catalog without its graph is routed by the default graph, which names neither seat.
+    const defaulted = failure(await run(auto().pipe(Effect.provide(answering([]))), catalog(["a", "b"], [])))
+    expect(defaulted).toMatchObject({ reason: "no_candidates", message: "None of sonnet, kimi is available here" })
+    // Failover and the panel follow the catalog's graph too.
+    const failedOver = await run(auto().pipe(Effect.provide(answering([]))), custom(["b"]))
+    expect(Exit.isSuccess(failedOver) ? failedOver.value : undefined).toMatchObject({ seat: "b", backups: [] })
+    const paneled = await run(auto({ phase: "review" }).pipe(Effect.provide(answering([]))), custom(["a", "b", "c"]))
+    expect(Exit.isSuccess(paneled) ? paneled.value : undefined).toMatchObject({
+      seat: "c",
+      backups: ["a"],
+      panel: { seats: [{ seat: "a", backups: [] }, { seat: "b", backups: [] }], merger: "c" }
+    })
+    const unavailable = failure(await run(auto().pipe(Effect.provide(answering([]))), custom(["c"])))
+    expect(unavailable).toMatchObject({ reason: "no_candidates", message: "None of a, b is available here" })
+  })
+
+  it("the default graph is the maintainer's seats, picks and failover order", () => {
+    expect(SeatRouter.defaultGraph.seats).toBe(SeatRouter.seats)
+    expect(SeatRouter.defaultGraph.plan).toBe(SeatRouter.plan)
+    for (const seat of everySeat) {
+      for (const phase of phases) {
+        expect(SeatRouter.defaultGraph.backupsOf(seat, phase)).toEqual(SeatRouter.backupsOf(seat, phase))
+      }
+    }
+  })
+
   it("fails typed when Jev cannot answer, and never picks a seat", async () => {
     const cases = [
       [Evaluator.layerUnavailable(), "unreachable"],

@@ -124,7 +124,7 @@ describe("unified root commands with real handlers", () => {
       root,
       "--older-than",
       "12h",
-      ...(dryRun ? ["--dry-run"] : []),
+      ...(dryRun ? ["--dry-run"] : ["--yes"]),
       "--json"
     ])
     expect(result.codes, result.stdout).toEqual([])
@@ -136,7 +136,8 @@ describe("unified root commands with real handlers", () => {
     const root = await fixture()
     mkdirSync(join(root, ".flows"))
     await writeFile(join(root, ".flows/engine.db"), "not a database")
-    const result = await invoke(["gc", "--root", root, "--json"])
+    expect((await invoke(["gc", "--root", root, "--json"])).stdout).toContain("--yes")
+    const result = await invoke(["gc", "--yes", "--root", root, "--json"])
     expect(result.codes).toContain(1)
     expect(JSON.parse(result.stdout).failures).toHaveLength(1)
     expect(await readFile(join(root, ".flows/engine.db"), "utf8")).toBe("not a database")

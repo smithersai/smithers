@@ -33,7 +33,8 @@ const recorded = [
   [7002, "memory_indexes"],
   [7003, "memory_fts_fold"],
   [7004, "memory_note_lifecycle"],
-  [7005, "memory_namespace_keys"]
+  [7005, "memory_namespace_keys"],
+  [7006, "memory_recall_order_index"]
 ]
 
 interface NameRow {
@@ -116,6 +117,38 @@ describe("memory migrations", () => {
     expect(result.recorded).toEqual(recorded.map(([migration_id, name]) => ({ migration_id, name })))
   })
 
+  // Recall pages a bank's facts newest first. The plan must walk the recall
+  // order index, never sort the bank for each page.
+  it("serves a newest-first fact page from the recall order index", async () => {
+    const result = await Effect.runPromise(
+      Effect.gen(function*() {
+        const sql = yield* SqlClient.SqlClient
+        const upgraded = yield* migratedThrough(5).pipe(Effect.andThen(Migrations.run))
+        const store = yield* MemoryStore.make
+        const namespace = { kind: "flow", id: "plan" } as const
+        for (let index = 0; index < 20; index++) {
+          yield* store.putFact({ namespace, key: `k${index}`, value: `v${index}`, provenance: {} })
+        }
+        const page = yield* store.searchRows({ namespace, kinds: ["fact"], limit: 5 })
+        const plan = Dialect.isPostgres(sql) ?
+          (yield* sql<NameRow>`SELECT indexname AS name FROM pg_indexes
+            WHERE schemaname = current_schema() AND indexname = 'memory_facts_recall_order_idx'`)
+            .map((row) => `USING INDEX ${row.name}`) :
+          (yield* sql<{ readonly detail: string }>`EXPLAIN QUERY PLAN
+            SELECT fact_key FROM memory_facts
+            WHERE namespace_kind = ${"flow"} AND namespace_id = ${"plan"}
+              AND (ttl_ms IS NULL OR updated_at_ms + ttl_ms > ${0})
+              AND (updated_at_ms < ${10} OR (updated_at_ms = ${10} AND fact_key > ${"k"}))
+            ORDER BY updated_at_ms DESC, fact_key LIMIT ${512}`).map((row) => row.detail)
+        return { upgraded, page: page.length, plan }
+      }).pipe(Effect.provide(TestDatabase.layer), Effect.provide(testCrypto))
+    )
+    expect(result.upgraded).toEqual(recorded.slice(5))
+    expect(result.page).toBe(5)
+    expect(result.plan.join("\n")).toContain("USING INDEX memory_facts_recall_order_idx")
+    expect(result.plan.join("\n")).not.toContain("TEMP B-TREE")
+  })
+
   // PostgreSQL FTS tables enabled before the fold carry a search column that
   // keeps accents. The migration regenerates it so rows indexed then match a
   // folded query; on SQLite, FTS5 already folds and the migration is a no-op.
@@ -183,7 +216,11 @@ describe("memory migrations", () => {
     )
     expect(result.before).toEqual(["memory_facts_expiry_idx"])
     expect(result.applied).toEqual(recorded.slice(1))
-    expect(result.after).toEqual(["memory_facts_expires_at_idx", "memory_note_supersedes_target_idx"])
+    expect(result.after).toEqual([
+      "memory_facts_expires_at_idx",
+      "memory_facts_recall_order_idx",
+      "memory_note_supersedes_target_idx"
+    ])
   })
 
   // The expiry sweep filters on the computed sum, and every default note read

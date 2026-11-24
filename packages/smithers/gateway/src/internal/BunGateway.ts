@@ -8,6 +8,7 @@ import { Cause, Effect, Layer } from "effect"
 import type { HttpServer } from "effect/http/HttpServer"
 import type { ServeError } from "effect/http/HttpServerError"
 import { GatewayError } from "../GatewayError.ts"
+import { defaultMaxRequestBodyBytes } from "../GatewayServer.ts"
 import * as NativeGateway from "./NativeGateway.ts"
 
 /**
@@ -17,13 +18,20 @@ import * as NativeGateway from "./NativeGateway.ts"
  * @since 0.1.0
  */
 export const makeBunLayer = (
-  server: (options: { readonly hostname: string; readonly port: number }) => Layer.Layer<HttpServer, ServeError>
+  server: (
+    options: {
+      readonly hostname: string
+      readonly port: number
+      readonly websocket: { readonly maxPayloadLength: number }
+    }
+  ) => Layer.Layer<HttpServer, ServeError>
 ) =>
   NativeGateway.makeLayer((options) =>
     server({
       // Shared listenOptions has already supplied and admitted the bind host.
       hostname: options.host!,
-      port: options.port!
+      port: options.port!,
+      websocket: { maxPayloadLength: defaultMaxRequestBodyBytes }
     }).pipe(Layer.catchCause((cause): Layer.Layer<HttpServer, ServeError | GatewayError> => {
       const failure = Cause.squash(cause)
       const code = typeof failure === "object" && failure !== null && "code" in failure ? failure.code : undefined

@@ -74,14 +74,14 @@ const found = Grep.run({
 
 The output is match-centric:
 
-| Output                | Meaning                                                                   |
-| --------------------- | ------------------------------------------------------------------------- |
-| `matches`             | Each hit with its own `before` and `after` context and optional `symbol`. |
-| `files`               | The file list, which is what `filesWithMatches` fills.                    |
-| `filesSearched`       | Every file the globs admitted, including binaries and unopenable files.   |
-| `skippedBinary`       | How many of those held a NUL byte.                                        |
-| `truncated`, `notice` | Whether the budget bit, and what was shown out of what there was.         |
-| `retriedAsLiteral`    | Present when these results came from re-running the pattern literally.    |
+| Output                | Meaning                                                                    |
+| --------------------- | -------------------------------------------------------------------------- |
+| `matches`             | Each hit with its own `before` and `after` context and optional `symbol`.  |
+| `files`               | The file list, which is what `filesWithMatches` fills.                     |
+| `filesSearched`       | Every file the globs admitted, including binaries and unopenable files.    |
+| `skippedBinary`       | How many of those held a NUL byte, or a line over 8 MiB (in-process peer). |
+| `truncated`, `notice` | Whether the budget bit, and what was shown out of what there was.          |
+| `retriedAsLiteral`    | Present when these results came from re-running the pattern literally.     |
 
 `limit` counts matches, not rows, so context can never crowd out the hit it
 belongs to.

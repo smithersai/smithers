@@ -111,7 +111,7 @@ describe("workspace archive boundaries", () => {
   it("round trips files through the actual tar streams and upload/download scripts", async () => {
     const { home } = await fixture(),
       source = join(home, "source"),
-      remote = join(home, "remote"),
+      remote = join(home, "--remote"),
       output = join(home, "output")
     await mkdir(source)
     await mkdir(output)
@@ -123,8 +123,8 @@ describe("workspace archive boundaries", () => {
     await run("bash", ["-c", `${copyScript(false, remote, "remote", false)} > ${quote(archive)}`], {
       env: { ...process.env, COPYFILE_DISABLE: "1" }
     })
-    await tar.x({ cwd: output, file: archive, strict: true, filter: archiveFilter("remote") })
-    expect(await readFile(join(output, "remote", "hello"), "utf8")).toBe("hello")
+    await tar.x({ cwd: output, file: archive, strict: true, filter: archiveFilter("--remote") })
+    expect(await readFile(join(output, "--remote", "hello"), "utf8")).toBe("hello")
   })
   it("refuses siblings, traversal and hard links outside the requested archive root", () => {
     const filter = archiveFilter("requested")

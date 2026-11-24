@@ -1,11 +1,12 @@
 /** @jsxImportSource react */
 import { processPatch, type CodeViewItem, type DiffsThemeNames, type FileDiffMetadata } from "@pierre/diffs";
-import { CodeView } from "@pierre/diffs/react";
+import { CodeView, WorkerPoolContext } from "@pierre/diffs/react";
 import { decodeGitPath, DEFAULT_THEME_KEY, type ResolvedPalette, themeRegistry, useResolvedPalette, useResolvedTheme } from "@smthrs/ui";
 import { cn } from "@smthrs/ui-css";
 import { useMemo, type ReactNode } from "react";
 import { useInjectRepoViewCss } from "./styles";
 import { registerVibe } from "./vibe";
+import { codeViewThemeKey, useCodeViewWorkerPool } from "./workerPool";
 
 registerVibe();
 
@@ -143,6 +144,9 @@ export function PierreDiffView({
   const resolvedMode = mode ?? houseTheme;
   const resolvedPalette = palette ?? housePalette;
   const items = useMemo(() => patchToCodeViewItems(patch, selectedPath), [patch, selectedPath]);
+  const theme = diffsThemeForMode(resolvedMode, resolvedPalette);
+  // Tokenizing runs in the theme's worker pool, as for a code view; pierre takes the pool when CodeView mounts, so the key remounts it.
+  const { manager, waiting } = useCodeViewWorkerPool(theme);
 
   if (items.length === 0) {
     return (
@@ -152,7 +156,7 @@ export function PierreDiffView({
         data-theme-mode={resolvedMode}
         data-palette={resolvedPalette}
       >
-        {emptyLabel ?? "No diff is available for this change."}
+        {emptyLabel ?? "No diff"}
       </div>
     );
   }
@@ -169,22 +173,27 @@ export function PierreDiffView({
       data-theme-mode={resolvedMode}
       data-palette={resolvedPalette}
     >
-      <CodeView
-        className={cn("sui-pierre-diff", className)}
-        disableWorkerPool
-        items={items}
-        options={{
-          unsafeCSS,
-          collapsedContextThreshold: 12,
-          diffIndicators: "bars",
-          diffStyle: diffStyleForLayout(layout),
-          hunkSeparators: "metadata",
-          overflow: "wrap",
-          stickyHeaders: true,
-          theme: diffsThemeForMode(resolvedMode, resolvedPalette),
-          themeType: resolvedMode,
-        }}
-      />
+      {waiting ? null : (
+        <WorkerPoolContext.Provider value={manager}>
+          <CodeView
+            key={manager === undefined ? "main-thread" : `worker:${codeViewThemeKey(theme)}`}
+            className={cn("sui-pierre-diff", className)}
+            disableWorkerPool={manager === undefined}
+            items={items}
+            options={{
+              unsafeCSS,
+              collapsedContextThreshold: 12,
+              diffIndicators: "bars",
+              diffStyle: diffStyleForLayout(layout),
+              hunkSeparators: "metadata",
+              overflow: "wrap",
+              stickyHeaders: true,
+              theme,
+              themeType: resolvedMode,
+            }}
+          />
+        </WorkerPoolContext.Provider>
+      )}
     </div>
   );
 }

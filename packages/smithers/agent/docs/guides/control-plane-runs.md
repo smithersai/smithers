@@ -200,10 +200,14 @@ execution, and a once-per-second follower drains the control database's pending
 resume delegations, because a decision taken in another process reaches this
 executor through nothing else. A parked run has no owner, so the follower takes
 up a delegation only when this composition is the run's host: the fence the
-park was written under, which only the parking incarnation holds. A delegation
-left standing for `abandonedParkAfter` may be adopted by another host. The
-default is `Ownership.heartbeatStaleAfter` (30 seconds). The cutoff is inclusive
-and applies to the delegation's age, not the age of the parked run.
+park was written under, which only the parking incarnation holds. Another host
+adopts a delegation only when it has stood for `abandonedParkAfter` and the
+host's `confirmParkHostDead` confirms that the parking host is dead. The
+default age is `Ownership.heartbeatStaleAfter` (30 seconds). The cutoff is
+inclusive and applies to the delegation's age, not the age of the parked run.
+The age is not evidence by itself, because it compares one host's clock with
+another's. A host with no `confirmParkHostDead` never adopts a foreign park:
+resume such a run explicitly.
 
 Corrupt evidence on a succeeded action parks both the engine execution and its
 control record. A saved clock, deferred, parent, or approval wake cannot clear

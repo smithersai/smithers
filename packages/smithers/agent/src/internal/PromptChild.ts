@@ -34,6 +34,7 @@ import * as QuotaPolicy from "../QuotaPolicy.ts"
 import { agentOutcome } from "./AgentOutcome.ts"
 import { callId } from "./CallIdentity.ts"
 import { declaredEffort } from "./Effort.ts"
+import { truncated } from "./Truncate.ts"
 
 /**
  * The run services a child runs with: the caller's own. Steering is not among
@@ -142,7 +143,7 @@ const failed = (flow: string, reason: string): Cell.CallResult =>
     outcome: "failure",
     value: null,
     code: "flow_failed",
-    message: `The child run of ${flow} failed: ${reason}`.slice(0, maxMessage)
+    message: truncated(`The child run of ${flow} failed: ${reason}`, maxMessage)
   })
 
 /**

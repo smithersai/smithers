@@ -184,24 +184,33 @@ resolves its own services when it is built.
 The in-process peer. Walks the injected `FileSystem`, so it needs no external
 binary and is browser-safe.
 
-| Export     | Type                                                                                                                                   |
-| ---------- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| `make`     | `(services: Context<FileSystem \| Path>) => Search.Search`                                                                             |
-| `layer`    | `Layer<Search.Search, never, FileSystem \| Path>`                                                                                      |
-| `searched` | `(input: Pick<GrepInput, "root" \| "hidden" \| "noIgnore" \| "globs">) => Effect<ReadonlyArray<string>, StdError, FileSystem \| Path>` |
+| Export                    | Type                                                                                                                                   |
+| ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `make`                    | `(services: Context<FileSystem \| Path>, limits?: Limits) => Search.Search`                                                            |
+| `MAX_LINE_UNITS`          | `8_388_608`: the longest line, in UTF-16 code units, held while scanning one file.                                                     |
+| `MAX_SYMBOL_SOURCE_BYTES` | `67_108_864`: the largest file loaded whole to name symbols.                                                                           |
+| `Limits`                  | `{ maxLineUnits?: number; maxSymbolSourceBytes?: number }`: lower bounds for a host with less memory.                                  |
+| `layer`                   | `Layer<Search.Search, never, FileSystem \| Path>`                                                                                      |
+| `searched`                | `(input: Pick<GrepInput, "root" \| "hidden" \| "noIgnore" \| "globs">) => Effect<ReadonlyArray<string>, StdError, FileSystem \| Path>` |
 
 `searched` names the files `grep` reads for an input, in the order it reads
 them; `RemoteSearch` fetches exactly those.
+
+A file with a line longer than `MAX_LINE_UNITS` is not buffered: the scan
+stops reading it, a walk counts it in `skippedBinary`, and a search whose root
+names it fails with `response_too_large`. A file over
+`MAX_SYMBOL_SOURCE_BYTES` returns its matches without symbols.
 
 ## NativeSearch
 
 The peer that drives the `rg` executable through the permission-aware spawner.
 
-| Export              | Type                                                                                                                              | Meaning                                                            |
-| ------------------- | --------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
-| `MAX_CAPTURE_BYTES` | `67_108_864`                                                                                                                      | Bytes captured from either `rg` stream before the call is refused. |
-| `make`              | `(services: Context<FileSystem \| Path \| ChildProcessSpawner>, environment?: Readonly<Record<string, string>>) => Search.Search` |                                                                    |
-| `layer`             | `Layer<Search.Search, never, FileSystem \| Path \| ChildProcessSpawner>`                                                          |                                                                    |
+| Export              | Type                                                                                                                              | Meaning                                                                     |
+| ------------------- | --------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| `MAX_CAPTURE_BYTES` | `67_108_864`                                                                                                                      | Bytes captured from either `rg` stream before the call is refused.          |
+| `TIMEOUT_MS`        | `600_000`                                                                                                                         | Milliseconds one `rg` process may run before the call fails with `timeout`. |
+| `make`              | `(services: Context<FileSystem \| Path \| ChildProcessSpawner>, environment?: Readonly<Record<string, string>>) => Search.Search` |                                                                             |
+| `layer`             | `Layer<Search.Search, never, FileSystem \| Path \| ChildProcessSpawner>`                                                          |                                                                             |
 
 An overflow is `command_failed` rather than a truncation, because a partial
 ripgrep stream could make this peer disagree with the portable one. A failure to
@@ -218,10 +227,11 @@ machine. It lists the root with the machine's `find`, brings back its
 the in-process peer's. Each search is two round trips through the machine's
 spawner, whatever the tree's size.
 
-| Export     | Type                                                                                                 | Meaning                                                                      |
-| ---------- | ---------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
-| `maxBytes` | `268_435_456`                                                                                        | The most file content one search brings back; past it, `response_too_large`. |
-| `make`     | `(services: Context<ChildProcessSpawner \| Path>, options?: { maxBytes?: number }) => Search.Search` | The spawner runs on the machine; `Path` resolves a relative root there.      |
+| Export       | Type                                                                                                 | Meaning                                                                      |
+| ------------ | ---------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| `maxBytes`   | `268_435_456`                                                                                        | The most file content one search brings back; past it, `response_too_large`. |
+| `TIMEOUT_MS` | `600_000`                                                                                            | Milliseconds one round trip may take before the call fails with `timeout`.   |
+| `make`       | `(services: Context<ChildProcessSpawner \| Path>, options?: { maxBytes?: number }) => Search.Search` | The spawner runs on the machine; `Path` resolves a relative root there.      |
 
 The machine needs `sh`, `find`, `xargs`, `tar`, `head`, and `base64`; GNU,
 BusyBox, and BSD userlands all have them, and a machine without one refuses
@@ -362,27 +372,27 @@ How the project under test runs its suite, declared once by the host.
 
 Pinned trees, and the scratch checkouts a call runs against.
 
-| Export             | Type                                                                                          | Meaning                                                             |
-| ------------------ | --------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
-| `Checkpoints`      | interface and `Context.Service` tag                                                           | `{ capture, materialize }`.                                         |
-| `Snapshot`         | `Schema.Class`                                                                                | `{ id, ref }`, identified as `@smthrs/std/Checkpoints/Snapshot`.    |
-| `Materialized`     | interface                                                                                     | `id`, `host`, `guest`, `root`, `guestRoot`.                         |
-| `baseId`           | `"base"`                                                                                      | The id naming the tree the run opened on.                           |
-| `scratchDirectory` | `".flows-checkpoints"`                                                                        | Where a checkpoint is materialized, relative to the root.           |
-| `configSection`    | `"flows-checkpoint"`                                                                          | The git-config section minted checkpoints are recorded under.       |
-| `make`             | `(service: Checkpoints) => Checkpoints`                                                       |                                                                     |
-| `unavailable`      | `(id: string) => StdError`                                                                    | The refusal a host that pins nothing answers with.                  |
-| `makeNoop`         | `() => Checkpoints`                                                                           | Fails both calls with `unavailable`.                                |
-| `layerNoop`        | `Layer<Checkpoints>`                                                                          |                                                                     |
-| `GitOptions`       | interface                                                                                     | `root`, `cwd?`, `baseRef?`.                                         |
-| `makeGit`          | `(options: GitOptions) => Effect<Checkpoints, never, ChildProcessSpawner>`                    |                                                                     |
-| `layerGit`         | `(options: GitOptions) => Layer<Checkpoints, never, ChildProcessSpawner>`                     |                                                                     |
-| `ContainerOptions` | interface                                                                                     | `container`, `cwd?`.                                                |
-| `makeContainer`    | `(options: ContainerOptions) => Effect<Checkpoints, never, ChildProcessSpawner \| Container>` | Runs git inside the container `bash` runs in.                       |
-| `layerContainer`   | `(options: ContainerOptions) => Layer<Checkpoints, never, ChildProcessSpawner \| Container>`  |                                                                     |
-| `Relocation`       | tagged union                                                                                  | `Relocated`, `UnsupportedFlow`, `AbsolutePath`, `OutsideTree`.      |
-| `precheck`         | `(flow: string, input: Json) => Exclude<Relocation, { _tag: "Relocated" }> \| undefined`      | Refuses unsupported flows and invalid reader paths before checkout. |
-| `relocate`         | `(flow: string, input: Json, materialized: Materialized) => Relocation`                       | Rewrites one call's input onto a checkpoint.                        |
+| Export             | Type                                                                                          | Meaning                                                                                       |
+| ------------------ | --------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| `Checkpoints`      | interface and `Context.Service` tag                                                           | `{ capture, materialize }`.                                                                   |
+| `Snapshot`         | `Schema.Class`                                                                                | `{ id, ref }`, identified as `@smthrs/std/Checkpoints/Snapshot`.                              |
+| `Materialized`     | interface                                                                                     | `id`, `host`, `guest`, `root`, `guestRoot`.                                                   |
+| `baseId`           | `"base"`                                                                                      | The id naming the tree the run opened on.                                                     |
+| `scratchDirectory` | `".flows-checkpoints"`                                                                        | Where a checkpoint is materialized, relative to the root.                                     |
+| `configSection`    | `"flows-checkpoint"`                                                                          | The git-config section minted checkpoints are recorded under.                                 |
+| `make`             | `(service: Checkpoints) => Checkpoints`                                                       |                                                                                               |
+| `unavailable`      | `(id: string) => StdError`                                                                    | The refusal a host that pins nothing answers with.                                            |
+| `makeNoop`         | `() => Checkpoints`                                                                           | Fails both calls with `unavailable`.                                                          |
+| `layerNoop`        | `Layer<Checkpoints>`                                                                          |                                                                                               |
+| `GitOptions`       | interface                                                                                     | `root`, `cwd?`, `baseRef?`.                                                                   |
+| `makeGit`          | `(options: GitOptions) => Effect<Checkpoints, never, ChildProcessSpawner>`                    |                                                                                               |
+| `layerGit`         | `(options: GitOptions) => Layer<Checkpoints, never, ChildProcessSpawner>`                     |                                                                                               |
+| `ContainerOptions` | interface                                                                                     | `container`, `cwd?`, `gitTimeoutMs?` (ten minutes by default, enforced inside the container). |
+| `makeContainer`    | `(options: ContainerOptions) => Effect<Checkpoints, never, ChildProcessSpawner \| Container>` | Runs git inside the container `bash` runs in.                                                 |
+| `layerContainer`   | `(options: ContainerOptions) => Layer<Checkpoints, never, ChildProcessSpawner \| Container>`  |                                                                                               |
+| `Relocation`       | tagged union                                                                                  | `Relocated`, `UnsupportedFlow`, `AbsolutePath`, `OutsideTree`.                                |
+| `precheck`         | `(flow: string, input: Json) => Exclude<Relocation, { _tag: "Relocated" }> \| undefined`      | Refuses unsupported flows and invalid reader paths before checkout.                           |
+| `relocate`         | `(flow: string, input: Json, materialized: Materialized) => Relocation`                       | Rewrites one call's input onto a checkpoint.                                                  |
 
 `capture(id)` returns a `Snapshot`. `materialize(id, use)` is scoped: it hands
 the tree to `use` and removes the checkout however that effect ends. Host git

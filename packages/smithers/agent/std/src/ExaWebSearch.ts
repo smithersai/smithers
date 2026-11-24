@@ -13,6 +13,7 @@ import * as HttpClient from "@smthrs/kernel/HttpClient"
 import { Clock, Effect, Layer, Redacted, Schema } from "effect"
 import * as HttpClientRequest from "effect/http/HttpClientRequest"
 import { header, readBounded } from "./internal/Http.ts"
+import { clipUnits } from "./internal/Text.ts"
 import * as StdError from "./StdError.ts"
 import * as WebSearch from "./WebSearch.ts"
 
@@ -135,7 +136,7 @@ export const layer = (
               results: body.results.slice(0, Math.min(input.numResults ?? 8, maxResults)).map((result) => ({
                 title: result.title ?? result.url,
                 url: result.url,
-                snippet: (result.text ?? "").slice(0, 2_000),
+                snippet: clipUnits(result.text ?? "", 2_000),
                 ...(result.publishedDate === undefined ? {} : { publishedAt: result.publishedDate })
               }))
             }

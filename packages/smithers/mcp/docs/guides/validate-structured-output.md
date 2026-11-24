@@ -82,6 +82,12 @@ same way.
 Without a declared `outputSchema`, any JSON-object `structuredContent` passes
 through unchanged.
 
+With a declared `outputSchema`, a result that is not an error must carry
+`structuredContent`; one that omits it fails with `invalid_response`. A result
+with `isError: true` is the tool's own report of a failure, so it is returned
+as sent: its `structuredContent` is not checked and may be absent, and the
+model reads the tool's message.
+
 ## Reading it downstream
 
 `McpFlows.Result` carries the field through the flow's output schema, so a cell

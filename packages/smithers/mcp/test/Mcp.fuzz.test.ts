@@ -893,7 +893,8 @@ describe("@smthrs/mcp fuzz", () => {
             if (method === "DELETE") return { status: 204 }
             reqCount += 1
             const id = body?.id
-            if (id === undefined) return { status: 202 }
+            // A notification or the client's reply to a server request: accepted, with no body.
+            if (id === undefined || body?.method === undefined) return { status: 202 }
             if (v.scenario === "http-bad-session-id" && body?.method === "initialize") {
               return {
                 status: 200,

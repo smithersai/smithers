@@ -58,6 +58,12 @@ import * as Seat from "../src/Seat.ts"
 import * as SeatResolver from "../src/SeatResolver.ts"
 import * as Safety from "./Safety.ts"
 
+/**
+ * The principal these compositions decide approvals as. The SQL control runtime stamps a caller that names
+ * none `anonymous`, which its default approval authority refuses: only the local operator may decide.
+ */
+const localOperator = { id: "local", kind: "operator" } as const
+
 const prepared: Route.PreparedRequest = {
   routeId: "route-a",
   protocolId: "test-protocol",
@@ -215,7 +221,7 @@ const host = (root: string, owner: Ownership.OwnerId, engineHost = "approval-res
     Layer.provide(engine),
     Layer.provideMerge(
       Layer.mergeAll(
-        SqlControlRuntime.layer({ owner, flows: controlFlows }).pipe(Layer.orDie),
+        SqlControlRuntime.layer({ owner, flows: controlFlows, principal: localOperator }).pipe(Layer.orDie),
         NotificationQueue.layer,
         registryLayer
       )
@@ -229,7 +235,7 @@ const decider = (root: string, owner: Ownership.OwnerId) =>
   ControlLive.layer.pipe(
     Layer.provideMerge(
       Layer.mergeAll(
-        SqlControlRuntime.layer({ owner, flows: controlFlows }).pipe(Layer.orDie),
+        SqlControlRuntime.layer({ owner, flows: controlFlows, principal: localOperator }).pipe(Layer.orDie),
         NotificationQueue.layer,
         registryLayer
       )

@@ -20,7 +20,7 @@ describe("branch SSH catalog CLI", () => {
     expect(result.seen).toEqual(["/api/ssh?branch=retry"])
     expect(child.spawn).toHaveBeenCalledWith(
       "ssh",
-      ["-p", "2222", "-l", endpoint.branch, endpoint.host],
+      ["-F", "/dev/null", "-o", "StrictHostKeyChecking=yes", "-p", "2222", "-l", endpoint.branch, endpoint.host],
       expect.objectContaining({ stdio: "inherit" })
     )
     expect(result.code).toBe(7)

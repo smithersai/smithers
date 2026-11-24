@@ -17,6 +17,7 @@ import type { HookCatalog, HookKind, HookObject } from "./Hooks.ts"
 import { engineHooks, handlerOf, orderOf } from "./Hooks.ts"
 import type { FlowsHooks } from "./index.ts"
 import * as Boundary from "./internal/Boundary.ts"
+import * as Instrument from "./internal/Instrument.ts"
 import { mergePluginLayers } from "./internal/mergePluginLayers.ts"
 import { snapshotCacheEnvironment } from "./internal/snapshotCacheEnvironment.ts"
 import type { Apply, FlowsPlugin, PluginInput } from "./Plugin.ts"
@@ -416,16 +417,10 @@ const included = <H>(
 
 const rank = (enforce: "pre" | "post" | undefined): number => (enforce === "pre" ? 0 : enforce === "post" ? 2 : 1)
 
-/**
- * Resolves a plugin preset into an immutable, resource-bounded catalog.
- *
- * @category constructors
- * @since 1.0.0-rc.0
- */
-export const resolve = <H = FlowsHooks>(
-  input: PluginInput<NoInfer<H>>,
-  options: Options<NoInfer<H>> = {},
-  configOverride?: FlowsConfig
+const resolveUnobserved = <H>(
+  input: PluginInput<H>,
+  options: Options<H>,
+  configOverride: FlowsConfig | undefined
 ): Effect.Effect<Resolved<H>, PluginError> =>
   Effect.gen(function*() {
     const raw = yield* Effect.try({
@@ -570,6 +565,28 @@ export const resolve = <H = FlowsHooks>(
       ...(cacheEnvironment === undefined ? {} : { cacheEnvironment })
     })
   })
+
+/**
+ * Resolves a plugin preset into an immutable, resource-bounded catalog.
+ *
+ * Runs in a `Plugins.resolve` span that carries a failure's `error.code`, and
+ * counts the outcome on `smithers_plugin_resolutions`.
+ *
+ * @category constructors
+ * @since 1.0.0-rc.0
+ */
+export const resolve = <H = FlowsHooks>(
+  input: PluginInput<NoInfer<H>>,
+  options: Options<NoInfer<H>> = {},
+  configOverride?: FlowsConfig
+): Effect.Effect<Resolved<H>, PluginError> =>
+  Instrument.observe(
+    "Plugins.resolve",
+    Instrument.resolutions,
+    {},
+    {},
+    resolveUnobserved<H>(input, options, configOverride)
+  )
 
 /**
  * Merges every resolved plugin layer left-to-right and supplies the detached

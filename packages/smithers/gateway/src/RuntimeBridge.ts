@@ -491,7 +491,8 @@ export const observe = (control: Control["Service"], input: ObserveRequest, rece
       )
     }
     const events: Array<ControlEvent> = []
-    let bytes = 0
+    let hasMore = false
+    let bytes = 2
     yield* control.watch({
       runId: input.runId,
       ...(after === undefined
@@ -502,27 +503,34 @@ export const observe = (control: Control["Service"], input: ObserveRequest, rece
       follow: false
     }).pipe(
       Stream.take(limit + 1),
-      Stream.runForEach((row) => {
-        bytes += new TextEncoder().encode(JSON.stringify(row)).byteLength
-        if (bytes > Projections.maxProjectionBytes) {
-          return Effect.fail(
-            new BridgeError({
-              code: "resource_limit",
-              message: "Observation page exceeds the inspection limit",
-              retryable: false
-            })
-          )
-        }
-        events.push(row)
-        return Effect.void
-      })
+      Stream.rechunk(1),
+      Stream.runForEachWhile((row) =>
+        Effect.sync(() => {
+          if (events.length === limit) {
+            hasMore = true
+            return false
+          }
+          const size = new TextEncoder().encode(JSON.stringify(row)).byteLength
+          const oversized = size + 2 > Projections.maxProjectionBytes
+          const event = oversized ? { ...row, kind: "control.event.truncated", payload: { encodedBytes: size } } : row
+          const retained = oversized ? new TextEncoder().encode(JSON.stringify(event)).byteLength : size
+          if (events.length > 0 && bytes + retained + 1 > Projections.maxProjectionBytes) {
+            hasMore = true
+            return false
+          }
+          events.push(event)
+          bytes += retained + 1
+          return true
+        })
+      )
     )
-    const page = events.slice(0, limit)
+    const page = events
     const last = page.at(-1)
     // Typed Flow results use the same committed root projection as the app.
     // A terminal status alone never supplies a result, and a bounded event
     // page cannot reconstruct a root result that precedes its cursor.
     let finalOutput: string | undefined
+    let resultUnavailable: "resource_limit" | undefined
     let failure: {
       readonly failureFault?: Fault.Class
       readonly failureTag?: string
@@ -530,21 +538,26 @@ export const observe = (control: Control["Service"], input: ObserveRequest, rece
     } = {}
     if (terminal.has(summary.status)) {
       const projections = yield* Projections.make(control)
-      const snapshot = yield* projections.snapshot({ _tag: "run-summary", runId: input.runId })
-      const row = snapshot.rows.find(Schema.is(RunSummaryRow))
-      if (
-        row === undefined || row.runId !== summary.runId || row.flowId !== summary.flowId ||
-        row.status !== summary.status || row.planId !== summary.planId || row.planDigest !== summary.planDigest
-      ) {
-        return yield* Effect.fail(
-          new BridgeError({ code: "internal", message: "Terminal result observation changed", retryable: true })
-        )
-      }
-      finalOutput = row.finalOutput
-      failure = {
-        ...(row.failureFault === undefined ? {} : { failureFault: row.failureFault }),
-        ...(row.failureTag === undefined ? {} : { failureTag: row.failureTag }),
-        ...(row.failureMessage === undefined ? {} : { failureMessage: row.failureMessage })
+      const snapshot = yield* projections.snapshot({ _tag: "run-summary", runId: input.runId }).pipe(
+        Effect.catch((error) => error.code === "resource_limit" ? Effect.succeed(undefined) : Effect.fail(error))
+      )
+      if (snapshot === undefined) resultUnavailable = "resource_limit"
+      else {
+        const row = snapshot.rows.find(Schema.is(RunSummaryRow))
+        if (
+          row === undefined || row.runId !== summary.runId || row.flowId !== summary.flowId ||
+          row.status !== summary.status || row.planId !== summary.planId || row.planDigest !== summary.planDigest
+        ) {
+          return yield* Effect.fail(
+            new BridgeError({ code: "internal", message: "Terminal result observation changed", retryable: true })
+          )
+        }
+        finalOutput = row.finalOutput
+        failure = {
+          ...(row.failureFault === undefined ? {} : { failureFault: row.failureFault }),
+          ...(row.failureTag === undefined ? {} : { failureTag: row.failureTag }),
+          ...(row.failureMessage === undefined ? {} : { failureMessage: row.failureMessage })
+        }
       }
     }
     // Keep the private receipt out of every repository-controlled projection.
@@ -560,13 +573,14 @@ export const observe = (control: Control["Service"], input: ObserveRequest, rece
         ...hostSummary,
         ...(commandReceipt === undefined ? {} : { commandReceipt }),
         ...(finalOutput === undefined ? {} : { finalOutput }),
+        ...(resultUnavailable === undefined ? {} : { resultUnavailable }),
         ...failure
       },
       events: page,
       nextCursor: last === undefined
         ? input.afterCursor ?? ""
         : encodedCursor(last.cursor ?? { sequence: last.sequence }),
-      hasMore: events.length > limit,
+      hasMore,
       terminal: terminal.has(summary.status)
     }
   })
@@ -626,7 +640,7 @@ export const monitor = (control: Control["Service"], runId: string, at?: number)
       // A slower reader cannot overwrite a longer committed prefix.
       if (current !== undefined && (current.records.length > records.length || current.limited)) return
       cache.delete(runId)
-      cache.set(runId, { records, bytes, limited })
+      cache.set(runId, limited ? { records: [], bytes: 0, limited } : { records, bytes, limited })
       let total = [...cache.values()].reduce((sum, entry) => sum + entry.bytes, 0)
       while (cache.size > 32 || total > monitorJournalBytes) {
         const oldest = cache.keys().next().value!
@@ -719,6 +733,7 @@ export const ObserveResponse = Schema.Struct({
     run: Schema.Struct({
       ...RunSummary.fields,
       finalOutput: Schema.optional(Schema.String),
+      resultUnavailable: Schema.optionalKey(Schema.Literal("resource_limit")),
       failureFault: Schema.optional(Fault.Class),
       failureTag: Schema.optional(Schema.String),
       failureMessage: Schema.optional(Schema.String),
@@ -770,16 +785,14 @@ const errorResponse = (cause: unknown) => {
 /**
  * Answers a failed bridge request with its sanitized response, logging it first.
  *
- * The wire carries only the stable code. The operator log carries the full
- * cause of every failure the caller did not cause, so a launch that failed in
- * storage or in the executor can be diagnosed from the host.
+ * Operator diagnostics carry the operation and its stable failure code.
  */
 const respondToFailure =
   (operation: "runtime-bridge.command" | "runtime-bridge.observe" | "runtime-bridge.monitor") => (cause: unknown) => {
     const response = errorResponse(cause)
     if (cause instanceof BridgeError) return Effect.succeed(response)
     const code = Schema.is(ControlError.ControlErrorSchema)(cause) ? cause.code : "internal"
-    return Effect.logError({ message: "Runtime bridge request failed", operation, code, cause }).pipe(
+    return Effect.logError({ message: "Runtime bridge request failed", operation, code }).pipe(
       Effect.as(response)
     )
   }

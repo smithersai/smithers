@@ -53,10 +53,12 @@ const sources = [
 ] as const
 ```
 
-`system: true` changes the collision rule rather than the order: a name shared
-with a system source fails construction with
-`RegistryError { code: "system_collision" }` instead of being resolved
-silently. Two ordinary sources sharing a name resolve first-found and report a
+`system: true` protects the source's names. A later source that reuses a system
+flow's name loses that one flow with a `duplicate_name` warning, and the rest of
+its flows are listed. A system source that arrives after another source already
+claimed one of its names fails construction with
+`RegistryError { code: "system_collision" }`, so list system sources first. Two
+ordinary sources sharing a name resolve first-found and report a
 `duplicate_name` warning. See [Sources and naming](../concepts/sources.md).
 
 ## Decide what a missing root means

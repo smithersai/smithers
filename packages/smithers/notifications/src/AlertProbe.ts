@@ -15,8 +15,9 @@
  */
 
 import { Journal, JournalEvent } from "@smthrs/journal"
-import { Effect, Schema } from "effect"
-import { type Detector, maxSummaryLength, type Policy, type Rule } from "./AlertPolicy.ts"
+import { Effect, Option, Schema } from "effect"
+import { type Detector, maxSummaryLength, type Policy, type Rule, truncated } from "./AlertPolicy.ts"
+import { NotificationError } from "./NotificationQueue.ts"
 
 /**
  * What a probe saw: the thing it checks is `failing`, or it is `ok`.
@@ -44,7 +45,8 @@ export type ProbeState = typeof ProbeState.Type
  * its repeated failures one condition.
  *
  * `summary` is one line a person reads in the page, such as how far behind the
- * site is. Only the first {@link maxSummaryLength} characters are kept.
+ * site is. Only the first {@link maxSummaryLength} UTF-16 code units are kept,
+ * and one fewer when the cut would split a character in two.
  *
  * @category models
  * @since 1.0.0
@@ -63,6 +65,18 @@ export const Report = Schema.Struct({
  * @since 1.0.0
  */
 export type Report = typeof Report.Type
+
+const decodeReport = Schema.decodeUnknownOption(Report)
+const decodeRunId = Schema.decodeUnknownOption(JournalEvent.RunId)
+const decodeSourceId = Schema.decodeUnknownOption(JournalEvent.SourceId)
+const loneSurrogate = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/
+
+/** What every identifier the journal stores must be; a message names the rule, never the value. */
+const identifierRule =
+  `well-formed UTF-16, free of NUL, and at most ${JournalEvent.maxIdentifierLength} code units long`
+
+const invalid = (message: string, path: string): NotificationError =>
+  new NotificationError({ code: "notification_invalid", message, path })
 
 /**
  * A probe name as one event-type or source segment.
@@ -131,28 +145,53 @@ export const probes = (rules: Readonly<Record<string, Rule>>): Pick<Policy, "rul
  * the same state again is harmless: it neither restarts the condition's clock
  * nor raises a second alert, so a step that retries may report twice.
  *
- * The report is checked first. An empty run id or probe name is a mistake in
- * the calling step, not a condition of the system, so it dies with the
- * schema's error instead of failing the step with something to retry.
+ * The report is checked first, and one the journal cannot record fails with a
+ * `NotificationError` whose code is `notification_invalid` and whose `path`
+ * names the member at fault: a report that is not a {@link Report}, a run id
+ * that is not a journal identifier, or a probe name that is malformed UTF-16
+ * or too long to be one. The message names the rule and never the value.
  *
  * @param input the probe result
  * @category operations
  * @since 1.0.0
  */
-export const report: (input: Report) => Effect.Effect<void, Journal.JournalError, Journal.Journal> = Effect.fn(
+export const report: (
+  input: Report
+) => Effect.Effect<void, Journal.JournalError | NotificationError, Journal.Journal> = Effect.fn(
   "Alerts.report"
 )(function*(input: Report) {
-  const checked = yield* Effect.orDie(Schema.decodeUnknownEffect(Report)(input))
+  const checked = yield* Option.match(decodeReport(input), {
+    onNone: () => Effect.fail(invalid("A probe report names a run and a probe, and is failing or ok", "report")),
+    onSome: Effect.succeed
+  })
+  const runId = yield* Option.match(decodeRunId(checked.runId), {
+    onNone: () => Effect.fail(invalid(`A run id must be a journal identifier: ${identifierRule}`, "runId")),
+    onSome: Effect.succeed
+  })
+  // `segment` percent-encodes the name, which throws on malformed UTF-16 and
+  // makes a long name longer. Both are judged before anything is built on it.
+  const named = loneSurrogate.test(checked.probe) ? Option.none() : Option.all({
+    sourceId: decodeSourceId(`/notifications/alerts/probe/${segment(checked.probe)}`),
+    // An event type is held to the rule a source id is.
+    eventType: decodeSourceId(probeEventType(checked.probe))
+  })
+  const { eventType, sourceId } = yield* Option.match(named, {
+    onNone: () =>
+      Effect.fail(
+        invalid(`A probe name must form a journal identifier once percent-encoded: ${identifierRule}`, "probe")
+      ),
+    onSome: Effect.succeed
+  })
   const journal = yield* Journal.Journal
   yield* journal.emitDurableUnfenced(
     new JournalEvent.Input({
-      runId: JournalEvent.RunId.make(checked.runId),
-      sourceId: JournalEvent.SourceId.make(`/notifications/alerts/probe/${segment(checked.probe)}`),
-      eventType: probeEventType(checked.probe),
+      runId,
+      sourceId,
+      eventType,
       payload: {
         probe: checked.probe,
         state: checked.state,
-        ...(checked.summary === undefined ? {} : { summary: checked.summary.slice(0, maxSummaryLength) })
+        ...(checked.summary === undefined ? {} : { summary: truncated(checked.summary, maxSummaryLength) })
       }
     })
   )

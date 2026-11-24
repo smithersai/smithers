@@ -27,6 +27,7 @@ import * as Option from "effect/Option"
 import * as Redacted from "effect/Redacted"
 import * as Schema from "effect/Schema"
 import { readPackets } from "./internal/bounded.ts"
+import { withoutRedirects } from "./internal/redirects.ts"
 
 /**
  * Why a remote's HEAD couldn't be read:
@@ -40,7 +41,9 @@ import { readPackets } from "./internal/bounded.ts"
  * - `too_large`: the answer passed the read's cap (64 KiB for {@link head},
  *   1 MiB for {@link ref}) before it said what was asked;
  * - `invalid_response`: an answer that isn't a smart HTTP ref advertisement
- *   or `ls-refs` answer, or whose lines it needed aren't UTF-8.
+ *   or `ls-refs` answer, or whose lines it needed aren't UTF-8;
+ * - `invalid_argument`: a branch ({@link ref}) whose `ls-refs` request can't
+ *   be framed, because its line passes git's pkt-line maximum. Nothing is sent.
  *
  * @category errors
  * @since 0.1.0
@@ -55,7 +58,8 @@ export class GitRemoteError extends Schema.TaggedError<GitRemoteError>()(
       "unavailable",
       "transport",
       "too_large",
-      "invalid_response"
+      "invalid_response",
+      "invalid_argument"
     ]),
     status: Schema.optional(Schema.Number)
   }
@@ -190,6 +194,20 @@ const withCredential = (request: HttpClientRequest.HttpClientRequest, upstream: 
     ? request
     : HttpClientRequest.setHeader(request, "authorization", Redacted.value(upstream.authorization))
 
+/**
+ * Sends `request` to `upstream`. With a credential, a redirect is never followed, so the credential reaches only the
+ * remote the host named; the 3xx is then `unavailable`. Without one, the transport follows redirects as `git clone`
+ * does, which is how a renamed public repository still answers.
+ */
+const execute = (
+  client: HttpClient.HttpClient,
+  request: HttpClientRequest.HttpClientRequest,
+  upstream: Upstream
+) => {
+  const sent = client.execute(request).pipe(Effect.mapError(() => new GitRemoteError({ code: "transport" })))
+  return upstream.authorization === undefined ? sent : withoutRedirects(sent)
+}
+
 /** One count on {@link requests} by how a read ended, and its span, which names only the remote's URL. */
 const observed = (span: string, remote: string) => <A, R>(effect: Effect.Effect<A, GitRemoteError, R>) =>
   effect.pipe(
@@ -226,9 +244,7 @@ export const head = (remote: string | Upstream): Effect.Effect<Head, GitRemoteEr
       HttpClientRequest.setUrlParam("service", "git-upload-pack"),
       (request) => withCredential(request, upstream)
     )
-    const response = yield* client.execute(request).pipe(
-      Effect.mapError(() => new GitRemoteError({ code: "transport" }))
-    )
+    const response = yield* execute(client, request, upstream)
     const status = response.status
     if (status === 401 || status === 403 || status === 404) {
       return yield* new GitRemoteError({ code: "not_found", status })
@@ -251,21 +267,40 @@ const maxRefsBytes = 1024 * 1024
 
 const encoder = new TextEncoder()
 
-/** One pkt-line: four hex digits of length, counting themselves, then the payload's UTF-8 bytes. */
-const pkt = (line: string): Uint8Array => {
+/**
+ * The most bytes one pkt-line may be, its four length digits included: git's `LARGE_PACKET_MAX` (65,520; gitprotocol-common,
+ * "pkt-line Format"), under the 65,535 that four hex digits can say.
+ */
+const maxPktBytes = 65_520
+
+/**
+ * One pkt-line: four hex digits of length, counting themselves, then the payload's UTF-8 bytes. `undefined` when
+ * the line passes {@link maxPktBytes}: a longer length would take a fifth digit, which the payload then overwrites.
+ * A line with more UTF-16 units than the cap has at least that many bytes, so it is refused before it is encoded.
+ */
+const pkt = (line: string): Uint8Array | undefined => {
+  if (line.length > maxPktBytes - 4) return undefined
   const payload = encoder.encode(line)
+  if (payload.length > maxPktBytes - 4) return undefined
   const framed = new Uint8Array(payload.length + 4)
   framed.set(encoder.encode((payload.length + 4).toString(16).padStart(4, "0")), 0)
   framed.set(payload, 4)
   return framed
 }
 
-/** Protocol v2's `ls-refs` for refs under `prefix`: the command, a delimiter, the prefix, a flush. */
-const lsRefs = (prefix: string): Uint8Array => {
+const lsRefsCommand = encoder.encode("0014command=ls-refs\n")
+
+/**
+ * Protocol v2's `ls-refs` for refs under `prefix`: the command, a delimiter, the prefix, a flush. `undefined` when
+ * the prefix's line can't be framed.
+ */
+const lsRefs = (prefix: string): Uint8Array | undefined => {
+  const line = pkt(`ref-prefix ${prefix}\n`)
+  if (line === undefined) return undefined
   const parts = [
-    pkt("command=ls-refs\n"),
+    lsRefsCommand,
     encoder.encode("0001"),
-    pkt(`ref-prefix ${prefix}\n`),
+    line,
     encoder.encode("0000")
   ]
   const body = new Uint8Array(parts.reduce((size, part) => size + part.length, 0))
@@ -304,7 +339,8 @@ const listedRef = (wanted: string) => {
 /**
  * The commit branch `branch` points at on `upstream`, asked with git protocol v2's `ls-refs` for that one ref, with
  * the upstream's credential: a remote with thousands of pull request refs answers in one short line. A remote with no
- * such branch fails with `ref_not_found`.
+ * such branch fails with `ref_not_found`. A branch too long for one pkt-line fails with `invalid_argument` and sends
+ * nothing.
  *
  * Each call is one span, `GitRemote.ref`, and one count on `git_remote_requests` by `outcome`; neither names the
  * credential.
@@ -316,14 +352,14 @@ export const ref = (upstream: Upstream, branch: string): Effect.Effect<string, G
   Effect.gen(function*() {
     const client = yield* HttpClient.HttpClient
     const wanted = `refs/heads/${branch}`
+    const body = lsRefs(wanted)
+    if (body === undefined) return yield* new GitRemoteError({ code: "invalid_argument" })
     const request = HttpClientRequest.post(`${upstream.url.replace(/\/+$/, "")}/git-upload-pack`).pipe(
       HttpClientRequest.setHeader("git-protocol", "version=2"),
-      HttpClientRequest.bodyUint8Array(lsRefs(wanted), "application/x-git-upload-pack-request"),
+      HttpClientRequest.bodyUint8Array(body, "application/x-git-upload-pack-request"),
       (request) => withCredential(request, upstream)
     )
-    const response = yield* client.execute(request).pipe(
-      Effect.mapError(() => new GitRemoteError({ code: "transport" }))
-    )
+    const response = yield* execute(client, request, upstream)
     const status = response.status
     if (status === 401 || status === 403 || status === 404) {
       return yield* new GitRemoteError({ code: "not_found", status })

@@ -202,6 +202,40 @@ describe("Scheduler.layer", () => {
     expect(runner.starts.map((start) => start.idempotencyKey)).toEqual(["hourly:1970-01-01T01:00:00.000Z"])
   })
 
+  // A first tick has no watermark of its own to hand back. When its dispatch
+  // failed it used to hand off its own instant, and the occurrence it failed
+  // to claim was never asked about again.
+  it("hands off no watermark when the first tick's dispatch failed, and the next round retries it", async () => {
+    const runner = runs()
+    const logged = warnings()
+    let claims = 0
+    const handed = await run(
+      Effect.gen(function*() {
+        const store = yield* TriggerStore.TriggerStore
+        yield* seeded(store)
+        const flaky = TriggerStore.TriggerStore.of({
+          ...store,
+          claimFire: (fire) =>
+            claims++ === 0
+              ? Effect.fail(new TriggerError({ code: "store", message: "claim failed" }))
+              : store.claimFire(fire)
+        })
+        yield* TestClock.setTime(hour + 1_000)
+        return yield* Effect.scoped(Effect.gen(function*() {
+          yield* Layer.build(scheduler({ pollInterval: "1 minute" }, flaky, runner))
+          yield* until(() => claims === 1 && logged.messages.length === 1)
+          for (let turn = 0; turn < 200; turn++) yield* Effect.yieldNow
+          yield* TestClock.adjust("1 minute")
+          yield* until(() => runner.starts.length === 1)
+          return yield* firstRound(Scheduler.defaultHost)
+        }))
+      }).pipe(Effect.provide(logged.layer))
+    )
+    expect(handed).toEqual({ tag: "Handoff", payload: { since: null } })
+    expect(logged.messages).toEqual(["A trigger dispatch of occurrence 3600000 failed"])
+    expect(runner.starts.map((start) => start.idempotencyKey)).toEqual(["hourly:1970-01-01T01:00:00.000Z"])
+  })
+
   // Closing the scope detaches from the lineage; the round parked on its timer
   // is the engine's. The next host under the same name joins it, so a restart
   // never opens a second lineage beside the first.

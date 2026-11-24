@@ -6,19 +6,28 @@
  * @since 0.1.0
  */
 
-import * as NodePath from "node:path"
 import type { HarnessHost } from "../HarnessHost.ts"
+import { type PortablePath, posix, win32 } from "./PortablePath.ts"
+
+/** A home only Windows writes: a drive with a separator, or a backslash UNC prefix. */
+const WINDOWS_HOME = /^[A-Za-z]:[/\\]|^\\\\/
 
 /**
- * Path rules for the injected host, with native defaults for legacy directory callers.
+ * Path rules for the injected host.
+ *
+ * A caller that omits `platform` gets the rules its `home` is written in: a
+ * drive or backslash UNC home selects Windows rules, anything else POSIX.
+ * The package reads no runtime global to decide.
  *
  * @category internal
  * @since 0.1.0
  */
 export const hostPath = (
-  host: { readonly platform?: string | undefined }
-): Pick<typeof NodePath, "join" | "resolve" | "sep" | "delimiter" | "isAbsolute"> =>
-  host.platform === undefined ? NodePath : host.platform === "win32" ? NodePath.win32 : NodePath.posix
+  host: { readonly platform?: string | undefined; readonly home?: string | undefined }
+): PortablePath =>
+  (host.platform ?? (host.home !== undefined && WINDOWS_HOME.test(host.home) ? "win32" : "posix")) === "win32"
+    ? win32
+    : posix
 
 /**
  * Whether a path is independent of the current directory and, on Windows,
@@ -27,9 +36,14 @@ export const hostPath = (
  * @category internal
  * @since 0.1.0
  */
-export const isAbsoluteHostPath = (host: { readonly platform?: string | undefined }, path: string): boolean =>
-  hostPath(host).isAbsolute(path)
-  && (host.platform !== "win32" || /^[A-Za-z]:[/\\]|^[/\\]{2}[^/\\]+[/\\][^/\\]+/.test(path))
+export const isAbsoluteHostPath = (
+  host: { readonly platform?: string | undefined; readonly home?: string | undefined },
+  path: string
+): boolean => {
+  const paths = hostPath(host)
+  return paths.isAbsolute(path)
+    && (paths === posix || /^[A-Za-z]:[/\\]|^[/\\]{2}[^/\\]+[/\\][^/\\]+/.test(path))
+}
 
 /**
  * A JSON object at `path`, or null when the file is missing, unreadable, or not an object.

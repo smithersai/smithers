@@ -1,5 +1,5 @@
 import { metadataGlobals, createMetadataFixture, removeMetadataFixture, nativeConsole } from "./modules.ts"
-import { Request } from "./modules.ts"
+import { Request, scalarModule } from "./modules.ts"
 
 import { $platform$4 } from "./Incur.test.platform.js";
 import { $platform$3 } from "./Incur.test.platform.js";
@@ -382,17 +382,9 @@ describe("Incur projection", () => {
   })
 
   it.live("carries an explicit null scalar input over a JSON body and MCP arguments", effect () => {
-    const flow = {
-      capabilities: [],
-      effects: undefined,
-      name: "scalar",
-      input: Schema.NullOr(Schema.String),
-      output: Schema.NullOr(Schema.String)
-    } as const
-    vi.spyOn(Route, "load").mockImplementation(effect () => flow)
-    try ensuring(effect {
+    {
       const inputs: Array<unknown> = []
-      const { cli } = try makeCli([makeRoute("scalar")], effect ({ input }) => {
+      const { cli } = try makeCli([makeRoute("scalar", scalarModule("nullable-text"))], effect ({ input }) => {
         inputs.push(input)
         return input
       })
@@ -407,9 +399,7 @@ describe("Incur projection", () => {
       const called = try tool(cli, "call_write_tool", { name: "scalar", arguments: { input: null } })
       expect(called.result.isError).not.toBe(true)
       expect(inputs).toEqual([null, null])
-    }, effect {
-      vi.restoreAllMocks()
-    })
+    }
   })
 
   it.live("advertises the real input schema on every discovery surface", effect () => {

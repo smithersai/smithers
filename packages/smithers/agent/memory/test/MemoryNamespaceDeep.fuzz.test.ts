@@ -41,7 +41,9 @@ const compareUtf8 = (left: string, right: string): number => {
 // Namespaces chosen to collide wherever an implementation compares loosely:
 // the same id under two kinds, a bank-name spelling of another namespace
 // (`flow` + `user-shared` against `user` + `shared`), case, LIKE wildcards,
-// trailing whitespace and an embedded NUL.
+// trailing whitespace and an embedded NUL. The NUL namespace is one no backend
+// may store: every call that names it must be refused with
+// `invalid_namespace`, on SQLite as on PostgreSQL, and must change nothing.
 const namespaces: ReadonlyArray<Namespace.Namespace> = [
   { kind: "user", id: "shared" },
   { kind: "flow", id: "shared" },
@@ -59,9 +61,26 @@ const MessageId = Schema.Literals(["m1", "m2", "m3"])
 const FactKey = Schema.Literals(["prefs", "prefs%", "k"])
 const Status = Schema.Literals(["pending", "accepted", "rejected"])
 
+const isRefused = (namespace: Namespace.Namespace): boolean => namespace.id.includes("\u0000")
+
+// Whether `effect` fails with the typed namespace refusal.
+const refuses = <A, R>(effect: Effect.Effect<A, { readonly code: string }, R>): Effect.Effect<boolean, never, R> =>
+  Effect.result(effect).pipe(
+    Effect.map((result) => Result.isFailure(result) && result.failure.code === "invalid_namespace")
+  )
+
 const snapshot = (namespace: Namespace.Namespace) =>
   Effect.gen(function*() {
     const store = yield* MemoryStore.MemoryStore
+    // A refused namespace holds nothing, and its reads say so the same way.
+    if (isRefused(namespace)) {
+      return JSON.stringify([
+        yield* refuses(store.listThreads({ namespace })),
+        yield* refuses(store.listFacts({ namespace })),
+        yield* refuses(store.listNotes({ namespace })),
+        yield* refuses(store.searchRows({ namespace }))
+      ])
+    }
     const threads = yield* store.listThreads({ namespace })
     const messages: Array<unknown> = []
     for (const threadId of ThreadId.literals) {
@@ -131,7 +150,26 @@ describe("@smthrs/memory composite (namespace_kind, namespace_id, id) isolation 
             for (const op of ops) {
               const namespace = namespaces[op.ns]!
               const own = marker(op.ns)
-              if (op._tag === "putFact") {
+              if (isRefused(namespace)) {
+                const message = { threadId: op._tag === "putFact" ? "chat" : "chat%", id: "m1", role: "user", at: 0 }
+                const refused = yield* Effect.all([
+                  refuses(store.putFact({ namespace, key: "k", value: own, provenance: {} })),
+                  refuses(store.deleteFact({ namespace, key: "k" })),
+                  refuses(store.putNote({ namespace, id: "n1", text: own, tags: [], provenance: {} })),
+                  refuses(store.setNoteStatus({ namespace, id: "n1", status: "accepted" })),
+                  refuses(store.supersede({ namespace, supersederId: "n1", targetId: "n2" })),
+                  refuses(store.appendMessage({ namespace, ...message, role: "user", text: own })),
+                  refuses(store.deleteMessages({ namespace, threadId: message.threadId, ids: ["m1"] })),
+                  refuses(store.deleteThread({ namespace, threadId: message.threadId })),
+                  refuses(store.compactMessages({
+                    namespace,
+                    threadId: message.threadId,
+                    summary: { ...message, role: "system", text: own },
+                    sourceMessages: []
+                  }))
+                ])
+                if (refused.includes(false)) return false
+              } else if (op._tag === "putFact") {
                 yield* store.putFact({
                   namespace,
                   key: op.key,
@@ -177,6 +215,11 @@ describe("@smthrs/memory composite (namespace_kind, namespace_id, id) isolation 
                   thread: { namespace, threadId: op.threadId },
                   keepRecent: op.keepRecent
                 }))
+              } else if (isRefused(namespaces[op.from]!)) {
+                // A refused namespace has no messages to present as sources.
+                if (!(yield* refuses(store.listMessages({ namespace: namespaces[op.from]!, threadId: op.threadId })))) {
+                  return false
+                }
               } else {
                 const sources = yield* store.listMessages({ namespace: namespaces[op.from]!, threadId: op.threadId })
                 const forged = yield* Effect.result(store.compactMessages({
@@ -204,6 +247,7 @@ describe("@smthrs/memory composite (namespace_kind, namespace_id, id) isolation 
 
             // Every namespace still holds exactly the facts written to it.
             for (let index = 0; index < namespaces.length; index++) {
+              if (isRefused(namespaces[index]!)) continue
               const listed = yield* store.listFacts({ namespace: namespaces[index]! })
               const expected = [...facts[index]!.entries()].sort(([left], [right]) => left < right ? -1 : 1)
               if (listed.length !== expected.length) return false
@@ -222,13 +266,21 @@ describe("@smthrs/memory composite (namespace_kind, namespace_id, id) isolation 
             if (allFacts.length !== facts.reduce((total, map) => total + map.size, 0)) return false
             const refs = yield* store.listThreadRefs
             let threadCount = 0
-            for (const namespace of namespaces) threadCount += (yield* store.listThreads({ namespace })).length
+            for (const namespace of namespaces) {
+              if (!isRefused(namespace)) threadCount += (yield* store.listThreads({ namespace })).length
+            }
             if (refs.length !== threadCount) return false
             if (new Set(refs.map((ref) => JSON.stringify(ref))).size !== refs.length) return false
 
             // Recall over one bank returns that namespace's rows only.
             for (let index = 0; index < namespaces.length; index++) {
               const bank = Recall.bankForNamespace(namespaces[index]!)
+              if (isRefused(namespaces[index]!)) {
+                if (!(yield* refuses(RecallKeyword.recall({ banks: [bank], query: "common", maxTokens: 4096 })))) {
+                  return false
+                }
+                continue
+              }
               const recalled = yield* RecallKeyword.recall({ banks: [bank], query: "common", maxTokens: 4096 })
               for (const row of recalled) {
                 if (row.bank !== bank || !row.text.includes(marker(index))) return false

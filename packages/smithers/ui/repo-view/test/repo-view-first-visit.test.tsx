@@ -236,6 +236,7 @@ describe("HtmlPreview", () => {
     // The page reaches its frame unchanged, quotes, ampersands and angle brackets included.
     expect(frame.getAttribute("srcdoc")).toBe(previewDocument(html));
     expect(guard.querySelector("p")!.hidden).toBe(true);
+    expect(guard.querySelector("p")!.textContent).toBe("Navigation blocked");
     expect(guard.querySelector("script")!.textContent).toContain("securitypolicyviolation");
   });
 

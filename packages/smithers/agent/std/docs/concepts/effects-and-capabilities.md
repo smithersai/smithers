@@ -118,8 +118,11 @@ command substitution, the argument of a shell's `-c` flag, and the arguments of
 as a read or a write from the command that governs it, resolves both the token
 and every declaration to a canonical absolute path, and refuses the call with
 `outside_declared_reads` or `outside_declared_writes` when one falls outside.
-Paths under `/dev/` are exempt, because `2>/dev/null` is process plumbing rather
-than a filesystem access.
+Process plumbing is exempt, because `2>/dev/null` is not a filesystem access:
+`/dev/null`, `/dev/zero`, `/dev/full`, `/dev/random`, `/dev/urandom`,
+`/dev/tty`, `/dev/stdin`, `/dev/stdout`, `/dev/stderr`, and `/dev/fd/N`. Every
+other path under `/dev/` is declared or refused like any other path:
+`/dev/shm` is a writable filesystem, and a block device is a disk.
 
 A command's syntax decides what is a path. A redirection target and every
 operand of a writing command (`rm`, `tee`, `touch`, the destination of `cp`,

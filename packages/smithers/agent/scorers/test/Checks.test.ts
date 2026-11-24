@@ -145,6 +145,19 @@ describe("Checks.excludes", () => {
     expect(check.detail).toHaveLength(200)
     expect(check.detail.endsWith("…")).toBe(true)
   })
+
+  it("clips a long detail between code points (R1-Fable-D2-091)", () => {
+    // "found: " is 7 units and the opening quote 1, so the emoji's two units
+    // sit at 198 and 199: a cut at 199 would keep half of it.
+    const term = `${"x".repeat(190)}😀${"y".repeat(20)}`
+    const check = Checks.excludes(term, [term])
+    expect(check.detail).toBe(`found: "${"x".repeat(190)}…`)
+    // With the `u` flag a whole pair is one code point, so only a lone surrogate matches.
+    expect(check.detail).not.toMatch(/\p{Surrogate}/u)
+    // One unit earlier the whole emoji fits and is kept.
+    const fits = `${"x".repeat(189)}😀${"y".repeat(20)}`
+    expect(Checks.excludes(fits, [fits]).detail).toBe(`found: "${"x".repeat(189)}😀…`)
+  })
 })
 
 describe("Checks.opener", () => {

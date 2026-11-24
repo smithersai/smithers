@@ -104,6 +104,7 @@ import type { Path } from "effect"
 import type * as EffectDigest from "effect/crypto/Digest"
 import type * as SecureRandom from "effect/crypto/SecureRandom"
 import * as Deferred from "effect/Deferred"
+import * as HttpServer from "effect/http/HttpServer"
 import { SqlClient } from "effect/sql/SqlClient"
 import type * as Terminal from "effect/Terminal"
 import { createHash, randomUUID } from "node:crypto"
@@ -1156,7 +1157,7 @@ export const make = (
     const host = emptyHost()
     const authorization = {
       authorizeLaunch: authorizeTriggerLaunch,
-      principal: authority.principal,
+      principal: authority.principal ?? { id: "local", kind: "operator" },
       approvalAuthority: authority.approvalAuthority ??
         (authority.credential === undefined || authority.credential === ""
           ? ApprovalAuthority.local
@@ -2519,9 +2520,11 @@ export const make = (
                 }
               }
               return Layer.launch(
-                Layer.effectDiscard(Effect.flatten(Serve.Ready)).pipe(Layer.provideMerge(
-                  layerGateway(health, verifiedOptions, root, engine, Layer.succeed(Journal.Journal, journalService))
-                ))
+                Layer.effectDiscard(Effect.flatMap(Serve.Ready, HttpServer.addressFormattedWith)).pipe(
+                  Layer.provideMerge(
+                    layerGateway(health, verifiedOptions, root, engine, Layer.succeed(Journal.Journal, journalService))
+                  )
+                )
               )
             })
               .pipe(
@@ -2580,7 +2583,7 @@ export const make = (
       const discovered = yield* Registry.Registry
       return SqlControlRuntime.layer({
         approvalAuthority: config.approvalAuthority ?? ApprovalAuthority.local,
-        principal: config.principal,
+        principal: config.principal ?? { id: "local", kind: "operator" },
         engineVersion: packageVersion,
         currentFlows: () =>
           discovered.list().pipe(

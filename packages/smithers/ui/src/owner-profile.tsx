@@ -9,7 +9,7 @@ import { Input } from "./input";
 import { safeHref } from "./internal/safeHref";
 import { LoadingBar } from "./loading";
 import { Markdown } from "./primitives/markdown";
-import { formatCount, LANGUAGE_COLORS } from "./repo-about";
+import { formatCount, languageColor } from "./repo-about";
 import { Skeleton } from "./skeleton";
 import { useInjectUiCss } from "./styles";
 import { RelativeTime } from "./time/RelativeTime";
@@ -163,7 +163,7 @@ const SmallIcon = ({ children }: { readonly children: ReactNode }) => (
 );
 
 const languageColorOf = (name: string, color?: string | null): string =>
-  color && /^#[0-9a-f]{3,8}$/i.test(color) ? color : LANGUAGE_COLORS[name] ?? OTHER_LANG_COLOR;
+  color && /^#[0-9a-f]{3,8}$/i.test(color) ? color : languageColor(name) ?? OTHER_LANG_COLOR;
 
 const joinedLabel = (ts: number | null | undefined): string | null => {
   if (ts === null || ts === undefined || !Number.isFinite(ts)) return null;

@@ -447,3 +447,15 @@ describe("FlowEngineLike Web Crypto", () => {
       expect(second).not.toBe(first)
     }).pipe(Effect.provide(FlowEngineLike.layerMemory)))
 })
+
+it.scoped("settles separate executions of the same flow against their own input", () =>
+  Effect.gen(function*() {
+    const engine = yield* EngineSubject.EngineSubject
+    const flow = { name: "testing/engine-like/contract/echo", steps: [] }
+    const [left, right] = yield* Effect.all(
+      ["left", "right"].map((payload) => engine.run({ flow, payload, executionId: payload })),
+      { concurrency: 2 }
+    )
+    expect(left).toMatchObject({ executionId: "left", status: "completed", value: "left" })
+    expect(right).toMatchObject({ executionId: "right", status: "completed", value: "right" })
+  }).pipe(Effect.provide(realSubject)))

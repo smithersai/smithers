@@ -16,6 +16,7 @@ import * as Result from "effect/Result"
 import * as Schema from "effect/Schema"
 import * as SqlClient from "effect/sql/SqlClient"
 import * as ClaimDecision from "./ClaimDecision.ts"
+import * as AttemptId from "./internal/AttemptId.ts"
 import * as Migrations from "./migrations/index.ts"
 import * as Overlap from "./Overlap.ts"
 import * as Schedule from "./Schedule.ts"
@@ -152,6 +153,7 @@ export const make: Effect.Effect<
 > = Effect.gen(function*() {
   const sql = yield* Effect.service(SqlClient.SqlClient)
   const writer = yield* DurableWriter
+  const attemptId = yield* AttemptId.make
   // Effect 4.1 reports migration failures in the typed error channel.
   yield* Migrations.run.pipe(Effect.mapError((cause) => storeError("could not run trigger migrations", cause)))
   // A failure the store itself typed already says which refusal it is, so it
@@ -233,7 +235,7 @@ export const make: Effect.Effect<
       const decision = ClaimDecision.decideFenced({
         fire,
         claimedAt,
-        reservationId: reservationId(fire.triggerId, fire.occurrence, globalThis.crypto.randomUUID()),
+        reservationId: reservationId(fire.triggerId, fire.occurrence, yield* attemptId),
         snapshot: {
           revision: row.revision,
           enabled: row.enabled === 1,

@@ -17,6 +17,8 @@
 import * as ChildProcessEnvironment from "@smthrs/kernel/ChildProcessEnvironment"
 import * as ChildProcessSpawner from "@smthrs/kernel/ChildProcessSpawner"
 import * as Effect from "effect/Effect"
+import * as Fiber from "effect/Fiber"
+import * as Option from "effect/Option"
 import * as ChildProcess from "effect/process/ChildProcess"
 import * as Schema from "effect/Schema"
 import * as Stream from "effect/Stream"
@@ -334,6 +336,38 @@ const argumentsTooLong = (error: { readonly cause?: unknown }): ExecError | unde
     })
     : undefined
 
+/**
+ * How long both output streams may stay silent, once the command has exited,
+ * before the capture is cut. A command that exits leaves at most a pipe's
+ * worth of bytes unread, and those arrive at once; a pipe that stays open
+ * after that is held by a process the command left behind (`server &`), which
+ * may hold it for as long as it lives.
+ */
+const quietMillis = 100
+
+/** Windows of {@link quietMillis} a left-behind process may keep printing through before the capture is cut anyway. */
+const quietWindows = 10
+
+/**
+ * Waits for the streams of a command that has exited: until they end, until
+ * one {@link quietMillis} window passes with no bytes, or until
+ * {@link quietWindows} windows have passed. Answers `undefined` when it cut
+ * them, and the bytes kept so far are then the capture.
+ */
+const settle = <A, E>(streams: Fiber.Fiber<A, E>, seen: () => number): Effect.Effect<A | undefined, E> =>
+  Effect.gen(function*() {
+    let window = 0
+    let before = -1
+    while (window < quietWindows && seen() !== before) {
+      before = seen()
+      window += 1
+      const ended = yield* Fiber.join(streams).pipe(Effect.timeoutOption(quietMillis))
+      if (Option.isSome(ended)) return ended.value
+    }
+    yield* Fiber.interrupt(streams)
+    return undefined
+  })
+
 const unbounded = (
   command: string,
   options: ExecOptions,
@@ -366,10 +400,28 @@ const unbounded = (
     // stdout, stderr, and the exit code have to be consumed concurrently: a
     // command that fills a pipe blocks until the pipe is drained, so waiting
     // for exit first would deadlock on any output larger than the buffer.
-    const [stdout, stderr, exitCode] = yield* Effect.all(
-      [fill(handle.stdout, buffers.stdout), fill(handle.stderr, buffers.stderr), handle.exitCode],
+    let chunks = 0
+    const counted = (into: Retained): Retained => ({
+      keep: (chunk) => {
+        chunks += 1
+        into.keep(chunk)
+      },
+      read: into.read
+    })
+    const streams = yield* Effect.all(
+      [fill(handle.stdout, counted(buffers.stdout)), fill(handle.stderr, counted(buffers.stderr))],
       { concurrency: "unbounded" }
+    ).pipe(Effect.forkScoped)
+    // A stream that fails still fails the call at once, as it did when all
+    // three were awaited together.
+    const exitCode = yield* Effect.raceFirst(
+      handle.exitCode,
+      Fiber.join(streams).pipe(Effect.andThen(Effect.never))
     )
+    // The exit code is the command's answer. A process it left in the
+    // background can hold the pipes open long after, and waiting for end of
+    // stream would turn a command that exited 0 into a timeout.
+    const [stdout, stderr] = (yield* settle(streams, () => chunks)) ?? [buffers.stdout.read(), buffers.stderr.read()]
     if (options.overflow === "refuse") {
       const overflowed = [
         stdout.droppedBytes > 0 ? "stdout" : undefined,
@@ -411,6 +463,11 @@ const unbounded = (
  * — including the one a `timeoutMs` interrupts — terminates the process rather
  * than leaking it. A timeout reports what the command printed before it was
  * stopped as {@link ExecError} `captured`, bounded by the same options.
+ *
+ * The result is ready when the command exits, not when its pipes close: a
+ * process the command left in the background (`server &`) keeps them open, so
+ * once the command has exited the capture ends at the first 100 ms in which
+ * neither stream delivers a byte, and after one second at the latest.
  *
  * @category execution
  * @since 1.0.0

@@ -200,15 +200,15 @@ The `.gitignore` policy and `noIgnore` opt-out are the same as for `glob`.
 | `noIgnore`         | boolean, optional             | Include paths excluded by `.gitignore`. Defaults to false. |
 | `limit`            | integer, at least 0, optional | Global match budget, capped at 200.                        |
 
-| Output             | Type              | Meaning                                                    |
-| ------------------ | ----------------- | ---------------------------------------------------------- |
-| `matches`          | array of `Match`  | Each hit with its own context and optional symbol.         |
-| `files`            | array of string   | File names, which is what `filesWithMatches` fills.        |
-| `filesSearched`    | number            | Files admitted after ignore filtering, including binaries. |
-| `skippedBinary`    | number            | Files skipped for holding a NUL byte.                      |
-| `truncated`        | boolean           | Whether the budget bit.                                    |
-| `retriedAsLiteral` | boolean, optional | Present when these results came from a literal retry.      |
-| `notice`           | string, optional  | Truncation, retry, unsatisfiable glob, ignore exclusions.  |
+| Output             | Type              | Meaning                                                     |
+| ------------------ | ----------------- | ----------------------------------------------------------- |
+| `matches`          | array of `Match`  | Each hit with its own context and optional symbol.          |
+| `files`            | array of string   | File names, which is what `filesWithMatches` fills.         |
+| `filesSearched`    | number            | Files admitted after ignore filtering, including binaries.  |
+| `skippedBinary`    | number            | Files skipped for holding a NUL byte, or a line over 8 MiB. |
+| `truncated`        | boolean           | Whether the budget bit.                                     |
+| `retriedAsLiteral` | boolean, optional | Present when these results came from a literal retry.       |
+| `notice`           | string, optional  | Truncation, retry, unsatisfiable glob, ignore exclusions.   |
 
 Three schemas are exported alongside `Output`:
 

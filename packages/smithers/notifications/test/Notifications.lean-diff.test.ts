@@ -7,9 +7,9 @@
  * line. A text crosses as its UTF-16 code units, so a lone surrogate arrives as it left, and an absent value crosses
  * as `null`.
  *
- * A machine with neither the built oracle nor `lake` skips the differential cases; a machine with `lake` builds the
- * oracle first, and builds it again when a source of the specification is newer than it. The regression cases at the
- * end need no oracle and always run.
+ * A developer's machine with neither the built oracle nor `lake` skips the differential cases; a machine with `lake`
+ * builds the oracle first, and builds it again when a source of the specification is newer than it. The regression
+ * cases at the end need no oracle and always run.
  */
 import { Fuzz } from "@smthrs/fuzz"
 import { JournalEvent } from "@smthrs/journal"

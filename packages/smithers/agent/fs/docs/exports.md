@@ -79,10 +79,11 @@ behavior, and errors, see the [API reference](./api.md).
 
 `@smthrs/fs/Incur`
 
-| Export        | Kind  | Category     | Summary                                                                     |
-| ------------- | ----- | ------------ | --------------------------------------------------------------------------- |
-| `selfSegment` | const | constants    | The reserved child segment that invokes a route which also has children.    |
-| `createCli`   | const | constructors | Projects routes onto an Incur CLI while preserving metadata-only discovery. |
+| Export        | Kind    | Category     | Summary                                                                     |
+| ------------- | ------- | ------------ | --------------------------------------------------------------------------- |
+| `selfSegment` | const   | constants    | The reserved child segment that invokes a route which also has children.    |
+| `Host`        | service | services     | The process facts a served CLI reads and the channels it writes.            |
+| `createCli`   | const   | constructors | Projects routes onto an Incur CLI while preserving metadata-only discovery. |
 
 ## `Route`
 

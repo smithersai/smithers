@@ -7,7 +7,7 @@
  */
 import { Result, Schema } from "effect"
 import { readFileSync } from "node:fs"
-import { afterEach, describe, expect, it, vi } from "vitest"
+import { describe, expect, it } from "vitest"
 import { ExternalTranscript } from "../src/index.ts"
 
 const fixture = new URL("./fixtures/external/claude-code-2.1/", import.meta.url)
@@ -130,18 +130,13 @@ describe("ExternalTranscript Claude Code", () => {
     })
 
     describe("with no network or providers", () => {
-      afterEach(() => {
-        vi.unstubAllGlobals()
-      })
-
+      // The decoder takes no service, so there is no client to inject: `ExternalTranscript.test.ts` pins its two
+      // imports, and a synchronous `Result` leaves it no turn in which to await a request.
       it("decodes synchronously from explicit input and state alone, without changing the start state", () => {
-        const fetch = vi.fn()
-        vi.stubGlobal("fetch", fetch)
         const before = structuredClone(ExternalTranscript.claudeStart)
         const decoded = ExternalTranscript.decodeClaude(ExternalTranscript.claudeStart, transcript)
         expect(decoded).not.toBeInstanceOf(Promise)
         expect(Result.isSuccess(decoded)).toBe(true)
-        expect(fetch).not.toHaveBeenCalled()
         expect(ExternalTranscript.claudeStart).toEqual(before)
       })
 
@@ -628,13 +623,28 @@ describe("ExternalTranscript Claude Code", () => {
       ["a row with a uuid", row("progress", { data: { type: "hook_progress" } })]
     ])("refuses %s whose type it does not name with unsupported_record", (_, line) => {
       const type = (JSON.parse(line) as { type: string }).type
-      expect(failure(jsonl(user("kept by a caller that decodes line by line"), line, user("never reached"))))
-        .toMatchObject({
-          _tag: "harness/ExternalTranscriptError",
-          code: "unsupported_record",
-          line: 2,
-          message: `Claude Code wrote a record this release does not read: ${type}`
-        })
+      const kept = user("kept, whether the caller decodes by line or by chunk")
+      const error = failure(jsonl(kept, line, user("never reached")))
+      expect(error).toMatchObject({
+        _tag: "harness/ExternalTranscriptError",
+        code: "unsupported_record",
+        line: 2,
+        message: `Claude Code wrote a record this release does not read: ${type}`
+      })
+      // Regression (R1-Fable-D2-047): the refusal used to drop the entry its chunk had already completed.
+      expect(error.decoded).toEqual(replay([jsonl(kept)]))
+      expect(error.decoded.entries).toHaveLength(1)
+    })
+
+    it("refuses a line that passes 64 MiB without ending", () => {
+      const ceiling = 64 * 1024 * 1024
+      const result = ExternalTranscript.decodeClaude(ExternalTranscript.claudeStart, "x".repeat(ceiling + 1))
+      expect(Result.isFailure(result) && result.failure).toMatchObject({
+        code: "malformed_record",
+        line: 1,
+        message: `Claude Code transcript line 1 passes ${ceiling} characters without ending.`,
+        decoded: { state: ExternalTranscript.claudeStart, entries: [] }
+      })
     })
 
     it.each([

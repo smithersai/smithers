@@ -19,6 +19,7 @@ import { GatewayError } from "../src/GatewayError.ts"
 import * as GatewayProjection from "../src/GatewayProjection.ts"
 import * as GatewaySchema from "../src/GatewaySchema.ts"
 import * as Projections from "../src/Projections.ts"
+import * as RuntimeBridge from "../src/RuntimeBridge.ts"
 import * as RunTrace from "../src/RunTrace.ts"
 
 const die = () => Effect.die("the suite does not use this operation")
@@ -380,6 +381,15 @@ describe("Projections resource bounds", () => {
         Effect.flip
       )
       expect(refused.code).toBe("resource_limit")
+      const oversized = completion("x".repeat(Projections.maxProjectionBytes + 1))
+      const service = control({
+        list: () => Effect.succeed({ _tag: "runs", items: [{ ...run, status: "completed" }] }),
+        watch: () => Stream.fromIterable([binding, oversized])
+      })
+      const observation = yield* RuntimeBridge.observe(service, { protocol: RuntimeBridge.protocol, runId: run.runId })
+      expect(observation.run.resultUnavailable).toBe("resource_limit")
+      expect(observation.events.at(-1)?.kind).toBe("control.event.truncated")
+      expect(observation.nextCursor).toBe("2")
     }))
 
   it.effect(
@@ -509,7 +519,7 @@ describe("Projections resource bounds", () => {
       expect(second.cursor.value).toBe(2)
     }))
 
-  it.effect("refuses oversized native graph pages at the event byte limit without clipping topology", () =>
+  it.effect("marks oversized native graph events and preserves their cursors", () =>
     Effect.gen(function*() {
       for (const eventType of ["flows.engine.plan-recorded", "flows.engine.subgraph-appended"]) {
         const projections = make(control({
@@ -520,20 +530,23 @@ describe("Projections resource bounds", () => {
               payload: { graph: { nodes: [{ id: "界".repeat(Projections.maxEventBytes / 2) }], edges: [] } }
             }))
         }))
-        expect((yield* Effect.flip(projections.snapshot({ _tag: "run-events", runId: run.runId }))).code)
-          .toBe("resource_limit")
+        expect(yield* projections.snapshot({ _tag: "run-events", runId: run.runId })).toMatchObject({
+          cursor: { value: 1 },
+          rows: [{ kind: "control.event.truncated" }]
+        })
       }
     }))
 
-  it.effect("refuses a native event too large for a page instead of corrupting its contract", () =>
+  it.effect("advances past a native event too large for a page with an explicit marker", () =>
     Effect.gen(function*() {
       const projections = make(control({
         list: () => Effect.succeed({ _tag: "runs", items: [run] }),
         watch: () =>
           Stream.succeed(event(1, "control.engine.event", { result: "x".repeat(Projections.maxProjectionBytes) }))
       }))
-      expect((yield* Effect.flip(projections.snapshot({ _tag: "run-events", runId: run.runId }))).code)
-        .toBe("resource_limit")
+      expect(JSON.stringify(yield* projections.snapshot({ _tag: "run-events", runId: run.runId }))).toContain(
+        "control.event.truncated"
+      )
     }))
 
   it.effect("clips an oversized payload instead of refusing the projection", () =>
@@ -758,7 +771,8 @@ describe("Projections subscriptions", () => {
         frame._tag === "delta"
       )
       expect(nonFollowingReads).toBe(1)
-      expect(listCalls).toBe(52)
+      // Two snapshot consistency reads and one summary read for the burst.
+      expect(listCalls).toBe(3)
       expect(deltas).toHaveLength(50)
 
       const fresh = yield* projections.snapshot({ _tag: "run-tree", runId: "run-1" })

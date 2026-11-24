@@ -39,6 +39,7 @@ import { Control } from "@smthrs/control/Control"
 import * as ControlSchema from "@smthrs/control/ControlSchema"
 import * as Health from "@smthrs/control/Health"
 import { Context, Effect, Layer, Schema, Semaphore, Stream } from "effect"
+import * as Arr from "effect/Array"
 import * as Diagnosis from "./Diagnosis.ts"
 import { GatewayError, settingRefusal } from "./GatewayError.ts"
 import * as GatewayProjection from "./GatewayProjection.ts"
@@ -382,25 +383,27 @@ const decodeSnapshot = Schema.decodeUnknownSync(GatewaySchema.ProjectionSnapshot
 
 const decodedEvent = (
   candidate: unknown,
-  message: string
+  message: string,
+  eventWindow = false
 ): Effect.Effect<ControlSchema.ControlEvent, GatewayError> =>
   Effect.suspend(() => {
     try {
       const event = decodeEvent(candidate)
-      // Graph topology is a bounded contract. Refuse an oversized legacy page
-      // intact; clipping a node id or dependency would silently change the DAG.
-      const payload = event.payload
-      if (
-        event.kind === "control.engine.event" && typeof payload === "object" && payload !== null &&
-        "eventType" in payload && (payload.eventType === "flows.engine.plan-recorded" ||
-          payload.eventType === "flows.engine.subgraph-appended") &&
-        encodedSize(event) > maxEventBytes
-      ) {
-        return Effect.fail(resourceLimit(`One graph event exceeds ${maxEventBytes} encoded bytes`))
+      if (!Number.isSafeInteger(event.sequence) || event.sequence < 0) {
+        return Effect.fail(unavailable(message, undefined))
       }
-      return Number.isSafeInteger(event.sequence) && event.sequence >= 0
-        ? Effect.succeed(event)
-        : Effect.fail(unavailable(message, undefined))
+      const payload = event.payload
+      // Never clip graph identifiers or typed engine outputs. An explicit marker carries the original cursor.
+      const graph = event.kind === "control.engine.event" && typeof payload === "object" && payload !== null &&
+        "eventType" in payload &&
+        (payload.eventType === "flows.engine.plan-recorded" || payload.eventType === "flows.engine.subgraph-appended")
+      if (event.kind === "control.engine.event") {
+        const bytes = encodedSize(event)
+        if (eventWindow && bytes + 2 > maxProjectionBytes || graph && bytes > maxEventBytes) {
+          return Effect.succeed({ ...event, kind: "control.event.truncated", payload: { encodedBytes: bytes } })
+        }
+      }
+      return Effect.succeed(event)
     } catch (cause) {
       return Effect.fail(unavailable(message, cause))
     }
@@ -894,6 +897,7 @@ const makeService = (
   // every read asks it for the suffix, including when the summary is unchanged.
   // Cache eviction or host restart simply rebuilds the same fold from sequence 0.
   const journalBuffers = new Map<string, EventBuffer>()
+  let journalBufferBytes = 0
   const eventsOf = (
     run: ControlSchema.RunSummary,
     compactHealth: boolean
@@ -935,7 +939,12 @@ const makeService = (
           if (current === undefined || comparePosition(buffer.lastPosition, current.lastPosition) >= 0) {
             journalBuffers.delete(key)
             journalBuffers.set(key, { ...buffer, events: [...buffer.events] })
-            if (journalBuffers.size > 32) journalBuffers.delete(journalBuffers.keys().next().value!)
+            journalBufferBytes += buffer.encodedBytes - (current?.encodedBytes ?? 0)
+            while (journalBuffers.size > maxWorkspaceRuns || journalBufferBytes > 32 * maxProjectionBytes) {
+              const oldest = journalBuffers.keys().next().value!
+              journalBufferBytes -= journalBuffers.get(oldest)!.encodedBytes
+              journalBuffers.delete(oldest)
+            }
           }
         })
       ))
@@ -991,7 +1000,7 @@ const makeService = (
       () => empty,
       (page, candidate): Effect.Effect<Page, GatewayError> =>
         page.full ? Effect.succeed(page) : Effect.flatMap(
-          decodedEvent(candidate, `${message}: the control plane returned an invalid event`),
+          decodedEvent(candidate, `${message}: the control plane returned an invalid event`, true),
           (decoded) => {
             // A journal that moves backward is a broken control plane, not a
             // short page, and the fold refuses it exactly as the window does.
@@ -1010,9 +1019,6 @@ const makeService = (
             // their meaning and can hide validated actions such as Vibe.
             // Match live deltas, which already carry the original event.
             const event = decoded.kind === "control.engine.event" ? decoded : retainedEvent(decoded)
-            if (encodedSize(event) + 2 > maxProjectionBytes) {
-              return Effect.fail(resourceLimit(`One journal event exceeds ${maxProjectionBytes} encoded bytes`))
-            }
             const bytes = page.bytes + encodedSize(event) + (page.events.length === 0 ? 0 : 1)
             if (page.events.length > 0 && bytes > maxProjectionBytes) {
               stopped = true
@@ -1308,6 +1314,10 @@ const makeService = (
       }).pipe(
         Stream.tapError((cause) => logReadFailure("follow-run", cause)),
         Stream.mapError((cause) => unavailable(message, cause)),
+        // Each transport chunk shares one lazy summary read; duplicate positions need no read.
+        Stream.mapArrayEffect((chunk) =>
+          Effect.map(Effect.cached(runOf(runId)), (latest) => Arr.map(chunk, (candidate) => ({ candidate, latest })))
+        ),
         Stream.mapAccumEffect(
           (): RunFollowState => ({
             buffer: initial,
@@ -1329,12 +1339,16 @@ const makeService = (
               return seen
             })()
           }),
-          (state, candidate): Effect.Effect<
+          (state, { candidate, latest }): Effect.Effect<
             readonly [RunFollowState, ReadonlyArray<RunDelta>],
             GatewayError
           > =>
             Effect.flatMap(
-              decodedEvent(candidate, `${message}: the control plane returned an invalid event`),
+              decodedEvent(
+                candidate,
+                `${message}: the control plane returned an invalid event`,
+                selector._tag === "run-events"
+              ),
               (event) => {
                 if (state.observed !== undefined && event.sequence < state.observed.value) {
                   return Effect.fail(unavailable(`${message}: event sequences moved backward`, undefined))
@@ -1370,7 +1384,7 @@ const makeService = (
                   : 0
                 return Effect.flatMap(
                   selector._tag === "run-summary" || selector._tag === "run-tree" || selector._tag === "approvals"
-                    ? runOf(runId)
+                    ? latest
                     : Effect.succeed(source.run),
                   (run) =>
                     Effect.map(

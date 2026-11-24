@@ -226,7 +226,12 @@ export const deleteFtsRecord = (
   })
 
 /**
- * Searches one namespace-kind FTS5 table in raw BM25 rank order.
+ * Searches one namespace-kind FTS5 table in raw BM25 rank order, ties broken
+ * by record id.
+ *
+ * One table indexes every namespace of a kind, so the raw BM25 value moves
+ * with other namespaces' writes. It orders this page and must not leave the
+ * store: `Search.searchFts` answers an ordinal instead.
  *
  * `offset` lets a caller walk the ranked matches in pages. A match can be
  * dropped by a status, supersession, or tag filter the FTS table knows nothing
@@ -261,6 +266,6 @@ export const searchFts = (
   return sql<FtsMatch>`SELECT record_id, record_kind, ${bm25} AS rank
     FROM ${table}
     WHERE ${table} MATCH ${literalFtsQuery(terms.join(" "))} AND namespace_id = ${namespaceId}
-    ORDER BY rank
+    ORDER BY rank, record_id
     LIMIT ${limit} OFFSET ${offset}`
 }

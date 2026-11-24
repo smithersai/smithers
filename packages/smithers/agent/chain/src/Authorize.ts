@@ -255,7 +255,10 @@ export const layerRules = (rules: ReadonlyArray<Permission.Rule>): Layer.Layer<A
 }
 
 /**
- * An allow-everything seam for hosts that enforce elsewhere.
+ * An allow-everything seam for hosts that enforce elsewhere. `Chain.run`
+ * requires a seam, so a host with no policy mounts this one explicitly:
+ * running every handler a script names is then a written decision, never
+ * the result of a layer nobody mounted.
  *
  * @category layers
  * @since 0.1.0

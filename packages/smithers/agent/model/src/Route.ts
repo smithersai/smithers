@@ -378,6 +378,7 @@ const stream = <Body, Frame, Event, State>(
           const decodeEvent = Schema.decodeUnknownEffect(route.protocol.stream.event)
           const terminal = route.protocol.stream.terminal
           const alive = yield* Model.Liveness
+          let settled = false
           const events = route.framing.frame(
             response.stream.pipe(
               // Every chunk is progress, a keep-alive that frames to no event
@@ -389,7 +390,8 @@ const stream = <Body, Frame, Event, State>(
               // `transport` is what the retry ladder classifies on, and a body
               // that dies after the headers is on that ladder from here.
               Stream.mapError(() => new ModelError({ code: "transport", message: "Model response stream failed" }))
-            )
+            ),
+            true
           ).pipe(
             // effect rc.108's SSE decoder adds `SseError` (oversized events) to
             // the framing channel; a framing failure is a transport failure here.
@@ -410,12 +412,13 @@ const stream = <Body, Frame, Event, State>(
                 )
               )
             }),
+            Stream.rechunk(1),
             terminal === undefined
               ? (framed) => framed
               // The route reads nothing after the terminal frame: the response
               // stream closes with it, before the protocol steps it.
               : Stream.takeUntil((event) => {
-                const last = terminal(event)
+                const last = terminal(event, settled)
                 if (last) timing.closed()
                 return last
               }),
@@ -425,7 +428,12 @@ const stream = <Body, Frame, Event, State>(
           return events.pipe(
             Stream.mapAccumEffect(
               () => route.protocol.stream.initial(snapshot),
-              route.protocol.stream.step,
+              (state, event) =>
+                route.protocol.stream.step(state, event).pipe(Effect.tap(([, emitted]) =>
+                  Effect.sync(() => {
+                    if (emitted.some((item) => item.type === "settle")) settled = true
+                  })
+                )),
               route.protocol.stream.onHalt === undefined
                 ? undefined
                 : { onHalt: route.protocol.stream.onHalt }

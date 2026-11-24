@@ -13,7 +13,6 @@ import { Fuzz } from "@smthrs/fuzz"
 import * as Context from "effect/Context"
 import * as Effect from "effect/Effect"
 import type * as Scope from "effect/Scope"
-import * as inspector from "node:inspector"
 
 /**
  * One V8 precise-coverage bytecode range.
@@ -104,7 +103,10 @@ export interface V8CoverageOptions {
  * @since 1.0.0
  * @category constructors
  */
-export const createNodeSession = (): InspectorSession => new inspector.Session() as unknown as InspectorSession
+export const createNodeSession = (): InspectorSession => {
+  const { Session } = process.getBuiltinModule("node:inspector")
+  return new Session() as unknown as InspectorSession
+}
 
 /**
  * Effect service reference supplying the V8 inspector session factory.

@@ -4,6 +4,25 @@
 
 ### Fixed
 
+- Two openings of one condition in the same millisecond are two alerts.
+  `Alerts.alertId` now carries the opening entry's journal sequence as
+  `:s<seq>` for every alert the runtime raises, so a receiver that dedupes on
+  the id sends the second page and an acknowledgement of the first opening does
+  not silence the second. Delivery and acknowledgement records written under
+  the earlier `alert:<key>:<since>` form still count for the opening they were
+  written under, and `acknowledge` takes that form too.
+- A run whose notification queue is full is paged about all the same. The alert
+  stays in `Tick.refused` and is also in `Tick.delivered` or `Tick.failed`.
+- A page the sink refused for good (`AlertError.retryable: false`) is sent
+  once, and a sink that named a wait (`AlertError.retryAfterMillis`) is left
+  alone until it has passed. `Alerts.layerChannels` reports `unauthorized` and
+  `rejected` as not retryable and passes on a provider's `Retry-After`.
+- `AlertRuntime.acknowledge`, `AlertRuntime.standing` and `Alerts.report` fail
+  with a `NotificationError` (`notification_invalid`) for a run id, alert id,
+  condition or probe name the journal cannot store, where they threw a defect.
+  Their error types now include `NotificationError`.
+- An acknowledger's name and an alert summary are cut without splitting a
+  UTF-16 surrogate pair.
 - Invalid notification, run, lineage, boundary and alert identifiers now return
   typed refusals before journal access or delivery. Non-JSON payload objects
   and primitive leaves beyond the journal's depth bound are refused before
@@ -12,6 +31,9 @@
 
 ### Added
 
+- `Alerts.layerWebhookClient` is the webhook sink over the `HttpClient` the
+  host provides, so a host's destination policy and instrumentation apply to a
+  page. `Alerts.layerWebhook` keeps its own Fetch client.
 - `Alerts.report` journals a probe result from a flow step into the run that
   owns the problem, and `Alerts.probes` builds the rules and detectors that
   read it. A probe that keeps failing is one condition and pages once.

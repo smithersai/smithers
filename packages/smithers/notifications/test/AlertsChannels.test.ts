@@ -93,7 +93,9 @@ const run = <A>(
 const alerts = Alerts.AlertRuntime
 const tick = Effect.flatMap(alerts, (service) => service.tick(runId))
 const failing = (summary: string) => Alerts.report({ runId, probe: "site-freshness", state: "failing", summary })
-const id = Alerts.alertId({ coalescingKey: Alerts.coalescingKey(runId, "site-freshness"), since: 0 })
+/** The alert a first failing report opens: that report is the journal's entry 0. */
+const id = Alerts.alertId({ coalescingKey: Alerts.coalescingKey(runId, "site-freshness"), since: 0, opening: 0 })
+const legacyId = Alerts.alertId({ coalescingKey: Alerts.coalescingKey(runId, "site-freshness"), since: 0 })
 
 /** The failure records the alerter journaled on the run. */
 const failures = Effect.flatMap(Journal.Journal, (journal) =>
@@ -143,6 +145,7 @@ describe("Alerts.layerChannels", () => {
           "Since: 1970-01-01T00:00:00.000Z",
           "Owner: oncall",
           "Runbook: https://runbook.example/site",
+          // The id a person types carries the opening's sequence so an ack targets this opening.
           `Alert: ${id}`
         ].join("\n"),
         link_preview_options: { is_disabled: true }
@@ -169,6 +172,53 @@ describe("Alerts.layerChannels", () => {
     expect(observed.refused.failed.map((alert) => alert.condition)).toEqual(["site-freshness"])
     expect(observed.retried.delivered.map((alert) => alert.condition)).toEqual(["site-freshness"])
     expect(observed.failures).toEqual([["sink_rejected", 500]])
+    expect(received).toHaveLength(2)
+  })
+
+  it("sends a page the provider refused for good once, however many ticks follow", async () => {
+    // A revoked bot token answers 401 on every attempt. Asking again costs a
+    // request per open alert per tick and can never succeed.
+    answers = [{ status: 401, json: { ok: false, description: "Unauthorized" } }]
+    const observed = await run(
+      Effect.gen(function*() {
+        yield* failing("deploy failed")
+        const first = yield* tick
+        const second = yield* tick
+        const third = yield* tick
+        return { ticks: [first, second, third], failures: yield* failures }
+      })
+    )
+
+    expect(received).toHaveLength(1)
+    // The page still did not go out, and every tick says so.
+    expect(observed.ticks.map((result) => result.failed.map((alert) => alert.condition))).toEqual([
+      ["site-freshness"],
+      ["site-freshness"],
+      ["site-freshness"]
+    ])
+    expect(observed.ticks.map((result) => result.delivered)).toEqual([[], [], []])
+    expect(observed.failures).toEqual([["sink_rejected", 401]])
+  })
+
+  it("leaves a rate-limited provider alone for the wait it named, then sends", async () => {
+    answers = [{ status: 429, json: { ok: false, parameters: { retry_after: 30 } } }]
+    const observed = await run(
+      Effect.gen(function*() {
+        yield* failing("deploy failed")
+        const limited = yield* tick
+        yield* TestClock.adjust("29 seconds")
+        const waiting = yield* tick
+        const requestsWhileWaiting = received.length
+        yield* TestClock.adjust("1 second")
+        const sent = yield* tick
+        return { limited, waiting, requestsWhileWaiting, sent }
+      })
+    )
+
+    expect(observed.limited.failed.map((alert) => alert.condition)).toEqual(["site-freshness"])
+    expect(observed.waiting.failed.map((alert) => alert.condition)).toEqual(["site-freshness"])
+    expect(observed.requestsWhileWaiting).toBe(1)
+    expect(observed.sent.delivered.map((alert) => alert.condition)).toEqual(["site-freshness"])
     expect(received).toHaveLength(2)
   })
 
@@ -232,6 +282,9 @@ describe("Alerts.layerChannels", () => {
       "unconfigured",
       undefined
     ])
+    // Only a send the provider refused would be refused again. A provider that
+    // is missing costs no request and may be configured before the next tick.
+    expect([refused.retryable, slow.retryable, unconfigured.retryable]).toEqual([false, undefined, undefined])
   })
 })
 
@@ -248,6 +301,12 @@ describe("Alerts.messageOf", () => {
 
   it("says which repeat a page is, keeps the id a person acknowledges, and leaves out what the policy did not name", () => {
     expect(Alerts.messageOf(alert)).toEqual({
+      id: `${legacyId}:r2`,
+      subject: "[warning] site-freshness (reminder 2)",
+      text: `Run: lane-site\nSince: 1970-01-01T00:00:00.000Z\nAlert: ${legacyId}`
+    })
+    // An alert the runtime raised carries its opening in both the provider dedupe id and the text id a person acknowledges.
+    expect(Alerts.messageOf({ ...alert, opening: 0 })).toEqual({
       id: `${id}:r2`,
       subject: "[warning] site-freshness (reminder 2)",
       text: `Run: lane-site\nSince: 1970-01-01T00:00:00.000Z\nAlert: ${id}`
@@ -271,6 +330,10 @@ describe("Alerts.messageOf", () => {
     expect(message.id).toMatch(/^alert:[0-9a-f]{64}$/u)
     expect(message.id).toBe(Alerts.messageOf({ ...long }).id)
     expect(message.subject).toBe(`[warning] ${"c".repeat(150)}… (reminder 2)`)
+    // A cut that would split a character keeps one unit fewer, so no line ends in half of one.
+    expect(Alerts.messageOf({ ...long, owner: `${"o".repeat(149)}😀tail` }).text).toContain(
+      `Owner: ${"o".repeat(149)}…`
+    )
     expect(message.text.split("\n").map((line) => line.length)).toEqual([500, 156, 31, 158, 160, 158])
   })
 })

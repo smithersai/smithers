@@ -36,7 +36,10 @@ const record = (value: unknown): Record<string, unknown> | undefined =>
 
 const compact = (value: unknown): string => {
   const text = JSON.stringify(value) ?? String(value);
-  return text.length > 200 ? `${text.slice(0, 199)}…` : text;
+  if (text.length <= 200) return text;
+  // Never end on half of a surrogate pair: an emoji at the cut drops whole instead of reading as U+FFFD.
+  const cut = text.slice(0, 199);
+  return `${/[\uD800-\uDBFF]$/.test(cut) ? cut.slice(0, -1) : cut}…`;
 };
 
 /** A field value as it reads after `=`: quoted only when it holds a space, a quote or an `=`. */

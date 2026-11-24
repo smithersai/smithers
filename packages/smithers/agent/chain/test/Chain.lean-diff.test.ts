@@ -976,6 +976,7 @@ describe("replay against the Lean specification", () => {
     return runOn(
       Layer.mergeAll(
         Journal.layerMemory(journal),
+        Authorize.layerAllowAll,
         Author.layerMock([]),
         ScriptRunner.layerInProcess,
         Catalog.layer(entries(dispatched))
@@ -986,7 +987,16 @@ describe("replay against the Lean specification", () => {
             chain: scope,
             envelope,
             goal: "g",
-            ...(scope.includes("/") || scope === "0.1" ? { [childRun]: true } : {})
+            // A child scope runs under the tree its root would hand it: the
+            // root's seam and a budget this specification never exhausts.
+            ...(scope.includes("/") || scope === "0.1"
+              ? {
+                [childRun]: {
+                  authorize: Authorize.make({ authorize: () => Effect.void }),
+                  fuel: { max: Number.MAX_SAFE_INTEGER, spent: 0 }
+                }
+              }
+              : {})
           })
         )
         return { dispatched, events: yield* (yield* Journal.Journal).read, result }

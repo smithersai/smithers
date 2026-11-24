@@ -35,9 +35,14 @@ one misses. Line numbers are facts about the page, so they are page fields.
 Source lines split on `\n`. A trailing `\r` is part of the line, including in
 CRLF files. Pages omit the final `\n` and retain every `\r`. For example,
 `"one\r\ntwo\r\n"` reads as `"one\r\ntwo\r"`. Copy that text unchanged into
-`oldString` or `expect`. Replacement text is also literal: retain the `\r`
-bytes in `newString` to keep CRLF endings, including the last line of a range.
-A line-range edit leaves the final `\n` outside the replaced span.
+`oldString` or `expect`. Replacement text for an `oldString` anchor is literal:
+retain the `\r` bytes in `newString` to keep CRLF endings. A line-range edit
+leaves the final `\n` outside the replaced span, and keeps the endings of the
+lines it replaces: when every line of the range ends in `\r`, each line of
+`newString` is written with `\r\n` and the last with `\r`, whether or not
+`newString` carries those bytes. For example, `{ startLine: 2, endLine: 2,
+newString: "TWO" }` on `"one\r\ntwo\r\nthree\r\n"` writes
+`"one\r\nTWO\r\nthree\r\n"`.
 
 A page cut by the byte budget ends on a whole line rather than handing back a
 fragment that looks like an anchor and is not one. A line longer than 2,000

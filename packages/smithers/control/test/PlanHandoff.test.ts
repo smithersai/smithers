@@ -16,7 +16,7 @@ import { Effect, Schema } from "effect"
 import { describe, expect, it } from "vitest"
 import { Control } from "../src/Control.ts"
 import { InvalidInput } from "../src/ControlError.ts"
-import type { MemoryFlow } from "../src/ControlRuntime.ts"
+import { ControlRuntime, type MemoryFlow } from "../src/ControlRuntime.ts"
 import { PlanCard, PlanGraph, type PlanNodeStatus } from "../src/ControlSchema.ts"
 import * as TestControl from "../src/test/TestControl.ts"
 
@@ -76,6 +76,33 @@ describe("the persisted plan handoff", () => {
     expect(card.nodes.map((node) => node.key)).toEqual(card.plan?.nodes.map((node) => node.key))
     expect(card.nodes.find((node) => node.id === "root.all.read")?.status).toBe("cached")
     expect(card.nodes.find((node) => node.id === "root.all.review")?.status).toBe("run")
+  })
+
+  it("stores a node named constructor with the default status", async () => {
+    const definition: MemoryFlow = {
+      ...flow(graph()),
+      plan: (_input, planId) =>
+        PersistedPlan.compile({
+          planId,
+          flow: "review/pull-request",
+          nodes: Graph.drafts(Graph.build(step("single", []).call({}))).map((node) => ({ ...node, id: "constructor" }))
+        }).pipe(
+          Effect.map((plan) => ({ plan, statuses: {} })),
+          Effect.mapError((cause) => new InvalidInput({ issue: String(cause) })),
+          Effect.provide(NodeCrypto.layer)
+        )
+    }
+    await Effect.runPromise(
+      Effect.gen(function*() {
+        const control = yield* Control
+        const card = yield* control.plan({ flowId: definition.flowId, input: {} })
+        const stored = yield* (yield* ControlRuntime).getPlan(card.planId)
+        expect(Schema.decodeUnknownSync(PlanCard)(stored.card).nodes).toMatchObject([{
+          id: "constructor",
+          status: "run"
+        }])
+      }).pipe(Effect.provide(TestControl.layer({ flows: [definition] })), Effect.scoped)
+    )
   })
 
   it("binds approval to the persisted plan digest", async () => {

@@ -11,6 +11,7 @@ import {
   type MythicalReceipt,
   mythicalReceiptDuration,
   mythicalRoute,
+  MythicalRouteSegmentInvalid,
   MythicalStackSchema,
   MythicalWikiSchema
 } from "../src/Mythical.ts"
@@ -358,10 +359,47 @@ describe("the mythical stack contract", () => {
     expect(MythicalItemSchema.parse(snapshot.items[0]).request).toBeUndefined()
   })
 
+  test("an empty or dot segment is refused before it can name another route", () => {
+    const refusal = (run: () => string): unknown => {
+      try {
+        return run()
+      } catch (error) {
+        return error
+      }
+    }
+    for (const bad of ["", ".", ".."]) {
+      for (
+        const [segment, run] of [
+          ["owner", () => mythicalRoute("stack", bad, "r")],
+          ["repo", () => mythicalRoute("stack", "o", bad)],
+          ["id", () => mythicalRoute("merge", "o", "r", bad)],
+          ["id", () => mythicalRoute("item", "o", "r", bad)]
+        ] as const
+      ) {
+        const refused = refusal(run)
+        expect(refused).toBeInstanceOf(MythicalRouteSegmentInvalid)
+        expect(refused).toMatchObject({
+          _tag: "MythicalRouteSegmentInvalid",
+          name: "MythicalRouteSegmentInvalid",
+          segment,
+          message: `The Mythical route ${segment} is empty or a dot segment.`
+        })
+      }
+    }
+    // An item route without its item is refused as an empty one; a route that carries no item ignores it.
+    expect(refusal(() => mythicalRoute("item", "o", "r"))).toBeInstanceOf(MythicalRouteSegmentInvalid)
+    expect(mythicalRoute("stack", "o", "r", "..")).toBe("/api/repos/o/r/mythical")
+    // The merge route of `..` would otherwise resolve to the item collection's own `merge`.
+    expect(new URL("/api/repos/o/r/mythical/items/../merge", "http://h").pathname).toBe("/api/repos/o/r/mythical/merge")
+  })
+
   test("routes fill owner, repository and item", () => {
     expect(mythicalRoute("stack", "smithers-canary", "smithers")).toBe("/api/repos/smithers-canary/smithers/mythical")
     expect(mythicalRoute("merge", "o", "r", "item 1")).toBe("/api/repos/o/r/mythical/items/item%201/merge")
     expect(mythicalRoute("item", "o", "r", "12")).toBe("/api/repos/o/r/mythical/items/12")
+    // A name that only contains dots or slashes is one encoded segment, so it stays in its route.
+    expect(mythicalRoute("item", "o", ".github", "a/../b")).toBe("/api/repos/o/.github/mythical/items/a%2F..%2Fb")
+    expect(mythicalRoute("item", "...", "r", "..a")).toBe("/api/repos/.../r/mythical/items/..a")
     // A TODO's Retry is POST /api/todos/{n} on the install; the stack's item retry route is gone.
     expect("retry" in MYTHICAL_ROUTES).toBe(false)
     for (const route of Object.values(MYTHICAL_ROUTES)) {

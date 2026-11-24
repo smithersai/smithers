@@ -497,7 +497,8 @@ export const sources = (
         source: `pack:${pack.manifest.name}`,
         root: sourcePath,
         confinementRoot: root,
-        naming: "path"
+        naming: "path",
+        undeclaredCapabilities: "none"
       })
     }
     return output

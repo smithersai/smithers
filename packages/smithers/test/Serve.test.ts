@@ -255,7 +255,13 @@ describe("the serve command", () => {
         // The local operator can still decide the unchanged pending approval.
         await Effect.runPromise(
           Effect.flatMap(Control.Control, (control) => control.approve(card.approval)).pipe(
-            Effect.provide(NodeControl.layerControl({ root, evaluator: ScriptedJudge.layer })),
+            Effect.provide(
+              NodeControl.layerControl({
+                root,
+                evaluator: ScriptedJudge.layer,
+                principal: { id: "local", kind: "operator" }
+              })
+            ),
             Effect.scoped
           )
         )
@@ -398,8 +404,8 @@ describe("the banner", () => {
     }
   })
 
-  it("names every mount and how the server authenticates", () => {
-    const banner = Serve.banner(bind())
+  it("names every mount and shows anonymous reads for an empty token", () => {
+    const banner = Serve.banner(bind({ credential: "" }))
 
     expect(banner).toContain("http://127.0.0.1:3000")
     expect(banner).toContain("/rpc")

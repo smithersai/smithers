@@ -246,6 +246,8 @@ forces the textarea or the rich editor, overriding the
 middle-clicked link's `href` as written in the markdown (a right click leaves
 the link to the browser's menu); returning true stops the browser from
 following it, which is how a host opens a document's relative links itself.
+A link whose scheme is not http, https or mailto never navigates and never
+reaches `onLinkClick`.
 `readOnly` shows the document without editing, and an HTML node in it shows as
 its text. `MarkdownEditorHandle` exposes `getMarkdown` and the imperative seams.
 Images stay inline Markdown images, so their alt text and title round-trip

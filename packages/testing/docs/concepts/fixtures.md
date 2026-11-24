@@ -38,8 +38,7 @@ private user content.
 A fixture path permits one active writer. The first append acquires the
 `path.lock` directory until `flush` releases it. Concurrent appends through one
 store are serialized. Competing stores or processes fail with a defect naming
-the path instead of overwriting calls. Construction also takes this lock while
-reading, so open another store after the current writer flushes. An idle store
+the path instead of overwriting calls. Readers open and flush without acquiring the lock or changing files. An idle store
 refreshes from disk before its next recording session; `load` alone does not
 refresh changes from other stores. Do not address the same fixture through
 symlink aliases.
@@ -59,10 +58,8 @@ outside the working directory has no trusted root, and its directories are
 not checked. Windows has no `O_NOFOLLOW`.
 
 After a killed process, confirm that no writer remains, remove `path.lock`,
-and reopen the store. Complete journal lines are recovered; an unfinished last
-line is discarded. Numbered records prevent duplication if the process died
-after publishing JSON but before deleting the journal. Flush the recovered
-store to publish those calls. Abandoned temporary directories named `path.*` can then be removed after checking their contents.
+and reopen the store. Readers recover complete journal lines. The next append truncates any unfinished last line. Numbered records prevent duplication if the process died
+after publishing JSON but before deleting the journal. The next writer publishes the recovered calls when it flushes. Abandoned temporary directories named `path.*` can then be removed after checking their contents.
 These guarantees cover process interruption, not power loss: writes do not
 issue `fsync`. Never edit or delete the JSON or journal while a writer is active.
 

@@ -16,6 +16,7 @@ import { Deferred, Effect, Fiber, Layer, Redacted, Result, Stream } from "effect
 import * as FetchHttpClient from "effect/http/FetchHttpClient"
 import { canonicalRequestDigest } from "../src/Fixture.ts"
 import * as ModelServer from "../src/ModelServer.ts"
+import { UnscriptedModelError } from "../src/TestingError.ts"
 import * as TurnGate from "../src/TurnGate.ts"
 import * as TurnLog from "../src/TurnLog.ts"
 
@@ -178,7 +179,9 @@ describe("ModelServer chat completions", () => {
 
   it.effect("fails a request the fixture does not hold loudly, naming the request and never its text", () =>
     Effect.gen(function*() {
-      const missing = Model.make({ stream: () => Stream.die(new Error("no recording")) })
+      const missing = Model.make({
+        stream: () => Stream.die(new UnscriptedModelError({ modelId: "m", messageCount: 1, toolNames: [] }))
+      })
       const server = yield* ModelServer.make({ model: missing })
       const answer = yield* post(server.url, ModelServer.paths.chat, {
         model: "openai/gpt-5-mini",
@@ -199,9 +202,9 @@ describe("ModelServer chat completions", () => {
       const chat = ModelServer.paths.chat
       const notJson = yield* raw(server.url, chat, { method: "POST", body: "{" })
       expect(notJson.status).toBe(400)
-      const extra = yield* post(server.url, chat, { model: "m", messages: [], stream: true, stop: ["x"] })
+      const extra = yield* post(server.url, chat, { model: "m", messages: [], stream: true, unexpectedField: ["x"] })
       expect(extra.status).toBe(400)
-      expect(extra.body).toContain("stop")
+      expect(extra.body).toContain("unexpectedField")
       const unstreamed = yield* post(server.url, chat, { model: "m", messages: [], stream: false })
       expect(unstreamed.status).toBe(400)
       const structured = yield* post(server.url, chat, {
@@ -340,7 +343,9 @@ describe("ModelServer evaluation", () => {
 
   it.effect("refuses an evaluation body that is not one, and fails a miss loudly", () =>
     Effect.gen(function*() {
-      const missing: Evaluator.Evaluator = { evaluate: () => Effect.die(new Error("no recording")) }
+      const missing: Evaluator.Evaluator = {
+        evaluate: () => Effect.die(new UnscriptedModelError({ modelId: "judge", messageCount: 0, toolNames: [] }))
+      }
       const server = yield* ModelServer.make({ model: scripted([]), evaluator: missing })
       expect((yield* post(server.url, ModelServer.paths.evaluation, [])).status).toBe(400)
       expect((yield* post(server.url, ModelServer.paths.evaluation, { state: {} })).status).toBe(400)
@@ -348,6 +353,13 @@ describe("ModelServer evaluation", () => {
         .toBe(400)
       const question = { type: "boolean", instructions: "Is it done?" }
       const miss = yield* post(server.url, ModelServer.paths.evaluation, { state: {}, questions: { a: question } })
+      const broken = yield* ModelServer.make({
+        model: scripted([]),
+        evaluator: { evaluate: () => Effect.die(new TypeError("private")) }
+      })
+      const failed = yield* post(broken.url, ModelServer.paths.evaluation, { state: {}, questions: { a: question } })
+      expect(failed.status).toBe(500)
+      expect(failed.body).not.toContain("private")
       expect(miss.status).toBe(501)
       expect(JSON.parse(miss.body)).toMatchObject({ error: { type: "unrecorded" } })
     }).pipe(Effect.scoped))

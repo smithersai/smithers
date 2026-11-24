@@ -87,6 +87,7 @@ export const layerHealth = (health: Health): Layer.Layer<never, never, HttpRoute
 export const layerHandlers = GatewayRpcs.toLayer(
   Effect.gen(function*() {
     const projections = yield* Projections
+    const admit = ControlServer.makeStreamAdmission()
     const control = yield* Control
     // Only a host that owns the project's stores can fork or verify its runs.
     const history = yield* Effect.serviceOption(RunHistory.RunHistory)
@@ -107,8 +108,12 @@ export const layerHandlers = GatewayRpcs.toLayer(
         ({ selector, after }) => projections.snapshot(selector, after),
         Effect.tapCause(ControlServer.logDefect)
       ),
-      "Projection.Subscribe": ({ after, selector }) =>
-        Stream.tapCause(projections.subscribe(selector, after), ControlServer.logDefect),
+      "Projection.Subscribe": ({ after, selector }, { client }) =>
+        admit(
+          client,
+          () => new GatewayError({ code: "resource_limit", message: "Too many concurrent subscriptions" }),
+          Stream.tapCause(projections.subscribe(selector, after), ControlServer.logDefect)
+        ),
       /* One operator command. Control owns the atomic decision plus durable
        * resume delegation; the gateway is only a transport adapter. */
       "Approval.Submit": Effect.fn("Gateway.submitApproval")((input) =>
@@ -601,10 +606,12 @@ const requestAuthority = (host: string | undefined): URL | undefined => {
 }
 
 const browserRequestRefusal = (
-  headers: Readonly<Record<string, string>>,
+  request: HttpServerRequest.HttpServerRequest,
+  scheme: "http:" | "https:" | undefined,
   allowedHosts: ReadonlyArray<string>,
   loopbackOnly: boolean
 ): { readonly error: GatewayError; readonly status: number } | undefined => {
+  const headers = request.headers
   const authority = requestAuthority(headers.host)
   // `URL` lowercases the hostname, and a host name is case-insensitive, so an
   // allowed name is compared lowercased too.
@@ -612,13 +619,7 @@ const browserRequestRefusal = (
     authority === undefined || !allowedHosts.some((name) => name.toLowerCase() === authority.hostname) ||
     (loopbackOnly && !loopbackHost.test(headers.host!))
   ) return { error: invalidHostRequest(), status: 421 }
-  const origin = headers.origin
-  // CLI clients do not send Origin. Browsers must prove they came from this
-  // exact authority, including the port, on HTTP requests AND WS upgrades.
-  if (origin === undefined) return undefined
-  const parsed = URL.parse(origin)
-  return parsed !== null && (parsed.protocol === "http:" || parsed.protocol === "https:") &&
-      parsed.origin === origin && parsed.host === authority.host
+  return ControlServer.sameOrigin(request, scheme)
     ? undefined
     : { error: invalidOriginRequest(), status: 403 }
 }
@@ -796,6 +797,7 @@ export const layerIngress = (options: IngressOptions = {}) => {
   const ticketMillis = options.ticketMillis ?? defaultTicketMillis
   return HttpRouter.middleware(
     Effect.gen(function*() {
+      const scheme = yield* ControlServer.RequestScheme
       const serialization = yield* RpcSerialization.RpcSerialization
       const binary = !serialization.contentType.includes("json")
       /** Outstanding tickets: the Authorization header each was issued under, and when it lapses. */
@@ -821,7 +823,12 @@ export const layerIngress = (options: IngressOptions = {}) => {
       return (httpEffect: Effect.Effect<HttpServerResponse.HttpServerResponse, Types.unhandled>) =>
         Effect.gen(function*() {
           const request = yield* HttpServerRequest.HttpServerRequest
-          const browserRefusal = browserRequestRefusal(request.headers, allowedHosts, options.loopbackOnly === true)
+          const browserRefusal = browserRequestRefusal(
+            request,
+            scheme,
+            allowedHosts,
+            options.loopbackOnly === true
+          )
           if (browserRefusal !== undefined) return refuse(browserRefusal.error, browserRefusal.status)
           const path = routedPath(request.url)
           if (path === ticketPath && request.method === "POST" && options.authorize !== undefined) {

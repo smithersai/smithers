@@ -5,8 +5,8 @@
  */
 
 import { NotificationError } from "@smthrs/notifications/NotificationQueue"
-import { Context, Effect, Layer, Schema, SchemaTransformation } from "effect"
-import { Rpc, RpcGroup, RpcMiddleware } from "effect/rpc"
+import { Clock, Context, Effect, Layer, Schema, SchemaTransformation } from "effect"
+import { Rpc, RpcGroup, RpcMiddleware, RpcSchema } from "effect/rpc"
 import {
   AlreadyResolved,
   ClaimLost,
@@ -287,7 +287,7 @@ export interface Authenticator {
   readonly authenticate: (
     headers: Readonly<Record<string, string>>,
     call?: Call | undefined
-  ) => Effect.Effect<typeof Principal.Type, Unauthorized>
+  ) => Effect.Effect<typeof Principal.Type & { readonly expiresAt?: number }, Unauthorized>
 }
 
 /**
@@ -358,10 +358,12 @@ export const bearerAuthenticator = (options: BearerAuthOptions): Authenticator =
   authenticate: (headers) => {
     const credential = bearerCredential(headers)
     return options.token.length > 0 && credential !== undefined && constantTimeTokenEqual(options.token, credential)
-      ? Effect.succeed({
-        ...options.principal,
-        stampedAt: options.now?.() ?? Date.now()
-      })
+      ? Clock.clockWith((clock) =>
+        Effect.succeed({
+          ...options.principal,
+          stampedAt: options.now?.() ?? clock.currentTimeMillisUnsafe()
+        })
+      )
       : Effect.fail(new Unauthorized({ message: "A valid bearer credential is required" }))
   }
 })
@@ -410,14 +412,23 @@ export const layerAuth = (authenticator: Authenticator, options: AuthOptions = {
   return Layer.succeed(
     ControlAuth,
     (effect, call) =>
-      Effect.flatMap(
-        authenticator.authenticate(call.headers, { rpc: call.rpc._tag, payload: call.payload }),
-        (principal) =>
-          effect.pipe(
-            Effect.provideService(ControlPrincipal, principal),
-            Effect.provideService(RunVisibility, visibility)
-          )
-      )
+      Effect.gen(function*() {
+        const started = yield* Clock.currentTimeMillis
+        const { expiresAt, ...principal } = yield* authenticator.authenticate(call.headers, {
+          rpc: call.rpc._tag,
+          payload: call.payload
+        })
+        const authenticated = effect.pipe(
+          Effect.provideService(ControlPrincipal, principal),
+          Effect.provideService(RunVisibility, visibility)
+        )
+        if (expiresAt === undefined || !RpcSchema.isStreamSchema(call.rpc.successSchema)) return yield* authenticated
+        const remaining = expiresAt - principal.stampedAt - ((yield* Clock.currentTimeMillis) - started)
+        const expired = () => Effect.fail(new Unauthorized({ message: "The scoped token has expired" }))
+        return yield* (remaining <= 0
+          ? expired()
+          : Effect.timeoutOrElse(authenticated, { duration: remaining, orElse: expired }))
+      })
   )
 }
 

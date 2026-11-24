@@ -8,7 +8,7 @@
 import * as Fault from "@smthrs/flow/Fault"
 import { Result, Schema } from "effect"
 import { readFileSync } from "node:fs"
-import { afterEach, describe, expect, it, vi } from "vitest"
+import { describe, expect, it } from "vitest"
 import { ExternalTranscript } from "../src/index.ts"
 
 const fixture = new URL("./fixtures/external/codex-0.160/", import.meta.url)
@@ -141,18 +141,13 @@ describe("ExternalTranscript", () => {
     })
 
     describe("with no network or providers", () => {
-      afterEach(() => {
-        vi.unstubAllGlobals()
-      })
-
+      // The decoder takes no service, so there is no client to inject: its two imports are pinned above, and a
+      // synchronous `Result` leaves it no turn in which to await a request.
       it("decodes synchronously from explicit input and state alone", () => {
-        const fetch = vi.fn()
-        vi.stubGlobal("fetch", fetch)
         const before = structuredClone(ExternalTranscript.codexStart)
         const result = ExternalTranscript.decodeCodex(ExternalTranscript.codexStart, rollout)
         expect(result).not.toBeInstanceOf(Promise)
         expect(Result.isSuccess(result)).toBe(true)
-        expect(fetch).not.toHaveBeenCalled()
         expect(ExternalTranscript.codexStart).toEqual(before)
       })
     })
@@ -160,7 +155,12 @@ describe("ExternalTranscript", () => {
     it("registers its error tag with Fault as a dependency failure for every code", () => {
       expect(Fault.registered().has("harness/ExternalTranscriptError")).toBe(true)
       for (const code of ExternalTranscript.ExternalTranscriptErrorCode.literals) {
-        const error = new ExternalTranscript.ExternalTranscriptError({ code, message: "m", line: 1 })
+        const error = new ExternalTranscript.ExternalTranscriptError({
+          code,
+          message: "m",
+          line: 1,
+          decoded: { state: ExternalTranscript.codexStart, entries: [] }
+        })
         expect(Fault.of(error)).toEqual({ class: "dependency", tag: `harness/ExternalTranscriptError/${code}` })
       }
     })
@@ -494,6 +494,63 @@ describe("ExternalTranscript", () => {
         line: 3,
         message: "Codex rollout line 3 is not a JSON record."
       })
+    })
+
+    // Regression (R1-Fable-D2-047): a refused line used to drop the entries its chunk had already completed, so
+    // one chunk yielded fewer entries than the same bytes fed a line at a time.
+    it("returns the entries and state before a refused line, whatever the partition", () => {
+      const bad = Math.floor(records.length / 2)
+      const text = [...records.slice(0, bad), "{\"type\":\"event_msg\"\n", ...records.slice(bad)].join("")
+      /** Decode chunks until one is refused; the entries are those of the good chunks and of the refusal. */
+      const until = (chunks: ReadonlyArray<string>) => {
+        let state = ExternalTranscript.codexStart
+        const entries: Array<ExternalTranscript.Entry> = []
+        for (const chunk of chunks) {
+          const result = ExternalTranscript.decodeCodex(state, chunk)
+          if (Result.isFailure(result)) {
+            const { code, decoded, line } = result.failure
+            return { code, line, entries: [...entries, ...decoded.entries], state: decoded.state }
+          }
+          state = result.success.state
+          entries.push(...result.success.entries)
+        }
+        throw new Error("expected the decode to fail")
+      }
+      const whole = until([text])
+      const before = replay([records.slice(0, bad).join("")])
+      expect(whole).toEqual({ code: "malformed_record", line: bad + 1, entries: before.entries, state: before.state })
+      expect(whole.entries.length).toBeGreaterThan(0)
+      expect(until(text.split(/(?<=\n)/))).toEqual(whole)
+      const next = random(0x47)
+      for (let trial = 0; trial < 64; trial++) {
+        const offsets = Array.from({ length: 1 + Math.floor(next() * 24) }, () => Math.floor(next() * text.length))
+        expect(until(cut(text, offsets))).toEqual(whole)
+      }
+      // The state stands after the last good line: decoding goes on from the bytes after the refused one.
+      const rest = Result.getOrThrow(ExternalTranscript.decodeCodex(whole.state, records.slice(bad).join("")))
+      expect([...whole.entries, ...rest.entries]).toEqual(golden.entries)
+      expect(rest.state).toEqual(golden.state)
+    })
+
+    it("returns no entries and the state it was given when the first line of a chunk is refused", () => {
+      expect(failure("[1]\n").decoded).toEqual({ state: ExternalTranscript.codexStart, entries: [] })
+    })
+
+    // Regression (R1-Fable-D2-047): `pending` was joined to every chunk and split again with no ceiling.
+    it("refuses a line that passes 64 MiB without ending, and keeps what its chunk completed", () => {
+      const ceiling = 64 * 1024 * 1024
+      const first = records.slice(0, 2).join("")
+      const before = replay([first])
+      const held = Result.getOrThrow(ExternalTranscript.decodeCodex(ExternalTranscript.codexStart, "x".repeat(ceiling)))
+      expect(held.state.pending).toHaveLength(ceiling)
+      const result = ExternalTranscript.decodeCodex(ExternalTranscript.codexStart, first + "x".repeat(ceiling + 1))
+      expect(Result.isFailure(result) && result.failure).toMatchObject({
+        _tag: "harness/ExternalTranscriptError",
+        code: "malformed_record",
+        line: 3,
+        message: `Codex rollout line 3 passes ${ceiling} characters without ending.`
+      })
+      expect(Result.isFailure(result) && result.failure.decoded).toEqual(before)
     })
 
     // Regression: JSON that is not an object is not a record, before or after the session record.

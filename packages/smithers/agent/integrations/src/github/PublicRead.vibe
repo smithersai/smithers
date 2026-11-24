@@ -159,6 +159,10 @@ const statusOf = (error: { readonly details?: Readonly<Record<string, unknown>> 
  * smithers.sh's installation tokens for public reads, one per listed repository, held in this isolate until
  * `REFRESH_BEFORE` its expiry. Each is minted for the repository's id alone, read-only, and used only while GitHub
  * confirms with it, at most `RECHECK_AFTER` ago, that the name still names that id and the repository is public.
+ *
+ * A held token GitHub answers 401, 403 or 404 for is dropped, so the next read mints again instead of failing until
+ * the token would have expired. A 401 mints once more within the same read, and a 404 (the repository is gone or
+ * out of the installation) is `forbidden`, which drops the site's cached copy.
  */
 export function installations(app: AppAuth.AppAuth, github: HttpClient.HttpClient, api = GITHUB_API): Token {
   const held = new Map<number, { readonly minted: AppAuth.InstallationToken; readonly checked: number }>()
@@ -169,15 +173,27 @@ export function installations(app: AppAuth.AppAuth, github: HttpClient.HttpClien
     const live = known !== undefined && known.minted.expiresAt - REFRESH_BEFORE > now ? known : undefined
     if (live !== undefined && now - live.checked < RECHECK_AFTER) return live.minted.token
     const [owner, name] = read.repository.split("/") as [string, string]
-    let minted = live?.minted
-    if (minted === undefined) {
+    const mint = effect () => {
       const installation = try Effect.mapError(app.installation(owner, name), (error) => refused(statusOf(error) === 404 ? "forbidden" : "unavailable"))
-      minted = try Effect.mapError(app.installationToken({ installationId: installation.id, repositoryIds: [read.repositoryId], permissions: READ_PERMISSIONS }), (error) => refused(statusOf(error) === 404 || statusOf(error) === 422 ? "forbidden" : "unavailable"))
+      return try Effect.mapError(app.installationToken({ installationId: installation.id, repositoryIds: [read.repositoryId], permissions: READ_PERMISSIONS }), (error) => refused(statusOf(error) === 404 || statusOf(error) === 422 ? "forbidden" : "unavailable"))
     }
-    const repository = try Effect.flatMap(GitHubClient.make({ token: Redacted.value(minted.token), apiBaseUrl: api }, {}), (client) => client.request("GET", `/repos/${read.repository}`, undefined, { schema: Repository })).pipe(
+    const recheck = (token: Redacted.Redacted<string>) => Effect.result(Effect.flatMap(GitHubClient.make({ token: Redacted.value(token), apiBaseUrl: api }, {}), (client) => client.request("GET", `/repos/${read.repository}`, undefined, { schema: Repository })).pipe(
       Effect.provideService(HttpClient.HttpClient, github),
-      Effect.mapError(() => refused("unavailable")),
-    )
+    ))
+    let minted = live === undefined ? try mint() : live.minted
+    let checked = try recheck(minted.token)
+    // GitHub no longer takes the held token (the App was suspended or reinstalled): a fresh one is tried once, in this read.
+    if (checked._tag === "Failure" && live !== undefined && statusOf(checked.failure) === 401) {
+      held.delete(read.repositoryId)
+      minted = try mint()
+      checked = try recheck(minted.token)
+    }
+    if (checked._tag === "Failure") {
+      const status = statusOf(checked.failure)
+      if (status === 401 || status === 403 || status === 404) held.delete(read.repositoryId)
+      throw refused(status === 404 ? "forbidden" : "unavailable")
+    }
+    const repository = checked.success
     if (repository.id !== read.repositoryId || repository.private) {
       held.delete(read.repositoryId)
       throw refused("forbidden")

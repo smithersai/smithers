@@ -2,6 +2,7 @@ import { Model, ModelError, type ModelEvent } from "@smthrs/model"
 import { AgentContext, AgentTurnJournal, UiInstruction } from "@smthrs/rpc"
 import { Effect, Logger, Metric, Stream } from "effect"
 import { HttpEffect } from "effect/http"
+import { TestClock } from "effect/testing"
 import { createHash } from "node:crypto"
 import { describe, expect, test, vi } from "vitest"
 import { ResolveFailed } from "../src/ModelHostError.ts"
@@ -101,6 +102,7 @@ test("the authenticated model stream emits provider frames through the configure
     authorization: "host-token",
     callbackBaseUrl: "http://callback.test",
     resolve: (accepted) => {
+      expect(accepted.request).not.toHaveProperty("selectedContext")
       resolvedOwner = accepted.ownerId
       return Effect.succeed({
         model: Model.make({
@@ -117,6 +119,7 @@ test("the authenticated model stream emits provider frames through the configure
   const body = JSON.stringify({
     runId: "run-stream",
     ownerId: 42,
+    selectedContext: [{ text: "untrusted" }],
     instructions: "summarize",
     messages: [{ role: "user", content: "hi" }]
   })
@@ -196,7 +199,9 @@ describe("the turn's runtime context", () => {
 
   test.each(invalidContexts)("the model stream refuses a context that fails its schema %#", async (context) => {
     const resolve = vi.fn(options.resolve)
-    const response = await serve({ ...options, resolve })(streamPost({ runId: "run", messages: [], context }))
+    const response = await serve({ ...options, resolve })(
+      streamPost({ runId: "run", ownerId: 1, messages: [], context })
+    )
     expect(response.status).toBe(400)
     expect(await response.json()).toEqual({ status: "error", code: "request_invalid" })
     expect(resolve).not.toHaveBeenCalled()
@@ -212,7 +217,8 @@ describe("the turn's runtime context", () => {
       (await handler(post(JSON.stringify({ ...grant, request: { ...grant.request, context: runtimeContext } }))))
         .status
     ).toBe(502)
-    expect((await handler(streamPost({ runId: "run", messages: [], context: runtimeContext }))).status).toBe(502)
+    expect((await handler(streamPost({ runId: "run", ownerId: 1, messages: [], context: runtimeContext }))).status)
+      .toBe(502)
     expect(resolve).toHaveBeenCalledTimes(2)
   })
 })
@@ -278,29 +284,13 @@ test.each([
   expect(resolve).not.toHaveBeenCalled()
 })
 
-test.each([undefined, 1.5])(
-  "the model stream normalizes optional metadata for the default owner (%s)",
-  async (ownerId) => {
-    const resolve = vi.fn<ModelTurnResolver>((accepted) => {
-      expect(accepted.ownerId).toBe(0)
-      expect(accepted.request.instructions).toBe("")
-      expect(accepted.request.tools).toEqual([])
-      return Effect.succeed({
-        model: Model.make({ stream: () => Stream.make({ type: "settle", stopReason: "stop" }) }),
-        options: { modelId: "fixture" }
-      })
-    })
-    const response = await serve({ ...options, resolve })(
-      streamPost({ runId: "run", ownerId, messages: [], tools: [] })
-    )
-    expect(response.status).toBe(200)
-    expect(await response.text()).toBe(`${JSON.stringify({ runId: "run", type: "done", reason: "stop" })}\n`)
-    expect(resolve).toHaveBeenCalledOnce()
-  }
-)
+test.each([undefined, 0, -1, 1.5, Number.MAX_SAFE_INTEGER + 1])("rejects invalid stream owner %s", async (ownerId) => {
+  const response = await serve(options)(streamPost({ runId: "run", ownerId, messages: [] }))
+  expect(response.status).toBe(400)
+})
 
 test("the model stream names the stage that refused it and hides the resolver's diagnostic", async () => {
-  const response = await serve(options)(streamPost({ runId: "run", messages: [] }))
+  const response = await serve(options)(streamPost({ runId: "run", ownerId: 1, messages: [] }))
   expect(response.status).toBe(502)
   // The stage and the failure's tag, never the resolver's message: a refused
   // model is told apart from a provider that never answered without reading
@@ -318,7 +308,7 @@ test("a refused model stream records its stage on the guest's diagnostics", asyn
   const response = await serve({
     ...options,
     writeDiagnostic: (line) => records.push(JSON.parse(line))
-  })(streamPost({ runId: "run", messages: [] }))
+  })(streamPost({ runId: "run", ownerId: 1, messages: [] }))
   expect(response.status).toBe(502)
   expect(records).toEqual(expect.arrayContaining([expect.objectContaining({
     event: "model_stream",
@@ -337,7 +327,7 @@ test("a refused model stream names the provider's own code, and no other field i
   // status is not: a sealed stream commits nothing, so nothing on this route
   // has one, and the response must not imply it could.
   const response = await failing(new ModelError.ModelError({ code: "rate_limited", message: "signed request detail" }))(
-    streamPost({ runId: "run", messages: [] })
+    streamPost({ runId: "run", ownerId: 1, messages: [] })
   )
   expect(response.status).toBe(502)
   expect(await response.json()).toEqual({
@@ -589,7 +579,7 @@ test("writes a turn's diagnostics only to the sink the host passes", async () =>
     })
   try {
     expect((await handler()(post(JSON.stringify(grant)))).status).toBe(502)
-    expect((await handler()(streamPost({ runId: "run", messages: [] }))).status).toBe(200)
+    expect((await handler()(streamPost({ runId: "run", ownerId: 1, messages: [] }))).status).toBe(200)
     expect(consoleError).not.toHaveBeenCalled()
     const response = await handler((line) => records.push(JSON.parse(line)))(post(JSON.stringify(grant)))
     expect(response.status).toBe(502)
@@ -786,7 +776,7 @@ test("the model stream refuses a response that outgrows the stream byte ceiling"
         }),
         options: { modelId: "fixture" }
       })
-  })(streamPost({ runId: "run", messages: [] }))
+  })(streamPost({ runId: "run", ownerId: 1, messages: [] }))
   expect(response.status).toBe(502)
   expect(await response.json()).toEqual({
     status: "error",
@@ -1146,4 +1136,12 @@ test("a Cloud account conversation's private marker reaches the turn through the
   // Without the marker, or on a turn that belongs to a repository, the host offers what it did: nothing here.
   expect(await offered({ ...account, privateConversation: false })).toEqual([])
   expect(await offered({ ...account, privateConversation: true }, { repositoryId: 3 })).toEqual([])
+})
+
+test("grant expiry reads the host's Effect clock", async () => {
+  const handler = HttpEffect.toWebHandler(createModelTurnHandler(options).pipe(Effect.provide(TestClock.layer())))
+  const expiresAt = new Date(1).toISOString()
+  const response = await handler(post(JSON.stringify({ ...grant, expiresAt })))
+  // The grant was accepted at test time zero and reached the configured failing resolver.
+  expect(response.status).toBe(502)
 })

@@ -4,6 +4,7 @@ import { Clock, Context, Effect, FileSystem, Layer, Random, Ref } from "effect"
 import * as ChildProcess from "effect/process/ChildProcess"
 import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner"
 import * as TestClock from "effect/testing/TestClock"
+import { afterAll } from "vitest"
 import * as EngineSubject from "../src/EngineSubject.ts"
 import { runEffectTest } from "../src/internal/TestEffectRunner.ts"
 import * as TestHost from "../src/TestHost.ts"
@@ -51,9 +52,27 @@ describe("Vitest", () => {
     }
   )
 
-  it.effect("runs Effect test bodies", () => Effect.sync(() => expect(true).toBe(true)))
+  describe("factory body registration", () => {
+    let ran = false
+    it.effect("runs an Effect factory", () =>
+      Effect.sync(() => {
+        ran = true
+      }))
+    afterAll(() => expect(ran).toBe(true))
+  })
 
-  test.effect("runs a direct Effect body", Effect.sync(() => expect(1 + 1).toBe(2)), 1_000)
+  describe("direct body registration", () => {
+    let ran = false
+    // Exercise the numeric timeout overload with the package's normal test budget.
+    test.effect(
+      "runs a direct Effect body",
+      Effect.sync(() => {
+        ran = true
+      }),
+      30_000
+    )
+    afterAll(() => expect(ran).toBe(true))
+  })
 
   test.skip("registers a skipped layered Effect body", Effect.die("must stay skipped"))
 

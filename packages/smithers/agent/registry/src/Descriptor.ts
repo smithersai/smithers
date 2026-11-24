@@ -462,8 +462,15 @@ export interface Source {
   readonly lockfileRoot?: string | undefined
   /** A missing root produces an empty scan; other root failures still fail. */
   readonly optionalRoot?: boolean | undefined
-  /** Pack root whose real path must resolve and bound discovery. */
+  /** Pack or project root whose real path must resolve and bound discovery. */
   readonly confinementRoot?: string | undefined
+  /**
+   * What a markdown flow that declares no `capabilities` receives: `"all"` is
+   * the wildcard, `"none"` is the empty list. Pack sources and project skill
+   * libraries are built with `"none"`, so omitting the field cannot widen a
+   * foreign flow's authority. An unset value is `"all"`.
+   */
+  readonly undeclaredCapabilities?: "all" | "none" | undefined
   /**
    * A directory this source's flows moved out of. Entries there never load;
    * if any exist, the scan reports one `retired_root` warning naming it.

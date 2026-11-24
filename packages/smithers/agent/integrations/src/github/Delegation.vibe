@@ -529,7 +529,13 @@ export effect function make(options: {
     /** GitHub says this person revoked the App. Nothing to revoke there; every delegation here ends. */
     revokedAtGitHub: () => observed("webhook", effect {
       try options.store.remove("credential")
-      for (const row of try options.store.list("delegation/")) try options.store.remove("delegation/" + (row as { origin: string }).origin)
+      // A row that no longer decodes names no origin to remove. With the credential gone it authorizes nothing, and
+      // liveRows counts it as none, so it is counted and skipped: one bad row never keeps the others connected.
+      for (const raw of try options.store.list("delegation/")) {
+        const row = Schema.decodeUnknownOption(Row)(raw).pipe(Option.getOrUndefined)
+        if (row === undefined) try record("webhook", "corrupt")
+        else try options.store.remove("delegation/" + row.origin)
+      }
     }),
   }
 }

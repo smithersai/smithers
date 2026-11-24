@@ -371,18 +371,18 @@ export interface Options {
  */
 export const launch = async (options: Options): Promise<Launched | Rejected> => {
   options.signal?.throwIfAborted()
-  const timeoutMs = Math.max(1, options.timeoutMs ?? defaultTimeoutMs)
-  const maxWaitMs = timeoutMs * liveChildGraceMultiple
+  const timeoutMs = Math.min(2_147_483_647, Math.max(1, options.timeoutMs ?? defaultTimeoutMs))
+  const maxWaitMs = Math.min(2_147_483_647, timeoutMs * liveChildGraceMultiple)
   const intervalMs = Math.max(1, options.intervalMs ?? pollIntervalMs)
   const nonce = `${process.pid}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
   const directory = Project.logDirectory(options.root)
-  mkdirSync(directory, { recursive: true })
+  mkdirSync(directory, { recursive: true, mode: 0o700 })
   // The run id does not exist until the child is admitted, so the log opens
   // under the nonce and is renamed onto the run id afterwards. On POSIX the
   // child keeps writing through its open descriptor across the rename, so no
   // output is lost and no second file appears.
   const pending = join(directory, `pending-${nonce}.log`)
-  const descriptor = openSync(pending, "a")
+  const descriptor = openSync(pending, "ax", 0o600)
 
   let child: ChildProcess
   try {

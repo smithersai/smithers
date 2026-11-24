@@ -1,6 +1,6 @@
 import { Model } from "@smthrs/model"
 import type { ContextPreflight } from "@smthrs/rpc"
-import { Effect, Stream } from "effect"
+import { Effect, Metric, Stream } from "effect"
 import { HttpEffect } from "effect/http"
 import { expect, test, vi } from "vitest"
 import { environmentModelResolver } from "../src/EnvironmentResolver.ts"
@@ -8,7 +8,8 @@ import {
   createModelTurnHandler,
   MODEL_HOST_CONTEXT_SELECT_PATH,
   type ModelTurnHandlerOptions,
-  type ModelTurnResolver
+  type ModelTurnResolver,
+  turnFailures
 } from "./fixtures/durable.ts"
 
 /** The handler as a host serves it: a Fetch handler. */
@@ -128,7 +129,10 @@ test("selection without a resolved selector or with invalid choices fails withou
     callbackBaseUrl: "http://callback.test",
     resolve: () => Effect.succeed({ model: fastModel(answer), options: { modelId: "coding" } })
   })
+  const counter = Metric.withAttributes(turnFailures, { failure: "ModelFailure", operation: "context_select" })
+  const before = (await Effect.runPromise(Metric.value(counter))).count
   const refused = await without(post(body()))
+  expect((await Effect.runPromise(Metric.value(counter))).count).toBe(before + 1)
   expect(refused.status).toBe(502)
   expect(await refused.json()).toEqual({ status: "error", code: "turn_failed" })
   expect(answer).toHaveLength(0)

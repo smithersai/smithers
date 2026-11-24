@@ -11,8 +11,9 @@
  * - a file inside the flow's source root that is not one of the measured
  *   copies the loader wrote is refused, an original of the measured closure
  *   included, because its live bytes are not the bytes that were measured;
- * - an installed package (a path through a `node_modules` directory) loads as
- *   a static package import does;
+ * - a `node_modules` directory beneath the source root is held the same way:
+ *   it is committed beside the flow and no scan measured it, so it could
+ *   change after approval under the same execution digest;
  * - every other file, such as the TypeScript, linter or bundler configuration
  *   of the repository a flow works on, loads with the host's authority.
  *

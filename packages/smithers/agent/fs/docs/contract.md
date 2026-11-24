@@ -160,6 +160,13 @@ Single quotes are literal: a backslash inside them is an ordinary character, so
 a Windows path or a regular expression survives unchanged. Unquoted and
 double-quoted text honor backslash escapes. Shell syntax is never evaluated.
 
+A bare `--name` whose schema type is boolean is `true` and never takes the
+next token, so `deploy --force prod` keeps `prod` positional, as Incur's own
+parser does. `--name=false` and `--no-name` spell `false`. Any other bare
+option takes the next token as its value when one follows. A first token that
+begins with `-` is an option, never a command name, and is not split on
+slashes.
+
 Quoted empty argument values are preserved. Route resolution snapshots the
 full argv under command-token bounds. Route-name restrictions apply while
 selecting a route prefix; unconsumed arguments retain their original text

@@ -82,6 +82,7 @@ const bookmarks = async (c: Client, names: Array<string> = []) =>
       "list",
       "-T",
       "if(!remote, name ++ \"\\t\" ++ if(normal_target, normal_target.change_id() ++ \"\\t\" ++ normal_target.commit_id(), \"\\t\") ++ \"\\n\")",
+      "--",
       ...names
     ])
   ).map((line) => {
@@ -105,14 +106,14 @@ local.status = async (c) => ({
 })
 local["bookmark list"] = async (c) => bookmarks(c)
 local["bookmark create"] = async (c, a, o) => {
-  await c.exec("jj", ["bookmark", "create", str(a.name), ...(o.change ? ["-r", str(o.change)] : [])])
+  await c.exec("jj", ["bookmark", "create", ...(o.change ? ["-r", str(o.change)] : []), "--", str(a.name)])
   return (await bookmarks(c, [str(a.name)]))[0] ?? { name: a.name, target_change_id: o.change || null }
 }
 local["bookmark delete"] = async (c, a) => {
   if (!(await bookmarks(c, [str(a.name)])).some((bookmark) => bookmark.name === a.name)) {
     throw new Refused({ fault: "user", code: "not_found", message: `Bookmark ${str(a.name)} was not found` })
   }
-  await c.exec("jj", ["bookmark", "delete", str(a.name)])
+  await c.exec("jj", ["bookmark", "delete", "--", str(a.name)])
   return { status: "deleted", name: a.name }
 }
 local["change list"] = async (c, _a, o) =>

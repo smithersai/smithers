@@ -562,6 +562,23 @@ describe("MarkdownEditor links", () => {
     expect(opened).toEqual(["docs/guide.md"]);
   });
 
+  test("a script, data or other unsafe scheme never navigates and never reaches the host", async () => {
+    const stub = stubEditor();
+    const opened: string[] = [];
+    await render(<MarkdownEditor value="x" readOnly fallback={false} loadEditor={stub.load}
+      onLinkClick={(href) => { opened.push(href); return false; }} />);
+    for (const href of ["javascript:alert(1)", " JaVaScRiPt:alert(1)", "java\nscript:alert(1)", "\u0001javascript:alert(1)", "data:text/html,x", "vbscript:x", "file:///etc/passwd"]) {
+      expect(click(renderedLink(href)).defaultPrevented).toBe(true);
+    }
+    expect(opened).toEqual([]);
+    // With no host handler the same rule holds; safe links keep the browser's behavior.
+    await render(<MarkdownEditor value="x" readOnly fallback={false} loadEditor={stubEditor().load} />);
+    expect(click(renderedLink("javascript:alert(1)")).defaultPrevented).toBe(true);
+    for (const href of ["https://example.com", "mailto:a@b.c", "docs/guide.md", "#usage", "?q=1"]) {
+      expect(click(renderedLink(href)).defaultPrevented).toBe(false);
+    }
+  });
+
   test("a link the host declines keeps the browser's own behavior", async () => {
     const stub = stubEditor();
     await render(<MarkdownEditor value="x" readOnly fallback={false} loadEditor={stub.load} onLinkClick={() => false} />);

@@ -1,8 +1,12 @@
 import { describe, expect, test } from "vitest"
 import {
+  AGENT_TURN_READ_LIMIT_MAX,
   AgentConversationBatchSchema,
+  AgentConversationReplaySchema,
   AgentTurnBatchRejected,
+  AgentTurnJournalCommandSchema,
   agentTurnJournalDigestInput,
+  AgentTurnJournalReplySchema,
   AgentTurnJournalRequestSchema,
   projectAgentTurnBatch
 } from "../src/AgentTurnJournal.ts"
@@ -129,6 +133,47 @@ describe("AgentConversationBatchSchema", () => {
     const parsed = AgentConversationBatchSchema.safeParse({ ...batch, frames: [{ runId: "run-1", type: "teleport" }] })
     expect(parsed.success).toBe(false)
     expect(parsed.error?.issues.every((issue) => issue.path[0] === "frames" && issue.path[1] === 0)).toBe(true)
+  })
+})
+
+describe("journal reply pages", () => {
+  const cursor = head.cursor
+  const batches = (count: number) => Array.from({ length: count }, (_, index) => ({ ...batch, batch: index + 1 }))
+  const page = (count: number) => ({
+    status: "ok" as const,
+    after: cursor,
+    next: cursor,
+    head: cursor,
+    terminal: false,
+    more: true,
+    batches: batches(count)
+  })
+  const read = (limit: number) => ({
+    operation: "read",
+    ownerHash: hash("1"),
+    accessHash: hash("2"),
+    after: null,
+    limit
+  })
+
+  test("a read asks for at most one page, and a reply carries at most that many batches", () => {
+    expect(AGENT_TURN_READ_LIMIT_MAX).toBe(16)
+    expect(AgentTurnJournalCommandSchema.safeParse(read(AGENT_TURN_READ_LIMIT_MAX)).success).toBe(true)
+    expect(AgentTurnJournalCommandSchema.safeParse(read(AGENT_TURN_READ_LIMIT_MAX + 1)).success).toBe(false)
+    const full = AgentTurnJournalReplySchema.parse(page(AGENT_TURN_READ_LIMIT_MAX))
+    expect(full.status === "ok" && full.batches.length).toBe(AGENT_TURN_READ_LIMIT_MAX)
+    const over = AgentTurnJournalReplySchema.safeParse(page(AGENT_TURN_READ_LIMIT_MAX + 1))
+    expect(over.success).toBe(false)
+  })
+
+  test("a conversation replay page has the same bound", () => {
+    const replay = (count: number) => ({ status: "ok", conversationId: "c-1", userText: "hi", page: page(count) })
+    expect(AgentConversationReplaySchema.parse(replay(AGENT_TURN_READ_LIMIT_MAX)).page.batches).toHaveLength(
+      AGENT_TURN_READ_LIMIT_MAX
+    )
+    const over = AgentConversationReplaySchema.safeParse(replay(AGENT_TURN_READ_LIMIT_MAX + 1))
+    expect(over.success).toBe(false)
+    expect(over.error?.issues.map((issue) => issue.path.join("."))).toEqual(["page.batches"])
   })
 })
 

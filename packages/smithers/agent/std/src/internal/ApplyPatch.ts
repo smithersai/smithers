@@ -521,7 +521,11 @@ const computeReplacements = (
     }
 
     if (chunk.oldLines.length === 0) {
-      const insertionIdx = originalLines.length > 0 && originalLines[originalLines.length - 1] === ""
+      // A chunk of additions alone goes after the `@@` line that places it.
+      // With no such line there is nowhere to put it but the end of the file.
+      const insertionIdx = chunk.changeContext !== undefined
+        ? lineIndex
+        : originalLines.length > 0 && originalLines[originalLines.length - 1] === ""
         ? originalLines.length - 1
         : originalLines.length
       replacements.push([insertionIdx, 0, [...chunk.newLines], []])

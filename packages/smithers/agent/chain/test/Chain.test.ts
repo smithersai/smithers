@@ -2,8 +2,9 @@ import * as Effect from "effect/Effect"
 import * as Fiber from "effect/Fiber"
 import * as Layer from "effect/Layer"
 import type { QuickJSWASMModule } from "quickjs-emscripten-core"
-import { describe, expect, it } from "vitest"
+import { describe, expect, expectTypeOf, it } from "vitest"
 import * as Author from "../src/Author.ts"
+import * as Authorize from "../src/Authorize.ts"
 import * as Catalog from "../src/Catalog.ts"
 import * as Chain from "../src/Chain.ts"
 import type * as Event from "../src/Event.ts"
@@ -63,6 +64,7 @@ describe("Chain", () => {
         Effect.flip(Chain.run({ chain, goal: "root" })).pipe(
           Effect.provide(Layer.mergeAll(
             Journal.layerNoop(),
+            Authorize.layerAllowAll,
             Catalog.layer([]),
             Author.layerMock([]),
             ScriptRunner.layerInProcess
@@ -82,7 +84,11 @@ describe("Chain", () => {
       ["maxCallsPerLink", Number.NaN],
       ["maxCallsPerLink", Number.POSITIVE_INFINITY],
       ["maxCallsPerLink", -1],
-      ["maxCallsPerLink", 0.5]
+      ["maxCallsPerLink", 0.5],
+      ["maxTotalCalls", Number.NaN],
+      ["maxTotalCalls", Number.POSITIVE_INFINITY],
+      ["maxTotalCalls", -1],
+      ["maxTotalCalls", 2.5]
     ] as const
   )("refuses %s %s before running anything", async (budget, value) => {
     const grep = countingEntry("grep", 1)
@@ -189,6 +195,7 @@ describe("Chain", () => {
       })
       const layers = Layer.mergeAll(
         Layer.succeed(Journal.Journal)(journal),
+        Authorize.layerAllowAll,
         Author.layerMock([flow(`await ctx.call("write", {})`, `return done("ok")`)]),
         ScriptRunner.layerInProcess,
         Catalog.layer([entry])
@@ -741,7 +748,12 @@ describe("Chain journal ownership", () => {
   )
 
   const sharedLayers = (entries: ReadonlyArray<Catalog.Entry>, journal: Layer.Layer<Journal.Journal>) => {
-    const base = Layer.mergeAll(journal, Author.layerFn(() => twoCalls), ScriptRunner.layerInProcess)
+    const base = Layer.mergeAll(
+      journal,
+      Author.layerFn(() => twoCalls),
+      ScriptRunner.layerInProcess,
+      Authorize.layerAllowAll
+    )
     return Layer.mergeAll(base, Catalog.layer(entries).pipe(Layer.provide(base)))
   }
 
@@ -859,7 +871,7 @@ describe("Chain journal cost", () => {
     author: Layer.Layer<Author.Author>,
     catalog: Layer.Layer<Catalog.Catalog, never, Journal.Journal | Author.Author | ScriptRunner.ScriptRunner>
   ) => {
-    const base = Layer.mergeAll(journal, author, ScriptRunner.layerInProcess)
+    const base = Layer.mergeAll(journal, author, ScriptRunner.layerInProcess, Authorize.layerAllowAll)
     return Layer.mergeAll(base, catalog.pipe(Layer.provide(base)))
   }
 
@@ -1025,7 +1037,7 @@ describe("Chain recovery bounds", () => {
     })
     const outcome = await Effect.runPromise(
       Chain.run(options).pipe(
-        Effect.provide(Layer.mergeAll(journal, author, Catalog.layer([]), runner))
+        Effect.provide(Layer.mergeAll(journal, author, Catalog.layer([]), runner, Authorize.layerAllowAll))
       )
     )
     return { events, outcome }
@@ -1234,6 +1246,7 @@ describe("Chain recovery bounds", () => {
       Effect.flip(Chain.run({ goal, context: [prefix + "new context"] })).pipe(
         Effect.provide(Layer.mergeAll(
           Journal.layerMemory(events.slice(0, 2)),
+          Authorize.layerAllowAll,
           Author.layerNoop(),
           Catalog.layer([]),
           ScriptRunner.layerInProcess
@@ -1296,5 +1309,47 @@ describe("Chain handler payload", () => {
     expect(settled.map((event) => event.payload)).toEqual([{ target: "authorized" }])
     expect(received).toEqual([{ target: "authorized" }])
     expect(contexts.at(-1)).toEqual(["authorized"])
+  })
+
+  // R1-Fable-D2-090: the seam is required. A host with no policy mounts
+  // `Authorize.layerAllowAll` by name; a chain with no seam does not build.
+  it("requires the Authorize seam: a chain without the layer neither builds nor runs a handler", async () => {
+    type Needs<T> = T extends Effect.Effect<unknown, unknown, infer R> ? R : never
+    expectTypeOf<Authorize.Authorize>().toExtend<Needs<ReturnType<typeof Chain.run>>>()
+    const grep = countingEntry("grep", 1)
+    const unguarded = Layer.mergeAll(
+      Journal.layerMemory(),
+      Author.layerMock([flow(`return done(await ctx.call("grep", {}))`)]),
+      ScriptRunner.layerInProcess,
+      Catalog.layer([grep.entry])
+    )
+    const run = Chain.run({ goal: "no seam mounted" }).pipe(Effect.provide(unguarded))
+    expectTypeOf<Needs<typeof run>>().toEqualTypeOf<Authorize.Authorize>()
+    // Past the type system the run still fails closed: the missing service
+    // is a defect, raised before the author or any handler is reached.
+    const exit = await Effect.runPromiseExit(run as Effect.Effect<Outcome.RunResult, unknown>)
+    expect(exit._tag).toBe("Failure")
+    expect(grep.count()).toBe(0)
+    const allowed = await Effect.runPromise(run.pipe(Effect.provide(Authorize.layerAllowAll)))
+    expect(allowed).toEqual({ _tag: "Done", value: 1 })
+    expect(grep.count()).toBe(1)
+  })
+
+  it("parks with quota when one chain spends its tree budget", async () => {
+    const grep = countingEntry("grep", 1)
+    const { events, outcome } = await runChain({
+      author: Author.layerMock([
+        flow(`await ctx.call("grep", {})`, `await ctx.call("grep", {})`, `return done("unreachable")`)
+      ]),
+      entries: [grep.entry],
+      maxTotalCalls: 2
+    })
+    // The author call and one grep spend the budget; the second grep is refused.
+    expect(outcome).toEqual({
+      _tag: "Park",
+      reason: { code: "quota", message: "the chain tree exhausted its budget of 2 calls" }
+    })
+    expect(grep.count()).toBe(1)
+    expect(events.filter((event) => event._tag === "CallSettled")).toHaveLength(2)
   })
 })

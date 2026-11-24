@@ -659,7 +659,7 @@ const statusError = (
       : chooseReset(candidates)
     const details = responseBody(body, request, redactedNames)
     const fields = providerFields(parsed)
-    const classified = classifyError?.(response.status, body ?? "")
+    const classified = classifyError?.(response.status, body ?? "", now)
     const classifiedMessage = classified === undefined
       ? undefined
       : responseBody(classified.message, request, redactedNames).body
@@ -831,7 +831,7 @@ const retryFailures = <A, R>(
  * @since 0.1.0
  * @slop
  */
-export type ErrorClassifier = (status: number, body: string) => ModelError
+export type ErrorClassifier = (status: number, body: string, now?: number) => ModelError
 
 /**
  * Per-request execution policy supplied by the composed route.

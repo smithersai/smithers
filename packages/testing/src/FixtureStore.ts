@@ -229,15 +229,15 @@ export const makeFile = (path: string): Effect.Effect<
       }
     })
 
-    // Called only while holding the path lock. Publication can precede journal
+    // Publication can precede journal
     // cleanup when a writer dies, so skip already-published indexes.
     const readFixture = (): Effect.Effect<Option.Option<Fixture>> =>
       Effect.gen(function*() {
+        const journalPath = `${path}.journal`
+        const journal = yield* readOptional(journalPath, true)
         const text = yield* readOptional(path)
         const initial = text === undefined ? undefined : yield* decodeFile(path, yield* parse(path, text))
         const calls = [...(initial?.calls ?? [])]
-        const journalPath = `${path}.journal`
-        const journal = yield* readOptional(journalPath, true)
         if (journal !== undefined) {
           const end = journal.lastIndexOf("\n") + 1
           const complete = journal.slice(0, end)
@@ -256,7 +256,7 @@ export const makeFile = (path: string): Effect.Effect<
             if (index === calls.length) calls.push(decoded.calls[0]!)
             previous = index
           }
-          if (end !== journal.length) {
+          if (locked && end !== journal.length) {
             yield* io(
               journalPath,
               withJournal(
@@ -309,7 +309,7 @@ export const makeFile = (path: string): Effect.Effect<
         )
         : Effect.void
     )
-    const initial = yield* Effect.acquireUseRelease(acquire, readFixture, () => release)
+    const initial = yield* io(path, refuseSymlinkedDirs).pipe(Effect.andThen(readFixture))
     const state = yield* SynchronizedRef.make(initial)
     const current = (value: Option.Option<Fixture>) =>
       locked ? Effect.succeed(value) : acquire.pipe(Effect.andThen(readFixture))
@@ -335,11 +335,9 @@ export const makeFile = (path: string): Effect.Effect<
       flush: () =>
         SynchronizedRef.updateEffect(state, (value) =>
           Effect.gen(function*() {
-            const latest = yield* current(value)
-            if (Option.isSome(latest) && (yield* readOptional(`${path}.journal`, true)) !== undefined) {
-              yield* writeFixture(latest.value)
-            }
-            return latest
+            if (!locked) return value
+            yield* writeFixture(Option.getOrThrow(value))
+            return value
           }).pipe(Effect.ensuring(release))).pipe(Effect.uninterruptible)
     }
   }).pipe(Effect.uninterruptible)

@@ -307,16 +307,17 @@ export const scrubExchange = (exchange: Exchange, options: Pick<Options, "secret
   for (const [name, value] of Object.entries(exchange.response.headers)) {
     const lower = name.toLowerCase()
     if (keptHeaders.has(lower)) {
+      const cleaned = redact(replaceSecrets(value, secrets)) as string
       headers[lower] = lower === "location"
-        ? scrubLocation(value, exchange.request.url)
-        : value
+        ? scrubLocation(cleaned, exchange.request.url)
+        : cleaned
     }
   }
   return {
     request: scrubRequest(exchange.request, options),
     response: {
       status: exchange.response.status,
-      headers: redact(replaceSecrets(headers, secrets)) as Record<string, string>,
+      headers,
       body: redact(replaceSecrets(exchange.response.body, secrets))
     }
   }

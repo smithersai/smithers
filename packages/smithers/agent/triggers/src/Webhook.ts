@@ -11,6 +11,8 @@ import { InvalidInput, Unauthorized } from "@smthrs/control/ControlError"
 import type { Receipt, RunSummary } from "@smthrs/control/ControlSchema"
 import type { CredentialRef } from "@smthrs/control/Credential"
 import * as ControlWebhook from "@smthrs/control/WebhookChannel"
+import * as Clock from "effect/Clock"
+import * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
 import type * as Redacted from "effect/Redacted"
 import * as Schema from "effect/Schema"
@@ -40,15 +42,58 @@ export const constantTimeEqual = (expected: Uint8Array, supplied: Uint8Array): b
 }
 
 /**
+ * The signed timestamp a request must carry, and how old it may be.
+ *
+ * A signature over the body alone verifies forever, so a captured request
+ * replays for as long as the secret lives. A sender that signs
+ * `timestamp.body` closes that: name the header carrying the timestamp here,
+ * sign it inside `SignatureConfig.expected` (which receives the headers), and
+ * the verifier refuses a request whose timestamp is absent, unreadable, or
+ * further than `tolerance` from the `Clock`, in either direction.
+ *
+ * `parse` reads the header's value as epoch milliseconds and answers
+ * `undefined` for a value it cannot read. It defaults to
+ * {@link epochSeconds}, the whole decimal seconds most senders use. A sender
+ * that folds the timestamp into the signature header itself (`t=...,v1=...`)
+ * names that header and supplies its own `parse`.
+ *
+ * The check proves freshness only when `expected` binds the same header into
+ * the signature. A timestamp the signature does not cover is the sender's to
+ * rewrite.
+ *
+ * @category models
+ * @since 1.0.0-rc.18
+ */
+export interface TimestampConfig {
+  readonly header: string
+  readonly tolerance: Duration.Duration
+  readonly parse?: ((value: string) => number | undefined) | undefined
+}
+
+/**
+ * Reads a header value of whole decimal epoch seconds as epoch milliseconds,
+ * and answers `undefined` for anything else.
+ *
+ * @category verification
+ * @since 1.0.0-rc.18
+ */
+export const epochSeconds = (value: string): number | undefined =>
+  /^\d{1,12}$/.test(value) ? Number(value) * 1_000 : undefined
+
+/**
  * Configuration for a raw-byte signature verifier.
  *
- * `expected` receives a private copy of the request bytes and the redacted
- * credential reference the channel was declared with, and answers with the
- * signature bytes the request must carry in `header`. It returns an Effect so
- * the secret is resolved through the host's resolver per request rather than
- * captured in a closure at declaration time, and so a resolution or HMAC
- * failure arrives as a typed `verification_failed` instead of a defect that
- * kills the fiber.
+ * `expected` receives a private copy of the request bytes, the redacted
+ * credential reference the channel was declared with, and a private copy of
+ * the request headers, and answers with the signature bytes the request must
+ * carry in `header`. It returns an Effect so the secret is resolved through
+ * the host's resolver per request rather than captured in a closure at
+ * declaration time, and so a resolution or HMAC failure arrives as a typed
+ * `verification_failed` instead of a defect that kills the fiber.
+ *
+ * The headers let `expected` sign more than the body: a `v0:{timestamp}:{body}`
+ * scheme reads the timestamp header and folds it into the signed bytes. Pair
+ * it with `timestamp`, which refuses a request older than a tolerance.
  *
  * @category models
  * @since 0.1.0
@@ -57,8 +102,10 @@ export interface SignatureConfig {
   readonly header: string
   readonly expected: (
     body: Uint8Array,
-    credential: Redacted.Redacted<CredentialRef>
+    credential: Redacted.Redacted<CredentialRef>,
+    headers: Channel.RawInbound["headers"]
   ) => Effect.Effect<Uint8Array, TriggerError>
+  readonly timestamp?: TimestampConfig | undefined
 }
 
 /**
@@ -105,6 +152,10 @@ const headerValue = (
  * zero-length expected signature is a misconfigured credential, never a valid
  * one, so the door stays closed instead of opening for everyone.
  *
+ * With `timestamp` configured, a request whose timestamp header is absent,
+ * unreadable, or further than the tolerance from the `Clock` is refused before
+ * `expected` runs.
+ *
  * Every refusal carries the same message, `webhook signature in <header> did
  * not verify`, whatever the reason. A failure raised by `expected` is kept in
  * `cause` only: its message names the credential reference or the resolver
@@ -123,23 +174,41 @@ export const makeSignatureVerifier = (config: SignatureConfig): Channel.Verify =
         ...(cause === undefined ? {} : { cause })
       })
     )
+  const timestamp = config.timestamp
+  // Whether the request's timestamp is within the tolerance of the clock. A
+  // timestamp from the future is as unverifiable as a stale one: a sender
+  // that may post-date a request chooses how long its capture stays valid.
+  const fresh: (headers: Channel.RawInbound["headers"]) => Effect.Effect<boolean> = timestamp === undefined
+    ? () => Effect.succeed(true)
+    : (headers) => {
+      const stated = headerValue(headers, timestamp.header)
+      const at = stated === undefined ? undefined : (timestamp.parse ?? epochSeconds)(stated)
+      if (at === undefined || !Number.isFinite(at)) return Effect.succeed(false)
+      return Effect.map(
+        Clock.currentTimeMillis,
+        (now) => Math.abs(now - at) <= Duration.toMillis(timestamp.tolerance)
+      )
+    }
   return Effect.suspend(() => {
     const supplied = headerValue(raw.headers, config.header)
     if (supplied === undefined || supplied.length === 0) {
       return refuse()
     }
     const actual = new TextEncoder().encode(supplied)
-    // The verifier gets its own copy: nothing it does to these bytes can reach
-    // the buffer that is about to be fingerprinted and decoded.
-    return config.expected(ownedCopy(raw.body), credential).pipe(
-      Effect.matchEffect({
-        onFailure: (error) => refuse(error),
-        onSuccess: (expected) =>
-          expected.length > 0 && constantTimeEqual(expected, actual)
-            ? Effect.void
-            : refuse()
-      })
-    )
+    return Effect.flatMap(fresh(raw.headers), (isFresh) =>
+      isFresh
+        // The verifier gets its own copies: nothing it does to these bytes or
+        // headers can reach what is about to be fingerprinted and decoded.
+        ? config.expected(ownedCopy(raw.body), credential, { ...raw.headers }).pipe(
+          Effect.matchEffect({
+            onFailure: (error) => refuse(error),
+            onSuccess: (expected) =>
+              expected.length > 0 && constantTimeEqual(expected, actual)
+                ? Effect.void
+                : refuse()
+          })
+        )
+        : refuse())
   })
 }
 

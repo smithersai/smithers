@@ -416,7 +416,7 @@ class Refused extends Data.TaggedError("Refused")<{
 | `Connection` | `url: string`, `secret?: Redacted<string>`, `secretAs?: SecretAs`, `sourceId?: string`                                                                               |
 | `SecretAs`   | `"parameter"` (Electric's `secret` query parameter; the default) or `"bearer"` (`authorization: Bearer <secret>`, for a gateway in front of Electric)                |
 | `Shape`      | `table: string`, `where?: string`, `params?: Readonly<Record<string, string>>`, `columns?: ReadonlyArray<string>` (the only columns sent; every column when omitted) |
-| `Cache`      | `"no-store"` (every response `private, no-store`; the default) or `"public"` (Electric's caching headers pass through)                                               |
+| `Cache`      | `"no-store"` (every response `private, no-store`; the default) or `"public"` (Electric's caching headers pass through, unless `rowAccess` is set)                    |
 | `Options<R>` | everything in `Connection`, and `shape: Shape \| Effect<Shape, Refused, R>`, `cache?: Cache`, `name?: string`, `metric?: Metric.Counter<number>`                     |
 
 `make` serves one shape, fixed or decided per request, and answers a

@@ -1300,7 +1300,9 @@ describe("durable signal admission and engine observation", () => {
     const directory = await mkdtemp(join(tmpdir(), "smithers-signals-"))
     try {
       const controlLayer = SqlControlRuntime.layer({
-        flows: [{ flowId: "system/test", description: "test", deployClass: false, envelope }]
+        flows: [{ flowId: "system/test", description: "test", deployClass: false, envelope }],
+        // A caller that names no principal is stamped `anonymous`, which the default approval authority refuses.
+        principal: { id: "local", kind: "operator" }
       }).pipe(
         Layer.provide(fileBundle(join(directory, "control.db"))),
         Layer.provide(NodeCrypto.layer),

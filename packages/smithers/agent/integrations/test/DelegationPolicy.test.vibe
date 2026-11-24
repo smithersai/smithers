@@ -55,6 +55,22 @@ describe("DelegationPolicy.permits", () => {
     expect(permits(pull("vibelang/wiki-x"))).toBe(false)
     expect(permits(pull("ADA:vibelang/wiki-x"))).toBe(true)
   })
+  // Neon D2-005: a prefix test alone admitted `vibelang/../main`, which GitHub resolves to `main`.
+  for (const name of [
+    "vibelang/../main", "vibelang/./x", "vibelang//x", "vibelang/x/", "vibelang/.hidden", "vibelang/x.lock", "vibelang/a..b", "vibelang/x y",
+    "vibelang/x\tz", "vibelang/x?ref=main", "vibelang/x#main", "vibelang/%2e%2e/main", "vibelang/x:y", "vibelang/" + "x".repeat(Policy.MAX_BRANCH),
+  ]) check(`refuses the branch %s for a commit and as a pull request head`.replace("%s", JSON.stringify(name)), () => {
+    expect(permits(commit("apps/vibelang/wiki/x.md", { branch: name }))).toBe(false)
+    expect(permits({ kind: "pull.create", repository: wiki, head: `ada:${name}`, base: "main", title: "t", body: "b" })).toBe(false)
+  })
+  check("judges a new branch by the whole name its prefix and label make", () => {
+    const branch = (prefix: string, label: string) => permits({ kind: "branch.create", repository: wiki, prefix, label, at: "a" })
+    expect([branch("vibelang/wiki-", ""), branch("vibelang/wiki/", "p"), branch("vibelang/wiki-", "a/b")]).toEqual([true, true, true])
+    expect([
+      branch("vibelang/../main-", "p"), branch("vibelang/wiki-", "../../main"), branch("vibelang/wiki-", "a..b"), branch("vibelang/wiki-", "a b"),
+      branch("vibelang/wiki-", "x/.git"), branch("vibelang/wiki-", "a//b"), branch("vibelang/", "p"), branch("vibelang/wiki-", "x".repeat(Policy.MAX_BRANCH)),
+    ]).toEqual([false, false, false, false, false, false, false, false])
+  })
   check("refuses a label outside the prefix, and an empty label list", () => {
     expect(permits({ kind: "label.create", repository: issues, name: "bug", color: "000000" })).toBe(false)
     expect(permits({ kind: "label.add", repository: issues, number: 1, labels: ["vibelang:task", "bug"] })).toBe(false)
@@ -80,7 +96,19 @@ describe("DelegationPolicy.readTarget", () => {
     "/user", "/repos/ada", "/repos/smithersai/secret", "/repos/eve/smithers", "/repos/ada/private", "/repos/smithersai/vibelang/../secret",
     "/repos/smithersai/vibelang/%2e%2e/secret", "/repos/smithersai/vibelang/contents/.\t./.\t./.\t./.\t./user/emails",
     "/repos/smithersai/vibelang/contents/.\n./.\n./.\n./.\n./user", "/repos/smithersai/vibelang/contents/.\r./.\r./secret", "/repos/smithersai/vibelang/contents/a\x7f", "https://api.github.com/repos/smithersai/vibelang", "/repos/smithersai/vibelangevil", "/repos/smithersai/vibelang/keys",
+    // Neon D2-005: only the pathname was judged, so a query, a fragment or any length rode along to GitHub.
+    "/repos/smithersai/vibelang/issues?state=all#frag", "/repos/smithersai/vibelang#/../../user", "/repos/smithersai/vibelang/issues?q=a b",
+    "/repos/smithersai/vibelang/issues?x=1\r\nhost: evil", "/repos/smithersai/vibelang/issues?next=/user", "/repos/smithersai/vibelang/issues?a=1?b=2",
+    "/repos/smithersai/vibelang/issues?" + "a".repeat(Policy.MAX_READ_PATH),
   ]) check(`refuses %s`.replace("%s", path), () => expect(read(path)).toBe(false))
+})
+
+describe("DelegationPolicy.readTarget bounds the whole path", () => {
+  check("admits a path of exactly MAX_READ_PATH characters and refuses one more", () => {
+    const base = "/repos/smithersai/vibelang/issues?q="
+    expect(Policy.readTarget(grants, "ada", base + "a".repeat(Policy.MAX_READ_PATH - base.length))).toBeDefined()
+    expect(Policy.readTarget(grants, "ada", base + "a".repeat(Policy.MAX_READ_PATH - base.length + 1))).toBeUndefined()
+  })
 })
 
 describe("DelegationPolicy.liveDelegation", () => {

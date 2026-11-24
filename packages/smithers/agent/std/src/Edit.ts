@@ -193,7 +193,7 @@ const lineSpan = (
   content: string,
   startLine: number,
   endLine: number
-): { readonly start: number; readonly end: number } | StdError.StdError => {
+): { readonly start: number; readonly end: number; readonly carriageReturns: boolean } | StdError.StdError => {
   const lines = sourceLines(content)
   if (endLine < startLine) return invalid(path, `endLine ${endLine} is before startLine ${startLine}`)
   if (startLine > lines.length) {
@@ -215,7 +215,20 @@ const lineSpan = (
   for (let index = 0; index < startLine - 1; index++) start += lines[index]!.length + 1
   let end = start
   for (let index = startLine - 1; index < last; index++) end += lines[index]!.length + (index === last - 1 ? 0 : 1)
-  return { start, end }
+  return { start, end, carriageReturns: lines.slice(startLine - 1, last).every((line) => line.endsWith("\r")) }
+}
+
+/**
+ * `text` with every line ending in `\r`, as the CRLF lines it replaces do.
+ *
+ * A line range ends before its last line's `\n` and so takes that line's
+ * `\r` with it. A replacement written with bare `\n`, which is what a model
+ * writes, would leave LF-only lines in a CRLF file; one that already carries
+ * its `\r` bytes is returned as it is.
+ */
+const withCarriageReturns = (text: string): string => {
+  const lines = text.replaceAll(/\r?\n/g, "\r\n")
+  return lines.endsWith("\r") ? lines : `${lines}\r`
 }
 
 /**
@@ -280,6 +293,7 @@ export const run = Effect.fn("Edit.run")(function*(
     })
 
     const targets: Array<{ readonly start: number; readonly end: number }> = []
+    let replacement = input.newString
     if (input.oldString !== undefined) {
       const located = Match.locate(content, input.oldString)
       if (located.length === 0) return yield* Effect.fail(miss(input.path, content, input.oldString, "oldString"))
@@ -309,12 +323,13 @@ export const run = Effect.fn("Edit.run")(function*(
         )
       }
       targets.push(span)
+      if (span.carriageReturns) replacement = withCarriageReturns(input.newString)
     }
 
     let replaced = ""
     let cursor = 0
     for (const span of targets) {
-      replaced += content.slice(cursor, span.start) + input.newString
+      replaced += content.slice(cursor, span.start) + replacement
       cursor = span.end
     }
     replaced += content.slice(cursor)
@@ -346,7 +361,7 @@ export const run = Effect.fn("Edit.run")(function*(
     // server before this one's.
     const server = yield* Diagnostics.sync(input.path, replaced)
     const first = targets[0]!
-    const applied = Match.hunk(replaced, first.start, first.start + input.newString.length)
+    const applied = Match.hunk(replaced, first.start, first.start + replacement.length)
     const output: typeof Output.Type = {
       path: input.path,
       replacements: targets.length,

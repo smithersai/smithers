@@ -195,7 +195,7 @@ describe("@smthrs/registry Authority, MarkdownFlow, NodeLoadGuard, ExecutionSnap
     expect(report._tag).toBe("Passed")
   })
 
-  it("NodeLoadGuard.layerWith refuses unmeasured loads inside protected root, allows permitted/node_modules/external loads, and fails when hooks are ignored", async () => {
+  it("NodeLoadGuard.layerWith refuses unmeasured and node_modules loads inside protected root, allows permitted/external loads, and fails when hooks are ignored", async () => {
     const tmpBase = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "smthrs-nlg-fuzz-")))
     const rootDir = path.join(tmpBase, "flows")
     const measuredFile = path.join(rootDir, "measured.mjs")
@@ -259,7 +259,7 @@ describe("@smthrs/registry Authority, MarkdownFlow, NodeLoadGuard, ExecutionSnap
                 return exit._tag === "Failure"
               }
               if (exit._tag !== "Success") return false
-              return exit.value === (target === "unmeasured")
+              return exit.value === (target === "unmeasured" || target === "node_modules")
             }),
           { seed: seed + 2, executions: Math.min(executions, 40) }
         )

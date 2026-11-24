@@ -25,10 +25,6 @@ import { CommitRefused, ProducerUnreachable, ProviderStartRefused, ReceiptMismat
 import type { ProducerError } from "./ModelHostError.ts"
 import type { ModelTurnOptions } from "./ModelTurnHost.ts"
 
-// performance.now() belongs to this host process. A distinct identity prevents
-// comparing receipts from a producer restart as though they shared a clock.
-const preflightClock = `host monotonic:${crypto.randomUUID()}`
-
 /**
  * One short-lived capability for an already accepted chat turn.
  *
@@ -124,6 +120,11 @@ const sha256Hex = async (value: string): Promise<string> => {
 
 const invalidReceipt = () => new ReceiptMismatch({ message: "chat producer commit returned an invalid receipt" })
 
+const discardBody = (response: Response) =>
+  Effect.tryPromise(async () => {
+    await response.body?.cancel()
+  }).pipe(Effect.ignore)
+
 const commitReply = (
   response: Response,
   phase: () => HostDiagnosticFields
@@ -138,8 +139,11 @@ const commitReply = (
           : Effect.fail(invalidReceipt())
       })
     )
-    : Effect.fail(
-      new CommitRefused({ status: response.status, message: `chat producer commit refused (${response.status})` })
+    : Effect.andThen(
+      discardBody(response),
+      Effect.fail(
+        new CommitRefused({ status: response.status, message: `chat producer commit refused (${response.status})` })
+      )
     )
 
 /**
@@ -149,6 +153,8 @@ const commitReply = (
  * @since 1.0.0-rc.0
  */
 export class DurableChatProducer {
+  // Pages of this producer share a monotonic clock identity across both phases.
+  private preflightClock?: string
   private cursor: AgentTurnJournal.AgentTurnCursor
   private readonly callbackBaseUrl: string
   private readonly grant: DurableChatGrant
@@ -209,11 +215,14 @@ export class DurableChatProducer {
               })
             ),
             Effect.flatMap((response) =>
-              response.ok ? Effect.void : Effect.fail(
-                new ProviderStartRefused({
-                  status: response.status,
-                  message: `chat provider start refused (${response.status})`
-                })
+              Effect.andThen(
+                discardBody(response),
+                response.ok ? Effect.void : Effect.fail(
+                  new ProviderStartRefused({
+                    status: response.status,
+                    message: `chat provider start refused (${response.status})`
+                  })
+                )
               )
             )
           ),
@@ -247,6 +256,7 @@ export class DurableChatProducer {
     result: ContextPreflight.ContextPreflightResult
   ): Effect.Effect<void, ProducerError | ModelError.ModelError> {
     return Effect.gen({ self: this }, function*() {
+      const preflightClock = this.preflightClock ??= `host monotonic:${crypto.randomUUID()}`
       const at = performance.now()
       const pages: Array<ContextPreflight.ContextPreflightResult> = []
       let current: ContextPreflight.ContextPreflightResult = { ...result, candidates: [], context: [] }

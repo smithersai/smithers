@@ -47,6 +47,12 @@ const importRules = ImportRules({
     },
     {
       kind: "forbidCalls",
+      files: ["test/**"],
+      callees: ["vi.mock", "vi.doMock", "vi.stubGlobal", "jest.mock"],
+      because: "test.behavioral: a test injects a faulty Effect service; it does not replace a module or a global."
+    },
+    {
+      kind: "forbidCalls",
       files: [
         "test/Supervisor.test.ts",
         "test/QuickJSMemoryAdmission.test.ts",

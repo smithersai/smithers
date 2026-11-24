@@ -300,7 +300,15 @@ const humanWaitStack = (interpreter: Layer.Layer<never, any, any>) => {
   )
   const plane = Layer.provideMerge(
     ControlLive.layer,
-    Layer.mergeAll(SqlControlRuntime.layer({}).pipe(Layer.orDie), NotificationQueue.layer, bridge, Registry.layerNoop())
+    Layer.mergeAll(
+      SqlControlRuntime.layer({
+        // This fixture runs commands as the explicitly configured local operator.
+        principal: { id: "local", kind: "operator" }
+      }).pipe(Layer.orDie),
+      NotificationQueue.layer,
+      bridge,
+      Registry.layerNoop()
+    )
   )
   return Layer.merge(plane, engine).pipe(Layer.provideMerge(database))
 }

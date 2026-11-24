@@ -33,13 +33,24 @@
  * `flows.alerts.failed` once per failure code and the alert is retried on the
  * next tick, because a refused page is not a delivered page.
  *
- * ## What a refusal costs
+ * Two failures are not retried on the next tick. A sink that says another
+ * attempt would be refused the same way, with `retryable: false` on its
+ * {@link AlertError}, has that page recorded as refused for good, and no later
+ * tick sends it. A sink that names a wait, with `retryAfterMillis`, is left
+ * alone until the wait has passed. Both are read back from the journal, so a
+ * restart does not forget them. A repeat of the page and a condition that
+ * re-opens are pages of their own, and each is tried once.
+ *
+ * ## What a full queue costs
  *
  * The queue can refuse the admission when a run already holds its capacity of
- * pending notifications. A tick that is refused pages nobody: the alert comes
- * back in {@link Tick.refused}, the refusal is journaled, and the next tick
- * tries again once a boundary has drained. Calling the sink anyway would page
- * about an alert the run will never see.
+ * pending notifications. The person is paged all the same: the alert comes
+ * back in {@link Tick.refused}, the refusal is journaled, and the sink is
+ * called, so the alert is in {@link Tick.delivered} or {@link Tick.failed} as
+ * well. A run that has stopped draining its inbox is the run the alert exists
+ * for, so the page never waits on the run reading its own copy. Once the page
+ * is delivered the alert is not admitted again, and the run's inbox does not
+ * hold it.
  *
  * ## Conditions are data
  *
@@ -86,4 +97,4 @@ export { probeDetector, probeEventType, probes, ProbeState, Report, report } fro
 export { AlertRuntime, layer, type RuntimeService, type Standing, type Tick } from "./AlertRuntime.ts"
 export { AlertError, FailureCode, layerNoop, Sink, type SinkService } from "./AlertSink.ts"
 export { type ChannelsSinkOptions, layerChannels, messageOf } from "./layerChannels.ts"
-export { defaultWebhookTimeout, layerWebhook } from "./layerWebhook.ts"
+export { defaultWebhookTimeout, layerWebhook, layerWebhookClient } from "./layerWebhook.ts"

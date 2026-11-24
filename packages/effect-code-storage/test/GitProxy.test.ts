@@ -250,6 +250,78 @@ describe("GitProxy.uploadPack", () => {
     expect(recorded.count(GitProxy.requests, { service: "info-refs", outcome: "4xx" })).toBe(1)
   })
 
+  test.each(
+    [
+      ["a 302", () => new Response("moved", { status: 302, headers: { location: "https://elsewhere.example/x" } })],
+      ["a 307", () => new Response(null, { status: 307, headers: { location: "https://elsewhere.example/x" } })],
+      ["an opaque answer with status 0", () => Response.error()]
+    ] as const
+  )("never follows a redirect with the credential: %s is a bodyless 502", async (_name, answer) => {
+    const redirects: Array<RequestRedirect | undefined> = []
+    const recorded = telemetry()
+    const seen: Array<string> = []
+    const fetch: typeof globalThis.fetch = async (input, init) => {
+      seen.push(String(input))
+      redirects.push(init?.redirect)
+      return answer()
+    }
+    const response = await Effect.runPromise(recorded.provide(
+      GitProxy.uploadPack(
+        HttpServerRequest.fromWeb(new Request(`${GUEST}/info/refs?service=git-upload-pack`)),
+        UPSTREAM
+      ).pipe(Effect.provide(httpClient(fetch)))
+    ))
+    const web = HttpServerResponse.toWeb(response)
+    expect(web.status).toBe(502)
+    expect(await web.text()).toBe("")
+    expect(web.headers.get("location")).toBeNull()
+    // One request, to the upstream the host chose, with following switched off at the transport.
+    expect(seen).toEqual(["https://acme.code.storage/github/o/n.git/info/refs?service=git-upload-pack"])
+    expect(redirects).toEqual(["manual"])
+    expect(recorded.count(GitProxy.requests, { service: "info-refs", outcome: "redirect" })).toBe(1)
+    expect(recorded.logs).toContainEqual({
+      message: ["git.proxy"],
+      annotations: expect.objectContaining({ service: "info-refs", outcome: "redirect", status: 502 })
+    })
+  })
+
+  test("keeps the host's other fetch defaults when it switches following off", async () => {
+    const inits: Array<RequestInit | undefined> = []
+    const fetch: typeof globalThis.fetch = async (_input, init) => {
+      inits.push(init)
+      return new Response("advertisement")
+    }
+    await Effect.runPromise(
+      GitProxy.uploadPack(
+        HttpServerRequest.fromWeb(new Request(`${GUEST}/info/refs?service=git-upload-pack`)),
+        UPSTREAM
+      ).pipe(
+        Effect.provide(httpClient(fetch)),
+        Effect.provideService(FetchHttpClient.RequestInit, { redirect: "follow", cache: "no-store" })
+      )
+    )
+    expect(inits[0]).toMatchObject({ redirect: "manual", cache: "no-store" })
+  })
+
+  test("records the body's end with the request's services when the server streams it with none", async () => {
+    const recorded = telemetry()
+    const fetch: typeof globalThis.fetch = async () => new Response("pack")
+    const response = await Effect.runPromise(recorded.provide(
+      GitProxy.uploadPack(
+        HttpServerRequest.fromWeb(new Request(`${GUEST}/git-upload-pack`, { method: "POST", body: "0000" })),
+        UPSTREAM
+      ).pipe(Effect.provide(httpClient(fetch)))
+    ))
+    expect(recorded.logs).toEqual([])
+    // The handler has returned. The body is consumed outside it, with an empty context: no logger, no registry.
+    expect(await HttpServerResponse.toWeb(response).text()).toBe("pack")
+    expect(recorded.count(GitProxy.requests, { service: "upload-pack", outcome: "ok" })).toBe(1)
+    expect(recorded.logs).toEqual([{
+      message: ["git.proxy"],
+      annotations: expect.objectContaining({ service: "upload-pack", outcome: "ok", status: 200 })
+    }])
+  })
+
   test("answers 502 when the upstream doesn't answer", async () => {
     const { response, recorded } = await proxy(new Request(`${GUEST}/info/refs?service=git-upload-pack`), () => "throw")
     expect(response.status).toBe(502)

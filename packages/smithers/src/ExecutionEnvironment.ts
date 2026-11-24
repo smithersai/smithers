@@ -15,6 +15,7 @@ import * as CliError from "./CliError.ts"
 import { Client } from "./internal/backend/Client.ts"
 import { quote, sshArgs } from "./internal/backend/SSH.ts"
 import { workspaceSSH } from "./internal/backend/Workspaces.ts"
+import { acquireLock, releaseLock } from "./internal/OwnerLock.ts"
 import * as Tree from "./runner/Tree.ts"
 
 /**
@@ -148,22 +149,20 @@ const update = async (
 ): Promise<void> => {
   const path = registryPath(source), directory = join(path, ".."), lock = `${path}.lock`
   await mkdir(directory, { recursive: true, mode: 0o700 })
-  try {
-    await mkdir(lock, { mode: 0o700 })
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "EEXIST") {
-      throw usage(`The environment registry is being changed; retry, or remove ${lock} after its writer exits`)
-    }
-    throw error
-  }
+  const token = `${process.pid}:${Date.now()}:${randomUUID()}`
+  const refusal = acquireLock(lock, path, token)
+  if (refusal) throw usage(refusal.reason)
   const temporary = `${path}.${randomUUID()}.tmp`
   try {
     const environments = change(await list(source))
     await writeFile(temporary, `${JSON.stringify({ version: 1, environments }, null, 2)}\n`, { mode: 0o600 })
     await rename(temporary, path)
   } finally {
-    await rm(temporary, { force: true })
-    await rm(lock, { recursive: true, force: true })
+    try {
+      await rm(temporary, { force: true })
+    } finally {
+      releaseLock(lock, token)
+    }
   }
 }
 

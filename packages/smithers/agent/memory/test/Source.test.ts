@@ -777,14 +777,58 @@ describe("Source", () => {
     expect(result.first.digest).toMatch(/^[0-9a-f]{64}$/)
   })
 
-  it("reads through the default source value", async () => {
-    const declared = await withMemory(
-      read({ lineageId: "default-source", iteration: 0, banks: [], query: "q" }, {
-        source: Source.source,
-        recall: Recall.makeNoop()
-      })
-    )
-    expect(declared.text).toBe("")
+  it("never answers one bank's frozen rows to a read of the same identity that names another bank", async () => {
+    const source = Source.make()
+    const options = { source, recall: Recall.makeNoop() }
+    const identity = { lineageId: "shared", iteration: 0, query: "q" }
+    const result = await withMemory(Effect.gen(function*() {
+      yield* note("user-alice", "alice-note", "alice secret")
+      yield* note("user-bob", "bob-note", "bob plan")
+      const alice = yield* read({ ...identity, banks: ["user-alice"] }, options)
+      const bob = yield* read({ ...identity, banks: ["user-bob"] }, options)
+      const primer = yield* read({ ...identity, banks: ["user-bob"], primerBanks: ["user-alice"] }, options)
+      yield* note("user-alice", "later", "written after the freeze")
+      const frozen = yield* read({ ...identity, banks: ["user-alice"] }, options)
+      return { alice, bob, primer, frozen }
+    }))
+
+    expect(result.alice.rows.map((row) => row.bank)).toEqual(["user-alice"])
+    expect(result.bob.rows.map((row) => [row.bank, row.text])).toEqual([["user-bob", "bob plan"]])
+    expect(result.primer.rows.map((row) => row.bank)).toEqual(["user-alice"])
+    expect(result.frozen).toEqual(result.alice)
+  })
+
+  it("refuses a recorded snapshot that names a bank the read did not request", async () => {
+    // The recorder holds one value per (lineageId, iteration), as the durable adapter does.
+    const recorded = new Map<string, SnapshotRecorder.Snapshot>()
+    const recorder = SnapshotRecorder.layer({
+      record: (identity, effect) =>
+        Effect.suspend(() => {
+          const key = `${identity.lineageId}/${identity.iteration}`
+          const snapshot = recorded.get(key)
+          return snapshot === undefined
+            ? effect.pipe(Effect.tap((value) => Effect.sync(() => recorded.set(key, value))))
+            : Effect.succeed(snapshot)
+        })
+    })
+    const identity = { lineageId: "recorded", iteration: 0, query: "q" }
+    const result = await withMemory(Effect.gen(function*() {
+      yield* note("user-alice", "alice-note", "alice secret")
+      yield* note("user-bob", "bob-note", "bob plan")
+      const options = { recall: Recall.makeNoop(), recorder }
+      const alice = yield* read({ ...identity, banks: ["user-alice"] }, options)
+      // A resumed process: a new source, the same recorder.
+      const replayed = yield* read({ ...identity, banks: ["user-alice"] }, options)
+      const bob = yield* Effect.exit(read({ ...identity, banks: ["user-bob"] }, options))
+      const retried = yield* Effect.exit(read({ ...identity, banks: ["user-bob"] }, options))
+      return { alice, replayed, bob, retried }
+    }))
+
+    expect(result.alice.rows.map((row) => row.text)).toEqual(["alice secret"])
+    expect(result.replayed).toEqual(result.alice)
+    expect(failure(result.bob)).toMatchObject({ _tag: "flows/memory/MemoryError", code: "invalid_namespace" })
+    // The refusal is not frozen as a success, so a retry is refused the same way.
+    expect(failure(result.retried)).toMatchObject({ code: "invalid_namespace" })
   })
   it("reads unrendered rows keyed for relevance: note id, then recall key", async () => {
     const snapshot = await withMemory(Effect.gen(function*() {

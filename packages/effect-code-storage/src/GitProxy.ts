@@ -19,7 +19,9 @@
  *   identity`) and streams it back with only its `Content-Type` and
  *   `Cache-Control`: the host's `fetch` decodes a compressed answer anyway
  *   (GitHub gzips `info/refs`), so a `Content-Encoding` passed on would name
- *   an encoding the bytes no longer have.
+ *   an encoding the bytes no longer have;
+ * - never follows a redirect, which would carry the credential to an origin
+ *   the host never chose: an upstream that answers 3xx is a 502 to the guest.
  *
  * Code Storage's guide to proxying git with your own auth has the same shape
  * (code.storage/docs/guides/proxy-git-with-your-own-auth, read 2026-10-20).
@@ -46,6 +48,7 @@ import * as Redacted from "effect/Redacted"
 import * as Stream from "effect/Stream"
 import * as GitRemote from "./GitRemote.ts"
 import { readAtMost } from "./internal/bounded.ts"
+import { isRedirect, withoutRedirects } from "./internal/redirects.ts"
 import { negotiation, packet, validBranch } from "./internal/scopedGit.ts"
 
 /**
@@ -61,8 +64,9 @@ export type Service = "info-refs" | "upload-pack"
  * The counter {@link uploadPack} updates once per request:
  * `git_proxy_requests`, by `service` (`info-refs`, `upload-pack`, or
  * `refused`) and `outcome` (`ok`, `refused`, the upstream's status class
- * such as `4xx`, `transport` when it didn't answer, or `broken` when its
- * answer broke off), once the answer's body has ended.
+ * such as `4xx`, `transport` when it didn't answer, `redirect` when it
+ * answered 3xx, or `broken` when its answer broke off), once the answer's
+ * body has ended.
  *
  * @category observability
  * @since 0.2.0
@@ -109,7 +113,7 @@ const statusClass = (status: number) => `${Math.floor(status / 100)}xx`
  * avoid exposing other objects through ACKs. Shallow, partial, and thin packs
  * and arbitrary capabilities are refused. A failed scoped ref read is 502.
  * Unscoped upstream failures come back as their
- * status; no answer at all is 502. Requires the host's `HttpClient`.
+ * status; no answer at all, or a redirect, is 502. Requires the host's `HttpClient`.
  *
  * @category proxy
  * @since 0.2.0
@@ -205,12 +209,16 @@ export const uploadPack = (
       outgoing = HttpClientRequest.setHeader(outgoing, "authorization", Redacted.value(upstream.authorization))
     }
     const client = yield* HttpClient.HttpClient
-    const response = yield* client.execute(outgoing).pipe(Effect.option)
+    const response = yield* client.execute(outgoing).pipe(withoutRedirects, Effect.option)
     if (response._tag === "None") {
       yield* done("transport", 502)
       return HttpServerResponse.empty({ status: 502 })
     }
     const answer = response.value
+    if (isRedirect(answer.status)) {
+      yield* done("redirect", 502)
+      return HttpServerResponse.empty({ status: 502 })
+    }
     yield* annotate(answer.status)
     const headers: Record<string, string> = {}
     for (const name of forwardedResponseHeaders) {
@@ -218,9 +226,14 @@ export const uploadPack = (
       if (value !== undefined) headers[name] = value
     }
     const outcome = answer.status < 300 ? "ok" : statusClass(answer.status)
+    // The server streams the body after this handler has returned, with its own services: the record runs with the
+    // request's, so it reaches the logger, metric registry and clock the request ran with.
+    const context = yield* Effect.context<never>()
     // Recorded once the body has ended, the way the guest saw it: whole, or broken off.
     const body = answer.stream.pipe(
-      Stream.onExit((exit) => record(Exit.isSuccess(exit) ? outcome : "broken", answer.status))
+      Stream.onExit((exit) =>
+        record(Exit.isSuccess(exit) ? outcome : "broken", answer.status).pipe(Effect.provideContext(context))
+      )
     )
     return HttpServerResponse.stream(body, { status: answer.status, headers })
   }).pipe(Effect.withSpan("GitProxy.uploadPack", { kind: "server" }))

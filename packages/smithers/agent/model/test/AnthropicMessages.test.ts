@@ -301,15 +301,17 @@ describe("AnthropicMessages streaming", () => {
         index: 0,
         delta: { type: "signature_delta", signature: "sig_final" }
       }),
+      JSON.stringify({ type: "content_block_delta", index: 0, delta: { type: "signature_delta", signature: "_tail" } }),
       JSON.stringify({ type: "content_block_stop", index: 0 }),
       JSON.stringify({ type: "message_delta", delta: { stop_reason: "end_turn" } }),
       JSON.stringify({ type: "message_stop" })
     ])
     expect(ModelEvent.settledMessage(events).message.content).toEqual([
-      { type: "thinking", text: "Inspect carefully", signature: "sig_final" }
+      { type: "thinking", text: "Inspect carefully", signature: "sig_final_tail" }
     ])
     expect(events.filter((event) => event.type === "thinking-start")).toEqual([
-      { type: "thinking-start", id: "thinking-0", signature: "sig_final" }
+      { type: "thinking-start", id: "thinking-0", signature: "sig_final" },
+      { type: "thinking-start", id: "thinking-0", signature: "sig_final_tail" }
     ])
   })
 
@@ -535,6 +537,7 @@ describe("AnthropicMessages streaming", () => {
     ])).toEqual([
       { type: "thinking-start", id: "thinking-0", signature: "sig_0" },
       { type: "thinking-delta", id: "thinking-0", text: "pre" },
+      { type: "thinking-start", id: "thinking-0", signature: "sig_0sig_1" },
       { type: "thinking-delta", id: "thinking-0", text: " after" },
       { type: "thinking-end", id: "thinking-0" }
     ])
@@ -1174,6 +1177,14 @@ describe("AnthropicMessages body lowering", () => {
         }
       })
     )
+    const datedByCaller = AnthropicMessages.protocol.classifyError(
+      429,
+      JSON.stringify({
+        error: { message: "usage limits", details: { error_code: "enforced_spend_limit_reached" } }
+      }),
+      Date.UTC(2030, 0, 15)
+    )
+    expect(datedByCaller.resetAtEpochMillis).toBe(Date.UTC(2030, 1, 1))
     expect(stale.resetAtEpochMillis).toBe(undated.resetAtEpochMillis)
   })
 
@@ -1415,6 +1426,19 @@ describe("AnthropicMessages generation budget and effort", () => {
     expect(lowered).not.toHaveProperty("output_config")
     expect(lowered).not.toHaveProperty("thinking")
   })
+
+  it.each(["temperature", "topP", "topK", "thinkingBudget"] as const)(
+    "rejects unsupported %s on adaptive-only models",
+    (key) => {
+      const error = Effect.runSync(
+        AnthropicMessages.protocol.body.from(request("claude-haiku-5-5", { [key]: 1 }), { native: true }).pipe(
+          Effect.flip
+        )
+      )
+      expect(error).toMatchObject({ code: "invalid_request", path: `params.${key}` })
+      expect(body(request("claude-haiku-5-5", { reasoningEffort: "xhigh" })).output_config).toEqual({ effort: "xhigh" })
+    }
+  )
 
   it("keeps an explicit thinking budget ahead of adaptive thinking", () => {
     const lowered = body(request("claude-opus-4-6", { reasoningEffort: "high", thinkingBudget: 2048 }))

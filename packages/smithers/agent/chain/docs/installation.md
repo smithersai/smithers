@@ -32,17 +32,21 @@ import * as Catalog from "@smthrs/chain/Catalog"
 
 ## The services a run needs
 
-`Chain.run` requires four services in its environment, and picks up two
-optional seams when they are mounted:
+`Chain.run` requires five services in its environment, and picks up one
+optional seam when it is mounted:
 
-| Service                     | Layer you mount                                          | Required |
-| --------------------------- | -------------------------------------------------------- | -------- |
-| `Journal.Journal`           | `Journal.layerMemory()` or a durable journal of your own | Yes      |
-| `Catalog.Catalog`           | `Catalog.layer(entries)` or a composed catalog           | Yes      |
-| `Author.Author`             | `ModelAuthor.layer(config)` over `Model.Model`           | Yes      |
-| `ScriptRunner.ScriptRunner` | `QuickJsRunner.layer()` (production)                     | Yes      |
-| `Authorize.Authorize`       | `Authorize.layerRules(rules)`                            | Optional |
-| `Steering.Steering`         | `Steering.layerMemory()` or a durable queue              | Optional |
+| Service                     | Layer you mount                                                      | Required |
+| --------------------------- | -------------------------------------------------------------------- | -------- |
+| `Journal.Journal`           | `Journal.layerMemory()` or a durable journal of your own             | Yes      |
+| `Catalog.Catalog`           | `Catalog.layer(entries)` or a composed catalog                       | Yes      |
+| `Author.Author`             | `ModelAuthor.layer(config)` over the durable `ModelAuthor.Step` port | Yes      |
+| `ScriptRunner.ScriptRunner` | `QuickJsRunner.layer()` (production)                                 | Yes      |
+| `Authorize.Authorize`       | `Authorize.layerRules(rules)`, or `Authorize.layerAllowAll` by name  | Yes      |
+| `Steering.Steering`         | `Steering.layerMemory()` or a durable queue                          | Optional |
+
+The authorization seam fails closed: a chain composed without it does not
+compile. A host that enforces policy elsewhere mounts
+`Authorize.layerAllowAll` and says so.
 
 Two layers in this table can fail while they are being built, before any run
 starts: `QuickJsRunner.layer()` fails with a `ScriptFailure` whose code is
@@ -51,10 +55,14 @@ catalog layer such as `SubChains.layer` dies at construction when the host's
 entries shadow reserved names. For the failure taxonomy, see
 [Troubleshooting](./troubleshooting.md).
 
-`ModelAuthor.layer(config)` needs `Model.Model` from the
-[@smthrs/model package](/api/model). Provide the model layer UNDER the author
-layer with `Layer.provide`, not beside it in `Layer.mergeAll`: siblings in one
-`mergeAll` cannot satisfy each other. The
+`ModelAuthor.layer(config)` needs the `ModelAuthor.Step` port: one model call
+run as a durable step. A production host binds it to its durable engine
+(`ModelStep.run` from `@smthrs/agent`), which retries a transient provider
+failure and seals the answer a resumed run replays.
+`ModelAuthor.layerStepUnsealed` binds it straight to a `Model.Model` from the
+[@smthrs/model package](/api/model) for tests and replay models. Provide the
+step layer UNDER the author layer with `Layer.provide`, not beside it in
+`Layer.mergeAll`: siblings in one `mergeAll` cannot satisfy each other. The
 [Quickstart](./quickstart.md#7-drive-it-with-a-model) shows the full
 composition, including the `Prompt.forCatalog` prefix a model-backed run
 must pass to `Chain.run`.

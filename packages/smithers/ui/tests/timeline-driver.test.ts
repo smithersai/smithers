@@ -489,3 +489,30 @@ for (const control of [".sui-tl-thumb", ".sui-tl-dot", "[data-lens]"]) test(`new
     expect(style(4).height).toBe("60px");
   } finally { driver.dispose(); host.remove(); }
 });
+
+test("levels that grow twice in a row run one funnel frame loop, and disposal cancels it", async () => {
+  const { timelineDriver } = await import("../src/chat/timelineDriver");
+  const { host, rail, box } = minimap(rowHtml(0));
+  // Count the frames the driver holds; each still runs on the real requestAnimationFrame.
+  const realRequest = globalThis.requestAnimationFrame, realCancel = globalThis.cancelAnimationFrame;
+  const held = new Set<number>();
+  globalThis.requestAnimationFrame = (run: FrameRequestCallback): number => {
+    const id: number = realRequest((time) => { held.delete(id); run(time); });
+    held.add(id);
+    return id;
+  };
+  globalThis.cancelAnimationFrame = (id: number): void => { held.delete(id); realCancel(id); };
+  const driver = timelineDriver(rail, box);
+  try {
+    for (const levels of [2, 3, 4]) driver.sync({ ids: ["grow-0"], asks: [], levels, spans: [], arcs: [] });
+    // At most the layout frame and the one follow loop; a loop per growth would hold one more each time.
+    expect(held.size).toBeLessThanOrEqual(2);
+    driver.dispose();
+    expect(held.size).toBe(0);
+  } finally {
+    globalThis.requestAnimationFrame = realRequest;
+    globalThis.cancelAnimationFrame = realCancel;
+    driver.dispose();
+    host.remove();
+  }
+});

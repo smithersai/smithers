@@ -4,11 +4,14 @@ import { InvalidInput } from "@smthrs/control/ControlError"
 import type { RunSummary } from "@smthrs/control/ControlSchema"
 import type { CredentialRef } from "@smthrs/control/Credential"
 import * as Cause from "effect/Cause"
+import * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as Redacted from "effect/Redacted"
 import * as Schema from "effect/Schema"
 import * as Stream from "effect/Stream"
+import { TestClock } from "effect/testing"
+import { createHmac } from "node:crypto"
 import { describe, expect, it } from "vitest"
 import * as Channel from "../src/Channel.ts"
 import { TriggerError } from "../src/TriggerError.ts"
@@ -531,6 +534,137 @@ describe("Webhook", () => {
       )
     )
     expect(verified._tag).toBe("Success")
+  })
+
+  // `expected` received the body only, so a sender's `timestamp.body` scheme
+  // could not be expressed and a captured request verified for as long as the
+  // secret lived. The headers reach `expected`, and `timestamp` checks the
+  // signed instant against the clock.
+  describe("a verifier that binds a timestamp", () => {
+    const secret = "shared-secret"
+    const now = Date.UTC(2026, 10, 23, 12, 0, 0)
+    const body = encode(JSON.stringify({ _tag: "start", flowId: "review", input: {} }))
+    /** The sender's signature: an HMAC over `v0:{timestamp}:{body}`. */
+    const sign = (timestamp: string, bytes: Uint8Array): string =>
+      `v0=${createHmac("sha256", secret).update(`v0:${timestamp}:`).update(bytes).digest("hex")}`
+    const seconds = (instant: number): string => String(Math.floor(instant / 1_000))
+    const signedCalls: Array<Channel.RawInbound["headers"]> = []
+    const verify = Webhook.makeSignatureVerifier({
+      header: "x-signature",
+      timestamp: { header: "x-request-timestamp", tolerance: Duration.minutes(5) },
+      expected: (bytes, _credential, headers) => {
+        signedCalls.push(headers)
+        return Effect.succeed(encode(sign(headers["x-request-timestamp"] ?? "", bytes)))
+      }
+    })
+    const verified = (headers: Channel.RawInbound["headers"], check: Channel.Verify = verify) =>
+      Effect.runPromise(
+        Effect.gen(function*() {
+          yield* TestClock.setTime(now)
+          return yield* Effect.result(check({ body, headers, idempotencyKey: "timestamped-1" }, credential))
+        }).pipe(Effect.provide(TestClock.layer()))
+      )
+    const signedAt = (instant: number) => ({
+      "x-request-timestamp": seconds(instant),
+      "x-signature": sign(seconds(instant), body)
+    })
+    const refusal = { code: "verification_failed", message: "webhook signature in x-signature did not verify" }
+
+    it("verifies a v0:{timestamp}:{body} signature made within the tolerance, early or late", async () => {
+      for (const instant of [now, now - 5 * 60_000, now + 5 * 60_000]) {
+        expect((await verified(signedAt(instant)))._tag, String(instant - now)).toBe("Success")
+      }
+    })
+
+    it("refuses a correctly signed request that is ten minutes old, before the secret is resolved", async () => {
+      signedCalls.length = 0
+      const stale = await verified(signedAt(now - 10 * 60_000))
+      expect(stale).toMatchObject({ _tag: "Failure", failure: refusal })
+      expect(signedCalls).toEqual([])
+    })
+
+    it("refuses a request dated further ahead than the tolerance", async () => {
+      expect(await verified(signedAt(now + 5 * 60_000 + 1_000))).toMatchObject({ _tag: "Failure", failure: refusal })
+    })
+
+    it("refuses a request whose timestamp header is absent or is not whole seconds", async () => {
+      const signature = sign("", body)
+      for (const stated of [undefined, "", "soon", "1.5", "-1", "1e9", `${seconds(now)}000`]) {
+        signedCalls.length = 0
+        const headers = { "x-signature": signature, ...(stated === undefined ? {} : { "x-request-timestamp": stated }) }
+        expect(await verified(headers), String(stated)).toMatchObject({ _tag: "Failure", failure: refusal })
+        expect(signedCalls, String(stated)).toEqual([])
+      }
+    })
+
+    it("refuses a stale capture replayed under a fresh timestamp, because the signature covers the timestamp", async () => {
+      const captured = signedAt(now - 10 * 60_000)
+      const replayed = { ...captured, "x-request-timestamp": seconds(now) }
+      expect(await verified(replayed)).toMatchObject({ _tag: "Failure", failure: refusal })
+    })
+
+    it("hands expected() a copy of the headers, so editing them cannot reach the request", async () => {
+      const headers = signedAt(now)
+      const editing = Webhook.makeSignatureVerifier({
+        header: "x-signature",
+        expected: (bytes, _credential, seen) => {
+          const signature = sign(seen["x-request-timestamp"] ?? "", bytes)
+          ;(seen as Record<string, string | undefined>)["x-signature"] = "edited"
+          return Effect.succeed(encode(signature))
+        }
+      })
+      expect((await verified(headers, editing))._tag).toBe("Success")
+      expect(headers["x-signature"]).toBe(sign(seconds(now), body))
+    })
+
+    it("reads a timestamp folded into the signature header through a custom parse", async () => {
+      const folded = Webhook.makeSignatureVerifier({
+        header: "x-signature",
+        timestamp: {
+          header: "x-signature",
+          tolerance: Duration.minutes(5),
+          parse: (value) => {
+            const stated = /^t=(\d+),/.exec(value)?.[1]
+            return stated === undefined ? Number.NaN : Number(stated) * 1_000
+          }
+        },
+        expected: (bytes, _credential, headers) => {
+          const stated = /^t=(\d+),/.exec(headers["x-signature"] ?? "")?.[1] ?? ""
+          return Effect.succeed(encode(`t=${stated},${sign(stated, bytes)}`))
+        }
+      })
+      const header = (instant: number) => ({ "x-signature": `t=${seconds(instant)},${sign(seconds(instant), body)}` })
+      expect((await verified(header(now), folded))._tag).toBe("Success")
+      expect(await verified(header(now - 10 * 60_000), folded)).toMatchObject({ _tag: "Failure" })
+      // A parse that answers no finite instant refuses instead of comparing.
+      expect(await verified({ "x-signature": "v0=unstamped" }, folded)).toMatchObject({ _tag: "Failure" })
+    })
+
+    it("reads whole decimal epoch seconds, and nothing else, by default", () => {
+      expect(Webhook.epochSeconds("1700000000")).toBe(1_700_000_000_000)
+      expect(Webhook.epochSeconds("0")).toBe(0)
+      for (const value of ["", " 1700000000", "1700000000.5", "-5", "0x10", "1e3", "1700000000000"]) {
+        expect(Webhook.epochSeconds(value), value).toBeUndefined()
+      }
+    })
+
+    it("refuses a stale request at the door, before decode or planning", async () => {
+      const calls: Array<string> = []
+      const webhook = Webhook.make({ ...declaration(calls), verify })
+      const ingest = (instant: number, idempotencyKey: string) =>
+        Effect.gen(function*() {
+          yield* TestClock.setTime(now)
+          yield* webhook.register
+          return yield* Effect.result(webhook.ingest({ body, headers: signedAt(instant), idempotencyKey }))
+        }).pipe(Effect.provide(TestClock.layer()))
+      expect(await run(ingest(now - 10 * 60_000, "stale-1"), calls)).toMatchObject({
+        _tag: "Failure",
+        failure: { code: "verification_failed", message: "webhook events did not verify the request" }
+      })
+      expect(calls).toEqual([])
+      expect((await run(ingest(now - 60_000, "fresh-1"), calls))._tag).toBe("Success")
+      expect(calls).toEqual(["plan:review", "run"])
+    })
   })
 
   it("keeps the host's resolver failure in the verifier's cause, out of its message", async () => {

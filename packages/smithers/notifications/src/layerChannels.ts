@@ -11,7 +11,7 @@
 
 import { digestSync } from "@smthrs/crypto"
 import { Effect, Layer } from "effect"
-import { type Alert, alertId } from "./AlertPolicy.ts"
+import { type Alert, alertId, truncated } from "./AlertPolicy.ts"
 import { AlertError, type FailureCode, Sink } from "./AlertSink.ts"
 import { Channels, type DeliveryError, type Destination, type Message } from "./Channels.ts"
 
@@ -28,7 +28,7 @@ export interface ChannelsSinkOptions {
 /** The longest run id, condition, owner or runbook a message carries. */
 const maxPartLength = 150
 
-const part = (value: string): string => value.length > maxPartLength ? `${value.slice(0, maxPartLength)}…` : value
+const part = (value: string): string => value.length > maxPartLength ? `${truncated(value, maxPartLength)}…` : value
 
 /**
  * The message's idempotency key: the alert's id when a provider accepts it as
@@ -42,6 +42,12 @@ const messageId = (id: string): string => id.length <= 256 ? id : `alert:${diges
  * The subject is the severity and the condition. The text is the summary the
  * opening entry carried, the run, when the condition opened, the owner and
  * runbook when the policy names them, and the id to acknowledge the alert by.
+ *
+ * The id a person reads is the alert's without the opening's journal sequence,
+ * `alert:<key>:<since>`: the form `smthrs alerts` prints and
+ * {@link RuntimeService.acknowledge} takes for the opening a condition has
+ * now. The message's own id, which a provider dedupes on, is the whole
+ * {@link alertId}.
  *
  * @param alert the alert
  * @category constructors
@@ -58,7 +64,15 @@ export const messageOf = (alert: Alert): Message => ({
     `Since: ${new Date(alert.since).toISOString()}`,
     ...(alert.owner === undefined ? [] : [`Owner: ${part(alert.owner)}`]),
     ...(alert.runbook === undefined ? [] : [`Runbook: ${part(alert.runbook)}`]),
-    `Alert: ${part(alertId({ coalescingKey: alert.coalescingKey, since: alert.since }))}`
+    `Alert: ${
+      part(
+        alertId({
+          coalescingKey: alert.coalescingKey,
+          since: alert.since,
+          ...(alert.opening === undefined ? {} : { opening: alert.opening })
+        })
+      )
+    }`
   ].join("\n")
 })
 
@@ -80,9 +94,14 @@ const codes: Readonly<Record<DeliveryError["code"], FailureCode>> = {
  * between an accepted send and the delivery record sends the same Telegram
  * message again on the next tick.
  *
- * Every channel failure fails the delivery, so the tick records it and the
- * next tick tries again. That includes a destination the deployment has no
- * provider for, which fails with the reason `unconfigured`.
+ * Every channel failure fails the delivery, and the tick records it. A
+ * failure another attempt may clear is tried again on the next tick, or once
+ * the provider's own `Retry-After` has passed when it named one. A send the
+ * provider refused, with the reason `unauthorized` or `rejected`, would be
+ * refused again, so it fails as not `retryable` and the runtime does not send
+ * that page a second time. A destination the deployment has no provider for
+ * fails with the reason `unconfigured` and stays retryable: no request is made
+ * for it, and the provider may be configured before the next tick.
  *
  * @param options the destination every alert goes to
  * @category layers
@@ -101,7 +120,11 @@ export const layerChannels = (options: ChannelsSinkOptions): Layer.Layer<Sink, n
                 code: codes[error.code],
                 message: `The ${error.channel} channel did not take the alert`,
                 reason: error.reason ?? error.code,
-                ...(error.status === undefined ? {} : { status: error.status })
+                ...(error.status === undefined ? {} : { status: error.status }),
+                ...(error.code === "unauthorized" || error.code === "rejected" ? { retryable: false } : {}),
+                ...("retryAfterMillis" in error && error.retryAfterMillis !== undefined
+                  ? { retryAfterMillis: error.retryAfterMillis }
+                  : {})
               })
             )
           )

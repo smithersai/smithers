@@ -86,14 +86,14 @@ rather than a failure.
 
 ### system_collision
 
-**What happened.** A flow name is claimed by both a source declared
-`system: true` and another source, in either direction. Construction fails
-rather than resolving it silently.
+**What happened.** A source declared `system: true` was scanned after another
+source that already claimed one of its flow names. Construction fails rather
+than letting the earlier flow shadow the system flow.
 
-**What to change.** Rename the project flow, or stop declaring the source as a
-system source. Ordinary sources resolve a shared name first-found with a
-`duplicate_name` warning; the system rule exists precisely so that a system
-name is never quietly shadowed and never quietly shadows.
+**What to change.** List the system source first, or rename the other flow. In
+the supported order a later source that reuses a system flow's name does not
+fail: that one flow is dropped with a `duplicate_name` warning naming the
+system flow that was kept, and the source's other flows are listed.
 
 ### body_unavailable
 

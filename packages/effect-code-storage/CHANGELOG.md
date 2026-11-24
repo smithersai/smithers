@@ -4,6 +4,22 @@
 
 ### Fixed
 
+- `gitRemote` builds its URL on the new `Credentials.gitUrl`
+  (`CODE_STORAGE_GIT_URL`), so a host on another deployment no longer gets a
+  production git URL with a freshly signed token. It defaults to
+  `https://<org>.code.storage`, as before.
+- A repository name with an empty, `.` or `..` segment fails
+  `invalid_argument` before a token is signed or a request sent, and is a
+  `CodeStorageInvalidRepository` defect for `gitRemote`. `deleteRepo("")` no
+  longer sends `DELETE /api/repos`.
+- Requests that carry a token or credential never follow a redirect. A 3xx is
+  `CodeStorageError` code `redirect`, `GitRemoteError` code `unavailable`, and
+  a bodyless 502 from `GitProxy.uploadPack` counted as outcome `redirect`.
+- `GitRemote.ref` fails `invalid_argument`, sending nothing, for a branch too
+  long for one pkt-line (65,520 bytes), instead of sending a corrupt length.
+- `GitProxy.uploadPack` records the end of a body with the request's logger,
+  metric registry and clock when the server streams it with other services.
+
 - Branch-scoped fetches now accept Git's gzip negotiation requests after a
   repository grows beyond a few dozen commits, keeping the 1 MiB limit on
   decoded bytes and the same branch checks.

@@ -388,7 +388,7 @@ describe("one project, from init to gc", processBudget, () => {
     // A dry run deletes nothing, which is the whole point of the flag.
     expect(json("ps").items.map((entry: { readonly runId: string }) => entry.runId)).toContain(runId)
 
-    json("gc", "--older-than", "1s")
+    json("gc", "--older-than", "1s", "--yes")
     expect(json("ps").items).toEqual([])
   })
 })

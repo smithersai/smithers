@@ -1,8 +1,15 @@
 /**
  * The model-backed author seat.
  *
- * Requires `Model.Model` from context — production supplies a route stack,
- * tests supply a replay model — and maps an author input onto the sealed
+ * The seat never calls a model itself. It asks the {@link Step} port to run
+ * one model call as a durable step, and the host binds that port to its
+ * durable engine (`ModelStep.run` from `@smthrs/agent`, one `@smthrs/flow`
+ * action per call), which supplies the retries, the deadline and the sealed
+ * record a resumed run replays. `@smthrs/chain` cannot depend on the engine,
+ * so the port is the seam. {@link layerStepUnsealed} binds it straight to a
+ * `Model.Model` for tests and replay models.
+ *
+ * The seat maps an author input onto the sealed
  * request shape of the harness's sealed steps: prefix as the stable system
  * part, context lines as one user message, no tools, `toolChoice: "none"`
  * (https://chain.smithers.sh/contract/). Prior art, copied rather than
@@ -15,7 +22,7 @@
 import * as Model from "@smthrs/model/Model"
 import * as ModelEvent from "@smthrs/model/ModelEvent"
 import * as ModelRequest from "@smthrs/model/ModelRequest"
-import { Effect, Layer, Stream } from "effect"
+import { Context, Effect, Layer, Stream } from "effect"
 import * as Author from "./Author.ts"
 import { failureCode } from "./internal/failureCode.ts"
 
@@ -40,7 +47,77 @@ const visibleText = (message: ModelRequest.AssistantMessage): string =>
 export interface Config {
   readonly modelId: string
   readonly params?: ModelRequest.GenerationParams | undefined
+  /** The durable step's name, part of its key. Defaults to {@link defaultStepName}. */
+  readonly stepName?: string | undefined
 }
+
+/**
+ * The step name the seat's model calls run under when {@link Config.stepName}
+ * is unset.
+ *
+ * @category constants
+ * @since 0.1.0
+ * @slop
+ */
+export const defaultStepName = "chain/author/model"
+
+/**
+ * One model call for the durable engine to run: the step's name and the
+ * request. Both are stable for one author input, so an engine that keys a
+ * step on them replays the recorded answer instead of calling the provider
+ * again.
+ *
+ * @category models
+ * @since 0.1.0
+ * @slop
+ */
+export interface StepCall {
+  readonly name: string
+  readonly request: ModelRequest.ModelRequest
+}
+
+/**
+ * The port's one operation: run the call as one durable step and return the
+ * provider's events in order. The binding owns retries and the deadline; it
+ * fails only once its engine has given up, or with a refusal the engine
+ * sealed.
+ *
+ * @category services
+ * @since 0.1.0
+ * @slop
+ */
+export interface StepService {
+  readonly run: (call: StepCall) => Effect.Effect<ReadonlyArray<ModelEvent.ModelEvent>, unknown>
+}
+
+/**
+ * The durable model step port the author seat calls through.
+ *
+ * @category services
+ * @since 0.1.0
+ * @slop
+ */
+export class Step extends Context.Service<Step, StepService>()("/chain/ModelAuthor/Step") {}
+
+/**
+ * Binds the port straight to the ambient `Model.Model`, with no engine
+ * between them: one stream per call, no retry, nothing sealed. It is for
+ * tests, for replay models, and for a host whose `Model.Model` is itself a
+ * sealed step (`ModelStep.model` from `@smthrs/agent`). A production host
+ * binds {@link Step} to its durable engine.
+ *
+ * @category layers
+ * @since 0.1.0
+ * @slop
+ */
+export const layerStepUnsealed: Layer.Layer<Step, never, Model.Model> = Layer.effect(Step)(
+  Effect.gen(function*() {
+    const model = yield* Model.Model
+    return Step.of({
+      run: (call) => Effect.map(Stream.runCollect(model.stream(call.request)), (events) => Array.from(events))
+    })
+  })
+)
 
 /**
  * The pure mapping from an author input to the wire-neutral request — the
@@ -94,20 +171,23 @@ const describeFailure = (error: unknown): string => {
 }
 
 /**
- * Builds the author seat over the ambient model.
+ * Builds the author seat over the ambient durable step port. The seat makes
+ * one step call per author input and never retries it: a failure the step
+ * reports is one its engine already gave up on.
  *
  * @category constructors
  * @since 0.1.0
  * @slop
  */
-export const make = (config: Config): Effect.Effect<Author.Service, never, Model.Model> =>
+export const make = (config: Config): Effect.Effect<Author.Service, never, Step> =>
   Effect.gen(function*() {
-    const model = yield* Model.Model
+    const step = yield* Step
     const request = requestFor(config)
+    const name = config.stepName ?? defaultStepName
     return Author.make({
       author: Effect.fn("ModelAuthor.author")((input) =>
         Effect.gen(function*() {
-          const events = Array.from(yield* Stream.runCollect(model.stream(request(input))))
+          const events = yield* step.run({ name, request: request(input) })
           const settled = ModelEvent.ModelEvent.settledMessage(events)
           // `settledMessage` folds an unsettled stream to stopReason
           // "aborted", so one guard covers interruption, truncation
@@ -139,11 +219,11 @@ export const make = (config: Config): Effect.Effect<Author.Service, never, Model
   })
 
 /**
- * The production author layer: `Author` from `Model.Model`.
+ * The production author layer: `Author` from the durable {@link Step} port.
  *
  * @category layers
  * @since 0.1.0
  * @slop
  */
-export const layer = (config: Config): Layer.Layer<Author.Author, never, Model.Model> =>
+export const layer = (config: Config): Layer.Layer<Author.Author, never, Step> =>
   Layer.effect(Author.Author)(make(config))

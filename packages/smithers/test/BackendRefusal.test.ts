@@ -294,8 +294,16 @@ describe.skipIf(process.platform === "win32")("backend process failures", () => 
 
   it("reports a failed local tool through Client.exec without its stderr", async () => {
     const { c } = await fixture()
-    const failure = await c.exec("sh", ["-c", "echo secret-detail >&2; exit 4"]).catch((error: unknown) => error)
-    expect(failure).toMatchObject({ fault: "dependency", code: "tool_failed", message: "sh failed" })
+    c.protect("private-value")
+    const failure = await c.exec("sh", ["-c", "echo secret-detail private-value >&2; exit 4"]).catch((error: unknown) =>
+      error
+    )
+    expect(failure).toMatchObject({
+      fault: "dependency",
+      code: "tool_failed",
+      message: "sh failed",
+      cause: { message: expect.stringMatching(/^Exit 4: secret-detail (?!private-value)/) }
+    })
   })
 })
 

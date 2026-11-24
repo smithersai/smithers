@@ -29,6 +29,15 @@ import * as StdError from "./StdError.ts"
  */
 export const MAX_CAPTURE_BYTES = 67_108_864
 
+/**
+ * How long one `rg` process may run. A walk over a stalled mount never ends
+ * on its own. Ten minutes is the `bash` flow's own default.
+ *
+ * @category constants
+ * @since 1.0.0-rc.18
+ */
+export const TIMEOUT_MS = 600_000
+
 interface RgResult {
   readonly stdout: string
   readonly stderr: string
@@ -40,14 +49,28 @@ const execute = (
   args: ReadonlyArray<string>,
   environment: Readonly<Record<string, string>> | undefined
 ): Effect.Effect<RgResult, StdError.StdError, ChildProcessSpawner.ChildProcessSpawner> =>
-  Exec.exec("rg", { args, cwd, env: environment, maxCaptureBytes: MAX_CAPTURE_BYTES, overflow: "refuse" }).pipe(
+  Exec.exec("rg", {
+    args,
+    cwd,
+    env: environment,
+    timeoutMs: TIMEOUT_MS,
+    maxCaptureBytes: MAX_CAPTURE_BYTES,
+    overflow: "refuse"
+  }).pipe(
     Effect.mapError((error) =>
-      new StdError.StdError({
-        code: error.code === "capture_overflow" ? "command_failed" : "provider_unavailable",
-        message: error.code === "capture_overflow"
-          ? error.message
-          : "The native ripgrep implementation could not start rg"
-      })
+      error.code === "timeout"
+        ? new StdError.StdError({
+          code: "timeout",
+          message: `The native ripgrep implementation did not finish searching ${cwd}`,
+          path: cwd,
+          limitMillis: TIMEOUT_MS
+        })
+        : new StdError.StdError({
+          code: error.code === "capture_overflow" ? "command_failed" : "provider_unavailable",
+          message: error.code === "capture_overflow"
+            ? error.message
+            : "The native ripgrep implementation could not start rg"
+        })
     )
   )
 

@@ -213,8 +213,16 @@ SMITHERS_GITHUB_PROXY_CAPABILITY_FILE=~/.config/smithers/github-proxy-capability
   node .smithers/flows/issue-claim/github-proxy.mjs
 ```
 
-SDK clients reaching a non-loopback proxy require an HTTPS URL. A TLS frontend
-must also rewrite the proxy's `Link` headers to its public HTTPS origin for pagination.
+SDK clients reaching a non-loopback proxy require an HTTPS URL. Behind a TLS
+frontend, set `publicOrigin` in `ProxyOptions` to the frontend's HTTPS origin
+so pagination `Link` headers name it; without it they name `http://` and the
+request's `Host`.
+
+The proxy never merges or approves. It answers `403` with
+`reason: "people-only"` for a pull request or branch merge, a review that is
+not a `COMMENT`, a review dismissal, and the GraphQL mutations that do the
+same. A person merges and approves on GitHub or through a client that does not
+use an agent's proxy.
 
 The `SMITHERS_GITHUB_*` variables listed under `RateLimit.resolveLimits` in
 the [API reference](../api.md#githubratelimit) tune the limits.

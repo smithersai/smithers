@@ -49,6 +49,7 @@ export const REPO_PATTERN = /^(?!\.{1,2}$)[A-Za-z0-9._-]{1,100}$/
 /**
  * Whether `value` is a usable account name.
  *
+ * @throws {never}
  * @category refinements
  * @since 1.0.0
  */

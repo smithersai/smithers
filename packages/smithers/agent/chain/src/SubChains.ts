@@ -12,6 +12,13 @@
  * the chain core never drains steering under a child scope
  * (https://chain.smithers.sh/contract/).
  *
+ * A child is not a fresh run. It is gated by the `Authorize` seam its root
+ * runs under, and its calls spend the root's tree budget
+ * (`Chain.Options.maxTotalCalls`): the per-child `maxLinks` and
+ * `maxCallsPerLink` only narrow what one child may take from it. A child
+ * that meets the tree budget parks with `quota`, and so does each ancestor
+ * on its next live call.
+ *
  * Composition invariants: the catalog layer must be built over the SAME
  * journal/author/runner layers the chain runs on (the services are
  * captured at construction), root chain ids must not contain `/` or look
@@ -26,6 +33,7 @@ import * as Digest from "@smthrs/core/Digest"
 import { Effect, Layer, Schema } from "effect"
 import * as Author from "./Author.ts"
 import * as AuthorDeclaration from "./AuthorDeclaration.ts"
+import * as Authorize from "./Authorize.ts"
 import * as Catalog from "./Catalog.ts"
 import * as Chain from "./Chain.ts"
 import { childRun } from "./internal/childRun.ts"
@@ -99,7 +107,8 @@ export interface Options {
   /**
    * Per-child budgets and prefix, independent of the parent's. A budget,
    * when set, must be a non-negative integer; construction dies on any
-   * other value.
+   * other value. Whatever they allow, every child also spends the root's
+   * tree budget (`Chain.Options.maxTotalCalls`).
    */
   readonly maxLinks?: number | undefined
   readonly maxCallsPerLink?: number | undefined
@@ -204,10 +213,13 @@ export const make = (
               name: agentName
             })
           }
-          if (slot === undefined) {
+          const tree = slot?.[childRun]
+          if (slot === undefined || tree === undefined) {
             // Without a slot there is no derivable child identity: two
             // slotless spawns would alias one scope and replay each
-            // other's outcomes.
+            // other's outcomes. A slot no running chain issued carries no
+            // authorization seam and no tree budget, and a child must
+            // never run without either.
             return yield* new Catalog.CallError({
               message: `"${agentName}" requires a call slot; invoke it through a running chain`,
               name: agentName
@@ -221,7 +233,7 @@ export const make = (
             })
           }
           const outcome = yield* Chain.run({
-            [childRun]: true,
+            [childRun]: tree,
             chain: child,
             context: input.value.context ?? [],
             goal: input.value.goal,
@@ -233,6 +245,7 @@ export const make = (
             Effect.provideService(Journal.Journal, journal),
             Effect.provideService(Author.Author, author),
             Effect.provideService(ScriptRunner.ScriptRunner, runner),
+            Effect.provideService(Authorize.Authorize, tree.authorize),
             // Only a terminal is data. Preserve run failures as typed,
             // un-settled failures of the parent, with their original cause.
             Effect.mapError((error) => ChildRunError.new(error))

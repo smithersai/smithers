@@ -1,6 +1,6 @@
 ---
 title: "Bound an untrusted server"
-description: "The ten limits McpClient enforces on a remote server, their default values, what each one protects, and the rules a tool name must satisfy."
+description: "The thirteen limits McpClient enforces on a remote server, their default values, what each one protects, and the rules a tool name must satisfy."
 sidebar:
   order: 6
 ---
@@ -13,20 +13,23 @@ default constant.
 You rarely need to change these. Read this page when a real server trips one, or
 when you are deciding what to allow a server you do not trust.
 
-## The ten limits
+## The thirteen limits
 
-| Option                  | Default | Constant                                 | What it bounds                                      |
-| ----------------------- | ------- | ---------------------------------------- | --------------------------------------------------- |
-| `handshakeTimeoutMs`    | 10000   | `McpClient.defaultHandshakeTimeoutMs`    | Each `initialize` and `tools/list` exchange.        |
-| `requestTimeoutMs`      | 120000  | `McpClient.defaultRequestTimeoutMs`      | Each later `tools/call` exchange.                   |
-| `queueCapacity`         | 64      | `McpClient.defaultQueueCapacity`         | Outbound frames waiting to be written.              |
-| `maxFrameBytes`         | 1048576 | `McpClient.defaultMaxFrameBytes`         | One inbound JSON-RPC frame, in UTF-8 bytes.         |
-| `maxOutboundFrameBytes` | 1048576 | `McpClient.defaultMaxOutboundFrameBytes` | One outbound JSON-RPC frame, in UTF-8 bytes.        |
-| `maxTools`              | 256     | `McpClient.defaultMaxTools`              | Tools accepted across every catalog page.           |
-| `maxToolNameBytes`      | 128     | `McpClient.defaultMaxToolNameBytes`      | UTF-8 bytes in one tool name.                       |
-| `maxToolDocumentBytes`  | 65536   | `McpClient.defaultMaxToolDocumentBytes`  | One tool's description plus JSON `inputSchema`.     |
-| `maxCatalogPages`       | 32      | `McpClient.defaultMaxCatalogPages`       | `tools/list` pages walked while following a cursor. |
-| `maxStderrBytes`        | 2048    | `McpClient.defaultMaxStderrBytes`        | Child stderr retained as a diagnostic tail.         |
+| Option                    | Default  | Constant                                   | What it bounds                                      |
+| ------------------------- | -------- | ------------------------------------------ | --------------------------------------------------- |
+| `handshakeTimeoutMs`      | 10000    | `McpClient.defaultHandshakeTimeoutMs`      | Each `initialize` and `tools/list` exchange.        |
+| `requestTimeoutMs`        | 120000   | `McpClient.defaultRequestTimeoutMs`        | Each later `tools/call` exchange.                   |
+| `queueCapacity`           | 64       | `McpClient.defaultQueueCapacity`           | Outbound frames waiting to be written.              |
+| `maxFrameBytes`           | 1048576  | `McpClient.defaultMaxFrameBytes`           | One inbound JSON-RPC frame, in UTF-8 bytes.         |
+| `maxOutboundFrameBytes`   | 1048576  | `McpClient.defaultMaxOutboundFrameBytes`   | One outbound JSON-RPC frame, in UTF-8 bytes.        |
+| `maxTools`                | 256      | `McpClient.defaultMaxTools`                | Tools accepted across every catalog page.           |
+| `maxToolNameBytes`        | 128      | `McpClient.defaultMaxToolNameBytes`        | UTF-8 bytes in one tool name.                       |
+| `maxToolDocumentBytes`    | 65536    | `McpClient.defaultMaxToolDocumentBytes`    | One tool's description plus JSON `inputSchema`.     |
+| `maxCatalogDocumentBytes` | 1048576  | `McpClient.defaultMaxCatalogDocumentBytes` | Every description plus JSON `inputSchema`, summed.  |
+| `maxCatalogPages`         | 32       | `McpClient.defaultMaxCatalogPages`         | `tools/list` pages walked while following a cursor. |
+| `maxEventStreamBytes`     | 16777216 | `McpClient.defaultMaxEventStreamBytes`     | One Streamable HTTP event-stream response.          |
+| `maxServerRequests`       | 32       | `McpClient.defaultMaxServerRequests`       | Server requests answered during one HTTP request.   |
+| `maxStderrBytes`          | 2048     | `McpClient.defaultMaxStderrBytes`          | Child stderr retained as a diagnostic tail.         |
 
 Every one must be a positive safe integer. A zero, a negative number, a fraction,
 or a number above `Number.MAX_SAFE_INTEGER`
@@ -58,10 +61,20 @@ request expires.
 `maxCatalogPages`** bound the catalog, which is the part a model reads.
 `maxToolDocumentBytes` counts the UTF-8 bytes of a tool's description plus its
 JSON-encoded `inputSchema`, so one tool cannot flood the model's context with
-server-authored text. A catalog past `maxTools` fails with
+server-authored text. `maxCatalogDocumentBytes` sums the same bytes across
+every tool on every page, so 256 tools of the largest size cannot add up to
+megabytes of it. A description also has its control and format characters
+removed, keeping line feeds and tabs: a bidi override or a zero-width mark
+makes the text a person reviews differ from the text a model reads. A catalog past `maxTools` fails with
 `invalid_response` rather than being truncated, because a silently truncated
 toolset is worse than a refused connection. `maxCatalogPages` and a repeated
 cursor both end a cursor walk that would otherwise never finish.
+
+**`maxEventStreamBytes` and `maxServerRequests`** bound one Streamable HTTP
+response. Each event is already bounded by `maxFrameBytes`, but comments,
+keep-alives and events the client drops cost the server nothing, and every
+server request in a stream makes the client send one `POST` in answer. Past
+either limit the request fails with `protocol_error` and the session ends.
 
 **`maxStderrBytes`** bounds a diagnostic buffer. Child stderr is drained
 continuously and only the tail is retained, so a chatty server cannot fill

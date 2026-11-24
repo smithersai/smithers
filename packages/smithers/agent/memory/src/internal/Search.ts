@@ -247,17 +247,29 @@ export const make = (
               if (matchesTags(row.tags)) byId.set(`fact\0${row.id}`, row)
             }
             for (const note of notes) byId.set(`note\0${note.id}`, noteSearchRow(bank, note))
-            const ordered: Array<FtsRow> = []
+            const ordered: Array<{ readonly row: SearchRow; readonly raw: number }> = []
             for (const match of eligible) {
               const row = byId.get(`${match.record_kind}\0${match.record_id}`)
-              if (row !== undefined) {
-                const rank = Number(match.rank)
-                ordered.push({ ...row, rank, score: -rank })
-              }
+              if (row !== undefined) ordered.push({ row, raw: Number(match.rank) })
             }
             return ordered
           })
-      )).pipe(Effect.mapError(storeError("memory FTS query failed")))
+      )).pipe(
+        Effect.mapError(storeError("memory FTS query failed")),
+        // One FTS table serves every namespace of a kind, so a raw BM25 value
+        // moves with other namespaces' writes. The answer carries the row's
+        // 1-based position among this namespace's passing matches instead;
+        // matches with one raw value share a position.
+        Effect.map((matches) => {
+          let position = 0
+          let previous: number | undefined
+          return matches.map(({ row, raw }): FtsRow => {
+            if (raw !== previous) position++
+            previous = raw
+            return { ...row, rank: position, score: 1 / position }
+          })
+        })
+      )
     })
 
   return { searchRows, enableFts, searchFts }

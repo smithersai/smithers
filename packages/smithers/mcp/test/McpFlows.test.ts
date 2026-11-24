@@ -382,6 +382,35 @@ describe("McpFlows.mcp", () => {
     )
   })
 
+  // A client handed to `mcp` need not come from `McpClient.connect`, which strips these itself.
+  it("removes control and format characters from a server-supplied description", async () => {
+    const source = McpFlows.mcp({
+      server: "remote",
+      tools: [{
+        name: "run",
+        description: "Lists\u202E files\u200B\n\tsafely\u0000",
+        inputSchema: { type: "object" },
+        outputSchema: undefined
+      }],
+      callTool: () => Effect.succeed({ content: [], isError: false, structuredContent: undefined })
+    })
+    const [binding] = await execute(source.bindings())
+    expect(binding!.descriptor.description).toBe(
+      "MCP tool \"run\" on server \"remote\". Server-supplied description: Lists files\n\tsafely"
+    )
+  })
+
+  it("uses the default prefix when the total constructor is given an empty namePrefix", async () => {
+    const source = McpFlows.mcp({
+      server: "remote",
+      tools: [{ name: "run", description: undefined, inputSchema: { type: "object" }, outputSchema: undefined }],
+      callTool: () => Effect.succeed({ content: [], isError: false, structuredContent: undefined })
+    }, { namePrefix: "" })
+    const [binding] = await execute(source.bindings())
+    expect(source.name).toBe("mcp/remote")
+    expect(binding!.descriptor.name).toBe("mcp/remote/run")
+  })
+
   it("passes structuredContent through the binding output schema", async () => {
     const source = McpFlows.mcp({
       server: "structured",

@@ -120,6 +120,16 @@ const bootstrap = `command -v base64 >/dev/null || { echo "${missing("base64")}"
   "IFS= read -r p && p=$(printf %s \"$p\" | base64 -d) && exec sh -c \"$p\" sh \"$@\""
 
 /**
+ * How long one round trip to the machine may take. A stalled mount under the
+ * root, or a transport that never answers, would otherwise hang the search.
+ * Ten minutes is the `bash` flow's own default.
+ *
+ * @category constants
+ * @since 1.0.0-rc.18
+ */
+export const TIMEOUT_MS = 600_000
+
+/**
  * Runs one script on the machine and decodes the base64 it prints, refusing
  * output that reached `bound`: `head` cut it, so it is not the whole answer.
  */
@@ -133,8 +143,24 @@ const run = (
   Effect.gen(function*() {
     const result = yield* Exec.exec("sh", {
       args: ["-c", bootstrap, "sh", ...args],
-      stdin: `${Base64.encode(new TextEncoder().encode(script))}\n${stdin}`
-    }).pipe(Effect.mapError((error) => failed(root, error.message)))
+      stdin: `${Base64.encode(new TextEncoder().encode(script))}\n${stdin}`,
+      timeoutMs: TIMEOUT_MS,
+      // Base64 of at most `bound` bytes, with its line breaks, fits in twice
+      // the bound; a machine that prints more is not answering this script.
+      maxCaptureBytes: 2 * bound + 4096,
+      overflow: "refuse"
+    }).pipe(
+      Effect.mapError((error) =>
+        error.code === "timeout"
+          ? new StdError.StdError({
+            code: "timeout",
+            message: `Searching ${root} on this machine timed out`,
+            path: root,
+            limitMillis: TIMEOUT_MS
+          })
+          : failed(root, error.message)
+      )
+    )
     if (result.exitCode !== 0) {
       return yield* Effect.fail(failed(root, result.stderr.trim() || `exit ${result.exitCode}`))
     }

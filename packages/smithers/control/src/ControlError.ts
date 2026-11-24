@@ -313,6 +313,16 @@ export class CredentialConflict extends Schema.TaggedError<CredentialConflict>()
 }) {}
 
 /**
+ * Stream admission refused because the connection or server is at capacity.
+ * @since 1.0.0
+ * @category errors
+ */
+export class ResourceLimit extends Schema.TaggedError<ResourceLimit>()("/control/ResourceLimit", {
+  code: constantCode("resource_limit"),
+  message: Schema.String
+}) {}
+
+/**
  * Every stable failure emitted by the control plane, as one schema.
  *
  * This is the single membership list. The exported union type is derived from
@@ -342,6 +352,7 @@ export const ControlErrorSchema = Schema.Union([
   LaunchFailed,
   NoMatchingWait,
   CredentialConflict,
+  ResourceLimit,
   NotificationError
 ])
 
@@ -371,6 +382,7 @@ for (
     ["LaunchFailed", "user"],
     ["ClaimLost", "infra"],
     ["CodeDrift", "infra"],
+    ["ResourceLimit", "infra"],
     ["Unavailable", "infra"],
     ["TransportError", "infra"],
     ["PersistenceError", "infra"]

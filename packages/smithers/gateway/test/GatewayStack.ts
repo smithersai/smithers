@@ -46,8 +46,8 @@ export const databaseFile = Effect.acquireRelease(
 ).pipe(Effect.map((directory) => join(directory, "control.db")))
 
 /** Journal, run store, and writer over one real SQLite file. */
-export const storage = (filename: string) =>
-  Layer.mergeAll(SqlJournal.layer({ capacity: 1024, overflow: "reject" }), RunStore.layer).pipe(
+export const storage = (filename: string, maxEntryBytes?: number) =>
+  Layer.mergeAll(SqlJournal.layer({ capacity: 1024, overflow: "reject", maxEntryBytes }), RunStore.layer).pipe(
     Layer.provideMerge(
       Layer.provideMerge(
         DatabaseMigrations.layer([Migrations.set, RunStoreMigrations.set]),
@@ -63,6 +63,8 @@ export const storage = (filename: string) =>
  * @param options the acceptance port to launch runs through
  */
 export const stack = (options: {
+  /** Raise producer admission only for tests of a smaller consumer page budget. */
+  readonly maxEntryBytes?: number
   readonly executor?: ControlExecutor.Service | undefined
   readonly approvalAuthority?: ApprovalAuthority.Service | undefined
 } = {}) =>
@@ -77,13 +79,17 @@ export const stack = (options: {
         Layer.provideMerge(ControlLive.layer),
         Layer.provideMerge(
           Layer.mergeAll(
-            SqlControlRuntime.layer({ approvalAuthority: options.approvalAuthority }).pipe(Layer.orDie),
+            SqlControlRuntime.layer({
+              // This fixture runs commands as the explicitly configured local operator.
+              principal: { id: "local", kind: "operator" },
+              approvalAuthority: options.approvalAuthority
+            }).pipe(Layer.orDie),
             NotificationQueue.layer,
             ControlExecutor.layer(options.executor ?? ControlExecutor.makeNoop()),
             Registry.layerNoop()
           )
         ),
-        Layer.provideMerge(Layer.merge(storage(filename), NodeCrypto.layer))
+        Layer.provideMerge(Layer.merge(storage(filename, options.maxEntryBytes), NodeCrypto.layer))
       ))
   )
 
@@ -98,7 +104,10 @@ export const defaultCadenceStack = Layer.unwrap(
       Layer.provideMerge(ControlLive.layer),
       Layer.provideMerge(
         Layer.mergeAll(
-          SqlControlRuntime.layer({}).pipe(Layer.orDie),
+          SqlControlRuntime.layer({
+            // This fixture runs commands as the explicitly configured local operator.
+            principal: { id: "local", kind: "operator" }
+          }).pipe(Layer.orDie),
           NotificationQueue.layer,
           ControlExecutor.layer(ControlExecutor.makeNoop()),
           Registry.layerNoop()

@@ -96,7 +96,10 @@ export effect function scan(config: ScanConfig): ScanResult!FsError!(FileSystem.
   const fileSystem = try FileSystem.FileSystem
   const path = try Path.Path
   const root = try snapshotRoot(config, path)
-  const discovery = try sync(() => Discovery.make(fileSystem, path))
+  // A host that already provides the registry's `Discovery` service is
+  // scanned through it; otherwise discovery runs over the file system.
+  const provided = try Effect.serviceOption(Discovery.Discovery)
+  const discovery = Option.isSome(provided) ? provided.value : try sync(() => Discovery.make(fileSystem, path))
   // Confinement makes discovery refuse any entry or directory whose real
   // path leaves the root, so a symlink in a cloned repository cannot route
   // a module that lives elsewhere on the host.

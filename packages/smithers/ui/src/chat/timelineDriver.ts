@@ -338,10 +338,13 @@ export const timelineDriver = (rail: HTMLElement, box: HTMLElement, scrollByRead
   const mounted = new MutationObserver(() => { measure(); schedule(); });
   /** Keeps funnel lines on the columns while they slide. */
   let following = 0;
+  /** The one frame loop that follows them; a second `follow` extends it rather than starting another. */
+  let followFrame = 0;
   const follow = (until: number) => {
     following = Math.max(following, until);
-    const step = () => { drawFunnels(); if (performance.now() < following) requestAnimationFrame(step); };
-    requestAnimationFrame(step);
+    if (followFrame !== 0) return;
+    const step = () => { followFrame = 0; drawFunnels(); if (performance.now() < following) followFrame = requestAnimationFrame(step); };
+    followFrame = requestAnimationFrame(step);
   };
 
   const bind = () => {
@@ -487,6 +490,7 @@ export const timelineDriver = (rail: HTMLElement, box: HTMLElement, scrollByRead
       mounted.disconnect();
       pendingRead = undefined; readAnchor = undefined;
       if (frame !== 0) cancelAnimationFrame(frame);
+      if (followFrame !== 0) cancelAnimationFrame(followFrame);
       viewport?.removeEventListener("scroll", scrolled);
       for (const event of ["wheel", "touchstart", "pointerdown", "keydown"]) viewport?.removeEventListener(event, releaseRead);
       window.removeEventListener("resize", remeasure);

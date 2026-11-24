@@ -354,14 +354,16 @@ describe("@smthrs/effect-code-storage CodeStorage ES256 client fuzz invariants",
             const layer = CodeStorage.CodeStorage.layer({
               org: "acme",
               key: Redacted.make(testPem),
-              apiUrl: "https://api.code.storage"
+              apiUrl: "https://api.code.storage",
+              gitUrl: "https://git.staging.code.storage"
             }).pipe(Layer.provide(Layer.succeed(HttpClient.HttpClient, fakeHttp)))
 
             const program = Effect.gen(function*() {
               const cs = yield* CodeStorage.CodeStorage
               if (op === "gitRemote") {
                 const remote = yield* cs.gitRemote(repo)
-                return remote.url.includes("acme.code.storage") && remote.authorization !== undefined
+                return remote.url === `https://git.staging.code.storage/${repo}.git` &&
+                  remote.authorization !== undefined
               }
               const call: Effect.Effect<unknown, CodeStorage.CodeStorageError> = op === "createRepo"
                 ? cs.createRepo({ name: repo, defaultBranch: "main" })

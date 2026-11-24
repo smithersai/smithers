@@ -78,7 +78,9 @@ Friday 19:30 in New York stays a Friday even when it is Saturday in UTC.
 | Repeated, hour field every hour | In both passes, so `30 * * * *` fires every elapsed hour and never stalls.              |
 
 Occurrences are whole seconds in UTC, whatever the host's zone. A schedule
-with no timezone follows the host's zone by the same rules.
+with no timezone is a UTC schedule on every host: `0 9 * * *` fires at 09:00
+UTC whether the process runs with `TZ=UTC` or `TZ=America/New_York`, so two
+hosts sharing one store compute the same occurrence and claim it once.
 
 ## Every search runs under a bound
 

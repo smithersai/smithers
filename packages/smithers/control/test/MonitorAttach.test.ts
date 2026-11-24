@@ -140,7 +140,8 @@ describe("Monitor.attach", () => {
   it("delivers healed beats when it auto-heals a stall", async () => {
     const observed = await run(Effect.gen(function*() {
       const runId = yield* start("attach-heal")
-      yield* parkReleased(runId)
+      const runtime = yield* ControlRuntime
+      yield* runtime.releasePending(runId, yield* runtime.claimFence(runId))
       const seen: Array<Monitor.Beat> = []
       const attached = yield* Monitor.attach(runId, {
         intervalMs: 0,

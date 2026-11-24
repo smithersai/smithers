@@ -239,6 +239,7 @@ test("accepts a duplicate receipt, then advances the next batch from that cursor
 })
 
 test("does not call the model after a refused provider-start acknowledgment", async () => {
+  let cancelled = false
   let streamed = false
   const model = Model.make({
     stream: () => {
@@ -248,9 +249,24 @@ test("does not call the model after a refused provider-start acknowledgment", as
   })
   await expect(
     Effect.runPromise(
-      runDurableChatTurn(model, grant, { modelId: "m" }, undefined, async () => new Response(null, { status: 403 }))
+      runDurableChatTurn(
+        model,
+        grant,
+        { modelId: "m" },
+        undefined,
+        async () =>
+          new Response(
+            new ReadableStream({
+              cancel() {
+                cancelled = true
+              }
+            }),
+            { status: 403 }
+          )
+      )
     )
   ).rejects.toThrow("chat provider start refused (403)")
+  expect(cancelled).toBe(true)
   expect(streamed).toBe(false)
 })
 
@@ -447,4 +463,29 @@ test.each(["started", "completed"] as const)("refused later %s page stops subseq
   expect(selectorCalls).toBe(phase === "started" ? 0 : 1)
   expect(starts).toBe(phase === "started" ? 0 : 1)
   expect(answerCalls).toBe(0)
+})
+
+test("different producers stamp different clock identities and release refused commit bodies", async () => {
+  const clocks: string[] = []
+  let cancellations = 0
+  for (let i = 0; i < 2; i++) {
+    const producer = new DurableChatProducer(grant.producerBaseUrl, grant, async (_url, init) => {
+      clocks.push(JSON.parse(String(init?.body)).frames[0].clock)
+      return new Response(
+        new ReadableStream({
+          cancel() {
+            cancellations++
+          }
+        }),
+        { status: 409 }
+      )
+    })
+    await expect(
+      Effect.runPromise(
+        producer.writePreflight("started", { candidates: [], context: [], model: "fast", durationMs: 0 })
+      )
+    ).rejects.toThrow("commit refused (409)")
+  }
+  expect(new Set(clocks).size).toBe(2)
+  expect(cancellations).toBe(2)
 })

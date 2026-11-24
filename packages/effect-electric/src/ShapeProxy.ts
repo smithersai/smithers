@@ -26,7 +26,8 @@
  * - calls Electric with the host's `Upstream` client when it provides one,
  *   for example a platform's private binding to Electric's gateway;
  * - tells browsers and CDNs not to keep a response (`cache-control: private,
- *   no-store`), unless the host opts a public shape in with `cache`;
+ *   no-store`), unless the host opts a public shape in with `cache`; a shape
+ *   with a row-access guard is never kept, whatever `cache` says;
  * - records one span, one log line and one count per request with plain
  *   Effect, so the host's own logger, tracer and metric exporters pick them up.
  *
@@ -45,7 +46,7 @@ import * as HttpServerRequest from "effect/http/HttpServerRequest"
 import * as HttpServerResponse from "effect/http/HttpServerResponse"
 import * as Metric from "effect/Metric"
 import * as Option from "effect/Option"
-import type * as Redacted from "effect/Redacted"
+import * as Redacted from "effect/Redacted"
 import * as Result from "effect/Result"
 import * as Stream from "effect/Stream"
 
@@ -115,7 +116,8 @@ export interface Shape {
  *
  * - `"no-store"`, the default: every response carries `cache-control:
  *   private, no-store`, and Electric's `cache-control`, `etag`,
- *   `surrogate-control`, `cdn-cache-control` and `expires` are dropped. Use it
+ *   `last-modified`, `age`, `surrogate-control`, `cdn-cache-control` and
+ *   `expires` are dropped. Use it
  *   for every shape whose rows depend on who asks: a `where` built from the
  *   session, or a shape served only after a session check. The browser's URL
  *   doesn't name the person, so a cached response would answer the next
@@ -123,7 +125,9 @@ export interface Shape {
  *   SSE requests are refused with 400 (503 with `rowAccess`): a session check authorizes one finite
  *   response, never an unbounded stream. Use long polling instead.
  * - `"public"`: Electric's caching headers pass through, for a shape that is
- *   the same for everyone and served without a session check.
+ *   the same for everyone and served without a session check. A shape with
+ *   `rowAccess` is served as `"no-store"` even so: its rows depend on who
+ *   asks, and a cache would answer the next person without asking the guard.
  *
  * @category models
  * @since 0.2.0
@@ -171,8 +175,11 @@ export interface Options<R = never> extends Connection {
   readonly shape: Shape | Effect.Effect<Shape, Refused, R>
   /**
    * Guard cached JSON log values against current authorization. Pair with a stable database projection so changes
-   * withheld during uncertainty are emitted again on recovery. Deletes carry only the named primary keys.
+   * withheld during uncertainty are emitted again on recovery. Deletes carry only the named primary keys, and no
+   * message carries `old_value`: a row's earlier values were never shown to `allows`.
    * SSE is refused with this guard; finite long polls retain their handle, offset and control messages.
+   * Every response is `private, no-store` without Electric's validators, whatever `cache` says. A successful answer
+   * other than a 200 JSON log or a bodyless 204, 205 or 304 is a bodyless 502: the guard never saw its rows.
    */
   readonly rowAccess?: {
     readonly keyColumns: ReadonlyArray<string>
@@ -289,10 +296,12 @@ export const config = (options: { readonly url?: string } = {}): Config.Config<C
 const dropped = (name: string) =>
   name === "content-encoding" || name === "content-length" || name.startsWith("access-control-")
 
-/** Electric's headers that let a browser or CDN keep a response; a `"no-store"` shape drops them. */
+/** Electric's headers that let a browser or CDN keep or revalidate a response; a `"no-store"` shape drops them. */
 const caching: ReadonlySet<string> = new Set([
   "cache-control",
   "etag",
+  "last-modified",
+  "age",
   "surrogate-control",
   "cdn-cache-control",
   "expires"
@@ -321,18 +330,23 @@ const noStore = { "cache-control": "private, no-store" } as const
  *   first value other than `"false"`) is 503 with `rowAccess`, otherwise 400
  *   unless `cache` is `"public"`, without calling Electric. Long polling
  *   checks access per request.
+ * - A request URL that does not parse is 400, without calling Electric.
  * - Electric unreachable is 502, and Electric's own 401 or 403, or a redirect,
  *   is a no-store 503 with its body cancelled, so an outward 401 or 403 is only
  *   ever the host's. Otherwise Electric's status, headers and body stream back.
- * - A refusal, and unless `cache` is `"public"` every other response, a 405
- *   and a 502 included, carries `cache-control: private, no-store` in place
- *   of Electric's caching
- *   headers. Electric's `cursor` and `cache-buster` already keep its protocol
- *   correct without a cache.
+ * - With `rowAccess`, Electric's 200 is filtered by the guard and stripped of
+ *   every `old_value`; any other successful answer with a body, a 206
+ *   included, is a bodyless 502 with its body cancelled.
+ * - A refusal, and unless `cache` is `"public"` without `rowAccess` every
+ *   other response, a 405 and a 502 included, carries `cache-control: private,
+ *   no-store` in place of Electric's caching headers. Electric's `cursor` and
+ *   `cache-buster` already keep its protocol correct without a cache.
  *
  * Each request records one span, `name`, and once its body has ended one log
  * line, `name`, and one count on `metric`. None of them carries the secret, a
- * where clause or a parameter value.
+ * where clause or a parameter value, and neither does the HTTP client's span
+ * for the call to Electric: its `url.full` and `url.query` show each as
+ * `REDACTED`.
  *
  * @category handlers
  * @since 0.1.0
@@ -347,7 +361,9 @@ export const make = <R = never>(
   const name = options.name ?? "electric.shape"
   const metric = options.metric ?? defaultMetric
   const shapeUrl = new URL("/v1/shape", options.url).toString()
-  const keeps = options.cache === "public"
+  // A row-filtered body depends on who asks, and the URL does not name them: a cache would answer the next person
+  // without running `validate` or `allows`, so a guarded shape is never kept, whatever `cache` says.
+  const keeps = options.cache === "public" && options.rowAccess === undefined
   const own = keeps ? {} : noStore
 
   /** Records a request once it has ended: its count and one log line. */
@@ -398,7 +414,9 @@ export const make = <R = never>(
     const ownHeaders = { ...own, "x-request-id": correlationId }
     const request = yield* HttpServerRequest.HttpServerRequest
     const startedAt = yield* Clock.currentTimeMillis
-    const incoming = new URL(request.url, "http://localhost").searchParams
+    // A request target that is no URL has no parameters to read; it is refused below, once it can be recorded.
+    const parsed = URL.canParse(request.url, "http://localhost")
+    const incoming = parsed ? new URL(request.url, "http://localhost").searchParams : new URLSearchParams()
     const live = incoming.get("live") === "true"
     const sse = ["live_sse", "experimental_live_sse"].some((key) => incoming.has(key) && incoming.get(key) !== "false")
     const phase = live ? "live" : incoming.get("offset") === "-1" ? "first" : "catch-up"
@@ -416,6 +434,11 @@ export const make = <R = never>(
         answered(status, upstream),
         record({ status, live, phase, startedAt, bytes: 0, outcome, correlationId, upstream, reason })
       )
+
+    if (!parsed) {
+      yield* ended(400, "proxy")
+      return HttpServerResponse.empty({ status: 400, headers: { ...ownHeaders, ...noStore } })
+    }
 
     if (request.method !== "GET") {
       yield* ended(405, "proxy")
@@ -471,10 +494,13 @@ export const make = <R = never>(
     }
     parameters.push(
       ["table", shape.table],
-      ...(shape.where === undefined ? [] : [["where", shape.where] as const]),
-      ...Object.entries(shape.params ?? {}).map(([key, value]) => [`params[${key}]`, value] as const),
+      // Redacted, so the client span's `url.full` and `url.query`, and a failed request's error, show
+      // `where=REDACTED` and `params[1]=REDACTED`: a predicate and its values can name a person or carry their
+      // content. The request carries the values.
+      ...(shape.where === undefined ? [] : [["where", Redacted.make(shape.where)] as const]),
+      ...Object.entries(shape.params ?? {}).map(([key, value]) => [`params[${key}]`, Redacted.make(value)] as const),
       ...(shape.columns === undefined ? [] : [["columns", shape.columns.join(",")] as const]),
-      // Redacted, so the client span's `url.full` shows `secret=REDACTED`; the request carries the value.
+      // Redacted likewise: the span shows `secret=REDACTED`; the request carries the value.
       ...(options.secret === undefined || options.secretAs === "bearer" ? [] : [["secret", options.secret] as const]),
       ...(options.sourceId === undefined ? [] : [["source_id", options.sourceId] as const])
     )
@@ -569,11 +595,14 @@ export const make = <R = never>(
         const filtered = yield* Effect.try(() =>
           (messages.value as Array<unknown>).flatMap((message: unknown) => {
             if (typeof message !== "object" || message === null) throw new Error("invalid shape message")
-            const row = message as {
+            if (Array.isArray(message)) throw new Error("invalid shape message")
+            // `old_value` holds a row's earlier column values (`replica=full`), which `allows` never sees: a delete
+            // would carry the whole row, and an update the values of a row the person could not read before.
+            const row = Object.fromEntries(Object.entries(message).filter(([key]) => key !== "old_value")) as {
               readonly value?: Record<string, unknown>
               readonly headers?: Record<string, unknown>
             }
-            if (row.value === undefined) return [message]
+            if (row.value === undefined) return [row]
             if (
               typeof row.value !== "object" || row.value === null ||
               !guard.keyColumns.every((key) => Object.hasOwn(row.value!, key))
@@ -584,7 +613,7 @@ export const make = <R = never>(
               return [{ ...row, value: Object.fromEntries(guard.keyColumns.map((key) => [key, row.value![key]])) }]
             }
             if (guard.allows(row.value)) {
-              return [message]
+              return [row]
             }
             if (guard.retryIfDenied?.(row.value) === true) requiresReplay = true
             return []
@@ -614,6 +643,14 @@ export const make = <R = never>(
           outcome: "complete"
         })
         return guarded
+      }
+      // Any other successful answer (a 206 from a cache in between, a 201) would stream rows the guard never saw,
+      // with Electric's cursor. Only the forms above are permitted; an error status carries Electric's own error
+      // body and no rows, and streams below.
+      if (options.rowAccess !== undefined && status >= 200 && status < 300) {
+        yield* Stream.runDrain(stream).pipe(Effect.timeout("10 millis"), Effect.ignore)
+        yield* ended(502, "electric", "failed")
+        return HttpServerResponse.empty({ status: 502, headers: ownHeaders })
       }
       return undefined
     }).pipe(

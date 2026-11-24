@@ -13,7 +13,9 @@ ExternalTranscript.decodeClaude(state, chunk) // <session>.jsonl under ~/.claude
 ```
 
 Each returns `Result<Decoded<State>, ExternalTranscriptError>`: the entries the
-chunk completed and the state to pass with the next chunk. Both are pure. They
+chunk completed and the state to pass with the next chunk. A refused line
+fails the chunk with the entries and state before that line in the error's
+`decoded`, so a chunk loses nothing a line-by-line decode keeps. Both are pure. They
 read no file, clock, network or process, register no importer and publish
 nothing. The reference for every type is [api.md](api.md#externaltranscript).
 
@@ -129,7 +131,8 @@ line that wrote the record.
 | `malformed_record`    | A complete line that is not a JSON record, or a named kind in another shape                |
 
 An incomplete last line is not an error: it waits in `state.pending` for its
-newline.
+newline. One that passes 64 MiB without its newline is refused as
+`malformed_record`.
 
 ## Mapping: Codex
 

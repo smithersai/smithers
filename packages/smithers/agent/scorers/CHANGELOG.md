@@ -10,6 +10,12 @@ are history, not the release that carries it.
 
 ### Fixed
 
+- A check detail longer than 200 characters is cut between code points. A cut
+  inside a surrogate pair left a string canonical JSON refuses, so a failing
+  score was recorded as inconclusive.
+- `Rubric.parse` refuses a judge reply whose braces cost more than
+  `Rubric.maxParseScan` (16,777,216) characters to scan. A reply of 50,000
+  unmatched `{` took about 1.25e9 steps.
 - Returned scoring reasons and metadata now redact credentials before reaching
   eval reports or CI summaries. Non-canonical or oversized scorer metadata now
   records an inconclusive observation instead of repeatedly failing persistence.

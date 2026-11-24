@@ -9,6 +9,7 @@ import { Clock, Effect, Option, Schema } from "effect"
 import * as CanonicalJson from "./CanonicalJson.ts"
 import * as DeferredTools from "./DeferredTools.ts"
 import { classifyHttpStatus } from "./HttpStatusClassifier.ts"
+import { trackToolCalls } from "./internal/ToolHistory.ts"
 import { ModelError } from "./ModelError.ts"
 import * as ModelEvent from "./ModelEvent.ts"
 import {
@@ -178,7 +179,7 @@ const decodeErrorBody = Schema.decodeUnknownOption(Schema.fromJsonString(JsonObj
  */
 export interface State {
   readonly tools: ToolStream.State
-  readonly toolNames: Readonly<Record<string, string>>
+  readonly toolNames: ReadonlyMap<string, string>
   readonly textIds: ReadonlySet<string>
   readonly thinkingIds: ReadonlySet<string>
   readonly thinkingBreaks: ReadonlySet<string>
@@ -308,6 +309,7 @@ const lowerInput = (
 ): ReadonlyArray<InputItem> => {
   const input: Array<InputItem> = []
   const loadedNames = new Set<string>()
+  const dropped = new Set<string>()
   for (const message of request.messages) {
     if (message.role === "user") {
       input.push({
@@ -320,10 +322,12 @@ const lowerInput = (
       continue
     }
     if (message.role === "assistant") {
+      trackToolCalls(dropped, message)
       input.push(...assistantInput(message))
       continue
     }
     for (const result of message.content) {
+      if (dropped.has(result.toolCallId)) continue
       input.push({ type: "function_call_output", call_id: result.toolCallId, output: result.content })
       input.push(...searchItems(result.toolCallId, result.addedToolNames, deferredTools, loadedNames))
     }
@@ -598,7 +602,7 @@ const closeOpenCalls = (
   for (const open of state.tools.open) {
     const item = output.find((entry) =>
       entry?.type === "function_call" &&
-      (string(entry.call_id) === open.callId || current.toolNames[string(entry.id) ?? ""] === open.callId)
+      (string(entry.call_id) === open.callId || current.toolNames.get(string(entry.id) ?? "") === open.callId)
     )
     if (item === undefined && open.fragments.length === 0) continue
     const result = completeTool(current, open.callId, string(item?.arguments))
@@ -716,7 +720,7 @@ const stepEvent = (
       state: {
         ...current,
         tools,
-        toolNames: { ...current.toolNames, [itemId]: callId }
+        toolNames: new Map(current.toolNames).set(itemId, callId)
       },
       events: [
         ModelEvent.ModelEvent.ToolCallStart({ type: "tool-call-start", id: callId, name }),
@@ -733,7 +737,7 @@ const stepEvent = (
     }
   }
   if (type === "response.function_call_arguments.delta" && delta !== undefined) {
-    const callId = current.toolNames[itemId]
+    const callId = current.toolNames.get(itemId)
     if (callId === undefined) {
       return new ModelError({
         code: "invalid_provider_output",
@@ -755,7 +759,7 @@ const stepEvent = (
     if (type === "response.output_item.done" && item?.type !== "function_call") {
       return { state: current, events: [] }
     }
-    const callId = current.toolNames[itemId] ?? string(item?.call_id)
+    const callId = current.toolNames.get(itemId) ?? string(item?.call_id)
     if (callId === undefined) return { state: current, events: [] }
     return completeTool(current, callId, string(value.arguments) ?? string(item?.arguments))
   }
@@ -797,7 +801,7 @@ const stepEvent = (
     if (closed instanceof ModelError) return closed
     const terminal = settle(
       closed.state,
-      Object.keys(closed.state.toolNames).length === 0 ? "stop" : "tool-calls",
+      closed.state.toolNames.size === 0 ? "stop" : "tool-calls",
       servedTier
     )
     return { state: terminal.state, events: [...events, ...closed.events, ...terminal.events] }
@@ -890,7 +894,7 @@ export const protocol: Protocol.Protocol<
     event: Protocol.jsonEvent(OpenAIEvent),
     initial: () => ({
       tools: ToolStream.initial(),
-      toolNames: {},
+      toolNames: new Map(),
       textIds: new Set(),
       thinkingIds: new Set(),
       thinkingBreaks: new Set(),
@@ -934,7 +938,7 @@ export const chatgptProtocol: Protocol.Protocol<
     event: Protocol.jsonEvent(OpenAIEvent),
     initial: () => ({
       tools: ToolStream.initial(),
-      toolNames: {},
+      toolNames: new Map(),
       textIds: new Set(),
       thinkingIds: new Set(),
       thinkingBreaks: new Set(),

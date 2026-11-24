@@ -333,6 +333,41 @@ describe("GitRemote.ref", () => {
     expect(body.extra * pkt(`${SHA} refs/pull/1/head\n`).length).toBeLessThan(1024 * 1024 + 1024)
   })
 
+  // "ref-prefix refs/heads/" and the newline are 23 bytes, so a branch of 65,493 bytes fills git's largest pkt-line
+  // (65,520 bytes with its four length digits) exactly.
+  test.each(
+    [
+      ["ASCII", "a".repeat(65_493)],
+      ["multibyte", "a" + "\u00e9".repeat(32_746)]
+    ] as const
+  )("frames the largest %s branch one pkt-line holds, its header the real byte count", async (_name, branch) => {
+    expect(encoder.encode(branch).length).toBe(65_493)
+    const { run, seen } = readRef(() => answer(listed()), branch)
+    expect(await run).toMatchObject({ failure: { code: "ref_not_found" } })
+    const sent = encoder.encode(seen[0]!.body)
+    const line = sent.subarray("0014command=ls-refs\n0001".length, sent.length - 4)
+    expect(line.length).toBe(65_520)
+    expect(new TextDecoder().decode(line.subarray(0, 4))).toBe("fff0")
+    expect(new TextDecoder().decode(line.subarray(4))).toBe(`ref-prefix refs/heads/${branch}\n`)
+    expect(seen[0]!.body.endsWith("\n0000")).toBe(true)
+  })
+
+  test.each(
+    [
+      ["ASCII", "a".repeat(65_494)],
+      ["multibyte", "aa" + "\u00e9".repeat(32_746)],
+      ["far past the cap", "\u00e9".repeat(200_000)]
+    ] as const
+  )("a branch one byte past the largest pkt-line (%s) is invalid_argument and sends nothing", async (_name, branch) => {
+    const { run, seen, recorded } = readRef(() => answer(listed()), branch, "Basic c2VjcmV0")
+    const result = await run
+    expect(Result.isFailure(result) && result.failure).toMatchObject({ code: "invalid_argument" })
+    expect(Result.isFailure(result) && result.failure.status).toBeUndefined()
+    expect(seen).toEqual([])
+    expect(recorded.count(GitRemote.requests, { outcome: "invalid_argument" })).toBe(1)
+    expect(recorded.spans.find((span) => span.name === "GitRemote.ref")?.status._tag).toBe("Ended")
+  })
+
   test("reading an answer costs time linear in its refs, however finely the network cuts it", async () => {
     const refs = (n: number) =>
       encoder.encode(listed(...Array.from({ length: n }, (_, index) => `${SHA} refs/pull/${index}/head\n`)))
@@ -400,5 +435,42 @@ describe("GitRemote.head with an upstream", () => {
     const span = recorded.spans.find((each) => each.name === "GitRemote.head")!
     expect(span.attributes.get("git.remote")).toBe("https://acme.code.storage/r.git")
     expect(recorded.recorded()).not.toContain("eDp5")
+  })
+})
+
+describe("redirects", () => {
+  const moved = () => new Response(null, { status: 302, headers: { location: "https://elsewhere.example/r.git" } })
+  /** A host that answers every request with a redirect, and the fetch options each request arrived with. */
+  const redirecting = () => {
+    const seen: Array<{ readonly url: string; readonly redirect: RequestRedirect | undefined }> = []
+    const fetch: typeof globalThis.fetch = async (input, init) => {
+      seen.push({ url: String(input), redirect: init?.redirect })
+      return moved()
+    }
+    return { fetch, seen }
+  }
+  const upstream = { url: "https://acme.code.storage/r.git", authorization: Redacted.make("Basic eDp5") }
+
+  test.each(
+    [
+      ["head", () => Effect.asVoid(GitRemote.head(upstream))],
+      ["ref", () => Effect.asVoid(GitRemote.ref(upstream, "main"))]
+    ] as const
+  )("%s with a credential never follows a redirect: one request, then unavailable", async (_name, call) => {
+    const { fetch, seen } = redirecting()
+    const result = await Effect.runPromise(Effect.result(call()).pipe(Effect.provide(httpClient(fetch))))
+    expect(Result.isFailure(result) && result.failure).toMatchObject({ code: "unavailable", status: 302 })
+    expect(seen).toHaveLength(1)
+    expect(seen[0]!.redirect).toBe("manual")
+    expect(new URL(seen[0]!.url).origin).toBe("https://acme.code.storage")
+  })
+
+  test("head without a credential leaves redirects to the transport, as git clone follows a renamed repository", async () => {
+    const { fetch, seen } = redirecting()
+    await Effect.runPromise(
+      Effect.result(GitRemote.head("https://github.com/o/renamed.git")).pipe(Effect.provide(httpClient(fetch)))
+    )
+    expect(seen).toHaveLength(1)
+    expect(seen[0]!.redirect).toBeUndefined()
   })
 })

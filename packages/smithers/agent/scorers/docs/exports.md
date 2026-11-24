@@ -7,7 +7,7 @@ Every categorized member reachable through the root namespaces, in source
 order. Signatures, bounds, and the reasoning behind each rule are on the
 [API reference](./api.md).
 
-12 namespaces, 109 documented members.
+12 namespaces, 110 documented members.
 
 | Export                               | Kind      | Category     | Summary                                                                                       |
 | ------------------------------------ | --------- | ------------ | --------------------------------------------------------------------------------------------- |
@@ -104,6 +104,7 @@ order. Signatures, bounds, and the reasoning behind each rule are on the
 | `Rubric.MakeOptions`                 | interface | models       | Scorer identity, rubric, rule, instructions, and the judge.                                   |
 | `Rubric.Agreement`                   | interface | models       | Judge-versus-human agreement counts and accuracy.                                             |
 | `Rubric.render`                      | const     | rendering    | Builds the judge request with fenced, inert content.                                          |
+| `Rubric.maxParseScan`                | const     | constants    | 16,777,216: the most characters `parse` scans before it refuses a reply.                      |
 | `Rubric.parse`                       | const     | parsing      | Reads the one scores object of a reply into a `Judgement`.                                    |
 | `Rubric.decide`                      | const     | predicates   | Applies a `Rule` to scores.                                                                   |
 | `Rubric.make`                        | const     | constructors | Declares a rubric scorer over a caller-supplied judge.                                        |

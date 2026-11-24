@@ -13,25 +13,31 @@
  * dark repository view beside a light conversation card) never share a
  * pool: sharing one would repaint every mounted file in the theme of
  * whichever view rendered last. A page normally holds one theme, or two
- * after the house theme flips.
+ * after the house theme flips. Each theme's pool has its own state: a second
+ * theme still starting is "starting" while the first is "ready".
  *
  * The pool is a promise the page keeps, not a fact, and pierre's own
  * initialization settles it: a worker that cannot start (a page whose policy
  * refuses workers, a shell that cannot load a module worker) or that never
  * answers `initialize` within the deadline rejects it, and pierre reports any
  * worker error to the pool. Either marks the pool failed, the views remount
- * pierre without it, and highlighting runs on the main thread as before. Views read the pool through
- * `useSyncExternalStore`; nothing here is component state.
+ * pierre without it, and highlighting runs on the main thread as before.
+ *
+ * A view starts its theme's pool from an effect, never from its render body,
+ * so a render React discards (StrictMode's second pass, an interrupted
+ * concurrent render) spawns no worker. Views read the pool through
+ * `useCodeViewWorkerPool`; nothing here is component state.
  */
 import type { DiffsThemeNames, ThemesType } from "@pierre/diffs";
 import { WorkerPoolManager } from "@pierre/diffs/worker";
+import { useCallback, useEffect, useSyncExternalStore } from "react";
 import { registerVibe } from "./vibe";
 
 registerVibe();
 
 export type CodeViewPoolState = "off" | "starting" | "ready" | "failed";
 
-/** The page's pools: their state, which a failure of any one ends for all, and the first theme's pool. */
+/** One theme's pool: its state, which a failure of any pool ends for all. */
 export interface CodeViewPool {
   readonly state: CodeViewPoolState;
   /** The pool pierre's File takes; undefined off the pool (no Worker here, or a pool that failed). */
@@ -44,14 +50,16 @@ export type CodeViewTheme = DiffsThemeNames | ThemesType;
 export const CODE_VIEW_POOL_DEADLINE_MS = 15_000;
 
 const OFF: CodeViewPool = { state: "off", manager: undefined };
+const FAILED: CodeViewPool = { state: "failed", manager: undefined };
 
-let pool: CodeViewPool = OFF;
-/** The page's pools by theme key. */
-const managers = new Map<string, WorkerPoolManager>();
+/** The page's pools by theme key; each entry is replaced, never mutated, so a snapshot read is stable. */
+const pools = new Map<string, CodeViewPool & { readonly manager: WorkerPoolManager }>();
+/** The theme key of the page's first pool, which `currentCodeViewPool` reports. */
+let first: string | undefined;
+let failed = false;
 const listeners = new Set<() => void>();
 
-const publish = (next: CodeViewPool): void => {
-  pool = next;
+const publish = (): void => {
   for (const listener of listeners) listener();
 };
 
@@ -84,24 +92,37 @@ export const spawnWorker = (inBun: boolean = bunRuntime()): Worker => {
 
 const messageOf = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
+/** Whether this page can run a pool at all: a Worker, a document, and no pool that failed. */
+const poolsAvailable = (): boolean => !failed && typeof Worker === "function" && typeof document !== "undefined";
+
 /** Retire every pool of the page. */
 const terminateAll = (): void => {
-  for (const manager of managers.values()) manager.terminate();
-  managers.clear();
+  for (const pool of pools.values()) pool.manager.terminate();
+  pools.clear();
 };
+
+const owns = (manager: WorkerPoolManager): boolean => [...pools.values()].some((pool) => pool.manager === manager);
 
 /** Give up on the page's pools when `manager` fails, unless the page has closed it or started another since. */
 const fail = (manager: WorkerPoolManager, reason: string): void => {
-  if (![...managers.values()].includes(manager)) return;
+  if (!owns(manager)) return;
   console.warn(`code view: highlighting stays on the main thread — ${reason}`);
   terminateAll();
-  publish({ state: "failed", manager: undefined });
+  failed = true;
+  publish();
 };
 
-/** Start the pool for `theme` once per page. Publishes nothing: the caller is mid-render. */
-const start = (theme: CodeViewTheme): void => {
-  if (pool.state === "failed" || managers.has(codeViewThemeKey(theme))) return;
-  if (typeof Worker !== "function" || typeof document === "undefined") return;
+/** The pool for `theme` as it stands; starts nothing. */
+const poolFor = (key: string | undefined): CodeViewPool => (failed ? FAILED : (key === undefined ? undefined : pools.get(key)) ?? OFF);
+
+/**
+ * Start the pool for `theme` once per page and return it. Call it from an
+ * effect or an event, never a render body: it spawns a worker and notifies
+ * the subscribed views.
+ */
+export const codeViewWorkerPool = (theme: CodeViewTheme): CodeViewPool => {
+  const key = codeViewThemeKey(theme);
+  if (pools.has(key) || !poolsAvailable()) return poolFor(key);
   const manager: WorkerPoolManager = new WorkerPoolManager(
     {
       poolSize: 1,
@@ -112,29 +133,22 @@ const start = (theme: CodeViewTheme): void => {
     },
     { theme, useTokenTransformer: true, preferredHighlighter: "shiki-js" },
   );
-  managers.set(codeViewThemeKey(theme), manager);
-  if (pool.manager === undefined) pool = { state: "starting", manager };
+  pools.set(key, { state: "starting", manager });
+  first ??= key;
   manager.initialize().then(
     () => {
-      if (pool.manager === manager && manager.isInitialized()) publish({ state: "ready", manager });
+      if (pools.get(key)?.manager !== manager || !manager.isInitialized()) return;
+      pools.set(key, { state: "ready", manager });
+      publish();
     },
     (error: unknown) => fail(manager, `its worker failed to initialize (${messageOf(error)})`),
   );
+  publish();
+  return poolFor(key);
 };
 
-/**
- * The pool for a view rendering with `theme`: started on first use of that
- * theme, and carrying the page's state. Call it from the render body, then
- * read the live state through
- * `useSyncExternalStore(subscribeCodeViewPool, currentCodeViewPool)`.
- */
-export const codeViewWorkerPool = (theme: CodeViewTheme): CodeViewPool => {
-  start(theme);
-  const manager = managers.get(codeViewThemeKey(theme));
-  return manager === undefined || manager === pool.manager ? pool : { state: pool.state, manager };
-};
-
-export const currentCodeViewPool = (): CodeViewPool => pool;
+/** The page's first pool, or "failed" once any pool has failed. */
+export const currentCodeViewPool = (): CodeViewPool => poolFor(first);
 
 /**
  * Release the page's highlighter after unmounting its code views, while its
@@ -143,8 +157,9 @@ export const currentCodeViewPool = (): CodeViewPool => pool;
  * initialization and errors cannot change their successors' state.
  */
 export const disposeCodeViewPool = (): void => {
-  pool = OFF;
   terminateAll();
+  first = undefined;
+  failed = false;
 };
 
 export const subscribeCodeViewPool = (listener: () => void): (() => void) => {
@@ -152,4 +167,44 @@ export const subscribeCodeViewPool = (listener: () => void): (() => void) => {
   return () => {
     listeners.delete(listener);
   };
+};
+
+/** What a view hands pierre: the pool's manager, or none (the main thread), and whether to wait for the pool. */
+export interface CodeViewHighlighter {
+  /** The manager for pierre's `WorkerPoolContext`; undefined highlights on the main thread. */
+  readonly manager: WorkerPoolManager | undefined;
+  /**
+   * True for the render before this view's effect starts its theme's pool.
+   * The view mounts no pierre widget yet: one mounted without the pool would
+   * tokenize on the main thread, the stall the pool exists to avoid.
+   */
+  readonly waiting: boolean;
+}
+
+const MAIN_THREAD: CodeViewHighlighter = { manager: undefined, waiting: false };
+const WAITING: CodeViewHighlighter = { manager: undefined, waiting: true };
+/** One highlighter per published pool, so the store's snapshot is stable between changes. */
+const highlighters = new WeakMap<CodeViewPool, CodeViewHighlighter>();
+
+const highlighterFor = (key: string): CodeViewHighlighter => {
+  const pool = poolFor(key);
+  if (pool.manager === undefined) return pool.state === "off" && poolsAvailable() ? WAITING : MAIN_THREAD;
+  let highlighter = highlighters.get(pool);
+  if (highlighter === undefined) highlighters.set(pool, highlighter = { manager: pool.manager, waiting: false });
+  return highlighter;
+};
+
+/**
+ * The pool for a view rendering with `theme`. Its effect starts the pool for
+ * the theme; the view re-renders on every change of that pool's state. A
+ * server render, and the client render that hydrates it, highlight on the
+ * main thread, as a page without workers does.
+ */
+export const useCodeViewWorkerPool = (theme: CodeViewTheme): CodeViewHighlighter => {
+  const key = codeViewThemeKey(theme);
+  // Keyed by the theme's key: an equal theme object made on each render starts nothing new.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => void codeViewWorkerPool(theme), [key]);
+  const read = useCallback(() => highlighterFor(key), [key]);
+  return useSyncExternalStore(subscribeCodeViewPool, read, () => MAIN_THREAD);
 };

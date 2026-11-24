@@ -49,6 +49,12 @@ import * as Seat from "../src/Seat.ts"
 import * as SeatResolver from "../src/SeatResolver.ts"
 import * as Safety from "./Safety.ts"
 
+/**
+ * The principal these compositions decide approvals as. The SQL control runtime stamps a caller that names
+ * none `anonymous`, which its default approval authority refuses: only the local operator may decide.
+ */
+const localOperator = { id: "local", kind: "operator" } as const
+
 const liveClock = Effect.runSync(Clock.Clock)
 const latencyMaxMillis = 1_000
 const betweenProcessesMillis = 2_000
@@ -207,6 +213,9 @@ const host = (root: string, owner: Ownership.OwnerId, engineHost: string, clock?
     )
   }
   const registration = AgentSession.layer({
+    // A later host in these cases starts only after the case has ended the one before it, so it may adopt that
+    // host's park: the case itself is the confirmation that the parking host is dead (`AgentSession.hostsPark`).
+    ...(owner === firstOwner ? {} : { confirmParkHostDead: () => Effect.succeed(true) }),
     quotaPolicy: Safety.quotaPolicy,
     budget,
     flows: [],
@@ -234,7 +243,7 @@ const host = (root: string, owner: Ownership.OwnerId, engineHost: string, clock?
     Layer.provide(engine),
     Layer.provideMerge(
       Layer.mergeAll(
-        SqlControlRuntime.layer({ owner, flows: controlFlows }).pipe(Layer.orDie),
+        SqlControlRuntime.layer({ owner, flows: controlFlows, principal: localOperator }).pipe(Layer.orDie),
         NotificationQueue.layer,
         registryLayer
       )

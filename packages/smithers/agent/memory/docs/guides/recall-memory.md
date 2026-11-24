@@ -45,7 +45,7 @@ Pick keyword recall when you want zero moving parts: no enablement step, no embe
 
 ## Full text recall
 
-`RecallFts.layer` ranks by SQLite FTS5 BM25. Enable FTS once per namespace kind before the first query, or the store fails the read with `fts_not_enabled`:
+`RecallFts.layer` orders each bank by SQLite FTS5 BM25 and scores a row `1 / position` within its bank, so a score never reveals another namespace's writes. Enable FTS once per namespace kind before the first query, or the store fails the read with `fts_not_enabled`:
 
 ```ts
 import * as MemoryStore from "@smthrs/memory/MemoryStore"
@@ -66,7 +66,7 @@ The store maintains the FTS projection on every write, so no reindex step exists
 
 ## Semantic recall
 
-`RecallSemantic.layer` ranks rows by cosine similarity between each row's stored vector and the query embedding, decayed by a recency half-life. It needs an `Embedding` service and a vector store. The authoritative store writes no vectors itself, so decorate it: every `putFact` and `putNote` then projects a vector after commit, retrying once and logging failures without changing the write result. The projection runs in the caller's fiber under `projectionTimeout` (default 5 seconds), so a hung embedding provider delays the write by at most that deadline and is logged like any other failure. The SQL vector upsert accepts a projection only while its text matches the authoritative row in the same write transaction. When two processes write identical text, a late projection can still replace a newer vector's `updatedAtMs` with an older value and reduce its recency score. Direct vector upserts that omit `text` instead keep the newest vector by `updatedAtMs`.
+`RecallSemantic.layer` ranks rows by cosine similarity between each row's stored vector and the query embedding, decayed by a recency half-life. It needs an `Embedding` service and a vector store. The authoritative store writes no vectors itself, so decorate it: every `putFact` and `putNote` then projects a vector after commit, retrying once, then logging and counting failures without changing the write result. `RecallSemantic.reconcile(banks, options)` projects again every row a failure left without a current vector. The projection runs in the caller's fiber under `projectionTimeout` (default 5 seconds), so a hung embedding provider delays the write by at most that deadline and is logged like any other failure. The SQL vector upsert accepts a projection only while its text matches the authoritative row in the same write transaction. When two processes write identical text, a late projection can still replace a newer vector's `updatedAtMs` with an older value and reduce its recency score. Direct vector upserts that omit `text` instead keep the newest vector by `updatedAtMs`.
 
 ```ts
 import * as DurableWriter from "@smthrs/database/DurableWriter"

@@ -224,6 +224,29 @@ describe("JsonSchema.property and JsonSchema.at", () => {
     expect(JsonSchema.property({}, "x")).toBeUndefined()
   })
 
+  it("answers with every union member that declares the property", () => {
+    const payload: JsonSchema.Resolved = {
+      oneOf: [
+        { properties: { kind: { const: "a" }, rows: { type: "array", items: { properties: { left: {} } } } } },
+        {
+          anyOf: [{
+            properties: { kind: { const: "b" }, rows: { type: "array", items: { properties: { right: {} } } } }
+          }]
+        },
+        { properties: { only: { type: "integer" } } }
+      ]
+    }
+    const kind = JsonSchema.property(payload, "kind")!
+    expect(kind).toEqual({ anyOf: [{ const: "a" }, { const: "b" }] })
+    expect(Option.isNone(JsonSchema.validate(kind, "a"))).toBe(true)
+    expect(Option.isNone(JsonSchema.validate(kind, "b"))).toBe(true)
+    expect(Option.isSome(JsonSchema.validate(kind, "c"))).toBe(true)
+    expect(JsonSchema.property(payload, "only")).toEqual({ type: "integer" })
+    expect(JsonSchema.at(payload, ["rows", 0, "left"])).toEqual({})
+    expect(JsonSchema.at(payload, ["rows", 0, "right"])).toEqual({})
+    expect(JsonSchema.at(payload, ["rows", 0, "neither"])).toBeUndefined()
+  })
+
   it("walks names into properties and numbers into items", () => {
     expect(JsonSchema.at(row, ["options", 0, "label"])).toEqual({ type: "string" })
     expect(JsonSchema.at(row, [])).toBe(row)

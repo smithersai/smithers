@@ -169,7 +169,13 @@ export class ExternalTranscriptError
   extends Schema.TaggedError<ExternalTranscriptError>()("harness/ExternalTranscriptError", {
     code: ExternalTranscriptErrorCode,
     message: Schema.String,
-    line: Schema.Number
+    line: Schema.Number,
+    /**
+     * What decoded before the refused line: the entries of every complete line ahead of it in the chunk, and the
+     * state as it stood after the last of them, with nothing pending. The same bytes fed one line at a time
+     * return these entries and then this error.
+     */
+    decoded: Schema.Struct({ state: Schema.Unknown, entries: Schema.Array(Entry) })
   })
 {}
 Fault.register(
@@ -238,6 +244,60 @@ export const codexStart: CodexState = { pending: "", line: 0, seq: 0 }
 export interface Decoded<State = CodexState> {
   readonly state: State
   readonly entries: ReadonlyArray<Entry>
+}
+
+/**
+ * A refused decode: the error, with `decoded.state` typed as the decoder's own state.
+ *
+ * @category errors
+ * @since 1.0.0-rc.18
+ */
+export type Refused<State = CodexState> = ExternalTranscriptError & { readonly decoded: Decoded<State> }
+
+/** What a line decoder says of the line it stopped at; {@link resumable} adds what decoded before it. */
+interface Stopped {
+  readonly code: ExternalTranscriptErrorCode
+  readonly message: string
+  readonly line: number
+}
+
+/**
+ * The longest unfinished line a state holds, in UTF-16 code units: 64 MiB.
+ *
+ * `state.pending` is joined to every chunk and split again, so a file that never writes a newline would
+ * grow the state, and the work per chunk, without limit.
+ */
+const pendingCeiling = 64 * 1024 * 1024
+
+/**
+ * Turns a line decoder into a chunk decoder that keeps what decoded before a refused line.
+ *
+ * The line decoder stops at the first line it refuses and says only which. The entries before that line
+ * are decoded again from the lines ahead of it, which costs a second pass on the failure path alone.
+ */
+const resumable = <State extends { readonly pending: string; readonly line: number }>(
+  what: string,
+  decode: (state: State, text: string) => Result.Result<Decoded<State>, Stopped>
+) =>
+(state: State, chunk: string): Result.Result<Decoded<State>, Refused<State>> => {
+  const start = { ...state, pending: "" }
+  const text = state.pending + chunk
+  const refuse = (stopped: Stopped, decoded: Decoded<State>) =>
+    Result.fail(new ExternalTranscriptError({ ...stopped, decoded }) as Refused<State>)
+  return Result.match(decode(start, text), {
+    onSuccess: (decoded) =>
+      decoded.state.pending.length <= pendingCeiling
+        ? Result.succeed(decoded)
+        : refuse({
+          code: "malformed_record",
+          message: `${what} line ${decoded.state.line + 1} passes ${pendingCeiling} characters without ending.`,
+          line: decoded.state.line + 1
+        }, { state: { ...decoded.state, pending: "" }, entries: decoded.entries }),
+    onFailure: (stopped) => {
+      const ahead = text.split("\n").slice(0, stopped.line - state.line - 1).map((line) => `${line}\n`).join("")
+      return refuse(stopped, Result.getOrThrow(decode(start, ahead)))
+    }
+  })
 }
 
 type Json = Record<string, unknown>
@@ -494,21 +554,14 @@ const profileOf = (profile: string, releases: ReadonlyArray<string>, release: st
   return minor !== undefined && releases.includes(minor) ? `${profile}/${minor}` : undefined
 }
 
-/**
- * Decode the next chunk of a Codex rollout. Pass `codexStart` with the first chunk and the returned state
- * with each following one; any partition of the same bytes yields the same entries.
- *
- * @category decoding
- * @since 1.0.0-rc.1
- */
-export const decodeCodex = (state: CodexState, chunk: string): Result.Result<Decoded, ExternalTranscriptError> => {
-  const lines = (state.pending + chunk).split("\n")
+/** The lines of a Codex rollout from `state` on; `state.pending` is already part of `chunk`. */
+const codexLines = (state: CodexState, chunk: string): Result.Result<Decoded, Stopped> => {
+  const lines = chunk.split("\n")
   const pending = lines.pop()!
   let { line, seq, session, goal } = state
   const calls = new Map(Object.entries(state.calls ?? {}))
   const entries: Array<Entry> = []
-  const fail = (code: ExternalTranscriptErrorCode, message: string) =>
-    Result.fail(new ExternalTranscriptError({ code, message, line }))
+  const fail = (code: ExternalTranscriptErrorCode, message: string) => Result.fail({ code, message, line })
   /** A kind outside the named lists; a kind that is not even a string is a record of another shape. */
   const unread = (what: string, type: unknown) =>
     typeof type === "string" && type !== ""
@@ -707,6 +760,18 @@ export const decodeCodex = (state: CodexState, chunk: string): Result.Result<Dec
     entries
   })
 }
+
+/**
+ * Decode the next chunk of a Codex rollout. Pass `codexStart` with the first chunk and the returned state
+ * with each following one; any partition of the same bytes yields the same entries.
+ *
+ * @category decoding
+ * @since 1.0.0-rc.1
+ */
+export const decodeCodex: (state: CodexState, chunk: string) => Result.Result<Decoded, Refused> = resumable(
+  "Codex rollout",
+  codexLines
+)
 
 /**
  * The Claude Code release lines whose transcript shape this module reads, by `major.minor`.
@@ -971,28 +1036,14 @@ const ownerText = (said: string): Part | undefined => {
   return { type: "prompt", text: shell === undefined ? said : `!${shell.trim()}` }
 }
 
-/**
- * Decode the next chunk of a Claude Code session transcript. Pass `claudeStart` with the first chunk and the
- * returned state with each following one; any partition of the same bytes yields the same entries.
- *
- * Entries follow the order of the records that complete them. A tool call is held in `state.calls` from its
- * `tool_use` record until the `tool_result` with the same id arrives, and becomes one entry at the result's line;
- * a call whose result never arrives emits nothing.
- *
- * @category decoding
- * @since 1.0.0-rc.1
- */
-export const decodeClaude = (
-  state: ClaudeState,
-  chunk: string
-): Result.Result<Decoded<ClaudeState>, ExternalTranscriptError> => {
-  const lines = (state.pending + chunk).split("\n")
+/** The lines of a Claude Code transcript from `state` on; `state.pending` is already part of `chunk`. */
+const claudeLines = (state: ClaudeState, chunk: string): Result.Result<Decoded<ClaudeState>, Stopped> => {
+  const lines = chunk.split("\n")
   const pending = lines.pop()!
   let { line, seq, session, turn } = state
   const calls = new Map(Object.entries(state.calls))
   const entries: Array<Entry> = []
-  const fail = (code: ExternalTranscriptErrorCode, message: string) =>
-    Result.fail(new ExternalTranscriptError({ code, message, line }))
+  const fail = (code: ExternalTranscriptErrorCode, message: string) => Result.fail({ code, message, line })
   /** A kind outside the named lists; a kind that is not even a string is a record of another shape. */
   const unread = (what: string, type: unknown) =>
     typeof type === "string" && type !== ""
@@ -1145,3 +1196,19 @@ export const decodeClaude = (
     entries
   })
 }
+
+/**
+ * Decode the next chunk of a Claude Code session transcript. Pass `claudeStart` with the first chunk and the
+ * returned state with each following one; any partition of the same bytes yields the same entries.
+ *
+ * Entries follow the order of the records that complete them. A tool call is held in `state.calls` from its
+ * `tool_use` record until the `tool_result` with the same id arrives, and becomes one entry at the result's line;
+ * a call whose result never arrives emits nothing.
+ *
+ * @category decoding
+ * @since 1.0.0-rc.1
+ */
+export const decodeClaude: (
+  state: ClaudeState,
+  chunk: string
+) => Result.Result<Decoded<ClaudeState>, Refused<ClaudeState>> = resumable("Claude Code transcript", claudeLines)

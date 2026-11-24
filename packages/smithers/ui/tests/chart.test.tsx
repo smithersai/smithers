@@ -305,3 +305,42 @@ test("reordering pie slices beside another series removes old legend entries", (
   ]);
   expect(host.textContent).toBe("Sessionssafari");
 });
+
+describe("series named like Object's own members", () => {
+  test("a series named __proto__ keeps its color and label like any other", () => {
+    const config = chartConfig([{ key: "__proto__", label: "Proto" }, { key: "files" }]);
+    expect(Object.keys(config)).toEqual(["__proto__", "files"]);
+    const html = renderToStaticMarkup(
+      <ChartContainer id="proto" config={config}>
+        <BarChart width={400} height={200} data={[{ __proto__: 1, files: 2 }]}>
+          <Bar dataKey="files" fill="var(--color-files)" />
+        </BarChart>
+      </ChartContainer>,
+    );
+    expect(html).toContain("--color-__proto__: #2a78d6");
+    const legend = renderToStaticMarkup(
+      <ChartProvider config={config}>
+        <ChartLegendContent payload={[{ dataKey: "__proto__", value: "__proto__", color: "#2a78d6" }]} />
+      </ChartProvider>,
+    );
+    expect(legend).toContain(">Proto</span>");
+  });
+
+  test("a missing series named constructor or toString falls back as any missing series does", () => {
+    const config = chartConfig([{ key: "landed", label: "Landed" }]);
+    const tooltip = (name: string) => renderToStaticMarkup(
+      <ChartProvider config={config}>
+        <ChartTooltipContent active payload={[{ dataKey: name, name, value: 3, color: "#123456" }]} />
+      </ChartProvider>,
+    ).replaceAll(name, "NAME");
+    const legend = (name: string) => renderToStaticMarkup(
+      <ChartProvider config={config}>
+        <ChartLegendContent payload={[{ dataKey: name, value: name, color: "#123456" }]} />
+      </ChartProvider>,
+    ).replaceAll(name, "NAME");
+    for (const name of ["constructor", "toString", "hasOwnProperty"]) {
+      expect(tooltip(name)).toBe(tooltip("absent"));
+      expect(legend(name)).toBe(legend("absent"));
+    }
+  });
+});

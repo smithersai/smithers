@@ -73,7 +73,8 @@ interface Client {
 - `listBranches` lists one page of branches, each with its head commit.
 - `gitRemote` signs a five-minute `git:read` token for `repo` and returns
   `{ url: "https://<org>.code.storage/<repo>.git", authorization }`, the token
-  as Basic `t:<token>` in a redacted value. It sends nothing; hand the result to
+  as Basic `t:<token>` in a redacted value. The URL is built on `gitUrl` when
+  the credentials set it. It sends nothing; hand the result to
   `GitProxy.uploadPack` or `GitRemote.ref`, never to a guest.
 - `listTags` lists one page of tags in lexical order, each with the commit it
   names (dereferenced for an annotated tag).
@@ -86,9 +87,19 @@ interface Client {
   fast-forward or not (the provider's `force`); moving it to where it is
   changes nothing.
 
-Every API operation rejects a repository name containing an unpaired UTF-16
-surrogate with `invalid_argument` before sending HTTP. `gitRemote` keeps its
-infallible public type and requires a well-formed repository name.
+Every API operation rejects a malformed repository name with
+`invalid_argument` before it signs a token or sends HTTP: a name containing an
+unpaired UTF-16 surrogate, or one with a `/`-separated segment that is empty,
+`.` or `..` (`""`, `"a/../b"`, `"a//b"`, `"/a"`). A URL parser drops or
+resolves those segments, so the request would reach another route.
+`gitRemote` keeps its infallible public type: the same names are a defect,
+`CodeStorage.CodeStorageInvalidRepository`, which carries no part of the name,
+and no token is signed.
+
+No call follows a redirect. Each request carries a signed token, and a
+followed 3xx would send it to an origin the host never named, so the client
+sets `redirect: "manual"` on the fetch transport and fails a 3xx answer with
+code `redirect` and its status, without reading its body.
 
 ### `CodeStorage.Credentials` and `CodeStorage.config`
 
@@ -97,15 +108,19 @@ interface Credentials {
   readonly org: string
   readonly key: Redacted.Redacted<string>
   readonly apiUrl?: string | undefined
+  readonly gitUrl?: string | undefined
 }
 const config: Config.Config<Credentials>
 ```
 
 `key` is the organization's ES256 key as a PKCS#8 PEM; newlines escaped as
 `\n`, as an environment variable often carries them, work too. `apiUrl`
-defaults to `https://api.<org>.code.storage`. `config` reads
-`CODE_STORAGE_ORG`, `CODE_STORAGE_KEY` (redacted) and the optional
-`CODE_STORAGE_API_URL`.
+defaults to `https://api.<org>.code.storage`. `gitUrl`, the origin
+`gitRemote` builds its URL on, defaults to `https://<org>.code.storage`. Each
+defaults on its own, so a host that points `apiUrl` at another deployment,
+such as staging, sets `gitUrl` too; otherwise `gitRemote` hands out a
+production URL. `config` reads `CODE_STORAGE_ORG`, `CODE_STORAGE_KEY`
+(redacted) and the optional `CODE_STORAGE_API_URL` and `CODE_STORAGE_GIT_URL`.
 
 ### Options and results
 
@@ -242,9 +257,11 @@ const isTransient: (error: CodeStorageError) => boolean
     - `transport`: no answer, or a body that broke off;
     - `invalid_response`: a body over 8 MiB, not JSON, or not the documented
       shape;
+    - `redirect`: a 3xx answer, which the client never follows;
     - `too_large`;
-    - `invalid_argument`: a malformed repository name or invalid `readFile`
-      `maxBytes` (not a finite, non-negative safe integer);
+    - `invalid_argument`: a malformed repository name (an unpaired surrogate,
+      or an empty, `.` or `..` segment) or invalid `readFile` `maxBytes` (not
+      a finite, non-negative safe integer);
     - `invalid_key`.
 - **`retryAfterMillis`** is the server's `Retry-After` in milliseconds, from
   delta-seconds or an HTTP date. `@smthrs/flow`'s `RetryPolicy` reads this
@@ -335,13 +352,26 @@ const ref: (upstream: Upstream, branch: string) => Effect.Effect<string, GitRemo
   flush that ends the answer, when the remote has no such branch
   (`ref_not_found`). Reading costs time linear in the answer however the
   network cuts it, and stops at 1 MiB: an answer that reaches that cap before
-  the branch's line or the flush fails `too_large`.
+  the branch's line or the flush fails `too_large`. A branch whose
+  `ref-prefix` line passes git's largest pkt-line (65,520 bytes, so a branch
+  over 65,493 UTF-8 bytes) fails `invalid_argument` and sends nothing.
+- **Redirects:** a request that carries a credential never follows a redirect;
+  the 3xx is `unavailable`. `head` of a plain URL, with no credential, leaves
+  redirects to the transport, as `git clone` follows a renamed repository.
 
 ### `GitRemote.GitRemoteError`
 
 ```ts
 class GitRemoteError extends Schema.TaggedError<GitRemoteError>()("@smthrs/effect-code-storage/GitRemoteError", {
-  code: "not_found" | "empty" | "ref_not_found" | "unavailable" | "transport" | "too_large" | "invalid_response",
+  code:
+    | "not_found"
+    | "empty"
+    | "ref_not_found"
+    | "unavailable"
+    | "transport"
+    | "too_large"
+    | "invalid_response"
+    | "invalid_argument",
   status?: number
 })
 ```
@@ -355,6 +385,7 @@ class GitRemoteError extends Schema.TaggedError<GitRemoteError>()("@smthrs/effec
 | `transport`        | No answer, or the answer broke off                                                                          |
 | `too_large`        | The answer reached the read's cap (64 KiB for `head`, 1 MiB for `ref`) before it said what was asked        |
 | `invalid_response` | Not an upload-pack advertisement or `ls-refs` answer, malformed, or a line it needed isn't UTF-8            |
+| `invalid_argument` | `ref` only: the branch is too long for one pkt-line. Nothing is sent                                        |
 
 ### `GitRemote.requests`
 
@@ -386,6 +417,9 @@ const uploadPack: (
   `Content-Type` and `Cache-Control`. It asks for `Accept-Encoding: identity`
   and never passes `Content-Encoding` on: the host's `fetch` decodes a
   compressed answer (GitHub gzips `info/refs`). No answer is 502.
+- **Redirects:** it never follows one, which would carry the credential to an
+  origin the host never chose. An upstream that answers 3xx is a bodyless 502
+  to the guest.
 
 ### `GitProxy.classify`
 
@@ -404,8 +438,10 @@ const requests: Metric.Counter<number>
 
 `git_proxy_requests`: one count per request, by `service` (`info-refs`,
 `upload-pack` or `refused`) and `outcome` (`ok`, `refused`, the upstream's
-status class such as `4xx`, `transport`, or `broken` for an answer that broke
-off), counted once the answer's body has ended. Each request is also one span,
+status class such as `4xx`, `transport`, `redirect` for a 3xx it refused to
+follow, or `broken` for an answer that broke off), counted once the answer's
+body has ended. The count and the log line run with the request's services,
+whichever services the server streams the body with. Each request is also one span,
 `GitProxy.uploadPack`, annotated with `git.proxy.service` and
 `http.response.status_code` before the headers are returned. The span ends at
 the headers; one log line, `git.proxy`, records the service, outcome, status and

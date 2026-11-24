@@ -18,6 +18,13 @@ class HeldWorker extends EventTarget {
   }
   postMessage(request: unknown): void {
     this.requests.push(request);
+    HeldWorker.onPost?.(this, request as { readonly type?: string; readonly id?: unknown });
+  }
+  /** Sees each request a worker receives, the moment pierre posts it. */
+  static onPost: ((worker: HeldWorker, request: { readonly type?: string; readonly id?: unknown }) => void) | undefined;
+  /** Answer `initialize` as pierre's worker does once Shiki has loaded. */
+  initialized(id: unknown): void {
+    this.dispatchEvent(new MessageEvent("message", { data: { type: "success", requestType: "initialize", id } }));
   }
   terminate(): void {
     this.terminated = true;
@@ -38,7 +45,27 @@ const holdWorkers = (): void => {
   globalThis.Worker = HeldWorker as unknown as typeof Worker;
 };
 
+/** The next `initialize` request any held worker receives. */
+const initializeRequest = (): Promise<{ readonly worker: HeldWorker; readonly id: unknown }> =>
+  new Promise((resolve) => {
+    HeldWorker.onPost = (worker, request) => {
+      if (request.type !== "initialize") return;
+      HeldWorker.onPost = undefined;
+      resolve({ worker, id: request.id });
+    };
+  });
+/** Resolves on the first published change after which `condition` holds. */
+const published = (condition: () => boolean): Promise<void> =>
+  new Promise((resolve) => {
+    const unsubscribe = subscribeCodeViewPool(() => {
+      if (!condition()) return;
+      unsubscribe();
+      resolve();
+    });
+  });
+
 afterEach(() => {
+  HeldWorker.onPost = undefined;
   disposeCodeViewPool();
   globalThis.Worker = originalWorker;
 });
@@ -116,6 +143,32 @@ describe("code view page lifetime", () => {
       warning.mockRestore();
       error.mockRestore();
     }
+  });
+
+  test("each theme's pool has its own state: a second theme is starting while the first is ready", async () => {
+    holdWorkers();
+    const darkRequest = initializeRequest();
+    expect(codeViewWorkerPool("github-dark").state).toBe("starting");
+    const dark = await darkRequest;
+    const darkReady = published(() => currentCodeViewPool().state === "ready");
+    dark.worker.initialized(dark.id);
+    await darkReady;
+    expect(codeViewWorkerPool("github-dark").state).toBe("ready");
+
+    const lightRequest = initializeRequest();
+    const light = codeViewWorkerPool("github-light");
+    expect(light.state).toBe("starting");
+    expect(light.manager!.isInitialized()).toBe(false);
+    const pending = await lightRequest;
+    // The light pool has not answered `initialize`: it is not ready because the dark one is.
+    expect(codeViewWorkerPool("github-light")).toBe(light);
+    expect(currentCodeViewPool().state).toBe("ready");
+    const lightReady = published(() => codeViewWorkerPool("github-light").state === "ready");
+    pending.worker.initialized(pending.id);
+    await lightReady;
+    expect(codeViewWorkerPool("github-light").manager).toBe(light.manager);
+    expect(light.manager!.isInitialized()).toBe(true);
+    expect(HeldWorker.instances).toHaveLength(2);
   });
 
   test("a current worker failure publishes fallback once, terminates it, and can restart on a new page", async () => {

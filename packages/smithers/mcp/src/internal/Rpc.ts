@@ -109,6 +109,22 @@ const encoder = new TextEncoder()
  */
 export const encode = (message: OutboundMessage): Uint8Array => encoder.encode(`${JSON.stringify(message)}\n`)
 
+const tagged = (value: unknown): Inbound | undefined => {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined
+  if (!Object.hasOwn(value, "jsonrpc")) return undefined
+  return value as Inbound
+}
+
+const json = (line: string): unknown => {
+  const trimmed = line.trim()
+  if (trimmed === "") return undefined
+  try {
+    return JSON.parse(trimmed)
+  } catch {
+    return undefined
+  }
+}
+
 /**
  * Parses one line of server output. A blank line, invalid JSON, a non-object,
  * or an object with no own `jsonrpc` property returns `undefined`. MCP servers
@@ -119,18 +135,26 @@ export const encode = (message: OutboundMessage): Uint8Array => encoder.encode(`
  * @category conversions
  * @since 1.0.0-rc.0
  */
-export const parse = (line: string): Inbound | undefined => {
-  const trimmed = line.trim()
-  if (trimmed === "") return undefined
-  let value: unknown
-  try {
-    value = JSON.parse(trimmed)
-  } catch {
-    return undefined
+export const parse = (line: string): Inbound | undefined => tagged(json(line))
+
+/**
+ * Parses one frame as the messages it carries, in order: one for a JSON-RPC
+ * object, one per tagged element for a JSON-RPC batch (a JSON array, which MCP
+ * `2025-03-26` lets a server send), none for noise. Each element is read by
+ * the rule {@link parse} applies to a whole line, so an element that does not
+ * claim JSON-RPC is dropped as noise is.
+ *
+ * @category conversions
+ * @since 1.0.0-rc.19
+ */
+export const parseFrame = (line: string): ReadonlyArray<Inbound> => {
+  const value = json(line)
+  const messages: Array<Inbound> = []
+  for (const candidate of Array.isArray(value) ? value : [value]) {
+    const message = tagged(candidate)
+    if (message !== undefined) messages.push(message)
   }
-  if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined
-  if (!Object.hasOwn(value, "jsonrpc")) return undefined
-  return value as Inbound
+  return messages
 }
 
 const malformed = (reason: string): Reply => ({ _tag: "Malformed", reason })

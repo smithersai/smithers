@@ -69,7 +69,7 @@ export const guardDocument = (html: string, title: string): string =>
   "p{margin:1rem;font:14px system-ui,sans-serif;color:GrayText}</style>" +
   `<iframe sandbox="${HTML_PREVIEW_SANDBOX}" referrerpolicy="no-referrer" title="${attribute(title)}" ` +
   `srcdoc="${attribute(previewDocument(html))}"></iframe>` +
-  "<p hidden>This page tried to leave the preview, so it was stopped.</p>" +
+  "<p hidden>Navigation blocked</p>" +
   `<script>${guardScript}</script>`;
 
 export type HtmlPreviewProps = Omit<ComponentProps<"iframe">, "src" | "srcDoc" | "sandbox" | "title"> & {

@@ -10,6 +10,39 @@
   Restoration source: `0448786fcd3634143161c29117cf6dbedef1be33`
   ([#3389](https://github.com/smithersai/smithers/issues/3389)).
 
+### Security
+
+- `GitHub.Proxy` refuses merges and approvals. A request that merges a pull
+  request or a branch, sends a review other than a `COMMENT`, dismisses a
+  review, or does any of these through GraphQL is answered `403` with reason
+  `PEOPLE_ONLY`, before a credential is fetched. `forwardPeopleActions` lifts
+  it for a proxy no agent can reach.
+- `GitHub.Proxy` reads at most `maxBodyBytes` (32 MiB by default) of a request
+  body and answers `413` past it, and `400` for a body the caller never
+  finished. Pagination `Link` headers name `publicOrigin`, or the request's
+  validated `Host`; a malformed `Host` is answered `400`. `/REPOS/owner/name`
+  selects the same credential as `/repos/owner/name`.
+- A delegated branch, commit branch, or pull request head must be a git ref
+  name inside the grant's branch folder, so `proposals/../main` is refused,
+  and a new branch is judged by the whole name its prefix and label make. A
+  delegated read path is bounded to 2048 characters with a plain query and no
+  fragment.
+- `Telegram.Source` refuses an `apiBaseUrl` that is `http:` beyond loopback:
+  the bot token is part of the request path.
+
+### Fixed
+
+- `GitHub.RateLimit` gives back the write slot of a write that was refused or
+  interrupted before its attempt began, so refused writes no longer count
+  toward the 80 a minute and 500 an hour.
+- The auth broker accepts an Enterprise Managed User's login (`ada_acme`), and
+  the device flow keeps the refresh token GitHub answers.
+- `GitHub.PublicRead.installations` drops a held token GitHub answers 401,
+  403, or 404 for, mints once more on a 401, and answers `forbidden` for a
+  404.
+- GitHub's App-revoked event ends every readable delegation when a stored row
+  is malformed.
+
 ### Added
 
 - `Core.Channel.fromSource`: the control-plane door of a polling source. Its

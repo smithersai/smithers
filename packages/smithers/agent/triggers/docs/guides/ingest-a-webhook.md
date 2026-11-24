@@ -85,6 +85,44 @@ empty header is refused before `expected` runs, and an `expected` that answers
 with zero bytes is refused after it, so a secret that resolves to the empty
 string closes the door instead of opening it for everyone.
 
+## Bind a timestamp
+
+A signature over the body alone verifies forever: anyone who captures one
+request can replay it for as long as the secret lives. Senders close that by
+signing a timestamp with the body, such as `v0:{timestamp}:{body}`. Two parts
+of the verifier express it:
+
+```ts
+import * as Duration from "effect/Duration"
+
+declare const signTimestamped: (
+  body: Uint8Array,
+  credential: Redacted.Redacted<CredentialRef>,
+  headers: Readonly<Record<string, string | undefined>>
+) => Effect.Effect<Uint8Array, TriggerError>
+
+const verifyFresh = Webhook.makeSignatureVerifier({
+  header: "x-signature",
+  expected: signTimestamped,
+  timestamp: { header: "x-request-timestamp", tolerance: Duration.minutes(5) }
+})
+```
+
+- `expected` receives a private copy of the request headers as its third
+  argument, so it reads the timestamp header and folds it into the bytes it
+  signs.
+- `timestamp` names the header and a tolerance. The verifier refuses a request
+  whose timestamp is absent, is not whole decimal epoch seconds, or is further
+  than the tolerance from the clock, in the past or the future. A
+  ten-minute-old request under a five-minute tolerance fails
+  `verification_failed` before the secret is resolved.
+
+The freshness check means something only when `expected` signs the same header:
+a timestamp the signature does not cover is the sender's to rewrite. A sender
+that folds the timestamp into the signature header (`t=...,v1=...`) names that
+header in `timestamp.header` and supplies `timestamp.parse`, which answers
+epoch milliseconds or `undefined`.
+
 ## Register once, then accept traffic
 
 ```ts

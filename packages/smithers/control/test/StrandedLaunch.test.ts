@@ -7,7 +7,7 @@
  * read the recorded receipt back, so nothing ever launched it (#2175).
  */
 import { Registry } from "@smthrs/registry"
-import { Effect, Exit, Layer } from "effect"
+import { Deferred, Effect, Exit, Layer } from "effect"
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -60,13 +60,13 @@ const retry = (card: PlanCard) =>
     })
   })
 
-it("relaunches a run whose admitting process died before the launch when the client retries its key", async () => {
+it("never repeats an executor handoff after the admitter dies and its key is retried", async () => {
   const filename = join(directory, "stranded.sqlite")
   const planned = await run(stack(filename, 101, ControlExecutor.makeNoop()), admit)
   if (!Exit.isSuccess(planned)) throw new Error("plan failed")
   const card = planned.value
 
-  // The host dies between committing the admission and the executor's launch.
+  // The host dies inside launch, after the durable handoff.
   const crashed = await run(
     stack(filename, 101, ControlExecutor.makeNoop({ launch: () => Effect.die("host died") })),
     retry(card)
@@ -87,7 +87,7 @@ it("relaunches a run whose admitting process died before the launch when the cli
     stack(filename, 202, launch),
     Effect.gen(function*() {
       // The admitter's pid is gone from this host, so its lease, still fresh,
-      // is no reason to wait: the first retry launches.
+      // is no reason to wait. The handoff still requires an explicit resume.
       const receipt = yield* retry(card)
       const again = yield* retry(card)
       const runtime = yield* ControlRuntime
@@ -98,12 +98,53 @@ it("relaunches a run whose admitting process died before the launch when the cli
     })
   )
   if (!Exit.isSuccess(retried)) throw new Error(String(retried.cause))
-  // The retry answers from the recorded receipt, and the run it names starts.
+  // A replay returns the receipt without calling either executor again.
   expect(retried.value.receipt).toMatchObject({ _tag: "AlreadyApplied", receiptId: "run:stranded" })
   expect(retried.value.again).toEqual(retried.value.receipt)
-  expect(launched).toEqual([retried.value.runId])
-  expect(retried.value.status).toBe("running")
+  expect(launched).toEqual([])
+  expect(retried.value.status).toBe("accepted")
   expect(retried.value.runId).toBe("dispatch:stranded-caller-reservation")
+})
+
+it("a late admitter cannot hand off a launch another runtime took", async () => {
+  const file = join(directory, "late-handoff.sqlite")
+  const calls: string[] = []
+  const executor = ControlExecutor.makeNoop({
+    launch: (input) =>
+      Effect.sync(() => {
+        calls.push(input.run.runId)
+        return "accepted" as const
+      })
+  })
+  const first = stack(file, 101, executor)
+  const card = await run(first, admit)
+  if (!Exit.isSuccess(card)) throw new Error("plan failed")
+  const ready = Effect.runSync(Deferred.make<void>())
+  const release = Effect.runSync(Deferred.make<void>())
+  // Pause at the real handoff transaction while a peer recovers the abandoned admission.
+  const delayed = Layer.effect(
+    ControlRuntime,
+    Effect.map(ControlRuntime, (runtime) => ({
+      ...runtime,
+      takeLaunch: (id: string) =>
+        Deferred.succeed(ready, undefined).pipe(
+          Effect.andThen(Deferred.await(release)),
+          Effect.andThen(runtime.takeLaunch(id))
+        )
+    }))
+  ).pipe(Layer.provideMerge(first))
+  const original = run(
+    Layer.provideMerge(Layer.fresh(ControlLive.layer), Layer.merge(Registry.layerNoop(), delayed)),
+    retry(card.value)
+  )
+  try {
+    await Effect.runPromise(Deferred.await(ready))
+    expect(Exit.isSuccess(await run(stack(file, 202, executor), retry(card.value)))).toBe(true)
+  } finally {
+    await Effect.runPromise(Deferred.succeed(release, undefined))
+  }
+  expect(Exit.isSuccess(await original)).toBe(true)
+  expect(calls).toEqual(["dispatch:stranded-caller-reservation"])
 })
 
 it("retries stranded recovery in the same process after the plan read fails", async () => {
@@ -112,11 +153,30 @@ it("retries stranded recovery in the same process after the plan read fails", as
   if (!Exit.isSuccess(planned)) throw new Error("plan failed")
   const card = planned.value
   const crashed = await run(
-    stack(filename, 101, ControlExecutor.makeNoop({ launch: () => Effect.die("host died") })),
+    Layer.provideMerge(
+      Layer.fresh(ControlLive.layer),
+      Layer.merge(
+        Registry.layerNoop(),
+        Layer.effect(
+          ControlRuntime,
+          Effect.map(
+            ControlRuntime,
+            (runtime) => ({ ...runtime, takeLaunch: () => Effect.die("host died before handoff") })
+          )
+        ).pipe(Layer.provideMerge(stack(filename, 101, ControlExecutor.makeNoop())))
+      )
+    ),
     retry(card)
   )
   expect(Exit.isFailure(crashed)).toBe(true)
 
+  for (const [pid, alive] of [[101, []], [202, [101]]] as const) {
+    const guarded = await run(
+      stack(filename, pid, ControlExecutor.makeNoop({ launch: () => Effect.die("live admitter was bypassed") }), alive),
+      retry(card)
+    )
+    expect(Exit.isSuccess(guarded) && guarded.value._tag).toBe("AlreadyApplied")
+  }
   const launched: Array<string> = []
   let failNextPlanRead = true
   const base = stack(

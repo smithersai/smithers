@@ -44,6 +44,7 @@ import type {
   SteerInputSchema,
   WatchFilter
 } from "./ControlSchema.ts"
+import type { FlowLookup } from "./ScopedToken.ts"
 
 /**
  * Raw input submitted to planning. Decoding is owned by `ControlRuntime`.
@@ -350,6 +351,8 @@ export interface Service {
     Receipt,
     RunNotFound | ClaimLost | CodeDrift | InvalidInput | PersistenceError | Unavailable | TransportError | Unauthorized
   >
+  /** Resolves stored owners for flow-confined RPC credentials. */
+  readonly flowLookup?: FlowLookup
   readonly list: (input: ListInput) => Effect.Effect<ListResponse, ControlError>
   /** Checkpoint `event.cursor` after processing each event and resume with `afterCursor`. */
   readonly watch: (filter: WatchInput) => Stream.Stream<ControlEvent, ControlError>

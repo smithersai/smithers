@@ -13,7 +13,7 @@ import type { Runtime } from "../../cli/ControlBridge.ts"
 import * as Presentation from "../../cli/Presentation.ts"
 import { Refused, UsageError } from "../../CliError.ts"
 import * as Failure from "../Failure.ts"
-import { Client, list, object } from "./Client.ts"
+import { Client, list, object, parseResponse } from "./Client.ts"
 import { definitions } from "./Definitions.ts"
 import { targetsInstall } from "./Destination.ts"
 import { draftFromIssue } from "./IssueDraft.ts"
@@ -181,7 +181,7 @@ export const dispatchCatalog = async (
     { headers: request.method === "GET" ? {} : { "Idempotency-Key": requestId } }
   )
   const text = await client.text(response)
-  let result: unknown = text.trim() ? JSON.parse(text) : null
+  let result: unknown = text.trim() ? parseResponse(text) : null
   if (row.name === "todo.answer") result = { todo: payload.n, wait: body.wait, ...object(result) }
   if (row.name === "ssh") {
     const endpoint = object(result)
@@ -193,11 +193,15 @@ export const dispatchCatalog = async (
     ) {
       throw new Refused({ fault: "infra", code: "invalid_ssh_endpoint", message: "Invalid SSH address" })
     }
-    const child = spawn("ssh", ["-p", "2222", "-l", branch, host], {
-      env: client.env,
-      stdio: "inherit",
-      signal: client.runtime.signal
-    })
+    const child = spawn(
+      "ssh",
+      ["-F", "/dev/null", "-o", "StrictHostKeyChecking=yes", "-p", "2222", "-l", branch, host],
+      {
+        env: client.env,
+        stdio: "inherit",
+        signal: client.runtime.signal
+      }
+    )
     const code = await child.exited
     client.runtime.exit?.(code)
     return { code }

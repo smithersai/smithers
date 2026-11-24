@@ -18,7 +18,7 @@
  * @since 1.0.0
  */
 
-import { ControlRpcs, ControlServer, ScopedToken } from "@smthrs/control"
+import { Control, ControlRpcs, ControlServer, ScopedToken } from "@smthrs/control"
 import { Effect, Layer } from "effect"
 import { HttpRouter } from "effect/http"
 import type { HttpServer } from "effect/http/HttpServer"
@@ -159,14 +159,17 @@ export const listenOptions = (options: ServerOptions): Effect.Effect<ListenOptio
  * procedures, run, or flow it names, until it expires, and stamps
  * {@link scopedPrincipal}. With no credential the composition is
  * loopback-only (see {@link listenOptions}) and every request runs as the
- * anonymous read principal. A session operator token alone stamps the local
+ * anonymous principal for reads and run control. A session operator token alone stamps the local
  * operator for approval decisions; without it approvals are unauthorized.
  *
  * @param options the requested bind
  * @since 1.0.0
  * @category layers
  */
-export const layerAuth = (options: ServerOptions): Layer.Layer<ControlRpcs.ControlAuth> =>
+export const layerAuth = (
+  options: ServerOptions,
+  flows?: ScopedToken.FlowLookup
+): Layer.Layer<ControlRpcs.ControlAuth> =>
   options.credential === undefined || options.credential === ""
     ? ControlRpcs.layerAuth({
       authenticate: (headers) => {
@@ -185,7 +188,7 @@ export const layerAuth = (options: ServerOptions): Layer.Layer<ControlRpcs.Contr
         )
       }
     }, gatewayRunVisibility)
-    : ControlRpcs.layerAuth(credentialAuthenticator(options.credential), gatewayRunVisibility)
+    : ControlRpcs.layerAuth(credentialAuthenticator(options.credential, flows), gatewayRunVisibility)
 
 /**
  * Every identity this gateway stamps reads every run. They all stand for the
@@ -202,10 +205,14 @@ const gatewayRunVisibility: ControlRpcs.AuthOptions = { seesAllRuns: () => true 
  * alone, because a scoped token names control procedures and the bridge's
  * versioned commands are not those.
  */
-const credentialAuthenticator = (credential: string): ControlRpcs.Authenticator =>
+const credentialAuthenticator = (credential: string, flows?: ScopedToken.FlowLookup): ControlRpcs.Authenticator =>
   ControlRpcs.anyAuthenticator([
     ControlRpcs.bearerAuthenticator({ token: credential, principal: bearerPrincipal }),
-    ScopedToken.authenticator({ key: credential, principal: scopedPrincipal })
+    ScopedToken.authenticator({
+      key: credential,
+      principal: scopedPrincipal,
+      ...(flows === undefined ? {} : { flows })
+    })
   ])
 
 /**
@@ -359,7 +366,7 @@ export const makeLayer = (
           })
         }).pipe(
           Layer.provide(Layer.succeed(ControlServer.RequestScheme, options.requestScheme ?? "http:")),
-          Layer.provide(layerAuth(options)),
+          Layer.provide(Layer.unwrap(Effect.map(Control.Control, (control) => layerAuth(options, control.flowLookup)))),
           Layer.provide(RpcSerialization.layerNdjson)
         ),
         { disableListenLog: true, disableLogger: true }

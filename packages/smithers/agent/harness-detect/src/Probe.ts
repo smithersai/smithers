@@ -46,7 +46,14 @@ export const parseVersionLine = (output: string): string | null => {
     .find((line) => line !== "")
   if (firstLine === undefined) return null
   const match = /\d+\.\d+(?:\.\d+)?[0-9A-Za-z.+-]*/.exec(firstLine)
-  return (match === null ? firstLine : match[0]).slice(0, VERSION_MAX_LENGTH)
+  // Whole code points only: a cut between the halves of a surrogate pair would
+  // leave a lone surrogate, which renders as U+FFFD and is not valid UTF-8.
+  let version = ""
+  for (const point of match === null ? firstLine : match[0]) {
+    if (version.length + point.length > VERSION_MAX_LENGTH) break
+    version += point
+  }
+  return version
 }
 
 /**
@@ -91,7 +98,8 @@ const copyKeys = (
 
 /**
  * The version-probe child environment: {@link PROBE_ENV_KEYS} from `source`,
- * plus `NO_COLOR`. The optional platform defaults to the native path rules.
+ * plus `NO_COLOR`. Without a platform, `OS=Windows_NT` in `source` (which
+ * Windows always sets) selects Windows path rules and anything else POSIX.
  * On Windows, `PATH` is looked up case-insensitively and emitted as `PATH`.
  * `PATH` keeps only absolute entries, so a probed script's
  * `#!/usr/bin/env node` cannot resolve an interpreter out of the cwd.
@@ -104,7 +112,7 @@ export const probeEnv = (
   platform?: string
 ): Record<string, string> => {
   const env = copyKeys({ NO_COLOR: "1" }, source, PROBE_ENV_KEYS)
-  const paths = hostPath({ platform })
+  const paths = hostPath({ platform: platform ?? (source.OS === "Windows_NT" ? "win32" : "posix") })
   if (paths.sep === "\\" && source.PATH === undefined) {
     const key = Object.keys(source).find((key) => key.toUpperCase() === "PATH" && source[key] !== undefined)
     if (key !== undefined) copyKeys(env, { PATH: source[key] }, ["PATH"])

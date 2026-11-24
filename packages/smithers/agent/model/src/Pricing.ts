@@ -12,7 +12,7 @@
  * @since 1.0.0-rc.1
  */
 
-import { Schema } from "effect"
+import { Clock, Schema } from "effect"
 import { type ModelPrice, modelPrices } from "./internal/prices.generated.ts"
 import type * as ModelEvent from "./ModelEvent.ts"
 
@@ -128,7 +128,7 @@ export const lookup = (modelId: string, options: Options = {}): Rates | Price | 
   const rows = options.table ?? table
   const key = candidates(modelId).find((candidate) => Object.hasOwn(rows, candidate))
   if (key === undefined) return undefined
-  const at = options.at ?? Date.now()
+  const at = options.at ?? Clock.Clock.defaultValue().currentTimeMillisUnsafe()
   // A Rates row has no successor; an undated successor never starts.
   let price = rows[key] as Price
   while (price.next !== undefined && at >= Date.parse(String(price.nextFrom))) price = price.next

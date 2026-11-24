@@ -130,33 +130,31 @@ describe("RuntimeBridge", () => {
       })
     }))
 
-  it.effect("passes a caller-reserved run identity through the authenticated bridge", () =>
+  it.effect("preserves a reserved run and its receipt across attempts on the real control stack", () =>
     Effect.gen(function*() {
-      let seen: Control.RunInput | undefined
-      const keys: Array<string> = []
-      const control = service({
-        run: (input) => {
-          seen = input
-          keys.push(input.idempotencyKey)
-          return Effect.succeed({ ...accepted, runId: "dispatch:review-attempt-1" })
-        }
+      const control = yield* Control.Control
+      const id = "dispatch:review-attempt-1"
+      const input = { ...launch, flowId: "system/test", runId: id }
+      const host = { ...config, verifiedCatalogSourceRevision: revision }
+      const prepared = yield* control.plan({
+        flowId: input.flowId,
+        input: input.payload,
+        idempotencyKey: "bridge:v1:request-1:plan"
       })
-      const result = yield* RuntimeBridge.execute(config, control, principal, {
-        ...launch,
-        runId: "dispatch:review-attempt-1"
+      yield* control.approve(prepared.approval)
+      const first = yield* RuntimeBridge.execute(host, control, principal, input)
+      const replay = yield* RuntimeBridge.execute(host, control, principal, { ...input, attempt: 3 })
+      expect(first).toMatchObject({
+        planDigest: prepared.digest,
+        receipt: { _tag: "Accepted", runId: id, receiptId: "bridge:v1:request-1:run:" + id }
       })
-      expect(seen).toMatchObject({ reservedRunId: "dispatch:review-attempt-1", principal })
-      expect(result).toMatchObject({ receipt: { runId: "dispatch:review-attempt-1" } })
-      yield* RuntimeBridge.execute(config, control, principal, {
-        ...launch,
-        attempt: 3,
-        runId: "dispatch:review-attempt-1"
+      expect(replay).toMatchObject({
+        receipt: { _tag: "AlreadyApplied", runId: id, receiptId: "bridge:v1:request-1:run:" + id }
       })
-      expect(keys).toEqual([
-        "bridge:v1:request-1:run:dispatch:review-attempt-1",
-        "bridge:v1:request-1:run:dispatch:review-attempt-1"
-      ])
-    }))
+      expect(yield* control.list({ _tag: "runs" })).toMatchObject({
+        items: [{ runId: id, launchedBy: { id: principal.id, kind: principal.kind } }]
+      })
+    }).pipe(Effect.provide(stack()), Effect.scoped))
 
   it.effect("launches through Control with stable plan and attempt identities", () =>
     Effect.gen(function*() {
@@ -646,6 +644,21 @@ describe("RuntimeBridge", () => {
       }))
   }
 
+  it.effect("propagates a failed terminal summary read", () =>
+    Effect.gen(function*() {
+      let reads = 0
+      const faulty = service({
+        list: () =>
+          ++reads === 1
+            ? Effect.succeed({ _tag: "runs", items: [summary] })
+            : Effect.fail(new ControlError.Unavailable({ feature: "list", ticket: "disconnected" }))
+      })
+      const failure = yield* Effect.flip(
+        RuntimeBridge.observe(faulty, { protocol: RuntimeBridge.protocol, runId: summary.runId })
+      )
+      expect(failure).toMatchObject({ code: "run_unavailable" })
+    }))
+
   it.effect("carries a failed run's stamped fault to the worker, and none on a run that did not fail", () =>
     Effect.gen(function*() {
       const failed = { ...summary, status: "failed" } as RunSummary
@@ -849,6 +862,18 @@ describe("RuntimeBridge", () => {
 
   it.effect("serves successful command and observation JSON without a second runtime", () =>
     Effect.gen(function*() {
+      const control = yield* Control.Control
+      const card = yield* control.plan({ flowId: "system/test", input: {} })
+      yield* control.approve(card.approval)
+      const launch = yield* control.run({
+        _tag: "Plan",
+        planId: card.planId,
+        digest: card.digest,
+        envelope: card.envelope,
+        idempotencyKey: "bridge-real-run"
+      })
+      if (launch._tag !== "Accepted" || !launch.runId) return yield* Effect.die("expected a launched run")
+      const runId = launch.runId
       const server = yield* HttpServer.HttpServer
       if (server.address._tag !== "InetAddressV4") return yield* Effect.die("expected IPv4")
       const base = `http://127.0.0.1:${server.address.port}/runtime/v1`
@@ -861,44 +886,44 @@ describe("RuntimeBridge", () => {
             operation: "cancel",
             applicationRequestId: "cancel-1",
             ownerGeneration: 7,
-            runId: "run-1"
+            runId
           })
         })
       )
       expect(response.status).toBe(200)
       expect(yield* Effect.promise(() => response.json())).toMatchObject({
         ok: true,
-        value: { operation: "cancel", receipt: accepted }
+        value: { operation: "cancel", receipt: { _tag: "Terminal", status: "cancelled", runId } }
       })
       const observed = yield* Effect.promise(() =>
         fetch(`${base}/observe`, {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ protocol: RuntimeBridge.protocol, runId: "run-1" })
+          body: JSON.stringify({ protocol: RuntimeBridge.protocol, runId })
         })
       )
       expect(observed.status).toBe(200)
       expect(yield* Effect.promise(() => observed.json())).toMatchObject({
         ok: true,
-        value: { run: { runId: "run-1" }, terminal: true }
+        value: { run: { runId }, terminal: true }
       })
       const monitored = yield* Effect.promise(() =>
         fetch(`${base}/monitor`, {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ protocol: RuntimeBridge.protocol, runId: "run-1", at: 1 })
+          body: JSON.stringify({ protocol: RuntimeBridge.protocol, runId, at: 1 })
         })
       )
       expect(monitored.status).toBe(200)
       expect(yield* Effect.promise(() => monitored.json())).toMatchObject({
         ok: true,
-        value: { flow: "fixture/small", tokens: 0, cost_usd: 0 }
+        value: { flow: "system/test", tokens: 0, cost_usd: 0 }
       })
       const invalidMonitor = yield* Effect.promise(() =>
         fetch(`${base}/monitor`, {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ protocol: RuntimeBridge.protocol, runId: "run-1", at: -1 })
+          body: JSON.stringify({ protocol: RuntimeBridge.protocol, runId, at: -1 })
         })
       )
       expect(invalidMonitor.status).toBe(400)
@@ -914,7 +939,12 @@ describe("RuntimeBridge", () => {
       expect(yield* Effect.promise(() => invalidObservation.json())).toMatchObject({
         error: { code: "invalid_request" }
       })
-    }).pipe(Effect.provide(directBridge(service())), Effect.scoped))
+    }).pipe(
+      Effect.provide(
+        Layer.unwrap(Effect.map(Control.Control, (control) => directBridge(control))).pipe(Layer.provideMerge(stack()))
+      ),
+      Effect.scoped
+    ))
 
   it.effect("maps authenticated bridge failures to stable HTTP classes", () =>
     Effect.gen(function*() {
@@ -1101,9 +1131,9 @@ describe("RuntimeBridge", () => {
         expect(logged).toHaveLength(1)
         expect(logged[0]).toMatchObject([{
           operation: `runtime-bridge.${operation}`,
-          code: "persistence_failed",
-          cause: failure
+          code: "persistence_failed"
         }])
+        expect(JSON.stringify(logged)).not.toContain(privateMessage)
         const requests = spans.filter((span) => span.name === `runtime-bridge.${operation}`)
         expect(requests).toHaveLength(1)
         expect(requests[0]!.status._tag).toBe("Ended")
@@ -1279,8 +1309,24 @@ it.effect("stops an oversized monitor scan and refuses repeated polls from its b
     let reads = 0
     let watches = 0
     const payload = { text: "😀".repeat(256 * 1024) }
+    const smallReads: Array<number | undefined> = []
     const control = service({
-      watch: () => {
+      list: (request) =>
+        Effect.succeed({
+          _tag: "runs",
+          items: [{ ...summary, runId: request._tag === "runs" ? request.filters!.runId! : "run-1" }]
+        }),
+      watch: (filter) => {
+        if (filter.runId === "small") {
+          smallReads.push(filter.afterSequence)
+          return Stream.succeed({
+            sequence: 3,
+            runId: "small",
+            kind: "event",
+            occurredAt: 1,
+            payload: { text: "s".repeat(2 * 1024 * 1024) }
+          })
+        }
         watches++
         return Stream.range(0, 100).pipe(Stream.mapEffect((sequence) =>
           Effect.sync(() => {
@@ -1290,6 +1336,7 @@ it.effect("stops an oversized monitor scan and refuses repeated polls from its b
         ))
       }
     })
+    yield* RuntimeBridge.monitor(control, "small")
     expect(yield* Effect.flip(RuntimeBridge.monitor(control, "run-1"))).toMatchObject({
       code: "resource_limit",
       retryable: false
@@ -1298,6 +1345,8 @@ it.effect("stops an oversized monitor scan and refuses repeated polls from its b
     expect(reads).toBe(64)
     expect(yield* Effect.flip(RuntimeBridge.monitor(control, "run-1"))).toMatchObject({ code: "resource_limit" })
     expect(yield* Effect.flip(RuntimeBridge.monitor(control, "run-1", 1))).toMatchObject({ code: "resource_limit" })
+    yield* RuntimeBridge.monitor(control, "small")
+    expect(smallReads).toEqual([undefined, 2])
     expect(watches).toBe(1)
     expect(reads).toBe(64)
   }))
@@ -1307,6 +1356,7 @@ it.effect("bounds observation bytes before collecting the rest of a page", () =>
     let reads = 0
     const payload = { text: "😀".repeat(256 * 1024) }
     const control = service({
+      list: () => Effect.succeed({ _tag: "runs", items: [{ ...summary, status: "running" }] }),
       watch: () =>
         Stream.range(0, 20).pipe(Stream.mapEffect((sequence) =>
           Effect.sync(() => {
@@ -1316,12 +1366,15 @@ it.effect("bounds observation bytes before collecting the rest of a page", () =>
         ))
     })
     expect(
-      yield* Effect.flip(RuntimeBridge.observe(control, {
+      yield* RuntimeBridge.observe(control, {
         protocol: RuntimeBridge.protocol,
         runId: "run-1",
         limit: 20
-      }))
-    ).toMatchObject({ code: "resource_limit", retryable: false })
+      })
+    ).toMatchObject({
+      hasMore: true,
+      events: Array.from({ length: 3 }, (_, sequence) => expect.objectContaining({ sequence }))
+    })
     expect(reads).toBe(4)
   }))
 

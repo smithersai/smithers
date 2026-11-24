@@ -748,7 +748,20 @@ export const callTimedOut = (flow: string, callMs: number): Cell.CallResult =>
  */
 const answerMs = 1_000
 
-/** The time a call's input names for its own work, in milliseconds: its `timeoutMs`, or its `timeoutSeconds`. */
+/**
+ * The most time a call's input may name for its own work, in milliseconds: one hour.
+ *
+ * The input is the model's to write, so the time it names is a request and
+ * this is the host's answer to the largest one. Without it `timeoutSeconds:
+ * 1e9` raised the ceiling of a call whose frame keeps no clock for it, a flow
+ * in `pauseTotalMsFor`, without limit.
+ */
+const askedCeilingMs = 3_600_000
+
+/**
+ * The time a call's input names for its own work, in milliseconds: its `timeoutMs`, or its `timeoutSeconds`, held to
+ * {@link askedCeilingMs}.
+ */
 const askedMs = (input: Schema.Json): number | undefined => {
   if (input === null || typeof input !== "object" || Array.isArray(input)) return undefined
   const { timeoutMs, timeoutSeconds } = input as Readonly<Record<string, unknown>>
@@ -756,7 +769,7 @@ const askedMs = (input: Schema.Json): number | undefined => {
     typeof timeoutMs === "number" ? timeoutMs : NaN,
     typeof timeoutSeconds === "number" ? timeoutSeconds * 1000 : NaN
   ].filter((value) => Number.isFinite(value) && value > 0)
-  return asked.length === 0 ? undefined : Math.max(...asked)
+  return asked.length === 0 ? undefined : Math.min(askedCeilingMs, Math.max(...asked))
 }
 
 /**
@@ -772,7 +785,9 @@ const askedMs = (input: Schema.Json): number | undefined => {
  * 600 s, and on 2026-10-22 a 600 s ceiling answered a sandbox command whose
  * job settled 37 s after its 600 s timeout as timed out. The request is held
  * to what the frame has left, so the call settles as a timeout the cell reads
- * instead of taking its frame down unanswered.
+ * instead of taking its frame down unanswered. The time a call names is the
+ * model's to write, so it is held to one hour whatever the frame has left: no
+ * input raises the ceiling past `callMs` and an hour.
  *
  * @category constructors
  * @since 1.0.0-rc.8

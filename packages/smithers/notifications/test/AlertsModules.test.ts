@@ -41,7 +41,7 @@ const owners: ReadonlyArray<readonly [string, Readonly<Record<string, unknown>>,
   ["AlertProbe", AlertProbe, ["probeDetector", "probeEventType", "probes", "ProbeState", "Report", "report"]],
   ["AlertRuntime", AlertRuntime, ["AlertRuntime", "layer"]],
   ["layerChannels", layerChannels, ["layerChannels", "messageOf"]],
-  ["layerWebhook", layerWebhook, ["defaultWebhookTimeout", "layerWebhook"]]
+  ["layerWebhook", layerWebhook, ["defaultWebhookTimeout", "layerWebhook", "layerWebhookClient"]]
 ]
 
 const published = Alerts as Readonly<Record<string, unknown>>

@@ -82,6 +82,7 @@ const makeControl = (overrides: Partial<Control.Service> = {}): Control.Service 
     deny: () => Effect.succeed(accepted),
     signal: () => Effect.succeed(accepted),
     steer: () => Effect.succeed(accepted),
+    pause: () => Effect.die("pause is outside the runtime bridge protocol"),
     cancel: () => Effect.succeed(accepted),
     resume: () => Effect.succeed(accepted),
     list: () => Effect.succeed({ _tag: "runs", items: [makeSummary()] }),
@@ -484,7 +485,7 @@ describe("@smthrs/gateway NativeGateway, BunGateway, NodeGateway, GatewayServer 
             bridgeCfg.commandReceipt
           ).pipe(Effect.exit)
 
-          if (tc.cursorKind === "bad" || tc.oversizedEvents || tc.receiptMismatch) {
+          if (tc.cursorKind === "bad" || tc.receiptMismatch) {
             expect(Exit.isFailure(obsExit)).toBe(true)
           } else {
             expect(Exit.isSuccess(obsExit)).toBe(true)

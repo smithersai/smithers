@@ -9,7 +9,7 @@ import type { HostModelRoute } from "./ConfiguredModelRoute.ts"
 import { fastModelFallback, type ModelSource } from "./FastModelFallback.ts"
 import { StreamingCredentialCutter } from "./StreamingCredentialCutter.ts"
 export { StreamingCredentialCutter } from "./StreamingCredentialCutter.ts"
-import { type Model, ModelError, type ModelEvent, ModelRequest } from "@smthrs/model"
+import { type Model, ModelError, ModelEvent, ModelRequest } from "@smthrs/model"
 import { AgentContext, type NativeAgent } from "@smthrs/rpc"
 import { Effect, Stream } from "effect"
 import { createHostDiagnostics } from "./HostDiagnostics.ts"
@@ -147,14 +147,13 @@ const mergeUsage = (
   current: NativeAgent.AgentTurnUsage | undefined,
   event: ModelEvent.UsageEvent
 ): NativeAgent.AgentTurnUsage | undefined => {
-  const next: NativeAgent.AgentTurnUsage = { ...current }
-  const inputTokens = usageCount(event.inputTokens)
-  const outputTokens = usageCount(event.outputTokens)
-  const cachedInputTokens = usageCount(event.cachedInputTokens)
-  if (inputTokens !== undefined) next.inputTokens = inputTokens
-  if (outputTokens !== undefined) next.outputTokens = outputTokens
-  if (cachedInputTokens !== undefined) next.cachedInputTokens = cachedInputTokens
-  return Object.keys(next).length === 0 ? undefined : next
+  const merged = ModelEvent.Usage.merge(current ?? {}, {
+    type: "usage",
+    inputTokens: usageCount(event.inputTokens),
+    outputTokens: usageCount(event.outputTokens),
+    cachedInputTokens: usageCount(event.cachedInputTokens)
+  })
+  return Object.keys(merged).length === 0 ? undefined : merged
 }
 
 /** Adds one leg's counts to the turn's: a done frame ending a host-owned turn states all of its calls. */
@@ -211,8 +210,8 @@ export const runModelTurn = <E>(
         source
       ) => [source.credential ?? "", ...(source.additionalCredentials ?? [])])
     ]
-    const text = new StreamingCredentialCutter(options.credential, additionalCredentials)
-    const reasoning = new StreamingCredentialCutter(options.credential, additionalCredentials)
+    let text = new StreamingCredentialCutter(options.credential, additionalCredentials)
+    let reasoning = new StreamingCredentialCutter(options.credential, additionalCredentials)
     const cut = (value: string): string => {
       const cutter = new StreamingCredentialCutter(options.credential, additionalCredentials)
       return cutter.push(value) + cutter.finish()
@@ -289,6 +288,11 @@ export const runModelTurn = <E>(
         case "retry":
           // A retried call starts over; the abandoned attempt's counts are not this call's.
           usage = undefined
+          settled = undefined
+          tools.clear()
+          held.length = 0
+          text = new StreamingCredentialCutter(options.credential, additionalCredentials)
+          reasoning = new StreamingCredentialCutter(options.credential, additionalCredentials)
           return Effect.void
         default:
           return Effect.void

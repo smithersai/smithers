@@ -5,6 +5,7 @@ import type * as Auth from "./Auth.vibe"
 import * as CookieKeys from "../core/CookieKeys.vibe"
 import * as Pkce from "../core/Pkce.ts"
 import { forCredentials } from "../core/CredentialHttp.ts"
+import { isOwner } from "./Repository.ts"
 import { DEFAULT_REQUEST_TIMEOUT } from "../core/OAuthToken.ts"
 import { WebCryptoCipher } from "@smthrs/control"
 import { HttpClient, HttpClientRequest, HttpServerRequest, HttpServerResponse, UrlParams } from "effect/http"
@@ -178,7 +179,7 @@ export effect function site(options: { readonly origin: string; readonly brokerO
       )))
       if (response.status !== 200) throw refused()
       const identity = try checked(Schema.decodeUnknownEffect(Identity)(try checked(response.json)))
-      if (!Number.isSafeInteger(identity.id) || identity.id <= 0 || !/^[a-zA-Z0-9-]{1,39}$/.test(identity.login)) throw refused()
+      if (!Number.isSafeInteger(identity.id) || identity.id <= 0 || !isOwner(identity.login)) throw refused()
       return identity
     }) |> timeoutOrElse(%, {
       duration: DEFAULT_REQUEST_TIMEOUT,
@@ -354,7 +355,7 @@ export effect function make(options: {
       const tokens = try checked(options.github.exchange({ code: Redacted.make(code), codeVerifier: Redacted.make(pending.verifier), redirectUri: options.origin + CALLBACK }))
       const lookup = effect {
         const person = try checked(options.github.user(tokens.accessToken))
-        if (!Number.isSafeInteger(person.id) || person.id <= 0 || !/^[a-zA-Z0-9-]{1,39}$/.test(person.login)) throw refused()
+        if (!Number.isSafeInteger(person.id) || person.id <= 0 || !isOwner(person.login)) throw refused()
         return person
       }
       const connect = pending.claims.connect

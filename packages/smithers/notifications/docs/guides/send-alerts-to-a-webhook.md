@@ -7,6 +7,8 @@ sidebar:
 
 `Alerts.layerWebhook` POSTs each alert to one endpoint. It is the shipped
 implementation of `Alerts.Sink`. It constructs its own Fetch HTTP client.
+`Alerts.layerWebhookClient` is the same sink over the `HttpClient` your host
+provides. See [Send through the host's client](#send-through-the-hosts-client).
 
 ## Point it at an endpoint
 
@@ -82,7 +84,7 @@ The body is the alert plus its `alertId`, and the same id is sent as an
 ```text
 POST /alerts HTTP/1.1
 authorization: Bearer ...
-idempotency-key: alert:run-1:waiting-approval:1700000000000
+idempotency-key: alert:run-1:waiting-approval:1700000000000:s12
 content-type: application/json
 
 {
@@ -94,7 +96,7 @@ content-type: application/json
   "coalescingKey": "run-1:waiting-approval",
   "owner": "oncall",
   "runbook": "https://runbook.example/approvals",
-  "alertId": "alert:run-1:waiting-approval:1700000000000"
+  "alertId": "alert:run-1:waiting-approval:1700000000000:s12"
 }
 ```
 
@@ -102,6 +104,32 @@ The header is set after your headers, so it is always the one this sink sends.
 The receiver must deduplicate on it: delivery is at-least-once, and every field
 of the alert is derived from the journal, so the same alert is byte-identical on
 every attempt. See [How alerting decides](../concepts/alerting.md).
+
+## Send through the host's client
+
+A host that sends its outbound requests through one client, to enforce a
+destination policy, proxy credentials or record requests, composes
+`Alerts.layerWebhookClient`. It takes the same options and requires an
+`HttpClient.HttpClient`:
+
+```ts
+import { Alerts } from "@smthrs/notifications"
+import type * as HttpClient from "effect/http/HttpClient"
+import * as Layer from "effect/Layer"
+
+export const sink = (host: Layer.Layer<HttpClient.HttpClient>) =>
+  Alerts.layerWebhookClient({ url: "https://pager.example/alerts" }).pipe(Layer.provide(host))
+```
+
+A client that denies the endpoint denies the page: the delivery fails with
+`sink_unreachable`, and no request is made another way.
+
+The client must make one request and return its answer. The sink sets the fetch
+redirect mode to `manual` on every delivery, which `FetchHttpClient.layer` and
+the kernel's guarded client obey, and it calls a 3xx answer a refusal. A client
+that follows redirects regardless, such as one wrapped in
+`HttpClient.followRedirects`, re-sends your headers to wherever the endpoint
+points. Do not provide one.
 
 ## Read the failure
 

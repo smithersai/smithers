@@ -31,12 +31,15 @@ describe("internal pin assertions", () => {
 
   it.effect("fails typed when the bounded wait is exhausted", () =>
     Effect.gen(function*() {
-      const error = yield* Pin.waitUntil("race/example", () => false, "the race stayed pending").pipe(Effect.flip)
+      const error = yield* Pin.waitUntil("race/example", () => false, "the race stayed pending").pipe(
+        Effect.provideService(Pin.WaitBudget, 25),
+        Effect.flip
+      )
       expect(error).toMatchObject({
         code: "conformance_violation",
         pin: "race/example",
         message: "the race stayed pending",
-        expected: "settlement within one second of live time",
+        expected: "settlement within 25 ms of live time",
         actual: "still pending"
       })
     }))

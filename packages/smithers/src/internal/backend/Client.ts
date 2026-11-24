@@ -82,7 +82,10 @@ export const positive = (value: unknown, label = "id"): number => {
   return n
 }
 /** Parse backend data without retaining server bytes in diagnostic errors. */
-const parseResponse = (text: string): unknown => {
+/** @private
+ * @since 1.0.0
+ */
+export const parseResponse = (text: string): unknown => {
   try {
     return JSON.parse(text)
   } catch {
@@ -449,7 +452,16 @@ export class Client {
         error
       )
     })
-    if (result.code !== 0) throw new Refused({ fault: "dependency", code: "tool_failed", message: `${command} failed` })
+    if (result.code !== 0) {
+      throw withCause(
+        new Refused({ fault: "dependency", code: "tool_failed", message: `${command} failed` }),
+        new Error(
+          `Exit ${result.code}: ${
+            Failure.terminalSafeLines(str(this.redact(Failure.terminalSafeLines(result.stderr)))).slice(-8192)
+          }`
+        )
+      )
+    }
     return result.stdout.trim()
   }
   /**
@@ -500,13 +512,16 @@ export class Client {
     }
   }
   async stdin(label: string, allowEmpty = false): Promise<string> {
-    let text = ""
+    let text = "", bytes = 0
+    const decoder = new TextDecoder("utf-8", { ignoreBOM: true })
     for await (const chunk of process.stdin) {
-      text += chunk
-      if (Buffer.byteLength(text) > 4 * 1024 * 1024) {
+      bytes += Buffer.byteLength(chunk)
+      text += typeof chunk === "string" ? decoder.decode() + chunk : decoder.decode(chunk, { stream: true })
+      if (bytes > 4 * 1024 * 1024) {
         throw new Refused({ fault: "user", code: "input_too_large", message: `${label} exceeds 4 MiB` })
       }
     }
+    text += decoder.decode()
     if (!allowEmpty && !text.trim()) throw new UsageError({ message: `${label} is required on stdin` })
     return text.trim()
   }

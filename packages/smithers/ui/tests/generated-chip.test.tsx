@@ -81,6 +81,13 @@ describe("GeneratedChip", () => {
     expect(went).toHaveLength(1);
   });
 
+  test("a link whose scheme could run script shows as its plain label", async () => {
+    await render(<GeneratedChip flow={{ label: "flow", href: "java\tscript:alert(1)" }} sources={[{ label: "src", href: "javascript:alert(1)" }, { label: "ok", href: "/ok" }]} />);
+    await click(container!.querySelector('button[data-slot="generated-chip"]')!);
+    expect([...document.querySelectorAll(".sui-generated-row")].map((row) => row.querySelector("a")?.getAttribute("href") ?? null)).toEqual([null, null, "/ok"]);
+    expect(document.querySelector('[href*="script"]')).toBeNull();
+  });
+
   test("without a host to navigate, its links are plain links", async () => {
     await render(<GeneratedChip flow={{ label: "x", href: "/x" }} />);
     await click(container!.querySelector('button[data-slot="generated-chip"]')!);

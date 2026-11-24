@@ -230,7 +230,9 @@ export const planCard = (source: PlanSource) =>
       ? []
       : plan.nodes.map((node) => ({
         ...node,
-        status: source.handoff?.statuses?.[node.id] ?? "run"
+        status: source.handoff?.statuses && Object.hasOwn(source.handoff.statuses, node.id)
+          ? source.handoff.statuses[node.id]!
+          : "run"
       }))
     const planDigest = yield* digest({
       flowId: source.flowId,

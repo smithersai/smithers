@@ -36,8 +36,8 @@ element once per document and removes it, even when the measurement throws.
 
 ## The code view's worker pool
 
-`CodeFileView` highlights in a worker wherever one exists. The pool falls back
-to the main thread, and logs one warning that names the reason, when its worker
+`CodeFileView` and `PierreDiffView` highlight in a worker wherever one exists.
+The pool falls back to the main thread, and logs one warning that names the reason, when its worker
 errors, fails to start (a page policy that refuses workers included), or does
 not answer `initialize` within `CODE_VIEW_POOL_DEADLINE_MS` (15 seconds), which
 the pool passes to pierre as its `workerInitializationTimeout`. A fallen-back

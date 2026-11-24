@@ -1,8 +1,8 @@
-import { Model, type ModelEvent, type ModelRequest } from "@smthrs/model"
+import { Model, ModelError, type ModelEvent, type ModelRequest } from "@smthrs/model"
 import { ContextPreflight } from "@smthrs/rpc"
 import { Effect, Stream } from "effect"
 import { expect, test } from "vitest"
-import { runContextPreflight } from "./fixtures/durable.ts"
+import { fixtureRoute, runContextPreflight } from "./fixtures/durable.ts"
 import { providerRequest } from "./fixtures/durable.ts"
 
 const input: ContextPreflight.ContextPreflightInput = {
@@ -240,4 +240,50 @@ test("subscription fallback selects context without sending an unsupported outpu
   expect(requests[0]?.params.maxTokens).toBeUndefined()
   expect(answer.result.model).toBe("subscription-coding")
   expect(answer.result.context[0]?.ref).toBe("src/webhooks/retry.ts")
+})
+
+test("a metadata-only refusal can fall back and the winning selector discards its abandoned retry", async () => {
+  const primary = Model.make({
+    stream: () =>
+      Stream.concat(
+        Stream.make({ type: "usage" as const, inputTokens: 3 }),
+        Stream.fail(new ModelError.ModelError({ code: "rate_limited", message: "busy" }))
+      )
+  })
+  const secondary = Model.make({
+    stream: () =>
+      Stream.fromIterable<ModelEvent.ModelEvent>([
+        { type: "text-delta", id: "t", text: "badsecr" },
+        { type: "settle", stopReason: "stop" },
+        { type: "retry", attempt: 1, code: "transport", delayMillis: 0 },
+        { type: "text-delta", id: "u", text: "[]" },
+        { type: "settle", stopReason: "stop" }
+      ])
+  })
+  const answer = await Effect.runPromise(
+    runContextPreflight(input, primary, {
+      modelId: "primary",
+      credential: "secret",
+      fallbacks: [{ modelId: "secondary", model: secondary, route: fixtureRoute }]
+    })
+  )
+  expect(answer.result.model).toBe("secondary")
+  expect(answer.selectedContext).toEqual([])
+})
+
+test.each(["\uDE00", "x"])("charges exact JSON bytes across split UTF-16 fragments (%s)", async (suffix) => {
+  const reason = "\uD83D" + suffix
+  const start = "[{\"index\":0,\"reason\":\"\uD83D"
+  const end = suffix + "\"}]"
+  const padding = 65536 - new TextEncoder().encode(JSON.stringify(start + end)).length
+  const model = Model.make({
+    stream: () =>
+      Stream.fromIterable<ModelEvent.ModelEvent>([
+        { type: "text-delta", id: "t", text: start },
+        { type: "text-delta", id: "t", text: end + " ".repeat(padding) },
+        { type: "settle", stopReason: "stop" }
+      ])
+  })
+  const answer = await Effect.runPromise(runContextPreflight(input, model, { modelId: "fast" }))
+  expect(answer.result.context[0]?.reason).toBe(reason)
 })

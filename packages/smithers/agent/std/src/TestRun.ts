@@ -41,6 +41,7 @@ import * as Timeout from "./internal/TimeoutMs.ts"
 import * as Probe from "./Probe.ts"
 import * as StdError from "./StdError.ts"
 import * as TestRunner from "./TestRunner.ts"
+import * as TreeFingerprint from "./TreeFingerprint.ts"
 
 /**
  * Registry name for the test flow.
@@ -272,7 +273,20 @@ const printed = (captured: Exec.Captured): StdError.PartialOutput => {
   }
 }
 
-/** Runs one invocation, in the container when the declaration names one. */
+/**
+ * How long past a containerised run's own overrun the host waits for the
+ * transport to answer; `Bash` waits the same.
+ */
+const transportMillis = 15_000
+
+/**
+ * Runs one invocation, in the container when the declaration names one.
+ *
+ * A containerised run goes through `TreeFingerprint.around`, as a
+ * containerised `bash` call does, so its time limit is enforced inside the
+ * container. Killing the host's transport process stops nothing there, and a
+ * suite that hung would run on beside the next one.
+ */
 const execute = (
   runner: TestRunner.Runner,
   transport: Option.Option<Container.Container>,
@@ -288,25 +302,32 @@ const execute = (
 > =>
   Effect.gen(function*() {
     const plan = invocation(runner, options.selection)
-    const routed: Container.Plan = runner.container === undefined ?
+    const frame = runner.container === undefined ? undefined : {
+      container: runner.container,
+      nonce: yield* TreeFingerprint.nonce,
+      seconds: TreeFingerprint.deadlineSeconds(options.timeoutMs)
+    }
+    const routed: Container.Plan = frame === undefined ?
       { ...plan, env: runner.env } :
       Option.isNone(transport)
-      ? yield* Effect.fail(Container.unavailable(runner.container))
+      ? yield* Effect.fail(Container.unavailable(frame.container))
       : yield* transport.value.exec({
-        container: runner.container,
-        file: plan.file,
-        args: plan.args,
+        container: frame.container,
+        file: "sh",
+        args: ["-c", TreeFingerprint.around(), "sh", frame.nonce, String(frame.seconds), plan.file, ...plan.args],
         ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
         ...(runner.env === undefined ? {} : { env: runner.env }),
         stdin: false
       })
     // Report the logical invocation, never the transport or its credentials.
     const quoted = [plan.file, ...plan.args].join(" ")
-    const result = yield* Exec.exec(routed.file, {
+    const ran = yield* Exec.exec(routed.file, {
       args: [...routed.args],
-      ...(options.cwd === undefined || runner.container !== undefined ? {} : { cwd: options.cwd }),
+      ...(options.cwd === undefined || frame !== undefined ? {} : { cwd: options.cwd }),
       ...(routed.env === undefined ? {} : { env: routed.env }),
-      timeoutMs: options.timeoutMs,
+      timeoutMs: frame === undefined
+        ? options.timeoutMs
+        : frame.seconds * 1000 + TreeFingerprint.overrunSeconds * 1000 + transportMillis,
       maxCaptureBytes: MAX_CAPTURE_BYTES
     }).pipe(
       Effect.mapError((error) =>
@@ -318,6 +339,21 @@ const execute = (
         })
       )
     )
+    // A containerised run ended its standard error with the wrapper's report,
+    // which says whether the deadline stopped it. The report is not the
+    // runner's output and is never shown as it.
+    const tree = frame === undefined ? undefined : TreeFingerprint.split(ran.stderr, frame.nonce)
+    const result = tree === undefined ? ran : { ...ran, stderr: tree.stderr }
+    if (tree?.timedOut === true) {
+      return yield* Effect.fail(
+        new StdError.StdError({
+          code: "timeout",
+          message: `The test runner did not run: exec: \`${quoted}\` exceeded ${options.timeoutMs}ms`,
+          limitMillis: options.timeoutMs,
+          output: printed(result)
+        })
+      )
+    }
     const combined = result.stderr === ""
       ? result.stdout
       : result.stdout === ""

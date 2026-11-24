@@ -2282,6 +2282,7 @@ describe("@smthrs/chain deep replay, dispatch and sandbox invariants", () => {
         })
         const layers = Layer.mergeAll(
           Journal.layerMemory(),
+          Authorize.layerAllowAll,
           Author.layerFn((input) =>
             input.context.length > 1
               ? flow("return done(\"recovered\")")

@@ -61,9 +61,12 @@ const durable = (
   } = {}
 ): Layer.Layer<Stack | DurableWriter | SqlClient.SqlClient | RunStore.RunStore | EffectDigest.Digest> => {
   const journal = options.database ?? durableJournal
-  const runtime = SqlControlRuntime.layer(
-    { owner: options.owner, approvalAuthority: delegateApproval({ id: "reviewer", kind: "test" }) }
-  ).pipe(Layer.orDie)
+  const runtime = SqlControlRuntime.layer({
+    // This fixture runs commands as the explicitly configured local operator.
+    principal: { id: "local", kind: "operator" },
+    owner: options.owner,
+    approvalAuthority: delegateApproval({ id: "reviewer", kind: "test" })
+  }).pipe(Layer.orDie)
   // The database is provided once, to the whole stack: `NodeDatabase.layer`
   // opens a fresh `:memory:` connection per build, so provisioning it to each
   // consumer separately would hand them unrelated databases.
@@ -498,14 +501,16 @@ describe("SqlControlRuntime", () => {
       Effect.gen(function*() {
         const writer = yield* DurableWriter
         let fail = false
-        const runtime = yield* SqlControlRuntime.make().pipe(Effect.provideService(DurableWriter, {
-          write: (effect) =>
-            Effect.suspend(() =>
-              fail
-                ? Effect.fail(new DatabaseError({ code: "unsupported" }))
-                : writer.write(effect)
-            )
-        }))
+        const runtime = yield* SqlControlRuntime.make({ principal: { id: "local", kind: "operator" } }).pipe(
+          Effect.provideService(DurableWriter, {
+            write: (effect) =>
+              Effect.suspend(() =>
+                fail
+                  ? Effect.fail(new DatabaseError({ code: "unsupported" }))
+                  : writer.write(effect)
+              )
+          })
+        )
         const control = Context.get(
           yield* Layer.build(Layer.fresh(ControlLive.layer)).pipe(
             Effect.provide(Registry.layerNoop()),
@@ -617,6 +622,7 @@ describe("SqlControlRuntime", () => {
 
         // Nothing of the first runtime is carried across — only the database.
         const restarted = yield* SqlControlRuntime.make({
+          principal: { id: "local", kind: "operator" },
           owner: { hostId: "local", pid: 2, nonce: "restarted" }
         }).pipe(Effect.orDie)
         const run = yield* restarted.getRun(runId)
@@ -1171,6 +1177,19 @@ describe("SqlControlRuntime", () => {
     expect(observed.flows.length).toBeGreaterThan(0)
   })
 
+  it("refuses an unnamed SQL caller approval authority", async () => {
+    await Effect.runPromise(
+      Effect.gen(function*() {
+        const runtime = yield* SqlControlRuntime.make().pipe(Effect.orDie)
+        const principal = yield* runtime.stampPrincipal()
+        expect(principal).toMatchObject({ id: "anonymous", kind: "anonymous" })
+        const control = yield* Control
+        const card = yield* control.plan({ flowId: "system/test", input: {} })
+        expect((yield* Effect.flip(control.approve({ ...card.approval, principal }))).code).toBe("unauthorized")
+      }).pipe(Effect.provide(durable()), Effect.scoped)
+    )
+  })
+
   it("stamps a submitted principal over the composition's own", async () => {
     // The durable twin of the memory runtime's precedence. `Control.ts` says
     // the runtime supplies its own principal when the caller names none, so a
@@ -1242,7 +1261,7 @@ describe("SqlControlRuntime", () => {
             })
         }))
     )
-    const runtime = SqlControlRuntime.layer().pipe(Layer.orDie)
+    const runtime = SqlControlRuntime.layer({ principal: { id: "local", kind: "operator" } }).pipe(Layer.orDie)
     const notifications = NotificationQueue.layer.pipe(Layer.provide(observedJournal))
     const control = ControlLive.layer.pipe(
       Layer.provide([

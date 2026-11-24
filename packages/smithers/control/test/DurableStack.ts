@@ -127,7 +127,8 @@ export const controlPlane = (
         adoptFlow: options.adoptFlow,
         pinnedFlow: options.pinnedFlow,
         engineVersion: options.engineVersion,
-        principal: options.principal
+        // This fixture models a local operator session.
+        principal: options.principal ?? { id: "local", kind: "operator" }
       }).pipe(Layer.orDie),
       NotificationQueue.layer,
       ControlExecutor.layer(options.executor ?? ControlExecutor.makeNoop()),

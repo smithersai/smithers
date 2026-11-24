@@ -56,6 +56,11 @@ const table: ReadonlyArray<{
     error: new ControlError.Unauthorized({ message: "no bearer" })
   },
   {
+    tag: "/control/ResourceLimit",
+    code: "resource_limit",
+    error: new ControlError.ResourceLimit({ message: "stream limit" })
+  },
+  {
     tag: "/control/Unavailable",
     code: "unavailable",
     error: new ControlError.Unavailable({ feature: "watch", ticket: "control-watch" })

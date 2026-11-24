@@ -208,11 +208,11 @@ describe("live steering", () => {
     expect(observed.after?.steering).toEqual({ pending: 0 })
   })
 
-  it("wakes a run a sweep released from a dead owner", async () => {
+  it("queues steering until an operator resumes a released run", async () => {
     const observed = await run(Effect.gen(function*() {
       const runId = yield* start("released")
       // `released` is what `DisasterRecovery.fence` writes on a run whose owner
-      // died: nothing is coming back to claim it, so the steer claims it.
+      // died. Only an explicit resume may claim it.
       yield* park(runId, "released")
       const parked = yield* summary(runId)
       yield* steer(runId, { messageId: "steer-1", body: "carry on" })
@@ -220,7 +220,7 @@ describe("live steering", () => {
     }))
 
     expect(observed.parked?.status).toBe("parked")
-    expect(observed.woken?.status).toBe("accepted")
+    expect(observed.woken).toMatchObject({ status: "parked", steering: { pending: 1 } })
   })
 
   it("leaves a run the operator parked exactly where the operator left it", async () => {

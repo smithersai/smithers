@@ -22,6 +22,7 @@
  * @since 1.0.0
  */
 
+import { Effect, type Scope } from "effect"
 import * as ProcessTable from "./ProcessTable.ts"
 
 const pollIntervalMs = 25
@@ -213,7 +214,7 @@ const requireFiniteMs = (name: string, ms: number): void => {
  * @since 1.0.0
  * @category models
  */
-export interface SkewedClock {
+export interface SkewedClock extends Disposable {
   /** The skewed instant, in milliseconds. */
   readonly now: () => number
   /** Moves the skew further forward. Throws `RangeError` for a non-finite `ms`. */
@@ -249,17 +250,28 @@ export const skewClock = (skewMs: number): SkewedClock => {
   OriginalDate.now = now
   globalThis.Date = SkewedDate
 
+  const restore = () => {
+    if (restored) return
+    restored = true
+    OriginalDate.now = originalNow
+    globalThis.Date = OriginalDate
+  }
   return {
     now,
     advance: (ms) => {
       requireFiniteMs("advance", ms)
       skew += ms
     },
-    restore: () => {
-      if (restored) return
-      restored = true
-      OriginalDate.now = originalNow
-      globalThis.Date = OriginalDate
-    }
+    restore,
+    [Symbol.dispose]: restore
   }
 }
+
+/**
+ * Acquires a process clock skew and restores Date when the scope closes.
+ *
+ * @since 1.0.0
+ * @category constructors
+ */
+export const skewClockScoped = (skewMs: number): Effect.Effect<SkewedClock, never, Scope.Scope> =>
+  Effect.acquireRelease(Effect.sync(() => skewClock(skewMs)), (clock) => Effect.sync(clock.restore))

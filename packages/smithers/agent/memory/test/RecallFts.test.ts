@@ -144,6 +144,7 @@ describe("RecallFts", () => {
     const rows = await withMemory(Effect.gen(function*() {
       yield* TestClock.setTime(1)
       yield* note("flow-one", "high", "durable durable", project)
+      yield* note("flow-one", "weak", "durable recovery guidance for an interrupted run", project)
       yield* note("flow-one", "rejected", "durable durable durable", { ...project, status: "rejected" })
       yield* note("flow-one", "pending", "durable durable durable", { ...project, status: "pending" })
       yield* note("flow-one", "untagged", "durable durable durable")
@@ -158,14 +159,39 @@ describe("RecallFts", () => {
       })
     }))
 
-    expect(rows.map((row) => [row.bank, row.key, row.updatedAtMs])).toEqual([
-      ["flow-one", "high", 1],
-      ["flow-two", "tiea", 3],
-      ["flow-two", "tieb", 3],
-      ["flow-two", "oldc", 1]
+    // A score is a row's reciprocal position within its own bank, and equal
+    // matches share a position, so each bank's best rows tie at 1.
+    expect(rows.map((row) => [row.bank, row.key, row.updatedAtMs, row.score])).toEqual([
+      ["flow-two", "tiea", 3, 1],
+      ["flow-two", "tieb", 3, 1],
+      ["flow-one", "high", 1, 1],
+      ["flow-two", "oldc", 1, 1],
+      ["flow-one", "weak", 1, 0.5]
     ])
-    expect(rows[0]!.score).toBeGreaterThan(rows[1]!.score)
-    expect(new Set(rows.slice(1).map((row) => row.score)).size).toBe(1)
+  })
+
+  it("keeps one namespace's rank and score still while another namespace writes the same term", async () => {
+    const result = await withMemory(Effect.gen(function*() {
+      const store = yield* MemoryStore.MemoryStore
+      // One FTS table indexes every user namespace, user-b's rows included.
+      yield* store.enableFts("user")
+      yield* note("user-a", "strong", "zebra zebra crossing")
+      yield* note("user-a", "weak", "a zebra among many other animals at the watering hole")
+      const read = store.searchFts({ namespace: "user-a", query: "zebra" }).pipe(
+        Effect.map((rows) => rows.map((row) => [row.key, row.rank, row.score]))
+      )
+      const recall = Fts.recall({ banks: ["user-a"], query: "zebra" }).pipe(
+        Effect.map((rows) => rows.map((row) => [row.key, row.score]))
+      )
+      const before = { read: yield* read, recall: yield* recall }
+      for (let index = 0; index < 1_000; index++) {
+        yield* store.putFact({ namespace: "user-b", key: `zebra-${index}`, value: "zebra", provenance: {} })
+      }
+      return { before, after: { read: yield* read, recall: yield* recall } }
+    }))
+
+    expect(result.before.read).toEqual([["strong", 1, 1], ["weak", 2, 0.5]])
+    expect(result.after).toEqual(result.before)
   })
 
   it("returns one row per 256 tokens of budget and caps the rows it returns", async () => {

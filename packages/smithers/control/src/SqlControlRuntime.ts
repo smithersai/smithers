@@ -1981,8 +1981,8 @@ const makeRuntime = (
         yield* runStore.create(runId, JSON.stringify(summary)).pipe(
           Effect.mapError(persistence("create a run"))
         )
-        yield* sql`INSERT INTO control_runs (run_id, created_seq, principal_id, principal_kind)
-          VALUES (${runId}, ${sequence}, ${principal?.id ?? null}, ${principal?.kind ?? null})`.pipe(
+        yield* sql`INSERT INTO control_runs (run_id, created_seq, principal_id, principal_kind, launch_pending)
+          VALUES (${runId}, ${sequence}, ${principal?.id ?? null}, ${principal?.kind ?? null}, 1)`.pipe(
           Effect.mapError(persistence("index a run"))
         )
         const outcome = yield* runStore.claimAndOwn(
@@ -1999,6 +1999,14 @@ const makeRuntime = (
         }
         return started
       }),
+      launchPending: (id) =>
+        sql`SELECT run_id FROM control_runs WHERE run_id = ${id} AND launch_pending = 1`.pipe(
+          Effect.map((rows) => rows.length > 0),
+          Effect.mapError(persistence("read pending launch"))
+        ),
+      takeLaunch: (id) =>
+        sql`UPDATE control_runs SET launch_pending = 0 WHERE run_id = ${id} AND launch_pending = 1 RETURNING run_id`
+          .pipe(Effect.map((rows) => rows.length > 0), Effect.mapError(persistence("take pending launch"))),
       getRun: Effect.fn("SqlControlRuntime.getRun")((runId: RunId) =>
         Effect.gen(function*() {
           const row = yield* requireRow(runId)
@@ -2376,8 +2384,8 @@ const makeRuntime = (
       stampPrincipal: Effect.fn("SqlControlRuntime.stampPrincipal")(function*(submitted?: Principal | undefined) {
         const timestamp = yield* now
         return {
-          id: submitted?.id ?? options.principal?.id ?? "local",
-          kind: submitted?.kind ?? options.principal?.kind ?? "operator",
+          id: submitted?.id ?? options.principal?.id ?? "anonymous",
+          kind: submitted?.kind ?? options.principal?.kind ?? "anonymous",
           stampedAt: timestamp
         }
       }),

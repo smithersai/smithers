@@ -287,6 +287,78 @@ describe("RateLimit refusals", () => {
   })
 })
 
+// Fable D2-086: a slot booked before the wait stayed booked when the write
+// never started, and those phantom writes filled the minute and the hour.
+describe("RateLimit write slots of writes that never started", () => {
+  const spent = { "x-ratelimit-limit": "5000", "x-ratelimit-remaining": "0", "x-ratelimit-reset": "600" }
+
+  it("gives back the slot of every write refused for the budget", async () => {
+    const starts: Array<number> = []
+    const refused = await run(Effect.gen(function*() {
+      const rate = yield* limiter({ writeSpacingMs: 0 }, "1 minute")
+      yield* call(rate, "GET", starts, { headers: spent })
+      // The budget resets in ten minutes, past the one-minute wait: each write books a slot and is refused.
+      const exits = yield* Effect.all(Array.from({ length: 100 }, () => Effect.exit(call(rate, "POST", starts))))
+      yield* TestClock.adjust("10 minutes")
+      // 100 phantom writes in the hour would put the next 400 real ones past the hourly 500, and 80 in a minute hold the 81st.
+      expect(yield* rate.earliestStart(500, "/repos/o/r")).toBe(
+        (yield* Clock.currentTimeMillis) + 6 * 60_000
+      )
+      yield* call(rate, "POST", starts)
+      return exits.map((exit) => failure(exit).details?.["reason"])
+    }))
+    expect(refused).toEqual(Array.from({ length: 100 }, () => "budget"))
+    expect(starts).toEqual([0, 600_000])
+  })
+
+  it("gives back the slot of a write refused after it waited out a pause", async () => {
+    const starts: Array<number> = []
+    await run(Effect.gen(function*() {
+      const rate = yield* limiter({ writeSpacingMs: 0, writesPerHour: 1 }, "1 minute")
+      // A limit response pauses every caller for 30 s; the response after it names a budget spent for ten minutes.
+      yield* call(rate, "GET", starts, { limited: true, headers: { "retry-after": "30" } })
+      const reader = yield* Effect.forkChild(call(rate, "GET", starts, { headers: spent }))
+      const writer = yield* Effect.forkChild(Effect.exit(call(rate, "POST", starts)))
+      yield* TestClock.adjust("31 seconds")
+      yield* Fiber.join(reader)
+      expect(failure(yield* Fiber.join(writer)).details?.["reason"]).toBe("budget")
+      yield* TestClock.adjust("10 minutes")
+      // One write an hour: a slot left booked at 30 s would hold the next write for an hour.
+      expect(yield* rate.earliestStart(1, "/repos/o/r")).toBe(yield* Clock.currentTimeMillis)
+    }))
+    expect(starts).toEqual([0, 30_000])
+  })
+
+  it("gives back the slot of a write interrupted while it waits for its turn", async () => {
+    const starts: Array<number> = []
+    await run(Effect.gen(function*() {
+      const rate = yield* limiter({ writeSpacingMs: 30_000 })
+      yield* call(rate, "POST", starts)
+      const waiting = yield* Effect.forkChild(call(rate, "POST", starts))
+      yield* TestClock.adjust("1 second")
+      // The waiting write holds the slot at 30 s, so the next would start at 60 s.
+      expect(yield* rate.earliestStart(1, "/repos/o/r")).toBe(60_000)
+      yield* Fiber.interrupt(waiting)
+      expect(yield* rate.earliestStart(1, "/repos/o/r")).toBe(30_000)
+    }))
+    expect(starts).toEqual([0])
+  })
+
+  it("keeps the slot of a write whose attempt began, whether it failed or was interrupted", async () => {
+    await run(Effect.gen(function*() {
+      const rate = yield* limiter({ writeSpacingMs: 30_000 })
+      // The request reached GitHub, which counts it whatever became of the answer.
+      yield* Effect.exit(rate.limit("POST", "/x", Effect.fail("socket closed"), () => ({ limited: false })))
+      expect(yield* rate.earliestStart(1, "/repos/o/r")).toBe(30_000)
+      yield* TestClock.adjust("30 seconds")
+      const hung = yield* Effect.forkChild(rate.limit("POST", "/x", Effect.never, () => ({ limited: false })))
+      yield* TestClock.adjust("1 second")
+      yield* Fiber.interrupt(hung)
+      expect(yield* rate.earliestStart(1, "/repos/o/r")).toBe(60_000)
+    }))
+  })
+})
+
 describe("RateLimit paths", () => {
   it("runs a request whose absolute path does not parse, spending the core budget", async () => {
     const starts: Array<number> = []

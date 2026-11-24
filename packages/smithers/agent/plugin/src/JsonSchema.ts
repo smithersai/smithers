@@ -416,25 +416,36 @@ const check = (schema: Resolved, value: unknown, path: string): string | undefin
 export const validate = (resolved: Resolved, value: unknown): Option.Option<string> =>
   Option.fromUndefinedOr(check(resolved, value, "$"))
 
+/** One step into a schema, through the `oneOf` and `anyOf` members when the schema itself does not declare it. */
+const step = (resolved: Resolved, segment: string | number): Resolved | undefined => {
+  if (typeof segment === "number") {
+    if (resolved.items !== undefined) return resolved.items
+  } else if (resolved.properties !== undefined && Object.hasOwn(resolved.properties, segment)) {
+    return resolved.properties[segment]
+  }
+  const found: Array<Resolved> = []
+  for (const member of [...(resolved.oneOf ?? []), ...(resolved.anyOf ?? [])]) {
+    const declared = step(member, segment)
+    if (declared !== undefined) found.push(declared)
+  }
+  return found.length > 1 ? { anyOf: found } : found[0]
+}
+
 /**
- * The schema of a named property: from `properties`, else from the first
- * `oneOf` or `anyOf` member that declares it.
+ * The schema of a named property: from `properties`, else from the `oneOf`
+ * and `anyOf` members that declare it. One declaring member answers with its
+ * own schema; several answer with an `anyOf` of theirs, so a value any of them
+ * admits validates, as it does for a payload discriminated on that property.
  *
  * @category accessors
  * @since 1.1.0
  */
-export const property = (resolved: Resolved, name: string): Resolved | undefined => {
-  if (resolved.properties !== undefined && Object.hasOwn(resolved.properties, name)) return resolved.properties[name]
-  for (const member of [...(resolved.oneOf ?? []), ...(resolved.anyOf ?? [])]) {
-    const found = property(member, name)
-    if (found !== undefined) return found
-  }
-  return undefined
-}
+export const property = (resolved: Resolved, name: string): Resolved | undefined => step(resolved, name)
 
 /**
  * The schema a path reaches: a name steps into a property, a number into
- * `items`. Undefined when the schema does not declare the step.
+ * `items`, each through union members as {@link property} does. Undefined
+ * when the schema does not declare the step.
  *
  * @category accessors
  * @since 1.1.0
@@ -442,7 +453,7 @@ export const property = (resolved: Resolved, name: string): Resolved | undefined
 export const at = (resolved: Resolved, path: ReadonlyArray<string | number>): Resolved | undefined => {
   let current: Resolved | undefined = resolved
   for (const segment of path) {
-    current = typeof segment === "number" ? current.items : property(current, segment)
+    current = step(current, segment)
     if (current === undefined) return undefined
   }
   return current

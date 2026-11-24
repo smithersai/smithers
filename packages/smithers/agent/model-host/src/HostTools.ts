@@ -40,7 +40,7 @@ import {
   TodoCommands,
   UiInstruction
 } from "@smthrs/rpc"
-import { Duration, Effect } from "effect"
+import { Clock, Duration, Effect } from "effect"
 import { z } from "zod"
 import type { DurableChatGrant } from "./DurableChatProducer.ts"
 import type { HostDiagnostics } from "./HostDiagnostics.ts"
@@ -313,7 +313,10 @@ export const apiCaller =
               : { "Content-Type": "application/json", "Idempotency-Key": request!.idempotencyKey! })
           }
         })
-        if (response.status >= 300 && response.status < 400 || response.redirected) return { code: "call_refused" }
+        if (response.status >= 300 && response.status < 400 || response.redirected) {
+          await response.body?.cancel()
+          return { code: "call_refused" }
+        }
         if (response.body === null) {
           return response.status === 204 && method !== "GET"
             ? { status: 204, body: null }
@@ -418,7 +421,7 @@ const filesRead: Bind = (grant, { read }) => {
           ...(column === undefined ? {} : { column })
         },
         ordinal,
-        Date.now()
+        yield* Clock.currentTimeMillis
       )
       return { cards: [card], value }
     })
@@ -463,7 +466,7 @@ const filesList: Bind = (grant, { list }) => {
           readAt: { changeId: null, commitId: directory.commit, source: "head" }
         },
         ordinal,
-        Date.now()
+        yield* Clock.currentTimeMillis
       )
       return { cards: [card], value }
     })
@@ -607,14 +610,14 @@ const formArgs = (command: UiInstruction.FormInstructionCommand): string =>
 const docsCommand: Bind = (_grant, { docs }) => {
   if (docs === undefined || docs.length === 0) return undefined
   return (args, ordinal) =>
-    Effect.sync(() => {
+    Effect.gen(function*() {
       const input = DocsPages.parseDocsArgs(args)
       if ("error" in input) return { refusal: input.error }
       if (input.payload.mode === "read") {
         const read = DocsPages.readDocsPage(docs, input.payload.page ?? "")
         return "error" in read ? { refusal: read.error } : { cards: [], value: read.value }
       }
-      const { card, value } = DocsPages.docsCard(docs, input.payload.page, ordinal, Date.now())
+      const { card, value } = DocsPages.docsCard(docs, input.payload.page, ordinal, yield* Clock.currentTimeMillis)
       return { cards: [card], value }
     })
 }
@@ -682,7 +685,7 @@ const flowCommand = (row: CatalogDescriptor): Bind => (grant, { api }) => {
       }
       if (model === undefined) return { refusal: `No flow ${name}` }
       if (row.name === "flow.edit" && model.system) return { refusal: `${FlowEdit.flowTitle(name)} is built in` }
-      const now = Date.now()
+      const now = yield* Clock.currentTimeMillis
       if (row.name === "flow.edit") {
         const draft = FlowEdit.flowEditTodoInput(name, input.request!, input.diff)
         const request = catalogRequest(catalogDescriptors.find((entry) => entry.name === "todo.new")!, draft)
@@ -741,7 +744,7 @@ const catalogCommand = (row: CatalogDescriptor): Bind => (grant, { api }) => {
       if (answer.status < 200 || answer.status >= 300) {
         return { refusal: JSON.stringify({ status: answer.status, body: answer.body }) }
       }
-      const now = Date.now()
+      const now = yield* Clock.currentTimeMillis
       if (row.name === "stack") {
         const parsed = HomeCard.HomeCardSchema.safeParse(answer.body)
         if (!parsed.success) return { refusal: "Invalid stack response" }

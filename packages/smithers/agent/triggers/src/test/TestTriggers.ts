@@ -8,6 +8,7 @@ import * as Ref from "effect/Ref"
 import * as Result from "effect/Result"
 import * as Schema from "effect/Schema"
 import * as ClaimDecision from "../ClaimDecision.ts"
+import * as AttemptId from "../internal/AttemptId.ts"
 import * as Overlap from "../Overlap.ts"
 import * as Schedule from "../Schedule.ts"
 import * as Trigger from "../Trigger.ts"
@@ -144,7 +145,8 @@ const applyClaim = (
   trigger: Stored,
   fire: ClaimFire,
   current: State,
-  claimedAt: number
+  claimedAt: number,
+  attempt: string
 ): Decision => {
   const fireKey = key(fire.triggerId, fire.occurrence)
   const existingFire = fireSnapshot(current, fireKey)
@@ -165,7 +167,7 @@ const applyClaim = (
   const decision = ClaimDecision.decide({
     fire,
     claimedAt,
-    reservationId: reservationId(fire.triggerId, fire.occurrence, globalThis.crypto.randomUUID()),
+    reservationId: reservationId(fire.triggerId, fire.occurrence, attempt),
     snapshot: {
       revision: trigger.revision,
       enabled: trigger.enabled,
@@ -248,6 +250,9 @@ export const layer: Layer.Layer<TriggerStore> = Layer.effect(TriggerStore)(Effec
     pending: new Map(),
     active: new Map()
   })
+  const attemptId = yield* AttemptId.make
+  // A claim reads the clock and draws its attempt id before it touches state.
+  const claimSeed = Effect.all([Clock.currentTimeMillis, attemptId])
   const get: Service["get"] = (triggerId) =>
     Ref.get(state).pipe(Effect.map((current) => {
       const trigger = current.triggers.get(triggerId)
@@ -265,12 +270,12 @@ export const layer: Layer.Layer<TriggerStore> = Layer.effect(TriggerStore)(Effec
     }).pipe(Effect.flatten)
   const claimFire: Service["claimFire"] = (fire) =>
     Effect.flatMap(
-      Clock.currentTimeMillis,
-      (claimedAt) =>
+      claimSeed,
+      ([claimedAt, attempt]) =>
         Ref.modify(state, (current): readonly [Effect.Effect<Claim, TriggerError>, State] => {
           const trigger = current.triggers.get(fire.triggerId)
           if (trigger === undefined) return [Effect.fail(unknown(fire.triggerId)), current]
-          const decision = applyClaim(trigger, fire, current, claimedAt)
+          const decision = applyClaim(trigger, fire, current, claimedAt, attempt)
           return decision._tag === "Failure"
             ? [Effect.fail(decision.error), current]
             : [Effect.succeed(decision.claim), decision.state]
@@ -349,7 +354,7 @@ export const layer: Layer.Layer<TriggerStore> = Layer.effect(TriggerStore)(Effec
       ),
     claimFire,
     claimPending: (fire) =>
-      Effect.flatMap(Clock.currentTimeMillis, (claimedAt) =>
+      Effect.flatMap(claimSeed, ([claimedAt, attempt]) =>
         Ref.modify(state, (current): readonly [
           ReturnType<Service["claimPending"]>,
           State
@@ -367,7 +372,8 @@ export const layer: Layer.Layer<TriggerStore> = Layer.effect(TriggerStore)(Effec
               resumeBuffered: true
             },
             current,
-            claimedAt
+            claimedAt,
+            attempt
           )
           if (decision._tag === "Failure") return [Effect.fail(decision.error), current]
           let next = decision.state

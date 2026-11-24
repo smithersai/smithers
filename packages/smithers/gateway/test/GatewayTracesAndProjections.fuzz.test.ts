@@ -754,15 +754,7 @@ describe("@smthrs/gateway Projections live follow, EngineTrace, RunTrace, callEv
 
         const q = yield* Queue.unbounded<ControlSchema.ControlEvent>()
         const badControl = Control.make({
-          plan: control.plan,
-          run: control.run,
-          approve: control.approve,
-          deny: control.deny,
-          signal: control.signal,
-          steer: control.steer,
-          cancel: control.cancel,
-          resume: control.resume,
-          list: control.list,
+          ...control,
           watch: (filter) =>
             filter.follow
               ? Stream.make(

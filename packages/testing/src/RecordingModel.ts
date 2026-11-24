@@ -8,11 +8,11 @@
  * @since 0.0.0
  */
 
-import { defaultRules } from "@smthrs/journal/Redaction"
 import * as Model from "@smthrs/model/Model"
 import { ModelError } from "@smthrs/model/ModelError"
 import { Effect, Exit, type Layer, Stream } from "effect"
 import { type RecordedCall, recordedRequest } from "./Fixture.ts"
+import { scan } from "./internal/credentials.ts"
 import { snapshot } from "./internal/Structural.ts"
 import type { ModelErrorLike, ModelEventLike } from "./ModelLike.ts"
 
@@ -49,20 +49,6 @@ const recordedFailure = (error: Model.ModelFailure): ModelErrorLike | undefined 
 // rules would also match ordinary tool schemas (`"token": {...}`, `maxTokens`).
 // A match refuses the whole call rather than redacting it, because a redacted
 // request no longer has the digest its replay will look up.
-const credentialRules = new Set([
-  "private-key-block",
-  "jwt",
-  "api-key",
-  "github-token",
-  "github-fine-grained-token",
-  "aws-access-key",
-  "slack-token",
-  "google-api-key"
-])
-const credentialPatterns = defaultRules
-  .filter((rule) => credentialRules.has(rule.id))
-  .map((rule) => ({ id: rule.id, pattern: new RegExp(rule.pattern.source, rule.pattern.flags.replace("g", "")) }))
-
 // Providers stream output a few characters per delta, so a key the model
 // emitted is split across events and never contiguous in the serialized call.
 // Each text, thinking and tool-call stream is joined in event order and scanned
@@ -103,10 +89,10 @@ const unescaped = (text: string): Array<string> =>
 const guarded = (call: RecordedCall, sink: Sink): Effect.Effect<void> =>
   Effect.suspend(() => {
     const texts = [...strings(call, []), ...streamedTexts(call.events)].flatMap(unescaped)
-    const found = credentialPatterns.find((rule) => texts.some((text) => rule.pattern.test(text)))
+    const found = texts.flatMap(scan)[0]
     return found === undefined ? sink(call) : Effect.die(
       new Error(
-        `Refusing to record a ${call.model} call: it contains a value shaped like a credential (${found.id}). ` +
+        `Refusing to record a ${call.model} call: it contains a value shaped like a credential (${found}). ` +
           "Remove it from the request, tool results, or provider output before recording."
       )
     )

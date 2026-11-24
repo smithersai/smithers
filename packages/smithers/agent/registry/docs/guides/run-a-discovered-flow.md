@@ -116,10 +116,12 @@ holds the flow to its source root, `<project>/.smithers/flows`:
 
 - A file outside the source root loads: the target repository's packages and
   configuration, and those of the repository that holds the flow.
-- An installed package loads, as a static package import does.
+- An installed package outside the source root loads, as a static package
+  import does.
 - A file under the source root that was not measured is refused. The call that
   asked for it throws `UnmeasuredLoadError`, which names the file, and the run
-  fails. That includes the live file of a measured helper.
+  fails. That includes the live file of a measured helper and anything in a
+  `node_modules` directory beneath the source root.
 
 The check reads the real path of the file that was resolved, so a `..` path or a
 symbolic link that leads back under the source root is refused like a direct

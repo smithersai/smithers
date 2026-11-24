@@ -159,7 +159,15 @@ const redriveGate = DurableDeferred.make("agent/test/children-redrive", { succes
 const collideGate = DurableDeferred.make("agent/test/children-collide", { success: Schema.String })
 
 /** Every flow this host is willing to start as a child. */
-const childFlows = [Worker, Structured, Silent, Unstarted, Counted, Refusing, Steerable]
+/** A child whose input is any JSON, for telling two inputs apart by value. */
+const Shaped = Flow.make("agent/test/children-shaped", {
+  payload: { value: Schema.Unknown },
+  success: Schema.String,
+  error: Schema.Never,
+  body: () => Node.succeed("")
+})
+
+const childFlows = [Worker, Structured, Silent, Unstarted, Counted, Refusing, Steerable, Shaped]
 
 /** The text of one rendered steering insert. */
 const textOf = (message: ModelRequest.Message): string =>
@@ -303,6 +311,7 @@ const registerChildren = (runtime: FlowRuntime.FlowRuntime["Service"]) =>
     yield* runtime.register(Structured, () => Effect.succeed({ ok: true }))
     yield* runtime.register(Silent, () => Effect.void)
     yield* runtime.register(Counted, ({ count }) => Effect.succeed(`counted ${count}`))
+    yield* runtime.register(Shaped, () => Effect.succeed("shaped"))
   })
 
 const children = (options?: Partial<EngineChildren.Options>) =>
@@ -559,6 +568,104 @@ describe("EngineChildren.spawn", () => {
 
       expect(ids["first"]?.child).toBe(ids["second"]?.child)
       expect(ids["labelledA"]?.child).not.toBe(ids["labelledB"]?.child)
+    })))
+
+  it("regression R1-Fable-D2-040: refuses a label a child already holds for another input or another flow", () =>
+    run(Effect.gen(function*() {
+      const runtime = yield* engine("children-label-reuse")
+      const port = yield* children().pipe(Effect.provideService(FlowRuntime.FlowRuntime, runtime))
+      yield* registerChildren(runtime)
+      const refusal = (error: { readonly code: string; readonly message: string }) =>
+        Effect.succeed(`${error.code}: ${error.message}`)
+      yield* runtime.register(Parent, () =>
+        Effect.gen(function*() {
+          const first = yield* port.spawn({ flow: Counted._tag, input: { count: 1 }, label: "tally" })
+          const output = yield* port.await({ child: first.child })
+          // The same flow and input under the same label is the same child, as a re-driven parent asks.
+          const again = yield* port.spawn({ flow: Counted._tag, input: { count: 1 }, label: "tally" })
+          const otherInput = yield* port.spawn({ flow: Counted._tag, input: { count: 2 }, label: "tally" }).pipe(
+            Effect.as("started"),
+            Effect.catch(refusal)
+          )
+          const otherFlow = yield* port.spawn({ flow: Worker._tag, label: "tally" }).pipe(
+            Effect.as("started"),
+            Effect.catch(refusal)
+          )
+          // The refused input still runs under a label of its own.
+          const second = yield* port.spawn({ flow: Counted._tag, input: { count: 2 }, label: "tally-2" })
+          const secondOutput = yield* port.await({ child: second.child })
+          return JSON.stringify({
+            same: again.child === first.child,
+            output: output.output,
+            otherInput,
+            otherFlow,
+            secondOutput: secondOutput.output
+          })
+        }).pipe(Effect.orDie))
+
+      const answered = JSON.parse(
+        yield* runtime.execute(Parent, { executionId: "label-reuse-parent", payload: {} })
+      ) as Record<string, unknown>
+      expect(answered["same"]).toBe(true)
+      expect(answered["output"]).toBe("counted 1")
+      expect(answered["otherInput"]).toMatch(/^failed: agent\/spawn refused the label "tally": .* different input/)
+      expect(answered["otherFlow"]).toMatch(/^failed: agent\/spawn refused the label "tally": .* different flow/)
+      expect(answered["secondOutput"]).toBe("counted 2")
+    })))
+
+  it("regression R1-Fable-D2-040: tells a label's input apart by value, not by how it was written", () =>
+    run(Effect.gen(function*() {
+      const runtime = yield* engine("children-label-values")
+      const store = yield* RunStore.RunStore
+      const port = yield* children().pipe(Effect.provideService(FlowRuntime.FlowRuntime, runtime))
+      yield* registerChildren(runtime)
+      const asked = (value: Schema.Json, label = "shape") =>
+        port.spawn({ flow: Shaped._tag, input: { value }, label }).pipe(
+          Effect.as("same"),
+          Effect.catch((error) => Effect.succeed(error.code))
+        )
+      yield* runtime.register(Parent, () =>
+        Effect.gen(function*() {
+          const answers = [
+            yield* asked({ a: 1, b: [1, { c: null }] }),
+            // Key order is not part of a JSON value.
+            yield* asked({ b: [1, { c: null }], a: 1 }),
+            yield* asked({ a: 1 }),
+            yield* asked({ a: 1, c: [1, { c: null }] }),
+            yield* asked({ a: 1, b: [1, { c: 0 }] }),
+            yield* asked({ a: 1, b: { 0: 1, 1: { c: null } } }),
+            yield* asked([1]),
+            yield* asked(null),
+            yield* asked("text")
+          ]
+          // A row whose state this port cannot read is let through: `await` is where that is reported.
+          const unreadable = EngineChildren.childExecutionId("label-values-parent", "unreadable")
+          yield* store.create(unreadable, JSON.stringify({ flow: "unnamed" })).pipe(Effect.orDie)
+          answers.push(yield* asked({ a: 1 }, "unreadable"))
+          return answers.join(",")
+        }).pipe(Effect.orDie))
+
+      expect(yield* runtime.execute(Parent, { executionId: "label-values-parent", payload: {} })).toBe(
+        "same,same,failed,failed,failed,failed,failed,failed,failed,same"
+      )
+    })))
+
+  it("regression R1-Fable-D2-040: an input the flow's schema refuses is not the input a label holds", () =>
+    run(Effect.gen(function*() {
+      const runtime = yield* engine("children-label-invalid")
+      const port = yield* children().pipe(Effect.provideService(FlowRuntime.FlowRuntime, runtime))
+      yield* registerChildren(runtime)
+      yield* runtime.register(Parent, () =>
+        Effect.gen(function*() {
+          yield* port.spawn({ flow: Counted._tag, input: { count: 1 }, label: "tally" })
+          return yield* port.spawn({ flow: Counted._tag, input: { count: "many" } as never, label: "tally" }).pipe(
+            Effect.as("started"),
+            Effect.catch((error) => Effect.succeed(error.message))
+          )
+        }).pipe(Effect.orDie))
+      expect(yield* runtime.execute(Parent, { executionId: "label-invalid-parent", payload: {} })).toContain(
+        "different input"
+      )
     })))
 
   it("reports an unregistered declared flow as a failed start", () =>

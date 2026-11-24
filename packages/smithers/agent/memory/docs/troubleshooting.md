@@ -21,6 +21,8 @@ A namespace or bank name is empty or malformed. An empty bank string is the comm
 
 For a policy-carrying declaration, `Flows.handlersFor`, `Flows.runRecallFor`, and `Flows.runRememberFor` also reject an explicit bank unless its resolved kind and id match a bank in `policy.banks`. Rejection happens before any I/O; one foreign bank fails the entire recall request. An empty recall `banks` list uses all policy banks; `remember` requires a non-empty `bank`. `recall: "none"` and `retain: "never"` short-circuit before bank validation. Given a declaration that carries no policy, the same three fail with `invalid_namespace` before any I/O; bind the `WithMemory.withMemory` copy.
 
+A namespace id or bank name that contains U+0000 is also refused, on SQLite and PostgreSQL alike: PostgreSQL cannot store that character in text, so the store answers `invalid_namespace` before any statement runs instead of a backend-specific database error.
+
 ### `invalid_tag`
 
 A tag or tag group violates the vocabulary or a published ceiling. Tags must start with `branch:`, `stream:`, `source:`, or `scope:`, must be unique per record, and number at most 16. The `remember` flow refuses a `source:` tag, which only a host writing through the store may set. A tag group accepts at most 8 levels and 64 expression nodes.

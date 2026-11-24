@@ -591,9 +591,15 @@ const build = (
         : undefined
     )
     // The watermark a trigger starts from when this process has not seen it:
-    // the caller's, or the last fire the store recorded when that is later.
+    // the caller's, or what the store recorded for the trigger when that is
+    // later: its last fire, or its registration while it has never fired. A
+    // `since` that one failing trigger held back for hours is older than a
+    // trigger registered meanwhile, and starting that trigger from it launched
+    // `catchUp: "all"` runs for boundaries before the trigger existed.
     const seeded = (trigger: Registered): number | undefined =>
-      seed?.since === undefined ? undefined : Math.max(seed.since, trigger.lastFiredAt ?? seed.since)
+      seed?.since === undefined
+        ? undefined
+        : Math.max(seed.since, trigger.lastFiredAt ?? trigger.registeredAt ?? seed.since)
     const launching = new Set<Deferred.Deferred<void>>()
     let clean = true
     // Every runner call carries a deadline. A runtime that never answers used
@@ -1200,18 +1206,20 @@ const build = (
         // parked plan hold every trigger after it for the whole wait. A row
         // the store could not decode is one more isolated failure, so one
         // corrupt declaration cannot stop the healthy schedules beside it.
+        // It is logged and leaves the tick clean: no schedule can be read from
+        // it, so no occurrence is owed that a later tick could retry, and
+        // holding the watermark for it held every healthy trigger's `since`
+        // at one instant for as long as the row stayed corrupt.
         yield* Effect.forEach(
           listing,
           (row) =>
-            attempted(
-              { triggerId: row.triggerId },
-              "tick",
-              Result.isFailure(row.trigger)
-                ? Effect.fail(row.trigger.failure)
-                : processTrigger(row.trigger.success, row)
-            ).pipe(Effect.map((finished) => {
-              if (!finished) clean = false
-            })),
+            Result.isFailure(row.trigger)
+              ? Effect.asVoid(attempted({ triggerId: row.triggerId }, "tick", Effect.fail(row.trigger.failure)))
+              : attempted({ triggerId: row.triggerId }, "tick", processTrigger(row.trigger.success, row)).pipe(
+                Effect.map((finished) => {
+                  if (!finished) clean = false
+                })
+              ),
           { concurrency, discard: true }
         )
       }).pipe((tick) => timed(tickDuration, tick), Effect.withSpan("Scheduler.runOnce", { attributes: { host } }))
@@ -1269,9 +1277,13 @@ export interface Ticked {
   /**
    * What the next tick passes as `since`: `at` when every trigger finished
    * dispatching, and this tick's own `since` when one did not, so the next
-   * tick asks the catch-up policy about the same interval again.
+   * tick asks the catch-up policy about the same interval again. A first tick
+   * has no `since` of its own, so one that did not finish answers `undefined`
+   * and the next tick is a first tick again: it starts every trigger from the
+   * fire or registration the store recorded, which is where the occurrence
+   * that failed is still owed.
    */
-  readonly watermark: number
+  readonly watermark: number | undefined
 }
 
 /**
@@ -1304,7 +1316,7 @@ export const tick = (
     const built = yield* build(options, { since, at })
     yield* built.service.runOnce
     yield* built.launched
-    return { at, watermark: since === undefined || (yield* built.clean) ? at : since }
+    return { at, watermark: (yield* built.clean) ? at : since }
   }))
 
 /**
@@ -1469,7 +1481,7 @@ export const layer = (
           const ticked = yield* fire(since ?? undefined).pipe(
             Effect.map((ticked): { readonly at: number; readonly watermark: number | null } => ({
               at: Math.floor(ticked.at),
-              watermark: Math.floor(ticked.watermark)
+              watermark: ticked.watermark === undefined ? null : Math.floor(ticked.watermark)
             })),
             // The whole cause, not the typed error alone: a defect raised
             // anywhere under a tick, which `Effect.catch` by contract leaves

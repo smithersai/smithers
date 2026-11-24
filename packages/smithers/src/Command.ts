@@ -739,6 +739,7 @@ const doctor = Command.make("doctor", {}, () =>
   })).pipe(Command.withDescription(Verb.find("doctor")!.help))
 
 const gc = Command.make("gc", {
+  yes: Flag.Boolean("yes").pipe(Flag.withDefault(false)),
   olderThan: Flag.String("older-than").pipe(
     Flag.withDefault(Gc.defaultRetention),
     Flag.withDescription("Delete terminal runs older than this duration, for example 7d")
@@ -748,7 +749,10 @@ const gc = Command.make("gc", {
   ).pipe(Flag.withDefault(false))
 }, (config) =>
   Effect.gen(function*() {
-    const swept = yield* GcCmd.sweep({ olderThan: config.olderThan, dryRun: config.dryRun }, yield* globalsOf)
+    const swept = yield* GcCmd.sweep(
+      { olderThan: config.olderThan, dryRun: config.dryRun, yes: config.yes },
+      yield* globalsOf
+    )
     yield* render(swept)
     if (swept.failures.length > 0) {
       return yield* Effect.fail(new CliError.UnsupportedError({ message: Gc.failureMessage(swept.failures) }))

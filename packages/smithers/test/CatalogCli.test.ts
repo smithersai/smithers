@@ -550,6 +550,16 @@ describe("C-CAT-02 installed parser and descriptor dispatcher", () => {
       }
     }
   )
+  it("classifies invalid JSON without retaining the response body", async () => {
+    const f = await fixture(200, "private invalid JSON")
+    try {
+      const result = await f.invoke(["todo", "new", "--text", "Retry"])
+      expect(JSON.parse(result.stdout)).toMatchObject({ code: "backend_protocol" })
+      expect(result.stdout).not.toContain("private")
+    } finally {
+      await f.close()
+    }
+  })
   it.each([200, 201])("refuses a pending envelope without HTTP 202: %i", async (status) => {
     const f = await fixture(status, { confirmation: "confirm-1", state: "pending" })
     try {

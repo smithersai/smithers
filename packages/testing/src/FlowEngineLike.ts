@@ -33,6 +33,7 @@ import * as Deferred from "effect/Deferred"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
 import * as Fiber from "effect/Fiber"
+import { constant } from "effect/Function"
 import * as Layer from "effect/Layer"
 import * as Option from "effect/Option"
 import * as Schema from "effect/Schema"
@@ -69,6 +70,7 @@ type Subject = Flow.Flow<
 >
 
 interface ExecutionMeta {
+  settlement: Deferred.Deferred<ExecutionResult, EngineSubjectError>
   readonly flow: Subject
   /** What the execution was started with, so a re-submission can be checked. */
   readonly submitted: ExecutionConflict
@@ -293,22 +295,7 @@ export const make = (): Effect.Effect<
     // after a delay (a timer, an external signal) costs one suspension rather
     // than an unbounded busy-poll that never yields the CPU to the sleeping
     // step.
-    const settlements = new Map<string, Deferred.Deferred<ExecutionResult, EngineSubjectError>>()
     let nextExecutionId = 0
-
-    const arm = (executionId: string): Effect.Effect<Deferred.Deferred<ExecutionResult, EngineSubjectError>> =>
-      Effect.sync(() => {
-        const pending = Deferred.makeUnsafe<ExecutionResult, EngineSubjectError>()
-        settlements.set(executionId, pending)
-        return pending
-      })
-
-    const settle = (executionId: string, result: ExecutionResult): Effect.Effect<void> =>
-      Effect.suspend(() => {
-        const deferred = settlements.get(executionId)
-        /* v8 ignore next -- Registered execution bodies settle only after run or resume arms their settlement. */
-        return deferred === undefined ? Effect.void : Effect.asVoid(Deferred.succeed(deferred, result))
-      })
 
     const journalFor = (executionId: string): Array<JournalEntryLike> => {
       let journal = journals.get(executionId)
@@ -330,13 +317,13 @@ export const make = (): Effect.Effect<
             // runs the registered execute and never interprets the plan-time
             // body `Flow.make` requires, so the declaration carries the
             // smallest honest body.
-            /* v8 ignore next -- The registered execute function runs every subject flow, so the declarative body is never interpreted. */
-            body: () => Node.succeed(undefined)
+            body: constant(Node.succeed(undefined))
           })
           yield* engine.register(flow, (payload, executionId) =>
             Effect.suspend(() => {
               const journal = journalFor(executionId)
               return Effect.gen(function*() {
+                const pending = executions.get(executionId)!.settlement
                 const instance = yield* FlowRuntime.FlowInstance
                 return yield* Effect.onExit(
                   Effect.gen(function*() {
@@ -351,7 +338,7 @@ export const make = (): Effect.Effect<
                     }
                     return input
                   }),
-                  (exit) => settle(executionId, attemptToExecutionResult(executionId, instance, exit))
+                  (exit) => Deferred.succeed(pending, attemptToExecutionResult(executionId, instance, exit))
                 )
               })
             })).pipe(Scope.provide(scope))
@@ -372,11 +359,7 @@ export const make = (): Effect.Effect<
     const awaitResult = (executionId: string): Effect.Effect<ExecutionResult, EngineSubjectError> =>
       Effect.gen(function*() {
         const meta = yield* requireMeta(executionId)
-        const deferred = settlements.get(executionId)
-        /* v8 ignore next 3 -- Every path to awaitResult arms a settlement after recording execution metadata, and a settlement is removed only together with that metadata. */
-        if (deferred === undefined) {
-          return yield* Effect.fail(unavailable(`Execution ${executionId} has no pending settlement`))
-        }
+        const deferred = meta.settlement
         // Completion signal. Nothing polls while the execution is still doing
         // work, so a step that settles only after a delay costs this fiber one
         // suspension instead of a hot `yieldNow` loop that starves the timer it
@@ -432,14 +415,15 @@ export const make = (): Effect.Effect<
         }
         if (known === undefined) {
           const flow = yield* register(options.flow)
+          const pending = Deferred.makeUnsafe<ExecutionResult, EngineSubjectError>()
           executions.set(executionId, {
+            settlement: pending,
             flow,
             submitted: { flowName: options.flow.name, payload: options.payload }
           })
           journalFor(executionId)
           // Armed before submission so the body can never settle a latch that
           // does not exist yet.
-          const pending = yield* arm(executionId)
           yield* engine.execute(flow, {
             executionId,
             // Omitted rather than set to `undefined`: see `payloadSchema`.
@@ -463,7 +447,6 @@ export const make = (): Effect.Effect<
                 Deferred.failCause(pending, cause),
                 Effect.sync(() => {
                   executions.delete(executionId)
-                  settlements.delete(executionId)
                   journals.delete(executionId)
                   for (const [key, claimedId] of idempotencyIndex) {
                     if (claimedId === executionId) idempotencyIndex.delete(key)
@@ -481,8 +464,8 @@ export const make = (): Effect.Effect<
         const meta = yield* requireMeta(executionId)
         // Cancellation can re-drive a suspended round without entering the
         // registered body. In that case only the runtime has its latest exit.
-        const deferred = settlements.get(executionId)
-        if (!interrupted.has(executionId) && deferred !== undefined && Deferred.isDoneUnsafe(deferred)) {
+        const deferred = meta.settlement
+        if (!interrupted.has(executionId) && Deferred.isDoneUnsafe(deferred)) {
           return yield* Deferred.await(deferred)
         }
         const polled = yield* Effect.exit(engine.poll(meta.flow, executionId))
@@ -502,9 +485,9 @@ export const make = (): Effect.Effect<
       Effect.gen(function*() {
         const meta = executions.get(executionId)
         if (meta === undefined) return
-        const deferred = settlements.get(executionId)
-        const wasSettled = deferred !== undefined && Deferred.isDoneUnsafe(deferred)
-        if (wasSettled) yield* arm(executionId)
+        const deferred = meta.settlement
+        const wasSettled = Deferred.isDoneUnsafe(deferred)
+        if (wasSettled) meta.settlement = Deferred.makeUnsafe()
         interrupted.add(executionId)
         // `interrupt`, never `interruptUnsafe`: the durable engine refuses the
         // unsafe path with `unsafe_interrupt_unsupported` by contract, and the
@@ -517,7 +500,7 @@ export const make = (): Effect.Effect<
         for (let attempt = 0;; attempt++) {
           const current = yield* result(executionId)
           if (current.status !== "suspended") {
-            yield* settle(executionId, current)
+            yield* Deferred.succeed(meta.settlement, current)
             return
           }
           if (attempt >= publicationPasses) {
@@ -536,7 +519,7 @@ export const make = (): Effect.Effect<
         // settled one is a no-op that would never settle a fresh latch.
         const current = yield* result(executionId)
         if (current.status !== "suspended") return current
-        yield* arm(executionId)
+        meta.settlement = Deferred.makeUnsafe()
         yield* engine.resume(meta.flow, executionId)
         return yield* awaitResult(executionId)
       })

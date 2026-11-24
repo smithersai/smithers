@@ -109,9 +109,23 @@ the worse failure.
 The cost of that choice is a duplicate page: a process that dies between an
 accepted send and the delivery record pages again on the next tick. So the sink
 owns the last mile. `deliver` must be idempotent on `Alerts.alertId(alert)`,
-which is `alert:<coalescingKey>:<since>` and stable for the life of one
+which is `alert:<coalescingKey>:<since>:s<opening>` and stable for the life of
+one condition. `opening` is the journal sequence of the entry that opened the
 condition. A condition that clears and re-opens gets a new id, because the second
-approval wait is not the first one.
+approval wait is not the first one, and the sequence keeps the two apart even
+when both opened in the same millisecond.
+
+Records written before ids carried the sequence name an alert as
+`alert:<coalescingKey>:<since>`. The runtime reads such a delivery or
+acknowledgement as about the opening the condition had when the record was
+written, so an upgrade neither pages again about an alert already delivered nor
+forgets who acknowledged it.
+
+`acknowledge` takes that shorter form of the id too, for the opening the
+condition has now. It is the form a channel message and `smthrs alerts` show a
+person. An acknowledgement typed from a page about an earlier opening that
+shared this one's millisecond therefore takes this one; `Standing.alertId`
+names one opening and nothing else.
 
 ## Acknowledged, or paged again
 
@@ -128,9 +142,10 @@ stands, and a condition that clears and re-opens is a new alert nobody has
 acknowledged. `standing(runId)` lists every open condition past its delay as
 `raised`, `delivered` or `acknowledged`.
 
-A tick validates its run id and checks condition names for malformed UTF-16
-before deciding alerts. Invalid input fails with `notification_invalid` and
-`path` names `runId` or `condition`. An alert id that would exceed the journal's
+`tick`, `acknowledge` and `standing` validate the run id and check condition
+names for malformed UTF-16 before reading the journal. Invalid input fails with
+`notification_invalid` and `path` names `runId`, `condition` or, for an
+acknowledgement, `alertId`. An alert id that would exceed the journal's
 1,024-code-unit bound once prefixed and percent-encoded is also refused before
 admission or delivery. Shorten the run id or condition name before retrying.
 
@@ -138,17 +153,28 @@ admission or delivery. Shorten the run id or condition name before retrying.
 
 `Alerts.Tick` sorts every alert the tick considered:
 
-| Field        | What it means                                                        |
-| ------------ | -------------------------------------------------------------------- |
-| `delivered`  | The sink accepted the page, and `flows.alerts.delivered` records it. |
-| `suppressed` | This page was already delivered, or the alert is acknowledged.       |
-| `failed`     | The sink refused or could not be reached. Retried on the next tick.  |
-| `refused`    | The notification queue was at capacity. The sink was not called.     |
+| Field        | What it means                                                                                                         |
+| ------------ | --------------------------------------------------------------------------------------------------------------------- |
+| `delivered`  | The sink accepted the page, and `flows.alerts.delivered` records it.                                                  |
+| `suppressed` | This page was already delivered, or the alert is acknowledged.                                                        |
+| `failed`     | The sink refused or could not be reached. Retried on the next tick, unless the sink refused for good or named a wait. |
+| `refused`    | The notification queue was at capacity. The sink was paged all the same.                                              |
 
-A refused page is not a delivered page, so it is retried. A refusal from the
-queue pages nobody at all: the alert has nowhere durable to sit, and paging
-about something the run will never read would send an operator looking in the
-wrong place.
+A refused page is not a delivered page, so it is retried. Two refusals are not
+retried on the next tick. A sink that fails with `retryable: false` has said
+another attempt would be refused the same way, as a revoked key is: that page
+is recorded as refused for good and no later tick sends it, though every tick
+still lists it in `failed`. A sink that fails with `retryAfterMillis` is left
+alone until the wait has passed. Both are journaled, so a restart keeps them. A
+repeat of the page and a re-opened condition are pages of their own, and each is
+tried once. After fixing a credential, the next repeat or the next opening is
+what pages.
+
+A refusal from the queue does not stop the page. A run that holds its capacity
+of pending notifications is often the stalled run the alert is about, so the
+sink is called on the same tick and the alert is in `refused` and in
+`delivered` or `failed`. Once the page is delivered the alert is not admitted
+again, so the run's own inbox does not hold it.
 
 Both non-delivery outcomes journal `flows.alerts.failed`, one record per alert
 per failure code, never one per tick. A webhook that stays down for an hour

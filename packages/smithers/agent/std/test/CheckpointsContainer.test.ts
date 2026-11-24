@@ -48,6 +48,9 @@ const inDirectory = [
   "process.exit(result.status ?? 1)"
 ].join("\n")
 
+/** Where a request to `sh` carries its script: after the deadline wrapper's seconds, or straight after `-c`. */
+const scriptIndex = (request: Container.Request): number => request.args[1]?.startsWith("d=$1") === true ? 4 : 1
+
 /** A container named `task` whose working directory is `workdir`. */
 const task = (workdir: string, shellPreamble = ""): Container.Container =>
   Container.make({
@@ -60,7 +63,12 @@ const task = (workdir: string, shellPreamble = ""): Container.Container =>
             inDirectory,
             request.cwd ?? workdir,
             request.file,
-            ...request.args.map((arg, index) => request.file === "sh" && index === 1 ? shellPreamble + arg : arg)
+            // A git script is the second argument of the deadline wrapper
+            // (`sh -c <wrapper> sh <seconds> <script>`); any other shell text
+            // is the first argument of `sh -c`.
+            ...request.args.map((arg, index) =>
+              request.file === "sh" && index === scriptIndex(request) ? shellPreamble + arg : arg
+            )
           ],
           env: request.env
         })
@@ -233,8 +241,8 @@ describe("Checkpoints in a container with a filesystem of its own", () => {
     const hung = Container.make({
       exec: (request) =>
         inner.exec(
-          request.args[1]?.includes("checkout --quiet") === true
-            ? { ...request, args: request.args.map((arg, index) => index === 1 ? `${arg}\nsleep 60` : arg) }
+          request.args[4]?.includes("checkout --quiet") === true
+            ? { ...request, args: request.args.map((arg, index) => index === 4 ? `${arg}\nsleep 60` : arg) }
             : request
         )
     })
@@ -269,7 +277,7 @@ describe("Checkpoints in a container with a filesystem of its own", () => {
     // the `git init` the removal does not run.
     const stuck = Container.make({
       exec: (request) =>
-        request.args[1]?.includes("rm -rf") === true && !request.args[1].includes("git init")
+        request.args[4]?.includes("rm -rf") === true && !request.args[4].includes("git init")
           ? Effect.succeed({ file: "false", args: [] })
           : inner.exec(request)
     })

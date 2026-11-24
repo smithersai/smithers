@@ -630,6 +630,60 @@ describe("smithers.sh's installation tokens", () => {
       expect(world.seen.map((seen) => seen.authorization)).toEqual(["Bearer minted-1", "Bearer minted-1", "Bearer minted-2"])
     })
   })
+  // Fable D2-088: every recheck failure answered unavailable and kept the token, so a rejected token failed reads for most of an hour.
+  const failed = (status: number): Answer => ({ status, headers: { "content-type": "application/json" }, body: JSON.stringify({ message: "no" }) })
+  it.effect("a held token GitHub answers 401 for is replaced within the same read", () => effect {
+    const state: App = { mints: 0, repository: { id: 11, private: false }, expiresAt: 3_600_000 }
+    const { world, token } = try tokens(state)
+    try token(reads[0]!)
+    world.answer = () => world.seen.at(-1)?.authorization === "Bearer minted-1" ? failed(401) : ok(state.repository)
+    try TestClock.adjust("61 seconds")
+    const replaced = try token(reads[0]!)
+    const kept = try token(reads[0]!)
+    try Effect.try(() => {
+      expect([Redacted.value(replaced), Redacted.value(kept), state.mints]).toEqual(["minted-2", "minted-2", 2])
+      expect(world.seen.map((seen) => seen.authorization)).toEqual(["Bearer minted-1", "Bearer minted-1", "Bearer minted-2"])
+    })
+  })
+  it.effect("a 401 for the fresh token too is unavailable after one more mint, never a loop", () => effect {
+    const state: App = { mints: 0, repository: { id: 11, private: false }, expiresAt: 3_600_000 }
+    const { world, token } = try tokens(state)
+    try token(reads[0]!)
+    world.answer = () => failed(401)
+    try TestClock.adjust("61 seconds")
+    const rejected = try Effect.flip(token(reads[0]!))
+    const fresh = try Effect.flip(token(reads[0]!))
+    try Effect.try(() => {
+      // The first read replaced the held token once; the second held none, so it minted and asked once.
+      expect([rejected.reason, fresh.reason, state.mints]).toEqual(["unavailable", "unavailable", 3])
+      expect(world.seen.map((seen) => seen.authorization)).toEqual(["Bearer minted-1", "Bearer minted-1", "Bearer minted-2", "Bearer minted-3"])
+    })
+  })
+  it.effect("a 404 or 403 drops the held token: gone is forbidden, and the next read mints again", () => effect {
+    const state: App = { mints: 0, repository: { id: 11, private: false }, expiresAt: 3_600_000 }
+    const { world, token } = try tokens(state)
+    try token(reads[0]!)
+    world.answer = () => failed(404)
+    try TestClock.adjust("61 seconds")
+    const gone = try Effect.flip(token(reads[0]!))
+    world.answer = () => ok(state.repository)
+    const back = try token(reads[0]!)
+    world.answer = () => failed(403)
+    try TestClock.adjust("61 seconds")
+    const refusedRead = try Effect.flip(token(reads[0]!))
+    world.answer = () => ok(state.repository)
+    const again = try token(reads[0]!)
+    world.answer = () => failed(500)
+    try TestClock.adjust("61 seconds")
+    const outage = try Effect.flip(token(reads[0]!))
+    world.answer = () => ok(state.repository)
+    const survived = try token(reads[0]!)
+    try Effect.try(() => {
+      expect([gone.reason, Redacted.value(back), refusedRead.reason, Redacted.value(again)]).toEqual(["forbidden", "minted-2", "unavailable", "minted-3"])
+      // An outage says nothing about the token, so it is kept.
+      expect([outage.reason, Redacted.value(survived), state.mints]).toEqual(["unavailable", "minted-3", 3])
+    })
+  })
   it.effect("refuses a repository whose id changed or that is private, and says unavailable when GitHub fails", () => effect {
     const reason = (state: App) => effect {
       const { token } = try tokens(state)

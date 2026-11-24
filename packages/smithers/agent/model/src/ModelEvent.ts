@@ -19,6 +19,17 @@ import { AssistantMessage, StopReason, ToolCallPart } from "./ModelRequest.ts"
 const withStatics = <S extends object, Statics extends object>(schema: S, statics: Statics): S & Statics =>
   Object.defineProperties(schema, Object.getOwnPropertyDescriptors(statics)) as S & Statics
 
+const UsageSchema = Schema.Struct({
+  inputTokens: Schema.optional(Schema.Number),
+  outputTokens: Schema.optional(Schema.Number),
+  reasoningTokens: Schema.optional(Schema.Number),
+  cachedInputTokens: Schema.optional(Schema.Number),
+  cacheWriteTokens: Schema.optional(Schema.Number),
+  totalTokens: Schema.optional(Schema.Number),
+  /** The USD charge the provider itself reported for the call, when it reports one. */
+  costUsd: Schema.optional(Schema.Number)
+}).annotate({ identifier: "flows/model/Usage" })
+
 /**
  * Token counts a provider reports for one request. Every field is
  * optional: providers disagree on which counters they expose, and a missing
@@ -29,18 +40,13 @@ const withStatics = <S extends object, Statics extends object>(schema: S, static
  * @slop
  */
 export const Usage = withStatics(
-  Schema.Struct({
-    inputTokens: Schema.optional(Schema.Number),
-    outputTokens: Schema.optional(Schema.Number),
-    reasoningTokens: Schema.optional(Schema.Number),
-    cachedInputTokens: Schema.optional(Schema.Number),
-    cacheWriteTokens: Schema.optional(Schema.Number),
-    totalTokens: Schema.optional(Schema.Number),
-    /** The USD charge the provider itself reported for the call, when it reports one. */
-    costUsd: Schema.optional(Schema.Number)
-  }).annotate({ identifier: "flows/model/Usage" }),
+  UsageSchema,
   {
-    make: (input: Usage): Usage => input
+    make: (input: Usage): Usage => input,
+    merge: (current: Usage, event: UsageEvent): Usage => {
+      const { type: _, ...counters } = event
+      return { ...current, ...Object.fromEntries(Object.entries(counters).filter(([, value]) => value !== undefined)) }
+    }
   }
 )
 
@@ -51,7 +57,7 @@ export const Usage = withStatics(
  * @since 0.1.0
  * @slop
  */
-export type Usage = typeof Usage.Type
+export type Usage = typeof UsageSchema.Type
 
 /**
  * Opens a text part. Its `id` correlates the later deltas and end event
@@ -527,9 +533,14 @@ export function settledMessage(
         if (current?.type === "text") parts[index] = { type: "text", text: current.text + event.text }
         break
       }
-      case "thinking-start":
-        part(event.id, { type: "thinking", text: "", signature: event.signature })
+      case "thinking-start": {
+        const index = part(event.id, { type: "thinking", text: "", signature: event.signature })
+        const current = parts[index]
+        if (current?.type === "thinking" && event.signature !== undefined) {
+          parts[index] = { ...current, signature: event.signature }
+        }
         break
+      }
       case "thinking-delta": {
         const index = part(event.id, { type: "thinking", text: "" })
         const current = parts[index]
@@ -558,19 +569,7 @@ export function settledMessage(
         break
       }
       case "usage": {
-        const next = {
-          inputTokens: event.inputTokens,
-          outputTokens: event.outputTokens,
-          reasoningTokens: event.reasoningTokens,
-          cachedInputTokens: event.cachedInputTokens,
-          cacheWriteTokens: event.cacheWriteTokens,
-          totalTokens: event.totalTokens,
-          costUsd: event.costUsd
-        }
-        usage = {
-          ...usage,
-          ...Object.fromEntries(Object.entries(next).filter(([, value]) => value !== undefined))
-        }
+        usage = Usage.merge(usage, event)
         break
       }
       case "retry":

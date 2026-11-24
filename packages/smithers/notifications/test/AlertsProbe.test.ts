@@ -4,7 +4,7 @@
  */
 import { Journal, JournalEvent } from "@smthrs/journal"
 import * as TestJournal from "@smthrs/journal/test/TestJournal"
-import { Cause, Effect, Exit, Layer } from "effect"
+import { Effect, Layer } from "effect"
 import { TestClock } from "effect/testing"
 import { describe, expect, it } from "vitest"
 import * as Alerts from "../src/Alerts.ts"
@@ -84,6 +84,8 @@ describe("Alerts.report", () => {
       runId,
       condition: "site-freshness",
       since: 3_600_000,
+      // The first failing report is the journal's first entry.
+      opening: 0,
       firedAt: 3_600_000,
       severity: "critical",
       coalescingKey: Alerts.coalescingKey(runId, "site-freshness"),
@@ -101,6 +103,7 @@ describe("Alerts.report", () => {
         condition: "site-freshness",
         severity: "critical",
         since: 3_600_000,
+        opening: 0,
         firedAt: 3_600_000,
         summary: "site lags main by 979 minutes",
         owner: "oncall"
@@ -129,8 +132,8 @@ describe("Alerts.report", () => {
     expect(observed.again.delivered.map((alert) => alert.summary)).toEqual(["deploy failed again"])
     // A condition that re-opens is a new alert, with a new id for the sink to dedupe on.
     expect(sink.sent.map((alert) => Alerts.alertId(alert))).toEqual([
-      `alert:${Alerts.coalescingKey(runId, "site-freshness")}:0`,
-      `alert:${Alerts.coalescingKey(runId, "site-freshness")}:1200000`
+      `alert:${Alerts.coalescingKey(runId, "site-freshness")}:0:s0`,
+      `alert:${Alerts.coalescingKey(runId, "site-freshness")}:1200000:s4`
     ])
   })
 
@@ -168,12 +171,43 @@ describe("Alerts.report", () => {
     expect(sink.sent.map((alert) => alert.summary)).toEqual(["x".repeat(Alerts.maxSummaryLength)])
   })
 
-  it("dies on a report that names no probe, because the calling step is wrong", async () => {
-    const exit = await Effect.runPromiseExit(
-      Alerts.report({ runId, probe: "", state: "failing" }).pipe(Effect.provide(TestJournal.layer()), Effect.scoped)
+  it("fails with a typed refusal, and journals nothing, for a report the journal cannot record", async () => {
+    const refusal = (input: Alerts.Report) =>
+      Effect.runPromise(
+        Effect.gen(function*() {
+          const error = (yield* Effect.flip(Alerts.report(input))) as NotificationQueue.NotificationError
+          const journal = yield* Journal.Journal
+          const written = yield* journal.entries({ runId: JournalEvent.RunId.make(runId), limit: 8 })
+          return [error._tag, error.code, error.path, written.entries.length]
+        }).pipe(Effect.provide(TestJournal.layer()), Effect.scoped)
+      )
+    const invalid = (path: string) => ["/notifications/NotificationError", "notification_invalid", path, 0]
+
+    // A step that names no probe is wrong, and can now branch on being told so.
+    expect(await refusal({ runId, probe: "", state: "failing" })).toEqual(invalid("report"))
+    expect(await refusal({ runId: "run\u0000id", probe: "disk", state: "failing" })).toEqual(invalid("runId"))
+    expect(await refusal({ runId: "r".repeat(1_025), probe: "disk", state: "failing" })).toEqual(invalid("runId"))
+    // Percent-encoding a lone surrogate throws, and a long name encodes past the journal's identifier bound.
+    expect(await refusal({ runId, probe: "\uD800", state: "failing" })).toEqual(invalid("probe"))
+    expect(await refusal({ runId, probe: "p".repeat(1_024), state: "failing" })).toEqual(invalid("probe"))
+  })
+
+  it("never ends a summary on half a character", async () => {
+    const sink = keeping()
+    await run(
+      sink.layer,
+      Effect.gen(function*() {
+        // The 500th unit is the first half of an emoji: keeping it would leave a lone surrogate.
+        yield* Alerts.report({ runId, probe: "site-freshness", state: "failing", summary: `${"x".repeat(499)}😀tail` })
+        yield* tick
+        yield* Alerts.report({ runId, probe: "site-freshness", state: "ok" })
+        // The emoji ends exactly at the bound, so all of it is kept.
+        yield* Alerts.report({ runId, probe: "site-freshness", state: "failing", summary: `${"x".repeat(498)}😀tail` })
+        yield* tick
+      })
     )
 
-    expect(Exit.isFailure(exit) && Cause.hasDies(exit.cause)).toBe(true)
+    expect(sink.sent.map((alert) => alert.summary)).toEqual(["x".repeat(499), `${"x".repeat(498)}😀`])
   })
 })
 

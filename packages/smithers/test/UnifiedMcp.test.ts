@@ -183,6 +183,8 @@ it(
           "approvals_approve",
           "approvals_deny",
           "flow_start",
+          "gc",
+          "bug",
           "debug_api",
           "settings",
           "members",

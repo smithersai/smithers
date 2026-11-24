@@ -93,8 +93,12 @@ const namedTool = (name) => ({ name, inputSchema: { type: "object" } })
 
 const reader = startupDiagnostic === undefined ? readline.createInterface({ input: process.stdin }) : undefined
 let serverExchange
+// What this peer received during the handshake, for the "report-handshake" mode.
+const handshake = { initialize: undefined, initialized: undefined }
 reader?.on("line", (line) => {
   const request = JSON.parse(line)
+  if (request.method === "initialize") handshake.initialize = request
+  if (request.method === "notifications/initialized") handshake.initialized = request
   if (serverExchange && !Object.hasOwn(request, "method")) {
     const expected = serverExchange.pending.get(request.id)
     if (expected === undefined || JSON.stringify(request) !== JSON.stringify(expected)) {
@@ -337,6 +341,10 @@ reader?.on("line", (line) => {
       send({ jsonrpc: "2.0", method: "notifications/progress", params: { progress: 1 } })
       send({ jsonrpc: "2.0", method: "ping" })
       for (const probe of probes) send({ jsonrpc: "2.0", ...probe })
+      return
+    }
+    if (mode === "report-handshake") {
+      succeed(request, { content: [], structuredContent: handshake })
       return
     }
     if (mode === "exit-mid-call") process.exit(0)

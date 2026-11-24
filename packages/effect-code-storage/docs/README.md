@@ -146,9 +146,12 @@ From `https://code.storage/docs/openapi.json`, read 2026-10-19:
 | `listTags`     | `GET /api/repos/{repo}/tags`                                     | `git:read`   |
 
 A repository name may contain `/`; the client encodes it into one path
-segment. API calls reject names containing unpaired UTF-16 surrogates with
-`invalid_argument` before sending HTTP; `gitRemote` requires a well-formed name.
-The organization's API origin is `https://api.<org>.code.storage`.
+segment. API calls reject a name containing an unpaired UTF-16 surrogate, or a
+`/`-separated segment that is empty, `.` or `..`, with `invalid_argument`
+before sending HTTP; for `gitRemote` such a name is a defect. The
+organization's API origin is `https://api.<org>.code.storage` and its git
+origin `https://<org>.code.storage`; `apiUrl` and `gitUrl` override each.
+No request that carries a token or credential follows a redirect.
 
 ### Capacity and spend
 

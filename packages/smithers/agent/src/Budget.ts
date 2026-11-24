@@ -11,10 +11,11 @@
  *
  * Old smithers spelled this `<Aspects tokenBudget latencySlo>` and enforced it
  * at dispatch, from usage accumulated over the run. This is the same rule at
- * the same place: the enforcement point is the model boundary in
- * {@link module:FlowEngineLike}, which every model call in the composition
- * passes through, so a budget cannot be evaded by a step that assembles its own
- * loop.
+ * the same place: the enforcement points are the model boundary in
+ * {@link module:FlowEngineLike}, which every model call of the agent loop
+ * passes through, and {@link module:ModelStep}'s public `run`, which reserves
+ * and records against the `Budget` in its context the same way. A budget
+ * cannot be evaded by a step that assembles its own loop over either.
  *
  * Its accounting and admission rules are:
  *
@@ -46,7 +47,15 @@
  *   call. Before a positive cost is known, one call holds the whole allowance.
  *   Zero refuses new calls unless `warn` explicitly permits them. Scope exit
  *   releases reservations; recorded usage replaces the estimate. `check` only
- *   previews admission and must not be used as a concurrency guard.
+ *   previews admission and must not be used as a concurrency guard. A step
+ *   that already holds a reservation is asked again on every engine attempt:
+ *   the latch and every ceiling are checked against everything but its own
+ *   hold, so a retry of a step whose failed attempt spent the allowance is
+ *   refused.
+ * - **A daily cap counts calls in flight.** Settled spend comes from the
+ *   ledger; every reservation this instance holds, on any run, adds its run's
+ *   forecast, and at least one token while that run has no cost to project.
+ *   A fresh run's first call is projected at its `tokens.max`.
  * - **An evaluator reading is refused only by a spent ceiling.** A judge or
  *   monitor reading is small next to the primary call a forecast projects, so
  *   `admitReading` projects nothing: it refuses only once the run's ceiling is
@@ -609,6 +618,17 @@ export interface Service {
    * be subtracted as parked time.
    */
   readonly resume: (at?: number) => Effect.Effect<void, AccountingUnavailable>
+  /**
+   * Forgets one run's in-memory account because the run has ended. A host
+   * calls it from the finalizer of the scope that lives as long as the run
+   * ({@link releaseOnClose}), never at a park: a memory-only account that is
+   * released cannot be rebuilt, so a run asked about again afterwards starts a
+   * new allowance. An account with a call in flight or uncommitted usage is
+   * kept. Absent on a service that holds no accounts.
+   *
+   * @since 1.0.0-rc.18
+   */
+  readonly release?: ((runId: string) => Effect.Effect<void>) | undefined
 }
 
 /**
@@ -1000,7 +1020,7 @@ const exceeded = (
     max,
     next,
     message: scope === "daily"
-      ? `This machine has spent ${used} of its ${max} tokens for the UTC day across all runs, and the next call is projected at ${next}`
+      ? `This machine has spent ${used} of its ${max} tokens for the UTC day across all runs, has ${reserved} reserved by calls in flight, and the next call is projected at ${next}`
       : scope === "tokens"
       ? `The run has spent ${used} of its ${max} approved tokens, has ${reserved} reserved, and the next call is projected at ${next}`
       : scope === "usd"
@@ -1354,8 +1374,10 @@ export const looseRunId = ""
  * The accumulator has to be held between one run's model calls, and a run
  * publishes no "I am finished" the budget could listen for: `FlowInstance`'s
  * scope closes at the end of every NODE dispatch, not at the end of the run,
- * so it cannot be the lifetime. The bound is what keeps a control plane that
- * drives runs for weeks from holding one tally per run it ever drove. It is
+ * so it cannot be the lifetime. A host that knows when a run ends says so with
+ * {@link Service.release}, normally through {@link releaseOnClose}. The bound
+ * is what keeps a control plane that drives runs for weeks, and says nothing,
+ * from holding one tally per run it ever drove. It is
  * an upper bound, not permission to forget spend: active operations,
  * uncommitted usage, and memory-only accounts cannot be evicted. If all slots
  * are pinned, admission fails with AccountingUnavailable. An evicted durable
@@ -1444,6 +1466,12 @@ export const make = (
     const recoveryEntries = options.recoveryEntries ?? defaultRecoveryEntries
     const accounts = new Map<string, RunAccount>()
     const registry = yield* Semaphore.make(1)
+    // A daily cap is one allowance shared by every run, so its admissions are
+    // decided one at a time across runs: two fresh runs must not both read the
+    // ledger before either holds its reservation.
+    const dailyAdmission = yield* Semaphore.make(1)
+    const acrossRuns = <A, E, R>(effect: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> =>
+      policy.daily === undefined ? effect : dailyAdmission.withPermits(1)(effect)
 
     const newAccount = Effect.gen(function*() {
       const startedAt = yield* Clock.currentTimeMillis
@@ -1750,6 +1778,25 @@ export const make = (
         }
       }).pipe(Effect.uninterruptible)
 
+    /**
+     * The forecast held by every reservation this budget has in flight, on any
+     * run, except the asking step's own. A run with no cost to project holds
+     * its token allowance, and one token without that: no call in flight is
+     * free. A reservation whose step is already counted is settled spend.
+     */
+    const inFlight = (asking: RunAccount, stepKey: string | undefined): Effect.Effect<number> =>
+      Effect.gen(function*() {
+        let held = 0
+        for (const account of [loose, ...accounts.values()]) {
+          const state = yield* Ref.get(account.state)
+          const forecast = state.largestCall || policy.tokens?.max || 1
+          for (const key of account.reservations.keys()) {
+            if (!state.counted.has(key) && !(account === asking && key === stepKey)) held += forecast
+          }
+        }
+        return held
+      })
+
     const checkAccount = (
       run: RunAccount,
       runId: string,
@@ -1771,7 +1818,11 @@ export const make = (
         }
         const pending = run.pending.values().next().value
         if (pending !== undefined) return yield* Effect.fail(pending)
-        if (stepKey !== undefined && run.reservations.has(stepKey)) return { _tag: "proceed" }
+        // A step that already holds a reservation is not admitted on that
+        // alone. One reservation spans every engine attempt of its step, and
+        // an attempt that failed unsealed has spent since it was taken: the
+        // latch and each ceiling below are asked again, counting every
+        // reservation but the step's own.
         const now = yield* Clock.currentTimeMillis
         if (current.latched !== undefined) return verdictFor(current.latched)
         // A run asking to call a model is executing, whatever it recorded.
@@ -1818,9 +1869,14 @@ export const make = (
           const used = yield* spendLedger.total(utcDay(now)).pipe(
             Effect.mapError((cause) => unavailable("recover", runId, String(cause), cause))
           )
-          const projected = mode === "reading" ? 0 : current.largestCall
-          if (used + projected > daily.max || used >= daily.max) {
-            return yield* settle(run, runId, exceeded("daily", "fail", used, daily.max, projected))
+          // Settled spend alone admits every fresh run at once: the ledger
+          // holds nothing for a call in flight, and a run with no call behind
+          // it projects nothing. Calls in flight count, and a first call is
+          // projected at its run's token allowance.
+          const projected = mode === "reading" ? 0 : current.largestCall || tokens?.max || 0
+          const held = mode === "reading" ? 0 : yield* inFlight(run, stepKey)
+          if (used + held + projected > daily.max || used + held >= daily.max) {
+            return yield* settle(run, runId, exceeded("daily", "fail", used, daily.max, projected, held))
           }
         }
         // Before any positive cost is known, hold the whole token allowance
@@ -1829,7 +1885,7 @@ export const make = (
         let reserved = 0
         if (mode !== "reading") {
           for (const key of run.reservations.keys()) {
-            if (!current.counted.has(key)) reserved += forecast
+            if (key !== stepKey && !current.counted.has(key)) reserved += forecast
           }
         }
         const next = mode === "reading"
@@ -1877,7 +1933,7 @@ export const make = (
           let reservedUsd = 0
           if (mode !== "reading") {
             for (const key of run.reservations.keys()) {
-              if (!current.counted.has(key)) reservedUsd += forecastUsd
+              if (key !== stepKey && !current.counted.has(key)) reservedUsd += forecastUsd
             }
           }
           const nextUsd = mode === "reading"
@@ -1906,7 +1962,7 @@ export const make = (
 
     const reserve = (stepKey: string): Effect.Effect<Verdict, AccountingUnavailable, Scope.Scope> =>
       withRecovered((run, runId) =>
-        run.admission.withPermits(1)(Effect.uninterruptibleMask((restore) =>
+        run.admission.withPermits(1)(acrossRuns(Effect.uninterruptibleMask((restore) =>
           Effect.gen(function*() {
             const verdict = yield* restore(checkAccount(run, runId, stepKey, "reserve"))
             if (verdict._tag === "refuse") return verdict
@@ -1929,7 +1985,7 @@ export const make = (
             )
             return verdict
           })
-        ))
+        )))
       )
 
     const summarize = (current: State): Usage => {
@@ -1957,9 +2013,19 @@ export const make = (
               const cost = Pricing.cost(paid, modelId, { table: prices, at })
               return { spent: tokensOf(paid, weights), ...(cost === undefined ? {} : { costUsd: cost.costUsd }) }
             }
-            const spent = tokensOf(usage, weights)
+            // A weighted charge needs the input and output counts. Well-formed
+            // usage that lacks one, as a call cut off before the provider said
+            // anything reports, cannot be weighed: it is charged nothing and
+            // marked unreported. A malformed counter still yields NaN below
+            // and keeps the ledger unavailable.
+            const unweighable = weights !== undefined &&
+              (usage.inputTokens === undefined || usage.outputTokens === undefined) &&
+              !Number.isNaN(tokensOf(usage))
+            const spent = unweighable ? 0 : tokensOf(usage, weights)
             const priced = Pricing.cost(usage, modelId, { table: prices, at })
-            const unreported = quality?.unreported !== true && reportsTokens(usage) ? {} : { unreported: true as const }
+            const unreported = quality?.unreported !== true && !unweighable && reportsTokens(usage)
+              ? {}
+              : { unreported: true as const }
             const charge: Counted = {
               spent,
               ...(priced === undefined ? {} : { costUsd: priced.costUsd }),
@@ -2049,6 +2115,13 @@ export const make = (
             Effect.flatMap(Clock.currentTimeMillis, (now) => transition(run, runId, "resume", at ?? now))
           )
         ),
+      release: (runId) =>
+        registry.withPermits(1)(Effect.sync(() => {
+          const ended = accounts.get(runId)
+          // An account still in use, or holding spend no durable record has,
+          // is not the caller's to forget.
+          if (ended !== undefined && ended.users === 0 && ended.pending.size === 0) accounts.delete(runId)
+        })),
       usageOf: (runId) =>
         Effect.suspend(() => {
           const live = runId === looseRunId ? loose : accounts.get(runId)
@@ -2123,6 +2196,30 @@ export const layer = (policy: Policy, options: Options = {}): Layer.Layer<Budget
  * @since 0.1.0
  */
 export const layerUnbounded = (): Layer.Layer<Budget> => Layer.succeed(Budget)(makeUnbounded())
+
+/**
+ * Releases `runId`'s account when the current scope closes.
+ *
+ * Call it in the scope that lives exactly as long as the run: a budget keeps
+ * one account per run it has answered about, and a host with no journal can
+ * never evict one, so without this its {@link Options.maxRuns}th run is its
+ * last. Do not call it in a scope that closes at a park (see
+ * {@link Service.release}).
+ *
+ * @example
+ * ```ts
+ * import * as Budget from "@smthrs/agent/Budget"
+ * import * as Effect from "effect/Effect"
+ *
+ * const driven = (runId: string, run: Effect.Effect<void, never, Budget.Budget>) =>
+ *   Effect.scoped(Effect.andThen(Budget.releaseOnClose(runId), run))
+ * ```
+ *
+ * @category accounting
+ * @since 1.0.0-rc.18
+ */
+export const releaseOnClose = (runId: string): Effect.Effect<void, never, Budget | Scope.Scope> =>
+  Effect.flatMap(Budget, (budget) => Effect.addFinalizer(() => budget.release?.(runId) ?? Effect.void))
 
 /**
  * Reads the budget a composition explicitly provided.

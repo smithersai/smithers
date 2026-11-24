@@ -14,6 +14,7 @@
 import { SpanFailure } from "@smthrs/flow"
 import { Effect, Option, Schema } from "effect"
 import { classifyHttpStatus } from "./HttpStatusClassifier.ts"
+import { trackToolCalls } from "./internal/ToolHistory.ts"
 import { ModelError } from "./ModelError.ts"
 import * as ModelEvent from "./ModelEvent.ts"
 import {
@@ -162,12 +163,14 @@ const assistantToolCalls = (
 
 const lowerMessages = (request: ModelRequest): ReadonlyArray<ChatMessage> => {
   const messages: Array<ChatMessage> = [...systemMessage(request)]
+  const dropped = new Set<string>()
   for (const message of request.messages) {
     if (message.role === "user") {
       messages.push({ role: "user", content: message.content.map((part) => part.text).join("") })
       continue
     }
     if (message.role === "assistant") {
+      trackToolCalls(dropped, message)
       // A historically aborted or errored turn carries no wire-valid content;
       // omitting it lets the next user input resume cleanly, matching
       // OpenAIResponses's own handling of the same case.
@@ -182,6 +185,7 @@ const lowerMessages = (request: ModelRequest): ReadonlyArray<ChatMessage> => {
       continue
     }
     for (const result of message.content) {
+      if (dropped.has(result.toolCallId)) continue
       messages.push({ role: "tool", tool_call_id: result.toolCallId, content: result.content })
     }
   }
@@ -234,18 +238,18 @@ const fromRequest = (structuredOutput: StructuredOutput | undefined) =>
   )
 
 const ChunkToolCall = Schema.Struct({
-  index: Schema.optional(Schema.Number),
-  id: Schema.optional(Schema.String),
+  index: Schema.optional(Schema.NullOr(Schema.Number)),
+  id: Schema.optional(Schema.NullOr(Schema.String)),
   function: Schema.optional(Schema.Struct({
-    name: Schema.optional(Schema.String),
-    arguments: Schema.optional(Schema.String)
+    name: Schema.optional(Schema.NullOr(Schema.String)),
+    arguments: Schema.optional(Schema.NullOr(Schema.String))
   }))
 })
 
 const ChunkDelta = Schema.Struct({
-  role: Schema.optional(Schema.String),
+  role: Schema.optional(Schema.NullOr(Schema.String)),
   content: Schema.optional(Schema.NullOr(Schema.String)),
-  tool_calls: Schema.optional(Schema.Array(ChunkToolCall))
+  tool_calls: Schema.optional(Schema.NullOr(Schema.Array(ChunkToolCall)))
 })
 
 const ChunkUsage = Schema.Struct({
@@ -260,16 +264,16 @@ const ChunkUsage = Schema.Struct({
 })
 
 const ChatCompletionChunk = Schema.Struct({
-  id: Schema.optional(Schema.String),
+  id: Schema.optional(Schema.NullOr(Schema.String)),
   /** The tier that served the request, on a chunk that carries it. */
   service_tier: Schema.optional(Schema.NullOr(Schema.String)),
   choices: Schema.optional(Schema.Array(Schema.Struct({
-    index: Schema.optional(Schema.Number),
+    index: Schema.optional(Schema.NullOr(Schema.Number)),
     delta: Schema.optional(ChunkDelta),
     finish_reason: Schema.optional(Schema.NullOr(Schema.String))
   }))),
   usage: Schema.optional(Schema.NullOr(ChunkUsage)),
-  error: Schema.optional(JsonObject)
+  error: Schema.optional(Schema.Union([JsonObject, Schema.String]))
 })
 
 type ChatCompletionChunk = typeof ChatCompletionChunk.Type
@@ -339,13 +343,13 @@ const toolIndex = (state: State, call: typeof ChunkToolCall.Type): number => {
   // `index: 0`. A delta whose id differs from the call already at its index is
   // another call, so it is placed by its id instead of merged into that one.
   // A known id always names its call, even under a different index.
-  if (call.id !== undefined) {
+  if (call.id != null) {
     for (const [index, callId] of Object.entries(state.callIdByIndex)) {
       if (callId === call.id) return Number(index)
     }
   }
-  const occupant = call.index === undefined ? undefined : state.callIdByIndex[call.index]
-  if (call.index !== undefined && (occupant === undefined || call.id === undefined)) {
+  const occupant = call.index == null ? undefined : state.callIdByIndex[call.index]
+  if (call.index != null && (occupant === undefined || call.id == null)) {
     return call.index
   }
   return Object.keys(state.callIdByIndex).reduce((next, index) => Math.max(next, Number(index) + 1), 0)
@@ -360,28 +364,28 @@ const stepToolCall = (
   if (existingId === undefined) {
     const id = call.id ?? `tool-${index}`
     const name = call.function?.name
-    if (name === undefined) {
+    if (name == null) {
       return new ModelError({
         code: "invalid_provider_output",
         message: "Chat Completions opened a tool call without a name"
       })
     }
     const initialArguments = call.function?.arguments
-    const tools = initialArguments === undefined || initialArguments === ""
+    const tools = initialArguments == null || initialArguments === ""
       ? ToolStream.start(state.tools, { callId: id, name })
       : ToolStream.delta(ToolStream.start(state.tools, { callId: id, name }), id, initialArguments)
     return {
       state: { ...state, tools, callIdByIndex: { ...state.callIdByIndex, [index]: id } },
       events: [
         ModelEvent.ModelEvent.ToolCallStart({ type: "tool-call-start", id, name }),
-        ...(initialArguments === undefined || initialArguments === ""
+        ...(initialArguments == null || initialArguments === ""
           ? []
           : [ModelEvent.ModelEvent.ToolCallDelta({ type: "tool-call-delta", id, arguments: initialArguments })])
       ]
     }
   }
   const fragment = call.function?.arguments
-  if (fragment === undefined || fragment === "") return { state, events: [] }
+  if (fragment == null || fragment === "") return { state, events: [] }
   return {
     state: { ...state, tools: ToolStream.delta(state.tools, existingId, fragment) },
     events: [ModelEvent.ModelEvent.ToolCallDelta({ type: "tool-call-delta", id: existingId, arguments: fragment })]
@@ -398,7 +402,7 @@ const stepEvent = (
     // way. Classifying every one of them as `provider_internal` made a rate
     // limit, an exhausted balance and a rejected key all retryable, so the
     // ladder burned instead of the seat parking or the call failing typed.
-    const error = event.error as { readonly message?: unknown; readonly code?: unknown }
+    const error = typeof event.error === "string" ? { message: event.error } : event.error
     const providerCode = typeof error.code === "string"
       ? error.code
       : typeof error.code === "number"
@@ -424,7 +428,7 @@ const stepEvent = (
   let current: State = {
     ...state,
     ...(event.usage === undefined || event.usage === null ? {} : { usage: event.usage }),
-    ...(event.id === undefined ? {} : { responseId: event.id }),
+    ...(event.id == null ? {} : { responseId: event.id }),
     ...(event.service_tier === undefined || event.service_tier === null ? {} : { servedTier: event.service_tier })
   }
   if (delta?.content !== undefined && delta.content !== null && delta.content !== "") {
@@ -494,10 +498,10 @@ const step = SpanFailure.fn(
 // usage into finish_reason. Both carry the final counters, so stop there even
 // when a proxy keeps the body open. A finish without usage must still pull
 // the trailing counters before returning.
-const terminalEvent = (event: ChatCompletionChunk): boolean =>
+const terminalEvent = (event: ChatCompletionChunk, settled = false): boolean =>
   event.usage !== undefined && event.usage !== null &&
-  (event.choices === undefined || event.choices.length === 0 ||
-    (event.choices[0]?.finish_reason !== undefined && event.choices[0]?.finish_reason !== null))
+  ((settled && (event.choices === undefined || event.choices.length === 0)) ||
+    (event.choices?.[0]?.finish_reason !== undefined && event.choices?.[0]?.finish_reason !== null))
 
 const finalize = (state: State): ReadonlyArray<ModelEvent.ModelEvent> =>
   ToolStream.flushAborted(state.tools).completed.map((call) =>

@@ -71,9 +71,31 @@ const dataSettings = /^core\.(autocrlf|eol|safecrlf|filemode|symlinks|ignorecase
 /** A setting value this module will repeat to git: a bare word, never a command. */
 const bareWord = /^[A-Za-z0-9_-]+$/
 
+/**
+ * How long one host command of this module may run. A stalled mount or a
+ * repository on a dead network filesystem would otherwise hang the tool call
+ * that asked. Ten minutes is the `bash` flow's own default.
+ */
+const hostTimeoutMs = 600_000
+
+/**
+ * Bytes kept per stream of one host command. Every answer read here is a
+ * path, a commit, or a config listing; more than this is refused, never cut,
+ * because a cut answer would be parsed as a whole one.
+ */
+const hostCaptureBytes = 16 * 1024 * 1024
+
 const run = (command: string, args: ReadonlyArray<string>, env?: Readonly<Record<string, string>>) =>
-  Exec.exec(command, { args, ...(env === undefined ? {} : { env }) }).pipe(
-    Effect.mapError((error) => failed(`${command} could not run: ${error.message}`))
+  Exec.exec(command, {
+    args,
+    ...(env === undefined ? {} : { env }),
+    timeoutMs: hostTimeoutMs,
+    maxCaptureBytes: hostCaptureBytes,
+    overflow: "refuse"
+  }).pipe(
+    Effect.mapError((error) =>
+      failed(`${command} could not run: ${error.message}`, error.code === "timeout" ? "timeout" : "command_failed")
+    )
   )
 
 /**
@@ -508,7 +530,7 @@ const checkout = (shadow: Shadow, host: string, commit: string) =>
         checkoutConfig(repository)
       ])
       yield* succeeded(prepared, `Could not check out ${commit}`)
-      const written = yield* shadow.git(["read-tree", "--reset", "-u", commit], staged)
+      const written = yield* shadow.git(["read-tree", "--reset", "-u", "--end-of-options", commit], staged)
       yield* succeeded(written, `Could not check out ${commit}`)
       const indexed = yield* run("sh", [
         "-c",

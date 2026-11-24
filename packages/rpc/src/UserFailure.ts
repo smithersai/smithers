@@ -157,6 +157,8 @@ export const failureDetail = (_error: unknown): string => "[REDACTED]"
  * The first error in the `cause` chain whose `_tag` the registry lists wins,
  * so a boot step that wraps a tagged cause still shows the cause's copy.
  * Anything else is unknown: the fallback copy, `tag: null`, and `onUnknown`.
+ * A registered formatter that throws on a malformed failure is unknown too:
+ * its exception never replaces the failure being shown.
  *
  * @since 1.0.0
  * @category constructors
@@ -172,8 +174,13 @@ export const presentUserFailure = <E extends TaggedFailure>(
     const tag = tagOf(current)
     if (tag !== undefined && Object.hasOwn(entries, tag)) {
       const entry = entries[tag]!
-      const copy = typeof entry === "function" ? entry(current as never) : entry
-      return { tag, fault: copy.fault, sentence: copy.sentence, actions: copy.actions, detail: failureDetail(error) }
+      try {
+        // A formatter reads fields its tag promises; a value that only carries the tag can make it throw.
+        const copy = typeof entry === "function" ? entry(current as never) : entry
+        return { tag, fault: copy.fault, sentence: copy.sentence, actions: copy.actions, detail: failureDetail(error) }
+      } catch {
+        break
+      }
     }
     current = causeOf(current)
   }

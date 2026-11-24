@@ -47,6 +47,7 @@ import { Ownership, RunStore } from "@smthrs/run-store"
 import {
   Cause,
   Clock,
+  Context,
   Deferred,
   Duration,
   Effect,
@@ -54,6 +55,7 @@ import {
   Fiber,
   Layer,
   Logger,
+  Metric,
   Option,
   PubSub,
   References,
@@ -63,6 +65,7 @@ import {
   Stream
 } from "effect"
 import * as Semaphore from "effect/Semaphore"
+import { readFileSync } from "node:fs"
 import { describe, expect, it } from "vitest"
 import * as Agent from "../src/Agent.ts"
 import * as AgentSession from "../src/AgentSession.ts"
@@ -330,6 +333,7 @@ interface ScenarioOptions {
   readonly logs?: Array<string>
   readonly logDetails?: Array<Readonly<Record<string, unknown>>>
   readonly abandonedParkAfter?: Duration.Duration | undefined
+  readonly confirmParkHostDead?: AgentSession.Options["confirmParkHostDead"]
   readonly authorizeReleasedChildren?: AgentSession.Options["authorizeReleasedChildren"]
   readonly canExecute?: AgentSession.Options["canExecute"]
   readonly runs?: Partial<RunStore.Service> | undefined
@@ -344,6 +348,7 @@ interface ScenarioOptions {
   readonly reenterModules?: AgentSession.Options["reenterModules"]
   readonly reentryCheckpoint?: AgentSession.Options["reentryCheckpoint"]
   readonly orderTerminalStatus?: AgentSession.Options["orderTerminalStatus"]
+  readonly orderTerminalStatusWithin?: AgentSession.Options["orderTerminalStatusWithin"]
 }
 
 const engineLayer = (
@@ -381,7 +386,9 @@ const withExecutor = <A>(
       reenterModules: options.reenterModules,
       reentryCheckpoint: options.reentryCheckpoint,
       abandonedParkAfter: options.abandonedParkAfter,
+      confirmParkHostDead: options.confirmParkHostDead,
       orderTerminalStatus: options.orderTerminalStatus,
+      orderTerminalStatusWithin: options.orderTerminalStatusWithin,
       limits: { calls: 4 },
       maxFrames: 2,
       quotaPolicy: Safety.quotaPolicy,
@@ -1311,7 +1318,18 @@ describe("the executor's driver admission fence", () => {
   })
 
   for (const status of ["waiting-approval", "parked"] as const) {
-    it.each([false, true])(`honors foreign-host round ownership (${status}, abandoned: %s)`, async (abandoned) => {
+    // `aged` alone is the regression of R1-Fable-D2-041: a delegation old enough by this host's clock, parked by a
+    // host nobody has confirmed dead (`unknown`, no confirmation configured) or that is alive, is not adopted.
+    it.each(
+      [
+        [false, "dead"],
+        [true, "dead"],
+        [true, "unknown"],
+        [true, "alive"]
+      ] as const
+    )(`honors foreign-host round ownership (${status}, aged: %s, parking host: %s)`, async (aged, parkingHost) => {
+      const abandoned = aged && parkingHost === "dead"
+      const asked: Array<readonly [string, string]> = []
       const record = recorder()
       let registration: {
         readonly flow: Flow.Any
@@ -1327,6 +1345,13 @@ describe("the executor's driver admission fence", () => {
       await withExecutor(record, {
         nowMs,
         abandonedParkAfter: Duration.millis(cutoff),
+        ...(parkingHost === "unknown" ? {} : {
+          confirmParkHostDead: (asking, parkedBy) =>
+            Effect.sync(() => {
+              asked.push([asking, parkedBy])
+              return parkingHost === "dead"
+            })
+        }),
         runtime: {
           getRun: () =>
             Effect.succeed({
@@ -1338,7 +1363,7 @@ describe("the executor's driver admission fence", () => {
           pendingResumes: Effect.succeed([{
             runId,
             sequence: 7,
-            requestedAtMs: nowMs - cutoff + (abandoned ? 0 : 1)
+            requestedAtMs: nowMs - cutoff + (aged ? 0 : 1)
           }]),
           clearResume: (runId, sequence) =>
             Effect.sync(() => {
@@ -1377,6 +1402,9 @@ describe("the executor's driver admission fence", () => {
           expect(bodies).toBe(abandoned ? 1 : 0)
           expect(cleared).toEqual(abandoned ? [{ runId, sequence: 7 }] : [])
           expect(record.statuses).toEqual(abandoned ? ["completed"] : [])
+          // The parking host's death is asked only of a delegation that has reached the cutoff.
+          expect(asked.length > 0).toBe(aged && parkingHost !== "unknown")
+          for (const each of asked) expect(each).toEqual([runId, "foreign-host-fence"])
         }))
     })
   }
@@ -1626,6 +1654,16 @@ describe("the executor's driver admission fence", () => {
     expect(causeOf(record)).toContain("opaque model transport defect")
     expect(causeOf(record)).not.toContain("undefined")
   })
+})
+
+/** A journal that records as the default one does and names the write. */
+const journalWatching = (record: Recorder, wrote: Deferred.Deferred<void>): Partial<Journal.Service> => ({
+  emitDurableUnfenced: (input) =>
+    Effect.sync(() => {
+      record.journaled.push({ eventType: input.eventType, payload: input.payload })
+      if (input.eventType.startsWith("control.run.")) Deferred.doneUnsafe(wrote, Effect.void)
+      return accepted
+    })
 })
 
 describe("the executor's resume bridge", () => {
@@ -2084,6 +2122,7 @@ describe("the executor's resume bridge", () => {
       const attempted = await withExecutor(record, {
         nowMs,
         abandonedParkAfter,
+        confirmParkHostDead: () => Effect.succeed(true),
         runtime: {
           getRun: (runId) =>
             Effect.succeed(
@@ -2305,15 +2344,262 @@ describe("the executor's resume bridge", () => {
     expect(record.statuses).toEqual([])
   })
 
-  it("stops the bridge without stopping the executor when the journal subscription itself fails", async () => {
+  it("keeps the executor running when the journal subscription itself fails", async () => {
     const record = recorder()
     const result = await launched(record, { journal: { changes: Effect.die("the journal cannot publish changes") } })
 
-    // The bridge is dead, so nothing would re-drive a parked run — but a
-    // launch still runs to completion, which is the containment the catch
-    // exists to buy.
+    // No subscription ever opens, so nothing re-drives a parked run through
+    // the bridge, but a launch still runs to completion.
     expect(result.acceptance).toBe("accepted")
     expect(result.status).toBe("completed")
+  })
+
+  it("regression R1-Fable-D2-042: a take-up that dies ends that entry only, and the next resume is driven", async () => {
+    const record = recorder()
+    const resumed: Array<string> = []
+    const logs: Array<string> = []
+    const logDetails: Array<Readonly<Record<string, unknown>>> = []
+    const drove = Deferred.makeUnsafe<void>()
+    const hub = await Effect.runPromise(PubSub.unbounded<JournalEvent.Entry>())
+    const attempted = await withExecutor(
+      record,
+      {
+        logs,
+        logDetails,
+        journal: {
+          changes: Effect.tap(PubSub.subscribe(hub), () => Deferred.succeed(record.subscribed, void 0))
+        },
+        // The host's own guard is host code: a defect in it is not the bridge's to die of.
+        canExecute: (id) => id === "run-poisoned" ? Effect.die("Bearer sk-live-guard12345678") : Effect.succeed(true),
+        engine: (engine) =>
+          ({
+            ...engine,
+            poll: () => Effect.succeed(Option.some({ _tag: "Suspended" })),
+            resume: (_flow: unknown, executionId: string) =>
+              Effect.sync(() => {
+                resumed.push(executionId)
+                Deferred.doneUnsafe(drove, Effect.void)
+              })
+          }) as unknown as EngineService
+      },
+      () =>
+        Effect.gen(function*() {
+          yield* Deferred.await(record.subscribed)
+          yield* PubSub.publish(hub, entry("run-poisoned", "control.steer.woke"))
+          yield* PubSub.publish(hub, entry("run-next", "control.steer.woke"))
+          yield* Deferred.await(drove)
+          return resumed
+        })
+    )
+
+    expect(attempted).toEqual(["run-next"])
+    const at = logs.indexOf("A resume event could not be taken up")
+    expect(at).toBeGreaterThanOrEqual(0)
+    expect(logDetails[at]).toMatchObject({ runId: "run-poisoned", eventType: "control.steer.woke" })
+    // The defect's text is logged redacted (R1-Fable-D2-043).
+    expect(JSON.stringify(logDetails)).not.toContain("sk-live-guard12345678")
+    expect(logs).not.toContain("The executor resume bridge stopped and is subscribing again")
+  })
+
+  it("regression R1-Fable-D2-042: subscribes again after its subscription fails or ends, and counts each stop", async () => {
+    const record = recorder()
+    const resumed: Array<string> = []
+    const logs: Array<string> = []
+    const logDetails: Array<Readonly<Record<string, unknown>>> = []
+    const drove = Deferred.makeUnsafe<void>()
+    const ending = await Effect.runPromise(PubSub.unbounded<JournalEvent.Entry>())
+    const lasting = await Effect.runPromise(PubSub.unbounded<JournalEvent.Entry>())
+    const endingSubscribed = Deferred.makeUnsafe<void>()
+    let subscriptions = 0
+    const attempted = await withExecutor(
+      record,
+      {
+        logs,
+        logDetails,
+        journal: {
+          // The first subscription fails, the second ends, and the third is the one that lasts.
+          changes: Effect.suspend(() => {
+            subscriptions++
+            return subscriptions === 1
+              ? Effect.die(new Error("the journal refused the subscription: Bearer sk-live-bridge1234"))
+              : subscriptions === 2
+              ? Effect.tap(PubSub.subscribe(ending), () => Deferred.succeed(endingSubscribed, void 0))
+              : Effect.tap(PubSub.subscribe(lasting), () => Deferred.succeed(record.subscribed, void 0))
+          })
+        },
+        engine: (engine) =>
+          ({
+            ...engine,
+            poll: () => Effect.succeed(Option.some({ _tag: "Suspended" })),
+            resume: (_flow: unknown, executionId: string) =>
+              Effect.sync(() => {
+                resumed.push(executionId)
+                Deferred.doneUnsafe(drove, Effect.void)
+              })
+          }) as unknown as EngineService
+      },
+      () =>
+        Effect.gen(function*() {
+          const before = (yield* Metric.value(AgentSession.resumeBridgeStops)).count
+          yield* Deferred.await(endingSubscribed)
+          yield* PubSub.shutdown(ending)
+          yield* Deferred.await(record.subscribed)
+          yield* PubSub.publish(lasting, entry("run-after-restart", "control.run.resume"))
+          yield* Deferred.await(drove)
+          return { resumed, stops: (yield* Metric.value(AgentSession.resumeBridgeStops)).count - before }
+        })
+    )
+
+    expect(attempted.resumed).toEqual(["run-after-restart"])
+    expect(subscriptions).toBe(3)
+    // The failed subscription may be counted before the scenario reads the counter; the ended one never is.
+    expect(attempted.stops).toBeGreaterThanOrEqual(1)
+    expect(logs).toContain("The executor resume bridge stopped and is subscribing again")
+    expect(logs.some((line) => line.includes("journal subscription ended"))).toBe(true)
+    expect(JSON.stringify(logDetails)).not.toContain("sk-live-bridge1234")
+  })
+})
+
+describe("regression R1-Fable-D2-043 and -118: what a failed run writes to logs and to its status", () => {
+  const failing = (message: string) =>
+    Agent.makeNoop({ run: () => Stream.fail(new HarnessError({ code: "engine_failed", message })) })
+
+  it("redacts a credential a failure quotes before the cause is logged", async () => {
+    const record = recorder()
+    const logs: Array<string> = []
+    const logDetails: Array<Readonly<Record<string, unknown>>> = []
+    const result = await launched(record, {
+      logs,
+      logDetails,
+      agent: failing("the provider answered 401 for Bearer sk-live-XXXXXXXX1234")
+    })
+
+    expect(result.status).toBe("failed")
+    const at = logs.indexOf("An agent run failed")
+    expect(at).toBeGreaterThanOrEqual(0)
+    expect(String(logDetails[at]?.["cause"])).toContain("the provider answered 401")
+    expect(JSON.stringify(logDetails)).not.toContain("sk-live-XXXXXXXX1234")
+  })
+
+  it("cuts a long failure on a code point, never between the halves of a surrogate pair", async () => {
+    // Emoji fill the whole 4096-unit bound, under two leads, so the cut lands inside a pair or beside one.
+    // `Truncate` and `FailureSummary` pin each case by its exact length; this pins the status a run writes.
+    const causes = []
+    for (const lead of ["", "x"]) {
+      const record = recorder()
+      await launched(record, { agent: failing(`${lead}${"😀".repeat(4096)}`) })
+      const failed = record.journaled.find((entry) => entry.eventType === "control.run.failed")
+      causes.push((failed?.payload as { readonly cause: string }).cause)
+    }
+    for (const cause of causes) expect(cause).not.toMatch(/\p{Surrogate}/u)
+    for (const cause of causes) {
+      expect(cause.length).toBeGreaterThanOrEqual(4095)
+      expect(cause.length).toBeLessThanOrEqual(4096)
+    }
+  })
+})
+
+describe("regression R1-Fable-D2-041: confirming a parking host's death from the host's liveness check", () => {
+  const claimant: Ownership.OwnerId = { hostId: "host-a", pid: 20, nonce: "now" }
+  const fence = (owner: Ownership.OwnerId) => JSON.stringify(owner)
+
+  it("answers dead only for an owner on this host that the liveness check says is gone", async () => {
+    const asked: Array<{ readonly owner: Ownership.OwnerId; readonly context: Ownership.LivenessContext }> = []
+    const confirm = (alive: boolean) =>
+      AgentSession.parkHostDead(claimant, (owner, context) =>
+        Effect.sync(() => {
+          asked.push({ owner, context })
+          return alive
+        }))
+    const earlier: Ownership.OwnerId = { hostId: "host-a", pid: 10, nonce: "before" }
+    const elsewhere: Ownership.OwnerId = { hostId: "host-b", pid: 10, nonce: "before" }
+    const run = (effect: Effect.Effect<boolean>) => Effect.runPromise(effect)
+
+    expect(await run(confirm(false)("run-1", fence(earlier)))).toBe(true)
+    expect(await run(confirm(true)("run-1", fence(earlier)))).toBe(false)
+    expect(asked.map(({ owner }) => owner)).toEqual([earlier, earlier])
+    expect(asked[0]!.context).toMatchObject({ claimant, heartbeatAtMs: null })
+    // Liveness this host cannot establish is not death: another host's owner, and a fence that names no owner.
+    expect(await run(confirm(false)("run-1", fence(elsewhere)))).toBe(false)
+    expect(await run(confirm(false)("run-1", "fence-1"))).toBe(false)
+    expect(await run(confirm(false)("run-1", JSON.stringify({ hostId: 7 })))).toBe(false)
+    expect(asked).toHaveLength(2)
+  })
+})
+
+describe("regression R1-Fable-D2-014: the fibers the executor starts belong to its scope", () => {
+  it("interrupts and awaits an ordered terminal write still waiting when the scope closes", async () => {
+    const record = recorder()
+    const entered = Deferred.makeUnsafe<void>()
+    let ended: "interrupted" | "running" = "running"
+    await withExecutor(record, {
+      orderTerminalStatus: () =>
+        Effect.andThen(Effect.sync(() => Deferred.doneUnsafe(entered, Effect.void)), Effect.never).pipe(
+          Effect.onInterrupt(() =>
+            Effect.sync(() => {
+              ended = "interrupted"
+            })
+          )
+        )
+    }, (executor) =>
+      Effect.gen(function*() {
+        yield* executor.launch(launchInput)
+        yield* Deferred.await(entered).pipe(Effect.timeout(Duration.seconds(10)))
+      }))
+
+    // The scope has closed by the time `withExecutor` resolves: nothing it started is still running.
+    expect(ended).toBe("interrupted")
+    expect(record.statuses).toEqual([])
+  })
+
+  it("starts an owned fiber with the executor's services and none of its caller's", async () => {
+    const record = recorder()
+    const wrote = Deferred.makeUnsafe<void>()
+    class CallerOnly extends Context.Service<CallerOnly, string>()("test/AgentSession/CallerOnly") {}
+    let seen: Option.Option<string> | undefined
+    const observed = await withExecutor(record, {
+      journal: journalWatching(record, wrote),
+      orderTerminalStatus: () =>
+        Effect.map(Effect.serviceOption(CallerOnly), (service) => {
+          seen = service
+        })
+    }, (executor) =>
+      Effect.gen(function*() {
+        // The launch is made from a fiber that carries a service only its caller has.
+        yield* executor.launch(launchInput).pipe(Effect.provideService(CallerOnly, "the caller's"))
+        yield* Deferred.await(wrote).pipe(Effect.timeout(Duration.seconds(10)))
+        return [...record.statuses]
+      }))
+
+    expect(observed).toEqual(["completed"])
+    expect(seen).toEqual(Option.none())
+  })
+
+  it("writes the terminal status once the host's ordering has outlasted its bound", async () => {
+    const record = recorder()
+    const wrote = Deferred.makeUnsafe<void>()
+    const logs: Array<string> = []
+    const observed = await withExecutor(record, {
+      logs,
+      journal: journalWatching(record, wrote),
+      orderTerminalStatus: () => Effect.never,
+      orderTerminalStatusWithin: Duration.millis(20)
+    }, (executor) =>
+      Effect.gen(function*() {
+        yield* executor.launch(launchInput)
+        yield* Deferred.await(wrote).pipe(Effect.timeout(Duration.seconds(10)))
+        return [...record.statuses]
+      }))
+
+    expect(observed).toEqual(["completed"])
+    expect(logs).toContain("A terminal control status was not ordered in time and is written without it")
+  })
+
+  it("has no root fiber in the executor's source", () => {
+    // `Effect.run*` starts a fiber no scope owns. The package's import rules name a few files; this holds the
+    // executor to the same rule, the `...With` variants included.
+    const source = readFileSync(new URL("../src/AgentSession.ts", import.meta.url), "utf8")
+    expect(source.match(/\bEffect\.run(?:Fork|Promise|Sync|Callback)\w*\(/g)).toBeNull()
   })
 })
 
@@ -2829,16 +3115,6 @@ describe("the executor's terminal ordering", () => {
       expect(record.journaled.some((entry) => entry.eventType === "control.run.cancelled")).toBe(intent === "cancelled")
     }
   )
-
-  /** A journal that records as the default one does and names the write. */
-  const journalWatching = (record: Recorder, wrote: Deferred.Deferred<void>): Partial<Journal.Service> => ({
-    emitDurableUnfenced: (input) =>
-      Effect.sync(() => {
-        record.journaled.push({ eventType: input.eventType, payload: input.payload })
-        if (input.eventType.startsWith("control.run.")) Deferred.doneUnsafe(wrote, Effect.void)
-        return accepted
-      })
-  })
 
   it("does not hide an inline terminal write failure behind a settled body", async () => {
     const record = recorder()

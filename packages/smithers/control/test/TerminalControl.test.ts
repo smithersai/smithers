@@ -67,7 +67,10 @@ const plane = (executor: Layer.Layer<ControlExecutor.ControlExecutor, never, nev
   Layer.provideMerge(
     ControlLive.layer,
     Layer.mergeAll(
-      SqlControlRuntime.layer({}).pipe(Layer.orDie),
+      SqlControlRuntime.layer({
+        // This fixture runs commands as the explicitly configured local operator.
+        principal: { id: "local", kind: "operator" }
+      }).pipe(Layer.orDie),
       NotificationQueue.layer,
       executor,
       Registry.layerNoop()

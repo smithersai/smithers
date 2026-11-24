@@ -51,7 +51,7 @@ Every fact the returned `remember` handler writes records that provenance. A pro
 
 ## Call the scoped handlers directly
 
-Outside a host, `Flows.runRecallFor` and `Flows.runRememberFor` apply a flow's policy to one call. The non-empty `policy.banks` list is an allowlist. An empty recall `banks` list uses all policy banks; `remember` requires a non-empty `bank`. Each explicit bank must match one of them by resolved `kind` and `id`. A foreign bank fails with `invalid_namespace` before the recall service or store runs. A mixed recall request also fails in full. Equivalent spellings such as `release-notes` and `flow-release-notes` are allowed. Every declared bank is readable and writable. An explicit `maxTokens` still overrides the budget default:
+Outside a host, `Flows.runRecallFor` and `Flows.runRememberFor` apply a flow's policy to one call. The non-empty `policy.banks` list is an allowlist. An empty recall `banks` list uses all policy banks; `remember` requires a non-empty `bank`. Each explicit bank must match one of them by resolved `kind` and `id`. A foreign bank fails with `invalid_namespace` before the recall service or store runs. A mixed recall request also fails in full. Equivalent spellings such as `release-notes` and `flow-release-notes` are allowed. Every declared bank is readable and writable. An explicit `maxTokens` may lower the policy budget but never raise it:
 
 ```ts
 import * as Flows from "@smthrs/memory/Flows"

@@ -35,12 +35,12 @@ The root entry point exports these namespaces; each is also importable from `@sm
 | `Ls`                | `name`, `description`, `Input`, `Output`, `effects`, `effectsFor`, `capabilities`, `flow`, `run`, `activity`, `presentation`                                                                                                                                               | Declares and runs directory listings.                                                                               |
 | `Lsp`               | `name`, `description`, `Input`, `Output`, `effects`, `effectsFor`, `capabilities`, `flow`, `run`                                                                                                                                                                           | Declares and runs ten language-server queries, from hover to diagnostics.                                           |
 | `Manifest`          | `flows`, `handlers`, `effectsFor`, `names`, `readOnly`                                                                                                                                                                                                                     | Exposes frozen flow, handler, and narrowing registries plus the read-only set.                                      |
-| `NativeSearch`      | `MAX_CAPTURE_BYTES`, `make`, `layer`                                                                                                                                                                                                                                       | Implements Search through the ripgrep binary.                                                                       |
-| `PortableSearch`    | `make`, `layer`, `searched`                                                                                                                                                                                                                                                | Implements Search by walking the kernel filesystem in process.                                                      |
+| `NativeSearch`      | `MAX_CAPTURE_BYTES`, `TIMEOUT_MS`, `make`, `layer`                                                                                                                                                                                                                         | Implements Search through the ripgrep binary.                                                                       |
+| `PortableSearch`    | `MAX_LINE_UNITS`, `MAX_SYMBOL_SOURCE_BYTES`, `make`, `layer`, `searched`                                                                                                                                                                                                   | Implements Search by walking the kernel filesystem in process.                                                      |
 | `Probe`             | `key`, `Reason`, `InvalidProbe`, `Attribution`, `CONFIDENCE_FLOOR`, `MAX_OUTPUT_BYTES`, `posix`, `probeAttribution`, `classify`, `unjudged`                                                                                                                                | Attributes a non-zero exit to the command or to the tree, with Jev.                                                 |
 | `Read`              | `name`, `description`, `Input`, `Output`, `effects`, `effectsFor`, `capabilities`, `flow`, `run`, `activity`, `presentation`, `MAX_READ_FILE_BYTES`, `Preconditions`, `ReadSession`, `VersionedFileSystem`, `Batched`, `BatchedFileSystem`                                 | Declares and runs bounded file reads.                                                                               |
 | `Relocate`          | `Relocation`, `precheck`, `relocate`                                                                                                                                                                                                                                       | Rewrites a call's input so the call runs against a materialized checkpoint.                                         |
-| `RemoteSearch`      | `maxBytes`, `make`                                                                                                                                                                                                                                                         | Implements Search for another machine's tree in two shell round trips.                                              |
+| `RemoteSearch`      | `maxBytes`, `TIMEOUT_MS`, `make`                                                                                                                                                                                                                                           | Implements Search for another machine's tree in two shell round trips.                                              |
 | `Search`            | `GrepInput`, `GrepLine`, `ContextLine`, `Symbol`, `GrepMatch`, `GrepOutput`, `GlobInput`, `GlobOutput`, `Search`, `make`, `makeNoop`, `layerNoop`                                                                                                                          | Defines the search service both peers implement.                                                                    |
 | `SearchConformance` | `GeneratedFile`, `Plan`, `Divergence`, `plan`, `materialize`, `compare`, `report`                                                                                                                                                                                          | Generates a tree and calls, then reports where two Search peers disagree.                                           |
 | `SearchContract`    | `validatePattern`, `validateGlob`, `canonicalGlob`, `matchesGlob`, `includedByGlobs`, `expression`, `unsatisfiableNotice`, `isContractRejection`                                                                                                                           | The shared matcher an external Search peer must build on.                                                           |
@@ -86,24 +86,28 @@ when its name looks sensitive. The allowlist is read through `@smthrs/kernel`'s
 
 Output limits are disclosed to the caller, never a silent cut. A capped result says so in its own output: `truncated`, `<stream>Truncated`, or a `notice` line naming what was shown and what there was. Rows named by prose are fixed in the package and not exported; the rest are the constants named.
 
-| Limit                             | Value       | Applies to                                                      |
-| --------------------------------- | ----------- | --------------------------------------------------------------- |
-| Default `read` page               | 2,000 lines | one `read` call with no `limit`                                 |
-| Displayed line                    | 2,000       | one displayed line; a clipped line is not an edit anchor        |
-| Entries per page                  | 1,000       | one `ls` or `glob` page                                         |
-| Matches per call                  | 200         | one `grep` call                                                 |
-| Rendered text payload             | 60,000      | one rendered text payload (`fetch`, `http-post`, `webfetch`)    |
-| Shell stream capture              | 30,000      | each captured shell stream                                      |
-| `Bash.DEFAULT_TIMEOUT_MS`         | 600,000     | one `bash` call with no `timeoutMs`                             |
-| `TestRun.DEFAULT_TIMEOUT_MS`      | 600,000     | one `test` call with no `timeoutMs`                             |
-| `TestRun.MAX_CAPTURE_BYTES`       | 8,000,000   | the runner output one `test` call holds in memory               |
-| `ShellCommand.DEFAULT_TIMEOUT_MS` | 10,000      | one `shell_command` call with no `timeout_ms`                   |
-| `ShellCommand.MAX_CAPTURE_BYTES`  | 8,000,000   | the command output one `shell_command` call holds in memory     |
-| `NativeSearch.MAX_CAPTURE_BYTES`  | 64 MiB      | one `rg` invocation's captured output, refused past the cap     |
-| `RemoteSearch.maxBytes`           | 256 MiB     | the files one search fetches from a machine, refused past it    |
-| HTTP response bytes               | 5 MiB       | `fetch`, `http-post` and `webfetch`, refused past the cap       |
-| `fetch` / `http-post` timeout     | 30 s        | total request and body budget; `timeout` seconds, capped at 120 |
-| `webfetch` request timeout        | 120 s cap   | the request and the body read                                   |
+| Limit                                    | Value       | Applies to                                                      |
+| ---------------------------------------- | ----------- | --------------------------------------------------------------- |
+| Default `read` page                      | 2,000 lines | one `read` call with no `limit`                                 |
+| Displayed line                           | 2,000       | one displayed line; a clipped line is not an edit anchor        |
+| Entries per page                         | 1,000       | one `ls` or `glob` page                                         |
+| Matches per call                         | 200         | one `grep` call                                                 |
+| Rendered text payload                    | 60,000      | one rendered text payload (`fetch`, `http-post`, `webfetch`)    |
+| Shell stream capture                     | 30,000      | each captured shell stream                                      |
+| `Bash.DEFAULT_TIMEOUT_MS`                | 600,000     | one `bash` call with no `timeoutMs`                             |
+| `TestRun.DEFAULT_TIMEOUT_MS`             | 600,000     | one `test` call with no `timeoutMs`                             |
+| `TestRun.MAX_CAPTURE_BYTES`              | 8,000,000   | the runner output one `test` call holds in memory               |
+| `ShellCommand.DEFAULT_TIMEOUT_MS`        | 10,000      | one `shell_command` call with no `timeout_ms`                   |
+| `ShellCommand.MAX_CAPTURE_BYTES`         | 8,000,000   | the command output one `shell_command` call holds in memory     |
+| `NativeSearch.MAX_CAPTURE_BYTES`         | 64 MiB      | one `rg` invocation's captured output, refused past the cap     |
+| `RemoteSearch.maxBytes`                  | 256 MiB     | the files one search fetches from a machine, refused past it    |
+| `NativeSearch.TIMEOUT_MS`                | 600,000     | one `rg` process, failed with `timeout` past it                 |
+| `RemoteSearch.TIMEOUT_MS`                | 600,000     | one round trip to the machine, failed with `timeout` past it    |
+| `PortableSearch.MAX_LINE_UNITS`          | 8 MiB       | one line held while scanning; the file is skipped past it       |
+| `PortableSearch.MAX_SYMBOL_SOURCE_BYTES` | 64 MiB      | a file loaded whole to name symbols; none are named past it     |
+| HTTP response bytes                      | 5 MiB       | `fetch`, `http-post` and `webfetch`, refused past the cap       |
+| `fetch` / `http-post` timeout            | 30 s        | total request and body budget; `timeout` seconds, capped at 120 |
+| `webfetch` request timeout               | 120 s cap   | the request and the body read                                   |
 
 The language-server client's frame, queue and request limits belong to `NodeLanguageServer` in `@smthrs/platform-node`.
 

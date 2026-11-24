@@ -4,6 +4,15 @@
 
 ### Added
 
+- `Webhook.SignatureConfig.timestamp` (`TimestampConfig`) binds a request to
+  the clock: the verifier refuses one whose timestamp header is absent,
+  unreadable, or further than `tolerance` from the `Clock`. With the headers
+  now passed to `expected`, a `v0:{timestamp}:{body}` scheme can be verified
+  and a captured request stops replaying. `Webhook.epochSeconds` is the default
+  timestamp reader.
+- The `0006_fire_newest_index` migration indexes the fire ledger newest first,
+  the order `TriggerStore.history` reads it, so a fires page no longer sorts
+  the whole ledger.
 - `TriggerStore.history` reads the fire ledger newest first, filtered by
   trigger, run, or outcome and paged by cursor and limit, so a listing can show
   what a trigger did without joining the runtime's run table.
@@ -37,6 +46,19 @@
 
 ### Changed
 
+- A schedule with no timezone is a UTC schedule on every host. It used to
+  follow the host's zone, so two hosts sharing one store under different `TZ`
+  values computed different instants for one occurrence, keyed it differently,
+  and both launched it. Declare a timezone to keep a wall-clock schedule.
+- `Scheduler.Ticked.watermark` is `number | undefined`. A first tick whose
+  dispatch did not finish answers `undefined` instead of its own instant, so
+  the next tick is a first tick again and retries the occurrence from what the
+  store recorded; answering its own instant lost that occurrence.
+- A row the store cannot decode is logged and no longer holds a tick's
+  watermark. It used to hold `since` at one instant for every healthy trigger
+  for as long as the row stayed corrupt.
+- `Webhook.SignatureConfig.expected` receives a private copy of the request
+  headers as a third argument.
 - `Scheduler.layer` ticks on the flow engine's durable timers instead of a
   fiber it forked. It registers the `Scheduler.Tick` flow, whose rounds each
   run one `Scheduler.tick`, sleep for `pollInterval` on a durable clock, and
@@ -91,6 +113,20 @@
   contention between connections, and applies no migrations.
 
 ### Fixed
+
+- A tick given `since` starts a never-fired trigger from its registration when
+  that is later. A trigger registered after a `since` that a failing trigger or
+  an outage had held back launched `catchUp: "all"` runs for boundaries before
+  it existed.
+- `Cron.parse` remembers the parsed fields of up to 1,024 expression and
+  timezone pairs. Every parse built a fresh cron, so the compiled wall-clock
+  search was rebuilt for every trigger on every tick.
+- `SqlTriggerStore` and `TestTriggers` draw a reservation's attempt id from
+  `SecureRandom` when the composition provides it, instead of always reading
+  `globalThis.crypto.randomUUID()`, so a test can determine the id.
+- The Lean differential suite for cron fails when `CI` is set and no oracle
+  can be found or built. It used to skip, so CI could pass with zero
+  differential cases.
 
 - A scheduled launch refused before a run exists no longer lists its
   reservation token as a run id. Fire summaries also hide older reservation

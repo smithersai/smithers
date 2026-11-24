@@ -174,7 +174,7 @@ describe("package documentation", () => {
           ordinal: "ordinal: number",
           key: "key?: CallKey.CallKey",
           signal: "signal?: AbortSignal"
-        } satisfies Record<keyof Catalog.CallSlot, string>
+        } satisfies Record<Extract<keyof Catalog.CallSlot, string>, string>
       ],
       [
         "Entry",

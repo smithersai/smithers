@@ -2,6 +2,39 @@
 
 ## [Unreleased]
 
+### Security
+
+- **Breaking security fix:** the Streamable HTTP transport no longer follows a
+  redirect. A `307` previously re-sent the bearer token, the session id and the
+  tool arguments to the redirect's target; it now fails that message with
+  `protocol_error`. Set `url` to the final address.
+- Bound one event-stream response with `maxEventStreamBytes` (16 MiB) and the
+  server requests answered during one request with `maxServerRequests` (32).
+- Bound the model-facing text of a whole catalog with
+  `maxCatalogDocumentBytes` (1 MiB), and remove control and format characters
+  other than line feed and tab from tool descriptions.
+- **Breaking:** a `server` name must be usable as a flow-name segment. For
+  example `server: "a/b"` and `server: ".."` now fail `ConnectOptionsSchema`,
+  `HttpConnectOptionsSchema` and `connect`; use a name such as `a-b`.
+
+### Fixed
+
+- A Streamable HTTP session is terminal after the server ends it or breaks the
+  protocol: every later call fails with the first error and sends nothing.
+- **Breaking:** a notification or a reply to a server request must be accepted
+  with `202` and no body. A `200` carrying a JSON-RPC error previously counted
+  as delivered; it now fails with `protocol_error`.
+- A message JSON cannot encode fails the HTTP transport with `protocol_error`
+  instead of a defect.
+- Read a JSON-RPC batch as its messages on both transports, as MCP
+  `2025-03-26` requires of a client that negotiates it.
+- Return a tool's own `isError` result without validating it against the
+  tool's `outputSchema`. **Breaking:** a result that is not an error and omits
+  `structuredContent` for a tool with an `outputSchema` now fails with
+  `invalid_response`; previously it passed unvalidated.
+- `McpFlows.mcp` with `namePrefix: ""` uses the default `mcp/<server>` prefix
+  instead of naming flows `/<tool>`.
+
 ### Changed
 
 - **Breaking security fixes:** `include: []` previously projected every tool;

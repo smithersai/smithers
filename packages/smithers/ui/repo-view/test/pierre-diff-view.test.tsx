@@ -133,7 +133,7 @@ describe("patchToCodeViewItems", () => {
     // pierre throws on a hunk whose lines don't add up to its header; the view shows the empty state instead.
     expect(patchToCodeViewItems("diff --git a/x b/x\n--- a/x\n+++ b/x\n@@ -1,3 +1,3 @@\n-a\n")).toEqual([]);
     expect(renderToStaticMarkup(<PierreDiffView patch={"--- a/x\n+++ b/x\n@@ -abc +1 @@\n-a\n+b\n"} />)).toContain(
-      "No diff is available for this change.",
+      "No diff",
     );
   });
 });
@@ -142,7 +142,7 @@ describe("PierreDiffView markup", () => {
   test("empty patch renders the honest empty-state, not a broken CodeView", () => {
     const html = renderToStaticMarkup(<PierreDiffView patch="" />);
     expect(html).toContain("sui-pierre-diff-empty");
-    expect(html).toContain("No diff is available for this change.");
+    expect(html).toContain(">No diff</div>");
   });
 
   test("empty-state honors a custom label and passthrough className", () => {

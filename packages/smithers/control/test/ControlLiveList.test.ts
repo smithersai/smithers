@@ -7,7 +7,7 @@ import { Journal, JournalEvent } from "@smthrs/journal"
 import { NotificationQueue } from "@smthrs/notifications"
 import { Registry } from "@smthrs/registry"
 import { DiscoveryWarning, SchemaRefMarkdownArgs } from "@smthrs/registry/Descriptor"
-import { Deferred, Effect, Fiber, Layer, Schema, Stream } from "effect"
+import { Deferred, Effect, Fiber, Layer, Logger, Schema, Stream } from "effect"
 import { describe, expect, it } from "vitest"
 import { Control } from "../src/Control.ts"
 import { InvalidInput, LaunchFailed, PersistenceError, PlanDenied } from "../src/ControlError.ts"
@@ -1089,6 +1089,8 @@ describe("ControlLive executor acceptance", () => {
   })
 
   it("keeps the executor refusal and admission when failure settlement cannot be saved", async () => {
+    const logs: string[] = []
+    const secret = "Bearer sk-live-failed-storage"
     let refused = false
     const runtime = Layer.effect(
       ControlRuntime,
@@ -1096,7 +1098,7 @@ describe("ControlLive executor acceptance", () => {
         ...service,
         claimFence: (id: string) =>
           refused
-            ? Effect.fail(new PersistenceError({ operation: "settle refusal", message: "storage refused" }))
+            ? Effect.fail(new PersistenceError({ operation: "settle refusal", message: secret }))
             : service.claimFence(id)
       }))
     ).pipe(Layer.provide(memoryRuntime({ flows })))
@@ -1114,7 +1116,7 @@ describe("ControlLive executor acceptance", () => {
         }
         const failure = yield* Effect.flip(control.run(input))
         return { failure, replay: yield* control.run(input) }
-      }),
+      }).pipe(Effect.provide(Logger.layer([Logger.map(Logger.formatJson, (line) => logs.push(line))]))),
       live({
         runtime,
         executor: ControlExecutor.makeNoop({
@@ -1126,6 +1128,8 @@ describe("ControlLive executor acceptance", () => {
         })
       })
     )
+    expect(logs.join("\n")).toContain("A refused launch could not be settled")
+    expect(logs.join("\n")).not.toContain(secret)
     expect(observed.failure).toMatchObject({ _tag: "/control/LaunchFailed", message: "no capacity" })
     expect(observed.replay._tag).toBe("AlreadyApplied")
   })

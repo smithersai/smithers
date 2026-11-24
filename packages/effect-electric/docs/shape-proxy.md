@@ -159,9 +159,9 @@ Electric marks a shape's responses cacheable: a first response says
 your server builds `where` from the session, or serves the shape only after a
 session check, a cached response answers the next person in that browser, or
 anyone after sign-out. So by default (`cache: "no-store"`) the proxy drops
-Electric's `cache-control`, `etag`, `surrogate-control`, `cdn-cache-control`
-and `expires`, and every response it sends, a 405 or 502 included, says
-`cache-control: private, no-store`.
+Electric's `cache-control`, `etag`, `last-modified`, `age`,
+`surrogate-control`, `cdn-cache-control` and `expires`, and every response it
+sends, a 405 or 502 included, says `cache-control: private, no-store`.
 
 Opt a shape in to Electric's own caching only when it is the same for everyone
 and served without a session check:
@@ -169,6 +169,10 @@ and served without a session check:
 ```ts
 ShapeProxy.make({ ...connection, shape: { table: "releases" }, cache: "public" })
 ```
+
+`cache: "public"` has no effect on a shape with `rowAccess`. Its rows depend
+on who asks, so every response stays `private, no-store` without Electric's
+validators, and keeps Electric's handle, offset and cursor headers.
 
 Electric's protocol doesn't depend on a cache: a live request carries
 `cursor` and a retry `cache-buster`, so a shape syncs and follows changes the
@@ -207,7 +211,8 @@ clause or a parameter value.
 - **Span.** One server span per request, named `name` (default
   `electric.shape`), with `http.response.status_code` and
   `electric.shape.live`, `route`, `upstream` and `correlationId`. The `HttpClient` adds its own client span for the call to
-  Electric, with `secret=REDACTED` in `url.full`.
+  Electric, with `secret=REDACTED`, `where=REDACTED` and each `params[n]=REDACTED` in `url.full` and `url.query`. A
+  failed call's error shows the same URL. Electric receives the real values.
 - **Log line.** One line per request, once its body has ended, with the message
   `name` and the annotations `route` (the fixed shape name), `upstream`, `correlationId`, `statusClass`, `status`, `live`, `durationMs`, `bytes` and
   `outcome`, plus `reason` on 503 responses. `outcome` is `complete`, `aborted`
@@ -249,6 +254,8 @@ The proxy sends its generated span id as `x-request-id` to its upstream, matchin
 Bodyless upstream answers retain their status and headers and record a complete response with zero bytes. A bodyless 503 remains a retryable HTTP refusal; a stream that breaks while reading still records a failure.
 
 For a JSON `rowAccess` guard whose authorization can change during a poll, provide `rowAccess.validate` to prepare one current authorization snapshot after the upstream body is buffered and before `allows` evaluates any value. The snapshot can populate the subject set used by `allows`; validation runs once per buffered poll, including bodyless 204/205/304 responses. In particular, an idle 204 live response must still let a host reconcile suppressed membership; otherwise restored authority cannot produce the insert needed to wake the subscriber. Bodyless polls apply the same failure and cursor fences, without calling `allows`. A false result or failed check returns 503 with Retry-After: 1 and no upstream handle, offset, cursor or body. The client retries its original cursor instead of acknowledging inserts the stale guard withheld. A superseded decision records `upstream: access`, `outcome: superseded`; a failed check records `outcome: failed`. Repeated confirmations of the same decision should validate successfully.
+
+A guarded shape answers in three forms only: a 200 JSON log, filtered; a bodyless 204, 205 or 304; or Electric's own error status with its error body. Any other successful answer, for example a 206 from a cache between the proxy and Electric, is a bodyless 502 with no cursor: the guard never saw its rows. Every emitted message has `old_value` removed, since `allows` judges a row's current values only; a delete keeps its key columns and nothing else of the row.
 
 When a denied value remains stored without a projection transition that will replay it, provide `retryIfDenied(value)`. It runs only for denied insert/update values, against the snapshot prepared by `validate`. If any returns true, the proxy answers private no-store 503 with Retry-After: 1 and no body or Electric cursor headers, preserving the caller's original cursor. Deletes still reduce to keys and never request replay. Ordinary skips retain cursor progress. This callback performs no extra authority read.
 

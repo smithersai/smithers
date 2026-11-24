@@ -68,12 +68,13 @@ fails as unavailable, with per-operation overrides. They are the defaults a
 test starts from when a service should NOT be called:
 
 ```ts
-import { Author, Journal, ScriptRunner, Steering } from "@smthrs/chain"
+import { Author, Authorize, Journal, ScriptRunner, Steering } from "@smthrs/chain"
 import { Layer } from "effect"
 
 // A finished chain replays its terminal without executing anything:
 const replay = Layer.mergeAll(
   Journal.layerMemory(priorEvents),
+  Authorize.layerAllowAll,
   Author.layerMock([]),
   ScriptRunner.layerNoop(),
   catalogLayer

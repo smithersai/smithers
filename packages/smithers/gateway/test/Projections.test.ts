@@ -23,6 +23,7 @@ import * as SqlClient from "effect/sql/SqlClient"
 import type * as GatewayProjection from "../src/GatewayProjection.ts"
 import * as GatewaySchema from "../src/GatewaySchema.ts"
 import { make, maxDurationRuns, Projections } from "../src/Projections.ts"
+import * as RuntimeBridge from "../src/RuntimeBridge.ts"
 import { defaultCadenceStack, driverFence, emit, stack } from "./GatewayStack.ts"
 
 const approvalOf = (card: PlanCard): ApprovalPayload => ({
@@ -46,6 +47,46 @@ const launch = Effect.gen(function*() {
   if (receipt._tag !== "Accepted" || receipt.runId === undefined) return yield* Effect.die("expected an accepted run")
   return receipt.runId
 })
+
+it.effect("retains suffix cursors across a hundred-run workspace snapshot", () =>
+  Effect.gen(function*() {
+    const control = yield* Control
+    const cursors: Array<number | undefined> = []
+    const projections = yield* make({
+      ...control,
+      watch: (filter) => {
+        cursors.push(filter.afterSequence)
+        return control.watch(filter)
+      }
+    })
+    for (let i = 0; i < 100; i++) yield* launch
+    expect((yield* projections.snapshot({ _tag: "workspace-runs" })).rows).toHaveLength(100)
+    cursors.length = 0
+    expect((yield* projections.snapshot({ _tag: "workspace-runs" })).rows).toHaveLength(100)
+    expect(cursors.length).toBe(100)
+    expect(cursors.every((cursor) => cursor !== undefined)).toBe(true)
+  }).pipe(Effect.provide(stack()), Effect.scoped))
+
+it.effect("pages past oversized journal entries through the real control store", () =>
+  Effect.gen(function*() {
+    const control = yield* Control
+    const runId = yield* launch
+    const before = yield* control.watch({ runId, follow: false }).pipe(Stream.runCollect)
+    const start = String(before.at(-1)!.sequence)
+    const large = "x".repeat(2_200_000)
+    for (const value of [large, large, "y".repeat(5_000_000), "after"]) yield* emit(runId, "test.payload", { value })
+    const page = (afterCursor: string) =>
+      RuntimeBridge.observe(control, { protocol: RuntimeBridge.protocol, runId, afterCursor, limit: 1 })
+    const first = yield* page(start)
+    const second = yield* page(first.nextCursor)
+    const third = yield* page(second.nextCursor)
+    const fourth = yield* page(third.nextCursor)
+    expect(first.events[0]?.payload).toEqual({ value: large })
+    expect(second.events[0]?.payload).toEqual({ value: large })
+    expect(third.events[0]?.kind).toBe("control.event.truncated")
+    expect(fourth.events[0]?.payload).toEqual({ value: "after" })
+    expect([first.hasMore, second.hasMore, third.hasMore, fourth.hasMore]).toEqual([true, true, true, false])
+  }).pipe(Effect.provide(stack({ maxEntryBytes: 6 * 1024 * 1024 })), Effect.scoped))
 
 const askTarget = (runId: string, requestId: string): Extract<ApprovalTarget, { readonly _tag: "Node" }> => ({
   _tag: "Node",

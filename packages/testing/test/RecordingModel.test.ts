@@ -165,6 +165,18 @@ describe("RecordingModel", () => {
 
   // Assembled at runtime so no credential-shaped literal sits in the source.
   const secrets: ReadonlyArray<readonly [string, string]> = [
+    ["gitlab-token", `glpat-${"abc12".repeat(5)}`],
+    ["smithers-scoped-token", `smt1.claims.${"x".repeat(43)}`],
+    ["smithers-machine-token", `smm_${"x".repeat(43)}`],
+    ["url-credentials", "https://user:pass@example.invalid"],
+    ["bearer-token", "Bearer abc1234"],
+    ["slack-webhook", ["hooks.slack.com", "services", "T1", "B1", "abc123"].join("/")],
+    ["jwt", ["eyJhbGciOiJIUzI1NiJ9", "eyJzdWIiOiIxIn0", "c2lnbmF0dXJl"].join(".")],
+    ["private-key-block", ["-----BEGIN PRIVATE KEY-----", "ABC", "-----END PRIVATE KEY-----"].join(" ")],
+    ["github-fine-grained-token", `github_pat_${"x".repeat(20)}`],
+    ["slack-token", `xoxb-${"x".repeat(20)}`],
+    ["google-api-key", `AIza${"x".repeat(35)}`],
+    ["npm-token", `npm_${"a".repeat(36)}`],
     ["api-key", ["sk", "ant", "api03", "Q1w2E3r4T5y6U7i8"].join("-")],
     ["github-token", `gh${"p"}_${"A1b2C3d4".repeat(5)}`],
     ["aws-access-key", `AK${"IA"}${"ABCDEFGH23456789"}`]

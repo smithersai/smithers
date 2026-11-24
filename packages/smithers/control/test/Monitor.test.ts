@@ -29,6 +29,13 @@ const parkOn = (runId: string, reason: string) =>
     (sql) => sql`UPDATE flows_runs SET waiting_reason = ${reason} WHERE run_id = ${runId}`.pipe(Effect.orDie)
   )
 
+/** Leave ordinary admitted work pending, without an owner-death recovery park. */
+const releasePending = (runId: string) =>
+  Effect.gen(function*() {
+    const runtime = yield* ControlRuntime
+    yield* runtime.releasePending(runId, yield* runtime.claimFence(runId))
+  })
+
 const run = <A, E>(
   body: Effect.Effect<A, E, DurableStack>,
   stack: Layer.Layer<DurableStack> = durable()
@@ -381,11 +388,7 @@ describe("Monitor.run over the durable control plane", () => {
   it("resumes a stalled run once and stops when the resume moves it", async () => {
     const observed = await run(Effect.gen(function*() {
       const runId = yield* start("stalled")
-      yield* park(yield* ControlRuntime, runId)
-      // A stall is a run nobody is driving: `released` is what a sweep writes
-      // on a run whose owner died. A park with no reason is an operator's, and
-      // the case below proves the monitor leaves that one alone.
-      yield* parkOn(runId, "released")
+      yield* releasePending(runId)
       const report = yield* Monitor.run({
         runId,
         intervalMs: 0,
@@ -415,13 +418,11 @@ describe("Monitor.run over the durable control plane", () => {
     const observed = await run(Effect.gen(function*() {
       const runId = yield* start("stalled-twice")
       const options = { runId, intervalMs: 0, maxChecks: 4, stallBeats: 3, autoHeal: ["stalled" as const] }
-      yield* park(yield* ControlRuntime, runId)
-      yield* parkOn(runId, "released")
+      yield* releasePending(runId)
       const first = yield* Monitor.run(options)
       // The run stalls again, and the operator reruns the same monitor. Its
       // beats count from zero again, so it reaches the stall on the same beat.
-      yield* park(yield* ControlRuntime, runId)
-      yield* parkOn(runId, "released")
+      yield* releasePending(runId)
       const second = yield* Monitor.run(options)
       return [first, second].map((report) => report.beats.find((beat) => beat.healed === "resume")?.receipt?._tag)
     }))
@@ -433,8 +434,7 @@ describe("Monitor.run over the durable control plane", () => {
   it("journals the heal only after the remedy returned a receipt", async () => {
     const observed = await run(Effect.gen(function*() {
       const runId = yield* start("healed-after")
-      yield* park(yield* ControlRuntime, runId)
-      yield* parkOn(runId, "released")
+      yield* releasePending(runId)
       const report = yield* Monitor.run({
         runId,
         intervalMs: 0,
@@ -445,11 +445,13 @@ describe("Monitor.run over the durable control plane", () => {
       const entries = yield* entriesOf(runId)
       return {
         report,
+        resume: entries.find((entry) => entry.eventType === "control.run.resume"),
         beats: entries.filter((entry) => entry.eventType === Monitor.beatEventType),
         healed: entries.filter((entry) => entry.eventType === Monitor.healedEventType)
       }
     }))
 
+    expect(observed.resume?.payload).toMatchObject({ principal: { id: "default", kind: "monitor" } })
     const deciding = observed.beats.at(-1)!
     // The beat that decided says what it is ABOUT to do. Saying it healed
     // before the remedy ran would leave durable evidence of a heal that a

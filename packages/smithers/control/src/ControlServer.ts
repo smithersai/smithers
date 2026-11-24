@@ -8,7 +8,7 @@ import { Cause, Context, Effect, Layer, Stream } from "effect"
 import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http"
 import { RpcSerialization, RpcServer } from "effect/rpc"
 import { Control } from "./Control.ts"
-import { Unauthorized } from "./ControlError.ts"
+import { ResourceLimit, Unauthorized } from "./ControlError.ts"
 import { ControlPrincipal, ControlRpcs, RunVisibility } from "./ControlRpcs.ts"
 import type { Principal } from "./ControlSchema.ts"
 import { protectProtocolDefects } from "./internal/RpcSerialization.ts"
@@ -38,6 +38,35 @@ export const RequestScheme = Context.Reference<"http:" | "https:" | undefined>(
   "/control/RequestScheme",
   { defaultValue: () => undefined }
 )
+
+/**
+ * Bounds active streams to 16 per RPC client and 128 per mounted service.
+ * Each subscription holds its slot through consumption and releases it on disconnect.
+ * @since 1.0.0
+ * @category guards
+ */
+export const makeStreamAdmission = () => {
+  const clients = new WeakMap<object, number>()
+  let active = 0
+  return <A, E, R, F>(client: object, refused: () => F, stream: Stream.Stream<A, E, R>) =>
+    Stream.unwrap(Effect.as(
+      Effect.acquireRelease(
+        Effect.suspend(() => {
+          const count = clients.get(client) ?? 0
+          if (count >= 16 || active >= 128) return Effect.fail(refused())
+          clients.set(client, count + 1)
+          active++
+          return Effect.void
+        }),
+        () =>
+          Effect.sync(() => {
+            active--
+            clients.set(client, clients.get(client)! - 1)
+          })
+      ),
+      stream
+    ))
+}
 
 const logged = <A, E, R>(effect: Effect.Effect<A, E, R>) => Effect.tapCause(effect, logDefect)
 
@@ -69,6 +98,7 @@ const operatorOnly = (principal: Principal): Effect.Effect<void, Unauthorized> =
 export const layer = ControlRpcs.toLayer(
   Effect.gen(function*() {
     const control = yield* Control
+    const admit = makeStreamAdmission()
     // A reader that is not an operator is restricted to the runs its own
     // principal launched. `reader` is not on the wire, so only this stamp sets
     // it. The authentication middleware provides the rule with the principal.
@@ -82,6 +112,7 @@ export const layer = ControlRpcs.toLayer(
       Run: Effect.fn("Control.run")((input) =>
         Effect.gen(function*() {
           const principal = yield* ControlPrincipal
+          if (input._tag !== "Plan") yield* operatorOnly(principal)
           return yield* control.run({ ...input, principal, ...yield* reader })
         }), logged),
       Approve: Effect.fn("Control.approve")((input) =>
@@ -133,16 +164,21 @@ export const layer = ControlRpcs.toLayer(
       Resume: Effect.fn("Control.resume")((input) =>
         Effect.gen(function*() {
           const principal = yield* ControlPrincipal
+          yield* operatorOnly(principal)
           return yield* control.resume({ ...input, principal, ...yield* reader })
         }), logged),
       List: Effect.fn("Control.list")(
         (input) => Effect.flatMap(reader, (restriction) => control.list({ ...input, ...restriction })),
         logged
       ),
-      Watch: (input) =>
-        Stream.tapCause(
-          Stream.unwrap(Effect.map(reader, (restriction) => control.watch({ ...input, ...restriction }))),
-          logDefect
+      Watch: (input, { client }) =>
+        admit(
+          client,
+          () => new ResourceLimit({ message: "Too many concurrent watches" }),
+          Stream.tapCause(
+            Stream.unwrap(Effect.map(reader, (restriction) => control.watch({ ...input, ...restriction }))),
+            logDefect
+          )
         )
     })
   })
@@ -156,8 +192,10 @@ export const layer = ControlRpcs.toLayer(
  * any `Origin` whose scheme or authority differs from the endpoint stops a page on another site
  * from riding a credential that a proxy or cookie attaches on the victim's
  * behalf (cross-site WebSocket hijacking of the `Watch` stream).
+ * @since 1.0.0
+ * @category guards
  */
-const sameOrigin = (
+export const sameOrigin = (
   request: HttpServerRequest.HttpServerRequest,
   scheme: "http:" | "https:" | undefined
 ): boolean => {

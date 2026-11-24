@@ -120,6 +120,23 @@ describe("Rubric.parse", () => {
       .toEqual(message)
   })
 
+  it("refuses a reply whose braces cost too much to scan, and never reads it in part (R1-Fable-D2-091)", () => {
+    const refused = Result.fail("too many unmatched braces to parse")
+    // 50,000 unmatched braces: each scans to the end, about 1.25e9 steps unbounded.
+    expect(Rubric.parse("{".repeat(50_000), criteria)).toEqual(refused)
+    // A verdict before the flood is not returned: the judge's own object could sit after it.
+    const verdict = "{\"scores\": {\"plain\": 5, \"useful\": 5}}"
+    expect(Rubric.parse(`${verdict}${"{".repeat(50_000)}`, criteria)).toEqual(refused)
+    // Unmatched braces within the budget do not hide the verdict after them.
+    expect(Rubric.parse(`${"{ ".repeat(200)}${verdict}`, criteria))
+      .toEqual(Result.succeed({ scores: { plain: 5, useful: 5 }, reason: "" }))
+    // The budget counts scanned characters, so one large valid object costs its length once.
+    const large = `{"scores": {"plain": 2, "useful": 2}, "reason": ${
+      JSON.stringify("{".repeat(Rubric.maxParseScan / 2))
+    }}`
+    expect(Result.isSuccess(Rubric.parse(large, criteria))).toBe(true)
+  })
+
   it("fails without an object or scores", () => {
     expect(Rubric.parse("I cannot judge this.", criteria)).toEqual(Result.fail("no JSON object found"))
     expect(Rubric.parse("{\"scores\": [1, 2", criteria)).toEqual(Result.fail("no JSON object found"))

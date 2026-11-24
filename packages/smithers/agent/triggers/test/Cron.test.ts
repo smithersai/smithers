@@ -112,6 +112,44 @@ describe("Cron", () => {
     expect(occurrence.toISOString()).toBe("2026-01-01T01:00:00.000Z")
   })
 
+  // A scheduler parses every trigger's expression on every tick. Each parse
+  // built a fresh Effect cron, and the wall-clock compile cache is keyed by
+  // that object, so every trigger recompiled on every tick.
+  it("answers the same parsed value for the same expression and timezone, so its compiled search is reused", async () => {
+    const first = await Effect.runPromise(Cron.parse("15 4 * * 2", "America/New_York"))
+    const again = await Effect.runPromise(Cron.parse("15 4 * * 2", "America/New_York"))
+    const otherZone = await Effect.runPromise(Cron.parse("15 4 * * 2", "UTC"))
+    const zoneless = await Effect.runPromise(Cron.parse("15 4 * * 2"))
+    expect(again.value).toBe(first.value)
+    expect(otherZone.value).not.toBe(first.value)
+    expect(zoneless.value).not.toBe(otherZone.value)
+    expect(await Effect.runPromise(Cron.parse("15 4 * * 2"))).toMatchObject({ value: zoneless.value })
+    // A refusal is remembered as a refusal, and still probed against the clock.
+    expect((await Effect.runPromise(Effect.flip(Cron.parse("not cron")))).code).toBe("invalid_cron")
+    expect((await Effect.runPromise(Effect.flip(Cron.parse("not cron")))).code).toBe("invalid_cron")
+    expect((await Effect.runPromise(Effect.flip(Cron.parse("0 0 30 2 *")))).code).toBe("unsatisfiable_cron")
+  })
+
+  it("does not confuse an expression with a timezone spelled inside another expression", async () => {
+    const zoned = await Effect.runPromise(Cron.parse("0 9 * * *", "UTC"))
+    const spelled = await Effect.runPromise(Effect.flip(Cron.parse("0 9 * * *\",\"UTC")))
+    expect(zoned.timezone).toBe("UTC")
+    expect(spelled.code).toBe("invalid_cron")
+  })
+
+  it("bounds what it remembers: a full memo is emptied and filled again", async () => {
+    const kept = await Effect.runPromise(Cron.parse("7 7 * * *", "UTC"))
+    // 24 hours of 60 minutes is more distinct expressions than the memo holds.
+    for (let hour = 0; hour < 24; hour++) {
+      for (let minute = 0; minute < 60; minute++) {
+        await Effect.runPromise(Cron.parse(`${minute} ${hour} 1 1 *`, "UTC"))
+      }
+    }
+    const reparsed = await Effect.runPromise(Cron.parse("7 7 * * *", "UTC"))
+    expect(reparsed.value).not.toBe(kept.value)
+    expect(reparsed.value).toEqual(kept.value)
+  })
+
   it("keeps the parsed timezone beside the expression it came from", async () => {
     const zoned = await Effect.runPromise(Cron.parse("0 9 * * *", "America/New_York"))
     const naive = await Effect.runPromise(Cron.parse("0 9 * * *"))

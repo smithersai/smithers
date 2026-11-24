@@ -222,7 +222,11 @@ const ENTITIES: Record<string, string> = {
 /** Decode HTML character references; an unknown name stays as written. */
 const decodeEntities = (text: string): string =>
   text.replace(/&(#x[\da-f]+|#\d+|[a-z]+);/gi, (entity, name: string) => {
-    if (!name.startsWith("#")) return ENTITIES[name.toLowerCase()] ?? entity;
+    if (!name.startsWith("#")) {
+      // Own names only: "&constructor;" is an unknown name, not Object's constructor.
+      const known = name.toLowerCase();
+      return Object.hasOwn(ENTITIES, known) ? ENTITIES[known]! : entity;
+    }
     const point = name[1] === "x" || name[1] === "X" ? parseInt(name.slice(2), 16) : Number(name.slice(1));
     return point > 0 && point <= 0x10ffff && !(point >= 0xd800 && point <= 0xdfff) ? String.fromCodePoint(point) : "\ufffd";
   });
@@ -812,14 +816,17 @@ function renderSpan(
         </ul>
       );
 
-    case "ordered":
+    case "ordered": {
+      // A list that resumes after a code block or paragraph keeps its own first number: "2." starts at 2.
+      const start = Number(/^\s*(\d+)\./.exec(lines[0]!)![1]);
       return (
-        <ol className="sui-md-list" key={key}>
+        <ol className="sui-md-list" key={key} start={start === 1 ? undefined : start}>
           {listItems(lines, /^\s*\d+\.\s+/).map((line, item) => (
             <li key={item}>{inline(line, `ol${key}.${item}`)}</li>
           ))}
         </ol>
       );
+    }
 
     case "image": {
       const image = IMAGE_BLOCK.exec(lines[0]!.trim())!;

@@ -63,8 +63,32 @@ export const MYTHICAL_ROUTES = {
   wiki: "/api/repos/{owner}/{repo}/mythical/wiki"
 } as const
 
+/** A route segment that would name another route: empty, `.` or `..`.
+ * @since 1.0.0
+ * @category errors
+ */
+export class MythicalRouteSegmentInvalid extends Error {
+  readonly _tag = "MythicalRouteSegmentInvalid"
+  readonly segment: "owner" | "repo" | "id"
+  constructor(segment: "owner" | "repo" | "id") {
+    super(`The Mythical route ${segment} is empty or a dot segment.`)
+    this.name = "MythicalRouteSegmentInvalid"
+    this.segment = segment
+  }
+}
+
+// `encodeURIComponent` leaves `.` and `..` as they are, and a URL parser then walks out of the route.
+const routeSegment = (segment: "owner" | "repo" | "id", value: string): string => {
+  if (value === "" || value === "." || value === "..") throw new MythicalRouteSegmentInvalid(segment)
+  return encodeURIComponent(value)
+}
+
 /**
  * One route of the family for a concrete repository (and item, for `item` and `merge`).
+ *
+ * Throws {@link MythicalRouteSegmentInvalid} for an empty, `.` or `..` owner, repository or item: a URL
+ * parser resolves a dot segment to another route, and an empty one names the collection above it. An
+ * item is checked only on the routes that carry one.
  *
  * @since 1.0.0
  * @category accessors
@@ -74,11 +98,13 @@ export const mythicalRoute = (
   owner: string,
   repo: string,
   id?: string
-): string =>
-  MYTHICAL_ROUTES[route]
-    .replace("{owner}", encodeURIComponent(owner))
-    .replace("{repo}", encodeURIComponent(repo))
-    .replace("{id}", encodeURIComponent(id ?? ""))
+): string => {
+  const template: string = MYTHICAL_ROUTES[route]
+  const filled = template
+    .replace("{owner}", routeSegment("owner", owner))
+    .replace("{repo}", routeSegment("repo", repo))
+  return filled.includes("{id}") ? filled.replace("{id}", routeSegment("id", id ?? "")) : filled
+}
 
 /**
  * The stack as a whole. `absent`: no stack yet (bootstrap creates one).

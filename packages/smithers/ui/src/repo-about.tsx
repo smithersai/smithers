@@ -1,7 +1,7 @@
 /** @jsxImportSource react */
 import type { ComponentProps, ReactNode } from "react";
 import { cn } from "@smthrs/ui-css";
-import { safeHref } from "./internal/safeHref";
+import { safeHref, safeImageSrc } from "./internal/safeHref";
 import { LoadingBar } from "./loading";
 import { useInjectUiCss } from "./styles";
 import { RelativeTime } from "./time/RelativeTime";
@@ -90,6 +90,9 @@ export const LANGUAGE_COLORS: Readonly<Record<string, string>> = {
 
 const OTHER_COLOR = "var(--text-faint, #6c655a)";
 
+/** A language's color by its own name only: "constructor" or "toString" is a language without one, not a lookup on Object. */
+export const languageColor = (name: string): string | undefined => (Object.hasOwn(LANGUAGE_COLORS, name) ? LANGUAGE_COLORS[name] : undefined);
+
 /** A count as GitHub shows it: `908`, `14.1k`, `1.2m`. */
 export const formatCount = (count: number): string =>
   new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 1 }).format(count).toLowerCase();
@@ -109,7 +112,7 @@ export const languageShares = (
     ...shown.map((share) => ({
       name: share.name,
       percent: Math.round(share.percent * 10) / 10,
-      color: LANGUAGE_COLORS[share.name] ?? OTHER_COLOR,
+      color: languageColor(share.name) ?? OTHER_COLOR,
     })),
     ...(other > 0 ? [{ name: "Other", percent: Math.round(other * 10) / 10, color: OTHER_COLOR }] : []),
   ];
@@ -206,7 +209,7 @@ export function RepoAbout({
               const image = (
                 <img
                   className="sui-repo-about-avatar"
-                  src={person.avatarUrl}
+                  src={safeImageSrc(person.avatarUrl)}
                   alt={person.login}
                   title={person.login}
                   width={28}

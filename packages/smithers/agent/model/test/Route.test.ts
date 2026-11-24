@@ -1068,7 +1068,7 @@ describe("Route.stream", () => {
     const executor = RequestExecutor.RequestExecutor.of({
       execute: (httpRequest, options) => {
         seenByExecutor.push(options.modelId)
-        return Effect.succeed(HttpClientResponse.fromWeb(httpRequest, sseResponse([])))
+        return Effect.succeed(HttpClientResponse.fromWeb(httpRequest, sseResponse(["[DONE]"])))
       }
     })
 
@@ -1137,6 +1137,14 @@ describe("Route.stream", () => {
       { type: "text-delta", id: "f1", text: "two" }
     ])
   })
+
+  it.each(["", "<html>failure</html>", "{\"error\":\"failed\"}", ": keepalive\n\n"])(
+    "rejects a 200 response with no SSE data (%s)",
+    async (body) => {
+      await expect(collect(routeOf({ protocol, framing: Framing.sse }), executorOf(() => new Response(body)))).rejects
+        .toMatchObject({ code: "invalid_provider_output" })
+    }
+  )
 
   it("streams zero events when the provider settles without sending any", async () => {
     const events = await collect(routeOf({ protocol, framing: Framing.sse }), executorOf(() => sseResponse(["[DONE]"])))

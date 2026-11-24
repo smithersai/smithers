@@ -147,9 +147,15 @@ export interface Client {
 
 /**
  * How the client answers the agent's permission requests: `allow` picks the
- * first `allow_always` or `allow_once` option, `reject` the first
- * `reject_once` or `reject_always` option. A request with no such option is
- * answered `cancelled`.
+ * first `allow_once` option, or the first `allow_always` option when the
+ * request offers no `allow_once`; `reject` the first `reject_once` or
+ * `reject_always` option. A request with no such option is answered
+ * `cancelled`.
+ *
+ * A grant for the rest of the session (`allow_always`) is given only to a
+ * caller that set `allow` itself: with {@link Options.permission} left unset
+ * the client grants single requests (`allow_once`) and answers a request that
+ * offers only `allow_always` `cancelled`.
  *
  * @category models
  * @since 1.0.0
@@ -165,7 +171,10 @@ export type Permission = "allow" | "reject"
 export interface Options {
   /** Runs for each `session/update`, in order; a failure it raises is logged by kind and dropped. */
   readonly onUpdate: (update: Update) => Effect.Effect<void>
-  /** `allow` unless set. */
+  /**
+   * Unset, the client grants one request at a time: it picks `allow_once` and
+   * never `allow_always`. Every answer is logged by the kind chosen.
+   */
   readonly permission?: Permission | undefined
   /** The client's name and version, as `initialize` sends them. */
   readonly clientInfo?: { readonly name: string; readonly version: string } | undefined
@@ -217,13 +226,23 @@ const decodePermission = Schema.decodeUnknownOption(PermissionRequest)
 
 type Pending = Deferred.Deferred<unknown, AcpError>
 
-/** The option a permission request is answered with, by policy: the first of the policy's kinds, in order. */
-const chosen = (request: unknown, permission: Permission): Option.Option<string> =>
+/**
+ * The option a permission request is answered with, by policy: the first of the policy's kinds, in order. A
+ * single grant comes before a session-wide one, and an unset policy never grants session-wide.
+ */
+const chosen = (
+  request: unknown,
+  permission: Permission | undefined
+): Option.Option<{ readonly optionId: string; readonly kind: string }> =>
   Option.flatMap(decodePermission(request), ({ options }) => {
-    const kinds = permission === "allow" ? ["allow_always", "allow_once"] : ["reject_once", "reject_always"]
+    const kinds = permission === "reject"
+      ? ["reject_once", "reject_always"]
+      : permission === "allow"
+      ? ["allow_once", "allow_always"]
+      : ["allow_once"]
     for (const kind of kinds) {
       const option = options.find((each) => each.kind === kind)
-      if (option !== undefined) return Option.some(option.optionId)
+      if (option !== undefined) return Option.some({ optionId: option.optionId, kind })
     }
     return Option.none()
   })
@@ -256,7 +275,7 @@ export const make = <E, R>(
   options: Options
 ): Effect.Effect<Client, never, R | Scope.Scope> =>
   Effect.gen(function*() {
-    const permission = options.permission ?? "allow"
+    const permission = options.permission
     const pending = new Map<number, { readonly method: string; readonly deferred: Pending }>()
     const nextId = yield* Ref.make(0)
     const closed = yield* Ref.make(false)
@@ -324,11 +343,18 @@ export const make = <E, R>(
         // terminal, so any other method is not found.
         if (message.method === "session/request_permission") {
           const option = chosen(message.params, permission)
+          // Logged by policy and kind only: a request's title and input can quote the user's work.
+          yield* Effect.logInfo("acp.permission").pipe(
+            Effect.annotateLogs({
+              policy: permission ?? "allow_once",
+              outcome: Option.isSome(option) ? option.value.kind : "cancelled"
+            })
+          )
           yield* answer(
             message.id,
             message.method,
             Option.isSome(option)
-              ? { outcome: { outcome: "selected", optionId: option.value } }
+              ? { outcome: { outcome: "selected", optionId: option.value.optionId } }
               : { outcome: { outcome: "cancelled" } }
           )
           return

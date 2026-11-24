@@ -13,6 +13,7 @@ import * as Container from "../src/Container.ts"
 import { MAX_SHELL_OUTPUT_BYTES } from "../src/internal/Text.ts"
 import * as TestRun from "../src/TestRun.ts"
 import * as TestRunner from "../src/TestRunner.ts"
+import * as TreeFingerprint from "../src/TreeFingerprint.ts"
 
 const execute = <A, E>(effect: Effect.Effect<A, E, never>) => Effect.runPromise(effect)
 
@@ -405,7 +406,7 @@ describe("TestRun", () => {
       new RegExp(
         `^git --git-dir=(\\S+/smithers-git-[0-9a-f-]{36}) --work-tree=\\1/${
           scratch!.slice(scratch!.lastIndexOf("/") + 1)
-        } .* read-tree --reset -u abc123$`
+        } .* read-tree --reset -u --end-of-options abc123$`
       )
     ))
     expect(lines.some((line) => line.includes("worktree add"))).toBe(false)
@@ -637,6 +638,8 @@ describe("TestRun", () => {
         Layer.succeed(Container.Container)(Container.makeCommand())
       )
     ))
+    // The runner goes through the tree-measuring wrapper, which enforces the
+    // time limit inside the container: `sh -c <around> sh <nonce> <seconds>`.
     expect(spawns[0]).toEqual([
       "docker",
       "exec",
@@ -644,6 +647,12 @@ describe("TestRun", () => {
       "/testbed",
       "--",
       "swebench-1",
+      "sh",
+      "-c",
+      TreeFingerprint.around(),
+      "sh",
+      expect.stringMatching(/^[0-9a-f]{16}$/),
+      "600",
       "bash",
       "-c",
       "pytest -rA \"$@\"",

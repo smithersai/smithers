@@ -16,7 +16,7 @@ import type * as Flow from "@smthrs/flow/Flow"
 import * as Graph from "@smthrs/flow/Graph"
 import type * as Placement from "@smthrs/plan/Placement"
 import type * as PlanPackage from "@smthrs/plan/Plan"
-import * as StepKey from "@smthrs/plan/StepKey"
+import { KeyMaterialError } from "@smthrs/plan/StepKey"
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
 import { compare } from "./internal/Structural.ts"
@@ -126,27 +126,50 @@ const canonical = (value: unknown, seen: Set<object> = new Set()): unknown => {
  * A graph holding a fatal build refusal has no drafts and therefore no keys;
  * `Graph.drafts` raises that refusal rather than keying a truncated topology.
  *
- * Keys hash through the injected `Crypto` service; the synchronous crypto
- * service keeps plan projection pure and total under `TestLayers.poisoned`.
+ * Synchronous canonical SHA-256 keeps projection independent of the Effect runtime.
  *
  * @category constructors
  * @since 0.0.0
  */
 export const keys = (graph: Graph.Graph, options: KeysOptions = {}): Record<string, string> => {
+  const normalized = (values: ReadonlyArray<string>) =>
+    [...new Set(values.map((value) => value.normalize("NFC")))].sort()
   const runId = options.runId ?? "plan"
   const digests: Record<string, string> = {}
   Graph.drafts(graph).forEach((draft, index) => {
     const material = draft.material
-    digests[draft.id] = Effect.runSync(Digest.provideSync(
-      material.kind === "sealed"
-        ? StepKey.fromKeyMaterial(material, digests)
-        : StepKey.ordinal({
-          runId,
-          parentScope: draft.id,
-          ordinal: index,
-          tier: material.kind
-        })
-    ))
+    const identity = material.kind === "sealed" ?
+      {
+        kind: "content",
+        body: {
+          version: material.version,
+          declaration: material.body,
+          nondeterministic: material.nondeterministic,
+          effects: material.effects,
+          placement: material.placement
+        },
+        inputs: Object.fromEntries(material.inputs.map((input, position) => {
+          if (input._tag === "Literal") return [position, { kind: "literal", value: input.value }]
+          if (!Object.hasOwn(digests, input.from)) {
+            throw new KeyMaterialError({
+              code: "missing_dependency",
+              message: `Missing digest for graph dependency ${input.from}`
+            })
+          }
+          const digest = digests[input.from]
+          if (input._tag === "Pending") return [position, { kind: "digest", digest, reference: "pending" }]
+          return [
+            position,
+            input.path.length === 0
+              ? { kind: "digest", digest, reference: "ref" }
+              : { kind: "digest", digest, reference: "ref-projected", path: input.path }
+          ]
+        })),
+        layers: normalized(material.layers),
+        capabilities: { declared: normalized(material.capabilities) }
+      } :
+      { kind: "ordinal", runId, parentScope: draft.id, ordinal: index, tier: material.kind }
+    digests[draft.id] = `key1_${Digest.digest(Digest.canonical(identity))}`
   })
   return digests
 }

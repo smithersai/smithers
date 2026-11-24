@@ -37,6 +37,25 @@ const runKey = <A, E>(effect: Effect.Effect<A, E, import("effect/crypto/Digest")
   Effect.runSync(Digest.provideSync(effect))
 
 describe("plan key identity", () => {
+  it("matches the step-key compiler for positional references and normalized layers", () => {
+    const graph = graphOf("sealed")
+    const node = graph.nodes[0]!
+    const from = node.draft.id
+    const material = {
+      ...node.draft.material,
+      kind: "sealed" as const,
+      layers: ["é", "e\u0301"],
+      inputs: [
+        { _tag: "Pending" as const, from },
+        { _tag: "Ref" as const, from, path: [] },
+        { _tag: "Ref" as const, from, path: ["field"] }
+      ]
+    }
+    const consumer = { ...node, draft: { ...node.draft, id: "consumer", material } }
+    const keys = Plan.keys({ ...graph, nodes: [node, consumer] })
+    expect(keys.consumer).toBe(runKey(StepKey.fromKeyMaterial(material, keys)))
+    expect(() => Plan.keys({ ...graph, nodes: [consumer] })).toThrow(/Missing digest/)
+  })
   it("keys sealed material the way the persisted plan keys it", () => {
     const graph = graphOf("sealed")
     const { draft } = declarationOf(graph, "sealed")

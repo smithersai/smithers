@@ -15,6 +15,17 @@
   `smithers_memory_operations`.
 - `Recall.BankName`, and `Flows.MAX_REMEMBER_KEY_BYTES` and
   `MAX_REMEMBER_TEXT_BYTES`.
+- `RecallSemantic.reconcile(banks, options)` projects again every accepted row
+  whose vector is missing or stale, and `RecallSemantic.projectionFailures`
+  (`smithers_memory_projection_failures`) counts each failed projection. A
+  failed projection used to log once and leave the row out of semantic recall
+  until it was rewritten.
+- `Embedding.Service.model`, set through `Embedding.make(embedMany, { model })`
+  and `Embedding.layer`, names the provider's vector space. Semantic recall
+  stamps and filters vectors by it when `Options.model` is absent.
+- Migration `0006_recall_order_index` adds `memory_facts_recall_order_idx` on
+  `(namespace_kind, namespace_id, updated_at_ms DESC, fact_key)`, the order
+  recall pages a bank's facts in, so a page no longer sorts the whole bank.
 
 ### Changed
 
@@ -32,6 +43,21 @@
   `memory_note_supersedes`, `memory_threads`, and `memory_messages` with the
   namespace leading every primary and foreign key, keeping every row.
 
+- **Breaking:** `Source.source`, the process-wide default source, is removed.
+  Build one with `Source.make()` in the scope that owns the run.
+- **Breaking:** `MemoryStore.FtsRow.rank` is the row's 1-based position among
+  its namespace's passing matches, shared by ties, and `score` is `1 / rank`.
+  Both were the raw BM25 value, which one FTS table computes over every
+  namespace of a kind, so one tenant's score moved with another tenant's
+  writes. SQLite FTS order now breaks rank ties by record id.
+- **Breaking:** `Flows.runRecallFor` treats the policy `maxTokens` as a
+  ceiling. A caller may still ask for less; a larger request is lowered to the
+  policy budget instead of overriding it.
+- Semantic recall, projection and `reconcile` fail with `vector_model_mismatch`
+  when `RecallSemantic.Options.model` and the `Embedding` service's `model`
+  both name a model and differ. `Embedding.makeInProcess` names
+  `Embedding.inProcessModel`.
+
 ### Deprecated
 
 - `Maintenance.layerTtlGc` and `Maintenance.TtlGcScheduleOptions`. The layer
@@ -40,6 +66,17 @@
   host now does. Both exports are removed in the next breaking release (#4714).
 
 ### Fixed
+
+- A namespace id or bank name containing U+0000 is refused with
+  `invalid_namespace` at the namespace boundary on every backend. SQLite
+  stored such a namespace while PostgreSQL, which cannot hold that character
+  in text, failed the call with a `store` database error.
+
+- `Source` keys its memo by `banks` and `primerBanks` as well as
+  `(lineageId, iteration)`. A second read of one identity that named another
+  bank was answered with the first bank's frozen rows. A value a
+  `SnapshotRecorder` replays is refused with `invalid_namespace` when its rows
+  name a bank the read did not request.
 
 - Memory writes no longer mistake missing driver row counts for no-op writes.
   Unsupported result shapes now fail and roll back the transaction; safe bigint

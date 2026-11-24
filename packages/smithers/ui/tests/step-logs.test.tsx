@@ -60,6 +60,15 @@ test("a record reads as time, level, message and key=value fields, without the e
   });
 });
 
+test("a long field value is cut between characters, never inside an emoji's surrogate pair", () => {
+  // `{"text":"` is 9 units, so the emoji's high surrogate is unit 198, the last one a plain 199-unit cut keeps.
+  const value = { text: `${"y".repeat(189)}😀${"z".repeat(40)}` };
+  const [line] = stepLogLines([log({ annotations: { ...engine, attempt: 1, emoji: value } })]);
+  const shown = line!.kind === "record" ? line!.fields.find(([name]) => name === "emoji")![1] : "";
+  expect(shown).toBe(`${JSON.stringify(value).slice(0, 198)}…`);
+  expect(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/.test(shown)).toBe(false);
+});
+
 test("a record's failure reads as one phrase per reason", () => {
   const [line] = stepLogLines([log({
     level: "Error",

@@ -17,6 +17,7 @@
  * coverage denominator, which `packages/smithers/flows/test/vitestCoverageIsolation.test.ts`
  * refuses to let any config carve an exception out of.
  */
+import { Effect } from "effect"
 import { spawn } from "node:child_process"
 import { afterEach, describe, expect, it } from "vitest"
 import {
@@ -26,6 +27,7 @@ import {
   killProcess,
   parentPid,
   skewClock,
+  skewClockScoped,
   type SkewedClock,
   waitFor,
   waitForReparent
@@ -326,6 +328,27 @@ afterEach(() => {
 })
 
 describe("skewClock", () => {
+  it("releases a scoped skew when work fails", async () => {
+    const original = Date
+    const failure = await Effect.runPromise(
+      Effect.scoped(Effect.gen(function*() {
+        yield* skewClockScoped(60_000)
+        expect(Date).not.toBe(original)
+        return yield* Effect.fail("fault")
+      })).pipe(Effect.flip)
+    )
+    expect(failure).toBe("fault")
+    expect(Date).toBe(original)
+  })
+  it("restores Date after a skewed operation throws", () => {
+    const original = Date
+    expect(() => {
+      using clock = skewClock(60_000)
+      expect(Date.now()).toBeGreaterThanOrEqual(clock.now() - 100)
+      throw new Error("fault")
+    }).toThrow("fault")
+    expect(Date).toBe(original)
+  })
   it("keeps Date callable and returns the skewed instant as a string", () => {
     const OriginalDate = Date
     const before = Date.now()

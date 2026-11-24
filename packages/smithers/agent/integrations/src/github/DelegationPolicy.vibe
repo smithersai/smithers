@@ -35,9 +35,17 @@ function safePath(path: string): boolean {
 }
 /** A folder prefix: relative, safe segments, ending in `/`. Anything else matches nothing, so a typo grants nothing. */
 const folder = (prefix: string) => prefix.length > 1 && prefix.endsWith("/") && safePath(prefix.slice(0, -1))
-/** `value` lies strictly inside the folder `prefix`, compared by whole segments. */
-const inside = (prefix: string, value: string) => folder(prefix) && value.length > prefix.length && value.startsWith(prefix)
-const underGrant = (grant: Grant, path: string) => safePath(path) && grant.paths.some((prefix) => inside(prefix, path))
+/** `value` extends the folder `prefix`; it may itself be a name cut short, as a branch prefix is. */
+const extending = (prefix: string, value: string) => folder(prefix) && value.length > prefix.length && value.startsWith(prefix)
+/** `value` lies strictly inside the folder `prefix`, compared by whole segments: `proposals/../main` is inside nothing. */
+const inside = (prefix: string, value: string) => safePath(value) && extending(prefix, value)
+const underGrant = (grant: Grant, path: string) => grant.paths.some((prefix) => inside(prefix, path))
+const REF_SEGMENT = /^[A-Za-z0-9._-]+$/
+export const MAX_BRANCH = 200
+/** A branch name as `GitHub.Refs` sends one: git's ref rules, so no `..`, no `.lock`, no leading dot, nothing a URL would reread. */
+const branchNamed = (name: string) => name.length <= MAX_BRANCH && name.split("/").every((segment) => REF_SEGMENT.test(segment) && !segment.startsWith(".") && !segment.endsWith(".lock") && !segment.includes(".."))
+/** `name` is a branch inside the grant's branch folder. */
+const branchUnder = (grant: Grant, name: string) => branchNamed(name) && inside(grant.branchPrefix, name)
 const labelled = (grant: Grant, label: string) => grant.labelPrefix.length > 0 && label.length > grant.labelPrefix.length && label.startsWith(grant.labelPrefix)
 
 /**
@@ -56,12 +64,13 @@ export function permits(grants: ReadonlyArray<Grant>, login: string, operation: 
   if (grant === undefined) return false
   switch (operation.kind) {
     case "branch.create":
-      return grant.scopes.includes("proposals") && inside(grant.branchPrefix, operation.prefix)
+      // The name GitHub.Once.branch makes is the prefix, the label and a `-`, then hex: judged whole, so a label cannot leave the folder.
+      return grant.scopes.includes("proposals") && extending(grant.branchPrefix, operation.prefix) && branchUnder(grant, `${operation.prefix}${operation.label === "" ? "" : operation.label + "-"}0`)
     case "commit.create":
-      return grant.scopes.includes("proposals") && inside(grant.branchPrefix, operation.branch) && operation.deletions.length === 0 && operation.additions.length > 0 && operation.additions.every((file) => underGrant(grant, file.path))
+      return grant.scopes.includes("proposals") && branchUnder(grant, operation.branch) && operation.deletions.length === 0 && operation.additions.length > 0 && operation.additions.every((file) => underGrant(grant, file.path))
     case "pull.create": {
       const separator = operation.head.indexOf(":")
-      return grant.scopes.includes("proposals") && separator > 0 && same(operation.head.slice(0, separator), login) && inside(grant.branchPrefix, operation.head.slice(separator + 1))
+      return grant.scopes.includes("proposals") && separator > 0 && same(operation.head.slice(0, separator), login) && branchUnder(grant, operation.head.slice(separator + 1))
     }
     case "label.create":
       return grant.scopes.includes("issues") && labelled(grant, operation.name)
@@ -75,6 +84,15 @@ export function permits(grants: ReadonlyArray<Grant>, login: string, operation: 
 }
 
 const READS = ["issues", "pulls", "contents", "git/ref", "git/matching-refs", "branches", "commits", "assignees"]
+const QUERY = /^[A-Za-z0-9._~%=&:+,-]*$/
+export const MAX_READ_PATH = 2048
+/** The pathname of a GET path reads may send, or undefined: bounded, no fragment, safe segments and a plain query. */
+function readPathname(path: string): string | undefined {
+  if (path.length > MAX_READ_PATH || path.includes("#")) return undefined
+  const mark = path.indexOf("?")
+  const pathname = mark < 0 ? path : path.slice(0, mark)
+  return QUERY.test(mark < 0 ? "" : path.slice(mark + 1)) && safePath(pathname.slice(1)) ? pathname : undefined
+}
 
 /**
  * GET only. The repository a read names, under a path reads may take: a grant's repository (`fork: false`) or the same-named repository the person owns
@@ -82,8 +100,8 @@ const READS = ["issues", "pulls", "contents", "git/ref", "git/matching-refs", "b
  */
 export interface ReadTarget { readonly grant: Grant; readonly owner: string; readonly name: string; readonly fork: boolean }
 export function readTarget(grants: ReadonlyArray<Grant>, login: string, path: string): ReadTarget | undefined {
-  const pathname = path.split("?")[0]!
-  if (!pathname.startsWith("/repos/") || !safePath(pathname.slice(1))) return undefined
+  const pathname = readPathname(path)
+  if (pathname === undefined || !pathname.startsWith("/repos/")) return undefined
   const [owner, name, ...rest] = pathname.slice("/repos/".length).split("/")
   if (owner === undefined || name === undefined) return undefined
   const tail = rest.join("/")
@@ -106,18 +124,14 @@ const NAMED = /^[A-Za-z0-9-]+\/[A-Za-z0-9._-]+$/
 export function validRead(read: Read): boolean {
   return NAMED.test(read.repository) && Number.isSafeInteger(read.repositoryId) && read.repositoryId > 0
 }
-const QUERY = /^[A-Za-z0-9._~%=&:+,-]*$/
-export const MAX_READ_PATH = 2048
 /**
  * The listed repository a public GET reads, or undefined: `/repos/<owner>/<name>` or `/repositories/<id>` (the form
  * GitHub's `rel="next"` links take), or one of its read collections, safe segments and a plain query. No person takes
  * part, so no fork is admitted.
  */
 export function publicRead(reads: ReadonlyArray<Read>, path: string): Read | undefined {
-  if (path.length > MAX_READ_PATH) return undefined
-  const mark = path.indexOf("?")
-  const pathname = mark < 0 ? path : path.slice(0, mark)
-  if (!QUERY.test(mark < 0 ? "" : path.slice(mark + 1)) || !safePath(pathname.slice(1))) return undefined
+  const pathname = readPathname(path)
+  if (pathname === undefined) return undefined
   const byId = pathname.startsWith("/repositories/")
   if (!byId && !pathname.startsWith("/repos/")) return undefined
   const segments = pathname.slice(byId ? "/repositories/".length : "/repos/".length).split("/")

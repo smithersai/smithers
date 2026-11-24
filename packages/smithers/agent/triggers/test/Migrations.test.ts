@@ -5,6 +5,7 @@ import * as ReservationLease from "../src/migrations/0002_reservation_lease.ts"
 import * as Heartbeat from "../src/migrations/0003_heartbeat.ts"
 import * as FireRunIndex from "../src/migrations/0004_fire_run_index.ts"
 import * as RegisteredAt from "../src/migrations/0005_registered_at.ts"
+import * as FireNewestIndex from "../src/migrations/0006_fire_newest_index.ts"
 import * as Migrations from "../src/migrations/index.ts"
 
 // The CommonJS build reads a default import of a sibling module as the whole
@@ -19,7 +20,8 @@ describe("migrations", () => {
       "0002_reservation_lease",
       "0003_heartbeat",
       "0004_fire_run_index",
-      "0005_registered_at"
+      "0005_registered_at",
+      "0006_fire_newest_index"
     ])
     for (const [, migration] of entries) {
       expect(typeof migration.pipe).toBe("function")
@@ -33,10 +35,12 @@ describe("migrations", () => {
     expect("default" in Heartbeat).toBe(false)
     expect("default" in FireRunIndex).toBe(false)
     expect("default" in RegisteredAt).toBe(false)
+    expect("default" in FireNewestIndex).toBe(false)
     expect(Object.keys(Initial)).toEqual(["triggers"])
     expect(Object.keys(ReservationLease)).toEqual(["reservationLease"])
     expect(Object.keys(Heartbeat)).toEqual(["schedulerHeartbeat"])
     expect(Object.keys(FireRunIndex)).toEqual(["fireRunIndex"])
     expect(Object.keys(RegisteredAt)).toEqual(["registeredAt"])
+    expect(Object.keys(FireNewestIndex)).toEqual(["fireNewestIndex"])
   })
 })

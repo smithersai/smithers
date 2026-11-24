@@ -67,3 +67,9 @@ export const coreSuite = (options?: {
   readonly filter?: ((conformanceCase: ConformanceCase) => boolean) | undefined
 }): ReadonlyArray<ConformanceCase> =>
   Object.freeze(options?.filter === undefined ? [...coreCases] : coreCases.filter(options.filter))
+
+/** Live-clock deadline in milliseconds for conformance pins.
+ * @since 1.0.0
+ * @category configuration
+ */
+export { WaitBudget } from "./internal/Pin.ts"

@@ -12,6 +12,11 @@
  * client: its proxy, pinning, and capability checks apply unchanged, and a
  * destination the egress policy denies fails with `connection_closed`.
  *
+ * A redirect is never followed: it would re-send the bearer credential, the
+ * session id and the message to an address the caller did not name. A
+ * protocol violation or an ended session is terminal: every later message
+ * fails with that error and nothing more is sent.
+ *
  * Out of scope: the optional standalone `GET` event stream, resuming a broken
  * event stream with `Last-Event-ID`, and OAuth discovery. An expired session
  * fails rather than re-initializing, so no request is ever replayed.
@@ -21,7 +26,20 @@
 
 import { isRecord } from "@smthrs/canonical/Record"
 import * as KernelHttpClient from "@smthrs/kernel/HttpClient"
-import { Cause, Deferred, Effect, Exit, Option, type Redacted, type Scope, Stream, Tracer } from "effect"
+import {
+  Cause,
+  Context,
+  Deferred,
+  Effect,
+  Exit,
+  Option,
+  type Redacted,
+  Result,
+  type Scope,
+  Stream,
+  Tracer
+} from "effect"
+import * as FetchHttpClient from "effect/http/FetchHttpClient"
 import * as Headers from "effect/http/Headers"
 import * as HttpClient from "effect/http/HttpClient"
 import type * as HttpClientError from "effect/http/HttpClientError"
@@ -65,7 +83,29 @@ export interface ConnectOptions {
   readonly maxFrameBytes?: number | undefined
   /** Maximum UTF-8 bytes emitted in one JSON-RPC message. See {@link Transport.defaultMaxOutboundFrameBytes}. */
   readonly maxOutboundFrameBytes?: number | undefined
+  /** Maximum bytes read from one `text/event-stream` response. See {@link defaultMaxEventStreamBytes}. */
+  readonly maxEventStreamBytes?: number | undefined
+  /** Maximum server requests answered while one request awaits its reply. See {@link defaultMaxServerRequests}. */
+  readonly maxServerRequests?: number | undefined
 }
+
+/**
+ * Default maximum bytes read from one event-stream response (16 MiB), across
+ * every event, comment and keep-alive it carries.
+ *
+ * @category constants
+ * @since 1.0.0-rc.19
+ */
+export const defaultMaxEventStreamBytes = 16 * 1024 * 1024
+
+/**
+ * Default maximum server requests answered while one request awaits its
+ * reply. Each answer is one outbound `POST`.
+ *
+ * @category constants
+ * @since 1.0.0-rc.19
+ */
+export const defaultMaxServerRequests = 32
 
 /** Deadline for the best-effort `DELETE` that ends a session on scope close. */
 const sessionCloseMs = 1_000
@@ -145,6 +185,20 @@ const withoutRequest = (server: string) => (tracer: Tracer.Tracer): Tracer.Trace
 
 const utf8 = new TextEncoder()
 
+/** The reply to a request: its result, or the failure for the server's own error reply. */
+type Answer = Result.Result<unknown, McpError>
+
+/**
+ * Forces `redirect: "manual"` on the fetch options a fetch-backed client
+ * reads, keeping every other option the host set. The kernel's guarded client
+ * reads the same option as the caller's choice not to follow a redirect.
+ */
+const manualRedirects = (context: Context.Context<Scope.Scope>): Context.Context<Scope.Scope> =>
+  Context.add(context, FetchHttpClient.RequestInit, {
+    ...Context.getOrUndefined(context, FetchHttpClient.RequestInit),
+    redirect: "manual"
+  })
+
 const mediaType = (header: string | undefined): string => (header ?? "").split(";")[0]!.trim().toLowerCase()
 
 /**
@@ -165,10 +219,14 @@ export const connect = (
     const requestTimeoutMs = options.requestTimeoutMs ?? Transport.defaultRequestTimeoutMs
     const maxFrameBytes = options.maxFrameBytes ?? Transport.defaultMaxFrameBytes
     const maxOutboundFrameBytes = options.maxOutboundFrameBytes ?? Transport.defaultMaxOutboundFrameBytes
+    const maxEventStreamBytes = options.maxEventStreamBytes ?? defaultMaxEventStreamBytes
+    const maxServerRequests = options.maxServerRequests ?? defaultMaxServerRequests
     yield* Limits.checkPositiveIntegers(server, [
       ["requestTimeoutMs", requestTimeoutMs],
       ["maxFrameBytes", maxFrameBytes],
-      ["maxOutboundFrameBytes", maxOutboundFrameBytes]
+      ["maxOutboundFrameBytes", maxOutboundFrameBytes],
+      ["maxEventStreamBytes", maxEventStreamBytes],
+      ["maxServerRequests", maxServerRequests]
     ])
     const endpoint = endpointOf(options.url)
     if (endpoint === undefined) {
@@ -188,9 +246,12 @@ export const connect = (
     // Each message runs in its own scope, which aborts the HTTP request and
     // releases its body however the exchange ends.
     const client = HttpClient.withScope(yield* HttpClient.HttpClient)
-    /** Sends one HTTP message, keeping the endpoint and the session id out of its span. */
+    /**
+     * Sends one HTTP message, keeping the endpoint and the session id out of
+     * its span. A redirect is returned as the answer, never followed.
+     */
     const send = (request: HttpClientRequest.HttpClientRequest) =>
-      client.execute(request).pipe(
+      Effect.updateContext(client.execute(request), manualRedirects).pipe(
         Effect.updateService(Headers.CurrentRedactedNames, (names) => [...names, ...redactedHeaderNames]),
         // A host may name HTTP spans for their url. This one is named for its
         // method, as the client names it by default.
@@ -204,6 +265,15 @@ export const connect = (
     let sessionId: string | undefined
     let protocolVersion: string | undefined
     let nextId = 0
+    /** Set once the session cannot continue; every later message fails with it unsent. */
+    let terminal: McpError | undefined
+
+    /** Makes a protocol violation in what the server sent terminal for the session. */
+    const latching = <A>(effect: Effect.Effect<A, McpError>): Effect.Effect<A, McpError> =>
+      Effect.tapError(effect, (error) =>
+        Effect.sync(() => {
+          if (error.code === "protocol_error") terminal = error
+        }))
 
     const unreachable = (error: HttpClientError.HttpClientError): McpError => {
       diagnostic("transport", error.message)
@@ -212,16 +282,21 @@ export const connect = (
         : Transport.closed(server, "is not reachable; transport details withheld")
     }
 
-    const frameOf = (method: string, message: Rpc.OutboundMessage): Effect.Effect<Uint8Array, McpError> => {
-      // Rpc.encode appends the stdio line terminator; an HTTP body has none.
-      const frame = Rpc.encode(message).subarray(0, -1)
-      return frame.byteLength <= maxOutboundFrameBytes
-        ? Effect.succeed(frame)
-        : Effect.fail(Limits.protocolError(
-          server,
-          `MCP server "${server}" tried to send a ${method} frame larger than ${maxOutboundFrameBytes} bytes`
-        ))
-    }
+    const frameOf = (method: string, message: Rpc.OutboundMessage): Effect.Effect<Uint8Array, McpError> =>
+      Effect.try({
+        // Rpc.encode appends the stdio line terminator; an HTTP body has none.
+        try: () => Rpc.encode(message).subarray(0, -1),
+        catch: () => Limits.protocolError(server, `MCP server "${server}" could not encode a ${method} frame`)
+      }).pipe(
+        Effect.flatMap((frame) =>
+          frame.byteLength <= maxOutboundFrameBytes
+            ? Effect.succeed(frame)
+            : Effect.fail(Limits.protocolError(
+              server,
+              `MCP server "${server}" tried to send a ${method} frame larger than ${maxOutboundFrameBytes} bytes`
+            ))
+        )
+      )
 
     const withSession = (request: HttpClientRequest.HttpClientRequest): HttpClientRequest.HttpClientRequest => {
       let next = request
@@ -270,6 +345,7 @@ export const connect = (
     const post = (method: string, message: Rpc.OutboundMessage, dispatched?: { value: boolean }) =>
       Effect.gen(function*() {
         if (!open) return yield* Effect.fail(Transport.closed(server, "connection scope closed"))
+        if (terminal !== undefined) return yield* Effect.fail(terminal)
         const body = yield* frameOf(method, message)
         const request = yield* authorize(withSession(
           HttpClientRequest.post(endpoint).pipe(
@@ -281,7 +357,18 @@ export const connect = (
         if (dispatched !== undefined) dispatched.value = true
         const response = yield* Effect.mapError(send(request), unreachable)
         if (response.status === 404 && sentSession) {
-          return yield* Effect.fail(Transport.closed(server, "ended the session; reconnect to continue"))
+          // The session is gone: nothing more is sent under its id, not even
+          // the `DELETE` that would end it.
+          terminal = Transport.closed(server, "ended the session; reconnect to continue")
+          sessionId = undefined
+          return yield* Effect.fail(terminal)
+        }
+        if (response.status >= 300 && response.status <= 399) {
+          diagnostic("remote-error", { status: response.status })
+          return yield* Effect.fail(Limits.protocolError(
+            server,
+            `MCP server "${server}" answered ${method} with an HTTP ${response.status} redirect, which is not followed`
+          ))
         }
         if (response.status < 200 || response.status > 299) {
           diagnostic("remote-error", { status: response.status })
@@ -293,9 +380,34 @@ export const connect = (
         return response
       })
 
-    /** Sends a notification or a reply to a server request; the body is ignored. */
+    /**
+     * Sends a notification or a reply to a server request. The server accepts
+     * either with `202 Accepted` and no body; any other answer, such as a
+     * `200` carrying a JSON-RPC error, is a protocol violation. The body is
+     * never read past its first byte and never reported.
+     */
     const deliver = (method: string, message: Rpc.OutboundMessage) =>
-      Effect.scoped(Effect.flatMap(post(method, message), (response) => Effect.asVoid(readBody(response.stream))))
+      Effect.scoped(Effect.flatMap(post(method, message), (response) =>
+        latching(
+          response.status !== 202
+            ? Effect.fail(Limits.protocolError(
+              server,
+              `MCP server "${server}" answered ${method} with HTTP ${response.status}, not the 202 that accepts it`
+            ))
+            : response.stream.pipe(
+              Stream.mapError(unreachable),
+              Stream.filter((chunk) => chunk.byteLength > 0),
+              Stream.runHead,
+              Effect.flatMap((chunk) =>
+                Option.isNone(chunk)
+                  ? Effect.void
+                  : Effect.fail(Limits.protocolError(
+                    server,
+                    `MCP server "${server}" accepted ${method} with a body; an acceptance carries none`
+                  ))
+              )
+            )
+        )))
 
     /** Fails `effect` with `connection_closed`, interrupting it, when the scope closes first. */
     const untilClosed = <A>(effect: Effect.Effect<A, McpError>) =>
@@ -307,15 +419,16 @@ export const connect = (
     /**
      * Handles one inbound JSON-RPC message during request `id`: server
      * requests are answered, notifications dropped, and the reply returned.
+     * The server's own error reply is returned, not failed: it answers the
+     * request within the protocol, so it does not end the session.
      */
-    const receive = (method: string, id: number, text: string): Effect.Effect<Option.Option<unknown>, McpError> =>
+    const receiveMessage = (
+      method: string,
+      id: number,
+      message: Rpc.Inbound,
+      served: { count: number }
+    ): Effect.Effect<Option.Option<Answer>, McpError> =>
       Effect.gen(function*() {
-        const message = Rpc.parse(text)
-        if (message === undefined) {
-          return yield* Effect.fail(
-            Limits.protocolError(server, `MCP server "${server}" sent a message that is not JSON-RPC`)
-          )
-        }
         const jsonIssue = JsonLimits.checkParsed(message)
         if (jsonIssue !== undefined) {
           return yield* Effect.fail(
@@ -327,6 +440,13 @@ export const connect = (
           case "Notification":
             return Option.none()
           case "Request": {
+            served.count += 1
+            if (served.count > maxServerRequests) {
+              return yield* Effect.fail(Limits.protocolError(
+                server,
+                `MCP server "${server}" sent more than ${maxServerRequests} requests while answering ${method}`
+              ))
+            }
             yield* deliver(
               "server-response",
               reply.method === "ping"
@@ -352,14 +472,52 @@ export const connect = (
         }
         if (reply._tag === "Error") {
           diagnostic("remote-error", { code: reply.code, message: reply.message, data: reply.data })
-          return yield* Effect.fail(Transport.replyError(server, method, reply))
+          return Option.some(Result.fail(Transport.replyError(server, method, reply)))
         }
-        return Option.some(reply.result)
+        return Option.some(Result.succeed(reply.result))
+      })
+
+    /**
+     * Handles one JSON body or event: a message, or a JSON-RPC batch whose
+     * messages are handled in order. Returns the reply to request `id` when
+     * the frame carried it.
+     */
+    const receive = (
+      method: string,
+      id: number,
+      text: string,
+      served: { count: number }
+    ): Effect.Effect<Option.Option<Answer>, McpError> =>
+      Effect.gen(function*() {
+        const messages = Rpc.parseFrame(text)
+        if (messages.length === 0) {
+          return yield* Effect.fail(
+            Limits.protocolError(server, `MCP server "${server}" sent a message that is not JSON-RPC`)
+          )
+        }
+        let result = Option.none<Answer>()
+        for (const message of messages) {
+          const received = yield* receiveMessage(method, id, message, served)
+          if (Option.isNone(result)) result = received
+        }
+        return result
       })
 
     /** Collects `data:` lines into events; a blank line ends one. */
-    const events = (stream: Stream.Stream<Uint8Array, HttpClientError.HttpClientError>) =>
-      Transport.lines(server, maxFrameBytes, Stream.mapError(stream, unreachable), { crTerminates: true }).pipe(
+    const events = (stream: Stream.Stream<Uint8Array, HttpClientError.HttpClientError>) => {
+      // Lines and events are bounded one by one; this bounds the response, so
+      // comments and discarded events cannot hold a request open at no cost.
+      let streamed = 0
+      const bounded = Stream.mapEffect(Stream.mapError(stream, unreachable), (chunk) => {
+        streamed += chunk.byteLength
+        return streamed > maxEventStreamBytes
+          ? Effect.fail(Limits.protocolError(
+            server,
+            `MCP server "${server}" sent an event stream longer than ${maxEventStreamBytes} bytes`
+          ))
+          : Effect.succeed(chunk)
+      })
+      return Transport.lines(server, maxFrameBytes, bounded, { crTerminates: true }).pipe(
         Stream.mapAccumEffect(
           () => ({ data: undefined as string | undefined, bytes: 0 }),
           (event, line) => {
@@ -381,42 +539,48 @@ export const connect = (
           }
         )
       )
+    }
 
     const exchange = (method: string, params: unknown, id: number, dispatched: { value: boolean }) =>
       Effect.scoped(Effect.gen(function*() {
         const response = yield* post(method, { jsonrpc: "2.0", id, method, params }, dispatched)
-        if (method === "initialize") {
-          const header = response.headers["mcp-session-id"]
-          if (header !== undefined && !validSessionId.test(header)) {
-            return yield* Effect.fail(Limits.protocolError(server, `MCP server "${server}" sent an invalid session id`))
+        const result = yield* latching(Effect.gen(function*() {
+          if (method === "initialize") {
+            const header = response.headers["mcp-session-id"]
+            if (header !== undefined && !validSessionId.test(header)) {
+              return yield* Effect.fail(
+                Limits.protocolError(server, `MCP server "${server}" sent an invalid session id`)
+              )
+            }
+            sessionId = header
           }
-          sessionId = header
-        }
-        const type = mediaType(response.headers["content-type"])
-        let result: Option.Option<unknown>
-        if (type === "application/json") {
-          result = yield* Effect.flatMap(readBody(response.stream), (text) => receive(method, id, text))
-        } else if (type === "text/event-stream") {
-          result = Option.flatten(
-            yield* events(response.stream).pipe(
-              Stream.mapEffect((data) => receive(method, id, data)),
-              Stream.filter(Option.isSome),
-              Stream.runHead
+          const served = { count: 0 }
+          const type = mediaType(response.headers["content-type"])
+          if (type === "application/json") {
+            return yield* Effect.flatMap(readBody(response.stream), (text) => receive(method, id, text, served))
+          }
+          if (type === "text/event-stream") {
+            return Option.flatten(
+              yield* events(response.stream).pipe(
+                Stream.mapEffect((data) => receive(method, id, data, served)),
+                Stream.filter(Option.isSome),
+                Stream.runHead
+              )
             )
-          )
-        } else {
+          }
           return yield* Effect.fail(Limits.protocolError(
             server,
             `MCP server "${server}" answered ${method} with an unsupported content type`
           ))
-        }
+        }))
         if (Option.isNone(result)) {
           return yield* Effect.fail(Transport.closed(server, `closed its response before answering ${method}`))
         }
-        if (method === "initialize" && isRecord(result.value) && typeof result.value.protocolVersion === "string") {
-          protocolVersion = result.value.protocolVersion
+        const value = yield* Effect.fromResult(result.value)
+        if (method === "initialize" && isRecord(value) && typeof value.protocolVersion === "string") {
+          protocolVersion = value.protocolVersion
         }
-        return result.value
+        return value
       }))
 
     const notify = (method: string, params?: unknown, timeoutMs = requestTimeoutMs): Effect.Effect<void, McpError> =>

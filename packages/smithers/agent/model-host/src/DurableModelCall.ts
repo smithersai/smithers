@@ -39,6 +39,7 @@ const safeModel = (source: ModelSource): Model.Model => ({
           Stream.tap((event) =>
             Effect.sync(() => {
               if (event.type === "settle") settled = true
+              if (event.type === "retry") settled = false
             })
           ),
           Stream.concat(Stream.suspend(() =>
@@ -124,6 +125,10 @@ const safeModel = (source: ModelSource): Model.Model => ({
               }])
             }
             case "retry":
+              text.clear()
+              thinking.clear()
+              argumentsById.clear()
+              settled = false
               return Effect.succeed([{ ...event, code: cut(event.code) }])
             case "settle": {
               if (
@@ -172,6 +177,13 @@ const safeModel = (source: ModelSource): Model.Model => ({
             ? new ModelError.ModelError({
               code: error.code,
               message: cut(error.message),
+              resetAtEpochMillis: error.resetAtEpochMillis,
+              quotaScope: error.quotaScope,
+              resetSource: error.resetSource === undefined ? undefined : cut(error.resetSource),
+              providerCode: error.providerCode === undefined ? undefined : cut(error.providerCode),
+              requestId: error.requestId === undefined ? undefined : cut(error.requestId),
+              path: error.path === undefined ? undefined : cut(error.path),
+
               ...(error.httpStatus === undefined ? {} : { httpStatus: error.httpStatus }),
               ...(error.retryAfterMillis === undefined ? {} : { retryAfterMillis: error.retryAfterMillis })
             })

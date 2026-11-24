@@ -79,6 +79,17 @@ describe("actual copy transport", () => {
     expect(await readFile(join(destination, "nested/item"), "utf8")).toBe("new")
     expect(await readFile(join(destination, "item"), "utf8")).toBe("new")
   })
+  it("preserves a directory when a remote file collides with it", async () => {
+    const { c, home } = await fixture()
+    const dir = join(home, "local/item")
+    await mkdir(dir, { recursive: true })
+    await writeFile(join(dir, "keep"), "original")
+    await writeFile(join(home, "item"), "remote")
+    await expect(copy(c, { src: `box:${home}/item`, dst: join(home, "local") }, options)).rejects.toMatchObject({
+      code: "copy_type_conflict"
+    })
+    expect(await readFile(join(dir, "keep"), "utf8")).toBe("original")
+  })
   it("downloads a named directory into an existing directory", async () => {
     const { c, home } = await fixture()
     await mkdir(join(home, "source"))

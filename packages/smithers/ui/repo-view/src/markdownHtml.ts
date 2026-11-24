@@ -1,11 +1,9 @@
+import { safeHtmlUrl } from "./linkPolicy";
 import { markdownLinkNames } from "./markdownLinkNames";
 
 /** Read-only HTML policy. Parse into an inert template, then construct only allowlisted nodes. */
 const allowed = new Set("a abbr b blockquote br code dd del details div dl dt em h1 h2 h3 h4 h5 h6 hr i img kbd li ol p pre s samp small span strong sub summary sup table tbody td th thead tr ul".split(" "));
 const discard = new Set("script style iframe object embed template svg math form input button link meta base".split(" "));
-
-/** URLs keep repository-relative paths and the protocols GitHub Markdown needs. */
-const safeUrl = (value: string) => !/^[\s\u0000-\u0020]*[^/?#]*:/.test(value) || /^(https?:|mailto:)/i.test(value);
 
 export function markdownHtml(source: string): HTMLElement {
   const template = document.createElement("template");
@@ -26,7 +24,7 @@ export function markdownHtml(source: string): HTMLElement {
       }
       for (const attr of ["href", "src"]) {
         const value = element.getAttribute(attr);
-        if (value !== null && ((name === "a" && attr === "href") || (name === "img" && attr === "src")) && safeUrl(value)) target.setAttribute(attr, value);
+        if (value !== null && ((name === "a" && attr === "href") || (name === "img" && attr === "src")) && safeHtmlUrl(value, attr)) target.setAttribute(attr, value);
       }
       const alert = element.getAttribute("data-github-alert");
       if (name === "strong" && alert !== null && /^(note|tip|important|warning|caution)$/.test(alert)) {

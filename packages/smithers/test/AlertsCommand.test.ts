@@ -186,6 +186,7 @@ describe("smthrs alerts", () => {
     const reopened = await report(root, "failing")
     expect(received).toHaveLength(2)
     const reopenedId = /^Alert: (.+)$/mu.exec(received[1]!.body.text!)![1]!
+    expect(reopenedId).toMatch(/:s\d+$/)
     expect(reopenedId).not.toBe(id)
     expect(reopened.delivered).toEqual([expect.objectContaining({ alertId: reopenedId })])
   })
@@ -364,7 +365,9 @@ describe("smthrs alerts", () => {
       invoke([...args, "--root", root, "--run", run, "--audience", "human", "--silent"], undefined, true)
 
     const reported = await human(["alerts", "report", "--probe", "site-freshness", "--state", "failing"])
-    const id = /^Alert: (.+)$/mu.exec(received[0]!.body.text!)![1]!
+    const [open] = (await list(root)).alerts
+    const id = open.alertId
+    expect(id).toMatch(/:s\d+$/)
     expect(reported.stdout).toBe([
       "alerts report",
       "Recorded site-freshness failing on probe-owner.",
@@ -373,7 +376,7 @@ describe("smthrs alerts", () => {
       `smthrs alerts list --run probe-owner --root ${root}`,
       ""
     ].join("\n"))
-    const since = new Date(Number(id.split(":").at(-1))).toISOString()
+    const since = open.since
     expect((await human(["alerts", "list"])).stdout).toBe(
       `alerts list\nsite-freshness  delivered  -  ${since}  ${id}\n`
     )

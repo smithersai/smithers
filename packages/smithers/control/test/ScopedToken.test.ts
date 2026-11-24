@@ -1,4 +1,4 @@
-import { Effect, Layer } from "effect"
+import { Effect, Fiber, Layer, Stream } from "effect"
 import * as WebCrypto from "effect/crypto/WebCrypto"
 import { RpcTest } from "effect/rpc"
 import { TestClock } from "effect/testing"
@@ -210,6 +210,26 @@ describe("what claims authorize", () => {
 
   it("confines a flow token to calls that name that flow", () => {
     const confined = claims({ flowId: "demo" })
+    for (const rpc of ["Projection.Snapshot", "Projection.Subscribe"]) {
+      for (const flowId of ["demo", "other"]) {
+        expect(
+          ScopedToken.authorizes({ ...confined, procedures: [rpc] }, {
+            rpc,
+            payload: { selector: { _tag: "workspace-runs", flowId } }
+          })
+        ).toBe(flowId === "demo")
+      }
+    }
+    for (const tag of ["run-summary", "flow-durations"]) {
+      expect(
+        ScopedToken.authorizes({ ...confined, procedures: ["Projection.Snapshot"] }, {
+          rpc: "Projection.Snapshot",
+          payload: { selector: { _tag: tag, flowId: "demo" } }
+        })
+      ).toBe(tag === "flow-durations")
+    }
+    expect(ScopedToken.authorizes(confined, { rpc: "List", payload: { _tag: "flows", selector: { flowId: "demo" } } }))
+      .toBe(false)
     expect(ScopedToken.authorizes(confined, { rpc: "Plan", payload: { flowId: "demo", input: {} } })).toBe(true)
     expect(ScopedToken.authorizes(confined, { rpc: "Plan", payload: { flowId: "other", input: {} } })).toBe(false)
     expect(ScopedToken.authorizes(confined, { rpc: "List", payload: { _tag: "runs", filters: { flowId: "demo" } } }))
@@ -252,9 +272,13 @@ describe("the authenticator", () => {
     const authenticator = ScopedToken.authenticator({ key, principal: scoped, now: () => 5_000 })
     const headers = { authorization: `Bearer ${token}` }
 
-    expect(await Effect.runPromise(authenticator.authenticate(headers))).toEqual({ ...scoped, stampedAt: 5_000 })
+    expect(await Effect.runPromise(authenticator.authenticate(headers))).toEqual({
+      ...scoped,
+      stampedAt: 5_000,
+      expiresAt: 61000
+    })
     expect(await Effect.runPromise(authenticator.authenticate(headers, { rpc: "List", payload: { runId: "run-1" } })))
-      .toEqual({ ...scoped, stampedAt: 5_000 })
+      .toEqual({ ...scoped, stampedAt: 5_000, expiresAt: 61000 })
     const refused = await Effect.runPromise(
       Effect.flip(authenticator.authenticate(headers, { rpc: "Cancel", payload: { runId: "run-1" } }))
     )
@@ -320,7 +344,7 @@ describe("the authenticator", () => {
         const authenticator = ScopedToken.authenticator({ key, principal: scoped })
         const headers = { authorization: `Bearer ${token}` }
         yield* TestClock.adjust(1999)
-        expect(yield* authenticator.authenticate(headers)).toEqual({ ...scoped, stampedAt: 1999 })
+        expect(yield* authenticator.authenticate(headers)).toEqual({ ...scoped, stampedAt: 1999, expiresAt: 2000 })
         yield* TestClock.adjust(1)
         const error = yield* Effect.flip(authenticator.authenticate(headers))
         expect(error).toBeInstanceOf(Unauthorized)
@@ -340,7 +364,7 @@ describe("anyAuthenticator", () => {
     expect(await Effect.runPromise(both.authenticate({ authorization: `Bearer ${key}` })))
       .toEqual({ id: "gateway", kind: "bearer", stampedAt: 7 })
     expect(await Effect.runPromise(both.authenticate({ authorization: `Bearer ${token}` })))
-      .toEqual({ id: "gateway", kind: "scoped", stampedAt: 7 })
+      .toEqual({ id: "gateway", kind: "scoped", stampedAt: 7, expiresAt: 61000 })
     const refused = await Effect.runPromise(Effect.flip(both.authenticate({ authorization: "Bearer nope" })))
     expect(refused).toBeInstanceOf(Unauthorized)
     expect(refused.message).toBe("A valid scoped token is required")
@@ -367,6 +391,52 @@ describe("a minted token on the control RPC boundary", () => {
       })
     )
   )
+
+  it("refuses a follow whose flow lookup used the remaining credential lifetime", async () => {
+    const auth = ScopedToken.authenticator({
+      key,
+      principal: scoped,
+      flows: {
+        ofRun: () => TestClock.adjust(51).pipe(Effect.as("test")),
+        ofPlan: () => Effect.die("unexpected plan lookup")
+      }
+    })
+    await Effect.runPromise(
+      Effect.gen(function*() {
+        const { token } = yield* ScopedToken.mint({ key, scopes: ["read:runs"], ttlMillis: 50, flowId: "test" })
+        const rpc = yield* RpcTest.makeClient(ControlRpcs)
+        const error = yield* rpc.Watch({ follow: true, runId: "run-1" }, {
+          headers: { authorization: `Bearer ${token}` }
+        }).pipe(Stream.runDrain, Effect.flip)
+        expect(error.message).toBe("The scoped token has expired")
+      }).pipe(
+        Effect.provide(Layer.merge(ControlServer.layer, layerAuth(auth)).pipe(Layer.provide(TestControl.layer()))),
+        Effect.scoped,
+        Effect.provide(TestClock.layer())
+      )
+    )
+  })
+
+  it("expires an already open followed watch", async () => {
+    await Effect.runPromise(
+      Effect.gen(function*() {
+        const token = yield* ScopedToken.mint({ key, scopes: ["read:runs"], ttlMillis: 50 })
+        const client = yield* RpcTest.makeClient(ControlRpcs)
+        const watch = yield* client.Watch({ follow: true }, { headers: { authorization: `Bearer ${token.token}` } })
+          .pipe(Stream.runDrain, Effect.flip, Effect.forkScoped)
+        yield* TestClock.adjust(51)
+        expect(yield* Fiber.join(watch)).toBeInstanceOf(Unauthorized)
+      }).pipe(
+        Effect.provide(
+          Layer.merge(ControlServer.layer, layerAuth(ScopedToken.authenticator({ key, principal: scoped }))).pipe(
+            Layer.provide(TestControl.layer())
+          )
+        ),
+        Effect.scoped,
+        Effect.provide(TestClock.layer())
+      )
+    )
+  })
 
   it("a minted read:runs token reads, cannot approve, and expires", async () => {
     const { token } = await minted({ now: () => now, ttlMillis: 10_000 })

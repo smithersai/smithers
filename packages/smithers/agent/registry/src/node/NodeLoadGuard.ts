@@ -77,9 +77,6 @@ const onDisk = (file: string): string => {
   }
 }
 
-/** Whether a path beneath `root` runs through an installed-package directory. */
-const installed = (root: string, file: string): boolean => relative(root, file).split(sep).includes("node_modules")
-
 const real = (file: string) =>
   Effect.try({
     try: () => realpathSync.native(file),
@@ -109,12 +106,15 @@ export const layerWith = (register: RegisterHooks | undefined): Layer.Layer<neve
     const refusal = (file: string): LoadGuard.UnmeasuredLoadError | undefined => {
       if (held.permitted.has(file)) return undefined
       for (const root of held.roots) {
-        if (!within(root, file) || installed(root, file)) continue
+        // A `node_modules` directory beneath a protected root is source the
+        // flow's author committed beside the flow, not an installed package:
+        // nothing measured it, so it is held like any other file there.
+        if (!within(root, file)) continue
         return new LoadGuard.UnmeasuredLoadError({
           path: file,
           root,
           message:
-            `"${file}" was loaded at run time from inside the flow source root "${root}" and is not a module measured for this run. Import it statically so it is measured, or keep code a flow loads by a computed path outside the source root`
+            `"${file}" was loaded at run time from inside the flow source root "${root}" and is not a module measured for this run. Import it statically so it is measured, or keep code a flow loads by a computed path, and the packages it installs, outside the source root`
         })
       }
       return undefined

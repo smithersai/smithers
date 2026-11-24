@@ -189,6 +189,7 @@ test("reports a Chat Completions usage chunk sent after finish_reason on the don
   // api.openai.com and Ollama send the counters in a choice-less chunk after
   // the finish_reason chunk; the body stays open, as a proxy may hold it.
   const wire = [
+    JSON.stringify({ choices: [], usage: { prompt_tokens: 1 } }),
     "{\"id\":\"c\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"hi\"},\"finish_reason\":null}]}",
     "{\"id\":\"c\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}",
     "{\"id\":\"c\",\"choices\":[],\"usage\":{\"prompt_tokens\":9,\"completion_tokens\":1,\"total_tokens\":10}}"

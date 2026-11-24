@@ -25,6 +25,7 @@ import { describe, expect, it } from "vitest"
 import { ElectricCollection, ShapeProxy, ShapeSource, SyncPolicy } from "../src/index.ts"
 import { rowsIn } from "../src/internal/Batch.ts"
 import { fenced, type SyncControls } from "../src/internal/fence.ts"
+import { eventually, storedRows } from "./fixtures.ts"
 import { sqlite } from "./sqlite.ts"
 
 const executions = Number(process.env.EFFECT_FUZZ_EXECUTIONS ?? (process.env.EFFECT_FUZZ ? "800" : "200"))
@@ -956,11 +957,14 @@ describe("@smthrs/effect-electric comprehensive fuzz security & sync invariants"
             },
             { headers: { control: "up-to-date" } }
           ]
+          // Once false the source answers nothing, as offline: no row comes back after an evict, so a row still held
+          // then is one `evict` left behind.
+          let serving = true
           const source: ShapeSource.Source = {
             request: (url, init) => {
               const parsed = new URL(url)
               const isLive = parsed.searchParams.get("live") === "true"
-              if (!isLive) {
+              if (!isLive && serving) {
                 return Effect.succeed(
                   new Response(JSON.stringify(batch), {
                     status: 200,
@@ -979,34 +983,68 @@ describe("@smthrs/effect-electric comprehensive fuzz security & sync invariants"
               })
             }
           }
-          return Effect.scoped(
-            Effect.gen(function*() {
-              const colId = `notes-persist-${crypto.randomUUID()}`
-              const col = yield* ElectricCollection.make<Note, never>({
-                id: colId,
-                schema: NoteSchema,
-                getKey: (r) => r.id,
-                shape: { url: "https://electric.test/v1/shape", params: { table: "notes" } },
-                persist: { schemaVersion: 1 },
-                retry: Schedule.spaced("5 millis")
-              })
-              if (evictBeforeLoad) {
-                yield* col.evict
-                return true
-              }
-              const appliedFiber = yield* col.currentApplied.pipe(Effect.forkScoped({ startImmediately: true }))
-              yield* col.preload
-              yield* Fiber.join(appliedFiber).pipe(Effect.timeout("1 second"), Effect.ignore)
-              const rows = yield* col.toArray
-              if (rows.length !== 1 || rows[0]?.text !== rowText) return false
-              yield* col.evict
-              return true
-            }).pipe(
+          const colId = `notes-persist-${crypto.randomUUID()}`
+          type Notes = ElectricCollection.ElectricCollection<Note>
+          // One program over the device's database: its collection, closed with the program.
+          // A failed restore or preload fails the property, like a row that is wrong.
+          const program = <E>(body: (col: Notes) => Effect.Effect<boolean, E>) =>
+            Effect.scoped(
+              Effect.flatMap(
+                ElectricCollection.make<Note, never>({
+                  id: colId,
+                  schema: NoteSchema,
+                  getKey: (r) => r.id,
+                  shape: { url: "https://electric.test/v1/shape", params: { table: "notes" } },
+                  persist: { schemaVersion: 1 },
+                  retry: Schedule.spaced("5 millis")
+                }),
+                body
+              )
+            ).pipe(
+              Effect.orElseSucceed(() => false),
               Effect.provide(makePersistence()),
               Effect.provideService(ShapeSource.ShapeSource, source),
               Effect.provide(silentLogger)
             )
-          ).pipe(
+          const holds = (col: Notes, expected: ReadonlyArray<string>) =>
+            Effect.map(col.toArray, (rows) => JSON.stringify(rows.map((row) => row.text)) === JSON.stringify(expected))
+          // A persisted collection's rows leave it, and the device, as the evicting transaction arrives; one that
+          // never arrives (an `evict` that truncates nothing) ends the wait and fails the property.
+          const emptied = (col: Notes) =>
+            eventually(() => col.tanstack.size === 0 && storedRows(dbPath, colId) === 0).pipe(
+              Effect.andThen(holds(col, [])),
+              Effect.catchDefect(() => Effect.succeed(false))
+            )
+          return Effect.gen(function*() {
+            // The first program syncs the row and certifies it applied. Unless the next program is to evict unread,
+            // it evicts what it holds, with the source silent: the row must be gone, not merely about to return.
+            const synced = yield* program((col) =>
+              Effect.gen(function*() {
+                const appliedFiber = yield* col.currentApplied.pipe(Effect.forkScoped({ startImmediately: true }))
+                yield* col.preload
+                yield* Fiber.join(appliedFiber).pipe(Effect.timeout("1 second"), Effect.ignore)
+                if (!(yield* holds(col, [rowText]))) return false
+                serving = false
+                if (evictBeforeLoad) {
+                  // The row reaches the device after it is applied; the next programs start from what is stored.
+                  return yield* eventually(() => storedRows(dbPath, colId) === 1).pipe(
+                    Effect.as(true),
+                    Effect.catchDefect(() => Effect.succeed(false))
+                  )
+                }
+                yield* col.evict
+                return yield* emptied(col)
+              }).pipe(Effect.scoped)
+            )
+            if (!synced) return false
+            if (evictBeforeLoad) {
+              // The device kept the row: an offline program restores it. The next one evicts before anything reads.
+              if (!(yield* program((col) => Effect.andThen(col.restored, holds(col, [rowText]))))) return false
+              if (!(yield* program((col) => Effect.andThen(col.evict, emptied(col))))) return false
+            }
+            // The rows left the device too: an offline program restores nothing.
+            return yield* program((col) => Effect.andThen(col.restored, holds(col, [])))
+          }).pipe(
             Effect.ensuring(
               Effect.sync(() => {
                 for (const suffix of ["", "-wal", "-shm"]) {

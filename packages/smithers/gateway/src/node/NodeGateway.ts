@@ -4,6 +4,7 @@
 
 import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer"
 import { createServer } from "node:http"
+import { defaultMaxRequestBodyBytes } from "../GatewayServer.ts"
 import * as NativeGateway from "../internal/NativeGateway.ts"
 
 export {
@@ -27,4 +28,6 @@ export type ServerOptions = NativeGateway.ServerOptions
  * @since 1.0.0
  * @category layers
  */
-export const layer = NativeGateway.makeLayer((options) => NodeHttpServer.layer(createServer, options))
+export const layer = NativeGateway.makeLayer((options) =>
+  NodeHttpServer.layer(createServer, { ...options, websocket: { maxPayload: defaultMaxRequestBodyBytes } })
+)

@@ -19,6 +19,7 @@ import * as DiagnosticReporter from "./internal/DiagnosticReporter.ts"
 import * as HttpTransport from "./internal/HttpTransport.ts"
 import * as JsonLimits from "./internal/JsonLimits.ts"
 import * as Limits from "./internal/Limits.ts"
+import * as RemoteText from "./internal/RemoteText.ts"
 import * as StdioTransport from "./internal/StdioTransport.ts"
 import * as Transport from "./internal/Transport.ts"
 import { McpError } from "./McpError.ts"
@@ -31,6 +32,7 @@ import { McpError } from "./McpError.ts"
  */
 export interface ToolDescription {
   readonly name: string
+  /** The server's description, with control and format characters other than line feed and tab removed. */
   readonly description: string | undefined
   /** The tool's parameter shape, as a JSON Schema document with `type: "object"`. */
   readonly inputSchema: Record<string, unknown>
@@ -79,7 +81,12 @@ export interface McpClient {
  * @since 1.0.0-rc.1
  */
 export interface ClientOptions {
-  /** The name this server is known by, for flow naming and error messages. */
+  /**
+   * The name this server is known by, for flow naming and error messages. It
+   * follows the rules of a tool name, since it is a segment of every flow
+   * name: at most 128 UTF-8 bytes, not `.` or `..`, and no `/`, control,
+   * format or other invisible character.
+   */
   readonly server: string
   /** Deadline for each initialize/catalog request. See {@link defaultHandshakeTimeoutMs}. */
   readonly handshakeTimeoutMs?: number | undefined
@@ -97,6 +104,12 @@ export interface ClientOptions {
    * its JSON-encoded `inputSchema`. See {@link defaultMaxToolDocumentBytes}.
    */
   readonly maxToolDocumentBytes?: number | undefined
+  /**
+   * Maximum UTF-8 bytes of model-facing text across the whole catalog: every
+   * tool's description plus its JSON-encoded `inputSchema`, summed over every
+   * page. See {@link defaultMaxCatalogDocumentBytes}.
+   */
+  readonly maxCatalogDocumentBytes?: number | undefined
   /** Maximum pages walked while fetching the catalog. See {@link defaultMaxCatalogPages}. */
   readonly maxCatalogPages?: number | undefined
 }
@@ -154,6 +167,37 @@ const isHttp = (options: ConnectOptions): options is HttpConnectOptions => optio
 
 const PositiveInteger = Schema.Int.check(Schema.isGreaterThan(0))
 
+const nameEncoder = new TextEncoder()
+
+// Cc covers C0, DEL, and C1. Cf covers bidi overrides and isolates (U+202A-202E,
+// U+2066-2069), zero-width marks (U+200B-200F, U+2060, U+FEFF), and soft hyphen.
+// Default_Ignorable_Code_Point adds the blank letters and marks outside Cf
+// (U+034F, U+115F, U+1160, U+3164, U+FFA0, variation selectors). Co and Cn
+// (private use, unassigned) render blank or as a font's placeholder. U+2800,
+// U+13440, U+16FE4, U+1BC9D and U+1D159 are assigned but draw nothing, and Zs
+// other than U+0020 is a space that reads as one. An ASCII space is visible
+// only alone between other characters, and a leading combining mark attaches
+// to the "/" before the name. All are invisible text that makes
+// `mcp/<server>/<tool>` read as another tool. Cs catches a lone surrogate,
+// which UTF-8 encoding would silently replace.
+// The three combining blanks sit outside the class, where a mark cannot read as
+// joined to the character before it.
+const forbiddenToolNameText =
+  /[/\p{Cc}\p{Cf}\p{Cs}\p{Co}\p{Cn}\p{Default_Ignorable_Code_Point}\p{Zl}\p{Zp}⠀\u{1D159}]|\u{13440}|\u{16FE4}|\u{1BC9D}|(?! )\p{Zs}|^\p{M}|^ | $| {2}/u
+
+// A name in another normalization form renders the same as its NFC spelling
+// but compares unequal.
+const isForbiddenToolName = (name: string): boolean =>
+  name === "." || name === ".." || forbiddenToolNameText.test(name) || name.normalize("NFC") !== name
+
+/** A server name is one segment of `mcp/<server>/<tool>`, so it obeys the default tool-name rules. */
+const isServerName = (name: string): boolean =>
+  name !== "" && nameEncoder.encode(name).byteLength <= defaultMaxToolNameBytes && !isForbiddenToolName(name)
+
+const ServerName = Schema.String.check(
+  Schema.makeFilter(isServerName, { expected: "a server name usable as a flow-name segment" })
+)
+
 const environmentVariableName = /^[A-Za-z_][A-Za-z0-9_]*$/
 
 /** An environment variable name: a persisted entry names where a credential comes from, never its value. */
@@ -169,7 +213,8 @@ const EnvironmentNames = Schema.Record(Schema.String, EnvironmentVariableName).c
 /**
  * Authoritative decoder for a persisted stdio MCP server entry.
  *
- * The schema requires non-empty server and command names, string arguments,
+ * The schema requires a server name usable as a flow-name segment (see
+ * {@link ClientOptions}), a non-empty command name, string arguments,
  * a plain string-valued environment record, and positive-integer limits. A
  * credential is never stored in the entry: `envFrom` maps a variable the
  * child reads to the environment variable holding its value. Like
@@ -181,7 +226,7 @@ const EnvironmentNames = Schema.Record(Schema.String, EnvironmentVariableName).c
  * @since 1.0.0-rc.0
  */
 export const ConnectOptionsSchema = Schema.Struct({
-  server: Schema.NonEmptyString,
+  server: ServerName,
   command: Schema.NonEmptyString,
   args: Schema.Array(Schema.String),
   cwd: Schema.optional(Schema.NonEmptyString),
@@ -196,6 +241,7 @@ export const ConnectOptionsSchema = Schema.Struct({
   maxTools: Schema.optional(PositiveInteger),
   maxToolNameBytes: Schema.optional(PositiveInteger),
   maxToolDocumentBytes: Schema.optional(PositiveInteger),
+  maxCatalogDocumentBytes: Schema.optional(PositiveInteger),
   maxCatalogPages: Schema.optional(PositiveInteger)
 })
 
@@ -210,7 +256,8 @@ const isEndpoint = (url: string): boolean => {
 /**
  * Authoritative decoder for a persisted Streamable HTTP MCP server entry.
  *
- * The schema requires a non-empty server name, an absolute `http:` or
+ * The schema requires a server name usable as a flow-name segment (see
+ * {@link ClientOptions}), an absolute `http:` or
  * `https:` `url` without userinfo, and positive-integer limits. A bearer
  * credential is never stored in the entry: `bearerTokenEnv` names the
  * environment variable the host reads it from and turns into an
@@ -220,16 +267,19 @@ const isEndpoint = (url: string): boolean => {
  * @since 1.0.0-rc.1
  */
 export const HttpConnectOptionsSchema = Schema.Struct({
-  server: Schema.NonEmptyString,
+  server: ServerName,
   url: Schema.String.check(Schema.makeFilter(isEndpoint, { expected: "an http: or https: URL without credentials" })),
   bearerTokenEnv: Schema.optionalKey(EnvironmentVariableName),
   handshakeTimeoutMs: Schema.optional(PositiveInteger),
   requestTimeoutMs: Schema.optional(PositiveInteger),
   maxFrameBytes: Schema.optional(PositiveInteger),
   maxOutboundFrameBytes: Schema.optional(PositiveInteger),
+  maxEventStreamBytes: Schema.optional(PositiveInteger),
+  maxServerRequests: Schema.optional(PositiveInteger),
   maxTools: Schema.optional(PositiveInteger),
   maxToolNameBytes: Schema.optional(PositiveInteger),
   maxToolDocumentBytes: Schema.optional(PositiveInteger),
+  maxCatalogDocumentBytes: Schema.optional(PositiveInteger),
   maxCatalogPages: Schema.optional(PositiveInteger)
 })
 
@@ -331,6 +381,32 @@ export const defaultMaxToolNameBytes = 128
 export const defaultMaxToolDocumentBytes = 65_536
 
 /**
+ * Default maximum UTF-8 bytes of model-facing text in a whole catalog (one
+ * MiB): every description plus every JSON-encoded `inputSchema`.
+ *
+ * @category constants
+ * @since 1.0.0-rc.19
+ */
+export const defaultMaxCatalogDocumentBytes = 1024 * 1024
+
+/**
+ * Default maximum bytes read from one Streamable HTTP event-stream response.
+ *
+ * @category constants
+ * @since 1.0.0-rc.19
+ */
+export const defaultMaxEventStreamBytes = HttpTransport.defaultMaxEventStreamBytes
+
+/**
+ * Default maximum server requests answered while one Streamable HTTP request
+ * awaits its reply.
+ *
+ * @category constants
+ * @since 1.0.0-rc.19
+ */
+export const defaultMaxServerRequests = HttpTransport.defaultMaxServerRequests
+
+/**
  * Default maximum number of remote catalog pages.
  *
  * @category constants
@@ -390,34 +466,14 @@ type CatalogLimits = {
   readonly maxTools: number
   readonly maxToolNameBytes: number
   readonly maxToolDocumentBytes: number
+  readonly maxCatalogDocumentBytes: number
+  /** What is left of the catalog's document budget; spent as tools are accepted. */
+  remainingDocumentBytes: number
 }
 
 type ToolPage = {
   readonly nextCursor: string | undefined
 }
-
-const nameEncoder = new TextEncoder()
-
-// Cc covers C0, DEL, and C1. Cf covers bidi overrides and isolates (U+202A-202E,
-// U+2066-2069), zero-width marks (U+200B-200F, U+2060, U+FEFF), and soft hyphen.
-// Default_Ignorable_Code_Point adds the blank letters and marks outside Cf
-// (U+034F, U+115F, U+1160, U+3164, U+FFA0, variation selectors). Co and Cn
-// (private use, unassigned) render blank or as a font's placeholder. U+2800,
-// U+13440, U+16FE4, U+1BC9D and U+1D159 are assigned but draw nothing, and Zs
-// other than U+0020 is a space that reads as one. An ASCII space is visible
-// only alone between other characters, and a leading combining mark attaches
-// to the "/" before the name. All are invisible text that makes
-// `mcp/<server>/<tool>` read as another tool. Cs catches a lone surrogate,
-// which UTF-8 encoding would silently replace.
-// The three combining blanks sit outside the class, where a mark cannot read as
-// joined to the character before it.
-const forbiddenToolNameText =
-  /[/\p{Cc}\p{Cf}\p{Cs}\p{Co}\p{Cn}\p{Default_Ignorable_Code_Point}\p{Zl}\p{Zp}\u2800\u{1D159}]|\u{13440}|\u{16FE4}|\u{1BC9D}|(?! )\p{Zs}|^\p{M}|^ | $| {2}/u
-
-// A name in another normalization form renders the same as its NFC spelling
-// but compares unequal.
-const isForbiddenToolName = (name: string): boolean =>
-  name === "." || name === ".." || forbiddenToolNameText.test(name) || name.normalize("NFC") !== name
 
 const asToolPage = (
   server: string,
@@ -474,13 +530,20 @@ const asToolPage = (
         `MCP server "${server}" returned a tool whose inputSchema is not a JSON Schema object of type "object"`
       ))
     }
-    const description = typeof record.description === "string" ? record.description : undefined
+    const description = typeof record.description === "string" ? RemoteText.visible(record.description) : undefined
     const documentBytes = nameEncoder.encode(description ?? "").byteLength +
       nameEncoder.encode(JSON.stringify(record.inputSchema)).byteLength
     if (documentBytes > limits.maxToolDocumentBytes) {
       return Result.fail(invalidResponse(
         server,
         `MCP server "${server}" returned a tool description and inputSchema longer than ${limits.maxToolDocumentBytes} bytes`
+      ))
+    }
+    limits.remainingDocumentBytes -= documentBytes
+    if (limits.remainingDocumentBytes < 0) {
+      return Result.fail(invalidResponse(
+        server,
+        `MCP server "${server}" returned a catalog whose descriptions and inputSchemas are longer than ${limits.maxCatalogDocumentBytes} bytes`
       ))
     }
     let outputSchema: Record<string, unknown> | undefined
@@ -681,7 +744,9 @@ const asToolResult = function*(
       ))
     }
     structuredContent = result.structuredContent
-    if (validate !== undefined) {
+    // A tool's own error result reports a failure in whatever shape the tool
+    // chose; the output schema describes its successful result only.
+    if (validate !== undefined && result.isError !== true) {
       const issue = yield* validate(structuredContent, "structuredContent")
       if (issue !== undefined) {
         diagnostic("invalid-response", { issue, outputSchema })
@@ -691,6 +756,13 @@ const asToolResult = function*(
         ))
       }
     }
+  }
+  if (!hasStructuredContent && validate !== undefined && result.isError !== true) {
+    diagnostic("invalid-response", { issue: { path: "structuredContent", reason: "missing" }, outputSchema })
+    return Result.fail(invalidResponse(
+      server,
+      `MCP server "${server}" returned no structuredContent for a tool that declares an outputSchema`
+    ))
   }
   return Result.succeed({
     content,
@@ -886,11 +958,14 @@ const snapshotArguments = (
  * connecting (a `notifications/tools/list_changed` push) is not re-polled.
  * Nothing reconnects: after a terminal error (a malformed reply, an oversized
  * frame, the server exiting) the session stops the server process and every
- * later call fails with that error. Connect again in a new scope to refresh
+ * later call fails with that error. A Streamable HTTP session does the same
+ * after a protocol violation or once the server ends the session, and sends
+ * nothing more. Connect again in a new scope to refresh
  * the catalog or to continue.
  * Catalog input schemas must declare `type: "object"`. A later tool result may
  * omit `content` when it carries `structuredContent`; a declared output schema
- * is enforced for the documented keyword subset.
+ * is enforced for the documented keyword subset, and requires
+ * `structuredContent`, unless the result is the tool's own `isError` result.
  *
  * @category constructors
  * @since 1.0.0-rc.0
@@ -912,12 +987,20 @@ export const connect = <O extends ConnectOptions>(
         const maxTools = options.maxTools ?? defaultMaxTools
         const maxToolNameBytes = options.maxToolNameBytes ?? defaultMaxToolNameBytes
         const maxToolDocumentBytes = options.maxToolDocumentBytes ?? defaultMaxToolDocumentBytes
+        const maxCatalogDocumentBytes = options.maxCatalogDocumentBytes ?? defaultMaxCatalogDocumentBytes
         const maxCatalogPages = options.maxCatalogPages ?? defaultMaxCatalogPages
+        if (!isServerName(options.server)) {
+          return yield* Effect.fail(Limits.protocolError(
+            options.server,
+            `MCP option "server" must be a name of at most ${defaultMaxToolNameBytes} bytes that is not "." or "..", is NFC, and contains no "/", leading, trailing, or doubled space, or invisible or control character`
+          ))
+        }
         yield* Limits.checkPositiveIntegers(options.server, [
           ["handshakeTimeoutMs", handshakeTimeoutMs],
           ["maxTools", maxTools],
           ["maxToolNameBytes", maxToolNameBytes],
           ["maxToolDocumentBytes", maxToolDocumentBytes],
+          ["maxCatalogDocumentBytes", maxCatalogDocumentBytes],
           ["maxCatalogPages", maxCatalogPages]
         ])
 
@@ -942,6 +1025,13 @@ export const connect = <O extends ConnectOptions>(
         const tools: Array<ToolDescription> = []
         const toolNames = new Set<string>()
         const cursors = new Set<string>()
+        const catalogLimits: CatalogLimits = {
+          maxTools,
+          maxToolNameBytes,
+          maxToolDocumentBytes,
+          maxCatalogDocumentBytes,
+          remainingDocumentBytes: maxCatalogDocumentBytes
+        }
         let params: Record<string, unknown> = {}
         let pageCount = 0
         while (true) {
@@ -949,13 +1039,7 @@ export const connect = <O extends ConnectOptions>(
           pageCount += 1
           const page = yield* decodeResponse(
             listed,
-            asToolPage(
-              options.server,
-              listed,
-              { maxTools, maxToolNameBytes, maxToolDocumentBytes },
-              toolNames,
-              tools
-            )
+            asToolPage(options.server, listed, catalogLimits, toolNames, tools)
           )
           if (page.nextCursor === undefined) break
           if (cursors.has(page.nextCursor)) {

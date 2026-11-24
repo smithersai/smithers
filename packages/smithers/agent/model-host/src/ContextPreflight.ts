@@ -77,6 +77,7 @@ export const runContextPreflight = (
     })).sort(Recall.compareResults)
     const recalledRows = Recall.capRecallResults(rows, Recall.MAX_RECALL_TOKENS)
     const snapshot = Recall.layer({ recall: () => Effect.succeed(recalledRows) })
+    let servedModel = options.modelId
     let reasons = new Map<number, string>()
     const selected = yield* Source.selectRecall(
       { banks: [bank], query: input.prompt, maxTokens: Recall.MAX_RECALL_TOKENS },
@@ -106,30 +107,51 @@ export const runContextPreflight = (
             params: options.outputTokenLimitSupported === false ? {} : { maxTokens: 2048 }
           })
           let output = ""
-          const cutter = new StreamingCredentialCutter(options.credential, additionalCredentials)
+          let size = 2
+          let endsWithHighSurrogate = false
+          const append = (fragment: string) => {
+            // JSON escapes isolated UTF-16 surrogates as six bytes. A joined pair encodes to four.
+            if (fragment.length === 0) return
+            if (endsWithHighSurrogate && /^[\uDC00-\uDFFF]/.test(fragment)) size -= 8
+            endsWithHighSurrogate = /[\uD800-\uDBFF]$/.test(fragment)
+            size += bytes(fragment) - 2
+            output += fragment
+          }
+          let cutter = new StreamingCredentialCutter(options.credential, additionalCredentials)
           let settled = false
           yield* Stream.runForEach(
             fastModelFallback(
               [{ model, ...options }, ...(options.fallbacks ?? [])],
               options.onFallback,
-              "model-host/context"
+              "model-host/context",
+              (modelId) => {
+                servedModel = modelId
+              }
             ).stream(request),
             (event) => {
               // A selector has no tools, and settlement ends its one response.
               // Usage may arrive after settlement (OpenAI include_usage). It
               // carries accounting, never another selector response.
+              if (event.type === "retry") {
+                output = ""
+                size = 2
+                endsWithHighSurrogate = false
+                settled = false
+                cutter = new StreamingCredentialCutter(options.credential, additionalCredentials)
+                return Effect.void
+              }
               if (event.type === "usage") return Effect.void
               // Never turn a malformed stream into a durable context selection.
               if (settled || event.type.startsWith("tool-")) return Effect.fail(invalid())
               if (event.type === "text-delta") {
-                output += cutter.push(event.text)
+                append(cutter.push(event.text))
               }
               if (event.type === "settle") {
                 if (event.stopReason !== "stop") return Effect.fail(invalid())
-                output += cutter.finish()
+                append(cutter.finish())
                 settled = true
               }
-              return bytes(output) > 65536 ? Effect.fail(invalid()) : Effect.void
+              return size > 65536 ? Effect.fail(invalid()) : Effect.void
             }
           )
           // JSON escapes can reconstruct an echo that the raw stream cutter never saw.
@@ -170,7 +192,7 @@ export const runContextPreflight = (
       result: ContextPreflight.ContextPreflightResultSchema.parse({
         context: selectedContext.map((candidate) => candidate.item),
         candidates: candidates.map((candidate) => candidate.item),
-        model: options.modelId,
+        model: servedModel,
         durationMs: performance.now() - started
       }),
       selectedContext,

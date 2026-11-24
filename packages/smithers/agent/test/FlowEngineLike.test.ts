@@ -1133,6 +1133,29 @@ describe("FlowEngineLike.make", () => {
     ])
   })
 
+  it("refuses the engine's retry of a step whose unsettled attempt spent the allowance", async () => {
+    const attempts: Array<number> = []
+    // The first attempt reports its whole allowance and ends without settling.
+    const model = byAttempt([
+      Stream.fromIterable([ModelEvent.ModelEvent.Usage({ inputTokens: 60, outputTokens: 40 })]),
+      Stream.fromIterable(answer)
+    ], attempts)
+    const outcome = await drive(Effect.gen(function*() {
+      const budget = yield* Budget.make({ tokens: { max: 100 } })
+      const engine = yield* FlowEngineLike.make({ model, route: staticRoute(), modelRetryPolicy: fastRetries(3) }).pipe(
+        Effect.provideService(Budget.Budget, budget)
+      )
+      const exit = yield* Stream.runCollect(engine.sealStep(step("hello"))).pipe(Effect.exit)
+      return { failed: Exit.isFailure(exit) ? Cause.squash(exit.cause) : undefined, usage: yield* budget.usage }
+    }))
+    expect(completed(outcome)).toMatchObject({
+      failed: { code: "model_failed", cause: { _tag: "flows/agent/BudgetExceeded", scope: "tokens", used: 100 } },
+      usage: { tokens: 100, calls: 1 }
+    })
+    // One provider call: the reservation the step still held did not admit a second.
+    expect(attempts).toEqual([1])
+  })
+
   it("refuses a model retry policy that does not bound its attempts", async () => {
     const outcome = await drive(
       FlowEngineLike.make({

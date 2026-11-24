@@ -282,7 +282,10 @@ describe("Scheduler.tick", () => {
     expect(runner.starts).toHaveLength(1)
   })
 
-  it("answers its own instant as the watermark when a first tick meets a row it cannot decode", async () => {
+  // A row that never decodes used to mark every tick unclean, so the lineage
+  // re-sent one `since` for as long as the row stayed corrupt and every healthy
+  // trigger was asked about an interval that only grew.
+  it("does not hold the watermark for a row it cannot decode, on a first tick or a later one", async () => {
     const runner = runs()
     const ticked = await run(Effect.gen(function*() {
       const store = yield* TriggerStore.TriggerStore
@@ -303,7 +306,119 @@ describe("Scheduler.tick", () => {
       return { first, second }
     }))
     expect(ticked.first).toEqual({ at: hour, watermark: hour })
-    expect(ticked.second).toEqual({ at: 2 * hour, watermark: hour })
+    expect(ticked.second).toEqual({ at: 2 * hour, watermark: 2 * hour })
+  })
+
+  it("keeps firing the healthy triggers beside a corrupt row, and advances their watermark", async () => {
+    const runner = runs()
+    const seen = await run(Effect.gen(function*() {
+      const store = yield* TriggerStore.TriggerStore
+      yield* store.register(hourly())
+      const corrupt = TriggerStore.TriggerStore.of({
+        ...store,
+        list: () =>
+          Effect.map(store.list(), (listing) => [{
+            triggerId: "corrupt",
+            trigger: Result.fail(new TriggerError({ code: "store", message: "could not decode trigger row corrupt" }))
+          }, ...listing])
+      })
+      const ticked = (options?: Scheduler.TickOptions) =>
+        tick(runner, options).pipe(Effect.provideService(TriggerStore.TriggerStore, corrupt))
+      yield* TestClock.setTime(30 * minute)
+      let watermark = (yield* ticked()).watermark
+      const watermarks: Array<number | undefined> = []
+      for (const now of [hour + 1_000, 2 * hour + 1_000]) {
+        runner.active.clear()
+        yield* TestClock.setTime(now)
+        watermark = (yield* ticked({ since: watermark })).watermark
+        watermarks.push(watermark)
+      }
+      // Registered two and a half hours in, beside a row that is still corrupt.
+      yield* TestClock.setTime(2 * hour + 30 * minute)
+      yield* store.register(hourly({ id: "late", catchUp: "all", maxCatchUp: 5 }))
+      yield* TestClock.setTime(3 * hour + 1_000)
+      yield* ticked({ since: watermark })
+      const late = yield* store.history({ triggerId: "late" })
+      return { watermarks, late: late.items.map((fire) => fire.occurrence) }
+    }))
+    expect(seen.watermarks).toEqual([hour + 1_000, 2 * hour + 1_000])
+    expect(seen.late).toEqual([3 * hour])
+  })
+
+  // `since` can be far older than a trigger: one failing trigger holds it, and
+  // a host may persist it across a long outage. A trigger registered after it
+  // used to start from it, so `catchUp: "all"` launched runs for boundaries
+  // that passed before the trigger existed.
+  it("starts a never-fired trigger from its registration when that is later than since", async () => {
+    const runner = runs()
+    const seen = await run(Effect.gen(function*() {
+      const store = yield* TriggerStore.TriggerStore
+      yield* TestClock.setTime(2 * hour + 30 * minute)
+      const registered = yield* store.register(hourly({ catchUp: "all", maxCatchUp: 5 }))
+      yield* TestClock.setTime(3 * hour + 1_000)
+      const ticked = yield* tick(runner, { since: 30 * minute })
+      const fires = yield* store.history({ triggerId: "hourly" })
+      return { ticked, registeredAt: registered.registeredAt, fires: fires.items.map((fire) => fire.occurrence) }
+    }))
+    expect(seen.registeredAt).toBe(2 * hour + 30 * minute)
+    expect(seen.fires).toEqual([3 * hour])
+    expect(seen.fires.every((occurrence) => occurrence >= seen.registeredAt!)).toBe(true)
+    expect(runner.starts.map((start) => start.idempotencyKey)).toEqual(["hourly:1970-01-01T03:00:00.000Z"])
+    expect(seen.ticked).toEqual({ at: 3 * hour + 1_000, watermark: 3 * hour + 1_000 })
+  })
+
+  // A row stored before registration was recorded has neither a fire nor a
+  // registration to start from, so `since` is all a tick knows about it.
+  it("starts a never-fired trigger with no recorded registration from since", async () => {
+    const runner = runs()
+    const fires = await run(Effect.gen(function*() {
+      const store = yield* TriggerStore.TriggerStore
+      yield* TestClock.setTime(2 * hour + 30 * minute)
+      yield* store.register(hourly({ catchUp: "all", maxCatchUp: 5 }))
+      const legacy = TriggerStore.TriggerStore.of({
+        ...store,
+        list: () =>
+          Effect.map(store.list(), (listing) =>
+            listing.map((row) => ({
+              ...row,
+              trigger: Result.map(row.trigger, ({ registeredAt: _registeredAt, ...trigger }) => trigger)
+            })))
+      })
+      yield* TestClock.setTime(3 * hour + 1_000)
+      yield* tick(runner, { since: hour + 30 * minute }).pipe(Effect.provideService(TriggerStore.TriggerStore, legacy))
+      return (yield* store.history({ triggerId: "hourly" })).items.map((fire) => fire.occurrence).reverse()
+    }))
+    expect(fires).toEqual([2 * hour, 3 * hour])
+  })
+
+  // A first tick has no `since` to fall back to. Answering its own instant
+  // after a failed claim moved the watermark past the occurrence, and no later
+  // tick asked about it again.
+  it("answers no watermark when a first tick's dispatch failed, so the next first tick retries it", async () => {
+    const runner = runs()
+    let failing = true
+    const seen = await run(Effect.gen(function*() {
+      const store = yield* TriggerStore.TriggerStore
+      yield* store.register(hourly())
+      const flaky = TriggerStore.TriggerStore.of({
+        ...store,
+        claimFire: (fire) =>
+          failing ? Effect.fail(new TriggerError({ code: "store", message: "claim failed" })) : store.claimFire(fire)
+      })
+      const ticked = (options?: Scheduler.TickOptions) =>
+        tick(runner, options).pipe(Effect.provideService(TriggerStore.TriggerStore, flaky))
+      yield* TestClock.setTime(hour + 1_000)
+      const failed = yield* ticked()
+      const startsAfterFailure = runner.starts.length
+      failing = false
+      yield* TestClock.setTime(hour + 2_000)
+      const retried = yield* ticked({ since: failed.watermark })
+      return { failed, retried, startsAfterFailure }
+    }))
+    expect(seen.failed).toEqual({ at: hour + 1_000, watermark: undefined })
+    expect(seen.startsAfterFailure).toBe(0)
+    expect(seen.retried).toEqual({ at: hour + 2_000, watermark: hour + 2_000 })
+    expect(runner.starts.map((start) => start.idempotencyKey)).toEqual(["hourly:1970-01-01T01:00:00.000Z"])
   })
 
   it("prunes the fire ledger only on a first tick or when an hour boundary passed since the last one", async () => {

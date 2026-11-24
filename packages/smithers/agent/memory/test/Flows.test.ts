@@ -280,4 +280,41 @@ describe("Flows model-facing boundary", () => {
     )
     expect(recalled.map((rows) => rows.map((row) => row.key))).toEqual([["trusted"], ["trusted"]])
   })
+
+  it("lowers a model-supplied recall budget to the policy ceiling", async () => {
+    const seen: Array<number | undefined> = []
+    await Effect.runPromise(
+      Effect.gen(function*() {
+        const scoped = WithMemory.withMemory(Flows.recall, { banks: ["bank"], maxTokens: 512 })
+        yield* Flows.runRecallFor(scoped, { banks: [], query: "q", maxTokens: Recall.MAX_RECALL_TOKENS })
+        yield* Flows.runRecallFor(scoped, { banks: [], query: "q", maxTokens: 512 })
+        yield* Flows.runRecallFor(scoped, { banks: [], query: "q", maxTokens: 100 })
+      }).pipe(
+        Effect.provide(Recall.layer({
+          recall: (input) => Effect.sync(() => (seen.push(input.maxTokens), []))
+        }))
+      )
+    )
+    expect(seen).toEqual([512, 512, 100])
+  })
+
+  it("answers at most the policy budget in bytes when the model asks for the ceiling", async () => {
+    const rows = await Effect.runPromise(
+      Effect.gen(function*() {
+        const store = yield* MemoryStore.MemoryStore
+        for (let index = 0; index < 40; index++) {
+          yield* store.putFact({
+            namespace: "bank",
+            key: `k${index}`,
+            value: `alpha ${"x".repeat(100)}`,
+            provenance: {}
+          })
+        }
+        const scoped = WithMemory.withMemory(Flows.recall, { banks: ["bank"], maxTokens: 512 })
+        return yield* Flows.runRecallFor(scoped, { banks: [], query: "alpha", maxTokens: Recall.MAX_RECALL_TOKENS })
+      }).pipe(Effect.provide(RecallKeyword.layer), Effect.provide(TestMemory.layer))
+    )
+    expect(rows.length).toBeGreaterThan(0)
+    expect(new TextEncoder().encode(JSON.stringify(rows)).byteLength).toBeLessThanOrEqual(512)
+  })
 })

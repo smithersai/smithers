@@ -11,7 +11,9 @@
  * read. File-type registries are outside v1, and there is no `types` field to
  * pass. Patterns are capped at 4096 ASCII bytes and counted repetitions at 1000. Invalid UTF-8 is replacement-decoded; NUL-bearing
  * files are skipped and counted, while an explicitly named binary file is a
- * typed failure.
+ * typed failure. The in-process peer treats a file with a line longer than
+ * 8 MiB the same way, with `response_too_large` for a named one, and names
+ * no symbols for a file over 64 MiB.
  *
  * Results are match-centric, which is `rg --json`'s own grouping: `limit`
  * counts matches, each match carries the context lines that belong to it, and

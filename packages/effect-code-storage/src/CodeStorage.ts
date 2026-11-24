@@ -45,6 +45,7 @@ import * as Schema from "effect/Schema"
 import * as Stream from "effect/Stream"
 import type * as GitRemote from "./GitRemote.ts"
 import { isReadLimit, readAtMost } from "./internal/bounded.ts"
+import { isRedirect, withoutRedirects } from "./internal/redirects.ts"
 import * as Token from "./internal/token.ts"
 
 /**
@@ -73,10 +74,12 @@ export type Operation =
  *   a documented one (`sync_in_progress`, `repository_not_found`,
  *   `rate_limited`, ...), its generic code for the status otherwise, or one of
  *   this client's: `transport` (no answer), `invalid_response` (an answer it
- *   couldn't read), `too_large` (a file over `maxBytes`), `invalid_argument`
- *   (a malformed repository name or invalid read limit) and `invalid_key`
- *   (the key didn't import). A code the docs don't list becomes the status's
- *   generic code, as the docs say to treat it.
+ *   couldn't read), `redirect` (a 3xx answer, which the client never follows:
+ *   following would send the token to an origin the host never named),
+ *   `too_large` (a file over `maxBytes`), `invalid_argument` (a malformed
+ *   repository name or invalid read limit) and `invalid_key` (the key didn't
+ *   import). A code the docs don't list becomes the status's generic code, as
+ *   the docs say to treat it.
  * - `unknownCode` is that undocumented code, kept for diagnosis only. Messages
  *   include it only as a lowercase identifier of at most 64 characters. Branch
  *   on `code`.
@@ -126,6 +129,28 @@ export class CodeStorageError extends Schema.TaggedError<CodeStorageError>()(
   }
 }
 
+/**
+ * The defect `gitRemote` dies with for a malformed repository name: an
+ * unpaired UTF-16 surrogate, or a `/`-separated segment that is empty, `.` or
+ * `..`. It carries no part of the name.
+ *
+ * @category errors
+ * @since 0.2.0
+ */
+export class CodeStorageInvalidRepository extends Schema.TaggedError<CodeStorageInvalidRepository>()(
+  "@smthrs/effect-code-storage/CodeStorageInvalidRepository",
+  {}
+) {
+  /**
+   * A fixed message, never the name.
+   *
+   * @since 0.2.0
+   */
+  override get message(): string {
+    return "Code Storage gitRemote: invalid repository name"
+  }
+}
+
 const transientCodes: ReadonlySet<string> = new Set([
   "transport",
   "request_timeout",
@@ -149,7 +174,10 @@ export const isTransient = (error: CodeStorageError): boolean =>
 /**
  * The organization a host acts as: its name, its ES256 signing key (a PKCS#8
  * PEM from Code Storage's Keys page), and optionally the API's origin, which
- * defaults to `https://api.<org>.code.storage`.
+ * defaults to `https://api.<org>.code.storage`, and the git remotes' origin,
+ * which defaults to `https://<org>.code.storage`. A host that points `apiUrl`
+ * at another deployment, such as staging, points `gitUrl` there too: each
+ * defaults on its own, to production.
  *
  * @category models
  * @since 0.1.0
@@ -158,11 +186,18 @@ export interface Credentials {
   readonly org: string
   readonly key: Redacted.Redacted<string>
   readonly apiUrl?: string | undefined
+  /**
+   * The origin `gitRemote` builds its URL on, without a trailing slash.
+   *
+   * @since 0.2.0
+   */
+  readonly gitUrl?: string | undefined
 }
 
 /**
  * Reads {@link Credentials} from `CODE_STORAGE_ORG`, `CODE_STORAGE_KEY` (as a
- * redacted value) and the optional `CODE_STORAGE_API_URL`.
+ * redacted value) and the optional `CODE_STORAGE_API_URL` and
+ * `CODE_STORAGE_GIT_URL`.
  *
  * @category configuration
  * @since 0.1.0
@@ -170,8 +205,16 @@ export interface Credentials {
 export const config: Config.Config<Credentials> = Config.all({
   org: Config.String("CODE_STORAGE_ORG"),
   key: Config.Redacted("CODE_STORAGE_KEY"),
-  apiUrl: Config.option(Config.String("CODE_STORAGE_API_URL"))
-}).pipe(Config.map(({ org, key, apiUrl }) => ({ org, key, apiUrl: Option.getOrUndefined(apiUrl) })))
+  apiUrl: Config.option(Config.String("CODE_STORAGE_API_URL")),
+  gitUrl: Config.option(Config.String("CODE_STORAGE_GIT_URL"))
+}).pipe(
+  Config.map(({ org, key, apiUrl, gitUrl }) => ({
+    org,
+    key,
+    apiUrl: Option.getOrUndefined(apiUrl),
+    gitUrl: Option.getOrUndefined(gitUrl)
+  }))
+)
 
 /**
  * A public GitHub repository to mirror, without a GitHub App installation.
@@ -497,9 +540,11 @@ export interface Client {
   readonly createBranch: (repo: string, options: CreateBranchOptions) => Effect.Effect<CreatedBranch, CodeStorageError>
   /**
    * The repository's git remote for reading, with a `git:read` token as its
-   * credential: `https://<org>.code.storage/<repo>.git` and Basic `t:<token>`,
-   * five minutes long. Hand it to `GitProxy.uploadPack` or `GitRemote.ref`;
-   * the token never belongs in a URL or a guest.
+   * credential: `https://<org>.code.storage/<repo>.git` (on
+   * {@link Credentials} `gitUrl` when set) and Basic `t:<token>`, five minutes
+   * long. Hand it to `GitProxy.uploadPack` or `GitRemote.ref`; the token never
+   * belongs in a URL or a guest. A malformed repository name is a defect, and
+   * no token is signed for it.
    *
    * @since 0.2.0
    */
@@ -622,6 +667,21 @@ const retryAfterMillis = (value: string | undefined, now: number): number | unde
 
 const decoder = new TextDecoder()
 
+/**
+ * Whether a repository name can be put in a URL as itself: well-formed UTF-16,
+ * and no `/`-separated segment that is empty, `.` or `..`. A URL parser drops
+ * or resolves those segments, so the request would reach another repository's
+ * route, or the collection's.
+ */
+const validRepo = (repo: string): boolean => {
+  try {
+    encodeURIComponent(repo)
+  } catch {
+    return false
+  }
+  return repo.split("/").every((segment) => segment !== "" && segment !== "." && segment !== "..")
+}
+
 const CreatedJson = Schema.fromJsonString(Schema.Struct({ repo_name: Schema.String }))
 const FilesJson = Schema.fromJsonString(Schema.Struct({
   ref: Schema.String,
@@ -665,8 +725,9 @@ const make = (credentials: Credentials): Effect.Effect<Client, CodeStorageError,
     )
     const client = yield* HttpClient.HttpClient
     const base = credentials.apiUrl ?? `https://api.${credentials.org}.code.storage`
-    const url = (repo: string, path = "") =>
-      `${base}/api/repos${repo === "" ? "" : `/${encodeURIComponent(repo)}`}${path}`
+    const collection = `${base}/api/repos`
+    /** A repository's route. `observe` has checked the name, so it is one path segment here. */
+    const url = (repo: string, path = "") => `${collection}/${encodeURIComponent(repo)}${path}`
 
     /** A response's body, counted on {@link bytesRead} chunk by chunk as it arrives, read up to `maxBytes`. */
     const read = (operation: Operation, response: HttpClientResponse.HttpClientResponse, maxBytes: number) =>
@@ -693,7 +754,10 @@ const make = (credentials: Credentials): Effect.Effect<Client, CodeStorageError,
         })
       })
 
-    /** Signs a token for `repo` with `scopes`, sends `request` with it, and fails on any status over 299. */
+    /**
+     * Signs a token for `repo` with `scopes`, sends `request` with it, and fails on any status over 299. A redirect
+     * is never followed, so the token reaches only the origin the host configured.
+     */
     const send = (
       operation: Operation,
       repo: string,
@@ -710,8 +774,12 @@ const make = (credentials: Credentials): Effect.Effect<Client, CodeStorageError,
           ttlSeconds: tokenTtlSeconds
         })
         const response = yield* client.execute(HttpClientRequest.bearerToken(request, Redacted.make(token))).pipe(
+          withoutRedirects,
           Effect.mapError(() => new CodeStorageError({ operation, code: "transport" }))
         )
+        if (isRedirect(response.status)) {
+          return yield* new CodeStorageError({ operation, code: "redirect", status: response.status })
+        }
         if (response.status >= 300) return yield* Effect.flip(failure(operation, response))
         return response
       })
@@ -751,13 +819,14 @@ const make = (credentials: Credentials): Effect.Effect<Client, CodeStorageError,
         Effect.fail(new CodeStorageError({ operation, code: "invalid_response", status })) :
         Effect.succeed(page.next_cursor)
 
-    /** One span and one count per call; the span names only the repository. */
+    /**
+     * One span and one count per call; the span names only the repository. A malformed repository name fails
+     * `invalid_argument` here, before a token is signed or a request sent.
+     */
     const observe = <A>(operation: Operation, repo: string, effect: Effect.Effect<A, CodeStorageError>) =>
-      Effect.try({
-        try: () => encodeURIComponent(repo),
-        catch: () => new CodeStorageError({ operation, code: "invalid_argument" })
-      }).pipe(
-        Effect.andThen(effect),
+      Effect.suspend(() =>
+        validRepo(repo) ? effect : Effect.fail(new CodeStorageError({ operation, code: "invalid_argument" }))
+      ).pipe(
         Effect.onExit((exit) =>
           Metric.update(
             Metric.withAttributes(requests, {
@@ -781,11 +850,13 @@ const make = (credentials: Credentials): Effect.Effect<Client, CodeStorageError,
         Object.entries(entries).flatMap(([name, value]) => (value === undefined ? [] : [[name, String(value)]]))
       )
 
-    const gitBase = `https://${credentials.org}.code.storage`
+    const gitBase = (credentials.gitUrl ?? `https://${credentials.org}.code.storage`).replace(/\/+$/, "")
 
     return {
       gitRemote: (repo, namespace = "default") =>
         Effect.gen(function*() {
+          // The type stays infallible, so a malformed name is a defect: no token is signed for it.
+          if (!validRepo(repo)) return yield* Effect.die(new CodeStorageInvalidRepository())
           const now = yield* Clock.currentTimeMillis
           const token = yield* Token.sign(key, {
             org: credentials.org,
@@ -807,7 +878,7 @@ const make = (credentials: Credentials): Effect.Effect<Client, CodeStorageError,
           "createRepo",
           options.name,
           Effect.gen(function*() {
-            const request = HttpClientRequest.post(url("")).pipe(
+            const request = HttpClientRequest.post(collection).pipe(
               HttpClientRequest.bodyJsonUnsafe({
                 repo_name: options.name,
                 ...(options.defaultBranch === undefined ? {} : { default_branch: options.defaultBranch }),

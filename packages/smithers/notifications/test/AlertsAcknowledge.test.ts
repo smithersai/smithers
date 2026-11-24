@@ -20,7 +20,9 @@ const policy: Alerts.Policy = {
   })
 }
 
-const deployId = (since: number) => Alerts.alertId({ coalescingKey: Alerts.coalescingKey(runId, "deploy"), since })
+/** The id of the deploy alert whose opening report is the journal's entry `opening`. */
+const deployId = (since: number, opening = 0) =>
+  Alerts.alertId({ coalescingKey: Alerts.coalescingKey(runId, "deploy"), since, opening })
 
 /** A sink that keeps the id of every page it was handed. */
 const keeping = () => {
@@ -116,7 +118,7 @@ describe("an alert's state", () => {
 
   it("can be acknowledged before its delay has passed, and then never pages", async () => {
     const sink = keeping()
-    const diskId = Alerts.alertId({ coalescingKey: Alerts.coalescingKey(runId, "disk"), since: 0 })
+    const diskId = Alerts.alertId({ coalescingKey: Alerts.coalescingKey(runId, "disk"), since: 0, opening: 0 })
     const observed = await run(
       sink.layer,
       Effect.gen(function*() {

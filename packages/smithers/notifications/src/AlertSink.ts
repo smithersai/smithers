@@ -52,7 +52,20 @@ export class AlertError extends Schema.TaggedError<AlertError>()(
     /** The HTTP status that refused the page, when the sink speaks HTTP. */
     status: Schema.optional(Schema.Int),
     /** A short, credential-free description of the transport failure. */
-    reason: Schema.optional(Schema.String)
+    reason: Schema.optional(Schema.String),
+    /**
+     * `false` when another attempt at this page would be refused the same way:
+     * a revoked key, or a destination the provider does not know. The runtime
+     * records the refusal and does not send that page again. Absent or `true`
+     * means the next tick may try.
+     */
+    retryable: Schema.optional(Schema.Boolean),
+    /**
+     * How long the receiver asked to be left alone, in milliseconds, when it
+     * named a wait. The runtime does not send that page again before the wait
+     * has passed.
+     */
+    retryAfterMillis: Schema.optional(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)))
   }
 ) {}
 

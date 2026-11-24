@@ -55,6 +55,7 @@ import * as CommandStatus from "./internal/CommandStatus.ts"
 import { errorCode } from "./internal/ErrorCode.ts"
 import * as Failure from "./internal/Failure.ts"
 
+import * as HttpServer from "effect/http/HttpServer"
 import { Session } from "./internal/backend/Session.ts"
 import * as NodeWebSocket from "./internal/NodeWebSocket.ts"
 import * as RegistryWorkspace from "./internal/RegistryWorkspace.ts"
@@ -719,7 +720,7 @@ const layerRemote = (applicationConfig: RemoteConfig) => {
       Serve.GatewayHost.of({
         launch: (health, options, gatewayRoot) =>
           Layer.launch(
-            Layer.effectDiscard(Effect.flatten(Serve.Ready)).pipe(
+            Layer.effectDiscard(Effect.flatMap(Serve.Ready, HttpServer.addressFormattedWith)).pipe(
               Layer.provideMerge(layerGateway(health, options, gatewayRoot, durable))
             )
           ).pipe(

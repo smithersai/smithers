@@ -51,7 +51,7 @@ import * as FailureCopy from "./FailureCopy.ts"
 import { classifyHttpStatus } from "./HttpStatusClassifier.ts"
 import * as Model from "./Model.ts"
 import { faults, ModelError, ModelErrorCode } from "./ModelError.ts"
-import { ModelEvent, type Usage } from "./ModelEvent.ts"
+import { ModelEvent, Usage } from "./ModelEvent.ts"
 import { ModelRequest } from "./ModelRequest.ts"
 import type { PreparedRequest } from "./Route.ts"
 
@@ -996,11 +996,7 @@ class Call {
       if (producesOutput(event)) this.produced = true
       if (event.type === "retry") this.usage = {}
       if (event.type === "usage") {
-        const { type: _, ...counters } = event
-        this.usage = {
-          ...this.usage,
-          ...Object.fromEntries(Object.entries(counters).filter(([, value]) => value !== undefined))
-        }
+        this.usage = Usage.merge(this.usage, event)
       }
     })
   }

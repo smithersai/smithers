@@ -65,11 +65,11 @@ describe("didYouMean", () => {
     expect(line).toBe("Did you mean: smthrs runs show?")
   })
 
-  it("sends the typed verb and the rest of the command line as the state", async () => {
+  it("sends the typed verb alone as the state", async () => {
     await ask("stauts", ["run-42", "--json"], scripted({ choice: "none" }))
 
     expect(asked).toHaveLength(1)
-    expect(asked[0]!.state).toEqual({ typed: "stauts", args: "run-42 --json" })
+    expect(asked[0]!.state).toEqual({ typed: "stauts" })
   })
 
   it("offers every canonical command, described by its own help line, plus none", async () => {

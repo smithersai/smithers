@@ -36,8 +36,12 @@ const recorded = (
 const modelLayerOf = (replay: RecordedModel.Replay): Layer.Layer<Model.Model> =>
   Layer.succeed(Model.Model)(Model.make({ stream: replay.model.stream as Model.Model["stream"] }))
 
+// The unsealed binding: the step port straight over a model, with no engine.
+const stepOver = (model: Layer.Layer<Model.Model>): Layer.Layer<ModelAuthor.Step> =>
+  ModelAuthor.layerStepUnsealed.pipe(Layer.provide(model))
+
 const authorVia = (replay: RecordedModel.Replay): Layer.Layer<Author.Author> =>
-  ModelAuthor.layer(config).pipe(Layer.provide(modelLayerOf(replay)))
+  ModelAuthor.layer(config).pipe(Layer.provide(stepOver(modelLayerOf(replay))))
 
 const seatOver = <A>(
   calls: ReadonlyArray<Fixture.RecordedCall>,
@@ -46,7 +50,7 @@ const seatOver = <A>(
   Effect.runPromise(
     Effect.gen(function*() {
       const replay = yield* RecordedModel.scripted(...calls)
-      const seat = yield* ModelAuthor.make(config).pipe(Effect.provide(modelLayerOf(replay)))
+      const seat = yield* ModelAuthor.make(config).pipe(Effect.provide(stepOver(modelLayerOf(replay))))
       return yield* use(seat)
     })
   )
@@ -164,7 +168,7 @@ describe("ModelAuthor", () => {
     const error = await Effect.runPromise(
       Effect.gen(function*() {
         const seat = yield* ModelAuthor.make(config).pipe(
-          Effect.provide(Layer.succeed(Model.Model)(failing))
+          Effect.provide(stepOver(Layer.succeed(Model.Model)(failing)))
         )
         return yield* Effect.flip(seat.author({ context: ["x"], prefix: "" }))
       })
@@ -184,7 +188,7 @@ describe("ModelAuthor", () => {
     const error = await Effect.runPromise(
       Effect.gen(function*() {
         const seat = yield* ModelAuthor.make(config).pipe(
-          Effect.provide(Layer.succeed(Model.Model)(failing))
+          Effect.provide(stepOver(Layer.succeed(Model.Model)(failing)))
         )
         return yield* Effect.flip(seat.author({ context: ["x"], prefix: "" }))
       })
@@ -200,7 +204,7 @@ describe("ModelAuthor", () => {
     const error = await Effect.runPromise(
       Effect.gen(function*() {
         const seat = yield* ModelAuthor.make(config).pipe(
-          Effect.provide(Layer.succeed(Model.Model)(failing))
+          Effect.provide(stepOver(Layer.succeed(Model.Model)(failing)))
         )
         return yield* Effect.flip(seat.author({ context: ["x"], prefix: "" }))
       })
@@ -216,7 +220,7 @@ describe("ModelAuthor", () => {
     const error = await Effect.runPromise(
       Effect.gen(function*() {
         const seat = yield* ModelAuthor.make(config).pipe(
-          Effect.provide(Layer.succeed(Model.Model)(failing))
+          Effect.provide(stepOver(Layer.succeed(Model.Model)(failing)))
         )
         return yield* Effect.flip(seat.author({ context: ["x"], prefix: "" }))
       })
@@ -272,5 +276,87 @@ describe("ModelAuthor", () => {
     expect(grep.count()).toBe(1)
     expect(unconsumed).toEqual([])
     expect(events.filter((event) => event._tag === "LinkEnded")).toHaveLength(3)
+  })
+
+  it.each([
+    [undefined, ModelAuthor.defaultStepName],
+    ["concierge/author/model", "concierge/author/model"]
+  ])("runs each author call as one named durable step (stepName %s)", async (stepName, expected) => {
+    const input: Author.Input = { context: ["goal"], prefix: "P" }
+    const calls: Array<ModelAuthor.StepCall> = []
+    const step = Layer.succeed(ModelAuthor.Step)(ModelAuthor.Step.of({
+      run: (call) =>
+        Effect.sync(() => {
+          calls.push(call)
+          return textEvents("authored") as ReadonlyArray<never>
+        })
+    }))
+    const text = await Effect.runPromise(
+      Effect.gen(function*() {
+        const seat = yield* ModelAuthor.make({ ...config, stepName })
+        return yield* seat.author(input)
+      }).pipe(Effect.provide(step))
+    )
+    expect(text).toBe("authored")
+    // One step per author input, keyed by a stable name and the exact request
+    // the pure mapping derives: an engine that seals the step replays it.
+    expect(calls).toEqual([{ name: expected, request: ModelAuthor.requestFor(config)(input) }])
+    expect(ModelAuthor.defaultStepName).toBe("chain/author/model")
+  })
+
+  // DUR-4: the seat's model call is a step of the host's durable engine, so a
+  // transient provider failure is the engine's to retry, and the chain never
+  // sees it. This binding stands in for the engine: it runs the call again
+  // when an attempt fails, as `ModelStep.run`'s retry policy does.
+  it("continues the run when the durable step absorbs one transient stream failure", async () => {
+    let streams = 0
+    const flaky = Model.make({
+      stream: () => {
+        streams = streams + 1
+        return (streams === 1
+          ? Stream.fail(new ModelError.ModelError({ code: "transport", message: "connection reset" }))
+          : Stream.fromIterable(textEvents(flow(`return done("authored after a retry")`)))) as ReturnType<
+            Model.Model["stream"]
+          >
+      }
+    })
+    const stepCalls: Array<string> = []
+    const engine = Layer.succeed(ModelAuthor.Step)(ModelAuthor.Step.of({
+      run: (call) => {
+        stepCalls.push(call.name)
+        const attempt = Effect.suspend(() =>
+          Effect.map(Stream.runCollect(flaky.stream(call.request)), (events) => Array.from(events))
+        )
+        return Effect.catch(attempt, () => attempt)
+      }
+    }))
+    const { events, outcome } = await runChain({
+      author: ModelAuthor.layer(config).pipe(Layer.provide(engine)),
+      goal: "survive a dropped connection"
+    })
+    expect(outcome).toEqual({ _tag: "Done", value: "authored after a retry" })
+    // The seat asked for one step; the engine's two attempts stayed inside it.
+    expect(stepCalls).toEqual([ModelAuthor.defaultStepName])
+    expect(streams).toBe(2)
+    expect(events.filter((event) => event._tag === "CallSettled")).toHaveLength(1)
+  })
+
+  it("never retries a step failure itself: the engine already gave up", async () => {
+    let asked = 0
+    const exhausted = Layer.succeed(ModelAuthor.Step)(ModelAuthor.Step.of({
+      run: () =>
+        Effect.suspend(() => {
+          asked = asked + 1
+          return Effect.fail(new ModelError.ModelError({ code: "transport", message: "connection reset" }))
+        })
+    }))
+    const error = await Effect.runPromise(
+      Effect.gen(function*() {
+        const seat = yield* ModelAuthor.make(config)
+        return yield* Effect.flip(seat.author({ context: ["x"], prefix: "" }))
+      }).pipe(Effect.provide(exhausted))
+    )
+    expect(error).toMatchObject({ cause: "transport", code: "author_unavailable" })
+    expect(asked).toBe(1)
   })
 })

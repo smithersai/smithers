@@ -93,7 +93,9 @@ import { Alerts } from "@smthrs/notifications"
 export const webhook = Alerts.layerWebhook({ url: "https://pager.example/alerts" })
 ```
 
-Injected `HttpClient` layers are not used. The sink controls redirect refusal
+A host that sends outbound requests through its own client composes
+`Alerts.layerWebhookClient` instead, which requires an `HttpClient.HttpClient`.
+With `Alerts.layerWebhook`, injected `HttpClient` layers are not used. The sink controls redirect refusal
 and request cleanup. See [Send alerts to a webhook](guides/send-alerts-to-a-webhook.md)
 for Fetch configuration and delivery behavior.
 

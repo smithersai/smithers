@@ -1429,17 +1429,28 @@ export const modelCredentialParts = (secret: string): ReadonlyArray<string> => {
   return secret === "" ? [] : [secret]
 }
 
-/** Cut every secret and account identity from a provider echo.
+/**
+ * The shortest credential part {@link cutModelCredential} cuts. A shorter part, such as a loopback
+ * model's placeholder key `x`, occurs in ordinary words, so cutting it would corrupt the text
+ * without hiding anything worth guessing.
+ *
+ * @since 1.0.0
+ * @category constants
+ */
+export const MODEL_CREDENTIAL_CUT_MIN = 6
+
+/** Cut every secret and account identity of at least {@link MODEL_CREDENTIAL_CUT_MIN} characters from a provider echo.
  * @since 1.0.0
  * @category conversions
  */
 export const cutModelCredential = (text: string, secret: string): string => {
+  const parts = modelCredentialParts(secret).filter((part) => part.length >= MODEL_CREDENTIAL_CUT_MIN)
   let kept = text
   // Again until none is left: cutting one echo out can join the halves of another.
   let previous: string
   do {
     previous = kept
-    for (const part of modelCredentialParts(secret)) kept = kept.split(part).join("")
+    for (const part of parts) kept = kept.split(part).join("")
   } while (previous !== kept)
   return kept
 }

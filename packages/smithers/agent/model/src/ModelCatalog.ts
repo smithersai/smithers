@@ -89,3 +89,14 @@ export const maxOutputTokensFor = (modelId: string): number | undefined => {
   }
   return undefined
 }
+
+/**
+ * Claude families that reject manual thinking budgets and sampling controls.
+ * https://platform.claude.com/docs/en/build-with-claude/thinking
+ * @category resolvers
+ * @since 1.0.0
+ */
+export const adaptiveThinkingOnly = (modelId: string): boolean =>
+  /^claude-(?:(?:opus|sonnet|haiku|fable|mythos)-5(?:-[0-9]{1,2})?|opus-4-[78]|mythos-preview)$/i.test(
+    modelId.replace(/-\d{8}$/, "")
+  )

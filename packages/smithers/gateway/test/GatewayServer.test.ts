@@ -1169,20 +1169,22 @@ describe("the assembled gateway over a real loopback bind", () => {
         JSON.stringify({ _tag: "Request", id: "1", tag: "List", payload: { _tag: "runs" }, headers: [] })
       }\n`
       for (const scheme of ["http:", "https:"]) {
-        const response = yield* Effect.promise(() =>
-          raw(
-            url,
-            [
-              "POST /rpc HTTP/1.1",
-              `Origin: ${scheme}//localhost`,
-              "Content-Type: application/ndjson",
-              `Content-Length: ${body.length}`
-            ],
-            body,
-            "localhost"
+        for (const path of ["/rpc", "/projections"]) {
+          const response = yield* Effect.promise(() =>
+            raw(
+              url,
+              [
+                `POST ${path} HTTP/1.1`,
+                `Origin: ${scheme}//localhost`,
+                "Content-Type: application/ndjson",
+                `Content-Length: ${body.length}`
+              ],
+              body,
+              "localhost"
+            )
           )
-        )
-        expect([scheme, response.status]).toEqual([scheme, scheme === "https:" ? 200 : 403])
+          expect([scheme, response.status]).toEqual([scheme, scheme === "https:" ? 200 : 403])
+        }
       }
     }).pipe(Effect.provide(served({ host: "127.0.0.1", port: 0, requestScheme: "https:" }))))
 
@@ -2111,6 +2113,30 @@ describe("the assembled gateway over a real loopback bind", () => {
       expect(exit.exit._tag).toBe("Success")
       expect(exit.exit.value).toEqual(yield* projections.snapshot(selector))
     }).pipe(Effect.provide(served({ host: "127.0.0.1", port: 0, credential: "edge-secret" }))))
+
+  test("bounds simultaneous subscriptions on one WebSocket and releases a cancelled slot", () =>
+    Effect.gen(function*() {
+      const url = yield* baseUrl
+      const runId = yield* launched
+      yield* Effect.gen(function*() {
+        const rpc = yield* RpcClient.make(GatewayRpcs)
+        const subscribe = () => rpc["Projection.Subscribe"]({ selector: { _tag: "run-summary", runId } })
+        const open = yield* Effect.forEach(Array.from({ length: 16 }), () =>
+          Effect.gen(function*() {
+            const ready = yield* Deferred.make<void>()
+            const fiber = yield* subscribe().pipe(
+              Stream.tap(() => Deferred.succeed(ready, undefined)),
+              Stream.runDrain,
+              Effect.forkScoped
+            )
+            yield* Deferred.await(ready)
+            return fiber
+          }))
+        expect(yield* subscribe().pipe(Stream.runDrain, Effect.flip)).toMatchObject({ code: "resource_limit" })
+        yield* Fiber.interrupt(open[0]!)
+        expect(yield* subscribe().pipe(Stream.take(1), Stream.runCollect)).toHaveLength(1)
+      }).pipe(Effect.provide(projectionsClient(url)))
+    }).pipe(Effect.provide(served())))
 
   test("streams a projection over /projections/ws: snapshot, keepalive, then a delta above the snapshot cursor", () =>
     Effect.gen(function*() {
@@ -3125,6 +3151,23 @@ describe("scoped tokens over the served gateway", () => {
     Effect.gen(function*() {
       const url = yield* baseUrl
       const runId = yield* launched
+      const flowToken = yield* ScopedToken.mint({ key, scopes: ["read:runs"], ttlMillis: 60000, flowId: "system/test" })
+      expect(
+        (yield* post(
+          url,
+          "projections",
+          flowToken.token,
+          frame("Projection.Snapshot", { selector: { _tag: "run-summary", runId } })
+        )).body
+      ).toContain("\"Success\"")
+      expect(
+        (yield* post(
+          url,
+          "projections",
+          flowToken.token,
+          frame("Projection.Snapshot", { selector: { _tag: "workspace-runs", flowId: "system/test" } })
+        )).body
+      ).toContain("\"Success\"")
       const { token } = yield* ScopedToken.mint({ key, scopes: ["read:runs", "write:runs"], ttlMillis: 60_000, runId })
 
       const summary = yield* post(

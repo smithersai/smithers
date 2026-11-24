@@ -53,3 +53,18 @@ test("split HTML tags surround Markdown marks without losing or executing their 
   expect(dom.querySelector("img")?.alt).toBe("Logo");
   expect(dom.textContent).toContain("unknown");
 });
+
+test("raw HTML keeps links and images on the repository's host: no //host, no \\\\host, no mailto image", () => {
+  const external = ["//evil.example/x", "\\\\evil.example/x", "/\\evil.example/x", "\\/evil.example/x", " //evil.example", "/\t/evil.example", "\u0001//evil.example"];
+  for (const url of external) {
+    const dom = markdownHtml(`<a href="${url}">a</a><img src="${url}" alt="i">`);
+    expect([url, dom.querySelector("a")?.hasAttribute("href")]).toEqual([url, false]);
+    expect([url, dom.querySelector("img")?.hasAttribute("src")]).toEqual([url, false]);
+  }
+  const mail = markdownHtml('<a href="mailto:a@example.com">m</a><img src="mailto:a@example.com" alt="m">');
+  expect(mail.querySelector("a")?.getAttribute("href")).toBe("mailto:a@example.com");
+  expect(mail.querySelector("img")?.hasAttribute("src")).toBe(false);
+  const kept = markdownHtml('<a href="/docs">d</a><img src="https://example.com/logo.svg" alt="l"><img src="./logo.svg" alt="r">');
+  expect(kept.querySelector("a")?.getAttribute("href")).toBe("/docs");
+  expect([...kept.querySelectorAll("img")].map(img => img.getAttribute("src"))).toEqual(["https://example.com/logo.svg", "./logo.svg"]);
+});

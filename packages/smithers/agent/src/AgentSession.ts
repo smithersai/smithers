@@ -76,7 +76,7 @@ import * as QuickJSSandbox from "@smthrs/harness/QuickJSSandbox"
 import type * as Sandbox from "@smthrs/harness/Sandbox"
 import * as Steering from "@smthrs/harness/Steering"
 import * as Transcript from "@smthrs/harness/Transcript"
-import { Journal, JournalEvent } from "@smthrs/journal"
+import { Journal, JournalEvent, Redaction } from "@smthrs/journal"
 import * as CapabilitySet from "@smthrs/kernel/CapabilitySet"
 import * as MemorySnapshot from "@smthrs/memory/SnapshotRecorder"
 import type * as MemorySource from "@smthrs/memory/Source"
@@ -100,6 +100,7 @@ import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
 import * as Fiber from "effect/Fiber"
 import * as Layer from "effect/Layer"
+import * as Metric from "effect/Metric"
 import * as Option from "effect/Option"
 import * as RcMap from "effect/RcMap"
 import * as Schedule from "effect/Schedule"
@@ -118,6 +119,7 @@ import { failureSummary } from "./internal/FailureSummary.ts"
 import { latestPendingApproval } from "./internal/PendingApproval.ts"
 import * as RetryStep from "./internal/RetryStep.ts"
 import { unordered } from "./internal/TraceOrder.ts"
+import { truncated } from "./internal/Truncate.ts"
 import { waitingAnnotation } from "./internal/WaitingAnnotation.ts"
 import type * as QuotaPolicy from "./QuotaPolicy.ts"
 import * as RunawayGuard from "./RunawayGuard.ts"
@@ -232,10 +234,34 @@ export interface Options {
    */
   readonly requestNativeCancel?: ControlExecutor.Service["requestCancel"] | undefined
   /**
-   * Age at which an unanswered resume delegation may be adopted by another
-   * host. Defaults to `Ownership.heartbeatStaleAfter`; the cutoff is inclusive.
+   * Age an unanswered resume delegation must reach before another host asks
+   * {@link Options.confirmParkHostDead} about the host that parked the run.
+   * Defaults to `Ownership.heartbeatStaleAfter`; the cutoff is inclusive.
+   *
+   * Age alone adopts nothing. A delegation's timestamp is written by one
+   * host's clock and read by another's, so a skewed clock would otherwise
+   * have a second host drive a run whose parking host is alive.
    */
   readonly abandonedParkAfter?: Duration.Duration | undefined
+  /**
+   * Confirms that the host that parked `runId` is dead, so this host may
+   * adopt a resume delegation that host left standing. `parkedBy` is the
+   * fence the park was written under (`RunSummary.parkedBy`).
+   *
+   * Asked only for a delegation at least {@link Options.abandonedParkAfter}
+   * old, and only for a park another host wrote. Answer `true` on evidence
+   * that the parking host cannot come back for the run, such as its process
+   * having exited on this machine; liveness this host cannot establish is
+   * `false`.
+   *
+   * Absent, a foreign park is never adopted: the delegation stands for the
+   * host that parked it, and a run whose host is gone needs an explicit
+   * resume (`Control.resume`), which claims the run before it is driven.
+   * {@link parkHostDead} builds one from the host's liveness check.
+   *
+   * @since 1.0.0
+   */
+  readonly confirmParkHostDead?: ((runId: string, parkedBy: string) => Effect.Effect<boolean>) | undefined
   /** Refuse resume delegation for a run routed to another workspace host. */
   readonly canExecute?: ((runId: string) => Effect.Effect<boolean>) | undefined
   /** Binds an explicit resume to the currently released native children before driving. */
@@ -257,6 +283,17 @@ export interface Options {
    * @since 1.0.0-rc.0
    */
   readonly orderTerminalStatus?: ((runId: string) => Effect.Effect<void>) | undefined
+  /**
+   * The longest a terminal control status waits on
+   * {@link Options.orderTerminalStatus}. Defaults to 30 seconds.
+   *
+   * The ordering is a wait, never a veto: a host whose observation never
+   * answers still owes the run its terminal status, so past this bound the
+   * status is written without the ordering and the lapse is logged.
+   *
+   * @since 1.0.0
+   */
+  readonly orderTerminalStatusWithin?: Duration.Duration | undefined
   /** Host executable-flow sources composed into every run's catalog. */
   readonly flows?: ReadonlyArray<FlowBinding.Source> | undefined
   /** Runs rendered markdown children; the host closes over their runtime dependencies. */
@@ -2513,6 +2550,65 @@ export const waitForParked = (
     return result.value._tag === "Suspended"
   })
 
+/**
+ * A cause as a log annotation: rendered, then redacted (OBS-5). A cause can
+ * quote tool output, a SQL diagnostic or a provider's refusal, and any of
+ * them can carry a credential into an operator's logs.
+ */
+const loggedCause = (cause: Cause.Cause<unknown>): unknown => Redaction.redactDiagnostic(Cause.pretty(cause))
+
+/**
+ * Counts each time an executor's journal follower stopped and had to
+ * subscribe again: its subscription failed or ended. A resume journaled
+ * between the two subscriptions waits for the once-per-second follower.
+ *
+ * @category metrics
+ * @since 1.0.0
+ */
+export const resumeBridgeStops = Metric.counter("smithers_agent_resume_bridge_stops", {
+  description: "Times an executor's resume bridge stopped and subscribed to the journal again"
+})
+
+const decodeParkOwner = Schema.decodeUnknownOption(Schema.fromJsonString(Ownership.OwnerId))
+
+/**
+ * An {@link Options.confirmParkHostDead} from the host's own liveness check:
+ * the parking host is dead only when the park's fence names an owner on
+ * `claimant`'s host and `isAlive` says that owner is gone. This is the rule
+ * the SQL control runtime applies before a public resume takes a park, whose
+ * fence is the parking owner's identity.
+ *
+ * A fence that names no owner, and an owner on another host, are liveness
+ * this host cannot establish, so they answer `false`: such a run needs an
+ * explicit resume.
+ *
+ * @example
+ * ```ts
+ * import { AgentSession } from "@smthrs/agent"
+ * import type { Ownership } from "@smthrs/run-store"
+ *
+ * // `owner` and `isAlive` are the ones the host gives its engine and control runtime.
+ * const options = (owner: Ownership.OwnerId, isAlive: Ownership.LivenessCheck) => ({
+ *   confirmParkHostDead: AgentSession.parkHostDead(owner, isAlive)
+ * })
+ * ```
+ *
+ * @category constructors
+ * @since 1.0.0
+ */
+export const parkHostDead = (
+  claimant: Ownership.OwnerId,
+  isAlive: Ownership.LivenessCheck
+): (runId: string, parkedBy: string) => Effect.Effect<boolean> =>
+(_runId, parkedBy) => {
+  const parked = decodeParkOwner(parkedBy)
+  if (Option.isNone(parked) || !Ownership.sameHostIncarnation(parked.value, claimant)) return Effect.succeed(false)
+  return Clock.currentTimeMillis.pipe(
+    Effect.flatMap((nowMs) => isAlive(parked.value, { claimant, heartbeatAtMs: null, nowMs })),
+    Effect.map((alive) => !alive)
+  )
+}
+
 const recoverCause = <A>(
   cause: Cause.Cause<unknown>,
   message: string,
@@ -2523,7 +2619,7 @@ const recoverCause = <A>(
     ? Effect.interrupt
     : Effect.annotateLogs(
       Effect.logWarning(message).pipe(Effect.as(fallback)),
-      { ...annotations, cause: Cause.pretty(cause) }
+      { ...annotations, cause: loggedCause(cause) }
     )
 
 /**
@@ -2575,7 +2671,7 @@ export const settleDriverFailure = <E, R>(
     : Effect.andThen(
       Effect.annotateLogs(
         Effect.logError("An accepted agent run could not start on the engine"),
-        { runId, cause: Cause.pretty(cause) }
+        { runId, cause: loggedCause(cause) }
       ),
       writeFailed(Cause.pretty(cause))
     )
@@ -3090,13 +3186,13 @@ export const drainRecordedSignals: Effect.Effect<
         )
       }
     }).pipe(Effect.catchCause((cause) =>
-      Effect.logWarning("Pending signal delivery failed", { commandId: command.commandId, cause: Cause.pretty(cause) })
+      Effect.logWarning("Pending signal delivery failed", { commandId: command.commandId, cause: loggedCause(cause) })
     )), { discard: true })
 }).pipe(
   Effect.catchCause((cause) =>
     Effect.annotateLogs(
       Effect.logWarning("Recorded signals could not be replayed at executor start"),
-      { cause: Cause.pretty(cause) }
+      { cause: loggedCause(cause) }
     )
   )
 )
@@ -3150,6 +3246,24 @@ export const make = (
     const moduleHolds = new WeakSet<FlowRuntime.FlowInstance["Service"]>()
     const scope = yield* Effect.scope
     const services = yield* Effect.context<Services>()
+    /**
+     * Owns every fiber this executor starts on its own account: the launch
+     * drives and the detached terminal writes. They are forked INTO it, never
+     * run as root fibers, so closing it interrupts and awaits each one, a
+     * fiber started after the finalizers below took their snapshots included.
+     * Those finalizers give the fibers they know of their grace first; this
+     * scope closes after them and leaves nothing running.
+     */
+    const fibers = yield* Scope.make()
+    /**
+     * `effect` on a fiber of {@link fibers}, with the executor's own services
+     * and nothing of the caller's: a drive or a terminal write is started
+     * from inside a control call or an engine handler, and must not carry
+     * that caller's flow instance, span or annotations into its own life.
+     */
+    const forkOwned = <A, E>(effect: Effect.Effect<A, E, Services>): Effect.Effect<Fiber.Fiber<A, E>> =>
+      Effect.forkIn(Effect.updateContext(effect, (_: Context.Context<never>) => services), fibers)
+    const orderTerminalStatusWithin = options.orderTerminalStatusWithin ?? Duration.seconds(30)
     /** One machine per sandbox-selected run, held across its parks until it settles. */
     const sandboxes = new Map<
       string,
@@ -3380,7 +3494,7 @@ export const make = (
           sourceId,
           `control.run.${status}`,
           {
-            ...(detail === undefined ? {} : { cause: detail.slice(0, 4096) }),
+            ...(detail === undefined ? {} : { cause: truncated(detail, 4096) }),
             ...(fault === undefined ? {} : { fault }),
             ...(reason === undefined ? {} : { reason })
           }
@@ -3437,42 +3551,49 @@ export const make = (
             Effect.andThen(
               Effect.annotateLogs(
                 Effect.logError("A terminal control status could not be written"),
-                { runId, status, cause: Cause.pretty(cause) }
+                { runId, status, cause: loggedCause(cause) }
               ),
               Effect.failCause(cause)
             )
           )
         )
       }
-      return Effect.sync(() => {
+      return Effect.suspend(() => {
         const key = {}
-        terminalWrites.set(
-          key,
-          Effect.runForkWith(services)(
-            order(runId).pipe(
-              // The ordering is a wait, never a veto. A host whose observation
-              // dies still owes this run a terminal status, so a refusal is
-              // recorded and the write goes on; only the scope closing under it
-              // stops it, and the finalizer below gives that its own grace.
-              Effect.catchCause((cause) =>
-                Cause.hasInterruptsOnly(cause) ? Effect.failCause(cause) : Effect.annotateLogs(
-                  Effect.logWarning("A terminal control status was ordered by a host that stopped answering"),
-                  { runId, status, cause: Cause.pretty(cause) }
-                )
-              ),
-              Effect.andThen(write),
-              // Nothing joins this fiber, so an unwritten terminal status would
-              // otherwise be silent. It is the run's outcome of record.
-              Effect.catchCause((cause) =>
+        return forkOwned(
+          order(runId).pipe(
+            // A host whose observation never answers is no different from one that died: the run is still
+            // owed its status. The bound is the host's to set, and the lapse is logged, not hidden.
+            Effect.timeoutOrElse({
+              duration: orderTerminalStatusWithin,
+              orElse: () =>
                 Effect.annotateLogs(
-                  Effect.logError("A terminal control status could not be written"),
-                  { runId, status, cause: Cause.pretty(cause) }
+                  Effect.logWarning("A terminal control status was not ordered in time and is written without it"),
+                  { runId, status, withinMs: Duration.toMillis(orderTerminalStatusWithin) }
                 )
-              ),
-              Effect.ensuring(Effect.sync(() => terminalWrites.delete(key)))
-            )
+            }),
+            // The ordering is a wait, never a veto. A host whose observation
+            // dies still owes this run a terminal status, so a refusal is
+            // recorded and the write goes on; only the scope closing under it
+            // stops it, and the finalizer below gives that its own grace.
+            Effect.catchCause((cause) =>
+              Cause.hasInterruptsOnly(cause) ? Effect.failCause(cause) : Effect.annotateLogs(
+                Effect.logWarning("A terminal control status was ordered by a host that stopped answering"),
+                { runId, status, cause: loggedCause(cause) }
+              )
+            ),
+            Effect.andThen(write),
+            // Nothing joins this fiber, so an unwritten terminal status would
+            // otherwise be silent. It is the run's outcome of record.
+            Effect.catchCause((cause) =>
+              Effect.annotateLogs(
+                Effect.logError("A terminal control status could not be written"),
+                { runId, status, cause: loggedCause(cause) }
+              )
+            ),
+            Effect.ensuring(Effect.sync(() => terminalWrites.delete(key)))
           )
-        )
+        ).pipe(Effect.map((fiber) => void terminalWrites.set(key, fiber)))
       })
     }
 
@@ -3486,7 +3607,7 @@ export const make = (
           Effect.as(
             Effect.annotateLogs(Effect.logWarning("Cancellation intent could not be read"), {
               runId,
-              cause: Cause.pretty(cause)
+              cause: loggedCause(cause)
             }),
             false
           )
@@ -3549,7 +3670,7 @@ export const make = (
         : Effect.andThen(
           Effect.annotateLogs(Effect.logWarning("An agent run failed"), {
             runId,
-            cause: Cause.pretty(exit.cause)
+            cause: loggedCause(exit.cause)
           }),
           Effect.suspend(() => {
             const error = Cause.squash(exit.cause)
@@ -4529,7 +4650,7 @@ export const make = (
             (cause) =>
               Effect.annotateLogs(
                 Effect.logWarning("A parked agent run could not be resumed"),
-                { runId, cause: Cause.pretty(cause) }
+                { runId, cause: loggedCause(cause) }
               )
           )
         )
@@ -4609,10 +4730,13 @@ export const make = (
      * - `parkedBy` this session wrote: this is the host. It takes its own
      *   delegation up at once, which is the ordinary same-process approval.
      * - Somebody else's `parkedBy`: not this composition's run to drive, so
-     *   the delegation is left standing for the host that parked it — until
-     *   it has stood unanswered for `options.abandonedParkAfter`, defaulting
-     *   to the engine's `heartbeatStaleAfter`. Refusing it forever would leave
-     *   a run parked by an exited process unresumable by another host.
+     *   the delegation is left standing for the host that parked it. It is
+     *   adopted only once it has stood unanswered for
+     *   `options.abandonedParkAfter` AND `options.confirmParkHostDead` says
+     *   the parking host is dead. The age is no evidence by itself: it
+     *   compares one host's clock with another's, and a parked timestamp is
+     *   not a lease anybody renews. A host that cannot confirm the death
+     *   leaves the run for an explicit resume, which arrives as `claimed`.
      *
      * A control store that cannot answer is not evidence of a foreign host, so
      * it leaves the decision where it was before this guard existed.
@@ -4631,9 +4755,11 @@ export const make = (
         )
         if (parkedBy === undefined) return true
         if (parkFences.get(runId) === parkedBy) return true
-        if (uptake.requestedAtMs === undefined) return false
+        const confirmDead = options.confirmParkHostDead
+        if (uptake.requestedAtMs === undefined || confirmDead === undefined) return false
         const nowMs = yield* Clock.currentTimeMillis
-        return nowMs - uptake.requestedAtMs >= abandonedParkAfterMs
+        if (nowMs - uptake.requestedAtMs < abandonedParkAfterMs) return false
+        return yield* confirmDead(runId, parkedBy)
       })
 
     /**
@@ -4734,6 +4860,48 @@ export const make = (
      * row is `running` while nothing runs it (J10: a review steer on a TODO
      * waiting for stack events).
      */
+    /**
+     * Takes up one journal entry the bridge follows. A failure, a defect in
+     * the host's `canExecute` included, ends this entry's take-up and nothing
+     * else: the entry is logged, and the bridge goes on to the next. A resume
+     * dropped here is still a durable request, which the follower below
+     * reads again.
+     *
+     * An interrupt raised INSIDE the take-up, by a host callback, is contained
+     * the same way. The scope closing interrupts the bridge's own fiber, which
+     * unwinds without running this handler, so nothing here can keep a closing
+     * executor alive.
+     */
+    const bridgeEntry = (entry: JournalEvent.Entry): Effect.Effect<unknown> =>
+      (entry.eventType === "control.run.resumed" && Schema.is(ResumeDelegation)(entry.payload)
+        ? takeUpOfferedResume(entry.runId, entry.payload.delegationSequence)
+        : takeUpResume(
+          entry.runId,
+          (runId, uptake) => resumeExecution(runId, uptake),
+          // Approval notifications above use their durable delegation.
+          // Other wakes keep their ownership rules; only an explicit
+          // operator resume carries consent to retry released children.
+          entry.eventType === "control.run.resume"
+            ? { _tag: "claimed", sequence: entry.seq }
+            : { _tag: "delegated" }
+        )).pipe(
+          Effect.catchCause((cause) =>
+            Effect.annotateLogs(Effect.logWarning("A resume event could not be taken up"), {
+              runId: entry.runId,
+              eventType: entry.eventType,
+              interrupted: Cause.hasInterruptsOnly(cause),
+              cause: loggedCause(cause)
+            })
+          )
+        )
+
+    /**
+     * The journal follower, supervised: one subscription drained until it
+     * ends, then another. A subscription that fails or ends is counted
+     * ({@link resumeBridgeStops}), logged, and replaced after a second, so
+     * no failure leaves the host deaf to resumes for the rest of its life.
+     * Only the executor's scope closing stops it.
+     */
     const resumeBridge = Effect.gen(function*() {
       const subscription = yield* journal.changes
       yield* Stream.fromSubscription(subscription).pipe(
@@ -4742,32 +4910,26 @@ export const make = (
           entry.eventType === "control.run.resumed" ||
           entry.eventType === "control.steer.woke"
         ),
-        Stream.mapEffect(
-          (entry) =>
-            entry.eventType === "control.run.resumed" && Schema.is(ResumeDelegation)(entry.payload)
-              ? takeUpOfferedResume(entry.runId, entry.payload.delegationSequence)
-              : takeUpResume(
-                entry.runId,
-                (runId, uptake) => resumeExecution(runId, uptake),
-                // Approval notifications above use their durable delegation.
-                // Other wakes keep their ownership rules; only an explicit
-                // operator resume carries consent to retry released children.
-                entry.eventType === "control.run.resume"
-                  ? { _tag: "claimed", sequence: entry.seq }
-                  : { _tag: "delegated" }
-              ),
-          { concurrency: 1 }
-        ),
+        Stream.mapEffect(bridgeEntry, { concurrency: 1 }),
         Stream.runDrain
       )
     }).pipe(
-      Effect.catchCause(
-        (cause) =>
-          Effect.annotateLogs(
-            Effect.logError("The executor resume bridge stopped"),
-            { cause: Cause.pretty(cause) }
-          )
-      )
+      Effect.scoped,
+      Effect.exit,
+      // Reached only when the subscription itself ended or failed: the scope closing interrupts this fiber
+      // and never comes here. So every exit, an interrupt raised inside the subscription included, is a stop.
+      Effect.flatMap((exit) =>
+        Effect.andThen(
+          Metric.update(resumeBridgeStops, 1),
+          Exit.isFailure(exit)
+            ? Effect.annotateLogs(
+              Effect.logError("The executor resume bridge stopped and is subscribing again"),
+              { cause: loggedCause(exit.cause) }
+            )
+            : Effect.logWarning("The executor resume bridge's journal subscription ended; subscribing again")
+        )
+      ),
+      Effect.repeat({ schedule: Schedule.spaced("1 second") })
     )
 
     /**
@@ -5119,6 +5281,11 @@ export const make = (
         )
       })).pipe(Scope.provide(scope))
 
+    // Added first of the three, so a closing scope runs it last of them: the
+    // two below give the drives and the terminal writes they know of their
+    // grace, and this ends whatever is left, a fiber forked after their
+    // snapshots included. No fiber this executor started outlives its scope.
+    yield* Scope.addFinalizer(scope, Scope.close(fibers, Exit.void))
     // Added after `agent/run` is registered, so a closing scope runs them
     // BEFORE that registration is released. A parked drive is still following
     // the engine's trampoline; were it left running past the release, its next
@@ -5199,7 +5366,7 @@ export const make = (
         Effect.catchCause((cause) =>
           Effect.annotateLogs(
             Effect.logWarning("A pending resume delegation could not be taken up"),
-            { cause: Cause.pretty(cause) }
+            { cause: loggedCause(cause) }
           )
         )
       )
@@ -5315,7 +5482,7 @@ export const make = (
         const start = yield* Deferred.make<void>()
         const drive: Drive = { settling: false, settled: false }
         launchedDrives.set(input.run.runId, drive)
-        const fiber = Effect.runForkWith(services)(
+        const fiber = yield* forkOwned(
           Deferred.await(start).pipe(
             Effect.andThen(driver(input.run.runId, input.plan.card.planId)),
             // The drive is over: whatever the engine was going to record, it

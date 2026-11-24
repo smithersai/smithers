@@ -11,6 +11,7 @@
 import * as Digest from "@smthrs/core/Digest"
 import { Clock, Context, type Effect, Layer, Random, Schema } from "effect"
 import type * as CallKey from "./CallKey.ts"
+import type { childRun, Tree } from "./internal/childRun.ts"
 
 /**
  * A call that reached its entry and failed there. The chain journals it as
@@ -50,6 +51,8 @@ export interface CallSlot {
   readonly key?: CallKey.CallKey
   /** Aborted on Stop for entries that settle before interruption returns. */
   readonly signal?: AbortSignal | undefined
+  /** @internal Set by a running chain so a spawned sub-chain shares its root's seam and budget. */
+  readonly [childRun]?: Tree | undefined
 }
 
 /**

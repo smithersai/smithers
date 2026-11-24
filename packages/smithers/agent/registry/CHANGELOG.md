@@ -2,7 +2,31 @@
 
 ## [Unreleased]
 
+### Changed
+
+- A markdown flow from a pack or a declared project skill library that declares
+  no `capabilities` now receives none instead of the wildcard. `Source` and
+  `MarkdownFlow.fromMarkdown` take `undeclaredCapabilities: "all" | "none"`;
+  `Pack.sources` and `Registry.projectSources` set `"none"`, and a source that
+  leaves it unset keeps the wildcard. Declare `capabilities` in a pack flow or
+  skill that needs any.
+- `NodeLoadGuard` no longer exempts a `node_modules` directory beneath a
+  protected source root. A file there is refused with `UnmeasuredLoadError`
+  unless it is a measured copy; keep installed packages outside the source
+  root.
+- A flow from a later source or a pack that reuses a system flow's name is
+  dropped with a `duplicate_name` warning instead of failing `Registry.make`
+  and every `refresh` with `system_collision`. A system source that arrives
+  after the name was claimed still fails.
+
 ### Fixed
+
+- `Registry.projectSource` confines discovery to the project root, so a
+  `.smithers/flows` entry linked to a directory outside the project is refused
+  with `outside_root` instead of having its description listed.
+- A frontmatter description over 1,024 code points is truncated at the limit,
+  on a code-point boundary, with the `invalid_description` warning. It used to
+  be warned about and shipped whole.
 
 - Flows using TypeScript import types in aliases or annotations are admitted
   without treating the erased query as a runtime load. Their referenced files

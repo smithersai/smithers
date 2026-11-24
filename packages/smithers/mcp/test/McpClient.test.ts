@@ -1,5 +1,6 @@
+import { NodeServices } from "@effect/platform-node"
 import * as ChildProcessSpawner from "@smthrs/kernel/ChildProcessSpawner"
-import { Cause, Effect, Exit, Layer, Redacted, Scheduler, Schema } from "effect"
+import { Cause, Effect, Exit, Layer, Redacted, Result, Scheduler, Schema } from "effect"
 import { readFileSync } from "node:fs"
 import { describe, expect, it } from "vitest"
 import * as Diagnostics from "../src/Diagnostics.ts"
@@ -18,6 +19,7 @@ import {
   trackedServer,
   withFakeServer
 } from "./fixtures/FakeServer.ts"
+import * as FixtureServer from "./fixtures/FixtureServer.ts"
 
 const execute = <A, E>(effect: Effect.Effect<A, E, never>) => Effect.runPromise(effect)
 
@@ -29,30 +31,43 @@ const typedFailure = (exit: Exit.Exit<unknown, unknown>): unknown => {
   return failure.error
 }
 
+/** A real child process speaking MCP over its stdio: the shared `node -e` fixture in the given mode. */
+const connectFixture = (mode: string) =>
+  Effect.provide(
+    McpClient.connect({
+      server: mode,
+      command: process.execPath,
+      args: ["-e", FixtureServer.source, mode]
+    }),
+    NodeServices.layer
+  )
+
 describe("McpClient.connect", () => {
+  // The peer is a separate process, so what is asserted is what crossed its
+  // stdin: the peer reports the handshake it received through its own tool.
   it("sends the frozen Smithers initialize payload using the package version", async () => {
-    const requests: Array<Rpc.Outbound> = []
-    await withFakeServer(
-      (request) => {
-        requests.push(request)
-        return respondToEcho(request)
-      },
-      McpClient.connect({ server: "handshake", command: "echo-mcp", args: [] })
-    )
     const manifest = JSON.parse(
       readFileSync(new URL("../package.json", import.meta.url), "utf8")
     ) as { readonly version: string }
+    const received = await execute(Effect.scoped(Effect.gen(function*() {
+      const client = yield* connectFixture("report-handshake")
+      expect(client.tools.map((tool) => tool.name)).toEqual(["add", "error"])
+      return yield* client.callTool("add", { a: 2, b: 3 })
+    })))
 
     expect(McpClient.clientInfo).toEqual({ name: "smithers", version: manifest.version })
-    expect(requests[0]).toEqual({
-      jsonrpc: "2.0",
-      id: 1,
-      method: "initialize",
-      params: {
-        protocolVersion: "2025-06-18",
-        capabilities: {},
-        clientInfo: { name: "smithers", version: manifest.version }
-      }
+    expect(received.structuredContent).toEqual({
+      initialize: {
+        jsonrpc: "2.0",
+        id: 1,
+        method: "initialize",
+        params: {
+          protocolVersion: "2025-06-18",
+          capabilities: {},
+          clientInfo: { name: "smithers", version: manifest.version }
+        }
+      },
+      initialized: { jsonrpc: "2.0", method: "notifications/initialized" }
     })
   })
 
@@ -71,18 +86,26 @@ describe("McpClient.connect", () => {
     expect(McpClient.supportedProtocolVersions[0]).toBe("2025-06-18")
   })
 
-  it("completes the handshake and fetches the tool catalog", async () => {
-    const client = await withFakeServer(
-      respondToEcho,
-      McpClient.connect({ server: "echo", command: "echo-mcp", args: [] })
-    )
-    expect(client.server).toBe("echo")
-    expect(client.tools).toEqual([{
-      name: "add",
-      description: "Adds two numbers",
-      inputSchema: TOOLS[0]!.inputSchema,
-      outputSchema: undefined
-    }])
+  it("completes the handshake, fetches the tool catalog and calls an advertised tool in one session", async () => {
+    const session = await execute(Effect.scoped(Effect.gen(function*() {
+      const client = yield* connectFixture("normal")
+      return { server: client.server, tools: client.tools, added: yield* client.callTool("add", { a: 2, b: 3 }) }
+    })))
+    expect(session.server).toBe("normal")
+    expect(session.tools).toEqual([
+      {
+        name: "add",
+        description: "Adds two numbers",
+        inputSchema: { type: "object", properties: { a: {}, b: {} } },
+        outputSchema: undefined
+      },
+      { name: "error", description: undefined, inputSchema: { type: "object" }, outputSchema: undefined }
+    ])
+    expect(session.added).toEqual({
+      content: [{ type: "text", text: "5" }],
+      isError: false,
+      structuredContent: undefined
+    })
   })
 
   it("calls a remote tool and decodes its result", async () => {
@@ -585,7 +608,7 @@ describe("McpClient.connect", () => {
   it("bounds every numeric ConnectOptionsSchema field before spawning", async () => {
     const nonNumeric = ["server", "command", "args", "cwd", "env", "envFrom"]
     const numeric = Object.keys(McpClient.ConnectOptionsSchema.fields).filter((name) => !nonNumeric.includes(name))
-    expect(numeric).toHaveLength(10)
+    expect(numeric).toHaveLength(11)
 
     for (const name of numeric) {
       const { counts, spawner } = trackedServer(respondToEcho)
@@ -1384,6 +1407,133 @@ describe("McpClient.connect", () => {
   })
 })
 
+describe("McpClient hardening against review findings", () => {
+  const structured = (reply: Record<string, unknown>) => (request: Rpc.Outbound): unknown => {
+    if (request.method === "initialize") {
+      return { protocolVersion: "2025-06-18", capabilities: { tools: {} }, serverInfo: {} }
+    }
+    if (request.method === "tools/list") {
+      return {
+        tools: [{
+          ...TOOLS[0],
+          outputSchema: { type: "object", required: ["total"], properties: { total: { type: "number" } } }
+        }]
+      }
+    }
+    return request.method === "tools/call" ? reply : undefined
+  }
+  const call = (reply: Record<string, unknown>) =>
+    withFakeServer(
+      structured(reply),
+      Effect.gen(function*() {
+        const client = yield* McpClient.connect({ server: "schema-error", command: "mcp", args: [] })
+        return yield* Effect.result(client.callTool("add", {}))
+      })
+    )
+
+  // R1-Fable-D2-067: the output schema describes a successful result only.
+  it("returns a tool's own error result without holding it to the output schema", async () => {
+    const text = [{ type: "text", text: "the ledger is locked" }]
+    expect(await call({ content: text, isError: true, structuredContent: { reason: "locked" } })).toEqual(
+      Result.succeed({ content: text, isError: true, structuredContent: { reason: "locked" } })
+    )
+    expect(await call({ content: text, isError: true })).toEqual(
+      Result.succeed({ content: text, isError: true, structuredContent: undefined })
+    )
+  })
+
+  it("fails a successful result that omits the structuredContent its output schema promises", async () => {
+    const result = await call({ content: [{ type: "text", text: "5" }] })
+    expect(Result.isFailure(result) && result.failure).toMatchObject({
+      code: "invalid_response",
+      message: "MCP server \"schema-error\" returned no structuredContent for a tool that declares an outputSchema"
+    })
+    expect(await call({ content: [], structuredContent: { total: 5 } })).toEqual(
+      Result.succeed({ content: [], isError: false, structuredContent: { total: 5 } })
+    )
+  })
+
+  const catalog =
+    (pages: ReadonlyArray<ReadonlyArray<Record<string, unknown>>>) => (request: Rpc.Outbound): unknown => {
+      if (request.method === "initialize") {
+        return { protocolVersion: "2025-06-18", capabilities: { tools: {} }, serverInfo: {} }
+      }
+      if (request.method !== "tools/list") return undefined
+      const cursor = (request.params as { readonly cursor?: string }).cursor
+      const index = cursor === undefined ? 0 : Number(cursor)
+      return index + 1 < pages.length ? { tools: pages[index], nextCursor: String(index + 1) } : { tools: pages[index] }
+    }
+
+  // R1-Fable-D2-068: per-tool bounds alone let a catalog grow to tools × bytes.
+  it("bounds the model-facing text of the whole catalog across pages", async () => {
+    // Each tool is 17 bytes of schema plus a 13-byte description: 30 bytes.
+    const tool = (name: string) => ({ name, description: "thirteen byte", inputSchema: { type: "object" } })
+    const pages = [[tool("one"), tool("two")], [tool("three")]]
+    const connect = (maxCatalogDocumentBytes: number) =>
+      withFakeServer(
+        catalog(pages),
+        Effect.result(
+          McpClient.connect({ server: "catalog-total", command: "mcp", args: [], maxCatalogDocumentBytes })
+        )
+      )
+    const fits = await connect(90)
+    expect(Result.isSuccess(fits) && fits.success.tools.map((each) => each.name)).toEqual(["one", "two", "three"])
+    const over = await connect(89)
+    expect(Result.isFailure(over) && over.failure).toMatchObject({
+      code: "invalid_response",
+      message:
+        "MCP server \"catalog-total\" returned a catalog whose descriptions and inputSchemas are longer than 89 bytes"
+    })
+    expect(McpClient.defaultMaxCatalogDocumentBytes).toBe(1024 * 1024)
+  })
+
+  it("removes control and format characters from a description, keeping line feeds and tabs", async () => {
+    const client = await withFakeServer(
+      catalog([[{
+        name: "run",
+        description: "Reads a file\u202E.exe\u200B\r\n\tsecond\u0007 line\u2028\u{E0001}",
+        inputSchema: { type: "object" }
+      }]]),
+      McpClient.connect({ server: "catalog-text", command: "mcp", args: [] })
+    )
+    expect(client.tools[0]!.description).toBe("Reads a file.exe\n\tsecond line")
+  })
+
+  // R1-Fable-D2-120: the server name is a segment of every flow name.
+  it.each(["..", "a/b", "git\u202Ehub", "s".repeat(129)])(
+    "refuses the server name %j before spawning",
+    async (server) => {
+      const { counts, spawner } = trackedServer(respondToEcho)
+      const error = await execute(Effect.scoped(provideSpawner(
+        Effect.flip(McpClient.connect({ server, command: "mcp", args: [] })),
+        spawner
+      )))
+      expect(counts.acquired).toBe(0)
+      expect(error.code).toBe("protocol_error")
+      expect(error.message).toMatch(/^MCP option "server" must be a name of at most 128 bytes/)
+    }
+  )
+
+  // R1-Fable-D2-066: MCP 2025-03-26 lets a server answer with a JSON-RPC batch.
+  it("resolves a call whose reply arrives inside a JSON-RPC batch", async () => {
+    const result = await withFakeServer(
+      respondToEcho,
+      Effect.flatMap(
+        McpClient.connect({ server: "batched", command: "mcp", args: [] }),
+        (client) => client.callTool("add", { a: 2, b: 3 })
+      ),
+      {
+        envelope: (request, result) => [
+          { jsonrpc: "2.0", method: "notifications/progress", params: { progress: 1 } },
+          "noise",
+          { jsonrpc: "2.0", id: request.id, result }
+        ]
+      }
+    )
+    expect(result.content).toEqual([{ type: "text", text: "5" }])
+  })
+})
+
 describe("McpClient.ConnectOptionsSchema", () => {
   it("decodes a minimal persisted server entry", () => {
     expect(
@@ -1411,6 +1561,8 @@ describe("McpClient.ConnectOptionsSchema", () => {
       maxStderrBytes: 6,
       maxTools: 7,
       maxToolNameBytes: 8,
+      maxToolDocumentBytes: 10,
+      maxCatalogDocumentBytes: 11,
       maxCatalogPages: 9
     }
 
@@ -1433,6 +1585,10 @@ describe("McpClient.ConnectOptionsSchema", () => {
     }],
     ["an envFrom that is not an object", { server: "fixture", command: "node", args: [], envFrom: "GITHUB_TOKEN" }],
     ["an empty server", { server: "", command: "node", args: [] }],
+    ["a server name holding a path separator", { server: "a/b", command: "node", args: [] }],
+    ["a server name that is a parent directory", { server: "..", command: "node", args: [] }],
+    ["a server name holding a bidi override", { server: "git\u202Ehub", command: "node", args: [] }],
+    ["a server name longer than 128 bytes", { server: "s".repeat(129), command: "node", args: [] }],
     ["an empty command", { server: "fixture", command: "", args: [] }],
     ["a non-integer limit", { server: "fixture", command: "node", args: [], handshakeTimeoutMs: 1.5 }],
     ["a zero limit", { server: "fixture", command: "node", args: [], requestTimeoutMs: 0 }],
@@ -1455,6 +1611,9 @@ describe("McpClient.HttpConnectOptionsSchema", () => {
       maxTools: 5,
       maxToolNameBytes: 6,
       maxToolDocumentBytes: 7,
+      maxCatalogDocumentBytes: 9,
+      maxEventStreamBytes: 10,
+      maxServerRequests: 11,
       maxCatalogPages: 8
     }
     expect(Schema.decodeUnknownSync(McpClient.HttpConnectOptionsSchema)(entry)).toEqual(entry)
@@ -1468,6 +1627,8 @@ describe("McpClient.HttpConnectOptionsSchema", () => {
     ["a url with a password", { server: "remote", url: "https://user:secret@mcp.example.test/" }],
     ["a url with a username", { server: "remote", url: "https://token@mcp.example.test/" }],
     ["an empty server", { server: "", url: "https://mcp.example.test/" }],
+    ["a server name holding a path separator", { server: "a/b", url: "https://mcp.example.test/" }],
+    ["a server name longer than 128 bytes", { server: "s".repeat(129), url: "https://mcp.example.test/" }],
     ["a credential variable that is not a name", {
       server: "remote",
       url: "https://mcp.example.test/",

@@ -73,6 +73,14 @@ so a caller never waits on a reply that can no longer come. A transition other
 than scope closure also stops the child process, so a dead session does not
 keep the server running, with the credentials in its environment, until the
 scope closes. Nothing reconnects: connect again in a new scope to continue.
+A Streamable HTTP session has the same rule without a process: once the server
+ends the session (a `404` for its session id) or breaks the protocol (a
+malformed or oversized reply, an unsupported content type, an acceptance that
+is not an empty `202`), every later call fails with that first error and no
+further request is sent. A failing HTTP status or the server's own JSON-RPC
+error reply fails one call and leaves the session usable. A redirect is never
+followed.
+
 `McpFlows.connected` is bound to one session, so its flows fail with the same
 error until the host rebuilds the source. A clean child exit
 is still a closed session: Node reports an ordinary exit by ending stdout

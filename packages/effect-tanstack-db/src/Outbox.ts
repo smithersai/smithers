@@ -108,13 +108,16 @@ export class NotAdmitted extends Data.TaggedError("NotAdmitted")<{
  * - `sending`: the write is being sent now, or was just sent or refused and is
  *   leaving the storage; it settles as usual;
  * - `storage`: reading or deleting the outbox's storage failed; the write is
- *   sent as usual.
+ *   sent as usual;
+ * - `ambiguous`: writes of more than one mutation wait under that idempotency
+ *   key and `withdraw` wasn't given the mutation's name, so it can't tell
+ *   which one was meant; each is sent as usual.
  *
  * @category errors
  * @since 0.2.0
  */
 export class NotWithdrawn extends Data.TaggedError("NotWithdrawn")<{
-  readonly reason: "follower" | "gone" | "sending" | "storage"
+  readonly reason: "ambiguous" | "follower" | "gone" | "sending" | "storage"
 }> {}
 
 /**
@@ -297,19 +300,24 @@ export interface Service {
    * and taken back: one being sent fails with `NotWithdrawn` `sending` and settles as usual. Fails with `follower`
    * when this program doesn't lead, `gone` when no write waiting to be sent has the key, and `storage` when the
    * storage can't be read or deleted from. Each call is a span, `outbox.withdraw`, with `outcome`.
+   *
+   * `transact` keys a write on its mutation's name and its idempotency key together, so two mutations can share a
+   * key. Pass the mutation's `name` to take back that one: only a write of that mutation matches. Without a name,
+   * a key that writes of more than one mutation wait under fails with `ambiguous`, and none is taken back.
    */
-  readonly withdraw: (idempotencyKey: string) => Effect.Effect<void, NotWithdrawn>
+  readonly withdraw: (idempotencyKey: string, name?: string) => Effect.Effect<void, NotWithdrawn>
   /**
    * Takes back a write not sent yet, as `withdraw` does, into a new durable home that `accept` writes, such as a
    * draft: before the write leaves the storage it is parked with reason `withdrawn`, which also keeps it from being
    * sent. `accept` runs next and must succeed only once its own copy is durable; its success deletes the parked write.
    * When `accept` fails or is interrupted, or the program stops first, the write stays parked, never sent, and
    * `Options.parked` takes it as the outbox next starts. Fails with `accept`'s error, or `NotWithdrawn` as `withdraw`
-   * does, when no parked write was recorded and `accept` didn't run.
+   * does, when no parked write was recorded and `accept` didn't run. `name` picks the mutation, as for `withdraw`.
    */
   readonly handoff: <E, R>(
     idempotencyKey: string,
-    accept: Effect.Effect<void, E, R>
+    accept: Effect.Effect<void, E, R>,
+    name?: string
   ) => Effect.Effect<void, E | NotWithdrawn, R>
   /** The writes parked now: ones an older build made that this build can't send as they were meant, and `handoff`s. */
   readonly parked: Effect.Effect<ReadonlyArray<Parked>>
@@ -399,6 +407,21 @@ interface StoredParked {
   readonly write: string
 }
 
+/**
+ * A parked write as far as it can be read: a value that isn't JSON, or lacks a field, is none. Storage is another
+ * program's to damage, so a parked value this build can't read is left where it is and never stops the outbox.
+ */
+const readParked = (stored: string): StoredParked | undefined => {
+  try {
+    const parsed = JSON.parse(stored) as Partial<Record<keyof StoredParked, unknown>> | null
+    return typeof parsed?.reason === "string" && typeof parsed.name === "string" && typeof parsed.write === "string"
+      ? { reason: parsed.reason, name: parsed.name, write: parsed.write }
+      : undefined
+  } catch {
+    return undefined
+  }
+}
+
 /** A stored write's mutation name and rows, as far as they can be read. */
 const readWrite = (stored: string): { readonly name: string; readonly rows: ReadonlyArray<unknown> } => {
   try {
@@ -456,7 +479,10 @@ const carry = (storage: StorageAdapter, upgrade: OutboxUpgrade) => {
   })).pipe(Effect.withSpan("outbox.carry"))
 }
 
-/** The writes parked in `storage` that are `principal`'s. A storage that fails reads as none, and is logged. */
+/**
+ * The writes parked in `storage` that are `principal`'s. A storage that fails reads as none, and is logged. A parked
+ * value that can't be read is skipped, and logged as `outbox parked write unreadable` with its `id`.
+ */
 const parkedIn = (storage: StorageAdapter, principal: Principal | undefined): Effect.Effect<ReadonlyArray<Parked>> =>
   Effect.gen(function*() {
     const keys = yield* Effect.tryPromise(() => storage.keys())
@@ -464,7 +490,13 @@ const parkedIn = (storage: StorageAdapter, principal: Principal | undefined): Ef
     for (const key of keys.filter((key) => key.startsWith(PARKED_PREFIX))) {
       const stored = yield* Effect.tryPromise(() => storage.get(key))
       if (stored === null) continue
-      const parked = JSON.parse(stored) as StoredParked
+      const parked = readParked(stored)
+      if (parked === undefined) {
+        yield* Effect.logWarning("outbox parked write unreadable").pipe(
+          Effect.annotateLogs({ id: key.slice(PARKED_PREFIX.length) })
+        )
+        continue
+      }
       if (!owns(principal, stampOf(parked.write))) continue
       writes.push({
         id: key.slice(PARKED_PREFIX.length),
@@ -578,7 +610,8 @@ export const layer = <R>(options: Options<R>): Layer.Layer<Outbox, never, R> =>
       // A recovery record is also a tombstone: even a crash before deleting the sendable copy cannot replay it.
       const handingOff = async (id: string) => {
         const stored = await options.storage.get(`${PARKED_PREFIX}${id}`)
-        return stored !== null && (JSON.parse(stored) as StoredParked).reason === "withdrawn"
+        // An unreadable record is no tombstone: its write is sent as one whose park never reached the storage.
+        return stored !== null && readParked(stored)?.reason === "withdrawn"
       }
       const ownKeys = async (migrated = true) => {
         // Replay must wait for the same recovery barrier as admission after a leadership transfer.
@@ -1239,7 +1272,7 @@ export const layer = <R>(options: Options<R>): Layer.Layer<Outbox, never, R> =>
         }).pipe(Semaphore.withPermits(creating, 1))
 
       const notWithdrawn = (reason: NotWithdrawn["reason"]) => new NotWithdrawn({ reason })
-      const takeBack = (idempotencyKey: string, retain = false) =>
+      const takeBack = (idempotencyKey: string, name: string | undefined, retain = false) =>
         permit.withPermit(Effect.uninterruptible(Effect.gen(function*() {
           // A follower's view of the storage is no lock: the leader may be sending the write.
           if (!executor.isOfflineEnabled) return yield* notWithdrawn("follower")
@@ -1247,8 +1280,15 @@ export const layer = <R>(options: Options<R>): Layer.Layer<Outbox, never, R> =>
             try: () => executor.peekOutbox(),
             catch: () => notWithdrawn("storage")
           })
-          const write = writes.find((entry) => entry.idempotencyKey === idempotencyKey)
+          // `transact` keys a write on its mutation's name and its idempotency key, so the key alone can name two.
+          const matching = writes.filter((entry) =>
+            entry.idempotencyKey === idempotencyKey && (name === undefined || entry.mutationFnName === name)
+          )
+          const write = matching[0]
           if (write === undefined) return yield* notWithdrawn("gone")
+          if (matching.some((entry) => entry.mutationFnName !== write.mutationFnName)) {
+            return yield* notWithdrawn("ambiguous")
+          }
           // A write with an `outboxPhase` was sent or refused, and only its deletion is left.
           if (write.outboxPhase !== undefined || inFlight?.id === write.id) return yield* notWithdrawn("sending")
           if (retain) {
@@ -1297,15 +1337,17 @@ export const layer = <R>(options: Options<R>): Layer.Layer<Outbox, never, R> =>
           const key = `${PARKED_PREFIX}${id}`
           const stored = yield* Effect.tryPromise(() => options.storage.get(key))
           if (stored === null) return
-          if (!owns(options.principal, stampOf((JSON.parse(stored) as StoredParked).write))) return
+          const parked = readParked(stored)
+          // Whose an unreadable record is can't be told, so it stays: `parked` never lists it, and it is never sent.
+          if (parked === undefined || !owns(options.principal, stampOf(parked.write))) return
           // The recovery tombstone outlives any leftover sendable copy, including a failed withdrawal deletion.
-          if ((JSON.parse(stored) as StoredParked).reason === "withdrawn") {
+          if (parked.reason === "withdrawn") {
             yield* Effect.tryPromise(() => storage.delete(`${KEY_PREFIX}${id}`))
           }
           yield* Effect.tryPromise(() => options.storage.delete(key))
           handedOff.delete(id)
           yield* Effect.logInfo("outbox write discarded").pipe(
-            Effect.annotateLogs({ name: (JSON.parse(stored) as StoredParked).name })
+            Effect.annotateLogs({ name: parked.name })
           )
         }).pipe(Effect.catch((error) =>
           Effect.logWarning("outbox couldn't discard a parked write").pipe(
@@ -1345,10 +1387,10 @@ export const layer = <R>(options: Options<R>): Layer.Layer<Outbox, never, R> =>
           void recover()
           executor.getOnlineDetector().notifyOnline()
         }),
-        withdraw: (key) => Effect.asVoid(takeBack(key)),
-        handoff: (key, accept) =>
+        withdraw: (key, name) => Effect.asVoid(takeBack(key, name)),
+        handoff: (key, accept, name) =>
           Effect.gen(function*() {
-            const write = yield* takeBack(key, true)
+            const write = yield* takeBack(key, name, true)
             yield* accept
             yield* discard(write.id)
           }),

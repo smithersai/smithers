@@ -18,7 +18,8 @@ import { ModelError } from "./ModelError.ts"
 export interface Framing<Frame> {
   readonly id: string
   readonly frame: <E, R>(
-    stream: Stream.Stream<Uint8Array, E, R>
+    stream: Stream.Stream<Uint8Array, E, R>,
+    requireFrame?: boolean
   ) => Stream.Stream<Frame, E | Sse.SseError | ModelError, R>
 }
 
@@ -115,15 +116,19 @@ const bounded = <E, R>(stream: Stream.Stream<Uint8Array, E, R>, sse: boolean, li
  */
 export const makeSse = (limits: Limits = {}): Framing<string> => ({
   id: "sse",
-  frame: (stream) =>
+  frame: (stream, requireFrame = false) =>
     Stream.suspend(() => {
       let frames: Array<string> = []
+      let received = false
       // `bounded` owns the record budget: it counts every line of the event in
       // UTF-8 bytes and fails upstream, while the parser's own cap counts only
       // the data values in UTF-16 units, so that cap can never fire first. It
       // stays off rather than leave a failure path no input reaches.
       const parser = Sse.makeParser((event) => {
-        if (event._tag === "Event" && event.data !== "" && event.data !== "[DONE]") frames.push(event.data)
+        if (event._tag === "Event" && event.data !== "") {
+          received = true
+          frames.push(event.data)
+        }
       }, { maxEventSize: Number.POSITIVE_INFINITY })
       return bounded(stream, true, limits).pipe(
         Stream.decodeText,
@@ -133,7 +138,15 @@ export const makeSse = (limits: Limits = {}): Framing<string> => ({
           frames = []
           return emitted
         }),
-        Stream.flattenIterable
+        Stream.flattenIterable,
+        Stream.takeWhile((data) => data !== "[DONE]"),
+        Stream.onEnd(Effect.suspend(() =>
+          received || !requireFrame
+            ? Effect.void
+            : Effect.fail(
+              new ModelError({ code: "invalid_provider_output", message: "Provider response contained no SSE frames" })
+            )
+        ))
       )
     })
 })

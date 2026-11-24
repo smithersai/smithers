@@ -55,6 +55,12 @@ import * as SeatResolver from "../src/SeatResolver.ts"
 import * as StandardFlows from "../src/StandardFlows.ts"
 import * as Safety from "./Safety.ts"
 
+/**
+ * The principal these compositions decide approvals as. The SQL control runtime stamps a caller that names
+ * none `anonymous`, which its default approval authority refuses: only the local operator may decide.
+ */
+const localOperator = { id: "local", kind: "operator" } as const
+
 const allowanceMillis = 500
 const firstCallMillis = 1_100
 const betweenProcessesMillis = 1_500
@@ -250,6 +256,9 @@ const host = (root: string, owner: Ownership.OwnerId, engineHost: string, guarde
     return Agent.make({ run: (options) => production.run(options).pipe(Stream.provideService(Clock.Clock, clock)) })
   })).pipe(Layer.provide(Agent.layer))
   const registration = AgentSession.layer({
+    // A later host in these cases starts only after the case has ended the one before it, so it may adopt that
+    // host's park: the case itself is the confirmation that the parking host is dead (`AgentSession.hostsPark`).
+    ...(owner === firstOwner ? {} : { confirmParkHostDead: () => Effect.succeed(true) }),
     quotaPolicy: Safety.quotaPolicy,
     // The approved envelope, raised by every approved `budget/` request.
     budget: guarded.budget ?? ((approved) => Budget.layerFromEnvelope(approved)),
@@ -280,7 +289,7 @@ const host = (root: string, owner: Ownership.OwnerId, engineHost: string, guarde
     Layer.provideMerge(engine),
     Layer.provideMerge(
       Layer.mergeAll(
-        SqlControlRuntime.layer({ owner, flows: controlFlows }).pipe(Layer.orDie),
+        SqlControlRuntime.layer({ owner, flows: controlFlows, principal: localOperator }).pipe(Layer.orDie),
         NotificationQueue.layer,
         registryLayer
       )
@@ -711,7 +720,9 @@ const decideWithoutDriving = (
           ),
           Layer.provideMerge(
             Layer.mergeAll(
-              SqlControlRuntime.layer({ owner: secondOwner, flows: controlFlows }).pipe(Layer.orDie),
+              SqlControlRuntime.layer({ owner: secondOwner, flows: controlFlows, principal: localOperator }).pipe(
+                Layer.orDie
+              ),
               NotificationQueue.layer,
               registryLayer
             )

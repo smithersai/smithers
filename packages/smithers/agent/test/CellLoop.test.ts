@@ -304,9 +304,14 @@ describe("the cell loop on the durable engine", () => {
     expect(outcome._tag).toBe("completed")
     expect(executed).toEqual(["fs/write"])
     expect(providerCalls).toEqual(["test-model"])
-    expect(events.filter((event) => event._tag === "cell-call-settled")).toMatchObject([{
-      result: { outcome: "failure", code: "timeout", value: { limitMillis: 80 } }
-    }])
+    // The attempt whose record write failed ended without an answer and is journaled as that (harness
+    // R1-Fable-D2-048: a started call that ends is settled). The resumed run starts the call again and settles
+    // it with the recovered timeout, so every start has its settlement and the call ran once.
+    expect(events.filter((event) => event._tag === "cell-call-settled")).toMatchObject([
+      { result: { outcome: "failure", value: null, message: "Flow fs/write ended without an answer." } },
+      { result: { outcome: "failure", code: "timeout", value: { limitMillis: 80 } } }
+    ])
+    expect(events.filter((event) => event._tag === "cell-call-started")).toHaveLength(2)
   })
 
   it("runs each call in a cell as its own keyed activity, not one opaque cell activity", async () => {

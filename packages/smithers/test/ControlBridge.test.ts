@@ -463,7 +463,7 @@ describe("real serve command", () => {
     const tokenFile = join(local.root, "operator.token")
     const ready = Promise.withResolvers<void>()
     const watcher = watch(local.root, () => {
-      if (existsSync(tokenFile)) ready.resolve()
+      if (quiet && existsSync(tokenFile)) ready.resolve()
     })
     const abort = new AbortController()
     let stdout = ""
@@ -477,6 +477,7 @@ describe("real serve command", () => {
         columns: 80,
         write: (text) => {
           stderr += text
+          if (!quiet && stderr.includes("smthrs serve listening on ")) ready.resolve()
         }
       }
     }).serve([
@@ -484,7 +485,7 @@ describe("real serve command", () => {
       "--root",
       local.root,
       "--port",
-      String(address.port),
+      quiet ? String(address.port) : "0",
       "--operator-token-file",
       tokenFile,
       ...(quiet ? ["--quiet"] : [])
@@ -497,6 +498,7 @@ describe("real serve command", () => {
         codes.push(code)
       }
     })
+    let url = `http://127.0.0.1:${address.port}`
     const settled = running.then(() => "settled", (error: unknown) => error)
     try {
       await Promise.race([
@@ -505,7 +507,7 @@ describe("real serve command", () => {
           throw new Error(`serve ended before readiness: ${String(error)}`)
         })
       ])
-      const url = `http://127.0.0.1:${address.port}`
+      if (!quiet) url = /listening on (http:\/\/[^\s]+)/.exec(stderr)![1]!
       expect((await fetch(`${url}/health`)).ok).toBe(true)
       const token = readFileSync(tokenFile, "utf8").trim()
       expect(token).toMatch(/^[0-9a-f]{64}$/)
@@ -516,14 +518,14 @@ describe("real serve command", () => {
         .toMatchObject({ _tag: "flows", items: expect.any(Array) })
       expect(stdout + stderr).not.toContain(token)
       if (quiet) expect(stdout + stderr).toBe("")
-      else expect(stderr).toContain(String(address.port))
+      else expect(new URL(url).port).not.toBe("0")
     } finally {
       watcher.close()
       abort.abort()
       await settled
     }
     expect(codes.every((code) => code === 0 || code === 1)).toBe(true)
-    await expect(fetch(`http://127.0.0.1:${address.port}/health`)).rejects.toThrow()
+    await expect(fetch(`${url}/health`)).rejects.toThrow()
   })
 
   it("refuses remote or public hosting before opening a store or token file", async () => {

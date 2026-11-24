@@ -529,11 +529,11 @@ export const layer: Layer.Layer<
         )
       }).pipe(
         journal.transact,
-        Effect.catchCause((failure) =>
-          Effect.annotateLogs(
-            Effect.logWarning("A refused launch could not be settled"),
-            { runId, cause: Cause.pretty(failure) }
-          )
+        Effect.catchCause((cause) =>
+          Effect.annotateLogs(Effect.logWarning("A refused launch could not be settled"), {
+            runId,
+            interrupted: Cause.hasInterruptsOnly(cause)
+          })
         )
       )
 
@@ -649,6 +649,7 @@ export const layer: Layer.Layer<
      */
     const hand = (launch: Launch) =>
       Effect.gen(function*() {
+        if (!(yield* runtime.takeLaunch(launch.run.runId))) return
         const acceptance = Option.isSome(executor)
           ? yield* executor.value.launch(launch).pipe(
             Effect.tapError((error) => settleUnlaunched(error.runId, error.message, Fault.of(error)))
@@ -694,6 +695,7 @@ export const layer: Layer.Layer<
       Effect.gen(function*() {
         const current = yield* runtime.getRun(runId)
         if (current.status !== "accepted" || current.ownerId === undefined || current.planId === undefined) return
+        if (!(yield* runtime.launchPending(runId))) return
         const ours = yield* runtime.claimFence(runId).pipe(
           Effect.as(true),
           Effect.catchTag("/control/ClaimLost", () => Effect.succeed(false))
@@ -713,7 +715,7 @@ export const layer: Layer.Layer<
         Effect.catch((failure) =>
           Effect.annotateLogs(
             Effect.logWarning("A stranded run could not be relaunched"),
-            { runId, cause: failure.message }
+            { runId, code: failure.code }
           )
         )
       )
@@ -733,11 +735,24 @@ export const layer: Layer.Layer<
           // row the refusal adds; a record that cannot be written fails the
           // call rather than leaving an unaudited refusal.
           Effect.catchTag("/control/Unauthorized", (refusal) =>
-            emit(
-              input.target._tag === "Plan" ? `plan:${input.target.planId}` : input.target.runId,
-              "control.approval.refused",
-              json({ decision, principal, scope: input.scope, target: input.target })
-            ).pipe(Effect.andThen(Effect.fail(refusal))))
+            Effect.gen(function*() {
+              const target = input.target
+              const identity = target._tag === "Plan"
+                ? yield* runtime.getPlan(target.planId).pipe(
+                  Effect.map((plan) => ({ planId: plan.card.planId })),
+                  Effect.catchTag("/control/PlanNotFound", () => Effect.succeed({ unknown: true }))
+                )
+                : yield* runtime.getRun(target.runId).pipe(
+                  Effect.map((run) => ({ runId: run.runId })),
+                  Effect.catchTag("/control/RunNotFound", () => Effect.succeed({ unknown: true }))
+                )
+              yield* emit(
+                "audit:approval",
+                "control.approval.refused",
+                json({ decision, principal, scope: input.scope, target: identity })
+              )
+              return yield* refusal
+            }))
         )
       })
 
@@ -887,6 +902,9 @@ export const layer: Layer.Layer<
             }
             // Every claim re-enters the flow's current code, so a changed flow
             // is refused before the claim and the run stays where it was.
+            if (
+              (principal.kind === "monitor" || principal.kind === "anonymous") && current.waitingReason === "released"
+            ) return yield* new ClaimLost({ runId: input.runId })
             if (input.allowCodeDrift !== true) yield* refuseCodeDrift(input.runId)
             yield* progress("code-verified")
             let handedTo: RunHost | undefined
@@ -930,7 +948,10 @@ export const layer: Layer.Layer<
             )
             yield* progress("recorded")
             if (handedTo !== undefined) {
-              yield* runtime.requestResume(input.runId, { consent: sequence })
+              yield* runtime.requestResume(
+                input.runId,
+                principal.kind === "monitor" || principal.kind === "anonymous" ? {} : { consent: sequence }
+              )
               const handedOff: Receipt = {
                 _tag: "Accepted",
                 receiptId: input.idempotencyKey,
@@ -1004,22 +1025,20 @@ export const layer: Layer.Layer<
         yield* emit(runId, `control.run.${status}`, json({ runId, status, ...ControlFacts.runFact(run) }))
       }).pipe(
         journal.transact,
-        Effect.catchCause((failure) =>
-          Effect.annotateLogs(
-            Effect.logWarning("A settled engine row could not be reconciled onto the control row"),
-            { runId, status, cause: Cause.pretty(failure) }
-          )
+        Effect.catchCause((cause) =>
+          Effect.annotateLogs(Effect.logWarning("A settled engine row could not be reconciled onto the control row"), {
+            runId,
+            status,
+            interrupted: Cause.hasInterruptsOnly(cause)
+          })
         )
       )
 
     /**
      * Resumes a parked run whose park a steer has just answered.
      *
-     * Only two parks are the steer's to end. A run parked on `event` is
-     * waiting for something to arrive, and a steer is something arriving. A
-     * run parked on `released` lost its owner to a sweep
-     * (`@smthrs/engine-store` `DisasterRecovery.fence`) and nothing is coming
-     * to claim it, so the steer claims it.
+     * An event park waits for a message. A released park requires explicit
+     * recovery consent, so its messages remain queued.
      *
      * Every other park keeps waiting. An `approval`, `timer`, or `quota` park
      * is waiting for a decision, a clock, or a budget that a message does not
@@ -1044,7 +1063,7 @@ export const layer: Layer.Layer<
       messageId: string
     ): Effect.Effect<void, PersistenceError> => {
       if (run.status !== "parked") return Effect.void
-      if (run.waitingReason !== "event" && run.waitingReason !== "released") return Effect.void
+      if (run.waitingReason !== "event") return Effect.void
       // A changed flow keeps its park: the steer stays queued, and the
       // operator decides with `runs resume --allow-code-drift`.
       return refuseCodeDrift(run.runId).pipe(
@@ -1082,7 +1101,7 @@ export const layer: Layer.Layer<
           (drift) =>
             Effect.annotateLogs(Effect.logWarning("A steer did not wake a run whose code changed"), {
               runId: run.runId,
-              cause: drift.message
+              code: drift.code
             })
         )
       )
@@ -2006,6 +2025,11 @@ export const layer: Layer.Layer<
       })
 
     const service: Service = {
+      flowLookup: {
+        ofRun: (id) => runtime.getRun(id).pipe(Effect.map((run) => run.flowId), Effect.orElseSucceed(() => undefined)),
+        ofPlan: (id) =>
+          runtime.getPlan(id).pipe(Effect.map((plan) => plan.card.flowId), Effect.orElseSucceed(() => undefined))
+      },
       plan: Effect.fn("Control.plan")((input) =>
         mutationSemaphore.withPermits(1)(
           journal.transact(Effect.gen(function*() {

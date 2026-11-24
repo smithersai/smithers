@@ -5,9 +5,10 @@
  */
 
 import { SpanFailure } from "@smthrs/flow"
-import { Chunk, Effect, Option, Result, Schema } from "effect"
+import { Chunk, Clock, Effect, Option, Result, Schema } from "effect"
 import * as DeferredTools from "./DeferredTools.ts"
 import { classifyHttpStatus } from "./HttpStatusClassifier.ts"
+import { trackToolCalls } from "./internal/ToolHistory.ts"
 import * as ModelCatalog from "./ModelCatalog.ts"
 import { ModelError, type ModelErrorCode } from "./ModelError.ts"
 import { ModelEvent, type Usage } from "./ModelEvent.ts"
@@ -392,6 +393,7 @@ const lowerMessages = (
     const boundary = request.cacheBoundary ?? request.messages.length
     // Lowering drops messages, so the boundary is re-counted on the wire.
     let stable = 0
+    const dropped = new Set<string>()
     for (const [index, message] of request.messages.entries()) {
       if (index === boundary) stable = messages.length
       if (message.role === "user") {
@@ -400,11 +402,13 @@ const lowerMessages = (
         continue
       }
       if (message.role === "assistant") {
+        trackToolCalls(dropped, message)
         const lowered = yield* lowerAssistant(message)
         if (lowered !== undefined) messages.push(lowered)
         continue
       }
-      messages.push(lowerToolResults(message, deferred, loaded))
+      const content = message.content.filter((part) => !dropped.has(part.toolCallId))
+      if (content.length > 0) messages.push(lowerToolResults({ ...message, content }, deferred, loaded))
     }
     if (boundary >= request.messages.length) stable = messages.length
     return { messages, stable }
@@ -475,6 +479,7 @@ const effortSupport: ReadonlyArray<
     /^claude-(?:(?:opus|sonnet)-5(?:-[0-9]{1,2})?|(?:fable|mythos)-5(?:-[0-9]+)*|opus-4-[78])$/i,
     { levels: effortOrder, adaptive: true }
   ],
+  [/^claude-haiku-5-5$/i, { levels: effortOrder, adaptive: true }],
   [/^claude-(?:opus|sonnet)-4-6$/i, { levels: ["low", "medium", "high", "max"], adaptive: true }],
   [/^claude-opus-4-5(?:-20251101)?$/i, { levels: ["low", "medium", "high"], adaptive: false }]
 ]
@@ -558,6 +563,19 @@ const buildBody = (
       resolution.immediate.length
     )
     const params = request.params
+    if (ModelCatalog.adaptiveThinkingOnly(request.modelId)) {
+      for (const key of ["thinkingBudget", "temperature", "topP", "topK"] as const) {
+        if (params[key] !== undefined) {
+          return yield* Result.fail(
+            new ModelError({
+              code: "invalid_request",
+              message: `Model does not accept params.${key}`,
+              path: `params.${key}`
+            })
+          )
+        }
+      }
+    }
     const lowered = yield* lowerMessages(request, resolution.deferred.map((tool) => tool.name))
     const messages = withMessageBreakpoint(lowered.messages, lowered.stable)
     if (messages[0]?.role === "assistant") {
@@ -797,9 +815,16 @@ const onContentBlockDelta = (state: State, event: AnthropicEvent): StepResult =>
   if (delta.type === "signature_delta" && delta.signature !== undefined && block?.type === "thinking") {
     if (delta.signature === "") return { state, events: [] }
     if (block.started) {
+      const signature = block.signature + delta.signature
       return {
-        state: startBlock(state, { ...block, signature: delta.signature }),
-        events: []
+        state: startBlock(state, { ...block, signature }),
+        events: [
+          ModelEvent.ThinkingStart({
+            type: "thinking-start",
+            id: block.id,
+            signature
+          })
+        ]
       }
     }
     return {
@@ -1075,7 +1100,7 @@ const spendCapResetAt = (message: string, now: number): number => {
   return Date.UTC(today.getUTCFullYear(), today.getUTCMonth() + 1, 1)
 }
 
-const classifyError = (status: number, body: string): ModelError => {
+const classifyError = (status: number, body: string, now?: number): ModelError => {
   const decoded = decodeErrorBody(body)
   const parsed = Option.isSome(decoded) ? decoded.value : undefined
   const error = parsed?.error
@@ -1089,7 +1114,7 @@ const classifyError = (status: number, body: string): ModelError => {
       message,
       providerCode: SPEND_CAP,
       httpStatus: status,
-      resetAtEpochMillis: spendCapResetAt(message, Date.now())
+      resetAtEpochMillis: spendCapResetAt(message, now ?? Clock.Clock.defaultValue().currentTimeMillisUnsafe())
     })
   }
   return new ModelError({

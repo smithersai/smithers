@@ -60,6 +60,12 @@ import * as Seat from "../src/Seat.ts"
 import * as SeatResolver from "../src/SeatResolver.ts"
 import * as Safety from "./Safety.ts"
 
+/**
+ * The principal these compositions decide approvals as. The SQL control runtime stamps a caller that names
+ * none `anonymous`, which its default approval authority refuses: only the local operator may decide.
+ */
+const localOperator = { id: "local", kind: "operator" } as const
+
 const prepared: Route.PreparedRequest = {
   routeId: "route-a",
   protocolId: "test-protocol",
@@ -218,10 +224,13 @@ const host = (
     quotaPolicy: Safety.quotaPolicy,
     budget: Safety.budget,
     // A composition that did not park the run may only adopt a standing
-    // delegation once it has gone unanswered (`AgentSession.hostsPark`). A
-    // restart case says so with zero rather than by waiting out the default
-    // `Ownership.heartbeatStaleAfter`.
-    ...(options.adoptsAtOnce === true ? { abandonedParkAfter: Duration.zero } : {}),
+    // delegation once it has gone unanswered AND the parking host is confirmed
+    // dead (`AgentSession.hostsPark`). A restart case is one where the test
+    // itself ended the parking host, so it confirms the death, and says the
+    // age with zero rather than by waiting out `Ownership.heartbeatStaleAfter`.
+    ...(options.adoptsAtOnce === true
+      ? { abandonedParkAfter: Duration.zero, confirmParkHostDead: () => Effect.succeed(true) }
+      : {}),
     flows: [
       FlowBinding.source("test/notes", [
         FlowBinding.make({
@@ -310,7 +319,7 @@ const host = (
     Layer.provideMerge(
       bindControl.pipe(Layer.provideMerge(
         Layer.mergeAll(
-          SqlControlRuntime.layer({ owner, flows: controlFlows }).pipe(Layer.orDie),
+          SqlControlRuntime.layer({ owner, flows: controlFlows, principal: localOperator }).pipe(Layer.orDie),
           NotificationQueue.layer,
           registryLayer
         )
@@ -995,7 +1004,8 @@ describe("a parked run resumed by a later process", () => {
         yield* awaitStatus(runtime, parked.runId, "completed", 9_000)
         return yield* runtime.getRun(parked.runId)
       }).pipe(
-        Effect.provide(host(root, secondOwner, "engine-park-second")),
+        // The first process is gone, which this case knows because it ended it: the second may adopt its park.
+        Effect.provide(host(root, secondOwner, "engine-park-second", { adoptsAtOnce: true })),
         Effect.scoped,
         Effect.orDie
       )
@@ -1459,7 +1469,8 @@ describe("explicit resume authorization for released native children", () => {
 
   it("preserves authorization interruption and never starts the resumed body", async () => {
     const root = makeRoot()
-    const called = Deferred.makeUnsafe<Fiber.Fiber<unknown, unknown>>()
+    const called = Deferred.makeUnsafe<void>()
+    const contained = Deferred.makeUnsafe<void>()
     await Effect.runPromise(
       Effect.gen(function*() {
         const id = yield* launch
@@ -1467,17 +1478,23 @@ describe("explicit resume authorization for released native children", () => {
         yield* awaitStatus(runtime, id, "parked")
         const control = yield* Control.Control
         expect((yield* control.resume({ runId: id, idempotencyKey: "interrupt-child-retry" }))._tag).toBe("Accepted")
-        const driver = yield* Deferred.await(called)
-        yield* Fiber.await(driver).pipe(Effect.timeout("5 seconds"))
+        yield* Deferred.await(called)
+        // The interrupt ends that take-up and nothing else: the bridge that carried it goes on following the
+        // journal (R1-Fable-D2-042), so the case waits for the take-up's own end, not for a fiber to die.
+        yield* Deferred.await(contained)
         expect(agentRuns).toEqual(["resume-interrupted"])
         yield* control.cancel({ runId: id, idempotencyKey: "cancel-interrupted-child-retry" })
         yield* awaitStatus(runtime, id, "cancelled")
         expect(agentRuns).toEqual(["resume-interrupted"])
       }).pipe(
         Effect.provide(host(root, hostOwner, "resume-interrupted", {
-          authorizeReleasedChildren: () =>
-            Effect.withFiber((fiber) => Deferred.succeed(called, fiber).pipe(Effect.andThen(Effect.interrupt)))
+          authorizeReleasedChildren: () => Deferred.succeed(called, void 0).pipe(Effect.andThen(Effect.interrupt))
         })),
+        Effect.provide(Logger.layer([Logger.make((entry) => {
+          if (String(entry.message).includes("A resume event could not be taken up")) {
+            Deferred.doneUnsafe(contained, Effect.void)
+          }
+        })])),
         Effect.scoped,
         Effect.orDie
       )

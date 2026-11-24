@@ -64,7 +64,7 @@ Runtime catalog and capability checks still govern every call.
 | Gate             | Where                 | What it rejects                                                                         |
 | ---------------- | --------------------- | --------------------------------------------------------------------------------------- |
 | 1. Shape         | `Script.extract`      | An author reply that is not exactly one fenced `flow` block.                            |
-| 2. Budget        | `Chain.run`           | A link past `maxLinks`, or a call past `maxCallsPerLink`.                               |
+| 2. Budget        | `Chain.run`           | A link past `maxLinks`, or a call past `maxCallsPerLink` or the tree's `maxTotalCalls`. |
 | 3. Catalog       | `Catalog.lookup`      | A call naming an entry the catalog does not carry.                                      |
 | 4. Authorization | `Authorize.authorize` | A call whose declared capabilities the host's policy denies, or parks pending approval. |
 

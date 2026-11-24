@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process"
 import { mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -302,9 +303,13 @@ describe("environment refusal and recovery", () => {
     await mkdir(`${path}.lock`)
     await expect(Environments.remove("dev", source)).rejects.toThrow("being changed")
     expect(await Environments.list(source)).toEqual([profile])
-    await rm(`${path}.lock`, { recursive: true })
+    await (await import("node:fs/promises")).utimes(`${path}.lock`, new Date(0), new Date(0))
     await Environments.remove("dev", source)
     expect(await Environments.list(source)).toEqual([])
+    const deadPid = execFileSync(process.execPath, ["-p", "process.pid"], { encoding: "utf8" }).trim()
+    await writeFile(`${path}.lock`, `${deadPid}:1:abandoned`)
+    await Environments.add(profile, source)
+    expect(await Environments.list(source)).toEqual([profile])
     expect(await readdir(join(source.XDG_CONFIG_HOME, "smithers"))).toEqual(["environments.json"])
   })
 

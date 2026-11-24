@@ -13,7 +13,7 @@
 
 import * as Fault from "@smthrs/flow/Fault"
 import type * as PersistedPlan from "@smthrs/plan/Plan"
-import { Context, Effect, Fiber, Layer, Option, Schema } from "effect"
+import { Clock, Context, Effect, Fiber, Layer, Option, Schema } from "effect"
 import * as EffectDigest from "effect/crypto/Digest"
 import * as ApprovalAuthority from "./ApprovalAuthority.ts"
 import type { ApprovalTarget, PlanInput } from "./Control.ts"
@@ -576,6 +576,8 @@ export interface Service {
     LaunchResult,
     PlanNotFound | PlanDenied | PlanDigestMismatch | EnvelopeMismatch | ClaimLost | PersistenceError
   >
+  readonly launchPending: (runId: RunId) => Effect.Effect<boolean, PersistenceError>
+  readonly takeLaunch: (runId: RunId) => Effect.Effect<boolean, PersistenceError>
   readonly getRun: (runId: RunId) => Effect.Effect<RunSummary, RunNotFound | PersistenceError>
   /**
    * Every durable run id in insertion order, one bounded page at a time, for
@@ -917,7 +919,8 @@ export const layerMemory = (options: MemoryOptions = {}): Layer.Layer<ControlRun
     ControlRuntime,
     Effect.gen(function*() {
       const crypto = yield* EffectDigest.Digest
-      const now = options.now ?? Date.now
+      const clock = yield* Clock.Clock
+      const now = options.now ?? (() => clock.currentTimeMillisUnsafe())
       // The in-memory adapter stamps `memory`/`test` on a caller that names no
       // principal, so its default policy delegates that identity as well as
       // the local operator. Production policies never carry it.
@@ -948,6 +951,7 @@ export const layerMemory = (options: MemoryOptions = {}): Layer.Layer<ControlRun
       }>()
       const tokens = new Map<string, MutableToken>()
       const runs = new Map<RunId, MutableRun>()
+      const pendingLaunches = new Set<RunId>()
       const authorizeApproval: Service["authorizeApproval"] = (request) =>
         approvalAuthority.authorize(request, {
           flowId: Effect.sync(() =>
@@ -1298,6 +1302,7 @@ export const layerMemory = (options: MemoryOptions = {}): Layer.Layer<ControlRun
               createdAt: timestamp,
               updatedAt: timestamp
             }
+            pendingLaunches.add(runId)
             runIds.set(sequence, runId)
             runs.set(runId, {
               summary: snapshot(summary),
@@ -1312,6 +1317,8 @@ export const layerMemory = (options: MemoryOptions = {}): Layer.Layer<ControlRun
             }
           }
         ),
+        launchPending: (id) => Effect.sync(() => pendingLaunches.has(id)),
+        takeLaunch: (id) => Effect.sync(() => pendingLaunches.delete(id)),
         getRun: Effect.fn("ControlRuntime.getRun")((runId) =>
           Effect.map(requireRun(runId), (run) => snapshot(run.summary))
         ),

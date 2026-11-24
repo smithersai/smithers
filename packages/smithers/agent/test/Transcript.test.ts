@@ -129,6 +129,126 @@ describe("Transcript", () => {
     expect(size(event!.update)).toBeLessThanOrEqual(Transcript.MAX_EVENT_BYTES)
   })
 
+  describe("regression R1-Fable-D2-045: a secret written across chunks", () => {
+    const chunk = (text: string, messageId = "m1") => ({
+      sessionUpdate: "agent_message_chunk",
+      messageId,
+      content: { type: "text", text }
+    })
+    const textsOf = (events: ReadonlyArray<{ readonly update: Record<string, unknown> }>) =>
+      events.map((event) => (event.update.content as { text: string }).text)
+    /** `text` as two chunks parted at `at`, then the end of the turn: the message as it left. */
+    const parted = (text: string, at: number, secrets: ReadonlyArray<string> = []) => {
+      const scrub = Transcript.streamScrubber(secrets)
+      const events = [
+        ...Transcript.prepare("agent_message_chunk", chunk(text.slice(0, at)), scrub),
+        ...Transcript.prepare("agent_message_chunk", chunk(text.slice(at)), scrub),
+        ...Transcript.prepare(Transcript.KINDS.turn, { stopReason: "end_turn" }, scrub)
+      ]
+      expect(events.at(-1)).toEqual({ kind: Transcript.KINDS.turn, update: { stopReason: "end_turn" } })
+      return textsOf(events.slice(0, -1)).join("")
+    }
+
+    it.each(["hunter2-token-value", "pass word 12", "a b"])(
+      "scrubs the known value %j parted at every offset",
+      (secret) => {
+        const text = `before ${secret} after`
+        const expected = secret.length >= 4 ? `before ${Transcript.REDACTED} after` : text
+        for (let at = 0; at <= text.length; at++) expect(parted(text, at, [secret, "pass phrase"])).toBe(expected)
+      }
+    )
+
+    it.each([
+      "sk-abcdefgh1234",
+      "sess-abcdefgh1234",
+      "Bearer abc.def",
+      "Basic dXNlcjpwYXNzd29yZA==",
+      "ghp_abcdefgh1234",
+      "github_pat_abcdefgh1234",
+      "eyJhbGciOi.eyJzdWIiOi.c2lnbmF0dXJl",
+      "a.person@example.org"
+    ])("scrubs the credential shape %j parted at every offset", (shape) => {
+      const text = `before ${shape} after`
+      for (let at = 0; at <= text.length; at++) expect(parted(text, at)).toBe(`before ${Transcript.REDACTED} after`)
+    })
+
+    it("holds an open ending for the next chunk, and sends it before the next message or update", () => {
+      const scrub = Transcript.streamScrubber()
+      // Nothing may leave yet: the whole chunk could be the start of a credential.
+      expect(Transcript.prepare("agent_message_chunk", chunk("hello"), scrub)).toEqual([])
+      expect(Transcript.prepare("agent_message_chunk", chunk(" wor"), scrub)).toEqual([
+        { kind: "agent_message_chunk", update: chunk("hello ") }
+      ])
+      // A dropped kind is not the session's work and ends nothing.
+      expect(Transcript.prepare("available_commands_update", { availableCommands: [] }, scrub)).toEqual([])
+      // Another message: the first one's held ending leaves first, as a chunk of the first.
+      expect(Transcript.prepare("agent_message_chunk", chunk("next. ", "m2"), scrub)).toEqual([
+        { kind: "agent_message_chunk", update: chunk("wor") },
+        { kind: "agent_message_chunk", update: chunk("next. ", "m2") }
+      ])
+      // Nothing is held now, so an update that is no chunk is sent alone.
+      expect(Transcript.prepare("plan", { entries: [] }, scrub)).toEqual([{ kind: "plan", update: { entries: [] } }])
+      // A chunk with no message id is told apart by its kind; an image is no text chunk and ends the message.
+      const thought = { sessionUpdate: "agent_thought_chunk", content: { type: "text", text: "sk-abcdefgh" } }
+      expect(Transcript.prepare("agent_thought_chunk", thought, scrub)).toEqual([])
+      expect(Transcript.prepare("agent_message_chunk", { content: { type: "image", data: "" } }, scrub)).toEqual([
+        { kind: "agent_thought_chunk", update: { ...thought, content: { type: "text", text: Transcript.REDACTED } } },
+        { kind: "agent_message_chunk", update: { content: { type: "image", data: "" } } }
+      ])
+      expect(Transcript.prepare("agent_message_chunk", { content: null }, scrub)).toEqual([
+        { kind: "agent_message_chunk", update: { content: null } }
+      ])
+      // Called as a function it scrubs one whole string, holding nothing.
+      expect(scrub("a sk-abcdefgh1234 b")).toBe(`a ${Transcript.REDACTED} b`)
+      expect(scrub.end()).toEqual([])
+    })
+
+    it("drops the rest of a credential longer than it holds, and keeps a long word that is none", () => {
+      const send = (texts: ReadonlyArray<string>) => {
+        const scrub = Transcript.streamScrubber()
+        return textsOf([
+          ...texts.flatMap((text) => Transcript.prepare("agent_message_chunk", chunk(text), scrub)),
+          ...Transcript.prepare(Transcript.KINDS.turn, {}, scrub).slice(0, -1)
+        ]).join("")
+      }
+      const long = "a".repeat(3000)
+      expect(send([`key sk-${long}`, long, long, `${long} done`])).toBe(`key ${Transcript.REDACTED} done`)
+      expect(send([`word ${long}`, long, long, `${long} done`])).toBe(`word ${long.repeat(4)} done`)
+      expect(Transcript.MAX_HELD).toBe(4096)
+    })
+
+    it("cuts a long string before scrubbing it, dropping an ending a secret could be open in", () => {
+      // 3 + 13 * 1260 = 16383 characters, so the bound falls inside the next value: after `pass wo`.
+      const stdout = "ab;" + "pass word 12;".repeat(1300)
+      for (const scrub of [Transcript.scrubber(["pass word 12"]), Transcript.streamScrubber(["pass word 12"])]) {
+        const [event] = Transcript.prepare("tool_call_update", { rawOutput: { stdout } }, scrub)
+        expect((event!.update.rawOutput as { stdout: string }).stdout).toBe(
+          `ab;${`${Transcript.REDACTED};`.repeat(1260)}${Transcript.CUT}`
+        )
+      }
+      // A scrubber that is only a function can't say where its own values open: the last credential run goes.
+      const [plain] = Transcript.prepare(
+        "tool_call_update",
+        { title: `${"é".repeat(16_380)}sk-abcdefgh` },
+        (text) => text.replaceAll("é", "")
+      )
+      expect(plain!.update.title).toBe(Transcript.CUT)
+      // The fields around a message's text are bounded the same way; its text is split, never cut.
+      const [first, ...more] = Transcript.prepare("agent_message_chunk", {
+        _meta: { note: `${"é".repeat(16_380)}sk-abcdefgh` },
+        content: { type: "text", text: "hi there " }
+      }, (text) => text.replaceAll("é", ""))
+      expect(more).toEqual([])
+      expect(first!.update).toEqual({ _meta: { note: Transcript.CUT }, content: { type: "text", text: "hi there " } })
+    })
+
+    it("reads a long dotted string with no address in it once", () => {
+      const dotted = "a.".repeat(1_000_000)
+      expect(Transcript.scrubber()(dotted)).toBe(dotted)
+      expect(Transcript.scrubber()(`..a.person@example.org ${dotted}`)).toBe(`${Transcript.REDACTED} ${dotted}`)
+    })
+  })
+
   it("numbers events from 0, names kinds plainly, and answers the next seq the host lacks", () => {
     const is = (schema: Schema.Top) => Schema.is(schema as never) as (value: unknown) => boolean
     const event = { seq: 0, at: 1, kind: "agent_message_chunk", update: { sessionUpdate: "agent_message_chunk" } }

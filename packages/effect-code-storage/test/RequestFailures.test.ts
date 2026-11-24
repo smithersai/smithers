@@ -55,6 +55,26 @@ describe.each(calls)("%s request failures", (_method, operation, call) => {
     }
   )
 
+  // A URL parser drops an empty segment and resolves a dot segment, so these names would reach the collection's
+  // route (`DELETE /api/repos` for an empty name) or another repository's.
+  test.each(["", ".", "..", "a/../b", "a/./b", "../b", "a/..", "a//b", "/a", "a/"])(
+    "rejects repository %j with an empty or dot segment before signing or sending",
+    async (repo) => {
+      const service = codeStorage(publicKey)
+      const recorded = telemetry()
+      const exit = await Effect.runPromiseExit(recorded.provide(
+        CodeStorage.CodeStorage.use((client) => call(client, repo)).pipe(Effect.provide(
+          CodeStorage.CodeStorage.layer({ org: ORG, key: Redacted.make(pem) }).pipe(
+            Layer.provide(httpClient(service.fetch))
+          )
+        ))
+      ))
+      expect(Exit.findErrorOption(exit)).toMatchObject({ _tag: "Some", value: { operation, code: "invalid_argument" } })
+      expect(service.seen).toEqual([])
+      expect(recorded.count(CodeStorage.requests, { operation, outcome: "invalid_argument" })).toBe(1)
+    }
+  )
+
   test.each(
     [
       ["defect", Cause.die(new Error("injected client defect")), "defect"],
@@ -82,23 +102,26 @@ describe.each(calls)("%s request failures", (_method, operation, call) => {
   })
 })
 
-test.each(["a/🚀", "日本語", "a\ud800\udc00b"])("preserves well-formed repository %j", async (repo) => {
-  const service = codeStorage(publicKey)
-  await Effect.runPromise(
-    CodeStorage.CodeStorage.use((client) =>
-      Effect.gen(function*() {
-        yield* client.createRepo({ name: repo })
-        expect((yield* client.listFiles(repo)).paths).toEqual([])
-      })
-    ).pipe(Effect.provide(
-      CodeStorage.CodeStorage.layer({ org: ORG, key: Redacted.make(pem) }).pipe(
-        Layer.provide(httpClient(service.fetch))
-      )
-    ))
-  )
-  expect(service.seen).toHaveLength(2)
-  expect(service.seen[1]!.url.pathname).toBe("/api/repos/" + encodeURIComponent(repo) + "/files")
-})
+test.each(["a/🚀", "日本語", "a\ud800\udc00b", "a/.../b", ".a/b.", "a..b"])(
+  "preserves well-formed repository %j",
+  async (repo) => {
+    const service = codeStorage(publicKey)
+    await Effect.runPromise(
+      CodeStorage.CodeStorage.use((client) =>
+        Effect.gen(function*() {
+          yield* client.createRepo({ name: repo })
+          expect((yield* client.listFiles(repo)).paths).toEqual([])
+        })
+      ).pipe(Effect.provide(
+        CodeStorage.CodeStorage.layer({ org: ORG, key: Redacted.make(pem) }).pipe(
+          Layer.provide(httpClient(service.fetch))
+        )
+      ))
+    )
+    expect(service.seen).toHaveLength(2)
+    expect(service.seen[1]!.url.pathname).toBe("/api/repos/" + encodeURIComponent(repo) + "/files")
+  }
+)
 
 describe.each(
   [

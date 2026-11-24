@@ -1338,7 +1338,7 @@ describe("Alerts.tick over a journal and a queue that can refuse", () => {
     expect(observed).toBe(1)
   })
 
-  it("pages nobody about an alert the run has no room to receive", async () => {
+  it("pages a person about an alert the run has no room to receive", async () => {
     const sink = controllableSink()
     const observed = await Effect.runPromise(
       Effect.gen(function*() {
@@ -1382,12 +1382,15 @@ describe("Alerts.tick over a journal and a queue that can refuse", () => {
       )
     )
 
-    // Paging about an alert the run will never read tells an operator about
-    // something that is not going to happen.
+    // A run that stopped draining its inbox is the run a person most needs to
+    // hear about: the refusal is reported and journaled, and the page goes out
+    // on the same tick instead of waiting for a boundary that may never come.
     expect(observed.full.refused.map((alert) => alert.condition)).toEqual(["waiting-approval"])
-    expect(observed.full.delivered).toEqual([])
+    expect(observed.full.delivered.map((alert) => alert.condition)).toEqual(["waiting-approval"])
     expect(sink.sent).toHaveLength(1)
-    expect(observed.drained.delivered.map((alert) => alert.condition)).toEqual(["waiting-approval"])
+    // The page went out once; draining the queue later does not send it again.
+    expect(observed.drained.suppressed.map((alert) => alert.condition)).toEqual(["waiting-approval"])
+    expect(observed.drained.delivered).toEqual([])
     expect(observed.delivered).toBe(1)
     expect(observed.failed).toBe(1)
   })
@@ -1631,6 +1634,8 @@ describe("Alerts over a policy that states only delays", () => {
       condition: "stalled",
       severity: "warning",
       since: 0,
+      // The beat that opened the condition is the journal's second entry.
+      opening: 1,
       firedAt: 0
     })
   })

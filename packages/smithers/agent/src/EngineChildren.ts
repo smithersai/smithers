@@ -47,8 +47,7 @@
  */
 
 import { Control, type ControlError } from "@smthrs/control"
-import type { Flow } from "@smthrs/flow"
-import { Action, DurableClock, FlowRuntime } from "@smthrs/flow"
+import { Action, DurableClock, Flow, FlowRuntime } from "@smthrs/flow"
 import { Redaction } from "@smthrs/journal"
 import { RunStore } from "@smthrs/run-store"
 import * as Cause from "effect/Cause"
@@ -63,6 +62,7 @@ import * as Option from "effect/Option"
 import * as Schema from "effect/Schema"
 import { ChildError } from "./ChildFlows.ts"
 import * as ChildFlows from "./ChildFlows.ts"
+import { truncated } from "./internal/Truncate.ts"
 
 /**
  * How a host wires detached children onto its engine.
@@ -114,7 +114,10 @@ export interface Options {
  * reclaim, a replayed cell — spawns the SAME child rather than a second one:
  * the engine's create is idempotent on the execution id. The label is
  * therefore the child's identity within its parent, and two concurrent
- * children need two labels.
+ * children need two labels. A label names one flow and one input: `spawn`
+ * refuses a label a child already holds when it is asked for another flow or
+ * another input, since that request would otherwise be dropped and a later
+ * `await` would answer with the first child's output.
  *
  * @category constructors
  * @since 0.1.0
@@ -170,28 +173,46 @@ const unowned = (operation: string, parentExecutionId: string, child: string): C
 const maxChildFailureCauseCharacters = 2_048
 
 const boundedCause = (cause: Cause.Cause<unknown>): string =>
-  String(Redaction.redact(Cause.pretty(cause))).slice(0, maxChildFailureCauseCharacters)
+  truncated(String(Redaction.redact(Cause.pretty(cause))), maxChildFailureCauseCharacters)
 
 /**
  * The one thing this port reads out of a child run's state document.
  *
  * `RunStore` publishes a run's state as `RunRow.stateJson`, an opaque string
  * it neither writes nor interprets, and a runtime fills it with whatever it
- * needs to resume the run. `await` needs exactly one key out of it: the name
- * of the flow the child is running, because `FlowRuntime.poll` addresses an
- * execution by declaration and a cell only ever has the child's id.
+ * needs to resume the run. `await` needs one key out of it: the name of the
+ * flow the child is running, because `FlowRuntime.poll` addresses an
+ * execution by declaration and a cell only ever has the child's id. `spawn`
+ * reads that name and one more, the input the child was admitted with
+ * (`payload`, the flow's identity snapshot of it), to refuse a label that
+ * already names a child doing other work.
  *
  * Declared here, narrow, rather than imported from an engine: a projection
- * that names one field is a dependency on that field, which is the smallest
- * one that can answer the question. Excess keys decode away, so a runtime
- * that records more than this — every runtime does — still satisfies it.
+ * that names two fields is a dependency on those fields, which is the
+ * smallest one that can answer the questions. Excess keys decode away, so a
+ * runtime that records more than this — every runtime does — still satisfies
+ * it, and one that records no `payload` is compared by flow name alone.
  *
  * @category schemas
  * @since 0.1.0
  */
 export const ChildState = Schema.Struct({
-  flowName: Schema.String
+  flowName: Schema.String,
+  payload: Schema.optionalKey(Schema.Unknown)
 })
+
+/** Whether two JSON values are the same value: object key order aside, as the engine compares a run's input. */
+const sameJson = (left: unknown, right: unknown): boolean => {
+  if (left === right) return true
+  if (typeof left !== "object" || typeof right !== "object" || left === null || right === null) return false
+  if (Array.isArray(left) !== Array.isArray(right)) return false
+  const keys = Object.keys(left)
+  return keys.length === Object.keys(right).length &&
+    keys.every((key) =>
+      Object.hasOwn(right, key) &&
+      sameJson((left as Record<string, unknown>)[key], (right as Record<string, unknown>)[key])
+    )
+}
 
 const decodeChildState = Schema.decodeUnknownEffect(Schema.fromJsonString(ChildState))
 
@@ -338,13 +359,16 @@ export const make = (
      */
     const awaitStarted = (
       child: string,
-      flowName: string,
+      flow: Flow.Any,
+      label: string,
+      payload: unknown,
       fiber: Fiber.Fiber<unknown, unknown>
     ): Effect.Effect<void, ChildError> =>
       Effect.gen(function*() {
+        const flowName = flow._tag
         const ended = yield* Effect.sync(() => fiber.pollUnsafe())
         const row = yield* rowOf(child)
-        if (Option.isSome(row)) return
+        if (Option.isSome(row)) return yield* sameChild(row.value, child, flow, label, payload)
         if (ended !== undefined) {
           if (Exit.isFailure(ended)) {
             return yield* Effect.fail(
@@ -363,7 +387,51 @@ export const make = (
           )
         }
         yield* Effect.sleep(pollInterval)
-        return yield* awaitStarted(child, flowName, fiber)
+        return yield* awaitStarted(child, flow, label, payload, fiber)
+      })
+
+    /**
+     * Refuses a label that an earlier child already holds for another flow or
+     * another input.
+     *
+     * The row a start finds can be one this call created or one an earlier
+     * `spawn` under the same label did, and the engine joins a start to an
+     * existing run without running anything. Answering the id then is right
+     * for a re-driven parent asking for the child it spawned before, and
+     * wrong for a cell asking for different work: its input would be dropped
+     * and `await` would answer with the first child's output. The two are
+     * told apart the way the engine tells them: by the flow's name and by
+     * the input's identity snapshot, which the row holds as `payload`.
+     *
+     * A state document this port cannot read, or one with no `payload`, is
+     * let through: `await` reports the first, and a runtime that records no
+     * input gives nothing to compare.
+     */
+    const sameChild = (
+      row: RunStore.RunRow,
+      child: string,
+      flow: Flow.Any,
+      label: string,
+      payload: unknown
+    ): Effect.Effect<void, ChildError> =>
+      Effect.gen(function*() {
+        const state = yield* decodeChildState(row.stateJson).pipe(Effect.option)
+        if (Option.isNone(state)) return
+        const refuse = (what: string) =>
+          Effect.fail(
+            failed(
+              `agent/spawn refused the label ${JSON.stringify(label)}: the child run ${child} already holds it ` +
+                `with a different ${what}, so this ${flow._tag} was not started. Spawn it under a label of its own.`
+            )
+          )
+        if (state.value.flowName !== flow._tag) return yield* refuse("flow")
+        if (!("payload" in state.value)) return
+        const asked = yield* (Flow.payloadSnapshot(flow.payloadSchema, payload) as Effect.Effect<
+          Schema.Json,
+          Schema.SchemaError
+        >).pipe(Effect.option)
+        // An input the flow's schema refuses is not the input the child was admitted with.
+        if (Option.isNone(asked) || !sameJson(state.value.payload, asked.value)) return yield* refuse("input")
       })
 
     const spawn: ChildFlows.Children["spawn"] = (input) =>
@@ -372,6 +440,7 @@ export const make = (
         const flow = yield* declarationOf(input.flow, "agent/spawn")
         const label = input.label ?? input.flow
         const child = childExecutionId(parent.executionId, label)
+        const payload = input.input === undefined ? {} : input.input
         // Detached on purpose, and detached in the durable sense: `discard`
         // is what the engine records as the child's `onParentExit` policy, so
         // this child survives its parent's completion instead of being
@@ -395,7 +464,7 @@ export const make = (
             // the real declaration it registered.
             (runtime.execute(flow as never, {
               executionId: child,
-              payload: input.input === undefined ? {} : input.input,
+              payload,
               discard: true
             }) as Effect.Effect<unknown, unknown>).pipe(
               Effect.tapCause((cause) =>
@@ -407,7 +476,7 @@ export const make = (
             )
           ),
           (fiber) =>
-            awaitStarted(child, input.flow, fiber).pipe(
+            awaitStarted(child, flow, label, payload, fiber).pipe(
               Effect.timeoutOrElse({
                 duration: startTimeout,
                 orElse: () => Effect.fail(failed(`The child run ${child} was not created within its start budget.`))

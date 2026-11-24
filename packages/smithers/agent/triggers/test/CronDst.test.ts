@@ -11,7 +11,7 @@
  * instant is also read back through `Intl` in its zone, independently of the
  * cron arithmetic, so a wrong offset cannot pass by agreeing with itself.
  *
- * The host's own zone is part of the answer (see the last case), so every
+ * The host's own zone is never part of the answer (see the last case). Every
  * case runs on a host pinned to UTC unless it names another host zone.
  *
  * The rules those answers follow, fixed by
@@ -168,8 +168,15 @@ const zones: ReadonlyArray<Zone> = [
 /** The UTC instant at the front of one `read` line. */
 const instantOf = (line: string): number => Date.parse(line.slice(0, 24))
 
-const declare = (timezone: string, id: string, cron: string) =>
-  Trigger.make({ id, flowId: `reviews/${id}`, input: { team: "builders" }, cron, timezone, enabled: true })
+const declare = (timezone: string | undefined, id: string, cron: string) =>
+  Trigger.make({
+    id,
+    flowId: `reviews/${id}`,
+    input: { team: "builders" },
+    cron,
+    ...(timezone === undefined ? {} : { timezone }),
+    enabled: true
+  })
 
 const run = <A, E>(effect: Effect.Effect<A, E>): Promise<A> => Effect.runPromise(effect)
 
@@ -540,26 +547,63 @@ for (const zone of zones) {
     })
   })
 
+  // A schedule with no timezone used to follow the host's zone, so two hosts
+  // on one store computed different instants for one occurrence, keyed it
+  // differently, and both launched it. It is a UTC schedule on every host.
   describe(`a schedule with no timezone on a host whose own zone is ${timezone}`, () => {
-    it("follows the host's wall clock across both transitions", async () => {
-      const [gap, repeat] = await onHost(timezone, async () => {
-        const gapCron = await run(Cron.parse("30 2 * * *"))
-        const repeatCron = await run(Cron.parse("30 1 * * *"))
-        return [
+    const search = async () => {
+      const gapCron = await run(Cron.parse("30 2 * * *"))
+      const repeatCron = await run(Cron.parse("30 1 * * *"))
+      return {
+        gap: iso(
           await run(
-            Cron.occurrencesBetween(gapCron, new Date("2026-03-06T00:00:00.000Z"), new Date("2026-03-10T00:00:00.000Z"))
-          ),
+            Cron.occurrencesBetween(gapCron, new Date("2026-03-07T00:00:00.000Z"), new Date("2026-03-09T00:00:00.000Z"))
+          )
+        ),
+        repeat: iso(
           await run(
             Cron.occurrencesBetween(
               repeatCron,
-              new Date("2026-10-30T00:00:00.000Z"),
-              new Date("2026-11-03T00:00:00.000Z")
+              new Date("2026-10-31T00:00:00.000Z"),
+              new Date("2026-11-02T00:00:00.000Z")
             )
           )
-        ]
-      })
-      expect(read(gap, timezone)).toEqual(zone.gap)
-      expect(read(repeat, timezone)).toEqual(zone.repeat)
+        ),
+        next: (await run(Cron.next(gapCron, new Date("2026-03-08T02:30:00.000Z")))).toISOString(),
+        previous: (await run(Cron.previousAtOrBefore(repeatCron, new Date("2026-11-01T09:00:00.000Z")))).toISOString()
+      }
+    }
+
+    it("answers the UTC occurrences on a UTC host and on this one, across both transitions", async () => {
+      const utc = {
+        gap: ["2026-03-07T02:30:00.000Z", "2026-03-08T02:30:00.000Z"],
+        repeat: ["2026-10-31T01:30:00.000Z", "2026-11-01T01:30:00.000Z"],
+        next: "2026-03-09T02:30:00.000Z",
+        previous: "2026-11-01T01:30:00.000Z"
+      }
+      expect(await search()).toEqual(utc)
+      expect(await onHost(timezone, search)).toEqual(utc)
+    })
+
+    it("launches one occurrence under one key from a UTC host and from this one", async () => {
+      const boundary = Date.parse("2026-03-08T02:30:00.000Z")
+      const launches = (host: string) =>
+        onHost(host, async () => {
+          const runner = runnerFixture()
+          await onStore(() =>
+            Effect.gen(function*() {
+              const store = yield* TriggerStore.TriggerStore
+              yield* TestClock.setTime(boundary - 12 * hour)
+              yield* store.register(yield* declare(undefined, "zoneless", "30 2 * * *"))
+              const tick = yield* scheduler(runner)
+              for (const instant of [boundary - 12 * hour, boundary, boundary + minute]) yield* tick(instant)
+            })
+          )
+          return runner.starts.map((start) => start.idempotencyKey)
+        })
+      const key = ["zoneless:2026-03-08T02:30:00.000Z"]
+      expect(await launches("UTC")).toEqual(key)
+      expect(await launches(timezone)).toEqual(key)
     })
   })
 }
