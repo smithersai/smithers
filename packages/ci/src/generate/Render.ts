@@ -593,7 +593,7 @@ export const machinesDirectory = "${{ runner.temp }}/smthrs-machines"
 // The shared cache's settings in a GitHub repository, as `docs/concepts/cache.md` names them: a variable for the URL
 // and secrets for the tokens. The URL given to `apply --cache` is used until the variable is set. A pull request
 // reads with the read token when the repository has one, so it reuses results and stores none. So does a run for any
-// branch but the repository's default one: `on: [pull_request, push]` starts a `push` run for each push to a pull
+// tag or any branch but the repository's default one: `on: [pull_request, push]` starts a `push` run for each push to a pull
 // request's branch in the same repository, and that run holds code nobody has reviewed. Neither is ever given the
 // token that writes: a repository with no read token gives them no token at all, where an unset secret, which is
 // the empty text, would otherwise let the expression go on to the next one. The two conditions exclude each other,
@@ -604,8 +604,10 @@ const cacheUrl = (cache: string | undefined): string =>
     : `\${{ vars.SMITHERS_CACHE_URL || '${cache.replaceAll("'", "''")}' }}`
 
 const cacheToken = "${{ github.event_name == 'pull_request' && secrets.SMITHERS_CACHE_READ_TOKEN || " +
+  "github.ref_type != 'branch' && secrets.SMITHERS_CACHE_READ_TOKEN || " +
   "github.ref_name != github.event.repository.default_branch && secrets.SMITHERS_CACHE_READ_TOKEN || " +
-  "github.event_name != 'pull_request' && github.ref_name == github.event.repository.default_branch && " +
+  "github.event_name != 'pull_request' && github.ref_type == 'branch' && " +
+  "github.ref_name == github.event.repository.default_branch && " +
   "secrets.SMITHERS_CACHE_TOKEN || '' }}"
 
 /**

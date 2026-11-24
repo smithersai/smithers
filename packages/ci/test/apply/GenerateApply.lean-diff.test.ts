@@ -26,12 +26,15 @@ import { fileURLToPath } from "node:url"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
 import { parseDocument } from "yaml"
 import { check } from "../../src/apply/Check.vibe"
-import { refusalOf } from "../../src/apply/Planned.vibe"
+import { refusalOf, refusedTargets } from "../../src/apply/Planned.vibe"
 import { errorLine } from "../../src/contract/Command.vibe"
 import type { Ci } from "../../src/contract/Inventory.vibe"
 import { shardOf } from "../../src/contract/Shard.vibe"
+import { files } from "../../src/generate/index.vibe"
+import { workflowPath } from "../../src/generate/Render.ts"
 import { planSteps } from "../../src/generate/Steps.vibe"
 import * as Yaml from "../../src/generate/Yaml.vibe"
+import { evaluate, value, whole } from "../../src/inventory/Expression.ts"
 import { generatedMark } from "../../src/native/Workspace.vibe"
 
 const specDir = fileURLToPath(new URL("../../spec/lean/generate_apply", import.meta.url))
@@ -922,6 +925,7 @@ const stream = Arbitrary.map(
 )
 
 const refusalCorpus = [
+  JSON.stringify({ message: "https://user:2024#part@host/path?secret_key=sample" }),
   "",
   " \n\t",
   "real error\n\n(node:42) ExperimentalWarning: fixture",
@@ -950,6 +954,48 @@ const refusalCorpus = [
 ] as const
 
 describe("generate and apply against the Lean 4 reference specification", () => {
+  it.skipIf(!oracleReady)(
+    "gives only a default branch outside a PR the write token, also when either secret is empty",
+    async () => {
+      const ci = ciOf({
+        jobs: [{ source: "github-actions", matrix: [], steps: [{ pool: "check", any: "", which: 0, echo: 0 }] }]
+      })
+      const workflow = Effect.runSync(files(ci)).find((entry) => entry.path === workflowPath)!
+      const steps = parseDocument(workflow.content).toJS().jobs.ci.steps as Array<
+        { env?: { SMITHERS_CACHE_TOKEN?: string } }
+      >
+      const expression = whole(steps.find((step) => step.env?.SMITHERS_CACHE_TOKEN)?.env?.SMITHERS_CACHE_TOKEN ?? "")
+      expect(expression).toBeDefined()
+      for (const event of ["pull_request", "push", "workflow_dispatch"]) {
+        for (const refType of ["branch", "tag"]) {
+          for (const name of ["main", "topic"]) {
+            for (const read of ["", "read"]) {
+              for (const write of ["", "write"]) {
+                const github = value({
+                  event_name: event,
+                  ref_type: refType,
+                  ref_name: name,
+                  event: { repository: { default_branch: "main" } }
+                })
+                const secrets = value({ SMITHERS_CACHE_READ_TOKEN: read, SMITHERS_CACHE_TOKEN: write })
+                const observed = evaluate(expression!, { context: (context) => ({ github, secrets })[context] })
+                const expected = await ask({
+                  op: "cacheToken",
+                  pullRequest: event === "pull_request",
+                  branch: refType === "branch",
+                  defaultName: name === "main",
+                  read,
+                  write
+                })
+                expect(observed).toEqual({ kind: "ok", residual: { kind: "literal", value: expected } })
+              }
+            }
+          }
+        }
+      }
+    }
+  )
+
   it.skipIf(!oracleReady)("refuses the same generated path names, with the same words", async () => {
     const compare = async (path: string): Promise<void> => {
       if (alsoRead(path)) return
@@ -1163,6 +1209,14 @@ describe("generate and apply against the Lean 4 reference specification", () => 
       expect(cases).toBe(yamlKeys.length * 6)
     }
   )
+
+  it.skipIf(!oracleReady)("classifies the full planner diagnostic before shortening it for display", async () => {
+    for (const message of ["target refused", "ENOSPC", "xENOSPC", "ENOSPC2", "out of MEMORY", "metadata"]) {
+      const printed = JSON.stringify({ message: "x".repeat(320) + " " + message })
+      const expected = await ask({ op: "refusedTargets", text: units(printed) })
+      expect(refusedTargets(printed)).toBe(expected === null ? undefined : textOf(expected))
+    }
+  })
 
   it.skipIf(!oracleReady)("reduces what Smithers build printed to the line the specification gives", async () => {
     const compare = async (text: string): Promise<void> => {

@@ -872,6 +872,9 @@ describe("credentials, against their specification", () => {
     },
     [
       ...remotes,
+      "https://user:2024/part@host/path?secret_access_key=sample&keep=x",
+      "https://user:42?part@host/path?ACCESS_KEY=x#public",
+      "https://user:1#part@host/path?secret_key=x",
       "fatal: unable to access 'https://user:token@host.example/acme/repo.git/': The requested URL returned error: 403",
       "remote: https://a:b@h/ and \"https://c:d@h/\" and git@github.com:acme/repo.git",
       "mailto:someone@example.com",

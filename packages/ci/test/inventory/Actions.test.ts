@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest"
-import { cacheActions, checkoutProblems, parseYaml, readAction, setupVariables } from "../../src/inventory/Actions.vibe"
+import {
+  cacheActions,
+  checkoutNotes,
+  checkoutProblems,
+  parseYaml,
+  readAction,
+  setupVariables
+} from "../../src/inventory/Actions.vibe"
 import type { Residual } from "../../src/inventory/Expression.ts"
 
 const sha: Residual = { kind: "variable", variable: { id: "sha", name: "github.sha", nullable: false, typed: false } }
@@ -236,6 +243,11 @@ describe("what the review found", () => {
     expect(readAction("runs: { using: { toString: 1 }, steps: [] }")).toEqual({
       problem: "it runs with a value that is not text, and only a composite action has steps to read"
     })
+  })
+
+  it("accepts explicit checkout defaults and reports an unreadable setting by name", () => {
+    expect(checkoutNotes({ "FETCH-DEPTH": 1, "fetch-tags": false, "persist-credentials": "TRUE" })).toEqual([])
+    expect(checkoutNotes({ "fetch-depth": [] })).toEqual(["fetch-depth is left at 1 by the generated checkout"])
   })
 
   // "actions/checkout: sparse-checkout, filter": the workspace then holds part of the repository.

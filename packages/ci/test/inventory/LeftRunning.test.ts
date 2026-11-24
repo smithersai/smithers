@@ -47,6 +47,8 @@ describe("a command that leaves a program running", () => {
   it.each([
     ["python3 -m http.server 8767 --bind 127.0.0.1 --directory site > /dev/null 2>&1 &", ["python3"]],
     ["npm start &", ["npm"]],
+    ["echo \"$(printf '\"')\"; serve &", ["serve"]],
+    ["echo \"${arg:-$(printf '}')}\"; serve &", ["serve"]],
     ["( cd api && server & )", ["server"]],
     ["first & second & wait %1", ["second"]],
     ["first & second & wait $!", ["first"]],

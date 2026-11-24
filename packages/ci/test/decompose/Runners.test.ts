@@ -247,6 +247,7 @@ describe("npm", () => {
   })
 
   it("reads npm test and a run in one directory", () => {
+    expect(at("npm run test -w 'packages/*'")).toBeUndefined()
     expect(at("npm test")).toMatchObject({ tasks: ["test"], selection: { kind: "directory", directory: "" } })
     expect(at("npm test extra", "packages/a")).toMatchObject({
       args: ["extra"],

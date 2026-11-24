@@ -78,9 +78,16 @@ const maxExpansion = 1024 * 1024
 const maxVisits = 4096
 const maxDepth = 64
 
+interface ExpansionBudget {
+  visits: number
+  bytes: number
+}
+
+const utf8 = new TextEncoder()
+
 interface Scope {
   depth: number
-  visits: number
+  readonly budget: ExpansionBudget
   exhausted: boolean
   readonly variables: ReadonlyMap<string, Variable>
   readonly automatic: ReadonlyMap<string, string>
@@ -90,8 +97,9 @@ interface Scope {
 
 const scopeOf = (
   variables: ReadonlyMap<string, Variable>,
-  automatic: ReadonlyMap<string, string> = new Map()
-): Scope => ({ variables, automatic, active: new Set(), problems: [], depth: 0, visits: 0, exhausted: false })
+  automatic: ReadonlyMap<string, string> = new Map(),
+  budget: ExpansionBudget = { visits: 0, bytes: 0 }
+): Scope => ({ variables, automatic, active: new Set(), problems: [], depth: 0, budget, exhausted: false })
 
 const fail = (scope: Scope, feature: string, reason: string): string => {
   if (!scope.problems.some((entry) => entry.feature === feature && entry.reason === reason)) {
@@ -156,13 +164,18 @@ const reference = (scope: Scope, raw: string): string => {
 /** Expands `text` as Make does. What cannot be expanded is added to the scope's problems. */
 const expand = (scope: Scope, text: string): string => {
   if (scope.exhausted) return ""
-  if (scope.depth >= maxDepth || ++scope.visits > maxVisits || text.length > maxExpansion) {
+  if (scope.depth >= maxDepth || ++scope.budget.visits > maxVisits ||
+    text.length > maxExpansion || scope.budget.bytes > maxExpansion) {
     scope.exhausted = true
     return fail(scope, "variable", "exceeds the Make variable expansion limit")
   }
   scope.depth++
   const result = expandText(scope, text)
   scope.depth--
+  if (scope.depth === 0) {
+    scope.budget.bytes += utf8.encode(result).byteLength
+    if (scope.budget.bytes > maxExpansion) return fail(scope, "variable", "exceeds the Make variable expansion limit")
+  }
   return result
 }
 
@@ -679,6 +692,7 @@ const inShell = (shell: Shell, line: string): string =>
 
 interface Context {
   visits: number
+  readonly expansion: ExpansionBudget
   readonly makefile: Makefile
   /** Every tracked file and every directory holding one. */
   readonly present: ReadonlySet<string>
@@ -806,7 +820,7 @@ interface RecipeContext {
 
 /** The text of a recipe line with variables filled in, or `undefined` once the reason is recorded. */
 const fillIn = (recipe: RecipeContext, line: RecipeLine, where: string): string | undefined => {
-  const scope = scopeOf(recipe.context.makefile.variables, recipe.automatic)
+  const scope = scopeOf(recipe.context.makefile.variables, recipe.automatic, recipe.context.expansion)
   const text = expand(scope, line.text)
   noteAll(recipe.job, where, scope.problems)
   return scope.problems.length > 0 ? undefined : text
@@ -871,7 +885,7 @@ const readRuleSteps = (context: Context, job: Draft, rule: Rule, running: Readon
     ["+", rule.prerequisites.join(" ")],
     ["|", [...new Set(rule.orderOnly)].join(" ")]
   ])
-  const scope = scopeOf(makefile.variables, automatic)
+  const scope = scopeOf(makefile.variables, automatic, context.expansion)
   const shell = shellOf(makefile, scope)
   const env = environmentOf(makefile, scope)
   noteAll(job, rule.name, scope.problems)
@@ -935,7 +949,7 @@ const readJob = (context: Context, file: string, rule: Rule): Draft => {
  */
 export const readMakefile = (file: string, text: string, tracked: ReadonlyArray<string>): Parsed => {
   const makefile = parse(text)
-  const context: Context = { makefile, visits: 0, present: withDirectories(tracked) }
+  const context: Context = { makefile, visits: 0, expansion: { visits: 0, bytes: 0 }, present: withDirectories(tracked) }
   const jobs = [...makefile.rules.values()].map((rule) => readJob(context, file, rule))
   const runsMake = jobs.some((job) => job.steps.some((step) => /(?:^|[\s;&|('])make(?:\s|$)/.test(step.command)))
   const unsupported: ReadonlyArray<Unsupported> = makefile.blockers.map((blocker) => ({

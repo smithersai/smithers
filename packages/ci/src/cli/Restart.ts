@@ -211,7 +211,7 @@ export interface Tools {
  * @category resolution
  * @since 0.1.0
  */
-export const tools = (): Tools => ({ mkfifo: "mkfifo", shell: "/bin/sh", directory: tmpdir() })
+export const tools = (): Tools => ({ mkfifo: "/usr/bin/mkfifo", shell: "/bin/sh", directory: tmpdir() })
 
 /**
  * Makes a pipe in a directory only this user can enter and leaves `withheld`
@@ -225,7 +225,7 @@ export const tools = (): Tools => ({ mkfifo: "mkfifo", shell: "/bin/sh", directo
 export const hand = async (withheld: Readonly<Record<string, string>>, using: Tools = tools()): Promise<string> => {
   const pipe = join(mkdtempSync(join(using.directory, directoryPrefix)), pipeName)
   try {
-    execFileSync(using.mkfifo, ["-m", "600", pipe], { stdio: "ignore" })
+    execFileSync(using.mkfifo, ["-m", "600", pipe], { env: { PATH: "/usr/bin:/bin" }, stdio: "ignore" })
     await new Promise<void>((resolve, reject) => {
       const helper = spawn(using.shell, ["-c", writer, "smithers-ci", pipe, String(using.seconds ?? 60)], {
         env: { PATH: "/usr/bin:/bin" },
@@ -358,9 +358,16 @@ export const received = (
 ): Readonly<Record<string, string>> | undefined => {
   try {
     if (!ours(pipe)) return undefined
-    const text = drained(pipe, patience, bounds)
-    discard(pipe)
-    return text === undefined ? undefined : variablesOf(text)
+    try {
+      const text = drained(pipe, patience, bounds)
+      return text === undefined ? undefined : variablesOf(text)
+    } finally {
+      try {
+        discard(pipe)
+      } catch {
+        // A cleanup collision cannot invalidate variables already read from our private pipe.
+      }
+    }
   } catch {
     return undefined
   }

@@ -49,21 +49,24 @@ export interface HostPath {
 
 /**
  * A search path containing only host directories. Check the final executable as well:
- * an otherwise trusted directory can contain a symlink into the checkout.
+ * an otherwise trusted directory can contain a symlink into the checkout or a working copy.
  *
  * @category constructors
  * @since 0.1.0
  * @throws {never}
  */
-export const hostPath = (root: string, search: string): HostPath => {
-  const lexicalRoot = resolve(root)
-  const realRoot = canonical(root)
+export const hostPath = (root: string, search: string, ...otherRoots: ReadonlyArray<string>): HostPath => {
+  const roots = [...new Set([root, ...otherRoots])]
+  const lexicalRoots = roots.map((directory) => resolve(directory))
+  const realRoots = roots.map(canonical)
   const target = (file: string): string | undefined => {
-    if (realRoot === undefined || !isAbsolute(file) || !outside(lexicalRoot, file) || !outside(realRoot, file)) {
-      return undefined
-    }
+    if (!isAbsolute(file) || lexicalRoots.some((directory) => !outside(directory, file))) return undefined
     const real = canonical(file)
-    return real !== undefined && outside(realRoot, real) ? real : undefined
+    if (real === undefined) return undefined
+    const trusted = realRoots.every((directory) =>
+      directory !== undefined && outside(directory, file) && outside(directory, real)
+    )
+    return trusted ? real : undefined
   }
   const directories = new Set<string>()
   for (const entry of search.split(delimiter)) {
@@ -72,11 +75,13 @@ export const hostPath = (root: string, search: string): HostPath => {
   }
   const program = (name: string): string | undefined => {
     for (const directory of directories) {
-      const file = target(join(directory, name))
+      const entry = join(directory, name)
+      const file = target(entry)
       if (file === undefined) continue
       try {
         accessSync(file, constants.X_OK)
-        if (statSync(file).isFile()) return file
+        // Homebrew computes its prefix from the path used to invoke its script.
+        if (statSync(file).isFile()) return name === "brew" ? entry : file
       } catch {
         // Another directory may provide an executable under the same name.
       }

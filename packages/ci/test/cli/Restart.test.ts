@@ -116,6 +116,37 @@ describe("handing variables to the next start", () => {
     expect(taken(pipe)).toEqual({})
   })
 
+  it("retains the hand-over when the cleanup directory is occupied", async () => {
+    const pipe = await hand({ A: "1" }, { ...tools(), directory: directory() })
+    const collision = `${dirname(pipe)}.gone`
+    mkdirSync(collision)
+    writeFileSync(join(collision, "keep"), "existing")
+    expect(received(pipe)).toEqual({ A: "1" })
+    expect(readFileSync(join(collision, "keep"), "utf8")).toBe("existing")
+    expect(tools().mkfifo).toBe("/usr/bin/mkfifo")
+  })
+
+  it("starts the pipe utility with only its system search path", async () => {
+    const base = directory()
+    const utility = join(base, "create-fifo")
+    writeFileSync(
+      utility,
+      [
+        "#!/bin/sh",
+        "test \"$PATH\" = /usr/bin:/bin && test -z \"$SMITHERS_TEST_HANDOVER\" || exit 1",
+        "exec /usr/bin/mkfifo \"$@\"",
+        ""
+      ].join("\n"),
+      { mode: 0o700 }
+    )
+    vi.stubEnv("SMITHERS_TEST_HANDOVER", "fixture")
+    try {
+      expect(taken(await hand({ A: "1" }, { ...tools(), directory: base, mkfifo: utility }))).toEqual({ A: "1" })
+    } finally {
+      vi.unstubAllEnvs()
+    }
+  })
+
   it("gives nothing for a path that is no pipe of its own, and leaves the file alone", () => {
     const file = join(directory(), "file")
     writeFileSync(file, JSON.stringify({ A: "1" }))

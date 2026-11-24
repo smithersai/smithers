@@ -420,6 +420,8 @@ export const npm = (words: ReadonlyArray<string>, cwd: string): Invocation | und
   const positional = plain.slice(plain[0] === "test" ? 1 : 2)
   const multiple = all || chosen.length > 0
   if (script === undefined || [...positional, ...args].some(leaves) || chosen.some(leaves)) return undefined
+  // Keep glob selectors intact. A multi-package invocation is only split at the repository root.
+  if (chosen.some((value) => !/^[\w@./-]+$/.test(value))) return undefined
   if ((multiple && directory !== undefined) || (all && chosen.length > 0)) return undefined
   const selection: Selection | undefined = all
     ? { kind: "all" }
@@ -427,7 +429,7 @@ export const npm = (words: ReadonlyArray<string>, cwd: string): Invocation | und
     // A value is a package's name or its directory.
     ? {
       kind: "patterns",
-      patterns: chosen.map((value) => ({ name: value, directory: value.replace(/^\.\//, "").replace(/\/$/, "") }))
+      patterns: chosen.map((value) => ({ name: value, directory: join("", value) }))
     }
     : under(cwd, directory)
   if (selection === undefined) return undefined

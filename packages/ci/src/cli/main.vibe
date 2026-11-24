@@ -4,8 +4,8 @@
  * @since 0.1.0
  */
 
-import * as ChildProcess from "effect/process/ChildProcess"
-import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
+import { runGit } from "../inventory/HostGit.vibe"
+import { checkoutOf } from "./Install.ts"
 import { exitCodes as codes, name } from "../contract/Command.vibe"
 import { recorderRefusal } from "../replay/Environment.ts"
 import { discard } from "../replay/index.vibe"
@@ -14,7 +14,6 @@ import { type Environment, type Host, layer } from "./Host.vibe"
 import { parts } from "./parts.vibe"
 import { deaf, exitCodes, idle, type Listen, type Signal, uncaught } from "./Signals.ts"
 import { broken, nothingTold, stoppedCode, type Told, unanswered } from "./Stage.vibe"
-import { gitArguments } from "../replay/Git.vibe"
 
 /**
  * The top directory of the repository that holds `directory`, as git names
@@ -25,9 +24,9 @@ import { gitArguments } from "../replay/Git.vibe"
  * @since 0.1.0
  */
 export effect function rootOf(directory: string) {
-  const spawner = try ChildProcessSpawner
-  const top = spawner.string(ChildProcess.make("git", gitArguments(["-C", directory, "rev-parse", "--show-toplevel"]))) catch () => ""
-  return top.trim() === "" ? directory : top.trim()
+  const top = runGit(checkoutOf(directory), directory, ["rev-parse", "--show-toplevel"]) catch () => undefined
+  const path = top?.code === 0 ? top.text.replace(/\r?\n$/, "") : ""
+  return path || directory
 }
 
 /**

@@ -508,6 +508,29 @@ describe("commands within shell words", () => {
     ["echo ${VALUE:-$(observe)}", "observe"],
     ["echo \"${A:-${B:-\`observe\`}}\"", "observe"],
     ["cat <<END\n${A:-${B:-$(observe)}}\nEND", "observe"],
+    ["echo \"${VALUE:-$(printf '}'; observe)}\"", "observe"],
+    ["echo \"$(case value in v*) observe ;; other) report ;; esac)\"", "observe"],
+    ["echo \"$(case x in (x) case y in y) observe ;; esac ;; esac)\"", "observe"],
+    ["echo \"$(echo case; observe)\"", "observe"],
+    ["echo \"$(echo `printf ')'`)\"; observe", "observe"],
+    ["echo \"$(echo \"${VALUE:-$(printf '}')}\")\"; observe", "observe"],
+    ["echo \"$(case x in esac)\"; observe", "observe"],
+    ["echo \"$(case a in a) printf in esac ;; b) observe ;; esac)\"", "observe"],
+    ["echo \"$(echo in esac)\"; observe", "observe"],
+    ["echo \"$(case x in x) echo ok ;; case ) observe ;; esac)\"", "observe"],
+    ["bash -eoc pipefail observe", "observe"],
+    ["bash --norc -eo pipefail -c observe", "observe"],
+    ["echo \"$(case x in\n esac)\"; observe", "observe"],
+    ["echo \"$(\n{ ! case x\nin\nx|esac) observe ;; esac; }\n)\"", "observe"],
+    ["echo \"$(if case x in x) observe ;; esac; then echo ok; fi)\"", "observe"],
+    ["echo \"$(echo if then case; echo ok)\"; observe", "observe"],
+    ["echo \"$(case x in x) echo x ;; (y) observe ;; esac)\"", "observe"],
+    ["echo \"$(# unmatched )\n\\\ncase x in x) observe ;; esac)\"", "observe"],
+    ["echo \"$(#unfinished", "echo"],
+    ["echo \"$(case value in v*) observe; esac)\"", "observe"],
+    ["timeout 1.5m observe", "observe"],
+    ["bash --rcfile init --init-file next +e -o pipefail +O extglob -c 'observe' ", "observe"],
+    ["bash -c -O extglob +o pipefail +u 'observe'", "observe"],
     ["echo \"${MSG:-can't}\"; observe", "observe"],
     ["echo ${unfinished; observe", "observe"],
     ["$'observe' $'it\\'s open'; report", "report"],
@@ -536,6 +559,11 @@ describe("commands within shell words", () => {
     ["<<< 'observe text' env bash", "observe"]
   ])("finds the program in %s", (source, program) => {
     expect(startedIn(source).map(({ name }) => name)).toContain(program)
+  })
+
+  it("treats repeated keyword arguments as data across long whitespace", () => {
+    const source = "echo \"$(printf " + "then ".repeat(1000) + " ".repeat(8192) + "case)\"; observe"
+    expect(startedIn(source).at(-1)?.name).toBe("observe")
   })
 
   it("preserves split-string trailing arguments as words and leaves ordinary stdin as data", () => {

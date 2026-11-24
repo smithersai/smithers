@@ -648,7 +648,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, WebCrypto.layer))("split", (it) => {
     expect(seen).toHaveLength(3)
     for (const command of seen) {
       expect(command).toMatchObject({
-        command: "git",
+        command: expect.stringMatching(/^\/.*\/git$/),
         args: expect.arrayContaining(["-c", "core.fsmonitor=false", "ls-files"])
       })
     }
@@ -701,6 +701,27 @@ it.layer(Layer.mergeAll(NodeServices.layer, WebCrypto.layer))("split", (it) => {
       const failed = try flip(split(root, ci([])))
       expect(failed).toMatchObject({code:"command-failed", message: expect.stringContaining("listing-failed")})
       expect(count).toBe(1)
+    }
+  })
+
+  it.effect("uses npm dot rules only for npm, keeping a different manager whole when its packages differ", () => effect {
+    for (const manager of ["npm", "bun"]) {
+      const root = try repository({
+        "package.json": JSON.stringify({ packageManager: `${manager}@1.0.0`, workspaces: ["packages/*"] }),
+        "packages/visible/package.json": manifest("visible", { test: "echo yes" }),
+        "packages/.template/package.json": manifest("template", { test: "echo hidden" })
+      })
+      const npm = ci([step("s", "npm run test --workspaces")])
+      const bun = ci([step("s", "bun run --workspaces test")])
+      const npmResult = try splitStatic(root, npm)
+      const bunResult = try splitStatic(root, bun)
+      if (manager === "npm") {
+        expect(stepsOf(npmResult)[0]?.inputs).toContain("packages/visible/**")
+        expect(bunResult).toEqual(bun)
+      } else {
+        expect(npmResult).toEqual(npm)
+        expect(stepsOf(bunResult).map((part) => part.id)).toEqual(["s:template", "s:visible"])
+      }
     }
   })
 
@@ -1024,7 +1045,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, WebCrypto.layer))("split", (it) => {
             test: "npm run check:lint && npm run check:types:js"
           }
         }),
-        "package-lock.json": `{ "lockfileVersion": 3 }`,
+        "package-lock.json": `{ "lockfileVersion": 3 }` + " ".repeat(2 * 1024 * 1024),
         "app/package.json": JSON.stringify({ name: "app", scripts: { check: "npm run a && npm run b", a: "node -e 0", b: "node -e 0" } })
       })
       // The check follows an install and a later step follows it: a chain is split wherever it stands in its job.
@@ -1083,6 +1104,31 @@ it.layer(Layer.mergeAll(NodeServices.layer, WebCrypto.layer))("split", (it) => {
         expect(steps["ci.yml:test:4"]?.whole).toEqual({ feature: "script-hook", detail: "pretest" })
       })
     })
+
+  it.effect("bounds Yarn lockfile reads and keeps unidentified releases whole", () => effect {
+    const fs = try FileSystem.FileSystem
+    const root = try repository({
+      "package.json": manifest("app", { check: "yarn run a && yarn run b", a: "echo a", b: "echo b" }),
+      "yarn.lock": "# yarn lockfile v1\n"
+    })
+    const before = ci([step("s", "yarn run check")])
+    const padding = "#".repeat(70_000) + "\n"
+    const file = root + "/yarn.lock"
+    for (const [text, expected] of [
+      ["# yarn lockfile v1\n", ["s:a", "s:b"]],
+      ["# yarn lockfile v1\n" + padding, ["s:a", "s:b"]],
+      ["__metadata:\n" + padding, ["s"]],
+      [padding + "__metadata:\n", ["s"]]
+    ] as const) {
+      try fs.writeFileString(file, text)
+      const after = stepsOf(try splitStatic(root, before))
+      expect(after.map((part) => part.id)).toEqual(expected)
+    }
+    try fs.chmod(file, 0o000)
+    const unread = stepsOf(try splitStatic(root, before))
+    expect(unread[0]?.whole).toMatchObject({ feature: "script-setting", detail: expect.stringContaining("yarn.lock") })
+    try fs.chmod(file, 0o644)
+  })
 
   it.effect("leaves the first step of a job whole when later steps read what it leaves them", () =>
     effect {

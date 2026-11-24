@@ -88,7 +88,9 @@ interface Settings {
   readonly token?: string
   /** The secret `SMITHERS_CACHE_READ_TOKEN`. */
   readonly readToken?: string
-  readonly event?: "push" | "pull_request"
+  readonly event?: "push" | "pull_request" | "workflow_dispatch"
+  readonly refType?: "branch" | "tag"
+  readonly refName?: string
 }
 
 /**
@@ -103,7 +105,8 @@ const evaluate = (text: string, settings: Settings): string => {
     "secrets.SMITHERS_CACHE_TOKEN": settings.token,
     "secrets.SMITHERS_CACHE_READ_TOKEN": settings.readToken,
     "github.event_name": settings.event ?? "push",
-    "github.ref_name": "main",
+    "github.ref_type": settings.refType ?? "branch",
+    "github.ref_name": settings.refName ?? "main",
     "github.event.repository.default_branch": "main"
   }
   const expression = /^\$\{\{ (.*) \}\}$/.exec(text)
@@ -290,7 +293,12 @@ describe.runIf(hostable && confines)("a cache you host yourself", () => {
     // A repository with no read token gives a pull request no token: never the one that writes. A push is given it.
     const tokenLine = stepsOf(a).find((entry) => entry.run?.includes("smthrs ci"))?.env?.["SMITHERS_CACHE_TOKEN"]
     expect(evaluate(tokenLine as string, { token: writeToken, event: "pull_request" })).toBe("")
-    expect(evaluate(tokenLine as string, { token: writeToken, event: "push" })).toBe(writeToken)
+    for (const event of ["push", "workflow_dispatch"] as const) {
+      expect(evaluate(tokenLine as string, { token: writeToken, event, refType: "tag" })).toBe("")
+      expect(evaluate(tokenLine as string, { ...secrets, event, refType: "tag" })).toBe(readToken)
+      expect(evaluate(tokenLine as string, { ...secrets, event, refName: "topic" })).toBe(readToken)
+      expect(evaluate(tokenLine as string, { token: writeToken, event })).toBe(writeToken)
+    }
     expect(evaluate(tokenLine as string, { token: writeToken, readToken: "r", event: "push" })).toBe(writeToken)
   }, slow)
 

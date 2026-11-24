@@ -175,7 +175,8 @@ describe("the cache's token in the workflow", () => {
   const tokenFor = (
     event: string,
     secrets: { readonly read?: string; readonly write?: string },
-    branch: "default" | "other" = "default"
+    branch: "default" | "other" = "default",
+    refType: "branch" | "tag" = "branch"
   ): string => {
     const workflow = parseYaml(content(generate([job("a", "ubuntu-latest")]), workflowPath)) as {
       readonly jobs: { readonly ci: { readonly steps: ReadonlyArray<{ readonly env?: Record<string, string> }> } }
@@ -185,6 +186,8 @@ describe("the cache's token in the workflow", () => {
     const value = (term: string): string | boolean => {
       const compared = /^github\.event_name (==|!=) '([^']*)'$/.exec(term)
       if (compared !== null) return (event === compared[2]) === (compared[1] === "==")
+      const type = /^github\.ref_type (==|!=) 'branch'$/.exec(term)
+      if (type !== null) return (refType === "branch") === (type[1] === "==")
       const onBranch = /^github\.ref_name (==|!=) github\.event\.repository\.default_branch$/.exec(term)
       // A pull request's ref is its merge commit's, never the default branch.
       if (onBranch !== null) return (event !== "pull_request" && branch === "default") === (onBranch[1] === "==")
@@ -212,6 +215,13 @@ describe("the cache's token in the workflow", () => {
     for (const event of ["push", "schedule", "workflow_dispatch"]) {
       expect(tokenFor(event, { read: "r", write: "w" })).toBe("w")
       expect(tokenFor(event, { read: "r" })).toBe("")
+    }
+  })
+
+  it("gives a tag named after the default branch only the read token", () => {
+    for (const event of ["push", "workflow_dispatch"]) {
+      expect(tokenFor(event, { read: "r", write: "w" }, "default", "tag")).toBe("r")
+      expect(tokenFor(event, { write: "w" }, "default", "tag")).toBe("")
     }
   })
 

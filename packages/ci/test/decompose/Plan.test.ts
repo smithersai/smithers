@@ -463,6 +463,19 @@ describe("decide: pnpm, Bun and npm", () => {
     )
     expect(plan(npm, "npm run test --workspaces")).toEqual(whole)
     expect(Object.keys(parts(plan(npm, "npm run test -w lib -w ./packages/lone")))).toEqual(["lib", "lone"])
+    const nested: Repository = {
+      manager: "npm",
+      files: Object.fromEntries([
+        ["apps", "suite"],
+        ["apps/web", "web"],
+        ["apps/web/deep", "deep"],
+        ["apps/.template", "template"],
+        ["tools", "tools"]
+      ].map(([directory, name]) => [`${directory}/package.json`, manifest(name!, { test: "echo tested" })]))
+    }
+    expect(Object.keys(parts(plan(nested, "npm run test -w apps -w tools")))).toEqual(["suite", "web", "tools"])
+    const ambiguous = { ...nested, files: { ...nested.files, "apps/package.json": manifest("apps", { test: "t" }) } }
+    expect(plan(ambiguous, "npm run test -w apps -w tools")).toEqual(whole)
     // npm never runs the root's script with its workspaces.
     const rooted = { ...npm, root: { name: "root", scripts: { test: "echo root" } } }
     expect(Object.keys(parts(plan(rooted, "npm run test --workspaces --if-present")))).toEqual(["app", "lib", "lone"])

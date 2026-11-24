@@ -4,13 +4,12 @@
  * @since 0.1.0
  */
 
-import * as ChildProcess from "effect/process/ChildProcess"
 import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 import type { Failure } from "../contract/Parts.vibe"
 import { errorLine } from "../contract/Command.vibe"
 import { failure } from "./Failure.vibe"
 import { type Commit, day, horizonDays } from "./Features.vibe"
-import { gitArguments } from "../replay/Git.vibe"
+import { runGit } from "../inventory/HostGit.vibe"
 
 /**
  * One change as its repository records it: when it was made, the files it
@@ -50,18 +49,10 @@ const commitsOf = (text: string): ReadonlyArray<Commit> =>
 
 /** Runs one git command in `root` with the caller's process runner: its exit code and what it printed. */
 effect function run(root: string, args: ReadonlyArray<string>) {
-  const spawner = try ChildProcessSpawner
-  return scoped(effect {
-    const handle = try spawner.spawn(ChildProcess.make("git", gitArguments(["-c", "core.quotePath=false", ...args]), { cwd: root }))
-    let diagnostic = ""
-    const drain = Stream.runForEach(Stream.decodeText(handle.stderr), (chunk) => sync(() => {
-      diagnostic = (diagnostic + chunk).slice(-2048)
-    }))
-    const [text, code] = try all([Stream.mkString(Stream.decodeText(handle.stdout)), handle.exitCode, drain], { concurrency: 3 })
-    return { code: Number(code), text, diagnostic: errorLine(diagnostic) }
-  }) catch effect (error) => {
+  const result = runGit(root, root, ["-c", "core.quotePath=false", ...args]) catch effect (error) => {
     throw failure("command-failed", `git ${args[0]} could not run in ${root}: ${error.message}`)
   }
+  return { ...result, diagnostic: errorLine(result.diagnostic) }
 }
 
 /** What one git command printed, or `command-failed` when it exits nonzero. */

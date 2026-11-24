@@ -471,23 +471,31 @@ effect function checkPaths(files: ReadonlyArray<GeneratedFile>) {
  * checkout copied with hard links does, would otherwise change in both places. With `within`, the directory the
  * file goes into must really be that one: a directory that became a link since the paths were checked is refused.
  */
-effect function write(path: string, content: string, within?: string) {
+effect function write(path: string, content: string, within: string) {
   const fs = try FileSystem.FileSystem
   const paths = try Path.Path
   const directory = paths.dirname(path)
   const staged = paths.join(directory, `.${paths.basename(path)}.${(try Random.nextInt).toString(36)}.smithers-ci`)
-  const written = effect {
+  const written = scoped(effect {
     try fs.makeDirectory(directory, { recursive: true })
     const real = try fs.realPath(directory)
-    if (within !== undefined && real !== within) {
+    if (real !== within) {
       throw failed(`${directory} is now ${real}, and no generated file is written through a link`)
     }
     // A new file, never one that is there: `wx` fails for a name that exists, a link included.
-    try fs.writeFileString(staged, content, { flag: "wx" })
+    const previous = fs.lstat(path) catch effect (error) => {
+      if (error.reason._tag !== "NotFound") throw error
+      return undefined
+    }
+    const mode = previous?.type === "File" ? previous.mode & 0o777 : undefined
+    const file = try acquireRelease(fs.open(staged, { flag: "wx", mode }), (_, exit) =>
+      Exit.isFailure(exit) ? ignore(fs.remove(staged, { force: true })) : Effect.void
+    )
+    try file.writeAll(new TextEncoder().encode(content))
+    if (mode !== undefined) try fs.chmod(staged, mode)
     try fs.rename(staged, path)
-  }
+  })
   written catch effect (error) => {
-    try ignore(fs.remove(staged, { force: true }))
     throw failed(`could not write ${path}: ${error.message}`)
   }
 }
@@ -587,32 +595,21 @@ function commandOf<R>(root: string, directory: string, parts: Parts<R>, status: 
   effect function placeOfOut(file: string) {
     const fs = try FileSystem.FileSystem
     const paths = try Path.Path
-    const below = insideOf(paths, paths.relative(root, file))
-    let link: string | undefined = undefined
-    if (below !== undefined) {
-      const segments = below.split(paths.sep)
-      for (const [index] of segments.entries()) {
-        const prefix = segments.slice(0, index + 1).join(paths.sep)
-        const leads = fs.readLink(paths.join(root, prefix)) catch () => undefined
-        if (leads !== undefined && link === undefined) link = prefix
-      }
-    }
-    // The real location: that of the nearest directory above the file that exists, and the names below it.
     const realRoot = fs.realPath(root) catch () => root
-    let canonical = file
-    let at = file
-    const rest: Array<string> = []
-    for (const _ of file.split(paths.sep)) {
-      const real = fs.realPath(at) catch () => undefined
-      if (real !== undefined) {
-        canonical = paths.join(real, ...rest)
-        break
+    let canonical = paths.parse(file).root
+    for (const segment of file.slice(canonical.length).split(paths.sep)) {
+      const next = paths.join(canonical, segment)
+      const below = insideOf(paths, paths.relative(realRoot, next))
+      if (below) {
+        const leads = fs.readLink(next) catch () => undefined
+        if (leads !== undefined) return { link: below, written: undefined, canonical: next }
+        canonical = next
+      } else {
+        // An external prefix, including an alias for the repository or one of its ancestors.
+        canonical = fs.realPath(next) catch () => next
       }
-      rest.unshift(paths.basename(at))
-      at = paths.dirname(at)
     }
-    const written = link === undefined ? insideOf(paths, paths.relative(realRoot, canonical)) : undefined
-    return { link, written }
+    return { link: undefined, written: insideOf(paths, paths.relative(realRoot, canonical)), canonical }
   }
 
   /** The failure for an `--out` file whose path holds the link `link`. */
@@ -656,7 +653,8 @@ function commandOf<R>(root: string, directory: string, parts: Parts<R>, status: 
     const document = try documentOf(ReplayReport, report, "replay")
     // The page is written after the report is printed, so the footer says where it will be before it is there: its
     // real location, whatever link the path the person gave goes through.
-    let place: { readonly link: string | undefined; readonly written: string | undefined } = {
+    let place: { readonly link: string | undefined; readonly written: string | undefined; readonly canonical: string } = {
+      canonical: "",
       link: undefined,
       written: undefined
     }
@@ -668,8 +666,8 @@ function commandOf<R>(root: string, directory: string, parts: Parts<R>, status: 
     if (Option.isSome(target)) {
       // A link a step of the replay left in the path: the report is printed, and the page is not written.
       if (place.link !== undefined) throw throughLink(target.value, place.link)
-      try write(target.value, try render(parts.html, report))
-      try Console.error(`${Surface.name}: wrote ${target.value}`)
+      try write(place.canonical, try render(parts.html, report), paths.dirname(place.canonical))
+      try Console.error(`${Surface.name}: wrote ${place.canonical}`)
     }
     // A replay the disk stopped is reported to the commit before, and is a failure of the program's own.
     if (report.stopped !== undefined) {

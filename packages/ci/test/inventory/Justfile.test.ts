@@ -226,6 +226,7 @@ describe("readJustfile scripts", () => {
   })
 
   it("reports other interpreters and values it cannot fill in", () => {
+    expect(features(jobOf("[script('bash', '--')]\nr:\n  echo ok\n", "r"))).toEqual(["interpreter"])
     const python = jobOf("run:\n  #!/usr/bin/env python3\n  print(1)\n", "run")
     expect(python.steps).toEqual([])
     expect(python.unsupported[0]).toEqual({
@@ -453,6 +454,7 @@ describe("readJustfile exactness", () => {
     expect(commands(jobOf("[script]\nr:\n  a=1\n  echo $a\n", "r"))).toEqual([`sh -eu -c 'a=1\necho $a'`])
     expect(commands(jobOf(`[script("bash", "-e")]\nr:\n  a\n`, "r"))).toEqual(["bash -e -c a"])
     expect(jobOf("[script]\nr:\n", "r").steps).toEqual([])
+    expect(features(jobOf("[script('bash', '--')]\nr:\n  echo ok\n", "r"))).toEqual(["interpreter"])
     const python = jobOf(`[script("python3")]\nr:\n  x = 1\n  print(x)\n`, "r")
     expect(python.steps).toEqual([])
     expect(python.unsupported).toEqual([{ feature: "interpreter", detail: "Justfile: r runs in python3" }])

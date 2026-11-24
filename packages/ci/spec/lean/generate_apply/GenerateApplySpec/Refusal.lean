@@ -113,7 +113,12 @@ def credentialAt (c : Nat) (rest : Str) : Option (Str × Str) :=
     | 58 :: 47 :: 47 :: after =>
       let authority := after.takeWhile isLineAuthorityUnit
       let rem := after.dropWhile isLineAuthorityUnit
-      some (c :: tail ++ lit "://" ++ afterLastAt authority, rem)
+      -- A raw delimiter in a password makes the authority ambiguous. Consume through the final @ in this word.
+      let word := rem.takeWhile (fun u => !isSpace u)
+      let user := authority.takeWhile (fun u => u != 58 && u != 91 && u != 93)
+      if 64 ∈ word ∧ 64 ∉ authority ∧ !(user.isEmpty) ∧ (authority.drop user.length).head? = some 58 then
+        some (c :: tail ++ lit "://", rem.drop (word.length - (afterLastAt word).length))
+      else some (c :: tail ++ lit "://" ++ afterLastAt authority, rem)
     | _ => none
   else none
 
@@ -166,13 +171,32 @@ def collapse : Bool → Str → Str
     if isSpace c then (if inRun then collapse true rest else 32 :: collapse true rest)
     else c :: collapse false rest
 
+/-- Query keys compared case-insensitively by the diagnostic redactor. -/
+def secretKey (key : Str) : Bool :=
+  let k := key.map lowerAscii
+  [(lit "sig"), (lit "key"), (lit "auth"), (lit "secret_key"), (lit "access_key"), (lit "secret_access_key")].any (· == k) || [(lit "token"), (lit "secret"), (lit "password"), (lit "passwd"), (lit "signature"), (lit "credential"), (lit "apikey"), (lit "api-key"), (lit "api_key")].any (·.isSuffixOf k)
+
+/-- Redact query values up to the next parameter, fragment or whitespace. -/
+def redactQuery : Nat → Str → Str
+  | _, [] => []
+  | 0, s => s
+  | fuel + 1, c :: rest =>
+    let key := rest.takeWhile (fun u => isWord u || u == 45 || u == 46)
+    match rest.drop key.length with
+    | 61 :: value =>
+      if (c == 63 || c == 38) && secretKey key then
+        c :: key ++ (lit "=[redacted]") ++ redactQuery fuel (value.dropWhile (fun u => !isSpace u && u != 35 && u != 38))
+      else c :: redactQuery fuel rest
+    | _ => c :: redactQuery fuel rest
+
 /-- The longest error a line quotes. -/
 def longest : Nat := 300
 
 /-- `errorLine` of a string: no credentials, no Bearer/Basic token, one line, at most 300 characters and an ellipsis. -/
 def errorLine (text : Str) : Str :=
   let scrubbed := withoutCredentials text.length text
-  let redacted := redactAuth scrubbed.length false scrubbed
+  let queried := redactQuery scrubbed.length scrubbed
+  let redacted := redactAuth queried.length false queried
   let line := trim (collapse false redacted)
   if longest < line.length then line.take longest ++ [0x2026] else line
 
@@ -389,7 +413,7 @@ def step (text : Str) (state : List Frame × Option Str) : Token → List Frame 
           let words := match found with
             | some message => trim (stripAnsi message)
             | none => []
-          ([123, 125], if words.isEmpty then frame.previous else some (errorLine words))
+          ([123, 125], if words.isEmpty then frame.previous else some words)
       match outer with
       | [] => ([], outcome.2)
       | parent :: rest =>
@@ -421,10 +445,23 @@ def fallback (kept lines : List Str) : Str :=
 /-- `refusalOf` from the substantive lines: the last record's message, else the fallback line. -/
 def refusalOfLines (lines : List Str) : Str :=
   match messageIn (joinWith [10] (useful lines)) with
-  | some message => message
+  | some message => errorLine message
   | none => errorLine (fallback (useful lines) lines)
 
 /-- `refusalOf`: Smithers build's own words for a refusal, in one line. -/
 def refusalOf (printed : Str) : Str := refusalOfLines (substantive printed)
+
+/-- Infrastructure diagnostics are classified before redaction and the 300-unit display bound. -/
+def machineFault (message : Str) : Bool :=
+  let s := lowerStr message
+  let codes := ["enospc", "edquot", "enomem", "emfile", "enfile", "eio", "erofs", "eacces", "eperm", "etimedout"].map lit
+  let wordStarts := (List.range s.length).filter fun i => i == 0 || !(s[i - 1]?).any isWord
+  ["no space left on device", "out of memory", "heap limit"].any (fun phrase => hasInfix s (lit phrase)) ||
+    wordStarts.any fun i => codes.any fun code =>
+      code.isPrefixOf (s.drop i) && !(s[i + code.length]?).any isWord
+
+def refusedTargets (printed : Str) : Option Str := do
+  let message ← messageIn (joinWith [10] (useful (splitOn 10 (stripAnsi printed))))
+  if machineFault message then none else some (errorLine message)
 
 end GenerateApplySpec.Refusal

@@ -331,6 +331,13 @@ interface Entry {
   readonly globs: ReadonlyArray<string>
 }
 
+// The literal directory itself or one non-hidden child, as npm resolves --workspace.
+const npmDirectories = (directory: string): ReadonlyArray<string> => {
+  const parts = directory.split("/")
+  const last = parts.pop()!
+  return last.startsWith(".") ? [directory] : [directory, parts.join("/")]
+}
+
 const selected = (workspace: Workspace, graph: Graph<unknown>, invocation: Invocation): ReadonlyArray<Package> | undefined => {
   const selection = invocation.selection
   if (selection.kind === "all") return workspace.packages
@@ -344,7 +351,10 @@ const selected = (workspace: Workspace, graph: Graph<unknown>, invocation: Invoc
     const matches = matching(pattern, matchDirectory)
     let matched = false
     for (const candidate of workspace.packages) {
-      const match = matches(candidate.name, candidate.directory)
+      // npm accepts a literal package name, its directory, or the parent of that directory.
+      const match = invocation.runner === "npm"
+        ? candidate.name === pattern.name || npmDirectories(candidate.directory).includes(pattern.directory!)
+        : matches(candidate.name, candidate.directory)
       if (match === undefined) return undefined
       if (!match) continue
       matched = true
@@ -372,7 +382,9 @@ const declaredClosure = (graph: Graph<unknown>, start: Package): ReadonlySet<str
 const entriesOf = (facts: Facts<unknown>, invocation: Invocation): ReadonlyArray<Entry> | undefined => {
   const { graph, workspace } = facts
   const manager = invocation.runner === "turbo" ? workspace.manager : invocation.runner
-  if (manager === "pnpm" ? workspace.pnpmMissing : workspace.npmMismatch) return undefined
+  const mismatch = manager === "pnpm" ? workspace.pnpmMissing : manager === "npm"
+    ? workspace.npmMismatch : workspace.otherManifestMismatch ?? workspace.npmMismatch
+  if (mismatch) return undefined
   const chosen = selected(workspace, graph, invocation)
   if (chosen === undefined) return undefined
   if (invocation.runner === "turbo") {
@@ -415,6 +427,11 @@ const entriesOf = (facts: Facts<unknown>, invocation: Invocation): ReadonlyArray
       ))
   ) return undefined
   const runnable = new Set(having.map((candidate) => candidate.name))
+  // A rendered --workspace=<package name> must isolate that package. A name which is also
+  // another workspace's path or parent can run extra scripts in the generated part.
+  if (invocation.runner === "npm" && having.length > 1 && workspace.packages.some((owner) =>
+    npmDirectories(owner.directory).some((selector) => selector !== owner.name && runnable.has(selector))
+  )) return undefined
   return having.map((owner): Entry => {
     // Nothing says this task does not need its dependencies' task first, as
     // a build does, so each package's command runs them too.

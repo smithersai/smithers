@@ -17,8 +17,10 @@ import { delimiter, join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { afterAll, beforeAll } from "vitest"
 import { expand, jobTemporaryVariable, script, shell } from "../../src/contract/Inventory.vibe"
+import { quote } from "../../src/decompose/Shell.vibe"
 import * as Expression from "../../src/inventory/Expression.ts"
 import { filesOf, regexOf } from "../../src/inventory/Glob.vibe"
+import { startedIn } from "../../src/inventory/MachineChanges.vibe"
 import { expandMatrix } from "../../src/inventory/Matrix.vibe"
 import { settled, write } from "../../src/inventory/Runner.ts"
 import { isLiteralSecret } from "../../src/inventory/Secrets.vibe"
@@ -1248,6 +1250,35 @@ describe("the Lean reference and Glob.vibe agree", () => {
     Effect.promise(async () => {
       for (const pattern of globCorpus) await compareGlob({ pattern, paths: corpusPaths })
       for (const patterns of filesCorpus) await compareFiles(patterns, corpusPaths)
+    }))
+})
+
+describe("shell invocation options", () => {
+  it.live.skipIf(!oracleReady)("chooses the same script as the Lean reference", () =>
+    Effect.promise(async () => {
+      expect.assertions(54)
+      for (
+        const option of [
+          [],
+          ["-e"],
+          ["+u"],
+          ["-o", "pipefail"],
+          ["--init-file", "init"],
+          ["+O", "extglob"],
+          ["-eo", "pipefail"],
+          ["-cO", "extglob"],
+          ["--norc"]
+        ]
+      ) {
+        for (
+          const tail of [[], ["-c", "observe"], ["-c", "--", "observe"], ["--", "-c", "file"], ["-s", "arg"], ["file"]]
+        ) {
+          const args = [...option, ...tail]
+          const expected = await ask({ op: "shellInput", input: "check", args })
+          const programs = startedIn(["bash", ...args.map(quote), "<<< check"].join(" ")).slice(1)
+          expect(programs.map(({ name }) => name), JSON.stringify(args)).toEqual(expected === null ? [] : [expected])
+        }
+      }
     }))
 })
 

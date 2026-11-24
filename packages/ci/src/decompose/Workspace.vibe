@@ -49,6 +49,7 @@ export interface Workspace {
   readonly orchestrated: boolean
   readonly pnpmMissing?: boolean
   readonly npmMismatch?: boolean
+  readonly otherManifestMismatch?: boolean
 }
 
 /**
@@ -219,11 +220,32 @@ export const boundedDirectoryMatcher = (): DirectoryMatcher => {
   return (segments, directory) => matchDirectory(segments, directory, spend)
 }
 
-const patternTest = (pattern: string, match: DirectoryMatcher): DirectoryTest | undefined => {
+const patternTest = (pattern: string, match: DirectoryMatcher, npm: boolean): DirectoryTest | undefined => {
   if (/[{}[\]?\\]/.test(pattern)) return undefined
   const segments = pattern.split("/").filter((segment) => segment !== "" && segment !== ".")
   if (segments.includes("..")) return undefined
-  return (directory) => match(segments, directory)
+  const hiddenSegments = segments.flatMap((segment, index) => segment.startsWith(".") ? [index] : [])
+  return (directory) => {
+    if (!npm || !/(?:^|\/)\./.test(directory)) return match(segments, directory)
+    const parts = directory.split("/")
+    const hiddenParts = parts.flatMap((part, index) => part.startsWith(".") ? [index] : [])
+    if (hiddenParts.length !== hiddenSegments.length) return false
+    let patternStart = 0
+    let pathStart = 0
+    for (let index = 0; index <= hiddenParts.length; index++) {
+      const patternEnd = hiddenSegments[index] ?? segments.length
+      const pathEnd = hiddenParts[index] ?? parts.length
+      const chunk = segments.slice(patternStart, patternEnd)
+      const matched = pathStart === pathEnd
+        ? chunk.every((segment) => segment === "**")
+        : match(chunk, parts.slice(pathStart, pathEnd).join("/"))
+      if (matched !== true) return matched
+      if (index < hiddenParts.length && !matchesName(segments[patternEnd]!, parts[pathEnd]!)) return false
+      patternStart = patternEnd + 1
+      pathStart = pathEnd + 1
+    }
+    return true
+  }
 }
 
 const matchesAny = (tests: ReadonlyArray<DirectoryTest>, directory: string): boolean | undefined => {
@@ -284,13 +306,14 @@ export const readPatterns = (
  */
 export const packageDirectories = (
   patterns: ReadonlyArray<string>,
-  files: ReadonlySet<string>
+  files: ReadonlySet<string>,
+  npm = true
 ): ReadonlyArray<string> | undefined => {
   const match = boundedDirectoryMatcher()
   const include: Array<DirectoryTest> = []
   const exclude: Array<DirectoryTest> = []
   for (const pattern of patterns) {
-    const test = patternTest(pattern.startsWith("!") ? pattern.slice(1) : pattern, match)
+    const test = patternTest(pattern.startsWith("!") ? pattern.slice(1) : pattern, match, npm)
     if (test === undefined) return undefined
     ;(pattern.startsWith("!") ? exclude : include).push(test)
   }

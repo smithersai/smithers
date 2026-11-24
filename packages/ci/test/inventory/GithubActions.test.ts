@@ -835,6 +835,22 @@ jobs:
     expect(jobs[0]?.steps[0]?.runner).toContain("'setup-go-1.'")
   })
 
+  it.each([
+    ["ruby/setup-ruby@v1", "bundler-cache"],
+    ["pnpm/action-setup@v4", "run_install"]
+  ])("records unresolved install settings before replaying %s", (uses, input) => {
+    const job = jobOf(withSteps([
+      "      - uses: " + uses,
+      "        with: { " + input + ": true }",
+      "        env: { SETTING: \"${{ vars.SETTING }}\" }"
+    ].join("\n")))
+    expect(job.steps).toEqual([])
+    expect(job.unsupported).toContainEqual({
+      feature: "expression",
+      detail: expect.stringContaining("sets SETTING from")
+    })
+  })
+
   it("reads a setup action outside any list by its name, and runs what it also runs", () => {
     const { jobs, toolchains } = read(`
 on: push

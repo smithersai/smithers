@@ -29,6 +29,7 @@ describe("host program lookup", () => {
       writeFileSync(join(first, "plain"), "", { mode: 0o600 })
       mkdirSync(join(first, "directory"))
       writeFileSync(join(second, "linked"), "", { mode: 0o755 })
+      symlinkSync(join(second, "linked"), join(first, "brew"))
       const entries = [
         "",
         ".",
@@ -42,9 +43,12 @@ describe("host program lookup", () => {
       ]
       const search = hostPath(alias, entries.join(delimiter))
       expect(search.path).toBe([first, second].map((path) => realpathSync(path)).join(delimiter))
+      expect(search.program("brew")).toBe(join(realpathSync(first), "brew"))
       expect(search.program("linked")).toBe(realpathSync(join(second, "linked")))
       for (const name of ["plain", "directory", "absent"]) expect(search.program(name)).toBeUndefined()
       expect(hostPath(root, join(base, "back")).program("linked")).toBeUndefined()
+      // The caller may run in another copy. A trusted bin may point back into that copy, too.
+      expect(hostPath(root, entries.join(delimiter), second).program("brew")).toBeUndefined()
       expect(hostPath(join(base, "missing"), first).path).toBe("")
     } finally {
       rmSync(base, { recursive: true, force: true })

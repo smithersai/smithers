@@ -13,6 +13,7 @@ import { keptNotes, keptRuns, keptSteps } from "../../src/generate/Kept.vibe"
 import { notesPath, packagePath, workflowPath } from "../../src/generate/Render.ts"
 import { planSteps, type StepTarget } from "../../src/generate/Steps.vibe"
 import * as Yaml from "../../src/generate/Yaml.vibe"
+import { readWorkflow } from "../../src/inventory/GithubActions.vibe"
 
 const step = (id: string, command: string, extra: Partial<Step> = {}): Step => ({
   id,
@@ -152,6 +153,33 @@ describe("a kept step the generated workflow cannot write for a variant", () => 
     expect(compared.notes).toHaveLength(1)
   })
 
+  it("keeps a hyphenated property verbatim in conditions and inputs", () => {
+    const property = "github.event.client_payload.run-matrix.os"
+    const kept = { uses: "a/b@v1", if: "github.event.inputs.use-matrix", with: { name: "${{ " + property + " }}" } }
+    expect(decided(kept).notes).toEqual([])
+    const place = { job: job("main", []), variant: {}, machine: "m", entry: "true" }
+    const [, written] = read(keptSteps(kept, place, 0, 0))
+    expect(written?.["with"]).toEqual(kept.with)
+    expect(written?.["if"]).toContain(kept.if)
+  })
+
+  it("omits a zero matrix condition and a boolean it could only write as quoted text", () => {
+    expect(decided({ uses: "a/b@v1", if: "matrix.shard" }, [{ shard: "0" }, { shard: "1" }]).runs)
+      .toEqual([[{ shard: "1" }, 1]])
+    expect(decided({ uses: "a/b@v1", continueOnError: "${{ MATRIX.flag }}" }, [{ Flag: "false" }]).runs)
+      .toEqual([])
+  })
+
+  it.each(["${{ GitHub.Job }}-logs", "${{ github['job'] }}"])(
+    "omits an input that reads the original job ID",
+    (name) => {
+      const kept = { uses: "actions/upload-artifact@v4", with: { name } }
+      expect(decided(kept).notes[0]).toContain("github.job")
+      expect(decided(kept).runs).toEqual([])
+      expect(decided({ ...kept, with: { name: "${{ format('github.job', github['ref']) }}" } }).notes).toEqual([])
+    }
+  )
+
   it("is written where true or false is only printed: the text is the same either way", () => {
     const kept: KeptStep = {
       uses: "a/b@v1",
@@ -185,6 +213,32 @@ describe("a kept step the generated workflow cannot write for a variant", () => 
 })
 
 describe("the notes of the generated files", () => {
+  it("records each checkout setting the shared runner leaves at its default", () => {
+    const parsed = readWorkflow(
+      ".github/workflows/ci.yml",
+      [
+        "on: push",
+        "jobs:",
+        "  build:",
+        "    runs-on: ubuntu-latest",
+        "    steps:",
+        "      - uses: actions/checkout@v4",
+        "        with: { fetch-depth: 0, fetch-tags: true, persist-credentials: false }",
+        "      - run: echo ok"
+      ].join("\n")
+    )
+    const notes = content(inventory(parsed.jobs), notesPath)
+    for (
+      const setting of [
+        "fetch-depth is left at 1",
+        "fetch-tags is left at false",
+        "persist-credentials is left at true"
+      ]
+    ) {
+      expect(notes).toContain("build step 1: " + setting + " by the generated checkout")
+    }
+  })
+
   it("name each job the inventory leaves out, with why", () => {
     const options = { left: [{ job: "deploy", reasons: [{ feature: "secrets", detail: "reads DEPLOY_KEY" }] }] }
     const generated = Effect.runSync(files(inventory([job("a", [step("a:1", "x")])]), options))
@@ -198,8 +252,10 @@ describe("the cache token of the generated workflow", () => {
     const build = stepsOf(workflow).find((each) => String(each["run"]).includes("smthrs ci"))
     expect((build?.["env"] as Record<string, string>)["SMITHERS_CACHE_TOKEN"]).toBe(
       "${{ github.event_name == 'pull_request' && secrets.SMITHERS_CACHE_READ_TOKEN || " +
+        "github.ref_type != 'branch' && secrets.SMITHERS_CACHE_READ_TOKEN || " +
         "github.ref_name != github.event.repository.default_branch && secrets.SMITHERS_CACHE_READ_TOKEN || " +
-        "github.event_name != 'pull_request' && github.ref_name == github.event.repository.default_branch && " +
+        "github.event_name != 'pull_request' && github.ref_type == 'branch' && " +
+        "github.ref_name == github.event.repository.default_branch && " +
         "secrets.SMITHERS_CACHE_TOKEN || '' }}"
     )
   })

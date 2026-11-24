@@ -159,6 +159,18 @@ describe("packageDirectories", () => {
     expect(packageDirectories([], files)).toEqual([])
   })
 
+  it("requires each hidden component to be explicit in an npm workspace pattern", () => {
+    const files = new Set(["pkg/.template/app/package.json", ".tools/sub/.bin/package.json", "pkg/app/package.json"])
+    expect(packageDirectories(["**"], files)).toEqual(["pkg/app"])
+    expect(packageDirectories(["pkg/*/*", "other/.template/*", "**/.hidden/**"], files)).toEqual([])
+    expect(packageDirectories(["**/.tools/**/.bin", "pkg/**/.temp*/**"], files)).toEqual([
+      ".tools/sub/.bin",
+      "pkg/.template/app"
+    ])
+    expect(packageDirectories(["x/**/.tools/**/.bin", "**/.tools/**/.bin/required"], files)).toEqual([])
+    expect(packageDirectories(["**"], files, false)).toHaveLength(3)
+  })
+
   it("gives nothing when a pattern uses syntax it does not read", () => {
     for (const pattern of ["packages/{a,b}", "packages/[ab]", "packages/?", "../outside/*", "!packages/{a,b}"]) {
       expect(packageDirectories(["packages/*", pattern], files), pattern).toBeUndefined()

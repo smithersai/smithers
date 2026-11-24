@@ -92,6 +92,28 @@ export const checkoutProblems = (
   return problems
 }
 
+// The inputs of actions/checkout@v4 when the generated workflow does not set them.
+const checkoutDefaults = { "fetch-depth": "1", "fetch-tags": "false", "persist-credentials": "true" }
+
+/**
+ * Checkout inputs the shared checkout of the generated workflow leaves at
+ * their defaults. Name the setting without printing a repository's input.
+ *
+ * @category accessors
+ * @since 0.1.0
+ */
+export const checkoutNotes = (inputs: unknown): ReadonlyArray<string> => {
+  const normalized = actionInputs(inputs)
+  const notes: Array<string> = []
+  for (const [name, fallback] of Object.entries(checkoutDefaults)) {
+    const input = normalized[name]
+    if (input !== undefined && asScalar(input)?.trim().toLowerCase() !== fallback) {
+      notes.push(`${name} is left at ${fallback} by the generated checkout`)
+    }
+  }
+  return notes
+}
+
 /**
  * A local composite action: its inputs with their defaults, the expression
  * of each output, and its steps as written.

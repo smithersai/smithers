@@ -127,7 +127,10 @@ describe("Repository.layerGit", () => {
     const recording = ChildProcessSpawner.of({
       ...real,
       spawn: (command) => {
-        if (command._tag === "StandardCommand") started.push(`${command.command} ${String(command.args[noUpkeep.length + 2])}`)
+        if (command._tag === "StandardCommand") {
+          expect(command.command).toMatch(/[/\\]git(?:\.exe)?$/)
+          started.push(String(command.args[noUpkeep.length + 2]))
+        }
         return real.spawn(command)
       }
     })
@@ -138,7 +141,7 @@ describe("Repository.layerGit", () => {
         const read = try reader.change(root, commits[0]!)
         try Effect.try(() => {
           expect(read.tree).toEqual(["a.ts"])
-          expect(started).toEqual(["git rev-parse", "git rev-parse", "git show", "git ls-tree"])
+          expect(started).toEqual(["rev-parse", "rev-parse", "show", "ls-tree"])
         })
       }
     }

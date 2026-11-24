@@ -59,6 +59,18 @@ describe("Make expansion limits", () => {
     }
   })
 
+  it("shares expanded UTF-8 bytes and variable visits across recipes", () => {
+    const first = "echo $(value)"
+    const jobs =
+      read("value := " + "é".repeat(270000) + "\nfirst:\n\t" + first + "\nsecond:\n\t" + first + "\n\tok").jobs
+    expect(jobs[0]?.steps).toHaveLength(1)
+    expect(details(jobs[1]!)).toContain("Makefile: second line 5 exceeds the Make variable expansion limit")
+    expect(jobs[1]?.steps).toEqual([])
+    const many = read("value = one\nfirst:\n" + "\techo $(value)\n".repeat(2048) + "second:\n\ttrue").jobs
+    expect(many[0]?.steps).toHaveLength(2048)
+    expect(details(many[1]!)).toContain("Makefile: second line 2052 exceeds the Make variable expansion limit")
+  })
+
   it("shares the visit budget across rules of the same file", () => {
     const inner = "\tmake empty\n".repeat(2100)
     const jobs = read(`first:\n${inner}second:\n${inner}empty:\n`).jobs

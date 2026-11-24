@@ -222,6 +222,11 @@ describe("--out", () => {
     expect(inside.code, inside.stderr).toBe(exitCodes.ok)
     expect(inside.stdout).toContain("This run wrote one file to the repository: report.html.")
     expect(readFileSync(join(root, "report.html"), "utf8")).toContain(page)
+    symlinkSync(elsewhere, join(root, "exports"))
+    const guarded = await runIn(["--out", join(through, "exports", "run.html"), "--commits", "1"], root)
+    expect(guarded.code).toBe(exitCodes.failed)
+    expect(guarded.stderr).toContain("exports is a link")
+    expect(existsSync(join(elsewhere, "run.html"))).toBe(false)
     // A new directory inside it, which is made for the page.
     const deeper = await runIn(["--out", "pages/new/report.html", "--commits", "1"], root)
     expect(deeper.code, deeper.stderr).toBe(exitCodes.ok)
@@ -236,6 +241,60 @@ describe("--out", () => {
     expect(outside.code, outside.stderr).toBe(exitCodes.ok)
     expect(outside.stdout).toContain("This run wrote nothing to the repository.")
     expect(readFileSync(join(pages, "report.html"), "utf8")).toContain(page)
+  })
+
+  it("reports the same external final-link destination that it writes", async () => {
+    const root = repo()
+    const output = join(scratch(), "out.html")
+    const report = join(root, "report.html")
+    writeFileSync(report, "old", { mode: 0o640 })
+    symlinkSync(report, output)
+    const outcome = await runIn(["--out", output, "--commits", "1"], root)
+    expect(outcome.code, outcome.stderr).toBe(exitCodes.ok)
+    expect(outcome.stdout).toContain("This run wrote one file to the repository: report.html.")
+    expect(outcome.stderr).toContain(`wrote ${report}`)
+    expect(readFileSync(report, "utf8")).toContain(page)
+    expect(statSync(report).mode & 0o777).toBe(0o640)
+  })
+
+  it("cleans up only its own staging file when writing the report fails", async () => {
+    const root = repo()
+    const report = join(root, "report.html")
+    writeFileSync(report, "old")
+    for (const failure of ["inspect", "collision", "rename"]) {
+      let stage = ""
+      const faulty = Layer.effect(
+        FileSystem.FileSystem,
+        Effect.gen(function*() {
+          const fs = yield* FileSystem.FileSystem
+          const denied = (method: string, path: string) =>
+            Effect.fail(PlatformError.systemError({
+              _tag: "PermissionDenied",
+              module: "FileSystem",
+              method,
+              pathOrDescriptor: path
+            }))
+          return FileSystem.FileSystem.of({
+            ...fs,
+            lstat: (path) => failure === "inspect" && path === report ? denied("lstat", path) : fs.lstat(path),
+            open: (path, options) => {
+              if (options?.flag === "wx") {
+                stage = path
+                if (failure === "collision") writeFileSync(path, "reserved")
+              }
+              return fs.open(path, options)
+            },
+            rename: (from, to) => failure === "rename" ? denied("rename", from) : fs.rename(from, to)
+          })
+        })
+      )
+      const outcome = await runIn(["--out", report, "--commits", "1"], root, unplanned, faulty)
+      expect(outcome.code, failure).toBe(exitCodes.failed)
+      expect(outcome.stderr).toContain(`could not write ${report}`)
+      expect(readFileSync(report, "utf8")).toBe("old")
+      if (failure === "collision") expect(readFileSync(stage, "utf8")).toBe("reserved")
+      if (failure === "rename") expect(existsSync(stage)).toBe(false)
+    }
   })
 
   it("is written, and placed by its name, where the repository's real location cannot be found", async () => {
@@ -257,6 +316,7 @@ describe("apply", () => {
     const first = readFileSync(join(root, workflow), "utf8")
     // A copy of the checkout made with hard links: one file, two names.
     const other = join(scratch(), "smithers-ci.yml")
+    chmodSync(join(root, workflow), 0o600)
     linkSync(join(root, workflow), other)
     expect(statSync(other).ino).toBe(statSync(join(root, workflow)).ino)
     const again = await runIn(["apply", "--cache", "https://cache.example.invalid/ac"], root)
@@ -267,7 +327,7 @@ describe("apply", () => {
     expect(readFileSync(other, "utf8")).toBe(first)
     expect(statSync(other).ino).not.toBe(statSync(join(root, workflow)).ino)
     // The new file is an ordinary one, and nothing it was written through is left beside it.
-    expect(statSync(join(root, workflow)).mode & 0o777).toBe(0o666 & ~process.umask())
+    expect(statSync(join(root, workflow)).mode & 0o777).toBe(0o600)
     expect(filesUnder(root).filter((file) => file.endsWith(".smithers-ci"))).toEqual([])
   })
 

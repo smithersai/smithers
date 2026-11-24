@@ -88,7 +88,12 @@ def credentialAt (c : Nat) (rest : Str) : Option (Str × Str) :=
     | 58 :: 47 :: 47 :: after =>
       let authority := after.takeWhile isLineAuthorityUnit
       let rem := after.dropWhile isLineAuthorityUnit
-      some (c :: rest.takeWhile isSchemeUnit ++ u!"://" ++ afterLastAt authority, rem)
+      -- A raw delimiter in a password makes the authority ambiguous. Consume through the final @ in this word.
+      let word := rem.takeWhile (fun u => !isSpace u)
+      let user := authority.takeWhile (fun u => u != 58 && u != 91 && u != 93)
+      if 64 ∈ word ∧ 64 ∉ authority ∧ !(user.isEmpty) ∧ (authority.drop user.length).head? = some 58 then
+        some (c :: rest.takeWhile isSchemeUnit ++ u!"://", rem.drop (word.length - (afterLastAt word).length))
+      else some (c :: rest.takeWhile isSchemeUnit ++ u!"://" ++ afterLastAt authority, rem)
     | _ => none
   else none
 
@@ -149,6 +154,24 @@ def collapse : Str → Str
       | [] => [32]
     else c :: collapse rest
 
+/-- Query keys compared case-insensitively by the diagnostic redactor. -/
+def secretKey (key : Str) : Bool :=
+  let k := key.map lowerAscii
+  [u!"sig", u!"key", u!"auth", u!"secret_key", u!"access_key", u!"secret_access_key"].any (· == k) || [u!"token", u!"secret", u!"password", u!"passwd", u!"signature", u!"credential", u!"apikey", u!"api-key", u!"api_key"].any (·.isSuffixOf k)
+
+/-- Redact query values up to the next parameter, fragment or whitespace. -/
+def redactQuery : Nat → Str → Str
+  | _, [] => []
+  | 0, s => s
+  | fuel + 1, c :: rest =>
+    let key := rest.takeWhile (fun u => isWord u || u == 45 || u == 46)
+    match rest.drop key.length with
+    | 61 :: value =>
+      if (c == 63 || c == 38) && secretKey key then
+        c :: key ++ u!"=[redacted]" ++ redactQuery fuel (value.dropWhile (fun u => !isSpace u && u != 35 && u != 38))
+      else c :: redactQuery fuel rest
+    | _ => c :: redactQuery fuel rest
+
 /-- The longest error a line quotes, in code units. -/
 def longest : Nat := 300
 
@@ -158,7 +181,8 @@ one line, and no more than 300 code units before a `…`.
 -/
 def errorLine (cause : Str) : Str :=
   let scrubbed := scrubAll cause.length cause
-  let redacted := redactAuth scrubbed.length false scrubbed
+  let queried := redactQuery scrubbed.length scrubbed
+  let redacted := redactAuth queried.length false queried
   let line := trim (collapse redacted)
   if line.length > longest then line.take longest ++ u!"…" else line
 

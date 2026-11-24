@@ -109,7 +109,9 @@ export const declarationNames: ReadonlyArray<string> = [
  * @category accessors
  * @since 0.1.0
  */
-export const declares = (path: string): boolean => declarationNames.includes(path.slice(path.lastIndexOf("/") + 1))
+export const declares = (path: string): boolean =>
+  declarationNames.includes(path.slice(path.lastIndexOf("/") + 1)) ||
+  /(?:^|\/)\.smithers\/config\.(?:[cm]?[jt]s|[jt]sx|vibe|smithers)$/.test(path)
 
 /** How many build files a refusal names before it counts the rest. */
 const named = 5

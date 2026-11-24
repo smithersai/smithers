@@ -229,7 +229,7 @@ describe.skipIf(!hasGo)("a Go test that reads a file through a child process", (
     // tool was told to keep a cache there, and no step of the job comes after this one, so what it left in its
     // home is kept for nobody: nothing of `go`'s lies in the directory, loose or in an archive.
     const carried = filesUnder(state)
-    expect(carried.filter((name) => name.startsWith("cache/")).length).toBeGreaterThan(0)
+    expect(carried.filter((name) => name.startsWith("cache/")).length, JSON.stringify(first.cache)).toBeGreaterThan(0)
     expect(carried.filter((name) => ofGoCache(name))).toEqual([])
     expect(carried.filter((name) => name.endsWith(".tar"))).toEqual([])
     const top = [...new Set(carried.map((name) => name.split("/")[0] as string))]

@@ -349,8 +349,8 @@ export const errorText = (cause: unknown): string => {
 }
 
 /** Also recognize a password containing a raw path, query or fragment delimiter before its final @. */
-const credential = /([a-z][a-z0-9+.-]{0,31}:\/\/)([^\s:/?#@[\]]+:(?!\d+[/?#])[^\s/?#@]*[/?#][^\s]*@|[^\s/?#]*)/gi
-const querySecret = /([?&](?:[\w.-]*(?:token|secret|password|passwd|signature|credential|api[-_]?key)|sig|key|auth)=)[^\s&#]*/gi
+const credential = /([a-z][a-z0-9+.-]{0,31}:\/\/)([^\s:/?#@[\]]+:[^\s/?#@]*[/?#][^\s]*@|[^\s/?#]*)/gi
+const querySecret = /([?&](?:[\w.-]*(?:token|secret|password|passwd|signature|credential|api[-_]?key)|(?:secret_|access_|secret_access_)?key|sig|auth)=)[^\s&#]*/gi
 
 const redact = (text: string): string => text
   .replace(credential, (_, prefix: string, authority: string) => prefix + authority.slice(authority.lastIndexOf("@") + 1))

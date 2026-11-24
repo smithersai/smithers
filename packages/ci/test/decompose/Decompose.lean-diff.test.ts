@@ -1366,6 +1366,10 @@ describe("Workspace against the Lean specification", () => {
 
   it.skipIf(!oracleReady)("matches workspace patterns as the specification does", async () => {
     await assertCorpus<DirectoriesCase>([
+      {
+        patterns: ["**", "packages/**/.kept/*", ".tools/**"],
+        files: [".tools/task/package.json", "packages/x/.kept/y/package.json", "packages/.hidden/z/package.json"]
+      },
       { patterns: ["packages/*"], files: ["packages/a/package.json", "packages/a/b/package.json", "package.json"] },
       { patterns: ["**"], files: ["a/package.json", "a/b/c/package.json", "node_modules/x/package.json"] },
       { patterns: ["a*a*a*z"], files: ["aaaaaaaaaaaa/package.json", "aaaz/package.json", "az/package.json"] },

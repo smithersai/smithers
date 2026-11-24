@@ -95,6 +95,11 @@ def answer (request : Json) : Except String Json := do
   | "within" => return toJson (Paths.withinRoot (← text "realRoot") (← text "real"))
   | "place" =>
     return ofPlace (Paths.placeOf (← diskOf (← request.getObjVal? "disk")) (← text "realRoot") (← text "path"))
+  | "cacheToken" =>
+    let flag (name : String) := request.getObjVal? name >>= Json.getBool?
+    let secret (name : String) := request.getObjVal? name >>= Json.getStr?
+    return toJson (Cache.token (← flag "pullRequest") (← flag "branch") (← flag "defaultName")
+      (← secret "read") (← secret "write"))
   | "labels" =>
     let batch ← (← (← request.getObjVal? "batch").getArr?).toList.mapM fun step => do
       return (← unitsOf (← step.getObjVal? "id"), ← variantOf (← step.getObjVal? "variant"))
@@ -110,6 +115,7 @@ def answer (request : Json) : Except String Json := do
   | "strip" => return ofUnits (Refusal.stripAnsi (← text "text"))
   | "warning" => return toJson (Refusal.isNodeWarning (← text "text"))
   | "errorLine" => return ofUnits (Refusal.errorLine (← text "text"))
+  | "refusedTargets" => return toJson ((Refusal.refusedTargets (← text "text")).map ofUnits)
   | "refusal" => return ofUnits (Refusal.refusalOf (← text "text"))
   | other => throw s!"unknown op {other}"
 

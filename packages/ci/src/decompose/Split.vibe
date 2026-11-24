@@ -8,7 +8,6 @@
  * @since 0.1.0
  */
 
-import * as ChildProcess from "effect/process/ChildProcess"
 import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 import { type Ci, type Job, type Step, withSteps } from "../contract/Inventory.vibe"
 import type { Decompose, Failure } from "../contract/Parts.vibe"
@@ -32,7 +31,7 @@ import {
   scanner,
   type Workspace
 } from "./Workspace.vibe"
-import { gitArguments } from "../replay/Git.vibe"
+import { runGit } from "../inventory/HostGit.vibe"
 
 /** File types that hold no path or package name a program follows. */
 const unscanned =
@@ -43,6 +42,7 @@ const manifest = /(?:^|\/)package\.json$/
 
 /** The largest file that can inform static reach. */
 const readLimit = 1024 * 1024
+const lockfileHead = 64 * 1024
 
 interface Tree {
   readonly fs: FileSystem.FileSystem
@@ -54,21 +54,15 @@ interface Tree {
 
 /** Read each listing once, draining both pipes before collecting its status. */
 effect function git(root: string, args: ReadonlyArray<string>): string!Failure!ChildProcessSpawner {
-  const spawner = try ChildProcessSpawner
-  const command = ChildProcess.make("git", gitArguments(["-c", "core.fsmonitor=false", "-C", root, ...args]))
-  const result = scoped(effect {
-    const handle = try spawner.spawn(command)
-    const [out, err, code] = try all([Stream.mkString(Stream.decodeText(handle.stdout)), Stream.mkString(Stream.decodeText(handle.stderr)), handle.exitCode], { concurrency: 3 })
-    return { out, err, code: Number(code) }
-  }) catch effect (error) => {
+  const result = runGit(root, root, args) catch effect (error) => {
     throw { part: "decompose", code: "command-failed", message: error.message } satisfies Failure
   }
   if (result.code !== 0) throw {
     part: "decompose",
-    code: result.err.includes("not a git repository") ? "not-a-repository" : "command-failed",
-    message: `git ls-files exited ${result.code}: ${result.err.trim().slice(-512)}`
+    code: result.diagnostic.includes("not a git repository") ? "not-a-repository" : "command-failed",
+    message: `git ls-files exited ${result.code}: ${result.diagnostic.trim().slice(-512)}`
   } satisfies Failure
-  return result.out
+  return result.text
 }
 
 /** A file's text, or `undefined` when it is missing or cannot be read. */
@@ -78,6 +72,15 @@ effect function text(tree: Tree, file: string): (string | undefined)!! {
   if (info?.type !== "File") return undefined
   const resolved = tree.fs.realPath(full) catch () => undefined
   if (resolved !== full) return undefined
+  if (isRootLockfile(tree.path.basename(file))) {
+    const head = tree.fs.stream(full, { bytesToRead: lockfileHead })
+    const content = Stream.mkString(Stream.decodeText(head)) catch () => undefined
+    // A Berry lockfile may place its metadata after a long comment. A truncated, unidentified
+    // Yarn header cannot establish classic Yarn's script semantics.
+    if (tree.path.basename(file) === "yarn.lock" && info.size > lockfileHead &&
+      !/^# yarn lockfile v1\r?$|__metadata:/m.test(content ?? "")) return undefined
+    return content
+  }
   return try readText(tree, full, info.size)
 }
 
@@ -96,27 +99,34 @@ effect function readText(tree: Tree, full: string, size: FileSystem.File.Info["s
 effect function readWorkspace(tree: Tree): (Workspace | undefined)!Failure!ChildProcessSpawner {
   const manifest = readObject((try text(tree, "package.json")) ?? "")
   if (manifest === undefined) return undefined
+  const pnpm = tree.files.has("pnpm-workspace.yaml")
+  const manager = managerOf(manifest, tree.files)
   const declared = readPatterns(
     manifest,
-    tree.files.has("pnpm-workspace.yaml") ? (try text(tree, "pnpm-workspace.yaml")) ?? "" : undefined,
+    pnpm ? (try text(tree, "pnpm-workspace.yaml")) ?? "" : undefined,
     tree.files.has(".npmrc") ? (try text(tree, ".npmrc")) ?? null : ""
   )
-  const directories = declared === undefined ? undefined : packageDirectories(declared.patterns, tree.files)
+  const npmPatterns = !pnpm && manager === "npm"
+  const directories = declared === undefined ? undefined : packageDirectories(declared.patterns, tree.files, npmPatterns)
   if (declared === undefined || directories === undefined || tree.opaque) return undefined
   // An ignored manifest still participates in package manager workspace discovery.
   const ignored = try git(tree.root, ["ls-files", "--others", "--ignored", "--exclude-standard", "-z", "--", ":(glob)**/package.json", ":(exclude,glob)**/node_modules/**"])
   const all = new Set([...tree.files, ...ignored.split("\0")])
-  if (packageDirectories(declared.patterns, all)?.length !== directories.length) return undefined
+  if (packageDirectories(declared.patterns, all, npmPatterns)?.length !== directories.length) return undefined
   const manifests: Array<readonly [string, string]> = []
   for (const directory of directories) {
     manifests.push([directory, (try text(tree, `${directory}/package.json`)) ?? ""])
   }
-  const workspace = assemble(managerOf(manifest, tree.files), manifest, declared.orchestrated, manifests)
+  const workspace = assemble(manager, manifest, declared.orchestrated, manifests)
   if (workspace === undefined) return undefined
-  if (!tree.files.has("pnpm-workspace.yaml")) return { ...workspace, pnpmMissing: true }
-  const npm = readPatterns(manifest, undefined)
-  const npmDirectories = npm === undefined ? [] : packageDirectories(npm.patterns, all)
-  return { ...workspace, npmMismatch: JSON.stringify(npmDirectories) !== JSON.stringify(directories) }
+  // One graph can serve another package manager only if both see the same packages.
+  const rootPatterns = pnpm ? readPatterns(manifest, undefined)?.patterns : declared.patterns
+  const same = (npm: boolean): boolean => {
+    if (!pnpm && npm === npmPatterns) return true
+    const found = rootPatterns === undefined ? [] : packageDirectories(rootPatterns, all, npm)
+    return JSON.stringify(found) === JSON.stringify(directories)
+  }
+  return { ...workspace, pnpmMissing: !pnpm, npmMismatch: !same(true), otherManifestMismatch: !same(false) }
 }
 
 /** Reads `turbo.json` at the root and in each package that has one. */

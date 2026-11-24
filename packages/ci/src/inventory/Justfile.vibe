@@ -452,7 +452,7 @@ const readDependencies = (job: Draft, recipe: Recipe, aliases: ReadonlyMap<strin
 /** The start of a `[script]` recipe, or `undefined` once the reason is recorded. */
 const scriptStart = (justfile: Justfile, job: Draft, recipe: Recipe, args: ReadonlyArray<string>) => {
   if (args.length === 0 && !justfile.customInterpreter) return "sh -eu"
-  if (/^(?:\S*\/)?(?:bash|sh)$/.test(args[0] ?? "")) return args.map(shellWord).join(" ")
+  if (/^(?:\S*\/)?(?:bash|sh)$/.test(args[0] ?? "") && !args.includes("--")) return args.map(shellWord).join(" ")
   note(job, "interpreter", `${recipe.name} runs in ${args.join(" ") || "the script interpreter the file sets"}`)
   return undefined
 }

@@ -36,7 +36,7 @@ import {
   unknownRunner,
   writePermission
 } from "../contract/Inventory.vibe"
-import { cacheActions, checkoutProblems, parseYaml, readAction, setupVariables } from "./Actions.vibe"
+import { cacheActions, checkoutNotes, checkoutProblems, parseYaml, readAction, setupVariables } from "./Actions.vibe"
 import {
   type CacheUse,
   cacheUse,
@@ -916,6 +916,10 @@ const readUses = (context: StepContext, raw: Record<string, unknown>, uses: stri
     if (setup.tools[0]?.name === "python") state.python = true
     // An input can make the action run a command too, such as installing what a lockfile names.
     if (setup.command === undefined) return kept ?? recordOf(ran, notRun, undefined)
+    if (context.env.unread.size > 0) {
+      for (const [name, why] of context.env.unread) note(job, "expression", `${where} sets ${name} from ${why}`)
+      return recordOf({ kind: "problem", why: "" }, notRun, undefined)
+    }
     addRun({ ...context, name: context.name ?? uses }, [setup.command], ["bash", "-e"], "")
     return recordOf(ran, notRun, () => variable(`outcome:${context.key}`, `how ${where} ended`))
   }
@@ -951,6 +955,7 @@ const readUses = (context: StepContext, raw: Record<string, unknown>, uses: stri
         ? only.residual
         : textOf(filled.parts)
     }
+    for (const detail of checkoutNotes(raw["with"])) note(job, hostAction, `${where}: ${detail}`)
     for (const problem of checkoutProblems(raw["with"], state.facts.repository, read)) {
       note(job, "checkout", `${where} ${problem}`)
     }

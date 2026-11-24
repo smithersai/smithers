@@ -46,7 +46,7 @@ const realOf = (path: string): string => {
  * @since 0.1.0
  */
 export const checkoutOf = (directory: string): string => {
-  let at = directory
+  let at = realOf(directory)
   while (!existsSync(join(at, ".git"))) {
     const above = dirname(at)
     if (above === at) return directory

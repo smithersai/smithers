@@ -214,8 +214,10 @@ describe("files", () => {
     // event for the default branch the token that writes. Neither stands in for the other: an unset read token, which
     // is the empty text, never lets a pull request go on to the next.
     const token = "${{ github.event_name == 'pull_request' && secrets.SMITHERS_CACHE_READ_TOKEN || " +
+      "github.ref_type != 'branch' && secrets.SMITHERS_CACHE_READ_TOKEN || " +
       "github.ref_name != github.event.repository.default_branch && secrets.SMITHERS_CACHE_READ_TOKEN || " +
-      "github.event_name != 'pull_request' && github.ref_name == github.event.repository.default_branch && " +
+      "github.event_name != 'pull_request' && github.ref_type == 'branch' && " +
+      "github.ref_name == github.event.repository.default_branch && " +
       "secrets.SMITHERS_CACHE_TOKEN || '' }}"
 
     // No URL given: the variable alone names the cache, and a run without it says so before the targets run.

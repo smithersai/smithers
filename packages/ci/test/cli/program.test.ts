@@ -2,8 +2,8 @@ import * as NodeServices from "@effect/platform-node/NodeServices"
 import * as Effect from "effect/Effect"
 import { execFileSync } from "node:child_process"
 import { EventEmitter } from "node:events"
-import { existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs"
-import { basename, join } from "node:path"
+import { existsSync, mkdirSync, readdirSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
+import { basename, delimiter, join } from "node:path"
 import { afterAll, describe, expect, it } from "vitest"
 import { main, rootOf, run } from "../../src/cli/main.vibe"
 import {
@@ -80,16 +80,26 @@ describe.concurrent("smithers-ci from a directory of the repository", () => {
     expect(await onNode(outside)).toBe(outside)
   })
 
+  it("preserves a space at the end of a repository name", async () => {
+    const named = join(scratch(), "repo ")
+    renameSync(repo(), named)
+    expect(await onNode(join(named, "src"))).toBe(named)
+  })
+
   it("keeps the directory when git cannot be started", async () => {
     const root = repo()
-    const found = Effect.provide(rootOf(join(root, "src")), cannotStart("git"))
+    const found = Effect.provide(rootOf(join(root, "src")), cannotStart("--show-toplevel"))
     expect(await Effect.runPromise(Effect.provide(found, NodeServices.layer))).toBe(join(root, "src"))
   })
 
   it("reads the same inventory from a subdirectory as from the top, as a process", async () => {
     const root = repo()
-    const top = await spawn(program, ["inventory"], root)
-    const below = await spawn(program, ["inventory"], join(root, "src"))
+    const tools = join(root, "bin")
+    mkdirSync(tools)
+    symlinkSync("/usr/bin/false", join(tools, "git"))
+    const env = { ...process.env, PATH: [tools, process.env["PATH"]].join(delimiter) }
+    const top = await spawn(program, ["inventory"], root, env)
+    const below = await spawn(program, ["inventory"], join(root, "src"), env)
     expect(below.code, below.stderr).toBe(exitCodes.ok)
     expect(below.stdout).toBe(top.stdout)
     expect(below.stdout).toContain("job justfile:ci")

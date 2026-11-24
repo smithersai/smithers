@@ -42,6 +42,17 @@ segment any run of directories. -/
 def matchesDirectory (segments : List Str) (directory : Str) : Bool :=
   wild (· = ['*', '*']) wildName segments (splitOn '/' directory)
 
+/-- npm's globstar can only cross ordinary directories. Hidden components must be explicitly matched. -/
+def npmDirectory : List Str → List Str → Bool
+  | [], parts => parts.isEmpty
+  | segment :: rest, [] => segment == "**".toList && npmDirectory rest []
+  | segment :: rest, part :: more =>
+    if segment == "**".toList then
+      npmDirectory rest (part :: more) || (part.head? != some '.' && npmDirectory (segment :: rest) more)
+    else
+      (part.head? != some '.' || segment.head? == some '.') && wildName segment part && npmDirectory rest more
+termination_by pattern parts => pattern.length + parts.length
+
 def packageFile : Str := "/package.json".toList
 def modulesDirectory : Str := "node_modules/".toList
 
@@ -63,7 +74,7 @@ def packageDirectories (patterns files : List Str) : Option (List Str) :=
         some (file.take (file.length - packageFile.length))
       else none
     some (jsSort (distinct (directories.filter fun directory =>
-      includes.any (matchesDirectory · directory) && !excludes.any (matchesDirectory · directory))))
+      includes.any (npmDirectory · (splitOn '/' directory)) && !excludes.any (npmDirectory · (splitOn '/' directory)))))
 
 /-! ## Paths -/
 

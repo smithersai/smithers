@@ -34,7 +34,8 @@ import { type Failure, type GeneratedFile, writtenFiles } from "../contract/Part
 import { path as targetMapPath, TargetMap } from "../contract/TargetMap.vibe"
 import { inheritedEnvironmentNames } from "@smthrs/targets/Exec"
 import { ambientEnvironment } from "../replay/Environment.ts"
-import { exec, git } from "../replay/Process.vibe"
+import { exec } from "../replay/Process.vibe"
+import { runGit } from "../inventory/HostGit.vibe"
 import { check } from "./Check.vibe"
 import { declaredRefusal, declares } from "./Former.vibe"
 import { compiledCaches, Options } from "../replay/Replay.vibe"
@@ -86,7 +87,7 @@ const messageIn = (text: string): string | undefined => {
         const record = JSON.parse(frame.parts.join("")) as { readonly message?: unknown }
         // A complete outer record owns the diagnostic. A message in its metadata is not a refusal.
         const words = typeof record.message === "string" ? record.message.replace(ansiControl, "").trim() : ""
-        message = words === "" ? frame.previous : errorLine(words)
+        message = words === "" ? frame.previous : words
       } catch {
         replacement = "?"
       }
@@ -110,7 +111,7 @@ const messageIn = (text: string): string | undefined => {
 export const refusalOf = (printed: string): string => {
   const raw = printed.replace(ansiControl, "").split("\n").filter((line) => line.trim() !== "")
   const useful = raw.filter((line) => !nodeWarning.test(line.trim()))
-  return messageIn(useful.join("\n")) ?? errorLine(useful.at(-1) ?? raw.at(-1) ?? "it printed nothing")
+  return errorLine(messageIn(useful.join("\n")) ?? useful.at(-1) ?? raw.at(-1) ?? "it printed nothing")
 }
 
 /**
@@ -142,7 +143,7 @@ const machineFault =
 export const refusedTargets = (printed: string): string | undefined => {
   const useful = printed.replace(ansiControl, "").split("\n").filter((line) => !nodeWarning.test(line.trim()))
   const message = messageIn(useful.join("\n"))
-  return message === undefined || machineFault.test(message) ? undefined : message
+  return message === undefined || machineFault.test(message) ? undefined : errorLine(message)
 }
 
 /** Labels of generated targets pinned to a host other than this machine, which `smthrs ci <label> --plan` refuses by OS. */
@@ -193,13 +194,19 @@ export effect function refusals(
   files: ReadonlyArray<GeneratedFile>,
   limit: Duration.Input = planLimit
 ) {
+  const git = effect (cwd: string, args: ReadonlyArray<string>) => {
+    const result = runGit(root, cwd, args) catch effect (cause) => {
+      throw failed("command-failed", `could not run git: ${errorLine(cause)}`)
+    }
+    if (result.code !== 0) throw failed("command-failed", `git ${args[0]} failed: ${errorLine(result.diagnostic)}`)
+    return result.text
+  }
   const written = files.find((file) => file.path === targetMapPath)
   if (written === undefined) return []
   const map = Schema.decodeUnknownEffect(Schema.fromJsonString(TargetMap))(written.content) catch effect (cause) => {
     throw failed("invalid-document", `the target map the generator wrote is not one: ${cause.message}`)
   }
   const jobs = labelsByJob(map, otherHostLabels(files))
-  if (jobs.size === 0) return []
   const fs = try FileSystem.FileSystem
   const path = try Path.Path
   return try scoped(effect {
@@ -218,8 +225,12 @@ export effect function refusals(
     // any way, a link to nowhere included, goes from the copy: the plan is of the files the person has, and removing
     // a build file is what a refusal below asks for.
     const declared = (try git(copy, ["ls-files", "-z"])).split("\0").filter(declares)
+    const working = (try git(root, ["ls-files", "--cached", "--others", "--exclude-standard", "-z"])).split("\0").filter(declares)
+    const overlays = (try git(root, ["ls-files", "--others", "-z", "--", ".smithers/config.*"])).split("\0").filter(declares)
+    const previous = (try check(root, files)).former
+    const candidates = [...new Set([...declared, ...working.filter((file) => !previous.includes(file)), ...overlays])].sort()
     const gone: Array<string> = []
-    for (const file of declared) {
+    for (const file of candidates) {
       const at = path.join(root, file)
       const missing = fs.stat(at) catch (error) => error.reason._tag === "NotFound"
       const link = fs.readLink(at) catch () => undefined
@@ -231,8 +242,9 @@ export effect function refusals(
     if (former.length > 0) try git(copy, ["rm", "--quiet", "-r", "--ignore-unmatch", "--", ...former])
     // Smithers build loads every build file of the tree it plans, and nothing of the repository runs here.
     const generated = new Set(writtenFiles(files).map((file) => file.path))
-    const stray = declared.filter((file) => !gone.includes(file) && !former.includes(file) && !generated.has(file))
+    const stray = candidates.filter((file) => !gone.includes(file) && !former.includes(file) && !generated.has(file))
     if (stray.length > 0) throw { code: "unsupported", message: declaredRefusal(stray), part: "generate" } satisfies Failure
+    if (jobs.size === 0) return []
     // The copy holds the files apply would write, and Smithers build is given a home of its own beside it.
     const home = path.join(work, "home")
     const cache = path.join(work, "cache")

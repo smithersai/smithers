@@ -15,7 +15,7 @@
  */
 
 import { type Job, leftRunning, type Step } from "../contract/Inventory.vibe"
-import { acrossVariants, ansiQuoteEnd, listed, type Started, startedIn } from "./MachineChanges.vibe"
+import { acrossVariants, ansiQuoteEnd, closingOf, listed, type Started, startedIn } from "./MachineChanges.vibe"
 
 /** The programs that, started with one of these flags, carry on in the background on their own. */
 const daemonizes = (args: ReadonlyArray<string>): boolean =>
@@ -33,23 +33,6 @@ const daemonFlags: ReadonlyMap<string, (args: ReadonlyArray<string>) => boolean>
   // `ssh-agent` with no command to run forks and stays: `eval "$(ssh-agent -s)"`.
   ["ssh-agent", (args) => args.every((word) => word.startsWith("-") || word === "")]
 ])
-
-/** Where the closing `close` of the `open` at `start` is, past quotes and escapes, or the end of the text. */
-const closingOf = (text: string, start: number, open: string, close: string): number => {
-  let depth = 0
-  let quote = ""
-  for (let at = start; at < text.length; at++) {
-    const char = text[at]
-    if (char === "\\" && quote !== "'") at += 1
-    else if (quote !== "") {
-      if (char === quote) quote = ""
-    } else if (char === "$" && text[at + 1] === "'") at = ansiQuoteEnd(text, at)
-    else if (char === "'" || char === '"') quote = char
-    else if (char === open) depth += 1
-    else if (char === close && --depth === 0) return at
-  }
-  return text.length
-}
 
 /**
  * Where each command a script puts in the background with `&` starts and
@@ -72,15 +55,12 @@ const backgrounded = (script: string): ReadonlyArray<readonly [start: number, en
     if (char === "\\") at += 2
     else if (char === "$" && script[at + 1] === "'") at = ansiQuoteEnd(script, at) + 1
     else if (char === "'") at = (script.indexOf("'", at + 1) + 1) || script.length
-    else if (char === "\"") {
-      at += 1
-      while (at < script.length && script[at] !== "\"") at += script[at] === "\\" ? 2 : 1
-      at += 1
-    } else if (char === "`") {
+    else if (char === '"') at = closingOf(script, at) + 1
+    else if (char === "`") {
       at += 1
       while (at < script.length && script[at] !== "`") at += script[at] === "\\" ? 2 : 1
       at += 1
-    } else if (char === "$" && script[at + 1] === "(") at = closingOf(script, at + 1, "(", ")") + 1
+    } else if (char === "$" && script[at + 1] === "(") at = closingOf(script, at + 1) + 1
     else if (char === "#" && (at === 0 || /[\s;&|(]/.test(script[at - 1] as string))) {
       while (at < script.length && script[at] !== "\n") at += 1
     } else if (char === "<" && script[at + 1] === "<" && script[at + 2] !== "<") {

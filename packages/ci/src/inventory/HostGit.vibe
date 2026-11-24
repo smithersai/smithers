@@ -1,0 +1,38 @@
+/**
+ * Run host Git outside the checkout, using the caller's process service.
+ *
+ * @since 0.1.0
+ */
+
+import * as ChildProcess from "effect/process/ChildProcess"
+import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
+import { gitArguments } from "../replay/Git.vibe"
+import { hostPath } from "./HostPath.ts"
+import { machinePath, thisMachine } from "./Tools.ts"
+
+/**
+ * Keep stdout separate from a bounded diagnostic. Exclude both the original checkout and
+ * the command's working directory when it operates on a disposable copy.
+ *
+ * @category accessors
+ * @since 0.1.0
+ */
+export effect function runGit(checkout: string, cwd: string, args: ReadonlyArray<string>) {
+  const search = hostPath(checkout, machinePath(thisMachine()), cwd)
+  const executable = search.program("git") ?? search.program("git.exe")
+  if (executable === undefined) throw PlatformError.systemError({
+    _tag: "NotFound", module: "ChildProcess", method: "spawn", description: "could not find git outside the checkout"
+  })
+  const spawner = try ChildProcessSpawner
+  return try scoped(effect {
+    const handle = try spawner.spawn(ChildProcess.make(executable, gitArguments(args), {
+      cwd, stdin: "ignore", env: { PATH: search.path }, extendEnv: true
+    }))
+    let diagnostic = ""
+    const drain = Stream.runForEach(Stream.decodeText(handle.stderr), (chunk) => sync(() => {
+      diagnostic = (diagnostic + chunk).slice(-2048)
+    }))
+    const [text, code] = try all([Stream.mkString(Stream.decodeText(handle.stdout)), handle.exitCode, drain], { concurrency: 3 })
+    return { text, code: Number(code), diagnostic }
+  })
+}

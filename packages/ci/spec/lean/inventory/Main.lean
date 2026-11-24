@@ -190,6 +190,7 @@ def answer (request : Json) : Except String Json := do
     return Json.mkObj [("variants", Json.arr (matrix.variants.map (encodeAssignment false)).toArray),
       ("types", Json.arr (matrix.variants.map (encodeAssignment true)).toArray),
       ("keys", strings matrix.keys), ("problem", encodeOption Json.str matrix.problem)]
+  | "shellInput" => return encodeOption Json.str (shellInput (← text request "input") (← texts request "args") false false)
   | "regexOf" => return encodeOption Json.str (regexOf (← text request "pattern"))
   | "filesOf" =>
     return encodeOption (fun files => Json.mkObj <|

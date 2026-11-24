@@ -66,6 +66,9 @@ export const fullDisk = Layer.effect(FileSystem.FileSystem, effect {
   const fs = try FileSystem.FileSystem
   const full: FileSystem.FileSystem = {
     ...fs,
+    open: (path, options) => options?.flag === "wx"
+      ? Effect.fail(PlatformError.systemError({ _tag: "Unknown", module: "FileSystem", method: "open", pathOrDescriptor: path, description: "no space left on device" }))
+      : fs.open(path, options),
     writeFileString: (path: string) =>
       Effect.fail(PlatformError.systemError({ _tag: "Unknown", module: "FileSystem", method: "writeFileString", pathOrDescriptor: path, description: "no space left on device" }))
   }

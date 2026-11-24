@@ -109,6 +109,11 @@ describe("a build file Smithers build reads", () => {
       expect(declares(`a/${name.toLowerCase()}`), name).toBe(false)
     }
     expect(declarationNames).toEqual(expect.arrayContaining(["PACKAGE.ts", "PACKAGE.vibe", "FACTORY.ts", "BUILD.ts"]))
+    for (const extension of ["ts", "vibe", "smithers", "js", "mjs", "cjs", "mts", "cts", "jsx", "tsx"]) {
+      expect(declares(`.smithers/config.${extension}`)).toBe(true)
+    }
+    expect(declares(".smithers/config.json")).toBe(false)
+    expect(declares("my.smithers/config.ts")).toBe(false)
     expect(declares("scripts/build.ts")).toBe(false)
     expect(declares("src/MY_PACKAGE.ts")).toBe(false)
   })
@@ -151,6 +156,7 @@ describe("Smithers build's refusal of the targets it was asked to plan", () => {
       const message of [
         "ENOSPC: no space left on device, write",
         "could not write the cache: No space left on device",
+        "x".repeat(340) + " ENOSPC",
         "EMFILE: too many open files",
         "EACCES: permission denied, mkdir '/x'",
         "JavaScript heap out of memory"
@@ -160,6 +166,24 @@ describe("Smithers build's refusal of the targets it was asked to plan", () => {
 })
 
 describe("the copy Smithers build plans", { timeout: 300_000 }, () => {
+  it("reports both a missing host Git and an unreadable HEAD before planning", async () => {
+    const source = repository()
+    const files = await generated(source)
+    const smthrs = scripted("exit 0")
+    expect(await failure(asked(smthrs.command, join(source, "absent"), files))).toMatchObject({
+      code: "command-failed",
+      message: expect.stringContaining("could not run git")
+    })
+    const empty = temporary("apply-empty")
+    made.push(empty)
+    git(empty, "init", "--quiet")
+    expect(await failure(asked(smthrs.command, empty, files))).toMatchObject({
+      code: "command-failed",
+      message: expect.stringContaining("git rev-parse failed")
+    })
+    expect(smthrs.started()).toBe(0)
+  })
+
   it("stops the plan, before Smithers build is started, for a build file of the repository's own", async () => {
     const root = repository({
       "tools/PACKAGE.ts": "throw new Error(\"run\")\n",
@@ -175,6 +199,28 @@ describe("the copy Smithers build plans", { timeout: 300_000 }, () => {
     })
     expect(smthrs.started()).toBe(0)
     expect(git(root, "status", "--porcelain")).toBe("")
+  })
+
+  it("checks committed, staged and working declarations even with only foreign-host targets", async () => {
+    const root = repository({ "sub/PACKAGE.ts": "", ".gitignore": ".smithers/config.*\n" })
+    const other = process.platform === "darwin" ? "linux" : "darwin"
+    const files = (await generated(root)).map((file) =>
+      file.path === ".smithers/WORKSPACE.smithers"
+        ? { ...file, content: file.content.replaceAll("S.Shell.Test({\n", `S.Shell.Test({\n  hosts: ["${other}"],\n`) }
+        : file
+    )
+    const smthrs = scripted("exit 1")
+    mkdirSync(join(root, ".smithers"), { recursive: true })
+    writeFileSync(join(root, ".smithers/config.ts"), "")
+    writeFileSync(join(root, "sub/BUILD.ts"), "")
+    git(root, "add", "sub/BUILD.ts")
+    expect(await failure(asked(smthrs.command, root, files))).toMatchObject({
+      code: "unsupported",
+      message: declaredRefusal([".smithers/config.ts", "sub/BUILD.ts", "sub/PACKAGE.ts"])
+    })
+    for (const file of [".smithers/config.ts", "sub/BUILD.ts", "sub/PACKAGE.ts"]) rmSync(join(root, file))
+    expect(await asked(smthrs.command, root, files)).toEqual([])
+    expect(smthrs.started()).toBe(0)
   })
 
   it("holds no build file the working tree no longer holds, though the commit does", async () => {

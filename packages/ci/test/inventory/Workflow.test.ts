@@ -544,7 +544,10 @@ jobs:
       - uses: actions/checkout@v4
         with: { ref: "refs/\${{ github.sha }}" }
 `)
-    expect(features(jobOf(repo, "ci.yml:same"))).toEqual(["host-action"])
+    expect(details(jobOf(repo, "ci.yml:same"))).toEqual([
+      "actions/checkout@v4 has no command to run",
+      "same step 1: fetch-depth is left at 1 by the generated checkout"
+    ])
     expect(details(jobOf(repo, "ci.yml:other")).filter((detail) => !detail.includes("has no command"))).toEqual([
       "other step 1 checks out another repository",
       "other step 1 checks the repository out into another directory",

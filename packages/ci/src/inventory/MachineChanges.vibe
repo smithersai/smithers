@@ -379,7 +379,7 @@ const commandAfter = (
     const word = args[at] as string
     if (splitEnv && splitStringFlag.test(word)) break
     if (valueFlags.includes(word)) at += 2
-    else if (isFlag(word) || assignmentOf(word) !== undefined || /^\d+[smhd]?$/.test(word) || word === "{}") at += 1
+    else if (isFlag(word) || assignmentOf(word) !== undefined || /^\d+(?:\.\d+)?[smhd]?$/.test(word) || word === "{}") at += 1
     else break
   }
   return args.slice(at)
@@ -409,6 +409,31 @@ export interface Started {
 
 /** Told each program a command starts, as it is met. */
 type Seen = (started: Started) => void
+
+/** Read shell invocation options up to the script or command string. */
+const shellCommand = (args: ReadonlyArray<string>, input?: string): string | undefined => {
+  let command = false
+  let stdin = false
+  let at = 0
+  for (; at < args.length; at++) {
+    const option = args[at]!
+    if (option === "--") {
+      at++
+      break
+    }
+    if (!/^[-+].+/.test(option)) break
+    if (option === "--rcfile" || option === "--init-file") at++
+    else if (/^[-+][A-Za-z]+$/.test(option)) {
+      if (option.startsWith("-")) {
+        command ||= option.includes("c")
+        stdin ||= option.includes("s")
+      }
+      // Each o/O in a short-option group consumes its own option name.
+      at += option.replace(/[^oO]/g, "").length
+    }
+  }
+  return command ? args[at] : stdin || at >= args.length ? input : undefined
+}
 
 /** What one command, given as its words, does to the machine. `seen` is told each program it starts. */
 const classify = (
@@ -457,10 +482,7 @@ const classify = (
   }
   if (name === "eval") return scan(args.join(" "), scope, depth + 1, seen)
   if (shells.has(name)) {
-    const flag = args.findIndex((word) => /^-[A-Za-z]*c[A-Za-z]*$/.test(word))
-    const command = flag < 0
-      ? args.every(isFlag) || args.includes("-s") ? input : undefined
-      : args.slice(flag + 1).find((word) => !isFlag(word))
+    const command = shellCommand(args, input)
     return command === undefined ? [] : scan(command, scope, depth + 1, seen)
   }
   if (name === "find") return findCommands(args).flatMap(inner)
@@ -520,18 +542,103 @@ const ansiWord = (raw: string): string =>
     return value <= 0x10ffff ? String.fromCodePoint(value) : escape
   }).split("\0", 1)[0] as string
 
-const closingOf = (text: string, start: number, open: string, close: string, inDoubleQuotes = false): number => {
-  let depth = 0
-  let quote: string | undefined
-  for (let at = start; at < text.length; at++) {
-    const char = text[at]
-    if (char === "\\" && quote !== "'") at += 1
-    else if (quote !== undefined) {
-      if (char === quote) quote = undefined
-    } else if (char === "$" && text[at + 1] === "'" && !inDoubleQuotes) at = ansiQuoteEnd(text, at)
-    else if ((char === "'" && !inDoubleQuotes) || char === '"' || char === "`") quote = char
-    else if (char === open) depth += 1
-    else if (char === close && --depth === 0) return at
+interface CaseClause {
+  readonly depth: number
+  part: "subject" | "in" | "first-pattern-word" | "pattern" | "body"
+}
+
+interface ShellSpan {
+  readonly open: string
+  readonly quoted: boolean
+  readonly cases: Array<CaseClause>
+  depth: number
+  quote: string
+  word: boolean
+  command: boolean
+}
+
+// Inspect only the beginning of the current word. No search crosses a word boundary.
+const reservedWord = /(?:case|esac|in|if|then|elif|else|do|while|until|!|\{)(?=[ \t\n();&|<>]|$)/y
+const beforeCommand = new Set(["if", "then", "elif", "else", "do", "while", "until", "!", "{"])
+
+/** Recognize case syntax at shell word boundaries, independently in each command substitution. */
+const caseSyntax = (text: string, at: number, frame: ShellSpan): void => {
+  const char = text.charAt(at)
+  const active = frame.cases.at(-1)
+  if (char === " " || char === "\t") frame.word = false
+  else if ("\n();&|".includes(char)) {
+    frame.word = false
+    frame.command = true
+    if (active !== undefined) {
+      if (char === ";" && (text[at + 1] === ";" || text[at + 1] === "&")) active.part = "first-pattern-word"
+      else if (char === ")") active.part = "body"
+      else if (char === "(" && active.part === "first-pattern-word") active.part = "pattern"
+    }
+  } else if (!frame.word) {
+    reservedWord.lastIndex = at
+    const token = reservedWord.exec(text)?.[0] ?? ""
+    if (active?.part === "subject") active.part = "in"
+    else if (active?.part === "in" && token === "in") active.part = "first-pattern-word"
+    else if (active?.part === "first-pattern-word") {
+      if (token === "esac") frame.cases.pop()
+      else active.part = "pattern"
+    } else if (frame.command && (active === undefined || active.part === "body")) {
+      if (token === "case") frame.cases.push({ depth: frame.depth, part: "subject" })
+      else if (token === "esac") frame.cases.pop()
+    }
+    frame.word = true
+    frame.command &&= beforeCommand.has(token)
+  }
+}
+
+/**
+ * End of a shell substitution or double-quoted word. A nested command starts with fresh quoting rules.
+ *
+ * @category reading
+ * @since 0.1.0
+ */
+export const closingOf = (text: string, start: number, quoted = false): number => {
+  const spans: Array<ShellSpan> = []
+  const enter = (at: number, inQuotes: boolean) => {
+    spans.push({ open: text.charAt(at), quoted: inQuotes, depth: 1, quote: "", cases: [], word: false, command: true })
+  }
+  enter(start, quoted)
+  for (let at = start + 1; at < text.length; at++) {
+    const frame = spans[spans.length - 1]!
+    const char = text.charAt(at)
+    if (frame.open === "(" && frame.quote === "") {
+      if (char === "#" && !frame.word) {
+        const end = text.indexOf("\n", at)
+        if (end < 0) return text.length
+        at = end - 1
+        continue
+      }
+      if (char === "\\" && text[at + 1] === "\n") {
+        at++
+        continue
+      }
+      caseSyntax(text, at, frame)
+    }
+    if (char === "\\" && frame.quote !== "'") at++
+    else if (frame.quote !== "") {
+      if (char === frame.quote) frame.quote = ""
+    } else if (char === '"' && frame.open === '"') spans.pop()
+    else if (char === "$" && (text[at + 1] === "(" || text[at + 1] === "{")) {
+      at++
+      enter(at, text[at] === "{" && (frame.open === '"' || frame.quoted))
+    } else if (char === "`") frame.quote = char
+    else if (frame.open !== '"') {
+      if (char === "$" && text[at + 1] === "'" && !frame.quoted) at = ansiQuoteEnd(text, at)
+      else if (char === "'" && !frame.quoted) frame.quote = char
+      else if (char === '"') enter(at, true)
+      else if (char === frame.open) frame.depth++
+      else if (frame.open === "(" && char === ")" && frame.cases.at(-1)?.depth !== frame.depth) {
+        if (--frame.depth === 0) spans.pop()
+      } else if (frame.open === "{" && char === "}" && --frame.depth === 0) {
+        spans.pop()
+      }
+    }
+    if (spans.length === 0) return at
   }
   return text.length
 }
@@ -582,13 +689,13 @@ const scan = (
   const dollar = (at: number, inDoubleQuotes = false): number => {
     const next = script[at + 1]
     if (next === "(") {
-      const end = closingOf(script, at + 1, "(", ")")
+      const end = closingOf(script, at + 1)
       nested(script.slice(at + 2, end))
       add("$()")
       return end + 1
     }
     if (next === "{") {
-      const end = closingOf(script, at + 1, "{", "}", inDoubleQuotes)
+      const end = closingOf(script, at + 1, inDoubleQuotes)
       if (end === script.length) {
         add("${")
         return at + 2

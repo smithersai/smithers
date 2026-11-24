@@ -154,7 +154,7 @@ const fenced = (text: string): string => text.replaceAll("${{", "${{ '${{' }}")
 const fillExpression = (expression: string, variant: Variant): string =>
   expression.split(/('(?:[^']|'')*')/).map((piece, at) =>
     at % 2 === 1 ? piece : piece.replace(
-      /(?<![\w.])matrix\.([\w.-]+)/gi,
+      /(?<![\w.-])matrix\.([\w.-]+)/gi,
       (_whole, key: string) => {
         const found = Object.keys(variant).find((held) => held.toLowerCase() === key.toLowerCase())
         return literal(found === undefined ? "" : variant[found] as string)
@@ -164,18 +164,21 @@ const fillExpression = (expression: string, variant: Variant): string =>
 
 // One place an expression reads `matrix`, outside its strings: the keys after it, and what follows them when that
 // is a `.*` or a `[`.
-const matrixRead = /(?<![\w.])matrix(?![\w-])((?:\.[\w-]+)*)(\.\*|\[)?/gi
+const matrixRead = /(?<![\w.-])matrix(?![\w-])((?:\.[\w-]+)*)(\.\*|\[)?/gi
 
 // Why an expression cannot be written with the variant's values, or `undefined` when it can.
 //
 // `fillExpression` writes `matrix.<key>` only. `matrix` alone, `matrix.*` and `matrix['key']` would be read against
 // the generated workflow's matrix, which holds the runner, the leg and the tools. And a variant holds each value as
-// text: `true` and `false` of the workflow file arrive as the texts `true` and `false`, and GitHub reads a text
-// that is not empty as true and compares it with `true` as a number, so the written expression would decide
-// otherwise than the original. `alone` is true where an expression that is one such key and nothing else gives the
-// same text either way: every place but a condition.
+// text: boolean values and numeric zero lose their type. GitHub treats a nonempty string as true, so the
+// generated condition could change the outcome. A standalone key may still be written in a text-valued field.
 const unwrittenExpression = (expression: string, variant: Variant, alone: boolean): string | undefined => {
   const outside = expression.split(/('(?:[^']|'')*')/).filter((_piece, at) => at % 2 === 0)
+  // Skip quoted text, including escaped quotes, before looking for a read of the original job ID.
+  const jobRead = /'(?:[^']|'')*'|((?<![\w.-])github\s*(?:\.\s*job(?![\w-])|\[\s*'job'\s*\]))/gi
+  if ([...expression.matchAll(jobRead)].some((match) => match[1] !== undefined)) {
+    return "an expression can read github.job, which identifies a different job in the generated workflow."
+  }
   for (const [, keys, after] of outside.flatMap((piece) => [...piece.matchAll(matrixRead)])) {
     if (keys === "" || after !== undefined) {
       return "an expression reads the matrix other than as matrix.<key>, and the matrix of this workflow holds other keys."
@@ -183,7 +186,7 @@ const unwrittenExpression = (expression: string, variant: Variant, alone: boolea
     const key = (keys as string).slice(1).toLowerCase()
     const found = Object.keys(variant).find((held) => held.toLowerCase() === key)
     const value = found === undefined ? "" : variant[found]
-    if ((value === "true" || value === "false") && !(alone && /^matrix\.[\w.-]+$/i.test(expression))) {
+    if ((value === "true" || value === "false" || value === "0") && !(alone && /^matrix\.[\w.-]+$/i.test(expression))) {
       return `an expression reads matrix.${key}, which is ${value} here: this workflow can write it only as text, ` +
         "which GitHub does not read as true or false."
     }
@@ -207,7 +210,7 @@ const unwritten = (step: KeptStep, variant: Variant): string | undefined => {
   ].flatMap((text) => text === undefined ? [] : [text])
   for (const text of texts) {
     for (const [, expression] of split(expand(text, variant)).pieces) {
-      const why = unwrittenExpression(expression, variant, true)
+      const why = unwrittenExpression(expression, variant, text !== step.continueOnError)
       if (why !== undefined) return why
     }
   }

@@ -361,7 +361,12 @@ theorem credentialAt_no_at_id (c : Nat) (rest stays rem : Str) (h : 64 ∉ c :: 
   split at heq
   · split at heq
     · rename_i after hdrop
-      simp only [Option.some.injEq, Prod.mk.injEq] at heq
+      have hword : 64 ∉ (after.dropWhile isLineAuthorityUnit).takeWhile (fun u => !isSpace u) := by
+        intro mem
+        have hafter := (List.dropWhile_sublist isLineAuthorityUnit).subset ((List.takeWhile_sublist _).subset mem)
+        have hrest : 64 ∈ rest.dropWhile isSchemeUnit := hdrop ▸ (by simp [hafter])
+        exact h (List.mem_cons_of_mem _ ((List.dropWhile_sublist isSchemeUnit).subset hrest))
+      simp only [hword, false_and, if_false, Option.some.injEq, Prod.mk.injEq] at heq
       obtain ⟨rfl, rfl⟩ := heq
       have hsub : ∀ x ∈ after.takeWhile isLineAuthorityUnit, x ∈ c :: rest := by
         intro x hx
@@ -429,7 +434,7 @@ theorem credentialAt_url (c : Nat) (scheme userinfo tail : Str) (hc : isLetter c
   unfold credentialAt
   rw [takeWhile_append_stop scheme 58 _ hscheme (by decide), dropWhile_append_stop scheme 58 _ hscheme (by decide),
     if_pos ⟨hc, hshort⟩]
-  simp only [run.1, run.2, last]
+  simp [run.1, run.2, last]
 
 /-- A run where some code unit fails: the first that fails is where `dropWhile` stops. -/
 theorem dropWhile_append_stops_in {p : Nat → Bool} : ∀ (l m : Str), (∃ x ∈ l, p x = false) →

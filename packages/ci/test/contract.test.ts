@@ -35,8 +35,15 @@ describe("diagnostics", () => {
       expect(Command.errorLine(`fetch https://user:pass${delimiter}tail@host/repo?access_token=value&label=public#tag`))
         .toBe("fetch https://host/repo?access_token=[redacted]&label=public#tag")
     }
+    for (const key of ["secret_key", "access_key", "secret_access_key"]) {
+      for (const delimiter of ["/", "?", "#"]) {
+        expect(Command.errorLine(`https://user:2024${delimiter}part@example.test/path?${key}=sample&keep=x`))
+          .toBe(`https://example.test/path?${key}=[redacted]&keep=x`)
+      }
+    }
+    // A port followed by a path containing @ is ambiguous with a malformed password.
     expect(Command.errorLine("https://host:443/path@name?password=value")).toBe(
-      "https://host:443/path@name?password=[redacted]"
+      "https://name?password=[redacted]"
     )
   })
 
