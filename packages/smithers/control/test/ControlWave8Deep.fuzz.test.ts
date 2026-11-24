@@ -33,90 +33,101 @@ const testFlows: ReadonlyArray<MemoryFlow> = [
 ]
 
 describe("@smthrs/control Wave 8 deep fuzz (ApprovalAuthority, ControlLive errors, ControlFacts, ScopedToken & Channels)", () => {
-  it("ApprovalAuthority.make enforces explicit delegations, agent refusal, scope/target/flow/wait matching & verifyProof", async () => {
-    const arb = Arbitrary.schema(
-      Schema.Struct({
-        principalId: Schema.Literals(["alice", "bob", "bot"]),
-        principalKind: Schema.Literals(["person", "operator", "agent"]),
-        scope: Schema.Literals(["once", "run", "remembered"]),
-        targetKind: Schema.Literals(["Plan", "Node"]),
-        decision: Schema.Literals(["approved", "denied"]),
-        flowMatch: Schema.Boolean,
-        waitMatch: Schema.Boolean,
-        proofOk: Schema.Boolean,
-        useProof: Schema.Boolean
-      })
-    )
-
-    const report = await Effect.runPromise(
-      Fuzz.run(
-        arb,
-        (v) =>
-          Effect.gen(function*() {
-            const agentDel = yield* Effect.exit(
-              ApprovalAuthority.make([
-                { principal: { id: "bot", kind: "agent" }, scopes: ["once"], targets: ["Plan"] }
-              ])
-            )
-            expect(Exit.isFailure(agentDel)).toBe(true)
-
-            const emptyDel = yield* ApprovalAuthority.make([])
-            const deniedByEmpty = yield* Effect.exit(emptyDel.authorize({ principal: { id: "alice", kind: "person", stampedAt: 1 }, scope: "once", target: { _tag: "Plan" }, flowId: "review/pull-request" }))
-            expect(Exit.isFailure(deniedByEmpty)).toBe(true)
-
-            const auth = yield* ApprovalAuthority.make(
-              [
-                {
-                  principal: { id: "alice", kind: "person" },
-                  scopes: ["once", "run"],
-                  targets: ["Plan", "Node"],
-                  flowId: "review/pull-request",
-                  ...(v.targetKind === "Node" ? { waitName: "confirm-deploy" } : {}),
-                  ...(v.useProof ? { requiredProof: "webauthn" } : {})
-                }
-              ],
-              {
-                verifyProof: () =>
-                  v.proofOk
-                    ? Effect.void
-                    : Effect.fail(new ControlError.Unauthorized({ message: "bad proof" }))
-              }
-            )
-
-            const principal: Principal = { id: v.principalId, kind: v.principalKind, stampedAt: 1_700_000_000_000 }
-            const target = v.targetKind === "Plan"
-              ? ({ _tag: "Plan" as const, planId: "p-1", digest: "a".repeat(64), envelope })
-              : ({
-                _tag: "Node" as const,
-                runId: "r-1",
-                requestId: "req-1",
-                digest: "a".repeat(64),
-                envelope,
-                waitName: v.waitMatch ? "confirm-deploy" : "other-wait"
-              })
-
-            const exit = yield* Effect.exit(
-              auth.authorize(
-                { principal, target, decision: v.decision, scope: v.scope },
-                { flowId: Effect.succeed(v.flowMatch ? "review/pull-request" : "release/train") }
-              )
-            )
-
-            const expectedOk = v.principalId === "alice" &&
-              v.principalKind === "person" &&
-              v.flowMatch &&
-              (v.targetKind === "Plan" || v.waitMatch) &&
-              (v.decision === "denied" || v.scope === "once" || v.scope === "run") &&
-              (!v.useProof || v.proofOk)
-
-            expect(Exit.isSuccess(exit)).toBe(expectedOk)
-            return true
-          }),
-        { seed, executions }
+  it(
+    "ApprovalAuthority.make enforces explicit delegations, agent refusal, scope/target/flow/wait matching & verifyProof",
+    async () => {
+      const arb = Arbitrary.schema(
+        Schema.Struct({
+          principalId: Schema.Literals(["alice", "bob", "bot"]),
+          principalKind: Schema.Literals(["person", "operator", "agent"]),
+          scope: Schema.Literals(["once", "run", "remembered"]),
+          targetKind: Schema.Literals(["Plan", "Node"]),
+          decision: Schema.Literals(["approved", "denied"]),
+          flowMatch: Schema.Boolean,
+          waitMatch: Schema.Boolean,
+          proofOk: Schema.Boolean,
+          useProof: Schema.Boolean
+        })
       )
-    )
-    assertPassed(report)
-  }, 60_000)
+
+      const report = await Effect.runPromise(
+        Fuzz.run(
+          arb,
+          (v) =>
+            Effect.gen(function*() {
+              const agentDel = yield* Effect.exit(
+                ApprovalAuthority.make([
+                  { principal: { id: "bot", kind: "agent" }, scopes: ["once"], targets: ["Plan"] }
+                ])
+              )
+              expect(Exit.isFailure(agentDel)).toBe(true)
+
+              const emptyDel = yield* ApprovalAuthority.make([])
+              const deniedByEmpty = yield* Effect.exit(
+                emptyDel.authorize({
+                  principal: { id: "alice", kind: "person", stampedAt: 1 },
+                  scope: "once",
+                  target: { _tag: "Plan" },
+                  flowId: "review/pull-request"
+                })
+              )
+              expect(Exit.isFailure(deniedByEmpty)).toBe(true)
+
+              const auth = yield* ApprovalAuthority.make(
+                [
+                  {
+                    principal: { id: "alice", kind: "person" },
+                    scopes: ["once", "run"],
+                    targets: ["Plan", "Node"],
+                    flowId: "review/pull-request",
+                    ...(v.targetKind === "Node" ? { waitName: "confirm-deploy" } : {}),
+                    ...(v.useProof ? { requiredProof: "webauthn" } : {})
+                  }
+                ],
+                {
+                  verifyProof: () =>
+                    v.proofOk
+                      ? Effect.void
+                      : Effect.fail(new ControlError.Unauthorized({ message: "bad proof" }))
+                }
+              )
+
+              const principal: Principal = { id: v.principalId, kind: v.principalKind, stampedAt: 1_700_000_000_000 }
+              const target = v.targetKind === "Plan"
+                ? ({ _tag: "Plan" as const, planId: "p-1", digest: "a".repeat(64), envelope })
+                : ({
+                  _tag: "Node" as const,
+                  runId: "r-1",
+                  requestId: "req-1",
+                  digest: "a".repeat(64),
+                  envelope,
+                  waitName: v.waitMatch ? "confirm-deploy" : "other-wait"
+                })
+
+              const exit = yield* Effect.exit(
+                auth.authorize(
+                  { principal, target, decision: v.decision, scope: v.scope },
+                  { flowId: Effect.succeed(v.flowMatch ? "review/pull-request" : "release/train") }
+                )
+              )
+
+              const expectedOk = v.principalId === "alice" &&
+                v.principalKind === "person" &&
+                v.flowMatch &&
+                (v.targetKind === "Plan" || v.waitMatch) &&
+                (v.decision === "denied" || v.scope === "once" || v.scope === "run") &&
+                (!v.useProof || v.proofOk)
+
+              expect(Exit.isSuccess(exit)).toBe(expectedOk)
+              return true
+            }),
+          { seed, executions }
+        )
+      )
+      assertPassed(report)
+    },
+    60_000
+  )
 
   it("ControlLive error paths agree on Memory and SQLite", async () => {
     const arb = Arbitrary.schema(
@@ -142,10 +153,9 @@ describe("@smthrs/control Wave 8 deep fuzz (ApprovalAuthority, ControlLive error
           Effect.gen(function*() {
             const dir = backend === "sqlite" ? mkdtempSync(join(tmpdir(), "ctrl-w8-")) : undefined
             try {
-              const stackLayer =
-                backend === "sqlite"
-                  ? durable({ database: fileBundle(join(dir!, "control.sqlite")) })
-                  : live({ runtime: memoryRuntime({ flows: testFlows }) })
+              const stackLayer = backend === "sqlite"
+                ? durable({ database: fileBundle(join(dir!, "control.sqlite")) })
+                : live({ runtime: memoryRuntime({ flows: testFlows }) })
 
               return yield* Effect.scoped(
                 Effect.gen(function*() {
@@ -326,7 +336,9 @@ describe("@smthrs/control Wave 8 deep fuzz (ApprovalAuthority, ControlLive error
             if (Exit.isSuccess(verified)) {
               const expired = yield* Effect.exit(ScopedToken.verify(key, minted.token, 1_700_000_999_000))
               expect(Exit.isFailure(expired)).toBe(true)
-              expect(typeof ScopedToken.authorizes(verified.value, { procedure: "control.list" } as any)).toBe("boolean")
+              expect(typeof ScopedToken.authorizes(verified.value, { procedure: "control.list" } as any)).toBe(
+                "boolean"
+              )
             }
             return true
           }),

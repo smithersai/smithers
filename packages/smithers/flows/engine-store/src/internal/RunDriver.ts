@@ -4594,12 +4594,12 @@ const authorizeControl = (
  * callers resuming from round 0 join the current tip instead of attempting to
  * recreate a deleted round.
  */
-const compactedTip = (driver: Driver, executionId: string): Effect.Effect<Option.Option<RunStore.RunMetadata>> =>
+const compactedTipFromRow = (
+  driver: Driver,
+  root: RunStore.RunRow
+): Effect.Effect<Option.Option<RunStore.RunMetadata>> =>
   Effect.gen(function*() {
-    const root = yield* driver.store.get(executionId).pipe(
-      Effect.catch((error) => error.code === "not_found_row" ? Effect.succeed(undefined) : Effect.die(error))
-    )
-    if (root === undefined || root.status !== "completed" || (root.roundOrdinal ?? 0) !== 0) {
+    if (root.status !== "completed" || root.roundOrdinal !== 0) {
       return Option.none()
     }
     const state = yield* decodeState(root.stateJson)
@@ -4614,24 +4614,21 @@ const compactedTip = (driver: Driver, executionId: string): Effect.Effect<Option
       return Option.none()
     }
     const round1 = yield* FlowEngine.Round.next(
-      FlowEngine.Round.initial(root.lineageId ?? executionId),
+      FlowEngine.Round.initial(root.runId),
       { flowName: (handoff as { readonly flow: string }).flow, maxRounds: undefined }
     ).pipe(Effect.provideContext(driver.crypto), Effect.orDie)
     // Only a missing round 1 indicates pruning; an existing (even malformed)
     // middle round must not trigger a lineage walk or skip ordinary resolution.
-    const round1Exists = yield* driver.store.get(round1.executionId).pipe(
-      Effect.as(true),
-      Effect.catch((error) => error.code === "not_found_row" ? Effect.succeed(false) : Effect.succeed(true))
-    )
-    if (round1Exists) return Option.none()
-    const latest = yield* driver.store.latestRound(executionId).pipe(
-      Effect.catch((error) => error.code === "not_found_row" ? Effect.succeed(undefined) : Effect.die(error))
-    )
-    if (latest === undefined || latest.runId === executionId || (latest.roundOrdinal ?? 0) <= 1) {
-      return Option.none()
-    }
-    return Option.some(latest)
+    if ((yield* findRun(driver, round1.executionId)) !== undefined) return Option.none()
+    const latest = yield* driver.store.latestRound(root.runId).pipe(Effect.orDie)
+    return Number(latest.roundOrdinal) > 1 ? Option.some(latest) : Option.none()
   })
+
+const compactedTip = (driver: Driver, executionId: string): Effect.Effect<Option.Option<RunStore.RunMetadata>> =>
+  Effect.flatMap(
+    findRun(driver, executionId),
+    (root) => root === undefined ? Effect.succeed(Option.none()) : compactedTipFromRow(driver, root)
+  )
 
 const poll = Effect.fn("FlowEngine.poll")((driver: Driver, flow: Flow.Any, executionId: string) =>
   Effect.gen(function*() {
@@ -5056,9 +5053,14 @@ const resume = Effect.fn("FlowEngine.resume")((
     if (!(yield* authorizeControl(driver, flow, executionId, known).pipe(Effect.orDie))) return
     let targetId = executionId
     if (options?.poll === true) {
-      const tip = yield* compactedTip(driver, executionId)
-      if (Option.isSome(tip)) targetId = tip.value.runId
-      const row = yield* driver.store.get(targetId).pipe(Effect.orDie)
+      let row = yield* driver.store.get(executionId).pipe(Effect.orDie)
+      if (row.status === "completed" && row.roundOrdinal === 0) {
+        const tip = yield* compactedTipFromRow(driver, row)
+        if (Option.isSome(tip)) {
+          targetId = tip.value.runId
+          row = yield* driver.store.get(targetId).pipe(Effect.orDie)
+        }
+      }
       if (row.status === "suspended" && row.cancelRequestedAtMs === null) {
         const waiting = yield* driver.engineState.waiting(targetId)
         if (Option.isSome(waiting) && waiting.value.reason === "quarantine") return

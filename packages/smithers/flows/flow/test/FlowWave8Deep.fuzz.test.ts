@@ -1,5 +1,5 @@
-import { FlowEngine } from "@smthrs/engine"
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
+import { FlowEngine } from "@smthrs/engine"
 import { Fuzz } from "@smthrs/fuzz"
 import * as Node from "@smthrs/plan/Node"
 import { Arbitrary, Cause, Context, Duration, Effect, Exit, Fiber, Layer, Logger, Option, Schema } from "effect"
@@ -37,7 +37,6 @@ const runFuzz = async <A, E>(
   if (failure !== undefined) throw new Error(failure)
   expect(report._tag).toBe("Passed")
 }
-
 
 const driveToExit = <A, E, R>(eff: Effect.Effect<A, E, R>, maxSteps = 80, stepMs = 50) =>
   Effect.gen(function*() {
@@ -220,135 +219,137 @@ describe("@smthrs/flow Wave 8 deep fuzz (Graph placements, Interpreter paging/li
     )
   }, 90_000)
 
-  it("fuzzes Action annotations, version mismatch, timeout validation, heartbeat expiry, and FlowRuntime error tags", async () => {
-    const TestKey = Context.Reference<string>("w8/TestAnnotationKey", { defaultValue: () => "" })
-    const arb = Arbitrary.schema(
-      Schema.Struct({
-        id: SafeTag,
-        badTimeout: Schema.Literals(["zero", "neg", "float"]),
-        mode: Schema.Literals(["beat-ok", "heartbeat-expire", "attempt-expire", "uncanonical-nan", "uncanonical-inf"])
-      })
-    )
+  it(
+    "fuzzes Action annotations, version mismatch, timeout validation, heartbeat expiry, and FlowRuntime error tags",
+    async () => {
+      const TestKey = Context.Reference<string>("w8/TestAnnotationKey", { defaultValue: () => "" })
+      const arb = Arbitrary.schema(
+        Schema.Struct({
+          id: SafeTag,
+          badTimeout: Schema.Literals(["zero", "neg", "float"]),
+          mode: Schema.Literals(["beat-ok", "heartbeat-expire", "attempt-expire", "uncanonical-nan", "uncanonical-inf"])
+        })
+      )
 
-    await runFuzz(
-      arb,
-      (v) =>
-        Effect.gen(function*() {
-          const badMs = v.badTimeout === "zero" ? 0 : v.badTimeout === "neg" ? -5 : 1.5
-          expect(() =>
-            Action.make(`w8/${v.id}/bad-to`, {
+      await runFuzz(
+        arb,
+        (v) =>
+          Effect.gen(function*() {
+            const badMs = v.badTimeout === "zero" ? 0 : v.badTimeout === "neg" ? -5 : 1.5
+            expect(() =>
+              Action.make(`w8/${v.id}/bad-to`, {
+                payload: { x: Schema.Number },
+                success: Schema.Number,
+                attemptTimeoutMs: badMs
+              })
+            ).toThrow(RangeError)
+            expect(() =>
+              Action.make(`w8/${v.id}/bad-hb`, {
+                payload: { x: Schema.Number },
+                success: Schema.Number,
+                heartbeatTimeoutMs: badMs
+              })
+            ).toThrow(RangeError)
+
+            const Versioned = Action.make(`w8/${v.id}/ver`, {
               payload: { x: Schema.Number },
               success: Schema.Number,
-              attemptTimeoutMs: badMs
+              implementationVersion: "v2"
             })
-          ).toThrow(RangeError)
-          expect(() =>
-            Action.make(`w8/${v.id}/bad-hb`, {
-              payload: { x: Schema.Number },
-              success: Schema.Number,
-              heartbeatTimeoutMs: badMs
+              .annotate(TestKey, "hello")
+              .annotateMerge(Context.make(TestKey, "merged"))
+            expect(Context.get(Versioned.annotations, TestKey)).toBe("merged")
+            expect(() => Versioned.toLayer(({ x }) => Effect.succeed(x), { implementationVersion: "v1" })).toThrow()
+
+            const dup = new Action.DuplicateImplementation({ name: v.id })
+            expect(dup._tag).toBe("@smthrs/flow/Action/DuplicateImplementation")
+            const notFound = new FlowRuntime.FlowExecutionNotFound({ executionId: v.id })
+            expect(notFound._tag).toBe("@smthrs/flow/FlowExecutionNotFound")
+            const storeErr = new FlowRuntime.StoreUnavailable({ executionId: v.id })
+            expect(storeErr._tag).toBe("@smthrs/flow/StoreUnavailable")
+            const retryRefused = new FlowRuntime.RetryFromRefused({ code: "not_found", executionId: v.id, step: "s1" })
+            expect(retryRefused._tag).toBe("@smthrs/flow/FlowRuntime/RetryFromRefused")
+
+            if (v.mode === "uncanonical-nan" || v.mode === "uncanonical-inf") {
+              const NumAct = Action.make(`w8/${v.id}/num`, {
+                payload: { x: Schema.Finite },
+                success: Schema.Number
+              })
+              const BadFlow = Flow.make(`w8/${v.id}/badlit`, {
+                payload: { kind: Schema.String },
+                success: Schema.Number,
+                body: () => NumAct.call({ x: v.mode === "uncanonical-nan" ? Number.NaN : Number.POSITIVE_INFINITY })
+              })
+              const layer = layerWired(
+                Layer.mergeAll(
+                  NumAct.toLayer(({ x }) => Effect.succeed(x)),
+                  Interpreter.layer(BadFlow)
+                )
+              )
+              const exit = yield* Effect.exit(BadFlow.execute({ kind: v.mode }).pipe(Effect.provide(layer)))
+              expect(Exit.isFailure(exit)).toBe(true)
+              return true
+            }
+
+            const Timed = Action.make(`w8/${v.id}/timed`, {
+              payload: { mode: Schema.String },
+              success: Schema.String,
+              attemptTimeoutMs: 100,
+              heartbeatTimeoutMs: 40
             })
-          ).toThrow(RangeError)
-
-          const Versioned = Action.make(`w8/${v.id}/ver`, {
-            payload: { x: Schema.Number },
-            success: Schema.Number,
-            implementationVersion: "v2"
-          })
-            .annotate(TestKey, "hello")
-            .annotateMerge(Context.make(TestKey, "merged"))
-          expect(Context.get(Versioned.annotations, TestKey)).toBe("merged")
-          expect(() =>
-            Versioned.toLayer(({ x }) => Effect.succeed(x), { implementationVersion: "v1" })
-          ).toThrow()
-
-          const dup = new Action.DuplicateImplementation({ name: v.id })
-          expect(dup._tag).toBe("@smthrs/flow/Action/DuplicateImplementation")
-          const notFound = new FlowRuntime.FlowExecutionNotFound({ executionId: v.id })
-          expect(notFound._tag).toBe("@smthrs/flow/FlowExecutionNotFound")
-          const storeErr = new FlowRuntime.StoreUnavailable({ executionId: v.id })
-          expect(storeErr._tag).toBe("@smthrs/flow/StoreUnavailable")
-          const retryRefused = new FlowRuntime.RetryFromRefused({ code: "not_found", executionId: v.id, step: "s1" })
-          expect(retryRefused._tag).toBe("@smthrs/flow/FlowRuntime/RetryFromRefused")
-
-          if (v.mode === "uncanonical-nan" || v.mode === "uncanonical-inf") {
-            const NumAct = Action.make(`w8/${v.id}/num`, {
-              payload: { x: Schema.Finite },
-              success: Schema.Number
-            })
-            const BadFlow = Flow.make(`w8/${v.id}/badlit`, {
-              payload: { kind: Schema.String },
-              success: Schema.Number,
-              body: () => NumAct.call({ x: v.mode === "uncanonical-nan" ? Number.NaN : Number.POSITIVE_INFINITY })
+            const TimedFlow = Flow.make(`w8/${v.id}/timed-flow`, {
+              payload: { mode: Schema.String },
+              success: Schema.String,
+              body: ({ mode }) => Timed.call({ mode })
             })
             const layer = layerWired(
               Layer.mergeAll(
-                NumAct.toLayer(({ x }) => Effect.succeed(x)),
-                Interpreter.layer(BadFlow)
+                Timed.toLayer(({ mode }) =>
+                  Effect.gen(function*() {
+                    if (mode === "beat-ok") {
+                      yield* Action.heartbeat
+                      yield* Effect.sleep("20 millis")
+                      yield* Action.heartbeat
+                      yield* Effect.sleep("20 millis")
+                      return "ok"
+                    }
+                    if (mode === "heartbeat-expire") {
+                      yield* Effect.sleep("80 millis")
+                      return "late"
+                    }
+                    for (let i = 0; i < 6; i++) {
+                      yield* Effect.sleep("25 millis")
+                      yield* Action.heartbeat
+                    }
+                    return "too-late"
+                  })
+                ),
+                Interpreter.layer(TimedFlow)
               )
             )
-            const exit = yield* Effect.exit(BadFlow.execute({ kind: v.mode }).pipe(Effect.provide(layer)))
-            expect(Exit.isFailure(exit)).toBe(true)
-            return true
-          }
 
-          const Timed = Action.make(`w8/${v.id}/timed`, {
-            payload: { mode: Schema.String },
-            success: Schema.String,
-            attemptTimeoutMs: 100,
-            heartbeatTimeoutMs: 40
-          })
-          const TimedFlow = Flow.make(`w8/${v.id}/timed-flow`, {
-            payload: { mode: Schema.String },
-            success: Schema.String,
-            body: ({ mode }) => Timed.call({ mode })
-          })
-          const layer = layerWired(
-            Layer.mergeAll(
-              Timed.toLayer(({ mode }) =>
-                Effect.gen(function*() {
-                  if (mode === "beat-ok") {
-                    yield* Action.heartbeat
-                    yield* Effect.sleep("20 millis")
-                    yield* Action.heartbeat
-                    yield* Effect.sleep("20 millis")
-                    return "ok"
-                  }
-                  if (mode === "heartbeat-expire") {
-                    yield* Effect.sleep("80 millis")
-                    return "late"
-                  }
-                  for (let i = 0; i < 6; i++) {
-                    yield* Effect.sleep("25 millis")
-                    yield* Action.heartbeat
-                  }
-                  return "too-late"
-                })
-              ),
-              Interpreter.layer(TimedFlow)
-            )
-          )
+            const res = yield* Effect.gen(function*() {
+              const fib = yield* Effect.forkChild(TimedFlow.execute({ mode: v.mode }))
+              for (let i = 0; i < 8; i++) {
+                yield* Effect.yieldNow
+                yield* TestClock.adjust(Duration.millis(25))
+              }
+              return yield* Fiber.await(fib)
+            }).pipe(Effect.provide(layer))
 
-          const res = yield* Effect.gen(function*() {
-            const fib = yield* Effect.forkChild(TimedFlow.execute({ mode: v.mode }))
-            for (let i = 0; i < 8; i++) {
-              yield* Effect.yieldNow
-              yield* TestClock.adjust(Duration.millis(25))
+            if (v.mode === "beat-ok") {
+              expect(Exit.isSuccess(res)).toBe(true)
+              if (Exit.isSuccess(res)) expect(res.value).toBe("ok")
+            } else {
+              expect(Exit.isFailure(res)).toBe(true)
             }
-            return yield* Fiber.await(fib)
-          }).pipe(Effect.provide(layer))
-
-          if (v.mode === "beat-ok") {
-            expect(Exit.isSuccess(res)).toBe(true)
-            if (Exit.isSuccess(res)) expect(res.value).toBe("ok")
-          } else {
-            expect(Exit.isFailure(res)).toBe(true)
-          }
-          return true
-        }).pipe(Effect.provide(Layer.merge(NodeCrypto.layer, TestClock.layer()))),
-      { seed: seed + 1, executions: ioExecs }
-    )
-  }, 90_000)
+            return true
+          }).pipe(Effect.provide(Layer.merge(NodeCrypto.layer, TestClock.layer()))),
+        { seed: seed + 1, executions: ioExecs }
+      )
+    },
+    90_000
+  )
 
   it("fuzzes Sleep all invalid deadline codes and HumanTask request_invalid / ranking diagnostics", async () => {
     const arb = Arbitrary.schema(
@@ -382,15 +383,22 @@ describe("@smthrs/flow Wave 8 deep fuzz (Graph placements, Interpreter paging/li
       arb,
       (v) =>
         Effect.gen(function*() {
-          const sleepPayload =
-            v.sleepCase === "both" ? { millis: 10, until: 1000 } :
-            v.sleepCase === "missing" ? {} :
-            v.sleepCase === "neg-millis" ? { millis: -1 } :
-            v.sleepCase === "nan-millis" ? { millis: Number.NaN } :
-            v.sleepCase === "inf-millis" ? { millis: Number.POSITIVE_INFINITY } :
-            v.sleepCase === "too-late-millis" ? { millis: Number.MAX_SAFE_INTEGER } :
-            v.sleepCase === "nan-until" ? { until: Number.NaN } :
-            v.sleepCase === "too-late-until" ? { until: Number.MAX_SAFE_INTEGER } :
+          const sleepPayload = v.sleepCase === "both" ?
+            { millis: 10, until: 1000 } :
+            v.sleepCase === "missing" ?
+            {} :
+            v.sleepCase === "neg-millis" ?
+            { millis: -1 } :
+            v.sleepCase === "nan-millis" ?
+            { millis: Number.NaN } :
+            v.sleepCase === "inf-millis" ?
+            { millis: Number.POSITIVE_INFINITY } :
+            v.sleepCase === "too-late-millis" ?
+            { millis: Number.MAX_SAFE_INTEGER } :
+            v.sleepCase === "nan-until" ?
+            { until: Number.NaN } :
+            v.sleepCase === "too-late-until" ?
+            { until: Number.MAX_SAFE_INTEGER } :
             { until: 0 }
 
           const SleepFlow = Flow.make(`w8/${v.id}/sleep`, {
@@ -400,7 +408,11 @@ describe("@smthrs/flow Wave 8 deep fuzz (Graph placements, Interpreter paging/li
             body: () => Sleep.action.call(sleepPayload as any)
           })
           const sleepLayer = layerWired(Layer.mergeAll(Sleep.layer, Interpreter.layer(SleepFlow)))
-          const sExit = yield* driveToExit(SleepFlow.execute({ tag: v.sleepCase }).pipe(Effect.provide(sleepLayer)), 20, 50)
+          const sExit = yield* driveToExit(
+            SleepFlow.execute({ tag: v.sleepCase }).pipe(Effect.provide(sleepLayer)),
+            20,
+            50
+          )
           if (v.sleepCase === "past-until") {
             expect(Exit.isSuccess(sExit)).toBe(true)
           } else {
@@ -417,13 +429,18 @@ describe("@smthrs/flow Wave 8 deep fuzz (Graph placements, Interpreter paging/li
             return true
           }
 
-          const htPayload =
-            v.humanCase === "bad-attempts-0" ? { name: "q", prompt: "p", kind: "ask" as const, maxAttempts: 0 } :
-            v.humanCase === "bad-attempts-huge" ? { name: "q", prompt: "p", kind: "ask" as const, maxAttempts: 999999 } :
-            v.humanCase === "bad-timeout-neg" ? { name: "q", prompt: "p", kind: "ask" as const, timeoutMs: -5 } :
-            v.humanCase === "schema-non-json" ? { name: "q", prompt: "p", kind: "ask" as const, schema: { type: "string" } } :
-            v.humanCase === "empty-principals" ? { name: "q", prompt: "p", kind: "ask" as const, allowedPrincipals: [] } :
-            v.humanCase === "empty-select" ? { name: "q", prompt: "p", kind: "select" as const, options: [] } :
+          const htPayload = v.humanCase === "bad-attempts-0" ?
+            { name: "q", prompt: "p", kind: "ask" as const, maxAttempts: 0 } :
+            v.humanCase === "bad-attempts-huge" ?
+            { name: "q", prompt: "p", kind: "ask" as const, maxAttempts: 999999 } :
+            v.humanCase === "bad-timeout-neg" ?
+            { name: "q", prompt: "p", kind: "ask" as const, timeoutMs: -5 } :
+            v.humanCase === "schema-non-json" ?
+            { name: "q", prompt: "p", kind: "ask" as const, schema: { type: "string" } } :
+            v.humanCase === "empty-principals" ?
+            { name: "q", prompt: "p", kind: "ask" as const, allowedPrincipals: [] } :
+            v.humanCase === "empty-select" ?
+            { name: "q", prompt: "p", kind: "select" as const, options: [] } :
             { name: "q", prompt: "p", kind: "rank" as const, options: ["a", "a"] }
 
           const HtFlow = Flow.make(`w8/${v.id}/ht`, {
@@ -441,94 +458,98 @@ describe("@smthrs/flow Wave 8 deep fuzz (Graph placements, Interpreter paging/li
     )
   }, 90_000)
 
-  it("fuzzes ExternalJob inline fast-path, polling, Lost/restart exhaustion, provider failure & DurableQueue/Deferred", async () => {
-    const arb = Arbitrary.schema(
-      Schema.Struct({
-        id: SafeTag,
-        jobMode: Schema.Literals(["exited-1", "exited-2", "lost-exhaust", "start-fail", "bad-config"]),
-        restarts: Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 2 }))
-      })
-    )
+  it(
+    "fuzzes ExternalJob inline fast-path, polling, Lost/restart exhaustion, provider failure & DurableQueue/Deferred",
+    async () => {
+      const arb = Arbitrary.schema(
+        Schema.Struct({
+          id: SafeTag,
+          jobMode: Schema.Literals(["exited-1", "exited-2", "lost-exhaust", "start-fail", "bad-config"]),
+          restarts: Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 2 }))
+        })
+      )
 
-    await runFuzz(
-      arb,
-      (v) =>
-        Effect.gen(function*() {
-          if (v.jobMode === "bad-config") {
-            expect(() =>
-              ExternalJob.make(`w8/${v.id}/bad`, {
-                payload: { n: Schema.Number },
-                handle: Schema.String,
-                success: Schema.String,
-                probe: { every: "100 millis", max: "50 millis" },
-                timeout: "1 second"
-              })
-            ).toThrow(RangeError)
-            expect(() =>
-              ExternalJob.make(`w8/${v.id}/bad-r`, {
-                payload: { n: Schema.Number },
-                handle: Schema.String,
-                success: Schema.String,
-                probe: { every: "10 millis", max: "50 millis" },
-                timeout: "1 second",
-                restarts: -1
-              })
-            ).toThrow(RangeError)
+      await runFuzz(
+        arb,
+        (v) =>
+          Effect.gen(function*() {
+            if (v.jobMode === "bad-config") {
+              expect(() =>
+                ExternalJob.make(`w8/${v.id}/bad`, {
+                  payload: { n: Schema.Number },
+                  handle: Schema.String,
+                  success: Schema.String,
+                  probe: { every: "100 millis", max: "50 millis" },
+                  timeout: "1 second"
+                })
+              ).toThrow(RangeError)
+              expect(() =>
+                ExternalJob.make(`w8/${v.id}/bad-r`, {
+                  payload: { n: Schema.Number },
+                  handle: Schema.String,
+                  success: Schema.String,
+                  probe: { every: "10 millis", max: "50 millis" },
+                  timeout: "1 second",
+                  restarts: -1
+                })
+              ).toThrow(RangeError)
+              return true
+            }
+
+            class JobErr extends Schema.TaggedError<JobErr>()("JobErr", { message: Schema.String }) {}
+            const Job = ExternalJob.make(`w8/${v.id}/job`, {
+              payload: { n: Schema.Number },
+              handle: Schema.String,
+              success: Schema.String,
+              error: JobErr,
+              probe: { every: "10 millis", max: "40 millis" },
+              timeout: "300 millis",
+              restarts: v.restarts
+            })
+
+            let probes = 0
+            const operations: ExternalJob.Operations<{ readonly n: number }, string, string, JobErr, never> = {
+              start: (_payload, key) =>
+                v.jobMode === "start-fail"
+                  ? Effect.fail(new JobErr({ message: "provider down" }))
+                  : Effect.succeed(`h:${key}`),
+              status: () =>
+                Effect.sync(() => {
+                  probes++
+                  if (v.jobMode === "exited-1") return { _tag: "Exited" as const, exitCode: 0 }
+                  if (v.jobMode === "exited-2") {
+                    return probes >= 2 ? { _tag: "Exited" as const, exitCode: 0 } : { _tag: "Running" as const }
+                  }
+                  return { _tag: "Lost" as const, reason: "gone" }
+                }),
+              collect: (h) => Effect.succeed(`done:${h}`),
+              cancel: () => Effect.void,
+              abandon: () => Effect.void
+            }
+            const layer = Job.toLayer(operations).pipe(
+              Layer.provideMerge(Sleep.layer),
+              Layer.provideMerge(Action.layerImplementations),
+              Layer.provideMerge(FlowEngine.layerMemory)
+            )
+            const res = yield* driveToExit(
+              Job.run({ n: 1 }, { executionId: `w8-ej-${v.id}-${v.jobMode}`, operations }).pipe(Effect.provide(layer)),
+              80,
+              50
+            )
+
+            if (v.jobMode === "exited-1" || v.jobMode === "exited-2") {
+              expect(Exit.isSuccess(res)).toBe(true)
+            } else {
+              expect(Exit.isFailure(res)).toBe(true)
+            }
+            expect(Cause.isCause(Exit.isFailure(res) ? res.cause : Cause.empty)).toBe(true)
+            expect(Option.isSome(Option.some(DurableDeferred.make))).toBe(true)
+            expect(typeof DurableQueue.make).toBe("function")
             return true
-          }
-
-          class JobErr extends Schema.TaggedError<JobErr>()("JobErr", { message: Schema.String }) {}
-          const Job = ExternalJob.make(`w8/${v.id}/job`, {
-            payload: { n: Schema.Number },
-            handle: Schema.String,
-            success: Schema.String,
-            error: JobErr,
-            probe: { every: "10 millis", max: "40 millis" },
-            timeout: "300 millis",
-            restarts: v.restarts
-          })
-
-          let probes = 0
-          const operations: ExternalJob.Operations<{ readonly n: number }, string, string, JobErr, never> = {
-            start: (_payload, key) =>
-              v.jobMode === "start-fail"
-                ? Effect.fail(new JobErr({ message: "provider down" }))
-                : Effect.succeed(`h:${key}`),
-            status: () =>
-              Effect.sync(() => {
-                probes++
-                if (v.jobMode === "exited-1") return { _tag: "Exited" as const, exitCode: 0 }
-                if (v.jobMode === "exited-2") {
-                  return probes >= 2 ? { _tag: "Exited" as const, exitCode: 0 } : { _tag: "Running" as const }
-                }
-                return { _tag: "Lost" as const, reason: "gone" }
-              }),
-            collect: (h) => Effect.succeed(`done:${h}`),
-            cancel: () => Effect.void,
-            abandon: () => Effect.void
-          }
-          const layer = Job.toLayer(operations).pipe(
-            Layer.provideMerge(Sleep.layer),
-            Layer.provideMerge(Action.layerImplementations),
-            Layer.provideMerge(FlowEngine.layerMemory)
-          )
-          const res = yield* driveToExit(
-            Job.run({ n: 1 }, { executionId: `w8-ej-${v.id}-${v.jobMode}`, operations }).pipe(Effect.provide(layer)),
-            80,
-            50
-          )
-
-          if (v.jobMode === "exited-1" || v.jobMode === "exited-2") {
-            expect(Exit.isSuccess(res)).toBe(true)
-          } else {
-            expect(Exit.isFailure(res)).toBe(true)
-          }
-          expect(Cause.isCause(Exit.isFailure(res) ? res.cause : Cause.empty)).toBe(true)
-          expect(Option.isSome(Option.some(DurableDeferred.make))).toBe(true)
-          expect(typeof DurableQueue.make).toBe("function")
-          return true
-        }).pipe(Effect.provide(Layer.merge(NodeCrypto.layer, TestClock.layer()))),
-      { seed: seed + 3, executions: ioExecs }
-    )
-  }, 90_000)
+          }).pipe(Effect.provide(Layer.merge(NodeCrypto.layer, TestClock.layer()))),
+        { seed: seed + 3, executions: ioExecs }
+      )
+    },
+    90_000
+  )
 })

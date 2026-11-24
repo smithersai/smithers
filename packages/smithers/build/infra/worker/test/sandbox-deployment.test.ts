@@ -16,6 +16,7 @@ import {
   sandboxTokenVariable,
   sandboxWorkerEntry,
   sandboxWorkerOptions,
+  sandboxWorkerStageOptions,
   workerCompatibilityDate,
   workerObservability
 } from "../../deployment.ts"
@@ -98,6 +99,22 @@ describe("sandbox service deployment", () => {
       }
     })))
     expect(sandboxContainerOptions(sandboxInstanceTypes[0]).instanceType).toBe("standard-4")
+
+    const withoutMetrics = sandboxWorkerOptions({
+      container: (id) => `container:${id}`
+    })
+    expect("SANDBOX_REQUEST_METRICS" in withoutMetrics.env).toBe(false)
+
+    const metricsCalls: Array<{ readonly id: string; readonly dataset: string }> = []
+    const staged = sandboxWorkerStageOptions({
+      container: (id) => `container:${id}`,
+      metrics: (id, props) => {
+        metricsCalls.push({ id, dataset: props.dataset })
+        return `dataset:${props.dataset}`
+      }
+    })({ stage: "pr-12.stage" })
+    expect(metricsCalls).toEqual([{ id: "SandboxRequestMetrics", dataset: "smithers_sandbox_requests_pr_12_stage" }])
+    expect(staged.env.SANDBOX_REQUEST_METRICS).toBe("dataset:smithers_sandbox_requests_pr_12_stage")
   })
 
   it("exports the Durable Object class every container application names", async () => {

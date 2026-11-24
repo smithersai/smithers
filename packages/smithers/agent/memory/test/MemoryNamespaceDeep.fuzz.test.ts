@@ -105,196 +105,207 @@ const snapshot = (namespace: Namespace.Namespace) =>
   })
 
 describe("@smthrs/memory composite (namespace_kind, namespace_id, id) isolation (#4712)", () => {
-  it("no write, supersession, compaction or delete in one namespace changes or leaks into another with identical ids", async () => {
-    const Op = Schema.Union([
-      Schema.Struct({ _tag: Schema.Literal("putFact"), ns: NsIndex, key: FactKey, value: intBetween(0, 3) }),
-      Schema.Struct({ _tag: Schema.Literal("deleteFact"), ns: NsIndex, key: FactKey }),
-      Schema.Struct({
-        _tag: Schema.Literal("putNote"),
-        ns: NsIndex,
-        id: NoteId,
-        status: Status,
-        supersedes: Schema.Array(NoteId).pipe(Schema.check(Schema.isMaxLength(2)))
-      }),
-      Schema.Struct({ _tag: Schema.Literal("setNoteStatus"), ns: NsIndex, id: NoteId, status: Status }),
-      Schema.Struct({ _tag: Schema.Literal("supersede"), ns: NsIndex, superseder: NoteId, target: NoteId }),
-      Schema.Struct({
-        _tag: Schema.Literal("append"),
-        ns: NsIndex,
-        threadId: ThreadId,
-        id: MessageId,
-        at: intBetween(0, 4)
-      }),
-      Schema.Struct({
-        _tag: Schema.Literal("deleteMessages"),
-        ns: NsIndex,
-        threadId: ThreadId,
-        ids: Schema.Array(MessageId).pipe(Schema.check(Schema.isMaxLength(3)))
-      }),
-      Schema.Struct({ _tag: Schema.Literal("deleteThread"), ns: NsIndex, threadId: ThreadId }),
-      Schema.Struct({ _tag: Schema.Literal("compact"), ns: NsIndex, threadId: ThreadId, keepRecent: intBetween(0, 1) }),
-      // A caller in `ns` presents another namespace's messages as its sources.
-      Schema.Struct({ _tag: Schema.Literal("forgedCompact"), ns: NsIndex, from: NsIndex, threadId: ThreadId })
-    ])
-    const arb = Arbitrary.schema(Schema.Array(Op).pipe(Schema.check(Schema.isMinLength(2), Schema.isMaxLength(14))))
+  it(
+    "no write, supersession, compaction or delete in one namespace changes or leaks into another with identical ids",
+    async () => {
+      const Op = Schema.Union([
+        Schema.Struct({ _tag: Schema.Literal("putFact"), ns: NsIndex, key: FactKey, value: intBetween(0, 3) }),
+        Schema.Struct({ _tag: Schema.Literal("deleteFact"), ns: NsIndex, key: FactKey }),
+        Schema.Struct({
+          _tag: Schema.Literal("putNote"),
+          ns: NsIndex,
+          id: NoteId,
+          status: Status,
+          supersedes: Schema.Array(NoteId).pipe(Schema.check(Schema.isMaxLength(2)))
+        }),
+        Schema.Struct({ _tag: Schema.Literal("setNoteStatus"), ns: NsIndex, id: NoteId, status: Status }),
+        Schema.Struct({ _tag: Schema.Literal("supersede"), ns: NsIndex, superseder: NoteId, target: NoteId }),
+        Schema.Struct({
+          _tag: Schema.Literal("append"),
+          ns: NsIndex,
+          threadId: ThreadId,
+          id: MessageId,
+          at: intBetween(0, 4)
+        }),
+        Schema.Struct({
+          _tag: Schema.Literal("deleteMessages"),
+          ns: NsIndex,
+          threadId: ThreadId,
+          ids: Schema.Array(MessageId).pipe(Schema.check(Schema.isMaxLength(3)))
+        }),
+        Schema.Struct({ _tag: Schema.Literal("deleteThread"), ns: NsIndex, threadId: ThreadId }),
+        Schema.Struct({
+          _tag: Schema.Literal("compact"),
+          ns: NsIndex,
+          threadId: ThreadId,
+          keepRecent: intBetween(0, 1)
+        }),
+        // A caller in `ns` presents another namespace's messages as its sources.
+        Schema.Struct({ _tag: Schema.Literal("forgedCompact"), ns: NsIndex, from: NsIndex, threadId: ThreadId })
+      ])
+      const arb = Arbitrary.schema(Schema.Array(Op).pipe(Schema.check(Schema.isMinLength(2), Schema.isMaxLength(14))))
 
-    const report = await Effect.runPromise(
-      Fuzz.run(
-        arb,
-        (ops) =>
-          Effect.gen(function*() {
-            const store = yield* MemoryStore.MemoryStore
-            const facts = namespaces.map(() => new Map<string, number>())
-            let before = yield* Effect.forEach(namespaces, snapshot)
+      const report = await Effect.runPromise(
+        Fuzz.run(
+          arb,
+          (ops) =>
+            Effect.gen(function*() {
+              const store = yield* MemoryStore.MemoryStore
+              const facts = namespaces.map(() => new Map<string, number>())
+              let before = yield* Effect.forEach(namespaces, snapshot)
 
-            for (const op of ops) {
-              const namespace = namespaces[op.ns]!
-              const own = marker(op.ns)
-              if (isRefused(namespace)) {
-                const message = { threadId: op._tag === "putFact" ? "chat" : "chat%", id: "m1", role: "user", at: 0 }
-                const refused = yield* Effect.all([
-                  refuses(store.putFact({ namespace, key: "k", value: own, provenance: {} })),
-                  refuses(store.deleteFact({ namespace, key: "k" })),
-                  refuses(store.putNote({ namespace, id: "n1", text: own, tags: [], provenance: {} })),
-                  refuses(store.setNoteStatus({ namespace, id: "n1", status: "accepted" })),
-                  refuses(store.supersede({ namespace, supersederId: "n1", targetId: "n2" })),
-                  refuses(store.appendMessage({ namespace, ...message, role: "user", text: own })),
-                  refuses(store.deleteMessages({ namespace, threadId: message.threadId, ids: ["m1"] })),
-                  refuses(store.deleteThread({ namespace, threadId: message.threadId })),
-                  refuses(store.compactMessages({
+              for (const op of ops) {
+                const namespace = namespaces[op.ns]!
+                const own = marker(op.ns)
+                if (isRefused(namespace)) {
+                  const message = { threadId: op._tag === "putFact" ? "chat" : "chat%", id: "m1", role: "user", at: 0 }
+                  const refused = yield* Effect.all([
+                    refuses(store.putFact({ namespace, key: "k", value: own, provenance: {} })),
+                    refuses(store.deleteFact({ namespace, key: "k" })),
+                    refuses(store.putNote({ namespace, id: "n1", text: own, tags: [], provenance: {} })),
+                    refuses(store.setNoteStatus({ namespace, id: "n1", status: "accepted" })),
+                    refuses(store.supersede({ namespace, supersederId: "n1", targetId: "n2" })),
+                    refuses(store.appendMessage({ namespace, ...message, role: "user", text: own })),
+                    refuses(store.deleteMessages({ namespace, threadId: message.threadId, ids: ["m1"] })),
+                    refuses(store.deleteThread({ namespace, threadId: message.threadId })),
+                    refuses(store.compactMessages({
+                      namespace,
+                      threadId: message.threadId,
+                      summary: { ...message, role: "system", text: own },
+                      sourceMessages: []
+                    }))
+                  ])
+                  if (refused.includes(false)) return false
+                } else if (op._tag === "putFact") {
+                  yield* store.putFact({
                     namespace,
-                    threadId: message.threadId,
-                    summary: { ...message, role: "system", text: own },
-                    sourceMessages: []
+                    key: op.key,
+                    value: { content: `${own} common fact ${op.value}` },
+                    provenance: {}
+                  })
+                  facts[op.ns]!.set(op.key, op.value)
+                } else if (op._tag === "deleteFact") {
+                  const deleted = yield* store.deleteFact({ namespace, key: op.key })
+                  if (deleted !== facts[op.ns]!.delete(op.key)) return false
+                } else if (op._tag === "putNote") {
+                  yield* Effect.result(store.putNote({
+                    namespace,
+                    id: op.id,
+                    text: `${own} common note ${op.id}`,
+                    tags: [],
+                    provenance: {},
+                    status: op.status,
+                    supersedes: op.supersedes
                   }))
-                ])
-                if (refused.includes(false)) return false
-              } else if (op._tag === "putFact") {
-                yield* store.putFact({
-                  namespace,
-                  key: op.key,
-                  value: { content: `${own} common fact ${op.value}` },
-                  provenance: {}
-                })
-                facts[op.ns]!.set(op.key, op.value)
-              } else if (op._tag === "deleteFact") {
-                const deleted = yield* store.deleteFact({ namespace, key: op.key })
-                if (deleted !== facts[op.ns]!.delete(op.key)) return false
-              } else if (op._tag === "putNote") {
-                yield* Effect.result(store.putNote({
-                  namespace,
-                  id: op.id,
-                  text: `${own} common note ${op.id}`,
-                  tags: [],
-                  provenance: {},
-                  status: op.status,
-                  supersedes: op.supersedes
-                }))
-              } else if (op._tag === "setNoteStatus") {
-                yield* Effect.result(store.setNoteStatus({ namespace, id: op.id, status: op.status }))
-              } else if (op._tag === "supersede") {
-                yield* Effect.result(
-                  store.supersede({ namespace, supersederId: op.superseder, targetId: op.target })
-                )
-              } else if (op._tag === "append") {
-                yield* Effect.result(store.appendMessage({
-                  namespace,
-                  threadId: op.threadId,
-                  id: op.id,
-                  role: "user",
-                  text: `${own} common message ${op.id}`,
-                  at: op.at
-                }))
-              } else if (op._tag === "deleteMessages") {
-                yield* store.deleteMessages({ namespace, threadId: op.threadId, ids: op.ids })
-              } else if (op._tag === "deleteThread") {
-                yield* store.deleteThread({ namespace, threadId: op.threadId })
-              } else if (op._tag === "compact") {
-                yield* Effect.result(Maintenance.compact({
-                  summarizer: { summarize: ({ messages }) => Effect.succeed(`${own} summary of ${messages.length}`) },
-                  thread: { namespace, threadId: op.threadId },
-                  keepRecent: op.keepRecent
-                }))
-              } else if (isRefused(namespaces[op.from]!)) {
-                // A refused namespace has no messages to present as sources.
-                if (!(yield* refuses(store.listMessages({ namespace: namespaces[op.from]!, threadId: op.threadId })))) {
-                  return false
+                } else if (op._tag === "setNoteStatus") {
+                  yield* Effect.result(store.setNoteStatus({ namespace, id: op.id, status: op.status }))
+                } else if (op._tag === "supersede") {
+                  yield* Effect.result(
+                    store.supersede({ namespace, supersederId: op.superseder, targetId: op.target })
+                  )
+                } else if (op._tag === "append") {
+                  yield* Effect.result(store.appendMessage({
+                    namespace,
+                    threadId: op.threadId,
+                    id: op.id,
+                    role: "user",
+                    text: `${own} common message ${op.id}`,
+                    at: op.at
+                  }))
+                } else if (op._tag === "deleteMessages") {
+                  yield* store.deleteMessages({ namespace, threadId: op.threadId, ids: op.ids })
+                } else if (op._tag === "deleteThread") {
+                  yield* store.deleteThread({ namespace, threadId: op.threadId })
+                } else if (op._tag === "compact") {
+                  yield* Effect.result(Maintenance.compact({
+                    summarizer: { summarize: ({ messages }) => Effect.succeed(`${own} summary of ${messages.length}`) },
+                    thread: { namespace, threadId: op.threadId },
+                    keepRecent: op.keepRecent
+                  }))
+                } else if (isRefused(namespaces[op.from]!)) {
+                  // A refused namespace has no messages to present as sources.
+                  if (
+                    !(yield* refuses(store.listMessages({ namespace: namespaces[op.from]!, threadId: op.threadId })))
+                  ) {
+                    return false
+                  }
+                } else {
+                  const sources = yield* store.listMessages({ namespace: namespaces[op.from]!, threadId: op.threadId })
+                  const forged = yield* Effect.result(store.compactMessages({
+                    namespace,
+                    threadId: op.threadId,
+                    summary: { threadId: op.threadId, id: "forged", role: "system", text: `${own} forged`, at: 0 },
+                    sourceMessages: sources
+                  }))
+                  // Another namespace's rows are never this namespace's sources:
+                  // they carry the other marker, so nothing here matches them.
+                  if (op.from !== op.ns && sources.length > 0 && Result.isSuccess(forged)) return false
                 }
-              } else {
-                const sources = yield* store.listMessages({ namespace: namespaces[op.from]!, threadId: op.threadId })
-                const forged = yield* Effect.result(store.compactMessages({
-                  namespace,
-                  threadId: op.threadId,
-                  summary: { threadId: op.threadId, id: "forged", role: "system", text: `${own} forged`, at: 0 },
-                  sourceMessages: sources
-                }))
-                // Another namespace's rows are never this namespace's sources:
-                // they carry the other marker, so nothing here matches them.
-                if (op.from !== op.ns && sources.length > 0 && Result.isSuccess(forged)) return false
+
+                const after = yield* Effect.forEach(namespaces, snapshot)
+                for (let index = 0; index < namespaces.length; index++) {
+                  // Isolation: only the namespace the operation named may differ.
+                  if (index !== op.ns && after[index] !== before[index]) return false
+                  // No leak: nothing a namespace holds was written under another's marker.
+                  for (let other = 0; other < namespaces.length; other++) {
+                    if (other !== index && after[index]!.includes(marker(other))) return false
+                  }
+                }
+                before = after
               }
 
-              const after = yield* Effect.forEach(namespaces, snapshot)
+              // Every namespace still holds exactly the facts written to it.
               for (let index = 0; index < namespaces.length; index++) {
-                // Isolation: only the namespace the operation named may differ.
-                if (index !== op.ns && after[index] !== before[index]) return false
-                // No leak: nothing a namespace holds was written under another's marker.
-                for (let other = 0; other < namespaces.length; other++) {
-                  if (other !== index && after[index]!.includes(marker(other))) return false
+                if (isRefused(namespaces[index]!)) continue
+                const listed = yield* store.listFacts({ namespace: namespaces[index]! })
+                const expected = [...facts[index]!.entries()].sort(([left], [right]) => left < right ? -1 : 1)
+                if (listed.length !== expected.length) return false
+                for (const [key, value] of expected) {
+                  const fact = yield* store.getFact({ namespace: namespaces[index]!, key })
+                  if (
+                    JSON.stringify(fact?.value) !== JSON.stringify({ content: `${marker(index)} common fact ${value}` })
+                  ) {
+                    return false
+                  }
                 }
               }
-              before = after
-            }
 
-            // Every namespace still holds exactly the facts written to it.
-            for (let index = 0; index < namespaces.length; index++) {
-              if (isRefused(namespaces[index]!)) continue
-              const listed = yield* store.listFacts({ namespace: namespaces[index]! })
-              const expected = [...facts[index]!.entries()].sort(([left], [right]) => left < right ? -1 : 1)
-              if (listed.length !== expected.length) return false
-              for (const [key, value] of expected) {
-                const fact = yield* store.getFact({ namespace: namespaces[index]!, key })
-                if (
-                  JSON.stringify(fact?.value) !== JSON.stringify({ content: `${marker(index)} common fact ${value}` })
-                ) {
-                  return false
+              // The global views are the disjoint union of the namespaced ones.
+              const allFacts = yield* store.listAllFacts
+              if (allFacts.length !== facts.reduce((total, map) => total + map.size, 0)) return false
+              const refs = yield* store.listThreadRefs
+              let threadCount = 0
+              for (const namespace of namespaces) {
+                if (!isRefused(namespace)) threadCount += (yield* store.listThreads({ namespace })).length
+              }
+              if (refs.length !== threadCount) return false
+              if (new Set(refs.map((ref) => JSON.stringify(ref))).size !== refs.length) return false
+
+              // Recall over one bank returns that namespace's rows only.
+              for (let index = 0; index < namespaces.length; index++) {
+                const bank = Recall.bankForNamespace(namespaces[index]!)
+                if (isRefused(namespaces[index]!)) {
+                  if (!(yield* refuses(RecallKeyword.recall({ banks: [bank], query: "common", maxTokens: 4096 })))) {
+                    return false
+                  }
+                  continue
                 }
-              }
-            }
-
-            // The global views are the disjoint union of the namespaced ones.
-            const allFacts = yield* store.listAllFacts
-            if (allFacts.length !== facts.reduce((total, map) => total + map.size, 0)) return false
-            const refs = yield* store.listThreadRefs
-            let threadCount = 0
-            for (const namespace of namespaces) {
-              if (!isRefused(namespace)) threadCount += (yield* store.listThreads({ namespace })).length
-            }
-            if (refs.length !== threadCount) return false
-            if (new Set(refs.map((ref) => JSON.stringify(ref))).size !== refs.length) return false
-
-            // Recall over one bank returns that namespace's rows only.
-            for (let index = 0; index < namespaces.length; index++) {
-              const bank = Recall.bankForNamespace(namespaces[index]!)
-              if (isRefused(namespaces[index]!)) {
-                if (!(yield* refuses(RecallKeyword.recall({ banks: [bank], query: "common", maxTokens: 4096 })))) {
-                  return false
+                const recalled = yield* RecallKeyword.recall({ banks: [bank], query: "common", maxTokens: 4096 })
+                for (const row of recalled) {
+                  if (row.bank !== bank || !row.text.includes(marker(index))) return false
                 }
-                continue
+                const visible = yield* store.searchRows({ namespace: namespaces[index]!, status: "accepted" })
+                if (recalled.length !== visible.length) return false
               }
-              const recalled = yield* RecallKeyword.recall({ banks: [bank], query: "common", maxTokens: 4096 })
-              for (const row of recalled) {
-                if (row.bank !== bank || !row.text.includes(marker(index))) return false
-              }
-              const visible = yield* store.searchRows({ namespace: namespaces[index]!, status: "accepted" })
-              if (recalled.length !== visible.length) return false
-            }
-            return true
-          }).pipe(Effect.provide(memoryLayer)),
-        { seed, executions: ioExecutions }
+              return true
+            }).pipe(Effect.provide(memoryLayer)),
+          { seed, executions: ioExecutions }
+        )
       )
-    )
-    assertPassed(report)
-  }, 120_000)
+      assertPassed(report)
+    },
+    120_000
+  )
 })
 
 describe("@smthrs/memory note supersession stays a DAG", () => {

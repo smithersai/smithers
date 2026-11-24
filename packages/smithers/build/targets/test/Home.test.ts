@@ -311,5 +311,18 @@ describe("Smithers.Factory.Home with sections", () => {
     expect(Home.parse(JSON.stringify({ sections: [{ audience: "maintainer", blocks: [] }] }))).toEqual({
       sections: [{ audience: "maintainer", blocks: [] }]
     })
+    const rendered = Home.render(
+      Home.Home({
+        docs: "https://smithers.sh/docs",
+        contributors: "role",
+        sections: [{ title: "Start", audience: "maintainer", blocks: [stack] }]
+      })
+    )
+    expect(JSON.parse(rendered)).toMatchObject({
+      docs: "https://smithers.sh/docs",
+      contributors: "role"
+    })
+    const minimal = Home.render(Home.Home({ sections: [{ blocks: [stack] }] }))
+    expect(JSON.parse(minimal)).toEqual({ sections: [{ blocks: [stack] }] })
   })
 })

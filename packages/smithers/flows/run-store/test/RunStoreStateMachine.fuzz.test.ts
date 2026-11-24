@@ -29,9 +29,11 @@ const must: (condition: boolean, message: string) => asserts condition = (condit
   if (!condition) throw new Error(`invariant violated: ${message}`)
 }
 
-const storesLayer = (putMode: "insert" | "upsert") =>
+const storesLayer = (putMode: "insert" | "upsert", sqliteOnly = false) =>
   Layer.mergeAll(RunStore.layer, Layer.orDie(AttemptStore.layerWith({ putMode }))).pipe(
-    Layer.provideMerge(Layer.provideMerge(Migrations.layer, TestDatabase.layer)),
+    Layer.provideMerge(
+      Layer.provideMerge(Migrations.layer, sqliteOnly ? TestDatabase.sqliteLayer : TestDatabase.layer)
+    ),
     Layer.orDie
   )
 
@@ -1414,7 +1416,7 @@ describe("@smthrs/run-store state machine, lease generations and claim races", (
           }
           return true
         }).pipe(Effect.orDie),
-      () => storesLayer("insert"),
+      () => storesLayer("insert", true),
       {
         seed: seed + 23,
         executions: Math.min(ioExecutions, 30),

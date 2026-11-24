@@ -51583,11 +51583,35 @@
       },
       {
         "kind": "file",
+        "path": "packages/smithers/agent/examples/use-cases/extract-intent/src/assemble.d.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/examples/use-cases/extract-intent/src/assemble.d.vibe.ts"
+      },
+      {
+        "kind": "file",
         "path": "packages/smithers/agent/examples/use-cases/extract-intent/src/assemble.vibe"
       },
       {
         "kind": "file",
+        "path": "packages/smithers/agent/examples/use-cases/extract-intent/src/collect.d.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/examples/use-cases/extract-intent/src/collect.d.vibe.ts"
+      },
+      {
+        "kind": "file",
         "path": "packages/smithers/agent/examples/use-cases/extract-intent/src/collect.vibe"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/examples/use-cases/extract-intent/src/flow.d.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/examples/use-cases/extract-intent/src/flow.d.vibe.ts"
       },
       {
         "kind": "file",
@@ -51599,11 +51623,35 @@
       },
       {
         "kind": "file",
+        "path": "packages/smithers/agent/examples/use-cases/extract-intent/src/label.d.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/examples/use-cases/extract-intent/src/label.d.vibe.ts"
+      },
+      {
+        "kind": "file",
         "path": "packages/smithers/agent/examples/use-cases/extract-intent/src/label.vibe"
       },
       {
         "kind": "file",
+        "path": "packages/smithers/agent/examples/use-cases/extract-intent/src/main.d.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/examples/use-cases/extract-intent/src/main.d.vibe.ts"
+      },
+      {
+        "kind": "file",
         "path": "packages/smithers/agent/examples/use-cases/extract-intent/src/main.vibe"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/examples/use-cases/extract-intent/src/prepare.d.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/examples/use-cases/extract-intent/src/prepare.d.vibe.ts"
       },
       {
         "kind": "file",
@@ -106575,35 +106623,7 @@
     "outputs": [],
     "dependencies": [
       "//packages/smithers/flows/engine-store:check",
-      "//packages/smithers/flows/engine-store:lib",
-      "//packages/smithers/flows/engine-store:sources-packages-fuzz",
-      "//packages/smithers/flows/engine-store:sources-packages-smithers-agent-model",
-      "//packages/smithers/flows/engine-store:sources-packages-smithers-agent-registry",
-      "//packages/smithers/flows/engine-store:sources-packages-smithers-agent-std",
-      "//packages/smithers/flows/engine-store:sources-packages-smithers-control",
-      "//packages/smithers/flows/engine-store:sources-packages-smithers-flows",
-      "//packages/smithers/flows/engine-store:sources-packages-smithers-flows-artifacts",
-      "//packages/smithers/flows/engine-store:sources-packages-smithers-flows-canonical",
-      "//packages/smithers/flows/engine-store:sources-packages-smithers-flows-capability",
-      "//packages/smithers/flows/engine-store:sources-packages-smithers-flows-core",
-      "//packages/smithers/flows/engine-store:sources-packages-smithers-flows-crypto",
-      "//packages/smithers/flows/engine-store:sources-packages-smithers-flows-database",
-      "//packages/smithers/flows/engine-store:sources-packages-smithers-flows-engine",
-      "//packages/smithers/flows/engine-store:sources-packages-smithers-flows-flow",
-      "//packages/smithers/flows/engine-store:sources-packages-smithers-flows-jj",
-      "//packages/smithers/flows/engine-store:sources-packages-smithers-flows-journal",
-      "//packages/smithers/flows/engine-store:sources-packages-smithers-flows-kernel",
-      "//packages/smithers/flows/engine-store:sources-packages-smithers-flows-keys",
-      "//packages/smithers/flows/engine-store:sources-packages-smithers-flows-observability",
-      "//packages/smithers/flows/engine-store:sources-packages-smithers-flows-plan",
-      "//packages/smithers/flows/engine-store:sources-packages-smithers-flows-plan-store",
-      "//packages/smithers/flows/engine-store:sources-packages-smithers-flows-platform-node",
-      "//packages/smithers/flows/engine-store:sources-packages-smithers-flows-run-store",
-      "//packages/smithers/flows/engine-store:sources-packages-smithers-flows-sandbox",
-      "//packages/smithers/flows/engine-store:sources-packages-smithers-flows-step-cache",
-      "//packages/smithers/flows/engine-store:sources-packages-smithers-flows-sync",
-      "//packages/smithers/flows/engine-store:sources-packages-smithers-flows-time-travel",
-      "//packages/smithers/flows/engine-store:sources-packages-smithers-notifications"
+      "//packages/smithers/flows/engine-store:test"
     ],
     "source": {
       "file": "packages/smithers/flows/engine-store/PACKAGE.ts"
@@ -107871,17 +107891,12 @@
       },
       {
         "kind": "glob",
-        "pattern": "packages/smithers/flows/engine-store/src/**/*.{ts,vibe}",
+        "pattern": "packages/smithers/flows/engine-store/{src,examples}/**/*.{ts,vibe}",
         "exclude": []
       },
       {
         "kind": "glob",
         "pattern": "packages/smithers/flows/engine-store/test/**/*.{ts,vibe}",
-        "exclude": []
-      },
-      {
-        "kind": "glob",
-        "pattern": "packages/smithers/flows/engine-store/examples/**/*.ts",
         "exclude": []
       },
       {
@@ -107899,23 +107914,6 @@
       {
         "kind": "file",
         "path": "packages/smithers/flows/engine-store/vitest.config.ts"
-      },
-      {
-        "kind": "file",
-        "path": "packages/smithers/flows/engine-store/eslint.config.js"
-      },
-      {
-        "kind": "file",
-        "path": "eslint.invariants.js"
-      },
-      {
-        "kind": "file",
-        "path": "eslint.jsdoc.js"
-      },
-      {
-        "kind": "glob",
-        "pattern": "packages/smithers/flows/engine-store/test/fixtures/**/*.mjs",
-        "exclude": []
       },
       {
         "kind": "file",
@@ -107944,11 +107942,44 @@
       {
         "kind": "file",
         "path": "packages/repo-targets/test-utils/effect-property.d.mts"
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/smithers/flows/engine-store/test/fixtures/**/*.mjs",
+        "exclude": []
       }
     ],
     "outputs": [],
     "dependencies": [
-      "//packages/smithers/flows/engine-store:lib"
+      "//packages/smithers/flows/engine-store:lib",
+      "//packages/smithers/flows/engine-store:sources-packages-fuzz",
+      "//packages/smithers/flows/engine-store:sources-packages-smithers-agent-model",
+      "//packages/smithers/flows/engine-store:sources-packages-smithers-agent-registry",
+      "//packages/smithers/flows/engine-store:sources-packages-smithers-agent-std",
+      "//packages/smithers/flows/engine-store:sources-packages-smithers-control",
+      "//packages/smithers/flows/engine-store:sources-packages-smithers-flows",
+      "//packages/smithers/flows/engine-store:sources-packages-smithers-flows-artifacts",
+      "//packages/smithers/flows/engine-store:sources-packages-smithers-flows-canonical",
+      "//packages/smithers/flows/engine-store:sources-packages-smithers-flows-capability",
+      "//packages/smithers/flows/engine-store:sources-packages-smithers-flows-core",
+      "//packages/smithers/flows/engine-store:sources-packages-smithers-flows-crypto",
+      "//packages/smithers/flows/engine-store:sources-packages-smithers-flows-database",
+      "//packages/smithers/flows/engine-store:sources-packages-smithers-flows-engine",
+      "//packages/smithers/flows/engine-store:sources-packages-smithers-flows-flow",
+      "//packages/smithers/flows/engine-store:sources-packages-smithers-flows-jj",
+      "//packages/smithers/flows/engine-store:sources-packages-smithers-flows-journal",
+      "//packages/smithers/flows/engine-store:sources-packages-smithers-flows-kernel",
+      "//packages/smithers/flows/engine-store:sources-packages-smithers-flows-keys",
+      "//packages/smithers/flows/engine-store:sources-packages-smithers-flows-observability",
+      "//packages/smithers/flows/engine-store:sources-packages-smithers-flows-plan",
+      "//packages/smithers/flows/engine-store:sources-packages-smithers-flows-plan-store",
+      "//packages/smithers/flows/engine-store:sources-packages-smithers-flows-platform-node",
+      "//packages/smithers/flows/engine-store:sources-packages-smithers-flows-run-store",
+      "//packages/smithers/flows/engine-store:sources-packages-smithers-flows-sandbox",
+      "//packages/smithers/flows/engine-store:sources-packages-smithers-flows-step-cache",
+      "//packages/smithers/flows/engine-store:sources-packages-smithers-flows-sync",
+      "//packages/smithers/flows/engine-store:sources-packages-smithers-flows-time-travel",
+      "//packages/smithers/flows/engine-store:sources-packages-smithers-notifications"
     ],
     "source": {
       "file": "packages/smithers/flows/engine-store/PACKAGE.ts"

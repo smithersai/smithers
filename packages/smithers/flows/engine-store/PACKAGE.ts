@@ -17,36 +17,6 @@ import * as Input from "@smthrs/targets/Input"
 const cwd = "packages/smithers/flows/engine-store"
 const workspaceSources = WorkspaceSources({ cwd })
 
-const { bench, check, circular, docs, docsFiles, fmt, lib, lint } = BuildAndCheckTypeScriptPackage({
-  deps: [],
-  reads: Object.values(workspaceSources),
-  // Examples are type-checked, linted and run by test/examples.test.ts.
-  sources: Input.glob("{src,examples}/**/*.{ts,vibe}"),
-  examples: [{
-    page: Input.file("docs/quickstart.md"),
-    example: Input.file("examples/vibe/quickstart.vibe"),
-    test: Input.file("test/quickstart.test.vibe")
-  }],
-  cwd
-})
-
-/**
- * Tests run our own modules as they ship: a fault comes from an injected
- * Effect service, never from replacing a module.
- *
- * @since 1.0.0
- * @category lint
- */
-const importRules = ImportRules({
-  cwd: "packages/smithers/flows/engine-store",
-  rules: [{
-    kind: "forbidCalls",
-    files: ["test/**"],
-    callees: ["vi.mock", "vi.doMock"],
-    because: "No mocks: unhappy paths inject a faulty Effect service, never a replaced module."
-  }]
-})
-
 // Declared env appears in plans, so an external connection must carry no
 // password or libpq credential/config-file indirection. The stock matrix's
 // private disposable-server password stays inside its existing runner.
@@ -76,43 +46,38 @@ for (const [name, postgresUrl] of Object.entries(postgresUrls)) {
   postgresEnvironment[name] = postgresUrl
 }
 
-/** The same SQLite/PostgreSQL matrix, optionally using a declared external server. */
-const test = Smithers.NodeTest({
-  runner: Smithers.entrypoint(Smithers.file("//packages/smithers/flows/database/scripts/test-matrix.mjs")),
-  srcs: [
-    Smithers.glob("src/**/*.{ts,vibe}"),
-    Smithers.glob("test/**/*.{ts,vibe}"),
-    Smithers.glob("examples/**/*.ts"),
-    Smithers.file("tsconfig.json"),
-    Smithers.file("tsconfig.test.json"),
-    Smithers.file("package.json"),
-    Smithers.file("vitest.config.ts"),
-    Smithers.file("eslint.config.js"),
-    Smithers.file("//eslint.invariants.js"),
-    Smithers.file("//eslint.jsdoc.js"),
-    Smithers.glob("test/fixtures/**/*.mjs"),
-    Smithers.file("//packages/repo-targets/test-utils/effect-property.mjs"),
-    Smithers.file("//packages/repo-targets/test-utils/coverage-teardown.mjs"),
-    Smithers.file("//packages/repo-targets/test-utils/test-process-environment.mjs"),
-    Smithers.file("//packages/repo-targets/test-utils/test-schemas.ts"),
-    Smithers.file("//packages/smithers/flows/database/src/TestSchemas.ts"),
-    Smithers.file("//packages/repo-targets/test-utils/vitest-root-temp.mjs"),
-    Smithers.file("//packages/repo-targets/test-utils/effect-property.d.mts")
-  ],
-  deps: [lib],
-  env: {
-    ...(postgresEnvironment["SMITHERS_TEST_PG_URL"] === undefined
-      ? {}
-      : { SMITHERS_TEST_PG_URL: postgresEnvironment["SMITHERS_TEST_PG_URL"] }),
-    ...(postgresEnvironment["SMITHERS_TEST_COMPOSE_PG_URL"] === undefined
-      ? {}
-      : { SMITHERS_TEST_COMPOSE_PG_URL: postgresEnvironment["SMITHERS_TEST_COMPOSE_PG_URL"] }),
-    ...(postgresEnvironment["SMITHERS_TEST_PGBOUNCER_URL"] === undefined
-      ? {}
-      : { SMITHERS_TEST_PGBOUNCER_URL: postgresEnvironment["SMITHERS_TEST_PGBOUNCER_URL"] })
-  },
-  timeout: "1200000ms",
-  cwd: "packages/smithers/flows/engine-store"
+const { bench, check, circular, docs, docsFiles, fmt, lib, lint, test } = BuildAndCheckTypeScriptPackage({
+  testProgram: Smithers.file("//packages/smithers/flows/database/scripts/test-matrix.mjs"),
+  testData: ["test/fixtures/**/*.mjs"],
+  testEnv: postgresEnvironment,
+  testTimeoutMs: 1_200_000,
+  deps: [],
+  reads: Object.values(workspaceSources),
+  // Examples are type-checked, linted and run by test/examples.test.ts.
+  sources: Input.glob("{src,examples}/**/*.{ts,vibe}"),
+  examples: [{
+    page: Input.file("docs/quickstart.md"),
+    example: Input.file("examples/vibe/quickstart.vibe"),
+    test: Input.file("test/quickstart.test.vibe")
+  }],
+  cwd
+})
+
+/**
+ * Tests run our own modules as they ship: a fault comes from an injected
+ * Effect service, never from replacing a module.
+ *
+ * @since 1.0.0
+ * @category lint
+ */
+const importRules = ImportRules({
+  cwd: "packages/smithers/flows/engine-store",
+  rules: [{
+    kind: "forbidCalls",
+    files: ["test/**"],
+    callees: ["vi.mock", "vi.doMock"],
+    because: "No mocks: unhappy paths inject a faulty Effect service, never a replaced module."
+  }]
 })
 
 /**

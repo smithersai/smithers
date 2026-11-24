@@ -15,7 +15,7 @@ import {
   cacheWorkerOptions,
   type RateLimitDeclaration,
   sandboxWorkerId,
-  sandboxWorkerOptions,
+  sandboxWorkerStageOptions,
   stackName
 } from "./deployment.ts"
 
@@ -49,12 +49,10 @@ const cacheWorker = Cloudflare.Worker(
 // which never does, declares none of them.
 const sandboxWorker = Cloudflare.Worker(
   sandboxWorkerId,
-  Stack.useSync((stack) =>
-    sandboxWorkerOptions({
-      container: (id, props) => Cloudflare.Container(id, props),
-      metrics: Cloudflare.AnalyticsEngine.Dataset("SandboxRequestMetrics", {
-        dataset: `smithers_sandbox_requests_${stack.stage.replace(/[^A-Za-z0-9_]/g, "_")}`
-      })
+  Stack.useSync(
+    sandboxWorkerStageOptions({
+      container: Cloudflare.Container,
+      metrics: Cloudflare.AnalyticsEngine.Dataset
     })
   )
 )

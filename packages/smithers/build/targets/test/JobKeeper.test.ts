@@ -437,6 +437,11 @@ describe.runIf(process.platform === "linux")("the processes a namespace's holder
       holder.kill("SIGKILL")
     }
   })
+
+  it("resolves working directories through the non-linux lsof path without failing when unavailable", async () => {
+    const map = await JobKeeper.cwds([process.pid], "darwin")
+    expect(map).toBeInstanceOf(Map)
+  })
 })
 
 describe.runIf(process.platform === "linux")("what still runs when a job's end is not reached", () => {

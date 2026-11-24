@@ -53,6 +53,15 @@ describe("VitestBench and NodeBench targets", () => {
     expect(args).toContain("--environment")
     expect(args).toContain("jsdom")
     expect(args).toContain("--passWithNoTests")
+
+    const noConfigArgs = VitestBench.benchArguments({
+      config: null,
+      cwd: "packages/example",
+      environment: "node",
+      passWithNoTests: false
+    })
+    expect(noConfigArgs).not.toContain("--config")
+    expect(noConfigArgs).not.toContain("--passWithNoTests")
   })
 
   it("plans VitestBench execution through the declared package manager", () => {

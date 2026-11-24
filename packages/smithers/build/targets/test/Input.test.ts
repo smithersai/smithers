@@ -949,4 +949,24 @@ describe("concurrent glob walk", () => {
     const matches = await Input.expandGlob(root, ".", "link/**/*.ts")
     expect(matches.some((path) => path.startsWith("link/loop/"))).toBe(false)
   })
+
+  it("handles empty ancestor .gitignore files and ignored symbolic links", async () => {
+    await write("ign/.gitignore", "")
+    await write("ign/sub/.gitignore", "skipped.ts\n")
+    await write("ign/sub/real.ts", "export const ok = 1\n")
+    await Fs.symlink(at("ign/sub/real.ts"), at("ign/sub/skipped.ts"))
+    const matches = await Input.expandGlob(root, ".", "ign/sub/*.ts")
+    expect(matches).toEqual(["ign/sub/real.ts"])
+
+    await write("ign-dangling/ok.ts", "export const ok = 1\n")
+    await Fs.symlink(at("ign-dangling/missing-target"), at("ign-dangling/.gitignore"))
+    expect(await Input.expandGlob(root, ".", "ign-dangling/*.ts")).toEqual(["ign-dangling/ok.ts"])
+
+    for (let dir = 0; dir < 20; dir += 1) {
+      for (let sub = 0; sub < 3; sub += 1) {
+        await write(`cap/d${dir}/s${sub}/f.ts`, "export const x = 1\n")
+      }
+    }
+    await expect(Input.expandGlob(root, ".", "cap/**/*.ts", { limits: { directories: 4 } })).rejects.toThrow()
+  })
 })

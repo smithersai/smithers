@@ -47,3 +47,4 @@ export declare const buildLibrary: (
   }
 ) => Promise<void>
 export const emptyDirectory: (directory: string) => void
+export declare function rewriteCommonJsCalls(text: string): string

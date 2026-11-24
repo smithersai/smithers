@@ -652,6 +652,24 @@ export const sandboxWorkerOptions = <Container, Metrics = never>(
 })
 
 /**
+ * Builds the stage-scoped sandbox Worker configuration factory for Alchemy.
+ *
+ * @category constructors
+ * @since 0.1.0
+ */
+export const sandboxWorkerStageOptions = <Container, Metrics>(resources: {
+  readonly container: SandboxWorkerResources<Container, Metrics>["container"]
+  readonly metrics: (id: string, props: { readonly dataset: string }) => Metrics
+}) =>
+(stack: { readonly stage: string }) =>
+  sandboxWorkerOptions({
+    container: resources.container,
+    metrics: resources.metrics("SandboxRequestMetrics", {
+      dataset: `smithers_sandbox_requests_${stack.stage.replace(/[^A-Za-z0-9_]/g, "_")}`
+    })
+  })
+
+/**
  * The D1 and R2 resources, and the declarations for the Rate Limiting and
  * Analytics Engine bindings the Worker binds.
  *

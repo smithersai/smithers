@@ -714,6 +714,24 @@
     },
     {
       "name": "@smthrs/sandbox",
+      "subpath": "./JjWorkspaceSandbox",
+      "development": "./src/JjWorkspaceSandbox/index.ts",
+      "published": {
+        "types": "./dist/esm/JjWorkspaceSandbox/index.d.ts",
+        "import": "./dist/esm/JjWorkspaceSandbox/index.js",
+        "require": "./dist/cjs/JjWorkspaceSandbox/index.js"
+      },
+      "reason": "Public jj workspace sandbox provider exported by @smthrs/sandbox."
+    },
+    {
+      "name": "@smthrs/sandbox",
+      "subpath": "./JjWorkspaceSandbox/*",
+      "development": null,
+      "published": null,
+      "reason": "Keep internal JjWorkspaceSandbox submodules private under the explicit export map."
+    },
+    {
+      "name": "@smthrs/sandbox",
       "subpath": "./CommandSandbox",
       "development": "./src/CommandSandbox/index.ts",
       "published": {
@@ -820,6 +838,17 @@
     },
     {
       "name": "@smthrs/agent",
+      "subpath": "./ModelPolicy",
+      "development": "./src/ModelPolicy.ts",
+      "published": {
+        "types": "./dist/esm/ModelPolicy.d.ts",
+        "import": "./dist/esm/ModelPolicy.js",
+        "require": "./dist/cjs/ModelPolicy.js"
+      },
+      "reason": "Public model policy contract exported by @smthrs/agent for declarative provider and fallback selection."
+    },
+    {
+      "name": "@smthrs/agent",
       "subpath": "./ModelStep",
       "development": "./src/ModelStep.ts",
       "published": {
@@ -855,6 +884,17 @@
         "require": "./dist/cjs/CloudSession.js"
       },
       "reason": "The signed-in Smithers Cloud session for hosts other than the CLI: the origin and an authenticated GET resolved from where smthrs auth login and smthrs config put them, so apps/tui reads the factory's issue list. It reuses the CLI's session resolution and stores or prints no token."
+    },
+    {
+      "name": "@smthrs/integrations",
+      "subpath": "./OpenApi",
+      "development": "./src/OpenApi.ts",
+      "published": {
+        "types": "./dist/esm/OpenApi.d.ts",
+        "import": "./dist/esm/OpenApi.js",
+        "require": "./dist/cjs/OpenApi.js"
+      },
+      "reason": "Public OpenAPI specification integration entrypoint exported by @smthrs/integrations."
     },
     {
       "name": "@smthrs/integrations",
@@ -1036,6 +1076,17 @@
         "require": "./dist/cjs/Fault.js"
       },
       "reason": "One typed fault class per failure, registered by each error owner and stamped on failed runs (failure model S7 slice 1)."
+    },
+    {
+      "name": "@smthrs/evals",
+      "subpath": "./Optimize",
+      "development": "./src/Optimize.ts",
+      "published": {
+        "types": "./dist/esm/Optimize.d.ts",
+        "import": "./dist/esm/Optimize.js",
+        "require": "./dist/cjs/Optimize.js"
+      },
+      "reason": "Public eval optimization entrypoint exported by @smthrs/evals."
     },
     {
       "name": "@smthrs/evals",
@@ -2290,6 +2341,28 @@
         }
       },
       "reason": "V8 coverage helper for fuzz-only coverage runs (added in e33d9c8d1ce9)."
+    },
+    {
+      "name": "@smthrs/migrate",
+      "subpath": "./SqliteStore",
+      "development": "./src/SqliteStore.ts",
+      "published": {
+        "types": "./dist/esm/SqliteStore.d.ts",
+        "import": "./dist/esm/SqliteStore.js",
+        "require": "./dist/cjs/SqliteStore.js"
+      },
+      "reason": "Public SQLite migration state store abstraction exported by @smthrs/migrate."
+    },
+    {
+      "name": "@smthrs/migrate",
+      "subpath": "./SqliteStoreNode",
+      "development": "./src/SqliteStoreNode.ts",
+      "published": {
+        "types": "./dist/esm/SqliteStoreNode.d.ts",
+        "import": "./dist/esm/SqliteStoreNode.js",
+        "require": "./dist/cjs/SqliteStoreNode.js"
+      },
+      "reason": "Public Node SQLite migration state store implementation exported by @smthrs/migrate."
     }
   ],
   "removed": [

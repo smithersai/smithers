@@ -379,7 +379,7 @@ for (const target of Postgres.targets) {
       }).pipe(Effect.ensuring(Effect.promise(() => Postgres.dropSchema(schema))))
     })
 
-    it.live("a child's alarm costs at most 195 round trips, including both unknown-run guards", () => {
+    it.live("a child's alarm costs at most 198 round trips, including unknown-run guards and atomic parent-wake journaling", () => {
       const schema = Postgres.freshSchema()
       return Effect.gen(function*() {
         const scope = yield* Scope.make()
@@ -397,10 +397,11 @@ for (const target of Postgres.targets) {
         const before = trace.roundTrips()
         yield* objects.alarm(childId)
         // 276 before schema-qualified lone reads and shared savepoints (2026-11-03). The unknown-run
-        // fix 53466ad8 adds two required existence guards before deferred completion: 193 + 2.
+        // fix 53466ad8 adds two required existence guards before deferred completion (193 + 2 = 195),
+        // and #4775 (b0bf124a) journals parent completions atomically in recordParentResume (+3 = 198).
         expect(trace.statements.slice(from).filter(({ sql }) => /^SELECT 1 FROM flows_runs WHERE/.test(sql)))
           .toHaveLength(2)
-        expect(trace.roundTrips() - before).toBeLessThanOrEqual(195)
+        expect(trace.roundTrips() - before).toBeLessThanOrEqual(198)
         yield* Scope.close(scope, Exit.void)
       }).pipe(Effect.ensuring(Effect.promise(() => Postgres.dropSchema(schema))))
     })

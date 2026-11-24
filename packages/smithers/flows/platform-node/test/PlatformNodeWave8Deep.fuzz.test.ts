@@ -67,50 +67,54 @@ describe("@smthrs/platform-node Wave 8 deep fuzz (PipedProcess fd bounds, Atomic
     assertPassed(report)
   }, 60_000)
 
-  it("AtomicFileSystemExecutable staging prunes stale dirs/temps, refuses symlinked staging dir & verifies ProcessSandbox/Reaper/Confinement helpers", async () => {
-    const arb = Arbitrary.schema(
-      Schema.Struct({
-        caseKind: Schema.Literals(["stale-dir", "stale-tmp", "symlink-staging", "fresh-dir"])
-      })
-    )
-
-    const report = await Effect.runPromise(
-      Fuzz.run(
-        arb,
-        (v) =>
-          Effect.sync(() => {
-            const base = mkdtempSync(join(tmpdir(), "pnode-w8-atomic-"))
-            try {
-              const oldTime = new Date(Date.now() - 10 * 24 * 60 * 60 * 1000)
-              if (v.caseKind === "stale-dir") {
-                const stale = join(base, ".smthrs-atomic-helper-old123")
-                mkdirSync(stale, { mode: 0o700 })
-                utimesSync(stale, oldTime, oldTime)
-              } else if (v.caseKind === "stale-tmp") {
-                const live = join(base, ".smthrs-atomic-helper-live123")
-                mkdirSync(live, { mode: 0o700 })
-                const tmpf = join(live, ".smthrs-atomic-fs.12345.deadbeefcafe")
-                writeFileSync(tmpf, "partial")
-                utimesSync(tmpf, oldTime, oldTime)
-              } else if (v.caseKind === "symlink-staging") {
-                const target = join(base, "real")
-                mkdirSync(target, { mode: 0o700 })
-                symlinkSync(target, join(base, ".smthrs-atomic-helper-link"))
-              } else {
-                mkdirSync(join(base, ".smthrs-atomic-helper-fresh"), { mode: 0o700 })
-              }
-              expect(AtomicFileSystemExecutable).toBeDefined()
-              expect(ProcessSandbox).toBeDefined()
-              expect(ProcessConfinement).toBeDefined()
-              expect(ProcessReaper).toBeDefined()
-              return true
-            } finally {
-              rmSync(base, { recursive: true, force: true })
-            }
-          }),
-        { seed: seed + 1, executions: Math.min(executions, 40) }
+  it(
+    "AtomicFileSystemExecutable staging prunes stale dirs/temps, refuses symlinked staging dir & verifies ProcessSandbox/Reaper/Confinement helpers",
+    async () => {
+      const arb = Arbitrary.schema(
+        Schema.Struct({
+          caseKind: Schema.Literals(["stale-dir", "stale-tmp", "symlink-staging", "fresh-dir"])
+        })
       )
-    )
-    assertPassed(report)
-  }, 60_000)
+
+      const report = await Effect.runPromise(
+        Fuzz.run(
+          arb,
+          (v) =>
+            Effect.sync(() => {
+              const base = mkdtempSync(join(tmpdir(), "pnode-w8-atomic-"))
+              try {
+                const oldTime = new Date(Date.now() - 10 * 24 * 60 * 60 * 1000)
+                if (v.caseKind === "stale-dir") {
+                  const stale = join(base, ".smthrs-atomic-helper-old123")
+                  mkdirSync(stale, { mode: 0o700 })
+                  utimesSync(stale, oldTime, oldTime)
+                } else if (v.caseKind === "stale-tmp") {
+                  const live = join(base, ".smthrs-atomic-helper-live123")
+                  mkdirSync(live, { mode: 0o700 })
+                  const tmpf = join(live, ".smthrs-atomic-fs.12345.deadbeefcafe")
+                  writeFileSync(tmpf, "partial")
+                  utimesSync(tmpf, oldTime, oldTime)
+                } else if (v.caseKind === "symlink-staging") {
+                  const target = join(base, "real")
+                  mkdirSync(target, { mode: 0o700 })
+                  symlinkSync(target, join(base, ".smthrs-atomic-helper-link"))
+                } else {
+                  mkdirSync(join(base, ".smthrs-atomic-helper-fresh"), { mode: 0o700 })
+                }
+                expect(AtomicFileSystemExecutable).toBeDefined()
+                expect(ProcessSandbox).toBeDefined()
+                expect(ProcessConfinement).toBeDefined()
+                expect(ProcessReaper).toBeDefined()
+                return true
+              } finally {
+                rmSync(base, { recursive: true, force: true })
+              }
+            }),
+          { seed: seed + 1, executions: Math.min(executions, 40) }
+        )
+      )
+      assertPassed(report)
+    },
+    60_000
+  )
 })

@@ -4223,6 +4223,28 @@ describe("AgentSession retry from a step", () => {
   it("offers no retry on a host that cannot read its engine's runs", () =>
     retrying(() =>
       Effect.gen(function*() {
-        expect((yield* ControlExecutor.ControlExecutor).retryStep).toBeUndefined()
+        const executor = yield* ControlExecutor.ControlExecutor
+        expect(executor.retryStep).toBeUndefined()
+        // Pausing a run with no active drive fiber is a clean no-op.
+        yield* executor.pause!("untracked-run-id")
+        // Launching a driver whose control row is already terminal returns without starting a round.
+        const control = yield* Control.Control
+        const runtime = yield* ControlRuntime.ControlRuntime
+        const card = yield* control.plan({ flowId: "agents/module", input: { plan: { changes: ["native"] } } })
+        yield* control.approve(card.approval)
+        const receipt = yield* control.run({
+          _tag: "Plan",
+          planId: card.planId,
+          digest: card.digest,
+          envelope: card.envelope,
+          idempotencyKey: "run:already-settled-launch"
+        })
+        if (receipt._tag === "Accepted" && receipt.runId !== undefined) {
+          yield* awaitStatus(runtime, receipt.runId, "failed")
+          const run = yield* runtime.getRun(receipt.runId)
+          const plan = yield* runtime.getPlan(card.planId)
+          yield* executor.launch({ run, plan })
+          yield* Effect.sleep("20 millis")
+        }
       }), { inspection: undefined }))
 })

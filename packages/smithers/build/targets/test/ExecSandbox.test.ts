@@ -238,4 +238,16 @@ describe("destination allowlist selection", () => {
     expect(ExecSandbox.isUnenforceable(ExecSandbox.select(restricted, darwin))).toBe(true)
     expect(ExecSandbox.isUnenforceable(ExecSandbox.select(restricted, windows))).toBe(true)
   })
+
+  it("handles unenforceable lower plans and root-slashed workspace paths in protect", () => {
+    const escaped = ExecSandbox.plan(
+      { policy: {}, reads: [], writes: ["out.txt"] },
+      { workspaceRoot: "/work", cwd: "/work", tmp: "/tmp/private" },
+      { ...linux, realpath: () => "/other" }
+    )
+    expect(escaped !== undefined && ExecSandbox.isUnenforceable(escaped)).toBe(true)
+    const argv = ["node", "-e", "0"]
+    expect(ExecSandbox.protect({ policy: {}, reads: [], writes: [], writeProtected: ["a.txt"] }, "/", argv, windows))
+      .toEqual(argv)
+  })
 })

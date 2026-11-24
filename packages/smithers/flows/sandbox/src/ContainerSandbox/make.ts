@@ -295,8 +295,8 @@ export const make = (options: ContainerSandboxOptions): Provider => {
               // prose is not a contract: podman words the conflict differently
               // from docker and a localized daemon differently again. The
               // question goes to the engine as a question instead.
-              const existing = legacy.code === 0 && attempt === 0 ? legacy : yield* run(["container", "inspect", name])
-              if (existing.code !== 0) {
+              const existing = created === undefined ? legacy : yield* run(["container", "inspect", name])
+              if (created !== undefined && existing.code !== 0) {
                 // A conflict whose holder is already gone means its removal
                 // finished between the two calls: create once more. A second
                 // refusal with nothing holding the name is a real failure.
@@ -307,9 +307,8 @@ export const make = (options: ContainerSandboxOptions): Provider => {
                 return yield* Effect.fail(
                   new ProviderError({
                     code: "unavailable",
-                    message: created === undefined
-                      ? `the legacy container ${name} could not be inspected: ${existing.stderr.trim()}`
-                      : `the container ${name} could not be created from ${options.image}: ${created.stderr.trim()}`
+                    message:
+                      `the container ${name} could not be created from ${options.image}: ${created.stderr.trim()}`
                   })
                 )
               }

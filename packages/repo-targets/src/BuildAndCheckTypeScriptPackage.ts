@@ -412,6 +412,7 @@ export const BuildAndCheckTypeScriptPackage = (options: Options): PackageTargets
         ...(options.testData ?? []).map((pattern) => Input.glob(pattern))
       ],
       deps: [lib, ...deps, ...reads],
+      ...(options.testEnv === undefined ? {} : { env: options.testEnv }),
       timeout: `${options.testTimeoutMs ?? 1_200_000}ms`,
       cwd
     })

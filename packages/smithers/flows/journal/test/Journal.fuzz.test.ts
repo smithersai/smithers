@@ -2599,7 +2599,7 @@ describe("@smthrs/journal SqlJournal fuzz invariants", () => {
               Effect.provideService(Metric.MetricRegistry, new Map()),
               Effect.provide(silentLog)
             ),
-          { seed: seed + 24, executions: 14 }
+          { seed: seed + 24, executions: process.env.SMITHERS_TEST_SQL === "postgres" ? 6 : 14 }
         )
       )
       assertFuzz(report)

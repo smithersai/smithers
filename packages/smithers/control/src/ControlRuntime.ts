@@ -1324,7 +1324,9 @@ export const layerMemory = (options: MemoryOptions = {}): Layer.Layer<ControlRun
         takeLaunch: (id, includeLegacy = false) =>
           Effect.sync(() => {
             const state = pendingLaunches.get(id)
-            if (state !== null && !(includeLegacy && state === undefined && !completedLaunches.has(id))) return undefined
+            if (state !== null && !(includeLegacy && state === undefined && !completedLaunches.has(id))) {
+              return undefined
+            }
             const nonce = String(++launchSequence)
             pendingLaunches.set(id, nonce)
             return nonce
