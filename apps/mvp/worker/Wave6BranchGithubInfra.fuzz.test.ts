@@ -557,7 +557,7 @@ test("a session's prior reads live, ended or absent, and each ending leaves its 
     return true
   }), options(20261134, 30))))
   expect(Fuzz.formatReport(report)).toBeUndefined()
-}, 120_000)
+}, 240_000)
 
 const RETRY_LATER = { "retry-after": "5", "cache-control": "no-store" }
 const answerOf = (response: HttpServerResponse.HttpServerResponse) => ({

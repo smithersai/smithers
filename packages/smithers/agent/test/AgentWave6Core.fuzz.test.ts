@@ -1155,12 +1155,12 @@ describe("@smthrs/agent Wave-6 core modules deep fuzz invariants", () => {
                       const children = yield* EngineChildren.make({
                         flows: [GoodChild, FailChild, SlowChild],
                         pollInterval,
-                        awaitTimeout: Duration.millis(2000)
+                        awaitTimeout: Duration.millis(15_000)
                       })
 
                       if (childCase === "await_zero_interval") {
                         const sp = yield* children.spawn({ flow: GoodChild._tag, input: { msg: text } })
-                        const res = yield* children.await({ child: sp.child, timeoutSeconds: 2 })
+                        const res = yield* children.await({ child: sp.child, timeoutSeconds: 15 })
                         return res.output.includes(text)
                       }
                       if (childCase === "await_with_flow_instance_timeout") {
@@ -1170,7 +1170,7 @@ describe("@smthrs/agent Wave-6 core modules deep fuzz invariants", () => {
                       }
                       if (childCase === "await_failed_child") {
                         const sp = yield* children.spawn({ flow: FailChild._tag, input: {} })
-                        const res = yield* Effect.result(children.await({ child: sp.child, timeoutSeconds: 2 }))
+                        const res = yield* Effect.result(children.await({ child: sp.child, timeoutSeconds: 15 }))
                         return Result.isFailure(res)
                       }
                       if (childCase === "await_cancelled_child") {

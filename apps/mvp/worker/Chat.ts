@@ -116,7 +116,14 @@ const Question = Schema.Struct({
   // The branch's conversation (decision 0013 §1). For one release, a question without one belongs to the home
   // conversation, so an ask queued by the build before branches still lands.
   conversationId: Schema.optional(Schema.String.check(Schema.isUUID())),
-  text: Schema.Trim.check(Schema.isBetweenLength(1, MAX_QUESTION_LENGTH)),
+  text: Schema.Trim.check(
+    Schema.isBetweenLength(1, MAX_QUESTION_LENGTH),
+    // Postgres text rejects NUL (SQLSTATE 22021 -> 503) and normalizes lone UTF-16 surrogates to U+FFFD
+    // (breaking idempotent resend with 409). Reject both cleanly at HTTP admission as 400 invalid.
+    Schema.makeFilter((text) =>
+      !text.includes("\0") && !/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/.test(text)
+    ),
+  ),
   // A question sent from a view (docs/features/views.md): the view and its event, and the values sent with it.
   source: Schema.optional(Schema.Struct({ viewId: Schema.String.check(Schema.isUUID()), event: Interactions.Name })),
   data: Schema.optional(FormValues),
