@@ -1,0 +1,10 @@
+name = "chain"
+version = "0.1.0"
+defaultTargets = ["ChainSpec", "chain-spec"]
+
+[[lean_lib]]
+name = "ChainSpec"
+
+[[lean_exe]]
+name = "chain-spec"
+root = "Main"

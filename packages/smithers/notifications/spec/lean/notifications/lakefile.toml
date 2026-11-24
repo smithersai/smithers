@@ -1,0 +1,10 @@
+name = "notifications"
+version = "0.1.0"
+defaultTargets = ["NotificationsSpec", "notifications-spec"]
+
+[[lean_lib]]
+name = "NotificationsSpec"
+
+[[lean_exe]]
+name = "notifications-spec"
+root = "Main"

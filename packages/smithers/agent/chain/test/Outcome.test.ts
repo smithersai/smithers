@@ -1,4 +1,6 @@
+import { Option } from "effect"
 import { describe, expect, it } from "vitest"
+import * as JsonBoundary from "../src/JsonBoundary.ts"
 import * as Outcome from "../src/Outcome.ts"
 import * as Script from "../src/Script.ts"
 
@@ -25,5 +27,10 @@ describe("Outcome", () => {
       reason: { code: "quota", message: "over budget" }
     })
     expect(Outcome.park("timer")).toEqual({ _tag: "Park", reason: { code: "timer", message: "" } })
+  })
+
+  it("decodeOutcome returns none instead of throwing on a To successor with an unpaired surrogate", () => {
+    expect(Option.isNone(JsonBoundary.decodeOutcome({ _tag: "To", script: "\ud800" }))).toBe(true)
+    expect(Option.isNone(JsonBoundary.decodeOutcome({ _tag: "To", script: { text: "a\udc00" } }))).toBe(true)
   })
 })

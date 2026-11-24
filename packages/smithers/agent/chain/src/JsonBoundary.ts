@@ -42,9 +42,13 @@ const decodeOutcomeShape = Schema.decodeUnknownOption(
  * @slop
  */
 export const decodeOutcome = (value: unknown): Option.Option<Outcome.Outcome> =>
-  Option.map(
+  Option.flatMap(
     decodeOutcomeShape(value),
-    (outcome) => outcome._tag === "To" ? Outcome.to(outcome.script) : outcome
+    (outcome) => {
+      if (outcome._tag !== "To") return Option.some(outcome)
+      const text = typeof outcome.script === "string" ? outcome.script : outcome.script.text
+      return isWellFormed(text) ? Option.some(Outcome.to(outcome.script)) : Option.none()
+    }
   )
 
 /**

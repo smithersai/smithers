@@ -346,7 +346,9 @@ export const observe = (
     entry.eventType === acknowledgedEventType
   ) return
   for (const condition of Object.keys(policy.rules)) {
-    const detector = detectors[condition]
+    // An own detector only. A plain lookup walks `Object.prototype`, so a rule named `constructor` or `toString`
+    // with no detector of its own would be read through an inherited function.
+    const detector = Object.hasOwn(detectors, condition) ? detectors[condition] : undefined
     if (detector === undefined) continue
     if (detector.eventTypes !== undefined && !names(detector.eventTypes, entry.eventType)) continue
     // Own properties only. `in` walks `Object.prototype`, so a detector named
@@ -417,7 +419,10 @@ export const decide = (
   now: number
 ): ReadonlyArray<Alert> =>
   open.flatMap((condition) => {
-    const rule = policy.rules[condition.condition]
+    // An own rule only. A plain lookup walks `Object.prototype`, so an open condition named `constructor` or
+    // `toString` that no rule covers would be judged by an inherited function and raise an alert whose
+    // `firedAt` is `NaN`.
+    const rule = Object.hasOwn(policy.rules, condition.condition) ? policy.rules[condition.condition] : undefined
     if (rule === undefined) return []
     if (now - condition.since < rule.afterMs) return []
     const severity = rule.severity ?? policy.defaults?.severity ?? "warning"

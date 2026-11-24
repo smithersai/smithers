@@ -1,0 +1,10 @@
+name = "repo_paths"
+version = "0.1.0"
+defaultTargets = ["RepoPathsSpec", "repo-paths-spec"]
+
+[[lean_lib]]
+name = "RepoPathsSpec"
+
+[[lean_exe]]
+name = "repo-paths-spec"
+root = "Main"
