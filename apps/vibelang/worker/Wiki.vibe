@@ -245,7 +245,8 @@ function storageCall<A>(run: () => Promise<A>): A!WikiFailure {
   return Effect.tryPromise({ try: run, catch: () => new WikiFailure({ reason: "unavailable" }) })
 }
 
-function jsonBytes(value: unknown): number {
+/** The byte length SqlJournal budgets: the UTF-8 bytes of the JSON encoding (spec/lean/wiki_spill `jsonBytes`). */
+export function jsonBytes(value: unknown): number {
   return new TextEncoder().encode(JSON.stringify(value)).byteLength
 }
 
@@ -261,7 +262,7 @@ effect function digestWikiBytes(bytes: Uint8Array): string!! {
  * Encoding is versioned per execution via storage markers so legacy unversioned receipts replay and retry verbatim
  * without false mismatches or literal-sentinel aliasing.
  */
-effect function encodeWikiText(storage: Storage, value: string, persist: boolean, threshold = WIKI_BLOB_THRESHOLD): { readonly value: string; readonly encoded: boolean }!WikiFailure {
+export effect function encodeWikiText(storage: Storage, value: string, persist: boolean, threshold = WIKI_BLOB_THRESHOLD): { readonly value: string; readonly encoded: boolean }!WikiFailure {
   if (jsonBytes(value) <= threshold) {
     return value.startsWith("\u0000")
       ? { value: `${WIKI_LIT_PREFIX}${value}`, encoded: true }
@@ -293,7 +294,8 @@ effect function encodeWikiText(storage: Storage, value: string, persist: boolean
   return { value: `${WIKI_BLOB_PREFIX}${digest}`, encoded: true }
 }
 
-effect function decodeWikiText(storage: Storage, value: string): string!WikiFailure {
+/** Reads a journaled wiki text back: verbatim, a `\u0000lit:` literal or the chunks a `\u0000blob:` reference names. */
+export effect function decodeWikiText(storage: Storage, value: string): string!WikiFailure {
   if (!value.startsWith("\u0000")) return value
   if (value.startsWith(WIKI_LIT_PREFIX)) return value.slice(WIKI_LIT_PREFIX.length)
   if (!value.startsWith(WIKI_BLOB_PREFIX)) throw new WikiFailure({ reason: "unavailable" })
@@ -323,7 +325,8 @@ effect function hydrateWikiRequest(storage: Storage, request: WikiRequest): Wiki
   return { ...request, base, text }
 }
 
-effect function dehydrateWikiState(storage: Storage, state: typeof WikiState.Type): { readonly value: typeof WikiState.Type; readonly encoded: boolean }!WikiFailure {
+/** Spills page sources and the draft in three passes (256 KiB, 16 KiB, 0) until the state is at most 1 MiB of JSON. */
+export effect function dehydrateWikiState(storage: Storage, state: typeof WikiState.Type): { readonly value: typeof WikiState.Type; readonly encoded: boolean }!WikiFailure {
   const spillWith = effect (threshold: number, input: typeof WikiState.Type) => {
     let encoded = false
     const nextPages: Array<typeof WikiState.Type["pages"][number]> = []
@@ -349,7 +352,8 @@ effect function dehydrateWikiState(storage: Storage, state: typeof WikiState.Typ
   return minimal
 }
 
-effect function hydrateWikiState(storage: Storage, state: typeof WikiState.Type): typeof WikiState.Type!WikiFailure {
+/** Reads every page source and the draft of a dehydrated state back. */
+export effect function hydrateWikiState(storage: Storage, state: typeof WikiState.Type): typeof WikiState.Type!WikiFailure {
   const nextPages: Array<typeof WikiState.Type["pages"][number]> = []
   for (const page of state.pages) {
     nextPages.push({ ...page, source: try decodeWikiText(storage, page.source) })

@@ -1,0 +1,10 @@
+name = "wiki_spill"
+version = "0.1.0"
+defaultTargets = ["WikiSpillSpec", "wiki-spill-spec"]
+
+[[lean_lib]]
+name = "WikiSpillSpec"
+
+[[lean_exe]]
+name = "wiki-spill-spec"
+root = "Main"

@@ -1,0 +1,10 @@
+name = "mcp_and_stack"
+version = "0.1.0"
+defaultTargets = ["McpAndStackSpec", "mcp-and-stack-spec"]
+
+[[lean_lib]]
+name = "McpAndStackSpec"
+
+[[lean_exe]]
+name = "mcp-and-stack-spec"
+root = "Main"
