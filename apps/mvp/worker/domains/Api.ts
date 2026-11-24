@@ -127,10 +127,12 @@ export const make = <E, R>(repository: { readonly id: string }, database: Layer.
         if (route.hostname !== undefined) {
           const hostname = normalizeHostname(route.hostname)
           if (hostname === undefined) return refuse(400, "invalid_hostname")
+          const row = yield* Store.read(hostname).pipe(Effect.provide(database))
+          const pollId = Option.isSome(row) && row.value.repoId === repo ? row.value.pollId : null
           const started = yield* starter.start(DomainFlows.Remove, {
             executionId,
             // The flow asks again before it touches the provider or the row (DomainFlows.ts).
-            payload: { authority: WriteAuthority.protectedOf(actor.value), repoId: repo, hostname, actorId: actor.value.subject.id },
+            payload: { authority: WriteAuthority.protectedOf(actor.value), repoId: repo, hostname, actorId: actor.value.subject.id, pollId },
           }).pipe(Effect.result)
           if (started._tag === "Failure") return refuse(503, "unavailable")
           fields.outcome = "removing"

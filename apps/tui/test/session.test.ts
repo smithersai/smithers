@@ -1,3 +1,4 @@
+import { KeyEvent } from "@opentui/core"
 import { afterEach, beforeEach, describe, expect, it } from "bun:test"
 import { createHash } from "node:crypto"
 import {
@@ -14,6 +15,8 @@ import { tmpdir } from "node:os"
 import { basename, join } from "node:path"
 import { inspect } from "node:util"
 import * as Flows from "../src/flows.ts"
+import * as Dispatch from "../src/key-dispatch.ts"
+import * as Panels from "../src/panels.ts"
 import * as Session from "../src/session.ts"
 
 let previousSessionDirectory: string | undefined
@@ -469,84 +472,277 @@ describe("credentials in a saved session", () => {
     expect(restored.flows.every((run) => !Flows.actions(run).retry)).toBe(true)
   })
 
-  it("keeps every view's, card's, status item's and key's action and redacts only their shown text (#2645)", () => {
-    const operand = `docs/${key}/README.md`
-    const flow = { kind: "flow", flow: "open", input: { path: operand } } as const
-    const panel = {
-      id: `ui-${key}`,
+  // R2-Fable-D4-001: the tab record carries the chat's history and the relaunch's operands.
+  it("redacts every text field of a tab record, and a tab whose relaunch bytes changed restores inert", () => {
+    const base = {
+      seat: "s",
+      file: "/w.jsonl",
+      depth: 1,
+      startedAt: 1
+    }
+    const tab = (id: string, fields: Partial<Extract<Session.Record, { type: "tab" }>["tab"]>): Session.Record => ({
+      type: "tab",
+      tab: { ...base, id, title: "Check auth", prompt: "check auth", status: "running", ...fields }
+    })
+    const writer = Session.create(mkdtempSync(join(tmpdir(), "tui-cwd-")))
+    const records = [
+      tab("history", {
+        history: [{ kind: "exchange", user: "why does auth fail", answer: `Your token ${pat} is expired.` }, {
+          kind: "shell",
+          text: `GH_TOKEN=${pat}`
+        }]
+      }),
+      tab("answered", { answered: [["opus", `rotate ${pat}`]] }),
+      tab("harness", { harness: { vendor: "claude", session: "v-1", prompt: `use ${pat}` } }),
+      // Shown text only: nothing a relaunch sends changed, so the tab still resumes.
+      tab("shown", {
+        title: `Rotate ${pat}`,
+        description: `Rotates ${pat}`,
+        detail: `waiting on ${pat}`,
+        failure: { headline: `401 for ${pat}` } as never
+      }),
+      tab("plain", {
+        history: [{ kind: "exchange", user: "hello", answer: "hi" }],
+        answered: [["opus", "fine"]],
+        harness: { vendor: "codex", prompt: "continue" }
+      }),
+      tab("settled", { status: "done", history: [{ kind: "exchange", user: "q", answer: pat }] })
+    ]
+    for (const record of records) writer.append(record)
+    const flow: Session.Record = {
+      type: "flow",
+      run: {
+        id: "r",
+        flow: "deploy",
+        by: "user",
+        input: {},
+        requested: "{}",
+        status: "failed",
+        startedAt: 1,
+        failure: `Refused ${pat}`
+      }
+    }
+    writer.append(flow)
+
+    const raw = readFileSync(writer.file, "utf8")
+    expect(raw).not.toContain(pat)
+    const loaded = Session.load(writer.file).slice(1)
+    const saved = (id: string) =>
+      loaded.flatMap((record) => record.type === "tab" && record.tab.id === id ? [record] : [])[0]!
+    expect(saved("history").tab.history).toEqual([
+      { kind: "exchange", user: "why does auth fail", answer: "Your token [REDACTED] is expired." },
+      { kind: "shell", text: "GH_TOKEN=[REDACTED]" }
+    ])
+    expect(saved("answered").tab.answered).toEqual([["opus", "rotate [REDACTED]"]])
+    expect(saved("harness").tab.harness).toEqual({ vendor: "claude", session: "v-1", prompt: "use [REDACTED]" })
+    expect(saved("shown").tab).toMatchObject({
+      title: "Rotate [REDACTED]",
+      description: "Rotates [REDACTED]",
+      detail: "waiting on [REDACTED]",
+      failure: { headline: "401 for [REDACTED]" }
+    })
+    expect(loaded.flatMap((record) => record.type === "tab" ? [[record.tab.id, record.redacted]] : [])).toEqual([
+      ["history", true],
+      ["answered", true],
+      ["harness", true],
+      ["shown", undefined],
+      ["plain", undefined],
+      ["settled", true]
+    ])
+    expect(loaded.at(-1)).toMatchObject({ run: { failure: "Refused [REDACTED]" } })
+
+    const restored = Session.restore(loaded)
+    expect(restored.workspace.tabs.map((each) => [each.id, each.status, each.message])).toEqual([
+      ["history", "failed", Session.notResumed],
+      ["answered", "failed", Session.notResumed],
+      ["harness", "failed", Session.notResumed],
+      ["shown", "running", undefined],
+      ["plain", "running", undefined],
+      ["settled", "done", undefined]
+    ])
+    // The untouched tab is the record that was appended, byte for byte.
+    expect(saved("plain")).toEqual(records[4] as never)
+  })
+
+  // R2-Astra-D4-003: an action's operands are free text an agent wrote; the journal never holds a credential in one.
+  describe("executable panel actions", () => {
+    const bearer = `curl -H 'Authorization: Bearer ${pat}' https://api.example.test`
+    const nested = { kind: "flow", flow: "deploy", input: { env: { headers: [{ authorization: pat }] } } } as const
+    const ordinary = { kind: "flow", flow: "open", input: { path: "docs/plain/README.md" } } as const
+    const panel: Panels.Panel = {
+      id: "ops",
       title: `Title ${pat}`,
       summary: `Summary ${pat}`,
-      bind: { tree: `tree-${key}` },
       rows: [
+        { id: "prompted", label: "Ask", details: [], action: { label: "Ask", prompt: bearer } },
         {
-          id: `row-${key}`,
+          id: "nested",
           label: `Row ${pat}`,
-          details: [{ kind: "text" as const, text: `detail ${pat}` }],
-          action: { label: `Open ${pat}`, action: flow }
+          details: [{ kind: "text", text: `detail ${pat}` }],
+          action: { label: "Deploy", action: nested }
         },
-        { id: "prompted", label: "Ask", details: [], action: { label: "Ask", prompt: `explain ${operand}` } },
+        {
+          id: "agent",
+          label: "Agent",
+          details: [],
+          action: { label: "Go", action: { kind: "agent", agent: "fix", prompt: bearer } }
+        },
+        {
+          id: "plain-prompt",
+          label: "Plain",
+          details: [],
+          action: { label: `Ask ${pat}`, prompt: "explain the plan" }
+        },
+        { id: "plain-flow", label: "Open", details: [], action: { label: "Open", action: ordinary } },
         { id: "control", label: "docs/plain/README.md", details: [] }
       ]
     }
-    const shownPanel = {
-      ...panel,
-      title: "Title [REDACTED]",
-      summary: "Summary [REDACTED]",
-      rows: [
-        {
-          ...panel.rows[0]!,
-          label: "Row [REDACTED]",
-          details: [{ kind: "text" as const, text: "detail [REDACTED]" }],
-          action: { label: "Open [REDACTED]", action: flow }
-        },
-        panel.rows[1]!,
-        panel.rows[2]!
-      ]
-    }
     type Contributed = Extract<Session.Record, { type: "contribution" }>
-    const status: Contributed = {
-      type: "contribution",
-      owner: `runtime:${key}`,
-      contribution: { kind: "status", status: { id: `ci-${key}`, text: `CI ${pat}`, action: flow } }
-    }
-    const keyed: Contributed & { readonly contribution: { readonly kind: "key" } } = {
+    const contribution = (contribution: Contributed["contribution"]): Contributed => ({
       type: "contribution",
       owner: "runtime:chat",
-      contribution: {
-        kind: "key",
-        key: { id: "open", key: "alt+o", label: `Open ${pat}`, action: flow, context: "panel" }
-      }
-    }
-    const writer = Session.create(mkdtempSync(join(tmpdir(), "tui-cwd-")))
+      contribution
+    })
     const records: ReadonlyArray<Session.Record> = [
       { type: "panel", panel },
       { type: "card", at: 1, panel: { ...panel, id: "card" } },
-      status,
-      keyed
+      contribution({
+        kind: "status",
+        status: { id: "ci", text: `CI ${pat}`, action: { kind: "prompt", prompt: bearer } }
+      }),
+      contribution({ kind: "status", status: { id: "docs", text: "Docs", action: ordinary } }),
+      contribution({ kind: "key", key: { id: "deploy", key: "alt+d", label: "Deploy", action: nested } }),
+      contribution({ kind: "key", key: { id: "open", key: "alt+o", label: `Open ${pat}`, action: ordinary } }),
+      // A clean key replaced by one that held a credential: neither is restored as runnable.
+      contribution({ kind: "key", key: { id: "swap", key: "alt+s", label: "Swap", action: ordinary } }),
+      contribution({ kind: "key", key: { id: "swap", key: "alt+s", label: "Swap", action: nested } }),
+      { type: "user", at: 2, text: "next" }
     ]
-    for (const record of records) writer.append(record)
-    const loaded = Session.load(writer.file).slice(1)
-    expect(loaded).toEqual([
-      { type: "panel", panel: shownPanel },
-      { type: "card", at: 1, panel: { ...shownPanel, id: "card" } },
-      { ...status, contribution: { kind: "status", status: { id: `ci-${key}`, text: "CI [REDACTED]", action: flow } } },
-      { ...keyed, contribution: { kind: "key", key: { ...keyed.contribution.key, label: "Open [REDACTED]" } } }
-    ])
-    const saved = readFileSync(writer.file, "utf8")
-    expect(saved).not.toContain(pat)
-    expect(saved).toContain(operand)
 
-    // Restored, each surface's action is the one published, byte for byte.
-    const restored = Session.restore(loaded)
-    expect(restored.workspace.panels.map((each) => each.rows[0]?.action)).toEqual([
-      { label: "Open [REDACTED]", action: flow },
-      { label: "Open [REDACTED]", action: flow }
-    ])
-    expect(restored.workspace.cards).toEqual(["card"])
-    expect(restored.contributions.map(({ owner, contribution }) => [owner, contribution])).toEqual([
-      [`runtime:${key}`, { kind: "status", status: { id: `ci-${key}`, text: "CI [REDACTED]", action: flow } }],
-      ["runtime:chat", { ...keyed.contribution, key: { ...keyed.contribution.key, label: "Open [REDACTED]" } }]
-    ])
+    /** What pressing `a` on each restored row does. */
+    const pressed = (restored: Panels.Panel) =>
+      restored.rows.map((_, selected) => {
+        const calls: Array<unknown> = []
+        Dispatch.panelKey(
+          new KeyEvent({
+            name: "a",
+            sequence: "a",
+            raw: "a",
+            ctrl: false,
+            meta: false,
+            option: false,
+            shift: false,
+            number: false,
+            eventType: "press",
+            source: "raw"
+          }),
+          restored,
+          {
+            surface: `ui:${restored.id}`,
+            navigation: { ...Panels.initial(), selected },
+            worker: undefined,
+            flow: { retry: false, continue: false, stop: false }
+          },
+          {
+            close: () => calls.push("close"),
+            release: () => calls.push("release"),
+            retryRun: () => calls.push("retry"),
+            continueRun: () => calls.push("continue"),
+            cancelRun: () => calls.push("cancel"),
+            fillRun: () => calls.push("fill"),
+            undo: () => calls.push("undo"),
+            scroll: () => calls.push("scroll"),
+            navigate: () => calls.push("navigate"),
+            send: (prompt) => calls.push(["send", prompt]),
+            perform: (action) => calls.push(["perform", action])
+          }
+        )
+        return calls
+      })
+
+    const check = (file: string) => {
+      const raw = readFileSync(file, "utf8")
+      expect(raw).not.toContain(pat)
+      expect(raw).not.toContain("Bearer ghp_")
+      const restored = Session.restore(Session.load(file))
+      expect(restored.workspace.panels.map((each) => each.id)).toEqual(["ops", "card"])
+      for (const each of restored.workspace.panels) {
+        expect(Panels.decode(each)).toEqual(each)
+        expect(each.title).toBe("Title [REDACTED]")
+        // The three actions that held the credential are gone and say why; the row stays.
+        for (const row of each.rows.slice(0, 3)) {
+          expect(row.action).toBeUndefined()
+          expect(row.details.at(-1)).toEqual({ kind: "text", text: Session.inertAction })
+        }
+        expect(each.rows[1]).toMatchObject({ label: "Row [REDACTED]", details: [{ text: "detail [REDACTED]" }, {}] })
+        expect(pressed(each)).toEqual([
+          [],
+          [],
+          [],
+          ["release", ["send", "explain the plan"]],
+          [["perform", ordinary]],
+          []
+        ])
+        expect(each.rows[3]!.action).toEqual({ label: "Ask [REDACTED]", prompt: "explain the plan" })
+        expect(each.rows[5]).toEqual(panel.rows[5]!)
+      }
+      // The credentialed status item is shown and does nothing; the credentialed keys are not bound.
+      expect(restored.contributions.map(({ contribution }) => contribution)).toEqual([
+        { kind: "status", status: { id: "ci", text: "CI [REDACTED]" } },
+        { kind: "status", status: { id: "docs", text: "Docs", action: ordinary } },
+        { kind: "key", key: { id: "open", key: "alt+o", label: "Open [REDACTED]", action: ordinary } }
+      ])
+    }
+
+    it("holds no credential from a prompt or a nested flow input, and restores only the untouched actions", () => {
+      const writer = Session.create(mkdtempSync(join(tmpdir(), "tui-cwd-")))
+      for (const record of records) writer.append(record)
+      check(writer.file)
+      const loaded = Session.load(writer.file)
+      const [turn] = Session.turns(loaded)
+      const forked = Session.fork(writer.file, mkdtempSync(join(tmpdir(), "tui-cwd-")), turn!)
+      if (forked._tag !== "Forked") throw new Error(forked._tag)
+      check(forked.writer.file)
+    })
+
+    it("a fork of a session saved before actions were scrubbed copies no credential and no runnable placeholder", () => {
+      const source = join(mkdtempSync(join(tmpdir(), "tui-old-")), "old.jsonl")
+      writeFileSync(source, records.map((record) => JSON.stringify(record)).join("\n") + "\n")
+      expect(readFileSync(source, "utf8")).toContain(pat)
+      const [turn] = Session.turns(Session.load(source))
+      const forked = Session.fork(source, mkdtempSync(join(tmpdir(), "tui-cwd-")), turn!)
+      if (forked._tag !== "Forked") throw new Error(forked._tag)
+      check(forked.writer.file)
+    })
+
+    it("keeps an action redaction leaves alone byte for byte, with no note (#2645)", () => {
+      const writer = Session.create(mkdtempSync(join(tmpdir(), "tui-cwd-")))
+      const record: Session.Record = {
+        type: "panel",
+        panel: { ...panel, title: "T", summary: "S", rows: panel.rows.slice(3) }
+      }
+      writer.append(record)
+      writer.append(records[3]!)
+      writer.append(records[5]!)
+      const restored = Session.restore(Session.load(writer.file))
+      expect(restored.workspace.panels[0]!.rows.map((row) => row.action)).toEqual([
+        { label: "Ask [REDACTED]", prompt: "explain the plan" },
+        { label: "Open", action: ordinary },
+        undefined
+      ])
+      expect(restored.workspace.panels[0]!.rows.every((row) => row.details.length === 0)).toBe(true)
+      expect(restored.contributions).toHaveLength(2)
+    })
+
+    it("a row already holding every detail it may loses its action without growing past the limit", () => {
+      const full = Array.from(
+        { length: Panels.maxDetails },
+        (_, index) => ({ kind: "text" as const, text: `d${index}` })
+      )
+      const row = Panels.inert({ ...panel.rows[0]!, details: full }, Session.inertAction)
+      expect(row.action).toBeUndefined()
+      expect(row.details).toEqual(full)
+    })
   })
 })
 

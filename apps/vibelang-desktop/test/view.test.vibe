@@ -40,7 +40,7 @@ describe("desktop controls", () => {
     expect(canSend(choosing)).toBe(false)
     expect(update(choosing, Message.SubmittedDraft()).commands).toBeUndefined()
     const state = { mock: false, folder: null, tools: [], model: { endpoint: "http://localhost:1234", model: "local", state: "ready" as const } }
-    const chosen = update(choosing, Message.Snapshot({ state, operation: "model" })).model
+    const chosen = update(choosing, Message.Snapshot({ generation: 1, state, operation: "model" })).model
     expect(chosen.modelOps).toBe(0)
     expect(canSend(chosen)).toBe(true)
   })
@@ -48,9 +48,9 @@ describe("desktop controls", () => {
     const opened = update(initial(), Message.OpenFolder()).model
     const choosing = update(opened, Message.Mock()).model
     expect([choosing.folderOps, choosing.modelOps]).toEqual([1, 1])
-    const refreshed = update({ ...choosing, error: "Model unavailable" }, Message.Snapshot({ conversation: choosing.conversation, state: choosing.desktop })).model
+    const refreshed = update({ ...choosing, error: "Model unavailable" }, Message.Snapshot({ generation: 1, conversation: choosing.conversation, state: choosing.desktop })).model
     expect([refreshed.folderOps, refreshed.modelOps, refreshed.error]).toEqual([1, 1, "Model unavailable"])
-    const mocked = update(refreshed, Message.Snapshot({ state: choosing.desktop, operation: "mock" })).model
+    const mocked = update(refreshed, Message.Snapshot({ generation: 1, state: choosing.desktop, operation: "mock" })).model
     expect([mocked.folderOps, mocked.modelOps, mocked.error]).toEqual([1, 0, ""])
     const failed = update(mocked, Message.Failed({ reason: "Unavailable", operation: "open" })).model
     expect([failed.folderOps, failed.modelOps, failed.error]).toEqual([0, 0, "Unavailable"])
@@ -82,14 +82,14 @@ describe("desktop controls", () => {
   it("keeps the endpoint the person named when the host reports another server's model", () => {
     const ready = (endpoint: string) => ({ mock: false, folder: null, tools: [], model: { endpoint, model: "local", state: "ready" as const } })
     const typed = update(initial(), Message.UpdatedEndpoint({ value: "http://localhost:2222" })).model
-    expect(update(typed, Message.Snapshot({ conversation: typed.conversation, state: ready("http://localhost:1111") })).model.endpoint).toBe("http://localhost:2222")
+    expect(update(typed, Message.Snapshot({ generation: 1, conversation: typed.conversation, state: ready("http://localhost:1111") })).model.endpoint).toBe("http://localhost:2222")
     const versioned = update(initial(), Message.UpdatedEndpoint({ value: "http://localhost:1111/v1" })).model
-    expect(update(versioned, Message.Snapshot({ state: ready("http://localhost:1111"), operation: "model" })).model.endpoint).toBe("http://localhost:1111")
-    expect(update(initial(), Message.Snapshot({ state: ready("http://localhost:1111") })).model.endpoint).toBe("http://localhost:1111")
+    expect(update(versioned, Message.Snapshot({ generation: 1, state: ready("http://localhost:1111"), operation: "model" })).model.endpoint).toBe("http://localhost:1111")
+    expect(update(initial(), Message.Snapshot({ generation: 1, state: ready("http://localhost:1111") })).model.endpoint).toBe("http://localhost:1111")
   })
   it("selects a model, restarts the stream at zero and preserves the draft", () => {
     const model = { ...initial(), draft: "keep this" }
-    const next = update(model, Message.Snapshot({ state: { mock: false, folder: null, tools: [], model: { endpoint: "http://localhost:1234", model: "local", state: "ready" } } })).model
+    const next = update(model, Message.Snapshot({ generation: 1, state: { mock: false, folder: null, tools: [], model: { endpoint: "http://localhost:1234", model: "local", state: "ready" } } })).model
     expect(next.mode).toBe("live")
     expect(next.epoch).toBe(1)
     expect(next.from).toBe(0)
@@ -135,7 +135,7 @@ it.effect("fuzzes file admission and model origins with Effect Arbitrary", () =>
 it("local selection clears Mock project authority before session I/O and rejects late identities", () => {
   const account = { ...initial().account!, identity: { id: "1", login: "will", role: "maintainer" as const } }
   const state = { mock: false, folder: null, tools: [], model: { endpoint: "http://localhost:1234", model: "local", state: "ready" as const } }
-  const selected = update({ ...initial(), account }, Message.Snapshot({ state })).model
+  const selected = update({ ...initial(), account }, Message.Snapshot({ generation: 1, state })).model
   expect(selected.account?.identity).toEqual({ id: "", login: "", role: "viewer", available: false })
   const late = update(selected, Message.AccountLoaded({ identity: account.identity })).model
   expect(late.account?.identity).toEqual({ id: "", login: "", role: "viewer", available: false })
@@ -156,11 +156,11 @@ it("a late local session cannot replace a newer Mock identity", () => {
 
 it("requests only the visible conversation and ignores a late receipt snapshot from another conversation", () => {
   const started = init({ session: "desktop", name: "Guest", mode: "mock" })
-  expect(started.commands?.[0]?.args).toEqual({ conversation: started.model.conversation })
+  expect(started.commands?.[0]?.args).toEqual({ generation: 1, conversation: started.model.conversation })
   const receipt = { conversation: "other", reply: "reply", operation: "fs.edit", path: "file", before: "old", after: "new" }
-  const stale = update(started.model, Message.Snapshot({ conversation: "other", state: { ...started.model.desktop, tools: [receipt] } }))
+  const stale = update(started.model, Message.Snapshot({ generation: 1, conversation: "other", state: { ...started.model.desktop, tools: [receipt] } }))
   expect(stale.model).toBe(started.model)
-  const current = update(started.model, Message.Snapshot({ conversation: started.model.conversation, state: started.model.desktop }))
+  const current = update(started.model, Message.Snapshot({ generation: 1, conversation: started.model.conversation, state: started.model.desktop }))
   expect(current.commands ?? []).toHaveLength(0)
 })
 
@@ -181,7 +181,7 @@ it("preserves shared commands when opening Models and handles the empty-command 
   const alreadyClosed = update(model, Message.OpenModels())
   expect(alreadyClosed.model.manager).toBe(true)
   expect(alreadyClosed.commands).toEqual([])
-  const snapshot = update(model, Message.Snapshot({ conversation: model.conversation, state: model.desktop }))
+  const snapshot = update(model, Message.Snapshot({ generation: 1, conversation: model.conversation, state: model.desktop }))
   expect(snapshot.commands).toEqual([])
 })
 
@@ -218,4 +218,23 @@ describe("desktop chrome", () => {
       Scene.expect(Scene.role("button", { name: "Close folder" })).toExist(),
     )
   })
+})
+
+
+it("keeps the selected local model and stream after an older same-conversation refresh arrives", () => {
+  const start = initial()
+  const folder = update(start, Message.OpenFolder()).model
+  const choosing = update(folder, Message.Select({ model: "local" })).model
+  const state = { mock: false, folder: null, tools: [], model: { endpoint: "http://localhost:1234", model: "local", state: "ready" as const } }
+  const chosen = update(choosing, Message.Snapshot({ generation: choosing.settingsRequest, operation: "model", state }))
+  const conversation = start.conversation
+  expect(chosen.commands?.at(-1)?.args).toEqual({ conversation, generation: chosen.model.settingsRequest })
+  const current = update(chosen.model, Message.Snapshot({ generation: chosen.model.settingsRequest, conversation, state })).model
+  const late = update(current, Message.Snapshot({ generation: start.settingsRequest, conversation, state: start.desktop })).model
+  const settled = update(late, Message.Snapshot({ generation: folder.settingsRequest, operation: "open", state: start.desktop })).model
+  expect(settled.mode).toBe("live")
+  expect(settled.desktop.model?.model).toBe("local")
+  expect(settled.epoch).toBe(start.epoch + 1)
+  expect(settled.folderOps).toBe(0)
+  expect(canSend(settled)).toBe(true)
 })

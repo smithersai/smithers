@@ -10,7 +10,7 @@
 // MAINTAINER_SITE_GIFS (~/Desktop/smithers-mvp/gifs), MAINTAINER_SITE_VIDEOS (~/Desktop/smithers-mvp/videos),
 // MAINTAINER_SITE_OUT (~/Desktop/smithers-maintainer).
 import { closeSync, createReadStream, existsSync, fstatSync, fsyncSync, mkdirSync, openSync, readFileSync, readSync, realpathSync, statSync, watch, writeSync } from "node:fs"
-import { createHash, timingSafeEqual } from "node:crypto"
+import { createHash, randomUUID, timingSafeEqual } from "node:crypto"
 import { execFileSync } from "node:child_process"
 import { createServer } from "node:http"
 import { homedir } from "node:os"
@@ -69,7 +69,11 @@ export function readAnswers(file) {
     if (!line.trim()) continue
     try {
       const answer = JSON.parse(line)
-      if (answer && typeof answer.itemId === "string" && ACTIONS.includes(answer.action)) answers.push(answer)
+      if (answer && typeof answer.itemId === "string" && ACTIONS.includes(answer.action)) {
+        // Existing append-only journals predate receipts. The ordinal distinguishes even identical lines.
+        answer.answerId ??= `legacy-${hash(JSON.stringify([answers.length, line]))}`
+        answers.push(answer)
+      }
     } catch {
       // A torn last line from a crash is skipped; the next append starts on a fresh line.
     }
@@ -82,8 +86,9 @@ export function replay(answers) {
   const stacks = new Map()
   for (const answer of answers) {
     const stack = stacks.get(answer.itemId) ?? []
-    if (answer.action === "undo") stack.pop()
-    else stack.push(answer)
+    if (answer.action === "undo") {
+      if (!answer.undoes || stack.at(-1)?.answerId === answer.undoes) stack.pop()
+    } else stack.push(answer)
     stacks.set(answer.itemId, stack)
   }
   // `last` is the newest answer still standing, whichever item it belongs to: what `u` undoes next.
@@ -127,10 +132,10 @@ const loadTypeScript = () => (typescript ??= import("typescript").then((module) 
 const OUTLINE_CACHE = 64
 
 const hash = (value) => createHash("sha256").update(value).digest("hex")
-const assetPolicy = { "Content-Security-Policy": "sandbox; default-src 'none'; style-src 'unsafe-inline'; form-action 'none'; base-uri 'none'", "X-Content-Type-Options": "nosniff" }
+const assetPolicy = { "Content-Security-Policy": "sandbox allow-scripts; default-src 'none'; script-src 'unsafe-inline' 'self'; style-src 'unsafe-inline' 'self'; img-src 'self' data:; form-action 'none'; base-uri 'none'", "X-Content-Type-Options": "nosniff" }
 const assetType = (file) => {
   const ext = extname(file).toLowerCase()
-  if ([".html", ".htm", ".css", ".json", ".gif", ".png", ".jpg", ".jpeg", ".avif", ".webp", ".mp4", ".webm", ".mov", ".m4v"].includes(ext)) return TYPES[ext]
+  if ([".html", ".htm", ".css", ".js", ".mjs", ".svg", ".json", ".gif", ".png", ".jpg", ".jpeg", ".avif", ".webp", ".mp4", ".webm", ".mov", ".m4v"].includes(ext)) return TYPES[ext]
   return "text/plain; charset=utf-8"
 }
 
@@ -155,6 +160,10 @@ export function startServer(options = {}) {
   const queueFile = join(queueDir, "queue.json")
   const answersFile = join(queueDir, "answers.jsonl")
   const coverageFile = join(queueDir, "coverage.json")
+  const readCoverageFile = options.readCoverageFile ?? readFileSync
+  const readCoverage = () => {
+    try { return JSON.parse(readCoverageFile(coverageFile, "utf8")) } catch { return null }
+  }
   mkdirSync(queueDir, { recursive: true })
 
   // A root's real path is resolved on each use, so a folder created after start (queue/before) still matches.
@@ -200,8 +209,7 @@ export function startServer(options = {}) {
     const id = url.searchParams.get("slice")
     if (!id) return null
     const item = readQueue().items.find((item) => item.id === id)
-    let coverage
-    try { coverage = JSON.parse(readFileSync(coverageFile, "utf8")).slices?.[id] } catch {}
+    const coverage = readCoverage()?.slices?.[id]
     const commit = item?.commit || coverage?.commit
     if (url.searchParams.has("expectedCommit") && (!item || commit !== url.searchParams.get("expectedCommit"))) return { status: 409, error: "review changed" }
     if (!commit) return null
@@ -227,9 +235,10 @@ export function startServer(options = {}) {
     const answers = readAnswers(answersFile)
     const { stacks, last } = replay(answers)
     const at = now()
-    const reviewed = queue.items.map((item) => reviewedItem(item, answers))
+    const coverage = readCoverage()
+    const reviewed = queue.items.map((item) => reviewedItem(item, answers, coverage?.slices))
     const visible = reviewed.filter((item) => !isHidden(item, stacks, at))
-    return { queue: { ...queue, items: reviewed }, answers, stacks, last, visible, at }
+    return { queue: { ...queue, items: reviewed }, answers, stacks, last, visible, at, coverage }
   }
 
   // Outlines by real path and the checked descriptor's identity and change times.
@@ -254,17 +263,13 @@ export function startServer(options = {}) {
   }
 
   const stats = () => {
-    const { queue, stacks, visible, at } = state()
+    const { queue, stacks, visible, at, coverage } = state()
     const today = new Date(at)
     let doneToday = 0
     for (const stack of stacks.values()) for (const answer of stack) if (DONE_ACTIONS.has(answer.action) && sameDay(new Date(answer.at), today)) doneToday++
     const remaining = {}
     for (const item of visible) remaining[item.kind] = (remaining[item.kind] ?? 0) + 1
-    let coverage = null
-    try {
-      coverage = coveragePercent(JSON.parse(readFileSync(coverageFile, "utf8")))
-    } catch {}
-    return { doneToday, remaining, total: visible.length, all: queue.items.length, coverage }
+    return { doneToday, remaining, total: visible.length, all: queue.items.length, coverage: coveragePercent(coverage) }
   }
 
   // ---------------------------------------------------------------------------------------------------------
@@ -442,13 +447,9 @@ export function startServer(options = {}) {
   const withAnswer = (item, answers) => (item.kind === "verify" ? { ...item, verifies: verifies(item.answerRef, answers) } : item)
 
   const fingerprints = new Map()
-  function reviewedItem(raw, answers) {
+  function reviewedItem(raw, answers, slices) {
     const item = { ...withAnswer(raw, answers) }
-    let coverage
-    if (!item.commit && item.files?.length) {
-      try { coverage = JSON.parse(readFileSync(coverageFile, "utf8")).slices?.[item.id] } catch {}
-      if (coverage?.commit) item.commit = coverage.commit
-    }
+    if (!item.commit && item.files?.length && slices?.[item.id]?.commit) item.commit = slices[item.id].commit
     const assets = Object.create(null)
     const capture = (path) => {
       if (typeof path !== "string" || Object.hasOwn(assets, path)) return
@@ -499,6 +500,7 @@ export function startServer(options = {}) {
     const item = current.queue.items.find((candidate) => candidate.id === itemId)
     if (action === "undo" && !current.stacks.get(itemId)?.length) return send(response, 409, { error: "nothing to undo" })
     const undone = action === "undo" ? current.stacks.get(itemId).at(-1) : null
+    if (undone && input.answerId !== undone.answerId) return send(response, 409, { error: "answer changed since you selected it" })
     // The curator replaced the item after Will opened it: refuse, and send the version now queued.
     if (action !== "undo" && (!item || cached.error)) return send(response, 409, { error: "item unavailable" })
     // The check and fsynced append run without yielding: another tab or a retry cannot add a second answer.
@@ -508,6 +510,8 @@ export function startServer(options = {}) {
       return send(response, 409, { error: "changed since you opened it", item })
     const record = {
       itemId,
+      answerId: randomUUID(),
+      ...(undone ? { undoes: undone.answerId } : {}),
       at: new Date(now()).toISOString(),
       action,
       ...(action === "option" ? { option: input.option } : {}),
@@ -527,12 +531,21 @@ export function startServer(options = {}) {
   const handle = async (request, response) => {
     if (!allowedHosts().has(String(request.headers.host ?? "").toLowerCase())) return send(response, 403, { error: "refused: host" })
     const url = new URL(request.url, `http://${request.headers.host}`)
-    const path = url.pathname
+    let path = url.pathname
+    if (path.startsWith("/api/file/")) {
+      try { url.searchParams.set("path", decodeURIComponent(path.slice("/api/file/".length))) }
+      catch { return send(response, 400, { error: "bad path" }) }
+      path = "/api/file"
+    }
     if (request.method === "POST") {
       const origin = request.headers.origin
       if (origin !== undefined && origin !== url.origin) return send(response, 403, { error: "refused: origin" })
       if (path === "/api/answer") {
-        if (!authorized(request) || request.headers["x-maintainer-write"] !== "1") return send(response, 403, { error: "maintainer credentials required" })
+        if (request.headers["x-maintainer-write"] !== "1") return send(response, 403, { error: "maintainer credentials required" })
+        if (!authorized(request)) {
+          if (writeToken) return send(response, 401, { error: "maintainer credentials required" }, "application/json; charset=utf-8", { "WWW-Authenticate": 'Basic realm="Maintainer queue"' })
+          return send(response, 403, { error: "maintainer credentials required" })
+        }
         return answer(request, response)
       }
       return send(response, 404, { error: "not found" })
@@ -540,9 +553,9 @@ export function startServer(options = {}) {
     if (request.method !== "GET" && request.method !== "HEAD") return send(response, 405, { error: "method not allowed" })
 
     if (path === "/api/queue") {
-      const { queue, visible, last, answers } = state()
+      const { queue, visible, last } = state()
       const items = visible
-      return send(response, 200, { version: queue.version, generatedAt: queue.generatedAt, missing: Boolean(queue.missing), error: cached.error, items, last: last ? { itemId: last.itemId, title: last.title ?? "", action: last.action, at: last.at } : null })
+      return send(response, 200, { version: queue.version, generatedAt: queue.generatedAt, missing: Boolean(queue.missing), error: cached.error, items, last: last ? { itemId: last.itemId, answerId: last.answerId, title: last.title ?? "", action: last.action, at: last.at } : null })
     }
     if (path === "/api/stats") return send(response, 200, stats())
     if (path === "/api/events") {
@@ -555,7 +568,7 @@ export function startServer(options = {}) {
     if (url.searchParams.has("digest") && ["/api/file", "/api/outline", "/api/markdown"].includes(path)) {
       const id = url.searchParams.get("slice")
       const raw = readQueue().items.find((entry) => entry.id === id)
-      const item = raw && reviewedItem(raw, readAnswers(answersFile))
+      const item = raw && reviewedItem(raw, readAnswers(answersFile), readCoverage()?.slices)
       if (!item || cached.error || item.digest !== url.searchParams.get("digest")) return send(response, 409, { error: "review changed" })
       const requested = url.searchParams.get("path")
       const recordedCode = item.commit && item.files?.some((file) => (typeof file === "string" ? file.replace(/:\d+(?:-\d+)?$/, "") : file.path) === requested)
@@ -570,19 +583,12 @@ export function startServer(options = {}) {
         if (path === "/api/markdown") return send(response, 200, renderDocument(found.real, roots[0].real, bytes))
         return sendRange(request, response, { real: found.real, bytes, size: bytes.length }, { ...assetPolicy, "Content-Type": assetType(found.real) })
       }
-      if (!item.commit || path === "/api/markdown") return send(response, 403, { error: "file outside review" })
+      if (!item.commit || (!recordedCode && path === "/api/markdown")) return send(response, 403, { error: "file outside review" })
       if (!/^[a-f0-9]{40,64}$/i.test(item.commit)) return send(response, 409, { error: "immutable commit required" })
       url.searchParams.set("expectedCommit", item.commit)
     }
-    if (path === "/api/file" || path.startsWith("/api/file/")) {
-      let requested = url.searchParams.get("path")
-      if (path.startsWith("/api/file/")) {
-        try {
-          requested = decodeURIComponent(path.slice("/api/file/".length))
-        } catch {
-          return send(response, 400, { error: "bad path" })
-        }
-      }
+    if (path === "/api/file") {
+      const requested = url.searchParams.get("path")
       const recorded = recordedFile(url, requested)
       if (recorded?.error) return send(response, recorded.status, { error: recorded.error })
       if (recorded) {
@@ -594,6 +600,9 @@ export function startServer(options = {}) {
       return sendRange(request, response, found, { ...assetPolicy, "Content-Type": assetType(found.real) })
     }
     if (path === "/api/markdown") {
+      const recorded = recordedFile(url)
+      if (recorded?.error) return send(response, recorded.status, { error: recorded.error })
+      if (recorded) return send(response, 200, renderDocument(resolve(roots[0].real, recorded.path), roots[0].real, recorded.body))
       const found = resolveFile(url.searchParams.get("path"), roots)
       if (found.error) return send(response, found.status, { error: found.error })
       try {
@@ -616,8 +625,9 @@ export function startServer(options = {}) {
         closeSync(found.fd)
       }
     }
-    if ((path === "/queue" || path === "/queue/") && writeToken && !authorized(request)) return send(response, 401, "Sign in to review", "text/plain", { "WWW-Authenticate": 'Basic realm="Maintainer queue"' })
-    if (path === "/queue" || path === "/queue/") return sendFile(response, join(clientDir, "queue.html"))
+    if (path === "/queue/") return send(response, 308, "", "text/plain", { Location: "/queue" + url.search })
+    if (path === "/queue" && writeToken && !authorized(request)) return send(response, 401, "Sign in to review", "text/plain", { "WWW-Authenticate": 'Basic realm="Maintainer queue"' })
+    if (path === "/queue") return sendFile(response, join(clientDir, "queue.html"))
     if (path.startsWith("/queue/")) {
       const name = path.slice("/queue/".length)
       if (!/^queue[\w.-]*\.(js|css)$/.test(name)) return send(response, 404, { error: "not found" })
@@ -656,7 +666,7 @@ export function startServer(options = {}) {
       server.closeAllConnections?.()
       server.close(() => resolveClose())
     })
-  return { server, ready, close, queueFile, answersFile, emit }
+  return { server, ready, close, queueFile, answersFile, emit, state }
 }
 
 // A Markdown file as a page, the way a README renders: links and images resolve beside the file and go through

@@ -5,6 +5,7 @@
  */
 
 import type { HostNode, ObservedSession, ProviderAccount } from "../../../src/features/fleet/globalSchema"
+import { redactSecrets } from "../../../src/features/fleet/scrub"
 import { durationOf, tokensOf, type Tone, UNREACHABLE_MS } from "./model"
 import type { Rows } from "./tab"
 
@@ -259,6 +260,8 @@ export function parseRepoSlug(project: string | null | undefined): RepoSlug | nu
   }
 }
 
+const LOW_DISK_FREE_GB = 20
+
 const TRANSCRIPT_ROLES: Readonly<Record<string, TranscriptRole>> = {
   user: "user",
   assistant: "assistant",
@@ -288,11 +291,12 @@ export function parseTranscript(raw: unknown): ReadonlyArray<TranscriptEntry> {
   for (const item of value) {
     if (typeof item !== "object" || item === null) continue
     const record = item as Record<string, unknown>
-    const rawText = typeof record.text === "string" ? record.text : ""
-    const label = typeof record.label === "string" ? nonEmpty(record.label) : null
+    // Electric delivers the column as stored: a row written before a redaction rule existed is shown through it.
+    const rawText = typeof record.text === "string" ? redactSecrets(record.text) : ""
+    const label = typeof record.label === "string" ? nonEmpty(redactSecrets(record.label)) : null
     if (rawText.trim().length === 0 && label === null) continue
     const rawRole = typeof record.role === "string" ? record.role.toLowerCase() : "system"
-    const role: TranscriptRole = TRANSCRIPT_ROLES[rawRole] ?? "system"
+    const role: TranscriptRole = Object.hasOwn(TRANSCRIPT_ROLES, rawRole) ? TRANSCRIPT_ROLES[rawRole]! : "system"
     const ts = typeof record.ts === "string" ? nonEmpty(record.ts) : null
     entries.push({
       ts,
@@ -493,7 +497,7 @@ export function attentionItemsOf(
         detail: h.kind,
         action: { _tag: "FilterHost", nodeId: h.nodeId },
       })
-    } else if (h.diskFreeGb !== null && h.diskFreeGb < 20) {
+    } else if (h.diskLow) {
       items.push({
         id: `host-disk:${h.nodeId}`,
         kind: "host-disk",
@@ -585,7 +589,7 @@ export function hostRowsOf(nodes: ReadonlyArray<HostNode>, nowMs: number): Reado
   return nodes.map((n) => {
     const seenMs = parseMs(n.seenAt)
     const reachable = n.online && seenMs !== null && nowMs - seenMs <= UNREACHABLE_MS * 3
-    const diskLow = n.diskFreeGb !== null && n.diskFreeGb < 25
+    const diskLow = n.diskFreeGb !== null && n.diskFreeGb < LOW_DISK_FREE_GB
     const stateWord = !reachable
       ? "Offline"
       : n.held !== null
@@ -631,7 +635,7 @@ export function sessionRowsOf(
   return sessions
     .filter((s) => includeEnded || s.status !== "ended")
     .map((s, index) => {
-      const meta = SESSION_TONE[s.status] ?? { word: s.status, tone: "muted" as const, rank: 6 }
+      const meta = Object.hasOwn(SESSION_TONE, s.status) ? SESSION_TONE[s.status]! : { word: s.status, tone: "muted" as const, rank: 6 }
       const startMs = parseMs(s.startedAt)
       const endMs = parseMs(s.endedAt)
       const lastMs = parseMs(s.lastActivityAt)

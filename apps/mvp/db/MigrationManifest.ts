@@ -127,6 +127,8 @@ import m0126 from "./migrations/0126_mcp_tokens.ts"
 import m0127 from "./migrations/0127_owner_profile.ts"
 import m0128 from "./migrations/0128_fleet_nodes_sessions_accounts.ts"
 import m0129 from "./migrations/0129_fleet_session_observability.ts"
+import m0130 from "./migrations/0130_agent_jobs_settled_claim.ts"
+import m0131 from "./migrations/0131_scrub_fleet_transcripts.ts"
 
 /** Every published migration identity, in ascending apply order. */
 export const migrations = {
@@ -258,4 +260,6 @@ export const migrations = {
   "0127_owner_profile": m0127,
   "0128_fleet_nodes_sessions_accounts": m0128,
   "0129_fleet_session_observability": m0129,
+  "0130_agent_jobs_settled_claim": m0130,
+  "0131_scrub_fleet_transcripts": m0131,
 }

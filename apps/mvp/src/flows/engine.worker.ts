@@ -34,7 +34,7 @@ const identity = new BroadcastChannel(IDENTITY_MESSAGE)
 const unbound = self.fetch.bind(self)
 // Under the dev server, the end-to-end tests' parameters, which main.tsx names this worker with (`dev:<parameters>`).
 // In production or dev, `demo:mock` runs an isolated zero-backend visitor demo (`?agent=mock`).
-const demoMock = self.name === "demo:mock"
+const demoMock = import.meta.env.DEV && self.name === "demo:mock"
 const dev = import.meta.env.DEV && self.name.startsWith("dev:") ? new URLSearchParams(self.name.slice("dev:".length)) : undefined
 const scripted = dev?.get("agent") ?? undefined
 const faulted = dev?.get("faults") === "session-503"

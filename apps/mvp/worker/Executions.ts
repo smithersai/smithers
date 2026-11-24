@@ -4,7 +4,6 @@ import { EdgeCache, type ExecutionObject } from "@smthrs/platform-cloudflare"
 import { RuntimeContext } from "alchemy"
 import { Cause, Effect, Layer, Option, Predicate, Redacted, Schema } from "effect"
 import { FetchHttpClient } from "effect/http"
-import type { SqlClient } from "effect/sql"
 import * as Database from "../db/Database.ts"
 import { applyExecutionId } from "../src/features/issues/contract.ts"
 import { todoExecutionId } from "../src/features/pulls/contract.ts"
@@ -164,17 +163,14 @@ export const live = <E, R>(
   options: ProgramOptions
 ) =>
   Layer.unwrap(Effect.map(
-    Effect.all([DatabaseLoad.sampler, SandboxSpend.sampler, FleetAlert.sampler, RedactFeed.launcher, Cron.ticker]),
+    Effect.all([DatabaseLoad.sampler, SandboxSpend.sampler, FleetAlert.sampler, Cron.ticker]),
     // Each alarm starts its window's database sample, then its window's sandbox spend (docs/features/sandbox-budgets.md),
-    // then its window's look at the runners (docs/features/fleet.md#alerts), then each confirmed feed barrier's pass not
-    // yet completed (docs/features/notifications.md#rows-written-before), and, with repositories' flows on, the
-    // minute's schedules tick (docs/features/ci.md#schedules).
-    ([sampleLoad, sampleSpend, sampleRunners, redactFeed, tick]) =>
+    // then its window's look at the runners and, with repositories' flows on, the minute's schedules tick.
+    ([sampleLoad, sampleSpend, sampleRunners, tick]) =>
       object(
         connection,
         options,
         Effect.andThen(Effect.andThen(sampleLoad, sampleSpend), sampleRunners),
-        redactFeed,
         options.repoFlows === true ? tick : Effect.void
       )
   ))
@@ -184,7 +180,6 @@ const object = <E, R>(
   connection: Effect.Effect<Cloudflare.Hyperdrive.Connection, E, R>,
   options: ProgramOptions,
   sampleLoad: Effect.Effect<void, never, Flows.FlowStarter>,
-  redactFeed: Effect.Effect<void, never, Flows.FlowStarter | SqlClient.SqlClient>,
   tick: Effect.Effect<void, never, Flows.FlowStarter>
 ) =>
   FlowExecution.make(
@@ -305,7 +300,7 @@ const object = <E, R>(
         // alarm's own runtime, on the started execution's object.
         const flowStarter = starter(executions)
         const hostFor = <ROut, FE, FR>(flows: ExecutionHost.Flows<ROut, FE, FR>) =>
-          ExecutionHost.make(state.storage, {
+          ExecutionHost.make(state.storage as ExecutionObject.Storage<RuntimeContext>, {
             hostId: state.id.toString(),
             database,
             signingKeyIds: Option.match(signIn, {
@@ -325,7 +320,7 @@ const object = <E, R>(
             driveBudgetMs,
             canStart: (intent) => TodoRuns.canStart(intent).pipe(Effect.provide(appDatabase), Effect.orDie),
             router: {
-              // A feed redaction round's handoff is recorded on its barrier, where a claim wakes a stalled pass.
+              // Record each feed redaction round's execution and cursor on the barrier.
               start: RedactFeed.recordingHandoffs(
                 (intent) => executions.getByName(intent.executionId).start(intent),
                 appDatabase
@@ -334,10 +329,7 @@ const object = <E, R>(
             },
             // The schedules' tick needs `triggers/Tick` registered: only a host with the GitHub App has it.
             afterAlarm: Effect.flatMap(flowStarter, (started) =>
-              Effect.andThen(
-                Effect.andThen(sampleLoad, Option.isSome(github) ? tick : Effect.void),
-                redactFeed.pipe(Effect.provide(appDatabase), Effect.orDie)
-              ).pipe(
+              Effect.andThen(sampleLoad, Option.isSome(github) ? tick : Effect.void).pipe(
                 Effect.provideService(Flows.FlowStarter, started)
               )),
             // A repository's run settles its row from the engine's status and its reported result (docs/features/actions.md), and a `todo` run

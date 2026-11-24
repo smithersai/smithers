@@ -219,13 +219,13 @@ test("a flow form shows every field and its choices, with no estimate toast", as
   await waitFor(() => /[◐◓◑◒◌] sum · asks/.test(frame()))
 })
 
-test("/smithers shows only factory content, never the flows or their runs", async () => {
+test("/smithers shows only the Cloud connection and apps, never the flows or their runs", async () => {
   await mount()
   await waitFor(() => frame().includes("alt+z"))
   await type("/smithers")
   await press("ESCAPE")
   await press("RETURN")
-  // No factory in a directory without a remote or apps: one line, and chat stays.
-  await waitFor(() => frame().includes("No factory for this directory"))
+  // Nothing to show in a directory without a remote or apps: one line, and chat stays.
+  await waitFor(() => frame().includes("No Smithers repository or apps here"))
   expect(frame()).not.toMatch(/\d+ flows · \d+ active/)
 })

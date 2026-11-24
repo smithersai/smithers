@@ -135,7 +135,19 @@ const endpoint = "https://bug.smithers.sh/api/demo-requests"
   const label = button.querySelector("[data-label]")
   // One idempotency key per submission, resent on every retry: a retry after
   // a lost response gets the stored request's receipt instead of a duplicate.
-  const submissionId = crypto.randomUUID()
+  let previousFields
+  let submissionId
+  function readFields() {
+    const data = Object.fromEntries(new FormData(form))
+    const fields = JSON.stringify(data)
+    if (fields !== previousFields) {
+      previousFields = fields
+      submissionId = crypto.randomUUID()
+    }
+    return data
+  }
+  form.addEventListener("input", readFields)
+  form.addEventListener("change", readFields)
   // The intake's receipt: 201 with the stored request's ID. Anything else,
   // such as an HTML page from a misrouted request, did not store it.
   const RECEIPT_ID = /^[0-9a-z]{26}$/
@@ -146,22 +158,25 @@ const endpoint = "https://bug.smithers.sh/api/demo-requests"
     status.textContent = ""
     status.classList.remove("error")
 
-    const data = Object.fromEntries(new FormData(form))
+    const data = readFields()
     for (const key of Object.keys(data)) data[key] = String(data[key]).trim()
     if (!form.reportValidity()) return
 
+    const sentId = submissionId
     button.disabled = true
     label.textContent = "Sending…"
     try {
       const res = await fetch(endpoint, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ ...data, submissionId }),
+        body: JSON.stringify({ ...data, submissionId: sentId }),
         signal: AbortSignal.timeout(20_000),
       })
       if (res.status !== 201) throw new Error(`intake answered ${res.status}`)
       const receipt = await res.json()
       if (typeof receipt?.id !== "string" || !RECEIPT_ID.test(receipt.id)) throw new Error("intake answered without a receipt")
+      readFields()
+      if (submissionId !== sentId) return
       form.hidden = true
       thanks.hidden = false
     } catch (error) {

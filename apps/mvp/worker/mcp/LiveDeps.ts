@@ -20,6 +20,7 @@ import { McpToolError } from "./Contract.ts"
 import {
   makeLiveToolDeps,
   MAX_FILE_PREVIEW_BYTES,
+  MAX_ISSUE_COMMENTS,
   type FileContent,
   type IssueDetail,
   type IssuePage,
@@ -296,14 +297,14 @@ const makePublicGitHubReader = (
       if ("pull_request" in item) {
         return yield* new McpToolError({ code: "not_found", message: `Issue #${number} not found` })
       }
-      const commentsRaw = yield* getJson(`${rp}/issues/${number}/comments?per_page=100`, `comments on #${number}`)
+      const { data: commentsRaw, hasNext } = yield* getPage(`${rp}/issues/${number}/comments?per_page=${MAX_ISSUE_COMMENTS}`, `comments on #${number}`)
       const user = item["user"] as { readonly login?: unknown } | null | undefined
       const rawLabels = Array.isArray(item["labels"]) ? item["labels"] : []
       const labels = rawLabels
         .map((l) => (typeof l === "string" ? l : typeof (l as { readonly name?: unknown })?.name === "string" ? (l as { readonly name: string }).name : null))
         .filter((l): l is string => l !== null)
       if (!Array.isArray(commentsRaw)) return yield* new McpToolError({ code: "unavailable", message: "Malformed GitHub comments" })
-      const comments = commentsRaw.map((c) => {
+      const comments = commentsRaw.slice(0, MAX_ISSUE_COMMENTS).map((c) => {
         const rec = c as Record<string, unknown>
         const author = rec["user"] as { readonly login?: unknown } | null | undefined
         return {
@@ -322,6 +323,7 @@ const makePublicGitHubReader = (
         createdAt: typeof item["created_at"] === "string" ? item["created_at"] : "",
         updatedAt: typeof item["updated_at"] === "string" ? item["updated_at"] : "",
         comments,
+        commentsTruncated: hasNext || commentsRaw.length > MAX_ISSUE_COMMENTS,
       }
     })
 
@@ -612,7 +614,7 @@ export const makeLiveDeps = <R = never>(options: LiveDepsOptions<R>): Effect.Eff
             FROM comments
             WHERE repo_id = ${id} AND item_id = ${item.id} AND deleted_at IS NULL
             ORDER BY created_at ASC, id ASC
-            LIMIT 101`
+            LIMIT ${MAX_ISSUE_COMMENTS + 1}`
           const labels: Array<string> = []
           if (item.triage === "accepted") labels.push("smithers:accepted")
           else if (item.triage === "not_accepted") labels.push("smithers:not-accepted")

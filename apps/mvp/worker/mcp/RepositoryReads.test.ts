@@ -159,3 +159,27 @@ test.each([true, false])("preview preserves its UTF-8 boundary with declared len
   }))
   expect(JSON.parse(result.content[0]!.text)).toMatchObject({ bytes: body.length, content: prefix, truncated: true })
 })
+
+test.each([100, 101])("issue_get reports whether the first comment page covers all %i comments", async count => {
+  const comments = Array.from({ length: count }, (_, index) => ({ body: String(index) }))
+  const { deps, database } = await harness((url, res) => {
+    if (url.pathname.endsWith("/comments")) {
+      const limit = Number(url.searchParams.get("per_page"))
+      if (count > limit) res.setHeader("link", '<https://api.github.com/page2>; rel="next"')
+      return void json(res, comments.slice(0, limit))
+    }
+    json(res, { number: 1 })
+  })
+  const sql = await runtime.runPromise(Effect.service(SqlClient.SqlClient))
+  await runtime.runPromise(sql`INSERT INTO github_repositories (repo_id, private) VALUES (${repoScope}, false)
+    ON CONFLICT (repo_id) DO UPDATE SET private = false`)
+  const auth = await Effect.runPromise(makeMcpAuthService({ database }))
+  const registry = await Effect.runPromise(makeMcpToolRegistry(deps).pipe(Effect.provideService(McpAuthService, auth)))
+  const result = await Effect.runPromise(registry.callTool("issue_get", { number: 1 }, {
+    principal: Option.none(), defaultRepo: repo, origin, requestId: "comments",
+  }))
+  const issue = JSON.parse(result.content.at(-1)!.text)
+  expect(issue.comments).toHaveLength(100)
+  expect(issue.comments[99].untrusted.body).toBe("99")
+  expect(issue.commentsTruncated).toBe(count > 100)
+})

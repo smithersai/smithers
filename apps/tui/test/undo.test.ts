@@ -3,8 +3,10 @@ import { Effect } from "effect"
 import {
   chmodSync,
   existsSync,
+  lstatSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   realpathSync,
   rmSync,
@@ -990,33 +992,6 @@ describe("undo", () => {
     expect(get(cwd, "a.ts")).toBe("after\n")
   })
 
-  it("restores the failed file itself when its write truncated it before throwing", async () => {
-    const cwd = scratch()
-    put(cwd, "a.ts", "before a\n")
-    put(cwd, "b.ts", "before b\n")
-    const r = recorder(cwd)
-    r.prompt("edit")
-    r.cell()
-    await r.call("write", { path: "a.ts" }, write(cwd, "a.ts", "after a\n"))
-    await r.call("write", { path: "b.ts" }, write(cwd, "b.ts", "after b\n"))
-    r.settle()
-    const plan = await Undo.plan(cwd, Undo.run(r.transcript())) as Undo.Plan
-    const files = Undo.chosen(plan, Undo.ready(plan))
-    const failing = files.at(-1)!
-    let failed = false
-    const failure = await Undo.commit(cwd, files, undefined, async (path, content, mode) => {
-      if (!failed && path === join(cwd, failing.path)) {
-        failed = true
-        writeFileSync(path, "")
-        throw Object.assign(new Error("no space"), { code: "ENOSPC" })
-      }
-      return Undo.put(path, content, mode)
-    })
-    expect(failure).toMatchObject({ _tag: "WriteFailed", path: failing.path, message: "ENOSPC", restored: true })
-    expect(get(cwd, "a.ts")).toBe("after a\n")
-    expect(get(cwd, "b.ts")).toBe("after b\n")
-  })
-
   it("reports files partly changed when the failed file cannot be put back", async () => {
     const cwd = scratch()
     put(cwd, "a.ts", "before\n")
@@ -1432,6 +1407,97 @@ describe("undo commit against intervening writers", () => {
     expect(get(cwd, "a.ts")).toBe("person's a\n")
     expect(get(cwd, "b.ts")).toBe("after b\n")
     expect(Undo.message(result!)).toBe("Undo failed · b.ts: disk full · files partly changed · kept newer edits: a.ts")
+  })
+
+  // R2-Astra-D4-002: a prefix of the planned bytes, the empty file included, is never proof undo wrote it.
+  for (
+    const [saved, name] of [["", "an empty file"], ["before", "a prefix of the planned bytes"]] as const
+  ) {
+    it(`keeps ${name} a second writer saved while the write failed, and reports it`, async () => {
+      const cwd = scratch()
+      put(cwd, "a.ts", "after a\n")
+      put(cwd, "b.ts", "after b\n")
+      const files = [
+        { path: "a.ts", current: "after a\n", next: "before a\n" },
+        { path: "b.ts", current: "after b\n", next: "before b\n" }
+      ]
+      expect(files[1]!.next.startsWith(saved)).toBe(true)
+      const result = await Undo.commit(cwd, files, undefined, async (path, content, mode) => {
+        if (path === join(cwd, "b.ts")) {
+          // A person saves b.ts while undo's write of it fails.
+          writeFileSync(path, saved)
+          throw Object.assign(new Error("no space"), { code: "ENOSPC" })
+        }
+        await Undo.put(path, content, mode)
+      })
+      expect(result).toEqual({ _tag: "WriteFailed", path: "b.ts", message: "ENOSPC", restored: false, kept: ["b.ts"] })
+      expect(get(cwd, "b.ts")).toBe(saved)
+      // a.ts still held what undo published, so it went back.
+      expect(get(cwd, "a.ts")).toBe("after a\n")
+      expect(Undo.message(result!)).toBe(
+        "Undo failed · b.ts: disk full · files partly changed · kept newer edits: b.ts"
+      )
+    })
+  }
+
+  it("keeps both edits when two files are saved over during one failed undo", async () => {
+    const cwd = scratch()
+    put(cwd, "a.ts", "after a\n")
+    put(cwd, "b.ts", "after b\n")
+    const files = [
+      { path: "a.ts", current: "after a\n", next: "before a\n" },
+      { path: "b.ts", current: "after b\n", next: "before b\n" }
+    ]
+    const result = await Undo.commit(cwd, files, undefined, async (path, content, mode) => {
+      if (path === join(cwd, "b.ts")) {
+        writeFileSync(join(cwd, "a.ts"), "")
+        writeFileSync(path, "before")
+        throw Object.assign(new Error("no space"), { code: "ENOSPC" })
+      }
+      await Undo.put(path, content, mode)
+    })
+    expect(result).toMatchObject({ _tag: "WriteFailed", restored: false, kept: ["a.ts", "b.ts"] })
+    expect(get(cwd, "a.ts")).toBe("")
+    expect(get(cwd, "b.ts")).toBe("before")
+  })
+
+  it("a write that cannot be staged leaves its file untouched and rolls the others back", async () => {
+    const cwd = scratch()
+    put(cwd, "a.ts", "after a\n")
+    put(cwd, "locked/b.ts", "after b\n")
+    chmodSync(join(cwd, "locked/b.ts"), 0o640)
+    // The file itself is writable; only a staged sibling is refused.
+    chmodSync(join(cwd, "locked"), 0o555)
+    try {
+      const result = await Undo.commit(cwd, [
+        { path: "a.ts", current: "after a\n", next: "before a\n" },
+        { path: "locked/b.ts", current: "after b\n", next: "before b\n" }
+      ])
+      expect(result).toEqual({ _tag: "WriteFailed", path: "locked/b.ts", message: "EACCES", restored: true })
+    } finally {
+      chmodSync(join(cwd, "locked"), 0o755)
+    }
+    expect(get(cwd, "locked/b.ts")).toBe("after b\n")
+    expect(statSync(join(cwd, "locked/b.ts")).mode & 0o7777).toBe(0o640)
+    expect(get(cwd, "a.ts")).toBe("after a\n")
+    expect(readdirSync(join(cwd, "locked"))).toEqual(["b.ts"])
+    expect(readdirSync(cwd).sort()).toEqual(["a.ts", "locked"])
+  })
+
+  it("publishes staged bytes whole: the file's mode, a symlink and its target all survive", async () => {
+    const cwd = scratch()
+    put(cwd, "real.sh", "after\n")
+    chmodSync(join(cwd, "real.sh"), 0o750)
+    symlinkSync("real.sh", join(cwd, "link.sh"))
+    await Undo.put(join(cwd, "link.sh"), "before\n")
+    expect(lstatSync(join(cwd, "link.sh")).isSymbolicLink()).toBe(true)
+    expect(get(cwd, "real.sh")).toBe("before\n")
+    expect(statSync(join(cwd, "real.sh")).mode & 0o7777).toBe(0o750)
+    await Undo.put(join(cwd, "new/made.ts"), "made\n", 0o644)
+    expect(get(cwd, "new/made.ts")).toBe("made\n")
+    expect(statSync(join(cwd, "new/made.ts")).mode & 0o7777).toBe(0o644)
+    expect(readdirSync(cwd).sort()).toEqual(["link.sh", "new", "real.sh"])
+    expect(readdirSync(join(cwd, "new"))).toEqual(["made.ts"])
   })
 
   it("refuses a later file whose directory became a symlink out of the workspace mid-commit", async () => {

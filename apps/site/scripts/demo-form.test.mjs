@@ -20,13 +20,13 @@ function mount(t, fetch, timeoutName = "TimeoutError") {
   const label = { textContent: "Continue" }
   const button = { disabled: false, querySelector: () => label }
   const thanks = { hidden: true }
-  let submit
+  const listeners = new Map()
   const form = {
     hidden: false,
     values,
     reportValidity: () => true,
     querySelector: (selector) => selector === "[data-status]" ? status : button,
-    addEventListener: (name, handler) => { assert.equal(name, "submit"); submit = handler }
+    addEventListener: (name, handler) => listeners.set(name, handler)
   }
   runInNewContext(script, {
     document: { querySelector: (selector) => selector === "#demo-form" ? form : thanks },
@@ -43,7 +43,7 @@ function mount(t, fetch, timeoutName = "TimeoutError") {
       }
     }
   })
-  return { form, thanks, button, label, status, classes, submit: () => submit({ preventDefault() {} }) }
+  return { form, thanks, button, label, status, classes, edit: (field, value, event = "input") => { values[field] = value; listeners.get(event)() }, submit: () => listeners.get("submit")({ preventDefault() {} }) }
 }
 
 for (const timeoutName of ["TimeoutError", "AbortError"]) {
@@ -147,4 +147,34 @@ test("a retry after a lost response resends the same submission id and accepts t
   assert.equal(bodies[1].submissionId, bodies[0].submissionId)
   assert.equal(ui.form.hidden, true)
   assert.equal(ui.thanks.hidden, false)
+})
+
+test("editing any field after a failed submission rotates its ID", async (t) => {
+  const bodies = []
+  const ui = mount(t, async (_url, { body }) => {
+    bodies.push(JSON.parse(body))
+    throw new TypeError("response lost")
+  })
+  await ui.submit()
+  for (const [field, value] of Object.entries(ui.form.values)) {
+    ui.edit(field, "new" + value, field === "workEmail" ? "change" : "input")
+    await ui.submit()
+    assert.equal(bodies.at(-1)[field], ("new" + value).trim())
+  }
+  // Some autofill tools update values without notifying the form.
+  ui.form.values.message = "Autofilled"
+  await ui.submit()
+  assert.equal(new Set(bodies.map(({ submissionId }) => submissionId)).size, bodies.length)
+})
+
+test("a receipt for an in-flight submission leaves later edits on screen", async (t) => {
+  let finish
+  const ui = mount(t, () => new Promise((resolve) => { finish = resolve }))
+  const pending = ui.submit()
+  ui.edit("message", "Follow-up")
+  finish(stored())
+  await pending
+  assert.equal(ui.form.hidden, false)
+  assert.equal(ui.thanks.hidden, true)
+  assert.equal(ui.button.disabled, false)
 })

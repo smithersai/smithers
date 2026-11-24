@@ -1,8 +1,7 @@
 // Confirms a feed barrier (docs/features/notifications.md#rows-written-before): the deploy owner's word that every
-// Worker of releases before the deployed one has drained, so no writer of private feed text is left. It writes one
-// `feed_barriers` row, which is also the durable request to run `ops/RedactFeed` as `redact-feed-<id>`: ChatApi's next
-// request, or the next `FlowExecution` alarm, claims and starts it. Idempotent: the same barrier again writes nothing
-// and says so. It prints what it wrote or found as one JSON line on stdout; a failure, one scrubbed line on stderr.
+// Worker of earlier releases has drained. Records the barrier in Postgres, then asks ChatApi to start its durable
+// redaction pass. A retry uses the same barrier and execution. Exit 0 means its host acknowledged the start.
+// APP_DOMAIN selects the Worker. The database-issued launch token authorizes only this barrier.
 //
 //   cd apps/mvp && ~/vault-ws-deployer/bin/mvp-prod-env node ops/feed-barrier/confirm.ts --project <id> --by <name> \
 //     [--release <build>] [--id <id>] [--stage prod]
@@ -18,22 +17,40 @@ import { parseArgs } from "node:util"
 import { Effect, Redacted } from "effect"
 import { SqlClient } from "effect/sql"
 import * as Database from "../database/Connection.ts"
+import { CONFIRM_ROUTE } from "./Route.ts"
 import { refuseUncheckedTls } from "../tls.mjs"
 
 /** A barrier's id: the release's first 12 characters unless named. */
 export const idOf = (release: string, id?: string) => (id ?? `r-${release.slice(0, 12)}`).toLowerCase()
 
 /** The row for `id`: written now (`written`), or the one an earlier run wrote (`existing`). */
-export const confirm = (barrier: { readonly id: string; readonly release: string; readonly by: string }) =>
+export const confirm = (
+  barrier: { readonly id: string; readonly release: string; readonly by: string },
+  domain: string | undefined,
+  fetch: typeof globalThis.fetch = globalThis.fetch,
+) =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient
-    const [written] = yield* sql<Row>`
+    const written = yield* sql`
       INSERT INTO feed_barriers (id, release, confirmed_by) VALUES (${barrier.id}, ${barrier.release}, ${barrier.by})
-      ON CONFLICT (id) DO NOTHING
-      RETURNING ${columns(sql)}`
-    if (written !== undefined) return { outcome: "written", ...written }
-    const [existing] = yield* sql<Row>`SELECT ${columns(sql)} FROM feed_barriers WHERE id = ${barrier.id}`
-    return { outcome: "existing", ...existing! }
+      ON CONFLICT (id) DO NOTHING RETURNING id`
+    // Also admits barriers left open by a previous release. Concurrent confirmations share the same capability.
+    const [open] = yield* sql<{ token: string }>`
+      UPDATE feed_barriers SET launch_token = COALESCE(launch_token, gen_random_uuid())
+      WHERE id = ${barrier.id} AND launched_at IS NULL AND completed_at IS NULL RETURNING launch_token AS token`
+    if (open !== undefined) {
+      yield* Effect.tryPromise(async () => {
+        if (!domain) throw new Error("APP_DOMAIN is required to start feed redaction")
+        const response = await fetch(`https://${domain}${CONFIRM_ROUTE}${barrier.id}`, {
+          method: "POST", headers: { authorization: `Bearer ${open.token}` }, redirect: "error",
+        })
+        if (response.status !== 204) throw new Error(`feed redaction start answered ${response.status}`)
+      })
+    }
+    const [row] = yield* sql<Row>`SELECT ${columns(sql)} FROM feed_barriers
+      WHERE id = ${barrier.id} AND (launched_at IS NOT NULL OR completed_at IS NOT NULL)`
+    if (row === undefined) return yield* Effect.fail(new Error("feed redaction start was not acknowledged"))
+    return { outcome: written.length ? "written" : "existing", ...row }
   })
 
 interface Row {
@@ -151,6 +168,8 @@ export const opsCommand = <A>(
   act: (
     options: { readonly by: string; readonly release: string | undefined; readonly id: string | undefined },
     release: () => Promise<string>,
+    domain: string | undefined,
+    fetch: typeof globalThis.fetch,
   ) => Promise<Effect.Effect<A, unknown, SqlClient.SqlClient>>,
 ) =>
 async (
@@ -185,7 +204,7 @@ async (
     databaseOperation = true
     const database = Database.layer(url)
     databaseOperation = false
-    const work = await act({ by: values.by, release: values.release, id: values.id }, () => deployedBuild(env.APP_DOMAIN, fetch))
+    const work = await act({ by: values.by, release: values.release, id: values.id }, () => deployedBuild(env.APP_DOMAIN, fetch), env.APP_DOMAIN, fetch)
     databaseOperation = true
     const row = await Effect.runPromise(Effect.scoped(work.pipe(Effect.provide(database))))
     io.out(JSON.stringify(row))
@@ -215,9 +234,9 @@ export const asMain = (url: string, failure: string, command: ReturnType<typeof 
 const FAILURE = "feed barrier not confirmed"
 
 /** The command: confirms the barrier and prints its row. */
-export const run = opsCommand(FAILURE, async (options, deployed) => {
+export const run = opsCommand(FAILURE, async (options, deployed, domain, fetch) => {
   const release = options.release ?? await deployed()
-  return confirm({ id: idOf(release, options.id), release, by: options.by })
+  return confirm({ id: idOf(release, options.id), release, by: options.by }, domain, fetch)
 })
 
 asMain(import.meta.url, FAILURE, run)

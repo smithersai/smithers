@@ -155,14 +155,19 @@ test("the built home renders three counts and the screenshot check rejects their
   assert.equal(hasHomeCounts(await page.locator(".stat-n").allTextContents()), false)
 })
 
-test("a signed-in reviewer can approve and contributed documents cannot run scripts", async (t) => {
+test("a signed-in reviewer can approve a scripted design with relative assets and an opaque origin", async (t) => {
   const dir = mkdtempSync(join(tmpdir(), "queue-auth-browser-"))
   t.after(() => rmSync(dir, { recursive: true, force: true }))
-  const item = { id: "browser-review", kind: "design", title: "Browser review" }
+  const item = { id: "browser-review", kind: "design", title: "Browser review", media: [{ type: "html", path: "files/design.html" }] }
   writeFileSync(join(dir, "queue.json"), JSON.stringify({ items: [item] }))
   writeFileSync(join(dir, "index.html"), "<title>Site</title>")
   mkdirSync(join(dir, "files"))
-  writeFileSync(join(dir, "files", "design.html"), "<title>Design</title><script>document.title='executed'</script>")
+  writeFileSync(join(dir, "files", "design.css"), "img { width: 31px }")
+  writeFileSync(join(dir, "files", "icon.svg"), '<svg xmlns="http://www.w3.org/2000/svg" width="11" height="9"/>')
+  writeFileSync(join(dir, "files", "design.html"), [
+    '<title>Design</title><link rel="stylesheet" href="design.css"><img src="icon.svg">',
+    "<script>document.title='executed'</script>",
+  ].join(""))
   const server = startServer({ port: 0, repo: dir, queueDir: dir, site: dir, writeToken: "browser-fixture" })
   t.after(() => server.close())
   const base = await server.ready
@@ -170,6 +175,14 @@ test("a signed-in reviewer can approve and contributed documents cannot run scri
   t.after(() => page.context().close())
   await page.goto(base + "/queue")
   await page.locator('.q-card[data-id="browser-review"]').waitFor()
+  const frame = page.frameLocator("iframe.q-frame")
+  const image = frame.locator("img")
+  await expect(image).toHaveCSS("width", "31px")
+  await expect(image).toHaveJSProperty("naturalWidth", 11)
+  assert.deepEqual(await image.evaluate(async () => ({
+    title: document.title, origin: self.origin,
+    queueReadable: await fetch("/api/queue").then((r) => r.ok, () => false),
+  })), { title: "executed", origin: "null", queueReadable: false })
   const saved = page.waitForResponse((res) => res.url().endsWith("/api/answer"), { timeout: 5000 })
   await page.keyboard.press("a")
   assert.equal((await saved).status(), 200)
@@ -177,6 +190,44 @@ test("a signed-in reviewer can approve and contributed documents cannot run scri
   assert.equal(receipt.action, "approve")
   assert.match(receipt.digest, /^[0-9a-f]{64}$/)
   await page.goto(base + "/files/design.html")
-  assert.equal(await page.title(), "Design")
+  assert.equal(await page.title(), "executed")
   assert.equal(await page.evaluate(() => window.origin), "null")
+})
+
+test("undo in a stale tab keeps the newer approval, including after a reload", async (t) => {
+  const dir = mkdtempSync(join(tmpdir(), "queue-undo-"))
+  const publish = (revision) => writeFileSync(join(dir, "queue.json"), JSON.stringify({
+    items: [{ id: "decision", kind: "design", title: "Design", revision }],
+  }))
+  publish("v1")
+  const app = startServer({ port: 0, repo: dir, queueDir: dir, writeToken: "fixture" })
+  const context = await browser.newContext({ httpCredentials: { username: "maintainer", password: "fixture" } })
+  t.after(async () => { await context.close(); await app.close(); rmSync(dir, { recursive: true, force: true }) })
+  const base = await app.ready
+  const answer = async (page, key) => {
+    const response = page.waitForResponse((r) => r.url() === base + "/api/answer", { timeout: 5000 })
+    await page.keyboard.press(key)
+    return response
+  }
+  const approve = async () => {
+    const page = await context.newPage()
+    await page.goto(base + "/queue")
+    await page.locator('.q-card[data-id="decision"]').waitFor()
+    const response = await answer(page, "a")
+    assert.equal(response.status(), 200)
+    return { page, id: (await response.json()).answer.answerId }
+  }
+  const first = await approve()
+  publish("v2")
+  const second = await approve()
+  const stale = await answer(first.page, "u")
+  assert.equal(stale.request().postDataJSON().answerId, first.id)
+  assert.equal(stale.status(), 409)
+  assert.equal((await (await fetch(base + "/api/queue")).json()).last.answerId, second.id)
+  await second.page.reload()
+  await second.page.locator(".q-empty").waitFor()
+  const undo = await answer(second.page, "u")
+  assert.equal(undo.request().postDataJSON().answerId, second.id)
+  assert.equal(undo.status(), 200)
+  await second.page.locator('.q-card[data-id="decision"]').waitFor()
 })

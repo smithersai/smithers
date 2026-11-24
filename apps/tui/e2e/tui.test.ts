@@ -2273,16 +2273,16 @@ describe("flows", () => {
     expect(screen).toContain("New conversation started")
   }, 60_000)
 
-  it("/smithers holds only factory content: without a factory here it says so and opens nothing", async () => {
+  it("/smithers without a repository or apps here says so and opens nothing", async () => {
     const { tui } = await open()
     const tabBar = (screen: string) => screen.split("\n").find((line) => /Chat\s+Summary/.test(line)) ?? ""
     await tui.type("/smithers")
     await tui.press(key.escape)
     await tui.press(key.enter)
     const screen = await tui.until(
-      (screen) => screen.includes("No factory for this directory"),
+      (screen) => screen.includes("No Smithers repository or apps here"),
       5_000,
-      "no factory"
+      "nothing on Smithers"
     )
     expect(tabBar(screen)).not.toContain("Smithers")
     expect(screen).not.toMatch(/\d+ flows · \d+ active/)

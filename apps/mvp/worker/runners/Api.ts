@@ -333,7 +333,7 @@ export const make = <E, R>(
       Effect.gen(function*() {
         const expired = yield* sql<{ readonly key: string }>`
           UPDATE agent_jobs SET status = 'failed', outcome = ${JSON.stringify(TIMEOUT)}::jsonb,
-            claim = NULL, lease_until = NULL, cancel_requested = true, settled_at = now(), updated_at = now()
+            settled_claim = claim, claim = NULL, lease_until = NULL, cancel_requested = true, settled_at = now(), updated_at = now()
           WHERE runner_id = ${runner.id}::uuid AND status = 'claimed'
             AND deadline_at + ${SETTLE_GRACE_SECONDS}::int * interval '1 second' <= now()
           RETURNING key`
@@ -489,7 +489,7 @@ export const make = <E, R>(
           // The claim is kept as `stopped_claim`, so a heartbeat whose answer was lost hears `cancel` again.
           if (!isUuid(beat.value.claim)) return refuse(fields, 403, "not_authorized")
           const [stopped] = yield* sql<{ readonly key: string }>`
-            UPDATE agent_jobs SET status = 'cancelled', outcome = ${JSON.stringify(STOPPED)}::jsonb, claim = NULL,
+            UPDATE agent_jobs SET status = 'cancelled', outcome = ${JSON.stringify(STOPPED)}::jsonb, settled_claim = claim, claim = NULL,
               stopped_claim = claim, lease_until = NULL, settled_at = now(), updated_at = now()
             WHERE key = ${beat.value.key} AND claim = ${beat.value.claim}::uuid AND runner_id = ${runner.id}::uuid
               AND status = 'claimed' AND cancel_requested
@@ -591,7 +591,7 @@ export const make = <E, R>(
         const status = outcome._tag === "Retryable" ? "retryable" : outcome._tag.toLowerCase()
         fields.result = outcome._tag === "Failed" ? `failed:${outcome.reason}` : status
         yield* sql`
-          UPDATE agent_jobs SET status = ${status}, outcome = ${JSON.stringify(outcome)}::jsonb, claim = NULL,
+          UPDATE agent_jobs SET status = ${status}, outcome = ${JSON.stringify(outcome)}::jsonb, settled_claim = claim, claim = NULL,
             lease_until = NULL, settled_at = now(), updated_at = now()
           WHERE key = ${key}`
         yield* Fleet.settled(key, outcome)
@@ -622,14 +622,14 @@ export const make = <E, R>(
         if (!(yield* lockCurrent(runner))) return refuse(fields, 403, "not_authorized")
         // The runner that holds the job under this claim, or held it until the job ended a moment ago: its settlement
         // may come before its last events. A job has one claim in its life (a retry is a new generation's own row and
-        // key), and settling clears it; a Stop keeps it as `stopped_claim`, which must then match. A claim that never
+        // key), and settlement retains the final claim for this check. A claim that never
         // held the job, and a job that ended long ago, store nothing.
         const [row] = yield* sql<{ readonly task: unknown; readonly generation: number }>`
           SELECT task, generation FROM agent_jobs
           WHERE key = ${key} AND runner_id = ${runner.id}::uuid AND (
             (status = 'claimed' AND claim = ${claim}::uuid)
             OR (status IN ('done', 'failed', 'cancelled', 'retryable')
-              AND (stopped_claim IS NULL OR stopped_claim = ${claim}::uuid)
+              AND settled_claim = ${claim}::uuid
               AND settled_at > now() - ${EVENTS_AFTER_SETTLE_SECONDS}::int * interval '1 second'))`
         if (row === undefined) return refuse(fields, 409, "not_held")
         const task = yield* decodeTask(row.task).pipe(Effect.orDie)
@@ -859,7 +859,7 @@ export const make = <E, R>(
       const sql = yield* SqlClient.SqlClient
       const told = yield* sql.withTransaction(Effect.gen(function*() {
         const [stopped] = yield* sql<{ readonly key: string }>`
-          UPDATE agent_jobs SET status = 'cancelled', outcome = ${JSON.stringify(STOPPED)}::jsonb, claim = NULL,
+          UPDATE agent_jobs SET status = 'cancelled', outcome = ${JSON.stringify(STOPPED)}::jsonb, settled_claim = claim, claim = NULL,
             stopped_claim = claim, lease_until = NULL, settled_at = now(), updated_at = now()
           WHERE key = ${beat.value.key} AND claim = ${beat.value.claim}::uuid AND claimed_token_sha256 = ${digest}
             AND status = 'claimed' AND cancel_requested

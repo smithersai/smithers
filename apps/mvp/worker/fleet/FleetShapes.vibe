@@ -10,6 +10,7 @@ import { ShapeProxy } from "@smthrs/effect-electric"
 import { HttpServerRequest, HttpServerResponse } from "effect/http"
 import { LOCAL_ELECTRIC_URL } from "../../src/features/chat/contract.ts"
 import {
+  ACTIVE_SESSIONS_WHERE,
   FLEET_ACCOUNTS_SHAPE_ROUTE,
   FLEET_NODES_SHAPE_ROUTE,
   FLEET_SESSIONS_SHAPE_ROUTE,
@@ -61,7 +62,9 @@ export effect function make(admins?: ReadonlySet<string>) {
     ...connection,
     shape: effect {
       try requireAdmin
-      return { table: "observed_sessions", columns: [...OBSERVED_SESSION_COLUMNS] }
+      // Ended sessions stay on the bounded overview read: the dashboard shows the fleet's live sessions, and an ended
+      // session's transcript never replicates to a browser (R2-Astra-D4-015).
+      return { table: "observed_sessions", where: ACTIVE_SESSIONS_WHERE, columns: [...OBSERVED_SESSION_COLUMNS] }
     },
     name: "fleet.shape.sessions",
     metric: sessionShapes,

@@ -26,6 +26,7 @@ import {
 import { isRepository, repoId } from "../../src/features/repo/contract.ts"
 import { type Actor, personOnlyRefusals, type Role, Sessions } from "../Actor.ts"
 import { readBounded } from "../Body.ts"
+import { networkOf } from "../Throttle.ts"
 import { codeOf } from "../ErrorCode.ts"
 import { type Repository, repositoryOf } from "../github/Config.ts"
 import * as RepoRoles from "../github/RepoRoles.ts"
@@ -66,7 +67,8 @@ export const MAX_REDIRECT_URIS = 8
 /** Maximum UTF-8 byte length of a single redirect URI (matches DB CHECK `BETWEEN 1 AND 2048`). */
 export const MAX_REDIRECT_URI_BYTES = 2048
 
-const REGISTRATIONS_PER_MINUTE = 30
+const NETWORK_REGISTRATIONS_PER_MINUTE = 30
+const GLOBAL_REGISTRATIONS_PER_MINUTE = 3000
 const UNUSED_CLIENT_DAYS = 30
 const GRANT_NAMESPACE = "81c97868-570f-49f6-9d82-0ad317744a64"
 
@@ -940,15 +942,16 @@ export const makeOAuthHandlers = <E, R, R2>(
         const clientId = generateClientId()
         const issuedAt = Math.floor((yield* Clock.currentTimeMillis) / 1000)
 
+        const networkDigest = digestSync(networkOf(request.headers))
         const registered = yield* withDb(Effect.flatMap(SqlClient.SqlClient, (sql) => sql.withTransaction(Effect.gen(function* () {
           // The deployment-wide limit also covers requests distributed across networks and Worker isolates.
           yield* sql`SELECT pg_advisory_xact_lock(hashtextextended('mcp-dynamic-registration', 0))`
-          const [recent] = yield* sql<{ count: number }>`
-            SELECT count(*)::int AS count FROM (
-              SELECT 1 FROM mcp_oauth_clients WHERE created_at > clock_timestamp() - interval '1 minute'
-              LIMIT ${REGISTRATIONS_PER_MINUTE}
-            ) recent`
-          if ((recent?.count ?? 0) >= REGISTRATIONS_PER_MINUTE) return false
+          yield* sql`DELETE FROM mcp_registration_admissions WHERE admitted_at <= clock_timestamp() - interval '1 minute'`
+          const [recent] = yield* sql<{ total: number; network: number }>`
+            SELECT count(*)::int AS total, (count(*) FILTER (WHERE network_digest = ${networkDigest}))::int AS network
+            FROM mcp_registration_admissions`
+          if (recent!.network >= NETWORK_REGISTRATIONS_PER_MINUTE || recent!.total >= GLOBAL_REGISTRATIONS_PER_MINUTE) return false
+          yield* sql`INSERT INTO mcp_registration_admissions (network_digest) VALUES (${networkDigest})`
           yield* sql`DELETE FROM mcp_oauth_clients c WHERE NOT (created_at > now() - make_interval(days => ${UNUSED_CLIENT_DAYS})
                 OR EXISTS (SELECT 1 FROM mcp_tokens t WHERE t.client_id = c.client_id)
                 OR EXISTS (SELECT 1 FROM mcp_oauth_codes a WHERE a.client_id = c.client_id AND a.expires_at > now()))`

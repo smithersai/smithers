@@ -87,10 +87,12 @@ title-only report.
   200/hour across all clients, in buckets separate from bug reports; a 400 or
   413 never spends the budget, and an all-clients refusal logs
   `demo_request.global_limit`. The body also carries `submissionId`, an
-  idempotency key the page draws once per submission and resends on retry.
-  Stores `demo-receipt:<submissionId>` and then `demo:<id>`, both for 90 days,
-  and returns the receipt `201 { id }`. A retry with the same key returns the
-  same `id`, spends no budget, and stores nothing new.
+  idempotency key the page retains on retry and rotates when a field changes.
+  The submission's Durable Object binds the validated fields to a receipt for
+  90 days. An hourly object charges both budgets in one transaction keyed by
+  that receipt. After storing the lead in KV at `demo:<id>`, intake returns
+  `201 { id }`. An identical retry returns the same receipt. Reusing the key
+  with different fields returns `409`.
   `tests/demoRequests.test.ts` reads the endpoint and field names from
   `apps/site/src/pages/demo/index.astro` and posts that payload.
 - `GET /api/bugs`, `GET /api/demo-requests` — maintainers only: one page of

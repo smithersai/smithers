@@ -46,7 +46,7 @@
   let linkIndex = -1
   let serverLast = null
   const inFlight = new Set() // answered here, not yet hidden by the server
-  const sent = [] // this session's answers, newest last, for undo: { item, text, scope, saved, settled }
+  const sent = [] // this session's answers, newest last, for undo: { item, text, scope, answerId, settled }
   const files = new Map() // [slice, commit, revision, path] -> Promise<{ ok, text, type }>
   let stats = { doneToday: 0, remaining: {}, total: 0, coverage: null }
   let missing = false
@@ -75,7 +75,7 @@
   const pin = (path, item) => item?.digest && (Object.hasOwn(item.assets, path) || item.files?.some((entry) => (entry.path ?? entry.replace?.(/:\d+(?:-\d+)?$/, "")) === path))
     ? `&slice=${encodeURIComponent(item.id)}&digest=${encodeURIComponent(item.digest)}` : ""
   const fileUrl = (path, item = current) => `/api/file?path=${encodeURIComponent(path)}${pin(path, item)}`
-  const frameUrl = fileUrl
+  const frameUrl = (path, item = current) => "/api/file/" + path.split("/").map(encodeURIComponent).join("/") + pin(path, item).replace(/^&/, "?")
   const extOf = (path) => (path.match(/\.([a-z0-9]+)$/i)?.[1] ?? "").toLowerCase()
   const IMAGE = new Set(["gif", "png", "jpg", "jpeg", "webp", "avif", "svg"])
   const VIDEO = new Set(["mp4", "webm"])
@@ -606,7 +606,7 @@
     const type = media.type || extOf(media.path)
     const name = media.path.split("/").pop()
     let body
-    if (type === "html") body = `<iframe class="q-frame" sandbox="" src="${esc(frameUrl(media.path))}" title="${esc(name)}"></iframe><span class="q-frame-hint">Keys go to the design. Click outside it for queue keys.</span>`
+    if (type === "html") body = `<iframe class="q-frame" sandbox="allow-scripts" src="${esc(frameUrl(media.path))}" title="${esc(name)}"></iframe><span class="q-frame-hint">Keys go to the design. Click outside it for queue keys.</span>`
     else if (isMarkdown(media)) body = null
     else if (!isVideo(media)) body = `<img class="q-img" src="${esc(fileUrl(media.path))}" alt="${esc(name)}">`
     player = null
@@ -952,7 +952,7 @@
       const name = media.path.split("/").pop()
       const body =
         type === "html"
-          ? `<iframe class="q-frame" sandbox="" src="${esc(frameUrl(media.path))}" title="${esc(`${label}: ${name}`)}"></iframe>`
+          ? `<iframe class="q-frame" sandbox="allow-scripts" src="${esc(frameUrl(media.path))}" title="${esc(`${label}: ${name}`)}"></iframe>`
           : `<img class="q-img" src="${esc(fileUrl(media.path))}" alt="${esc(`${label}: ${name}`)}">`
       return `<figure class="q-pane ${cls}"><figcaption><b>${label}</b> <span class="q-path" title="${esc(media.path)}">${esc(name)}</span></figcaption><div class="q-media">${body}</div></figure>`
     }
@@ -1202,13 +1202,13 @@
     items = items.filter((entry) => entry.id !== item.id)
     // Its own record: an earlier answer that fails later removes only itself.
     const { promise: settled, resolve: settle } = Promise.withResolvers()
-    const record = { item, text, scope, saved: false, settled }
+    const record = { item, text, scope, answerId: null, settled }
     sent.push(record)
     stats = { ...stats, doneToday: stats.doneToday + (action === "later" ? 0 : 1) }
     show(next(item.id), "up")
     try {
-      await api("/api/answer", { method: "POST", headers: { "Content-Type": "application/json", "X-Maintainer-Write": "1" }, body: JSON.stringify(answer) })
-      record.saved = true
+      const receipt = await api("/api/answer", { method: "POST", headers: { "Content-Type": "application/json", "X-Maintainer-Write": "1" }, body: JSON.stringify(answer) })
+      record.answerId = receipt.answer.answerId
       store.set(draftKey(item.id), "")
       store.set(scopeKey(item.id), "")
       if (scope) say(`Sent for ${allOf(item.kind)}`)
@@ -1235,20 +1235,23 @@
   }
 
   async function undo() {
-    // Undo follows the newest answer onto the server's stack: wait for one still sending, and skip it if it fails.
-    let local = sent.at(-1)
-    while (local && !local.saved) {
-      await local.settled
-      local = sent.at(-1)
-    }
-    const itemId = local?.item.id ?? serverLast?.itemId
-    if (!itemId) return say("Nothing to undo")
+    // Keep the selection made at the keypress, even if another answer settles while this one is sending.
+    const local = sent.at(-1)
+    const last = serverLast
+    if (local) await local.settled
+    const itemId = local ? local.item.id : last?.itemId
+    const answerId = local ? local.answerId : last?.answerId
+    if (!itemId || !answerId) return say("Nothing to undo")
     try {
-      await api("/api/answer", { method: "POST", headers: { "Content-Type": "application/json", "X-Maintainer-Write": "1" }, body: JSON.stringify({ itemId, action: "undo", text: "" }) })
+      await api("/api/answer", { method: "POST", headers: { "Content-Type": "application/json", "X-Maintainer-Write": "1" }, body: JSON.stringify({ itemId, answerId, action: "undo", text: "" }) })
     } catch (error) {
+      if (error.status === 409) {
+        if (local && sent.includes(local)) sent.splice(sent.indexOf(local), 1)
+        await refresh()
+      }
       return say(`Undo failed: ${error.message}`, true)
     }
-    if (local) {
+    if (local && sent.includes(local)) {
       sent.splice(sent.indexOf(local), 1)
       if (local.text && !store.get(draftKey(itemId))) store.set(draftKey(itemId), local.text)
       if (local.scope) store.set(scopeKey(itemId), "all")
@@ -1314,7 +1317,7 @@
     const counter = links.length > 1 && linkIndex >= 0 ? `<span class="q-range">${linkIndex + 1} / ${links.length} ${kbd("o")}</span>` : ""
     viewer.innerHTML = `<div class="q-viewer-box" role="dialog" aria-label="${esc(label || name)}"><div class="q-file-head"><span class="q-path">${esc(label && label !== path ? `${label} · ${path}` : path)}</span>${counter}<span class="q-close">${kbd("Esc")}</span></div><div class="q-viewer-body"><div class="q-code loading">Loading…</div></div></div>`
     const body = viewer.querySelector(".q-viewer-body")
-    if (ext === "html") body.innerHTML = `<iframe class="q-frame" sandbox="" src="${esc(frameUrl(path))}" title="${esc(name)}"></iframe>`
+    if (ext === "html") body.innerHTML = `<iframe class="q-frame" sandbox="allow-scripts" src="${esc(frameUrl(path))}" title="${esc(name)}"></iframe>`
     else if (IMAGE.has(ext)) body.innerHTML = `<div class="q-media"><img class="q-img" src="${esc(fileUrl(path))}" alt="${esc(name)}"></div>`
     else {
       const result = await loadFile(path)

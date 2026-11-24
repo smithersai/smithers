@@ -549,18 +549,13 @@ same directory at the same time. Restarting marks unfinished runs interrupted;
 retry resumes the durable run. A launch interrupted before its run id was saved
 retries under its saved launch key, so the control plane returns the run it
 already admitted instead of starting a second one. Summary holds run history.
-`/smithers` opens the Smithers tab: factory content only. Signed in to
-Smithers Cloud (`smthrs auth login`, or `SMITHERS_TOKEN` with
-`SMITHERS_API_ORIGIN`), it lists the repository's factory issues (the
-checkout's remote owner and name, or `SMITHERS_REPO`) under Needs you, Working
-and Done, headed by the app's History card numbers: landed of decided, reverts
-and the median issue→landed time, then the apps the directory's
-`.smithers/home.json` declares. It reads the stack again every 30 s while
-shown. Its connection row shows the signed-in username (or email); offline or
-unknown authentication stays distinct from signed out and never shows credentials.
-`/todo <title>` files a TODO for the factory (`POST …/mythical/todos`) and answers at once;
-the status line settles when Cloud answers. An unanswered filing keeps its request id, so
-the same `/todo` again returns the TODO already filed instead of filing twice.
+`/smithers` opens the Smithers tab in a directory with a Cloud repository
+(the checkout's remote owner and name, or `SMITHERS_REPO`) or apps. Its
+connection row shows the signed-in username (or email) from the existing CLI
+login (`smthrs auth login`, or `SMITHERS_TOKEN` with `SMITHERS_API_ORIGIN`),
+read again every 30 s while shown; offline or unknown authentication stays
+distinct from signed out and never shows credentials. Below it are the apps the
+directory's `.smithers/home.json` declares.
 
 Every turn runs with `SmithersPlugin` from `@smthrs/agent`: the system prompt
 names the key packages and `smthrs` verbs, and `smithers.guide` returns the

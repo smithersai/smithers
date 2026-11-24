@@ -11,7 +11,7 @@ import * as Smithers from "../src/smithers.ts"
 const connection = (
   status?: { logged_in: boolean; verified?: boolean; username?: string | null; email?: string | null }
 ) => {
-  const panel = Smithers.panel([], new Set(), undefined, status)
+  const panel = Smithers.panel([], new Set(), status)
   expect(Panels.decode(panel)).toEqual(panel)
   return panel.rows.find((row) => row.id === "cloud:identity")
 }
@@ -37,7 +37,7 @@ it("distinguishes unknown and offline from signed out, discarding unverified cac
 
 it("never renders extra credential fields from auth status", () => {
   const status = { logged_in: true, username: "will", token: "tok_identity_sentinel", access_token: "secret_sentinel" }
-  const panel = Smithers.panel([], new Set(), undefined, status)
+  const panel = Smithers.panel([], new Set(), status)
   expect(JSON.stringify(panel)).not.toContain(status.token)
   expect(JSON.stringify(panel)).not.toContain(status.access_token)
   expect(panel.rows[0]?.label).toBe("Connected · @will")
@@ -144,11 +144,11 @@ it("keeps invalid configuration unknown through the real authentication layer", 
   }
 })
 
-it("does not turn factory unavailability into a sign-in claim while authentication is uncertain or still valid", () => {
+it("makes no sign-in claim while authentication is uncertain or still valid", () => {
   for (const status of [undefined, { logged_in: true, verified: false }, { logged_in: true, username: "will" }]) {
-    const panel = Smithers.panel([], new Set(), "signed-out", status)
+    const panel = Smithers.panel([], new Set(), status)
     expect(Panels.decode(panel)).toEqual(panel)
     expect(panel.rows).toHaveLength(1)
-    expect(panel.rows.some((row) => row.id === "factory:sign-in")).toBe(false)
+    expect(panel.rows.some((row) => row.id === "cloud:sign-in")).toBe(false)
   }
 })

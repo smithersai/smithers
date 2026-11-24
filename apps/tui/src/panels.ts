@@ -38,13 +38,15 @@ export const Action = Schema.Union([
   Schema.Struct({ kind: Schema.Literal("open"), surface: short })
 ])
 export type Action = typeof Action.Type
+/** Detail blocks one row holds. */
+export const maxDetails = 40
 export const Row = Schema.Struct({
   id: short,
   label: short,
   status: Schema.optional(
     Schema.Literals(["running", "waiting", "queued", "parked", "done", "failed", "requested", "cancelled"])
   ),
-  details: Schema.Array(Block).check(Schema.isMaxLength(40)),
+  details: Schema.Array(Block).check(Schema.isMaxLength(maxDetails)),
   // A user selects an action; publishing a panel never executes its actions.
   action: Schema.optional(Schema.Union([
     Schema.Struct({ label: short, prompt: content }),
@@ -52,6 +54,19 @@ export const Row = Schema.Struct({
   ]))
 })
 export type Row = typeof Row.Type
+/**
+ * `row` with nothing to execute: its action removed, and `why` as its last
+ * detail while one fits. A session journal keeps a row this way when redaction
+ * would change the action's operands (a prompt, a nested flow input), so a
+ * restored view shows the row and says why choosing it does nothing.
+ */
+export const inert = (row: Row, why: string): Row => {
+  const { action: _action, ...rest } = row
+  return {
+    ...rest,
+    details: rest.details.length < maxDetails ? [...rest.details, { kind: "text", text: why }] : rest.details
+  }
+}
 export const Panel = Schema.Struct({
   id: short,
   title: short,

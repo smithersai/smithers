@@ -1,12 +1,14 @@
 // `ops/RedactFeed` on the Node host's durable engine over the compose Postgres: only after its barrier, every phase,
 // a role restored while a batch waits on its lock, the engine's retry of a failed batch, a resume by the next
 // incarnation after a crash, and the durable start: a confirmation starts the pass and its host finishes it with no
-// request after, and the host's alarm starts a barrier whose start was never acknowledged.
+// unrelated request. Repeating the command recovers an interrupted start.
 import { TestSchemas } from "@smthrs/database"
 import { Action, Interpreter } from "@smthrs/flow"
 import { Effect, Exit, Fiber, Layer, Metric } from "effect"
 import { SqlClient } from "effect/sql"
 import { beforeEach, expect, onTestFinished, test } from "vitest"
+import * as Command from "../../ops/feed-barrier/confirm.ts"
+import { CONFIRM_ROUTE } from "../../ops/feed-barrier/Route.ts"
 import * as TestDatabase from "../../db/TestDatabase.ts"
 import * as ExecutionHost from "../ExecutionHost.ts"
 import * as FeedLocks from "../FeedLocks.ts"
@@ -370,108 +372,92 @@ const hosts = async (db: Awaited<ReturnType<typeof database>>) => {
   return { starts, starter, count, run, drive, objects }
 }
 
-test(
-  "confirming a barrier starts its pass once; with no request and no look after it, the host's alarms finish it",
-  async () => {
-    await seed()
-    const db = await database()
-    const { starts, count, run, drive, objects } = await hosts(db)
-    const confirmed = await run(RedactFeed.confirm({ id: "b20", release: "abc123", by: "test" }))
-    expect(Exit.isSuccess(confirmed) && confirmed.value).toEqual({ outcome: "written" })
-    const first = RedactFeed.executionIdOf("b20")
-    expect(starts).toEqual([first])
-    expect(count("launched")).toBe(1)
-    expect(await query(`SELECT launched_at IS NOT NULL AS held, launch_token FROM feed_barriers WHERE id = 'b20'`))
-      .toEqual([{ held: true, launch_token: null }])
-    // Nothing but the pass's own objects' alarms from here: each round hands off to the next round's object.
-    expect(await drive("b20")).toBe(true)
-    expect(objects.size).toBeGreaterThan(1)
-    expect(starts).toEqual([first])
-    expect(await shown()).toEqual(EXPECTED)
-    // Confirming it again finds it, and starts nothing.
-    const again = await run(RedactFeed.confirm({ id: "b20", release: "abc123", by: "test" }))
-    expect(Exit.isSuccess(again) && again.value).toEqual({ outcome: "existing" })
-    expect(starts).toEqual([first])
-  },
-  120_000
-)
+/** The command's actual argument parsing, database connection and HTTP request targeting the production handler. */
+const commandFor = async (host: Awaited<ReturnType<typeof hosts>>, id: string) => {
+  const url = await runtime.runPromise(TestDatabase.serverUrl)
+  const schema = await runtime.runPromise(Effect.map(TestDatabase.Scratch, (scratch) => scratch.name))
+  url.searchParams.set("options", `-c search_path=${schema}`)
+  return async (using = host.starter, loseResponse = false) => {
+    const output: string[] = []
+    const code = await Command.run(["--by", "test", "--id", id, "--release", "abc123"],
+      { APP_DOMAIN: "app.example", DATABASE_URL: url.toString() },
+      { out: (line) => output.push(line), err: (line) => output.push(line) },
+      async (input, init) => {
+        const request = new Request(input, init)
+        expect(new URL(request.url).pathname).toBe(CONFIRM_ROUTE + id)
+        const result = await host.run(RedactFeed.confirm(request.method, new URL(request.url).pathname,
+          request.headers.get("authorization") ?? undefined), using)
+        if (loseResponse) throw new Error("lost acknowledgement")
+        return new Response(null, { status: Exit.isSuccess(result) ? result.value : 503 })
+      })
+    return { code, output }
+  }
+}
 
-test(
-  "a confirmation cut off before its start is repeated safely, or started by the host's next alarm, to the same end",
-  async () => {
-    await seed()
-    const db = await database()
-    const { starts, count, run, drive } = await hosts(db)
-    const unreachable = Flows.FlowStarter.of({
-      start: () => Effect.fail(new Flows.StartUnavailable({ errorCode: "unreachable" }))
-    })
-    // The row commits; the host never takes the start. The confirmation fails, and nothing claims the barrier.
-    const cut = await run(RedactFeed.confirm({ id: "b21", release: "abc123", by: "test" }), unreachable)
-    expect(Exit.isFailure(cut)).toBe(true)
-    expect(count("not_started")).toBe(1)
-    expect(await query(`SELECT launched_at, launch_token, completed_at FROM feed_barriers WHERE id = 'b21'`)).toEqual([
-      { launched_at: null, launch_token: null, completed_at: null }
-    ])
-    // A host's alarm that can't reach the object either fails nothing and leaves it for the next.
-    const missed = await run(RedactFeed.dispatch, unreachable)
-    expect(Exit.isSuccess(missed) && missed.value).toBe(0)
-    expect(starts).toEqual([])
-    // The next alarm starts it: no request, no stall to wait out.
-    const dispatched = await run(RedactFeed.dispatch)
-    expect(Exit.isSuccess(dispatched) && dispatched.value).toBe(1)
-    const first = RedactFeed.executionIdOf("b21")
-    expect(starts).toEqual([first])
-    // Acknowledged: later alarms start nothing, and a repeated confirmation finds it held.
-    const later = await run(RedactFeed.dispatch)
-    expect(Exit.isSuccess(later) && later.value).toBe(0)
-    const repeated = await run(RedactFeed.confirm({ id: "b21", release: "abc123", by: "test" }))
-    expect(Exit.isSuccess(repeated) && repeated.value).toEqual({ outcome: "existing" })
-    expect(starts).toEqual([first])
-    expect(await drive("b21")).toBe(true)
-    expect(await shown()).toEqual(EXPECTED)
-  },
-  120_000
-)
+test("the production confirmation command starts one pass and its own host alarms finish it", async () => {
+  await seed()
+  const host = await hosts(await database())
+  const command = await commandFor(host, "b20")
+  const first = await command()
+  expect(first.code).toBe(0)
+  expect(JSON.parse(first.output[0]!)).toMatchObject({ outcome: "written", id: "b20", confirmedBy: "test" })
+  expect(host.starts).toEqual([RedactFeed.executionIdOf("b20")])
+  expect(await host.drive("b20")).toBe(true)
+  expect(await shown()).toEqual(EXPECTED)
+  const repeated = await command()
+  expect(repeated.code).toBe(0)
+  expect(JSON.parse(repeated.output[0]!)).toMatchObject({ outcome: "existing", id: "b20" })
+  expect(host.starts).toEqual([RedactFeed.executionIdOf("b20")])
+}, 120_000)
 
-test(
-  "a start repeated while its host holds the pass is the same pass; a completed barrier is never started",
-  async () => {
-    await seed()
-    await barrier("b22")
-    await barrier("b23")
-    await query(`UPDATE feed_barriers SET completed_at = now() WHERE id = 'b23'`)
-    const db = await database()
-    const { starts, run, drive, objects } = await hosts(db)
-    // Two hosts' alarms that both read the barrier before either acknowledged it: each starts the same execution.
-    expect(Exit.isSuccess(await run(RedactFeed.start("b22")))).toBe(true)
-    const [acknowledged] = await query(`SELECT launched_at FROM feed_barriers WHERE id = 'b22'`)
-    expect(Exit.isSuccess(await run(RedactFeed.start("b22")))).toBe(true)
-    const first = RedactFeed.executionIdOf("b22")
-    expect(starts).toEqual([first, first])
-    expect([...objects.keys()]).toEqual([first])
-    // The acknowledgement stands as first written.
-    expect(await query(`SELECT launched_at FROM feed_barriers WHERE id = 'b22'`)).toEqual([acknowledged])
-    const dispatched = await run(RedactFeed.dispatch)
-    expect(Exit.isSuccess(dispatched) && dispatched.value).toBe(0)
-    expect(await drive("b22")).toBe(true)
-    expect(await shown()).toEqual(EXPECTED)
-    expect(starts).toEqual([first, first])
-  },
-  120_000
-)
+test("only the confirmed barrier can start and retrying the command recovers a failed start or lost response", async () => {
+  await seed()
+  const host = await hosts(await database())
+  const command = await commandFor(host, "b21")
+  const unreachable = Flows.FlowStarter.of({
+    start: () => Effect.fail(new Flows.StartUnavailable({ errorCode: "unreachable" }))
+  })
+  expect((await command(unreachable)).code).toBe(1)
+  expect(host.count("not_started")).toBe(1)
+  const [open] = await query(`SELECT launch_token, launched_at FROM feed_barriers WHERE id = 'b21'`)
+  expect(open!.launched_at).toBeNull()
+  const token = `Bearer ${String(open!.launch_token)}`
+  for (const [method, id, credential, expected] of [
+    ["GET", "b21", token, 405], ["POST", "b21", undefined, 403], ["POST", "b21", `Bearer ${crypto.randomUUID()}`, 403],
+    ["POST", "another-barrier", token, 403], ["POST", "../b21", token, 403],
+  ] as const) {
+    const refused = await host.run(RedactFeed.confirm(method, CONFIRM_ROUTE + id, credential))
+    expect(Exit.isSuccess(refused) && refused.value).toBe(expected)
+  }
+  expect(host.starts).toEqual([])
+  expect((await command(host.starter, true)).code).toBe(1)
+  expect(host.starts).toEqual([RedactFeed.executionIdOf("b21")])
+  expect((await command()).code).toBe(0)
+  expect(host.starts).toEqual([RedactFeed.executionIdOf("b21")])
+  expect(await host.drive("b21")).toBe(true)
+  expect(await shown()).toEqual(EXPECTED)
+}, 120_000)
 
-test("the execution host's alarm composes the dispatch under `launcher`, and it holds nothing between alarms", async () => {
-  await barrier("b24")
-  const db = await database()
-  const { starts, run } = await hosts(db)
-  const afterAlarm = await Effect.runPromise(RedactFeed.launcher)
-  expect(Exit.isSuccess(await run(afterAlarm))).toBe(true)
-  expect(starts).toEqual([RedactFeed.executionIdOf("b24")])
-  // The very next alarm looks again, with no window to wait out: a barrier confirmed in between is started at once.
-  await barrier("b25")
-  expect(Exit.isSuccess(await run(afterAlarm))).toBe(true)
-  expect(starts).toEqual([RedactFeed.executionIdOf("b24"), RedactFeed.executionIdOf("b25")])
-})
+test("retry after the host accepted the start but its database receipt failed reuses the same execution", async () => {
+  const host = await hosts(await database())
+  const command = await commandFor(host, "b22")
+  await query(`CREATE FUNCTION refuse_launch() RETURNS trigger LANGUAGE plpgsql AS $$
+    BEGIN RAISE EXCEPTION 'launch receipt unavailable'; END $$`)
+  await query(`CREATE TRIGGER refuse_launch BEFORE UPDATE OF launched_at ON feed_barriers
+    FOR EACH ROW EXECUTE FUNCTION refuse_launch()`)
+  try {
+    expect((await command()).code).toBe(1)
+    expect(await query("SELECT launched_at FROM feed_barriers WHERE id = 'b22'")).toEqual([{ launched_at: null }])
+  } finally {
+    await query("DROP TRIGGER refuse_launch ON feed_barriers")
+    await query("DROP FUNCTION refuse_launch()")
+  }
+  expect((await command()).code).toBe(0)
+  const id = RedactFeed.executionIdOf("b22")
+  expect(host.starts).toEqual([id, id])
+  expect([...host.objects.keys()]).toEqual([id])
+  expect(await host.drive("b22")).toBe(true)
+}, 120_000)
 
 test("a failed successor receipt keeps the predecessor retryable before it settles", async () => {
   await barrier("handoff-fault")

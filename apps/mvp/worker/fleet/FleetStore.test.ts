@@ -1,27 +1,41 @@
 import { Effect, Exit, Layer, Option } from "effect"
 import { FetchHttpClient, HttpClient, HttpEffect, UrlParams } from "effect/http"
 import { SqlClient } from "effect/sql"
-import { beforeEach, describe, expect, test } from "vitest"
+import { beforeAll, beforeEach, describe, expect, test } from "vitest"
+import scrubFleetTranscripts from "../../db/migrations/0131_scrub_fleet_transcripts.ts"
 import {
+  ACTIVE_SESSIONS_WHERE,
   FLEET_ACCOUNTS_SHAPE_ROUTE,
   FLEET_NODES_SHAPE_ROUTE,
   FLEET_SESSIONS_SHAPE_ROUTE,
+  PROVIDER_ACCOUNT_COLUMNS,
 } from "../../src/features/fleet/globalContract.ts"
+import { FLEET_REPORT_MAX_BYTES, MIN_TRANSCRIPT_ENTRIES, planSessionsReport } from "../../src/features/fleet/snapshotBudget.ts"
+import { MCP_MAX_REQUEST_BYTES, MCP_ROUTE } from "../../src/features/mcp/contract.ts"
 import { testFile } from "../test/harness.ts"
 import * as Actor from "../Actor.ts"
+import * as McpApi from "../mcp/Api.ts"
+import { McpAuthService, type McpPrincipal, McpToolRegistry } from "../mcp/Contract.ts"
+import { makeLiveToolDeps, makeMcpToolRegistry } from "../mcp/Tools.ts"
 import * as FleetMcpTools from "./FleetMcpTools.vibe"
 import * as FleetShapes from "./FleetShapes.vibe"
 import * as FleetStore from "./FleetStore.vibe"
 
 const runtime = testFile("fleet_store")
 
+// Migration 0131 creates the snapshot staging table. It can run again on a schema that already has it.
+beforeAll(() => runtime.runPromise(scrubFleetTranscripts))
+
 beforeEach(() =>
   runtime.runPromise(
     Effect.flatMap(SqlClient.SqlClient, (sql) =>
-      sql`TRUNCATE host_nodes, observed_sessions, provider_accounts, sandbox_generations CASCADE`
+      sql`TRUNCATE host_nodes, observed_sessions, provider_accounts, sandbox_generations, fleet_session_snapshot_keys CASCADE`
     ),
   )
 )
+
+/** Shaped as `ops/machine-token/issue.ts` issues one (`smm_` and 43 base64url characters), and never issued. */
+const MACHINE_TOKEN = `smm_${"Ab3-_xY9".repeat(6).slice(0, 43)}`
 
 describe("FleetStore (real Postgres)", () => {
   test("upserts host nodes, reconciles sessions with OBS-5 scrubbing, stores accounts, and projects open Cloudflare BranchSandboxes", async () => {
@@ -238,14 +252,23 @@ describe("FleetShapes authorization", () => {
   const ROUTES = [FLEET_NODES_SHAPE_ROUTE, FLEET_SESSIONS_SHAPE_ROUTE, FLEET_ACCOUNTS_SHAPE_ROUTE]
   const admin: Actor.Actor = { subject: { kind: "person", id: "p-maya" }, role: "admin", login: "maya" }
   /** What Electric was asked, by table: a refused request never reaches it. */
-  const runShape = async (route: string, actor: Option.Option<Actor.Actor>, admins?: ReadonlySet<string>) => {
+  const runShape = async (
+    route: string,
+    actor: Option.Option<Actor.Actor>,
+    admins?: ReadonlySet<string>,
+    sent: Array<Record<string, string | ReadonlyArray<string>>> = [],
+  ) => {
     const asked: Array<string> = []
     // The stack's own Electric answers; the client only records which table each request names.
     const electric = Layer.effect(
       HttpClient.HttpClient,
       Effect.map(HttpClient.HttpClient, (client) =>
         HttpClient.tapRequest(client, (request) =>
-          Effect.sync(() => void asked.push(String(UrlParams.toRecord(request.urlParams)["table"] ?? ""))))),
+          Effect.sync(() => {
+            const params = UrlParams.toRecord(request.urlParams)
+            sent.push(params)
+            asked.push(String(params["table"] ?? ""))
+          }))),
     ).pipe(Layer.provide(FetchHttpClient.layer))
     const shapes = await runtime.runPromise(FleetShapes.make(admins))
     const handler = HttpEffect.toWebHandler(
@@ -283,6 +306,40 @@ describe("FleetShapes authorization", () => {
       const delegated: Actor.Actor = { ...admin, act: { kind, id: "run-1", root: "run-1", chain: ["todo/Run"], ceiling: [["repo:read"]] } }
       expect(await runShape(route, Option.some(delegated), ADMINS), route).toEqual({ status: 403, asked: [] })
     }
+  })
+
+  // R2-Astra-D4-015, R2-Fable-D4-011: an ended session, and its transcript, is never replicated to a browser.
+  test("the session shape asks Electric only for sessions that have not ended", async () => {
+    const sent: Array<Record<string, string | ReadonlyArray<string>>> = []
+    await runShape(FLEET_SESSIONS_SHAPE_ROUTE, Option.some(admin), ADMINS, sent)
+    expect(ACTIVE_SESSIONS_WHERE).toBe("status <> 'ended'")
+    expect(sent).toHaveLength(1)
+    expect(sent[0]).toMatchObject({ table: "observed_sessions", where: "status <> 'ended'" })
+    // The other fleet shapes are whole tables.
+    for (const route of [FLEET_NODES_SHAPE_ROUTE, FLEET_ACCOUNTS_SHAPE_ROUTE]) {
+      const other: Array<Record<string, string | ReadonlyArray<string>>> = []
+      await runShape(route, Option.some(admin), ADMINS, other)
+      expect(other[0]?.["where"], route).toBeUndefined()
+    }
+  })
+
+  // R2-Astra-D4-004: a legacy row's disallowed grant fields reach neither Electric nor the overview.
+  test("a legacy grants_json row is outside the account shape's columns and is read through the allowlist", async () => {
+    await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`
+      INSERT INTO provider_accounts (account_key, provider, label, status, grants_json)
+      VALUES ('claude:legacy', 'claude', 'legacy', 'ready', ${JSON.stringify({ policy: "kept", leak: { token: "sentinel-legacy-grant" } })}::jsonb)
+    `))
+    const sent: Array<Record<string, string | ReadonlyArray<string>>> = []
+    await runShape(FLEET_ACCOUNTS_SHAPE_ROUTE, Option.some(admin), ADMINS, sent)
+    expect(sent).toHaveLength(1)
+    const columns = String(sent[0]?.["columns"]).split(",")
+    expect(columns).toEqual([...PROVIDER_ACCOUNT_COLUMNS])
+    expect(columns).not.toContain("grants_json")
+    expect(columns).toContain("account_key")
+    const overview = await runtime.runPromise(FleetStore.readOverview(false))
+    expect(overview.accounts).toHaveLength(1)
+    expect(overview.accounts[0]).toMatchObject({ accountKey: "claude:legacy", grantsJson: { policy: "kept" } })
+    expect(JSON.stringify(overview)).not.toContain("sentinel")
   })
 })
 
@@ -473,6 +530,135 @@ describe("FleetStore reports commit whole and keep the newest observation", () =
     expect(everything).not.toContain("sentinel")
     expect(everything).not.toContain("ghp_")
   })
+
+  // R2-Astra-D4-018: only a heartbeat that states a count changes it.
+  test("a heartbeat that omits activeSessions keeps the host's count, and an explicit zero replaces it", async () => {
+    const count = () => rows(`SELECT active_sessions FROM host_nodes WHERE node_id = 'node-1'`)
+    await runtime.runPromise(host("node-1"))
+    // A new host that states no count has none.
+    expect(await count()).toEqual([{ active_sessions: 0 }])
+    await runtime.runPromise(FleetStore.reportSessions({ nodeId: "node-1", sessions: [session("node-1:a"), session("node-1:b")] }))
+    expect(await count()).toEqual([{ active_sessions: 2 }])
+    await runtime.runPromise(host("node-1"))
+    expect(await count()).toEqual([{ active_sessions: 2 }])
+    await runtime.runPromise(FleetStore.upsertHostNode({ nodeId: "node-1", name: "node-1", kind: "macbook", activeSessions: 0 }))
+    expect(await count()).toEqual([{ active_sessions: 0 }])
+    await runtime.runPromise(FleetStore.upsertHostNode({ nodeId: "node-1", name: "node-1", kind: "macbook", activeSessions: 5 }))
+    expect(await count()).toEqual([{ active_sessions: 5 }])
+  })
+
+  // R2-Fable-D4-011: the table keeps recent history, not every session the fleet ever ran.
+  test("the next report deletes sessions that ended more than the retention ago and keeps the rest", async () => {
+    await runtime.runPromise(host("node-1"))
+    await runtime.runPromise(FleetStore.reportSessions({
+      nodeId: "node-1",
+      sessions: [session("node-1:old"), session("node-1:recent"), session("node-1:live"), session("node-1:undated", { status: "ended" })],
+    }))
+    await runtime.runPromise(FleetStore.reportSessions({ nodeId: "node-1", replaceActive: true, sessions: [session("node-1:live")] }))
+    await rows(`UPDATE observed_sessions SET ended_at = now() - interval '${FleetStore.ENDED_SESSION_RETENTION_DAYS} days 1 hour'
+      WHERE session_key = 'node-1:old'`)
+    await rows(`UPDATE observed_sessions SET ended_at = now() - interval '${FleetStore.ENDED_SESSION_RETENTION_DAYS - 1} days'
+      WHERE session_key = 'node-1:recent'`)
+    // An active session is kept however long ago it was last named.
+    await rows(`UPDATE observed_sessions SET updated_at = now() - interval '90 days' WHERE session_key = 'node-1:live'`)
+    // Another host's report prunes too: a host that stopped reporting never would.
+    await runtime.runPromise(FleetStore.reportSessions({ nodeId: "node-2", sessions: [session("node-2:a")] }))
+    expect(await rows(`SELECT session_key, status FROM observed_sessions ORDER BY session_key`)).toEqual([
+      { session_key: "node-1:live", status: "working" },
+      { session_key: "node-1:recent", status: "ended" },
+      { session_key: "node-1:undated", status: "ended" },
+      { session_key: "node-2:a", status: "working" },
+    ])
+    // An ended session with no end time goes once nothing has named it for the retention.
+    await rows(`UPDATE observed_sessions SET updated_at = now() - interval '${FleetStore.ENDED_SESSION_RETENTION_DAYS} days 1 hour'
+      WHERE session_key = 'node-1:undated'`)
+    await runtime.runPromise(FleetStore.reportSessions({ nodeId: "node-2", sessions: [] }))
+    expect((await rows(`SELECT session_key FROM observed_sessions ORDER BY session_key`)).map((row) => row["session_key"]))
+      .toEqual(["node-1:live", "node-1:recent", "node-2:a"])
+  })
+
+  // R2-Fable-D4-012: a reporter whose clock runs ahead cannot shut out later observations.
+  test("a checkedAt a year ahead is stored as now, so the next report without one applies", async () => {
+    const account = (label: string, more: Partial<FleetStore.ProviderAccountInput> = {}): FleetStore.ProviderAccountInput => ({
+      accountKey: "claude:ahead",
+      provider: "claude",
+      label,
+      status: "ready",
+      ...more,
+    })
+    const ahead = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString()
+    expect(await runtime.runPromise(FleetStore.reportAccounts({ sourceNode: "node-1", accounts: [account("ahead", { checkedAt: ahead })] })))
+      .toMatchObject({ applied: 1 })
+    expect(await rows(`SELECT checked_at <= now() AS clamped FROM provider_accounts`)).toEqual([{ clamped: true }])
+    expect(await runtime.runPromise(FleetStore.reportAccounts({ sourceNode: "node-1", accounts: [account("later")] })))
+      .toMatchObject({ applied: 1 })
+    expect(await rows(`SELECT label FROM provider_accounts`)).toEqual([{ label: "later" }])
+    // A past observation is still stored as its reporter dated it.
+    await runtime.runPromise(FleetStore.reportAccounts({
+      sourceNode: "node-1",
+      accounts: [{ ...account("past"), accountKey: "claude:past", checkedAt: "2026-01-02T03:04:05Z" }],
+    }))
+    expect(await rows(`SELECT to_char(checked_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS at
+      FROM provider_accounts WHERE account_key = 'claude:past'`)).toEqual([{ at: "2026-01-02T03:04:05Z" }])
+  })
+
+  // R2-Astra-D4-001: a machine token never reaches a stored row, the overview or a device, whenever the row was written.
+  test("a Smithers machine token is redacted at ingestion, in the overview, and in a row stored before the rule", async () => {
+    await runtime.runPromise(host("node-1"))
+    await runtime.runPromise(FleetStore.reportSessions({
+      nodeId: "node-1",
+      sessions: [session("node-1:leaky", {
+        title: `Deploy with ${MACHINE_TOKEN}`,
+        summary: `export SMITHERS=${MACHINE_TOKEN} then push`,
+        lane: `lane/${MACHINE_TOKEN}`,
+        cwd: `/tmp/${MACHINE_TOKEN}/work`,
+        transcriptJson: [
+          { ts: "2026-11-23T10:00:00Z", role: "user", label: null, text: `use ${MACHINE_TOKEN} for the issue write` },
+          { ts: "2026-11-23T10:00:01Z", role: "tool", label: `Bash ${MACHINE_TOKEN}`, text: `curl -H "Authorization: Bearer ${MACHINE_TOKEN}" https://smithers.test` },
+          { ts: "2026-11-23T10:00:02Z", role: "assistant", label: null, text: `Done. Token:${MACHINE_TOKEN}.` },
+        ],
+      })],
+    }))
+    const storedRows = await rows(`SELECT title, summary, lane, cwd, transcript_json::text AS transcript FROM observed_sessions`)
+    expect(storedRows).toHaveLength(1)
+    expect(JSON.stringify(storedRows)).not.toContain("smm_")
+    expect(storedRows[0]?.["title"]).toBe("Deploy with [redacted]")
+    const storedTranscript = JSON.parse(String(storedRows[0]?.["transcript"])) as ReadonlyArray<Record<string, unknown>>
+    expect(storedTranscript).toHaveLength(3)
+    expect(storedTranscript[0]?.["text"]).toBe("use [redacted] for the issue write")
+    expect(storedTranscript[1]?.["label"]).toBe("Bash [redacted]")
+
+    // A row as a worker before the rule stored it: the token passed the old pattern untouched.
+    const legacyTranscript = JSON.stringify([
+      { ts: null, role: "tool", label: `Bash ${MACHINE_TOKEN}`, text: `curl -H "x-smithers: ${MACHINE_TOKEN}" https://smithers.test` },
+      { ts: null, role: "assistant", label: null, text: "kept text" },
+    ])
+    await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`
+      INSERT INTO observed_sessions (session_key, node_id, harness, status, title, summary, cwd, transcript_json)
+      VALUES ('node-old:claude:legacy', 'node-old', 'claude', 'working', ${`Legacy ${MACHINE_TOKEN}`}, ${`ran ${MACHINE_TOKEN}`},
+        ${`/tmp/${MACHINE_TOKEN}`}, ${legacyTranscript}::jsonb)
+    `))
+    expect(JSON.stringify(await rows(`SELECT title, transcript_json::text AS transcript FROM observed_sessions WHERE session_key = 'node-old:claude:legacy'`)))
+      .toContain(MACHINE_TOKEN)
+    const overview = await runtime.runPromise(FleetStore.readOverview(true))
+    expect(overview.sessions).toHaveLength(2)
+    expect(JSON.stringify(overview)).not.toContain("smm_")
+    const legacy = overview.sessions.find((row: Record<string, unknown>) => row["sessionKey"] === "node-old:claude:legacy") as Record<string, unknown>
+    expect(legacy["title"]).toBe("Legacy [redacted]")
+    expect(legacy["transcriptJson"]).toEqual([
+      { ts: null, role: "tool", label: "Bash [redacted]", text: 'curl -H "x-smithers: [redacted]" https://smithers.test' },
+      { ts: null, role: "assistant", label: null, text: "kept text" },
+    ])
+
+    // Electric serves the column as stored, so migration 0131 rewrites what is stored.
+    await runtime.runPromise(scrubFleetTranscripts)
+    const migrated = await rows(`SELECT session_key, title, summary, cwd, transcript_json FROM observed_sessions ORDER BY session_key`)
+    expect(JSON.stringify(migrated)).not.toContain("smm_")
+    expect(migrated).toEqual([
+      { session_key: "node-1:leaky", title: "Deploy with [redacted]", summary: expect.any(String), cwd: expect.any(String), transcript_json: null },
+      { session_key: "node-old:claude:legacy", title: "Legacy [redacted]", summary: "ran [redacted]", cwd: "/tmp/[redacted]", transcript_json: null },
+    ])
+  })
 })
 
 // R1-Astra-D4-001: a refused fleet tool call changes no fleet row, with Postgres there to be changed.
@@ -514,5 +700,235 @@ describe("FleetMcpTools against Postgres", () => {
       expect(Exit.isSuccess(await call(name, args, null)), name).toBe(true)
     }
     expect(await counts()).toEqual([{ nodes: 1, sessions: 1, accounts: 1 }])
+  })
+
+  /** A call's outcome: `ok`, or the code the tool refused it with. */
+  const codeOf = (exit: Exit.Exit<unknown, unknown>) => {
+    if (Exit.isSuccess(exit)) return "ok"
+    const error = Option.getOrUndefined(Exit.findErrorOption(exit))
+    return typeof error === "object" && error !== null && "code" in error ? String(error.code) : "died"
+  }
+
+  // R2-Astra-D4-001: the read-only overview tool returns no machine token from a row stored before the rule.
+  test("fleet_overview returns a pre-upgrade transcript without its machine token", async () => {
+    await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`
+      INSERT INTO observed_sessions (session_key, node_id, harness, status, title, transcript_json)
+      VALUES ('node-old:claude:legacy', 'node-old', 'claude', 'working', ${`Legacy ${MACHINE_TOKEN}`},
+        ${JSON.stringify([{ ts: null, role: "user", label: null, text: `token ${MACHINE_TOKEN}` }])}::jsonb)
+    `))
+    const exit = await call("fleet_overview", {}, null)
+    if (!Exit.isSuccess(exit)) throw new Error("fleet_overview failed")
+    const text = exit.value.content.map((block) => block.type === "text" ? block.text : "").join("")
+    expect(text).toContain("node-old:claude:legacy")
+    expect(text).toContain("token [redacted]")
+    expect(text).not.toContain("smm_")
+  })
+
+  // R2-Astra-D4-019: a count Postgres cannot hold is an invalid argument, not a database outage.
+  test("a count of 2,147,483,647 is stored and 2,147,483,648 is refused as invalid_params before SQL", async () => {
+    const accounts = (activeSessions: number) => ({
+      sourceNode: "node-1",
+      accounts: [
+        { accountKey: "claude:first", provider: "claude", label: "first", status: "ready" },
+        { accountKey: "claude:edge", provider: "claude", label: "edge", status: "ready", activeSessions },
+      ],
+    })
+    expect(codeOf(await call("fleet_accounts_report", accounts(2_147_483_648), null))).toBe("invalid_params")
+    expect(await counts()).toEqual([{ nodes: 0, sessions: 0, accounts: 0 }])
+    expect(codeOf(await call("fleet_accounts_report", accounts(2_147_483_647), null))).toBe("ok")
+    expect(await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) =>
+      sql`SELECT active_sessions FROM provider_accounts WHERE account_key = 'claude:edge'`))).toEqual([{ active_sessions: 2_147_483_647 }])
+    const heartbeat = (more: Record<string, number>) => ({ nodeId: "node-1", name: "Node one", kind: "macbook", ...more })
+    for (const field of ["activeSessions", "runnerCapacity", "cpuCores"]) {
+      expect(codeOf(await call("fleet_heartbeat", heartbeat({ [field]: 2_147_483_648 }), null)), field).toBe("invalid_params")
+    }
+    expect(codeOf(await call("fleet_sessions_report", {
+      nodeId: "node-1",
+      sessions: [{ sessionKey: "node-1:s1", harness: "claude", status: "working", pid: 2_147_483_648 }],
+    }, null))).toBe("invalid_params")
+    expect(await counts()).toEqual([{ nodes: 0, sessions: 0, accounts: 2 }])
+    expect(codeOf(await call("fleet_heartbeat", heartbeat({ activeSessions: 2_147_483_647, runnerCapacity: 2_147_483_647, cpuCores: 2_147_483_647 }), null))).toBe("ok")
+    expect(codeOf(await call("fleet_sessions_report", {
+      nodeId: "node-1",
+      sessions: [{ sessionKey: "node-1:s1", harness: "claude", status: "working", pid: 2_147_483_647 }],
+    }, null))).toBe("ok")
+    // A chunk index outside its snapshot is refused the same way.
+    expect(codeOf(await call("fleet_sessions_report", { nodeId: "node-1", replaceActive: true, snapshotId: "s", chunkIndex: 2, totalChunks: 2, sessions: [] }, null)))
+      .toBe("invalid_params")
+  })
+})
+
+// R2-Astra-D4-011: a busy host's replacement snapshot crosses MCP's real HTTP route (worker/mcp/Api.ts), with its
+// 262,144-byte bound, into the real tool registry and Postgres.
+describe("fleet replacement snapshots through the MCP HTTP boundary", () => {
+  const ADMINS: ReadonlySet<string> = new Set(["maya"])
+  const principal: McpPrincipal = {
+    tokenId: "tok-1",
+    personId: "p-1",
+    login: "maya",
+    clientName: "smithers-node",
+    repoScope: null,
+    scopes: ["mcp:read", "mcp:write"],
+    actor: { subject: { kind: "person", id: "p-1" }, role: null, login: "maya", act: { kind: "agent", id: "mcp:tok-1" } },
+  }
+  const rows = (query: string) =>
+    runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) => sql.unsafe(query))) as Promise<ReadonlyArray<Record<string, unknown>>>
+
+  /** The MCP route over this file's Postgres: only the bearer check is stood in for. */
+  const openMcp = async () => {
+    const sql = await runtime.runPromise(Effect.map(SqlClient.SqlClient, (client) => client))
+    const auth = McpAuthService.of({
+      authenticate: () => Effect.succeed({ _tag: "Authenticated", principal }),
+      resolveRepoAccess: () => Effect.die("unused"),
+      requireWriteAccess: () => Effect.die("unused"),
+      listTokens: () => Effect.die("unused"),
+      revokeToken: () => Effect.die("unused"),
+      handleOAuthOrTokenRoute: () => Effect.die("unused"),
+    })
+    const registry = await Effect.runPromise(
+      makeMcpToolRegistry(makeLiveToolDeps({ fleet: { database: Layer.succeed(SqlClient.SqlClient, sql), admins: ADMINS } }))
+        .pipe(Effect.provideService(McpAuthService, auth)),
+    )
+    const handler = HttpEffect.toWebHandler(
+      McpApi.make().fetch.pipe(Effect.provideService(McpAuthService, auth), Effect.provideService(McpToolRegistry, registry)),
+    )
+    let id = 0
+    /** One `tools/call` request: its body's bytes, the HTTP status, and the tool's own answer. */
+    return async (name: string, args: unknown) => {
+      id += 1
+      const body = JSON.stringify({ jsonrpc: "2.0", id, method: "tools/call", params: { name, arguments: args } })
+      const response = await handler(new Request(`https://smithers.test${MCP_ROUTE}`, {
+        method: "POST",
+        headers: { "content-type": "application/json", accept: "application/json, text/event-stream", authorization: `Bearer sma_${"ab".repeat(32)}` },
+        body,
+      }))
+      const bytes = new TextEncoder().encode(body).length
+      if (response.status !== 200) return { bytes, status: response.status, isError: true, answer: undefined }
+      const reply = await response.json() as { readonly result?: { readonly isError?: boolean; readonly content?: ReadonlyArray<{ readonly text: string }> } }
+      const text = reply.result?.content?.[0]?.text
+      return {
+        bytes,
+        status: response.status,
+        isError: reply.result === undefined || reply.result.isError === true,
+        answer: text === undefined ? undefined : JSON.parse(text) as Record<string, unknown>,
+      }
+    }
+  }
+
+  /** The finding's host: 40 sessions, each with 20 transcript entries of 360 characters. */
+  const KEYS = Array.from({ length: 40 }, (_, index) => `node-big:claude:session-${String(index).padStart(2, "0")}`)
+  const snapshot = KEYS.map((sessionKey, index) => ({
+    sessionKey,
+    harness: "claude",
+    status: "working",
+    model: "claude-opus-4-7",
+    title: `Session ${index}`,
+    summary: `Working on lane ${index}`,
+    cwd: `/Users/dev/lanes/lane-${index}`,
+    transcriptJson: Array.from({ length: 20 }, (_unused, entry) => ({
+      ts: `2026-11-23T10:${String(entry).padStart(2, "0")}:00.000Z`,
+      role: entry % 2 === 0 ? "assistant" : "tool",
+      label: entry % 2 === 0 ? null : "Bash",
+      text: `session ${index} entry ${entry} `.padEnd(360, "ran the fleet suite and it passed "),
+    })),
+  }))
+  const active = async () =>
+    (await rows(`SELECT session_key FROM observed_sessions WHERE status <> 'ended' ORDER BY session_key`)).map((row) => row["session_key"])
+  const ended = async () =>
+    (await rows(`SELECT session_key FROM observed_sessions WHERE status = 'ended' ORDER BY session_key`)).map((row) => row["session_key"])
+
+  test("a 40-session snapshot fits one request once trimmed, and a chunked one ends nothing before its final chunk", async () => {
+    const post = await openMcp()
+    expect(FLEET_REPORT_MAX_BYTES).toBeLessThan(MCP_MAX_REQUEST_BYTES)
+    expect(MCP_MAX_REQUEST_BYTES).toBe(262_144)
+    expect((await post("fleet_heartbeat", { nodeId: "node-big", name: "Busy host", kind: "bare-metal", activeSessions: 41 })).isError).toBe(false)
+    // The host already runs the 40 sessions and one more that the snapshot will not name.
+    const before = await post("fleet_sessions_report", {
+      nodeId: "node-big",
+      sessions: [...KEYS, "node-big:claude:stale"].map((sessionKey) => ({ sessionKey, harness: "claude", status: "working" })),
+    })
+    expect(before.answer).toEqual({ nodeId: "node-big", reported: 41, active: 41 })
+
+    // The snapshot as the daemon sent it: refused whole by the route, so nothing changes.
+    const whole = await post("fleet_sessions_report", { nodeId: "node-big", replaceActive: true, sessions: snapshot })
+    expect(whole.bytes).toBeGreaterThan(MCP_MAX_REQUEST_BYTES)
+    expect(whole.status).toBe(413)
+    expect(await ended()).toEqual([])
+
+    // Trimmed to its newest transcript entries, it is one ordinary replacement request.
+    const single = planSessionsReport({ nodeId: "node-big", sessions: snapshot, snapshotId: "snapshot-1" })
+    expect(single).toHaveLength(1)
+    expect(single[0]?.snapshotId).toBeUndefined()
+    expect(single[0]?.sessions.map((session) => session.sessionKey)).toEqual(KEYS)
+    const kept = single[0]?.sessions.map((session) => session.transcriptJson.length) ?? []
+    expect(Math.min(...kept)).toBeGreaterThanOrEqual(MIN_TRANSCRIPT_ENTRIES)
+    // The newest entries are the ones kept.
+    expect(single[0]?.sessions[0]?.transcriptJson.at(-1)).toEqual(snapshot[0]?.transcriptJson.at(-1))
+    const sentOnce = await post("fleet_sessions_report", single[0])
+    expect(sentOnce.bytes).toBeLessThanOrEqual(MCP_MAX_REQUEST_BYTES)
+    expect(sentOnce.bytes).toBeLessThanOrEqual(FLEET_REPORT_MAX_BYTES + 1_024)
+    expect(sentOnce.answer).toEqual({ nodeId: "node-big", reported: 40, active: 40 })
+    expect(await active()).toEqual(KEYS)
+    expect(await ended()).toEqual(["node-big:claude:stale"])
+    expect(await rows(`SELECT count(*)::int AS stored FROM observed_sessions WHERE jsonb_array_length(transcript_json) = ${kept[0] ?? -1}`))
+      .toEqual([{ stored: 40 }])
+
+    // The stale session runs again, and the same snapshot is sent under a budget only chunks can meet.
+    await post("fleet_sessions_report", { nodeId: "node-big", sessions: [{ sessionKey: "node-big:claude:stale", harness: "claude", status: "working" }] })
+    expect(await ended()).toEqual([])
+    const chunks = planSessionsReport({ nodeId: "node-big", sessions: snapshot, snapshotId: "snapshot-2", maxBytes: 48_000 })
+    expect(chunks.length).toBeGreaterThan(1)
+    expect(chunks.flatMap((chunk) => chunk.sessions.map((session) => session.sessionKey))).toEqual(KEYS)
+    expect(chunks.map((chunk) => chunk.final)).toEqual([...chunks.slice(1).map(() => false), true])
+    for (const chunk of chunks) {
+      const sent = await post("fleet_sessions_report", chunk)
+      expect(sent.bytes).toBeLessThanOrEqual(48_000 + 1_024)
+      expect(sent.bytes).toBeLessThanOrEqual(MCP_MAX_REQUEST_BYTES)
+      expect(sent.isError).toBe(false)
+      expect(sent.answer).toMatchObject({ snapshotId: "snapshot-2", final: chunk.final, reported: chunk.sessions.length })
+      // No session the host still runs is ended while the snapshot is only partly here.
+      if (chunk.final !== true) {
+        expect(await ended()).toEqual([])
+        expect(await active()).toEqual([...KEYS, "node-big:claude:stale"])
+      }
+    }
+    expect(await active()).toEqual(KEYS)
+    expect(await ended()).toEqual(["node-big:claude:stale"])
+    expect(await rows(`SELECT active_sessions FROM host_nodes WHERE node_id = 'node-big'`)).toEqual([{ active_sessions: 40 }])
+    expect(await rows(`SELECT count(*)::int AS staged FROM fleet_session_snapshot_keys`)).toEqual([{ staged: 0 }])
+  })
+
+  test("a snapshot abandoned before its final chunk ends nothing, and the next whole snapshot still reconciles", async () => {
+    const post = await openMcp()
+    const bare = (sessionKey: string) => ({ sessionKey, harness: "claude", status: "working" })
+    await post("fleet_heartbeat", { nodeId: "node-big", name: "Busy host", kind: "bare-metal" })
+    await post("fleet_sessions_report", { nodeId: "node-big", sessions: [bare("node-big:a"), bare("node-big:b"), bare("node-big:c")] })
+    // First chunk of two, then the reporter stops.
+    const first = await post("fleet_sessions_report", {
+      nodeId: "node-big", replaceActive: true, snapshotId: "abandoned", chunkIndex: 0, totalChunks: 2, sessions: [bare("node-big:a")],
+    })
+    expect(first.answer).toEqual({ nodeId: "node-big", reported: 1, active: 3, snapshotId: "abandoned", final: false })
+    expect(await ended()).toEqual([])
+    // A later snapshot, its last chunk named by position alone, ends only what neither of its chunks named.
+    await post("fleet_sessions_report", {
+      nodeId: "node-big", mode: "replace", snapshotId: "next", chunkIndex: 0, totalChunks: 2, sessions: [bare("node-big:b")],
+    })
+    expect(await ended()).toEqual([])
+    const last = await post("fleet_sessions_report", {
+      nodeId: "node-big", mode: "replace", snapshotId: "next", chunkIndex: 1, totalChunks: 2, sessions: [bare("node-big:c")],
+    })
+    expect(last.answer).toEqual({ nodeId: "node-big", reported: 1, active: 2, snapshotId: "next", final: true })
+    expect(await active()).toEqual(["node-big:b", "node-big:c"])
+    expect(await ended()).toEqual(["node-big:a"])
+    // `mode: "append"` never ends a session, whatever else the report says.
+    await post("fleet_sessions_report", { nodeId: "node-big", replaceActive: true, mode: "append", snapshotId: "appended", final: true, sessions: [bare("node-big:d")] })
+    expect(await active()).toEqual(["node-big:b", "node-big:c", "node-big:d"])
+    // The abandoned snapshot's keys wait out their hour; the finished one's are gone.
+    expect(await rows(`SELECT snapshot_id, session_key FROM fleet_session_snapshot_keys ORDER BY snapshot_id`))
+      .toEqual([{ snapshot_id: "abandoned", session_key: "node-big:a" }])
+    await rows(`UPDATE fleet_session_snapshot_keys SET staged_at = now() - interval '2 hours'`)
+    await post("fleet_sessions_report", { nodeId: "node-big", replaceActive: true, snapshotId: "third", final: true, sessions: [bare("node-big:b")] })
+    expect(await rows(`SELECT count(*)::int AS staged FROM fleet_session_snapshot_keys`)).toEqual([{ staged: 0 }])
+    expect(await active()).toEqual(["node-big:b"])
   })
 })

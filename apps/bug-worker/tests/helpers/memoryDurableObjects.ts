@@ -1,9 +1,11 @@
+import type { BugKv, BugWorkerEnv } from "../../src/env.ts";
+import { memoryKv } from "./memoryKv.ts";
 import type { State } from "../../src/durableState.ts";
 import { RateLimiter } from "../../src/RateLimiter.ts";
 
 type DurableObject = { fetch(request: Request): Promise<Response>; alarm?(): Promise<void> };
 type Namespace = { getByName(name: string): { fetch(request: Request): Promise<Response> } };
-type Store = { values: Map<string, unknown>; tail: Promise<unknown>; alarm: number | null };
+type Store = { values: Map<string, unknown>; tail: Promise<unknown>; gate: Promise<unknown>; alarm: number | null };
 
 /**
  * Runs a deployed Durable Object class against isolated, atomic, rollback-capable
@@ -19,29 +21,39 @@ function memoryDurableObjects(make: (state: State) => DurableObject): Namespace 
   const storeOf = (name: string): Store => {
     let store = stores.get(name);
     if (!store) {
-      store = { values: new Map(), tail: Promise.resolve(), alarm: null };
+      store = { values: new Map(), tail: Promise.resolve(), gate: Promise.resolve(), alarm: null };
       stores.set(name, store);
     }
     return store;
   };
   // Construct afresh on every access so tests cannot rely on instance memory.
-  const open = (state: Store) => make({ storage: {
-    transaction(callback) {
-      const result = state.tail.then(async () => {
-        const pending = structuredClone(state.values);
-        const value = await callback({
-          async get<T>(key: string) { return structuredClone(pending.get(key)) as T | undefined; },
-          async put<T>(key: string, value: T) { pending.set(key, structuredClone(value)); },
-        });
-        state.values = pending;
-        return value;
-      });
-      state.tail = result.catch(() => {});
-      return result;
+  const open = (state: Store) => make({
+    blockConcurrencyWhile(callback) {
+      const value = state.gate.then(callback);
+      state.gate = value.catch(() => {});
+      return value;
     },
-    async setAlarm(scheduledTime) { state.alarm = scheduledTime; },
-    async deleteAll() { state.values = new Map(); },
-  } });
+    storage: {
+      async get<T>(key: string) { return structuredClone(state.values.get(key)) as T | undefined; },
+      async put<T>(key: string, value: T) { state.values.set(key, structuredClone(value)); },
+      transaction(callback) {
+        const result = state.tail.then(async () => {
+          const pending = structuredClone(state.values);
+          const value = await callback({
+            async get<T>(key: string) { return structuredClone(pending.get(key)) as T | undefined; },
+            async put<T>(key: string, value: T) { pending.set(key, structuredClone(value)); },
+          });
+          state.values = pending;
+          return value;
+        });
+        state.tail = result.catch(() => {});
+        return result;
+      },
+      async deleteAlarm() { state.alarm = null; },
+      async setAlarm(scheduledTime) { state.alarm = scheduledTime; },
+      async deleteAll() { state.values = new Map(); },
+    },
+  });
   return {
     getByName: (name) => open(storeOf(name)),
     stored: (name) => new Map(storeOf(name).values),
@@ -56,4 +68,13 @@ function memoryDurableObjects(make: (state: State) => DurableObject): Namespace 
   };
 }
 
-export const memoryRateLimits = () => memoryDurableObjects((state) => new RateLimiter(state));
+export function memoryRateLimits(kv: BugKv = memoryKv(), wrapCharge?: (charge: () => Promise<Response>) => Promise<Response>) {
+  const namespace = memoryDurableObjects((state) => new RateLimiter(state, env));
+  const env: BugWorkerEnv = { BUGS: kv, BUG_ADMIN_TOKEN: "fixture", RATE_LIMITS: {
+    getByName(name) {
+      const stub = namespace.getByName(name);
+      return wrapCharge && name.startsWith("demo-hour:") ? { fetch: (req) => wrapCharge(() => stub.fetch(req)) } : stub;
+    },
+  } };
+  return namespace;
+}

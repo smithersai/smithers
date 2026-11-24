@@ -51,6 +51,8 @@ import { codeOf } from "./ErrorCode.ts"
 import * as ExecutionHost from "./ExecutionHost.ts"
 import * as Executions from "./Executions.ts"
 import * as FeedsApi from "./feeds/Api.ts"
+import { CONFIRM_ROUTE } from "../ops/feed-barrier/Route.ts"
+import * as RedactFeed from "./flows/RedactFeed.ts"
 import * as Flows from "./Flows.ts"
 import { recheckExecutionId, RecheckRole } from "./flows/RecheckRole.ts"
 import * as Todo from "./flows/Todo.ts"
@@ -507,6 +509,15 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
         if (GitHub.PublicRead.handles(brokerRequest.url)) return yield* PublicReads.route(publicReadSetup, publicReadHttp)
         const checks = Layer.succeed(SignIn.RoleChecks, yield* roleChecks)
         const starter = yield* flowStarter
+        const confirmPath = brokerRequest.url.split("?")[0]!
+        if (confirmPath.startsWith(CONFIRM_ROUTE)) {
+          const status = yield* RedactFeed.confirm(brokerRequest.method, confirmPath, brokerRequest.headers.authorization).pipe(
+            Effect.provideService(Flows.FlowStarter, starter),
+            Effect.provide(database),
+            Effect.catchCause(() => Effect.succeed(503))
+          )
+          return HttpServerResponse.empty({ status })
+        }
         return yield* runnerAdmin.admit(
           signIn.admit(
             Effect.gen(function*() {

@@ -19,8 +19,8 @@ export function memoryKv(now: () => number = () => Date.now()): BugKv & {
       }
       return entry.value;
     },
-    async put(key: string, value: string, options?: { expirationTtl?: number }): Promise<void> {
-      const expiresAt = options?.expirationTtl ? now() + options.expirationTtl * 1000 : null;
+    async put(key: string, value: string, options?: { expirationTtl?: number; expiration?: number }): Promise<void> {
+      const expiresAt = options?.expiration ? options.expiration * 1000 : options?.expirationTtl ? now() + options.expirationTtl * 1000 : null;
       store.set(key, { value, expiresAt });
     },
     async delete(key: string): Promise<void> {

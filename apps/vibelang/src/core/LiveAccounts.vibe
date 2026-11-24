@@ -15,7 +15,8 @@ export effect function make(origin: string) {
     const answer = accountRead(response.status)
     if (answer === "denied") throw new Denied({ action: "people", least: "new" })
     if (answer === "unavailable") throw failed()
-    return try Effect.mapError(decode(try Effect.mapError(response.json, failed)), failed)
+    const value = try Effect.mapError(decode(try Effect.mapError(response.json, failed)), failed)
+    return { value, next: response.headers["x-vibelang-next"] }
   }
   effect function post(path: string, body: unknown) {
     const response = try Effect.mapError(client.execute(HttpClientRequest.post(origin + path).pipe(
@@ -27,8 +28,21 @@ export effect function make(origin: string) {
     if (answer === "unavailable") throw failed()
   }
   const accounts: Accounts.Shape = {
-    current: () => get("/api/auth/session", decodeSession).pipe(Effect.mapError(failed)),
-    members: () => get("/api/roles", decodeMembers),
+    current: () => get("/api/auth/session", decodeSession).pipe(Effect.map(page => page.value), Effect.mapError(failed)),
+    effect members() {
+      const members: Array<Identity> = []
+      const cursors = new Set<string>()
+      let path = "/api/roles"
+      for (let page = 0; page < 1000; page++) {
+        const { value, next } = try get(path, decodeMembers)
+        members.push(...value)
+        if (next === undefined) return members
+        if (!/^[1-9][0-9]{0,19}$/.test(next) || cursors.has(next)) throw failed()
+        cursors.add(next)
+        path = "/api/roles?after=" + next
+      }
+      throw failed()
+    },
     grant: (id, role) => post("/api/roles", { id, role }),
     signOut: () => post("/api/auth/sign-out", {}).pipe(Effect.mapError(failed)),
     choose: () => Effect.fail(failed()),

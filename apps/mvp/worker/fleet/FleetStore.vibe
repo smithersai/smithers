@@ -4,7 +4,8 @@
  *
  * Defense in depth (OBS-5): every free-form text a reporter sends is scrubbed before storage, provider grant telemetry
  * is reduced to an allowlist of fields, transcript entries are bounded and scrubbed, and every list is bounded, so
- * credentials or tokens never enter Postgres or Electric shapes. Each report commits whole or not at all.
+ * credentials or tokens never enter Postgres or Electric shapes. A stored session is scrubbed again when the overview
+ * reads it, so a row written before a rule existed is read through that rule. Each report commits whole or not at all.
  */
 
 import { SqlClient } from "effect/sql"
@@ -14,20 +15,10 @@ import {
   HOST_KINDS,
   SESSION_HARNESSES,
   SESSION_STATUSES,
-  TRANSCRIPT_ROLES,
-  type TranscriptEntry,
-  type TranscriptRole,
 } from "../../src/features/fleet/globalContract.ts"
+import { MAX_TRANSCRIPT_ENTRIES, scrubText, scrubTranscript } from "../../src/features/fleet/scrub.ts"
 
-const SECRET_PATTERN =
-  /(gh[pousr]_[A-Za-z0-9_]+|github_pat_[A-Za-z0-9_]+|sk-ant-[A-Za-z0-9_-]+|sk-[A-Za-z0-9_-]{16,}|sma_[0-9a-f]{32,}|xox[baprs]-[A-Za-z0-9-]+|AKIA[0-9A-Z]{16}|Bearer\s+[A-Za-z0-9._-]{12,}|(?:TOKEN|SECRET|PASSWORD|API_KEY)\s*=\s*\S+)/gi
-
-/** Scrubs accidental credential patterns and bounds text length. */
-export function scrubText(value: string | null | undefined, maxLen: number): string | null {
-  if (value === undefined || value === null) return null
-  const cleaned = value.replace(SECRET_PATTERN, "[redacted]").replace(/[\r\n\t]+/g, " ").trim()
-  return cleaned.length === 0 ? null : cleaned.slice(0, maxLen)
-}
+export { MAX_TRANSCRIPT_ENTRIES, scrubText, scrubTranscript }
 
 /** A required display text, scrubbed: `fallback` when nothing is left of it. */
 function scrubRequired(value: string, maxLen: number, fallback: string): string {
@@ -52,52 +43,12 @@ export const MAX_TAGS = 32
 const MAX_TAG_LENGTH = 64
 /** The most entries an account's `grants` list keeps. */
 export const MAX_GRANTS = 32
-/** The most transcript entries stored per observed session. */
-export const MAX_TRANSCRIPT_ENTRIES = 24
-const MAX_TRANSCRIPT_TEXT_LENGTH = 360
-const MAX_TRANSCRIPT_LABEL_LENGTH = 80
-
-/**
- * Scrubs and bounds a session's transcript entries (OBS-5): keeps at most the last 24 entries,
- * validates the role allowlist, scrubs `text` (max 360 chars) and `label` (max 80 chars) through
- * `scrubText`, and normalizes timestamps so credentials or raw dumps never enter Postgres or Electric.
- */
-export function scrubTranscript(raw: unknown): ReadonlyArray<TranscriptEntry> | null {
-  let list: unknown = raw
-  if (typeof list === "string") {
-    try {
-      list = JSON.parse(list)
-    } catch {
-      return null
-    }
-  }
-  if (!Array.isArray(list)) return null
-  const kept: Array<TranscriptEntry> = []
-  for (const item of list) {
-    if (typeof item !== "object" || item === null || Array.isArray(item)) continue
-    const obj = item as Record<string, unknown>
-    const rawRole = obj["role"]
-    if (typeof rawRole !== "string" || !(TRANSCRIPT_ROLES as ReadonlyArray<string>).includes(rawRole)) continue
-    const rawText = obj["text"]
-    if (typeof rawText !== "string") continue
-    const text = scrubText(rawText, MAX_TRANSCRIPT_TEXT_LENGTH)
-    if (text === null) continue
-    const rawLabel = obj["label"]
-    const label = typeof rawLabel === "string" ? scrubText(rawLabel, MAX_TRANSCRIPT_LABEL_LENGTH) : null
-    const rawTs = obj["ts"]
-    const ts = typeof rawTs === "string" && rawTs.length <= 64 && !Number.isNaN(Date.parse(rawTs))
-      ? new Date(Date.parse(rawTs)).toISOString()
-      : null
-    kept.push({
-      ts,
-      role: rawRole as TranscriptRole,
-      label,
-      text,
-    })
-  }
-  if (kept.length === 0) return null
-  return kept.slice(-MAX_TRANSCRIPT_ENTRIES)
-}
+/** Days a session stays stored after it ended: older rows are deleted by the next report (R2-Fable-D4-011). */
+export const ENDED_SESSION_RETENTION_DAYS = 7
+/** The largest value an `integer` column holds: a larger count is refused as an argument, before SQL (R2-Astra-D4-019). */
+export const MAX_INT32 = 2_147_483_647
+/** The most chunks one replacement snapshot is sent in. */
+export const MAX_SNAPSHOT_CHUNKS = 1_000
 
 /**
  * The fields a provider's grant telemetry may carry (R1-Astra-D4-011). Everything else a reporter sends, at any depth,
@@ -150,6 +101,9 @@ const Timestamp = Schema.String.check(
   Schema.makeFilter((value: string) => !Number.isNaN(Date.parse(value))),
 )
 
+/** A count an `integer` column stores. */
+const Count = Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: MAX_INT32 }))
+
 /** The timestamp as Postgres stores it, so no row of an admitted report fails its cast. */
 const instant = (value: string | null | undefined): string | null =>
   value === undefined || value === null ? null : new Date(Date.parse(value)).toISOString()
@@ -162,13 +116,13 @@ export const HostHeartbeatInput = Schema.Struct({
   online: Schema.optional(Schema.Boolean),
   held: Schema.optional(Schema.NullOr(Schema.String.check(Schema.isMaxLength(120)))),
   load1: Schema.optional(Schema.NullOr(Schema.Number.check(Schema.isGreaterThanOrEqualTo(0)))),
-  cpuCores: Schema.optional(Schema.NullOr(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)))),
+  cpuCores: Schema.optional(Schema.NullOr(Count)),
   memUsedGb: Schema.optional(Schema.NullOr(Schema.Number.check(Schema.isGreaterThanOrEqualTo(0)))),
   memTotalGb: Schema.optional(Schema.NullOr(Schema.Number.check(Schema.isGreaterThanOrEqualTo(0)))),
   diskFreeGb: Schema.optional(Schema.NullOr(Schema.Number.check(Schema.isGreaterThanOrEqualTo(0)))),
   diskTotalGb: Schema.optional(Schema.NullOr(Schema.Number.check(Schema.isGreaterThanOrEqualTo(0)))),
-  activeSessions: Schema.optional(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))),
-  runnerCapacity: Schema.optional(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))),
+  activeSessions: Schema.optional(Count),
+  runnerCapacity: Schema.optional(Count),
   version: Schema.optional(Schema.NullOr(Schema.String.check(Schema.isMaxLength(64)))),
 })
 export type HostHeartbeatInput = typeof HostHeartbeatInput.Type
@@ -187,7 +141,7 @@ export const ObservedSessionInput = Schema.Struct({
   cwd: Schema.optional(Schema.NullOr(Schema.String.check(Schema.isMaxLength(512)))),
   transcriptJson: Schema.optional(Schema.NullOr(Schema.Array(Schema.Unknown).check(Schema.isMaxLength(64)))),
   status: Schema.Literals(SESSION_STATUSES),
-  pid: Schema.optional(Schema.NullOr(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)))),
+  pid: Schema.optional(Schema.NullOr(Count)),
   cpuSeconds: Schema.optional(Schema.NullOr(Schema.Number.check(Schema.isGreaterThanOrEqualTo(0)))),
   tokensUsed: Schema.optional(Schema.NullOr(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)))),
   startedAt: Schema.optional(Schema.NullOr(Timestamp)),
@@ -196,11 +150,25 @@ export const ObservedSessionInput = Schema.Struct({
 })
 export type ObservedSessionInput = typeof ObservedSessionInput.Type
 
+/**
+ * A host's sessions. `replaceActive` (or `mode: "replace"`) makes the report a replacement snapshot: the host's active
+ * sessions it does not name are ended. A snapshot too large for one request is sent as chunks that share a
+ * `snapshotId` (R2-Astra-D4-011): each chunk's sessions are stored and its keys staged, and only the final chunk
+ * (`final: true`, or `chunkIndex` the last of `totalChunks`) ends the sessions no chunk named. A report without a
+ * `snapshotId` is a whole snapshot, as it always was. `mode`, when sent, decides over `replaceActive`.
+ */
 export const SessionsReportInput = Schema.Struct({
   nodeId: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(128)),
   replaceActive: Schema.optional(Schema.Boolean),
+  mode: Schema.optional(Schema.Literals(["replace", "append"])),
+  snapshotId: Schema.optional(Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(128))),
+  chunkIndex: Schema.optional(Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: MAX_SNAPSHOT_CHUNKS - 1 }))),
+  totalChunks: Schema.optional(Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: MAX_SNAPSHOT_CHUNKS }))),
+  final: Schema.optional(Schema.Boolean),
   sessions: Schema.Array(ObservedSessionInput).check(Schema.isMaxLength(MAX_SESSIONS_PER_REPORT)),
-})
+}).check(Schema.makeFilter((report: { readonly chunkIndex?: number | undefined; readonly totalChunks?: number | undefined }) =>
+  report.chunkIndex === undefined || report.totalChunks === undefined || report.chunkIndex < report.totalChunks
+))
 export type SessionsReportInput = typeof SessionsReportInput.Type
 
 export const ProviderAccountInput = Schema.Struct({
@@ -216,7 +184,7 @@ export const ProviderAccountInput = Schema.Struct({
   // Any object decodes; only its approved fields are kept (`projectGrants`).
   grantsJson: Schema.optional(Schema.NullOr(Schema.Record(Schema.String, Schema.Unknown))),
   creditsBalance: Schema.optional(Schema.NullOr(Schema.Number.check(Schema.isGreaterThanOrEqualTo(0)))),
-  activeSessions: Schema.optional(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))),
+  activeSessions: Schema.optional(Count),
   pools: Schema.optional(Schema.Array(Schema.String.check(Schema.isMaxLength(MAX_TAG_LENGTH))).check(Schema.isMaxLength(MAX_TAGS))),
   coolReason: Schema.optional(Schema.NullOr(Schema.String.check(Schema.isMaxLength(120)))),
   coolUntil: Schema.optional(Schema.NullOr(Timestamp)),
@@ -230,6 +198,10 @@ export const AccountsReportInput = Schema.Struct({
 })
 export type AccountsReportInput = typeof AccountsReportInput.Type
 
+/**
+ * A host's heartbeat. A new host counts no sessions until it says so; a heartbeat that omits `activeSessions` keeps the
+ * count the host's session rows gave it (R2-Astra-D4-018), and one that sends it, zero included, replaces it.
+ */
 export effect function upsertHostNode(input: HostHeartbeatInput) {
   const sql = try SqlClient.SqlClient
   const name = scrubRequired(input.name, 128, input.nodeId)
@@ -260,7 +232,7 @@ export effect function upsertHostNode(input: HostHeartbeatInput) {
       mem_total_gb = EXCLUDED.mem_total_gb,
       disk_free_gb = EXCLUDED.disk_free_gb,
       disk_total_gb = EXCLUDED.disk_total_gb,
-      active_sessions = EXCLUDED.active_sessions,
+      active_sessions = COALESCE(${input.activeSessions ?? null}::integer, host_nodes.active_sessions),
       runner_capacity = EXCLUDED.runner_capacity,
       version = EXCLUDED.version,
       seen_at = now(),
@@ -274,12 +246,24 @@ export effect function upsertHostNode(input: HostHeartbeatInput) {
  * the host's count are one transaction, and reports for one host run one after another. A session key named twice
  * counts once, as its last entry. The count is read from the host's rows after the report, so a report of one changed
  * session leaves the host's other active sessions counted.
+ *
+ * A chunk of a replacement snapshot that is not its final one ends nothing: it stores its sessions and stages their
+ * keys under the `snapshotId`. The final chunk ends the host's active sessions that no chunk of the snapshot named.
+ * A snapshot abandoned before its final chunk ends nothing either; its staged keys are dropped an hour later.
+ *
+ * Each report also deletes the sessions that ended more than `ENDED_SESSION_RETENTION_DAYS` ago, on any host, so the
+ * table holds the fleet's recent history rather than every session it ever ran (R2-Fable-D4-011).
  */
 export effect function reportSessions(input: SessionsReportInput) {
   const sql = try SqlClient.SqlClient
   const byKey = new Map<string, ObservedSessionInput>()
   for (const s of input.sessions) byKey.set(s.sessionKey, s)
   const seenKeys = [...byKey.keys()]
+  const replace = input.mode === undefined ? input.replaceActive === true : input.mode === "replace"
+  const snapshotId = replace ? input.snapshotId : undefined
+  const final = input.final ?? (
+    input.chunkIndex === undefined || input.totalChunks === undefined || input.chunkIndex >= input.totalChunks - 1
+  )
   const active = try sql.withTransaction(effect {
     try sql`SELECT pg_advisory_xact_lock(hashtextextended(${`fleet-sessions:${input.nodeId}`}, 0))`
     for (const s of byKey.values()) {
@@ -328,7 +312,35 @@ export effect function reportSessions(input: SessionsReportInput) {
           updated_at = now()
       `
     }
-    if (input.replaceActive === true) {
+    if (snapshotId !== undefined) {
+      if (seenKeys.length > 0) {
+        try sql`
+          INSERT INTO fleet_session_snapshot_keys (node_id, snapshot_id, session_key)
+          SELECT ${input.nodeId}, ${snapshotId}, staged.session_key
+          FROM unnest(${seenKeys}::text[]) AS staged (session_key)
+          ON CONFLICT DO NOTHING
+        `
+      }
+      if (final) {
+        try sql`
+          UPDATE observed_sessions
+          SET status = 'ended', ended_at = COALESCE(ended_at, now()), updated_at = now()
+          WHERE node_id = ${input.nodeId} AND status <> 'ended' AND NOT EXISTS (
+            SELECT 1 FROM fleet_session_snapshot_keys staged
+            WHERE staged.node_id = ${input.nodeId} AND staged.snapshot_id = ${snapshotId}
+              AND staged.session_key = observed_sessions.session_key
+          )
+        `
+      }
+      // This snapshot's keys go once it is whole; another snapshot's go once nothing can still be sending it.
+      try sql`
+        DELETE FROM fleet_session_snapshot_keys
+        WHERE node_id = ${input.nodeId} AND (
+          (${final}::boolean AND snapshot_id = ${snapshotId})
+          OR (snapshot_id <> ${snapshotId} AND staged_at < now() - interval '1 hour')
+        )
+      `
+    } else if (replace) {
       if (seenKeys.length === 0) {
         try sql`
           UPDATE observed_sessions
@@ -343,6 +355,14 @@ export effect function reportSessions(input: SessionsReportInput) {
         `
       }
     }
+    // `updated_at` is this server's clock: a session a reporter dated ahead still goes once nothing has named it since.
+    try sql`
+      DELETE FROM observed_sessions
+      WHERE status = 'ended' AND (
+        ended_at < now() - make_interval(days => ${ENDED_SESSION_RETENTION_DAYS}::integer)
+        OR updated_at < now() - make_interval(days => ${ENDED_SESSION_RETENTION_DAYS}::integer)
+      )
+    `
     const counted = try sql<{ active: number }>`
       SELECT count(*)::int AS active FROM observed_sessions
       WHERE node_id = ${input.nodeId} AND status <> 'ended'
@@ -355,14 +375,17 @@ export effect function reportSessions(input: SessionsReportInput) {
     `
     return activeCount
   })
-  return { nodeId: input.nodeId, reported: seenKeys.length, active }
+  return snapshotId === undefined
+    ? { nodeId: input.nodeId, reported: seenKeys.length, active }
+    : { nodeId: input.nodeId, reported: seenKeys.length, active, snapshotId, final }
 }
 
 /**
  * A node's report of provider accounts, committed whole or not at all. An account keeps its newest observation
  * (R1-Astra-D4-015): a report older than the stored one (`checkedAt`) changes nothing, and of two observations made
  * at the same instant the one from the node whose name sorts last stands, so the outcome never depends on arrival
- * order. `applied` counts the accounts this report changed.
+ * order. `applied` counts the accounts this report changed. A `checkedAt` ahead of this server's clock is stored as the
+ * moment it arrived (R2-Fable-D4-012), so a reporter whose clock runs ahead cannot shut out every later observation.
  */
 export effect function reportAccounts(input: AccountsReportInput) {
   const sql = try SqlClient.SqlClient
@@ -387,7 +410,7 @@ export effect function reportAccounts(input: AccountsReportInput) {
           ${instant(acct.resetsAt)}::timestamptz,
           ${grantsText}::jsonb, ${acct.creditsBalance ?? null}, ${acct.activeSessions ?? 0}, ${pools},
           ${coolReason}, ${instant(acct.coolUntil)}::timestamptz, ${input.sourceNode},
-          COALESCE(${instant(acct.checkedAt)}::timestamptz, now()), now()
+          LEAST(COALESCE(${instant(acct.checkedAt)}::timestamptz, now()), now()), now()
         )
         ON CONFLICT (account_key) DO UPDATE SET
           provider = EXCLUDED.provider,
@@ -452,8 +475,21 @@ export effect function readOverview(includeEnded: boolean = false) {
       ORDER BY updated_at DESC
       LIMIT 300
     `
+  // A row stored before a redaction rule existed is read through it (R2-Astra-D4-001).
+  const stored = (row: Record<string, unknown>, field: string, maxLen: number) => {
+    const value = row[field]
+    return typeof value === "string" ? scrubText(value, maxLen) : null
+  }
   const projectedSessions = sessions.map((row: Record<string, unknown>) => ({
     ...row,
+    model: stored(row, "model", 120),
+    accountLabel: stored(row, "accountLabel", 64),
+    repo: stored(row, "repo", 160),
+    project: stored(row, "project", 160),
+    lane: stored(row, "lane", 120),
+    title: stored(row, "title", 160),
+    summary: stored(row, "summary", 320),
+    cwd: stored(row, "cwd", 260),
     transcriptJson: scrubTranscript(row["transcriptJson"]),
   }))
   const accounts = try sql`

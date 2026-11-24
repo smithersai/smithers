@@ -48,7 +48,7 @@ const runtime = testFile("mcp_oauth")
 const queryDb = <A>(query: (sql: SqlClient.SqlClient) => Effect.Effect<A, unknown>) =>
   runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, query))
 beforeEach(async () => {
-  await queryDb(sql => sql`TRUNCATE mcp_oauth_clients CASCADE`)
+  await queryDb(sql => sql`TRUNCATE mcp_oauth_clients, mcp_registration_admissions CASCADE`)
   await queryDb(sql => sql`INSERT INTO people (id, github_id, github_login)
     VALUES (${ALICE_ID}::uuid, 101, 'alice'), (${BOB_ID}::uuid, 102, 'bob') ON CONFLICT DO NOTHING`)
 })
@@ -527,6 +527,20 @@ describe("OAuth 2.1 Token Exchange (PKCE S256, replay revocation, token cap, OBS
     ])
   })
 
+  test("the deployment ceiling bounds distributed registrations and expires after a minute", async () => {
+    const h = await createHarness()
+    await queryDb(sql => sql`INSERT INTO mcp_registration_admissions (network_digest)
+      SELECT md5(i::text) FROM generate_series(1, 3000) AS i`)
+    const register = () => h.send("POST", MCP_OAUTH_REGISTER_ROUTE, {
+      headers: { "content-type": "application/json", "cf-connecting-ip": "203.0.113.1" },
+      body: JSON.stringify({ client_name: "Client", redirect_uris: [CALLBACK] }),
+    })
+    expect((await register()).status).toBe(429)
+    await queryDb(sql => sql`UPDATE mcp_registration_admissions SET admitted_at = now() - interval '61 seconds'`)
+    expect((await register()).status).toBe(201)
+    expect(await queryDb(sql => sql`SELECT count(*)::int AS count FROM mcp_registration_admissions`)).toEqual([{ count: 1 }])
+  })
+
   test("registration expires unused clients and bounds concurrent registrations", async () => {
     const h = await createHarness()
     const expired = await registerClient(h)
@@ -535,11 +549,15 @@ describe("OAuth 2.1 Token Exchange (PKCE S256, replay revocation, token cap, OBS
       headers: { accept: "application/json" },
     })
     expect(expiredConsent.json).toMatchObject({ error: "invalid_client" })
-    const statuses = await Promise.all(Array.from({ length: 31 }, () => h.send("POST", MCP_OAUTH_REGISTER_ROUTE, {
-      headers: { "content-type": "application/json" }, body: JSON.stringify({ client_name: "Client", redirect_uris: [CALLBACK] }),
-    })))
+    const registerFrom = (ip: string) => h.send("POST", MCP_OAUTH_REGISTER_ROUTE, {
+      headers: { "content-type": "application/json", "cf-connecting-ip": ip },
+      body: JSON.stringify({ client_name: "Client", redirect_uris: [CALLBACK] }),
+    })
+    const statuses = await Promise.all(Array.from({ length: 31 }, () => registerFrom("192.0.2.1")))
     expect(statuses.filter(r => r.status === 201)).toHaveLength(30)
     expect(statuses.find(r => r.status === 429)?.headers.get("retry-after")).toBe("60")
+    expect((await registerFrom("198.51.100.1")).status).toBe(201)
+    expect((await registerFrom("192.0.2.254")).status).toBe(429)
     expect(await queryDb(sql => sql`SELECT 1 FROM mcp_oauth_clients WHERE client_id = ${expired}`)).toEqual([])
   })
 

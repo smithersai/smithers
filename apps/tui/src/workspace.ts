@@ -87,7 +87,7 @@ export interface Tab {
   readonly caps?: Host.Caps
   /** Who is driving it now (`t`): every frame waits for their message or their release. */
   readonly driver?: Driver
-  /** Every finished take-over, oldest first; the mythical note's `drivers:`. */
+  /** Every finished take-over, oldest first. */
   readonly drivers?: ReadonlyArray<Driver & { readonly to: number }>
   /** A wrapped harness runs this worker with its own tools; `session` once the vendor started it. */
   readonly harness?: {

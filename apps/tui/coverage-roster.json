@@ -28,7 +28,6 @@
   "src/editor.ts",
   "src/extension.ts",
   "src/external.ts",
-  "src/factory.ts",
   "src/failures.ts",
   "src/files.ts",
   "src/flow-control.ts",

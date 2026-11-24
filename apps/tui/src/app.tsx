@@ -37,7 +37,6 @@ import * as DevTools from "./devtools.ts"
 import * as Editor from "./editor.ts"
 import * as Extension from "./extension.ts"
 import * as External from "./external.ts"
-import * as Factory from "./factory.ts"
 import * as Files from "./files.ts"
 import {
   actions as flowActions,
@@ -593,24 +592,17 @@ export function App(props: AppProps) {
     extensions.panels.some((each) => each.placement === "tab" && each.panel === panel)
   )
   const pluginTabs = pluginPanels.filter((panel) => surface === `ui:${panel.id}`)
-  // Built-in plugin: the Smithers surface, a `plugin:smithers` tab over the factory's issues and apps.
+  // Built-in plugin: the Smithers surface, a `plugin:smithers` tab over the Cloud connection and the apps.
   const homeApps = useMemo(() => Home.read(props.host.cwd), [props.host.cwd])
-  // The factory's issue list, read from Cloud as the signed-in person while the Smithers tab shows.
-  const [factory, setFactory] = useState<Smithers.Factory | "signed-out" | undefined>()
   const [identity, setIdentity] = useState<CloudSession.AuthStatus>()
-  const factoryRepo = useMemo(() => Factory.repository(props.host.cwd, process.env), [props.host.cwd])
-  // `/todo` files through the session it resolves; the filer keeps a request id per unanswered TODO.
-  const todoCloud = useRef<CloudSession.Cloud | undefined>(undefined)
-  const todoFiler = useRef(Factory.filer((path, body, signal) => todoCloud.current!.post(path, body, signal)))
+  const cloudRepo = useMemo(() => Smithers.repository(props.host.cwd, process.env), [props.host.cwd])
   const smithersShown = surface === `ui:${Smithers.id}`
   useEffect(() => {
     if (!smithersShown) return
     setIdentity(undefined)
     const controller = new AbortController()
-    // One read at a time; a failed read clears the list rather than leaving it stale. The session is
-    // resolved once (it may ask the keyring) and again only after Cloud refuses it.
+    // One read at a time.
     let reading = false
-    let cloud: CloudSession.Cloud | undefined
     const authentication = CloudSession.layerAuthentication(process.env)
     const readIdentity = async () => {
       try {
@@ -622,29 +614,11 @@ export function App(props: AppProps) {
         if (!controller.signal.aborted) setIdentity(undefined)
       }
     }
-    const readFactory = async () => {
-      if (factoryRepo === undefined) return
-      try {
-        cloud ??= await CloudSession.signedIn(process.env)
-        if (controller.signal.aborted) return
-        if (cloud === undefined) return setFactory("signed-out")
-        const stack = await Factory.load(cloud.get, factoryRepo, controller.signal)
-        if (!controller.signal.aborted) {
-          setFactory({ metrics: Factory.metrics(stack), rows: Factory.rows(stack, Date.now()) })
-        }
-      } catch (error) {
-        if (controller.signal.aborted) return
-        const refused = CloudSession.isAuthenticationRefusal(error)
-        if (refused) cloud = undefined
-        setFactory(refused ? "signed-out" : undefined)
-        Log.write("factory.read", error)
-      }
-    }
     const read = async () => {
       if (reading) return
       reading = true
       try {
-        await Promise.all([readIdentity(), readFactory()])
+        await readIdentity()
       } finally {
         reading = false
       }
@@ -655,10 +629,10 @@ export function App(props: AppProps) {
       controller.abort()
       stop()
     }
-  }, [smithersShown, factoryRepo])
-  const smithersPanel = homeApps.length === 0 && factoryRepo === undefined
+  }, [smithersShown])
+  const smithersPanel = homeApps.length === 0 && cloudRepo === undefined
     ? undefined
-    : Smithers.panel(homeApps, new Set(runs.listed().map((flow) => flow.name)), factory, identity)
+    : Smithers.panel(homeApps, new Set(runs.listed().map((flow) => flow.name)), identity)
   const smithersKey = smithersPanel === undefined ? "" : JSON.stringify(smithersPanel)
   useEffect(() => {
     contributions.plugin(
@@ -1624,35 +1598,9 @@ export function App(props: AppProps) {
         showTab("summary")
         return true
       case "smithers":
-        if (smithersPanel === undefined) setStatus("No factory for this directory")
+        if (smithersPanel === undefined) setStatus("No Smithers repository or apps here")
         else showTab(`ui:${Smithers.id}`)
         return true
-      case "todo": {
-        const title = argument.trim()
-        if (title === "" || factoryRepo === undefined) {
-          setStatus(title === "" ? "Usage: /todo <title>" : "No repository for this directory", "warning")
-          return true
-        }
-        // Acknowledged at once; the filing settles the status when Cloud answers.
-        setStatus("TODO requested")
-        void (async () => {
-          try {
-            const cloud = await CloudSession.signedIn(process.env)
-            if (cloud === undefined) return setStatus("Sign in to file a TODO: smthrs auth login", "warning")
-            todoCloud.current = cloud
-            const filed = await todoFiler.current(factoryRepo, title)
-            if (filed.ok) {
-              setStatus(`TODO ${filed.item.issue === undefined ? "" : `#${filed.item.issue.number} `}queued`)
-            } else {
-              setStatus(`TODO not filed: ${filed.detail}${filed.settled ? "" : " · /todo again retries it"}`, "warning")
-            }
-          } catch (error) {
-            Log.write("factory.todo", error)
-            setStatus(Failures.line("flow", error), "warning")
-          }
-        })()
-        return true
-      }
       case "chat":
         setSurface("chat")
         setPanelFocus(false)
@@ -1823,8 +1771,7 @@ export function App(props: AppProps) {
     props.host.cwd,
     workspace,
     runs,
-    revision,
-    factoryRepo
+    revision
   ])
 
   /** A prompt for the agent, taken literally: never a `!` shell line or a `/` command. */

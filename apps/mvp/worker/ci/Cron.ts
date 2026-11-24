@@ -421,7 +421,8 @@ export const steps = <E, R>(services: Services<E, R>) => {
       Effect.mapError(() => new ScheduleUnavailable({ reason: "unavailable" })),
       // A trigger that didn't finish dispatching: the same interval again, which the claim protocol keeps to once.
       Effect.filterOrFail(
-        (ticked) => ticked.watermark >= ticked.at,
+        (ticked): ticked is typeof ticked & { readonly watermark: number } =>
+          ticked.watermark !== undefined && ticked.watermark >= ticked.at,
         () => new ScheduleUnavailable({ reason: "unclean" }),
       ),
       Effect.tapCause((cause) => {

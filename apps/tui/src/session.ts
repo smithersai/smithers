@@ -61,11 +61,15 @@ export type Record =
   | { readonly type: "panel"; readonly panel: Panels.Panel; readonly placement?: "card" }
   /** A panel published as a chat card; its transcript item and its `ui:<id>` view. */
   | { readonly type: "card"; readonly at: number; readonly panel: Panels.Panel }
-  /** A cell's status item or key (`runtime:<source>`); repo and plugin items are never persisted. */
+  /**
+   * A cell's status item or key (`runtime:<source>`); repo and plugin items are never persisted.
+   * `redacted`: the journal replaced a credential in a key's action, so the key is not restored.
+   */
   | {
     readonly type: "contribution"
     readonly owner: string
     readonly contribution: Extract<Extension.Contribution, { kind: "status" | "key" }>
+    readonly redacted?: true
   }
   /** `redacted`: the journal replaced a credential in what a relaunch would send. */
   | { readonly type: "tab"; readonly tab: Workspace.Tab; readonly redacted?: true }
@@ -212,33 +216,70 @@ const said = <A extends { readonly answer?: string; readonly message?: string }>
   ...(value.message === undefined ? {} : { message: text(value.message) })
 })
 
-/** A view's shown text, redacted; its ids and each row's executable action keep their bytes. */
-const view = (panel: Panels.Panel): Panels.Panel => ({
-  ...panel,
-  title: text(panel.title),
-  summary: text(panel.summary),
-  rows: panel.rows.map((row) => ({
-    ...row,
-    label: text(row.label),
-    details: JSON.parse(strings(row.details)) as typeof row.details,
-    ...(row.action === undefined ? {} : { action: { ...row.action, label: text(row.action.label) } })
-  }))
-})
-
-/** A status item's or key's shown text, redacted; its id, binding and action keep their bytes. */
-const contributed = (
-  contribution: Extract<Record, { readonly type: "contribution" }>["contribution"]
-): Extract<Record, { readonly type: "contribution" }>["contribution"] =>
-  contribution.kind === "status"
-    ? { ...contribution, status: { ...contribution.status, text: text(contribution.status.text) } }
-    : { ...contribution, key: { ...contribution.key, label: text(contribution.key.label) } }
-
 /** `value` with every string redacted. */
 const redacted = <A>(value: A): A => JSON.parse(strings(value)) as A
+
+/** Whether redaction leaves `value` byte for byte. */
+const clean = (value: unknown): boolean => JSON.stringify(value) === strings(value)
 
 /** Marks a record whose re-executable bytes lost a credential to redaction. */
 const marked = <A extends object>(record: A, before: unknown, after: unknown): A =>
   JSON.stringify(before) === JSON.stringify(after) ? record : { ...record, redacted: true as const }
+
+/** What a restored row shows in place of an action whose operands lost a credential to redaction. */
+export const inertAction = "Action not restored: it held a credential"
+
+/**
+ * A row's action as the journal holds it. Its operands (a prompt, a flow's
+ * name and nested input, an agent's prompt, a surface) are what choosing it
+ * executes: when redaction would change one, the action is not written at
+ * all, so a restore can neither read the credential nor run a placeholder.
+ */
+const rowAction = (action: NonNullable<Panels.Row["action"]>): Panels.Row["action"] => {
+  const { label, ...operands } = action
+  return clean(operands) ? { ...action, label: text(label) } : undefined
+}
+
+/** A view's text, redacted; a row keeps its action only while redaction leaves its operands alone. */
+const view = (panel: Panels.Panel): Panels.Panel => ({
+  ...panel,
+  title: text(panel.title),
+  summary: text(panel.summary),
+  rows: panel.rows.map((row) => {
+    const shown = { ...row, label: text(row.label), details: redacted(row.details) }
+    if (row.action === undefined) return shown
+    const action = rowAction(row.action)
+    return action === undefined ? Panels.inert(shown, inertAction) : { ...shown, action }
+  })
+})
+
+type Contributed = Extract<Record, { readonly type: "contribution" }>
+
+/**
+ * A status item's or key's record: its shown text redacted, its id and binding
+ * kept. An action whose operands redaction would change is not kept runnable:
+ * a status item loses it, and a key, which is nothing without one, is marked
+ * `redacted` so `restore` drops it.
+ */
+const contributed = (record: Contributed): Contributed => {
+  const { contribution } = record
+  if (contribution.kind === "status") {
+    const { action, ...status } = contribution.status
+    return {
+      ...record,
+      contribution: {
+        ...contribution,
+        status: {
+          ...status,
+          text: text(status.text),
+          ...(action === undefined || !clean(action) ? {} : { action })
+        }
+      }
+    }
+  }
+  const key = { ...contribution.key, label: text(contribution.key.label), action: redacted(contribution.key.action) }
+  return marked({ ...record, contribution: { ...contribution, key } }, contribution.key.action, key.action)
+}
 
 /**
  * A record as a session file holds it: the journal's textual credential rules
@@ -252,8 +293,10 @@ const marked = <A extends object>(record: A, before: unknown, after: unknown): A
  * life of the process that saw it. When redaction changes such bytes the
  * record is marked `redacted`, and `restore` keeps it inert: undo refuses the
  * patch, and a run, command, tab or monitor is not relaunched with a
- * placeholder. A view's, a card's, a status item's or a key's action keeps
- * its bytes: it holds ids and operands a person invokes, not captured output.
+ * placeholder. A view's, a card's, a status item's or a key's action is
+ * re-executable too: its prompt and nested flow input are free text an agent
+ * wrote. One whose operands redaction would change is not restored as
+ * runnable (`rowAction`, `contributed`); every other action keeps its bytes.
  * `session` and `undo` hold ids and paths, which a rule could mistake for a
  * key (`~/sk-demo-project`).
  */
@@ -288,15 +331,42 @@ const line = (record: Record): string => {
     case "card":
       return JSON.stringify({ ...record, panel: view(record.panel) }) + "\n"
     case "contribution":
-      return JSON.stringify({ ...record, contribution: contributed(record.contribution) }) + "\n"
+      return JSON.stringify(contributed(record)) + "\n"
     case "tab": {
-      const tab = { ...said(record.tab), prompt: text(record.tab.prompt) }
-      return JSON.stringify(marked({ ...record, tab }, record.tab.prompt, tab.prompt)) + "\n"
+      // Every text field: `history` is the chat's own exchanges, and it, `answered` and
+      // `harness.prompt` are what a relaunch sends, so a change to one keeps the tab inert.
+      const { answered, description, detail, failure, harness, history } = record.tab
+      const tab: Workspace.Tab = {
+        ...said(record.tab),
+        prompt: text(record.tab.prompt),
+        title: text(record.tab.title),
+        ...(description === undefined ? {} : { description: text(description) }),
+        ...(detail === undefined ? {} : { detail: text(detail) }),
+        ...(failure === undefined ? {} : { failure: redacted(failure) }),
+        ...(history === undefined ? {} : { history: redacted(history) }),
+        ...(answered === undefined
+          ? {}
+          : { answered: answered.map(([seat, answer]) => [seat, text(answer)] as const) }),
+        ...(harness?.prompt === undefined ? {} : { harness: { ...harness, prompt: text(harness.prompt) } })
+      }
+      return JSON.stringify(
+        marked(
+          { ...record, tab },
+          [record.tab.prompt, history, answered, harness?.prompt],
+          [tab.prompt, tab.history, tab.answered, tab.harness?.prompt]
+        )
+      ) + "\n"
     }
     case "flow": {
       const input = redacted(record.run.input)
       const requested = text(record.run.requested)
-      const run = { ...said(record.run), input, requested }
+      const { failure } = record.run
+      const run = {
+        ...said(record.run),
+        input,
+        requested,
+        ...(failure === undefined ? {} : { failure: text(failure) })
+      }
       return JSON.stringify(
         marked({ ...record, run }, [record.run.input, record.run.requested], [input, requested])
       ) + "\n"
@@ -780,10 +850,10 @@ export const restore = (records: ReadonlyArray<Record>): {
         break
       case "contribution": {
         const id = record.contribution.kind === "status" ? record.contribution.status.id : record.contribution.key.id
-        contributions.set(`${record.owner}\0${record.contribution.kind}\0${id}`, {
-          owner: record.owner,
-          contribution: record.contribution
-        })
+        const slot = `${record.owner}\0${record.contribution.kind}\0${id}`
+        // A key whose action lost a credential never runs with the placeholder, nor does the key it replaced.
+        if (record.redacted === true) contributions.delete(slot)
+        else contributions.set(slot, { owner: record.owner, contribution: record.contribution })
         break
       }
       case "tab":

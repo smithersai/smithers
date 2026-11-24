@@ -1,4 +1,4 @@
-/** The Smithers surface: the factory's issues and the apps its homepage declares. Runs live in Summary, flows in `/flows`. */
+/** The Smithers surface: the Cloud connection and the apps the homepage declares. Runs live in Summary, flows in `/flows`. */
 import * as CloudSession from "@smthrs/cli/CloudSession"
 import { Effect } from "effect"
 import type * as Home from "./home.ts"
@@ -10,10 +10,20 @@ const text = (value: string | undefined): Array<Panels.Block> =>
 /** The panel id; the surface is `ui:smithers`, owned `plugin:smithers`. */
 export const id = "smithers"
 
-/** The factory's issue list, when the repository's stack was read from Cloud. */
-export interface Factory {
-  readonly metrics: string
-  readonly rows: ReadonlyArray<Panels.Row>
+/** Where a repository lives on Cloud: `owner/name`. */
+export type Repository = string
+
+/**
+ * The repository the surface belongs to: `SMITHERS_REPO`, else the owner and
+ * name the checkout's git or jj remote names, as `smthrs open` reads it (a
+ * Cloud repository mirrors its GitHub owner and name).
+ */
+export const repository = (cwd: string, env: Readonly<Record<string, string | undefined>>): Repository | undefined => {
+  const named = env.SMITHERS_REPO?.trim()
+  if (named !== undefined && /^[\w.-]+\/[\w.-]+$/.test(named) && !named.split("/").some((part) => /^\.+$/.test(part))) {
+    return named
+  }
+  return CloudSession.repository(cwd, env)
 }
 
 /** A failed credential read is uncertain, never evidence that the person signed out. */
@@ -41,39 +51,24 @@ const identityRow = (status: CloudSession.AuthStatus | undefined): Panels.Row =>
   }
 }
 
-/** The one row a signed-out person sees in place of the factory's issues. */
-const signIn: Panels.Row = {
-  id: "factory:sign-in",
-  label: "Sign in to see the factory: smthrs auth login",
-  details: []
-}
-
-/** The factory's first row: the composer command that files a TODO. */
-const fileTodo: Panels.Row = { id: "factory:todo", label: "File a TODO", details: text("/todo <title>") }
+/** The one row a signed-out person sees: how to sign in. */
+const signIn: Panels.Row = { id: "cloud:sign-in", label: "Sign in: smthrs auth login", details: [] }
 
 export const panel = (
   apps: ReadonlyArray<Home.App>,
   /** The flows this directory discovers: an app row runs only one of these. */
   discovered: ReadonlySet<string>,
-  /** The issue list, or `signed-out` when the repository is known but no Cloud session is. */
-  input?: Factory | "signed-out",
   /** The CLI auth status; absent while it is unknown, independent of repository access. */
   identity?: CloudSession.AuthStatus
 ): Panels.Panel => {
-  const factory = input === "signed-out" ? undefined : input
   const signedOut = identity?.logged_in === false && identity.verified !== false
   return {
     id,
     title: "Smithers",
-    // The factory's measured numbers lead, when its stack was read.
-    summary: factory !== undefined && factory.metrics !== ""
-      ? factory.metrics
-      : apps.length === 0
-      ? "Factory"
-      : `${apps.length} apps`,
+    summary: apps.length === 0 ? "Smithers Cloud" : `${apps.length} apps`,
     rows: [
       identityRow(identity),
-      ...input === "signed-out" ? signedOut ? [signIn] : [] : factory === undefined ? [] : [fileTodo, ...factory.rows],
+      ...signedOut ? [signIn] : [],
       // The apps the homepage declares (home.ts): the same list the app home shows as tiles. A row runs its flow when this directory discovers it.
       ...apps.map((app) => ({
         id: `app:${app.flow}`,

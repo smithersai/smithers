@@ -11,15 +11,17 @@ import { confirm, deployedBuild, idOf, neonUri, projectNamePattern, run } from "
 
 const runtime = testFile("feed_barrier_script")
 
-test("writes the barrier once: a second run finds it and writes nothing", async () => {
+test("an unacknowledged HTTP response never reports a successful confirmation", async () => {
   const barrier = { id: idOf("74F62526544F"), release: "74f62526544f", by: "smithers-bc" }
-  expect(barrier.id).toBe("r-74f62526544f")
-  const first = await runtime.runPromise(confirm(barrier))
-  expect(first).toMatchObject({ outcome: "written", id: "r-74f62526544f", release: "74f62526544f", confirmedBy: "smithers-bc", completedAt: null })
-  const second = await runtime.runPromise(confirm({ ...barrier, by: "someone-else" }))
-  expect(second).toMatchObject({ outcome: "existing", confirmedBy: "smithers-bc", confirmedAt: first.confirmedAt })
-  expect(await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`SELECT count(*)::int AS n FROM feed_barriers`)))
-    .toEqual([{ n: 1 }])
+  const request = async (input: RequestInfo | URL, init?: RequestInit) => {
+    expect(String(input)).toBe("https://app.example/api/ops/feed-barrier/confirm/r-74f62526544f")
+    expect(init).toMatchObject({ method: "POST", redirect: "error", headers: { authorization: expect.stringMatching(/^Bearer /) } })
+    return new Response(null, { status: 204 })
+  }
+  await expect(runtime.runPromise(confirm(barrier, "app.example", request))).rejects.toThrow("not acknowledged")
+  expect(await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`
+    SELECT id, launched_at FROM feed_barriers WHERE id = ${barrier.id}`)))
+    .toEqual([{ id: barrier.id, launched_at: null }])
 })
 
 /** Neon's API as it answers for a project named as Alchemy names one: `<stack>-ChatPostgres-<stage>-<suffix>`. */

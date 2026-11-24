@@ -20,7 +20,7 @@ import {
   TableRow,
   useClock,
 } from "@smthrs/ui"
-import { type KeyboardEvent, type MouseEvent, useEffect, useSyncExternalStore } from "react"
+import { type KeyboardEvent, type MouseEvent, useSyncExternalStore } from "react"
 import {
   accountRowsOf,
   ACTIVE_STATUS,
@@ -157,7 +157,19 @@ function SessionDrawer({
   readonly onClose: () => void
 }) {
   return (
-    <aside className="fleet-inspector" aria-label={`Session inspector: ${session.project}`} data-session-inspector={session.sessionKey}>
+    <aside
+      className="fleet-inspector"
+      aria-label={`Session inspector: ${session.project}`}
+      data-session-inspector={session.sessionKey}
+      ref={(node) => {
+        if (node === null) return
+        const onKeyDown = (event: globalThis.KeyboardEvent) => {
+          if (event.key === "Escape") onClose()
+        }
+        window.addEventListener("keydown", onKeyDown)
+        return () => window.removeEventListener("keydown", onKeyDown)
+      }}
+    >
       <Card className="fleet-inspector-card">
         <CardHeader className="fleet-inspector-header">
           <div className="fleet-inspector-title-block">
@@ -304,15 +316,6 @@ function Shown({ tab }: { readonly tab: FleetTab }) {
   const accounts = useWatched(tab.queries.globalAccounts())
   const filters = useWatched(tab.queries.filters)
   const now = useClock(true, 10_000)
-
-  useEffect(() => {
-    if (filters.selectedSessionKey === null) return
-    const onKeyDown = (event: globalThis.KeyboardEvent) => {
-      if (event.key === "Escape") tab.actions.selectSession(null)
-    }
-    window.addEventListener("keydown", onKeyDown)
-    return () => window.removeEventListener("keydown", onKeyDown)
-  }, [filters.selectedSessionKey, tab.actions])
 
   // Each part draws counts and "none" only from a delivered snapshot: loading or withheld rows are not an empty fleet.
   const hosts = sectionOf(nodes, HOST_WORDS, (rows) => hostRowsOf(rows, now))

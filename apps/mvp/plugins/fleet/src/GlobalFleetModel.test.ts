@@ -133,7 +133,6 @@ describe("GlobalFleetModel", () => {
         weeklyPct: 10,
         scopedPct: 0,
         resetsAt: "2026-11-30T11:00:00Z",
-        grantsJson: null,
         creditsBalance: null,
         activeSessions: 1,
         pools: ["ci"],
@@ -152,7 +151,6 @@ describe("GlobalFleetModel", () => {
         weeklyPct: 96,
         scopedPct: null,
         resetsAt: "2026-11-27T11:00:00Z",
-        grantsJson: null,
         creditsBalance: 500,
         activeSessions: 1,
         pools: [],
@@ -171,7 +169,6 @@ describe("GlobalFleetModel", () => {
         weeklyPct: null,
         scopedPct: null,
         resetsAt: null,
-        grantsJson: { policy: "google-models-only" },
         creditsBalance: null,
         activeSessions: 1,
         pools: ["agy-gemini"],
@@ -592,7 +589,6 @@ describe("GlobalFleetModel", () => {
         weeklyPct: 80,
         scopedPct: null,
         resetsAt: null,
-        grantsJson: null,
         creditsBalance: null,
         activeSessions: 0,
         pools: [],
@@ -611,7 +607,6 @@ describe("GlobalFleetModel", () => {
         weeklyPct: null,
         scopedPct: null,
         resetsAt: null,
-        grantsJson: null,
         creditsBalance: null,
         activeSessions: 0,
         pools: [],
@@ -634,5 +629,87 @@ describe("GlobalFleetModel", () => {
     expect(items[0]?.action).toEqual({ _tag: "FilterHost", nodeId: "mbp" })
     expect(items[4]?.action).toEqual({ _tag: "SelectSession", sessionKey: "err-1", status: "error" })
     expect(items[5]?.action).toEqual({ _tag: "SelectSession", sessionKey: "wait-1", status: "waiting" })
+  })
+
+  test("guards prototype keys in transcript roles and session statuses and unifies low-disk alerts", () => {
+    const entries = parseTranscript(JSON.stringify([
+      { role: "constructor", text: "safe text" },
+      { role: "toString", text: "also safe" },
+    ]))
+    expect(entries.map((e) => e.role)).toEqual(["system", "system"])
+
+    const now = Date.parse("2026-11-24T00:00:00Z")
+    const rows = sessionRowsOf([
+      {
+        sessionKey: "s-proto",
+        nodeId: "n-1",
+        managed: false,
+        harness: "claude",
+        model: "opus",
+        accountLabel: null,
+        project: "smithers",
+        repo: null,
+        lane: null,
+        title: "Proto test",
+        status: "constructor" as unknown as "idle",
+        pid: 1,
+        cpuSeconds: 0,
+        tokensUsed: 10,
+        startedAt: "2026-11-23T23:55:00Z",
+        lastActivityAt: "2026-11-23T23:59:00Z",
+        endedAt: null,
+        transcriptJson: null,
+      },
+    ], now)
+    expect(rows[0]?.tone).toBe("muted")
+    expect(rows[0]?.statusWord).toBe("constructor")
+
+    const hosts = hostRowsOf([
+      {
+        nodeId: "n-disk",
+        name: "disk-host",
+        kind: "mac-mini",
+        labels: ["mac-mini"],
+        online: true,
+        held: null,
+        load1: 0.5,
+        cpuCores: 8,
+        memUsedGb: 8,
+        memTotalGb: 32,
+        diskFreeGb: 22,
+        diskTotalGb: 512,
+        activeSessions: 1,
+        runnerCapacity: 4,
+        version: "1.0.0",
+        seenAt: "2026-11-23T23:59:30Z",
+      },
+    ], now)
+    expect(hosts[0]?.diskLow).toBe(false)
+    expect(attentionItemsOf(hosts, [], [])).toEqual([])
+    expect(summarizeGlobal(hosts, [], []).alertsCount).toBe(0)
+
+    const lowHosts = hostRowsOf([
+      {
+        nodeId: "n-disk-low",
+        name: "disk-host-low",
+        kind: "mac-mini",
+        labels: ["mac-mini"],
+        online: true,
+        held: null,
+        load1: 0.5,
+        cpuCores: 8,
+        memUsedGb: 8,
+        memTotalGb: 32,
+        diskFreeGb: 19,
+        diskTotalGb: 512,
+        activeSessions: 1,
+        runnerCapacity: 4,
+        version: "1.0.0",
+        seenAt: "2026-11-23T23:59:30Z",
+      },
+    ], now)
+    expect(lowHosts[0]?.diskLow).toBe(true)
+    expect(attentionItemsOf(lowHosts, [], []).some((item) => item.id === "host-disk:n-disk-low")).toBe(true)
+    expect(summarizeGlobal(lowHosts, [], []).alertsCount).toBe(1)
   })
 })

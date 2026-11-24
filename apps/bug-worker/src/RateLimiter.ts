@@ -1,14 +1,10 @@
 import type { State } from "./durableState.ts";
+import type { RateLimitAnswer, RateLimitRequest } from "./checkRateLimit.ts";
+import type { BugWorkerEnv } from "./env.ts";
+import { admitDemo, receiveDemo, type DemoCharge, type DemoSubmission } from "./demoReceipt.ts";
 
-/**
- * The worker's request. A charge (the default) admits and counts one request
- * against `limit` for `hour`; a refund returns one admission charged to `hour`.
- */
-export type RateLimitRequest =
-  | { op?: "charge"; hour: number; limit: number }
-  | { op: "refund"; hour: number };
-/** The answer to a charge: whether it was admitted, and the hour it was charged to. */
-export type RateLimitAnswer = { allowed: boolean; hour: number };
+export type { RateLimitAnswer, RateLimitRequest } from "./checkRateLimit.ts";
+
 type Window = { hour: number; count: number };
 
 const HOUR_MS = 3_600_000;
@@ -22,7 +18,7 @@ const HOUR_MS = 3_600_000;
  * is over. Reachable only through the Worker's binding.
  */
 export class RateLimiter {
-  constructor(private readonly ctx: State) {}
+  constructor(private readonly ctx: State, private readonly env: BugWorkerEnv) {}
 
   /**
    * POST a `RateLimitRequest`. A charge answers `RateLimitAnswer`; a refund
@@ -30,6 +26,16 @@ export class RateLimiter {
    * the stored one counts against the stored window.
    */
   async fetch(request: Request): Promise<Response> {
+    const path = new URL(request.url).pathname;
+    if (path === "/demo-receipt") {
+      const submission = await request.json() as DemoSubmission;
+      // Only this submission's object waits for its KV write. Different forms run independently.
+      return this.ctx.blockConcurrencyWhile(() => receiveDemo(this.ctx.storage, this.env, submission));
+    }
+    if (path === "/demo-charge") {
+      const charge = await request.json() as DemoCharge;
+      return Response.json(await admitDemo(this.ctx.storage, charge));
+    }
     const body = await request.json() as RateLimitRequest;
     if (body.op === "refund") {
       const refunded = await this.ctx.storage.transaction(async (txn) => {

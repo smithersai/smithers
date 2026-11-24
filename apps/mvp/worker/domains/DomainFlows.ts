@@ -22,7 +22,7 @@ import * as Store from "./Store.ts"
 // it calls the provider and in the transaction that changes the row (`Store.authorized`). A person demoted since, or a
 // payload recorded without authority, ends the flow (`stale`, `unauthorized`) with the provider untouched. A session or
 // role observation that is only stale (`unavailable`) skips that attempt: the poll goes on once the person's role is
-// confirmed again. `domain/Cleanup` carries none: it forgets a registration an admitted removal already orphaned.
+// confirmed again. `domain/Cleanup` forgets newly created registrations that removal or loss of authority orphaned.
 //
 // Each step writes and records once under its invocation key. Postgres failing is `StoreUnavailable` and the provider
 // failing is `ProviderUnavailable`, both retried; a check that can't reach the provider records `unreachable` and
@@ -98,7 +98,7 @@ export const Check = Action.make("domain/Check", {
   retryPolicy: STORE_RETRY,
 })
 
-/** Forget a registration returned after removal. Its sealed payload survives a provider outage or host restart. */
+/** Forget a registration the poll could not retain. Its sealed payload survives a provider outage or host restart. */
 export const Cleanup = Action.make("domain/Cleanup", {
   payload: { repoId: Schema.String, hostname: Schema.String, pollId: Schema.String, providerId: Schema.String },
   success: Poll.CheckResult(Schema.String),
@@ -109,8 +109,11 @@ export const Cleanup = Action.make("domain/Cleanup", {
 
 /** Marks the row removing, forgets the domain at the provider and deletes the row. */
 export const Release = Action.make("domain/Release", {
-  payload: { authority: WriteAuthority.Admission, repoId: Schema.String, hostname: Schema.String, actorId: Schema.String },
-  success: Schema.Struct({ change: Schema.Literals(["released", "missing", "stale"]) }),
+  payload: {
+    authority: WriteAuthority.Admission, repoId: Schema.String, hostname: Schema.String, actorId: Schema.String,
+    pollId: Schema.optional(Schema.NullOr(Schema.String)),
+  },
+  success: Schema.Struct({ change: Schema.Literals(["released", "missing", "stale", "superseded"]) }),
   error: Schema.Union([StoreUnavailable, ReleaseUnavailable]),
   capabilities: ["db:write:domains", "net:domains"],
   retryPolicy: RELEASE_RETRY,
@@ -125,7 +128,7 @@ export const Verify = Poll.make("domain/Verify", {
   maxAttempts: VERIFY_ATTEMPTS,
   onTimeout: "return-last",
   check: Node.capture(
-    { claim: Claim.name, check: Check.name, cleanup: Cleanup.name, implementationVersion: "domain/verify-check/v2" },
+    { claim: Claim.name, check: Check.name, cleanup: Cleanup.name, implementationVersion: "domain/verify-check/v3" },
     (round) => {
       const { attempt, ...input } = round
       const check = Check.call({ ...input, attempt }).pipe(
@@ -135,7 +138,7 @@ export const Verify = Poll.make("domain/Verify", {
             Cleanup.call({
               repoId: input.repoId, hostname: input.hostname, pollId: input.pollId,
               providerId: result.cleanupId as Planned.Planned<string>,
-            })),
+            }).pipe(Node.andThen(Node.succeed({ satisfied: true, output: result.output })))),
           else: Node.capture({}, (result) => Node.succeed(result)),
         }),
       )
@@ -231,7 +234,12 @@ export const steps = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
             Store.record({ ...found, hostname: input.hostname, pollId: input.pollId, authority: input.authority }),
           )
           if (recorded === "written") return { satisfied: found.state !== "pending", output: found.state }
-          if (recorded === "denied" || recorded === "unavailable") return refused(recorded)
+          if (recorded === "denied" || recorded === "unavailable") {
+            const verdict = refused(recorded)
+            return verdict.satisfied && found.providerId !== undefined && found.providerId !== providerId
+              ? { ...verdict, cleanupId: found.providerId }
+              : verdict
+          }
           // Removal knew only the old id. Seal the new id before a separate durable step forgets it.
           if (recorded === "removed" && found.providerId !== undefined && found.providerId !== providerId) {
             return { satisfied: true, output: "superseded", cleanupId: found.providerId }
@@ -312,8 +320,8 @@ export const steps = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
           ),
         )
       }
-      const erased = yield* store(Store.erase(input.hostname, input.authority))
-      return { change: erased === "erased" ? "released" as const : "stale" as const }
+      const erased = yield* store(Store.erase({ hostname: input.hostname, ...withdrawn.value }, input.authority))
+      return { change: erased === "erased" ? "released" as const : erased }
     }).pipe((effect) => recorded("release", input.repoId, ({ change }) => change, effect))
 
   return { claim, check, cleanup, release }

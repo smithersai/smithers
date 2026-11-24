@@ -103,6 +103,15 @@ export const OBSERVED_SESSION_COLUMNS = [
   "ended_at",
 ] as const
 
+/** The sessions the Electric shape replicates: an ended session, and its transcript, stays on the server. */
+export const ACTIVE_SESSIONS_WHERE = "status <> 'ended'"
+
+/**
+ * The provider account columns Electric replicates. `grants_json` is not one of them (R2-Astra-D4-004): a row stored
+ * before the grant allowlist can hold fields the allowlist drops, and Electric serves a column as stored. Grants are
+ * read through the allowlist by `fleet_overview` only.
+ */
+
 export const PROVIDER_ACCOUNT_COLUMNS = [
   "account_key",
   "provider",
@@ -113,7 +122,6 @@ export const PROVIDER_ACCOUNT_COLUMNS = [
   "weekly_pct",
   "scoped_pct",
   "resets_at",
-  "grants_json",
   "credits_balance",
   "active_sessions",
   "pools",

@@ -197,8 +197,8 @@ export const record = (
   })
 
 /**
- * Marks `hostname` of `repoId` as being removed and records `remove` once. Its provider id, `null` when it was never
- * registered; none when the repository holds no such domain. A retry under the same invocation key finds only the row
+ * Marks the admitted registration as removing and records `remove` once. Returns its generation and provider id,
+ * or none when the repository holds no matching registration. A retry under the same invocation key finds only the row
  * it marked, never one added again after it was erased. `stale`, on a first try or a retry, when the person who asked
  * no longer holds the authority: the caller then leaves the provider alone.
  */
@@ -207,8 +207,9 @@ export const withdraw = (write: {
   readonly repoId: string
   readonly actorId: string
   readonly invocationKey: string
+  readonly pollId?: string | null | undefined
   readonly authority?: Authority
-}): Effect.Effect<Option.Option<{ readonly providerId: string | null }> | "stale", unknown, SqlClient.SqlClient> =>
+}): Effect.Effect<Option.Option<Pick<Row, "repoId" | "pollId" | "providerId">> | "stale", unknown, SqlClient.SqlClient> =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient
     return yield* sql.withTransaction(Effect.gen(function* () {
@@ -218,17 +219,18 @@ export const withdraw = (write: {
       if (receipt !== undefined) {
         // The first try marked its row and recorded `remove` together. Its row is still removing, or erased: a row
         // claimed since (`add` after the receipt) is another registration.
-        const [marked] = yield* sql<{ readonly providerId: string | null }>`
-          SELECT provider_id AS "providerId" FROM domains
+        const [marked] = yield* sql<Pick<Row, "repoId" | "pollId" | "providerId">>`
+          SELECT repo_id AS "repoId", poll_id AS "pollId", provider_id AS "providerId" FROM domains
           WHERE hostname = ${write.hostname} AND repo_id = ${write.repoId} AND state = 'removing'
             AND NOT EXISTS (
               SELECT 1 FROM domain_events WHERE hostname = ${write.hostname} AND action = 'add' AND id > ${receipt.id})`
         return Option.fromUndefinedOr(marked)
       }
-      const [row] = yield* sql<{ readonly providerId: string | null }>`
+      const [row] = yield* sql<Pick<Row, "repoId" | "pollId" | "providerId">>`
         UPDATE domains SET state = 'removing', updated_by = ${write.actorId}, updated_at = now()
         WHERE hostname = ${write.hostname} AND repo_id = ${write.repoId}
-        RETURNING provider_id AS "providerId"`
+          AND ${write.pollId === undefined ? sql`TRUE` : sql`poll_id = ${write.pollId}`}
+        RETURNING repo_id AS "repoId", poll_id AS "pollId", provider_id AS "providerId"`
       if (row === undefined) return Option.none()
       yield* sql`
         INSERT INTO domain_events (hostname, repo_id, action, actor_id, invocation_key, state)
@@ -239,17 +241,20 @@ export const withdraw = (write: {
   })
 
 /**
- * Deletes `hostname`'s row once it is being removed: `erased`, or `stale` with the row kept when the person who asked
- * lost the authority while the provider was forgetting it, or none was given. A later removal by someone who holds it finishes the job.
+ * Deletes the exact generation withdrawn before the provider call. A changed or absent generation is superseded.
+ * A legacy hostname-only call or loss of authority leaves the row in place.
  */
 export const erase = (
-  hostname: string,
+  registration: Pick<Row, "hostname" | "repoId" | "pollId"> | string,
   authority?: Authority,
-): Effect.Effect<"erased" | "stale", unknown, SqlClient.SqlClient> =>
+): Effect.Effect<"erased" | "stale" | "superseded", unknown, SqlClient.SqlClient> =>
   Effect.flatMap(SqlClient.SqlClient, (sql) =>
     sql.withTransaction(Effect.gen(function* () {
-      if ((yield* authorized(authority)) !== "held") return "stale" as const
-      yield* sql`DELETE FROM domains WHERE hostname = ${hostname} AND state = 'removing'`
+      // A legacy hostname-only request cannot establish which registration it withdrew.
+      if (typeof registration === "string" || (yield* authorized(authority)) !== "held") return "stale" as const
+      const erased = yield* sql`DELETE FROM domains WHERE hostname = ${registration.hostname} AND state = 'removing'
+        AND repo_id = ${registration.repoId} AND poll_id = ${registration.pollId} RETURNING poll_id`
+      if (erased.length === 0) return "superseded" as const
       yield* ProtectedAuthority.requireAtCommit(authority)
       return "erased" as const
     })))

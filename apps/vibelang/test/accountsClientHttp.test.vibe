@@ -5,6 +5,7 @@ import { expect, it } from "@effect/vitest"
 import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer"
 import { FetchHttpClient, HttpClient, HttpClientRequest, HttpServer, HttpServerRequest } from "effect/http"
 import { Core, GitHub } from "@smthrs/integrations"
+import * as Web from "../src/web/main.vibe"
 import * as Accounts from "../worker/Accounts.vibe"
 import * as LiveAccounts from "../src/core/LiveAccounts.vibe"
 import { objectStorage } from "./support/objectStorage.ts"
@@ -24,6 +25,9 @@ it.live("reads a real signed session, grants and follows a role, then signs out 
     try promise(() => storage.put("session/" + token, { id: "1", login: "will", expires }))
     try promise(() => storage.put("person/1", { id: "1", login: "will" }))
     try promise(() => storage.put("person/7", { id: "7", login: "ada" }))
+    for (let id = 100; id < 199; id++) {
+      try promise(() => storage.put("person/" + id, { id: String(id), login: "member" + id }))
+    }
     const product = try Accounts.make("live-accounts-client", storage, {
       origin, signingSecret, encryptionKey: Redacted.make("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="), initialMaintainer: "1", clientId: "fixture-client-id", github, issuedHere: () => succeed(true),
     })
@@ -34,6 +38,8 @@ it.live("reads a real signed session, grants and follows a role, then signs out 
       const client = try LiveAccounts.make(origin)
       const me = try client.current()
       const before = try client.members()
+      const people = try Effect.try(() => Web.update(Web.init({ session: "test", name: "Guest", mode: "live" }).model, Web.Message.LoadedPeople({ members: [...before] })).model)
+      try Effect.try(() => expect(new Set(Web.accountOf(people).members.map(person => person.id))).toEqual(new Set(["1", "7", ...Array.from({ length: 99 }, (_, i) => String(100 + i))])))
       try client.grant("7", "contributor")
       const events = try Stream.runCollect(client.events("ledger" in me ? me.ledger.seq : 0).pipe(Stream.take(1)))
       const after = try client.members()

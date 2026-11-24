@@ -4,7 +4,8 @@
 import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { build } from "vite"
+import { execFile } from "node:child_process"
+import { promisify } from "node:util"
 import { afterAll, expect, test } from "vitest"
 import { DOCS_SITE } from "./pwa"
 
@@ -13,12 +14,15 @@ const outDir = mkdtempSync(join(tmpdir(), "smithers-mvp-build-"))
 afterAll(() => rmSync(outDir, { recursive: true, force: true }))
 
 test("the production build succeeds and precaches the app's bundle and the engine worker", async () => {
-  await build({ root, configFile: join(root, "vite.config.ts"), logLevel: "silent", build: { outDir, emptyOutDir: true } })
+  await promisify(execFile)(join(root, "node_modules/.bin/vite"), ["build", "--outDir", outDir, "--emptyOutDir", "--logLevel", "silent"], {
+    cwd: root, env: { ...process.env, NODE_ENV: "production" },
+  })
   const assets = readdirSync(join(outDir, "assets"))
   const bundle = assets.find((name) => /^index-.*\.js$/.test(name))
   const engine = assets.find((name) => /^engine\.worker-.*\.js$/.test(name))
   expect(bundle).toBeDefined()
   expect(engine).toBeDefined()
+  expect(assets.filter(name => name.includes("demoModel"))).toEqual([])
   const serviceWorker = readFileSync(join(outDir, "sw.js"), "utf8")
   expect(serviceWorker).toContain(`assets/${bundle}`)
   expect(serviceWorker).toContain(`assets/${engine}`)

@@ -84,7 +84,11 @@ test("global fleet shapes sync host_nodes, observed_sessions, and provider_accou
         sql`INSERT INTO observed_sessions (session_key, node_id, managed, harness, model, account_label, repo, lane, title, status, pid, cpu_seconds, tokens_used)
           VALUES (${"mac-mini-live:claude:s1"}, ${"mac-mini-live"}, false, ${"claude"}, ${"claude-opus-4-7"}, ${"claude-1"}, ${"smithers"}, ${"feat/fleet"}, ${"Verify ElectricSQL sync"}, ${"working"}, 1234, 12.5, 4200)`,
         sql`INSERT INTO provider_accounts (account_key, provider, label, plan, status, five_hour_pct, weekly_pct, grants_json, active_sessions, pools, source_node)
-          VALUES (${"claude:claude-1"}, ${"claude"}, ${"claude-1"}, ${"max"}, ${"ready"}, 12.5, 34, ${JSON.stringify({ tier: "max" })}::jsonb, 1, ${["max"]}, ${"mac-mini-live"})`,
+          VALUES (${"claude:claude-1"}, ${"claude"}, ${"claude-1"}, ${"max"}, ${"ready"}, 12.5, 34, ${JSON.stringify({ tier: "max", leak: { token: "sentinel-legacy-grant" } })}::jsonb, 1, ${["max"]}, ${"mac-mini-live"})`,
+        // A session that ended, with a transcript: the shape leaves it on the server.
+        sql`INSERT INTO observed_sessions (session_key, node_id, managed, harness, title, status, ended_at, transcript_json)
+          VALUES (${"mac-mini-live:claude:ended"}, ${"mac-mini-live"}, false, ${"claude"}, ${"Finished yesterday"}, ${"ended"}, now(),
+            ${JSON.stringify([{ ts: null, role: "assistant", label: null, text: "sentinel-ended-transcript" }])}::jsonb)`,
       ], { discard: true })
     )
     const ui = await app.runPromise(Effect.service(PluginsUi))
@@ -132,6 +136,13 @@ test("global fleet shapes sync host_nodes, observed_sessions, and provider_accou
       pools: ["max"],
       sourceNode: "mac-mini-live",
     })
+    // R2-Astra-D4-004: Electric is never asked for `grants_json`, so a legacy row's disallowed fields stay on the server.
+    expect(accountRow).not.toHaveProperty("grantsJson")
+    expect(accountRow).not.toHaveProperty("grants_json")
+    expect(JSON.stringify(accountsState)).not.toContain("sentinel")
+    // R2-Astra-D4-015: the snapshot that delivered the live session did not carry the ended one.
+    expect(sessionsState._tag === "Ready" ? sessionsState.rows.map((r) => r.sessionKey) : []).toEqual(["mac-mini-live:claude:s1"])
+    expect(JSON.stringify(sessionsState)).not.toContain("sentinel")
   } finally { await app.dispose() }
 })
 

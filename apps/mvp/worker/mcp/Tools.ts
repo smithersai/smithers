@@ -94,6 +94,7 @@ export interface IssueDetail {
   readonly createdAt: string
   readonly updatedAt: string
   readonly comments: ReadonlyArray<IssueComment>
+  readonly commentsTruncated?: boolean
 }
 
 /** One pull request in a list. */
@@ -913,7 +914,7 @@ export const makeMcpToolRegistry = (deps: McpToolDeps) =>
                   createdAt: comment.createdAt,
                   untrusted: { body: comment.body },
                 })),
-                commentsTruncated: issue.comments.length > MAX_ISSUE_COMMENTS,
+                commentsTruncated: issue.commentsTruncated === true || issue.comments.length > MAX_ISSUE_COMMENTS,
               }),
             ],
           }

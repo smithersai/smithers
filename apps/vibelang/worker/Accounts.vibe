@@ -171,6 +171,9 @@ export effect function make(hostId: string, storage: Storage, setup: Setup) {
   // Serializes the object's storage writes. No request holds it while GitHub or smithers.sh answers, and no read takes it.
   const lock = try Semaphore.make(1)
   const locked = <A, E, R>(work: A!E!R) => Semaphore.withPermits(lock, 1)(work)
+  // One minute per window, with bounded memory even when every address is new.
+  let deviceWindowEnds = 0
+  const deviceAttempts = new Map<string, number>()
   const issueLock = try Semaphore.make(1)
   const policy: Policy.Shape = {
     authorize: effect (actor, action) => {
@@ -297,15 +300,24 @@ export effect function make(hostId: string, storage: Storage, setup: Setup) {
       // The token signs in only when GitHub says this App issued it. Any GitHub failure closes the sign-in; the
       // journal and logs carry only the outcome. The CLI keeps the session cookie, never the token, so the App's own
       // token is revoked once read: it must not evict the person's GitHub connection.
-      const token = body === undefined ? undefined : Redacted.make(body.token)
-      const issued = token !== undefined && (try setup.issuedHere(token))
-      const person = token !== undefined && issued ? (setup.github.user(token) catch () => null) : null
+      if (body === undefined) return json({ error: "body" }, 400)
+      const now = try Clock.currentTimeMillis
+      if (now >= deviceWindowEnds) {
+        deviceAttempts.clear()
+        deviceWindowEnds = now + 60_000
+      }
+      const visitor = request.headers["cf-connecting-ip"] ?? "unknown"
+      const attempts = deviceAttempts.get(visitor) ?? 0
+      if (attempts >= 10 || (attempts === 0 && deviceAttempts.size >= 10_000)) return json({ error: "rate-limit" }, 429)
+      deviceAttempts.set(visitor, attempts + 1)
+      const token = Redacted.make(body.token)
+      if (!(try setup.issuedHere(token))) return json({ error: "sign-in" }, 401)
+      const person = setup.github.user(token) catch () => null
       // The revocation is a durable action, so it runs as its own journaled step, also outside the lock.
-      if (token !== undefined && issued) try mutation("revoke", GitHub.Auth.Broker.discard(setup.github, token))
+      try mutation("revoke", GitHub.Auth.Broker.discard(setup.github, token))
+      try Effect.logInfo("vibelang.account.device").pipe(Effect.annotateLogs({ outcome: person === null ? "refused" : "issued" }))
+      if (person === null || !personId(Number.isSafeInteger(person.id), person.id)) return json({ error: "sign-in" }, 401)
       return try locked(mutation("device", effect {
-        if (body === undefined) return json({ error: "body" }, 400)
-        try Effect.logInfo("vibelang.account.device").pipe(Effect.annotateLogs({ outcome: !issued ? "foreign" : person === null ? "refused" : "issued" }))
-        if (person === null || !personId(Number.isSafeInteger(person.id), person.id)) return json({ error: "sign-in" }, 401)
         const id = String(person.id)
         const sessionId = try keys.token
         try put("session/" + sessionId, { id, login: person.login, expires: (try Clock.currentTimeMillis) + AGE, agent: true })

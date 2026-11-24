@@ -7,8 +7,9 @@
  */
 import * as SubagentCard from "@smthrs/rpc/SubagentCard"
 import { applyPatch, reversePatch } from "diff"
-import { chmod, mkdir, stat, unlink, writeFile } from "node:fs/promises"
-import { dirname, resolve } from "node:path"
+import { randomUUID } from "node:crypto"
+import { chmod, mkdir, realpath, rename, rm, stat, unlink, writeFile } from "node:fs/promises"
+import { basename, dirname, join, resolve } from "node:path"
 import { within } from "./approvals.ts"
 import * as Changes from "./changes.ts"
 import * as Log from "./log.ts"
@@ -348,18 +349,46 @@ export const recorded = (plan: Plan, files: ReadonlyArray<File>): ReadonlyArray<
   ...plan.settled
 ]
 
-export const put = async (path: string, content: string | null, mode?: number): Promise<void> => {
-  if (content === null) return unlink(path)
-  await mkdir(dirname(path), { recursive: true })
-  await writeFile(path, content)
-  if (mode !== undefined) await chmod(path, mode)
-}
-
 const modeOf = async (path: string): Promise<number | undefined> => {
   try {
     return (await stat(path)).mode & 0o7777
   } catch (error) {
     if (["ENOENT", "ENOTDIR"].includes((error as NodeJS.ErrnoException).code ?? "")) return undefined
+    throw error
+  }
+}
+
+/** The file a write to `path` lands in: a symlink's target, so publishing never replaces the link. */
+const target = async (path: string): Promise<string> => {
+  try {
+    return await realpath(path)
+  } catch (error) {
+    if (["ENOENT", "ENOTDIR"].includes((error as NodeJS.ErrnoException).code ?? "")) return path
+    throw error
+  }
+}
+
+/**
+ * Writes `content` to `path`, or removes it for `null`. The bytes and the mode
+ * are staged in a sibling file and published with one rename, so a write that
+ * fails (a full disk, a refused chmod) leaves `path` holding what it held:
+ * never a truncated prefix another writer's save could be mistaken for.
+ */
+export const put = async (path: string, content: string | null, mode?: number): Promise<void> => {
+  if (content === null) return unlink(path)
+  await mkdir(dirname(path), { recursive: true })
+  const destination = await target(path)
+  const staged = join(dirname(destination), `.${basename(destination)}.${randomUUID()}.undo`)
+  try {
+    // `wx`: a name another process holds is never written through.
+    await writeFile(staged, content, { flag: "wx", mode: 0o600 })
+    // A rename carries the staged file's mode: an existing file keeps its own unless one is given.
+    const kept = mode ?? await modeOf(destination)
+    if (kept !== undefined) await chmod(staged, kept)
+    else await chmod(staged, 0o666 & ~process.umask())
+    await rename(staged, destination)
+  } catch (error) {
+    await rm(staged, { force: true }).catch(() => undefined)
     throw error
   }
 }
@@ -370,9 +399,10 @@ const modeOf = async (path: string): Promise<number | undefined> => {
  * Each file is checked again just before its write: still inside the workspace
  * and still holding the bytes `plan` read. Another writer between two writes
  * stops the undo as a `Conflict` and rolls back. Rollback puts a file back only
- * while it still holds what this undo wrote (or, for the write that failed, a
- * truncated prefix of it); a file another writer changed meanwhile is kept and
- * named in `kept`.
+ * while it still holds exactly what this undo published. `put` stages its bytes
+ * and publishes them with a rename, so a failed write leaves its file alone;
+ * any other content, an empty file or a prefix of the planned bytes included,
+ * is another writer's save: it is kept and named in `kept`.
  */
 export const commit = async (
   cwd: string,
@@ -416,7 +446,7 @@ export const commit = async (
         const now = await read(path)
         if (now === done.current) {
           if ((await modeOf(path)) !== mode) await write(path, done.current, mode)
-        } else if (ours(now, done, done === failed)) {
+        } else if (now !== undefined && now === done.next) {
           await write(path, done.current, mode)
         } else {
           // Another writer changed it after this undo did: its bytes win.
@@ -446,7 +476,7 @@ export const commit = async (
       await write(path, file.next, file.mode)
       applied.push(file)
     } catch (error) {
-      // The failed write may have truncated its file before throwing.
+      // The failed write published nothing, or everything: rollback checks which.
       const { restored, kept } = await rollback(file)
       return {
         _tag: "WriteFailed",
@@ -458,16 +488,6 @@ export const commit = async (
     }
   }
   return undefined
-}
-
-/**
- * Whether `now` is what this undo left in `file`: its planned bytes, or for the
- * write that threw, a truncated prefix of them.
- */
-const ours = (now: string | null | undefined, file: File, failed: boolean): boolean => {
-  if (now === undefined) return false
-  if (now === file.next) return true
-  return failed && typeof now === "string" && typeof file.next === "string" && file.next.startsWith(now)
 }
 
 /** The failed write's errno code, the one fact `message` words; the rest goes to the log. */

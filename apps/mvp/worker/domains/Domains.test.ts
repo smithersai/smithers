@@ -260,6 +260,52 @@ describe("DELETE /api/repos/<owner>/<name>/domains/<hostname>", () => {
     expect((await events(runtime)).map((event) => event.action)).toEqual(["add", "check", "remove"])
   })
 
+  test("an old provider completion leaves a replacement that is itself being removed", async () => {
+    const hostname = "docs.example.com"
+    await seed(runtime, { hostname, pollId: "old-poll", providerId: "cf-old", state: "active" })
+    const h = await open({ actor: maintainer })
+    const route = domainRoute(REPO.owner, REPO.name, hostname)
+    let arrived!: () => void, finish!: () => void
+    const firstArrived = new Promise<void>((resolve) => { arrived = resolve })
+    const firstGate = new Promise<void>((resolve) => { finish = resolve })
+    let replacementArrived!: () => void, finishReplacement!: () => void
+    const replacing = new Promise<void>((resolve) => { replacementArrived = resolve })
+    const replacementGate = new Promise<void>((resolve) => { finishReplacement = resolve })
+    let oldAttempts = 0
+    provider.use({
+      ensure: () => Effect.succeed({ id: "cf-new", records: [], verification: "active", certificate: "active" }),
+      remove: (id) => Effect.promise(async () => {
+        if (id === "cf-old" && ++oldAttempts === 1) {
+          arrived()
+          await firstGate
+        }
+        if (id === "cf-new") {
+          replacementArrived()
+          await replacementGate
+        }
+      }),
+    })
+    const first = h.fetch(route, remove)
+    try {
+      await firstArrived
+      expect((await h.fetch(route, remove)).status).toBe(202)
+      expect(await rows(runtime)).toEqual([])
+      expect((await h.fetch(path, add(hostname))).status).toBe(202)
+      const replacement = h.fetch(route, remove)
+      await replacing
+      finish()
+      expect((await first).status).toBe(202)
+      expect(host.exits.at(-1)).toMatchObject({ _tag: "Success", value: { change: "superseded" } })
+      expect(await rows(runtime)).toMatchObject([{ providerId: "cf-new", state: "removing" }])
+      finishReplacement()
+      expect((await replacement).status).toBe(202)
+      expect(await rows(runtime)).toEqual([])
+    } finally {
+      finish()
+      finishReplacement()
+    }
+  })
+
   test("removing a domain the repository doesn't hold changes nothing, and an invalid hostname is refused", async () => {
     await seed(runtime, { hostname: "docs.example.com", repoId: "github/acme/other" })
     const h = await open({ actor: maintainer })
@@ -881,19 +927,34 @@ describe("authority held through the flows", () => {
     expect(await rows(runtime)).toMatchObject([{ state: "active", providerId: `cf-${hostname}` }])
   })
 
-  test("a Maintainer demoted while the provider answers: the domain is not promoted to active", async () => {
+  test.each([false, true])("demotion during ensure cleans up unless another poll adopts the registration (adopt=%s)", async (adopt) => {
     const who = await person("maintainer")
-    const { claim, check } = DomainFlows.steps(await database())
-    await keyed(claim(verify(who)))
+    const next = await person("admin")
+    const newer = await open({ actor: next.actor })
+    const forgotten: Array<string> = []
+    let ensures = 0
+    const id = "cf-new"
     provider.use({
-      ensure: (name) =>
-        Effect.promise(() => demote(who)).pipe(
-          Effect.as({ id: `cf-${name}`, records: [], verification: "active" as const, certificate: "active" as const }),
-        ),
+      ensure: () => Effect.promise(async () => {
+        if (++ensures === 1) {
+          await demote(who)
+          expect(await rows(runtime)).toMatchObject([{ state: "pending", providerId: null, updatedBy: who.id }])
+          if (adopt) expect((await newer.fetch(path, add(hostname))).status).toBe(202)
+        }
+        return { id, records: [], verification: "active", certificate: "active" } as const
+      }),
+      remove: (registrationId) => Effect.sync(() => void forgotten.push(registrationId)),
     })
-    expect(await keyed(check({ ...verify(who), attempt: 1 }))).toEqual({ satisfied: true, output: "unauthorized" })
-    expect(await rows(runtime)).toMatchObject([{ state: "pending", providerId: null }])
-    expect((await events(runtime)).map((event) => event.action)).toEqual(["add"])
+    const pollId = crypto.randomUUID()
+    await Effect.runPromise(host.starter.start(DomainFlows.Verify, {
+      executionId: pollId, payload: { ...verify(who), pollId },
+    }))
+    expect(host.exits.at(-1)).toMatchObject({ _tag: "Success" })
+    expect(forgotten).toEqual(adopt ? [] : [id])
+    expect(await rows(runtime)).toMatchObject([adopt
+      ? { state: "active", providerId: id, updatedBy: next.id }
+      : { state: "pending", providerId: null, updatedBy: who.id, checkedAt: null }])
+    expect((await events(runtime)).map((event) => event.action)).toEqual(adopt ? ["add", "refresh", "check"] : ["add"])
   })
 
   test("a Maintainer demoted after domain/Remove started: the provider keeps the domain and the row stays", async () => {

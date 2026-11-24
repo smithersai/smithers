@@ -126,6 +126,49 @@ describe("FleetMcpTools BYOA auth & OBS-5 scrubbing", () => {
     expect(scrubbed).toContain("[redacted]")
   })
 
+  // R2-Astra-D4-001: the journal's machine-token rule, and the forms around it, apply to every fleet text.
+  test("scrubText redacts Smithers machine, scoped and access tokens, whole or cut short", () => {
+    const machine = `smm_${"Ab3-_xY9".repeat(6).slice(0, 43)}`
+    for (const text of [
+      machine,
+      `token ${machine} trailing`,
+      `https://smithers.test/hooks/${machine}/x`,
+      `Authorization: Bearer ${machine}`,
+      `SMITHERS_MACHINE_TOKEN=${machine}`,
+      `"${machine}"`,
+      `cut ${machine.slice(0, 20)}`,
+      `smt1.${"a".repeat(24)}.${"b".repeat(43)}`,
+      `smithers_${"0123456789abcdef".repeat(3).slice(0, 40)}`,
+    ]) {
+      const scrubbed = FleetStore.scrubText(text, 400)
+      expect(scrubbed, text).toContain("[redacted]")
+      expect(scrubbed, text).not.toMatch(/smm_|smt1\.|smithers_0/)
+      expect(scrubbed, text).not.toContain("[REDACTED]")
+      // A scrubbed text read again is unchanged.
+      expect(FleetStore.scrubText(scrubbed, 400), text).toBe(scrubbed)
+    }
+    expect(FleetStore.scrubText("Fleet observability upgrade in /Users/dev/smithers-fleet", 400)).toBe("Fleet observability upgrade in /Users/dev/smithers-fleet")
+    expect(FleetStore.scrubTranscript([{ ts: null, role: "tool", label: `Bash ${machine}`, text: `echo ${machine}` }]))
+      .toEqual([{ ts: null, role: "tool", label: "Bash [redacted]", text: "echo [redacted]" }])
+  })
+
+  // R2-Astra-D4-019: a count Postgres cannot hold is refused as an argument, with no database to reach.
+  test("a count above the integer range is invalid_params on every tool that stores one", async () => {
+    const admin = principalFor("maya", ["mcp:read", "mcp:write"])
+    expect(FleetStore.MAX_INT32).toBe(2_147_483_647)
+    for (const field of ["activeSessions", "runnerCapacity", "cpuCores"]) {
+      expect(codeOf(await call("fleet_heartbeat", { ...HEARTBEAT, [field]: 2_147_483_648 }, admin, ADMINS)), field).toBe("invalid_params")
+    }
+    expect(codeOf(await call("fleet_accounts_report", {
+      sourceNode: "node-1",
+      accounts: [{ accountKey: "claude:one", provider: "claude", label: "one", status: "ready", activeSessions: 2_147_483_648 }],
+    }, admin, ADMINS))).toBe("invalid_params")
+    expect(codeOf(await call("fleet_sessions_report", {
+      nodeId: "node-1",
+      sessions: [{ sessionKey: "node-1:s1", harness: "claude", status: "working", pid: 2_147_483_648 }],
+    }, admin, ADMINS))).toBe("invalid_params")
+  })
+
   // R1-Astra-D4-011: provider grant telemetry keeps approved fields only, at every depth.
   test("projectGrants keeps the approved quota fields and drops everything else", () => {
     expect(FleetStore.projectGrants({

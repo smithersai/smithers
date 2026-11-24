@@ -279,7 +279,7 @@ const askAdmitted = (question: string, from: FromView | undefined, conversationI
     const answerId = crypto.randomUUID()
     const askedAt = yield* Clock.currentTimeMillis
     // Include rows restored or admitted by another tab. The outbox persists its own admission sequence for delivery.
-    yield* store.unsent.restored.pipe(Effect.orDie)
+    yield* store.unsent.restored.pipe(Effect.ignore)
     const latestQueued = (rows: ReadonlyArray<{ readonly queuedAt: number }>) => rows.reduce((max, row) => Math.max(max, row.queuedAt), 0)
     const restored = Math.max(latestQueued(yield* store.asking.toArray), latestQueued(yield* store.unsent.toArray))
     const queuedAt = yield* Ref.updateAndGet(store.lastQueuedAt, (last) => Math.max(askedAt, restored + 1, last + 1))

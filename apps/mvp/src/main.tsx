@@ -714,7 +714,7 @@ void Promise.all([Promise.resolve(firstPaint?.handOver()).then((held) => wipe.op
     void import("./test/e2e")
       .then((e2e) => e2e.startWithFaults(opened, window.location.search, window))
       .then(({ stop }) => leaving(stop))
-  } else if (new URLSearchParams(window.location.search).get("agent") === "mock") {
+  } else if (import.meta.env.DEV && new URLSearchParams(window.location.search).get("agent") === "mock") {
     void import("./features/agent/demoModel")
       .then((demo) => {
         const demoPage = {
@@ -730,9 +730,7 @@ void Promise.all([Promise.resolve(firstPaint?.handOver()).then((held) => wipe.op
           },
         }
         leaving(start(demoPage, demo.demoServices).stop)
-      })
-      .catch(() => {
-        // recorded: fallback to normal boot if demo chunk fails to load
+      }, () => {
         leaving(start(opened, realServices(opened)).stop)
       })
   } else {

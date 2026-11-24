@@ -3,6 +3,7 @@
 //   node --test apps/maintainer-site/test/serve.test.mjs
 import assert from "node:assert/strict"
 import { closeSync, copyFileSync, fstatSync, cpSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, statSync, symlinkSync, truncateSync, utimesSync, writeFileSync } from "node:fs"
+import { createHash } from "node:crypto"
 import { once } from "node:events"
 import { Worker } from "node:worker_threads"
 import { request } from "node:http"
@@ -48,6 +49,11 @@ function call(path, { method = "GET", headers = {}, body } = {}) {
 const seen = async (itemId) => {
   const item = (await call("/api/queue")).json.items.find((candidate) => candidate.id === itemId)
   return Object.fromEntries([...VERSION_FIELDS, "digest"].map((field) => [field, item?.[field] ?? null]))
+}
+const undoLast = async (itemId) => {
+  const { last } = (await call("/api/queue")).json
+  assert.equal(last.itemId, itemId)
+  return post({ itemId, answerId: last.answerId, action: "undo" })
 }
 const post = async (body, headers = {}) => call("/api/answer", { method: "POST", headers: { "content-type": "application/json", ...headers }, body: body && typeof body === "object" ? { ...await seen(body.itemId), ...body } : body })
 const visibleIds = async () => (await call("/api/queue")).json.items.map((item) => item.id)
@@ -149,6 +155,40 @@ describe("GET /api/queue", () => {
     assert.match(decision.contextHtml, /class="file"/)
   })
 
+  test("each queue snapshot reads the coverage index once and preserves review pins", async (t) => {
+    const snapshot = mkdtempSync(join(tmpdir(), "queue-coverage-"))
+    const items = JSON.parse(readFileSync(join(fixtures, "queue.json"))).items
+    const coverage = { slices: {} }
+    const inherited = ["first", "second"].map((name) => ({
+      id: "coverage-test:" + name, kind: "code", files: ["code.ts"],
+    }))
+    for (const [i, item] of inherited.entries()) {
+      items.push(item)
+      coverage.slices[item.id] = { commit: (i + 1).toString(16).padStart(40, "0") }
+    }
+    writeFileSync(join(snapshot, "queue.json"), JSON.stringify({ items }))
+    writeFileSync(join(snapshot, "coverage.json"), JSON.stringify(coverage))
+    let reads = 0
+    const app = startServer({ port: 0, queueDir: snapshot, repo, readCoverageFile(file, encoding) {
+      reads++
+      return readFileSync(file, encoding)
+    } })
+    t.after(async () => { await app.close(); rmSync(snapshot, { recursive: true, force: true }) })
+    await app.ready
+    for (let snapshot = 0; snapshot < 2; snapshot++) {
+      const before = reads
+      const { queue } = app.state()
+      assert.equal(reads - before, 1)
+      for (const raw of inherited) {
+        const item = queue.items.find((entry) => entry.id === raw.id)
+        const commit = coverage.slices[raw.id].commit
+        const reviewed = { ...raw, contextHtml: "", commit }
+        assert.equal(item.commit, commit)
+        assert.equal(item.digest, createHash("sha256").update(JSON.stringify([reviewed, {}])).digest("hex"))
+      }
+    }
+  })
+
   test("a verify item carries the answer it verifies", async () => {
     const verify = (await call("/api/queue")).json.items.find((item) => item.id === "verify:shape-stream-limit")
     assert.equal(verify.verifies.itemId, "code:shape-stream@old")
@@ -179,7 +219,7 @@ describe("POST /api/answer", () => {
     const after = answersText()
     assert.ok(after.startsWith(before), "the file is appended to, never rewritten")
     const line = JSON.parse(after.slice(before.length))
-    assert.deepEqual(Object.keys(line), ["itemId", "at", "action", "option", "text", "digest", "commit", "revision", "addedAt", "title"])
+    assert.deepEqual(Object.keys(line), ["itemId", "answerId", "at", "action", "option", "text", "digest", "commit", "revision", "addedAt", "title"])
     assert.equal(line.at, new Date(clock.now).toISOString())
     assert.equal(line.title, "Read rows through Electric shapes, not polling")
     assert.equal(line.text, "Shapes, with a retry.")
@@ -188,7 +228,7 @@ describe("POST /api/answer", () => {
 
   test("undo is an appended record that returns the item to the queue", async () => {
     const before = answersText()
-    const response = await post({ itemId: "decision:electric-shapes", action: "undo" })
+    const response = await undoLast("decision:electric-shapes")
     assert.equal(response.status, 200)
     const after = answersText()
     assert.ok(after.startsWith(before))
@@ -201,11 +241,11 @@ describe("POST /api/answer", () => {
     const response = await post({ itemId: "code:shape-stream@3f2a", action: "changes", scope: "all", kind: "design", text: "Show a diagram first." })
     assert.equal(response.status, 200)
     const line = JSON.parse(answersText().slice(before.length))
-    assert.deepEqual(Object.keys(line), ["itemId", "at", "action", "scope", "kind", "text", "digest", "commit", "revision", "addedAt", "title"])
+    assert.deepEqual(Object.keys(line), ["itemId", "answerId", "at", "action", "scope", "kind", "text", "digest", "commit", "revision", "addedAt", "title"])
     assert.equal(line.scope, "all")
     assert.equal(line.kind, "code", "the kind comes from the item, not the client")
     assert.ok(!(await visibleIds()).includes("code:shape-stream@3f2a"))
-    await post({ itemId: "code:shape-stream@3f2a", action: "undo" })
+    await undoLast("code:shape-stream@3f2a")
     assert.ok((await visibleIds()).includes("code:shape-stream@3f2a"))
     assert.equal((await post({ itemId: "code:shape-stream@3f2a", action: "approve", scope: "everything" })).status, 400)
   })
@@ -231,11 +271,11 @@ describe("POST /api/answer", () => {
     assert.equal((await post({ ...input, action: "approve" })).status, 409, "a second tab cannot replace a standing answer")
     assert.equal(answersText(), saved)
     assert.equal((await call("/api/stats")).json.doneToday, statsBefore.doneToday + 1)
-    assert.equal((await post({ itemId, action: "undo" })).status, 200)
+    assert.equal((await undoLast(itemId)).status, 200)
     assert.ok((await visibleIds()).includes(itemId))
     assert.equal((await call("/api/stats")).json.doneToday, statsBefore.doneToday)
     assert.equal((await post(input)).status, 200, "answering again after undo is allowed")
-    await post({ itemId, action: "undo" })
+    await undoLast(itemId)
   })
 
   test("historical duplicate answers remain undoable, newest first", async () => {
@@ -246,10 +286,10 @@ describe("POST /api/answer", () => {
     writeFileSync(join(queueDir, "answers.jsonl"), records.map((record) => JSON.stringify(record) + "\n").join(""), { flag: "a" })
     const { stacks } = replay(readAnswers(join(queueDir, "answers.jsonl")))
     assert.deepEqual(stacks.get("design:status-pill@9124").map((answer) => answer.text), ["first", "second"])
-    await post({ itemId: "design:status-pill@9124", action: "undo" })
+    await undoLast("design:status-pill@9124")
     assert.deepEqual(replay(readAnswers(join(queueDir, "answers.jsonl"))).stacks.get("design:status-pill@9124").map((answer) => answer.text), ["first"])
     assert.ok(!(await visibleIds()).includes("design:status-pill@9124"))
-    await post({ itemId: "design:status-pill@9124", action: "undo" })
+    await undoLast("design:status-pill@9124")
     assert.ok((await visibleIds()).includes("design:status-pill@9124"))
   })
 
@@ -263,26 +303,38 @@ describe("POST /api/answer", () => {
     clock.now = start + 24 * HOUR + 1
     assert.ok((await visibleIds()).includes("gif:chat-shortcut@bf47"))
     assert.equal((await post({ itemId: "gif:chat-shortcut@bf47", action: "approve" })).status, 200, "an expired snooze permits an answer")
-    await post({ itemId: "gif:chat-shortcut@bf47", action: "undo" })
+    await undoLast("gif:chat-shortcut@bf47")
     clock.now = start
-    await post({ itemId: "gif:chat-shortcut@bf47", action: "undo" })
+    await undoLast("gif:chat-shortcut@bf47")
   })
 
   test("an item the curator re-adds after the answer can be answered once again", async () => {
-    await post({ itemId: "verify:shape-stream-limit", action: "approve" })
+    const v1 = await post({ itemId: "verify:shape-stream-limit", action: "approve" })
+    assert.equal(v1.status, 200)
     assert.ok(!(await visibleIds()).includes("verify:shape-stream-limit"))
     const queue = JSON.parse(readFileSync(join(queueDir, "queue.json"), "utf8"))
     queue.items.find((item) => item.id === "verify:shape-stream-limit").addedAt = new Date(clock.now + HOUR).toISOString()
     writeFileSync(join(queueDir, "queue.json.tmp"), JSON.stringify(queue))
     renameSync(join(queueDir, "queue.json.tmp"), join(queueDir, "queue.json"))
     assert.ok((await visibleIds()).includes("verify:shape-stream-limit"))
-    assert.equal((await post({ itemId: "verify:shape-stream-limit", action: "changes", text: "New version." })).status, 200)
+    const itemId = "verify:shape-stream-limit"
+    const v2 = await post({ itemId, action: "approve" })
+    assert.equal(v2.status, 200)
+    assert.notEqual(v1.json.answer.answerId, v2.json.answer.answerId)
+    const beforeUndo = answersText()
+    for (const answerId of [v1.json.answer.answerId, undefined]) {
+      assert.equal((await post({ itemId, action: "undo", answerId })).status, 409)
+      assert.equal(answersText(), beforeUndo)
+      assert.equal((await call("/api/queue")).json.last.answerId, v2.json.answer.answerId)
+    }
     assert.ok(!(await visibleIds()).includes("verify:shape-stream-limit"), "the recorded generation hides the item even when the curator's clock is ahead")
     assert.equal((await post({ itemId: "verify:shape-stream-limit", action: "approve" })).status, 409)
-    await post({ itemId: "verify:shape-stream-limit", action: "undo" })
+    const undo = await post({ itemId, action: "undo", answerId: v2.json.answer.answerId })
+    assert.equal(undo.status, 200)
+    assert.equal(undo.json.answer.undoes, v2.json.answer.answerId)
     assert.ok((await visibleIds()).includes("verify:shape-stream-limit"))
     copyFileSync(join(fixtures, "queue.json"), join(queueDir, "queue.json"))
-    await post({ itemId: "verify:shape-stream-limit", action: "undo" })
+    await undoLast("verify:shape-stream-limit")
   })
 
   test("new answer generations and legacy timestamps both distinguish curator re-additions", () => {
@@ -324,7 +376,7 @@ describe("POST /api/answer", () => {
       const response = await post({ itemId: "code:shape-stream@3f2a", action: "approve", revision: "new-digest" })
       assert.equal(response.status, 200, response.text)
       assert.equal(response.json.answer.revision, "new-digest")
-      await post({ itemId: "code:shape-stream@3f2a", action: "undo" })
+      await undoLast("code:shape-stream@3f2a")
     } finally {
       copyFileSync(join(fixtures, "queue.json"), join(queueDir, "queue.json"))
     }
@@ -355,7 +407,7 @@ describe("POST /api/answer", () => {
       await call("/api/answer", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: { itemId: "review-atomic", action: "undo" },
+        body: { itemId: "review-atomic", action: "undo", answerId: response.json.answer.answerId },
       })
     } finally {
       copyFileSync(join(fixtures, "queue.json"), join(queueDir, "queue.json"))
@@ -369,7 +421,7 @@ describe("POST /api/answer", () => {
     assert.equal(after.doneToday, before.doneToday + 1)
     assert.equal(after.remaining.question ?? 0, (before.remaining.question ?? 0) - 1)
     assert.equal(after.total, before.total - 1)
-    await post({ itemId: "question:scratch-repo", action: "undo" })
+    await undoLast("question:scratch-repo")
     assert.equal((await call("/api/stats")).json.doneToday, before.doneToday)
   })
 
@@ -408,7 +460,7 @@ describe("POST /api/answer", () => {
     const lines = answersText().trimEnd().split("\n")
     assert.equal(JSON.parse(lines.at(-1)).itemId, "code:shape-stream@3f2a")
     assert.ok(!readAnswers(file).some((answer) => answer.itemId === "torn"))
-    await post({ itemId: "code:shape-stream@3f2a", action: "undo" })
+    await undoLast("code:shape-stream@3f2a")
   })
 })
 
@@ -446,7 +498,7 @@ describe("GET /api/events", () => {
     await post({ itemId: "gif:chat-shortcut@bf47", action: "approve" })
     await next
     stream.close()
-    await post({ itemId: "gif:chat-shortcut@bf47", action: "undo" })
+    await undoLast("gif:chat-shortcut@bf47")
   })
 })
 
@@ -494,10 +546,23 @@ describe("GET /api/file", () => {
   test("serves HTML as HTML, sandboxed, and by path so its relative styles resolve", async () => {
     const page = await file("design/status.html")
     assert.match(page.headers["content-type"], /^text\/html/)
-    assert.match(page.headers["content-security-policy"], /sandbox; default-src 'none'/)
+    assert.match(page.headers["content-security-policy"], /sandbox allow-scripts; default-src 'none'; script-src 'unsafe-inline' 'self'; style-src 'unsafe-inline' 'self'; img-src 'self' data:/)
     const byPath = await call("/api/file/design/status.html")
     assert.equal(byPath.status, 200)
-    assert.equal((await call("/api/file/design/status.css")).headers["content-type"], "text/css; charset=utf-8")
+    const { json: { items } } = await call("/api/queue")
+    const design = items.find((item) => item.media?.some((media) => media.path === "design/status.html"))
+    const query = new URLSearchParams({ slice: design.id, digest: design.digest })
+    const path = "/api/file/design/status.html?" + query
+    assert.equal((await call(path)).status, 200)
+    assert.equal((await call(path + "stale")).status, 409)
+    for (const [relative, type] of [["status.css", "text/css; charset=utf-8"], ["status.svg", "image/svg+xml"]]) {
+      const asset = await call(new URL(relative, base + path).pathname)
+      assert.equal(asset.status, 200)
+      assert.equal(asset.headers["content-type"], type)
+      assert.equal(asset.headers["content-security-policy"], page.headers["content-security-policy"])
+    }
+    const api = await call("/api/queue", { headers: { origin: "null" } })
+    assert.equal(api.headers["access-control-allow-origin"], undefined)
   })
 
   test("serves recordings from the videos folder, with chapters, even when a test name says token", async () => {
@@ -851,8 +916,8 @@ describe("pages", () => {
 test("credentials and the write header are required for answers and undo", async () => {
   const before = answersText()
   for (const action of ["approve", "undo"]) {
-    for (const headers of [{ authorization: "" }, { authorization: "Bearer wrong" }, { "x-maintainer-write": "" }]) {
-      assert.equal((await post({ itemId: "decision:electric-shapes", action }, headers)).status, 403)
+    for (const [headers, expected] of [[{ authorization: "" }, 401], [{ authorization: "Bearer wrong" }, 401], [{ "x-maintainer-write": "" }, 403]]) {
+      assert.equal((await post({ itemId: "decision:electric-shapes", action }, headers)).status, expected)
     }
   }
   assert.equal(answersText(), before)
@@ -890,16 +955,61 @@ test("replacing content invalidates open cards, file and outline reads, and stan
   } finally { writeFileSync(queue, original) }
 })
 
-test("uploaded documents get an opaque scriptless sandbox and uppercase raster images retain their MIME", async () => {
+test("uploaded documents get an opaque sandbox and uppercase raster images retain their MIME", async () => {
   for (const name of ["sample.html", "sample.svg", "sample.PNG"]) {
     writeFileSync(join(dir, "site", name), "sample")
     const res = await call("/" + name)
     assert.equal(res.headers["x-content-type-options"], "nosniff")
-    assert.match(res.headers["content-security-policy"], /sandbox;/)
-    assert.doesNotMatch(res.headers["content-security-policy"], /allow-scripts|allow-same-origin/)
+    assert.match(res.headers["content-security-policy"], /sandbox allow-scripts;/)
+    assert.doesNotMatch(res.headers["content-security-policy"], /allow-same-origin/)
     if (name.endsWith("PNG")) assert.equal(res.headers["content-type"], "image/png")
   }
   const { safeUrl } = await import("../markdown.mjs")
   assert.equal(safeUrl("file:///etc/passwd"), null)
   assert.equal(safeUrl("fi\nle:///etc/passwd"), null)
+})
+
+test("GET /queue/ redirects to /queue before Basic Auth and unauthenticated POST /api/answer returns 401 when writeToken is set", async () => {
+  const redir = await fetch(base + "/queue/", { redirect: "manual" })
+  assert.equal(redir.status, 308)
+  assert.equal(redir.headers.get("location"), "/queue")
+
+  const unauth = await fetch(base + "/api/answer", {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-maintainer-write": "1" },
+    body: JSON.stringify({ itemId: "s1", action: "approve" }),
+  })
+  assert.equal(unauth.status, 401)
+  assert.match(String(unauth.headers.get("www-authenticate")), /Basic realm=/)
+})
+
+test("/api/markdown renders committed Markdown files listed in a pinned slice", async () => {
+  const queue = join(queueDir, "queue.json")
+  const original = readFileSync(queue)
+  const commit = "a".repeat(40)
+  const pinnedPath = "docs/committed-note.md"
+  const committedBody = "# Committed Snapshot\n\nExact committed text.\n"
+  const origExec = globalThis.__test_commit_note
+  // Test via a real server using readCommit hook or existing git commit if available; here use a dedicated server with fileAtCommit if supported, else verify via working repo commit
+  try {
+    const { execFileSync } = await import("node:child_process")
+    const rev = execFileSync("jj", ["--no-pager", "log", "-r", "@-", "--no-graph", "-T", "commit_id"], { cwd: join(import.meta.dirname, "../../.."), encoding: "utf8" }).trim()
+    const realRoot = join(import.meta.dirname, "../../..")
+    const realServer = startServer({ port: 0, site: join(dir, "site"), repo: realRoot, queueDir, writeToken: "fixture", log: false })
+    try {
+      const realBase = await realServer.ready
+      writeFileSync(queue, JSON.stringify({ items: [{ id: "md-pin", title: "Pinned MD", commit: rev, files: [{ path: "apps/maintainer-site/README.md" }] }] }))
+      const q = await (await fetch(realBase + "/api/queue")).json()
+      const opened = q.items.find((entry) => entry.id === "md-pin")
+      assert.ok(opened, "pinned markdown item should be visible")
+      const res = await fetch(realBase + "/api/markdown?slice=md-pin&path=" + encodeURIComponent("apps/maintainer-site/README.md") + "&digest=" + encodeURIComponent(opened.digest))
+      assert.equal(res.status, 200)
+      const body = await res.json()
+      assert.ok(typeof body.html === "string" && body.html.length > 0)
+    } finally {
+      await realServer.close()
+    }
+  } finally {
+    writeFileSync(queue, original)
+  }
 })

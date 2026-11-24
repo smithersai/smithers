@@ -11,6 +11,33 @@ import { objectStorage } from "./support/objectStorage.ts"
 import { ORIGIN, cookieOf, get, github, offline, originOf, post, serve, setupWith, signIn, untilSse } from "./support/accountsWorld.vibe"
 
 describe("sign-in over the object's real HTTP boundary", () => {
+  it.live("bounds device token checks per visitor and never journals rejected requests", () => scoped(effect {
+    provide NodeHttpServer.layerTest {
+      let checks = 0
+      const { origin, storage } = try serve({ ...setupWith(github([])), issuedHere: () => sync(() => { checks++; return false }) })
+      // Startup journals the migration and bootstrap grant before the first HTTP request.
+      const runs = () => storage.sql.exec("SELECT run_id FROM flows_runs ORDER BY run_id").toArray()
+      const initialRuns = try Effect.try(runs)
+      provide FetchHttpClient.layer {
+        const http = try HttpClient.HttpClient
+        const attempt = (body: unknown, address: string) => http.execute(post(origin, "/api/auth/device", body).pipe(HttpClientRequest.setHeader("cf-connecting-ip", address)))
+        const bad = try attempt({}, "192.0.2.1")
+        const statuses: number[] = []
+        for (let i = 0; i < 11; i++) statuses.push((try attempt({ token: "junk" + i }, "192.0.2.1")).status)
+        try Effect.try(() => {
+          expect(bad.status).toBe(400)
+          expect(statuses).toEqual([...Array(10).fill(401), 429])
+          expect(checks).toBe(10)
+        })
+        const other = try attempt({ token: "junk" }, "192.0.2.2")
+        try Effect.try(() => {
+          expect(other.status).toBe(401)
+          expect(runs()).toEqual(initialRuns)
+        })
+      }
+    }
+  }), 30_000)
+
   it.live("signs a person in through the real callback, serves their session, and signs them out durably", () => scoped(effect {
     provide NodeHttpServer.layerTest {
       const { origin, storage } = try serve(setupWith(github([{ id: 7, login: "ada" }])))

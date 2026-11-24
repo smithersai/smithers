@@ -1,3 +1,5 @@
+import { Collection } from "@smthrs/effect-tanstack-db"
+import { ask } from "./actions"
 import { Effect } from "effect"
 import { afterEach, expect, test, vi } from "vitest"
 import { boundFetch } from "../../device/identity"
@@ -41,4 +43,21 @@ test("a malformed credential gate is repaired before posting a question", async 
   expect(result.ok).toBe(true)
   expect(JSON.parse((await storage.get(key))!)).toMatchObject({ until: 0, revision: expect.any(String) })
   expect(api.questionStatuses()).toEqual([result.status])
+})
+
+test("a failed unsent restore still admits the question to the offline outbox", async () => {
+  const server = openTestApi()
+  runtimes.push(server)
+  const api = await server.runPromise(Effect.service(TestChatApi))
+  const base = nodeDevice()
+  const tab = openTab(api, { host: { ...base, outbox: {
+    ...base.outbox, online: { ...base.outbox.online, isOnline: () => false },
+  } } })
+  runtimes.push(tab)
+  const store = await tab.runPromise(Effect.service(ChatStore))
+  const result = await tab.runPromise(ask("keep this question").pipe(Effect.provideService(ChatStore, {
+    ...store, unsent: { ...store.unsent, restored: Effect.fail(new Collection.LoadFailed({ cause: "storage unavailable" })) },
+  })))
+  expect(result.asked).toBe(true)
+  if (result.asked) expect(store.asking.tanstack.get(result.questionId)).toMatchObject({ text: "keep this question" })
 })

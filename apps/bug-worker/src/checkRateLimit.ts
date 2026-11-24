@@ -1,5 +1,13 @@
 import type { BugWorkerEnv } from "./env.ts";
-import type { RateLimitAnswer, RateLimitRequest } from "./RateLimiter.ts";
+/**
+ * The worker's request. A charge (the default) admits and counts one request
+ * against `limit` for `hour`; a refund returns one admission charged to `hour`.
+ */
+export type RateLimitRequest =
+  | { op?: "charge"; hour: number; limit: number }
+  | { op: "refund"; hour: number };
+/** The answer to a charge: whether it was admitted, and the hour it was charged to. */
+export type RateLimitAnswer = { allowed: boolean; hour: number };
 
 /**
  * Accepted bug reports per hour across all clients. Rotating addresses defeats

@@ -17,6 +17,7 @@ export const Model = Schema.Struct({
   endpoint: Schema.String, available: Schema.Array(Schema.String), highlighted: Schema.Number,
   // Each native operation is busy on its own: `discovering` is the endpoint of the discovery in flight, and
   // `discovery` numbers the latest request, so an answer to an earlier or edited one is recognized and dropped.
+  settingsRequest: Schema.Number, settingsApplied: Schema.Number,
   discovery: Schema.Number, discovering: Schema.NullOr(Schema.String), folderOps: Schema.Number, modelOps: Schema.Number,
   error: Schema.String, offline: Schema.Boolean,
 })
@@ -25,7 +26,7 @@ const OperationSchema = Schema.Literals(["open", "close", "model", "mock"])
 const DesktopMessage = defineMessageUnion({
   OpenExternal: { url: Schema.String }, ExternalOpened: {},
   OpenFolder: {}, CloseFolder: {}, TogglePicker: {}, OpenModels: {}, CloseModels: {}, MaximizeModels: {},
-  Snapshot: { state: Snapshot, conversation: Schema.optionalKey(Schema.String), operation: Schema.optionalKey(OperationSchema) },
+  Snapshot: { generation: Schema.Number, state: Snapshot, conversation: Schema.optionalKey(Schema.String), operation: Schema.optionalKey(OperationSchema) },
   Failed: { reason: Schema.String, operation: Schema.optionalKey(OperationSchema) }, UpdatedEndpoint: { value: Schema.String },
   Connect: {}, Listed: { models: Schema.Array(Schema.String), endpoint: Schema.String, generation: Schema.Number },
   DiscoveryFailed: { endpoint: Schema.String, generation: Schema.Number }, Select: { model: Schema.String }, Mock: {},
@@ -50,15 +51,15 @@ const External = Command.define("Desktop.External", { args: { url: Schema.String
   const result = try exit(desktop.external(url))
   return try orDie(Effect.try(() => Exit.isSuccess(result) ? Message.ExternalOpened() : Message.Failed({ reason: "Browser unavailable" })))
 } })
-const Refresh = Command.define("Desktop.Refresh", { args: { conversation: Schema.String }, messages: [Message.Snapshot, Message.Failed], execute: effect ({ conversation }) => {
+const Refresh = Command.define("Desktop.Refresh", { args: { conversation: Schema.String, generation: Schema.Number }, messages: [Message.Snapshot, Message.Failed], execute: effect ({ conversation, generation }) => {
   const desktop = try DesktopClient
   const result = try exit(desktop.snapshot(conversation))
-  return try orDie(Effect.try(() => Exit.isSuccess(result) ? Message.Snapshot({ state: result.value, conversation }) : Message.Failed({ reason: "Desktop unavailable" })))
+  return try orDie(Effect.try(() => Exit.isSuccess(result) ? Message.Snapshot({ generation, state: result.value, conversation }) : Message.Failed({ reason: "Desktop unavailable" })))
 } })
-const Change = Command.define("Desktop.Change", { args: { operation: OperationSchema, endpoint: Schema.String, model: Schema.String }, messages: [Message.Snapshot, Message.Failed], execute: effect ({ operation, endpoint, model }) => {
+const Change = Command.define("Desktop.Change", { args: { generation: Schema.Number, operation: OperationSchema, endpoint: Schema.String, model: Schema.String }, messages: [Message.Snapshot, Message.Failed], execute: effect ({ generation, operation, endpoint, model }) => {
   const desktop = try DesktopClient
   const result = try exit(desktop.change(operation, endpoint, model))
-  return try orDie(Effect.try(() => Exit.isSuccess(result) ? Message.Snapshot({ state: result.value, operation }) : Message.Failed({ reason: "Unavailable", operation })))
+  return try orDie(Effect.try(() => Exit.isSuccess(result) ? Message.Snapshot({ generation, state: result.value, operation }) : Message.Failed({ reason: "Unavailable", operation })))
 } })
 // The answer names the request it answers: the endpoint asked and its number.
 const Connect = Command.define("Desktop.Connect", { args: { endpoint: Schema.String, generation: Schema.Number }, messages: [Message.Listed, Message.DiscoveryFailed], execute: effect ({ endpoint, generation }) => {
@@ -69,7 +70,7 @@ const Connect = Command.define("Desktop.Connect", { args: { endpoint: Schema.Str
 
 export function init(flags: Web.Flags): Update.Return<Model, Message, DesktopClient | Factory | Actions> {
   const base = Web.init(flags)
-  return { model: { ...base.model, surface: "chat", desktop: { mock: true, folder: null, model: null, tools: [] }, manager: false, maximized: false, picker: false, endpoint: "", available: [], highlighted: 0, discovery: 0, discovering: null, folderOps: 0, modelOps: 0, error: "", offline: false }, commands: [Refresh({ conversation: base.model.conversation }), Web.LoadAccount({})] }
+  return { model: { ...base.model, surface: "chat", desktop: { mock: true, folder: null, model: null, tools: [] }, manager: false, maximized: false, picker: false, endpoint: "", available: [], highlighted: 0, settingsRequest: 1, settingsApplied: 0, discovery: 0, discovering: null, folderOps: 0, modelOps: 0, error: "", offline: false }, commands: [Refresh({ generation: 1, conversation: base.model.conversation }), Web.LoadAccount({})] }
 }
 
 /** Folder operations and model choices are counted apart, so one finishing never clears the other. */
@@ -79,7 +80,7 @@ function counted(model: Model, operation: Operation | undefined, by: 1 | -1): Pi
   return { folderOps: Math.max(0, model.folderOps + (folder ? by : 0)), modelOps: Math.max(0, model.modelOps + (folder ? 0 : by)) }
 }
 function change(model: Model, operation: Operation, selected = ""): Update.Return<Model, Message, DesktopClient> {
-  return { model: { ...model, ...counted(model, operation, 1), error: "", picker: false }, commands: [Change({ operation, endpoint: model.endpoint, model: selected }), ...(model.picker ? [FocusActive({ palette: model.palette })] : [])] }
+  return { model: { ...model, settingsRequest: model.settingsRequest + 1, ...counted(model, operation, 1), error: "", picker: false }, commands: [Change({ generation: model.settingsRequest + 1, operation, endpoint: model.endpoint, model: selected }), ...(model.picker ? [FocusActive({ palette: model.palette })] : [])] }
 }
 /** Whether any native operation is in flight, for the status line only. */
 export function busy(model: Model): boolean { return model.discovering !== null || model.folderOps > 0 || model.modelOps > 0 }
@@ -122,6 +123,11 @@ export function update(model: Model, message: Message): Update.Return<Model, Mes
     case "Network": return { model: { ...model, offline: message.offline } }
     case "Snapshot": {
       if (message.conversation !== undefined && message.conversation !== model.conversation) return { model }
+      if (message.generation < model.settingsApplied) {
+        return { model: message.operation === undefined ? model : { ...model, ...counted(model, message.operation, -1) } }
+      }
+      const refresh = message.conversation === undefined
+      const settingsRequest = model.settingsRequest + (refresh ? 1 : 0)
       const switched = model.desktop.mock !== message.state.mock
       const reset = switched && !message.state.mock ? Web.update(model, Web.Message.AccountLoaded({ identity: localViewer })) : { model, commands: [] }
       // The host's endpoint replaces the field only when it is the same server the person named, or none was named:
@@ -129,7 +135,7 @@ export function update(model: Model, message: Message): Update.Return<Model, Mes
       const hosted = message.state.model?.endpoint
       const endpoint = hosted !== undefined && (model.endpoint === "" || endpointOf(model.endpoint) === hosted) ? hosted : model.endpoint
       // A change's own answer settles it and clears its error; a refresh reports state and touches neither.
-      return { model: { ...model, ...reset.model, desktop: message.state, endpoint, mode: message.state.mock ? "mock" : "live", ...counted(model, message.operation, -1), ...(message.operation === undefined ? {} : { error: "" }), ...(switched ? { epoch: model.epoch + 1, from: 0, client: newClient, stream: "open" as const } : {}) }, commands: [...(reset.commands ?? []), ...(switched ? [Web.LoadAccount({})] : []), ...(message.conversation === undefined ? [Refresh({ conversation: model.conversation })] : [])] }
+      return { model: { ...model, ...reset.model, settingsRequest, settingsApplied: message.generation, desktop: message.state, endpoint, mode: message.state.mock ? "mock" : "live", ...counted(model, message.operation, -1), ...(message.operation === undefined ? {} : { error: "" }), ...(switched ? { epoch: model.epoch + 1, from: 0, client: newClient, stream: "open" as const } : {}) }, commands: [...(reset.commands ?? []), ...(switched ? [Web.LoadAccount({})] : []), ...(refresh ? [Refresh({ generation: settingsRequest, conversation: model.conversation })] : [])] }
     }
     case "PickerKey": {
       if (message.key === "Escape") return { model: { ...model, picker: false }, commands: [FocusActive({ palette: model.palette })] }
@@ -149,7 +155,7 @@ export function update(model: Model, message: Message): Update.Return<Model, Mes
       const result = Web.update(guarded, intent)
       const moved = result.model.conversation !== model.conversation
       const refresh = moved || (message._tag === "ReceivedEvent" && ["ReplyFinished", "ReplyFailed"].includes(message.event.type))
-      return { model: { ...model, ...result.model, ...(moved ? { desktop: { ...model.desktop, tools: [] } } : {}) }, commands: [ ...(result.commands ?? []), ...(refresh ? [Refresh({ conversation: result.model.conversation })] : []) ] }
+      return { model: { ...model, ...result.model, settingsRequest: model.settingsRequest + (refresh ? 1 : 0), ...(moved ? { desktop: { ...model.desktop, tools: [] } } : {}) }, commands: [ ...(result.commands ?? []), ...(refresh ? [Refresh({ generation: model.settingsRequest + 1, conversation: result.model.conversation })] : []) ] }
     }
   }
 }

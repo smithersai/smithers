@@ -155,7 +155,7 @@ export const make = <E>(
       const [row] = yield* sql<{ readonly status: Status; readonly outcome: unknown; readonly task: unknown; readonly generation: number }>`
         WITH expired AS (
           UPDATE agent_jobs SET status = 'failed', outcome = '{"_tag":"Failed","reason":"timeout"}'::jsonb,
-            claim = NULL, lease_until = NULL, cancel_requested = true, settled_at = now(), updated_at = now()
+            settled_claim = claim, claim = NULL, lease_until = NULL, cancel_requested = true, settled_at = now(), updated_at = now()
           WHERE key = ${key} AND (
             (status = 'queued' AND deadline_at <= now())
             OR (status = 'claimed' AND deadline_at + ${SETTLE_GRACE_SECONDS}::int * interval '1 second' <= now()))
