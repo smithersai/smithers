@@ -5157,16 +5157,16 @@ importers:
   packages/smithers/flows/kernel:
     dependencies:
       '@smthrs/capability':
-        specifier: 1.0.0-rc.18
+        specifier: workspace:*
         version: link:../capability
       '@smthrs/crypto':
-        specifier: 1.0.0-rc.18
+        specifier: workspace:*
         version: link:../crypto
       '@smthrs/jj':
-        specifier: 1.0.0-rc.18
+        specifier: workspace:*
         version: link:../jj
       '@smthrs/journal':
-        specifier: 1.0.0-rc.18
+        specifier: workspace:*
         version: link:../journal
     devDependencies:
       '@effect/language-service':
@@ -5182,7 +5182,7 @@ importers:
         specifier: 9.39.5
         version: 9.39.5
       '@smthrs/database':
-        specifier: 1.0.0-rc.18
+        specifier: workspace:*
         version: link:../database
       '@smthrs/fuzz':
         specifier: workspace:*
@@ -6315,16 +6315,19 @@ importers:
   packages/smithers/flows/sandbox:
     dependencies:
       '@smthrs/capability':
-        specifier: 1.0.0-rc.18
+        specifier: workspace:*
         version: link:../capability
+      '@smthrs/crypto':
+        specifier: workspace:*
+        version: link:../crypto
       '@smthrs/flow':
-        specifier: 1.0.0-rc.18
+        specifier: workspace:*
         version: link:../flow
       '@smthrs/jj':
-        specifier: 1.0.0-rc.18
+        specifier: workspace:*
         version: link:../jj
       '@smthrs/kernel':
-        specifier: 1.0.0-rc.18
+        specifier: workspace:*
         version: link:../kernel
       '@smthrs/plan':
         specifier: workspace:*
@@ -6343,19 +6346,19 @@ importers:
         specifier: 9.39.5
         version: 9.39.5
       '@smthrs/engine':
-        specifier: 1.0.0-rc.18
+        specifier: workspace:*
         version: link:../engine
       '@smthrs/fuzz':
         specifier: workspace:*
         version: link:../../../fuzz
       '@smthrs/platform-bun':
-        specifier: 1.0.0-rc.18
+        specifier: workspace:*
         version: link:../platform-bun
       '@smthrs/platform-node':
-        specifier: 1.0.0-rc.18
+        specifier: workspace:*
         version: link:../platform-node
       '@smthrs/std':
-        specifier: 1.0.0-rc.18
+        specifier: workspace:*
         version: link:../../agent/std
       '@types/node':
         specifier: 26.4.1
