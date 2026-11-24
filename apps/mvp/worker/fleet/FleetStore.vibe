@@ -257,7 +257,7 @@ export effect function readOverview(includeEnded: boolean = false) {
     ? try sql`
       SELECT session_key AS "sessionKey", node_id AS "nodeId", managed, harness, model,
         account_label AS "accountLabel", repo, lane, title, status, pid,
-        cpu_seconds AS "cpuSeconds", tokens_used AS "tokensUsed",
+        cpu_seconds AS "cpuSeconds", tokens_used::double precision AS "tokensUsed",
         started_at AS "startedAt", last_activity_at AS "lastActivityAt", ended_at AS "endedAt"
       FROM observed_sessions
       ORDER BY updated_at DESC
@@ -266,7 +266,7 @@ export effect function readOverview(includeEnded: boolean = false) {
     : try sql`
       SELECT session_key AS "sessionKey", node_id AS "nodeId", managed, harness, model,
         account_label AS "accountLabel", repo, lane, title, status, pid,
-        cpu_seconds AS "cpuSeconds", tokens_used AS "tokensUsed",
+        cpu_seconds AS "cpuSeconds", tokens_used::double precision AS "tokensUsed",
         started_at AS "startedAt", last_activity_at AS "lastActivityAt", ended_at AS "endedAt"
       FROM observed_sessions
       WHERE status <> 'ended'

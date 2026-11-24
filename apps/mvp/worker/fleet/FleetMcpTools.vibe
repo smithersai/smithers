@@ -104,7 +104,12 @@ schema OverviewArgs {
 }
 
 function jsonResult(value: unknown): FleetToolResult {
-  return { content: [{ type: "text", text: JSON.stringify(value) }] }
+  return {
+    content: [{
+      type: "text",
+      text: JSON.stringify(value, (_key, item) => (typeof item === "bigint" ? Number(item) : item)),
+    }],
+  }
 }
 
 export function visibleDescriptors(

@@ -134,6 +134,8 @@ describe("FleetStore (real Postgres)", () => {
           "cf-sandbox",
         ])
         expect(active.accounts).toHaveLength(2)
+        // Regression guard: bigint tokens_used must serialize cleanly with JSON.stringify (no BigInt TypeError).
+        expect(() => JSON.stringify(active)).not.toThrow()
 
         const withEnded = yield* FleetStore.readOverview(true)
         const endedClaude = withEnded.sessions.find(
@@ -143,6 +145,8 @@ describe("FleetStore (real Postgres)", () => {
         expect(String(endedClaude?.["title"])).not.toContain("ghp_SecretToken")
         expect(String(endedClaude?.["title"])).not.toContain("sk-ant-secret123")
         expect(String(endedClaude?.["title"])).toContain("[redacted]")
+        expect(() => JSON.stringify(withEnded)).not.toThrow()
+        expect(typeof endedClaude?.["tokensUsed"]).toBe("number")
       })
     )
   })
