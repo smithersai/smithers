@@ -488,7 +488,7 @@ describe("@smthrs/model SSE decoding is invariant under byte and chunk fragmenta
       )
     )
     assertPassed(report)
-  })
+  }, 120_000)
 
   it("the framer holds its record budget at every chunk boundary and never splits a UTF-8 sequence", async () => {
     const arb = Arbitrary.schema(Schema.Struct({

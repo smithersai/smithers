@@ -10,7 +10,7 @@ const fastExec = Math.max(50, Math.min(baseExecutions, 200))
 const enc = (value: unknown): Uint8Array =>
   new TextEncoder().encode(typeof value === "string" ? value : JSON.stringify(value))
 
-const assertPassed = <A>(report: Fuzz.Report<A>): void => {
+const assertPassed = <A>(report: Fuzz.Report<A, unknown>): void => {
   expect(report._tag, Fuzz.formatReport(report)).toBe("Passed")
 }
 

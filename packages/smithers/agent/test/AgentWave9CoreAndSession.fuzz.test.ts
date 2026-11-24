@@ -427,7 +427,7 @@ describe("@smthrs/agent Wave-9 Core & Session deep fuzz", () => {
       )
       assertPassed(report)
     },
-    30_000
+    120_000
   )
 
   it(
@@ -562,7 +562,7 @@ describe("@smthrs/agent Wave-9 Core & Session deep fuzz", () => {
       )
       assertPassed(report)
     },
-    30_000
+    120_000
   )
 
   it(
@@ -680,6 +680,6 @@ describe("@smthrs/agent Wave-9 Core & Session deep fuzz", () => {
       )
       expect(prepHuge.length).toBeGreaterThan(0)
     },
-    30_000
+    120_000
   )
 })

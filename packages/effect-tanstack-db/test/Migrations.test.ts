@@ -801,7 +801,7 @@ describe("apply", () => {
         yield* Deferred.succeed(paused, undefined)
         // BEGIN is acquisition: interruption must wait until the connection is safely owned.
         if (stage === "BEGIN IMMEDIATE") yield* Deferred.await(release)
-        else yield* Effect.never
+        else return yield* Effect.never
       })
       const injected: Migrations.Sql = {
         execute: (statement, params) =>

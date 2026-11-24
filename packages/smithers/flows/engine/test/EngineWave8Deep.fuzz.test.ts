@@ -15,7 +15,7 @@ const baseExecutions = Number(process.env.EFFECT_FUZZ_EXECUTIONS ?? "100")
 const fastExec = Math.max(20, Math.min(baseExecutions, 60))
 const httpExec = Math.max(8, Math.min(Math.ceil(baseExecutions / 15), 14))
 
-const assertPassed = <A>(report: Fuzz.Report<A>): void => {
+const assertPassed = <A>(report: Fuzz.Report<A, unknown>): void => {
   expect(report._tag, Fuzz.formatReport(report)).toBe("Passed")
 }
 
@@ -129,8 +129,8 @@ describe("Flows Engine Wave 8 deep fuzzing", () => {
                   )
                 )
 
-                const runOnA = <A, E>(eff: Effect.Effect<A, E, FlowRuntime.FlowRuntime>) =>
-                  Effect.provide(eff, clientCtx)
+                const runOnA = <A, E, R>(eff: Effect.Effect<A, E, R>) =>
+                  Effect.provide(eff as Effect.Effect<A, E, never>, clientCtx)
 
                 if (mode === "execute") {
                   const res = yield* runOnA(LocalParent.execute({ version }, { executionId: `exec-${version}` }))
@@ -185,10 +185,9 @@ describe("Flows Engine Wave 8 deep fuzzing", () => {
                     const ex = yield* Effect.exit(
                       runOnA(
                         engine.retryFrom(RemoteRelease, {
-                          sourceExecutionId: `src-${version}`,
+                          source: `src-${version}`,
                           executionId: `retry-${version}`,
-                          step: "0",
-                          payload: { version }
+                          step: "0"
                         })
                       )
                     )
@@ -315,10 +314,9 @@ describe("Flows Engine Wave 8 deep fuzzing", () => {
                   if (memEngine.retryFrom !== undefined) {
                     const bad = yield* Effect.exit(
                       memEngine.retryFrom(FlowA, {
-                        sourceExecutionId: "does-not-exist",
+                        source: "does-not-exist",
                         executionId: `retry-miss-${n}`,
-                        step: "0",
-                        payload: { n }
+                        step: "0"
                       })
                     )
                     expect(Exit.isFailure(bad)).toBe(true)
@@ -327,7 +325,7 @@ describe("Flows Engine Wave 8 deep fuzzing", () => {
 
                 return true
               }).pipe(Effect.provide(FlowEngine.layerMemory))
-            ).pipe(withCrypto),
+            ).pipe(withCrypto as <A, E, R>(e: Effect.Effect<A, E, R>) => Effect.Effect<A, E>),
           { seed: seed + 1, executions: fastExec }
         )
       )

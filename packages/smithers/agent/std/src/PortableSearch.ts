@@ -98,10 +98,18 @@ const grep = (
     const maxLineUnits = limits.maxLineUnits ?? MAX_LINE_UNITS
     const maxSymbolSourceBytes = limits.maxSymbolSourceBytes ?? MAX_SYMBOL_SOURCE_BYTES
     const insensitive = input.ignoreCase || (input.smartCase && !/[A-Z]/.test(input.pattern))
-    const regex = LinearRegex.compile(
-      input.fixedStrings ? escapeRegex(input.pattern) : input.pattern,
-      insensitive
-    )
+    const regex = yield* Effect.try({
+      try: () =>
+        LinearRegex.compile(
+          input.fixedStrings ? escapeRegex(input.pattern) : input.pattern,
+          insensitive
+        ),
+      catch: (cause) =>
+        new StdError.StdError({
+          code: "invalid_pattern",
+          message: cause instanceof Error ? cause.message : "Invalid search pattern"
+        })
+    })
     const shownMatches: Array<Search.GrepMatch> = []
     const shownFiles: Array<string> = []
     let total = 0

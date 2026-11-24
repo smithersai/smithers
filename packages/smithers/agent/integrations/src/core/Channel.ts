@@ -343,13 +343,19 @@ export const fromSource = (config: SourceConfig): SourceDoor => {
         ? Effect.void
         : Effect.fail(new Unauthorized({ message: `${config.name} takes events from its polling source only.` })),
     decode: (raw) =>
-      Effect.suspend(() =>
-        decodeExternalEvent({
-          ...JSON.parse(new TextDecoder().decode(raw.body)),
-          receivedAtMs: Number(raw.headers[SOURCE_RECEIVED_HEADER])
-        })
-      ).pipe(
-        Effect.mapError(() => new InvalidInput({ issue: `${config.name} source event is not a valid event.` }))
+      Effect.try({
+        try: (): unknown => JSON.parse(new TextDecoder().decode(raw.body)),
+        catch: () => new InvalidInput({ issue: `${config.name} source event is not a valid event.` })
+      }).pipe(
+        Effect.flatMap((parsed) =>
+          decodeExternalEvent(
+            typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)
+              ? { ...parsed, receivedAtMs: Number(raw.headers[SOURCE_RECEIVED_HEADER]) }
+              : parsed
+          ).pipe(
+            Effect.mapError(() => new InvalidInput({ issue: `${config.name} source event is not a valid event.` }))
+          )
+        )
       ),
     map: (event) => config.route(event as ExternalEvent),
     project: config.project ?? noProjection

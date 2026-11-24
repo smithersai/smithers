@@ -18,7 +18,7 @@ const seed = Number(process.env.EFFECT_FUZZ_SEED ?? "20261175")
 const baseExecutions = Number(process.env.EFFECT_FUZZ_EXECUTIONS ?? "100")
 const fastExec = Math.max(30, Math.min(baseExecutions, 120))
 
-const assertPassed = <A>(report: Fuzz.Report<A>): void => {
+const assertPassed = <A>(report: Fuzz.Report<A, any>): void => {
   expect(report._tag, Fuzz.formatReport(report)).toBe("Passed")
 }
 
@@ -199,7 +199,7 @@ describe("@smthrs/jj Wave 9 deep NodeJj.layerSpawner classification fuzzing", ()
               if (op === "status") return yield* jj.status()
               if (op === "diff") return yield* jj.diff("@-", "@")
               if (op === "opId") return yield* jj.restore("@")
-              if (op === "root") return yield* jj.root("/tmp")
+              if (op === "root") return yield* jj.root!("/tmp")
               return yield* jj.status()
             }).pipe(Effect.provide(jjLayer))
 
