@@ -750,13 +750,9 @@ export const layer: Layer.Layer<
               Effect.catchTag("/control/ClaimLost", () => Effect.succeed(undefined))
             )
             if (claimed === undefined || claimed.status !== "accepted") return
-            if (isPending) {
-              const nonce = yield* runtime.takeLaunch(runId)
-              if (nonce === undefined) return
-              yield* acknowledge(runId, nonce, "accepted")
-            } else {
-              yield* acknowledge(runId, undefined, "accepted")
-            }
+            const nonce = yield* runtime.takeLaunch(runId, !isPending)
+            if (nonce === undefined) return
+            yield* acknowledge(runId, nonce, "accepted")
             return
           }
         }

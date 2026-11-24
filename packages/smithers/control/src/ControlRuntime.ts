@@ -953,6 +953,7 @@ export const layerMemory = (options: MemoryOptions = {}): Layer.Layer<ControlRun
       const tokens = new Map<string, MutableToken>()
       const runs = new Map<RunId, MutableRun>()
       const pendingLaunches = new Map<RunId, string | null>()
+      const completedLaunches = new Set<RunId>()
       let launchSequence = 0
       const authorizeApproval: Service["authorizeApproval"] = (request) =>
         approvalAuthority.authorize(request, {
@@ -1323,7 +1324,7 @@ export const layerMemory = (options: MemoryOptions = {}): Layer.Layer<ControlRun
         takeLaunch: (id, includeLegacy = false) =>
           Effect.sync(() => {
             const state = pendingLaunches.get(id)
-            if (state !== null && !(includeLegacy && state === undefined)) return undefined
+            if (state !== null && !(includeLegacy && state === undefined && !completedLaunches.has(id))) return undefined
             const nonce = String(++launchSequence)
             pendingLaunches.set(id, nonce)
             return nonce
@@ -1332,7 +1333,10 @@ export const layerMemory = (options: MemoryOptions = {}): Layer.Layer<ControlRun
           Effect.sync(() => {
             if (pendingLaunches.get(id) !== nonce) return
             if (pending) pendingLaunches.set(id, null)
-            else pendingLaunches.delete(id)
+            else {
+              pendingLaunches.delete(id)
+              completedLaunches.add(id)
+            }
           }),
         getRun: Effect.fn("ControlRuntime.getRun")((runId) =>
           Effect.map(requireRun(runId), (run) => snapshot(run.summary))

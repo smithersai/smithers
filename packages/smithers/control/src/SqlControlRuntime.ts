@@ -2017,8 +2017,10 @@ const makeRuntime = (
           Effect.map((rows) => rows[0]?.handing_nonce),
           Effect.mapError(persistence("claim pending launch"))
         ),
+      // 0 is reserved for pre-0011 legacy rows; completed handoffs record 3 so a
+      // later pause+resume back to accepted is never misread as a legacy stranded launch.
       finishLaunch: (id, nonce, pending) =>
-        sql`UPDATE control_runs SET launch_pending = ${pending ? 1 : 0}, handing_nonce = NULL
+        sql`UPDATE control_runs SET launch_pending = ${pending ? 1 : 3}, handing_nonce = NULL
           WHERE run_id = ${id} AND handing_nonce = ${nonce}`.pipe(
           Effect.asVoid,
           Effect.mapError(persistence("finish launch"))

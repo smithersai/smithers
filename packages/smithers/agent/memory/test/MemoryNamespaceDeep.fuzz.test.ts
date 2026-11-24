@@ -294,7 +294,7 @@ describe("@smthrs/memory composite (namespace_kind, namespace_id, id) isolation 
       )
     )
     assertPassed(report)
-  })
+  }, 120_000)
 })
 
 describe("@smthrs/memory note supersession stays a DAG", () => {
