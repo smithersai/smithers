@@ -580,6 +580,7 @@ export const DOCS_PAGES: ReadonlyMap<string, ReadonlyMap<string, string>> = new 
     ["/keys/testing/", "https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/keys/docs/testing.md"],
     ["/keys/troubleshooting/", "https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/keys/docs/troubleshooting.md"],
     ["/merge-queue/", "https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/merge-queue/docs"],
+    ["/merge-queue/cut-over/", "https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/merge-queue/docs/cut-over.md"],
     ["/merge-queue/reference/api/", "https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/merge-queue/docs/api.md"],
     ["/observability/", "https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/observability/docs"],
     ["/observability/concepts/instrumentation-and-export/", "https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/observability/docs/concepts/instrumentation-and-export.md"],

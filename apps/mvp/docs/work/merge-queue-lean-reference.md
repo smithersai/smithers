@@ -26,3 +26,5 @@ Open: two matrix rows. One is a single decreasing measure for the whole queue. T
 duration when 5% of changes fail, because one failing change holds the prefix behind it. Next: speculate past a
 suspect. Not built: the real services (CI on `smthrs ci`, a jj target, the inbox command, the fix-agent launcher).
 After those: a shadow run beside `mq.py` and the cut-over, which needs Will's approval.
+The cut-over plan, one row per script around `mq.py` (#4577), is
+`packages/smithers/flows/merge-queue/docs/cut-over.md`; its two gaps are the GitHub mirror and comment-driven entry.

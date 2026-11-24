@@ -235,6 +235,9 @@ prints the commit that now stands for the change. That commit is the one tested 
 run finish once every change has ended. After a host dies, `smthrs runs resume
 <run id>` continues from the last recorded round.
 
+[The cut-over from `mq.py`](./cut-over.md) lists what replaces each script
+around VibeLang's current queue, and what is still missing.
+
 ## How each change ended
 
 The host appends one line to `$MQ_STATE/endings.jsonl` for every change that
