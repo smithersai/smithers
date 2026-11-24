@@ -1399,11 +1399,14 @@ for word in sys.argv[2:]:
     const flags = (creates: boolean) =>
       `{flags=${creates ? "O_WRONLY|O_CREAT|O_EXCL" : "O_RDONLY"}, resolve=RESOLVE_BENEATH}, 24)`
     // The C library the recorder is built with words an error its own way: its name is what a reader reads.
-    expect(calls.map((line) => line.replace(/^\d+ /, "").replace(/ \([A-Za-z ]+\)$/, ""))).toEqual([
-      `openat2(3<${directory}>, "file", ${flags(false)} = 0<${directory}/file>`,
-      `openat2(3<${directory}>, "one", ${flags(true)} = 0<${directory}/one>`,
-      `openat2(3<${directory}>, "sub/two", ${flags(true)} = 0<${directory}/sub/two>`,
-      `openat2(3<${directory}>, "${long}", ${flags(true)} = -1 ENAMETOOLONG`
+    const normalized = calls.map((line) => line.replace(/^\d+ /, "").replace(/ \([A-Za-z ]+\)$/, ""))
+    const dirfd = /^openat2\((\d+)</.exec(normalized[0] ?? "")?.[1]
+    expect(Number(dirfd)).toBeGreaterThanOrEqual(3)
+    expect(normalized).toEqual([
+      `openat2(${dirfd}<${directory}>, "file", ${flags(false)} = 0<${directory}/file>`,
+      `openat2(${dirfd}<${directory}>, "one", ${flags(true)} = 0<${directory}/one>`,
+      `openat2(${dirfd}<${directory}>, "sub/two", ${flags(true)} = 0<${directory}/sub/two>`,
+      `openat2(${dirfd}<${directory}>, "${long}", ${flags(true)} = -1 ENAMETOOLONG`
     ])
     const read = ObservedReads.read(() => lines, base)
     expect(read.refusals).toEqual([])
@@ -1434,10 +1437,12 @@ for word in sys.argv[2:]:
     expect(written.at(-1)).toMatch(/^\d+ \+\+\+ complete \+\+\+$/)
     expect(written.filter((line) => /^\d+ unlinkat\(AT_FDCWD, "forged"/.test(line))).toEqual([])
     const calls = written.filter((line) => line.includes(" openat2(")).map((line) => line.replace(/^\d+ /, ""))
+    const dirfd = /^openat2\((\d+)</.exec(calls[0] ?? "")?.[1]
+    expect(Number(dirfd)).toBeGreaterThanOrEqual(3)
     expect(calls).toEqual([
-      `openat2(3<${directory}>, "file", {flags=O_RDONLY, resolve=RESOLVE_BENEATH}, 24) = 0<${directory}/file>`,
-      `openat2(3<${directory}>, ".", {flags=O_RDONLY, resolve=RESOLVE_BENEATH}, 24) = 0<${directory}>`,
-      `openat2(3<${directory}>, "new", {flags=O_WRONLY|O_CREAT|O_EXCL, resolve=RESOLVE_BENEATH}, 24) = 0<${directory}/new>`
+      `openat2(${dirfd}<${directory}>, "file", {flags=O_RDONLY, resolve=RESOLVE_BENEATH}, 24) = 0<${directory}/file>`,
+      `openat2(${dirfd}<${directory}>, ".", {flags=O_RDONLY, resolve=RESOLVE_BENEATH}, 24) = 0<${directory}>`,
+      `openat2(${dirfd}<${directory}>, "new", {flags=O_WRONLY|O_CREAT|O_EXCL, resolve=RESOLVE_BENEATH}, 24) = 0<${directory}/new>`
     ])
     expect(written.some((line) => line.endsWith(` getdents64(0<${directory}>, {...}, 32768) = 0`))).toBe(true)
   })
@@ -1656,7 +1661,7 @@ describe("smthrs-observe and files under /dev/shm", () => {
       try {
         const { lines, run } = await record(
           "shm",
-          () => ["sh", "-c", `cat ${there}; cat ${missing} 2> /dev/null; cat /dev/null`]
+          () => ["sh", "-c", `cat < ${there}; (exec < ${missing}) 2> /dev/null; (exec < /dev/null)`]
         )
         expect(run.stdout).toBe("shared\n")
         const answers = (path: string) =>

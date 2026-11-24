@@ -156,11 +156,28 @@ const leftovers = (directory: string) => readdirSync(directory).filter((name) =>
 
 /** A group this process may give a file that its new files do not get, if there is one. */
 const foreignGroup = (() => {
-  if (process.getuid?.() === 0) return 4242
-  const primary = process.getgid?.()
-  return spawnSync("id", ["-G"], { encoding: "utf8" }).stdout.trim().split(/\s+/).map(Number).find((gid) =>
-    gid !== primary
-  )
+  const candidates = process.getuid?.() === 0
+    ? [4242]
+    : spawnSync("id", ["-G"], { encoding: "utf8" }).stdout.trim().split(/\s+/).filter(Boolean).map(Number).filter((gid) =>
+      Number.isInteger(gid) && gid !== process.getgid?.()
+    )
+  if (candidates.length === 0) return undefined
+  const probeDir = mkdtempSync(join(tmpdir(), "smthrs-batched-gid-"))
+  const probe = join(probeDir, "probe")
+  try {
+    writeFileSync(probe, "")
+    const uid = statSync(probe).uid
+    return candidates.find((gid) => {
+      try {
+        chownSync(probe, uid, gid)
+        return true
+      } catch {
+        return false
+      }
+    })
+  } finally {
+    rmSync(probeDir, { recursive: true, force: true })
+  }
 })()
 
 /** A fresh guest tree under `name`. */

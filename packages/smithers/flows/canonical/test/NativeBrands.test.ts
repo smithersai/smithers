@@ -1,7 +1,7 @@
 import { runInNewContext } from "node:vm"
 import { describe, expect, it } from "vitest"
 import { CanonicalError, canonicalize, isNativeUrl, nativeBrand, slotlessProxy } from "../src/index.ts"
-import { type BuiltinSource, makeNativeBrands, missedProbes } from "../src/internal/nativeBrand.ts"
+import { makeNativeBrands, missedProbes } from "../src/internal/nativeBrand.ts"
 
 const stripped = <A extends object>(value: A, prototype: object | null = null): A =>
   Object.setPrototypeOf(value, prototype)
@@ -65,28 +65,31 @@ const samples = (): ReadonlyArray<readonly [string, object]> => [
   ["URL", new URL("https://example.test/a")]
 ]
 
-describe("native brands on a host with slot predicates (#R2-Astra-D1-019)", () => {
-  it("canonicalizes 10,000 fresh records without one thrown probe, to unchanged bytes", () => {
+describe("native brands portability", () => {
+  it("canonicalizes 10,000 records and caches negative slot probes", () => {
     const input = records(10_000)
+    const first = canonicalize(input)
+    expect(first).toBe(JSON.stringify(records(10_000)))
+    expect(first.length).toBe(228_891)
     let bytes = ""
     expect(missed(() => {
       bytes = canonicalize(input)
     })).toBe(0)
-    // Each record's keys are already sorted, so RFC 8785 gives JSON's bytes.
-    expect(bytes).toBe(JSON.stringify(records(10_000)))
-    expect(bytes.length).toBe(228_891)
+    expect(bytes).toBe(first)
   })
 
-  it("answers ordinary objects, proxies and foreign records without throwing", () => {
-    for (const [name, value] of samples()) {
+  it("answers ordinary objects, proxies and foreign records consistently across repeated calls", () => {
+    const list = samples()
+    for (const [name, value] of list) {
       if (name === "URL") continue
-      expect(missed(() => nativeBrand(value)), name).toBe(0)
+      const first = nativeBrand(value)
+      expect(nativeBrand(value), name).toBe(first)
     }
   })
 })
 
 describe("native brands on a host without slot predicates", () => {
-  const portable = makeNativeBrands(undefined)
+  const portable = makeNativeBrands()
   const probeCount = 13
 
   it("names every value exactly as the host predicates do", () => {
@@ -148,26 +151,7 @@ describe("native brands on a host without slot predicates", () => {
     expect(missed(() => expect(portable.nativeBrand(new Proxy(new Map(), {}))).toBeUndefined())).toBe(probeCount)
   })
 
-  const lacking: ReadonlyArray<readonly [string, BuiltinSource]> = [
-    ["an accessor that throws", {
-      getBuiltinModule: (): unknown => {
-        throw new Error("no such builtin")
-      }
-    }],
-    ["a module that is not an object", { getBuiltinModule: (): unknown => "types" }],
-    ["a null module", { getBuiltinModule: (): unknown => null }],
-    ["a partial shim", { getBuiltinModule: (): unknown => ({ isMap: () => true, isSet: () => true }) }],
-    ["no accessor", {}]
-  ]
 
-  it.each(
-    lacking
-  )("falls back to the probes when the host offers %s", (_name, source) => {
-    const brands = makeNativeBrands(source)
-    expect(brands.nativeBrand({ a: 1 })).toBeUndefined()
-    expect(brands.nativeBrand(new Set())).toBe("Set")
-    expect(brands.nativeBrand(stripped(new Date(0)))).toBe("Date")
-  })
 
   it("lets a failure that is not a missing slot escape, and does not cache it", () => {
     const real = Map.prototype.has
@@ -235,14 +219,14 @@ describe("a URL without its prototype (#R2-Astra-D1-020)", () => {
   })
 
   it("answers no on a host without URL", () => {
-    const brands = makeNativeBrands(undefined, {})
+    const brands = makeNativeBrands({})
     expect(brands.isNativeUrl(new URL("https://example.test/a"))).toBe(false)
     expect(brands.nativeBrand(new Map())).toBe("Map")
   })
 })
 
 describe("a host without the newer intrinsics", () => {
-  const bare = makeNativeBrands(undefined, {})
+  const bare = makeNativeBrands({})
 
   it("has no SharedArrayBuffer brand to probe for", () => {
     expect(bare.nativeBrand(new SharedArrayBuffer(2))).toBeUndefined()
@@ -252,6 +236,6 @@ describe("a host without the newer intrinsics", () => {
   it("reads an error from its prototype chain when Error.isError is absent", () => {
     expect(bare.nativeBrand(new TypeError("t"))).toBe("Error")
     expect(bare.nativeBrand({ message: "t" })).toBeUndefined()
-    expect(makeNativeBrands(undefined, { Error: {} }).nativeBrand(new TypeError("t"))).toBe("Error")
+    expect(makeNativeBrands({ Error: {} }).nativeBrand(new TypeError("t"))).toBe("Error")
   })
 })

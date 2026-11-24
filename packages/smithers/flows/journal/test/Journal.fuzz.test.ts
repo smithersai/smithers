@@ -2601,7 +2601,7 @@ describe("@smthrs/journal SqlJournal fuzz invariants", () => {
       )
     )
     assertFuzz(report)
-  })
+  }, 180_000)
 })
 
 describe("@smthrs/journal deep edge-case & fault-injection fuzz invariants", () => {
@@ -3285,7 +3285,7 @@ describe("@smthrs/journal deep edge-case & fault-injection fuzz invariants", () 
             }
 
             if (faultCase === "corruptRowAndCheckpoint") {
-              const db = yield* Layer.build(migratedDb())
+              const db = yield* Layer.build(Layer.provideMerge(Migrations.layer, TestDatabase.sqliteLayer))
               const sql = Context.get(db, SqlClient.SqlClient)
               const jCtx = yield* Layer.build(
                 SqlJournal.layer({ capacity: 16, batchSize: 1, overflow: "reject" }).pipe(

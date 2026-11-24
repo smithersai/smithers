@@ -2,7 +2,7 @@ import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
 import * as NodePath from "@effect/platform-node/NodePath"
 import { Fuzz } from "@smthrs/fuzz"
-import { Arbitrary, Effect, FileSystem, Layer, Logger, Result, Schema } from "effect"
+import { Arbitrary, Effect, Exit, FileSystem, Layer, Logger, Result, Schema } from "effect"
 import * as FsSync from "node:fs"
 import * as Fs from "node:fs/promises"
 import * as Os from "node:os"
@@ -147,6 +147,79 @@ describe("@smthrs/platform-bun BunFileReplacement, BunDesktop, BunHost & BunRunt
     const failure = Fuzz.formatReport(report)
     if (failure !== undefined) throw new Error(failure)
     expect(report._tag).toBe("Passed")
+
+    // Cover faulty native BrowserWindow constructor and rejecting openFileDialog
+    const brokenNative = {
+      SMITHERS_BUN14_COMPAT: 3,
+      PATHS: { RESOURCES_FOLDER: "/res" },
+      BrowserWindow: class {
+        constructor() {
+          throw new Error("cef-init-failed")
+        }
+      },
+      Utils: {
+        openExternal: () => true,
+        openFileDialog: () => Promise.reject(new Error("dialog-failed"))
+      }
+    } as unknown as Parameters<typeof BunDesktop.layerWith>[0]["load"] extends
+      Effect.Effect<infer A, any, any> ? A : never
+    const brokenLayer = BunDesktop.layerWith({ load: Effect.succeed(brokenNative) })
+    const brokenRes = await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function*() {
+          const win = yield* BunDesktop.DesktopWindow
+          const openErr = yield* win.open("https://app.smithers.sh/home").pipe(Effect.result)
+          const dialogErr = yield* win.chooseDirectory().pipe(Effect.result)
+          return { openErr, dialogErr }
+        }).pipe(Effect.provide(brokenLayer), Effect.provide(Logger.layer([])))
+      )
+    )
+    expect(Result.isFailure(brokenRes.openErr)).toBe(true)
+    expect(Result.isFailure(brokenRes.dialogErr)).toBe(true)
+
+    // Cover faulty setNavigationRules, close, invalid URL in openExternal, and throwing openExternal
+    const brokenMethodsNative = {
+      SMITHERS_BUN14_COMPAT: 3,
+      PATHS: { RESOURCES_FOLDER: "/res" },
+      BrowserWindow: class {
+        webview = {
+          setNavigationRules: () => {
+            throw new Error("rules-failed")
+          }
+        }
+        close() {
+          throw new Error("close-failed")
+        }
+      },
+      Utils: {
+        openExternal: () => {
+          throw new Error("external-failed")
+        },
+        openFileDialog: async () => []
+      }
+    } as unknown as Parameters<typeof BunDesktop.layerWith>[0]["load"] extends
+      Effect.Effect<infer A, any, any> ? A : never
+    const brokenMethodsLayer = BunDesktop.layerWith({ load: Effect.succeed(brokenMethodsNative) })
+    let observedResults: { rulesErr: boolean; badUrlErr: boolean; extThrowErr: boolean } | undefined
+    const methodExit = await Effect.runPromise(
+      Effect.exit(
+        Effect.scoped(
+          Effect.gen(function*() {
+            const win = yield* BunDesktop.DesktopWindow
+            const rulesErr = yield* win.open("https://app.smithers.sh/home").pipe(Effect.result)
+            const badUrlErr = yield* win.openExternal("not a url").pipe(Effect.result)
+            const extThrowErr = yield* win.openExternal("https://app.smithers.sh/home").pipe(Effect.result)
+            observedResults = {
+              rulesErr: Result.isFailure(rulesErr),
+              badUrlErr: Result.isFailure(badUrlErr),
+              extThrowErr: Result.isFailure(extThrowErr)
+            }
+          }).pipe(Effect.provide(brokenMethodsLayer), Effect.provide(Logger.layer([])))
+        )
+      )
+    )
+    expect(observedResults).toEqual({ rulesErr: true, badUrlErr: true, extThrowErr: true })
+    expect(Exit.isFailure(methodExit)).toBe(true)
   })
 
   it("BunHost.layerAt/layerContainedAt & BunRuntime validate repository roots and barrel exports", async () => {

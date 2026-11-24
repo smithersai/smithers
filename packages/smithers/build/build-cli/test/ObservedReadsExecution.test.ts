@@ -420,7 +420,7 @@ describe("an observed test", () => {
     async () => {
       const uv = [
         "set -e",
-        "/bin/mkdir -p cache/archive",
+        "/bin/mkdir cache cache/archive",
         "/bin/mkdir cache/.tmp \"cache/.tmp/pkg/\"",
         "echo one > cache/.tmp/pkg/RECORD",
         "/bin/mv cache/.tmp cache/archive/one",
@@ -1071,7 +1071,7 @@ const job = async (
       observe,
       data: [files, ...after] as never
     })
-  const installing = "/bin/cat registry.cfg > /dev/null\n/bin/mkdir -p deps\n/bin/cat lock.txt > deps/installed.txt"
+  const installing = "/bin/cat registry.cfg > /dev/null\n(/bin/mkdir deps 2>/dev/null || true)\n/bin/cat lock.txt > deps/installed.txt"
   const install = step(
     "install",
     typeof settings.install === "function" ? settings.install(outside) : settings.install ?? installing,

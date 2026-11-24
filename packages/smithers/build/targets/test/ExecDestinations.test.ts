@@ -65,7 +65,7 @@ describe.runIf(process.platform === "linux")("destination confinement", () => {
     try {
       const result = await Effect.runPromise(Exec.run({
         workspaceRoot: root,
-        sandbox: { policy: {}, reads: [], writes: [".flows"], destinations: ["127.0.0.1"] }
+        sandbox: { policy: {}, reads: [], writes: [".flows"], destinations: [`127.0.0.1:${port}`] }
       }, payload(source)))
       expect(result.stdout).toContain("broker-only")
       expect(requests).toBe(1)

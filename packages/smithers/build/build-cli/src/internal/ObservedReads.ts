@@ -4770,15 +4770,23 @@ export const observe = (
       lists.push([inside(path), emptyDigest, []])
       continue
     }
+    const ignoredChildren = (directory: string): ReadonlyArray<string> => {
+      const declared = (options.ignore ?? []).flatMap((ignoredPath) => {
+        const clean = NodePath.posix.normalize(ignoredPath)
+        if (clean === "/" || NodePath.posix.dirname(clean) !== directory) return []
+        const name = NodePath.posix.basename(clean)
+        return name !== "" && !visible(`${directory}/${name}`) ? [name] : []
+      })
+      return [...namesIn(directory, io).filter((name) => !visible(`${directory}/${name}`)), ...declared]
+    }
     if (!entry.listed) {
       if (
         state === "d" && place === undefined && path !== "/" &&
         (path === options.root || under(path, options.root) ||
           (!under(options.root, path) && !temporary.some((dir) => under(dir, path))))
       ) {
-        const ignoredHere = namesIn(path, io).filter((name) => !visible(`${path}/${name}`))
         const names = [
-          ...new Set([...(own.get(path) ?? []), ...ignoredHere, ...mountView(path, mounts).children.keys()])
+          ...new Set([...(own.get(path) ?? []), ...ignoredChildren(path), ...mountView(path, mounts).children.keys()])
         ]
           .sort(byCodeUnit)
         const added: Array<readonly [string, number]> = []
@@ -4796,7 +4804,7 @@ export const observe = (
       }
       continue
     }
-    const names = [...(own.get(path) ?? [])].sort(byCodeUnit)
+    const names = [...new Set([...(own.get(path) ?? []), ...ignoredChildren(path)])].sort(byCodeUnit)
     // In a directory no step made, the names a step added are that step's: each is checked on its own.
     const added: Array<readonly [string, number, string]> = []
     if (place === undefined && producers.length > 0) {

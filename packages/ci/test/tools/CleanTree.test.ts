@@ -116,7 +116,15 @@ describe("a repository whose CI checks that its checkout holds what the commit h
     commit(root, "a source")
     // The copies a replay runs a commit in are what this test is about. The run as `apply` leaves the repository
     // holds `.smithers`, committed, where `cleanls` rightly fails: `AsApplied.test.ts` is about that run.
-    const replayed = node(root, program, ["--commits", "3", "--no-apply-check", "--json"])
+    const savedExportBinary = process.env["SMITHERS_WORKSPACE_JJ_EXPORT_BINARY"]
+    delete process.env["SMITHERS_WORKSPACE_JJ_EXPORT_BINARY"]
+    const replayed = (() => {
+      try {
+        return node(root, program, ["--commits", "3", "--no-apply-check", "--json"])
+      } finally {
+        if (savedExportBinary !== undefined) process.env["SMITHERS_WORKSPACE_JJ_EXPORT_BINARY"] = savedExportBinary
+      }
+    })()
     expect(replayed.status, replayed.output).toBe(0)
     const report = Schema.decodeUnknownSync(Schema.fromJsonString(ReplayReport))(replayed.stdout)
     expect(report.commits).toHaveLength(3)
@@ -153,10 +161,12 @@ describe("a repository whose CI checks that its checkout holds what the commit h
     const state = join(runner, "smithers-ci")
     // The command of the generated workflow, with the smthrs of this repository.
     const generatedCi = (extra: ReadonlyArray<string>, env: Readonly<Record<string, string>> = {}) => {
+      const cleanEnv: Record<string, string | undefined> = { ...process.env, ...env }
+      delete cleanEnv["SMITHERS_WORKSPACE_JJ_EXPORT_BINARY"]
       const ran = spawnSync(smthrs, ["ci", "//...", "--jobs", "1", "--ui", "plain", ...extra], {
         cwd: root,
         encoding: "utf8",
-        env: { ...process.env, ...env },
+        env: cleanEnv,
         maxBuffer: 64 * 1024 * 1024
       })
       return { status: ran.status, output: `${ran.stdout}${ran.stderr}` }

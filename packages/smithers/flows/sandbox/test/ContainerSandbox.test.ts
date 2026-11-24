@@ -804,9 +804,14 @@ describe("ContainerSandbox", () => {
   it.effect("gives up when the name keeps coming back mid-removal", () =>
     Effect.gen(function*() {
       let inspects = 0
+      let creates = 0
       const fake = engine((args) => {
-        if (args[0] === "create") return { exitCode: 125, stderr: "name in use" }
+        if (args[0] === "create") {
+          creates += 1
+          return { exitCode: 125, stderr: "name in use" }
+        }
         if (args[0] === "container" && args[1] === "inspect") {
+          if (creates === 0) return { exitCode: 1, stderr: "No such container" }
           inspects += 1
           return inspects % 2 === 1
             ? {

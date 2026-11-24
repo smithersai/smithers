@@ -287,7 +287,7 @@ export const make = (options: ContainerSandboxOptions): Provider => {
             })
             let vanished = false
             for (let attempt = 0; attempt < removalRetries; attempt++) {
-              const created = legacy.code === 0 ? undefined : yield* create
+              const created = legacy.code === 0 && attempt === 0 ? undefined : yield* create
               if (created?.code === 0) return
               // A refused create is either a name already taken, which is the
               // reattach this provider is built around, or anything else, which

@@ -118,6 +118,11 @@ for (const [index, commit] of commits.entries()) {
     "runner.temp": runnerTemp,
     "vars.SMITHERS_CACHE_URL": "",
     "github.event_name": "push",
+    "github.ref_type": "branch",
+    "github.ref_name": "main",
+    "github.event.repository.default_branch": "main",
+    "github.run_id": "1",
+    "github.sha": commit,
     "secrets.SMITHERS_CACHE_READ_TOKEN": "",
     "secrets.SMITHERS_CACHE_TOKEN": ""
   }

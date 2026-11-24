@@ -94,61 +94,6 @@ const slotProbes = (sharedBuffer: OptionalIntrinsics["SharedArrayBuffer"]): Read
   ["Symbol", (value) => Reflect.apply(Symbol.prototype.valueOf, value, [])]
 ]
 
-// The non-throwing slot predicates of `node:util/types`, in probe order.
-const predicateNames = [
-  ["Map", "isMap"],
-  ["Set", "isSet"],
-  ["WeakMap", "isWeakMap"],
-  ["WeakSet", "isWeakSet"],
-  ["ArrayBuffer", "isArrayBuffer"],
-  ["SharedArrayBuffer", "isSharedArrayBuffer"],
-  ["Date", "isDate"],
-  ["RegExp", "isRegExp"],
-  ["Number", "isNumberObject"],
-  ["String", "isStringObject"],
-  ["Boolean", "isBooleanObject"],
-  ["BigInt", "isBigIntObject"],
-  ["Symbol", "isSymbolObject"]
-] as const satisfies ReadonlyArray<readonly [NativeBrand, string]>
-
-type Predicate = (value: unknown) => boolean
-
-/**
- * Where a host publishes its built-in modules, as `process` does on Node, Bun
- * and Cloudflare Workers.
- *
- * @since 1.0.0
- * @private
- */
-export interface BuiltinSource {
-  readonly getBuiltinModule?: ((id: string) => unknown) | undefined
-}
-
-/**
- * The host's slot predicates, or `undefined` unless it supplies every one.
- *
- * A partial shim is refused whole: mixing its answers with the probes would
- * make a value's brand depend on which half answered.
- */
-const hostPredicates = (
-  source: BuiltinSource | undefined
-): ReadonlyArray<readonly [NativeBrand, Predicate]> | undefined => {
-  let types: unknown
-  try {
-    types = source?.getBuiltinModule?.("node:util/types")
-  } catch {
-    return undefined
-  }
-  if (typeof types !== "object" || types === null) return undefined
-  const found: Array<readonly [NativeBrand, Predicate]> = []
-  for (const [brand, name] of predicateNames) {
-    const predicate: unknown = (types as Record<string, unknown>)[name]
-    if (typeof predicate !== "function") return undefined
-    found.push([brand, predicate as Predicate])
-  }
-  return found
-}
-
 /**
  * The brand readers of one host.
  *
@@ -162,13 +107,12 @@ export interface NativeBrands {
 }
 
 /**
- * Builds the brand readers for a host.
+ * Builds the portable brand readers for a host.
  *
- * A host that publishes `node:util/types` answers from its non-throwing slot
- * predicates. Any other host, a browser included, falls back to the portable
- * probes, which throw once for every slot a value lacks.
+ * Uses pure ECMAScript internal-slot probes with a `WeakSet` negative cache so
+ * each ordinary object is probed at most once and the package stays strictly
+ * platform-neutral across browsers, workers, Node, and Bun.
  *
- * @param source - The host's built-in module accessor, when it has one.
  * @param intrinsics - The host's globals. A host without `URL` or
  * `SharedArrayBuffer` has no such brand, and one without `Error.isError`
  * reads an error from its prototype chain.
@@ -176,10 +120,8 @@ export interface NativeBrands {
  * @private
  */
 export const makeNativeBrands = (
-  source: BuiltinSource | undefined,
   intrinsics: OptionalIntrinsics = globalThis as OptionalIntrinsics
 ): NativeBrands => {
-  const predicates = hostPredicates(source)
   const probes = slotProbes(intrinsics.SharedArrayBuffer)
   const isError = intrinsics.Error?.isError
   const url = intrinsics.URL
@@ -203,22 +145,12 @@ export const makeNativeBrands = (
     return undefined
   }
 
-  const predicated = (
-    found: ReadonlyArray<readonly [NativeBrand, Predicate]>,
-    value: object
-  ): NativeBrand | undefined => {
-    for (const [brand, predicate] of found) {
-      if (predicate(value)) return brand
-    }
-    return undefined
-  }
-
   return {
     nativeBrand: (value) => {
       if (unbranded.has(value)) return undefined
       if (ArrayBuffer.isView(value)) return "ArrayBufferView"
       if (isError === undefined ? value instanceof Error : isError(value)) return "Error"
-      return predicates === undefined ? probed(value) : predicated(predicates, value)
+      return probed(value)
     },
     isNativeUrl: (value) => {
       if (urlHref === undefined || notUrl.has(value)) return false
@@ -241,7 +173,7 @@ export const makeNativeBrands = (
   }
 }
 
-const host = makeNativeBrands((globalThis as { readonly process?: BuiltinSource }).process)
+const host = makeNativeBrands()
 
 /**
  * Reads which built-in `value` is from its internal slots.
@@ -251,9 +183,7 @@ const host = makeNativeBrands((globalThis as { readonly process?: BuiltinSource 
  * reports `undefined`. Failures other than a missing-slot `TypeError`, such
  * as stack exhaustion, propagate and are not cached.
  *
- * On a host that publishes `node:util/types` (Node, Bun, Cloudflare Workers)
- * an ordinary object costs no thrown error. Elsewhere each slot an object
- * lacks costs one caught `TypeError`, paid once per object.
+ * Each slot an object lacks costs one caught `TypeError`, paid once per object.
  *
  * @param value - Any object or function.
  * @returns The built-in brand, or `undefined` for an ordinary object.

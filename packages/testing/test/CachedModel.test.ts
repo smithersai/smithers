@@ -5,7 +5,7 @@ import type * as ModelEvent from "@smthrs/model/ModelEvent"
 import * as ModelRequest from "@smthrs/model/ModelRequest"
 import { NodeHost } from "@smthrs/platform-node"
 import { Cause, Effect, Exit, FileSystem, Layer, Option, Path, Ref, Stream } from "effect"
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import * as CachedModel from "../src/CachedModel.ts"
@@ -373,6 +373,33 @@ describe("FixtureStore", () => {
         expect(
           Option.isNone(yield* read.pipe(Effect.provide(FixtureStore.layerFile(join(directory, "absent.json")))))
         ).toBe(true)
+      })
+    ))
+
+  it.effect("allows recording inside an existing subdirectory and refuses symlinked parent directories under root", () =>
+    withTempDir((directory) =>
+      Effect.gen(function*() {
+        const realSub = join(directory, "nested")
+        const outside = join(directory, "outside")
+        const linkSub = join(directory, "linked")
+        mkdirSync(realSub, { recursive: true })
+        mkdirSync(outside, { recursive: true })
+        symlinkSync(outside, linkSub)
+
+        const basePath = yield* Path.Path
+        const rootedPath = Layer.succeed(Path.Path, {
+          ...basePath,
+          resolve: (...segments: ReadonlyArray<string>) =>
+            segments.length === 0 ? directory : basePath.resolve(directory, ...segments)
+        })
+
+        const okStore = yield* FixtureStore.makeFile(join(realSub, "ok.json")).pipe(Effect.provide(rootedPath))
+        yield* okStore.append({ request: request("nested-ok"), model: "openai:gpt-5-mini", events: [] })
+        yield* okStore.flush()
+        expect(Option.getOrThrow(yield* okStore.load()).calls).toHaveLength(1)
+
+        const exit = yield* FixtureStore.makeFile(join(linkSub, "escape.json")).pipe(Effect.provide(rootedPath), Effect.exit)
+        expect(exit._tag).toBe("Failure")
       })
     ))
 })
