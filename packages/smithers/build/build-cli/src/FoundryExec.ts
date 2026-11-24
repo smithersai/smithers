@@ -6,8 +6,8 @@
  * declared foundry.toml and the workspace's mise pins enter the key as
  * digested authority, and an absent or wrong forge is a typed refusal.
  * `S.Mise.bin` resolution lives here too: the pinned version is read from
- * the declared mise config and execution refuses when mise itself is not
- * on the host.
+ * the declared mise config and execution refuses when mise or the pinned
+ * tool is not on the host.
  *
  * @since 0.1.0
  */
@@ -15,6 +15,7 @@
 import type * as Foundry from "@smthrs/targets/Foundry"
 import * as Input from "@smthrs/targets/Input"
 import type * as WorkspaceDeclaration from "@smthrs/targets/WorkspaceDeclaration"
+import * as NodeChildProcess from "node:child_process"
 import * as Fs from "node:fs/promises"
 import * as NodePath from "node:path"
 import * as HostProbes from "./internal/HostProbes.ts"
@@ -110,10 +111,29 @@ export const resolveMiseBin = async (
     ["mise", path, ["--version"], HostProbes.environmentKey(environment)],
     () => PackageTree.probeVersion(path, { environment })
   )
+  const toolPath = await probes.once(
+    ["mise", path, ["which", name], root, HostProbes.environmentKey(environment)],
+    () =>
+      new Promise<string | null>((resolve) => {
+        NodeChildProcess.execFile(
+          path,
+          ["which", name],
+          { cwd: root, env: { ...environment }, timeout: 10_000, maxBuffer: 1 << 20 },
+          (error, stdout) => resolve(error === null ? stdout.trim() || null : null)
+        )
+      })
+  )
+  if (toolPath === null) {
+    return {
+      ok: false,
+      refusal: `mise which ${JSON.stringify(name)} could not resolve the pinned tool; run mise install in the workspace root`,
+      identity: { ...identity, path, probe, absent: true }
+    }
+  }
   return {
     ok: true,
-    path,
-    identity: { ...identity, path, probe }
+    path: toolPath,
+    identity: { ...identity, path, probe, toolPath }
   }
 }
 

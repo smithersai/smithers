@@ -1,6 +1,8 @@
+import { execFile } from "node:child_process"
 import * as Fs from "node:fs/promises"
 import * as Os from "node:os"
 import * as NodePath from "node:path"
+import { promisify } from "node:util"
 import { afterAll, describe, expect, it } from "vitest"
 import * as FoundryExec from "../src/FoundryExec.ts"
 import * as HostProbes from "../src/internal/HostProbes.ts"
@@ -106,20 +108,138 @@ describe("S.Mise.bin resolution", () => {
 
   it("probes an installed mise once per environment and keys a tool missing from [tools] as unpinned", async () => {
     const { root, bin, environment } = await host()
-    const mise = await executable(bin, "mise", "printf '2025.10.0 linux-x64\\n'\n")
+    const node = await executable(bin, "node", "printf 'node marker\\n'\n")
+    const mise = await executable(
+      bin,
+      "mise",
+      `if [ "$1" = "--version" ]; then printf '2025.10.0 linux-x64\\n'; else printf '%s\\n' "$FAKE_NODE"; fi\n`
+    )
+    environment["FAKE_NODE"] = node
     await write(root, "mise.toml", "[tools]\npython = \"3.12\"\n[env]\nnode = \"18\"\n")
     const workspace = workspaceOf([null, { _tag: "Other" }, { _tag: "Mise", config: file("//mise.toml") }])
     const probes = HostProbes.make()
     const first = await FoundryExec.resolveMiseBin(root, workspace, "node", environment, probes)
     expect(first).toMatchObject({
       ok: true,
-      path: mise,
+      path: node,
       identity: { tag: "MiseBin", name: "node", pinned: null, path: mise, probe: { exitCode: 0 } }
     })
     expect((first.identity as { probe: { output: string } }).probe.output).toContain("2025.10.0")
     await Fs.writeFile(mise, "#!/bin/sh\nprintf 'replaced\\n'\n")
     const second = await FoundryExec.resolveMiseBin(root, workspace, "node", environment, probes)
     expect(second.identity).toEqual(first.identity)
+  })
+
+  it("executes the tool selected by mise which in the workspace root and supplied environment", async () => {
+    const { root, bin } = await host()
+    const mockery = await executable(bin, "mockery", "printf 'mockery marker:%s\\n' \"$*\"\n")
+    const mise = await executable(
+      bin,
+      "mise",
+      `case "$1" in
+  --version) printf '2025.10.0 linux-x64\\n';;
+  which)
+    [ "$2" = "mockery" ] && [ "$PWD" = "$FAKE_ROOT" ] || exit 2
+    printf 'which\\n' >> "$FAKE_LOG"
+    printf 'diagnostic on stderr\\n' >&2
+    printf '%s\\n' "$FAKE_TOOL";;
+  *) exit 64;;
+esac\n`
+    )
+    await write(root, "mise.toml", "[tools]\nmockery = \"2.53.6\"\n")
+    const environment = {
+      PATH: `${bin}${NodePath.delimiter}${process.env["PATH"] ?? ""}`,
+      FAKE_ROOT: root,
+      FAKE_TOOL: mockery,
+      FAKE_LOG: NodePath.join(root, "which.log")
+    }
+    const workspace = workspaceOf([{ _tag: "Mise", config: file("//mise.toml") }])
+    const probes = HostProbes.make()
+    const [resolved, repeated] = await Promise.all([
+      FoundryExec.resolveMiseBin(root, workspace, "mockery", environment, probes),
+      FoundryExec.resolveMiseBin(root, workspace, "mockery", environment, probes)
+    ])
+    expect(resolved).toMatchObject({
+      ok: true,
+      path: mockery,
+      identity: {
+        tag: "MiseBin",
+        name: "mockery",
+        authority: { path: "mise.toml" },
+        pinned: "2.53.6",
+        path: mise,
+        probe: { exitCode: 0, output: "2025.10.0 linux-x64\n" }
+      }
+    })
+    expect(repeated).toEqual(resolved)
+    expect(await Fs.readFile(environment.FAKE_LOG, "utf8")).toBe("which\n")
+    if (!resolved.ok) throw new Error(resolved.refusal)
+    const argv = [resolved.path, "--version"] as const
+    expect(argv[0]).toBe(mockery)
+    expect(argv[0]).not.toBe(mise)
+    const result = await promisify(execFile)(argv[0], argv.slice(1), { cwd: root, env: environment })
+    expect(result.stdout).toBe("mockery marker:--version\n")
+  })
+
+  it.each([
+    ["fails", "printf '/unusable/tool\\n'; printf 'not installed\\n' >&2; exit 1"],
+    ["prints nothing", "printf ' \\n\\t'; exit 0"]
+  ])("refuses with a mise install remedy when mise which %s", async (_, body) => {
+    const { root, bin, environment } = await host()
+    const mise = await executable(
+      bin,
+      "mise",
+      `if [ "$1" = "--version" ]; then printf '2025.10.0 linux-x64\\n'; exit 0; fi\n${body}\n`
+    )
+    await write(root, "mise.toml", "[tools]\nmockery = \"2.53.6\"\n")
+    const workspace = workspaceOf([{ _tag: "Mise", config: file("//mise.toml") }])
+    const resolved = await FoundryExec.resolveMiseBin(root, workspace, "mockery", environment)
+    expect(resolved).toMatchObject({
+      ok: false,
+      refusal: expect.stringContaining("mise install"),
+      identity: {
+        tag: "MiseBin",
+        name: "mockery",
+        authority: { path: "mise.toml" },
+        pinned: "2.53.6",
+        path: mise,
+        probe: { exitCode: 0 },
+        absent: true
+      }
+    })
+    expect(resolved.ok ? "" : resolved.refusal).toContain("mockery")
+    expect(resolved).not.toHaveProperty("path")
+  })
+
+  it("caches mise which separately for each tool name, workspace root, and environment", async () => {
+    const { root, bin, environment } = await host()
+    const otherRoot = await temporary("smthrs-mise-other-root-")
+    const mockery = await executable(bin, "mockery", "exit 0\n")
+    const other = await executable(bin, "other", "exit 0\n")
+    const log = NodePath.join(root, "which.log")
+    await executable(
+      bin,
+      "mise",
+      `if [ "$1" = "--version" ]; then printf '2025.10.0\\n'; exit 0; fi
+printf '%s|%s|%s\\n' "$PWD" "$2" "$FAKE_TOOL" >> "$FAKE_LOG"
+printf '%s\\n' "$FAKE_TOOL"\n`
+    )
+    for (const directory of [root, otherRoot]) {
+      await write(directory, "mise.toml", "[tools]\nmockery = \"2.53.6\"\nother = \"1.0\"\n")
+    }
+    const workspace = workspaceOf([{ _tag: "Mise", config: file("//mise.toml") }])
+    const probes = HostProbes.make()
+    const env = { ...environment, FAKE_TOOL: mockery, FAKE_LOG: log }
+    const resolve = (directory: string, name: string, tool = mockery) =>
+      FoundryExec.resolveMiseBin(directory, workspace, name, { ...env, FAKE_TOOL: tool }, probes)
+    const first = await resolve(root, "mockery")
+    expect(await resolve(root, "mockery")).toEqual(first)
+    await resolve(root, "other")
+    await resolve(otherRoot, "mockery")
+    expect(await resolve(root, "mockery", other)).toMatchObject({ ok: true, path: other })
+    expect(await Fs.readFile(log, "utf8")).toBe(
+      `${root}|mockery|${mockery}\n${root}|other|${mockery}\n${otherRoot}|mockery|${mockery}\n${root}|mockery|${other}\n`
+    )
   })
 })
 

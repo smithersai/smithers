@@ -932,6 +932,13 @@ info` and one `docker buildx ls`, keyed by the resolved executable and the
 probe environment. Project facts such as `forge config` are keyed by
 directory, config path and profile, so they never alias a host probe.
 
+`S.Mise.bin(name)` runs `mise which <name>` in the workspace root with the
+target's environment and executes the returned tool path. This probe is shared
+per tool name, root and environment within a plan. The tool identity retains
+the declared config digest, pin, mise path and `mise --version` result, and adds
+the resolved tool path. A failed or empty lookup refuses execution and names
+`mise install` as the remedy; planning never installs tools.
+
 ## Modules outside the barrel
 
 Every one of these is importable as `@smthrs/build-cli/<Module>`. The barrel
