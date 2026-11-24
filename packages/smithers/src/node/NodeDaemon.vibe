@@ -8,8 +8,11 @@
  * browser and CLI TanStack DB.
  */
 
+import * as Clock from "effect/Clock"
 import type { HttpClient } from "effect/http"
+import * as Random from "effect/Random"
 import * as McpClient from "./McpClient.vibe"
+import { planSessionsReport } from "./SnapshotBudget.ts"
 
 export interface TranscriptEntry {
   readonly ts: string | null
@@ -93,6 +96,29 @@ export interface DaemonOptions {
   readonly once: boolean
 }
 
+/** Sends a host's replacement session snapshot within MCP's request size limit, trimming or chunking when needed. */
+effect function reportSessionsSnapshot(
+  mcp: McpClient.McpClientConfig,
+  nodeId: string,
+  sessions: ReadonlyArray<SessionSnapshot>,
+): void!McpClient.McpCallError!HttpClient.HttpClient {
+  const now = try Clock.currentTimeMillis
+  const hi = try Random.nextInt
+  const lo = try Random.nextInt
+  const snapshotId = `snap-${now.toString(36)}-${(hi >>> 0).toString(36)}-${(lo >>> 0).toString(36)}`
+  const requests = try Effect.try({
+    try: () => planSessionsReport({ nodeId, sessions, snapshotId }),
+    catch: (err) =>
+      new McpClient.McpCallError({
+        code: "protocol",
+        message: `Failed to plan fleet snapshot: ${String(err)}`,
+      }),
+  })
+  for (const request of requests) {
+    try McpClient.callTool(mcp, "fleet_sessions_report", request)
+  }
+}
+
 /** Runs one full host + session sync cycle over BYOA MCP-over-HTTP. */
 export effect function syncHostOnce(
   mcp: McpClient.McpClientConfig
@@ -105,11 +131,7 @@ export effect function syncHostOnce(
     ...host,
     activeSessions: activeCount,
   })
-  try McpClient.callTool(mcp, "fleet_sessions_report", {
-    nodeId: host.nodeId,
-    replaceActive: true,
-    sessions,
-  })
+  try reportSessionsSnapshot(mcp, host.nodeId, sessions)
   return { nodeId: host.nodeId, sessions: sessions.length }
 }
 
@@ -140,11 +162,7 @@ export effect function syncAccountsAndCfboxOnce(
         ...cf.host,
         activeSessions: cf.sessions.filter((s) => s.status !== "ended").length,
       })
-      try McpClient.callTool(mcp, "fleet_sessions_report", {
-        nodeId: cf.host.nodeId,
-        replaceActive: true,
-        sessions: cf.sessions,
-      })
+      try reportSessionsSnapshot(mcp, cf.host.nodeId, cf.sessions)
       cfboxSessions = cf.sessions.length
     }
   }

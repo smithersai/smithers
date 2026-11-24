@@ -7,6 +7,13 @@ import { join } from "node:path"
 import { describe, expect, test } from "vitest"
 import { makeCollectorsLayer, resolveProject } from "../src/node/Collectors.ts"
 import * as NodeDaemon from "../src/node/NodeDaemon.vibe"
+import {
+  FLEET_REPORT_MAX_BYTES,
+  jsonBytes,
+  MAX_SESSIONS_PER_REPORT,
+  MIN_TRANSCRIPT_ENTRIES,
+  planSessionsReport
+} from "../src/node/SnapshotBudget.ts"
 
 describe("NodeDaemon BYOA MCP sync", () => {
   test("syncHostOnce & syncAccountsAndCfboxOnce send MCP tools/call over HTTP with observability fields", async () => {
@@ -422,5 +429,246 @@ describe("Collectors observability", () => {
     } finally {
       rmSync(home, { recursive: true, force: true })
     }
+  })
+})
+
+describe("NodeDaemon fleet snapshot byte budget & chunking (R2-Astra-D4-011)", () => {
+  const MCP_MAX_REQUEST_BYTES = 262_144
+
+  const makeHost = (nodeId: string): NodeDaemon.HostSnapshot => ({
+    nodeId,
+    name: nodeId,
+    kind: "bare-metal",
+    labels: ["linux"],
+    online: true,
+    held: null,
+    load1: 1.5,
+    cpuCores: 32,
+    memUsedGb: 16,
+    memTotalGb: 128,
+    diskFreeGb: 400,
+    diskTotalGb: 1000,
+    activeSessions: 0,
+    runnerCapacity: 16,
+    version: "1.0.0"
+  })
+
+  const makeTranscript = (sessionIdx: number, count: number): ReadonlyArray<NodeDaemon.TranscriptEntry> =>
+    Array.from({ length: count }, (_, i) => ({
+      ts: `2026-11-24T04:${String(Math.floor(i / 60)).padStart(2, "0")}:${String(i % 60).padStart(2, "0")}.000Z`,
+      role: i % 2 === 0 ? "user" : "assistant",
+      label: `turn-${i}`,
+      text: `s${sessionIdx}-e${i}-${"x".repeat(345)}`
+    }))
+
+  const makeSession = (
+    nodeId: string,
+    idx: number,
+    transcriptCount: number | null
+  ): NodeDaemon.SessionSnapshot => ({
+    sessionKey: `${nodeId}:claude:session-${idx}`,
+    managed: false,
+    harness: "claude",
+    model: "claude-fable-5-2",
+    accountLabel: "claude-1",
+    repo: "smithers",
+    project: "smithersai/smithers",
+    lane: `lane-${idx}`,
+    title: `Session ${idx}`,
+    summary: `Running fleet sync verification for session ${idx}`,
+    cwd: `/home/lane/ws-${idx}`,
+    transcriptJson: transcriptCount === null ? null : makeTranscript(idx, transcriptCount),
+    status: "working",
+    pid: 1000 + idx,
+    cpuSeconds: 12.5,
+    tokensUsed: 10_000 + idx,
+    startedAt: "2026-11-24T04:00:00.000Z",
+    lastActivityAt: "2026-11-24T04:10:00.000Z",
+    endedAt: null
+  })
+
+  const makeCapturingHttpLayer = () => {
+    const requests: Array<{
+      readonly bodyBytes: number
+      readonly name: string
+      readonly arguments: Record<string, unknown>
+    }> = []
+    const httpLayer = Layer.succeed(
+      HttpClient.HttpClient,
+      HttpClient.make((request) =>
+        Effect.sync(() => {
+          const rawBytes = request.body._tag === "Uint8Array" ? request.body.body : new Uint8Array()
+          const rawText = new TextDecoder().decode(rawBytes)
+          const parsed = JSON.parse(rawText) as {
+            id: string
+            params: { name: string; arguments: Record<string, unknown> }
+          }
+          requests.push({
+            bodyBytes: rawBytes.byteLength,
+            name: parsed.params.name,
+            arguments: parsed.params.arguments
+          })
+          return HttpClientResponse.fromWeb(
+            request,
+            new Response(
+              JSON.stringify({
+                jsonrpc: "2.0",
+                id: parsed.id,
+                result: { content: [{ type: "text", text: JSON.stringify({ ok: true }) }] }
+              }),
+              { status: 200, headers: { "content-type": "application/json" } }
+            )
+          )
+        })
+      )
+    )
+    return { requests, httpLayer }
+  }
+
+  test("40-session x 20-entry snapshot trims oldest transcript entries to fit under MCP limit in one request", async () => {
+    const sessions = Array.from({ length: 40 }, (_, i) => makeSession("nyc-02", i, 20))
+    // Confirm the raw untrimmed snapshot would breach MCP's 262,144-byte cap.
+    expect(jsonBytes({ nodeId: "nyc-02", replaceActive: true, sessions })).toBeGreaterThan(MCP_MAX_REQUEST_BYTES)
+
+    const { requests, httpLayer } = makeCapturingHttpLayer()
+    const collectors = Layer.succeed(NodeDaemon.NodeCollectors, {
+      collectHost: () => Effect.succeed(makeHost("nyc-02")),
+      collectSessions: () => Effect.succeed(sessions),
+      collectAccounts: () => Effect.succeed([]),
+      collectCfbox: () => Effect.succeed(null)
+    })
+    const mcp = { origin: "https://smithers.sh", token: "sma_" + "b".repeat(64) }
+    const result = await Effect.runPromise(
+      NodeDaemon.syncHostOnce(mcp).pipe(Effect.provide(Layer.merge(httpLayer, collectors)))
+    )
+    expect(result).toEqual({ nodeId: "nyc-02", sessions: 40 })
+
+    const reports = requests.filter((r) => r.name === "fleet_sessions_report")
+    expect(reports).toHaveLength(1)
+    expect(reports[0]!.bodyBytes).toBeLessThanOrEqual(MCP_MAX_REQUEST_BYTES)
+    expect(jsonBytes(reports[0]!.arguments)).toBeLessThanOrEqual(FLEET_REPORT_MAX_BYTES)
+    expect(reports[0]!.arguments["replaceActive"]).toBe(true)
+    expect(reports[0]!.arguments["snapshotId"]).toBeUndefined()
+
+    const sent = reports[0]!.arguments["sessions"] as ReadonlyArray<NodeDaemon.SessionSnapshot>
+    expect(sent.map((s) => s.sessionKey)).toEqual(sessions.map((s) => s.sessionKey))
+    for (const s of sent) {
+      expect(s.transcriptJson).not.toBeNull()
+      expect(s.transcriptJson!.length).toBeGreaterThanOrEqual(MIN_TRANSCRIPT_ENTRIES)
+      expect(s.transcriptJson!.length).toBeLessThan(20)
+      // Oldest entries are dropped first; newest entry ("turn-19") is preserved.
+      expect(s.transcriptJson![s.transcriptJson!.length - 1]?.label).toBe("turn-19")
+    }
+  })
+
+  test("busy host exceeding byte budget even after transcript trimming chunks under one snapshotId", async () => {
+    const sessions = Array.from({ length: 160 }, (_, i) => makeSession("nyc-01", i, 20))
+    const { requests, httpLayer } = makeCapturingHttpLayer()
+    const collectors = Layer.succeed(NodeDaemon.NodeCollectors, {
+      collectHost: () => Effect.succeed(makeHost("nyc-01")),
+      collectSessions: () => Effect.succeed(sessions),
+      collectAccounts: () => Effect.succeed([]),
+      collectCfbox: () => Effect.succeed(null)
+    })
+    const mcp = { origin: "https://smithers.sh", token: "sma_" + "c".repeat(64) }
+    await Effect.runPromise(
+      NodeDaemon.syncHostOnce(mcp).pipe(Effect.provide(Layer.merge(httpLayer, collectors)))
+    )
+
+    const reports = requests.filter((r) => r.name === "fleet_sessions_report")
+    expect(reports.length).toBeGreaterThan(1)
+
+    const snapshotId = reports[0]!.arguments["snapshotId"]
+    expect(typeof snapshotId).toBe("string")
+    expect((snapshotId as string).length).toBeGreaterThan(0)
+    expect((snapshotId as string).length).toBeLessThanOrEqual(128)
+
+    const deliveredKeys: Array<string> = []
+    for (let i = 0; i < reports.length; i += 1) {
+      const report = reports[i]!
+      expect(report.bodyBytes).toBeLessThanOrEqual(MCP_MAX_REQUEST_BYTES)
+      expect(jsonBytes(report.arguments)).toBeLessThanOrEqual(FLEET_REPORT_MAX_BYTES)
+      expect(report.arguments["nodeId"]).toBe("nyc-01")
+      expect(report.arguments["replaceActive"]).toBe(true)
+      expect(report.arguments["snapshotId"]).toBe(snapshotId)
+      expect(report.arguments["chunkIndex"]).toBe(i)
+      expect(report.arguments["totalChunks"]).toBe(reports.length)
+      expect(report.arguments["final"]).toBe(i === reports.length - 1)
+      const chunkSessions = report.arguments["sessions"] as ReadonlyArray<NodeDaemon.SessionSnapshot>
+      expect(chunkSessions.length).toBeGreaterThan(0)
+      expect(chunkSessions.length).toBeLessThanOrEqual(MAX_SESSIONS_PER_REPORT)
+      for (const s of chunkSessions) deliveredKeys.push(s.sessionKey)
+    }
+    expect(deliveredKeys).toEqual(sessions.map((s) => s.sessionKey))
+  })
+
+  test("more than MAX_SESSIONS_PER_REPORT compact sessions chunk under one snapshotId", async () => {
+    const total = MAX_SESSIONS_PER_REPORT + 20
+    const sessions = Array.from({ length: total }, (_, i) => makeSession("cf-pool", i, null))
+    const { requests, httpLayer } = makeCapturingHttpLayer()
+    const collectors = Layer.succeed(NodeDaemon.NodeCollectors, {
+      collectHost: () => Effect.succeed(makeHost("mbp")),
+      collectSessions: () => Effect.succeed([]),
+      collectAccounts: () => Effect.succeed([]),
+      collectCfbox: () => Effect.succeed({ host: makeHost("cf-pool"), sessions })
+    })
+    const mcp = { origin: "https://smithers.sh", token: "sma_" + "d".repeat(64) }
+    const result = await Effect.runPromise(
+      NodeDaemon.syncAccountsAndCfboxOnce(mcp, false, true).pipe(Effect.provide(Layer.merge(httpLayer, collectors)))
+    )
+    expect(result).toEqual({ accounts: 0, cfboxSessions: total })
+
+    const reports = requests.filter((r) => r.name === "fleet_sessions_report")
+    expect(reports.length).toBeGreaterThanOrEqual(2)
+    const snapshotId = reports[0]!.arguments["snapshotId"]
+    expect(typeof snapshotId).toBe("string")
+    const deliveredKeys: Array<string> = []
+    for (let i = 0; i < reports.length; i += 1) {
+      const r = reports[i]!
+      expect(r.bodyBytes).toBeLessThanOrEqual(MCP_MAX_REQUEST_BYTES)
+      expect(jsonBytes(r.arguments)).toBeLessThanOrEqual(FLEET_REPORT_MAX_BYTES)
+      expect(r.arguments["snapshotId"]).toBe(snapshotId)
+      expect(r.arguments["chunkIndex"]).toBe(i)
+      expect(r.arguments["totalChunks"]).toBe(reports.length)
+      expect(r.arguments["final"]).toBe(i === reports.length - 1)
+      const chunkSessions = r.arguments["sessions"] as ReadonlyArray<NodeDaemon.SessionSnapshot>
+      expect(chunkSessions.length).toBeGreaterThan(0)
+      expect(chunkSessions.length).toBeLessThanOrEqual(MAX_SESSIONS_PER_REPORT)
+      for (const s of chunkSessions) deliveredKeys.push(s.sessionKey)
+    }
+    expect(deliveredKeys).toEqual(sessions.map((s) => s.sessionKey))
+  })
+
+  test("planSessionsReport handles empty snapshots and drops transcript on a single oversized session", () => {
+    const empty = planSessionsReport({ nodeId: "empty-node", sessions: [], snapshotId: "snap-empty" })
+    expect(empty).toEqual([{ nodeId: "empty-node", replaceActive: true, sessions: [] }])
+
+    const oversized = makeSession("big-node", 0, 20)
+    const planned = planSessionsReport({
+      nodeId: "big-node",
+      sessions: [oversized],
+      snapshotId: "snap-single",
+      maxBytes: 1_200
+    })
+    expect(planned).toHaveLength(1)
+    expect(planned[0]!.snapshotId).toBe("snap-single")
+    expect(planned[0]!.chunkIndex).toBe(0)
+    expect(planned[0]!.totalChunks).toBe(1)
+    expect(planned[0]!.final).toBe(true)
+    expect(planned[0]!.sessions).toHaveLength(1)
+    expect(planned[0]!.sessions[0]!.sessionKey).toBe(oversized.sessionKey)
+    expect(planned[0]!.sessions[0]!.transcriptJson).toBeNull()
+    expect(jsonBytes(planned[0])).toBeLessThanOrEqual(1_200)
+
+    // Count-based chunking when small sessions fit in bytes but exceed MAX_SESSIONS_PER_REPORT.
+    const tiny = Array.from({ length: MAX_SESSIONS_PER_REPORT + 20 }, (_, i) => ({ sessionKey: `tiny:${i}` }))
+    const countPlanned = planSessionsReport({ nodeId: "tiny-node", sessions: tiny, snapshotId: "snap-count" })
+    expect(countPlanned).toHaveLength(2)
+    expect(countPlanned[0]!.sessions).toHaveLength(MAX_SESSIONS_PER_REPORT)
+    expect(countPlanned[0]!.final).toBe(false)
+    expect(countPlanned[1]!.sessions).toHaveLength(20)
+    expect(countPlanned[1]!.final).toBe(true)
+    expect(countPlanned[0]!.snapshotId).toBe("snap-count")
+    expect(countPlanned[1]!.snapshotId).toBe("snap-count")
   })
 })
