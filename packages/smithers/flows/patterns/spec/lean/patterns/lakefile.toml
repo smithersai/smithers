@@ -1,0 +1,10 @@
+name = "patterns"
+version = "0.1.0"
+defaultTargets = ["PatternsSpec", "patterns-spec"]
+
+[[lean_lib]]
+name = "PatternsSpec"
+
+[[lean_exe]]
+name = "patterns-spec"
+root = "Main"

@@ -1,0 +1,10 @@
+name = "capability"
+version = "0.1.0"
+defaultTargets = ["CapabilitySpec", "capability-spec"]
+
+[[lean_lib]]
+name = "CapabilitySpec"
+
+[[lean_exe]]
+name = "capability-spec"
+root = "Main"

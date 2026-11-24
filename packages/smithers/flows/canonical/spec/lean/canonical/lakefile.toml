@@ -1,0 +1,10 @@
+name = "canonical"
+version = "0.1.0"
+defaultTargets = ["CanonicalSpec", "canonical-spec"]
+
+[[lean_lib]]
+name = "CanonicalSpec"
+
+[[lean_exe]]
+name = "canonical-spec"
+root = "Main"

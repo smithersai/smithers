@@ -1,0 +1,10 @@
+name = "flow"
+version = "0.1.0"
+defaultTargets = ["FlowSpec", "flow-spec"]
+
+[[lean_lib]]
+name = "FlowSpec"
+
+[[lean_exe]]
+name = "flow-spec"
+root = "Main"

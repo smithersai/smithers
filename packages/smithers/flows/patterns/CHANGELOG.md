@@ -19,6 +19,14 @@
 
 ### Fixed
 
+- `Bounded.all` joins a member named `then`, `toString`, `valueOf` or
+  `toJSON`. It read each member off the planned batch record by name, and a
+  planned value answers `then` with `undefined` and refuses the other three, so
+  the first was dropped from the joined record and the others failed the build.
+  The joined record is now merged from the batch records at run time, as
+  `Node.all` holds them. Found by the Lean differential test
+  (`test/Patterns.lean-diff.test.ts`).
+
 - `Trellis.execute` reports malformed plans as typed `TrellisError` failures
   instead of throwing synchronously, and admits leaf factory calls under its
   shared concurrency bound

@@ -1,0 +1,10 @@
+name = "keys"
+version = "0.1.0"
+defaultTargets = ["KeysSpec", "keys-spec"]
+
+[[lean_lib]]
+name = "KeysSpec"
+
+[[lean_exe]]
+name = "keys-spec"
+root = "Main"

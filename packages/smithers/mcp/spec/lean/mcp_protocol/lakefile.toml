@@ -1,0 +1,10 @@
+name = "mcp_protocol"
+version = "0.1.0"
+defaultTargets = ["McpProtocolSpec", "mcp-protocol-spec"]
+
+[[lean_lib]]
+name = "McpProtocolSpec"
+
+[[lean_exe]]
+name = "mcp-protocol-spec"
+root = "Main"

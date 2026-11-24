@@ -1,0 +1,10 @@
+name = "journal"
+version = "0.1.0"
+defaultTargets = ["JournalSpec", "journal-spec"]
+
+[[lean_lib]]
+name = "JournalSpec"
+
+[[lean_exe]]
+name = "journal-spec"
+root = "Main"

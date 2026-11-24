@@ -1,0 +1,10 @@
+name = "cron"
+version = "0.1.0"
+defaultTargets = ["CronSpec", "cron-spec"]
+
+[[lean_lib]]
+name = "CronSpec"
+
+[[lean_exe]]
+name = "cron-spec"
+root = "Main"

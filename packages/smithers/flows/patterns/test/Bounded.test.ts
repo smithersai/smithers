@@ -69,6 +69,19 @@ describe("Bounded", () => {
     expect(callsTo(graph, "worker")).toHaveLength(5)
   })
 
+  // Found by `Patterns.lean-diff.test.ts`, shrunk to one member named `toString` at width 1. The join read each
+  // member off the planned batch record by name, and a planned value answers `then` with `undefined` and refuses
+  // `toString`, `valueOf` and `toJSON`: the first was dropped from the result and the others failed the build.
+  it("joins members whose names a planned value cannot be read by, like Node.all", async () => {
+    const names = ["then", "toString", "valueOf", "toJSON", "__proto__", "constructor", "a"]
+    for (const concurrency of [1, 3, 7]) {
+      const node = Bounded.all(members(names), { concurrency }) as Node.Node<unknown, never, never>
+      const host = Flow.make("bounded/reserved", { payload: {}, success: Schema.Unknown, body: () => node })
+      const joined = await execute(host, {}, `bounded-reserved-${concurrency}`) as Record<string, unknown>
+      expect(Object.entries(joined)).toEqual(names.map((name) => [name, name]))
+    }
+  })
+
   it("runs a higher priority member in an earlier batch", () => {
     const graph = graphOf(
       Bounded.all(

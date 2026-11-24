@@ -99,6 +99,10 @@ export const ranked = <Member>(
     .map(([name, member], index) => ({ name, member, rank: rank(name, member), index }))
     .sort((left, right) => right.rank - left.rank || left.index - right.index)
 
+// Own entries only, so a prototype-shaped member name stays a data property.
+const joined = (records: ReadonlyArray<Readonly<Record<string, unknown>>>): Readonly<Record<string, unknown>> =>
+  Object.fromEntries(records.flatMap((record) => Object.entries(record)))
+
 /**
  * Joins a record of members with a static width bound.
  *
@@ -143,36 +147,36 @@ export const all = <const Nodes extends Readonly<Record<string, Node.Any>>>(
     )
   }
   // Each batch gates the next one, so the plan carries the width bound as
-  // dependency edges rather than as a note a scheduler has to honour, and the
-  // joined record is every member's planned reference under its declared name.
-  // A planned result may be read by field and passed on, never computed on, so
-  // the record is assembled from references instead of spread from values.
+  // dependency edges rather than as a note a scheduler has to honour. A planned
+  // result may be passed on, never computed on, and reading a member off it by
+  // name is not always a reference: a planned value answers `then` with
+  // `undefined` and refuses `toString`, `valueOf` and `toJSON`. So each batch's
+  // record is carried whole and the joined record is merged from the real
+  // values at run time, which holds every member name `Node.all` holds.
   const visit = (
     batch: number,
-    carried: Readonly<Record<string, Planned.Planned<unknown>>>
+    carried: ReadonlyArray<Planned.Planned<Readonly<Record<string, unknown>>>>
   ): Node.Node<Readonly<Record<string, unknown>>, unknown, any> => {
     const members = batches[batch]
-    if (members === undefined) return Node.succeed(carried)
+    if (members === undefined) {
+      return Node.map(
+        // Planned references resolve to the real values at run time.
+        Node.succeed(carried as ReadonlyArray<Readonly<Record<string, unknown>>>),
+        Node.capture({ joined: order.map((entry) => entry.name) }, joined)
+      )
+    }
     return Node.bindPlanned(
       Node.all(members),
       Node.capture({ batch, members: Object.keys(members) }, (reference) =>
         Node.andThen(
           Node.succeed(reference),
-          visit(batch + 1, {
-            ...carried,
-            ...Object.fromEntries(
-              Object.keys(members).map((name) => [
-                name,
-                (reference as Readonly<Record<string, Planned.Planned<unknown>>>)[name]!
-              ])
-            )
-          })
+          visit(batch + 1, [...carried, reference as Planned.Planned<Readonly<Record<string, unknown>>>])
         ))
     )
   }
   // Batching preserves each member and key; only the private accumulator
   // erases their heterogeneous types while it assembles planned references.
-  return visit(0, {}) as Node.Node<
+  return visit(0, []) as Node.Node<
     Types.Simplify<{ readonly [K in keyof Nodes]: Node.Success<Nodes[K]> }>,
     Node.Error<Nodes[keyof Nodes]>,
     Node.Services<Nodes[keyof Nodes]>

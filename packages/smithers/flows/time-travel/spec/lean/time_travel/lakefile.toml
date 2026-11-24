@@ -1,0 +1,10 @@
+name = "time_travel"
+version = "0.1.0"
+defaultTargets = ["TimeTravelSpec", "time-travel-spec"]
+
+[[lean_lib]]
+name = "TimeTravelSpec"
+
+[[lean_exe]]
+name = "time-travel-spec"
+root = "Main"
