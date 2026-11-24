@@ -1345,7 +1345,9 @@ describe("timeline scrubber", () => {
     await tui.until((screen) => /◂Working\s+0\/20 ▸/.test(screen), 5_000, "first position")
     await tui.press("]")
     await tui.until(
-      (screen) => /◂patched approvals\.ts.*\s10\/20 ▸/.test(screen) && /▾ 10\s+patched approvals\.ts/.test(screen),
+      (screen) =>
+        /◂patched approvals\.ts.*\s10\/20 ▸/.test(screen) &&
+        /[▾⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏] 10\s+patched approvals\.ts/.test(screen),
       5_000,
       "jumped to step 10"
     )
