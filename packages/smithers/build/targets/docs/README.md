@@ -108,7 +108,7 @@ switching either is one edit to `WORKSPACE.ts`.
 
 ## What the catalog covers
 
-The catalog holds 108 rules. They group roughly like this:
+The catalog holds 110 rules. They group roughly like this:
 
 | Family                  | Rules                                                                          |
 | ----------------------- | ------------------------------------------------------------------------------ |
@@ -120,7 +120,7 @@ The catalog holds 108 rules. They group roughly like this:
 | Agents and model review | `Agent.Lint`, `Agent.Diff`, `Agent.Pr`, `LlmLint`, `SecurityReview`            |
 | Composition             | `Filegroup`, `Suite`, `Alias`, `Test`, `Materialize`                           |
 
-[Catalog rules](./rules.md) lists all 108 with the verbs each one joins,
+[Catalog rules](./rules.md) lists all 110 with the verbs each one joins,
 whether its result may be replayed from the cache, and whether it declares an
 output tree.
 
@@ -178,8 +178,29 @@ text, and `Smithers.Home.Stack()` the repository's live stack. The factory
 projection writes `.smithers/home.json` as one section for everyone, in the
 format `@smthrs/views`' `Home` defines and the app reads; `Factory.Home` takes
 any block that format does, `hero`, `code`, `cards`, `stats`, `releases`,
-`action`, `issues` and `runs` included, as plain objects. A home with sections
-for contributors or maintainers is written as `.smithers/home.json` directly
+`action`, `issues` and `runs` included, as plain objects.
+
+A home that shows some blocks only to contributors or maintainers declares
+`sections` instead of `blocks`:
+
+```ts
+export const home = Smithers.Factory.Home({
+  docs: "https://example.com/llms.txt",
+  contributors: "role",
+  sections: [
+    { title: "Today", audience: "maintainer", blocks: [Smithers.Home.Stack()] },
+    { title: "Contribute", audience: "contributor", blocks: [Smithers.Home.Markdown({ path: "CONTRIBUTING.md" })] },
+    { blocks: [Smithers.Home.Markdown({ path: "README.md" })] }
+  ]
+})
+```
+
+Each section's `audience` is `everyone` (the default), `contributor` or
+`maintainer`. `docs` names the docs index, an absolute `https` URL, and
+`contributors` is `role` (the default) or `anyone`. A home declares at most 8
+sections and 32 blocks in all, and declares `blocks` or `sections`, never
+both. The projection writes `docs`, `contributors` and each section's `title`
+and `audience` only when declared
 ([Read a repository's home](../../../ui/views/docs/read-a-home.md)).
 
 ### A flow's own view

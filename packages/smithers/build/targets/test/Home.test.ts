@@ -10,6 +10,7 @@
 import * as Views from "@smthrs/views"
 import { describe, expect, it } from "vitest"
 import * as Home from "../src/Home.ts"
+import { voltaireHome } from "./fixtures/VoltaireHome.ts"
 
 describe("the home blocks", () => {
   it("declare frozen plain values that carry their type", () => {
@@ -178,5 +179,137 @@ describe("Smithers.Factory.Home", () => {
       /must not contain HTML/
     )
     expect(Home.parse(JSON.stringify({ blocks: [{ type: "prose", markdown: "x" }] }))).toMatch(/shape/)
+  })
+})
+
+describe("Smithers.Factory.Home with sections", () => {
+  const stack = Home.Stack()
+  const readme = Home.Markdown({ path: "README.md" })
+
+  it("declares a frozen, tagged sections declaration that keeps only what was written", () => {
+    const home = Home.Home({
+      docs: "https://example.com/llms.txt",
+      contributors: "anyone",
+      sections: [
+        { title: "Today", audience: "maintainer", blocks: [stack] },
+        { blocks: [readme] }
+      ]
+    })
+    expect(home).toEqual({
+      _tag: "HomeDeclaration",
+      docs: "https://example.com/llms.txt",
+      contributors: "anyone",
+      sections: [{ title: "Today", audience: "maintainer", blocks: [stack] }, { blocks: [readme] }]
+    })
+    expect(Object.isFrozen(home)).toBe(true)
+    expect(Object.isFrozen(home.sections[0])).toBe(true)
+    expect(Home.isHomeDeclaration(home)).toBe(true)
+    expect("audience" in home.sections[1]!).toBe(false)
+    expect("title" in home.sections[1]!).toBe(false)
+    expect("docs" in Home.Home({ sections: [{ blocks: [stack] }] })).toBe(false)
+  })
+
+  it("renders docs, contributors, then sections, and the app's reader reads the audiences back", () => {
+    const home = Home.Home({
+      sections: [{ audience: "contributor", blocks: [readme] }, { title: "All", blocks: [stack] }],
+      contributors: "role",
+      docs: "https://example.com/llms.txt"
+    })
+    const text = Home.render(home)
+    expect(text).toBe(`${
+      JSON.stringify(
+        {
+          docs: "https://example.com/llms.txt",
+          contributors: "role",
+          sections: [{ audience: "contributor", blocks: [readme] }, { title: "All", blocks: [stack] }]
+        },
+        null,
+        2
+      )
+    }\n`)
+    expect(Home.parse(text)).toEqual({
+      docs: "https://example.com/llms.txt",
+      contributors: "role",
+      sections: [{ audience: "contributor", blocks: [readme] }, { title: "All", blocks: [stack] }]
+    })
+    expect(Views.Home.read(text)).toEqual({
+      _tag: "Declared",
+      docs: "https://example.com/llms.txt",
+      contributors: "role",
+      skipped: 0,
+      sections: [
+        { audience: "contributor", blocks: [readme] },
+        { title: "All", audience: "everyone", blocks: [stack] }
+      ]
+    })
+  })
+
+  it("renders a checked-in sections home byte for byte from its declaration", () => {
+    const parsed = JSON.parse(voltaireHome) as {
+      readonly docs: string
+      readonly sections: ReadonlyArray<Home.SectionOptions>
+    }
+    const home = Home.Home({ docs: parsed.docs, sections: parsed.sections })
+    expect(Home.render(home)).toBe(voltaireHome)
+    expect(Home.parse(voltaireHome)).toEqual(parsed)
+    const read = Views.Home.read(voltaireHome)
+    expect(read._tag === "Declared" && read.sections.map((section) => section.audience)).toEqual([
+      "maintainer",
+      "contributor",
+      "everyone"
+    ])
+    expect(read._tag === "Declared" && read.docs).toBe("https://voltaire.tevm.sh/llms.txt")
+  })
+
+  it("refuses both shapes at once, too many sections or blocks, a bad docs URL, and stray options", () => {
+    expect(() => Home.Home({ blocks: [stack], sections: [{ blocks: [stack] }] } as never)).toThrow(
+      /blocks or sections, not both/
+    )
+    expect(() => Home.Home({ blocks: [stack], docs: "https://example.com/llms.txt" } as never)).toThrow(
+      /docs and contributors need sections/
+    )
+    expect(() => Home.Home({ sections: Array.from({ length: Home.maximumSections + 1 }, () => ({ blocks: [stack] })) }))
+      .toThrow(/declares 9 sections; a home declares at most 8/)
+    expect(() =>
+      Home.Home({
+        sections: [
+          { blocks: Array.from({ length: 20 }, () => stack) },
+          { blocks: Array.from({ length: 13 }, () => stack) }
+        ]
+      })
+    ).toThrow(/declares 33 blocks in all; a home declares at most 32/)
+    expect(() => Home.Home({ docs: "http://example.com/llms.txt", sections: [{ blocks: [stack] }] })).toThrow(
+      /Factory\.Home/
+    )
+    expect(() => Home.Home({ docs: "/llms.txt", sections: [{ blocks: [stack] }] })).toThrow(/Factory\.Home/)
+    expect(() => Home.Home({ contributors: "everyone" as never, sections: [{ blocks: [stack] }] })).toThrow(
+      /Factory\.Home/
+    )
+    expect(() => Home.Home({ sections: [{ audience: "admin" as never, blocks: [stack] }] })).toThrow(/Factory\.Home/)
+    expect(() => Home.Home({ sections: [{ title: "<b>x</b>", blocks: [stack] }] })).toThrow(/must not contain HTML/)
+    expect(() => Home.Home({ sections: [{ blocks: [stack], hidden: true } as never] })).toThrow(
+      /section 0 received unknown option "hidden"/
+    )
+    expect(() => Home.Home({ sections: [{ blocks: [stack] }, { blocks: ["# Hi"] as never }] })).toThrow(
+      /section 1 block 0 must be a declared block.*not a string/
+    )
+    expect(() => Home.Home({ sections: [{ blocks: [] }] })).toThrow(/Factory\.Home/)
+    expect(() => Home.Home({ sections: [] })).toThrow(/Factory\.Home/)
+    expect(() => Home.Home({ sections: "today" as never })).toThrow(/sections must be an array of sections/)
+    expect(() => Home.Home({ sections: [{ blocks: "x" } as never] })).toThrow(/section 0 blocks must be an array/)
+  })
+
+  it("parses either shape back and refuses a document declaring both or breaking the bounds", () => {
+    expect(Home.parse(JSON.stringify({ blocks: [stack], sections: [] }))).toMatch(/blocks and sections/)
+    expect(Home.parse(JSON.stringify({ sections: Array.from({ length: 9 }, () => ({ blocks: [] })) }))).toMatch(
+      /shape/
+    )
+    expect(Home.parse(JSON.stringify({ sections: [{ blocks: Array.from({ length: 33 }, () => stack) }] }))).toMatch(
+      /at most 32 blocks in all/
+    )
+    expect(Home.parse(JSON.stringify({ docs: "ftp://x", sections: [] }))).toMatch(/shape/)
+    expect(Home.parse(JSON.stringify({ sections: [{ audience: "maintainer", blocks: [] }] }))).toEqual({
+      sections: [{ audience: "maintainer", blocks: [] }]
+    })
   })
 })

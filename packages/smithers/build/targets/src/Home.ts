@@ -4,7 +4,11 @@
  * A repository's workspace chat opens with its homepage message, a README
  * alternative the maintainer declares in
  * `.smithers/FACTORY.ts` as `export const home = Smithers.Factory.Home({ blocks })`,
- * the second export beside the factory itself. Blocks are declared values,
+ * the second export beside the factory itself. A home that gates blocks by
+ * audience declares `Smithers.Factory.Home({ sections, docs, contributors })`
+ * instead: each section names its `audience` (`everyone`, `contributor`, or
+ * `maintainer`), `docs` names the repository's docs index, and `contributors`
+ * says who counts as a contributor. Blocks are declared values,
  * never raw HTML, in the one home format `@smthrs/views` defines (`Home`),
  * which the app reads the file with. The app renders every block from data;
  * a string carrying an HTML tag is refused where it is written.
@@ -66,6 +70,14 @@ export const maximumUrlLength = Format.maximumUrlLength
 export const maximumBlocks = Format.maximumBlocks
 
 /**
+ * Maximum number of sections one home declares (`Home.maximumSections` of `@smthrs/views`).
+ *
+ * @category constants
+ * @since 1.0.0
+ */
+export const maximumSections = Format.maximumSections
+
+/**
  * The shape of raw HTML in a string (`Home.htmlPattern` of `@smthrs/views`): a
  * tag, a closing tag, a comment, or a processing instruction opener.
  *
@@ -81,6 +93,30 @@ export const htmlPattern = Format.htmlPattern
  * @since 1.0.0
  */
 export const Title = Format.Title
+
+/**
+ * Who may see a section: `everyone`, `contributor`, or `maintainer` (`Home.Audience` of `@smthrs/views`).
+ *
+ * @category schemas
+ * @since 1.0.0
+ */
+export const Audience = Format.Audience
+
+/**
+ * Who counts as a contributor to a home: `role` or `anyone` (`Home.Contributors` of `@smthrs/views`).
+ *
+ * @category schemas
+ * @since 1.0.0
+ */
+export const Contributors = Format.Contributors
+
+/**
+ * The docs index a home names: an absolute `https` URL (`Home.DocsUrl` of `@smthrs/views`).
+ *
+ * @category schemas
+ * @since 1.0.0
+ */
+export const DocsUrl = Format.DocsUrl
 
 /**
  * A paragraph of plain text: non-empty, bounded, no HTML.
@@ -232,15 +268,80 @@ export const FlowView = Schema.NonEmptyArray(FlowViewBlock).check(Schema.isMaxLe
  */
 export type Block = typeof Block.Type
 
+/** Refuses a list of sections that declares more than `maximumBlocks` blocks in all. */
+const totalBlocks = Schema.makeFilter<ReadonlyArray<{ readonly blocks: ReadonlyArray<unknown> }>>((sections) => {
+  const count = sections.reduce((sum, section) => sum + section.blocks.length, 0)
+  return count > maximumBlocks ? `must declare at most ${maximumBlocks} blocks in all, got ${count}` : true
+})
+
 /**
- * The home declaration `.smithers/FACTORY.ts` exports as `home`.
+ * One declared section: an optional heading, who may see it (`everyone` when
+ * absent), and its blocks.
  *
  * @category schemas
  * @since 1.0.0
  */
-export const Declaration = Schema.TaggedStruct("HomeDeclaration", {
+export const Section = Schema.Struct({
+  title: Schema.optional(Title),
+  audience: Schema.optional(Audience),
+  blocks: Schema.NonEmptyArray(Block)
+})
+
+/**
+ * One declared section.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export type Section = typeof Section.Type
+
+/**
+ * A home declared as one list of blocks, shown to everyone.
+ *
+ * @category schemas
+ * @since 1.0.0
+ */
+export const BlocksDeclaration = Schema.TaggedStruct("HomeDeclaration", {
   blocks: Schema.NonEmptyArray(Block).check(Schema.isMaxLength(maximumBlocks))
 })
+
+/**
+ * A home declared as one list of blocks.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export type BlocksDeclaration = typeof BlocksDeclaration.Type
+
+/**
+ * A home declared as sections, each gated by its audience, with an optional
+ * docs index and contributor rule: at most `maximumSections` sections and
+ * `maximumBlocks` blocks in all.
+ *
+ * @category schemas
+ * @since 1.0.0
+ */
+export const SectionsDeclaration = Schema.TaggedStruct("HomeDeclaration", {
+  docs: Schema.optional(DocsUrl),
+  contributors: Schema.optional(Contributors),
+  sections: Schema.NonEmptyArray(Section).check(Schema.isMaxLength(maximumSections), totalBlocks)
+})
+
+/**
+ * A home declared as sections.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export type SectionsDeclaration = typeof SectionsDeclaration.Type
+
+/**
+ * The home declaration `.smithers/FACTORY.ts` exports as `home`: blocks or sections.
+ *
+ * @category schemas
+ * @since 1.0.0
+ */
+export const Declaration = Schema.Union([BlocksDeclaration, SectionsDeclaration])
 
 /**
  * The home declaration `.smithers/FACTORY.ts` exports as `home`.
@@ -251,14 +352,40 @@ export const Declaration = Schema.TaggedStruct("HomeDeclaration", {
 export type Declaration = typeof Declaration.Type
 
 /**
- * The document `.smithers/home.json` holds: the blocks, in declaration order.
+ * The document `.smithers/home.json` holds for a blocks home: the blocks, in declaration order.
  *
  * @category schemas
  * @since 1.0.0
  */
-export const Document = Schema.Struct({
+export const BlocksDocument = Schema.Struct({
   blocks: Schema.Array(Block)
 })
+
+/**
+ * The document `.smithers/home.json` holds for a sections home, keys in
+ * written order: `docs`, `contributors`, `sections`; each section `title`,
+ * `audience`, `blocks`.
+ *
+ * @category schemas
+ * @since 1.0.0
+ */
+export const SectionsDocument = Schema.Struct({
+  docs: Schema.optional(DocsUrl),
+  contributors: Schema.optional(Contributors),
+  sections: Schema.Array(Schema.Struct({
+    title: Schema.optional(Title),
+    audience: Schema.optional(Audience),
+    blocks: Schema.Array(Block)
+  })).check(Schema.isMaxLength(maximumSections), totalBlocks)
+})
+
+/**
+ * The document `.smithers/home.json` holds: blocks or sections.
+ *
+ * @category schemas
+ * @since 1.0.0
+ */
+export const Document = Schema.Union([BlocksDocument, SectionsDocument])
 
 /**
  * The document `.smithers/home.json` holds.
@@ -434,6 +561,32 @@ export interface ViewOptions {
  */
 export interface HomeOptions {
   readonly blocks: ReadonlyArray<Block>
+  readonly sections?: undefined
+}
+
+/**
+ * What a `FACTORY.ts` writes for one section of a sections home.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export interface SectionOptions {
+  readonly title?: string | undefined
+  readonly audience?: typeof Audience.Type | undefined
+  readonly blocks: ReadonlyArray<Block>
+}
+
+/**
+ * What a `FACTORY.ts` writes for a home declared as sections.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export interface HomeSectionsOptions {
+  readonly docs?: string | undefined
+  readonly contributors?: typeof Contributors.Type | undefined
+  readonly sections: ReadonlyArray<SectionOptions>
+  readonly blocks?: undefined
 }
 
 /**
@@ -532,12 +685,27 @@ export const View = (options: ViewOptions): typeof ViewBlock.Type =>
     ...plainOptions("Home.View", options, new Set(["flow"]))
   }))
 
+/** Throws unless every entry is an object, naming the first that is not. */
+const objectBlocks = (blocks: ReadonlyArray<unknown>, where: string): void => {
+  blocks.forEach((block, index) => {
+    if (typeof block !== "object" || block === null) {
+      throw new TypeError(
+        `Factory.Home ${where}block ${index} must be a declared block (Smithers.Home.Text, Links, Flows, Prompt, Markdown, Stack, App, View), not ${
+          typeof block === "string" ? "a string" : typeof block
+        }`
+      )
+    }
+  })
+}
+
 /**
- * Declares the repository's homepage from declared blocks.
+ * Declares the repository's homepage from declared blocks, or from sections
+ * of blocks each gated by its audience.
  *
  * Every block has to be a value one of the block constructors returned, or
  * an equal plain value; a string, an element, or any other shape is refused
- * with the block index in the message.
+ * with the block index in the message. A home declares `blocks` or
+ * `sections`, never both; `docs` and `contributors` come with `sections`.
  *
  * @example
  * ```ts
@@ -552,37 +720,90 @@ export const View = (options: ViewOptions): typeof ViewBlock.Type =>
  * })
  * ```
  *
+ * @example
+ * ```ts
+ * import { Smithers } from "@smthrs/targets"
+ *
+ * export const home = Smithers.Factory.Home({
+ *   docs: "https://example.com/llms.txt",
+ *   sections: [
+ *     { title: "Today", audience: "maintainer", blocks: [Smithers.Home.Stack()] },
+ *     { audience: "everyone", blocks: [Smithers.Home.Markdown({ path: "README.md" })] }
+ *   ]
+ * })
+ * ```
+ *
  * @category constructors
  * @since 1.0.0
  */
-export const Home = (options: HomeOptions): Declaration => {
-  const plain = plainOptions("Factory.Home", options, new Set(["blocks"]))
-  const blocks = plain["blocks"]
-  if (!Array.isArray(blocks)) throw new TypeError("Factory.Home blocks must be an array of declared blocks")
-  blocks.forEach((block, index) => {
-    if (typeof block !== "object" || block === null) {
-      throw new TypeError(
-        `Factory.Home block ${index} must be a declared block (Smithers.Home.Text, Links, Flows, Prompt, Markdown, Stack, App, View), not ${
-          typeof block === "string" ? "a string" : typeof block
-        }`
-      )
+export function Home(options: HomeOptions): BlocksDeclaration
+export function Home(options: HomeSectionsOptions): SectionsDeclaration
+export function Home(options: HomeOptions | HomeSectionsOptions): Declaration {
+  const plain = plainOptions("Factory.Home", options, new Set(["blocks", "sections", "docs", "contributors"]))
+  const { blocks, sections, docs, contributors } = plain
+  if (blocks !== undefined && sections !== undefined) {
+    throw new TypeError("Factory.Home declares blocks or sections, not both")
+  }
+  if (sections === undefined) {
+    if (docs !== undefined || contributors !== undefined) {
+      throw new TypeError("Factory.Home docs and contributors need sections; declare sections instead of blocks")
     }
+    if (!Array.isArray(blocks)) throw new TypeError("Factory.Home blocks must be an array of declared blocks")
+    objectBlocks(blocks, "")
+    return freezeDeep(decode("Factory.Home", BlocksDeclaration, { _tag: "HomeDeclaration", blocks }))
+  }
+  if (!Array.isArray(sections)) throw new TypeError("Factory.Home sections must be an array of sections")
+  if (sections.length > maximumSections) {
+    throw new TypeError(`Factory.Home declares ${sections.length} sections; a home declares at most ${maximumSections}`)
+  }
+  let count = 0
+  const declared = sections.map((section, index) => {
+    const fields = plainOptions(`Factory.Home section ${index}`, section, new Set(["title", "audience", "blocks"]))
+    if (!Array.isArray(fields["blocks"])) {
+      throw new TypeError(`Factory.Home section ${index} blocks must be an array of declared blocks`)
+    }
+    objectBlocks(fields["blocks"], `section ${index} `)
+    count += fields["blocks"].length
+    return fields
   })
-  return freezeDeep(decode("Factory.Home", Declaration, { _tag: "HomeDeclaration", blocks }))
+  if (count > maximumBlocks) {
+    throw new TypeError(`Factory.Home declares ${count} blocks in all; a home declares at most ${maximumBlocks}`)
+  }
+  return freezeDeep(decode("Factory.Home", SectionsDeclaration, {
+    _tag: "HomeDeclaration",
+    ...(docs === undefined ? {} : { docs }),
+    ...(contributors === undefined ? {} : { contributors }),
+    sections: declared
+  }))
 }
 
 /**
  * Renders the projected document: two-space indentation and a trailing
- * newline, so the checked-in file diffs like a hand-written one.
+ * newline, so the checked-in file diffs like a hand-written one. A sections
+ * home writes `docs`, `contributors`, then `sections`, each key only when
+ * declared, and each section's `title` and `audience` only when declared.
  *
  * @category rendering
  * @since 1.0.0
  */
-export const render = (declaration: Declaration): string =>
-  `${JSON.stringify(Schema.encodeSync(Document)({ blocks: declaration.blocks }), null, 2)}\n`
+export const render = (declaration: Declaration): string => {
+  if ("blocks" in declaration) {
+    return `${JSON.stringify(Schema.encodeSync(BlocksDocument)({ blocks: declaration.blocks }), null, 2)}\n`
+  }
+  const document: typeof SectionsDocument.Type = {
+    ...(declaration.docs === undefined ? {} : { docs: declaration.docs }),
+    ...(declaration.contributors === undefined ? {} : { contributors: declaration.contributors }),
+    sections: declaration.sections.map(({ audience, blocks, title }) => ({
+      ...(title === undefined ? {} : { title }),
+      ...(audience === undefined ? {} : { audience }),
+      blocks
+    }))
+  }
+  return `${JSON.stringify(Schema.encodeSync(SectionsDocument)(document), null, 2)}\n`
+}
 
 /**
- * Reads a rendered document back, or reports why the text is not one.
+ * Reads a rendered document back, blocks or sections, or reports why the text is not one.
  *
  * @category parsing
  * @since 1.0.0
@@ -593,6 +814,9 @@ export const parse = (text: string): Document | string => {
     value = JSON.parse(text)
   } catch (cause) {
     return `the homepage is not JSON: ${cause instanceof Error ? cause.message : String(cause)}`
+  }
+  if (typeof value === "object" && value !== null && "blocks" in value && "sections" in value) {
+    return "the homepage does not have the .smithers/home.json shape: it declares blocks and sections, not one of them"
   }
   const result = Schema.decodeUnknownResult(Document)(value)
   return Result.isFailure(result)

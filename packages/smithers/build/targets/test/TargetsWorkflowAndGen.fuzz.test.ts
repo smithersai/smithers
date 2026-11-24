@@ -630,7 +630,10 @@ describe("@smthrs/targets workflow, CI generation, docs, factory, home & manifes
               if (!Home.isHomeDeclaration(homeDecl)) return false
               const homeJson = Home.render(homeDecl)
               const parsedHome = Home.parse(homeJson)
-              if (typeof parsedHome === "string" || parsedHome.blocks.length !== homeDecl.blocks.length) return false
+              if (
+                typeof parsedHome === "string" || !("blocks" in parsedHome) ||
+                parsedHome.blocks.length !== homeDecl.blocks.length
+              ) return false
 
               const flowDecl = Flow.Flow({ flow: "review", summary: "Review changes.", featured: true })
               const flowDecl2 = Flow.Flow({ flow: "lint", summary: "Lint workspace." })

@@ -329,6 +329,45 @@ export const home = S.Factory.Home({ blocks: [S.Home.View({ flow: "review" })] }
     expect((await serve(root, ["ci", "//:factoryProjection"])).exitCode).toBe(0)
   })
 
+  it("projects a sections home byte for byte, audiences and docs index kept, and reds when a section changes", async () => {
+    const sectionsFactory = (audience: string) =>
+      `import { Smithers as S } from "@smthrs/targets"
+export const review = S.Flow({ flow: "review", summary: "Review the change.", featured: true })
+export const factory = S.Factory({ summary: "S.", flows: [review] })
+export const home = S.Factory.Home({
+  docs: "https://example.com/llms.txt",
+  sections: [
+    { title: "Today", audience: "${audience}", blocks: [S.Home.Stack(), { type: "action", flow: "review", title: "Review", key: "r" }] },
+    { blocks: [S.Home.Markdown({ path: "README.md" })] },
+  ],
+})
+`
+    const root = await fixture({ factory: sectionsFactory("maintainer") })
+    const written = await serve(root, ["target", "//:factoryProjection", "--write"])
+    expect(written.exitCode, written.logs).toBe(0)
+    expect(await Fs.readFile(NodePath.join(root, ".smithers/home.json"), "utf8")).toBe(`${
+      JSON.stringify(
+        {
+          docs: "https://example.com/llms.txt",
+          sections: [
+            {
+              title: "Today",
+              audience: "maintainer",
+              blocks: [{ type: "stack" }, { type: "action", flow: "review", title: "Review", key: "r" }]
+            },
+            { blocks: [{ type: "markdown", path: "README.md" }] }
+          ]
+        },
+        null,
+        2
+      )
+    }\n`)
+    expect((await serve(root, ["ci", "//:factoryProjection"])).exitCode).toBe(0)
+
+    await write(root, ".smithers/FACTORY.ts", sectionsFactory("contributor"))
+    expect((await serve(root, ["ci", "//:factoryProjection"])).exitCode).toBe(1)
+  })
+
   it("refuses a flow view a drawn block union does not hold, and writes nothing", async () => {
     const root = await fixture({
       factory: `import { Smithers as S } from "@smthrs/targets"

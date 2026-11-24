@@ -9,9 +9,9 @@
  * its TODO lanes need. Optional `policy` values set document/test classification,
  * notification quiet hours and person-only approval rules; they grant no authority.
  * `export const
- * home = S.Factory.Home({ blocks })` in the same file is the homepage
- * (`Home.ts`). The file sits beside `WORKSPACE.ts`, may import it, and never
- * imports a `PACKAGE.ts`: a target it needs is named by label
+ * home = S.Factory.Home({ blocks })` (or `{ sections, docs, contributors }`)
+ * in the same file is the homepage (`Home.ts`). The file sits beside
+ * `WORKSPACE.ts`, may import it, and never imports a `PACKAGE.ts`: a target it needs is named by label
  * (`S.label("//:ci")`), never by value.
  *
  * `FACTORY.ts` is trusted executable code the build loader evaluates beside
