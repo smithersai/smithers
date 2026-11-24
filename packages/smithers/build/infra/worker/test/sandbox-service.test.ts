@@ -13,7 +13,7 @@ import * as Stream from "effect/Stream"
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { afterAll, describe, expect, it } from "vitest"
+import { afterAll, describe, expect, it, vi } from "vitest"
 import { sandboxInstanceTypes } from "../sandbox-instances.ts"
 import { makeSandboxService, type SandboxWorkerEnv } from "../SandboxService.ts"
 
@@ -232,6 +232,76 @@ describe("sandbox service", () => {
     ).toBe(503)
     expect(rows.map((row) => row.blobs)).toEqual(["401", "200", "503"].map((status) => ["sessions", "POST", status]))
     expect(rows.every((row) => Number(row.doubles?.[0]) >= 0)).toBe(true)
+  })
+
+  it("logs a handler failure by name and code only, and still counts it", async () => {
+    const errors = vi.spyOn(console, "error").mockImplementation(() => undefined)
+    try {
+      const rows: Array<AnalyticsEngineDataPoint> = []
+      const response = await worker.fetch(
+        new Request("https://sandbox.test/v1/sessions?key=query-secret", {
+          method: "POST",
+          headers: { authorization: `Bearer ${token}`, "x-private": "header-secret" },
+          body: JSON.stringify({ key: "payload-secret" })
+        }),
+        {
+          ...bindings().env,
+          SANDBOX_REQUEST_METRICS: {
+            writeDataPoint(point?: AnalyticsEngineDataPoint) {
+              if (point) rows.push(point)
+            }
+          },
+          get SANDBOX_STANDARD_4(): FakeBinding {
+            throw Object.assign(new Error(`binding refused Bearer ${token}`), { code: "BINDING_DOWN" })
+          }
+        }
+      )
+      expect(response.status).toBe(503)
+      expect(await response.json()).toEqual({
+        code: "unavailable",
+        message: "the sandbox service could not handle the request"
+      })
+      expect(rows.map((row) => row.blobs)).toEqual([["sessions", "POST", "503"]])
+      expect(errors.mock.calls).toEqual([["smithers sandbox service: request failed (name=Error code=BINDING_DOWN)"]])
+    } finally {
+      errors.mockRestore()
+    }
+  })
+
+  it("counts a request whose URL does not parse as other and answers it without throwing", async () => {
+    const errors = vi.spyOn(console, "error").mockImplementation(() => undefined)
+    try {
+      const rows: Array<AnalyticsEngineDataPoint> = []
+      const parsed = new Request("https://sandbox.test/v1/sessions", {
+        method: "POST",
+        headers: { authorization: `Bearer ${token}` },
+        body: JSON.stringify({ key: "payload-secret" })
+      })
+      // A runtime can hand a Worker a request line no URL parser accepts; `Request` itself refuses to build one.
+      const unparseable = new Proxy(parsed, {
+        get: (target, property) => {
+          if (property === "url") return "//[v1/sessions?key=query-secret"
+          const value: unknown = Reflect.get(target, property, target)
+          return typeof value === "function" ? value.bind(target) : value
+        }
+      })
+      const response = await worker.fetch(unparseable, {
+        ...bindings().env,
+        SANDBOX_REQUEST_METRICS: {
+          writeDataPoint(point?: AnalyticsEngineDataPoint) {
+            if (point) rows.push(point)
+          }
+        }
+      })
+      expect(response.status).toBe(503)
+      expect(rows.map((row) => row.blobs)).toEqual([["other", "POST", "503"]])
+      expect(errors.mock.calls).toHaveLength(1)
+      const line = String(errors.mock.calls[0]?.[0])
+      expect(line).toMatch(/^smithers sandbox service: request failed \([A-Za-z0-9_.=$ -]+\)$/)
+      for (const secret of [token, "query-secret", "payload-secret", "v1/sessions"]) expect(line).not.toContain(secret)
+    } finally {
+      errors.mockRestore()
+    }
   })
 
   it("keeps unrecognized input out of metrics and tolerates a lost datapoint", async () => {

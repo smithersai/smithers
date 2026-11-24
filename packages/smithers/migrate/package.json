@@ -59,6 +59,8 @@
     "./Report": "./src/Report.ts",
     "./RunState": "./src/RunState.ts",
     "./Scan": "./src/Scan.ts",
+    "./SqliteStore": "./src/SqliteStore.ts",
+    "./SqliteStoreNode": "./src/SqliteStoreNode.ts",
     "./Units": "./src/Units.ts",
     "./ZodSchemaHints": "./src/ZodSchemaHints.ts",
     "./flow/Archive": "./src/flow/Archive.ts",
@@ -207,6 +209,26 @@
         "require": {
           "types": "./dist/cjs/Scan.d.ts",
           "default": "./dist/cjs/Scan.js"
+        }
+      },
+      "./SqliteStore": {
+        "import": {
+          "types": "./dist/esm/SqliteStore.d.ts",
+          "default": "./dist/esm/SqliteStore.js"
+        },
+        "require": {
+          "types": "./dist/cjs/SqliteStore.d.ts",
+          "default": "./dist/cjs/SqliteStore.js"
+        }
+      },
+      "./SqliteStoreNode": {
+        "import": {
+          "types": "./dist/esm/SqliteStoreNode.d.ts",
+          "default": "./dist/esm/SqliteStoreNode.js"
+        },
+        "require": {
+          "types": "./dist/cjs/SqliteStoreNode.d.ts",
+          "default": "./dist/cjs/SqliteStoreNode.js"
         }
       },
       "./Units": {

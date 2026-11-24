@@ -12,7 +12,7 @@
  */
 
 import { describe } from "./describe.ts"
-import { type NativeBrand, nativeBrand } from "./nativeBrand.ts"
+import { isNativeUrl, type NativeBrand, nativeBrand } from "./nativeBrand.ts"
 
 /**
  * Maximum supported nesting below the root value.
@@ -302,9 +302,10 @@ export const canonicalize = (
     }
 
     let unsupported: string | undefined
+    let prototype: { readonly constructor?: { readonly name?: unknown } } | null
     try {
       unsupported = builtInName(object, brand)
-      const prototype = Object.getPrototypeOf(object) as { readonly constructor?: { readonly name?: unknown } } | null
+      prototype = Object.getPrototypeOf(object)
       if (unsupported === undefined && prototype !== null && prototype !== Object.prototype) {
         unsupported = constructorName(prototype.constructor?.name, "non-plain object")
       }
@@ -314,12 +315,19 @@ export const canonicalize = (
     if (unsupported !== undefined) throw new CanonicalError("canonical_unsupported_value", unsupported, path)
 
     let keys: Array<string>
+    let strippedUrl: boolean
     try {
       keys = Object.keys(value)
       if (keys.length > 1) keys.sort()
+      // A URL keeps its state in internal slots and has no own keys, so one
+      // whose prototype was replaced would serialize as `{}` whatever its
+      // address. The probe throws for every other object, so it runs only
+      // where a record with keys under `Object.prototype` cannot be.
+      strippedUrl = (keys.length === 0 || prototype === null) && isNativeUrl(object)
     } catch (cause) {
       throw caused("canonical_getter_threw", cause, path)
     }
+    if (strippedUrl) throw new CanonicalError("canonical_unsupported_value", "URL", path)
     const keyCount = keys.length
     const slots = new Array<Slot>(keyCount)
     for (let index = 0; index < keyCount; index++) slots[index] = {}

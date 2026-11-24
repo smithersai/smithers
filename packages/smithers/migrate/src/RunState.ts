@@ -22,11 +22,11 @@ import * as Clock from "effect/Clock"
 import * as Effect from "effect/Effect"
 import * as FileSystem from "effect/FileSystem"
 import * as Path from "effect/Path"
-import { posix, win32 } from "node:path"
-import { DatabaseSync } from "node:sqlite"
 import type { Detection } from "./Detect.ts"
 import * as Fs from "./internal/Fs.ts"
+import { dirname, windowsAbsolute } from "./internal/PathText.ts"
 import type { MigrateError } from "./MigrateError.ts"
+import { SqliteStore } from "./SqliteStore.ts"
 
 /**
  * Run statuses that mean the run is over. Everything else is either running or
@@ -186,8 +186,6 @@ export interface Options {
   readonly tmpdir?: string | undefined
 }
 
-const windowsAbsolute = (path: string): boolean => /^(?:[A-Za-z]:[\\/]|\\\\)/.test(path)
-
 /**
  * Every directory that holds 0.x run state.
  *
@@ -223,7 +221,7 @@ export const roots = (report: RunStateReport): ReadonlyArray<string> => {
     if (directory !== "") found.add(directory)
   }
   for (const file of report.gatewayState) {
-    const directory = (windowsAbsolute(file) ? win32 : posix).dirname(file)
+    const directory = dirname(file)
     if (directory !== ".") found.add(directory)
   }
   // A root that lives inside another root is already walked by it.
@@ -277,9 +275,10 @@ const stringOr = (value: unknown): string | undefined => (typeof value === "stri
 /**
  * Opens a database read only and reads what the report needs.
  *
- * `node:sqlite` throws on a locked or corrupt file rather than failing an
- * Effect, so every call is wrapped: a throw becomes `readable: false`, which
- * blocks the migration instead of silently passing it.
+ * The database is read through the host's {@link SqliteStore}. A failure is
+ * never an Effect failure here: a locked or corrupt file, and a host with no
+ * SQLite engine, both become `readable: false`, which blocks the migration
+ * instead of silently passing it.
  *
  * @category scanners
  * @since 1.0.0-rc.0
@@ -290,97 +289,82 @@ export const readDatabase = (
   siblings: ReadonlyArray<string>,
   now: number,
   liveWindowMs: number
-): DatabaseFinding => {
-  let database: DatabaseSync | undefined
-  try {
-    database = new DatabaseSync(file, { readOnly: true })
-    const tables = database
-      .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name LIKE '_smithers_%' ORDER BY name")
-      .all()
-      .flatMap((row) => {
-        const name = stringOr((row as Record<string, unknown>)["name"])
+): Effect.Effect<DatabaseFinding> =>
+  Effect.flatMap(SqliteStore, (store) =>
+    store.read(file, (query): DatabaseFinding => {
+      const tables = query(
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name LIKE '_smithers_%' ORDER BY name"
+      ).flatMap((row) => {
+        const name = stringOr(row["name"])
         return name === undefined ? [] : [name]
       })
 
-    const hasMigrations = tables.includes("_smithers_schema_migrations")
-    const migrationRow = hasMigrations
-      ? (database.prepare("SELECT COUNT(*) AS count, MAX(id) AS maxId FROM _smithers_schema_migrations").get() ??
-        {}) as Record<string, unknown>
-      : {}
-    const migrations = {
-      count: numberOr(migrationRow["count"]) ?? 0,
-      maxId: stringOr(migrationRow["maxId"])
-    }
+      const hasMigrations = tables.includes("_smithers_schema_migrations")
+      const migrationRow = hasMigrations
+        ? query("SELECT COUNT(*) AS count, MAX(id) AS maxId FROM _smithers_schema_migrations")[0] ?? {}
+        : {}
+      const migrations = {
+        count: numberOr(migrationRow["count"]) ?? 0,
+        maxId: stringOr(migrationRow["maxId"])
+      }
 
-    const hasRuns = tables.includes("_smithers_runs")
-    const runsByStatus = hasRuns
-      ? database
-        .prepare("SELECT status, COUNT(*) AS count FROM _smithers_runs GROUP BY status ORDER BY status")
-        .all()
-        .map((row) => {
-          const record = row as Record<string, unknown>
-          return { status: stringOr(record["status"]) ?? "", count: numberOr(record["count"]) ?? 0 }
-        })
-      : []
+      const hasRuns = tables.includes("_smithers_runs")
+      const runsByStatus = hasRuns
+        ? query("SELECT status, COUNT(*) AS count FROM _smithers_runs GROUP BY status ORDER BY status").map((row) => ({
+          status: stringOr(row["status"]) ?? "",
+          count: numberOr(row["count"]) ?? 0
+        }))
+        : []
 
-    const placeholders = terminalStatuses.map(() => "?").join(", ")
-    const nonTerminal = hasRuns
-      ? database
-        .prepare(
+      const placeholders = terminalStatuses.map(() => "?").join(", ")
+      const nonTerminal = hasRuns
+        ? query(
           `SELECT run_id, workflow_name, workflow_path, status, heartbeat_at_ms, runtime_owner_id,
                   parent_run_id, pause_requested_at_ms, cancel_requested_at_ms
-             FROM _smithers_runs WHERE status NOT IN (${placeholders}) ORDER BY run_id`
-        )
-        .all(...terminalStatuses)
-        .map((row): RunRow => {
-          const record = row as Record<string, unknown>
-          return {
-            runId: stringOr(record["run_id"]) ?? "",
-            workflowName: stringOr(record["workflow_name"]) ?? "",
-            workflowPath: stringOr(record["workflow_path"]),
-            status: stringOr(record["status"]) ?? "",
-            heartbeatAtMs: numberOr(record["heartbeat_at_ms"]),
-            runtimeOwnerId: stringOr(record["runtime_owner_id"]),
-            parentRunId: stringOr(record["parent_run_id"]),
-            pauseRequestedAtMs: numberOr(record["pause_requested_at_ms"]),
-            cancelRequestedAtMs: numberOr(record["cancel_requested_at_ms"])
-          }
+             FROM _smithers_runs WHERE status NOT IN (${placeholders}) ORDER BY run_id`,
+          ...terminalStatuses
+        ).map((row): RunRow => ({
+          runId: stringOr(row["run_id"]) ?? "",
+          workflowName: stringOr(row["workflow_name"]) ?? "",
+          workflowPath: stringOr(row["workflow_path"]),
+          status: stringOr(row["status"]) ?? "",
+          heartbeatAtMs: numberOr(row["heartbeat_at_ms"]),
+          runtimeOwnerId: stringOr(row["runtime_owner_id"]),
+          parentRunId: stringOr(row["parent_run_id"]),
+          pauseRequestedAtMs: numberOr(row["pause_requested_at_ms"]),
+          cancelRequestedAtMs: numberOr(row["cancel_requested_at_ms"])
+        }))
+        : []
+
+      const isLive = (row: RunRow): boolean =>
+        row.heartbeatAtMs !== undefined && now - row.heartbeatAtMs <= liveWindowMs
+
+      return {
+        path: relativePath,
+        readable: true,
+        unreadableReason: undefined,
+        tables,
+        migrations,
+        runsByStatus,
+        live: nonTerminal.filter(isLive),
+        parked: nonTerminal.filter((row) => !isLive(row)),
+        siblings
+      }
+    }).pipe(
+      Effect.catch((error) =>
+        Effect.succeed<DatabaseFinding>({
+          path: relativePath,
+          readable: false,
+          unreadableReason: String(error.cause),
+          tables: [],
+          migrations: { count: 0, maxId: undefined },
+          runsByStatus: [],
+          live: [],
+          parked: [],
+          siblings
         })
-      : []
-
-    const isLive = (row: RunRow): boolean => row.heartbeatAtMs !== undefined && now - row.heartbeatAtMs <= liveWindowMs
-
-    return {
-      path: relativePath,
-      readable: true,
-      unreadableReason: undefined,
-      tables,
-      migrations,
-      runsByStatus,
-      live: nonTerminal.filter(isLive),
-      parked: nonTerminal.filter((row) => !isLive(row)),
-      siblings
-    }
-  } catch (cause) {
-    return {
-      path: relativePath,
-      readable: false,
-      unreadableReason: String(cause),
-      tables: [],
-      migrations: { count: 0, maxId: undefined },
-      runsByStatus: [],
-      live: [],
-      parked: [],
-      siblings
-    }
-  } finally {
-    try {
-      database?.close()
-    } catch {
-      // A database that failed to open has nothing to close.
-    }
-  }
-}
+      )
+    ))
 
 const dbPathLiterals = (text: string): ReadonlyArray<string> => {
   const found = new Set<string>()
@@ -511,7 +495,7 @@ export const scan = (
       const siblings = ["-wal", "-shm"]
         .map((suffix) => `${relative}${suffix}`)
         .filter((sibling) => fileSet.has(sibling))
-      databases.push(readDatabase(absolute, relative, siblings, now, liveWindowMs))
+      databases.push(yield* readDatabase(absolute, relative, siblings, now, liveWindowMs))
     }
 
     // Postgres and PGlite: recorded from settings, never connected to.

@@ -147,8 +147,20 @@ smithers-build owners --diff HEAD --format json
 For each path the command prints the owning package, the agent policy, and
 every owner with its role and reasons, then the union of required approvers
 and suggested reviewers. `--diff <base>` adds every path changed since that
-git base, both names of a rename and every untracked file included, so the
-package a file leaves keeps its owners and agent policy in the answer.
+base revision, both names of a rename and every untracked file included, so
+the package a file leaves keeps its owners and agent policy in the answer.
+
+With `--diff`, every path resolves against the declarations the base revision
+held, not the checkout's. A change that removes an owner, weakens an agent
+policy, or deletes a package's declaration is still reported under the owners
+and policy it had, so a change cannot approve itself. Without `--diff`, paths
+resolve against the checkout. The base is a Git revision, or a Jujutsu
+revision in a workspace that has `.jj` and no `.git`; `HEAD` there means `@-`.
+
+The base's declarations are evaluated from its module text. Whatever a
+declaration reads another way, such as a directory listing, is read from the
+checkout, and a changed declaration module the base cannot supply as plain
+JavaScript or erasable TypeScript fails the command.
 
 `--format json` prints the shape the Smithers landing gate reads:
 

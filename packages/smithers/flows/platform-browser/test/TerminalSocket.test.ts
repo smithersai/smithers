@@ -431,6 +431,7 @@ describe("TerminalSocket", () => {
 
   it.live.each([
     { data: {}, code: TerminalProtocol.CloseCode.unsupported },
+    { data: new Uint8Array(TerminalProtocol.maxFrameBytes + 1), code: TerminalProtocol.CloseCode.tooBig },
     { data: "x".repeat(TerminalProtocol.maxFrameBytes + 1), code: TerminalProtocol.CloseCode.tooBig },
     { data: "😀".repeat(TerminalProtocol.maxFrameBytes / 3), code: TerminalProtocol.CloseCode.tooBig }
   ])("closes on an invalid inbound frame with code $code", ({ data, code }) =>
@@ -440,12 +441,27 @@ describe("TerminalSocket", () => {
       expect((yield* statuses(connection, (state) => state._tag === "Closed")).at(-1)).toEqual({ _tag: "Closed", code })
     }).pipe(Effect.scoped))
 
+  it.live("delivers a synchronous 200-frame burst in order and keeps the terminal open", () =>
+    Effect.gen(function*() {
+      const received: number[] = []
+      const delivered = yield* Deferred.make<void>()
+      const { connection, socket } = yield* openSocket((chunk) => {
+        received.push(chunk[0]!)
+        if (received.length === 200) Deferred.doneUnsafe(delivered, Effect.void)
+      })
+      for (let index = 0; index < 200; index++) {
+        socket.dispatchEvent(new MessageEvent("message", { data: new Uint8Array(1024).fill(index) }))
+      }
+      yield* Deferred.await(delivered)
+      expect(received).toEqual(Array.from({ length: 200 }, (_, index) => index))
+      expect(yield* Stream.runCollect(Stream.take(connection.status, 1))).toEqual([{ _tag: "Open", access: "read" }])
+    }).pipe(Effect.scoped))
+
   it.live.each([
-    { count: 65, bytes: 1 },
-    { count: 17, bytes: TerminalProtocol.maxFrameBytes },
-    { count: 1, bytes: TerminalProtocol.maxFrameBytes + 1 }
+    { count: 4097, bytes: 0 },
+    { count: 17, bytes: TerminalProtocol.maxFrameBytes }
   ])(
-    "closes on inbound overflow while decoding stalls ($count frames of $bytes bytes)",
+    "redials on inbound backlog while decoding stalls ($count frames of $bytes bytes)",
     ({ count, bytes }) =>
       Effect.gen(function*() {
         const decoding = yield* Deferred.make<void>()
@@ -462,9 +478,10 @@ describe("TerminalSocket", () => {
         for (let index = 0; index < count; index++) {
           socket.dispatchEvent(new MessageEvent("message", { data: new Uint8Array(bytes) }))
         }
-        expect((yield* statuses(connection, (state) => state._tag === "Closed")).at(-1)).toEqual({
-          _tag: "Closed",
-          code: TerminalProtocol.CloseCode.tooBig
+        expect((yield* statuses(connection, (state) => state._tag === "Offline")).at(-1)).toEqual({
+          _tag: "Offline",
+          attempt: 1,
+          code: 1013
         })
         expect(effects).toEqual([])
       }).pipe(Effect.scoped)

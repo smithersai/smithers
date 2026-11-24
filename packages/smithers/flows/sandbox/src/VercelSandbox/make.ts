@@ -15,7 +15,7 @@ import { checkEnvironmentNames } from "../internal/environmentNames.ts"
 import { finalizeWithin } from "../internal/finalizeWithin.ts"
 import { parentOf } from "../internal/guestPath.ts"
 import { commandFailure } from "../internal/localProcess.ts"
-import { machineName } from "../internal/machineName.ts"
+import { legacyMachineName, machineName } from "../internal/machineName.ts"
 import { rootedAt } from "../internal/rootedPath.ts"
 import { stdinRedirect } from "../internal/stdinRedirect.ts"
 import { warnTeardown } from "../internal/teardownWarning.ts"
@@ -214,21 +214,46 @@ export const make = (options: VercelSandboxOptions): Provider => {
           )
         }
         const createMs = Math.min(desiredMs, createCeilingMillis)
-        const name = machineName(options.namePrefix ?? "smthrs-", sessionKey)
         const credentials = resolveCredentials(options, options.env ?? {})
+        const legacyName = legacyMachineName(options.namePrefix ?? "smthrs-", sessionKey)
+        const legacy = options.sdk.Sandbox.get === undefined ? undefined : yield* attempt(
+          async () => {
+            try {
+              return await options.sdk.Sandbox.get!({ ...credentials, name: legacyName, resume: false })
+            } catch (cause) {
+              // @vercel/sandbox 3.2.1's getOrCreate recognizes APIError's
+              // response.status === 404. Keep its structural boundary here;
+              // other HTTP, snapshot and transport failures are not absence.
+              if (typeof cause === "object" && cause !== null && "response" in cause) {
+                const response = cause.response
+                if (
+                  typeof response === "object" && response !== null && "status" in response && response.status === 404
+                ) {
+                  return undefined
+                }
+              }
+              throw cause
+            }
+          },
+          "unavailable",
+          "could not look up legacy sandbox"
+        )
+        const name = legacy === undefined ? machineName(options.namePrefix ?? "smthrs-", sessionKey) : legacyName
         const sandbox = yield* Effect.acquireRelease(
           attempt(
             () =>
-              options.sdk.Sandbox.getOrCreate({
-                ...credentials,
-                name,
-                timeout: createMs,
-                persistent: true,
-                resume: true,
-                ...options.runtime === undefined ? {} : { runtime: options.runtime },
-                ...vcpus === undefined ? {} : { resources: { vcpus } },
-                networkPolicy
-              }),
+              legacy === undefined ?
+                options.sdk.Sandbox.getOrCreate({
+                  ...credentials,
+                  name,
+                  timeout: createMs,
+                  persistent: true,
+                  resume: true,
+                  ...options.runtime === undefined ? {} : { runtime: options.runtime },
+                  ...vcpus === undefined ? {} : { resources: { vcpus } },
+                  networkPolicy
+                }) :
+                Promise.resolve(legacy),
             "unavailable",
             `could not acquire ${name}`
           ),

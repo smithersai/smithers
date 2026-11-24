@@ -10,6 +10,7 @@ import { TestClock } from "effect/testing"
 import * as DurableEngineState from "../src/DurableEngineState.ts"
 import * as DeferredPersistence from "../src/internal/DeferredPersistence.ts"
 import * as RunDriver from "../src/internal/RunDriver.ts"
+import * as Migrations from "../src/Migrations.ts"
 import * as TestStores from "../src/test/TestStores.ts"
 import { opaqueHandlerBody } from "./fixtures/OpaqueHandlerBody.ts"
 import { withCrypto } from "./Sha256.ts"
@@ -20,6 +21,16 @@ const stores = Layer.mergeAll(
   RunStore.layer,
   DurableEngineState.layer
 ).pipe(Layer.provideMerge(TestStores.database))
+/**
+ * The same stores over SQLite alone. A row its own reader cannot decode is
+ * written here as a BLOB in a TEXT column, which SQLite stores as given and
+ * PostgreSQL refuses, as `./CorruptRowBlastRadius.test.ts` explains.
+ */
+const sqliteStores = Layer.mergeAll(
+  SqlJournal.layer({ capacity: 1024, overflow: "reject" }),
+  RunStore.layer,
+  DurableEngineState.layer
+).pipe(Layer.provideMerge(Layer.provideMerge(Migrations.layer, TestDatabase.sqliteLayer)))
 const seed = (id: string, completion: "ready" | "absent" | "consumed", flowName: string = flow._tag) =>
   Effect.gen(function*() {
     const runs = yield* RunStore.RunStore
@@ -376,6 +387,55 @@ it.effect("persists a child's wake for a parent registered only on another drive
       expect((yield* runs.get("remote-parent")).status).toBe("completed")
       expect(yield* state.hasDueWake("remote-parent", yield* Clock.currentTimeMillis)).toBe(false)
     }).pipe(Effect.scoped, Effect.provide(stores))
+  ))
+
+// R2-Astra-D1-006: one malformed row made a full first page look like the end
+// of the scan, so the timer lane reread the same page on every heartbeat and
+// a due timer on a later page was never served.
+it.effect("serves a due timer beyond a first page that holds a malformed row", () =>
+  withCrypto(
+    Effect.gen(function*() {
+      const runs = yield* RunStore.RunStore
+      const state = yield* DurableEngineState.DurableEngineState
+      const sql = yield* SqlClient
+      const id = (index: number) => `page-${String(index).padStart(2, "0")}`
+      // Page one is 64 rows: 63 that no worker here can take, and one malformed.
+      for (let index = 0; index < 64; index++) yield* seed(id(index), "ready", "ReadyTimerSweep/Unregistered")
+      yield* sql`UPDATE flows_runs SET waiting_token = x'00ff' WHERE run_id = ${id(7)}`
+      yield* seed(id(64), "ready")
+      const reads: Array<string | undefined> = []
+      const observed: DurableEngineState.Service = {
+        ...state,
+        waitingRuns: (filter) =>
+          Effect.suspend(() => {
+            if (filter?.reason === "timer") reads.push(filter.page?.afterRunId)
+            return state.waitingRuns(filter)
+          })
+      }
+      const driver = yield* RunDriver.make({
+        owner: { hostId: "timer-pages", pid: 2, nonce: "heartbeat" },
+        journalSource: "ready-timer-pages",
+        isAlive: () => Effect.succeed(false),
+        engine: Effect.succeed({} as FlowRuntime.FlowRuntime["Service"])
+      }).pipe(Effect.provideService(DurableEngineState.DurableEngineState, observed))
+      let executions = 0
+      yield* driver.register(flow, () =>
+        Effect.sync(() => {
+          executions++
+          return "done"
+        }))
+      // The row is malformed for the paged read as it is for the unpaged one.
+      expect((yield* state.waitingRuns({ reason: "timer" })).map((row) => row.runId)).not.toContain(id(7))
+      yield* TestDatabase.until(Effect.gen(function*() {
+        if ((yield* runs.get(id(64))).status === "completed") return true
+        yield* TestClock.adjust("1 second")
+        return false
+      }))
+      // Two heartbeat sweeps at most: the lane's cursor left page one.
+      expect(reads.length).toBeLessThanOrEqual(2)
+      expect(executions).toBe(1)
+      expect((yield* runs.get(id(0))).status).toBe("suspended")
+    }).pipe(Effect.scoped, Effect.provide(sqliteStores))
   ))
 
 it.effect("polling after a restart preserves an approval wait and honors cancellation", () =>

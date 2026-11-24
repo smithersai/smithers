@@ -1,5 +1,6 @@
 import {
   BuildAndCheckTypeScriptPackage,
+  ImportRules,
   ReviewDocsAgainstCode,
   ReviewJsdocAgainstCode,
   WorkspaceSources
@@ -47,6 +48,57 @@ const reviewDocsAgainstCode = ReviewDocsAgainstCode({
  * @category lint
  */
 const reviewJsdocAgainstCode = ReviewJsdocAgainstCode({ cwd: "packages/smithers/migrate" })
+
+/**
+ * The modules `import "@smthrs/migrate"` loads, which must import and run in a
+ * browser and a Worker as well as on Node. `src/Checks.ts` is the one root
+ * module left out of the first rule: it still hashes with `node:crypto`.
+ *
+ * @since 1.0.0
+ * @category lint
+ */
+const importRules = ImportRules({
+  cwd,
+  rules: [
+    {
+      kind: "forbidHostModules",
+      files: [
+        "src/index.ts",
+        "src/Constructs.ts",
+        "src/Detect.ts",
+        "src/Inventory.ts",
+        "src/Mapping.ts",
+        "src/MigrateError.ts",
+        "src/PromptHints.ts",
+        "src/Report.ts",
+        "src/RunState.ts",
+        "src/Scan.ts",
+        "src/SqliteStore.ts",
+        "src/Units.ts",
+        "src/ZodSchemaHints.ts",
+        "src/flow/Contract.ts",
+        "src/flow/Gate.ts",
+        "src/flow/Options.ts",
+        "src/internal/*.ts"
+      ],
+      because:
+        "sdk.platform-neutral: the root entry receives SQLite, the filesystem, and paths as Effect services (SDK-4)."
+    },
+    {
+      kind: "forbid",
+      files: ["src/Checks.ts", "src/flow/**/*.ts"],
+      modules: ["node:sqlite", "bun:sqlite"],
+      because:
+        "sdk.platform-neutral: SQLite is reached through the SqliteStore service; SqliteStoreNode is its one engine."
+    },
+    {
+      kind: "forbid",
+      files: ["src/Checks.ts"],
+      modules: ["node:path", "node:fs", "node:child_process", "node:os"],
+      because: "sdk.platform-neutral: the root entry reads files and paths through Effect services (SDK-4)."
+    }
+  ]
+})
 
 const securityReview = Smithers.SecurityReview({
   cwd: "packages/smithers/migrate",
@@ -144,7 +196,14 @@ const securityReview = Smithers.SecurityReview({
         "A recursion with no depth cap or no visited-set on real paths.",
         "A run-state reader in `RunState.ts` that opens a database or file outside the project without the operator's acknowledgement."
       ],
-      paths: ["src/internal/Fs.ts", "src/Scan.ts", "src/flow/Checkpoint.ts", "src/RunState.ts", "src/Inventory.ts"]
+      paths: [
+        "src/internal/Fs.ts",
+        "src/Scan.ts",
+        "src/flow/Checkpoint.ts",
+        "src/RunState.ts",
+        "src/SqliteStoreNode.ts",
+        "src/Inventory.ts"
+      ]
     },
     {
       id: "operator-gates",
@@ -161,6 +220,7 @@ const securityReview = Smithers.SecurityReview({
         "src/flow/MigrateFlow.ts",
         "src/flow/Command.ts",
         "src/flow/Lock.ts",
+        "src/SqliteStoreNode.ts",
         "src/flow/internal/Pending.ts"
       ]
     }
@@ -175,6 +235,7 @@ export const Package = Smithers.Package({
     docs,
     docsFiles,
     fmt,
+    importRules,
     lib,
     lint,
     reviewDocsAgainstCode,

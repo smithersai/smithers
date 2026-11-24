@@ -4,6 +4,7 @@
  * @since 1.0.0-rc.17
  */
 
+import { digestSync } from "@smthrs/crypto"
 import * as CommandLine from "@smthrs/kernel/CommandLine"
 import * as Data from "effect/Data"
 import * as Effect from "effect/Effect"
@@ -17,6 +18,7 @@ import type { ResourceLimits } from "../Sandbox/ResourceLimits.ts"
 import type { Session } from "../Sandbox/Session.ts"
 import { byteBudget } from "./bytes.ts"
 import { Acquire, Command, CommandResult, Failure, LimitsQuery, SessionInfo, statusOf } from "./protocol.ts"
+import { uploadScript } from "./upload.ts"
 
 /**
  * What `serve` needs: the provider that holds the machines, and the bearer
@@ -39,6 +41,10 @@ export interface ServeOptions {
   readonly maxRequestBytes?: number | undefined
   /** Maximum combined stdout and stderr bytes of one command (default 4 MiB). */
   readonly maxOutputBytes?: number | undefined
+  /** Maximum bytes collected for one file response (default 4 MiB). */
+  readonly maxFileBytes?: number | undefined
+  /** Guest records and upload receipts, outside the workspace (default /tmp/.smthrs-http). */
+  readonly processDirectory?: string | undefined
 }
 
 /** A request this service answers with a status of its own. */
@@ -137,7 +143,14 @@ const appendScript = (path: string, offset: number, end: number) =>
  * Routes without a JSON body take the limits as `cpus`, `memoryMib` and
  * `timeoutSecs` query parameters. A request without `Authorization: Bearer
  * <token>` is `401` with no body. A `ProviderError` is `404` (`not_found`) or
- * `422` with `{ code, message }`, never its cause; an append whose file does
+ * `422` with `{ code, message }`, never its cause. File reads are bounded by
+ * `maxFileBytes` before allocation in the server and travel as base64 from the
+ * guest so text-only command providers preserve binary files. Upload ranges
+ * carry `upload`, `offset` and `total`; their receipts live outside the workdir
+ * under `processDirectory`. Linux guests need util-linux `flock` with `-E`
+ * support (2.23 or later); BSD guests need `lockf -k -t`. A guest without either
+ * refuses uploads with `spawn_error`. A plain PUT still replaces a file for
+ * older clients. An append whose file does
  * not end at its offset is `409`, a malformed request `400`, and an unknown
  * route `404`, in the same shape.
  *
@@ -161,6 +174,14 @@ export const serve = (options: ServeOptions): (request: Request) => Effect.Effec
 
   const maxRequestBytes = limit(options.maxRequestBytes ?? 24 * 1024 * 1024, "maxRequestBytes")
   const maxOutputBytes = limit(options.maxOutputBytes ?? 4 * 1024 * 1024, "maxOutputBytes")
+  const processDirectory = options.processDirectory ?? "/tmp/.smthrs-http"
+  if (!/^\/[A-Za-z0-9._/-]*$/.test(processDirectory) || processDirectory.split("/").includes("..")) {
+    throw new TypeError("http-sandbox: invalid processDirectory")
+  }
+  const uploadRoot = (remoteId: string, id: string) =>
+    `${processDirectory}/uploads/${digestSync(JSON.stringify([remoteId, id]))}`
+  const maxFileBytes = limit(options.maxFileBytes ?? 4 * 1024 * 1024, "maxFileBytes")
+  if (maxFileBytes > Math.floor(Number.MAX_SAFE_INTEGER / 2)) throw new TypeError("http-sandbox: invalid maxFileBytes")
   const bytesOf = (request: Request) =>
     request.body === null ?
       Effect.succeed(new Uint8Array()) :
@@ -249,7 +270,44 @@ export const serve = (options: ServeOptions): (request: Request) => Effect.Effec
       }
       if (route === "GET :remote/files") {
         const bytes = yield* attached(remoteId, id, limits, (session) =>
-          session.readFile(path))
+          Effect.gen(function*() {
+            const child = yield* session.spawn(
+              `[ -f ${CommandLine.quote(path)} ] || exit 44; t=$(mktemp) || exit 3; ` +
+                `trap 'rm -f -- "$t"' EXIT; ` +
+                `head -c ${maxFileBytes + 1} -- ${CommandLine.quote(path)} >"$t" || exit 3; ` +
+                `s=$(wc -c <"$t") || exit 3; [ "$s" -le ${maxFileBytes} ] || exit 45; base64 <"$t"`,
+              {}
+            )
+            // Include conservative wrapping overhead for GNU and BSD base64.
+            const encodedBytes = 4 * Math.ceil(maxFileBytes / 3)
+            const encodedLimit = encodedBytes + 2 * Math.ceil(encodedBytes / 64) + 2
+            const [bytes, , code] = yield* Effect.all([
+              byteBudget(encodedLimit, tooLarge())(child.stdout),
+              byteBudget(maxOutputBytes, tooLarge())(child.stderr),
+              child.exitCode
+            ], { concurrency: "unbounded" })
+            if (code === 45) {
+              return yield* Effect.fail(tooLarge())
+            }
+            if (code !== 0) {
+              return yield* Effect.fail(
+                new Refusal({
+                  status: code === 44 ? 404 : 422,
+                  code: code === 44 ? "not_found" : "unknown",
+                  message: "remote file read failed"
+                })
+              )
+            }
+            const decoded = yield* Schema.decodeUnknownEffect(Schema.Uint8ArrayFromBase64)(
+              new TextDecoder().decode(bytes).replaceAll(/\s/g, "")
+            ).pipe(Effect.mapError(() =>
+              new Refusal({ status: 422, code: "unknown", message: "remote file encoding failed" })
+            ))
+            if (decoded.length > maxFileBytes) {
+              return yield* Effect.fail(tooLarge())
+            }
+            return decoded
+          }))
         return new Response(new Uint8Array(bytes), {
           status: 200,
           headers: { "content-type": "application/octet-stream" }
@@ -265,20 +323,63 @@ export const serve = (options: ServeOptions): (request: Request) => Effect.Effec
       if (!Number.isSafeInteger(end)) {
         return yield* Effect.fail(malformed("the ending offset is not a byte count"))
       }
+      const upload = url.searchParams.get("upload")
+      const totalText = url.searchParams.get("total")
+      const total = Number(totalText)
+      if (
+        upload !== null && (
+          !/^[a-zA-Z0-9-]{1,128}$/.test(upload) || totalText === null || !/^\d+$/.test(totalText) ||
+          !Number.isSafeInteger(total) || total < end || offset === null
+        )
+      ) {
+        return yield* Effect.fail(malformed("the upload range is malformed"))
+      }
       yield* attached(remoteId, id, limits, (session) =>
-        offset === null ? session.writeFile(path, bytes) : Effect.gen(function*() {
-          const appended = yield* runToEnd(session, appendScript(path, start, end), { stdin: bytes }, maxOutputBytes)
-          if (appended.exitCode !== 0) {
-            return yield* Effect.fail(
-              new Refusal({ status: 409, code: "unknown", message: `file does not end at byte ${start}` })
+        upload !== null ?
+          Effect.gen(function*() {
+            const staged = yield* runToEnd(
+              session,
+              uploadScript(path, `${uploadRoot(remoteId, id)}/${digestSync(path)}`, upload, start, end, total),
+              { stdin: bytes },
+              maxOutputBytes
             )
-          }
-        }))
+            if (staged.exitCode !== 0) {
+              return yield* Effect.fail(
+                new Refusal({
+                  status: staged.exitCode === 75 ? 503 : staged.exitCode === 69 ? 422 : 409,
+                  code: staged.exitCode === 75 ? "unavailable" : staged.exitCode === 69 ? "spawn_error" : "unknown",
+                  message: staged.exitCode === 75
+                    ? "file upload is busy"
+                    : staged.exitCode === 69
+                    ? "file uploads require flock or lockf"
+                    : "file upload range could not be stored"
+                })
+              )
+            }
+          }) :
+          offset === null ?
+          session.writeFile(path, bytes) :
+          Effect.gen(function*() {
+            const appended = yield* runToEnd(session, appendScript(path, start, end), { stdin: bytes }, maxOutputBytes)
+            if (appended.exitCode !== 0) {
+              return yield* Effect.fail(
+                new Refusal({ status: 409, code: "unknown", message: `file does not end at byte ${start}` })
+              )
+            }
+          }))
       return new Response(null, { status: 204 })
     })
 
   return (request) =>
-    handle(request).pipe(
+    Effect.raceFirst(
+      handle(request),
+      Effect.callback<never>((resume) => {
+        const abort = () => resume(Effect.interrupt)
+        if (request.signal.aborted) abort()
+        else request.signal.addEventListener("abort", abort, { once: true })
+        return Effect.sync(() => request.signal.removeEventListener("abort", abort))
+      })
+    ).pipe(
       Effect.catch((error) => {
         const status = error._tag === "Refusal" ? error.status : statusOf(error.code)
         return Effect.succeed(json(status, encodeFailure({ code: error.code, message: error.message })))

@@ -20,6 +20,8 @@
  *   decides each delay and when to give up, as the engine decides an
  *   action's, on Effect's clock; reaching `ready` resets the count. A socket
  *   lives in the page that shows its bytes, so no durable step holds it.
+ * - A backlog of up to 4096 frames and 1 MiB waits for delivery in order. A
+ *   larger backlog redials under the same policy with code 1013.
  * - **The scope owns it.** Closing the scope closes the socket and stops
  *   redialing. An `onOutput` that throws ends the connection, `Closed` with
  *   `TerminalProtocol.CloseCode.failed`.
@@ -226,9 +228,9 @@ export const connect = (
         yield* SubscriptionRef.set(status, { _tag: "Connecting" })
       }
       // Count frames until delivery, including frames already pulled into a stream chunk.
-      const capacity = 64
+      const capacity = 4096
       const events = yield* Queue.bounded<Event>(capacity + 1)
-      const rejected = yield* Deferred.make<number>()
+      const rejected = yield* Deferred.make<number, Dropped>()
       let retained = 0
       let frames = 0
       const receive = (data: unknown) => {
@@ -246,8 +248,13 @@ export const connect = (
           : data instanceof ArrayBuffer || ArrayBuffer.isView(data)
           ? data.byteLength
           : data.size
-        if (size > limit || frames >= capacity || retained + size > 16 * limit) {
+        if (size > limit) {
           Deferred.doneUnsafe(rejected, Effect.succeed(TerminalProtocol.CloseCode.tooBig))
+          return
+        }
+        if (frames >= capacity || retained + size > 16 * limit) {
+          // A slow page can recover from local backlog by reattaching to the terminal.
+          Deferred.doneUnsafe(rejected, Effect.fail(new Dropped(1013)))
           return
         }
         frames++

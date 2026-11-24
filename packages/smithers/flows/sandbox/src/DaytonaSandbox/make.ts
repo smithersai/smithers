@@ -15,7 +15,7 @@ import { checkEnvironmentNames } from "../internal/environmentNames.ts"
 import { finalizeWithin } from "../internal/finalizeWithin.ts"
 import { parentOf } from "../internal/guestPath.ts"
 import { commandFailure, providerFailure } from "../internal/localProcess.ts"
-import { machineName } from "../internal/machineName.ts"
+import { legacyMachineName, machineName } from "../internal/machineName.ts"
 import { rootedAt } from "../internal/rootedPath.ts"
 import { stdinRedirect } from "../internal/stdinRedirect.ts"
 import { warnTeardown } from "../internal/teardownWarning.ts"
@@ -155,6 +155,14 @@ export const make = (options: DaytonaSandboxOptions): Provider => {
         const held = yield* Effect.acquireRelease(
           Effect.tryPromise({
             try: async () => {
+              try {
+                return {
+                  sandbox: await options.sdk.get(legacyMachineName(options.namePrefix ?? "smthrs-", sessionKey)),
+                  attached: true
+                }
+              } catch (cause) {
+                if (!missingSandbox(cause)) throw cause
+              }
               try {
                 return { sandbox: await options.sdk.get(name), attached: true }
               } catch (cause) {

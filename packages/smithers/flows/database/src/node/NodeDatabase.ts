@@ -15,17 +15,30 @@ import { UnsupportedDatabase } from "../internal/UnsupportedDatabase.ts"
 export { isUnsupportedDatabase, UnsupportedDatabase, UnsupportedDatabaseCode } from "../internal/UnsupportedDatabase.ts"
 
 /**
+ * The settings that select where a store lives: `SMITHERS_BACKEND`,
+ * `SMITHERS_POSTGRES_URL`, `DATABASE_URL` and `SMITHERS_POSTGRES_SCHEMA`.
+ *
+ * @since 1.0.0
+ * @category models
+ */
+export type DatabaseSettings = PostgresSelection.Settings
+
+/**
  * Where the store at `filename` lives on PostgreSQL, as this module would open
  * it: the connection URL without its `schema` parameter, and the schema. It is
  * `undefined` for a store SQLite keeps. `postgres://…?schema=<schema>` opens
  * that exact schema, so a caller holding a copy of a store in another schema
- * addresses it by URL.
+ * addresses it by URL. `settings` defaults to this host's process environment,
+ * as `layer` does.
  *
  * @since 1.0.0
  * @category getters
  */
-export const postgresLocation: (filename: string) => { readonly url: string; readonly schema: string } | undefined =
-  PostgresSelection.location
+export const postgresLocation = (
+  filename: string,
+  settings?: DatabaseSettings | undefined
+): { readonly url: string; readonly schema: string } | undefined =>
+  PostgresSelection.location(filename, settings ?? process.env)
 
 /** Connection settings; write policy is supplied separately by DurableWriter.
  * @since 1.0.0
@@ -44,6 +57,12 @@ export interface NodeDatabaseOptions {
    * Nothing is created, migrated or locked for writing.
    */
   readonly readOnly?: boolean | undefined
+  /**
+   * The settings that select SQLite or PostgreSQL for this store. Defaults to
+   * this host's process environment, read when the layer is built. Two layers
+   * given different settings select independently in one process.
+   */
+  readonly settings?: DatabaseSettings | undefined
 }
 
 const readTableNames = (filename: string): ReadonlyArray<string> | undefined => {
@@ -106,7 +125,7 @@ export const layer = (options: NodeDatabaseOptions): Layer.Layer<SqlClient.SqlCl
       })
     }
     const readOnly = options.readOnly === true
-    const postgres = PostgresSelection.layer(options.filename, readOnly)
+    const postgres = PostgresSelection.layer(options.filename, readOnly, options.settings ?? process.env)
     if (postgres !== undefined) return postgres
     return SqliteOpen.layer(
       options.filename,

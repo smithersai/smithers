@@ -437,3 +437,25 @@ export const label = (
   })[${members.map(memberName).join(", ")}]`,
   description: options.description
 })
+
+/**
+ * The default name a pattern flow had before label values were quoted and
+ * before {@link label} named its members' ids: every field value is its plain
+ * `String`, an array joined with `,`. A run recorded under that build still
+ * holds this name, so a pattern whose default name has since changed rebuilds
+ * it here to register an alias for those runs.
+ *
+ * @since 1.0.0
+ * @private
+ */
+export const legacyLabel = (
+  kind: string,
+  fields: Readonly<Record<string, unknown>>,
+  members: ReadonlyArray<Named | undefined>
+): string =>
+  `${kind}(${
+    Object.entries(fields)
+      .filter(([, value]) => value !== undefined)
+      .map(([key, value]) => `${key}=${Array.isArray(value) ? value.map(String).join(",") : String(value)}`)
+      .join(", ")
+  })[${members.map(memberName).join(", ")}]`

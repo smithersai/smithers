@@ -38,10 +38,11 @@ import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
 import * as NodePath from "@effect/platform-node/NodePath"
 import * as Report from "@smthrs/migrate/Report"
 import * as Scan from "@smthrs/migrate/Scan"
+import * as SqliteStoreNode from "@smthrs/migrate/SqliteStoreNode"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 
-const platform = Layer.merge(NodeFileSystem.layer, NodePath.layer)
+const platform = Layer.mergeAll(NodeFileSystem.layer, NodePath.layer, SqliteStoreNode.layer)
 
 const program = Effect.gen(function*() {
   const result = yield* Scan.scan(process.cwd())
@@ -52,8 +53,10 @@ const report = await Effect.runPromise(program)
 console.log(Report.toMarkdown(report))
 ```
 
-Every scanner requires `FileSystem.FileSystem` and `Path.Path`, so the platform
-layer is the only composition you need. Every one fails with
+Every scanner requires `FileSystem.FileSystem` and `Path.Path`, and the
+run-state scan reads a 0.x database through `SqliteStoreNode.layer`, so the
+platform layer is the only composition you need. Without the SQLite layer a
+scan records every database it finds as unreadable and returns `blocked`. Every one fails with
 [`MigrateError`](../troubleshooting.md), so a missing file arrives as a typed
 failure rather than an untyped defect.
 
@@ -92,14 +95,18 @@ which is what the report prints.
 ```ts
 import * as Detect from "@smthrs/migrate/Detect"
 import * as RunState from "@smthrs/migrate/RunState"
+import * as SqliteStoreNode from "@smthrs/migrate/SqliteStoreNode"
 import * as Effect from "effect/Effect"
 
 const verdict = Effect.gen(function*() {
   const detection = yield* Detect.scan(process.cwd())
   const state = yield* RunState.scan(process.cwd(), detection)
   return { verdict: state.verdict, instructions: state.instructions }
-})
+}).pipe(Effect.provide(SqliteStoreNode.layer))
 ```
+
+`SqliteStoreNode.layer` is the SQLite engine the scan reads a 0.x database
+with.
 
 The verdict is `clean`, `history-only`, or `blocked`, and `instructions` are
 the operator texts in the order they have to be acted on. `RunState.roots`

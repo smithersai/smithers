@@ -702,6 +702,70 @@ describe("action executor failure paths", () => {
       })
   )
 
+  it.effect("replays a declared error with its tag and fields on a host that cannot detect a proxy", () =>
+    run(Effect.gen(function*() {
+      // R2-Astra-D1-003 / R2-Fable-D1-002: a browser has no `node:util/types`,
+      // so its reflection calls every object opaque. The declared error is the
+      // JSON its codec produced and must replay into the same catch branch.
+      const runId = "portable-declared-error"
+      const key = `failure/${runId}`
+      const portable = HostReflection.make(undefined)
+      expect(portable.detectsProxy).toBe(false)
+      const declared = { _tag: "RateLimited", code: "429", retry: { afterMs: 30, scopes: ["org", "seat"] } }
+      yield* activate(runId, ownerA)
+      let calls = 0
+      const live = yield* executor({
+        runId,
+        execute: () =>
+          Effect.suspend(() => {
+            calls++
+            return Effect.fail(declared)
+          })
+      })(input(key)).pipe(Effect.provideService(HostReflection.Current, portable), Effect.exit)
+      const persisted = yield* (yield* AttemptStore.AttemptStore).get({ runId, stepKeyDigest: sha256(key), attempt: 1 })
+      expect(Option.getOrThrow(persisted).error).toEqual({ reasons: [{ _tag: "Fail", error: declared }] })
+      const replayed = yield* executor({ runId, execute: () => Effect.die("must not dispatch") })(input(key)).pipe(
+        Effect.provideService(HostReflection.Current, portable),
+        Effect.exit
+      )
+      for (const exit of [live, replayed]) {
+        expect(Exit.isFailure(exit)).toBe(true)
+        if (Exit.isFailure(exit)) {
+          expect(Cause.hasFails(exit.cause)).toBe(true)
+          expect(Cause.squash(exit.cause)).toEqual(declared)
+        }
+      }
+      expect(calls).toBe(1)
+    })))
+
+  it.effect("keeps a defect opaque on a host that cannot detect a proxy", () =>
+    Effect.gen(function*() {
+      const result = yield* settleDefect("portable-defect", { stable: "hidden" }).pipe(
+        Effect.provideService(HostReflection.Current, HostReflection.make(undefined))
+      )
+      expect(Option.getOrThrow(result.row)).toMatchObject({
+        state: "failed",
+        error: { reasons: [{ _tag: "Die", defect: null }] }
+      })
+    }))
+
+  it.effect("still refuses a proxy inside a declared error on a host that detects one", () =>
+    Effect.gen(function*() {
+      let traps = 0
+      const proxy = new Proxy({ _tag: "RateLimited" }, {
+        ownKeys: (target) => {
+          traps++
+          return Reflect.ownKeys(target)
+        }
+      })
+      const result = yield* settleCause("native-declared-proxy", Cause.fail(proxy))
+      expect(traps).toBe(0)
+      expect(Option.getOrThrow(result.row)).toMatchObject({
+        state: "failed",
+        error: { reasons: [{ _tag: "Fail", error: null }] }
+      })
+    }))
+
   it.effect("journals a failed finish and no hard violation when boundary.prepare refuses", () =>
     Effect.gen(function*() {
       const key = "failure/prepare"

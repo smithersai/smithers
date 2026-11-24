@@ -235,9 +235,10 @@ due are left alone, so a duplicate alarm wakes nobody.
 
 Every object routes to objects of its own class, so every object's `flows`
 lists every flow an execution may start as a child or hand off to. An object
-whose intent names an unknown flow records `cloudflare.execution.poisoned`
-with `UnknownFlow` and enters settlement retention. A malformed intent or
-an invalid admission payload follows the same path with `InvalidIntent`.
+whose intent names an unknown flow retains its intent and retries with capped
+backoff until a deploy registers the flow again; it does not report settlement.
+A malformed intent or invalid admission payload records `cloudflare.execution.poisoned`
+with `InvalidIntent` and enters settlement retention.
 
 ## When an incarnation dies
 

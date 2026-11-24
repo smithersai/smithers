@@ -177,7 +177,7 @@ test("release workflow builds all four native archives before tag-bound signing 
   ])
   // The installers wait for the candidate lane, not for every lane of publish:
   // a prerelease's gates lane runs for hours and blocks nothing.
-  assert.equal(build.needs, "candidate-result")
+  assert.deepEqual(build.needs, ["validate-source", "candidate-result"])
   assert.equal(release.jobs["candidate-result"].needs, "native-helper")
   assert.equal(publish.needs, "installer-archive")
   assert.deepEqual(publish.concurrency, { group: "installer-publication", "cancel-in-progress": false })

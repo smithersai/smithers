@@ -357,4 +357,45 @@ describe("a settled child wakes its parked parent (#4774)", () => {
       yield* survivor.drained
       yield* survivor.close
     })))
+  // R2-Astra-D1-005: a child's worker commits the parent's wake and then wakes
+  // the parent. When it died between the two, the repair found the wake
+  // already recorded, took that to mean the parent had been told, and left it
+  // parked for good.
+  it.live("wakes a parent whose child's wake was recorded and never announced", () =>
+    onDisk(Effect.gen(function*() {
+      const test = yield* fixture
+      const state = yield* DurableEngineState.DurableEngineState
+      const outcomes: Array<DurableEngineState.CompleteDeferredOutcome["_tag"]> = []
+      const survivor = yield* test.makeDriver(
+        "survivor",
+        recordingWakes((record) => record.pipe(Effect.tap((outcome) => Effect.sync(() => outcomes.push(outcome._tag)))))
+      )
+      const dying = yield* test.makeDriver(
+        "dying",
+        recordingWakes(() => Effect.die(new Error("process died before the parent wake")))
+      )
+      yield* test.parked(dying.driver, dying.drained)
+      yield* Effect.exit(dying.driver.resume(Child, "child"))
+      // The dying worker's wake did commit; only its announcement was lost.
+      const committed = yield* state.completeDeferred({
+        flowName: Parent._tag,
+        executionId: "parent",
+        deferredName: "@smthrs/engine/parent-settled/child",
+        exit: { _tag: "Success", value: null },
+        completedAtMs: 0
+      })
+      assert.strictEqual(committed._tag, "Completed")
+      yield* dying.close
+      assert.strictEqual(yield* test.status("child"), "completed")
+      assert.isTrue(yield* test.parentWakeDue)
+
+      // No driver starts and nothing polls: the survivor's heartbeat announces
+      // the recorded wake, and the parent goes on through its second child.
+      test.released.add("second")
+      yield* test.until("parent", "completed")
+      yield* survivor.drained
+      // The first child's wake was recorded once, by the worker that died.
+      assert.deepStrictEqual(outcomes.filter((tag) => tag === "Completed"), ["Completed"])
+      yield* survivor.close
+    })))
 })

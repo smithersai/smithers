@@ -343,46 +343,54 @@ export const make = (
      * `finish` command refused it. What it made is then abandoned.
      */
     const apply = (source: string, onto: string) =>
-      Effect.gen(function*() {
-        const duplicated = yield* jj(["duplicate", "-r", source, "--onto", onto])
-        const changes = [...duplicated.matchAll(/Duplicated \S+ as (\S+) /g)].map((match) => match[1]!)
-        if (changes.length === 0) {
-          return yield* unavailable(`jj duplicate printed no new commit: ${duplicated.trim()}`)
-        }
-        const made = changes.join(" | ")
-        const refuse = Effect.as(jj(["abandon", made]), undefined)
-        const heads = yield* ids(`heads(${made})`)
-        // A stack with a fork has no last commit, and a commit that still
-        // reaches history outside the tip, such as a merge that kept its other
-        // parent, would bring that history along: neither can fast-forward.
-        const stray = yield* ids(`(${onto}..(${made})) ~ (${made})`)
-        if (heads.length !== 1 || stray.length > 0) return yield* refuse
-        const conflicted = (yield* ids(`(${made}) & conflicts()`)).length > 0
-        let commit = heads[0]!
-        if (options.finish === undefined) {
-          if (conflicted) return yield* refuse
-        } else {
-          const finish = options.finish
-          const validated = yield* Effect.gen(function*() {
-            const finished = yield* run(finish(commit, onto, conflicted))
-            if (finished.code !== 0) return undefined
-            const proposed = lines(finished.stdout).at(-1)?.trim() ?? ""
-            const wrong = unavailable(`the finish command gave ${proposed || "no commit"}, not a clean line on ${onto}`)
-            if (!/^[0-9a-f]{4,64}$/.test(proposed)) return yield* wrong
-            const line = yield* Effect.orElseSucceed(ids(`${onto}..(${proposed})`), () => [])
-            if (line.length === 0) return yield* wrong
-            const flaws = yield* ids(
-              `((${onto}..${proposed}) & (conflicts() | merges())) | (roots(${onto}..${proposed})- ~ ${onto})`
-            )
-            if (flaws.length > 0) return yield* wrong
-            return line[0]!
-          }).pipe(Effect.tapError(() => refuse))
-          if (validated === undefined) return yield* refuse
-          commit = validated
-        }
-        const below = yield* ids(`(${onto}..${commit}) ~ ${commit}`)
-        return { commit, interior: below }
-      })
+      Effect.uninterruptibleMask((restore) =>
+        Effect.gen(function*() {
+          const duplicated = yield* jj(["duplicate", "-r", source, "--onto", onto])
+          const changes = [...duplicated.matchAll(/Duplicated \S+ as (\S+) /g)].map((match) => match[1]!)
+          if (changes.length === 0) {
+            return yield* unavailable(`jj duplicate printed no new commit: ${duplicated.trim()}`)
+          }
+          const made = changes.join(" | ")
+          const refuse = Effect.as(jj(["abandon", made]), undefined)
+          // Once duplication starts, install cleanup for its exact IDs before observing interruption.
+          const applied = yield* restore(Effect.gen(function*() {
+            const heads = yield* ids(`heads(${made})`)
+            // A stack with a fork has no last commit, and a commit that still
+            // reaches history outside the tip, such as a merge that kept its other
+            // parent, would bring that history along: neither can fast-forward.
+            const stray = yield* ids(`(${onto}..(${made})) ~ (${made})`)
+            if (heads.length !== 1 || stray.length > 0) return undefined
+            const conflicted = (yield* ids(`(${made}) & conflicts()`)).length > 0
+            let commit = heads[0]!
+            if (options.finish === undefined) {
+              if (conflicted) return undefined
+            } else {
+              const finish = options.finish
+              const validated = yield* Effect.gen(function*() {
+                const finished = yield* run(finish(commit, onto, conflicted))
+                if (finished.code !== 0) return undefined
+                const proposed = lines(finished.stdout).at(-1)?.trim() ?? ""
+                const wrong = unavailable(
+                  `the finish command gave ${proposed || "no commit"}, not a clean line on ${onto}`
+                )
+                if (!/^[0-9a-f]{4,64}$/.test(proposed)) return yield* wrong
+                const line = yield* Effect.orElseSucceed(ids(`${onto}..(${proposed})`), () => [])
+                if (line.length === 0) return yield* wrong
+                const flaws = yield* ids(
+                  `((${onto}..${proposed}) & (conflicts() | merges())) | (roots(${onto}..${proposed})- ~ ${onto})`
+                )
+                if (flaws.length > 0) return yield* wrong
+                return line[0]!
+              })
+              if (validated === undefined) return undefined
+              commit = validated
+            }
+            const below = yield* ids(`(${onto}..${commit}) ~ ${commit}`)
+            return { commit, interior: below }
+          })).pipe(Effect.onError(() => Effect.ignore(refuse)))
+          return applied ?? (yield* refuse)
+        })
+      )
 
     /**
      * One step towards the candidate for a tree: the answer when the ledger

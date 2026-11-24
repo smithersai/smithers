@@ -1228,6 +1228,46 @@ describe("retention", () => {
     ))
 })
 
+describe("RetentionOps.generations", () => {
+  const flat = (groups: ReadonlyArray<ReadonlyArray<string>>) => groups.flat().sort()
+
+  it("orders a doomed lineage deepest generation first", () => {
+    const parentOf = new Map<string, string | null>([["root", null], ["child", "root"], ["leaf", "child"], [
+      "kept-child",
+      "kept"
+    ]])
+    expect(RetentionOps.generations(new Set(["root", "child", "leaf", "kept-child"]), parentOf)).toEqual([
+      ["leaf"],
+      ["child"],
+      ["root", "kept-child"]
+    ])
+  })
+
+  // R2-Neon-D1-006: the iterative walk had no cycle guard, so a corrupted
+  // `parent_run_id` cycle never reached a root and grew `pending` until the
+  // process ran out of memory.
+  it("terminates on a self-parent and lists the run once", () => {
+    const groups = RetentionOps.generations(new Set(["a", "b"]), new Map([["a", "a"], ["b", "a"]]))
+    expect(groups).toEqual([["b"], ["a"]])
+  })
+
+  it("terminates on a two-run cycle and lists every doomed run once", () => {
+    const doomed = new Set(["a", "b", "tail"])
+    const groups = RetentionOps.generations(doomed, new Map([["a", "b"], ["b", "a"], ["tail", "a"]]))
+    expect(flat(groups)).toEqual(["a", "b", "tail"])
+    expect(groups).toEqual([["tail"], ["a"], ["b"]])
+  })
+
+  it("terminates on a long cycle entered from every member", () => {
+    const size = 5_000
+    const parentOf = new Map<string, string | null>()
+    for (let index = 0; index < size; index++) parentOf.set(`r${index}`, `r${(index + 1) % size}`)
+    const groups = RetentionOps.generations(new Set(parentOf.keys()), parentOf)
+    expect(groups.flat()).toHaveLength(size)
+    expect(new Set(groups.flat()).size).toBe(size)
+  })
+})
+
 describe("Retention.pruneSupersededRounds", () => {
   it.effect("reparents the active latest round onto round 0 and deletes completed intermediate rounds", () =>
     withCrypto(

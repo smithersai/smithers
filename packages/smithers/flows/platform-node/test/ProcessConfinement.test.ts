@@ -105,7 +105,7 @@ describe("native ProcessConfinement", () => {
 
   it.each([true, "/bin/bash", false, undefined] as const)("confines shell=%s inside the mechanism", async (shell) => {
     const f = fixture()
-    const command = ChildProcess.make("printf", [Redacted.make("hello"), ">", "out.txt"], {
+    const command = ChildProcess.make("printf", ["hello", ">", "out.txt"], {
       cwd: f.workspaceRoot,
       shell
     })
@@ -144,25 +144,41 @@ describe("native ProcessConfinement", () => {
     expect(plainEnvironment(wrapped.options.env)?.["HOME"]).not.toBe(process.env.HOME)
   })
 
-  it("reveals opaque words only for the confined executable and private environment file", async () => {
+  it.each(["argument", "environment"] as const)("refuses a protected %s before creating a launcher", async (kind) => {
     const f = fixture()
-    await run(Effect.gen(function*() {
-      const wrapped = yield* ProcessConfinement.make(f).confine(
-        ChildProcess.make("fixture", [Redacted.make("synthetic-argument")], {
+    const secret = "synthetic-protected-value"
+    for (const unavailable of ["refuse", "unconfined"] as const) {
+      const service = ProcessConfinement.make({ ...f, unavailable })
+      const error = await run(Effect.flip(service.confine(
+        ChildProcess.make("fixture", kind === "argument" ? [Redacted.make(secret)] : [], {
           cwd: f.workspaceRoot,
-          env: { PRIVATE: Redacted.make("synthetic-environment") },
+          env: kind === "environment" ? { PRIVATE: Redacted.make(secret) } : {},
           extendEnv: false
         }),
         f.profile
-      )
-      expect(wrapped.args.map(plainWord).at(-1)).toBe("synthetic-argument")
-      expect(wrapped.options.env?.["PRIVATE"]).toBeUndefined()
-      const script = wrapped.args.map(plainWord).find((arg) => NodePath.basename(arg) === "environment.sh")!
-      assertPrivatePath(script)
-      expect(NodeFs.readFileSync(script, "utf8")).toContain("export PRIVATE='synthetic-environment'")
-    }))
-    expect(NodeFs.readdirSync(f.temporaryDirectory)).toEqual([])
+      )))
+      expect(error).toMatchObject({ reason: { _tag: "PermissionDenied", pathOrDescriptor: "fixture" } })
+      expect(String(error)).not.toContain(secret)
+      expect(NodeFs.readdirSync(f.temporaryDirectory)).toEqual([])
+    }
   })
+
+  it.each([false, true] as const)(
+    "omits sensitive plain arguments from confinement errors with shell=%s",
+    async (shell) => {
+      const f = fixture()
+      const secret = "synthetic-private-argument"
+      const command = ChildProcess.make(shell ? `fixture --credential=${secret}` : "fixture", [secret], {
+        cwd: f.base,
+        shell
+      })
+      const error = await run(Effect.flip(ProcessConfinement.make(f).confine(command, f.profile)))
+      expect(error).toMatchObject({ reason: { _tag: "PermissionDenied", pathOrDescriptor: "fixture" } })
+      expect(String(error)).not.toContain(secret)
+      expect(JSON.stringify(error)).not.toContain(secret)
+      expect(NodeFs.readdirSync(f.temporaryDirectory)).toEqual([])
+    }
+  )
 
   it("preserves own prototype-named environment values in the private launcher", async () => {
     const f = fixture()
@@ -178,7 +194,7 @@ describe("native ProcessConfinement", () => {
     expect(NodeFs.readdirSync(f.temporaryDirectory)).toEqual([])
   })
 
-  it("inherits the host environment only inside the sandbox", async () => {
+  it("does not expose a host-only environment value to the guest launcher", async () => {
     const f = fixture()
     vi.stubEnv("SMITHERS_ENV_TEST", "inherited fixture")
     await run(Effect.gen(function*() {
@@ -187,7 +203,16 @@ describe("native ProcessConfinement", () => {
       expect(plainEnvironment(wrapped.options.env)?.["SMITHERS_ENV_TEST"]).toBeUndefined()
       const script = wrapped.args.map(plainWord).find((arg) => NodePath.basename(arg) === "environment.sh")!
       const lines = NodeFs.readFileSync(script, "utf8").split("\n")
-      expect(lines.some((line) => line === "export SMITHERS_ENV_TEST='inherited fixture'")).toBe(true)
+      expect(lines.some((line) => line.includes("SMITHERS_ENV_TEST"))).toBe(false)
+      const probe = execFileSync("/usr/bin/env", [
+        "-i",
+        "/bin/sh",
+        script,
+        "/bin/sh",
+        "-c",
+        "printf '%s' \"${SMITHERS_ENV_TEST-absent}\""
+      ], { encoding: "utf8" })
+      expect(probe).toBe("absent")
     }))
   })
 
@@ -549,7 +574,11 @@ describe("Linux native network seccomp", () => {
             expect(evaluateFilter(bytes, audit, socketpair, 1, type)).toBe(0x00050001)
           }
           expect(evaluateFilter(bytes, audit, socketpair, 1, 1 | 0x80800)).toBe(0x7fff0000)
-          expect(evaluateFilter(bytes, audit, socketpair, 2, 2)).toBe(0x7fff0000)
+          for (const domain of [0, 2, 10, 16, 17, 40]) {
+            for (const type of [1, 2, 5]) {
+              expect(evaluateFilter(bytes, audit, socketpair, domain, type)).toBe(0x00050001)
+            }
+          }
           expect(evaluateFilter(bytes, audit, 425, 1)).toBe(0x00050001)
           expect(evaluateFilter(bytes, audit, 426, 1)).toBe(0x7fff0000)
           expect(evaluateFilter(bytes, audit ^ 1, syscall, 1)).toBe(0x80000000)
@@ -564,7 +593,11 @@ describe("Linux native network seccomp", () => {
             expect(evaluateFilter(openBytes, audit, socketpair, 1, type)).toBe(0x00050001)
           }
           expect(evaluateFilter(openBytes, audit, socketpair, 1, 1 | 0x80800)).toBe(0x7fff0000)
-          expect(evaluateFilter(openBytes, audit, socketpair, 2, 2)).toBe(0x7fff0000)
+          for (const domain of [0, 2, 10, 16, 17, 40]) {
+            for (const type of [1, 2, 5]) {
+              expect(evaluateFilter(openBytes, audit, socketpair, domain, type)).toBe(0x00050001)
+            }
+          }
           expect(evaluateFilter(openBytes, audit, 425, 1)).toBe(0x00050001)
           expect(evaluateFilter(openBytes, audit, 426, 1)).toBe(0x7fff0000)
           expect(evaluateFilter(openBytes, audit ^ 1, syscall, 1)).toBe(0x80000000)
@@ -646,13 +679,13 @@ describe("Linux native network seccomp", () => {
 describe("target environment isolation", () => {
   it.each(
     [
-      ["absent env", undefined, undefined, true],
-      ["absent env with extendEnv false", undefined, false, true],
-      ["replacement env with omitted extendEnv", { CALLER: "named value" }, undefined, false],
-      ["replacement env with extendEnv true", { CALLER: "named value" }, true, true],
-      ["replacement env with extendEnv false", { CALLER: "named value" }, false, false]
+      ["absent env", undefined, undefined],
+      ["absent env with extendEnv false", undefined, false],
+      ["replacement env with omitted extendEnv", { CALLER: "named value" }, undefined],
+      ["replacement env with extendEnv true", { CALLER: "named value" }, true],
+      ["replacement env with extendEnv false", { CALLER: "named value" }, false]
     ] as const
-  )("matches the native inheritance contract for %s", async (_, env, extendEnv, inherits) => {
+  )("passes only explicit environment values for %s", async (_, env, extendEnv) => {
     const f = fixture()
     vi.stubEnv("SMITHERS_HOST_SECRET", "inherited private fixture")
     await run(Effect.gen(function*() {
@@ -662,7 +695,7 @@ describe("target environment isolation", () => {
       )
       const script = wrapped.args.map(plainWord).find((arg) => NodePath.basename(arg) === "environment.sh")!
       const contents = NodeFs.readFileSync(script, "utf8")
-      expect(contents.includes("export SMITHERS_HOST_SECRET='inherited private fixture'")).toBe(inherits)
+      expect(contents).not.toContain("SMITHERS_HOST_SECRET")
       expect(contents.includes("export CALLER='named value'")).toBe(env !== undefined)
       expect(plainEnvironment(wrapped.options.env)?.SMITHERS_HOST_SECRET).toBeUndefined()
     }))
@@ -681,7 +714,7 @@ describe("target environment isolation", () => {
     }))
   })
 
-  it("skips nonportable inherited Bash function names while retaining ordinary inherited values", async () => {
+  it("omits ambient Bash function names and ordinary inherited values", async () => {
     const f = fixture()
     vi.stubEnv("BASH_FUNC_which%%", "() { printf inherited; }")
     vi.stubEnv("SMITHERS_ENV_TEST", "ordinary inherited value")
@@ -690,7 +723,7 @@ describe("target environment isolation", () => {
       const script = wrapped.args.map(plainWord).find((arg) => NodePath.basename(arg) === "environment.sh")!
       const contents = NodeFs.readFileSync(script, "utf8")
       expect(contents).not.toContain("BASH_FUNC_which")
-      expect(contents).toContain("export SMITHERS_ENV_TEST='ordinary inherited value'")
+      expect(contents).not.toContain("SMITHERS_ENV_TEST")
     }))
   })
 
@@ -797,7 +830,9 @@ describe("verification confinement (#5436)", () => {
         for (const type of [2, 3, 0, 4, 2 | 0x80800, 3 | 0x800]) {
           expect(evaluateFilter(bytes, audit, socketpair, 1, type)).toBe(0x00050001)
         }
-        expect(evaluateFilter(bytes, audit, socketpair, 2, 2)).toBe(0x7fff0000)
+        for (const domain of [0, 2, 10, 16, 17, 40]) {
+          for (const type of [1, 2, 5]) expect(evaluateFilter(bytes, audit, socketpair, domain, type)).toBe(0x00050001)
+        }
         expect(evaluateFilter(bytes, audit, socket, 1)).toBe(0x00050001)
         expect(evaluateFilter(bytes, audit, socket, 2)).toBe(network === "open" ? 0x7fff0000 : 0x00050001)
         expect(evaluateFilter(bytes, audit, 425, 1)).toBe(0x00050001)

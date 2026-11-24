@@ -156,14 +156,17 @@ export class ImmutableCache extends Context.Service<ImmutableCache, Service>()("
  * The slice of the Web Cache API a backend must answer. A browser's
  * `caches.open(name)` and a Worker's `caches.default` both do, and so does
  * {@link makeMemoryWebCache}. Keys are `https:` URLs; values are `200`
- * responses with a `Cache-Control` the Workers cache honors.
+ * responses with a `Cache-Control` the Workers cache honors. A `put` that
+ * resolves stored the response, as the Web Cache API's does; a backend with
+ * its own size bound answers `"too_large"` when it declined the response and
+ * stored nothing.
  *
  * @category models
  * @since 1.0.0
  */
 export interface WebCache {
   readonly match: (url: string) => Promise<Response | undefined>
-  readonly put: (url: string, response: Response) => Promise<void>
+  readonly put: (url: string, response: Response) => Promise<void | "too_large">
 }
 
 /**
@@ -338,8 +341,8 @@ export const make = (cache: WebCache, options: Options): Service => {
                 [metadataHeader]: encodeURIComponent(metadata)
               }
             })
-            yield* attempt("put", () => cache.put(url, response))
-            return "stored" as const
+            const declined = yield* attempt("put", () => cache.put(url, response))
+            return declined ?? "stored"
           })
         ))
   })
@@ -454,8 +457,9 @@ export const memoryEntryOverheadBytes = 64
  * `maxEntries` entries. An entry costs its body's bytes, its URL's and
  * headers' characters, and {@link memoryEntryOverheadBytes}, so empty bodies
  * and metadata count against the bound. Over either bound it evicts the least
- * recently used entries; an entry that alone is over `maxTotalBytes` is not
- * stored. It keeps a copy of each body and answers each `match` with a new
+ * recently used entries; an entry that alone is over `maxTotalBytes`, or any
+ * entry when `maxEntries` is under one, is not stored and its `put` answers
+ * `"too_large"`. It keeps a copy of each body and answers each `match` with a new
  * response.
  *
  * @category constructors
@@ -496,13 +500,14 @@ export const makeMemoryWebCache = (
         body.byteLength + url.length + memoryEntryOverheadBytes
       )
       remove(url)
-      if (cost > maxTotalBytes || maxEntries < 1) return
+      if (cost > maxTotalBytes || maxEntries < 1) return "too_large"
       stored.set(url, { body, headers, cost })
       total += cost
       for (const oldest of stored.keys()) {
         if (total <= maxTotalBytes && stored.size <= maxEntries) break
         remove(oldest)
       }
+      return undefined
     }
   }
 }

@@ -24,7 +24,7 @@ import { cancelledStatus, cancelMarker, killScript } from "../internal/killScrip
 import { commandFailure, gather, type GatheredRun } from "../internal/localProcess.ts"
 import { pidDirectory } from "../internal/pidDirectory.ts"
 import { rootedAt } from "../internal/rootedPath.ts"
-import { sessionSlug } from "../internal/sessionSlug.ts"
+import { legacySessionSlug, sessionSlug } from "../internal/sessionSlug.ts"
 import { stdinRedirect } from "../internal/stdinRedirect.ts"
 import { warnTeardown } from "../internal/teardownWarning.ts"
 import type { RemoteProcess } from "../RemoteChildProcessSpawner/Provider.ts"
@@ -125,8 +125,8 @@ const attempt = attemptIn("aws sandbox")
 
 const fingerprintTag = "smithers.dev/sandbox-fingerprint"
 
-const startedByOf = (session: string): string => {
-  const slug = sessionSlug(session).replaceAll(/[^A-Za-z0-9/_-]/g, "-")
+const startedByOf = (session: string, slugOf = sessionSlug): string => {
+  const slug = slugOf(session).replaceAll(/[^A-Za-z0-9/_-]/g, "-")
   if (slug.length <= 36) return slug
   const separator = slug.lastIndexOf("-")
   const digest = slug.slice(separator + 1)
@@ -638,7 +638,7 @@ export const make = (input: AwsSandboxOptions): Provider => {
           )
         }
         const workdir = options.workdir ?? "/workspace"
-        const startedBy = startedByOf(sessionKey)
+        const legacyStartedBy = startedByOf(sessionKey, legacySessionSlug)
         const { sdk: _sdk, exec: _exec, pollIntervalMs: _poll, maxPollAttempts: _attempts, ...configuration } = options
         const fingerprint = yield* configurationFingerprint({
           ...configuration,
@@ -650,7 +650,11 @@ export const make = (input: AwsSandboxOptions): Provider => {
         // Reattach before provisioning: the same key names the same machine
         // wherever one is still running. An adopted task is released the same
         // way a fresh one is, so closing the scope attempts to stop either.
-        const leftover = yield* leftoverTasks(options, startedBy, container, fingerprint)
+        const legacy = yield* leftoverTasks(options, legacyStartedBy, container, fingerprint)
+        const startedBy = legacy.adopt === undefined ? startedByOf(sessionKey) : legacyStartedBy
+        const leftover = legacy.adopt === undefined
+          ? yield* leftoverTasks(options, startedBy, container, fingerprint)
+          : legacy
         // Duplicates go before anything else: an adopter that provisioned beside
         // them would leave the key owning more machines every incarnation.
         if (leftover.stale.length > 0) yield* stopTasks(options, leftover.stale)

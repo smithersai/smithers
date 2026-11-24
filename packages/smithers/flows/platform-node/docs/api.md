@@ -1350,8 +1350,14 @@ stay closed. Networking opens only for unrestricted grants across all network
 actions. Closed networking blocks socket creation. Native agent commands keep
 host Unix sockets closed when IP networking opens, except the fixed macOS
 system DNS resolver endpoint.
-The launcher receives a minimal environment; the command's environment is
-restored inside confinement without putting its values in launcher arguments.
+Protected (`Redacted`) arguments and environment values are refused before
+preparation, including the explicit unconfined fallback. Use opaque secret
+references instead. The guest receives only explicit plain environment values,
+a fixed public `PATH` (`/usr/bin:/bin:/usr/sbin:/sbin`) unless overridden, and
+private temporary paths. Ambient host values never enter the guest, regardless
+of `extendEnv`. The launcher receives a minimal environment; explicit guest
+values are restored inside confinement without putting them in launcher arguments.
+Confinement errors identify only the executable, omitting all arguments.
 macOS also denies delegation through host IPC services. Runtime paths and
 private temporary storage are bootstrap permissions;
 known host credential locations stay masked. Workspace links do not grant
@@ -1366,7 +1372,8 @@ of each runtime and package manager on it, never the home directory, a
 credential location, or a parent of the workspace. Linux admits the
 `SOCK_SEQPACKET` socketpair beside the stream pair, because pnpm starts every
 script through one and neither can name a host endpoint; `socket(AF_UNIX)` and
-the datagram pair stay refused. Entries whose name starts with one of
+the datagram pair stay refused. Both modes refuse every non-`AF_UNIX`
+`socketpair` domain, including when IP networking is open. Entries whose name starts with one of
 `hiddenPrefixes`, in any ASCII case and at any depth, are closed for reads and
 writes; on Linux a workspace directory that cannot be listed refuses the run.
 `reads` lists absolute paths the operator opens: one outside the workspace is

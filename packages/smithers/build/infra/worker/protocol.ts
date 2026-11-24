@@ -1255,14 +1255,15 @@ const diagnosticTag = (cause: object, field: string, shape: RegExp): string | nu
  *
  * Operations are restricted to fixed internal names. At most four nested
  * causes contribute format-allowlisted codes; accessors are never invoked.
+ * `service` names the Worker the line belongs to.
  *
  * @category utilities
  * @since 0.1.0
  */
-export const describeFailure = (cause: unknown): string => {
+export const describeFailure = (cause: unknown, service: string = "smithers build cache"): string => {
   const kind = typeof cause
   if (typeof cause !== "object" || cause === null) {
-    return `smithers build cache: request failed (kind=${cause === null ? "null" : kind})`
+    return `${service}: request failed (kind=${cause === null ? "null" : kind})`
   }
   const operation = diagnosticValue(cause, "operation")
   const tags = [
@@ -1281,7 +1282,7 @@ export const describeFailure = (cause: unknown): string => {
   const attribution = tags.length === 0
     ? "unattributed"
     : tags.map((tag) => `${tag[0]}=${tag[1]}`).join(" ")
-  return `smithers build cache: request failed (${attribution})`
+  return `${service}: request failed (${attribution})`
 }
 
 interface NormalizedProtocolDependencies {

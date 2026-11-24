@@ -28,14 +28,17 @@ import { tmpdir } from "node:os"
 import { dirname, join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import * as Layer from "effect/Layer"
+import * as SqliteStoreNode from "../../src/SqliteStoreNode.ts"
 
 /** The real Node filesystem and path services every scanner test runs on. */
-export const platform: Layer.Layer<never> = Layer.merge(NodeFileSystem.layer, NodePath.layer) as never as Layer.Layer<
-  never
->
+export const platform: Layer.Layer<never> = Layer.mergeAll(
+  NodeFileSystem.layer,
+  NodePath.layer,
+  SqliteStoreNode.layer
+) as never as Layer.Layer<never>
 
-/** The layer scanners take: a real filesystem and a real path service. */
-export const nodeLayer = Layer.merge(NodeFileSystem.layer, NodePath.layer)
+/** The layer scanners take: a real filesystem, a real path service, and the Node SQLite engine. */
+export const nodeLayer = Layer.mergeAll(NodeFileSystem.layer, NodePath.layer, SqliteStoreNode.layer)
 
 /**
  * Node's services with the explicit unconfined choice, for a suite that calls
@@ -43,7 +46,11 @@ export const nodeLayer = Layer.merge(NodeFileSystem.layer, NodePath.layer)
  * confinement: exit codes, output tails, budgets, rollback. Without a
  * `ProcessConfinement` in the context verification starts no command.
  */
-export const unconfinedNode = Layer.merge(NodeServices.layer, KernelProcessConfinement.layerNoop)
+export const unconfinedNode = Layer.mergeAll(
+  NodeServices.layer,
+  SqliteStoreNode.layer,
+  KernelProcessConfinement.layerNoop
+)
 
 /**
  * Whether this host can enforce a process sandbox: bubblewrap on Linux,

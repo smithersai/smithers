@@ -8,6 +8,7 @@
 import * as CloudflareSandbox from "@smthrs/sandbox/CloudflareSandbox"
 import * as HttpSandbox from "@smthrs/sandbox/HttpSandbox"
 import * as Effect from "effect/Effect"
+import { describeFailure } from "./protocol.ts"
 import { sandboxInstanceTypes } from "./sandbox-instances.ts"
 
 /**
@@ -59,7 +60,8 @@ const unavailable = (message: string): Response =>
 export const makeSandboxService = <Binding>(options: SandboxServiceOptions<Binding>) => ({
   async fetch(request: Request, env: SandboxWorkerEnv<Binding>): Promise<Response> {
     const started = Date.now()
-    const path = new URL(request.url).pathname
+    // An unparseable URL is counted as "other" and answered by the handler's own failure path.
+    const path = URL.canParse(request.url) ? new URL(request.url).pathname : ""
     const match = /^\/v1\/sessions(?:\/[^/]+(?:\/(commands|files))?)?$/.exec(path)
     const route = match === null ? "other" : match[1] ?? "sessions"
     const method = ["GET", "POST", "DELETE", "PUT"].includes(request.method) ? request.method : "other"
@@ -83,7 +85,9 @@ export const makeSandboxService = <Binding>(options: SandboxServiceOptions<Bindi
           return handler(request)
         }).pipe(Effect.withSpan("sandbox.request", { attributes: { route, method } }))
       )
-    } catch {
+    } catch (cause) {
+      // Name and code only: a provider message can carry a token, a header or a payload.
+      console.error(describeFailure(cause, "smithers sandbox service"))
       response = unavailable("the sandbox service could not handle the request")
     }
     try {

@@ -95,6 +95,7 @@ import * as Path from "./Path.ts"
 import type * as RuleContract from "./RuleContract.ts"
 import * as RulePolicy from "./RulePolicy.ts"
 import * as NativeRules from "./rules/NativeRules.ts"
+import * as SdkIdentity from "./SdkIdentity.ts"
 import * as ShellWords from "./ShellWords.ts"
 import { posix, sha256Hex } from "./Text.ts"
 
@@ -892,45 +893,6 @@ const fetchCargoHome = (context: PlanContext, target: Target.AnyTarget): string 
 export const workspaceRootToken = "{smthrs:root}"
 
 const selectedEnvironment = new Set(["CI", "SDKROOT", "DEVELOPER_DIR", "SMITHERS_WORKSPACE_JJ_EXPORT_BINARY"])
-
-// Built-ins and shell keywords such as the closing `fi` in an if-statement
-// are supplied by the shell whose executable is already keyed.
-const suppliedByShell = new Set([
-  "case",
-  "done",
-  "esac",
-  "fi",
-  "for",
-  "in",
-  "alias",
-  "bg",
-  "break",
-  "cd",
-  "command",
-  "continue",
-  "eval",
-  "exec",
-  "exit",
-  "export",
-  "fc",
-  "fg",
-  "getopts",
-  "hash",
-  "jobs",
-  "read",
-  "readonly",
-  "return",
-  "set",
-  "shift",
-  "times",
-  "trap",
-  "type",
-  "ulimit",
-  "umask",
-  "unalias",
-  "unset",
-  "wait"
-])
 
 /**
  * The executable one target used as a tool edge produces, workspace relative,
@@ -3589,19 +3551,7 @@ const visit = async (
       const absolute = NodePath.resolve(context.root, cwd, path)
       let digest = context.sdkDigests.get(absolute)
       if (digest === undefined) {
-        try {
-          const root = NodeFs.realpathSync(absolute)
-          if (Path.contains(root, context.root)) throw new Error("SDK includes the workspace")
-          digest = InstalledTree.measure(root, {
-            ...InstalledTree.defaultIo,
-            readlink: (link) => {
-              if (!Path.contains(root, NodeFs.realpathSync(link))) throw new Error("SDK link leaves its tree")
-              return NodeFs.readlinkSync(link)
-            }
-          })
-        } catch {
-          digest = null
-        }
+        digest = SdkIdentity.identify(absolute, context.root)
         context.sdkDigests.set(absolute, digest)
       }
       if (digest === null) identityProblem ??= `cannot identify ${name}`
@@ -3620,7 +3570,10 @@ const visit = async (
       /[/\\]/.test(expanded) ?
       NodePath.resolve(context.root, cwd, expanded) :
       onPath(context, expanded, spawnEnvironment)
-    if (path === undefined && !executableCommands.includes(command) && suppliedByShell.has(command)) continue
+    // The text is read, not parsed: a bare word no directory on `PATH` holds
+    // is a function, a builtin, a `case` pattern or a here-document line. Were
+    // it a program after all, the run exits 127, and a failed run is not kept.
+    if (path === undefined && !executableCommands.includes(command)) continue
     const identity = path === undefined || !Exec.isExecutableFile(path) ?
       undefined :
       await binaryIdentity({ ...context, environment: spawnEnvironment }, path).catch(() => undefined)

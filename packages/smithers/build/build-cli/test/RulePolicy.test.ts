@@ -53,9 +53,17 @@ describe("rule cache eligibility", () => {
   })
 
   it("caches a mode-scoped rule only in its own mode", () => {
-    expect(cacheableIn("Foundry.Test")).toEqual(["execute/true", "execute/false", "execute/undefined"])
+    expect(cacheableIn("Shell.Test")).toEqual(["execute/true", "execute/false", "execute/undefined"])
     expect(cacheableIn("Generate")).toEqual(["check/true", "check/false", "check/undefined"])
   })
+
+  it.each(["Foundry.Build", "Foundry.Test"])(
+    "grants %s no intrinsic replay, because no Solidity source tree is keyed",
+    (rule) => {
+      expect(RulePolicy.of(rule).cache).toBeUndefined()
+      expect(cacheableIn(rule)).toEqual([])
+    }
+  )
 
   it.each(["Go.Lint", "Go.Generate", "Changesets.Version"])(
     "keeps %s scratch checks out of the cache in every mode",

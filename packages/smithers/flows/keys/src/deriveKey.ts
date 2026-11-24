@@ -6,7 +6,7 @@
  * @since 0.1.0
  */
 
-import { Canonical, type NativeBrand, nativeBrand } from "@smthrs/canonical"
+import { Canonical, isNativeUrl, type NativeBrand, nativeBrand, slotlessProxy } from "@smthrs/canonical"
 import { digest as sha256 } from "@smthrs/crypto"
 import type * as EffectDigest from "effect/crypto/Digest"
 import * as Effect from "effect/Effect"
@@ -22,6 +22,8 @@ const derivationFailure = (
 ): KeyDerivationError => KeyDerivationError.new({ code, message, cause })
 
 type Position = "root" | "member" | "element"
+
+const strippedUrl = "URL without a serializer cannot be keyed"
 
 // Unboxes a wrapper from its internal slot. `instanceof` would miss a
 // cross-realm wrapper and accept a slotless `Object.create(Number.prototype)`.
@@ -70,6 +72,12 @@ const checkedMaterial = (input: unknown, refuse: (reason: string) => never): unk
       // prototype was replaced would otherwise read as a plain record.
       if (brand !== undefined && plainPrototype) refuse("unsupported collection cannot be keyed")
     }
+    // A URL keeps its address in internal slots. Without its prototype it has
+    // no serializer and no own keys, so every address would key as `{}`. The
+    // probe throws for any other object, so a record under `Object.prototype`
+    // waits until its keys are read and pays only when it has none.
+    const mayBeUrl = !array && !native
+    if (mayBeUrl && prototype === null && isNativeUrl(value)) refuse(strippedUrl)
 
     const existing = views.get(value)
     if (existing !== undefined) {
@@ -80,7 +88,9 @@ const checkedMaterial = (input: unknown, refuse: (reason: string) => never): unk
     const view: View = {
       position,
       serializer,
-      value: new Proxy(array ? [] : {}, {
+      // Canonical reads only this view, which has no slots whatever the
+      // original is. Saying so spares it a second round of slot probes.
+      value: slotlessProxy(array ? [] : {}, {
         get: (_target, key) => {
           const member: unknown = native && key === "toJSON" ? view.serializer : Reflect.get(value, key)
           if (key === "toJSON" && typeof member === "function") {
@@ -91,7 +101,11 @@ const checkedMaterial = (input: unknown, refuse: (reason: string) => never): unk
         },
         getPrototypeOf: () => prototype,
         ...(array ? {} : {
-          ownKeys: () => Object.keys(value),
+          ownKeys: () => {
+            const keys = Object.keys(value)
+            if (mayBeUrl && keys.length === 0 && isNativeUrl(value)) refuse(strippedUrl)
+            return keys
+          },
           getOwnPropertyDescriptor: () => ({ enumerable: true, configurable: true })
         })
       })

@@ -1,5 +1,8 @@
+import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
+import * as NodePath from "@effect/platform-node/NodePath"
 import { describe, expect, it } from "@effect/vitest"
 import * as Effect from "effect/Effect"
+import * as Layer from "effect/Layer"
 import {
   chmodSync,
   mkdirSync,
@@ -16,6 +19,7 @@ import { join, relative } from "node:path"
 import { pathToFileURL } from "node:url"
 import * as Detect from "../src/Detect.ts"
 import * as RunState from "../src/RunState.ts"
+import * as SqliteStore from "../src/SqliteStore.ts"
 import { copyFixture, fixture, hashTree, nodeLayer } from "./fixtures/helpers.ts"
 
 const buildDb = async (root: string, now: number): Promise<void> => {
@@ -153,24 +157,24 @@ describe("RunState.scan", () => {
         writable.close()
       }
       const before = hashTree(root)
-      const atDeadline = RunState.readDatabase(
+      const atDeadline = yield* RunState.readDatabase(
         path,
         ".smithers/smithers.db",
         [],
         now + RunState.defaultLiveWindowMs,
         RunState.defaultLiveWindowMs
-      )
+      ).pipe(Effect.provide(nodeLayer))
       expect(atDeadline.live.map((row) => row.runId)).toEqual(["run-live"])
       expect(atDeadline.live[0]?.cancelRequestedAtMs).toBe(now)
       expect(atDeadline.parked.map((row) => row.runId)).toEqual(["run-parked"])
 
-      const afterDeadline = RunState.readDatabase(
+      const afterDeadline = yield* RunState.readDatabase(
         path,
         ".smithers/smithers.db",
         [],
         now + RunState.defaultLiveWindowMs + 1,
         RunState.defaultLiveWindowMs
-      )
+      ).pipe(Effect.provide(nodeLayer))
       expect(afterDeadline.live).toEqual([])
       expect(afterDeadline.parked.map((row) => row.runId)).toEqual(["run-live", "run-parked"])
       expect(hashTree(root)).toEqual(before)
@@ -181,7 +185,14 @@ describe("RunState.scan", () => {
       } finally {
         complete.close()
       }
-      const terminal = RunState.readDatabase(path, ".smithers/smithers.db", [], now + 1, RunState.defaultLiveWindowMs)
+      const terminal = yield* RunState.readDatabase(
+        path,
+        ".smithers/smithers.db",
+        [],
+        now + 1,
+        RunState.defaultLiveWindowMs
+      )
+        .pipe(Effect.provide(nodeLayer))
       expect(terminal.live).toEqual([])
       expect(terminal.parked.map((row) => row.runId)).toEqual(["run-parked"])
       expect(terminal.runsByStatus).toContainEqual({ status: "cancelled", count: 1 })
@@ -403,6 +414,92 @@ describe("RunState.scan over symbolic links", () => {
 
       expect(result.external).toEqual([])
       expect(result.databases.map((database) => database.path)).toEqual(["data/real.db"])
+    }))
+})
+
+describe("RunState.scan without a working SQLite engine", () => {
+  const scanWith = (root: string, layer: Layer.Layer<never>) =>
+    Effect.gen(function*() {
+      const detection = yield* Detect.scan(root)
+      return yield* RunState.scan(root, detection, { now })
+    }).pipe(Effect.provide(layer), Effect.provide(Layer.merge(NodeFileSystem.layer, NodePath.layer)))
+
+  it.effect("blocks on a database a faulty engine cannot read, names the engine's error, and asks it once", () =>
+    Effect.gen(function*() {
+      const root = copyFixture("persisted-db")
+      yield* Effect.promise(() => buildDb(root, now))
+      const before = hashTree(root)
+      const asked: Array<string> = []
+      const faulty = Layer.succeed(SqliteStore.SqliteStore, {
+        read: (file) => {
+          asked.push(file)
+          return Effect.fail(new SqliteStore.SqliteError({ reason: "failed", cause: new Error("disk I/O error") }))
+        },
+        lock: () => Effect.die("a scan never takes a lock")
+      })
+      const result = yield* scanWith(root, faulty)
+
+      expect(asked).toEqual([join(root, ".smithers", "smithers.db")])
+      expect(result.databases).toEqual([{
+        path: ".smithers/smithers.db",
+        readable: false,
+        unreadableReason: "Error: disk I/O error",
+        tables: [],
+        migrations: { count: 0, maxId: undefined },
+        runsByStatus: [],
+        live: [],
+        parked: [],
+        siblings: []
+      }])
+      expect(result.verdict).toBe("blocked")
+      expect(result.instructions[0]).toContain(".smithers/smithers.db could not be opened read only")
+      expect(hashTree(root)).toEqual(before)
+    }))
+
+  it.effect("blocks on every database when the host provides no engine, and stays clean when there is none", () =>
+    Effect.gen(function*() {
+      const root = copyFixture("persisted-db")
+      yield* Effect.promise(() => buildDb(root, now))
+      const result = yield* scanWith(root, Layer.empty)
+      expect(result.verdict).toBe("blocked")
+      expect(result.databases.map((database) => database.readable)).toEqual([false])
+      expect(result.databases[0]?.unreadableReason).toContain("no SQLite engine")
+
+      // A project with no database never asks for an engine.
+      const clean = yield* scanWith(copyFixture("jsx-single"), Layer.empty)
+      expect(clean.verdict).toBe("clean")
+    }))
+
+  it.effect("maps rows of the wrong shape to empty fields instead of failing the scan", () =>
+    Effect.gen(function*() {
+      const root = copyFixture("persisted-db")
+      yield* Effect.promise(() => buildDb(root, now))
+      const odd = Layer.succeed(SqliteStore.SqliteStore, {
+        read: (_file, use) =>
+          Effect.sync(() =>
+            use((sql) =>
+              sql.includes("sqlite_master")
+                ? [{ name: "_smithers_runs" }, { name: 7 }, { name: "_smithers_schema_migrations" }]
+                : sql.includes("_smithers_schema_migrations")
+                ? []
+                : sql.includes("GROUP BY")
+                ? [{ status: null, count: "many" }]
+                : [{ run_id: 1, status: "running", heartbeat_at_ms: now }, { run_id: "run-b", heartbeat_at_ms: "soon" }]
+            )
+          ),
+        lock: () => Effect.die("a scan never takes a lock")
+      })
+      const [database] = (yield* scanWith(root, odd)).databases
+
+      expect(database?.tables).toEqual(["_smithers_runs", "_smithers_schema_migrations"])
+      expect(database?.migrations).toEqual({ count: 0, maxId: undefined })
+      expect(database?.runsByStatus).toEqual([{ status: "", count: 0 }])
+      expect(database?.live.map((row) => [row.runId, row.status])).toEqual([["", "running"]])
+      expect(database?.parked.map((row) => [row.runId, row.status, row.heartbeatAtMs])).toEqual([[
+        "run-b",
+        "",
+        undefined
+      ]])
     }))
 })
 

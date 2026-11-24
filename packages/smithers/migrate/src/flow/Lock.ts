@@ -19,9 +19,9 @@ import * as Option from "effect/Option"
 import * as Path from "effect/Path"
 import * as Schema from "effect/Schema"
 import { randomUUID } from "node:crypto"
-import { DatabaseSync } from "node:sqlite"
 import * as Fs from "../internal/Fs.ts"
 import { io, make, type MigrateError } from "../MigrateError.ts"
+import * as SqliteStore from "../SqliteStore.ts"
 import * as Pending from "./internal/Pending.ts"
 import * as Options from "./Options.ts"
 
@@ -63,9 +63,9 @@ export interface Held {
   readonly reclaimed: Record | undefined
 }
 
-/** A live connection, kept private so callers cannot release its transaction. */
+/** A live writer lock, kept private so callers cannot release its transaction. */
 interface Lease {
-  readonly database: DatabaseSync
+  readonly lock: SqliteStore.Lease
   readonly file: string
   readonly token: string
   readonly reportDirectory: string
@@ -110,20 +110,11 @@ const read = (target: string) =>
     return Option.isNone(text) ? undefined : readRecord(text.value)
   })
 
-/** SQLite extended result codes retain BUSY (5) / LOCKED (6) in the low byte. */
-const busy = (cause: unknown): boolean => {
-  if (typeof cause !== "object" || cause === null || !("errcode" in cause)) return false
-  const code = cause.errcode
-  return typeof code === "number" && ((code & 0xff) === 5 || (code & 0xff) === 6)
-}
-
-/** Closing the connection rolls back the held transaction and releases its locks. */
-const close = (database: DatabaseSync): Effect.Effect<void> => Effect.try(() => database.close()).pipe(Effect.ignore)
-
 /**
  * Takes the canonical project's apply lock without waiting for another owner.
  *
- * A reserved SQLite writer lock is exclusive across connections and processes.
+ * The lock is the host's {@link SqliteStore.SqliteStore} writer lock: a
+ * reserved SQLite writer lock is exclusive across connections and processes.
  * No database rows are needed: the transaction stays open until release, and
  * the guard file is never removed. A contender can read diagnostic metadata,
  * but only the transaction winner can change it. There is no read/unlink/retry
@@ -151,22 +142,11 @@ export const acquire = (options: {
     if (realDirectory !== directory) {
       return yield* Effect.fail(make("invalid-layout", `the apply lock directory must not be a symlink: ${directory}`))
     }
-    const database = yield* Effect.try({
-      try: () => {
-        const connection = new DatabaseSync(`${target}.sqlite`)
-        try {
-          connection.exec("BEGIN IMMEDIATE")
-          return connection
-        } catch (cause) {
-          connection.close()
-          throw cause
-        }
-      },
-      catch: (cause) => cause
-    }).pipe(Effect.catch((cause) =>
-      busy(cause)
+    const store = yield* SqliteStore.SqliteStore
+    const lock = yield* store.lock(`${target}.sqlite`).pipe(Effect.catch((error) =>
+      error.reason === "busy"
         ? Effect.flatMap(read(target), (held) => Effect.fail(refusal(target, held)))
-        : Effect.fail(io(`could not take the apply lock ${target}`)(cause))
+        : Effect.fail(io(`could not take the apply lock ${target}`)(error.cause))
     ))
     return yield* Effect.gen(function*() {
       const reclaimed = yield* read(target)
@@ -197,9 +177,9 @@ export const acquire = (options: {
         Effect.mapError(io(`could not record the apply lock ${target}`))
       )
       const held: Held = Object.freeze({ file: target, record, reclaimed })
-      leases.set(held, { database, file: target, token, reportDirectory: path.join(root, options.reportDir) })
+      leases.set(held, { lock, file: target, token, reportDirectory: path.join(root, options.reportDir) })
       return held
-    }).pipe(Effect.onError(() => close(database)))
+    }).pipe(Effect.onError(() => lock.release))
   }).pipe(Effect.uninterruptible)
 
 /**
@@ -228,5 +208,5 @@ export const release = (
       if (current?.token !== lease.token) return
       const fs = yield* FileSystem.FileSystem
       yield* fs.remove(lease.file, { force: true })
-    }).pipe(Effect.ensuring(close(lease.database)), Effect.ignore)
+    }).pipe(Effect.ensuring(lease.lock.release), Effect.ignore)
   }).pipe(Effect.uninterruptible)

@@ -9,6 +9,7 @@ import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
 import * as NodePath from "@effect/platform-node/NodePath"
 import * as Report from "@smthrs/migrate/Report"
 import * as Scan from "@smthrs/migrate/Scan"
+import * as SqliteStoreNode from "@smthrs/migrate/SqliteStoreNode"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 
@@ -24,4 +25,4 @@ export const scanProject = (root: string, generatedAt = new Date().toISOString()
       mapping: report.mapping.map((decision) => `${decision.construct}:${decision.class}`),
       markdown: Report.toMarkdown(report)
     }
-  }).pipe(Effect.provide(Layer.merge(NodeFileSystem.layer, NodePath.layer)))
+  }).pipe(Effect.provide(Layer.mergeAll(NodeFileSystem.layer, NodePath.layer, SqliteStoreNode.layer)))

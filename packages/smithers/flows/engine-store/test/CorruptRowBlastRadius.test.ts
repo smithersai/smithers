@@ -130,6 +130,46 @@ describe("a corrupt row costs its own row and nothing else", () => {
       expect(result.warnings[0]).toContain("corrupt-run")
     }))
 
+  // R2-Astra-D1-006: SQL bounded the raw page and the decoder then dropped the
+  // malformed row, so a full page came back short and its sweep read that as
+  // the end of the set on every tick.
+  it.effect("a paged waitingRuns read continues past unreadable rows to fill its page", () =>
+    Effect.gen(function*() {
+      const result = yield* read((sql, state) =>
+        Effect.gen(function*() {
+          for (
+            const [runId, corrupt] of [["a", false], ["b", true], ["c", true], ["d", false], ["e", false]] as const
+          ) {
+            yield* sql`
+              INSERT INTO flows_runs
+                (run_id, status, created_at_ms, waiting_reason, waiting_wake_at_ms, waiting_token, state_json)
+              VALUES (${runId}, 'suspended', 0, 'timer', 10, ${corrupt ? sql`x'00ff'` : sql`NULL`}, '{}')
+            `.pipe(Effect.orDie)
+          }
+          const page = (limit: number, afterRunId?: string) =>
+            state.waitingRuns({ reason: "timer", page: { limit, afterRunId } }).pipe(
+              Effect.map((rows) => rows.map((row) => row.runId))
+            )
+          return {
+            first: yield* page(2),
+            afterMalformedPage: yield* page(2, "a"),
+            rest: yield* page(2, "d"),
+            one: yield* page(1, "a"),
+            whole: yield* page(64)
+          }
+        })
+      )
+
+      // A full page: its last row is the last row read, so the cursor resumes after it.
+      expect(result.value.first).toEqual(["a", "d"])
+      expect(result.value.afterMalformedPage).toEqual(["d", "e"])
+      expect(result.value.rest).toEqual(["e"])
+      expect(result.value.one).toEqual(["d"])
+      expect(result.value.whole).toEqual(["a", "d", "e"])
+      expect(result.warnings.every((warning) => warning.includes("waiting run"))).toBe(true)
+      expect(result.warnings.length).toBeGreaterThanOrEqual(2)
+    }))
+
   it.effect("runParents lists every readable parent edge beside an unreadable one", () =>
     Effect.gen(function*() {
       const result = yield* read((sql, state) =>

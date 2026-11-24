@@ -1,6 +1,7 @@
 import * as NodeServices from "@effect/platform-node/NodeServices"
 import * as Lock from "@smthrs/migrate/flow/Lock"
-import { Effect, FileSystem } from "effect"
+import * as SqliteStoreNode from "@smthrs/migrate/SqliteStoreNode"
+import { Effect, FileSystem, Layer } from "effect"
 
 const [root, reportDir = ".smithers-migrate", mode = "normal"] = process.argv.slice(2)
 if (root === undefined) throw new Error("root is required")
@@ -63,7 +64,7 @@ const operation = Effect.gen(function*() {
 send({ phase: "ready" })
 await wait("acquire")
 try {
-  await Effect.runPromise(operation.pipe(Effect.provide(NodeServices.layer)))
+  await Effect.runPromise(operation.pipe(Effect.provide(Layer.merge(NodeServices.layer, SqliteStoreNode.layer))))
 } catch (cause) {
   send({ phase: "refused", code: (cause as { code?: string }).code, message: String(cause) })
 }

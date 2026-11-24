@@ -902,13 +902,14 @@ describe("fence", () => {
   const upgrades: ReadonlyArray<readonly [string, ReadonlyArray<number>]> = [
     ["the same migration set", []],
     ["run-store 1005 below the installed plan block", [1005]],
-    ["a global suffix in the plan block", [4003]],
-    ["engine-store 3010 below the installed plan block", [3010]],
-    ["engine-store 3009 below the installed plan block", [3009, 3010]],
-    ["engine-store 3008 below the installed plan block", [3008, 3009, 3010]],
-    ["engine-store 3007 below the installed plan block", [3007, 3008, 3009, 3010]],
-    ["engine-store 3006 below the installed plan block", [3006, 3007, 3008, 3009, 3010]],
-    ["the previous engine and run-store migration sets", [1003, 1004, 1005, 3006, 3007, 3008, 3009, 3010]]
+    ["a global suffix in the plan block", [4004]],
+    ["engine-store 3011 below the installed plan block", [3011]],
+    ["engine-store 3010 below the installed plan block", [3010, 3011]],
+    ["engine-store 3009 below the installed plan block", [3009, 3010, 3011]],
+    ["engine-store 3008 below the installed plan block", [3008, 3009, 3010, 3011]],
+    ["engine-store 3007 below the installed plan block", [3007, 3008, 3009, 3010, 3011]],
+    ["engine-store 3006 below the installed plan block", [3006, 3007, 3008, 3009, 3010, 3011]],
+    ["the previous engine and run-store migration sets", [1003, 1004, 1005, 3006, 3007, 3008, 3009, 3010, 3011]]
   ]
   for (const [name, omitted] of upgrades) {
     it.effect(`restores, fences, and resumes with ${name}`, () =>
@@ -973,9 +974,10 @@ describe("fence", () => {
           const columns = yield* Dialect.columns(sql, "flows_runs")
           expect(columns.map((column) => column.name)).toContain("execution_parent_id")
           const indexes = yield* sql<{ readonly name: string }>`
-            SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'flows_runs_pending_cancel_idx'
+            SELECT name FROM sqlite_master WHERE type = 'index'
+              AND name IN ('flows_runs_pending_cancel_idx', 'flows_runs_parked_page_idx')
           `
-          expect(indexes).toHaveLength(1)
+          expect(indexes).toHaveLength(2)
           const runs = yield* RunStore.make.pipe(Effect.provide(SqlConsensus.layer))
           const row = yield* runs.get("upgrade-run")
           expect(row).toMatchObject({ status: "suspended", owner: null, heartbeatAtMs: null, claim: null })
@@ -1012,7 +1014,7 @@ describe("fence", () => {
           `
           const before = yield* sql`SELECT * FROM flows_runs WHERE run_id = 'owned-run'`
           // An additional migration cannot compensate for lost or renamed history.
-          yield* sql`INSERT INTO flows_migrations (migration_id, name) VALUES (3011, 'engine-store_future')`
+          yield* sql`INSERT INTO flows_migrations (migration_id, name) VALUES (3012, 'engine-store_future')`
           if (change === "missing") {
             yield* sql`DELETE FROM flows_migrations WHERE migration_id = 3005`
           } else {

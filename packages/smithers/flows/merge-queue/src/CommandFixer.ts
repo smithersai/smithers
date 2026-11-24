@@ -167,12 +167,20 @@ export const layer = (options: Options): Layer.Layer<Fixer, never, ChildProcessS
         wait: (pending) =>
           pending.length === 0 ?
             Effect.void :
-            Effect.forEach(pending, (entry) => written(name(entry.id, entry.attempt))).pipe(
-              Effect.map((found) => found.some((answer) => answer !== undefined)),
-              Effect.orElseSucceed(() => false),
-              Effect.repeat({ until: (news) => news, schedule: Schedule.spaced(options.poll) }),
-              Effect.asVoid
-            )
+            Effect.forEach(pending, (entry) =>
+              Effect.gen(function*() {
+                const key = name(entry.id, entry.attempt)
+                // A completed process without a valid answer needs another
+                // reconcile. Its completion is news even while every other
+                // queue input is idle.
+                if (agents.get(key)?.fiber.pollUnsafe() !== undefined) return true
+                return (yield* written(key)) !== undefined
+              })).pipe(
+                Effect.map((found) => found.some(Boolean)),
+                Effect.orElseSucceed(() => false),
+                Effect.repeat({ until: (news) => news, schedule: Schedule.spaced(options.poll) }),
+                Effect.asVoid
+              )
       })
     })
   )

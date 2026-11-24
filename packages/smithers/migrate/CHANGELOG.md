@@ -41,12 +41,30 @@
 
 ### Changed
 
+- **Breaking:** `import "@smthrs/migrate"` no longer loads `node:sqlite` or
+  `node:path`, so the root entry resolves in a browser and a Worker. SQLite is
+  reached through the new `SqliteStore` service (`@smthrs/migrate/SqliteStore`),
+  and `@smthrs/migrate/SqliteStoreNode` is its `node:sqlite` engine. The Node
+  compositions in `flow/Layers` provide it, so `Command.runNode` and the
+  `smithers-migrate` binary are unchanged. A caller that runs `Scan.scan`,
+  `RunState.scan`, or `Lock.acquire` on its own layers must also provide
+  `SqliteStoreNode.layer`: without it a scan reports every 0.x database as
+  unreadable and blocks, and `Lock.acquire` fails with `io`.
+- **Breaking:** `RunState.readDatabase` returns `Effect<DatabaseFinding>`
+  instead of `DatabaseFinding`.
+- `Options.layoutIssue` decides whether a root is a Windows or a POSIX path
+  from its spelling (a drive letter or a UNC prefix is Windows) rather than
+  from the host, so it gives one answer on every runtime.
 - The migration-only flow options now type `defaultFlowsDir` as `string` instead
   of the literal `"flows"`; M-49 also updates the exported target-model path
   contract. Accept a string and use the `.smithers/flows/` layout in migration
   consumers.
 
 ### Fixed
+
+- `Layers.rules` strips the trailing backslash from a Windows root or
+  absolute run-state directory (`C:\project\`, `D:\runtime\`), which
+  matched neither the directory nor its children. A drive root keeps its own.
 
 - Preserve missing and explicit-undefined decoding defaults, required output
   keys during encoding, and decoded types for supported Zod fields. Generated

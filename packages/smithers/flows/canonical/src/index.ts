@@ -33,7 +33,7 @@
  * @slop
  */
 export * from "./Canonical.ts"
-export { CanonicalError, canonicalize, nativeBrand } from "./Serializer.ts"
+export { CanonicalError, canonicalize, isNativeUrl, nativeBrand, slotlessProxy } from "./Serializer.ts"
 export type { CanonicalErrorCode, NativeBrand } from "./Serializer.ts"
 
 /**

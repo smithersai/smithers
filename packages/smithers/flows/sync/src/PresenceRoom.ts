@@ -131,7 +131,7 @@ export const evictions = Metric.counter("smithers_presence_evictions", {
 })
 
 /**
- * Joined connections in the room's latest published roster, including after hibernation.
+ * Joined connections across all rooms observed by this process, including after hibernation.
  *
  * @category metrics
  * @since 1.0.0-rc.17
@@ -218,6 +218,36 @@ export const connections = <S extends RoomSocket<R>, R = never>(
 ): Effect.Effect<ReadonlyArray<Connection<S>>, never, R> =>
   Effect.map(joinedOf(host), (joined) => joined.map(({ attachment, socket }) => connectionOf(socket, attachment)))
 
+// A hibernated room can acquire a new host and fresh socket wrappers in the same
+// metric registry. Its attachment IDs identify the previous roster in that case.
+const observedRooms = new WeakMap<Metric.MetricRegistry, {
+  readonly hosts: WeakMap<object, Set<string>>
+  readonly connections: Map<string, Set<string>>
+}>()
+
+const reportOpen = (host: object, live: ReadonlyArray<{ participant: Participant }>, gone: Set<string>) =>
+  Effect.gen(function*() {
+    const registry = yield* Metric.MetricRegistry
+    let observed = observedRooms.get(registry)
+    if (observed === undefined) {
+      observed = { hosts: new WeakMap(), connections: new Map() }
+      observedRooms.set(registry, observed)
+    }
+    const ids = live.map(({ participant }) => participant.id)
+    const previous = observed.hosts.get(host) ??
+      [...ids, ...gone].map((id) => observed.connections.get(id)).find((room) => room !== undefined) ??
+      new Set<string>()
+    const before = previous.size
+    for (const id of previous) observed.connections.delete(id)
+    previous.clear()
+    for (const id of ids) {
+      previous.add(id)
+      observed.connections.set(id, previous)
+    }
+    observed.hosts.set(host, previous)
+    yield* Metric.update(open, previous.size - before)
+  })
+
 /**
  * Sends the roster to every connection but those in `gone`, each with its own
  * `self`. A socket whose send fails joins `gone`, loses its attachment, and
@@ -227,8 +257,7 @@ const publish = <S extends RoomSocket<R>, R>(host: RoomHost<S, R>, gone: Set<str
   Effect.gen(function*() {
     while (true) {
       const live = (yield* connections(host)).filter((connection) => !gone.has(connection.participant.id))
-      const reported = yield* Metric.value(open)
-      yield* Metric.update(open, live.length - reported.count)
+      yield* reportOpen(host, live, gone)
       const participants = JSON.stringify(live.map((connection) => participantOf(connection.participant)))
       const failed: Array<Connection<S>> = []
       for (const connection of live) {

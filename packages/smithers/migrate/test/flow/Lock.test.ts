@@ -3,7 +3,9 @@ import * as NodeServices from "@effect/platform-node/NodeServices"
 import { describe, expect, it } from "@effect/vitest"
 import type * as Checkpoint from "@smthrs/migrate/flow/Checkpoint"
 import * as Lock from "@smthrs/migrate/flow/Lock"
-import { Effect, FileSystem, PlatformError } from "effect"
+import * as SqliteStore from "@smthrs/migrate/SqliteStore"
+import * as SqliteStoreNode from "@smthrs/migrate/SqliteStoreNode"
+import { Effect, FileSystem, Layer, PlatformError } from "effect"
 import { type ChildProcess, execFileSync, spawn, spawnSync } from "node:child_process"
 import { once } from "node:events"
 import {
@@ -22,7 +24,7 @@ import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { afterEach } from "vitest"
 
-const platform = NodeServices.layer
+const platform = Layer.merge(NodeServices.layer, SqliteStoreNode.layer)
 const temporaries: Array<string> = []
 const heldLocks: Array<Lock.Held> = []
 const children: Array<ChildProcess> = []
@@ -265,6 +267,76 @@ describe("Lock.acquire", () => {
       expect((yield* Effect.flip(acquire(redirected))).code).toBe("invalid-layout")
       expect(existsSync(guardPath(other))).toBe(false)
     }))
+
+  it.effect("refuses to start on a host that provides no SQLite engine, and writes no owner record", () =>
+    Effect.gen(function*() {
+      const root = scratch()
+      const failure = yield* Effect.flip(
+        Lock.acquire({ root, reportDir: ".smithers-migrate" }).pipe(Effect.provide(NodeServices.layer))
+      )
+      expect(failure.code).toBe("io")
+      expect(failure.message).toContain("could not take the apply lock")
+      expect(failure.details).toContain("no SQLite engine")
+      expect(existsSync(lockPath(root))).toBe(false)
+      expect(existsSync(guardPath(root))).toBe(false)
+    }))
+
+  it.effect("maps a faulty SQLite engine to io, and a busy one to the owner it can read", () =>
+    Effect.gen(function*() {
+      const root = scratch()
+      const asked: Array<string> = []
+      const faulty = (reason: "busy" | "failed") =>
+        Effect.provideService(SqliteStore.SqliteStore, {
+          read: () => Effect.die("the lock never reads a database"),
+          lock: (file) => {
+            asked.push(file)
+            return Effect.fail(new SqliteStore.SqliteError({ reason, cause: new Error("disk I/O error") }))
+          }
+        })
+      const failed = yield* Effect.flip(
+        Lock.acquire({ root, reportDir: ".smithers-migrate" }).pipe(
+          faulty("failed"),
+          Effect.provide(NodeServices.layer)
+        )
+      )
+      expect(failed.code).toBe("io")
+      expect(failed.details).toBe("Error: disk I/O error")
+      expect(asked).toEqual([guardPath(realpathSync(root))])
+      // Busy with no published record: the owner is still initializing.
+      const initializing = yield* Effect.flip(
+        Lock.acquire({ root, reportDir: ".smithers-migrate" }).pipe(faulty("busy"), Effect.provide(NodeServices.layer))
+      )
+      expect(initializing.code).toBe("apply-in-progress")
+      expect(initializing.message).toContain("owner record is being initialized")
+      expect(existsSync(lockPath(root))).toBe(false)
+    }))
+
+  it.effect("releases the engine's lease when publishing the owner record fails, and exactly once", () =>
+    Effect.gen(function*() {
+      const root = scratch()
+      const fs = yield* FileSystem.FileSystem
+      let released = 0
+      const counting = Effect.provideService(SqliteStore.SqliteStore, {
+        read: () => Effect.die("the lock never reads a database"),
+        lock: () => Effect.succeed({ release: Effect.sync(() => void released++) })
+      })
+      const failed = yield* Effect.flip(
+        Lock.acquire({ root, reportDir: "audit" }).pipe(
+          Effect.provideService(FileSystem.FileSystem, {
+            ...fs,
+            open: () =>
+              Effect.fail(PlatformError.systemError({ _tag: "PermissionDenied", module: "FileSystem", method: "open" }))
+          }),
+          counting
+        )
+      )
+      expect(failed.code).toBe("io")
+      expect(released).toBe(1)
+      const held = yield* Lock.acquire({ root, reportDir: "audit" }).pipe(counting)
+      yield* Lock.release(held)
+      yield* Lock.release(held)
+      expect(released).toBe(2)
+    }).pipe(Effect.provide(NodeServices.layer)))
 })
 
 describe("Lock.release", () => {

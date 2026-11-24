@@ -18,7 +18,7 @@ export const sessionSlug = (session: string): string => {
 }
 
 /**
- * Used only to address an existing machine from its recorded handle.
+ * Used only to look up an existing machine or admission, never to create one.
  *
  * @category constructors
  * @since 1.0.0-rc.18

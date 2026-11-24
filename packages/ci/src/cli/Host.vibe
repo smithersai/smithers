@@ -17,6 +17,7 @@
  */
 
 import { NodeStdio, NodeTerminal } from "@effect/platform-node"
+import type * as NodeControlModule from "@smthrs/cli/NodeControl"
 import { WebCrypto } from "@smthrs/crypto"
 import { FlowEngine } from "@smthrs/engine"
 import { Evaluator } from "@smthrs/model"
@@ -70,7 +71,7 @@ export const modelEnvironment = (environment: Environment): Environment =>
  */
 export const judge = (
   environment: Environment,
-  load: () => Promise<typeof import("@smthrs/cli/NodeControl")> = () => import("@smthrs/cli/NodeControl")
+  load: () => Promise<typeof NodeControlModule> = () => import("@smthrs/cli/NodeControl")
 ) =>
   Layer.effect(Evaluator.Evaluator, effect {
     // The judge lives as long as this layer does, whichever judgment built it.

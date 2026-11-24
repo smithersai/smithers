@@ -123,8 +123,13 @@ export const make = (options: DirectorySandboxOptions): Provider => {
           })
         )
       }
-      const workdir = attachedDirectory ?? `${root}/${sessionSlug(sessionKey)}`
-      const attachOnly = attachedDirectory !== undefined
+      const legacyDirectory = `${root}/${legacySessionSlug(sessionKey)}`
+      const legacyExists = attachedDirectory === undefined && seed === undefined &&
+        (yield* options.fs.exists(legacyDirectory).pipe(
+          Effect.mapError(failure("unavailable", "legacy scratch workspace lookup failed"))
+        ))
+      const workdir = attachedDirectory ?? (legacyExists ? legacyDirectory : `${root}/${sessionSlug(sessionKey)}`)
+      const attachOnly = attachedDirectory !== undefined || legacyExists
       if (
         attachOnly &&
         !(yield* options.fs.exists(workdir).pipe(

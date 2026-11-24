@@ -1188,16 +1188,42 @@ describe("SandboxTools rebase", () => {
         ...overrides
       })
       const decode = (overrides: Partial<Run>) => Effect.result(SandboxTools.rebased(ran(overrides)))
-      expect(yield* decode({ stdout: "current t1\n" })).toMatchObject({ success: { _tag: "Current", tree: "t1" } })
-      expect(yield* decode({ stdout: "unrelated t1\n" })).toMatchObject({ success: { _tag: "Unrelated" } })
-      expect(yield* decode({ stdout: "conflict t1 4\n" })).toMatchObject({ success: { _tag: "Conflicted", paths: 4 } })
-      expect(yield* decode({ stdout: "clean t1 r1 2\n" })).toMatchObject({
-        success: { _tag: "Planned", tree: "t1", result: "r1", paths: 2 }
+      const before = "1".repeat(40)
+      const after = "a".repeat(64)
+      expect(yield* decode({ stdout: `current ${before}\n` })).toMatchObject({
+        success: { _tag: "Current", tree: before }
       })
-      expect(yield* decode({ stdout: "moved t2\n" })).toMatchObject({ success: { _tag: "Moved", tree: "t2" } })
-      expect(yield* decode({ stdout: "applied t1 r1 0\n" })).toMatchObject({ success: { _tag: "Applied", paths: 0 } })
-      expect(yield* decode({ stdout: "merged t1\n" })).toMatchObject({ failure: { code: "unknown" } })
-      expect(yield* decode({ stdout: "current\n" })).toMatchObject({ failure: { code: "unknown" } })
+      expect(yield* decode({ stdout: `unrelated ${before}\n` })).toMatchObject({
+        success: { _tag: "Unrelated", tree: before }
+      })
+      expect(yield* decode({ stdout: `conflict ${before} 4\n` })).toMatchObject({
+        success: { _tag: "Conflicted", paths: 4 }
+      })
+      expect(yield* decode({ stdout: `clean ${before} ${after} 2\n` })).toMatchObject({
+        success: { _tag: "Planned", tree: before, result: after, paths: 2 }
+      })
+      expect(yield* decode({ stdout: `moved ${after}\n` })).toMatchObject({ success: { _tag: "Moved", tree: after } })
+      expect(yield* decode({ stdout: `applied ${before} ${after} 0\n` })).toMatchObject({
+        success: { _tag: "Applied", paths: 0 }
+      })
+      for (
+        const stdout of [
+          `merged ${before}`,
+          "current",
+          "current abc",
+          `current ${before} extra`,
+          `conflict ${before} nope`,
+          `conflict ${before} -1`,
+          `conflict ${before} 9007199254740992`,
+          `clean ${before}`,
+          `applied ${before} notasha 1`,
+          `applied ${before} ${after} 1 extra`
+        ]
+      ) {
+        expect(yield* decode({ stdout })).toMatchObject({
+          failure: new SandboxTools.ToolUnavailable({ code: "unknown" })
+        })
+      }
       expect(yield* decode({ timedOut: true, exitCode: 124 })).toMatchObject({ failure: { code: "timeout" } })
       expect(yield* decode({ exitCode: 125 })).toMatchObject({ failure: { code: "unknown", exitCode: 125 } })
       expect(

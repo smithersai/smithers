@@ -59,6 +59,7 @@ const kept = 64 * 1024
 const nodeWarning = /^\(node:\d+\)\s+\w*Warning:|^\(Use `node --trace-warnings /
 // A terminal control sequence, or else one escape character. Removing a sequence can join an escape character before
 // it to the text after it as a new sequence (`ESC ESC [ m [ 3 1 m`), so no escape character is left.
+// eslint-disable-next-line no-control-regex -- The escape character is what this expression removes.
 const ansiControl = /\u001b\[[0-?]*[ -/]*[@-~]|\u001b/g
 
 // The last complete refusal, even if an earlier log line has an unmatched brace. A frame
@@ -152,12 +153,12 @@ const otherHostLabels = (files: ReadonlyArray<GeneratedFile>, host: string = thi
   if (declaration === undefined) return new Set()
   const otherSteps = new Set<string>()
   for (const match of declaration.content.matchAll(/^const (step\d+) = S\.Shell\.(?:Build|Test)\(\{([\s\S]*?)^\}\)/gm)) {
-    const pinned = /^  hosts: \["([a-z0-9]+)"\]/m.exec(match[2]!)
+    const pinned = /^ {2}hosts: \["([a-z0-9]+)"\]/m.exec(match[2]!)
     if (pinned !== null && pinned[1] !== host) otherSteps.add(match[1]!)
   }
   if (otherSteps.size === 0) return new Set()
   const labels = new Set<string>()
-  for (const match of declaration.content.matchAll(/^    "([^"]+)": (step\d+)/gm)) {
+  for (const match of declaration.content.matchAll(/^ {4}"([^"]+)": (step\d+)/gm)) {
     if (otherSteps.has(match[2]!)) labels.add(`//:${match[1]!}`)
   }
   return labels

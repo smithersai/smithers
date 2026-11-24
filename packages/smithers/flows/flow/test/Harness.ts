@@ -19,8 +19,9 @@ export const effect = (
 /** Registers an Effect test that runs with concrete cryptography over a fresh `TestClock`. */
 export const effectOnTestClock = (
   name: string,
-  body: () => Effect.Effect<void, unknown, (EffectDigest.Digest | SecureRandom.SecureRandom)>
-) => it.effect(name, () => withCrypto(body().pipe(Effect.provide(TestClock.layer()))))
+  body: () => Effect.Effect<void, unknown, (EffectDigest.Digest | SecureRandom.SecureRandom)>,
+  timeout?: number
+) => it.effect(name, () => withCrypto(body().pipe(Effect.provide(TestClock.layer()))), timeout)
 
 /** Whether a polled result is the execution's completion. */
 export const isComplete = <A, E>(result: Flow.Result<A, E>): boolean => result._tag === "Complete"

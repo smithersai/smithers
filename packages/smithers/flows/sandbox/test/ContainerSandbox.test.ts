@@ -15,6 +15,8 @@ import { chmodSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import * as ContainerSandbox from "../src/ContainerSandbox/index.ts"
+import { configurationFingerprint } from "../src/internal/configurationFingerprint.ts"
+import { legacySessionSlug } from "../src/internal/sessionSlug.ts"
 import { ProviderError } from "../src/RemoteChildProcessSpawner/ProviderError.ts"
 import type { Session } from "../src/Sandbox/index.ts"
 import * as SandboxConformance from "../src/SandboxConformance/index.ts"
@@ -277,6 +279,39 @@ const output = (session: Session, command: string, options: Parameters<Session["
   )
 
 describe("ContainerSandbox", () => {
+  it.effect("adopts an owned legacy container and preserves its workspace", () =>
+    Effect.gen(function*() {
+      const fake = engine()
+      const key = "legacy/container"
+      const name = `smthrs-sbx-${legacySessionSlug(key)}`
+      const fingerprint = yield* configurationFingerprint({
+        provider: "ContainerSandbox/v1",
+        owner: key,
+        name,
+        image: "img",
+        workdir,
+        network: "none",
+        env: {},
+        createArgs: []
+      })
+      fake.containers.set(name, {
+        started: true,
+        env: {},
+        inspect: {
+          Config: { Image: "img", WorkingDir: workdir, Labels: { "smithers.dev/sandbox-fingerprint": fingerprint } },
+          HostConfig: { NetworkMode: "none", Privileged: false },
+          Mounts: []
+        }
+      })
+      const session = yield* acquired(
+        ContainerSandbox.make({ spawner: fake.spawner, image: "img", workdir }),
+        Effect.succeed,
+        key
+      )
+      expect(session.remoteId).toBe(name)
+      expect(fake.calls.filter((call) => call.args[0] === "create")).toEqual([])
+      expect(fake.containers.size).toBe(0)
+    }))
   it.effect("bounds stalled process signalling on the platform timer", () =>
     stalledFinalizer((stall) => {
       const fake = engine((args) => args.at(-1)?.includes("kill -s TERM") === true ? { wait: stall } : undefined)
@@ -451,7 +486,7 @@ describe("ContainerSandbox", () => {
     Effect.gen(function*() {
       const fake = engine()
       yield* acquired(ContainerSandbox.make({ spawner: fake.spawner, image: "img", workdir }), Effect.succeed)
-      expect(fake.calls[0]!.args.map(plainWord).slice(0, 7)).toEqual([
+      expect(fake.calls.find((call) => call.args[0] === "create")!.args.map(plainWord).slice(0, 7)).toEqual([
         "create",
         "--name",
         expect.stringMatching(/^smthrs-sbx-run-1-/),
@@ -477,7 +512,10 @@ describe("ContainerSandbox", () => {
         ContainerSandbox.make({ spawner: fake.spawner, image: "img", workdir, network: "none" }),
         Effect.succeed
       )
-      expect(fake.calls[0]!.args.map(plainWord).slice(5, 7)).toEqual(["--network", "none"])
+      expect(fake.calls.find((call) => call.args[0] === "create")!.args.map(plainWord).slice(5, 7)).toEqual([
+        "--network",
+        "none"
+      ])
     }))
 
   it.effect("maps the neutral `open` network to the engine's bridge network, never a network named open", () =>
@@ -487,7 +525,10 @@ describe("ContainerSandbox", () => {
         ContainerSandbox.make({ spawner: fake.spawner, image: "img", workdir, network: "open" }),
         Effect.succeed
       )
-      expect(fake.calls[0]!.args.map(plainWord).slice(5, 7)).toEqual(["--network", "bridge"])
+      expect(fake.calls.find((call) => call.args[0] === "create")!.args.map(plainWord).slice(5, 7)).toEqual([
+        "--network",
+        "bridge"
+      ])
     }))
 
   it.effect("hands exec the cwd `Sandbox.fileSystem` would name for a relative path", () =>
@@ -521,11 +562,13 @@ describe("ContainerSandbox", () => {
         }),
         Effect.succeed
       )
-      const create = limited.calls[0]!.args.map(plainWord)
+      const create = limited.calls.find((call) => call.args[0] === "create")!.args.map(plainWord)
       expect(create.slice(7, 11)).toEqual(["--cpus", "1.5", "--memory", "512m"])
       expect(create.slice(-3)).toEqual(["img", "sleep", "90"])
-      expect(unlimited.calls[0]!.args.map(plainWord)).not.toContain("--cpus")
-      expect(labelOf(create)).not.toBe(labelOf(unlimited.calls[0]!.args.map(plainWord)))
+      expect(unlimited.calls.find((call) => call.args[0] === "create")!.args.map(plainWord)).not.toContain("--cpus")
+      expect(labelOf(create)).not.toBe(
+        labelOf(unlimited.calls.find((call) => call.args[0] === "create")!.args.map(plainWord))
+      )
     }))
 
   it("refuses createArgs that would override a neutral ceiling when make is called", () => {
@@ -578,8 +621,8 @@ describe("ContainerSandbox", () => {
       expect(session.id).toBe("run-1")
       expect(session.remoteId.startsWith("t-run-1-")).toBe(true)
       expect(session.workdir).toBe(spaced)
-      expect(calls.map((call) => call.file)).toEqual(["podman", "podman", "podman", "podman"])
-      expect(calls[0]!.args.map(plainWord)).toEqual([
+      expect(calls.map((call) => call.file)).toEqual(["podman", "podman", "podman", "podman", "podman"])
+      expect(calls[1]!.args.map(plainWord)).toEqual([
         "create",
         "--name",
         session.remoteId,
@@ -597,15 +640,15 @@ describe("ContainerSandbox", () => {
         "sleep",
         "infinity"
       ])
-      expect(calls[1]!.args.map(plainWord)).toEqual(["start", session.remoteId])
-      expect(calls[2]!.args.map(plainWord)).toEqual([
+      expect(calls[2]!.args.map(plainWord)).toEqual(["start", session.remoteId])
+      expect(calls[3]!.args.map(plainWord)).toEqual([
         "exec",
         session.remoteId,
         "/bin/sh",
         "-c",
         `mkdir -p '${spaced}' && rm -rf /tmp/.smthrs-sbx && mkdir -p /tmp/.smthrs-sbx`
       ])
-      expect(calls[3]!.args.map(plainWord)).toEqual(["rm", "--force", session.remoteId])
+      expect(calls[4]!.args.map(plainWord)).toEqual(["rm", "--force", session.remoteId])
     }))
 
   it.effect("uses /bin/sh for every provider-owned helper", () =>
@@ -664,7 +707,7 @@ describe("ContainerSandbox", () => {
       )
       expect(refusal).toBeInstanceOf(ProviderError)
       expect((refusal as ProviderError).message).toContain("no such image")
-      expect(refusing.calls[0]!.args.map(plainWord)).toContain("/workspace")
+      expect(refusing.calls.find((call) => call.args[0] === "create")!.args.map(plainWord)).toContain("/workspace")
 
       // A conflict the engine words in some other language is still a
       // conflict. The reattach asks the engine whether the container is there
@@ -703,7 +746,7 @@ describe("ContainerSandbox", () => {
       const verbs = fake.calls.slice(before).map((call) => call.args.map(plainWord).slice(0, 2).join(" "))
       // Refused create, the conflict inspect sees `removing`, two polls
       // (removing, gone), then the replacement is created and started.
-      expect(verbs.slice(0, 5)).toEqual([
+      expect(verbs.slice(1, 6)).toEqual([
         "create --name",
         "container inspect",
         "container inspect",

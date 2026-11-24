@@ -279,6 +279,84 @@ const output = (session: Session, command: string, options: Parameters<Session["
   )
 
 describe("VercelSandbox", () => {
+  it.effect("adopts a legacy machine through native get without creating or resuming during lookup", () =>
+    Effect.gen(function*() {
+      const fake = fakeSdk()
+      const name = "smthrs-run-1-104febd83c9d57fc"
+      const held = yield* Effect.promise(() => fake.sdk.Sandbox.getOrCreate({ name }))
+      fake.recorded.acquired.length = 0
+      const lookups: Array<Parameters<NonNullable<Sdk["Sandbox"]["get"]>>[0]> = []
+      const provider = VercelSandbox.make({
+        sdk: {
+          Sandbox: {
+            ...fake.sdk.Sandbox,
+            get: async (input) => {
+              lookups.push(input)
+              return held
+            }
+          }
+        },
+        workdir: dir("legacy-migration")
+      })
+      const session = yield* acquired(provider, Effect.succeed)
+      expect(session.remoteId).toBe(name)
+      expect(lookups).toEqual([{ name, resume: false }])
+      expect(fake.recorded.acquired).toEqual([])
+    }))
+
+  it.effect("creates the SHA-256 identity only after native get reports HTTP 404", () =>
+    Effect.gen(function*() {
+      const fake = fakeSdk()
+      const provider = VercelSandbox.make({
+        sdk: {
+          Sandbox: {
+            ...fake.sdk.Sandbox,
+            get: async () => {
+              throw Object.assign(new Error("not found"), { response: new Response(null, { status: 404 }) })
+            }
+          }
+        },
+        workdir: dir("legacy-absent")
+      })
+      const session = yield* acquired(provider, Effect.succeed)
+      expect(session.remoteId).toMatch(/^smthrs-run-1-[a-f0-9]{32}$/)
+      expect(fake.recorded.acquired).toHaveLength(1)
+      expect(fake.recorded.acquired[0]!.name).toBe(session.remoteId)
+    }))
+
+  it.effect("propagates native lookup failures without creating or treating unrelated errors as absence", () =>
+    Effect.gen(function*() {
+      const failures: ReadonlyArray<unknown> = [
+        new Error("transport unavailable"),
+        null,
+        "not_found",
+        { code: "not_found" },
+        { status: 404 },
+        { statusCode: 404 },
+        { response: null },
+        { response: "404" },
+        { response: {} },
+        { response: { status: "404" } },
+        ...[401, 403, 410, 429, 503].map((status) => ({ response: new Response(null, { status }) }))
+      ]
+      for (const failure of failures) {
+        const fake = fakeSdk()
+        const provider = VercelSandbox.make({
+          sdk: {
+            Sandbox: {
+              ...fake.sdk.Sandbox,
+              get: async () => {
+                throw failure
+              }
+            }
+          },
+          workdir: dir("legacy-unavailable")
+        })
+        expect(yield* Effect.flip(acquired(provider, Effect.succeed))).toMatchObject({ code: "unavailable" })
+        expect(fake.recorded.acquired).toEqual([])
+        expect(fake.recorded.stopped).toEqual([])
+      }
+    }))
   for (const operation of ["remove", "release"] as const) {
     it.effect(`bounds stalled ${operation} on the platform timer`, () =>
       stalledFinalizer((stall) => {

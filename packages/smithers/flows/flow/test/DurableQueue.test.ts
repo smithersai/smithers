@@ -622,11 +622,14 @@ describe("DurableQueue", () => {
     )
     return Effect.gen(function*() {
       const id = yield* Flow_.execute({ id: "private-payload", value: 41 }, { discard: true })
-      for (let turn = 0; turn < 500 && writes === 0; turn++) yield* Effect.yieldNow
-      expect(writes).toBe(1)
+      for (let turn = 0; turn < 500 && writes < 2; turn++) yield* Effect.yieldNow
+      // This fixture runtime applies no retry policy, so the completion step gives up after its one refused write
+      // and the worker tries the recorded exit once more itself before the item is left for redelivery.
+      expect(writes).toBe(2)
       expect(handled).toBe(1)
       expect(Option.isSome(yield* Flow_.poll(id))).toBe(true)
       expect(logs.some((line) => line.includes("completion is retried"))).toBe(true)
+      expect(logs.some((line) => line.includes("the recorded handler result is delivered again"))).toBe(true)
       const telemetry = JSON.stringify({
         logs,
         spans: spans.map((span) => ({
@@ -765,6 +768,88 @@ describe("DurableQueue", () => {
         .toEqual(["handled once"])
     }).pipe(Effect.provide(PersistedQueueLayer))
   })
+
+  // The completion step retries for a day and then gives up. The handler's exit is already recorded, so the item's
+  // execution ends holding it and every later delivery records it against the caller's deferred, outside the ended
+  // execution, until the store takes it. The caller is then resumed, the item acknowledged, and nothing redelivered.
+  effect("a completion store that returns after the retry window still delivers the recorded handler exit", () => {
+    const itemFlow = `DurableQueue/${Queue.name}/item`
+    // The completion's day of retries.
+    const window = DurableQueue.completionRetryPolicy.expirationMs!
+    let down = true
+    let handled = 0
+    let executions = 0
+    let refused = 0
+    let recorded = 0
+    const runtime = Layer.effect(FlowRuntime.FlowRuntime)(Effect.gen(function*() {
+      const base = yield* FlowRuntime.FlowRuntime
+      return FlowRuntime.FlowRuntime.of({
+        ...base,
+        execute: ((flow, options) =>
+          Effect.suspend(() => {
+            if (flow._tag === itemFlow) executions++
+            return base.execute(flow, options)
+          })) as typeof base.execute,
+        deferredDone: (deferred, options) =>
+          Effect.suspend(() => {
+            if (!options.deferredName.startsWith(Queue.deferred.name)) return base.deferredDone(deferred, options)
+            if (down) {
+              refused++
+              return Effect.die("the completion store is unavailable")
+            }
+            recorded++
+            return base.deferredDone(deferred, options)
+          })
+      })
+    })).pipe(Layer.provide(FlowEngine.layerMemory))
+    const layer = Layer.mergeAll(
+      Offer.toLayer((payload) => DurableQueue.process(Queue, payload)),
+      Interpreter.layer(Flow_),
+      DurableQueue.worker(Queue, ({ value }) => Effect.sync(() => (handled++, value + 1)))
+    ).pipe(
+      Layer.provideMerge(Action.layerImplementations),
+      Layer.provideMerge(runtime),
+      Layer.provideMerge(PersistedQueueLayer)
+    )
+    const redelivered = Metric.withAttributes(
+      Metric.counter("flows_durable_queue_items_total", {
+        description: "Items a DurableQueue worker finished, by queue and outcome",
+        incremental: true
+      }),
+      { queue: Queue.name, outcome: "redelivered" }
+    )
+    return Effect.gen(function*() {
+      const id = yield* Flow_.execute({ id: "expired", value: 41 }, { discard: true })
+      // Past the completion's day of retries, with the store down throughout: the step's every try, a minute apart.
+      for (let elapsed = 0; elapsed <= window + 7_200_000; elapsed += 3_600_000) {
+        yield* TestClock.adjust("1 hour")
+        for (let turn = 0; turn < 100; turn++) yield* Effect.yieldNow
+      }
+      expect(refused).toBeGreaterThan(window / 60_000)
+      expect(handled).toBe(1)
+      expect(recorded).toBe(0)
+      // The step gave up: the worker now delivers the recorded exit itself, and each refusal redelivers the item.
+      const redeliveriesWhileDown = (yield* Metric.value(redelivered)).count
+      expect(redeliveriesWhileDown).toBeGreaterThan(0)
+      const pending = yield* Flow_.poll(id)
+      expect(Option.isSome(pending) && pending.value._tag === "Complete").toBe(false)
+
+      down = false
+      const result = yield* pollUntil(Flow_.poll(id), isComplete, { turns: 500, advance: "1 minute" })
+      expect(Option.isSome(result) && result.value._tag === "Complete" && result.value.exit).toEqual(Exit.succeed(42))
+      expect({ handled, recorded }).toEqual({ handled: 1, recorded: 1 })
+
+      // Acknowledged: no delivery follows, however long the queue is left.
+      const settled = { executions, refused, redeliveries: (yield* Metric.value(redelivered)).count }
+      for (let turn = 0; turn < 24; turn++) {
+        yield* TestClock.adjust("1 hour")
+        for (let inner = 0; inner < 100; inner++) yield* Effect.yieldNow
+      }
+      expect({ executions, refused, redeliveries: (yield* Metric.value(redelivered)).count }).toEqual(settled)
+      expect({ handled, recorded }).toEqual({ handled: 1, recorded: 1 })
+    }).pipe(Effect.provide(layer), Effect.provideService(Metric.MetricRegistry, new Map()))
+    // Some 1,500 retried steps: seconds alone, more beside the rest of the suite under coverage.
+  }, 300_000)
 
   const itemFor = (id: string) => ({
     token: new DurableDeferred.TokenParsed({

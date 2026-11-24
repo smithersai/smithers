@@ -214,7 +214,7 @@ export const make = (
         // arriving between selection and spawn reaches the spawn through this
         // race, before the handle guard exists. Everything after that is the
         // guard's job.
-        const open = yield* Effect.mapError(session, platformFailure("open"))
+        const open = yield* Effect.catch(session, platformFailure("open"))
         const handle = yield* Effect.raceFirst(open.spawner.spawn(command), Deferred.await(open.failed))
         yield* Effect.yieldNow
         return yield* guarded(handle, open.failed)

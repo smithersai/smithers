@@ -3,6 +3,7 @@ import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
 import * as NodePath from "@effect/platform-node/NodePath"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
+import * as Fiber from "effect/Fiber"
 import * as Layer from "effect/Layer"
 import * as PlatformError from "effect/PlatformError"
 import * as ChildProcess from "effect/process/ChildProcess"
@@ -130,6 +131,74 @@ describe.skipIf(!jjInstalled)("the target as a jj bookmark", { timeout: 120_000 
     expect(repo.head()).toBe(commit)
     expect(repo.files()).toEqual(["base.txt", "one.txt", "two.txt"])
     expect(await run(queue.tip)).toEqual(tree([1, 0], [2, 0]))
+  })
+
+  it.each([1, 2, 3, 4])("abandons duplicates when post-duplicate query %i fails", async (failedQuery) => {
+    const repo = repository()
+    const source = repo.change("one.txt", "one\n")
+    const visible = () =>
+      repo.jj("log", "--no-graph", "-r", "all()", "-T", "commit_id ++ \"\\n\"").trim().split("\n").sort()
+    const before = visible()
+    let duplicated = false
+    let queries = 0
+    let abandoned = 0
+    const faulty = Layer.provideMerge(
+      Layer.effect(
+        ChildProcessSpawner,
+        Effect.map(ChildProcessSpawner, (real) =>
+          ChildProcessSpawnerModule.make((command) => {
+            if (command._tag === "StandardCommand" && command.command === "jj") {
+              if (command.args.includes("duplicate")) duplicated = true
+              if (command.args.includes("abandon")) abandoned++
+              if (duplicated && command.args.includes("log") && ++queries === failedQuery) {
+                return Effect.fail(PlatformError.systemError({
+                  _tag: "Unknown",
+                  module: "fixture",
+                  method: "spawn",
+                  description: "post-duplicate query unavailable"
+                }))
+              }
+            }
+            return real.spawn(command)
+          }))
+      ),
+      host
+    )
+    const error = await Effect.runPromise(
+      Effect.gen(function*() {
+        const queue = yield* JjRepository.make(repo.options)
+        yield* queue.register({ id: 1, rev: 0 }, source)
+        return yield* Effect.flip(queue.candidate(tree([1, 0]), 0))
+      }).pipe(Effect.provide(faulty))
+    )
+    expect(error).toMatchObject({
+      service: "target",
+      detail: expect.stringContaining("post-duplicate query unavailable")
+    })
+    expect(abandoned).toBe(1)
+    expect(visible()).toEqual(before)
+  })
+
+  it("abandons duplicates when a running finish is interrupted", async () => {
+    const repo = repository()
+    const source = repo.change("one.txt", "one\n")
+    const marker = join(repo.path, ".jj", "finish-started")
+    const visible = () =>
+      repo.jj("log", "--no-graph", "-r", "all()", "-T", "commit_id ++ \"\\n\"").trim().split("\n").sort()
+    const before = visible()
+    const queue = await run(JjRepository.make({
+      ...repo.options,
+      finish: () => ({ command: "sh", args: ["-c", "echo started > \"$1\"; exec sleep 60", "sh", marker] })
+    }))
+    await run(queue.register({ id: 1, rev: 0 }, source))
+    await run(Effect.gen(function*() {
+      const fiber = yield* Effect.forkChild(queue.candidate(tree([1, 0]), 0))
+      yield* Effect.promise(() => vi.waitFor(() => expect(readFileSync(marker, "utf8")).toBe("started\n")))
+      yield* Fiber.interrupt(fiber)
+    }))
+    expect(visible()).toEqual(before)
+    const ledger = JSON.parse(readFileSync(repo.options.ledger, "utf8"))
+    expect(ledger.candidates).toEqual([])
   })
 
   it("two candidates that start with the same parts share those commits, so landing one never strands the other", async () => {

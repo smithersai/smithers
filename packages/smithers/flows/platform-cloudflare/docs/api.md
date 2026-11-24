@@ -927,10 +927,12 @@ declare const make: <E, R>(
   image's user when absent), in `options.workdir` unless the command names a `cwd`; a relative `cwd` is under the
   workdir. A deployed container's `exec` refuses a user name and runs a bare `uid` as root, so a session given anything
   but `uid:gid` fails every command with `ProviderError` code `spawn_error` before it reaches the container.
-- `options.env` reaches every command, under the command's own variables. A command inherits only `PATH` from the
-  image, so `env` carries the rest, such as `HOME`.
+- `options.env` reaches every command, under the command's own variables. An explicit command value of
+  `undefined` removes the variable from the merged environment and unsets it in the guest shell, including image defaults.
 - A command's input is fed beside its output, so one that writes before it has read all its input doesn't stall.
-- `readFile` and `writeFile` are commands (`cat`), so the container needs only `sh` and `cat`; `readFile` of an absent
+- `readFile` uses a bounded `head` command and collects at most `options.maxFileBytes` (default 4 MiB).
+  `writeFile` uses `cat` and waits for complete stdin delivery; an early-exiting ordinary command settles without waiting on stalled stdin.
+  The container needs `sh`, `cat` and `head`; `readFile` of an absent
   path or a directory fails `not_found`, and `writeFile` makes the file's directories.
 - `ping` runs `true`.
 - It starts nothing: wake the container (`SandboxObject.wake`) before handing the session out. A failure of the

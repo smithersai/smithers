@@ -42,7 +42,8 @@ import {
   hashTree,
   journeyHost,
   nativeHelperAvailable,
-  sandboxAvailable
+  sandboxAvailable,
+  unconfinedNode
 } from "../fixtures/helpers.ts"
 
 const golden = readFileSync(
@@ -1048,7 +1049,7 @@ describe("apply under the canonical project's lock", () => {
           committed(root)
           const source = join(root, "simple-workflow.jsx")
           const original = readFileSync(source, "utf8")
-          const held = yield* Lock.acquire({ root, reportDir: originalReport }).pipe(Effect.provide(NodeServices.layer))
+          const held = yield* Lock.acquire({ root, reportDir: originalReport }).pipe(Effect.provide(unconfinedNode))
           const backupDir = join(root, originalReport, "backup")
           const checkpoint = yield* Checkpoint.take({
             root,
@@ -1085,7 +1086,7 @@ describe("apply under the canonical project's lock", () => {
       // Held by this process, which is alive: exactly what a concurrent apply
       // in another process looks like to the lock.
       const held = yield* Lock.acquire({ root, reportDir: ".smithers-migrate" }).pipe(
-        Effect.provide(NodeServices.layer)
+        Effect.provide(unconfinedNode)
       )
 
       const failure = yield* Effect.flip(apply(root, { reportDir: "audit" }))

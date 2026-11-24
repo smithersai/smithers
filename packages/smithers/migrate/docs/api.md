@@ -24,8 +24,8 @@ smthrs migrate --apply --seat anthropic:claude-sonnet-4-5
 
 ## Import forms
 
-The root entry point exports the scanner modules, plus `Contract`, `Gate`, and
-`Options`, as namespaces. Each is also importable from its own subpath:
+The root entry point exports the scanner modules, plus `SqliteStore`,
+`Contract`, `Gate`, and `Options`, as namespaces. Each is also importable from its own subpath:
 
 ```ts
 import { Detect, Inventory, Mapping, Report, RunState, Scan, Units } from "@smthrs/migrate"
@@ -46,7 +46,8 @@ import * as Command from "@smthrs/migrate/flow/Command"
 map. `@smthrs/migrate/package.json` is exported.
 
 Every scanner is an Effect requiring `FileSystem.FileSystem` and `Path.Path`,
-and every one fails with `MigrateError`. See
+and every one fails with `MigrateError`. A scan that reads a 0.x database also
+needs a SQLite engine: see [`SqliteStore`](#sqlitestore). See
 [Read a project from your own script](./guides/embed-the-scanners.md) for a
 runnable composition.
 
@@ -750,16 +751,16 @@ session and cache are released when the scan ends.
 
 ### Exports
 
-| Export                | Signature                                                                                                             | What it is                                                                             |
-| --------------------- | --------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
-| `scan`                | `(root: string, detection: Detection, options?: Options) => Effect<RunStateReport, MigrateError, FileSystem \| Path>` | The read-only run-state pass.                                                          |
-| `RunStateReport`      | `interface`                                                                                                           | The verdict, the databases, the backends, the state directories, and the instructions. |
-| `roots`               | `(report: RunStateReport) => ReadonlyArray<string>`                                                                   | Every project-relative directory run state lives in, nested ones folded in.            |
-| `instructionText`     | `{ live, parked, archive, backend }`                                                                                  | The four operator texts, rendered verbatim into the report and onto stderr.            |
-| `readDatabase`        | `(file, relativePath, siblings, now, liveWindowMs) => DatabaseFinding`                                                | Opens one SQLite file read only. A throw becomes `readable: false`.                    |
-| `terminalStatuses`    | `ReadonlyArray<string>`                                                                                               | `finished`, `failed`, `cancelled`, `continued`. Everything else blocks.                |
-| `defaultLiveWindowMs` | `number`                                                                                                              | How recent a heartbeat must be for a run to count as live: ten minutes.                |
-| `Options`             | `interface`                                                                                                           | The clock and the live window a scan uses.                                             |
+| Export                | Signature                                                                                                             | What it is                                                                                  |
+| --------------------- | --------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| `scan`                | `(root: string, detection: Detection, options?: Options) => Effect<RunStateReport, MigrateError, FileSystem \| Path>` | The read-only run-state pass.                                                               |
+| `RunStateReport`      | `interface`                                                                                                           | The verdict, the databases, the backends, the state directories, and the instructions.      |
+| `roots`               | `(report: RunStateReport) => ReadonlyArray<string>`                                                                   | Every project-relative directory run state lives in, nested ones folded in.                 |
+| `instructionText`     | `{ live, parked, archive, backend }`                                                                                  | The four operator texts, rendered verbatim into the report and onto stderr.                 |
+| `readDatabase`        | `(file, relativePath, siblings, now, liveWindowMs) => Effect<DatabaseFinding>`                                        | Reads one SQLite file read only through `SqliteStore`. A failure becomes `readable: false`. |
+| `terminalStatuses`    | `ReadonlyArray<string>`                                                                                               | `finished`, `failed`, `cancelled`, `continued`. Everything else blocks.                     |
+| `defaultLiveWindowMs` | `number`                                                                                                              | How recent a heartbeat must be for a run to count as live: ten minutes.                     |
+| `Options`             | `interface`                                                                                                           | The clock and the live window a scan uses.                                                  |
 
 The finding types are `RunRow`, `DatabaseFinding`, `ExternalDatabase`,
 `BackendSetting`, and `StateDir`.
@@ -770,13 +771,15 @@ file, and never connects to Postgres.
 
 It opens each candidate SQLite file (`smithers.db`, `.smithers/smithers.db`,
 every `dbPath:` literal in project source, every `SMITHERS_DB` value in a
-dotenv file) with `node:sqlite` in read-only mode and records the
+dotenv file) read only, through the host's [`SqliteStore`](#sqlitestore), and records the
 `_smithers_*` tables, the migration count and highest id, the runs grouped by
 status, and every row whose status is not `finished`, `failed`, `cancelled`, or
 `continued`. A row whose `heartbeat_at_ms` is within ten minutes of `now` is
 `live`; anything older is `parked`. A database that will not open is recorded
 as unreadable and blocks exactly as a live run does, because the tool cannot
 prove the project has no work in flight.
+A host that provides no SQLite engine is the same case: every database is
+unreadable, and the scan blocks.
 
 Postgres and PGlite are recorded from settings: `backend:` in
 `smithers.config.ts`, `createSmithersPostgres(`, `SMITHERS_BACKEND`,
@@ -810,6 +813,48 @@ found run state in: the state directories, and the parent of each database and
 gateway state file, with nested roots folded into their parents. A checkpoint
 records that list so `Checks.run` can prove nothing was added under any of
 them.
+
+## SqliteStore
+
+The SQLite seam. The run-state scan reads a 0.x database and an apply takes a
+SQLite writer lock, and both reach the engine through this service, so
+`import "@smthrs/migrate"` loads no SQLite module in a browser or a Worker.
+
+### Exports
+
+| Export        | Signature                                            | What it is                                                                           |
+| ------------- | ---------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| `SqliteStore` | `Context.Reference<Service>`                         | The host's SQLite engine. Its default fails every call with `reason: "unavailable"`. |
+| `Service`     | `interface`                                          | `read` and `lock`.                                                                   |
+| `Query`       | `(sql: string, ...parameters) => ReadonlyArray<Row>` | Runs one statement inside a `read`.                                                  |
+| `Row`         | `Readonly<Record<string, unknown>>`                  | One result row, by column name.                                                      |
+| `Lease`       | `{ release: Effect<void> }`                          | A held writer lock. Releasing twice does nothing.                                    |
+| `SqliteError` | `Data.TaggedError` with `reason` and `cause`         | `busy`, `failed`, or `unavailable`, with the engine's own error.                     |
+
+`Service.read(file, use)` opens `file` read only, calls `use` with a `Query`,
+and closes the database when `use` returns or throws. `Service.lock(file)`
+takes the reserved writer lock without waiting and fails with `busy` when
+another connection holds it.
+
+`SqliteStore` has a default, so no scanner gains a requirement. On Node,
+provide the engine from `@smthrs/migrate/SqliteStoreNode`, which is the one
+module in the package that imports `node:sqlite`:
+
+```ts
+import * as SqliteStoreNode from "@smthrs/migrate/SqliteStoreNode"
+
+const program = scan.pipe(Effect.provide(SqliteStoreNode.layer))
+```
+
+| Export    | Signature      | What it is                                 |
+| --------- | -------------- | ------------------------------------------ |
+| `layer`   | `Layer<never>` | Provides `SqliteStore` from `node:sqlite`. |
+| `service` | `Service`      | The same engine as a value.                |
+
+`Layers.layerNode`, `Layers.layerNodeScanned`, `Layers.layerPlan`, and
+`Layers.layerScripted` already provide it, so `Command.runNode` and the
+`smithers-migrate` binary need nothing more. Without it, a scan reports every
+database as unreadable and blocks, and `Lock.acquire` fails with `io`.
 
 ## Inventory
 
@@ -1282,7 +1327,8 @@ step refuse the same layouts.
 Import from `@smthrs/migrate/flow/Lock`. Every apply acquires one lock for the
 canonical project root, independently of its report directory. The authority
 is a SQLite writer transaction held until release, on the permanent file
-`.smithers-migrate/apply.lock.sqlite`. The adjacent JSON owner record is
+`.smithers-migrate/apply.lock.sqlite`, taken through the host's
+[`SqliteStore`](#sqlitestore). The adjacent JSON owner record is
 diagnostic: an incomplete record never authorizes a competing apply.
 
 | Export    | Signature                                                                 | What it is                                                                                                                                                            |

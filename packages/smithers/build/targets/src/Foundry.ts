@@ -120,10 +120,17 @@ export const FmtAttrs = Schema.Struct({
   sandbox: Schema.optional(Attr.Sandbox)
 })
 
+// Forge reads the Solidity trees its config names (`src`, `test`, `script`,
+// `libs`), and nothing derives them into the key. `data` is the only
+// declaration of them, so without it a cache hit would reuse a result while
+// those sources changed.
+const declaresSources = (attrs: { readonly data?: ReadonlyArray<unknown> | undefined }): boolean =>
+  (attrs.data?.length ?? 0) > 0
+
 const buildDefinition = Target.make("Foundry.Build", {
   attrs: BuildAttrs,
   kinds: ["build"],
-  cache: true,
+  cache: declaresSources,
   outputs: (attrs) => ({ cwd: ".", paths: attrs.outDirs }),
   implementation: () => Target.notImplemented("Foundry.Build")
 })
@@ -131,7 +138,7 @@ const buildDefinition = Target.make("Foundry.Build", {
 const testDefinition = Target.make("Foundry.Test", {
   attrs: TestAttrs,
   kinds: ["test"],
-  cache: true,
+  cache: declaresSources,
   implementation: () => Target.notImplemented("Foundry.Test")
 })
 
@@ -144,6 +151,7 @@ const fmtDefinition = Target.make("Foundry.Fmt", {
 
 /**
  * Compiles Solidity sources with forge and captures the declared output directories.
+ * Cached only when `data` declares the sources forge reads.
  *
  * @category targets
  * @since 0.1.0
@@ -152,6 +160,7 @@ export const Build = buildDefinition
 
 /**
  * Runs forge tests under the declared profile and service/data edges.
+ * Cached only when `data` declares the sources forge reads.
  *
  * @category targets
  * @since 0.1.0

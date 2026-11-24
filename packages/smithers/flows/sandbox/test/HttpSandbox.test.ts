@@ -1,17 +1,27 @@
 import { describe, expect, it } from "@effect/vitest"
-import { Effect, FileSystem, Stream } from "effect"
+import { Deferred, Effect, Exit, Fiber, FileSystem, Stream } from "effect"
 import * as HttpClient from "effect/http/HttpClient"
 import * as HttpClientError from "effect/http/HttpClientError"
 import * as HttpClientRequest from "effect/http/HttpClientRequest"
 import * as HttpClientResponse from "effect/http/HttpClientResponse"
 import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
-import { spawnSync } from "node:child_process"
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync } from "node:fs"
+import { spawn, spawnSync } from "node:child_process"
+import {
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync
+} from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterAll } from "vitest"
 import * as DirectorySandbox from "../src/DirectorySandbox/index.ts"
 import * as HttpSandbox from "../src/HttpSandbox/index.ts"
+import { uploadScript, uploadStage } from "../src/HttpSandbox/upload.ts"
 import type { RemoteOptions } from "../src/RemoteChildProcessSpawner/Provider.ts"
 import { ProviderError } from "../src/RemoteChildProcessSpawner/ProviderError.ts"
 import type * as Sandbox from "../src/Sandbox/index.ts"
@@ -261,12 +271,227 @@ describe("HttpSandbox", () => {
       const content = Uint8Array.from({ length: 2500 }, (_, index) => (index * 7) % 256)
       const path = `${session.workdir}/nested/blob.bin`
       yield* session.writeFile(path, content)
-      expect(offsets).toEqual([null, "1000", "1000", "2000"])
+      expect(offsets).toEqual(["0", "1000", "1000", "2000"])
       expect(Array.from(yield* session.readFile(path))).toEqual(Array.from(content))
       const empty = `${session.workdir}/empty`
       yield* session.writeFile(empty, new Uint8Array())
       expect((yield* session.readFile(empty)).length).toBe(0)
     }).pipe(Effect.scoped), 120_000)
+
+  it.live(
+    "late first deliveries cannot truncate either their completed upload or a newer replacement",
+    () =>
+      Effect.gen(function*() {
+        const provider = machines()
+        const handler = HttpSandbox.serve({ provider, token })
+        const delayed: Array<Request> = []
+        let first = true
+        const fault: Fault = (request, forward, lose) => {
+          if (request.method === "PUT" && new URL(request.url).searchParams.get("offset") === "0" && first) {
+            first = false
+            delayed.push(request.clone())
+            return lose
+          }
+          return forward
+        }
+        const session = yield* client(handler, { chunkBytes: 3, fault }).acquire("delayed-first")
+        const path = `${session.workdir}/nested/file`
+        const original = new TextEncoder().encode("original-complete")
+        yield* session.writeFile(path, original)
+        // The first delivery was already in flight; finish it through an independent handler.
+        const independent = HttpSandbox.serve({ provider, token })
+        expect((yield* independent(delayed[0]!.clone())).status).toBe(204)
+        expect(yield* session.readFile(path)).toEqual(original)
+        const replacement = new TextEncoder().encode("newer-file")
+        yield* session.writeFile(path, replacement)
+        expect((yield* independent(delayed[0]!.clone())).status).toBe(204)
+        expect(yield* session.readFile(path)).toEqual(replacement)
+      }).pipe(Effect.scoped),
+    60_000
+  )
+
+  it.live("bounds file output on the server and releases the provider scope on refusal", () =>
+    Effect.gen(function*() {
+      const actual = machines()
+      let released = 0
+      let reads = 0
+      const observed: Sandbox.Provider = {
+        ...actual,
+        attach: (handle) =>
+          Effect.gen(function*() {
+            yield* Effect.addFinalizer(() =>
+              Effect.sync(() => {
+                released++
+              })
+            )
+            const session = yield* actual.attach!(handle)
+            return {
+              ...session,
+              // GET must use the bounded process stream, never this whole-file API.
+              readFile: () => Effect.die("unbounded readFile"),
+              spawn: (command: string, options: RemoteOptions) =>
+                Effect.map(session.spawn(command, options), (child) => ({
+                  ...child,
+                  stdout: child.stdout.pipe(Stream.tap((chunk) =>
+                    Effect.sync(() => {
+                      reads += chunk.length
+                    })
+                  ))
+                }))
+            }
+          })
+      }
+      const handler = HttpSandbox.serve({ provider: observed, token, maxFileBytes: 1024 })
+      const session = yield* client(handler).acquire("server-budget")
+      const path = `${session.workdir}/file`
+      yield* session.writeFile(path, new Uint8Array(100_000))
+      reads = 0
+      const before = released
+      expect((yield* failureOf(session.readFile(path))).message).toBe("byte limit exceeded")
+      expect(reads).toBeLessThanOrEqual(1025)
+      expect(released).toBe(before + 1)
+      yield* session.writeFile(path, new Uint8Array([1, 2, 3]))
+      expect(yield* session.readFile(path)).toEqual(new Uint8Array([1, 2, 3]))
+    }).pipe(Effect.scoped), 60_000)
+
+  it.live(
+    "upload locks release after a killed writer and leave no receipts in the worktree",
+    () =>
+      Effect.gen(function*() {
+        const session = yield* machines().acquire("killed-upload")
+        const path = `${session.workdir}/file`
+        const receipt = fresh("upload-receipt")
+        const content = new TextEncoder().encode("complete")
+        const script = uploadScript(path, receipt, "killed-1", 0, content.length, content.length)
+        yield* Effect.scoped(Effect.gen(function*() {
+          // A process crash must release the OS lock even when no provider finalizer runs.
+          const child = yield* Effect.acquireRelease(
+            Effect.sync(() =>
+              spawn("sh", [
+                "-c",
+                script.replaceAll("cat >&3", "printf ready; sleep 3019; cat >&3")
+              ], { cwd: session.workdir, detached: true, stdio: ["pipe", "pipe", "pipe"] })
+            ),
+            (child) =>
+              Effect.sync(() => {
+                if (child.exitCode === null && child.signalCode === null) process.kill(-child.pid!, "SIGKILL")
+              })
+          )
+          const closed = new Promise<void>((resolve) => child.once("close", () => resolve()))
+          const ready = new Promise<void>((resolve, reject) => {
+            child.stdout.once("data", () => resolve())
+            child.once("error", reject)
+            child.once("exit", () => reject(new Error("writer exited before readiness")))
+          })
+          child.stderr.resume()
+          child.stdin.end(content)
+          yield* Effect.promise(() => ready).pipe(Effect.timeout("5 seconds"))
+          process.kill(-child.pid!, "SIGKILL")
+          yield* Effect.promise(() => closed)
+        }))
+        const retry = yield* runIn(session, script, { stdin: content })
+        expect(retry.code).toBe(0)
+        expect(Array.from(yield* session.readFile(path))).toEqual(Array.from(content))
+        expect(readdirSync(session.workdir)).toEqual(["file"])
+        // An upload may not redirect staging through a pre-planted symlink.
+        const victim = join(fresh("victim"), "file")
+        writeFileSync(victim, "kept")
+        symlinkSync(victim, uploadStage(path, "symlink"))
+        expect(
+          (yield* runIn(session, uploadScript(path, receipt, "symlink", 0, 1, 1), { stdin: new Uint8Array([1]) })).code
+        ).not.toBe(0)
+        expect(readFileSync(victim, "utf8")).toBe("kept")
+        const poisoned = join(fresh("poisoned-receipts"), "link")
+        symlinkSync(receipt, poisoned)
+        expect(
+          (yield* runIn(session, uploadScript(path, poisoned, "outside", 0, 1, 1), { stdin: new Uint8Array([1]) })).code
+        ).not.toBe(0)
+        for (const id of ["lock", "pending"]) {
+          expect((yield* runIn(session, uploadScript(path, receipt, id, 0, 1, 1), { stdin: new Uint8Array([2]) })).code)
+            .toBe(0)
+        }
+        const longPath = `${session.workdir}/line\n/${"x".repeat(255)}`
+        expect(
+          (yield* runIn(session, uploadScript(longPath, receipt, "long", 0, 1, 1), { stdin: new Uint8Array([3]) })).code
+        ).toBe(0)
+        expect(Array.from(yield* session.readFile(longPath))).toEqual([3])
+        expect(
+          (yield* runIn(session, uploadScript(session.workdir, receipt, "directory", 0, 1, 1), {
+            stdin: new Uint8Array([1])
+          })).code
+        ).not.toBe(0)
+      }).pipe(Effect.scoped),
+    60_000
+  )
+
+  it.live("preserves non-UTF8 files through a provider with text-only command output", () =>
+    Effect.gen(function*() {
+      const actual = machines()
+      const provider: Sandbox.Provider = {
+        ...actual,
+        attach: (handle) =>
+          Effect.map(actual.attach!(handle), (session) => ({
+            ...session,
+            spawn: (command: string, options: RemoteOptions) =>
+              Effect.map(session.spawn(command, options), (child) => ({
+                ...child,
+                stdout: child.stdout.pipe(Stream.decodeText, Stream.encodeText)
+              }))
+          }))
+      }
+      const session = yield* client(HttpSandbox.serve({ provider, token, maxFileBytes: 256 })).acquire("binary-text")
+      const path = `${session.workdir}/binary`
+      const bytes = Uint8Array.from({ length: 256 }, (_, i) => i)
+      yield* session.writeFile(path, bytes)
+      expect(yield* session.readFile(path)).toEqual(bytes)
+      yield* session.writeFile(path, new Uint8Array(257))
+      expect((yield* failureOf(session.readFile(path))).message).toBe("byte limit exceeded")
+    }).pipe(Effect.scoped), 60_000)
+
+  it.live(
+    "disconnecting a file request interrupts provider reads and releases their scope",
+    () =>
+      Effect.gen(function*() {
+        const started = yield* Deferred.make<void>()
+        let released = false
+        const actual = machines()
+        const session = yield* actual.acquire("disconnect")
+        const provider: Sandbox.Provider = {
+          ...actual,
+          attach: (handle) =>
+            Effect.gen(function*() {
+              yield* Effect.addFinalizer(() =>
+                Effect.sync(() => {
+                  released = true
+                })
+              )
+              const attached = yield* actual.attach!(handle)
+              return {
+                ...attached,
+                spawn: () =>
+                  Effect.gen(function*() {
+                    yield* Deferred.succeed(started, undefined)
+                    return { stdout: Stream.never, stderr: Stream.empty, exitCode: Effect.never }
+                  })
+              }
+            })
+        }
+        const abort = new AbortController()
+        const request = new Request(
+          `${base}/v1/sessions/${encodeURIComponent(session.remoteId)}/files?id=disconnect&path=/file`,
+          {
+            headers: { authorization: `Bearer ${token}` },
+            signal: abort.signal
+          }
+        )
+        const running = yield* Effect.forkChild(HttpSandbox.serve({ provider, token })(request))
+        yield* Deferred.await(started)
+        abort.abort()
+        expect(Exit.hasInterrupts(yield* Fiber.await(running))).toBe(true)
+        expect(released).toBe(true)
+      }).pipe(Effect.scoped),
+    60_000
+  )
 
   it.live("bounds requests and combined command output and rejects unsafe offsets", () =>
     Effect.gen(function*() {

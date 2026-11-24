@@ -197,6 +197,67 @@ describe("a handoff whose payload the codec rejects", () => {
   })
 })
 
+describe("a handoff the driver established before encoding", () => {
+  // R2-Astra-D1-004: a host without a proxy detector calls every object
+  // opaque, so the fallback cannot learn the handoff from the settlement. A
+  // proxy is that same answer on this host.
+  const established = { flow: "test/next", payload: wrapped }
+  const opaque = () =>
+    new Proxy(new Flow.Handoff(established), {
+      getOwnPropertyDescriptor: () => {
+        throw new Error("the settlement must not be inspected")
+      }
+    })
+
+  it("degrades an uninspectable settlement to a terminal failure when nothing was established", async () => {
+    const encoded = await encode(opaque())
+
+    expect(encoded.encoded).toMatchObject({ _tag: "Complete", exit: { _tag: "Failure" } })
+  })
+
+  it("keeps the handoff and its destination without inspecting the settlement", async () => {
+    const encoded = await run(ExitEncoding.encode(unknownFlow, opaque(), established))
+
+    expect(encoded.note).toBe("the flow result codec rejected the settlement")
+    expect(encoded.encoded).toMatchObject({
+      _tag: "Handoff",
+      flow: "test/next",
+      payload: { _tag: ExitEncoding.projectionTag, result: "Handoff", reasons: [] }
+    })
+    const decoded = await decode(encoded.encoded)
+    expect(decoded._tag).toBe("Handoff")
+    expect((decoded as Flow.Handoff).flow).toBe("test/next")
+  })
+
+  it("projects only the payload on a host that cannot detect a proxy", () => {
+    const portable = ExitEncoding.makeProjector(HostReflection.make(undefined))
+
+    expect(portable.projectResult(new Flow.Handoff(established), "rejected").result).toBe("Complete")
+    expect(portable.projectHandoff(wrapped, "rejected")).toEqual({
+      _tag: ExitEncoding.projectionTag,
+      result: "Handoff",
+      note: "rejected",
+      reasons: [],
+      value: { type: "object", message: "[unrepresentable]" }
+    })
+    expect(portable.projectHandoff("plain", "rejected").value).toMatchObject({ type: "string", message: "\"plain\"" })
+  })
+
+  it("keeps the handoff when the payload projection itself throws", () => {
+    const throwing = ExitEncoding.makeProjector({
+      ...HostReflection.host,
+      isProxy: () => {
+        throw new Error("inspection refused")
+      }
+    })
+
+    expect(throwing.projectHandoff({ secret: 1 }, "rejected")).toMatchObject({
+      result: "Handoff",
+      value: { type: "object", message: "[unrepresentable]" }
+    })
+  })
+})
+
 describe("value projection", () => {
   it("names a primitive by its `typeof` and renders it", () => {
     expect(ExitEncoding.projectValue("boom")).toEqual({ type: "string", message: "\"boom\"" })

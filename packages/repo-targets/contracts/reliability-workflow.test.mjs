@@ -58,14 +58,20 @@ it("scheduled run lifecycle histories retain the rotating seed and shrunk case",
   assert.deepEqual(advisoryFlags(job), [])
 })
 
-it('durability runs nightly and reference execution refuses before branch tools', () => {
+// R2-Neon-D3-007: the nightly matrix held the reference host, whose every case
+// is refused, so each scheduled run ended red.
+it('durability runs nightly on Linux and reference execution refuses before branch tools', () => {
   const workflow = parseWorkflow(readFileSync(join(root, '.github/workflows/reliability.yml'), 'utf8'))
   const job = workflow.jobs['e2e-faults']
-  assert.deepEqual(faultHosts(job, {}), ['linux', 'reference'])
+  // A scheduled run has no inputs: `inputs.campaign` is empty.
+  assert.deepEqual(faultHosts(job, {}), ['linux'])
+  assert.deepEqual(faultHosts(job, { campaign: '' }), ['linux'])
+  assert.deepEqual(faultHosts(job, { campaign: 'faults-reference' }), ['reference'])
   assert.equal(job.strategy['fail-fast'], false)
   const refusal = job.steps.findIndex((step) => step.name === 'Refuse unapproved reference-host execution')
   const build = job.steps.findIndex((step) => step.name === 'Install native smithers-jj-export')
   assert.ok(refusal >= 0 && refusal < build)
+  assert.equal(job.steps[refusal].if, "matrix.host == 'reference'")
   assert.match(job.steps[refusal].run, /C-SEC-02/)
   assert.match(job.steps[refusal].run, /approved main-bundle provenance/)
   const suite = job.steps.find((step) => step.name === 'Exclusive fault matrix')
@@ -101,14 +107,15 @@ it("manual Linux faults run only the existing fault job and keep nightly campaig
   const choice = workflow.on.workflow_dispatch.inputs.campaign
   assert.equal(choice.type, "choice")
   assert.equal(choice.default, "all")
-  assert.deepEqual(choice.options, ["all", "faults-linux"])
+  assert.deepEqual(choice.options, ["all", "faults-linux", "faults-reference"])
   const allJobs = ["benchmark-observations", "sync-long-soak", "signal-state-machine",
     "run-lifecycle-state-model", "jj-native-wasm-abi", "e2e-faults"]
   assert.deepEqual(Object.keys(workflow.jobs).sort(), [...allJobs].sort())
   for (const [inputs, expectedJobs, expectedHosts] of [
-    [{}, allJobs, ["linux", "reference"]],
-    [{ campaign: "all" }, allJobs, ["linux", "reference"]],
-    [{ campaign: "faults-linux" }, ["e2e-faults"], ["linux"]]
+    [{}, allJobs, ["linux"]],
+    [{ campaign: "all" }, allJobs, ["linux"]],
+    [{ campaign: "faults-linux" }, ["e2e-faults"], ["linux"]],
+    [{ campaign: "faults-reference" }, ["e2e-faults"], ["reference"]]
   ]) {
     const selected = Object.entries(workflow.jobs).filter(([, job]) => {
       if (!job.if) return true
@@ -122,6 +129,7 @@ it("manual Linux faults run only the existing fault job and keep nightly campaig
   const group = (inputs) => interpolate(workflow.concurrency.group, { github: { ref: "refs/heads/main" }, inputs })
   assert.equal(group({}), group({ campaign: "all" }))
   assert.notEqual(group({ campaign: "faults-linux" }), group({}))
+  assert.notEqual(group({ campaign: "faults-reference" }), group({ campaign: "faults-linux" }))
   assert.equal(workflow.concurrency["cancel-in-progress"], false)
   assert.equal(workflow.permissions.contents, "read")
   assert.deepEqual(advisoryFlags(workflow.jobs["e2e-faults"]), [])

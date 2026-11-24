@@ -8,9 +8,12 @@
  * line. A text crosses as its UTF-16 code units and a double as the decimal text of its 64 bits, so a lone surrogate,
  * an infinity and a negative zero all arrive as they left.
  *
- * A machine with neither the built oracle nor `lake` skips the file, and so does a machine without `lake` whose
- * built oracle is older than a source of the specification; a machine with `lake` builds the oracle first, and builds
- * it again when a source of the specification is newer than it.
+ * An oracle is evidence only for the sources it was built from, so its freshness is decided by content, never by a
+ * modification time (`./LeanOracle.ts`): a build records the fingerprint of the specification's whole source tree
+ * beside the oracle, and the oracle is fresh only while that fingerprint is the tree's. A machine with `lake` builds
+ * the oracle whenever it is not fresh. A machine without `lake` runs only against a fresh oracle and otherwise skips
+ * the file, naming why. A specification that is present but missing a source fails the file: it is neither skipped
+ * nor answered by an oracle built from something else. A run shown no specification at all skips.
  */
 import { Capability } from "@smthrs/capability"
 import { Sha256 } from "@smthrs/crypto"
@@ -21,13 +24,14 @@ import * as Exit from "effect/Exit"
 import * as Option from "effect/Option"
 import * as Schema from "effect/Schema"
 import { type ChildProcessWithoutNullStreams, spawn, spawnSync } from "node:child_process"
-import { existsSync, readdirSync, statSync } from "node:fs"
+import { existsSync } from "node:fs"
 import { homedir } from "node:os"
 import { delimiter, join } from "node:path"
 import { createInterface } from "node:readline"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
 import { Flow, RetryPolicy, StepIdentity } from "../src/index.ts"
 import { key, runSync } from "./Crypto.ts"
+import * as LeanOracle from "./LeanOracle.ts"
 
 // --- the oracle -----------------------------------------------------------------------------------------------------
 
@@ -37,38 +41,34 @@ const elan = join(homedir(), ".elan", "bin")
 const lake = [...(process.env["PATH"] ?? "").split(delimiter).filter((directory) => directory !== ""), elan]
   .map((directory) => join(directory, "lake"))
   .find((path) => existsSync(path))
-/** The specification's sources are here and `lake` can build them. A confined run may be shown neither. */
-const buildable = lake !== undefined && existsSync(join(specDir, "lakefile.toml"))
-
-/** True when a source of the specification is newer than the built oracle, or there is no built oracle. */
-const stale = (): boolean => {
-  if (!existsSync(binary)) return true
-  const built = statSync(binary).mtimeMs
-  const sources = [
-    "Main.lean",
-    "FlowSpec.lean",
-    "lakefile.toml",
-    "lean-toolchain",
-    ...(existsSync(join(specDir, "FlowSpec"))
-      ? readdirSync(join(specDir, "FlowSpec")).map((name) => join("FlowSpec", name))
-      : [])
-  ]
-  return sources.some((source) => existsSync(join(specDir, source)) && statSync(join(specDir, source)).mtimeMs > built)
+const specification: LeanOracle.Specification = {
+  directory: specDir,
+  binary,
+  required: ["Main.lean", "FlowSpec.lean", "FlowSpec/Basic.lean", "lakefile.toml", "lean-toolchain"],
+  library: "FlowSpec"
 }
+const current = LeanOracle.sources(specification)
 
 /**
- * Why the differential cases cannot run, or `undefined` when they can: an oracle older than the specification it
- * answers for is not evidence, so without `lake` to rebuild it the file skips rather than passes against it.
+ * Why the differential cases cannot run, or `undefined` when they can. An oracle whose manifest does not name the
+ * sources as they are is not evidence, so without `lake` to rebuild it the file skips rather than passes against it.
  */
-const unavailable = buildable
+const unavailable: string | undefined = !existsSync(specDir)
+  ? "the specification is not visible to this run"
+  : current._tag === "Incomplete"
+  ? `the specification is missing ${current.missing.map(LeanOracle.shown).join(", ")}`
+  : lake !== undefined
   ? undefined
-  : !existsSync(binary)
-  ? "neither a built oracle nor lake is available"
-  : stale()
-  ? "the built oracle is older than the specification and lake is unavailable to rebuild it"
+  : LeanOracle.stale(specification, current)
+  ? "the built oracle was not built from the specification as it is, and lake is unavailable to rebuild it"
   : undefined
 const oracleReady = unavailable === undefined
 const differential = it.skipIf(!oracleReady)
+
+// A specification that is here but incomplete is a broken checkout, not a confined run: it fails.
+it.skipIf(!existsSync(specDir))("the specification's source tree is complete", () => {
+  expect(current).toMatchObject({ _tag: "Complete" })
+})
 
 interface Oracle {
   readonly ask: (op: string, request: Readonly<Record<string, unknown>>) => Promise<unknown>
@@ -105,7 +105,7 @@ let oracle: Oracle
 
 beforeAll(() => {
   if (!oracleReady) return
-  if (lake !== undefined && buildable && stale()) {
+  if (lake !== undefined && current._tag === "Complete" && LeanOracle.stale(specification, current)) {
     const built = spawnSync(lake, ["build"], {
       cwd: specDir,
       encoding: "utf8",
@@ -113,6 +113,12 @@ beforeAll(() => {
       env: { ...process.env, PATH: `${elan}${delimiter}${process.env["PATH"] ?? ""}` }
     })
     if (built.status !== 0) throw new Error(`lake build failed in ${specDir}:\n${built.stdout}\n${built.stderr}`)
+    // The build read the sources after they were fingerprinted; record it only if they did not change meanwhile.
+    const after = LeanOracle.sources(specification)
+    if (after._tag !== "Complete" || after.fingerprint !== current.fingerprint) {
+      throw new Error(`the specification in ${specDir} changed while it was being built`)
+    }
+    LeanOracle.record(specification, current)
   }
   oracle = start()
 })

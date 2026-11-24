@@ -9,7 +9,7 @@ import {
 } from "effect/http"
 import { createServer } from "node:http"
 import type { AddressInfo } from "node:net"
-import { gzipSync } from "node:zlib"
+import { brotliCompressSync, deflateSync, gunzipSync, gzipSync } from "node:zlib"
 import { describe, expect, test } from "vitest"
 import { Egress } from "../src/index.ts"
 import {
@@ -627,45 +627,80 @@ describe("Egress.execute", () => {
     expect(recorded.count("broken")).toBe(1)
   })
 
-  test("scrubs a real decoded HTTP response and drops hop-by-hop and secret-bearing header names", async () => {
-    const secret = "lowercase-credential"
-    const server = createServer((_request, response) =>
-      response.writeHead(200, {
-        "Content-Encoding": "gzip",
-        Connection: "X-Hop, X-Second",
-        "X-Hop": "first",
-        "X-Second": "second",
-        [`x-${secret}`]: "private",
-        "X-Ordinary": "kept"
-      }).end(gzipSync(secret))
+  test("passes through gzip bytes and their coding when a raw client has no secrets to scrub", async () => {
+    const json = JSON.stringify({ ok: true })
+    const raw = HttpClient.make((request) =>
+      Effect.succeed(HttpClientResponse.fromWeb(
+        request,
+        new Response(gzipSync(json), {
+          headers: { "content-type": "application/json", "content-encoding": "gzip" }
+        })
+      ))
     )
-    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve))
-    try {
-      const local = `http://127.0.0.1:${(server.address() as AddressInfo).port}/`
-      const result = await run(
-        Egress.execute(HttpClientRequest.get(`https://${API}/`), policy).pipe(
-          Effect.flatMap((answer) =>
-            Effect.map(Stream.runCollect(Stream.decodeText(answer.body)), (parts) => ({
-              body: [...parts].join(""),
-              headers: answer.headers
-            }))
-          ),
-          Effect.provideService(Egress.DecodesContent, (encodings) => encodings.join(",") === "gzip")
-        ),
-        (_input, init) => fetch(local, init),
-        { API_KEY: VALUE, GH_TOKEN: secret }
-      )
-      expect(Exit.isSuccess(result)).toBe(true)
-      if (!Exit.isSuccess(result)) throw new Error("missing egress response")
-      expect(result.value.body).toBe(OTHER_PLACEHOLDER)
-      expect(result.value.headers["x-ordinary"]).toBe("kept")
-      for (const name of ["x-hop", "x-second", `x-${secret}`, "content-encoding"]) {
-        expect(result.value.headers).not.toHaveProperty(name)
-      }
-    } finally {
-      await new Promise<void>((resolve) => server.close(() => resolve()))
-    }
+    const answer = await Effect.runPromise(
+      Effect.gen(function*() {
+        const response = yield* Egress.execute(HttpClientRequest.get(`https://${API}/`), { allow: [API], secrets: [] })
+        const chunks = yield* Stream.runCollect(response.body)
+        return { headers: response.headers, bytes: Buffer.concat([...chunks]) }
+      }).pipe(Effect.provide(Layer.mergeAll(Layer.succeed(HttpClient.HttpClient, raw), vault(), audit().layer)))
+    )
+    expect(answer.headers["content-encoding"]).toBe("gzip")
+    expect(gunzipSync(answer.bytes).toString()).toBe(json)
   })
+
+  test.each(
+    [
+      ["gzip", gzipSync],
+      ["deflate", deflateSync],
+      ["br", brotliCompressSync]
+    ] as const
+  )(
+    "scrubs a Fetch-decoded %s response and drops hop-by-hop and secret-bearing header names",
+    async (coding, compress) => {
+      const secret = "lowercase-credential"
+      const server = createServer((_request, response) =>
+        response.writeHead(200, {
+          "Content-Encoding": coding,
+          Connection: "X-Hop, X-Second",
+          "X-Hop": "first",
+          "X-Second": "second",
+          [`x-${secret}`]: "private",
+          "X-Ordinary": "kept"
+        }).end(compress(Buffer.from(secret)))
+      )
+      await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve))
+      try {
+        const local = `http://127.0.0.1:${(server.address() as AddressInfo).port}/`
+        const result = await run(
+          Egress.execute(
+            HttpClientRequest.get(`https://${API}/`).pipe(
+              HttpClientRequest.setHeader("authorization", `Bearer ${PLACEHOLDER}`)
+            ),
+            policy
+          ).pipe(
+            Effect.flatMap((answer) =>
+              Effect.map(Stream.runCollect(Stream.decodeText(answer.body)), (parts) => ({
+                body: [...parts].join(""),
+                headers: answer.headers
+              }))
+            ),
+            Effect.provide(Egress.layerFetchDecodesContent)
+          ),
+          (_input, init) => fetch(local, init),
+          { API_KEY: VALUE, GH_TOKEN: secret }
+        )
+        expect(Exit.isSuccess(result)).toBe(true)
+        if (!Exit.isSuccess(result)) throw new Error("missing egress response")
+        expect(result.value.body).toBe(OTHER_PLACEHOLDER)
+        expect(result.value.headers["x-ordinary"]).toBe("kept")
+        for (const name of ["x-hop", "x-second", `x-${secret}`, "content-encoding"]) {
+          expect(result.value.headers).not.toHaveProperty(name)
+        }
+      } finally {
+        await new Promise<void>((resolve) => server.close(() => resolve()))
+      }
+    }
+  )
 
   test("a flow step's request gets its value in the header and URL parameters kept as placeholders", async () => {
     const upstream = scripted(() => new Response(`you sent ${VALUE}`))

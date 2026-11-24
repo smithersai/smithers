@@ -162,7 +162,7 @@ const wholeNumber = (name: string, value: number, least: number) => {
  * `acquire` asks the service for the session key's machine and destroys it
  * when the acquiring scope closes. `readFile` is one `GET`, so a file is read
  * whole and must fit one response. `writeFile` sends a file over
- * `chunkBytes` as a first `PUT` and appends at each further offset.
+ * `chunkBytes` as staged ranges under one upload ID and publishes the complete file once.
  *
  * `spawn` never holds a request for the command's lifetime. One short request
  * starts the command detached in the machine, with its output and exit status
@@ -176,7 +176,7 @@ const wholeNumber = (name: string, value: number, least: number) => {
  * fails the process with `unavailable`.
  *
  * Every request is safe to send again: the start of a command by the id this
- * provider chose for it, a chunk by its offset. So a request that failed on
+ * provider chose for it, a chunk by its upload ID and offset. So a request that failed on
  * the way (a transport failure, a `5xx`, no answer within `requestTimeout`)
  * is sent again up to `retries` times, and then fails `unavailable`. A
  * refusal keeps the service's code; a `401` is `unknown`.
@@ -280,12 +280,13 @@ export const make = (options: HttpSandboxOptions): Provider => {
     )
 
   const open = (info: typeof SessionInfo.Type, token: string): Session => {
-    const files = (path: string, offset?: number) =>
+    const files = (path: string, offset?: number, upload?: string, total?: number) =>
       HttpClientRequest.setUrlParams({
         ...limitsQuery,
         id: info.id,
         path,
-        ...offset === undefined ? {} : { offset: String(offset) }
+        ...offset === undefined ? {} : { offset: String(offset) },
+        ...upload === undefined ? {} : { upload, total: String(total) }
       })
 
     /** Runs `command` to its end in one request. */
@@ -448,11 +449,12 @@ export const make = (options: HttpSandboxOptions): Provider => {
         ),
       writeFile: (path, content) =>
         Effect.gen(function*() {
+          const upload = `${token}-${next++}`
           for (let offset = 0; offset === 0 || offset < content.length; offset += chunkBytes) {
             yield* send(
               `writing ${path} at byte ${offset}`,
               HttpClientRequest.put(`${sessionUrl(info.remoteId)}/files`).pipe(
-                files(path, offset === 0 ? undefined : offset),
+                files(path, offset, upload, content.length),
                 HttpClientRequest.bodyUint8Array(
                   content.subarray(offset, offset + chunkBytes),
                   "application/octet-stream"

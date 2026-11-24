@@ -92,6 +92,37 @@ it.effect("protects report and run-state paths with native Windows separators", 
   }).pipe(Effect.provide(layer))
 })
 
+it.effect("matches a trailing-backslash Windows root and run-state directory exactly and by child", () => {
+  // `win32.normalize` keeps a trailing separator, and a pattern that ends in
+  // one matches neither the directory nor, joined with `**`, its children.
+  const winRoot = "C:\\project\\" as Layers.MigrationRoot
+  const rules = Layers.rules({ root: winRoot, runStatePaths: ["D:\\runtime\\"], commands })
+  const patterns = (effect: "allow" | "deny") =>
+    rules.filter((rule) => rule.effect === effect).map((rule) => `${rule.pattern.action} ${rule.pattern.resource}`)
+  expect(patterns("allow")).toEqual(expect.arrayContaining(["fs:* C:\\project", "fs:* C:\\project\\**"]))
+  expect(patterns("deny")).toEqual(expect.arrayContaining(["fs:* D:\\runtime", "fs:* D:\\runtime\\**"]))
+  const layer = GrantStore.layer({ attended: false, rules }).pipe(
+    Layer.provide(Workspace.layer("C:\\project" as Layers.MigrationRoot)),
+    Layer.orDie
+  )
+  return Effect.gen(function*() {
+    const grants = yield* GrantStore.GrantStore
+    for (const allowed of ["C:\\project", "C:\\project\\package.json", "C:\\project\\src\\flow.ts"]) {
+      yield* grants.check(Capability.make("fs:write", allowed))
+    }
+    for (const denied of ["D:\\runtime", "D:\\runtime\\state.db", "D:\\runtime\\nested\\log.txt"]) {
+      const exit = yield* Effect.result(grants.check(Capability.make("fs:read", denied)))
+      expect(exit._tag, denied).toBe("Failure")
+    }
+  }).pipe(Effect.provide(layer))
+})
+
+it("keeps a Windows drive root whole in the root allow rule and a run-state deny rule", () => {
+  const rules = Layers.rules({ root: "C:\\" as Layers.MigrationRoot, runStatePaths: ["D:\\"], commands })
+  const resources = rules.map((rule) => `${rule.effect} ${rule.pattern.resource}`)
+  expect(resources).toEqual(expect.arrayContaining(["allow C:\\", "allow C:\\**", "deny D:\\", "deny D:\\**"]))
+})
+
 it.effect("honors the run's network ceiling for completion evaluation", () =>
   Effect.gen(function*() {
     const directory = copyFixture("jsx-single")

@@ -20,6 +20,10 @@ const jj = (args) => {
 const T0 = new Date("2026-09-29T00:00:00Z")
 const hours = (n) => new Date(T0.getTime() + n * 3600_000)
 const HOST = hostname()
+// What GitHub reports of a comment's author: a maintainer, and the two kinds of stranger.
+const MEMBER = { author_association: "MEMBER", user: { login: "maintainer" } }
+const STRANGER = { author_association: "NONE", user: { login: "stranger" } }
+const CONTRIBUTOR = { author_association: "CONTRIBUTOR", user: { login: "drive-by" } }
 // No test may pick up this machine's real GitHub App configuration or reach its real proxy.
 const NO_APP = "/nonexistent/issue-claim-app.json"
 process.env.ISSUE_CLAIM_APP_CONFIG = NO_APP
@@ -76,7 +80,7 @@ const fakeGitHub = (issue = {}) => {
       return "[]"
     }
     if (/\/comments/.test(path) && args.includes("-f")) {
-      state.comments.push({ body: field("body"), created_at: state.clock.toISOString() })
+      state.comments.push({ body: field("body"), created_at: state.clock.toISOString(), ...(state.author ?? MEMBER) })
       state.afterComment?.(state)
       return "{}"
     }
@@ -103,11 +107,12 @@ describe("issue-claim references", () => {
 })
 
 describe("issue-claim holder", () => {
-  const claim = (by, at, host = "mac") => ({ body: claimBody({ by, host, now: at }), created_at: at.toISOString() })
+  const claim = (by, at, host = "mac", author = MEMBER) => ({ body: claimBody({ by, host, now: at }), created_at: at.toISOString(), ...author })
+  const release = (by, at, author = MEMBER) => ({ body: releaseBody({ by, host: "mac", now: at }), created_at: at.toISOString(), ...author })
 
   it("is null for an unlabeled issue without claims, and after a release", () => {
     assert.equal(holder({ labeled: false, comments: [] }), null)
-    const released = [claim("a", T0), { body: releaseBody({ by: "a", host: "mac", now: hours(1) }), created_at: hours(1).toISOString() }]
+    const released = [claim("a", T0), release("a", hours(1))]
     assert.equal(holder({ labeled: false, comments: released }, hours(2).getTime()), null)
   })
 
@@ -137,9 +142,62 @@ describe("issue-claim holder", () => {
     assert.equal(holder({ labeled: true, comments: [] }, hours(99).getTime()).stale, false)
   })
 
+  // R2-Neon-D3-010: anyone can comment on a public issue, and every comment was read.
+  it("ignores a claim or a release posted by anyone but an owner, member or collaborator", () => {
+    for (const author of [STRANGER, CONTRIBUTOR, { author_association: "FIRST_TIME_CONTRIBUTOR" }, { author_association: "MANNEQUIN" }, {}]) {
+      // A stranger's release leaves a maintainer's live claim in place.
+      const held = holder({ labeled: true, comments: [claim("a", T0), release("a", hours(1), author)] }, hours(2).getTime())
+      assert.equal(held.by, "a", JSON.stringify(author))
+      assert.equal(held.stale, false)
+      // A stranger's claim holds nothing: not a free issue, and not one a maintainer released.
+      assert.equal(holder({ labeled: false, comments: [claim("squatter", T0, "mac", author)] }, hours(1).getTime()), null)
+      assert.equal(holder({ labeled: false, comments: [claim("a", T0), release("a", hours(1)), claim("squatter", hours(2), "mac", author)] }, hours(3).getTime()), null)
+      // And it does not take over, refresh or outlast a maintainer's claim, even under the holder's own name.
+      const raced = holder({ labeled: true, comments: [claim("squatter", T0, "mac", author), claim("a", hours(1)), claim("a", hours(2), "mac", author)] }, hours(3).getTime())
+      assert.equal(raced.by, "a")
+      assert.equal(raced.expires, hours(7).toISOString())
+    }
+    for (const association of ["OWNER", "MEMBER", "COLLABORATOR"]) {
+      const author = { author_association: association }
+      assert.equal(holder({ labeled: true, comments: [claim("a", T0, "mac", author)] }, hours(1).getTime()).by, "a")
+      assert.equal(holder({ labeled: false, comments: [claim("a", T0), release("a", hours(1), author)] }, hours(2).getTime()), null)
+    }
+  })
+
+  it("reads the comments of the GitHub App this machine claims as, which GitHub reports as NONE", () => {
+    const bot = { author_association: "NONE", user: { login: "smithers-agents[bot]", type: "Bot" } }
+    const comments = [claim("a", T0, "mac", bot)]
+    assert.equal(holder({ labeled: true, comments, principal: "app:smithers-agents@smithersai" }, hours(1).getTime()).by, "a")
+    assert.equal(holder({ labeled: false, comments: [...comments, release("a", hours(1), bot)], principal: "app:smithers-agents@smithersai" }, hours(2).getTime()), null)
+    // Another App, the operator's own token, or no principal at all: the bot is a stranger.
+    for (const principal of ["app:other@smithersai", "app:smithers-agents", "gh-user", undefined]) {
+      assert.equal(holder({ labeled: false, comments, principal }, hours(1).getTime()), null, String(principal))
+    }
+    // A person cannot borrow the App's trust: their login is their own.
+    const impostor = [claim("squatter", T0, "mac", { author_association: "NONE", user: { login: "smithers-agents" } })]
+    assert.equal(holder({ labeled: false, comments: impostor, principal: "app:smithers-agents@smithersai" }, hours(1).getTime()), null)
+  })
+
+  it("lets no stranger's comment release or block a claim made through the CLI", () => {
+    const github = fakeGitHub()
+    assert.equal(cli(github, ["claim", "smithers#7"], T0, "lane-1").out.action, "claimed")
+    // A stranger posts a release and then their own claim on the public issue.
+    github.state.comments.push(
+      { body: releaseBody({ by: "lane-1", host: HOST, now: hours(1) }), created_at: hours(1).toISOString(), ...STRANGER },
+      { body: claimBody({ by: "squatter", host: "elsewhere", now: hours(1) }), created_at: hours(1).toISOString(), ...CONTRIBUTOR }
+    )
+    const checked = cli(github, ["check", "smithers#7"], hours(2), "lane-1")
+    assert.equal(checked.code, 0)
+    assert.equal(checked.out.mine, true)
+    assert.equal(checked.out.holder.by, "lane-1")
+    const rival = cli(github, ["claim", "smithers#7"], hours(2), "lane-2")
+    assert.equal(rival.code, 2)
+    assert.equal(rival.out.holder.by, "lane-1")
+  })
+
   it("reads the Cloud dispatcher's claim format", () => {
     const body = "Claimed by plue-8a (campaign feed9) on mac at 2026-09-29T00:00:00.000Z; expires 2026-09-29T06:00:00.000Z. Cloud run r-1 (#650)."
-    const current = holder({ labeled: true, comments: [{ body, created_at: T0.toISOString() }] }, hours(1).getTime())
+    const current = holder({ labeled: true, comments: [{ body, created_at: T0.toISOString(), ...MEMBER }] }, hours(1).getTime())
     assert.equal(current.by, "plue-8a (campaign feed9)")
     assert.equal(current.expires, "2026-09-29T06:00:00.000Z")
   })
@@ -187,7 +245,7 @@ describe("issue-claim commands", () => {
     const gh = github.gh
     const limitedGh = (args) => {
       if (args.includes("repos/smithersai/smithers/issues/7/comments") && args.includes("-f")) {
-        github.state.comments.push({ body: claimBody({ by: "rival", host: "cloud", now: T0 }), created_at: T0.toISOString() })
+        github.state.comments.push({ body: claimBody({ by: "rival", host: "cloud", now: T0 }), created_at: T0.toISOString(), ...MEMBER })
         throw new Error("HTTP 502: Bad Gateway")
       }
       return gh(args)
@@ -258,8 +316,8 @@ describe("issue-claim commands", () => {
 
   it("dates a label-only claim after historical claims were released", () => {
     const github = fakeGitHub({ labels: [LABEL], comments: [
-      { body: claimBody({ by: "old", host: "mac", now: hours(-10) }), created_at: hours(-10).toISOString() },
-      { body: releaseBody({ by: "old", host: "mac", now: hours(-9) }), created_at: hours(-9).toISOString() }
+      { body: claimBody({ by: "old", host: "mac", now: hours(-10) }), created_at: hours(-10).toISOString(), ...MEMBER },
+      { body: releaseBody({ by: "old", host: "mac", now: hours(-9) }), created_at: hours(-9).toISOString(), ...MEMBER }
     ], events: [
       { event: "labeled", label: { name: LABEL }, created_at: hours(-10).toISOString() },
       { event: "unlabeled", label: { name: LABEL }, created_at: hours(-9).toISOString() },
@@ -279,7 +337,7 @@ describe("issue-claim commands", () => {
     const github = fakeGitHub()
     github.state.afterComment = (state) => {
       state.afterComment = null
-      state.comments.unshift({ body: claimBody({ by: "rival", host: "cloud", now: T0 }), created_at: T0.toISOString() })
+      state.comments.unshift({ body: claimBody({ by: "rival", host: "cloud", now: T0 }), created_at: T0.toISOString(), ...MEMBER })
     }
     const { code, out } = cli(github, ["claim", "smithers#2"])
     assert.equal(code, 2)
@@ -365,8 +423,8 @@ describe("issue-claim idempotency and folded release", () => {
   })
 
   it("reads a release line anywhere in a comment", () => {
-    const claim = { body: claimBody({ by: "a", host: "mac", now: T0 }), created_at: T0.toISOString() }
-    const receipt = { body: `Landed x.\n\n${releaseBody({ by: "a", host: "mac", now: hours(1), note: "landed" })}`, created_at: hours(1).toISOString() }
+    const claim = { body: claimBody({ by: "a", host: "mac", now: T0 }), created_at: T0.toISOString(), ...MEMBER }
+    const receipt = { body: `Landed x.\n\n${releaseBody({ by: "a", host: "mac", now: hours(1), note: "landed" })}`, created_at: hours(1).toISOString(), ...MEMBER }
     assert.equal(holder({ labeled: false, comments: [claim, receipt] }, hours(1).getTime()), null)
   })
 
@@ -491,7 +549,7 @@ describe("issue-claim, gh and the GitHub proxy end to end", { skip: hasGh ? fals
         if (rest === "/labels/in-progress" && req.method === "DELETE") { issue.labels = issue.labels.filter((l) => l !== LABEL); return reply(200, []) }
         if (rest === "/comments" && req.method === "POST") {
           if (limitComments) return reply(403, { message: "You have exceeded a secondary rate limit" }, { "retry-after": "300" })
-          issue.comments.push({ body: fields.body, created_at: new Date().toISOString() })
+          issue.comments.push({ body: fields.body, created_at: new Date().toISOString(), ...MEMBER })
           return reply(201, { id: issue.comments.length })
         }
         if (rest === "/comments") return reply(200, issue.comments)

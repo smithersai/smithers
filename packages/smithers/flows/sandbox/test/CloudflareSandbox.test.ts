@@ -1,14 +1,16 @@
 import { NodeChildProcessSpawner, NodeFileSystem } from "@effect/platform-node"
 import { afterAll, describe, expect, it } from "@effect/vitest"
-import { Effect, Layer, Logger, Path, Stream } from "effect"
+import { Deferred, Effect, Fiber, Layer, Logger, Path, Stream } from "effect"
 import * as ChildProcess from "effect/process/ChildProcess"
 import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import * as CloudflareSandbox from "../src/CloudflareSandbox/index.ts"
+import { legacySessionSlug, sessionSlug } from "../src/internal/sessionSlug.ts"
 import type { RemoteProcess } from "../src/RemoteChildProcessSpawner/Provider.ts"
 import { ProviderError } from "../src/RemoteChildProcessSpawner/ProviderError.ts"
+import * as Sandbox from "../src/Sandbox/index.ts"
 import type { Session } from "../src/Sandbox/Session.ts"
 import * as SandboxConformance from "../src/SandboxConformance/index.ts"
 import { untouchable } from "./helpers/untouchable.ts"
@@ -21,6 +23,7 @@ interface SandboxOptions {
 }
 
 interface CommandOptions {
+  readonly signal?: AbortSignal | undefined
   readonly cwd?: string | undefined
   readonly env?: Record<string, string | undefined> | undefined
 }
@@ -94,7 +97,8 @@ const local = Effect.runSync(
 const runSh = (
   command: string,
   cwd: string,
-  env: Record<string, string | undefined> | undefined
+  env: Record<string, string | undefined> | undefined,
+  signal?: AbortSignal
 ): Promise<CommandResult> =>
   Effect.runPromise(
     Effect.scoped(
@@ -112,7 +116,8 @@ const runSh = (
         )
         return { success: exitCode === 0, exitCode, stdout, stderr }
       })
-    )
+    ),
+    signal === undefined ? undefined : { signal }
   )
 
 class FakeSandbox {
@@ -219,7 +224,12 @@ class FakeSandbox {
       this.failExec = undefined
       throw cause
     }
-    const result = await runSh(this.hostCommand(command), this.hostPath(options?.cwd ?? "/"), options?.env)
+    const result = await runSh(
+      this.hostCommand(command),
+      this.hostPath(options?.cwd ?? "/"),
+      options?.env,
+      options?.signal
+    )
     if (this.execExitOverride !== undefined) {
       const exitCode = this.execExitOverride
       this.execExitOverride = undefined
@@ -236,14 +246,28 @@ class FakeSandbox {
       this.failStart = undefined
       throw cause
     }
-    const running = runSh(this.hostCommand(command), this.hostPath(options?.cwd ?? "/"), options?.env)
+    const controller = new AbortController()
+    const running = runSh(
+      this.hostCommand(command),
+      this.hostPath(options?.cwd ?? "/"),
+      options?.env,
+      controller.signal
+    )
+    // A killed SDK process rejects its outstanding wait.
+    void running.catch(() => undefined)
     const mode = this.processExitMode
     const events = this.events
     const process: {
       exitCode?: number | undefined
       waitForExit(timeout?: number): Promise<{ readonly exitCode?: number | undefined }>
       getLogs(): Promise<{ readonly stdout: string; readonly stderr: string }>
+      kill(): Promise<void>
     } = {
+      kill: async () => {
+        events.push(`kill:${command}`)
+        controller.abort()
+        await running.catch(() => undefined)
+      },
       waitForExit: async () => {
         const result = await running
         events.push(`wait:${command}`)
@@ -276,6 +300,7 @@ const binding = (processExitMode: ProcessExitMode = "wait"): Binding => ({
 })
 
 const sdk = {
+  execSupportsCancellation: true,
   getSandbox(workerBinding: Binding, id: string, options?: SandboxOptions): FakeSandbox {
     workerBinding.resolutions.push({ id, options })
     if (workerBinding.resolveFailure !== undefined) throw workerBinding.resolveFailure
@@ -286,7 +311,7 @@ const sdk = {
     workerBinding.instances.push(sandbox)
     return sandbox
   }
-} satisfies CloudflareSandbox.Sdk<Binding>
+} as const satisfies CloudflareSandbox.Sdk<Binding>
 
 const acquired = <A, E>(
   provider: ReturnType<typeof CloudflareSandbox.make<Binding>>,
@@ -311,6 +336,160 @@ const sizes = (bindingOf: (name: string) => Binding) =>
   ] as const
 
 describe("CloudflareSandbox", () => {
+  it.effect("adopts legacy retained machines through a noncreating lookup", () =>
+    Effect.gen(function*() {
+      const workerBinding = binding()
+      const key = "session/key"
+      const legacyId = legacySessionSlug(key)
+      const machine = sdk.getSandbox(workerBinding, legacyId)
+      const provider = CloudflareSandbox.make({
+        sdk: { ...sdk, findSandbox: async (target, id) => target.active.get(id) },
+        binding: workerBinding,
+        workdir: join(root, "legacy-ws"),
+        retained: true
+      })
+      const session = yield* Effect.scoped(provider.acquire(key))
+      expect(session.remoteId).toBe(legacyId)
+      expect(workerBinding.instances).toEqual([machine])
+      const fresh = yield* Effect.scoped(provider.acquire("fresh"))
+      expect(fresh.remoteId).toBe(sessionSlug("fresh"))
+      expect(workerBinding.instances).toHaveLength(2)
+    }))
+
+  it.effect("reuses a legacy admission after its start receipt is lost and refuses a foreign full key", () =>
+    Effect.gen(function*() {
+      const workerBinding = binding()
+      const key = "session/key"
+      const workdir = join(root, "legacy-job-ws")
+      const provider = CloudflareSandbox.make({ sdk, binding: workerBinding, workdir, retained: true })
+      const jobDirectory = join(root, "legacy-jobs")
+      const directory = join(jobDirectory, legacySessionSlug(key))
+      mkdirSync(directory, { recursive: true })
+      writeFileSync(join(directory, "key"), key)
+      writeFileSync(join(directory, "exit"), "0\n")
+      writeFileSync(join(directory, "out"), "original result")
+      const job = Sandbox.job(provider, { command: "touch duplicate-worker", jobDirectory })
+      const handle = yield* job.start(undefined, key)
+      expect(handle.directory).toBe(directory)
+      expect(yield* job.status(handle, key)).toEqual({ _tag: "Exited", exitCode: 0 })
+      expect(readFileSync(join(directory, "out"), "utf8")).toBe("original result")
+      expect(existsSync(join(workdir, "duplicate-worker"))).toBe(false)
+      expect(existsSync(join(jobDirectory, sessionSlug(key)))).toBe(false)
+      writeFileSync(join(directory, "key"), "another full key")
+      expect(yield* Effect.flip(job.start(undefined, key))).toMatchObject({ code: "unknown" })
+      expect(readFileSync(join(directory, "key"), "utf8")).toBe("another full key")
+      rmSync(join(directory, "key"))
+      expect(yield* Effect.flip(job.start(undefined, key))).toMatchObject({ code: "not_found" })
+      expect(existsSync(join(workdir, "duplicate-worker"))).toBe(false)
+    }))
+
+  for (const execution of ["exec", "process", undefined] as const) {
+    it.effect(`interrupts retained ${execution} work, prevents pending writes, and reuses its sandbox`, () =>
+      Effect.gen(function*() {
+        const workerBinding = binding()
+        const workdir = join(root, `cancel-${execution}`)
+        const provider = CloudflareSandbox.make({ sdk, binding: workerBinding, workdir, retained: true, execution })
+        const session = yield* Effect.scoped(provider.acquire("session/key"))
+        const fiber = yield* Effect.forkChild(Effect.scoped(session.spawn("touch ready; sleep 1; touch forbidden", {})))
+        yield* Effect.promise(async () => {
+          const deadline = Date.now() + 5000
+          while (!existsSync(join(workdir, "ready"))) {
+            if (Date.now() >= deadline) throw new Error("command did not become ready")
+            await new Promise((resolve) => setTimeout(resolve, 5))
+          }
+        })
+        yield* Fiber.interrupt(fiber)
+        yield* Effect.promise(() => new Promise((resolve) => setTimeout(resolve, 1100)))
+        expect(existsSync(join(workdir, "forbidden"))).toBe(false)
+        const result = yield* Effect.scoped(Effect.flatMap(session.spawn("printf reused", {}), output))
+        expect(result.stdout).toBe("reused")
+        expect(workerBinding.instances).toHaveLength(1)
+        expect(workerBinding.instances[0]!.destroyed).toBe(false)
+        if (execution === "process") {
+          expect(workerBinding.instances[0]!.events.some((event) => event.startsWith("kill:"))).toBe(true)
+        }
+      }))
+  }
+
+  it.effect("kills a process whose acquisition completes after interruption", () =>
+    Effect.gen(function*() {
+      const ready = yield* Deferred.make<void>()
+      let publish!: (value: Awaited<ReturnType<FakeSandbox["startProcess"]>>) => void
+      let killed = false
+      const workerBinding = binding()
+      const delayedSdk = {
+        getSandbox(target: Binding, id: string, settings?: SandboxOptions) {
+          const machine = sdk.getSandbox(target, id, settings)
+          return {
+            ...machine,
+            mkdir: machine.mkdir.bind(machine),
+            readFile: machine.readFile.bind(machine),
+            writeFile: machine.writeFile.bind(machine),
+            exec: machine.exec.bind(machine),
+            destroy: machine.destroy.bind(machine),
+            startProcess: async () => {
+              Deferred.doneUnsafe(ready, Effect.void)
+              return await new Promise<Awaited<ReturnType<FakeSandbox["startProcess"]>>>((resolve) => {
+                publish = resolve
+              })
+            }
+          }
+        }
+      }
+      const provider = CloudflareSandbox.make({
+        sdk: delayedSdk,
+        binding: workerBinding,
+        workdir: root,
+        retained: true,
+        execution: "process"
+      })
+      const session = yield* Effect.scoped(provider.acquire("key"))
+      const fiber = yield* Effect.forkChild(Effect.scoped(session.spawn("true", {})))
+      yield* Deferred.await(ready)
+      yield* Fiber.interrupt(fiber)
+      publish({
+        kill: async () => {
+          killed = true
+        },
+        waitForExit: async () => ({}),
+        getLogs: async () => ({ stdout: "", stderr: "" })
+      })
+      yield* Effect.yieldNow
+      expect(killed).toBe(true)
+    }))
+
+  it.effect("cancels a default vendor command while preserving its session and sibling", () =>
+    Effect.gen(function*() {
+      const workerBinding = binding()
+      const workdir = join(root, "default-cancellation")
+      // The stock vendor SDK does not stop a running exec on signal abort.
+      const vendorSdk = { getSandbox: sdk.getSandbox }
+      const provider = CloudflareSandbox.make({ sdk: vendorSdk, binding: workerBinding, workdir })
+      yield* acquired(provider, (session) =>
+        Effect.gen(function*() {
+          const sibling = yield* Effect.forkChild(
+            Effect.scoped(Effect.flatMap(session.spawn("sleep 0.2; printf sibling", {}), output))
+          )
+          const interrupted = yield* Effect.forkChild(
+            Effect.scoped(session.spawn("touch ready; sleep 1; touch forbidden", {}))
+          )
+          yield* Effect.promise(async () => {
+            const deadline = Date.now() + 5000
+            while (!existsSync(join(workdir, "ready"))) {
+              if (Date.now() >= deadline) throw new Error("command did not become ready")
+              await new Promise((resolve) => setTimeout(resolve, 5))
+            }
+          })
+          yield* Fiber.interrupt(interrupted)
+          expect((yield* Fiber.join(sibling)).stdout).toBe("sibling")
+          expect(workerBinding.instances[0]!.destroyed).toBe(false)
+          expect(workerBinding.instances[0]!.events.some((event) => event.startsWith("exec:"))).toBe(false)
+          expect((yield* Effect.scoped(Effect.flatMap(session.spawn("printf reused", {}), output))).stdout).toBe(
+            "reused"
+          )
+        }))
+    }))
+
   it("requires exactly one of binding and instances, before touching its dependencies", () => {
     const deps = untouchable<never>()
     const instances = [{ name: "standard-1", cpus: 0.5, memoryMib: 4096, binding: deps.value }]

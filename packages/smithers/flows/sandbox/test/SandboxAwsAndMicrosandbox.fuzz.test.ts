@@ -557,7 +557,7 @@ describe("@smthrs/sandbox AwsSandbox & MicrosandboxSandbox (make, process, snaps
           },
           get: async (name: string) => {
             const found = machines.get(name)
-            if (!found) throw Object.assign(new Error(`SandboxNotFound: ${name}`), { code: "SandboxNotFound" })
+            if (!found) throw Object.assign(new Error(`SandboxNotFound: ${name}`), { code: "sandboxNotFound" })
             return makeHandleObj(found)
           },
           listWith: async (configure) => {

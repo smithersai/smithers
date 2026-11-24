@@ -67,6 +67,7 @@ import * as Stream from "effect/Stream"
 import { isAbsolute, posix, resolve, sep, win32 } from "node:path"
 import { make, type MigrateError } from "../MigrateError.ts"
 import * as Scan from "../Scan.ts"
+import * as SqliteStoreNode from "../SqliteStoreNode.ts"
 import * as Units from "../Units.ts"
 import * as Contract from "./Contract.ts"
 import * as MigrateFlow from "./MigrateFlow.ts"
@@ -312,7 +313,15 @@ export const rules = (options: {
 }): ReadonlyArray<Permission.Rule> => {
   const windows = sep === "\\" || (win32.isAbsolute(options.root) && !posix.isAbsolute(options.root))
   const path = windows ? win32 : posix
-  const root = windows ? path.normalize(options.root) : options.root.replace(/\/+$/, "")
+  // A directory pattern carries no trailing separator, or it matches neither
+  // the directory itself nor (joined with `**`) what is under it. A drive or
+  // share root keeps its own: `C:\` without it is a drive-relative path.
+  const trimmed = (value: string): string => {
+    if (!windows) return value.replace(/\/+$/, "")
+    const normalized = path.normalize(value)
+    return normalized.length > path.parse(normalized).root.length ? normalized.replace(/\\+$/, "") : normalized
+  }
+  const root = trimmed(options.root)
   const below = (...parts: ReadonlyArray<string>) => windows ? path.join(root, ...parts) : `${root}/${parts.join("/")}`
   const allow = (action: Capability.PatternAction, resource: string): Permission.Rule =>
     new Permission.Rule({ effect: "allow", pattern: new Capability.CapabilityPattern({ action, resource }) })
@@ -365,9 +374,7 @@ export const rules = (options: {
       // is denied by its own path: joined under the root the pattern would
       // match nothing, which is exactly the silent gap these rules exist to
       // close.
-      const target = path.isAbsolute(relative)
-        ? (windows ? path.normalize(relative) : relative.replace(/\/+$/, ""))
-        : below(relative)
+      const target = path.isAbsolute(relative) ? trimmed(relative) : below(relative)
       return [deny("fs:*", target), deny("fs:*", windows ? path.join(target, "**") : `${target}/**`)]
     })
   ]
@@ -548,6 +555,7 @@ export const layerPlan = MigrateFlow.layerPlan.pipe(
   Layer.provideMerge(FlowEngine.layerMemory),
   Layer.provideMerge(layerSnapshotBoundary),
   Layer.provideMerge(NodeCrypto.layer),
+  Layer.provideMerge(SqliteStoreNode.layer),
   Layer.provideMerge(NodeServices.layer)
 )
 
@@ -719,6 +727,7 @@ export const layerNode = (config: NodeConfig) => {
       Layer.provideMerge(FlowEngine.layerMemory),
       Layer.provideMerge(layerSnapshotBoundary),
       Layer.provideMerge(NodeCrypto.layer),
+      Layer.provideMerge(SqliteStoreNode.layer),
       Layer.provideMerge(NodeServices.layer),
       Layer.provideMerge(layerVerificationConfinement(config)),
       Layer.provideMerge(evaluatorFor(validated))
@@ -821,7 +830,7 @@ export const layerNodeScanned = (config: ScannedConfig) => {
         commands: commandsFor(result.detection, config.commands ?? {}, config.flowsDir ?? Units.defaultFlowsDir)
       })
     })
-  ).pipe(Layer.provide(NodeServices.layer))
+  ).pipe(Layer.provide([SqliteStoreNode.layer, NodeServices.layer]))
 }
 
 /**
@@ -919,6 +928,7 @@ export const layerScripted = (config: NodeConfig & { readonly script: Script }) 
       Layer.provideMerge(FlowEngine.layerMemory),
       Layer.provideMerge(layerSnapshotBoundary),
       Layer.provideMerge(NodeCrypto.layer),
+      Layer.provideMerge(SqliteStoreNode.layer),
       Layer.provideMerge(NodeServices.layer),
       Layer.provideMerge(layerVerificationConfinement(config)),
       // The model is scripted, so the judge is too, and it answers every

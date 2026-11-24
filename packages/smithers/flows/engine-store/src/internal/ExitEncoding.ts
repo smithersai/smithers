@@ -355,6 +355,26 @@ export const makeProjector = (reflection: HostReflection.Reflection) => {
   }
 
   /**
+   * Projects a handoff whose payload the flow's codec rejected.
+   *
+   * The caller has already established that the settlement is a handoff, so
+   * only the payload is described and the settlement object is never
+   * inspected. A host that cannot tell a proxy from its target still records
+   * the handoff.
+   *
+   * @since 1.0.0
+   * @category conversions
+   */
+  const projectHandoff = (payload: unknown, note: string): ResultProjection => {
+    note = truncate(note, maxTextLength)
+    try {
+      return withinBudget({ _tag: projectionTag, result: "Handoff", note, reasons: [], value: projectValue(payload) })
+    } catch {
+      return { _tag: projectionTag, result: "Handoff", note, reasons: [], value: minimalValue() }
+    }
+  }
+
+  /**
    * Projects a settlement the flow's codec rejected.
    *
    * @since 0.1.0
@@ -377,15 +397,7 @@ export const makeProjector = (reflection: HostReflection.Reflection) => {
           value: null
         })
       }
-      if (tag === "Handoff") {
-        return withinBudget({
-          _tag: projectionTag,
-          result: "Handoff",
-          note,
-          reasons: [],
-          value: projectValue(ownData(result, "payload"))
-        })
-      }
+      if (tag === "Handoff") return projectHandoff(ownData(result, "payload"), note)
       const exit = ownData(result, "exit")
       if (typeof exit !== "object" || exit === null || isProxy(exit)) return minimalResult(note)
       const prototype = reflection.getPrototypeOf(exit)
@@ -413,7 +425,7 @@ export const makeProjector = (reflection: HostReflection.Reflection) => {
     }
   }
 
-  return { projectValue, projectCause, projectResult }
+  return { projectValue, projectCause, projectResult, projectHandoff }
 }
 
 /**
@@ -422,7 +434,31 @@ export const makeProjector = (reflection: HostReflection.Reflection) => {
  * @since 0.1.0
  * @category conversions
  */
-export const { projectValue, projectCause, projectResult } = makeProjector(HostReflection.host)
+export const { projectValue, projectCause, projectResult, projectHandoff } = makeProjector(HostReflection.host)
+
+/**
+ * A handoff the caller established before encoding its settlement.
+ *
+ * `RunDriver.continueLineage` has already read the destination to resolve the
+ * successor and the payload to create it. Naming both here keeps the
+ * predecessor a `Handoff` when its codec rejects the payload, on every host:
+ * the fallback never has to ask whether the settlement object is a proxy.
+ *
+ * @since 1.0.0
+ * @category models
+ */
+export interface EstablishedHandoff {
+  readonly flow: string
+  readonly payload: unknown
+}
+
+/** The durable handoff shape that carries a projection as its payload. */
+const degradedHandoff = (flow: string, projection: ResultProjection): unknown => ({
+  _tag: "Handoff",
+  flow,
+  payload: projection,
+  capabilityCeilings: [[]]
+})
 
 /**
  * The encoded settlement written in place of one the codec rejected.
@@ -437,7 +473,7 @@ const degrade = (result: Flow.Result<unknown, unknown>, projection: ResultProjec
   try {
     if (!isProxy(result) && readOwnData(HostReflection.host, result, "_tag") === "Handoff") {
       const flow = readOwnData(HostReflection.host, result, "flow")
-      if (typeof flow === "string") return { _tag: "Handoff", flow, payload: projection, capabilityCeilings: [[]] }
+      if (typeof flow === "string") return degradedHandoff(flow, projection)
     }
   } catch {
     // The terminal Complete below is the fail-closed representation.
@@ -450,14 +486,17 @@ const degrade = (result: Flow.Result<unknown, unknown>, projection: ResultProjec
  * codec rejects it — through a JSON projection instead.
  *
  * The returned effect has no error channel and dies for nothing: a caller on
- * the terminal-transition path can always write the row it holds.
+ * the terminal-transition path can always write the row it holds. A caller
+ * that has already established the settlement is a handoff passes `handoff`,
+ * and the fallback then records that handoff without inspecting `result`.
  *
  * @since 0.1.0
  * @category conversions
  */
 export const encode = (
   flow: Flow.Any,
-  result: Flow.Result<unknown, unknown>
+  result: Flow.Result<unknown, unknown>,
+  handoff?: EstablishedHandoff
 ): Effect.Effect<EncodedResult> =>
   Schema.encodeEffect(
     Schema.toCodecJson(Flow.Result({
@@ -472,7 +511,12 @@ export const encode = (
         Effect.logWarning(
           `engine-store: the settlement of ${flow._tag} could not be encoded through its own codec; persisting a JSON projection so the run still settles`
         ),
-        { encoded: degrade(result, projectResult(result, note)), note } satisfies EncodedResult
+        {
+          encoded: handoff === undefined
+            ? degrade(result, projectResult(result, note))
+            : degradedHandoff(handoff.flow, projectHandoff(handoff.payload, note)),
+          note
+        } satisfies EncodedResult
       )
     })
   ) as Effect.Effect<EncodedResult>

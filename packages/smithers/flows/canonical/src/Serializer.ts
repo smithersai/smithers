@@ -8,5 +8,5 @@
 
 export { CanonicalError, canonicalize } from "./internal/canonicalize.ts"
 export type { CanonicalErrorCode } from "./internal/canonicalize.ts"
-export { nativeBrand } from "./internal/nativeBrand.ts"
+export { isNativeUrl, nativeBrand, slotlessProxy } from "./internal/nativeBrand.ts"
 export type { NativeBrand } from "./internal/nativeBrand.ts"

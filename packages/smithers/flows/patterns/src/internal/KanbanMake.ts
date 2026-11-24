@@ -231,7 +231,76 @@ const completionBoard = (
  * @category constructors
  * @since 0.1.0
  */
-export const make = <R = never>(options: MakeOptions<R>): KanbanFlow<R> => {
+export const make = <R = never>(options: MakeOptions<R>): KanbanFlow<R> => declare(options, undefined)
+
+/**
+ * The tag an unnamed board had before its tag named its card ids: the card
+ * count stood where the ids now stand, under the unversioned `kanban` kind.
+ * Two different boards with as many cards share one, which is why it was
+ * replaced.
+ */
+interface Declared {
+  readonly legacyTag: string
+  readonly alias: () => KanbanFlow<any>
+}
+
+// Only an unnamed board is here: a board the caller named keeps the tag it
+// always had, so a run recorded under it needs no alias.
+const declarations = new WeakMap<object, Declared>()
+
+// A board the caller named, and an alias, which is a board named by its old
+// tag.
+const named = new WeakSet<object>()
+
+/**
+ * The flows that keep runs recorded before a board's tag was versioned
+ * resumable.
+ *
+ * An unnamed board was once tagged with its card count,
+ * `kanban(columns=…, items=2, concurrency=…)[…]`, and is now tagged
+ * `kanban@2(…)` with its card ids. A run parked under the old tag resolves no
+ * registration on the new build. Pass every board the old build registered
+ * and register the flows returned beside them: each is the same board under
+ * its old tag, so a parked run resumes its own cards. The `kanban@2` kind
+ * means no current tag can equal an old one, whatever the card ids are.
+ *
+ * A board declared with a `name` kept its tag and yields no alias. A board
+ * listed twice yields one.
+ *
+ * `legacyAliases` throws a `PatternError` when two different boards had the
+ * same old tag: the engine resolves a flow by tag alone, so registering either
+ * could resume a parked run on the other board's cards. Give such runs a
+ * board by settling them on the old build, or leave them unregistered. It
+ * also throws for a flow `make` did not declare.
+ *
+ * @category constructors
+ * @since 1.0.0
+ */
+export const legacyAliases = (boards: ReadonlyArray<KanbanFlow<any>>): ReadonlyArray<KanbanFlow<any>> => {
+  const claimed = new Map<string, { readonly board: string; readonly declared: Declared }>()
+  for (const board of boards) {
+    const declared = declarations.get(board)
+    if (declared === undefined) {
+      if (named.has(board)) continue
+      throw new PatternError({
+        code: "invalid_decorator",
+        message: `Kanban.legacyAliases takes boards Kanban.make declared, and "${board._tag}" is not one`
+      })
+    }
+    const holder = claimed.get(declared.legacyTag)
+    if (holder === undefined) claimed.set(declared.legacyTag, { board: board._tag, declared })
+    else if (holder.board !== board._tag) {
+      throw new PatternError({
+        code: "invalid_decorator",
+        message:
+          `Kanban boards "${holder.board}" and "${board._tag}" were both tagged "${declared.legacyTag}", so a run parked under that tag cannot be resumed on the right board`
+      })
+    }
+  }
+  return [...claimed.values()].map((each) => each.declared.alias())
+}
+
+const declare = <R = never>(options: MakeOptions<R>, legacyTag: string | undefined): KanbanFlow<R> => {
   // The body runs when the graph builds, later than this call, so it reads
   // these snapshots and never the caller's options again. An item record is
   // copied because it enters key material as a literal.
@@ -327,16 +396,17 @@ export const make = <R = never>(options: MakeOptions<R>): KanbanFlow<R> => {
     }
     return visit(0, [])
   }
+  const members = [...columns.map((column) => column.flow), onComplete]
   const { name, description } = Compose.label(
-    "kanban",
+    // Versioned: before `kanban@2` the tag carried the card count where the
+    // ids are now, so an old two-card board and a board whose one card is
+    // `2` would otherwise share `items=2`.
+    "kanban@2",
     // The item ids, not their count: two boards with as many different cards
     // are two flows, not one tag whose last registration runs for both.
     { columns: names, items: ids, concurrency },
-    options,
-    [
-      ...columns.map((column) => column.flow),
-      onComplete
-    ]
+    legacyTag === undefined ? options : { ...options, name: legacyTag },
+    members
   )
   const body = (): Node.Node<unknown, unknown, R> => {
     const walk = (
@@ -380,7 +450,7 @@ export const make = <R = never>(options: MakeOptions<R>): KanbanFlow<R> => {
       )
     return walk(0, undefined, [])
   }
-  return Flow.make(name, {
+  const flow = Flow.make(name, {
     ...(description === undefined ? {} : { description }),
     payload: OpaqueInput,
     success: Schema.Unknown,
@@ -392,6 +462,15 @@ export const make = <R = never>(options: MakeOptions<R>): KanbanFlow<R> => {
     ) as typeof Schema.Unknown,
     body: Node.capture(captures, body)
   })
+  if (options.name !== undefined || legacyTag !== undefined) named.add(flow)
+  else {
+    // The snapshots, not the caller's options: an alias built later is the
+    // board this call declared.
+    const snapshot: MakeOptions<R> = { description, columns, items, concurrency, onComplete }
+    const before = Compose.legacyLabel("kanban", { columns: names, items: ids.length, concurrency }, members)
+    declarations.set(flow, { legacyTag: before, alias: () => declare(snapshot, before) })
+  }
+  return flow
 }
 
 interface Carried {

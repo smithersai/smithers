@@ -449,15 +449,21 @@ async function runRustFuzz(libfuzzerSeconds) {
   return allOk
 }
 
-async function ensureObserveCallsHeader(observeFuzzDir) {
+/**
+ * Writes the observer's syscall table to `<observeFuzzDir>/.gen/calls.h` unless
+ * the file already holds the current `callsHeader()` output. A header left by an
+ * earlier run is replaced, so the Zig suites never fuzz against an old table.
+ */
+export async function ensureObserveCallsHeader(observeFuzzDir) {
   const genDir = join(observeFuzzDir, ".gen")
   const headerPath = join(genDir, "calls.h")
-  if (existsSync(headerPath)) return
   const buildObserveUrl =
     pathToFileURL(join(rootDir, "packages/smithers/build/build-cli/scripts/build-observe.mjs")).href
   const { callsHeader } = await import(buildObserveUrl)
+  const header = callsHeader()
+  if (existsSync(headerPath) && readFileSync(headerPath, "utf8") === header) return
   mkdirSync(genDir, { recursive: true })
-  writeFileSync(headerPath, callsHeader(), "utf8")
+  writeFileSync(headerPath, header, "utf8")
 }
 
 async function runZigFuzz(zigRuns) {

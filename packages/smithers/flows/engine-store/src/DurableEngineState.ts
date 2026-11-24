@@ -31,6 +31,7 @@ import * as EngineStateSchema from "./internal/EngineStateSchema.ts"
 import { compareText } from "./internal/Ordering.ts"
 import * as PendingRunStatements from "./internal/PendingRunStatements.ts"
 import * as RunParentStatements from "./internal/RunParentStatements.ts"
+import * as WaitingRunStatements from "./internal/WaitingRunStatements.ts"
 import type { OnParentExit } from "./RunState.ts"
 
 /**
@@ -1744,50 +1745,37 @@ const waitingTree = (db: Database): Service["waitingTree"] =>
   )
 
 /**
- * The keyset page of {@link waitingRuns}: the same predicates, in run-id
- * order, bounded.
+ * One page of decoded parked runs, read past the rows that will not decode.
+ *
+ * SQL bounds the raw rows and {@link decodeSweep} drops a malformed one, so
+ * a full raw page came back short. A caller reads a short page as the end of
+ * the set, and one malformed row then hid every later page from its sweep on
+ * every tick. The read continues after the last raw row for the rows still
+ * owed. It answers a full page while more rows may follow, whose last row is
+ * the last one read, and a short page only when storage has no more.
  */
-const waitingRunsPage = (
+const waitingRunsDecodedPage = (
   db: Database,
   filter: WaitingRunsFilter,
   page: WaitingRunsPage
-): Effect.Effect<ReadonlyArray<WaitingDatabaseRow>, SqlError.SqlError> =>
-  db.sql<WaitingDatabaseRow>`
-    SELECT
-      run_id AS "runId",
-      waiting_reason AS "waitingReason",
-      waiting_wake_at_ms AS "waitingWakeAtMs",
-      waiting_token AS "waitingToken",
-      waiting_request AS "waitingRequest"
-    FROM flows_runs
-    WHERE ${
-    filter.reason === undefined ? db.sql`waiting_reason IS NOT NULL` : db.sql`waiting_reason = ${filter.reason}`
-  }
-      AND ${
-    filter.dueBeforeMs === undefined
-      ? db.sql`1 = 1`
-      : db.sql`waiting_wake_at_ms IS NOT NULL AND waiting_wake_at_ms <= ${filter.dueBeforeMs}`
-  }
-      AND ${filter.cancelRequested === true ? db.sql`cancel_requested_at_ms IS NOT NULL` : db.sql`1 = 1`}
-      AND ${
-    filter.hasChildren === true
-      ? db.sql`EXISTS (SELECT 1 FROM flows_run_parents WHERE flows_run_parents.parent_id = flows_runs.run_id)`
-      : db.sql`1 = 1`
-  }
-      AND ${page.afterRunId === undefined ? db.sql`1 = 1` : db.sql`run_id > ${page.afterRunId}`}
-      AND status NOT IN ('completed', 'failed', 'cancelled')
-    ORDER BY run_id
-    LIMIT ${page.limit}
-  `
+): Effect.Effect<ReadonlyArray<WaitingRow>> =>
+  Effect.gen(function*() {
+    const decoded: Array<WaitingRow> = []
+    let afterRunId = page.afterRunId
+    while (decoded.length < page.limit) {
+      const limit = page.limit - decoded.length
+      const rows = yield* WaitingRunStatements.page(db.sql, filter, { limit, afterRunId }).pipe(Effect.orDie)
+      decoded.push(...(yield* decodeSweep(rows, "waiting run", waitingRowKey, decodeWaitingRowResult)))
+      const last = rows.at(-1)
+      if (last === undefined || rows.length < limit) break
+      afterRunId = last.runId
+    }
+    return decoded
+  })
 
 const waitingRuns = (db: Database): Service["waitingRuns"] =>
   Effect.fn("DurableEngineState.waitingRuns")((filter) => {
-    if (filter?.page !== undefined) {
-      return waitingRunsPage(db, filter, filter.page).pipe(
-        Effect.orDie,
-        Effect.flatMap((rows) => decodeSweep(rows, "waiting run", waitingRowKey, decodeWaitingRowResult))
-      )
-    }
+    if (filter?.page !== undefined) return waitingRunsDecodedPage(db, filter, filter.page)
     // `1 = 0` short-circuits the cancel predicate away when the caller did
     // not ask for it, so the reason/wake filters (and the 0004 index) stay
     // the leading predicates (issue #68).

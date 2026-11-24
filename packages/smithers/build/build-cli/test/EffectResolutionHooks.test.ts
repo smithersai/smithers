@@ -435,3 +435,98 @@ describe("the vendored adapters an installed package carries in dist/vendor", ()
     else expect(Object.keys(served).sort()).toEqual(Object.keys(await load(pathToFileURL(barrel).href)).sort())
   })
 })
+
+describe("a revision's files in place of the changed ones", () => {
+  const path = (url: string) => fileURLToPath(url)
+
+  it("reads each changed module as the revision held it, and a deleted one from the place it had", async () => {
+    await write("revision/package.json", "{\"type\":\"module\"}\n")
+    const typed = await write("revision/typed.ts", "export const typed: string = \"now\"\n")
+    const plain = await write("revision/plain.mjs", "export const plain = \"now\"\n")
+    const data = await write("revision/data.json", "{\"data\":\"now\"}\n")
+    const same = await write("revision/same.ts", "export const same: string = \"unchanged\"\n")
+    const gone = pathToFileURL(NodePath.join(root, "revision", "gone.ts")).href
+    const removed = pathToFileURL(NodePath.join(root, "revision", "removed.mjs")).href
+    const entry = await write(
+      "revision/PACKAGE.ts",
+      [
+        "import { typed } from \"./typed.ts\"",
+        "import { plain } from \"./plain.mjs\"",
+        "import data from \"./data.json\" with { type: \"json\" }",
+        "import { same } from \"./same.ts\"",
+        "import { gone } from \"./gone.js\"",
+        `import { removed } from ${JSON.stringify(removed)}`,
+        "export const seen = { typed, plain, data: data.data, same, gone, removed }"
+      ].join("\n") + "\n"
+    )
+    const revision = {
+      changed: new Set([typed, plain, data, gone, removed].map(path)),
+      texts: new Map([
+        [path(typed), "export const typed: string = \"then\"\n"],
+        [path(plain), "export const plain = \"then\"\n"],
+        [path(data), "{\"data\":\"then\"}\n"],
+        [path(gone), "export const gone: string = \"then\"\n"],
+        [path(removed), "export const removed = \"then\"\n"]
+      ])
+    }
+    const loaded = await importDeclarationModule(entry, import.meta.url, undefined, revision) as {
+      readonly seen: unknown
+    }
+    expect(loaded.seen).toEqual({
+      typed: "then",
+      plain: "then",
+      data: "then",
+      same: "unchanged",
+      gone: "then",
+      removed: "then"
+    })
+    // The checkout's own evaluation is untouched, and still lacks the deleted modules.
+    await expect(load(entry)).rejects.toMatchObject({ code: "ERR_MODULE_NOT_FOUND" })
+  })
+
+  it("refuses a changed module the revision holds no text for, never reading it as it is now", async () => {
+    const added = await write("revision-added/added.ts", "export const added: string = \"now\"\n")
+    const entry = await write(
+      "revision-added/PACKAGE.ts",
+      "import { added } from \"./added.ts\"\nexport const seen = added\n"
+    )
+    await expect(
+      importDeclarationModule(entry, import.meta.url, undefined, { changed: new Set([path(added)]), texts: new Map() })
+    ).rejects.toMatchObject({
+      code: "ERR_MODULE_NOT_FOUND",
+      message: `${path(added)} changed since the revision, which holds no module there`
+    })
+  })
+
+  it("leaves an import that resolves nowhere failing, in its namespace and outside it", async () => {
+    const resolver = new URL("../src/effect-resolution.js", import.meta.url).href
+    const entry = await write(
+      "revision-missing/PACKAGE.ts",
+      [
+        "const code = (specifier: string) => import(specifier).then(() => \"loaded\", (cause) => cause.code)",
+        "export const bare = await code(\"smithers-no-such-package\")",
+        "export const relative = await code(\"./nowhere.js\")",
+        "await new Promise((resolve) => setTimeout(resolve, 250))"
+      ].join("\n") + "\n"
+    )
+    const script = await write(
+      "revision-missing/run.mjs",
+      [
+        `import { importDeclarationModule } from ${JSON.stringify(resolver)}`,
+        `const held = ${JSON.stringify(NodePath.join(root, "revision-missing", "held.mjs"))}`,
+        "const revision = { changed: new Set([held]), texts: new Map([[held, \"export const held = 1\\n\"]]) }",
+        `const pending = importDeclarationModule(${JSON.stringify(entry)}, import.meta.url, undefined, revision)`,
+        "// This module is in no namespace: the revision's text is not its to read.",
+        "const outside = await import(\"./held.mjs\").then(() => \"loaded\", (cause) => cause.code)",
+        "const loaded = await pending",
+        "console.log(JSON.stringify({ bare: loaded.bare, relative: loaded.relative, outside }))"
+      ].join("\n") + "\n"
+    )
+    const seen = JSON.parse(execFileSync(process.execPath, [fileURLToPath(script)], { encoding: "utf8" }))
+    expect(seen).toEqual({
+      bare: "ERR_MODULE_NOT_FOUND",
+      relative: "ERR_MODULE_NOT_FOUND",
+      outside: "ERR_MODULE_NOT_FOUND"
+    })
+  })
+})

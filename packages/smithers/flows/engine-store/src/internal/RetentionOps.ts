@@ -700,16 +700,21 @@ export const generations = (
   // inside the retention transaction, the same way on every retry.
   const depthOf = (runId: string): number => {
     const pending: Array<string> = []
+    // A corrupted `parent_run_id` cycle has no root. The walk cuts the cycle
+    // at the run whose parent it is already resolving and treats that run as
+    // the root, so the pass ends and every doomed run lands in one group.
+    const visiting = new Set<string>()
     let current = runId
     let base = depths.get(current)
     while (base === undefined) {
       const parent = parentOf.get(current) ?? undefined
-      if (parent === undefined || !doomed.has(parent)) {
+      if (parent === undefined || !doomed.has(parent) || parent === current || visiting.has(parent)) {
         base = 0
         depths.set(current, base)
         break
       }
       pending.push(current)
+      visiting.add(current)
       current = parent
       base = depths.get(current)
     }

@@ -9,22 +9,52 @@
  * @since 1.0.0
  */
 
-import { rethrowUnlessMissingSlot } from "./internal/slotFailure.ts"
+import { type NativeBrand, nativeBrand } from "./internal/nativeBrand.ts"
+
+/**
+ * The built-in an object is, read from its internal slots, so a `Set` or a
+ * `Date` made in another realm is the same thing as a local one. `instanceof`
+ * would compare against this realm's constructors and miss it.
+ *
+ * A record or an array is answered from its prototype alone. Almost every
+ * walked object is one, and on a host without slot predicates each of them
+ * would otherwise pay for a failed probe of every slot.
+ */
+const brandOf = (value: object): NativeBrand | undefined => {
+  if (Array.isArray(value)) return undefined
+  const prototype = Object.getPrototypeOf(value)
+  return prototype === Object.prototype || prototype === null ? undefined : nativeBrand(value)
+}
+
+const slottedBrands: ReadonlySet<NativeBrand | undefined> = new Set<NativeBrand>([
+  "ArrayBuffer",
+  "ArrayBufferView",
+  "Date",
+  "RegExp",
+  "WeakMap",
+  "WeakSet"
+])
 
 /**
  * Objects whose state lives in internal slots. Copying one through its
  * prototype would lose the slot, and none of them can hold a collection, so
  * the walk treats them as leaves.
  */
-const isSlotted = (value: object): boolean =>
-  value instanceof Date
-  || value instanceof RegExp
-  || value instanceof ArrayBuffer
-  || ArrayBuffer.isView(value)
-  || value instanceof WeakMap
-  || value instanceof WeakSet
+const isSlotted = (value: object, brand: NativeBrand | undefined): boolean =>
+  slottedBrands.has(brand)
   || value instanceof Promise
   || (typeof URL === "function" && value instanceof URL)
+
+// The intrinsic iteration reads the collection's slots directly. A
+// collection's own `Symbol.iterator` could belong to another realm or to a
+// subclass, and following it would run caller code.
+const setEntries = (value: object, out: Array<unknown>): void => {
+  Reflect.apply(Set.prototype.forEach, value, [(entry: unknown) => out.push(entry)])
+}
+
+const mapEntries = (value: object, out: Array<unknown>): void => {
+  Reflect.apply(Map.prototype.forEach, value, [(entry: unknown, key: unknown) => out.push(key, entry)])
+}
 
 const isObject = (value: unknown): value is object =>
   (typeof value === "object" && value !== null) || typeof value === "function"
@@ -41,18 +71,15 @@ const uninspectable = (error: unknown): "x" => {
 }
 
 /** The values one walked object refers to: its own data properties, then its entries. */
-const children = (value: object): Array<unknown> => {
-  if (typeof value === "function" || isSlotted(value)) return []
+const children = (value: object, brand: NativeBrand | undefined): Array<unknown> => {
+  if (typeof value === "function" || isSlotted(value, brand)) return []
   const out: Array<unknown> = []
   for (const key of Reflect.ownKeys(value)) {
     const descriptor = Reflect.getOwnPropertyDescriptor(value, key)!
     if ("value" in descriptor) out.push(descriptor.value)
   }
-  if (value instanceof Set) {
-    for (const entry of value) out.push(entry)
-  } else if (value instanceof Map) {
-    for (const [key, entry] of value) out.push(key, entry)
-  }
+  if (brand === "Set") setEntries(value, out)
+  else if (brand === "Map") mapEntries(value, out)
   return out
 }
 
@@ -72,8 +99,9 @@ const dirtyObjects = (root: unknown): Set<object> => {
   for (let next = pending.pop(); next !== undefined; next = pending.pop()) {
     let kids: Array<unknown>
     try {
-      kids = children(next)
-      if (next instanceof Set || next instanceof Map) dirty.add(next)
+      const brand = typeof next === "function" ? undefined : brandOf(next)
+      kids = children(next, brand)
+      if (brand === "Set" || brand === "Map") dirty.add(next)
     } catch (error) {
       // An object that cannot be inspected, such as a revoked proxy, is a leaf.
       uninspectable(error)
@@ -174,25 +202,25 @@ interface Shape {
 
 /** The rank of a slotted leaf, or the shape of an object that holds values. */
 const shapeOf = (object: object): string | Shape => {
+  // A wrapper prototype or a proxy has no primitive slot and so no brand. Its
+  // own data still ranks normally.
+  const brand = brandOf(object)
   let primitive = ""
-  try {
-    if (object instanceof Number) primitive = leafRank(Number.prototype.valueOf.call(object))!
-    else if (object instanceof String) primitive = leafRank(String.prototype.valueOf.call(object))!
-    else if (object instanceof Boolean) primitive = leafRank(Boolean.prototype.valueOf.call(object))!
-    else if (object instanceof BigInt) primitive = leafRank(BigInt.prototype.valueOf.call(object))!
-  } catch (cause) {
-    // A wrapper prototype or proxy need not have the primitive slot. Its
-    // own data still ranks normally; engine resource failures still escape.
-    rethrowUnlessMissingSlot(cause)
+  if (brand === "Number") primitive = leafRank(Number.prototype.valueOf.call(object))!
+  else if (brand === "String") primitive = leafRank(String.prototype.valueOf.call(object))!
+  else if (brand === "Boolean") primitive = leafRank(Boolean.prototype.valueOf.call(object))!
+  else if (brand === "BigInt") primitive = leafRank(BigInt.prototype.valueOf.call(object))!
+  if (brand === "Date") return `d${Date.prototype.getTime.call(object)}`
+  if (brand === "RegExp") {
+    const pattern = object as RegExp
+    return `r${JSON.stringify(pattern.source)}${JSON.stringify(pattern.flags)}`
   }
-  if (object instanceof Date) return `d${object.getTime()}`
-  if (object instanceof RegExp) return `r${JSON.stringify(object.source)}${JSON.stringify(object.flags)}`
   if (typeof URL === "function" && object instanceof URL) return `l${JSON.stringify(object.href)}`
   if (ArrayBuffer.isView(object)) {
     const bytes = new Uint8Array(object.buffer, object.byteOffset, object.byteLength)
     return `v${JSON.stringify(object.constructor.name)}[${bytes.join(",")}]`
   }
-  if (object instanceof ArrayBuffer) return `a[${new Uint8Array(object).join(",")}]`
+  if (brand === "ArrayBuffer") return `a[${new Uint8Array(object as ArrayBuffer).join(",")}]`
   const texts: Array<string> = []
   const children: Array<object> = []
   let text = `o${JSON.stringify(constructorName(Object.getPrototypeOf(object)))}${primitive}`
@@ -207,21 +235,24 @@ const shapeOf = (object: object): string | Shape => {
     }
   }
   let separator = ""
-  if (object instanceof Set) {
+  const entries: Array<unknown> = []
+  if (brand === "Set") {
+    setEntries(object, entries)
     text += "S["
-    for (const entry of Array.from(object)) {
+    for (const entry of entries) {
       text += separator
       add(entry)
       separator = ","
     }
     text += "]"
-  } else if (object instanceof Map) {
+  } else if (brand === "Map") {
+    mapEntries(object, entries)
     text += "M["
-    for (const [key, entry] of Array.from(object)) {
+    for (let index = 0; index < entries.length; index += 2) {
       text += separator
-      add(key)
+      add(entries[index])
       text += ":"
-      add(entry)
+      add(entries[index + 1])
       separator = ","
     }
     text += "]"
@@ -439,11 +470,11 @@ const keepIntegrity = (source: object, copy: object): void => {
   else if (!Object.isExtensible(source)) Object.preventExtensions(copy)
 }
 
-const shellOf = (value: object): object => {
+const shellOf = (value: object, brand: NativeBrand | undefined): object => {
   const prototype = Object.getPrototypeOf(value)
-  const shell: object = value instanceof Set
+  const shell: object = brand === "Set"
     ? new Set()
-    : value instanceof Map
+    : brand === "Map"
     ? new Map()
     : Array.isArray(value)
     ? []
@@ -455,6 +486,7 @@ const shellOf = (value: object): object => {
 /** An object whose copy is being filled. */
 interface CopyFrame {
   readonly source: object
+  readonly brand: NativeBrand | undefined
   readonly shell: object
   /** A set's entries, or a map's keys and values in turn; empty otherwise. */
   readonly entries: ReadonlyArray<unknown>
@@ -519,30 +551,27 @@ export const sortCollections = <A>(value: A): A => {
     if (!isObject(current) || !dirty.has(current)) return current
     const known = copies.get(current)
     if (known !== undefined) return known
-    const shell = shellOf(current)
+    // A function is never dirty: the walk reads no members from one.
+    const brand = brandOf(current)
+    const shell = shellOf(current, brand)
     copies.set(current, shell)
     building.add(shell)
     const entries: Array<unknown> = []
-    if (current instanceof Set) {
-      for (const entry of current) entries.push(entry)
-    } else if (current instanceof Map) {
-      for (const [key, entry] of current) entries.push(key, entry)
-    }
-    frames.push({ source: current, shell, entries, copied: [], keys: undefined, index: 0 })
+    if (brand === "Set") setEntries(current, entries)
+    else if (brand === "Map") mapEntries(current, entries)
+    frames.push({ source: current, brand, shell, entries, copied: [], keys: undefined, index: 0 })
     return started
   }
 
   /** Puts the copied entries into the shell in rank order. */
-  const fill = ({ copied, shell, source }: CopyFrame): void => {
-    if (source instanceof Set) {
-      const target = shell as Set<unknown>
-      for (const entry of byRank(copied, rank)) target.add(entry)
-    } else if (source instanceof Map) {
-      const target = shell as Map<unknown, unknown>
+  const fill = ({ brand, copied, shell }: CopyFrame): void => {
+    if (brand === "Set") {
+      for (const entry of byRank(copied, rank)) Reflect.apply(Set.prototype.add, shell, [entry])
+    } else if (brand === "Map") {
       const pairs: Array<readonly [unknown, unknown]> = []
       for (let index = 0; index < copied.length; index += 2) pairs.push([copied[index], copied[index + 1]])
       for (const [key, entry] of byRank(pairs, ([key, entry]) => entryRank(rank(key), rank(entry)))) {
-        target.set(key, entry)
+        Reflect.apply(Map.prototype.set, shell, [key, entry])
       }
     }
   }

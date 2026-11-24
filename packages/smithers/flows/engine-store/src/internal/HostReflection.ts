@@ -21,8 +21,11 @@
  * import gave. A browser takes the second, where proxy detection does not
  * exist. There the fallback is inert: every object is treated as opaque, so a
  * projection never reads a descriptor, a prototype or `Symbol.toStringTag` of
- * a value it cannot prove is not a proxy. A host that can answer supplies its
- * own {@link Reflection} through {@link Current}.
+ * a value it cannot prove is not a proxy. That stance covers diagnostics only.
+ * A declared action error is the JSON its own codec produced, and
+ * `./ActionPersistence.ts` persists it on every host, because replay needs
+ * its tag and fields. A host that can answer supplies its own
+ * {@link Reflection} through {@link Current}.
  *
  * The lookup grants no authority, which is why it is resolved here rather than
  * routed through a `HostServices` port. The whole surface of
@@ -57,6 +60,16 @@ export interface BuiltinSource {
 export interface Reflection {
   /** Whether reading this object would run a proxy handler. */
   readonly isProxy: (value: object) => boolean
+  /**
+   * Whether {@link Reflection.isProxy} answers from the host's internal slot.
+   *
+   * `false` means `isProxy` is the opaque stance of a host that cannot tell:
+   * it says yes to every object. A diagnostic projection honors that answer.
+   * A value a declared codec already encoded is durable data rather than a
+   * diagnostic, and its persistence reads this flag so it is never discarded
+   * for a question the host cannot answer.
+   */
+  readonly detectsProxy: boolean
   /** Whether this value carries the error internal slot, in any realm. */
   readonly isNativeError: (value: unknown) => boolean
   /** Reads an own property without invoking its accessor. */
@@ -148,8 +161,10 @@ export const make = (
   intrinsics: PortableIntrinsics = globalThis as PortableIntrinsics
 ): Reflection => {
   const types = builtinTypes(source)
+  const detectsProxy = typeof types?.isProxy === "function"
   return {
-    isProxy: typeof types?.isProxy === "function" ? types.isProxy : opaqueObject,
+    isProxy: detectsProxy ? types.isProxy : opaqueObject,
+    detectsProxy,
     isNativeError: typeof types?.isNativeError === "function" ? types.isNativeError : slotNativeError(intrinsics),
     getOwnPropertyDescriptor: Object.getOwnPropertyDescriptor,
     getPrototypeOf: Object.getPrototypeOf,

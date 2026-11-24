@@ -139,7 +139,18 @@ export const job = <Payload = unknown>(provider: Provider, options: JobOptions<P
           }
         }
         const session = yield* provider.acquire(key)
-        const directory = `${root}/${sessionSlug(key)}`
+        const legacyDirectory = `${root}/${legacySessionSlug(key)}`
+        const legacy = yield* run(session, `test -d ${q(legacyDirectory)}`)
+        if (legacy.code !== 0 && legacy.code !== 1) {
+          return yield* Effect.fail(fail("could not look up legacy admission"))
+        }
+        const directory = legacy.code === 0 ? legacyDirectory : `${root}/${sessionSlug(key)}`
+        if (legacy.code === 0) {
+          // A lost start receipt is redelivered with the full key. Never
+          // admit beside its legacy worker or trust a colliding old slug.
+          const owner = yield* readText(session, `${directory}/key`)
+          if (owner !== key) return yield* Effect.fail(fail("job directory belongs to another key", "unknown"))
+        }
         const checkout = options.capture?.checkout ?? session.workdir
         if (directory === checkout || directory.startsWith(`${checkout.replace(/\/$/, "")}/`)) {
           return yield* Effect.fail(fail("job directory must be outside the captured checkout", "spawn_error"))

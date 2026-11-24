@@ -21,7 +21,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import * as AwsSandbox from "../src/AwsSandbox/index.ts"
 import { elapsed } from "../src/internal/deadline.ts"
-import { sessionSlug } from "../src/internal/sessionSlug.ts"
+import { legacySessionSlug, sessionSlug } from "../src/internal/sessionSlug.ts"
 import { ProviderError } from "../src/RemoteChildProcessSpawner/ProviderError.ts"
 import type { Session } from "../src/Sandbox/Session.ts"
 import * as SandboxConformance from "../src/SandboxConformance/index.ts"
@@ -506,6 +506,20 @@ const output = (session: Session, command: string, options: Parameters<Session["
   )
 
 describe("AwsSandbox", () => {
+  it.effect("adopts an owned legacy task without launching another", () =>
+    Effect.gen(function*() {
+      const fake = fakeEcs()
+      const provider = transportProvider(fake, fakeCli())
+      const key = "aws/legacy"
+      const leaked = yield* Scope.make()
+      const first = yield* Effect.provideService(provider.acquire(key), Scope.Scope, leaked)
+      const prior = fake.running[0]!
+      fake.running[0] = { ...prior, startedBy: legacySessionSlug(key).replaceAll(/[^A-Za-z0-9/_-]/g, "-") }
+      const session = yield* acquired(provider, Effect.succeed, key)
+      expect(session.remoteId).toBe(first.remoteId)
+      expect(fake.runInputs).toHaveLength(1)
+      yield* Scope.close(leaked, Exit.void)
+    }))
   it("refuses every network restriction and accepts \"open\" at construction, before touching its dependencies", () => {
     const deps = untouchable<never>()
     for (const network of ["none", { allow: ["example.com"] }] as const) {
@@ -1486,9 +1500,9 @@ describe("AwsSandbox", () => {
       // `startedBy` must be the only ListTasks filter. Omitting desiredStatus
       // also uses ECS's RUNNING desired-status default, which includes a task
       // whose lastStatus is still PENDING.
-      expect(fake.listInputs).toHaveLength(2)
+      expect(fake.listInputs).toHaveLength(4)
       for (const input of fake.listInputs) {
-        expect(input).toEqual({ cluster: "cluster-arn", startedBy: fake.runInputs[0]!.startedBy })
+        expect(input).toEqual({ cluster: "cluster-arn", startedBy: expect.any(String) })
         expect(Object.hasOwn(input, "desiredStatus")).toBe(false)
       }
       // Releasing the adopting scope stops the adopted task like any other.
@@ -1538,7 +1552,7 @@ describe("AwsSandbox", () => {
       )
       expect(replacement).not.toBe(stoppingSession.remoteId)
       expect(stopping.runInputs).toHaveLength(2)
-      expect(stopping.listInputs).toHaveLength(2)
+      expect(stopping.listInputs).toHaveLength(4)
       yield* Scope.close(stoppingLeak, Exit.void)
 
       // Two machines under one key collapse to one: the lowest ARN is adopted
@@ -1620,7 +1634,7 @@ describe("AwsSandbox", () => {
           expect(adopted).toBe("arn:aws:ecs:us-west-2:123456789012:task/cluster/leftover-000")
           expect(fake.runInputs).toHaveLength(1)
           // With the crashed task that is 101 or 102 tasks: always a second page.
-          expect(fake.listInputs.map(({ nextToken }) => nextToken)).toEqual([undefined, "page-100"])
+          expect(fake.listInputs.map(({ nextToken }) => nextToken)).toEqual([undefined, undefined, "page-100"])
           const leftovers = fake.describeInputs.slice(-2)
           expect(leftovers.map(({ tasks }) => tasks.length)).toEqual([100, count - 99])
           expect(fake.running.filter((task) => task.startedBy === startedBy)).toEqual([])
@@ -1646,7 +1660,7 @@ describe("AwsSandbox", () => {
         foreign.listInputs.length = 0
         const refused = yield* Effect.flip(acquired(foreignProvider, () => Effect.void, "aws/foreign"))
         expect(refused).toMatchObject({ code: "unavailable", message: expect.stringContaining(intruder) })
-        expect(foreign.listInputs.map(({ nextToken }) => nextToken)).toEqual([undefined, "page-2", "page-4"])
+        expect(foreign.listInputs.map(({ nextToken }) => nextToken)).toEqual([undefined, undefined, "page-2", "page-4"])
         expect(foreign.stopInputs).toEqual([])
         expect(foreign.runInputs).toHaveLength(1)
         yield* Scope.close(crashed.leaked, Exit.void)

@@ -103,14 +103,19 @@ runner killed before it recorded an exit fails the process with `unavailable`.
 
 The service accepts up to `maxRequestBytes` (24 MiB) per request and
 `maxOutputBytes` (4 MiB) across both command streams. A larger request or
-command result returns HTTP 413. The client limits each response, including
-file reads, to `maxResponseBytes` (64 MiB).
+command result returns HTTP 413. File responses separately enforce server
+`maxFileBytes` (4 MiB): a bounded guest read checks the size before base64
+encoding, which preserves binary bytes through text-only command providers.
+The client limits each response, including file reads, to `maxResponseBytes`
+(64 MiB). A disconnected request interrupts its provider scope.
 
 ## Lost requests
 
 Every request is safe to send again. The provider names each command's
 directory itself, so a start sent again finds the directory and starts
-nothing. A chunk names its offset, so a chunk sent again is accepted once.
+nothing. A chunk names its upload ID and offset, so a chunk sent again is accepted once.
+A completed upload keeps its receipt, so an older delayed chunk cannot truncate
+a completed file or overwrite a newer upload.
 A request that fails on the way (a transport failure, a `5xx`, or no answer
 within `requestTimeout`, a minute) is sent again up to `retries` (4) times,
 from `retryDelay` (200 ms) doubling, and then fails `unavailable`.
@@ -120,8 +125,15 @@ host. A `401` is `unknown`, because sending it again cannot help.
 
 ## Large files
 
-`writeFile` sends at most `chunkBytes` (16 MiB) per request: a first `PUT`,
-then one per further chunk, each appended at its offset. A Worker request body
+`writeFile` sends at most `chunkBytes` (16 MiB) per request, each with the same
+upload ID and total byte count, starting at offset zero. Ranges stage beside the
+destination and the last range atomically publishes the file. Completed receipts
+and lock files live outside the workspace under server `processDirectory`
+(default `/tmp/.smthrs-http`), keyed by session and path SHA-256. They remain for
+the retained session's lifetime so redelivery of an earlier upload is harmless.
+Locks are OS-owned and release if a writer is killed. Linux guests need
+util-linux `flock` 2.23+ with `-E`; BSD guests need `lockf -k -t`. A guest lacking
+both refuses uploads with `spawn_error`. A Worker request body
 is capped near 100 MiB, so a shipped workspace of hundreds of MiB still
 crosses. `readFile` is one `GET`: the file must fit one response.
 
@@ -142,7 +154,9 @@ are file bytes.
 `stdin`, `stdout` and `stderr` are base64. An `env` value of `null` removes the
 variable. A `commands` request runs its command to the end in one request, so
 it is for short commands; `spawn` uses it only to start, poll and signal. A
-`PUT` with `offset=<n>` appends to a file holding exactly `n` bytes, accepts
+`PUT` with `upload=<id>&offset=<n>&total=<bytes>` stages a range and publishes
+only when complete. A legacy PUT without an upload ID still replaces the whole
+file; its `offset=<n>` variant appends to a file holding exactly `n` bytes, accepts
 one that already holds the chunk, and answers `409` otherwise. Routes without
 a JSON body carry the limits as `cpus`, `memoryMib` and `timeoutSecs` query
 parameters.

@@ -21,7 +21,7 @@ import { basename, join } from "node:path"
 import { afterAll } from "vitest"
 import * as CommandSandbox from "../src/CommandSandbox/index.ts"
 import { userPidDirectory } from "../src/internal/pidDirectory.ts"
-import { sessionSlug } from "../src/internal/sessionSlug.ts"
+import { legacySessionSlug, sessionSlug } from "../src/internal/sessionSlug.ts"
 import { ProviderError } from "../src/RemoteChildProcessSpawner/ProviderError.ts"
 import * as SandboxConformance from "../src/SandboxConformance/index.ts"
 import { platform } from "./helpers/containedPlatform.ts"
@@ -391,6 +391,21 @@ describe("CommandSandbox", () => {
       yield* Scope.provide(provider.acquire(key("pids")), scope)
       expect(existsSync(pids)).toBe(true)
       yield* Scope.close(scope, Exit.void)
+      expect(existsSync(pids)).toBe(false)
+    }).pipe(Effect.provide(platform)), 30_000)
+
+  it.effect("adopts the legacy pid directory on acquire", () =>
+    Effect.gen(function*() {
+      const spawner = yield* ChildProcessSpawner
+      const sessionKey = key("legacy-pids")
+      const pids = `${pidDirectory}/${legacySessionSlug(sessionKey)}`
+      mkdirSync(pids, { recursive: true })
+      const provider = CommandSandbox.make({ spawner, prefix: [], workdir: join(root, "legacy-pids-ws") })
+      yield* Effect.scoped(Effect.gen(function*() {
+        yield* provider.acquire(sessionKey)
+        expect(existsSync(pids)).toBe(true)
+        expect(existsSync(`${pidDirectory}/${sessionSlug(sessionKey)}`)).toBe(false)
+      }))
       expect(existsSync(pids)).toBe(false)
     }).pipe(Effect.provide(platform)), 30_000)
 

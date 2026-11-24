@@ -79,6 +79,7 @@ export interface CloudflareSandboxOptions<Binding> {
    * an idempotent `destroy`.
    */
   readonly retained?: true | undefined
+  /** Exec is used only with an explicitly cancellable adapter; otherwise scoped process handles are used. */
   readonly execution?: "exec" | "process" | undefined
   readonly workdir?: string | undefined
   readonly sleepAfter?: string | number | undefined
@@ -139,7 +140,7 @@ const encoder = new TextEncoder()
 const failed = (code: ProviderError["code"], message: string, cause: unknown): ProviderError =>
   new ProviderError({ code, message: `cloudflare sandbox: ${message}`, cause })
 
-const attemptCommand = <A>(run: () => Promise<A>, message: string) =>
+const attemptCommand = <A>(run: (signal: AbortSignal) => Promise<A>, message: string) =>
   Effect.tryPromise({ try: run, catch: commandFailure("spawn_error", message) })
 
 const attempt = attemptIn("cloudflare sandbox")
@@ -164,8 +165,9 @@ const processOf = (stdout: string, stderr: string, exitCode: number): RemoteProc
  * `attach` resolves the same Durable Object without creating the workdir, and
  * `destroy` ends it. The SDK cannot tell a running container from one
  * Cloudflare stopped after `sleepAfter`, so a command after such a stop runs
- * on a fresh container with an empty disk. `exec` mode uses the completed command result. `process` mode waits
- * for the detached handle and fetches its logs before it reports an outcome,
+ * on a fresh container with an empty disk. Commands use scoped process handles,
+ * waiting for exit and fetching logs before reporting an outcome. Direct exec
+ * is used only for ephemeral sessions whose SDK declares in-flight cancellation,
  * and a handle that reports no exit status at all is a provider failure, not
  * an invented one.
  *
@@ -273,20 +275,36 @@ export const make = <Binding>(options: CloudflareSandboxOptions<Binding>): Provi
             cwd: resolveCwd(spawnOptions.cwd ?? ""),
             env: guest.env
           }
-          return options.execution === "process"
+          return options.execution === "process" || options.retained === true ||
+              options.sdk.execSupportsCancellation !== true
             ? Effect.flatMap(
-              attemptCommand(
-                async () => {
-                  const started = await sandbox.startProcess(guest.command, commandOptions)
-                  const exit = await started.waitForExit()
-                  const logs = await started.getLogs()
-                  return {
-                    ...logs,
-                    exitCode: exit.exitCode ?? started.exitCode
-                  }
-                },
-                "cloudflare sandbox: process failed"
-              ),
+              Effect.gen(function*() {
+                let exited = false
+                const stop = (started: Awaited<ReturnType<typeof sandbox.startProcess>>) =>
+                  finalizeWithin(
+                    Effect.ignore(
+                      attemptCommand(async () => {
+                        await started.kill()
+                      }, "cloudflare sandbox: stop failed")
+                        .pipe(Effect.tapError((error) => warnTeardown("cloudflare", "kill", error)))
+                    ),
+                    "cloudflare sandbox process"
+                  )
+                const started = yield* Effect.acquireRelease(
+                  Effect.interruptible(attemptCommand(async (signal) => {
+                    const process = await sandbox.startProcess(guest.command, { ...commandOptions, signal })
+                    // An SDK may return its handle after cancellation won the
+                    // acquisition race. It must still be stopped.
+                    if (signal.aborted) await process.kill()
+                    return process
+                  }, "cloudflare sandbox: process failed")),
+                  (process) => exited ? Effect.void : stop(process)
+                )
+                const exit = yield* attemptCommand(() => started.waitForExit(), "cloudflare sandbox: process failed")
+                exited = true
+                const logs = yield* attemptCommand(() => started.getLogs(), "cloudflare sandbox: process failed")
+                return { ...logs, exitCode: exit.exitCode ?? started.exitCode }
+              }),
               (result) =>
                 result.exitCode === undefined
                   ? Effect.fail(
@@ -296,7 +314,7 @@ export const make = <Binding>(options: CloudflareSandboxOptions<Binding>): Provi
             )
             : Effect.map(
               attemptCommand(
-                () => sandbox.exec(guest.command, commandOptions),
+                (signal) => sandbox.exec(guest.command, { ...commandOptions, signal }),
                 "cloudflare sandbox: exec failed"
               ),
               (result) => processOf(result.stdout, result.stderr, result.exitCode)
@@ -335,9 +353,16 @@ export const make = <Binding>(options: CloudflareSandboxOptions<Binding>): Provi
   return {
     acquire: (sessionKey) =>
       Effect.gen(function*() {
-        const remoteId = remoteIdOf(sessionKey)
-        const sandbox = yield* options.retained === true ? resolve(remoteId) : Effect.acquireRelease(
-          resolve(remoteId),
+        const legacyId = `${placement.prefix}${legacySessionSlug(sessionKey)}`
+        const legacy = options.sdk.findSandbox === undefined ? undefined : yield* attempt(
+          () => options.sdk.findSandbox!(placement.binding, legacyId),
+          "unavailable",
+          "could not look up legacy sandbox"
+        )
+        const remoteId = legacy === undefined ? remoteIdOf(sessionKey) : legacyId
+        const resolved = legacy === undefined ? resolve(remoteId) : Effect.succeed(legacy)
+        const sandbox = yield* options.retained === true ? resolved : Effect.acquireRelease(
+          resolved,
           (sandbox) =>
             finalizeWithin(
               Effect.ignore(

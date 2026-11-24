@@ -1403,6 +1403,16 @@ export interface RebaseOptions {
   readonly timeoutSeconds?: number | undefined
 }
 
+const pathCount = Schema.String.check(Schema.isPattern(/^[0-9]+$/)).pipe(
+  Schema.decodeTo(Schema.NumberFromString)
+).check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(0))
+
+const decodeRebaseHeader = Schema.decodeUnknownEffect(Schema.Union([
+  Schema.Tuple([Schema.Literals(["current", "unrelated", "moved"]), ObjectId]),
+  Schema.Tuple([Schema.Literal("conflict"), ObjectId, pathCount]),
+  Schema.Tuple([Schema.Literals(["clean", "applied"]), ObjectId, ObjectId, pathCount])
+]))
+
 /**
  * How a {@link rebaseCall} ended, each with the working copy's tree (`tree`,
  * every tracked and untracked change staged, ignored files left out):
@@ -1525,24 +1535,26 @@ export const rebased = (
 ): Effect.Effect<Rebased, ToolRefused | ToolUnavailable> => {
   if (result.timedOut) return Effect.fail(new ToolUnavailable({ code: "timeout" }))
   if (result.exitCode !== 0) return Effect.fail(failedWith(result.exitCode) as ToolRefused | ToolUnavailable)
-  const [kind, tree = "", second = "", third = ""] = result.stdout.split("\n", 1)[0]!.split(" ")
-  const count = Number(second)
-  const rebased: Rebased | undefined = kind === "current"
-    ? { _tag: "Current", tree }
-    : kind === "unrelated"
-    ? { _tag: "Unrelated", tree }
-    : kind === "conflict"
-    ? { _tag: "Conflicted", tree, paths: count }
-    : kind === "clean"
-    ? { _tag: "Planned", tree, result: second, paths: Number(third) }
-    : kind === "moved"
-    ? { _tag: "Moved", tree }
-    : kind === "applied"
-    ? { _tag: "Applied", tree, result: second, paths: Number(third) }
-    : undefined
-  return rebased === undefined || tree === ""
-    ? Effect.fail(new ToolUnavailable({ code: "unknown" }))
-    : Effect.succeed(rebased)
+  const fields = result.stdout.split("\n", 1)[0]!.split(" ")
+  return decodeRebaseHeader(fields).pipe(
+    Effect.mapError(invalidAnswer),
+    Effect.map(([kind, tree, next, paths]): Rebased => {
+      switch (kind) {
+        case "current":
+          return { _tag: "Current", tree }
+        case "unrelated":
+          return { _tag: "Unrelated", tree }
+        case "moved":
+          return { _tag: "Moved", tree }
+        case "conflict":
+          return { _tag: "Conflicted", tree, paths: next }
+        case "clean":
+          return { _tag: "Planned", tree, result: next, paths }
+        case "applied":
+          return { _tag: "Applied", tree, result: next, paths }
+      }
+    })
+  )
 }
 
 /**

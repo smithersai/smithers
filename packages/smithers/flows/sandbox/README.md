@@ -52,6 +52,23 @@ Every namespace below is also its own import subpath.
 | `SandboxTools`              | `@smthrs/sandbox/SandboxTools`              | Typed tools on a working copy: run, read, write, list, git status and diff.   |
 | `SandboxCommand`            | `@smthrs/sandbox/SandboxCommand`            | A command as durable external work: start once, probe, collect, cancel.       |
 
+Acquisition looks up an existing legacy session name before creating a SHA-256
+name. Existing ownership and configuration checks still apply. Vercel uses its
+native `Sandbox.get({ name, resume: false })`; only `APIError.response.status`
+404 establishes absence. Minimal injected Vercel adapters may omit `get` and
+use fresh SHA-256 acquisition. Cloudflare hosts supply the optional noncreating
+`findSandbox` hook for legacy recovery without recorded handles; without it,
+fresh acquisition uses the SHA-256 name. Recorded legacy handles remain valid.
+Retained jobs check the legacy admission's full key before reusing its fence.
+
+Cloudflare process handles must implement `kill()`. Commands use process handles,
+including `execution: "exec"`, so cancelling a command stops it while preserving
+its sandbox and sibling commands. An adapter may opt into direct ephemeral exec
+with `execSupportsCancellation: true` only when exec stops the remote command on
+in-flight abort; the stock vendor SDK does not. Both paths pass an abort signal;
+a process handle delivered after cancellation is also stopped. The library
+catalog entry used here is `@smthrs/sandbox`.
+
 `DirectorySandbox` requires `sh` on `PATH`, including on Windows.
 
 Opening a provider is scoped, so interruption closes the layer scope and runs

@@ -61,6 +61,7 @@ import * as HttpClientRequest from "effect/http/HttpClientRequest"
 import type * as HttpServerRequest from "effect/http/HttpServerRequest"
 import * as HttpServerResponse from "effect/http/HttpServerResponse"
 import * as Url from "effect/http/Url"
+import * as Layer from "effect/Layer"
 import * as Metric from "effect/Metric"
 import * as Option from "effect/Option"
 import * as Redacted from "effect/Redacted"
@@ -297,6 +298,18 @@ export const DecodesContent = Context.Reference<(encodings: ReadonlyArray<string
   { defaultValue: () => () => false }
 )
 
+/**
+ * Declares the single gzip, deflate and Brotli codings decoded by a standard
+ * Fetch transport. Provide alongside the host's Fetch client.
+ *
+ * @category layers
+ * @since 0.1.0
+ */
+export const layerFetchDecodesContent = Layer.succeed(
+  DecodesContent,
+  (encodings) => encodings.length === 1 && ["gzip", "deflate", "br"].includes(encodings[0]!)
+)
+
 const forwardable = (headers: Readonly<Record<string, string>>) => {
   const entries = Object.entries(headers).map(([name, value]) => [name.toLowerCase(), value] as const)
   const named = new Set(
@@ -530,22 +543,24 @@ export const execute = (
       Effect.catchCause((cause) => unavailable("upstream", used.length, cause))
     )
 
+    // Inspect the wire coding even when Connection nominates the header for removal.
+    const encodings = sent.headers["content-encoding"]?.toLowerCase().split(",").map((name) => name.trim()) ?? []
+    const encoded = encodings.some((name) => name !== "identity")
+    const decodes = yield* DecodesContent
+    const decoded = encoded && decodes(encodings)
+    const unreadable = scrubber.active && encoded && !decoded
     const answered: Record<string, string> = Object.create(null)
     for (const [name, value] of forwardable(sent.headers)) {
-      if (name !== "content-encoding" && scrubber.text(name) === name) answered[name] = scrubber.text(value)
+      if (name === "content-encoding" && decoded) continue
+      if (scrubber.text(name) === name) answered[name] = scrubber.text(value)
     }
     if (method === "HEAD" || bodiless.has(sent.status)) {
       yield* mark("forwarded", sent.status)
       yield* settle("forwarded", sent.status, used.length)
       return { status: sent.status, headers: answered, body: Stream.empty }
     }
-    // Check the wire header even when Connection nominates it for removal.
-    const encodings = sent.headers["content-encoding"]?.toLowerCase().split(",").map((name) => name.trim()) ?? []
-    const encoded = encodings.some((name) => name !== "identity")
-    const decodes = yield* DecodesContent
-    const unreadable = scrubber.active && encoded && !decodes(encodings)
     // Open and immediately release the response stream's scope without pulling any bytes.
-    if (unreadable) yield* Effect.scoped(Stream.toPull(sent.stream))
+    if (unreadable) yield* Effect.scoped(Effect.asVoid(Stream.toPull(sent.stream)))
     yield* mark(unreadable ? "broken" : "forwarded", sent.status)
     const body = (unreadable ? Stream.fail(new Broken()) : scrubber.stream(
       sent.stream.pipe(

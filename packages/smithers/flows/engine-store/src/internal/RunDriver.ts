@@ -906,6 +906,31 @@ const recordParentResume = (
     return recorded
   })
 
+/**
+ * Whether a parked parent holds a `parent-settled` wake for this child that
+ * nothing has consumed.
+ *
+ * {@link recordParentResume} commits the wake and its caller then wakes the
+ * parent. A worker that dies between the two leaves the wake recorded and the
+ * parent parked, and a second attempt to record it answers that it already
+ * exists. That answer alone cannot tell a wake the parent has taken from one
+ * it was never told about, and this read can.
+ */
+const parentWakeUnconsumed = (
+  driver: Driver,
+  parentExecutionId: string,
+  childExecutionId: string
+): Effect.Effect<boolean> =>
+  Effect.gen(function*() {
+    const parent = yield* findRun(driver, parentExecutionId)
+    if (parent === undefined || parent.status !== "suspended") return false
+    const waiting = yield* driver.engineState.waiting(parentExecutionId)
+    if (Option.isNone(waiting) || waiting.value.reason === "quarantine") return false
+    const state = yield* decodeState(parent.stateJson)
+    const ready = yield* driver.engineState.completedDeferreds(state.flowName, parentExecutionId)
+    return ready.some((row) => row.deferredName === parentWakePrefix + childExecutionId)
+  })
+
 const requestCancellation = (driver: Driver, runId: string, at: number) =>
   driver.executionFacts.requestCancel(runId, at).pipe(
     Effect.catchIf(
@@ -2140,8 +2165,9 @@ const settleInterrupted = (
  */
 const encodeResult = (
   flow: Flow.Any,
-  result: Flow.Result<unknown, unknown>
-): Effect.Effect<ExitEncoding.EncodedResult> => ExitEncoding.encode(flow, result)
+  result: Flow.Result<unknown, unknown>,
+  handoff?: ExitEncoding.EstablishedHandoff
+): Effect.Effect<ExitEncoding.EncodedResult> => ExitEncoding.encode(flow, result, handoff)
 
 /**
  * Re-encodes a handoff payload as the target flow's identity snapshot
@@ -2357,7 +2383,12 @@ const continueLineage = (driver: Driver, seam: HandoffSeam, advanced: Successor)
     const nextStateJson = yield* encodeState(successorState(seam, payload, nextCeilings))
     const settledStateJson = yield* encodeState({
       ...seam.state,
-      result: (yield* encodeResult(seam.flow, seam.handoff)).encoded
+      // The seam already names the destination and the payload, so a payload
+      // this round's codec rejects still settles as the handoff it is.
+      result: (yield* encodeResult(seam.flow, seam.handoff, {
+        flow: seam.handoff.flow,
+        payload: seam.handoff.payload
+      })).encoded
     })
     const committed = yield* Effect.result(
       commitHandoff(driver, seam, advanced, { payload, nextCeilings, nextStateJson, settledStateJson })
@@ -3809,8 +3840,9 @@ const sweepPendingFlow = (
  * ({@link settleAnnounced}). A process that dies between the two leaves the
  * child settled and the parent parked with nothing due, and no other sweep
  * revisits it. For every parked run, this records the wake of each child
- * whose lineage has settled, unless the wake was already recorded, consumed
- * or not, and wakes the parent. A parent that attached to a child that had
+ * whose lineage has settled, unless the wake was already recorded, and wakes
+ * the parent. A wake that is recorded and not yet consumed wakes the parent
+ * again without a second record: its recorder died before announcing it. A parent that attached to a child that had
  * already settled has no such wake either, so it is woken once for nothing:
  * its round replays and parks again.
  *
@@ -3828,7 +3860,13 @@ const sweepUnannouncedSettlements = (driver: Driver): Effect.Effect<void> =>
       const parentId = waiting.runId
       for (const edge of yield* driver.engineState.runChildren(parentId)) {
         const latest = yield* driver.store.latestRound(edge.childId).pipe(Effect.orDie)
-        if (!isSettled(latest.status) || !(yield* recordParentResume(driver, parentId, latest.runId))) continue
+        if (!isSettled(latest.status)) continue
+        // A wake recorded by a worker that died before announcing it is
+        // announced here, and not recorded a second time.
+        if (
+          !(yield* recordParentResume(driver, parentId, latest.runId)) &&
+          !(yield* parentWakeUnconsumed(driver, parentId, latest.runId))
+        ) continue
         yield* driver.coordinator.wake(parentId)
         yield* driver.wakeBus.wake(parentId)
       }

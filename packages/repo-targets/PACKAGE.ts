@@ -367,7 +367,10 @@ const workspacePackages = Smithers.NodeTest({
     Smithers.file("//packages/repo-targets/scripts/workspace-packages.mjs"),
     Smithers.file("//packages/repo-targets/scripts/workspace-packages.d.mts"),
     Smithers.file("//packages/repo-targets/scripts/workspace-root.mjs"),
-    Smithers.file("//scripts/fuzz-repo.mjs")
+    Smithers.file("//scripts/fuzz-repo.mjs"),
+    // fuzz-repo.mjs writes the observer's syscall header from these two.
+    Smithers.file("//packages/smithers/build/build-cli/scripts/build-observe.mjs"),
+    Smithers.file("//packages/smithers/build/build-cli/src/internal/RecordedCalls.ts")
   ],
   deps: []
 })
@@ -455,6 +458,26 @@ const reliabilityWorkflow = Smithers.NodeTest({
     ...contracts,
     Smithers.file("//.smithers/flows/release/release-rehearsal.mjs"),
     Smithers.file("//.github/workflows/reliability.yml")
+  ],
+  deps: []
+})
+
+/**
+ * The root `projectCopy` target declares every file its generator writes and
+ * deletes, found by running the generator in a copy of the tree.
+ *
+ * @since 1.0.0
+ * @category test
+ */
+const projectCopyChanges = Smithers.NodeTest({
+  runner: Smithers.testRunner([Smithers.file("//packages/repo-targets/contracts/project-copy-changes.test.mjs")]),
+  srcs: [
+    ...contracts,
+    Smithers.file("//PACKAGE.ts"),
+    Smithers.file("//package.json"),
+    Smithers.file("//apps/site/scripts/generate-project-copy.mjs"),
+    Smithers.file("//apps/site/src/data/project.json"),
+    Smithers.file("//apps/site/docs/installation.mdx")
   ],
   deps: []
 })
@@ -1021,6 +1044,7 @@ export const Package = Smithers.Package({
     publicExportMaps,
     barrels,
     reliabilityWorkflow,
+    projectCopyChanges,
     faultSkips,
     machinePaths,
     scratchArtifacts,

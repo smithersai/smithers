@@ -194,9 +194,9 @@ describe("Fork.fork", () => {
       expect(calls).toEqual(["add"])
     }))
 
-  it.effect("tracks a bounded set of lanes on one scope and forgets them newest first at its close", () =>
+  it.effect("keeps every live fork's lane registered until its scope closes, then forgets them newest first (R2-Fable-D1-007)", () =>
     Effect.gen(function*() {
-      const forks = Fork.maxTrackedLanes + 44
+      const forks = 256 + 44
       const added: Array<string> = []
       const forgotten: Array<string> = []
       const store = MemoryTimeTravelStore.make({
@@ -218,13 +218,11 @@ describe("Fork.fork", () => {
       )
       for (let index = 0; index < forks; index++) yield* fork
       expect(new Set(added).size).toBe(forks)
-      // Past the bound the oldest lanes were forgotten as newer forks landed.
-      expect(forgotten).toEqual(added.slice(0, 44))
+      // A child run may still be executing in the first fork's workspace: no later fork deregisters it.
+      expect(forgotten).toEqual([])
 
-      forgotten.length = 0
       yield* Scope.close(scope, Exit.void)
-      // The close does bounded work, however many forks the scope ever made.
-      expect(forgotten).toEqual(added.slice(44).reverse())
+      expect(forgotten).toEqual([...added].reverse())
     }))
 
   it.effect("fails a repeated suffix page instead of spinning", () =>

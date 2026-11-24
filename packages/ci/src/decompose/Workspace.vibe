@@ -180,7 +180,7 @@ const matchDirectory = (
       continue
     }
     if (chunk.length === 0) continue
-    if (chunk.every((segment) => !/[*\/]/.test(segment))) {
+    if (chunk.every((segment) => !/[*/]/.test(segment))) {
       const literal = `/${chunk.join("/")}/`
       const next = subject.indexOf(literal, offsets[at])
       if (next === -1 || next + literal.length - 1 > offsets[end]!) return false

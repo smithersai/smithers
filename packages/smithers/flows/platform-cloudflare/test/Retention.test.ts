@@ -141,6 +141,48 @@ describe("CloudflareRuntime retention in a Durable Object's SQLite", () => {
     })
   })
 
+  it.effect("a parked run survives a deploy missing its flow and resumes when registration returns", () => {
+    const store = SqliteStorage.make()
+    const memory = MemoryStorage.make()
+    const steps: Array<string> = []
+    const reported: Array<string> = []
+    return Effect.gen(function*() {
+      yield* TestClock.setTime(Date.now())
+      const intent = yield* ExecutionObject.intent(Answer, {
+        executionId: "missing-deploy",
+        payload: { question: "kept", pauseMs: 60_000 }
+      })
+      yield* ExecutionObject.start(memory.storage, intent, Effect.void)
+      const options = {
+        flows: [Answer],
+        runtime: (driven: ExecutionObject.Intent) =>
+          CloudflareRuntime.layer(
+            { hostId, executionId: driven.executionId, flow: Answer._tag },
+            registration((label) => Effect.sync(() => steps.push(label)).pipe(Effect.as(label)))
+          ).pipe(Layer.provide(ObjectDatabase.layer(store.storage))),
+        router: Objects.unrouted,
+        settled: (id: string) =>
+          Effect.sync(() => {
+            reported.push(id)
+          })
+      }
+      const parked = yield* ExecutionObject.alarm(memory.storage, options)
+      expect(parked._tag).toBe("Parked")
+      if (parked._tag !== "Parked" || parked.wakeAtMs === null) return yield* Effect.die("expected timed park")
+      yield* TestClock.setTime(parked.wakeAtMs)
+      expect(yield* ExecutionObject.alarm(memory.storage, { ...options, flows: [] })).toMatchObject({
+        _tag: "Retrying",
+        failure: "@smthrs/platform-cloudflare/UnknownFlow"
+      })
+      expect(reported).toEqual([])
+      expect(memory.values.has(ExecutionObject.settledKey)).toBe(false)
+      expect((yield* rows(store)).runs).toEqual([{ run_id: expect.any(String), status: "suspended" }])
+      expect((yield* ExecutionObject.alarm(memory.storage, options))._tag).toBe("Settled")
+      expect(steps).toEqual(["ask:kept", "answer"])
+      expect(reported).toEqual(["missing-deploy"])
+    })
+  })
+
   it.effect("a pass that fails deletes nothing, and the execution still runs; telemetry carries counts only", () => {
     const store = SqliteStorage.make()
     const telemetry = Telemetry.make()

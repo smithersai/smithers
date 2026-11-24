@@ -23,15 +23,33 @@ export declare const installEffectResolution: (
 ) => void
 
 /**
+ * The files changed since a revision, by absolute path, and the text of each
+ * one the revision holds.
+ *
+ * @category loading
+ * @since 1.0.0
+ */
+export interface DeclarationRevision {
+  readonly changed: ReadonlySet<string>
+  readonly texts: ReadonlyMap<string, string>
+}
+
+/**
  * Evaluates one declaration module through tsx with the CLI's resolver in
  * front of tsx's namespace loader, so the module and the CLI share one Effect
- * instance.
+ * instance. With `revision`, every changed file is read as the revision held
+ * it, and a changed file the revision holds no text for is refused.
  *
  * @category loading
  * @since 0.1.0
  * @slop
  */
-export declare const importDeclarationModule: (url: string, parentURL: string, source?: string) => Promise<unknown>
+export declare const importDeclarationModule: (
+  url: string,
+  parentURL: string,
+  source?: string,
+  revision?: DeclarationRevision
+) => Promise<unknown>
 
 /**
  * Marks one admitted declaration URL for ES-module evaluation.

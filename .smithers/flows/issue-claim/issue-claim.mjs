@@ -17,7 +17,9 @@
 // Claiming again as the same NAME and host refreshes it once the claim is an hour old;
 // sooner it is a no-op, so a retried claim never posts a second comment. A claim ends at
 // a later comment with a `Released by ...` line, or at its expiry; a stale claim may be
-// taken over. Release removes the label and, when it ends a live claim, comments
+// taken over. Only a comment by an owner, member or collaborator of the repository, or by
+// the GitHub App this machine writes as, claims or releases: anyone can comment on a public
+// issue, and a stranger's `Claimed by` or `Released by` line is not read. Release removes the label and, when it ends a live claim, comments
 // `Released by <NAME> on <host> at <UTC>: <note>`. `comment --release` appends that line
 // to a new receipt, or posts a separate release when that receipt already exists; `--close` then closes
 // the issue (`--pr`: the pull request). A body already on the issue is never posted again.
@@ -52,6 +54,7 @@ export const TRANSIENT = 75
 const CLAIM = /^Claimed by (.+) on (\S+) at (\S+); expires (\S+?)\.?(?:\s|$)/
 const RELEASE = /^Released by /m
 const RELEASE_SUFFIX = /^\n\nReleased by .+ on \S+ at (\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z):(?: [\s\S]*)?$/
+const TRUSTED = new Set(["OWNER", "MEMBER", "COLLABORATOR"])
 const LIMITED = /secondary rate limit|rate limit exceeded|abuse detection|HTTP 429/i
 
 export const parseRef = (ref) => {
@@ -61,15 +64,30 @@ export const parseRef = (ref) => {
 }
 
 /**
+ * Whether a comment may claim or release: its author is an owner, member or collaborator
+ * of the repository (the associations `issue-sweep/github.ts` trusts), or is the GitHub
+ * App the proxy writes as. GitHub reports an App's own comments as `NONE`, so a machine
+ * that claims as `app:<slug>@<owner>` reads the comments of `<slug>[bot]`, a login no
+ * person can register.
+ */
+export const trustedComment = (comment, principal) => {
+  if (TRUSTED.has(comment.author_association)) return true
+  const app = /^app:([^@]+)@/.exec(principal ?? "")
+  return app !== null && comment.user?.login === `${app[1]}[bot]`
+}
+
+/**
  * The current holder of an issue, or null when it is free. `comments` are in
- * creation order with `body` and `created_at`; `labeledAt` is the latest time the
+ * creation order with `body`, `created_at`, `author_association` and `user`; a comment
+ * `trustedComment` refuses for `principal` is not read. `labeledAt` is the latest time the
  * label was added, used as the claim time when no claim comment explains the label.
  * A claim by another agent while an earlier one is live does not displace it, so
  * two agents racing to claim agree on the first.
  */
-export const holder = ({ labeled, comments, labeledAt }, now = Date.now()) => {
+export const holder = ({ labeled, comments, labeledAt, principal }, now = Date.now()) => {
   let current = null
   for (const comment of comments) {
+    if (!trustedComment(comment, principal)) continue
     const body = comment.body ?? ""
     const at = Date.parse(comment.created_at ?? "")
     if (RELEASE.test(body)) current = null
@@ -170,18 +188,21 @@ export const proxied = ({ gh, base, now = () => new Date() }) => {
 
 const pages = (text) => JSON.parse(text || "[]").flat()
 
-/** Reads the issue's label, comments and, only when needed, its latest `in-progress` label event. */
-export const read = ({ repo, number }, gh = defaultGh) => {
+/**
+ * Reads the issue's label, comments and, only when needed, its latest `in-progress` label
+ * event. `principal` is who the proxy writes as; it rides along for `holder`.
+ */
+export const read = ({ repo, number }, gh = defaultGh, principal) => {
   const base = `repos/${repo}/issues/${number}`
   const issue = JSON.parse(gh(["api", base]))
   const labeled = (issue.labels ?? []).some((label) => (label.name ?? label) === LABEL)
   const comments = pages(gh(["api", "--paginate", "--slurp", `${base}/comments?per_page=100`]))
   let labeledAt = null
-  if (labeled && !holder({ labeled: false, comments })) {
+  if (labeled && !holder({ labeled: false, comments, principal })) {
     const events = pages(gh(["api", "--paginate", "--slurp", `${base}/events?per_page=100`]))
     labeledAt = events.filter((event) => event.event === "labeled" && event.label?.name === LABEL).at(-1)?.created_at ?? null
   }
-  return { state: issue.state, labeled, comments, labeledAt }
+  return { state: issue.state, labeled, comments, labeledAt, principal }
 }
 
 const mine = (claim, me) => claim && claim.by === me.by && claim.host === me.host
@@ -218,8 +239,8 @@ export const run = (argv, { gh = defaultGh, now = () => new Date(), env = proces
   ensure(env)
   const github = proxied({ gh, base: proxyUrl(env), now })
   const write = (args) => github.write(args)
-  const readIssue = () => read(issue, github.read)
   let identity
+  const readIssue = () => read(issue, github.read, identity)
   const base = `repos/${issue.repo}/issues/${issue.number}`
   const unlabel = ["api", "--method", "DELETE", `${base}/labels/${LABEL}`]
   const admit = (writes) => { identity = github.admit(issue.repo, writes) }
@@ -282,7 +303,7 @@ export const run = (argv, { gh = defaultGh, now = () => new Date(), env = proces
     } catch (error) {
       if (!initial.labeled) {
         try {
-          const after = holder(read(issue, github.read), now().getTime())
+          const after = holder(readIssue(), now().getTime())
           if (!after || after.by === "unknown") write(unlabel)
         } catch { /* keep the label when ownership cannot be checked */ }
       }

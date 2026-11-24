@@ -194,7 +194,7 @@ int main(int argc, char **argv) {
       ["replacement env with extendEnv true", { CALLER: "named value" }, true],
       ["replacement env with extendEnv false", { CALLER: "named value" }, false]
     ] as const
-  )("preserves the real Node spawner environment contract for %s", async (_, env, extendEnv) => {
+  )("keeps ambient secrets outside confinement for %s", async (_, env, extendEnv) => {
     const f = fixture()
     vi.stubEnv("SMITHERS_HOST_SECRET", "inherited private fixture")
     const command = ChildProcess.make("/bin/sh", [
@@ -205,11 +205,9 @@ int main(int argc, char **argv) {
       env,
       extendEnv
     })
-    const baseline = await Effect.runPromise(Effect.scoped(spawn(command)).pipe(Effect.provide(spawnerLayer)))
-    expect(baseline.code, baseline.stderr).toBe(0)
     const result = await f.execute(command)
     expect(result.code, result.stderr).toBe(0)
-    expect(result.stdout).toBe(baseline.stdout)
+    expect(result.stdout).toBe(`absent|${env?.CALLER ?? "absent"}`)
   })
 
   it("keeps credentials read- and write-closed when the workspace contains the host home", async () => {
@@ -786,6 +784,12 @@ int main(int argc, char **argv) {
   for (int index = 1; index < argc; index++) {
     int type = atoi(argv[index]);
     if (type == 0) { int fd = socket(AF_UNIX, SOCK_STREAM, 0); printf("socket:%d\n", fd < 0 ? errno : 0); continue; }
+    if (type == -1) {
+      int result = socketpair(AF_INET, SOCK_STREAM, 0, pair);
+      printf("inet-pair:%d\n", result < 0 ? errno : 0);
+      if (result == 0) { close(pair[0]); close(pair[1]); }
+      continue;
+    }
     if (socketpair(AF_UNIX, type | SOCK_CLOEXEC, 0, pair)) { printf("pair %d:%d\n", type, errno); continue; }
     if (write(pair[0], "x", 1) != 1) return 90;
     char byte = 0;
@@ -800,13 +804,13 @@ int main(int argc, char **argv) {
       encoding: "utf8"
     })
     expect(compiled.status, compiled.stderr).toBe(0)
-    const types = [String(1), String(5), String(2), String(3), "0"]
+    const types = [String(1), String(5), String(2), String(3), "0", "-1"]
     const command = ChildProcess.make(executable, types, { cwd: f.workspaceRoot })
     const verification = await f.execute(command)
     expect(verification.code, verification.stderr).toBe(0)
-    expect(verification.stdout).toBe("pair 1:0\npair 5:0\npair 2:1\npair 3:1\nsocket:1\n")
+    expect(verification.stdout).toBe("pair 1:0\npair 5:0\npair 2:1\npair 3:1\nsocket:1\ninet-pair:1\n")
     const agent = await f.agent(command)
     expect(agent.code, agent.stderr).toBe(0)
-    expect(agent.stdout).toBe("pair 1:0\npair 5:1\npair 2:1\npair 3:1\nsocket:1\n")
+    expect(agent.stdout).toBe("pair 1:0\npair 5:1\npair 2:1\npair 3:1\nsocket:1\ninet-pair:1\n")
   })
 })

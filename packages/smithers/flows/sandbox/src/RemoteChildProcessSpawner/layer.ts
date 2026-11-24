@@ -55,8 +55,6 @@ const MODULE = "ChildProcess"
  */
 const signalWithin = Duration.seconds(5)
 
-const platformError = platformFailure
-
 const ambient = new Set(ChildProcessEnvironment.inheritedNames)
 
 /**
@@ -299,8 +297,8 @@ const handleOf = (
 ): Effect.Effect<ChildProcessHandle, never, Scope.Scope> =>
   Effect.gen(function*() {
     let running = true
-    const rawStdout = Stream.mapError(process.stdout, platformError("stdout"))
-    const rawStderr = Stream.mapError(process.stderr, platformError("stderr"))
+    const rawStdout = Stream.catch(process.stdout, (error) => Stream.fromEffect(platformFailure("stdout")(error)))
+    const rawStderr = Stream.catch(process.stderr, (error) => Stream.fromEffect(platformFailure("stderr")(error)))
     const options = rightmostOptions(child)
     const stdout = outputStream(rawStdout, options.stdout)
     const stderr = outputStream(rawStderr, options.stderr)
@@ -310,9 +308,9 @@ const handleOf = (
     // a handle whose exit could not be read must not keep reporting itself
     // as a live process.
     const observeExit = process.exitCode.pipe(
-      Effect.mapError((error) => {
+      Effect.catch((error) => {
         running = false
-        return platformError("exitCode")(error)
+        return platformFailure("exitCode")(error)
       }),
       Effect.map((code) => {
         running = false
@@ -327,7 +325,7 @@ const handleOf = (
     const signalled: (signal: ChildProcess.Signal) => Effect.Effect<void, PlatformError.PlatformError> =
       kill === undefined
         ? () => Effect.fail(noKill())
-        : (signal) => Effect.mapError(kill(process, signal), platformError("kill"))
+        : (signal) => Effect.catch(kill(process, signal), platformFailure("kill"))
     if (kill !== undefined) {
       // Closing a process scope asks the provider to stop THAT command before
       // the provider's own release finalizer tears down whatever it owns. A
@@ -402,7 +400,7 @@ export const makeOpened = (
           cwd,
           env,
           ...stdin === undefined ? {} : { stdin }
-        }).pipe(Effect.mapError(platformError("spawn")))
+        }).pipe(Effect.catch(platformFailure("spawn")))
         return yield* handleOf(command, started, allocatePid, provider)
       })
     )
@@ -426,9 +424,7 @@ export const make = (
   Effect.catch(
     makeOpened(provider),
     (error) =>
-      Effect.succeed(
-        makeSpawner(() => Effect.fail(platformError("open")(error)))
-      )
+      Effect.map(Effect.flip(platformFailure("open")(error)), (reason) => makeSpawner(() => Effect.fail(reason)))
   )
 
 /**

@@ -12,6 +12,7 @@ import { join } from "node:path"
 import { afterAll, describe, expect, it, vi } from "vitest"
 import type { Config, FixBrief } from "../src/index.ts"
 import { CommandCi, CommandFixer, Driver, empty, FileEndings, FileInbox, Fixer, JjRepository } from "../src/index.ts"
+import { makeWorld } from "./support/World.ts"
 
 const jjInstalled = (() => {
   try {
@@ -178,6 +179,50 @@ it("concurrent reconciles start one replacement for a cancelled fixer", async ()
   await vi.waitFor(() => expect(runs()).toBe(2))
   await world.fixer((fixer) => fixer.reconcile([]))
   expect(runs()).toBe(2)
+})
+
+it("wakes an idle driver when a fixer exits without an answer", async () => {
+  const config: Config = { required: [1], maxAttempts: 2, maxBatch: 1, maxRuns: 1, window: 1, defaultDuration: 1 }
+  const world = makeWorld(config, { failing: () => [1], fix: () => undefined })
+  world.enqueue(1)
+  world.close()
+  const path = mkdtempSync(join(root, "idle-driver-"))
+  const base = ManagedRuntime.make(host)
+  runtimes.push(base)
+  const repository = await base.runPromise(
+    JjRepository.make({ path, bookmark: "main", ledger: join(path, "ledger"), poll: 5 })
+  )
+  const layer = CommandFixer.layer({
+    repository,
+    directory: path,
+    command: (brief, answer) => ({
+      command: "sh",
+      args: [
+        "-c",
+        "if [ ! -f \"$1.started\" ]; then echo first > \"$1.started\"; exit 0; fi; "
+        + answerWith("{\"_tag\":\"gaveUp\",\"detail\":\"second invocation\"}"),
+        "sh",
+        brief,
+        answer
+      ]
+    }),
+    poll: "5 millis"
+  }).pipe(Layer.provide(host), Layer.provideMerge(world.layer))
+  const runtime = ManagedRuntime.make(layer)
+  runtimes.push(runtime)
+  let position: Driver.Position = { state: empty, cursor: 0, closed: false, ended: [], settled: 0 }
+  for (let rounds = 0; rounds < 30; rounds++) {
+    const outcome = await runtime.runPromise(Driver.round(config, position).pipe(Effect.timeout("3 seconds")))
+    position = outcome
+    if (outcome.done) break
+  }
+  expect(position.state.changes).toEqual([])
+  expect(world.endings).toHaveLength(1)
+  expect(world.endings[0]?.status).toMatchObject({ _tag: "unmergeable" })
+  expect(JSON.parse(readFileSync(join(path, "1-1.answer.json"), "utf8"))).toEqual({
+    _tag: "gaveUp",
+    detail: "second invocation"
+  })
 })
 
 // Real jj and real processes: a budget for a loaded host, still finite so a hang fails.

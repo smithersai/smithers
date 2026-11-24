@@ -96,6 +96,7 @@ export function exitCodeOf(failure: Failure): number {
 }
 
 /** A terminal's control sequences: an escape with what it introduces, to the byte that ends it. */
+// eslint-disable-next-line no-control-regex -- The escape and bell characters are what this expression removes.
 const controlSequence = /\u001b(?:\[[0-?]*[ -/]*[@-~]|\][^\u0007\u001b]*(?:\u0007|\u001b\\)?|[@-Z\\^_])/g
 
 /**

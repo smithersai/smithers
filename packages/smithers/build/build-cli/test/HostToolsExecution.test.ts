@@ -60,7 +60,7 @@ const home = async (): Promise<string> => {
   await Fs.writeFile(NodePath.join(directory, "odd/bin/oddtool"), "#!/usr/bin/env no-such-interpreter-here\n", {
     mode: 0o755
   })
-  await write(directory, ".secret", "private")
+  await write(directory, ".secret", "smthrs-secret-bytes")
   return directory
 }
 
@@ -155,7 +155,7 @@ describe.runIf(native)("a shell target and the tools on PATH", () => {
       expect(ran.logs).toContain("npm-of-22 cli")
       const secret = await serve(root, ["//:secret"])
       expect(secret.exitCode).toBe(1)
-      expect(secret.logs).not.toContain("private")
+      expect(secret.logs).not.toContain("smthrs-secret-bytes")
     })
   })
 

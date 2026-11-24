@@ -388,80 +388,83 @@ const openMachine = (
   network: GuestNetwork,
   name: string,
   sticky: boolean,
-  ownership: Record<string, string>
+  ownership: Record<string, string>,
+  existingOnly = false
 ): Effect.Effect<{ readonly sandbox: VendorSandbox; readonly created: boolean }, ProviderError> =>
   retrying(attempt(
     async () => {
-      try {
-        return {
-          sandbox: await configure(options.sdk.Sandbox.builder(name), options, network, sticky, ownership).create(),
-          created: true
+      if (!existingOnly) {
+        try {
+          return {
+            sandbox: await configure(options.sdk.Sandbox.builder(name), options, network, sticky, ownership).create(),
+            created: true
+          }
+        } catch (cause) {
+          if (!isAlreadyExists(cause)) throw cause
         }
-      } catch (cause) {
-        if (!isAlreadyExists(cause)) throw cause
-        const handle = await options.sdk.Sandbox.get(name)
-        const recorded = Object(Reflect.get(Object(JSON.parse(handle.configJson)), "labels"))
-        // Only this installation's own machines are taken: another owner
-        // sharing the Microsandbox home, or another provider, may hold one
-        // under the same name, and taking it would relabel, run in, and on an
-        // ephemeral release remove a machine that is not ours.
-        if (
-          Reflect.get(recorded, providerLabel) !== ownership[providerLabel] ||
-          Reflect.get(recorded, ownerLabel) !== ownership[ownerLabel]
-        ) {
-          throw new MicrosandboxReattachRefusal({
-            code: "ownership_mismatch",
-            message: `${name} belongs to another owner or provider; remove it or acquire another session`
-          })
-        }
-        // A reattached machine keeps the network it booted with; one that
-        // records none booted under the vendor's open default.
-        if (recordedNetwork(handle.configJson) !== ownership[networkLabel]) {
-          throw new MicrosandboxReattachRefusal({
-            code: "network_mismatch",
-            message: `${name} was created with another network; remove it or acquire another session`
-          })
-        }
-        // And the ceilings it booted with, which a restart does not change.
-        if (ownership[limitsLabel] !== undefined && Reflect.get(recorded, limitsLabel) !== ownership[limitsLabel]) {
-          throw new MicrosandboxReattachRefusal({
-            code: "limits_mismatch",
-            message: `${name} was created with other limits; remove it or acquire another session`
-          })
-        }
-        // And the boot source, ceilings and security profile it booted with.
-        const differing = configurationDifferences(recorded, ownership[configurationLabel]!)
-        if (differing.length > 0) {
-          throw new MicrosandboxReattachRefusal({
-            code: "configuration_mismatch",
-            message: `${name} was created with another ${differing.join(", ")}; remove it or acquire another session`
-          })
-        }
-        // The machine now belongs to this holder. Microsandbox cannot relabel
-        // a running machine live, but a next-start modification is recorded
-        // at once, and the recorded labels are what `reap` reads, so a sweep
-        // does not take the dead creator's label as this holder's.
-        // The recorded configuration is kept: a session that names fewer
-        // options than the machine booted with must not erase the rest.
-        const plan = await handle.modify({
-          labels: { ...ownership, [configurationLabel]: String(Reflect.get(recorded, configurationLabel)) },
-          policy: "next_start"
+      }
+      const handle = await options.sdk.Sandbox.get(name)
+      const recorded = Object(Reflect.get(Object(JSON.parse(handle.configJson)), "labels"))
+      // Only this installation's own machines are taken: another owner
+      // sharing the Microsandbox home, or another provider, may hold one
+      // under the same name, and taking it would relabel, run in, and on an
+      // ephemeral release remove a machine that is not ours.
+      if (
+        Reflect.get(recorded, providerLabel) !== ownership[providerLabel] ||
+        Reflect.get(recorded, ownerLabel) !== ownership[ownerLabel]
+      ) {
+        throw new MicrosandboxReattachRefusal({
+          code: "ownership_mismatch",
+          message: `${name} belongs to another owner or provider; remove it or acquire another session`
         })
-        if (!plan.applied) {
-          throw new MicrosandboxReattachRefusal({
-            code: "ownership_not_recorded",
-            message: `the ownership labels of ${name} were not recorded`
-          })
-        }
-        const detached = options.detached ?? sticky
-        return {
-          sandbox: handle.status === "running"
-            ? await handle.connect()
-            : detached
-            ? await handle.startDetached()
-            : await handle.start(),
-          created: false
-        }
+      }
+      // A reattached machine keeps the network it booted with; one that
+      // records none booted under the vendor's open default.
+      if (recordedNetwork(handle.configJson) !== ownership[networkLabel]) {
+        throw new MicrosandboxReattachRefusal({
+          code: "network_mismatch",
+          message: `${name} was created with another network; remove it or acquire another session`
+        })
+      }
+      // And the ceilings it booted with, which a restart does not change.
+      if (ownership[limitsLabel] !== undefined && Reflect.get(recorded, limitsLabel) !== ownership[limitsLabel]) {
+        throw new MicrosandboxReattachRefusal({
+          code: "limits_mismatch",
+          message: `${name} was created with other limits; remove it or acquire another session`
+        })
+      }
+      // And the boot source, ceilings and security profile it booted with.
+      const differing = configurationDifferences(recorded, ownership[configurationLabel]!)
+      if (differing.length > 0) {
+        throw new MicrosandboxReattachRefusal({
+          code: "configuration_mismatch",
+          message: `${name} was created with another ${differing.join(", ")}; remove it or acquire another session`
+        })
+      }
+      // The machine now belongs to this holder. Microsandbox cannot relabel
+      // a running machine live, but a next-start modification is recorded
+      // at once, and the recorded labels are what `reap` reads, so a sweep
+      // does not take the dead creator's label as this holder's.
+      // The recorded configuration is kept: a session that names fewer
+      // options than the machine booted with must not erase the rest.
+      const plan = await handle.modify({
+        labels: { ...ownership, [configurationLabel]: String(Reflect.get(recorded, configurationLabel)) },
+        policy: "next_start"
+      })
+      if (!plan.applied) {
+        throw new MicrosandboxReattachRefusal({
+          code: "ownership_not_recorded",
+          message: `the ownership labels of ${name} were not recorded`
+        })
+      }
+      const detached = options.detached ?? sticky
+      return {
+        sandbox: handle.status === "running"
+          ? await handle.connect()
+          : detached
+          ? await handle.startDetached()
+          : await handle.start(),
+        created: false
       }
     },
     "unavailable",
@@ -660,7 +663,21 @@ export const make = (input: MicrosandboxSandboxOptions): Provider => {
     attachedName?: string
   ): Effect.Effect<Session, ProviderError, Scope.Scope> =>
     Effect.gen(function*() {
-      const name = attachedName ?? `${namePrefix}${sessionSlug(sessionKey)}`
+      if (local) yield* requireLocalBackend(options.sdk)
+      const legacyName = `${namePrefix}${legacySessionSlug(sessionKey)}`
+      const legacy = attachedName !== undefined ? undefined : yield* attempt(
+        async () => {
+          try {
+            return await options.sdk.Sandbox.get(legacyName)
+          } catch (cause) {
+            if (Reflect.get(Object(cause), "code") !== "sandboxNotFound") throw cause
+            return undefined
+          }
+        },
+        "unavailable",
+        "could not look up legacy microVM"
+      )
+      const name = attachedName ?? (legacy === undefined ? `${namePrefix}${sessionSlug(sessionKey)}` : legacyName)
       const attachOnly = attachedName !== undefined
       const sticky = options.persistence === "sticky"
       const workdir = options.workdir ?? defaultWorkdir
@@ -673,8 +690,6 @@ export const make = (input: MicrosandboxSandboxOptions): Provider => {
           })
         )
       }
-      if (local) yield* requireLocalBackend(options.sdk)
-
       let prepared = false
       const opened = yield* Effect.acquireRelease(
         attachOnly ?
@@ -706,7 +721,7 @@ export const make = (input: MicrosandboxSandboxOptions): Provider => {
           openMachine(options, network, name, sticky, {
             ...ownership,
             ...sticky && /#g\d+$/.test(sessionKey) ? { "smithers.execution": sessionKey.replace(/#g\d+$/, "") } : {}
-          }),
+          }, legacy !== undefined),
         ({ created, sandbox }) =>
           !sticky || created && !prepared
             ? finalizeWithin(

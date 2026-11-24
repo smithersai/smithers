@@ -38,7 +38,7 @@ export class ProcessStatus extends ProviderError {}
 export const commandFailure = (code: ProviderError["code"], message: string) => (cause: unknown): ProviderError =>
   cause instanceof ProcessStatus
     ? cause
-    : new ProviderError({ code: cause instanceof ProviderError ? cause.code : code, message })
+    : new ProcessStatus({ code: cause instanceof ProviderError ? cause.code : code, message })
 
 /**
  * Presents a locally spawned handle as a remote process. The in-repository

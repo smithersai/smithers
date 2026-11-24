@@ -39,7 +39,7 @@ import { isBuiltin, registerHooks } from "node:module"
 import * as NodePath from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
 import * as Diagnostic from "./Diagnostic.ts"
-import { buildModuleUrl, importDeclarationModule } from "./effect-resolution.js"
+import { buildModuleUrl, type DeclarationRevision, importDeclarationModule } from "./effect-resolution.js"
 import { type LoadedFactory, validateFactoryModule } from "./FactoryLoader.ts"
 import { assertDeclarationDependencies } from "./internal/DeclarationDependencies.ts"
 import { containedRelative } from "./internal/Path.ts"
@@ -761,7 +761,8 @@ const undefinedNamespaceHint = (message: string): string => {
 const importGraph = async (
   discovery: Discovery,
   modules: ReadonlyArray<string>,
-  moduleRoots: ReadonlyArray<string>
+  moduleRoots: ReadonlyArray<string>,
+  revision?: DeclarationRevision
 ): Promise<LoadedGraph> => {
   const lines: Array<string> = []
   const bindings: Array<string> = []
@@ -790,7 +791,12 @@ const importGraph = async (
     readonly packages: ReadonlyArray<readonly [string, object]>
   }
   try {
-    entry = await importDeclarationModule(entryUrl, import.meta.url, `${lines.join("\n")}\n`) as typeof entry
+    entry = await importDeclarationModule(
+      entryUrl,
+      import.meta.url,
+      `${lines.join("\n")}\n`,
+      revision
+    ) as typeof entry
   } catch (cause) {
     // A PackageError the declaration code throws is wrapped too: only module
     // evaluation runs in this try, so every failure here is the declaration's.
@@ -854,6 +860,69 @@ export const load = async (discovery: Discovery): Promise<LoadedGraph> => {
   // next command re-evaluates after the author fixes the file.
   loaded.catch(() => loads.delete(key))
   return loaded
+}
+
+/**
+ * What a base revision held in place of the files changed since it: every
+ * changed path, workspace-relative, and the text of each one the base holds.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export interface Revision {
+  readonly changed: ReadonlySet<string>
+  readonly texts: ReadonlyMap<string, string>
+}
+
+/**
+ * Evaluates the declaration graph a base revision held, from the checkout's
+ * discovery and the files changed since.
+ *
+ * Every changed module is read as the base held it, a package declaration
+ * added since is left out, and one deleted since is evaluated from its base
+ * text. An unchanged file is read from the checkout, where it is what the
+ * base held. A changed file the base holds no text for is refused, so the
+ * graph never mixes in a declaration as the change wrote it.
+ *
+ * What a declaration reads outside module imports (a directory listing, a
+ * file read through `node:fs`) is still read from the checkout. The static
+ * checks {@link load} runs are not repeated, and nothing is memoized.
+ *
+ * @category loading
+ * @since 1.0.0
+ */
+export const loadAt = async (discovery: Discovery, revision: Revision): Promise<LoadedGraph> => {
+  const held = (file: string): boolean => !revision.changed.has(file) || revision.texts.has(file)
+  if (!held(discovery.workspaceFile)) {
+    throw new PackageError(
+      "module_import_failed",
+      `the base revision holds no workspace declaration at ${discovery.workspaceFile}`,
+      { path: discovery.workspaceFile }
+    )
+  }
+  const known = new Set(discovery.packageFiles)
+  // Discovery never entered these, so a declaration under one was never a package.
+  const outside = [discovery.cacheDirectory, ...discovery.pruned, ...discovery.repositories.map((entry) => entry.path)]
+  const deleted = [...revision.texts.keys()].filter((file) =>
+    Input.isDeclarationFileName(declarationName(file)) && !known.has(file) &&
+    !outside.some((directory) => file.startsWith(`${directory}/`))
+  )
+  const absolute = (file: string): string => NodePath.join(discovery.root, file)
+  return importGraph(
+    {
+      ...discovery,
+      factoryFile: discovery.factoryFile !== undefined && held(discovery.factoryFile)
+        ? discovery.factoryFile
+        : undefined,
+      packageFiles: [...discovery.packageFiles.filter(held), ...deleted].sort(byCodeUnit)
+    },
+    [],
+    [],
+    {
+      changed: new Set([...revision.changed].map(absolute)),
+      texts: new Map([...revision.texts].map(([file, text]) => [absolute(file), text]))
+    }
+  )
 }
 
 /**

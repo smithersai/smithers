@@ -508,7 +508,13 @@ const remoteCacheAccess = async (
 export const openPackageIndex = async (
   flags: WorkspaceFlags,
   runtime: RuntimeConfig = {}
-): Promise<PackageIndex.PackageIndex> => {
+): Promise<PackageIndex.PackageIndex> => (await openWorkspace(flags, runtime)).index
+
+/** The package index of the checkout, with the discovery it was loaded from. */
+const openWorkspace = async (
+  flags: WorkspaceFlags,
+  runtime: RuntimeConfig
+): Promise<{ readonly index: PackageIndex.PackageIndex; readonly discovery: PackageDiscovery.Discovery }> => {
   runtime.signal?.throwIfAborted()
   // An overlay repository plans against its materialized mount, never itself.
   const stderr = runtime.stderr ?? Reporter.terminalOf(process.stderr)
@@ -557,7 +563,7 @@ export const openPackageIndex = async (
       })
     )
     const loaded = yield* hostIo(() => PackageLoader.load(discovery))
-    return PackageIndex.PackageIndex.make(loaded, invocation)
+    return { index: PackageIndex.PackageIndex.make(loaded, invocation), discovery }
   }).pipe(Effect.provide(runtime.services ?? Layer.empty))
   try {
     return await Effect.runPromise(opening, { signal: runtime.signal })
@@ -565,6 +571,37 @@ export const openPackageIndex = async (
     runtime.signal?.throwIfAborted()
     throw cause
   }
+}
+
+/** The files a declaration module may be: what a base revision is asked the text of. */
+const moduleFile = /\.(?:[cm]?[jt]sx?|json|smithers|vibe)$/
+
+/**
+ * The paths changed since a base revision, and the package index that
+ * revision held: the ownership a change is judged under, which the change
+ * itself cannot rewrite. A change that touches no declaration module left the
+ * index as it was, so the checkout's own is returned.
+ */
+const openBase = async (
+  opened: { readonly index: PackageIndex.PackageIndex; readonly discovery: PackageDiscovery.Discovery },
+  base: string,
+  runtime: RuntimeConfig
+): Promise<{ readonly index: PackageIndex.PackageIndex; readonly paths: ReadonlyArray<string> }> => {
+  const { discovery, index } = opened
+  const bounds = { base, signal: runtime.signal, environment: environmentOf(runtime) }
+  const paths = await Affected.changedPaths(index.root, bounds)
+  const modules = new Set(index.modules)
+  const declared = (path: string): boolean => {
+    const name = NodePath.posix.basename(path)
+    return modules.has(path) || Input.isDeclarationFileName(name) || PackageDiscovery.isWorkspaceFileName(name)
+  }
+  if (!paths.some(declared)) return { index, paths }
+  const texts = await Affected.baseTexts(index.root, {
+    ...bounds,
+    paths: paths.filter((path) => moduleFile.test(path))
+  })
+  const graph = await PackageLoader.loadAt(discovery, { changed: new Set(paths), texts })
+  return { index: PackageIndex.PackageIndex.make(graph, index.root), paths }
 }
 
 /** Evaluates a query against the target index. */
@@ -2426,17 +2463,18 @@ const makeCommands = (config: RuntimeConfig) =>
       }),
       options: workspaceOption.extend({
         diff: z.string().optional().describe(
-          "Also resolve every path changed since this git base, both names of a rename and untracked files included"
+          "Resolve every path changed since this base revision, both names of a rename and untracked files included, against the ownership that revision declared"
         )
       }),
       alias: { workspace: "w", diff: "d" },
       async run(context) {
         try {
-          const index = await openPackageIndex(context.options, config)
-          const paths = [...(context.args.paths ?? [])]
-          if (context.options.diff !== undefined) {
-            paths.push(...await Owners.changedPaths(index.root, context.options.diff))
-          }
+          const opened = await openWorkspace(context.options, config)
+          // A diff is judged under the base revision's declarations, so a change cannot name its own owners.
+          const { index, paths: changed } = context.options.diff === undefined
+            ? { index: opened.index, paths: [] }
+            : await openBase(opened, context.options.diff, config)
+          const paths = [...(context.args.paths ?? []), ...changed]
           if (paths.length === 0) throw new Error("owners needs at least one path, or --diff <base>")
           const resolution = Owners.resolve(index, paths)
           return present(context, config, Owners.toJson(resolution), (style) => Owners.text(resolution, style))

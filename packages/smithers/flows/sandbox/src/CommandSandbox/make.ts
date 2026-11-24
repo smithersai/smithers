@@ -19,7 +19,7 @@ import { finalizeWithin } from "../internal/finalizeWithin.ts"
 import { linuxFileSystem } from "../internal/linuxFileSystem.ts"
 import { gather, type GatheredRun, ProcessStatus } from "../internal/localProcess.ts"
 import { userPidDirectory } from "../internal/pidDirectory.ts"
-import { sessionSlug } from "../internal/sessionSlug.ts"
+import { legacySessionSlug, sessionSlug } from "../internal/sessionSlug.ts"
 import { ProviderError } from "../RemoteChildProcessSpawner/ProviderError.ts"
 import type { Provider } from "../Sandbox/Provider.ts"
 
@@ -141,7 +141,12 @@ export const make = (options: CommandSandboxOptions): Provider => {
         // refuses one the user does not own; /tmp's sticky bit keeps others
         // from replacing it after the check.
         const base = userPidDirectory(uid)
-        const pids = `${base}/${sessionSlug(id)}`
+        const legacyPids = `${base}/${legacySessionSlug(id)}`
+        const legacy = yield* run(shell(`test -d ${CommandLine.quote(legacyPids)}`))
+        if (legacy.code !== 0 && legacy.code !== 1) {
+          return yield* Effect.fail(unreachable("legacy pid directory lookup failed"))
+        }
+        const pids = legacy.code === 0 ? legacyPids : `${base}/${sessionSlug(id)}`
         const ownPids =
           `(umask 077 && mkdir -p ${base} && set -- $(ls -ldn ${base}) && [ "$3" = ${uid} ] && chmod 700 ${base} && ` +
           `mkdir -p ${pids})`

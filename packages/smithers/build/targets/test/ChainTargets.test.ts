@@ -75,6 +75,19 @@ describe("Foundry targets", () => {
     expect(Target.metadata(test)).toMatchObject({ target: "Foundry.Test", cacheable: true })
   })
 
+  it("caches a build or a test only when data declares the Solidity sources forge reads", () => {
+    for (
+      const target of [
+        Foundry.Build({ outDirs: ["out"] }),
+        Foundry.Build({ data: [], outDirs: ["out"], config: Input.file("foundry.toml") }),
+        Foundry.Test({}),
+        Foundry.Test({ data: [], profile: "ci" })
+      ]
+    ) {
+      expect(Target.metadata(target).cacheable, Target.metadata(target).target).toBe(false)
+    }
+  })
+
   it("constructs forge fmt as a check/write rule and validates nested attrs strictly", () => {
     const fmt = Foundry.Fmt({ data: [srcs], changes: ["src/**"] })
     expect(Target.metadata(fmt)).toMatchObject({ target: "Foundry.Fmt", kinds: ["lint", "run"] })

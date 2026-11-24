@@ -67,11 +67,39 @@ export const Package = S.Package({ targets: { command: S.Shell.Run({ shell: "tou
 }
 
 describe("planned execution identity", () => {
-  it("declines caching a shell target whose command cannot be identified", async () => {
+  it("declines caching a shell target whose command names a path it cannot identify", async () => {
     const { node } = await fixture(`import { Smithers as S } from "@smthrs/targets"
-export const Package = S.Package({ targets: { command: S.Shell.Test({ shell: "missing-smthrs-planner-binary" }) } })`)
+export const Package = S.Package({ targets: { command: S.Shell.Test({ shell: "./missing-smthrs-planner-binary" }) } })`)
     expect(node.cacheable).toBe(false)
     expect(node.uncachedBecause).toContain("missing-smthrs-planner-binary")
+  })
+
+  it("declines caching a target whose own program PATH does not hold", async () => {
+    const { root, options } = await fixture(`import { Smithers as S } from "@smthrs/targets"
+export const Package = S.Package({ targets: { command: S.Shell.Test({ bin: S.Host.bin("sh"), args: ["-c", "true"] }) } })`)
+    const original = process.env["PATH"]
+    try {
+      await Fs.mkdir(Path.join(root, "empty-path"))
+      process.env["PATH"] = Path.join(root, "empty-path")
+      const node = (await PackageExec.plan(options)).workList[0]!
+      expect(node.cacheable).toBe(false)
+      expect(node.uncachedBecause).toMatch(/^cannot identify executable .*HostBin.*sh/)
+    } finally {
+      process.env["PATH"] = original
+    }
+  })
+
+  it.each([
+    ["a function", "smthrs_planner_fn() { true; }; smthrs_planner_fn"],
+    ["a case pattern", "case x in smthrs_planner_arm) true ;; esac"],
+    ["a here-document line", "cat <<'EOF'\\nsmthrs_planner_heredoc_line\\nEOF"],
+    ["bash builtins", "bash -c 'f() { local x=1; declare y=2; }; shopt -s nullglob; source /dev/null; f'"],
+    ["a bare word PATH does not hold", "true || missing-smthrs-planner-binary"]
+  ])("keeps a shell target cacheable when its text holds %s", async (_name, shell) => {
+    const { node } = await fixture(`import { Smithers as S } from "@smthrs/targets"
+export const Package = S.Package({ targets: { command: S.Shell.Test({ shell: ${JSON.stringify(shell)} }) } })`)
+    expect(node.uncachedBecause).toBeUndefined()
+    expect(node.cacheable).toBe(true)
   })
 
   it.skipIf(process.platform === "win32")("seals planner state beneath a root-level output grant", async () => {
@@ -111,6 +139,56 @@ export const Package = S.Package({ targets: { command: S.Shell.Build({ shell: "i
       else process.env["SDKROOT"] = originalSdk
       if (originalHelper === undefined) delete process.env["SMITHERS_WORKSPACE_JJ_EXPORT_BINARY"]
       else process.env["SMITHERS_WORKSPACE_JJ_EXPORT_BINARY"] = originalHelper
+    }
+  })
+
+  it.skipIf(process.platform === "win32")(
+    "keys an SDK by its manifest, without reading the tree or refusing a link that leaves it",
+    async () => {
+      const { root, options } = await fixture(`import { Smithers as S } from "@smthrs/targets"
+export const Package = S.Package({ targets: { command: S.Shell.Test({ shell: "true" }) } })`)
+      const outside = await Fs.realpath(await Fs.mkdtemp(Path.join(Os.tmpdir(), "smthrs-sdk-outside-")))
+      roots.push(outside)
+      await write(outside, "libSystem.tbd", "outside")
+      const sdk = Path.join(root, "sdk")
+      await write(root, "sdk/SDKSettings.json", "{\"Version\":\"26.0\"}")
+      await write(root, "sdk/usr/include/fixture.h", "one")
+      await Fs.symlink(Path.join(outside, "libSystem.tbd"), Path.join(sdk, "usr/libSystem.tbd"))
+      await Fs.symlink(Path.join(outside, "absent"), Path.join(sdk, "usr/dangling"))
+      // A file no reader may open: reading the tree whole would fail on it.
+      await write(root, "sdk/usr/unreadable", "sealed")
+      await Fs.chmod(Path.join(sdk, "usr/unreadable"), 0o000)
+      const original = process.env["SDKROOT"]
+      try {
+        process.env["SDKROOT"] = sdk
+        const node = async () => (await PackageExec.plan(options)).workList[0]!
+        const first = await node()
+        expect(first.uncachedBecause).toBeUndefined()
+        expect(first.cacheable).toBe(true)
+        await write(root, "sdk/SDKSettings.json", "{\"Version\":\"26.1\"}")
+        const second = await node()
+        expect(second.cacheable).toBe(true)
+        expect(second.keyPreview).not.toBe(first.keyPreview)
+      } finally {
+        await Fs.chmod(Path.join(sdk, "usr/unreadable"), 0o644)
+        if (original === undefined) delete process.env["SDKROOT"]
+        else process.env["SDKROOT"] = original
+      }
+    }
+  )
+
+  it("declines caching under a developer directory it cannot identify", async () => {
+    const { root, options } = await fixture(`import { Smithers as S } from "@smthrs/targets"
+export const Package = S.Package({ targets: { command: S.Shell.Test({ shell: "true" }) } })`)
+    const original = process.env["DEVELOPER_DIR"]
+    try {
+      process.env["DEVELOPER_DIR"] = Path.join(root, "no-such-developer-directory")
+      const node = (await PackageExec.plan(options)).workList[0]!
+      expect(node.cacheable).toBe(false)
+      expect(node.uncachedBecause).toBe("cannot identify DEVELOPER_DIR")
+    } finally {
+      if (original === undefined) delete process.env["DEVELOPER_DIR"]
+      else process.env["DEVELOPER_DIR"] = original
     }
   })
 

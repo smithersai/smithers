@@ -4,6 +4,9 @@
 
 ### Fixed
 
+- `ImmutableCache.put` answers `too_large`, not `stored`, when the memory
+  backend declines an entry whose body, URL, headers and overhead exceed
+  `maxTotalBytes`. `WebCache.put` may answer `"too_large"` to report that.
 - Reads racing a sweep now report a miss so the shared tier can answer; a
   healing rename preserves digest-verified reads. Failed dedupe freshens now
   warn and count failures, and interrupted scratch inspection cleans up its

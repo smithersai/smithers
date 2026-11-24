@@ -33,26 +33,26 @@ describe.skipIf(!url)("prefixed PostgreSQL store ownership", () => {
         yield* admin`CREATE TABLE saved_data (value TEXT)`
         yield* admin`INSERT INTO saved_data VALUES ('retained')`
         // Legacy read-only opens do not create ownership metadata.
-        const legacy = yield* connect(Selection.layer("cache.db", true)!)
+        const legacy = yield* connect(Selection.layer("cache.db", true, process.env)!)
         expect(yield* legacy`SELECT value FROM saved_data`).toEqual([{ value: "retained" }])
         expect(yield* admin`SELECT to_regclass('flows_store_owner') AS owner`).toEqual([{ owner: null }])
 
         // An empty legacy metadata table is also inspected without claiming it.
         yield* admin`CREATE TABLE flows_store_owner (id INTEGER PRIMARY KEY CHECK (id = 1), basename TEXT NOT NULL)`
-        yield* connect(Selection.layer("cache.db", true)!)
+        yield* connect(Selection.layer("cache.db", true, process.env)!)
         expect(yield* admin`SELECT basename FROM flows_store_owner`).toEqual([])
 
-        const first = yield* connect(Selection.layer("cache.db")!)
+        const first = yield* connect(Selection.layer("cache.db", false, process.env)!)
         expect(yield* first`SELECT value FROM saved_data`).toEqual([{ value: "retained" }])
         const before = yield* Metric.value(DatabaseMetrics.writerLockWait)
-        const same = yield* connect(Selection.layer("another-directory/cache.db")!)
+        const same = yield* connect(Selection.layer("another-directory/cache.db", false, process.env)!)
         expect((yield* Metric.value(DatabaseMetrics.writerLockWait)).count).toBe(before.count)
         expect(yield* same`SELECT basename FROM flows_store_owner`).toEqual([{ basename: "cache.db" }])
-        yield* connect(Selection.layer("cache.db", true)!)
+        yield* connect(Selection.layer("cache.db", true, process.env)!)
 
         for (const basename of ["cache-db", "cache_db"]) {
           for (const readOnly of [false, true]) {
-            const exit = yield* Effect.exit(Layer.build(Selection.layer(basename, readOnly)!))
+            const exit = yield* Effect.exit(Layer.build(Selection.layer(basename, readOnly, process.env)!))
             expect(Exit.isFailure(exit)).toBe(true)
             if (Exit.isFailure(exit)) {
               const defect = Cause.squash(exit.cause)
@@ -71,7 +71,7 @@ describe.skipIf(!url)("prefixed PostgreSQL store ownership", () => {
         // Explicit URLs intentionally address an existing schema directly.
         const explicit = new URL(url!)
         explicit.searchParams.set("schema", schema)
-        yield* connect(Selection.layer(explicit.toString())!)
+        yield* connect(Selection.layer(explicit.toString(), false, process.env)!)
       })
     )
   })
@@ -80,7 +80,7 @@ describe.skipIf(!url)("prefixed PostgreSQL store ownership", () => {
     await fixture((admin, schema) =>
       Effect.gen(function*() {
         yield* TestDatabase.dropSchema(admin, schema)
-        const sql = yield* connect(Selection.layer("cache.db")!)
+        const sql = yield* connect(Selection.layer("cache.db", false, process.env)!)
         expect(yield* sql`SELECT basename FROM flows_store_owner`).toEqual([{ basename: "cache.db" }])
         expect(yield* sql`SELECT current_schema() AS schema`).toEqual([{ schema }])
       })
@@ -100,14 +100,14 @@ describe.skipIf(!url)("prefixed PostgreSQL store ownership", () => {
         )
         yield* admin`CREATE TABLE saved_data (value TEXT)`
         yield* admin`INSERT INTO saved_data VALUES ('retained')`
-        yield* connect(Selection.layer("cache.db")!)
+        yield* connect(Selection.layer("cache.db", false, process.env)!)
         yield* admin`GRANT USAGE ON SCHEMA ${admin(schema)} TO ${admin(role)}`
         yield* admin`GRANT SELECT ON saved_data TO ${admin(role)}`
         const restricted = new URL(url!)
         restricted.searchParams.set("options", "-c role=" + role)
         vi.stubEnv("SMITHERS_POSTGRES_URL", restricted.toString())
 
-        const inaccessible = yield* Effect.exit(Layer.build(Selection.layer("cache-db", true)!))
+        const inaccessible = yield* Effect.exit(Layer.build(Selection.layer("cache-db", true, process.env)!))
         expect(Exit.isFailure(inaccessible)).toBe(true)
         if (Exit.isFailure(inaccessible)) {
           const defect = Cause.squash(inaccessible.cause)
@@ -116,14 +116,14 @@ describe.skipIf(!url)("prefixed PostgreSQL store ownership", () => {
         }
 
         yield* admin`GRANT SELECT ON flows_store_owner TO ${admin(role)}`
-        const collision = yield* Effect.exit(Layer.build(Selection.layer("cache-db", true)!))
+        const collision = yield* Effect.exit(Layer.build(Selection.layer("cache-db", true, process.env)!))
         expect(Exit.isFailure(collision)).toBe(true)
         if (Exit.isFailure(collision)) {
           const defect = Cause.squash(collision.cause)
           expect(isUnsupportedDatabase(defect)).toBe(true)
           if (isUnsupportedDatabase(defect)) expect(defect.code).toBe("postgres_schema_collision")
         }
-        const reader = yield* connect(Selection.layer("cache.db", true)!)
+        const reader = yield* connect(Selection.layer("cache.db", true, process.env)!)
         expect(yield* reader`SELECT value FROM saved_data`).toEqual([{ value: "retained" }])
       })
     )
@@ -133,7 +133,7 @@ describe.skipIf(!url)("prefixed PostgreSQL store ownership", () => {
     await fixture((admin) =>
       Effect.gen(function*() {
         const results = yield* Effect.all(
-          ["cache.db", "cache-db"].map((name) => Effect.exit(Layer.build(Selection.layer(name)!))),
+          ["cache.db", "cache-db"].map((name) => Effect.exit(Layer.build(Selection.layer(name, false, process.env)!))),
           { concurrency: 2 }
         )
         expect(results.filter(Exit.isSuccess)).toHaveLength(1)
@@ -142,7 +142,7 @@ describe.skipIf(!url)("prefixed PostgreSQL store ownership", () => {
         const sql = Context.get(success.value, SqlClient)
         const rows = yield* sql<{ basename: string }>`SELECT basename FROM flows_store_owner`
         const owner = rows[0]!.basename
-        yield* connect(Selection.layer(owner)!)
+        yield* connect(Selection.layer(owner, false, process.env)!)
         expect(yield* admin`SELECT basename FROM flows_store_owner`).toEqual([{ basename: owner }])
       })
     )

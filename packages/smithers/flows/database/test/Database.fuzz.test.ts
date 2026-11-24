@@ -116,7 +116,7 @@ describe("@smthrs/database fuzz", () => {
           expect(PostgresSelection.isUrl("postgresql://localhost/db")).toBe(true)
           expect(PostgresSelection.isUrl(":memory:")).toBe(false)
           expect(PostgresSelection.isUrl(`/tmp/${v.table}.sqlite`)).toBe(false)
-          expect(PostgresSelection.location(":memory:")).toBeUndefined()
+          expect(PostgresSelection.location(":memory:", process.env)).toBeUndefined()
           expect(SqliteOpen.probeTarget(":memory:")).toBe(":memory:")
           expect(SqliteOpen.isLockedError(new Error("database is busy"))).toBe(true)
           expect(SqliteOpen.isLockedError(new Error("database is locked"))).toBe(true)
@@ -992,7 +992,7 @@ describe("@smthrs/database fuzz", () => {
             if (isPg !== (filename.startsWith("postgres://") || filename.startsWith("postgresql://"))) return false
 
             try {
-              const loc = PostgresSelection.location(filename)
+              const loc = PostgresSelection.location(filename, process.env)
               if (filename === "" || filename === ":memory:" || filename.startsWith("file:")) {
                 if (loc !== undefined) return false
               }

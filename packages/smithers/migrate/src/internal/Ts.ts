@@ -13,7 +13,6 @@
 
 import * as Context from "effect/Context"
 import * as Effect from "effect/Effect"
-import { resolve } from "node:path"
 import * as ts from "typescript/unstable/ast"
 import { API, type APIOptions } from "typescript/unstable/sync"
 
@@ -69,7 +68,9 @@ export const Compiler = Context.Reference<CompilerService>("@smthrs/migrate/Comp
 
 /** A session owns one isolated compiler and caches trees by path and content. */
 const makeSession = (compiler: CompilerService = liveCompiler) => {
-  const directory = resolve(".__smithers_migration_syntax__").replace(/\\/g, "/")
+  // A virtual directory: the compiler reads only the files map below, so the
+  // path names nothing on disk and needs no host to resolve it.
+  const directory = "/.__smithers_migration_syntax__"
   const config = `${directory}/tsconfig.json`
   const files = new Map<string, string>()
   const trees = new Map<string, Map<string, ts.SourceFile>>()

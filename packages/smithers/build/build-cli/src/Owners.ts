@@ -27,7 +27,6 @@
  * @since 0.1.0
  */
 
-import * as Input from "@smthrs/targets/Input"
 import type * as Owners from "@smthrs/targets/Owners"
 import * as Target from "@smthrs/targets/Target"
 import { minimatch } from "minimatch"
@@ -37,7 +36,6 @@ import * as Ansi from "./Ansi.ts"
 import { byCodeUnit } from "./internal/Text.ts"
 import * as Label from "./Label.ts"
 import type { PackageIndex } from "./PackageIndex.ts"
-import * as PackageTree from "./PackageTree.ts"
 
 /**
  * Why one owner is on a path.
@@ -380,35 +378,6 @@ export const resolve = (index: PackageIndex, paths: ReadonlyArray<string>): Reso
     requiredApprovers: [...required].sort(byCodeUnit),
     suggestedReviewers: [...suggested].sort(byCodeUnit)
   }
-}
-
-/**
- * The workspace-relative paths changed since a git base: every path the
- * diff against the working tree touches, under both names of a rename, plus
- * every untracked file, the same set `affected --base` discovers.
- *
- * Rename detection would report only the destination, and a diff against a
- * commit never lists an untracked file. Either way the package a file leaves
- * or appears in would never be consulted, so a move out of a denied or
- * separately owned package would resolve to the destination's owners and
- * agent policy alone.
- *
- * @category resolution
- * @since 0.1.0
- */
-export const changedPaths = async (root: string, base: string): Promise<ReadonlyArray<string>> => {
-  const validated = Input.validateGitBase(base)
-  const tracked = await PackageTree.runGit(root, [
-    "diff",
-    "--name-only",
-    "--no-renames",
-    "-z",
-    "--end-of-options",
-    validated,
-    "--"
-  ])
-  const untracked = await PackageTree.runGit(root, ["ls-files", "--others", "--exclude-standard", "-z"])
-  return [...new Set(`${tracked}${untracked}`.split("\0").filter((path) => path !== ""))].sort(byCodeUnit)
 }
 
 /**

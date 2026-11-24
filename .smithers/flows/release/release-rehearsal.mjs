@@ -36,7 +36,7 @@
  *   --transcript <path> write a JSON transcript here
  *   --log <path>        write the combined step output here
  */
-import { spawn } from "node:child_process"
+import { spawn, spawnSync } from "node:child_process"
 import { appendFileSync, createWriteStream, existsSync, readFileSync, writeFileSync } from "node:fs"
 import { mkdir, mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
@@ -358,10 +358,19 @@ const parseArguments = (argv) => {
  * A rehearsal is a dispatched dry run of one tag and is always a first
  * attempt: the workflow's re-run guard reads `github.run_attempt` and must
  * stay silent here.
+ *
+ * `sourceSha` stands for the `validate-source` job, which no rehearsal runs:
+ * the commit that job would hand on is the one this checkout is at. The
+ * publish job's `Require the validated release source` step compares it with
+ * the tag, so a rehearsal of a tag that is not at this commit stops there
+ * unless that step is skipped.
  */
-export const rehearsalContexts = ({ tag, publish = false, runnerTemp = "/tmp/runner", workflowName = "Release" }) => ({
+export const rehearsalContexts = (
+  { tag, publish = false, runnerTemp = "/tmp/runner", workflowName = "Release", sourceSha = "" }
+) => ({
   github: { event_name: "workflow_dispatch", ref_name: tag, run_attempt: "1", workflow: workflowName },
   inputs: { releaseTag: tag, dryRun: !publish },
+  needs: { "validate-source": { outputs: { sha: sourceSha } } },
   // A rehearsal runs the `release` lane, every gate and then the candidate,
   // whatever the tag: the lanes of a prerelease exist to stop a red gate from
   // blocking a publication, and a rehearsal publishes nothing.
@@ -391,7 +400,14 @@ export const main = async (argv) => {
   const logPath = resolve(options.log ?? join(runnerTemp, "rehearsal.log"))
   const log = createWriteStream(logPath, { flags: "a" })
 
-  const contexts = rehearsalContexts({ tag: options.tag, publish: options.publish, runnerTemp, workflowName: workflow.name })
+  const head = spawnSync("git", ["rev-parse", "--verify", "--quiet", "HEAD^{commit}"], { cwd: repoRoot, encoding: "utf8" })
+  const contexts = rehearsalContexts({
+    tag: options.tag,
+    publish: options.publish,
+    runnerTemp,
+    workflowName: workflow.name,
+    sourceSha: head.status === 0 ? head.stdout.trim() : ""
+  })
   for (const [key, value] of Object.entries(job.env ?? {})) {
     contexts.env[key] = interpolate(value, contexts)
   }

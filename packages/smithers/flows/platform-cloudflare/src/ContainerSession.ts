@@ -7,7 +7,8 @@
  * Alchemy Durable Object's container handle passes in as is (`R` is its
  * `RuntimeContext`), and a test passes another. Every command runs with
  * `sh -c` as one user in one working directory; `readFile` and `writeFile`
- * are commands too, so the container needs only `sh` and `cat`.
+ * are commands too, so the container needs `sh`, `cat` and `head`. File reads collect at most
+ * `maxFileBytes` (4 MiB by default) and refuse larger files.
  *
  * It starts nothing: the object wakes its container (`SandboxObject.wake`)
  * before it hands the session out. A failure of the container itself
@@ -93,6 +94,8 @@ export interface Options {
   readonly workdir: string
   readonly user?: string | undefined
   readonly env?: Readonly<Record<string, string>> | undefined
+  /** Maximum bytes collected by readFile (default 4 MiB). */
+  readonly maxFileBytes?: number | undefined
 }
 
 const { ProviderError } = RemoteChildProcessSpawner
@@ -123,7 +126,11 @@ const uidGid = /^\d{1,10}:\d{1,10}$/
 export const make = <E, R>(container: Container<E, R>, options: Options): Effect.Effect<Sandbox.Session, never, R> =>
   Effect.map(Effect.context<R>(), (context) => {
     const workdir = options.workdir
-    const spawn: Sandbox.Session["spawn"] = (command, spawnOptions) =>
+    const maxFileBytes = options.maxFileBytes ?? 4 * 1024 * 1024
+    if (!Number.isSafeInteger(maxFileBytes) || maxFileBytes < 1 || maxFileBytes >= Number.MAX_SAFE_INTEGER) {
+      throw new TypeError("container session: invalid maxFileBytes")
+    }
+    const spawnWithInput = (command: string, spawnOptions: Parameters<Sandbox.Session["spawn"]>[1], strict = false) =>
       Effect.gen(function*() {
         if (options.user !== undefined && !uidGid.test(options.user)) {
           return yield* Effect.fail(
@@ -131,8 +138,17 @@ export const make = <E, R>(container: Container<E, R>, options: Options): Effect
           )
         }
         const env: Record<string, string> = { ...options.env }
-        for (const [name, value] of Object.entries(spawnOptions.env ?? {})) {
-          if (value !== undefined) env[name] = value
+        const removed: Array<string> = []
+        for (const [name, value] of Object.entries({ ...options.env, ...spawnOptions.env })) {
+          if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) {
+            return yield* Effect.fail(
+              new ProviderError({ code: "spawn_error", message: "container session: invalid environment name" })
+            )
+          }
+          if (value === undefined) {
+            delete env[name]
+            removed.push(name)
+          } else env[name] = value
         }
         const cwd = spawnOptions.cwd === undefined
           ? workdir
@@ -140,7 +156,11 @@ export const make = <E, R>(container: Container<E, R>, options: Options): Effect
           ? spawnOptions.cwd
           : `${workdir}/${spawnOptions.cwd}`
         const stdin = spawnOptions.stdin
-        const process = yield* container.exec(["sh", "-c", command], {
+        const process = yield* container.exec([
+          "sh",
+          "-c",
+          removed.length === 0 ? command : `unset ${removed.join(" ")} || exit 125; ${command}`
+        ], {
           ...options.user === undefined ? {} : { user: options.user },
           cwd,
           env,
@@ -165,28 +185,53 @@ export const make = <E, R>(container: Container<E, R>, options: Options): Effect
             .pipe(Stream.provideContext(context)),
           exitCode: (feed === undefined
             ? exitCode
-            : Effect.all([Fiber.join(feed), exitCode], { concurrency: "unbounded" }).pipe(
+            : strict
+            ? Effect.all([Fiber.join(feed), exitCode], { concurrency: "unbounded" }).pipe(
               Effect.map(([, code]) => code)
-            )).pipe(Effect.provideContext(context))
+            )
+            : Effect.flatMap(exitCode, (code) =>
+              Effect.gen(function*() {
+                yield* Fiber.interrupt(feed)
+                return code
+              }))).pipe(Effect.provideContext(context))
         }
       }).pipe(Effect.provideContext(context))
 
-    /** Runs `command` to completion: its exit code and standard output. */
+    const spawn: Sandbox.Session["spawn"] = (command, spawnOptions) => spawnWithInput(command, spawnOptions)
+
+    /** Collect during consumption so a guest cannot force an unbounded allocation. */
+    const collect = (stream: Stream.Stream<Uint8Array, InstanceType<typeof ProviderError>>) =>
+      Effect.suspend(() => {
+        let bytes = new Uint8Array()
+        let used = 0
+        return Stream.runForEach(stream, (chunk) => {
+          if (chunk.length > maxFileBytes - used) {
+            return Effect.fail(
+              new ProviderError({ code: "unknown", message: "container session: file byte limit exceeded" })
+            )
+          }
+          const end = used + chunk.length
+          if (end > bytes.length) {
+            const grown = new Uint8Array(Math.min(maxFileBytes, Math.max(end, bytes.length * 2, 256)))
+            grown.set(bytes)
+            bytes = grown
+          }
+          bytes.set(chunk, used)
+          used = end
+          return Effect.void
+        }).pipe(Effect.map(() => bytes.subarray(0, used)))
+      })
+
+    /** Runs `command` to completion: its exit code and bounded standard output. */
     const run = (command: string, stdin?: Uint8Array) =>
       Effect.scoped(Effect.gen(function*() {
-        const process = yield* spawn(command, stdin === undefined ? {} : { stdin })
+        const process = yield* spawnWithInput(command, stdin === undefined ? {} : { stdin }, stdin !== undefined)
         const [stdout, , code] = yield* Effect.all([
-          Stream.runCollect(process.stdout),
+          collect(process.stdout),
           Stream.runDrain(process.stderr),
           process.exitCode
         ], { concurrency: "unbounded" })
-        const bytes = new Uint8Array(stdout.reduce((size, chunk) => size + chunk.byteLength, 0))
-        let offset = 0
-        for (const chunk of stdout) {
-          bytes.set(chunk, offset)
-          offset += chunk.byteLength
-        }
-        return { bytes, code }
+        return { bytes: stdout, code }
       }))
 
     const session: Sandbox.Session = {
@@ -195,15 +240,18 @@ export const make = <E, R>(container: Container<E, R>, options: Options): Effect
       workdir,
       spawn,
       readFile: (path) =>
-        Effect.flatMap(run(`[ -f ${quote(path)} ] || exit 44; cat -- ${quote(path)}`), ({ bytes, code }) =>
-          code === 0
-            ? Effect.succeed(bytes)
-            : Effect.fail(
-              new ProviderError({
-                code: code === 44 ? "not_found" : "unknown",
-                message: `container session: read failed (${code})`
-              })
-            )),
+        Effect.flatMap(
+          run(`[ -f ${quote(path)} ] || exit 44; head -c ${maxFileBytes + 1} -- ${quote(path)}`),
+          ({ bytes, code }) =>
+            code === 0
+              ? Effect.succeed(bytes)
+              : Effect.fail(
+                new ProviderError({
+                  code: code === 44 ? "not_found" : "unknown",
+                  message: `container session: read failed (${code})`
+                })
+              )
+        ),
       writeFile: (path, content) =>
         Effect.flatMap(
           run(`mkdir -p -- "$(dirname -- ${quote(path)})" && cat >${quote(path)}`, content),

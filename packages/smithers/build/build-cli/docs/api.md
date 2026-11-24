@@ -42,6 +42,13 @@ from 1 through 86,400,000. Each output stream is limited to 16 MiB and decoded
 as strict UTF-8. Explicit files bypass Git. An already aborted signal refuses
 the call before discovery.
 
+A workspace that holds `.jj` and no `.git` is read through Jujutsu, where the
+base `HEAD` means `@-`. `baseTexts(root, { base, paths })` returns the text
+each path held at the base, with no entry for a path the base holds no file
+at. `select` reads a backslash as a separator only on Windows, or on the host
+its `platform` option names; every other host keeps it as a filename
+character.
+
 `AffectedGitError` carries `_tag` (`smithers-build/AffectedGitError`), `code`, the exact Git `args`, and `cause`.
 Codes distinguish `timed_out`, `cancelled`, `nonzero_exit`, `process_failed`,
 `output_limit`, `cleanup_failed`, and `invalid_timeout`. Cleanup completes
@@ -432,6 +439,14 @@ declared cache directory or `undefined` on failure. Successful probes
 are reused only while the workspace declaration and its imported configuration
 have the same content digest. Failed probes are retried on the next call;
 `loadWorkspaceDeclaration` remains the rejecting, unmemoized loader.
+
+`PackageLoader.loadAt(discovery, { changed, texts })` evaluates the
+declaration graph a base revision held: every changed module is read from
+`texts`, a package declaration added since is left out, and one deleted since
+is evaluated from its base text. A changed module with no base text is
+refused. `owners --diff` resolves against this graph. It evaluates no factory,
+repeats none of `load`'s static checks, and reads whatever a declaration takes
+from the file system from the checkout.
 
 ## Workspace
 

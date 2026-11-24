@@ -242,14 +242,6 @@ const forgetLane = (jj: Jj, workspaceName: string, when: string): Effect.Effect<
     )
   )
 
-/**
- * The most fork lanes one scope tracks for its close.
- *
- * @since 1.0.0
- * @category constants
- */
-export const maxTrackedLanes = 256
-
 /** The lanes each scope forgets when it closes, oldest first, with the Jj that added each. */
 const lanesByScope = new WeakMap<Scope.Scope, Map<string, Jj>>()
 
@@ -260,9 +252,9 @@ const lanesByScope = new WeakMap<Scope.Scope, Map<string, Jj>>()
  * A scope holds ONE finalizer however many forks it makes. Each fork used to
  * add its own to the long-lived service scope, so a service retained a
  * closure per fork ever made and ran that many `jj workspace forget` calls on
- * shutdown. The lanes are also bounded: past {@link maxTrackedLanes} the
- * oldest is forgotten at once rather than at close, so both the memory a
- * scope holds and the work its close does stay constant.
+ * shutdown. Every lane stays registered until then: a fork's child run may
+ * still be pending or executing in its workspace however many later forks
+ * the scope makes, so no lane is forgotten early to bound the set.
  */
 const trackLane = (jj: Jj, workspaceName: string): Effect.Effect<void, never, Scope.Scope> =>
   Effect.gen(function*() {
@@ -285,10 +277,6 @@ const trackLane = (jj: Jj, workspaceName: string): Effect.Effect<void, never, Sc
       )
     }
     lanes.set(workspaceName, jj)
-    if (lanes.size <= maxTrackedLanes) return
-    const [oldest, owner] = lanes.entries().next().value!
-    lanes.delete(oldest)
-    yield* forgetLane(owner, oldest, "to bound the lanes its scope tracks")
   })
 
 /**

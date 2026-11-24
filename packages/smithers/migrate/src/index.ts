@@ -41,6 +41,16 @@ export * as Detect from "./Detect.ts"
 export * as RunState from "./RunState.ts"
 
 /**
+ * The SQLite seam the run-state scanner and the apply lock read through. It
+ * names the capability and loads no engine; `@smthrs/migrate/SqliteStoreNode`
+ * provides it on Node.
+ *
+ * @category scanners
+ * @since 1.0.0
+ */
+export * as SqliteStore from "./SqliteStore.ts"
+
+/**
  * @category scanners
  * @since 1.0.0-rc.0
  */

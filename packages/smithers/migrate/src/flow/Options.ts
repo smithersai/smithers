@@ -15,8 +15,8 @@ import * as FileSystem from "effect/FileSystem"
 import * as Option from "effect/Option"
 import * as Path from "effect/Path"
 import * as Schema from "effect/Schema"
-import { isAbsolute, normalize, parse, sep } from "node:path"
 import * as Fs from "../internal/Fs.ts"
+import * as PathText from "../internal/PathText.ts"
 import { make, type MigrateError } from "../MigrateError.ts"
 import * as Units from "../Units.ts"
 
@@ -259,10 +259,9 @@ export const layoutIssue = (options: {
 }): string | undefined => {
   const root = options.root
   if (root.includes("\0")) return "root must not contain a NUL byte"
-  if (!isAbsolute(root)) return `root must be an absolute path ("${root}")`
-  if (normalize(root) !== root || (root !== parse(root).root && root.endsWith(sep))) {
-    return `root must be a normalized absolute path ("${root}")`
-  }
+  const rootProblem = PathText.absoluteIssue(root)
+  if (rootProblem === "relative") return `root must be an absolute path ("${root}")`
+  if (rootProblem === "unnormalized") return `root must be a normalized absolute path ("${root}")`
   const report = options.reportDir ?? defaultReportDir
   const flows = options.layout?.flowsDir ?? defaultFlowsDir
   const reportProblem = relativePathIssue("reportDir", report)
@@ -424,6 +423,7 @@ export const validateLayout = (
     const issue = layoutIssue(options)
     if (issue !== undefined) return yield* Effect.fail(make("invalid-layout", issue))
     const fs = yield* FileSystem.FileSystem
+    const path = yield* Path.Path
     const rootInfo = yield* Fs.optionalNotFound(fs.stat(options.root)).pipe(
       Effect.mapError((cause) => make("io", `could not inspect the project root "${options.root}"`, String(cause)))
     )
@@ -441,7 +441,7 @@ export const validateLayout = (
     ) {
       const resolved = yield* realAncestor(options.root, relative)
       if (resolved === undefined) continue
-      if (resolved !== realRoot && !resolved.startsWith(`${realRoot}${sep}`)) {
+      if (resolved !== realRoot && !resolved.startsWith(`${realRoot}${path.sep}`)) {
         return yield* Effect.fail(make(
           "invalid-layout",
           `${label} "${relative}" resolves outside the project: "${resolved}" is not under "${realRoot}"`,
@@ -455,7 +455,6 @@ export const validateLayout = (
     // plan and then receive the archive. A leftover atomic-write temporary —
     // the tool's own file, interrupted mid-rename by a crash — is tolerated
     // rather than reported as foreign.
-    const path = yield* Path.Path
     const report = path.join(options.root, ...reportDir(options).split("/"))
     const info = yield* Fs.optionalNotFound(fs.stat(report)).pipe(
       Effect.mapError((cause) => make("io", `could not inspect the report directory "${report}"`, String(cause)))

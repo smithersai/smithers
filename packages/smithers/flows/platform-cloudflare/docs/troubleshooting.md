@@ -36,10 +36,10 @@ cause:
 
 ## An alarm logs `cloudflare.execution.poisoned`
 
-The object enters settlement retention. `UnknownFlow` means its `flows` omitted
-the intent's declaration. `InvalidIntent` means the stored intent or its
-unadmitted payload failed validation. Restore the declaration or correct the
-payload before starting a new execution.
+The object enters settlement retention. `InvalidIntent` means the stored intent
+or its unadmitted payload failed validation. Correct the payload before starting
+a new execution. `UnknownFlow` instead retries with capped backoff and keeps the
+intent: restore its declaration in `flows` to resume the execution.
 
 ## The flow settled as failed after a database outage
 

@@ -10,9 +10,11 @@
 #
 # It checks out the release scripts and publishes nothing. Its only write is
 # `npm dist-tag add`, made with the NPM_TOKEN repository secret, the npm
-# credential release-auth.yml verifies.
+# credential release-auth.yml verifies. Only npm itself is given that secret:
+# the one script of the checkout runs first, without it.
 #
 # GUARDS, all checked before the write:
+# - the run is this repository's own copy of this file on `main`.
 # - `package` is one a release publishes: the list in
 #   .smithers/flows/release/published-packages.mjs, which the release packs
 #   from. `smithers-orchestrator`, a 0.x name the release does not publish,
@@ -70,25 +72,44 @@ jobs:
       TAG: ${{ inputs.tag }}
       REPLACE_ZERO_LATEST: ${{ inputs.replaceZeroLatest }}
     steps:
+      # The reviewed copy of this file only. A dispatch from another branch
+      # runs that branch's copy of this workflow and of the release scripts,
+      # so it stops here, before anything is checked out.
+      - name: Require the reviewed workflow on main
+        run: |
+          if [ "$GITHUB_REPOSITORY" != smithersai/smithers ] || [ "$GITHUB_REF" != refs/heads/main ] \
+            || [ "$GITHUB_WORKFLOW_REF" != "smithersai/smithers/.github/workflows/npm-dist-tag.yml@refs/heads/main" ]; then
+            echo "::error::A dist-tag moves only from smithersai/smithers' own npm-dist-tag.yml at refs/heads/main; this run is on $GITHUB_REF."
+            exit 1
+          fi
+        shell: bash
       # The release scripts only: the package list and the request check.
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           persist-credentials: false
           sparse-checkout: .smithers/flows/release
+      # No registry-url here: the request check below is a script of the
+      # checkout, and it runs before this job holds any registry credential.
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: 26.5.0
-          registry-url: https://registry.npmjs.org
-      # setup-node's .npmrc sends NODE_AUTH_TOKEN with every request, and the
-      # registry refuses even a public read made with its placeholder token, so
-      # each npm step carries the real one.
       - name: Check the request
+        run: node .smithers/flows/release/dist-tag-request.mjs
+        shell: bash
+      # From here on the job runs npm and no script of the checkout. This
+      # setup writes the .npmrc that sends NODE_AUTH_TOKEN with every request,
+      # and the registry refuses even a public read made with its placeholder
+      # token, so each npm step carries the real one.
+      - name: Configure the npm registry
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 26.5.0
+          registry-url: https://registry.npmjs.org
+      - name: Check the registry
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           set -euo pipefail
-          node .smithers/flows/release/dist-tag-request.mjs
-
           published="$(npm view "$PACKAGE@$VERSION" version --registry https://registry.npmjs.org --loglevel error)"
           if [ "$published" != "$VERSION" ]; then
             echo "::error::$PACKAGE@$VERSION is not on npm."

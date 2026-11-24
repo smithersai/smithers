@@ -20,7 +20,7 @@ import * as CommandLine from "@smthrs/kernel/CommandLine"
 import * as GrantStore from "@smthrs/kernel/GrantStore"
 import * as ProcessConfinement from "@smthrs/kernel/ProcessConfinement"
 import * as Workspace from "@smthrs/kernel/Workspace"
-import { Arbitrary, Effect, Exit, Layer, PlatformError, Schema, Stream } from "effect"
+import { Arbitrary, Effect, Exit, FileSystem, Layer, PlatformError, Schema, Stream } from "effect"
 import * as HttpClient from "effect/http/HttpClient"
 import * as HttpClientError from "effect/http/HttpClientError"
 import * as HttpClientRequest from "effect/http/HttpClientRequest"
@@ -32,6 +32,7 @@ import { basename, join, posix } from "node:path"
 import { inspect } from "node:util"
 import { afterAll, describe, expect, it } from "vitest"
 import * as CommandSandbox from "../src/CommandSandbox/index.ts"
+import * as DirectorySandbox from "../src/DirectorySandbox/index.ts"
 import * as HttpSandbox from "../src/HttpSandbox/index.ts"
 import { parentOf } from "../src/internal/guestPath.ts"
 import { rootedAt } from "../src/internal/rootedPath.ts"
@@ -58,7 +59,6 @@ const check = (holds: boolean, invariant: string): void => {
   if (!holds) throw new Error(invariant)
 }
 
-const encoder = new TextEncoder()
 const base64 = (text: string) => Buffer.from(text).toString("base64")
 
 /** A string built from adversarial fragments. */
@@ -75,48 +75,47 @@ const tokenOf = (parts: ReadonlyArray<string>) => `tok5057${parts.join("")}`
 const formsOf = (token: string) => [token, encodeURIComponent(token), base64(token), base64(`Bearer ${token}`)]
 const leaks = (text: string, token: string) => formsOf(token).some((form) => text.includes(form))
 
-/** A retained provider whose machines are held in memory, recording every session it was asked for. */
-const machines = () => {
-  const files = new Map<string, Uint8Array>()
-  const asked: Array<Pick<Session, "id" | "remoteId">> = []
-  const open = (id: string, remoteId: string): Session => ({
-    id,
-    remoteId,
-    workdir: "/work",
-    // Every command exits 0 having printed an exited poll's status line.
-    spawn: () =>
-      Effect.succeed({
-        stdout: Stream.make(encoder.encode("x 0\n")),
-        stderr: Stream.empty,
-        exitCode: Effect.succeed(0)
-      }),
-    readFile: (path) =>
-      Effect.suspend(() => {
-        const held = files.get(`${remoteId}\0${path}`)
-        return held === undefined
-          ? Effect.fail(new ProviderError({ code: "not_found", message: `the machine holds nothing at ${path}` }))
-          : Effect.succeed(held.slice())
-      }),
-    writeFile: (path, content) =>
-      Effect.sync(() => {
-        files.set(`${remoteId}\0${path}`, content.slice())
-      })
+const services = Effect.runSync(
+  Effect.gen(function*() {
+    return { fs: yield* FileSystem.FileSystem, spawner: yield* ChildProcessSpawner }
+  }).pipe(Effect.provide(platform))
+)
+
+/** Real files and processes, retaining logical machine IDs to check every request's identity. */
+const machines = (root: string) => {
+  const directory = DirectorySandbox.make({
+    ...services,
+    root: mkdtempSync(join(root, "machines-")),
+    persistence: "sticky"
   })
+  const held = new Map<string, Pick<Session, "id" | "remoteId">>()
+  const asked: Array<Pick<Session, "id" | "remoteId">> = []
+  const missing = () => new ProviderError({ code: "not_found", message: "the machine is gone" })
   const provider: Provider = {
     retained: true,
     acquire: (key) =>
-      Effect.sync(() => {
-        asked.push({ id: key, remoteId: `machine/${key}` })
-        return open(key, `machine/${key}`)
+      Effect.gen(function*() {
+        const remoteId = `machine/${key}`
+        asked.push({ id: key, remoteId })
+        const session = yield* directory.acquire(key)
+        held.set(remoteId, session)
+        return { ...session, remoteId }
       }),
-    attach: (session) =>
-      Effect.sync(() => {
-        asked.push({ id: session.id, remoteId: session.remoteId })
-        return open(session.id, session.remoteId)
+    attach: (handle) =>
+      Effect.gen(function*() {
+        asked.push(handle)
+        const actual = held.get(handle.remoteId)
+        if (actual === undefined || actual.id !== handle.id) return yield* Effect.fail(missing())
+        const session = yield* directory.attach!(actual)
+        return { ...session, remoteId: handle.remoteId }
       }),
-    destroy: (session) =>
-      Effect.sync(() => {
-        asked.push({ id: session.id, remoteId: session.remoteId })
+    destroy: (handle) =>
+      Effect.gen(function*() {
+        asked.push(handle)
+        const actual = held.get(handle.remoteId)
+        if (actual === undefined || actual.id !== handle.id) return
+        yield* directory.destroy!(actual)
+        held.delete(handle.remoteId)
       })
   }
   return { provider, asked }
@@ -227,90 +226,110 @@ describe("@smthrs/sandbox secret, transport and confinement fuzz invariants", ()
     new Rule({ effect: "allow", pattern: new CapabilityPattern({ action: "proc:spawn", resource: "*" }) })
   ]
 
-  it("HttpSandbox sends its bearer token in the Authorization header of its own origin only, through every network fault", async () => {
-    const arb = Arbitrary.schema(
-      Schema.Struct({
-        token: tokenPieces,
-        base: Schema.Literals(["http://sandbox.test", "http://sandbox.test/tenant/a/", "https://sandbox.test:8443/x"]),
-        key: pieces(["k", "9", "λ", "/", "..", "%", " ", "'", "😀", "?", "#", "&id=other", "\ud800", "\udc00"], 6),
-        path: pieces(["f", "dir/", "..", "λ", " ", "'", "%2e", "?", "#", "&", "="], 6),
-        content: Schema.Array(byte).pipe(Schema.check(Schema.isMaxLength(48))),
-        command: pieces(["true", ";", " ", "'", "\"", "$HOME", "\n", "λ", "`id`"], 6),
-        plan: Schema.Array(Schema.Literals(faults)).pipe(Schema.check(Schema.isMaxLength(7)))
-      })
-    )
-    const report = await Effect.runPromise(
-      Fuzz.run(
-        arb,
-        (input) =>
-          Effect.gen(function*() {
-            const token = tokenOf(input.token)
-            const base = new URL(input.base)
-            const key = input.key.join("")
-            const path = `/${input.path.join("")}`
-            const content = Uint8Array.from(input.content)
-            const { asked, provider: held } = machines()
-            const sent: Array<Sent> = []
-            const provider = HttpSandbox.make({
-              url: input.base,
-              token,
-              client: network(mounted(base, HttpSandbox.serve({ provider: held, token })), input.plan, sent),
-              retries: 2,
-              retryDelay: "1 millis",
-              pollInterval: "1 millis"
-            })
-            const clean = input.plan.every((fault) => fault === "pass")
-            const exits: Array<Exit.Exit<unknown, ProviderError>> = []
-            const observed = <A>(effect: Effect.Effect<A, ProviderError>) =>
-              Effect.tap(Effect.exit(effect), (exit) => Effect.sync(() => exits.push(exit)))
-            const whole = yield* Effect.exit(Effect.scoped(Effect.gen(function*() {
-              const session = yield* provider.acquire(key)
-              yield* observed(session.writeFile(path, content))
-              const read = yield* observed(session.readFile(path))
-              yield* observed(session.ping!)
-              const ran = yield* observed(Effect.scoped(Effect.gen(function*() {
-                const child = yield* session.spawn(input.command.join(""), { env: { ORDINARY: "value" } })
-                yield* Stream.runDrain(child.stdout)
-                return yield* child.exitCode
-              })))
-              if (clean) {
-                check(Exit.isSuccess(read) && Buffer.from(read.value).equals(Buffer.from(content)), "a file changed")
-                check(Exit.isSuccess(ran) && ran.value === 0, "a command's exit was lost")
-              }
-            })))
-            exits.push(whole)
-            if (/\p{Surrogate}/u.test(key)) {
-              // No URL can name this key's session: refused, typed, before anything is sent.
-              check(
-                Exit.isFailure(whole) && Exit.hasFails(whole),
-                `an ill-formed key was not refused: ${inspect(whole)}`
-              )
-              check(sent.length === 0 && asked.length === 0, "an ill-formed key reached the service")
-              return true
-            }
-            check(sent.length > 0, "nothing was sent")
-            headersOnly(sent, base, token)
-            for (const exit of exits) {
-              silent(exit, token)
-              // Every failure is the provider's typed one: no fault is a defect.
-              if (Exit.isFailure(exit)) check(Exit.hasFails(exit), `a fault became a defect: ${inspect(exit)}`)
-            }
-            if (clean) {
-              check(exits.every(Exit.isSuccess), `a clean network failed: ${inspect(exits.find(Exit.isFailure))}`)
-              // The machine asked for on every route is the one the session key acquired.
-              check(
-                asked.every((session) => session.id === key && session.remoteId === `machine/${key}`),
-                `a request named another session: ${JSON.stringify(asked)}`
-              )
-              check(asked.length >= 6, "a route never reached the provider")
-            }
-            return true
-          }),
-        { seed, executions: ioExecutions }
+  it(
+    "HttpSandbox sends its bearer token in the Authorization header of its own origin only, through every network fault",
+    async () => {
+      const arb = Arbitrary.schema(
+        Schema.Struct({
+          token: tokenPieces,
+          base: Schema.Literals([
+            "http://sandbox.test",
+            "http://sandbox.test/tenant/a/",
+            "https://sandbox.test:8443/x"
+          ]),
+          key: pieces(["k", "9", "λ", "/", "..", "%", " ", "'", "😀", "?", "#", "&id=other", "\ud800", "\udc00"], 6),
+          path: pieces(["f", "dir/", "..", "λ", " ", "'", "%2e", "?", "#", "&", "="], 6),
+          content: Schema.Array(byte).pipe(Schema.check(Schema.isMaxLength(48))),
+          command: pieces(["true", ";", " ", "'", "\"", "$HOME", "\n", "λ", "`id`"], 6),
+          plan: Schema.Array(Schema.Literals(faults)).pipe(Schema.check(Schema.isMaxLength(7)))
+        })
       )
-    )
-    assertPassed(report)
-  })
+      const report = await Effect.runPromise(
+        Fuzz.run(
+          arb,
+          (input) =>
+            Effect.gen(function*() {
+              const token = tokenOf(input.token)
+              const base = new URL(input.base)
+              const key = input.key.join("")
+              const content = Uint8Array.from(input.content)
+              const { asked, provider: held } = machines(root)
+              const sent: Array<Sent> = []
+              const provider = HttpSandbox.make({
+                url: input.base,
+                token,
+                client: network(
+                  mounted(
+                    base,
+                    HttpSandbox.serve({ provider: held, token, processDirectory: join(root, "http-records") })
+                  ),
+                  input.plan,
+                  sent
+                ),
+                processDirectory: join(root, "http-processes"),
+                retries: 2,
+                retryDelay: "1 millis",
+                pollInterval: "1 millis"
+              })
+              const clean = input.plan.every((fault) => fault === "pass")
+              const exits: Array<Exit.Exit<unknown, ProviderError>> = []
+              const observed = <A>(effect: Effect.Effect<A, ProviderError>) =>
+                Effect.tap(Effect.exit(effect), (exit) => Effect.sync(() => exits.push(exit)))
+              const whole = yield* Effect.exit(Effect.scoped(Effect.gen(function*() {
+                const session = yield* provider.acquire(key)
+                // A real guest needs a valid file name. Keep every adversarial fragment in the URL
+                // while encoding separators so generated paths cannot escape the fixture's root.
+                const path = `${session.workdir}/file-${encodeURIComponent(input.path.join(""))}`
+                yield* observed(session.writeFile(path, content))
+                const read = yield* observed(session.readFile(path))
+                yield* observed(session.ping!)
+                const ran = yield* observed(Effect.scoped(Effect.gen(function*() {
+                  const child = yield* session.spawn(`printf '%s' ${CommandLine.quote(input.command.join(""))}`, {
+                    env: { ORDINARY: "value" }
+                  })
+                  yield* Stream.runDrain(child.stdout)
+                  return yield* child.exitCode
+                })))
+                if (clean) {
+                  check(Exit.isSuccess(read) && Buffer.from(read.value).equals(Buffer.from(content)), "a file changed")
+                  check(Exit.isSuccess(ran) && ran.value === 0, "a command's exit was lost")
+                }
+              })))
+              exits.push(whole)
+              if (/\p{Surrogate}/u.test(key)) {
+                // No URL can name this key's session: refused, typed, before anything is sent.
+                check(
+                  Exit.isFailure(whole) && Exit.hasFails(whole),
+                  `an ill-formed key was not refused: ${inspect(whole)}`
+                )
+                check(sent.length === 0 && asked.length === 0, "an ill-formed key reached the service")
+                return true
+              }
+              check(sent.length > 0, "nothing was sent")
+              headersOnly(sent, base, token)
+              for (const exit of exits) {
+                silent(exit, token)
+                // Every failure is the provider's typed one: no fault is a defect.
+                if (Exit.isFailure(exit)) check(Exit.hasFails(exit), `a fault became a defect: ${inspect(exit)}`)
+              }
+              if (clean) {
+                check(exits.every(Exit.isSuccess), `a clean network failed: ${inspect(exits.find(Exit.isFailure))}`)
+                // The machine asked for on every route is the one the session key acquired.
+                check(
+                  asked.every((session) => session.id === key && session.remoteId === `machine/${key}`),
+                  `a request named another session: ${JSON.stringify(asked)}`
+                )
+                check(asked.length >= 6, "a route never reached the provider")
+              }
+              return true
+            }),
+          { seed, executions: ioExecutions }
+        )
+      )
+      assertPassed(report)
+    },
+    180_000
+  )
 
   it("HttpSandbox never follows a hostile service's session answer off its origin or into a defect", async () => {
     const hostile = pieces(
@@ -518,8 +537,8 @@ describe("@smthrs/sandbox secret, transport and confinement fuzz invariants", ()
             const value = forged[input.forgery]
             const headers = new Headers(value === undefined ? {} : { authorization: value })
             const authorized = headers.get("authorization") === expected
-            const { asked, provider } = machines()
-            const handler = HttpSandbox.serve({ provider, token })
+            const { asked, provider } = machines(root)
+            const handler = HttpSandbox.serve({ provider, token, processDirectory: join(root, "http-records") })
             const bodied = input.method !== "GET"
             const response = yield* handler(
               new Request(`http://sandbox.test/${input.path.join("/")}?${input.query.join("&")}`, {

@@ -31,46 +31,35 @@ export class AffectedGitError extends Data.TaggedError("smithers-build/AffectedG
   }
 }
 
-/** Collects changed paths from explicit inputs or a verified Git comparison.
- * The optional process runner admits bounded host execution and fault injection.
- * @category querying
- * @since 0.1.0
- */
-export const changedPaths = async (root: string, options: {
+/** Where discovery runs and the bounds it runs under. */
+interface DiscoveryOptions {
   readonly base: string
-  readonly head?: string | undefined
-  readonly files?: ReadonlyArray<string> | undefined
   readonly signal?: AbortSignal | undefined
   readonly timeoutMs?: number | undefined
   readonly environment?: Readonly<Record<string, string | undefined>> | undefined
-}, run: typeof ContainedProcess.run = ContainedProcess.run): Promise<ReadonlyArray<string>> => {
-  if (options.signal?.aborted) {
-    throw new AffectedGitError("cancelled", [], "affected discovery cancelled", options.signal.reason)
-  }
-  if (options.files !== undefined) return [...new Set(options.files)].sort()
+}
+
+/**
+ * The repository's version control as discovery reads it: Git, or Jujutsu in a
+ * workspace that holds `.jj` without `.git`. `exec` runs one bounded
+ * subcommand and returns its standard output, refusing a non-zero exit.
+ */
+const repository = (root: string, options: DiscoveryOptions, run: typeof ContainedProcess.run) => {
   const timeoutMs = options.timeoutMs ?? 60_000
   if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 86_400_000) {
     throw new AffectedGitError("invalid_timeout", [], "git timeout must be an integer from 1 to 86400000ms")
   }
-  // Support pure Jujutsu workspaces (where `.jj` exists without `.git`).
-  if (!Fs.existsSync(Path.join(root, ".git")) && Fs.existsSync(Path.join(root, ".jj"))) {
-    const jjBase = options.base === "HEAD" ? "@-" : options.base
-    const jjHead = options.head ?? "@"
-    const args = [
-      "--no-pager",
-      "--color=never",
-      "diff",
-      "--template",
-      "if(status == \"renamed\", json(source.path()) ++ \"\\0\") ++ json(path) ++ \"\\0\"",
-      `--from=${jjBase}`,
-      `--to=${jjHead}`
-    ]
+  const jj = !Fs.existsSync(Path.join(root, ".git")) && Fs.existsSync(Path.join(root, ".jj"))
+  const command = jj ? "jj" : "git"
+  const exec = async (subcommand: string, rest: ReadonlyArray<string>): Promise<string> => {
+    const name = `${command} ${subcommand}`
+    const args = [...(jj ? ["--no-pager", "--color=never"] : []), subcommand, ...rest]
     let stdout = ""
     let stderr = ""
     let code: number
     try {
       code = await run({
-        command: "jj",
+        command,
         args,
         cwd: root,
         signal: options.signal,
@@ -89,78 +78,121 @@ export const changedPaths = async (root: string, options: {
       throw new AffectedGitError(
         cause instanceof ContainedProcess.ProcessError ? cause.code : "process_failed",
         args,
-        `jj diff failed: ${cause instanceof Error ? cause.message : String(cause)}`,
+        `${name} failed: ${cause instanceof Error ? cause.message : String(cause)}`,
         cause
       )
     }
     if (code !== 0) {
-      throw new AffectedGitError("nonzero_exit", args, `jj diff exited ${code}: ${stderr.trim()}`, {
-        exitCode: code,
-        stderr
-      })
-    }
-    // JSON protects control characters from display escaping and a leading BOM from UTF-8 decoding.
-    const jjPaths = stdout.split("\0").filter(Boolean).map((record) => JSON.parse(record) as string)
-    return [...new Set(jjPaths)].sort()
-  }
-  const git = async (args: ReadonlyArray<string>): Promise<string> => {
-    let stdout = ""
-    let stderr = ""
-    let code: number
-    try {
-      code = await run({
-        command: "git",
-        args,
-        cwd: root,
-        signal: options.signal,
-        environment: options.environment,
-        timeoutMs,
-        maxOutputBytes: 16 * 1024 * 1024,
-        fatalUtf8: true,
-        stdout: (text) => {
-          stdout += text
-        },
-        stderr: (text) => {
-          stderr += text
-        }
-      })
-    } catch (cause) {
-      throw new AffectedGitError(
-        cause instanceof ContainedProcess.ProcessError ? cause.code : "process_failed",
-        args,
-        `git ${args[0]} failed: ${cause instanceof Error ? cause.message : String(cause)}`,
-        cause
-      )
-    }
-    if (code !== 0) {
-      throw new AffectedGitError("nonzero_exit", args, `git ${args[0]} exited ${code}: ${stderr.trim()}`, {
+      throw new AffectedGitError("nonzero_exit", args, `${name} exited ${code}: ${stderr.trim()}`, {
         exitCode: code,
         stderr
       })
     }
     return stdout
   }
-  const gitPaths = async (args: ReadonlyArray<string>) => (await git(args)).split("\0").filter(Boolean)
-  // Resolve user revisions before passing them to diff; a leading dash cannot become an option.
-  const revision = async (ref: string) =>
-    (await git(["rev-parse", "--verify", "--end-of-options", `${ref}^{commit}`])).trim()
-  const base = await revision(options.base)
+  return {
+    jj,
+    exec,
+    /** A Jujutsu revision for the base; Git's `HEAD` is the working copy's parent there. */
+    jjBase: options.base === "HEAD" ? "@-" : options.base,
+    /** Resolves a user revision before any command reads it; a leading dash cannot become an option. */
+    gitRevision: async (ref: string) =>
+      (await exec("rev-parse", ["--verify", "--end-of-options", `${ref}^{commit}`])).trim()
+  }
+}
+
+/** Collects changed paths from explicit inputs or a verified Git comparison.
+ * The optional process runner admits bounded host execution and fault injection.
+ * @category querying
+ * @since 0.1.0
+ */
+export const changedPaths = async (
+  root: string,
+  options: DiscoveryOptions & {
+    readonly head?: string | undefined
+    readonly files?: ReadonlyArray<string> | undefined
+  },
+  run: typeof ContainedProcess.run = ContainedProcess.run
+): Promise<ReadonlyArray<string>> => {
+  if (options.signal?.aborted) {
+    throw new AffectedGitError("cancelled", [], "affected discovery cancelled", options.signal.reason)
+  }
+  if (options.files !== undefined) return [...new Set(options.files)].sort()
+  const vcs = repository(root, options, run)
+  if (vcs.jj) {
+    const stdout = await vcs.exec("diff", [
+      "--template",
+      "if(status == \"renamed\", json(source.path()) ++ \"\\0\") ++ json(path) ++ \"\\0\"",
+      `--from=${vcs.jjBase}`,
+      `--to=${options.head ?? "@"}`
+    ])
+    // JSON protects control characters from display escaping and a leading BOM from UTF-8 decoding.
+    const jjPaths = stdout.split("\0").filter(Boolean).map((record) => JSON.parse(record) as string)
+    return [...new Set(jjPaths)].sort()
+  }
+  const gitPaths = async (subcommand: string, rest: ReadonlyArray<string>) =>
+    (await vcs.exec(subcommand, rest)).split("\0").filter(Boolean)
+  const base = await vcs.gitRevision(options.base)
   const paths = options.head === undefined
     ? [
-      ...await gitPaths(["diff", "--relative", "--name-only", "--no-renames", "-z", base, "--"]),
-      ...await gitPaths(["ls-files", "--others", "--exclude-standard", "-z"])
+      ...await gitPaths("diff", ["--relative", "--name-only", "--no-renames", "-z", base, "--"]),
+      ...await gitPaths("ls-files", ["--others", "--exclude-standard", "-z"])
     ]
-    : await gitPaths([
-      "diff",
+    : await gitPaths("diff", [
       "--relative",
       "--name-only",
       "--no-renames",
       "-z",
       base,
-      await revision(options.head),
+      await vcs.gitRevision(options.head),
       "--"
     ])
   return [...new Set(paths)].sort()
+}
+
+/**
+ * The text each path held at the base revision, in the spelling
+ * {@link changedPaths} reports. A path the base holds no file at has no entry:
+ * a file added since, or a name that was a directory there.
+ *
+ * @category querying
+ * @since 1.0.0
+ */
+export const baseTexts = async (
+  root: string,
+  options: DiscoveryOptions & { readonly paths: ReadonlyArray<string> },
+  run: typeof ContainedProcess.run = ContainedProcess.run
+): Promise<ReadonlyMap<string, string>> => {
+  const texts = new Map<string, string>()
+  if (options.paths.length === 0) return texts
+  const vcs = repository(root, options, run)
+  if (vcs.jj) {
+    // A fileset string literal takes JSON's escapes; `root-file` reads the path exactly, never as a glob.
+    const fileset = (path: string) => `root-file:${JSON.stringify(path)}`
+    const listed = await vcs.exec("file", [
+      "list",
+      `--revision=${vcs.jjBase}`,
+      "--template",
+      "json(path) ++ \"\\0\"",
+      "--",
+      ...options.paths.map(fileset)
+    ])
+    for (const record of listed.split("\0").filter(Boolean)) {
+      const path = JSON.parse(record) as string
+      texts.set(path, await vcs.exec("file", ["show", `--revision=${vcs.jjBase}`, "--", fileset(path)]))
+    }
+    return texts
+  }
+  const base = await vcs.gitRevision(options.base)
+  const listed = await vcs.exec("ls-tree", ["-z", base, "--", ...options.paths])
+  for (const record of listed.split("\0").filter(Boolean)) {
+    // `<mode> <type> <object>\t<path>`: only a blob is a file's text.
+    const tab = record.indexOf("\t")
+    if (record.slice(0, tab).split(" ")[1] !== "blob") continue
+    const path = record.slice(tab + 1)
+    texts.set(path, await vcs.exec("show", [`${base}:./${path}`]))
+  }
+  return texts
 }
 
 const globalPath = (path: string): boolean =>
@@ -269,6 +301,12 @@ export interface SelectOptions {
    * that attributes them itself, as test units do for the files a test reads.
    */
   readonly toolSources?: boolean
+  /**
+   * The host whose native separators the changed paths may use; this
+   * process's host by default. Only Windows spells a separator as a
+   * backslash, which every other host admits as a filename character.
+   */
+  readonly platform?: NodeJS.Platform
 }
 
 const compileInput = (
@@ -336,9 +374,10 @@ export function select(
   paths: ReadonlyArray<string>,
   options: SelectOptions = {}
 ): Selection | ExplainedSelection {
+  const windows = (options.platform ?? process.platform) === "win32"
   const normalized = [
     ...new Set(paths.map((path) => {
-      const value = path.replaceAll("\\", "/").replace(/^\.\//, "")
+      const value = (windows ? path.replaceAll("\\", "/") : path).replace(/^\.\//, "")
       if (value === "" || Path.posix.isAbsolute(value) || value.split("/").includes("..")) {
         throw new Error(`invalid workspace-relative changed path: ${path}`)
       }

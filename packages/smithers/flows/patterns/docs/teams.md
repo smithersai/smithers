@@ -242,6 +242,16 @@ Every call receives `{ column, item, previous }`. `previous` refers to the same 
 
 A column joins its batch with `Quarantine.all` under the `quarantine` policy: every card settles as a `Succeeded` or `Quarantined` envelope, so one rejected card does not interrupt the cards beside it. A later column's call for a card is the live arm of a `Node.branch` on the real set of rejected cards, so a rejected card makes no further call, as in `run`. A board's declared call count is an upper bound on the calls a pass makes. The declared flow settles to the same `{ board, completed, failed, iterations: 1 }` record one `run` pass returns; `onComplete` sees it and its own answer is discarded.
 
+### Tags and runs parked before the tag was versioned
+
+An unnamed board is tagged `kanban@2(columns=…, items=<card ids>, concurrency=…)[…]`. An earlier build tagged it with its card count, `kanban(columns=…, items=2, concurrency=…)[…]`, and a run that build parked still holds that tag. `Kanban.legacyAliases(boards)` returns each board under its old tag; register those flows beside the boards and a parked run resumes its own cards. A board declared with a `name` kept its tag and yields no alias.
+
+```ts
+const aliases = Kanban.legacyAliases([board])
+```
+
+`legacyAliases` throws a `PatternError` when two of the boards had the same old tag. The engine resolves a flow by its tag alone, so registering either alias could resume a parked run on the other board's cards.
+
 ### Execution
 
 `run(items, options)` returns `{ board, completed, failed, iterations }`.

@@ -24,6 +24,12 @@ export interface BunDatabaseOptions {
   readonly sqlite?: Omit<BunSqliteClient.SqliteClientConfig, "filename"> | undefined
   /** Opens an existing store for reading only, as `NodeDatabase` does. */
   readonly readOnly?: boolean | undefined
+  /**
+   * The settings that select SQLite or PostgreSQL for this store, as
+   * `NodeDatabase` reads them. Defaults to this host's process environment,
+   * read when the layer is built.
+   */
+  readonly settings?: PostgresSelection.Settings | undefined
 }
 
 const readTableNames = (filename: string): ReadonlyArray<string> | undefined => {
@@ -89,7 +95,7 @@ const client = (options: BunDatabaseOptions): Layer.Layer<SqlClient.SqlClient> =
 export const layer = (options: BunDatabaseOptions): Layer.Layer<SqlClient.SqlClient> =>
   Layer.unwrap(Effect.sync(() => {
     const readOnly = options.readOnly === true
-    return PostgresSelection.layer(options.filename, readOnly) ?? SqliteOpen.layer(
+    return PostgresSelection.layer(options.filename, readOnly, options.settings ?? process.env) ?? SqliteOpen.layer(
       options.filename,
       readTableNames,
       client(readOnly ? { ...options, sqlite: { ...options.sqlite, readonly: true, disableWAL: true } } : options),

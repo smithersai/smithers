@@ -273,7 +273,7 @@ describe("@smthrs/database Deep Fuzz (PostgresDatabase, PostgresSelection, NodeD
             let threw: unknown
             let layerRes: unknown
             try {
-              layerRes = PostgresSelection.layer(c.target)
+              layerRes = PostgresSelection.layer(c.target, false, process.env)
             } catch (e) {
               threw = e
             }
@@ -285,7 +285,7 @@ describe("@smthrs/database Deep Fuzz (PostgresDatabase, PostgresSelection, NodeD
               return true
             }
 
-            const loc = PostgresSelection.location(c.target)
+            const loc = PostgresSelection.location(c.target, process.env)
             if (layerRes === undefined && loc !== undefined) return false
             if (layerRes !== undefined && loc === undefined) return false
             if (loc !== undefined) {

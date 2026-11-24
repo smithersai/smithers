@@ -122,7 +122,8 @@ it("preserves owned, declared unowned, and multi-root reasons including excludes
   add("app", "build", target([shared, Input.file("//assets/schema.txt")], [lib]))
   add("tools", "check", target([Input.file("local.txt")], [], { dependencies: [lib] }))
   const paths = ["shared/.hidden.ts", "./lib/new.txt", "assets/schema.txt", "lib\\new.txt"]
-  expect(Affected.select(graph.index, ["//..."], paths)).toEqual({
+  // Only Windows spells a separator as a backslash; the native spelling folds onto the POSIX one there.
+  expect(Affected.select(graph.index, ["//..."], paths, { platform: "win32" })).toEqual({
     pattern: "//...",
     files: ["assets/schema.txt", "lib/new.txt", "shared/.hidden.ts"],
     conservative: false,

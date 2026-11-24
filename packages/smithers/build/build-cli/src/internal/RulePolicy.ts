@@ -63,9 +63,12 @@ const policies: Readonly<Record<NativeRule, Policy>> & Readonly<Record<string, P
   "FactoryProjection": { check: true },
   "Fetch": { sandbox: "network", writes: true, cache: "always" },
   "Filegroup": { reads: "declared" },
-  "Foundry.Build": { overlay: true, writes: true, cache: "always" },
+  // No intrinsic replay: the planner keys no Solidity tree (forge's `src`,
+  // `test`, `script` and `libs`), so only a declaration that names them in
+  // `data` is cacheable.
+  "Foundry.Build": { overlay: true, writes: true },
   "Foundry.Fmt": { check: true, cache: "check" },
-  "Foundry.Test": { overlay: true, cache: "execute" },
+  "Foundry.Test": { overlay: true },
   // Scratch checks still census the live ignored tree and restore escaping
   // symlink portals. Keep their snapshots apart from every peer's writes.
   "Generate": { check: true, exclusive: true, cache: "check" },

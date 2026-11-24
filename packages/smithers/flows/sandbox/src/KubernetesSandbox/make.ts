@@ -15,7 +15,7 @@ import { checkEnvironmentNames } from "../internal/environmentNames.ts"
 import { execSession } from "../internal/execSession.ts"
 import { finalizeWithin } from "../internal/finalizeWithin.ts"
 import { gather, type GatheredRun, providerFailure } from "../internal/localProcess.ts"
-import { sessionSlug } from "../internal/sessionSlug.ts"
+import { legacySessionSlug, sessionSlug } from "../internal/sessionSlug.ts"
 import { ProviderError } from "../RemoteChildProcessSpawner/ProviderError.ts"
 import { type NetworkPolicy, refuseNetworkPolicy } from "../Sandbox/NetworkPolicy.ts"
 import type { Provider } from "../Sandbox/Provider.ts"
@@ -143,8 +143,8 @@ const sealOf = (key: string, fingerprint: string, uid: string) =>
     catch: providerFailure("unavailable", "could not seal the sandbox pod")
   })
 
-const podNameOf = (prefix: string, sessionKey: string): string => {
-  const slug = sessionSlug(sessionKey).toLowerCase().replaceAll(/[^a-z0-9-]/g, "-")
+const podNameOf = (prefix: string, sessionKey: string, slugOf = sessionSlug): string => {
+  const slug = slugOf(sessionKey).toLowerCase().replaceAll(/[^a-z0-9-]/g, "-")
   const candidate = `${prefix.toLowerCase().replaceAll(/[^a-z0-9-]/g, "-")}${slug}`
     .replaceAll(/^-+|-+$/g, "")
   if (candidate.length <= maximumPodNameLength) return candidate
@@ -277,7 +277,17 @@ export const make = (input: KubernetesSandboxOptions): Provider => {
     acquire: (sessionKey) =>
       Effect.gen(function*() {
         const environment = options.env ?? {}
-        const name = podNameOf(prefix, sessionKey)
+        const legacyName = podNameOf(prefix, sessionKey, legacySessionSlug)
+        const legacy = yield* run(["get", "pod", legacyName, "--ignore-not-found", "-o", "json"])
+        if (legacy.code !== 0) {
+          return yield* Effect.fail(
+            new ProviderError({
+              code: "unavailable",
+              message: `legacy pod could not be inspected: ${legacy.stderr.trim()}`
+            })
+          )
+        }
+        const name = decoder.decode(legacy.stdout).trim() === "" ? podNameOf(prefix, sessionKey) : legacyName
         const fingerprint = yield* configurationFingerprint({
           provider: "KubernetesSandbox/v1",
           owner: sessionKey,
@@ -342,9 +352,9 @@ export const make = (input: KubernetesSandboxOptions): Provider => {
         })
         const origin = yield* Effect.acquireRelease(
           Effect.gen(function*() {
-            const created = yield* create
-            if (created.code === 0) return "fresh" as const
-            if (!/(?:AlreadyExists|already exists)/i.test(created.stderr)) {
+            const created = name === legacyName ? undefined : yield* create
+            if (created?.code === 0) return "fresh" as const
+            if (created !== undefined && !/(?:AlreadyExists|already exists)/i.test(created.stderr)) {
               return yield* Effect.fail(
                 new ProviderError({
                   code: "unavailable",
@@ -356,7 +366,9 @@ export const make = (input: KubernetesSandboxOptions): Provider => {
             // is reattached; one in a terminal phase is replaced, because the
             // Ready wait below would otherwise block on it until its timeout.
             // Validate ownership before adopting OR deleting a terminal Pod.
-            const inspected = yield* step(`the pod ${name} could not be inspected`, ["get", "pod", name, "-o", "json"])
+            const inspected = name === legacyName
+              ? legacy
+              : yield* step(`the pod ${name} could not be inspected`, ["get", "pod", name, "-o", "json"])
             const held = yield* Effect.try({
               try: () => Schema.decodeUnknownSync(inspectedPod)(JSON.parse(decoder.decode(inspected.stdout))),
               catch: providerFailure("unavailable", `the pod ${name} has no verifiable configuration`)
@@ -380,6 +392,14 @@ export const make = (input: KubernetesSandboxOptions): Provider => {
             const sealed = options.reattachKey !== undefined && held.metadata.uid !== undefined &&
               held.metadata.labels[sealLabel] === (yield* sealOf(options.reattachKey, fingerprint, held.metadata.uid))
             if (sealed && !terminalPhases.has(held.status.phase)) return "adopted" as const
+            if (name === legacyName) {
+              return yield* Effect.fail(
+                new ProviderError({
+                  code: "unavailable",
+                  message: `the legacy pod ${name} cannot be adopted safely`
+                })
+              )
+            }
             // An unsealed leftover is not trusted with the session: anyone who
             // may create Pods here can build one that matches every check
             // above. It is replaced, and a replacement that loses a race for

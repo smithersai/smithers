@@ -1,11 +1,12 @@
 import assert from "node:assert/strict"
 import { spawnSync } from "node:child_process"
-import { cpSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, utimesSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 import { test } from "node:test"
 import { fileURLToPath } from "node:url"
-import { execAsync, outputLimit } from "./fuzz-repo.mjs"
+import { callsHeader } from "../packages/smithers/build/build-cli/scripts/build-observe.mjs"
+import { ensureObserveCallsHeader, execAsync, outputLimit } from "./fuzz-repo.mjs"
 
 const fixture = (t) => {
   const root = mkdtempSync(join(tmpdir(), "fuzz-repo-contract-"))
@@ -120,4 +121,32 @@ test("applies a deadline to a subprocess that never exits", async () => {
   )
   assert.equal(reply.code, 1)
   assert.equal(reply.diagnostic, "Timed out after 100ms")
+})
+
+// R2-Neon-D3-013: an existing .gen/calls.h was kept whatever it held, so the Zig suites fuzzed an old syscall table.
+test("the observer's syscall header is written when missing, replaced when stale, and left alone when current", async (t) => {
+  const directory = mkdtempSync(join(tmpdir(), "smithers-fuzz-header-"))
+  t.after(() => rmSync(directory, { recursive: true, force: true }))
+  const header = join(directory, ".gen", "calls.h")
+  const current = callsHeader()
+  assert.match(current, /^#define LAST_KNOWN \d+$/m)
+
+  await ensureObserveCallsHeader(directory)
+  assert.equal(readFileSync(header, "utf8"), current)
+
+  // The table as an earlier build-observe.mjs wrote it: one entry short.
+  const stale = current.split("\n").filter((line, index, lines) => index !== lines.length >> 1).join("\n")
+  assert.notEqual(stale, current)
+  for (const old of [stale, "", "// calls.h of another checkout\n"]) {
+    writeFileSync(header, old)
+    await ensureObserveCallsHeader(directory)
+    assert.equal(readFileSync(header, "utf8"), current)
+  }
+
+  // A current header is not rewritten, so a build keyed on its time is not invalidated.
+  const long = new Date("2026-01-01T00:00:00Z")
+  utimesSync(header, long, long)
+  await ensureObserveCallsHeader(directory)
+  assert.equal(statSync(header).mtimeMs, long.getTime())
+  assert.equal(readFileSync(header, "utf8"), current)
 })

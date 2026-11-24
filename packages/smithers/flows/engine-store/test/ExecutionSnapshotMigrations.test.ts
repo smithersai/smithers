@@ -73,7 +73,8 @@ describe("execution snapshot migration ladder", () => {
               3007,
               3008,
               3009,
-              3010
+              3010,
+              3011
             ])
           })
         )

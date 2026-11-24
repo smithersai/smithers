@@ -19,6 +19,13 @@
 
 ### Fixed
 
+- An unnamed `Kanban.make` board is tagged `kanban@2(…)`, so no current tag
+  can equal a tag from the build that put the card count where the card ids
+  are now: a two-card board and a board whose one card is `2` both read
+  `items=2`. `Kanban.legacyAliases` returns each board under its count-era
+  tag for runs parked before the change, and refuses two boards that shared
+  one.
+
 - `Bounded.all` joins a member named `then`, `toString`, `valueOf` or
   `toJSON`. It read each member off the planned batch record by name, and a
   planned value answers `then` with `undefined` and refuses the other three, so

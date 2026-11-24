@@ -8,8 +8,9 @@
  *
  * This is a reading, not a shell. A name built at run time (`$TOOL`), a
  * function, an alias and a program another program starts are not found, and
- * a word that is no program (a line of a here-document) may be. The caller
- * keeps only the names `PATH` resolves, so a wrong word costs nothing.
+ * a word that is no program (a function's name, a builtin, a `case` pattern,
+ * a line of a here-document) may be. The caller keeps the bare names `PATH`
+ * resolves and every word written as a path, so a wrong word costs nothing.
  *
  * @since 1.0.0
  */

@@ -182,6 +182,6 @@ describe("generated pattern tags", () => {
     const other = Kanban.make({ columns, items: [{ id: "c" }, { id: "d" }], concurrency: 1 })
 
     expect(one._tag).not.toBe(other._tag)
-    expect(one._tag).toBe("kanban(columns=triage, items=a,b, concurrency=1)[reserved/card, ]")
+    expect(one._tag).toBe("kanban@2(columns=triage, items=a,b, concurrency=1)[reserved/card, ]")
   })
 })

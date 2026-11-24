@@ -18,7 +18,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { credentialFiles } from "../src/internal/credentialFiles.ts"
 import { elapsed } from "../src/internal/deadline.ts"
-import { sessionSlug } from "../src/internal/sessionSlug.ts"
+import { legacySessionSlug, sessionSlug } from "../src/internal/sessionSlug.ts"
 import * as MicrosandboxSandbox from "../src/MicrosandboxSandbox/index.ts"
 import type { Sdk } from "../src/MicrosandboxSandbox/Sdk.ts"
 import type { RemoteProcess } from "../src/RemoteChildProcessSpawner/Provider.ts"
@@ -710,6 +710,20 @@ const ownership = (owner: string, holder: string) => ({
 })
 
 describe("MicrosandboxSandbox", () => {
+  it.effect("adopts an owned legacy microVM without creating a second machine", () =>
+    Effect.gen(function*() {
+      const fake = fakeSdk()
+      const provider = microsandbox({ sdk: fake.sdk, persistence: "sticky", workdir: join(root, "legacy-msb-ws") })
+      const key = "legacy/microvm"
+      const first = yield* Effect.scoped(provider.acquire(key))
+      const machine = fake.machines.get(first.remoteId)!
+      const legacyName = first.remoteId.replace(sessionSlug(key), legacySessionSlug(key))
+      fake.plant(legacyName, machine.labels)
+      fake.machines.delete(first.remoteId)
+      const session = yield* Effect.scoped(provider.acquire(key))
+      expect(session.remoteId).toBe(legacyName)
+      expect([...fake.machines.keys()]).toEqual([legacyName])
+    }))
   it.effect("keeps vendor credentials out of health messages and debug logs", () =>
     Effect.gen(function*() {
       const secret = "HEALTH_CANARY_CREDENTIAL"

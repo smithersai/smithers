@@ -605,9 +605,16 @@ const inertJson = (
   value: unknown,
   budget: InertJsonBudget,
   reflection: HostReflection.Reflection,
-  redactText = true
+  declared = false
 ): unknown => {
   const active = new WeakSet<object>()
+  // A declared `Fail` value is the JSON its action's error codec produced.
+  // A host that cannot detect a proxy answers yes for every object, and
+  // honoring that here persisted every typed error as `null`, so replay took
+  // a different catch branch and lost its non-retryable tag. Such a host
+  // still walks declared data through own data descriptors under the same
+  // bounds; a host that can detect a proxy keeps refusing one.
+  const refusesProxy = reflection.detectsProxy || !declared
 
   const reduce = (current: unknown, depth: number): InertJsonReduction => {
     if (depth > maxInertJsonDepth) return inertJsonRejected
@@ -627,7 +634,7 @@ const inertJson = (
       case "bigint":
         return inertJsonOmitted
       case "object": {
-        if (reflection.isProxy(current) || active.has(current)) return inertJsonRejected
+        if ((refusesProxy && reflection.isProxy(current)) || active.has(current)) return inertJsonRejected
         if (ArrayBuffer.isView(current)) return arrayBufferViewMarker
         active.add(current)
         try {
@@ -671,7 +678,7 @@ const inertJson = (
             // Declared Fail values are executable schema-encoded data, including
             // message/stack literals and refinements. Only defect diagnostics use
             // textual redaction here; their diagnostic copies are not typed errors.
-            const member = redactText && (key === "message" || key === "stack") && typeof descriptor.value === "string"
+            const member = !declared && (key === "message" || key === "stack") && typeof descriptor.value === "string"
               ? Redaction.redact(descriptor.value)
               : descriptor.value
             const reduced = reduce(member, depth + 1)
@@ -727,7 +734,7 @@ const persistCause = (
       return { reasons: [{ _tag: "Die", defect: null }] }
     }
     if (Cause.isFailReason(reason)) {
-      reasons.push({ _tag: "Fail", error: inertJson(reason.error, budget, reflection, false) })
+      reasons.push({ _tag: "Fail", error: inertJson(reason.error, budget, reflection, true) })
     } else if (Cause.isDieReason(reason)) {
       reasons.push({ _tag: "Die", defect: inertJson(reason.defect, budget, reflection) })
     } else {

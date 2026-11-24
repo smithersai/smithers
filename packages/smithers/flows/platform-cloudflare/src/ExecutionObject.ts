@@ -847,7 +847,8 @@ const backoff = (attempt: number): number => Option.getOrThrow(RetryPolicy.nextD
  * The handler must be idempotent: an alarm that dies after it ran hands it
  * the settlement again.
  *
- * A malformed intent, invalid admission payload or unknown flow is retained as a terminal settlement.
+ * A malformed intent or invalid admission payload is retained as a terminal settlement.
+ * A flow absent from this deploy keeps its intent and retries until a deploy registers it.
  * A transient failure, a router call's included, re-arms the alarm with the backoff
  * and returns `Retrying`, so the alarm never fails and Cloudflare's own retry
  * limit never drops an execution. The failure is logged by its tag, and a
@@ -1032,9 +1033,7 @@ const settleOrDrive = <E, R, RS, RE, RR, RT>(
     }))
     if (Exit.isSuccess(outcome)) return outcome.value
     const failure = RetryPolicy.failureType(outcome.cause)
-    if (
-      failure === "@smthrs/platform-cloudflare/UnknownFlow" || failure === "@smthrs/platform-cloudflare/InvalidIntent"
-    ) {
+    if (failure === "@smthrs/platform-cloudflare/InvalidIntent") {
       const now = yield* Clock.currentTimeMillis
       yield* atomic(storage, (storage) =>
         Effect.gen(function*() {

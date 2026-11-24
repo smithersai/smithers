@@ -499,9 +499,14 @@ smithers-build owners --diff HEAD --format json
 Absolute paths inside the workspace resolve to their relative spelling.
 Paths outside the workspace are rejected.
 
-| Option   | Alias | Type   | Default | Description                                                                                              |
-| -------- | ----- | ------ | ------- | -------------------------------------------------------------------------------------------------------- |
-| `--diff` | `-d`  | string |         | Also resolve every path changed since this git base, both names of a rename and untracked files included |
+| Option   | Alias | Type   | Default | Description                                                                                                                                            |
+| -------- | ----- | ------ | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `--diff` | `-d`  | string |         | Resolve every path changed since this base revision, both names of a rename and untracked files included, against the ownership that revision declared |
+
+With `--diff`, every path resolves against the base revision's declarations,
+so a change that edits its own owners or agent policy is reported under the
+ones it had. The base is a Git revision, or a Jujutsu revision in a workspace
+without `.git`.
 
 Plus the [common options](#common-options).
 

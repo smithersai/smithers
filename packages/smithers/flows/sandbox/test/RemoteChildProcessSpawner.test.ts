@@ -1,5 +1,18 @@
 import { describe, expect, it } from "@effect/vitest"
-import { Cause, Deferred, Effect, Exit, Fiber, PlatformError, Redacted, Ref, Sink, Stream } from "effect"
+import {
+  Cause,
+  Deferred,
+  Effect,
+  Exit,
+  Fiber,
+  Logger,
+  PlatformError,
+  Redacted,
+  Ref,
+  References,
+  Sink,
+  Stream
+} from "effect"
 import { ChildProcess } from "effect/process"
 import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 import * as Scope from "effect/Scope"
@@ -305,6 +318,8 @@ describe("RemoteChildProcessSpawner", () => {
   it.effect("keeps a failing transport's command and nested diagnostics out of the formatted failure", () =>
     Effect.gen(function*() {
       const marker = "private-transport-marker"
+      const records: unknown[] = []
+      const logger = Logger.make(({ fiber }) => records.push(fiber.getRef(References.CurrentLogAnnotations)))
       const provider: RemoteChildProcessSpawner.Provider = {
         ...RemoteChildProcessSpawner.TestRemote.make({}),
         spawn: (command) =>
@@ -318,9 +333,11 @@ describe("RemoteChildProcessSpawner", () => {
       }
       const result = yield* Effect.exit(
         Effect.flatMap(ChildProcessSpawner, (spawner) => spawner.exitCode(ChildProcess.make("printf", [marker]))).pipe(
-          Effect.provide(RemoteChildProcessSpawner.layer(provider))
+          Effect.provide(RemoteChildProcessSpawner.layer(provider)),
+          Effect.provide(Logger.layer([logger]))
         )
       )
+      expect(records).toEqual([{ method: "spawn", code: "spawn_error" }])
       expect(Exit.isFailure(result)).toBe(true)
       if (Exit.isFailure(result)) {
         expect(Cause.pretty(result.cause)).not.toContain(marker)
@@ -487,10 +504,13 @@ describe("RemoteChildProcessSpawner", () => {
 
   it.effect("provides a spawner that fails every command when opening the session fails", () =>
     Effect.gen(function*() {
+      const logs: unknown[] = []
+      const logger = Logger.make(({ fiber }) => logs.push(fiber.getRef(References.CurrentLogAnnotations)))
       const provider = RemoteChildProcessSpawner.TestRemote.make({
         openFailure: new RemoteChildProcessSpawner.ProviderError({
           code: "unavailable",
-          message: "provider session is unavailable"
+          message: "quota exceeded",
+          cause: new Error("private SDK diagnostics")
         })
       })
 
@@ -502,9 +522,10 @@ describe("RemoteChildProcessSpawner", () => {
             // A stream must fail too, not hang on a queue nothing will ever end.
             yield* Effect.flip(Stream.runDrain(spawner.streamString(ChildProcess.make("never-opened"))))
           ]
-        }).pipe(Effect.provide(RemoteChildProcessSpawner.layer(provider)))
+        }).pipe(Effect.provide(RemoteChildProcessSpawner.layer(provider)), Effect.provide(Logger.layer([logger])))
       )
 
+      expect(logs).toEqual([{ method: "open", code: "unavailable", message: "quota exceeded" }])
       expect(errors.map(reason)).toEqual(["NotFound", "NotFound"])
       expect(errors[0]?.message).toContain("remote open failed (unavailable)")
     }))

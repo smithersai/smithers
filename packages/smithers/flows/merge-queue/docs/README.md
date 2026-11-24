@@ -293,3 +293,8 @@ pnpm reference               # regenerate test/fixtures from the reference
 The unit suite needs no Lean: `test/fixtures/reference.json` holds a digest of
 what the reference printed for 400 random traces, and the suite replays the
 same traces through the kernel.
+
+A fixer process that exits without a valid answer wakes an idle driver. The
+next reconciliation starts it again without waiting for an inbox, target, or CI
+change. Candidate construction abandons its duplicated commits if a later query
+or finish command fails or is interrupted; cleanup preserves the original error.

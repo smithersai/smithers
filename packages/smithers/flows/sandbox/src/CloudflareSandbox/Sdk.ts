@@ -5,6 +5,7 @@
  */
 
 interface CommandOptions {
+  readonly signal?: AbortSignal | undefined
   readonly cwd?: string | undefined
   readonly env?: Record<string, string | undefined> | undefined
 }
@@ -24,6 +25,7 @@ interface Process {
   readonly exitCode?: number | undefined
   waitForExit(timeout?: number): Promise<{ readonly exitCode?: number | undefined }>
   getLogs(): Promise<ProcessLogs>
+  kill(): Promise<unknown>
 }
 
 interface ReadFileResult {
@@ -60,5 +62,9 @@ interface Sandbox {
  * @since 0.1.0
  */
 export interface Sdk<Binding = unknown> {
+  /** Opt in only if exec stops its remote command on in-flight signal abort. */
+  readonly execSupportsCancellation?: true
   readonly getSandbox: (binding: Binding, id: string, options?: SandboxOptions) => Sandbox
+  /** Noncreating lookup for migrating retained names; undefined means absent. */
+  readonly findSandbox?: (binding: Binding, id: string) => Promise<Sandbox | undefined>
 }

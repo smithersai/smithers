@@ -609,10 +609,14 @@ pnpm exec smithers-build owners packages/api/src/server.ts
 pnpm exec smithers-build owners --diff main
 ```
 
-`--diff <base>` adds every path changed since that git base: both names of a
-rename and every untracked file included, the same set `affected --base`
+`--diff <base>` adds every path changed since that base revision: both names
+of a rename and every untracked file included, the same set `affected --base`
 discovers, so the package a file leaves keeps its owners and agent policy in
-the answer. The command needs at least one path, from the argument list or
+the answer. With `--diff`, paths resolve against the ownership the base
+revision declared, so a change that edits its own `owners` is still reported
+under the owners and agent policy it had; without it, they resolve against the
+checkout. The base is a Git revision, or a Jujutsu revision in a workspace
+without `.git`. The command needs at least one path, from the argument list or
 from `--diff`.
 
 ### git-hooks

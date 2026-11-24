@@ -534,10 +534,10 @@ interface Service {
 }
 ```
 
-| Member | Behavior                                                                                                                                                                                                                                  |
-| ------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `get`  | The entry at `key`, or `None` on a miss. Every hit returns a new array. A stored entry over `maxEntryBytes` or `maxMetadataBytes` fails `corrupt`; its body is read up to the bound, then cancelled.                                      |
-| `put`  | Stores a copy of `entry` and answers `stored`. An entry with more than `maxEntryBytes` of bytes, or more than `maxMetadataBytes` (1,024) of UTF-8 JSON metadata, stores nothing and answers `too_large`. Storing a key again replaces it. |
+| Member | Behavior                                                                                                                                                                                                                                                                                                |
+| ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `get`  | The entry at `key`, or `None` on a miss. Every hit returns a new array. A stored entry over `maxEntryBytes` or `maxMetadataBytes` fails `corrupt`; its body is read up to the bound, then cancelled.                                                                                                    |
+| `put`  | Stores a copy of `entry` and answers `stored`. An entry with more than `maxEntryBytes` of bytes, or more than `maxMetadataBytes` (1,024) of UTF-8 JSON metadata, stores nothing and answers `too_large`, as does an entry the backend declines for its own size bound. Storing a key again replaces it. |
 
 `ImmutableCache` is the service tag, with identity
 `@smthrs/artifacts/ImmutableCache`.
@@ -569,9 +569,15 @@ Answers from the cache, else runs `compute`, stores its entry and answers it.
 ```ts
 interface WebCache {
   readonly match: (url: string) => Promise<Response | undefined>
-  readonly put: (url: string, response: Response) => Promise<void>
+  readonly put: (url: string, response: Response) => Promise<void | "too_large">
 }
 ```
+
+A `put` that resolves stored the response. A backend with its own size bound
+answers `"too_large"` when it declined the response and stored nothing, and the
+service's `put` then answers `too_large`; `makeMemoryWebCache` does so for an
+entry whose cost alone is over `maxTotalBytes`, and for every entry when
+`maxEntries` is under one.
 
 A browser's `caches.open(name)` and a Worker's `caches.default` both satisfy
 `WebCache`. The host layers are `EdgeCache.layer` in

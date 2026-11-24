@@ -15,7 +15,7 @@ import { execSession } from "../internal/execSession.ts"
 import { finalizeWithin } from "../internal/finalizeWithin.ts"
 import { linuxFileSystem } from "../internal/linuxFileSystem.ts"
 import { gather, type GatheredRun, providerFailure } from "../internal/localProcess.ts"
-import { sessionSlug } from "../internal/sessionSlug.ts"
+import { legacySessionSlug, sessionSlug } from "../internal/sessionSlug.ts"
 import { ProviderError } from "../RemoteChildProcessSpawner/ProviderError.ts"
 import type { NetworkPolicy } from "../Sandbox/NetworkPolicy.ts"
 import type { Provider } from "../Sandbox/Provider.ts"
@@ -215,17 +215,26 @@ export const make = (options: ContainerSandboxOptions): Provider => {
         const envFile = creationEnv.length === 0 ? undefined : new TextEncoder().encode(
           creationEnv.map(([key, value]) => `${key}=${value}\n`).join("")
         )
-        const name = `${prefix}${sessionSlug(sessionKey)}`
-        // The name is a positional argument of `start`, `exec`, and `rm`; one
-        // that starts with `-` would be parsed as an option instead.
-        if (name.startsWith("-")) {
+        // Names are positional CLI arguments, so reject an option-like prefix
+        // before either the noncreating lookup or creation.
+        const legacyName = `${prefix}${legacySessionSlug(sessionKey)}`
+        if (legacyName.startsWith("-")) {
           return yield* Effect.fail(
             new ProviderError({
               code: "spawn_error",
-              message: `the container name ${JSON.stringify(name)} starts with "-"; set a namePrefix that does not`
+              message: `the container name ${
+                JSON.stringify(legacyName)
+              } starts with "-"; set a namePrefix that does not`
             })
           )
         }
+        const legacy = yield* run(["container", "inspect", legacyName])
+        if (legacy.code !== 0 && !/(?:No such|not found|does not exist)/i.test(legacy.stderr)) {
+          return yield* Effect.fail(
+            new ProviderError({ code: "unavailable", message: "legacy container lookup failed" })
+          )
+        }
+        const name = legacy.code === 0 ? legacyName : `${prefix}${sessionSlug(sessionKey)}`
         const fingerprint = yield* configurationFingerprint({
           provider: "ContainerSandbox/v1",
           owner: sessionKey,
@@ -278,28 +287,29 @@ export const make = (options: ContainerSandboxOptions): Provider => {
             })
             let vanished = false
             for (let attempt = 0; attempt < removalRetries; attempt++) {
-              const created = yield* create
-              if (created.code === 0) return
+              const created = legacy.code === 0 ? undefined : yield* create
+              if (created?.code === 0) return
               // A refused create is either a name already taken, which is the
               // reattach this provider is built around, or anything else, which
               // is a failure. The engine says which in English prose, and the
               // prose is not a contract: podman words the conflict differently
               // from docker and a localized daemon differently again. The
               // question goes to the engine as a question instead.
-              const existing = yield* run(["container", "inspect", name])
+              const existing = legacy.code === 0 && attempt === 0 ? legacy : yield* run(["container", "inspect", name])
               if (existing.code !== 0) {
                 // A conflict whose holder is already gone means its removal
                 // finished between the two calls: create once more. A second
                 // refusal with nothing holding the name is a real failure.
-                if (!vanished) {
+                if (!vanished && legacy.code !== 0) {
                   vanished = true
                   continue
                 }
                 return yield* Effect.fail(
                   new ProviderError({
                     code: "unavailable",
-                    message:
-                      `the container ${name} could not be created from ${options.image}: ${created.stderr.trim()}`
+                    message: created === undefined
+                      ? `the legacy container ${name} could not be inspected: ${existing.stderr.trim()}`
+                      : `the container ${name} could not be created from ${options.image}: ${created.stderr.trim()}`
                   })
                 )
               }
@@ -339,15 +349,18 @@ export const make = (options: ContainerSandboxOptions): Provider => {
           }),
           () =>
             finalizeWithin(
-              Effect.flatMap(run(["rm", "--force", name]), (result) =>
-                result.code === 0 ? Effect.void : Effect.logWarning("sandbox removal failed", {
-                  resource: `container ${name}`,
-                  exitCode: result.code
-                })).pipe(Effect.catch(() =>
-                  Effect.logWarning("sandbox removal failed", {
-                    resource: `container ${name}`
+              Effect.flatMap(
+                run(["rm", "--force", name]),
+                (result) =>
+                  result.code === 0 ? Effect.void : Effect.logWarning("sandbox removal failed", {
+                    resource: `container ${name}`,
+                    exitCode: result.code
                   })
-                )),
+              ).pipe(Effect.catch(() =>
+                Effect.logWarning("sandbox removal failed", {
+                  resource: `container ${name}`
+                })
+              )),
               `container ${name}`
             )
         )

@@ -4,7 +4,7 @@
  * @since 0.1.0
  */
 
-import { sessionSlug } from "./sessionSlug.ts"
+import { legacySessionSlug, sessionSlug } from "./sessionSlug.ts"
 
 /**
  * The lowercase, dot- and underscore-free name `prefix` plus the session slug.
@@ -14,3 +14,11 @@ import { sessionSlug } from "./sessionSlug.ts"
  */
 export const machineName = (prefix: string, session: string): string =>
   `${prefix}${sessionSlug(session)}`.toLowerCase().replaceAll(/[._]/g, "-")
+
+/**
+ * Existing pre-SHA machine name.
+ * @category utils
+ * @since 1.0.0-rc.18
+ */
+export const legacyMachineName = (prefix: string, session: string): string =>
+  `${prefix}${legacySessionSlug(session)}`.toLowerCase().replaceAll(/[._]/g, "-")

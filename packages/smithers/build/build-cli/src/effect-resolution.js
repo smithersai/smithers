@@ -469,9 +469,59 @@ const sourceHooks = (url, namespace, source) => {
 }
 
 /**
+ * Answers the files changed since a revision with the text they held at it,
+ * for one evaluation's namespace only.
+ *
+ * `revision.changed` holds the absolute path of every changed file and
+ * `revision.texts` the text of each one the revision holds. A changed file
+ * with no text there was added since, or is not a module the revision can
+ * supply, so loading it is refused: the evaluation never mixes in a file as
+ * it is now. A file deleted since no longer resolves, so an import of one the
+ * revision holds is resolved here to the place it had.
+ *
+ * TypeScript is handed to Node, which erases its types. A module whose
+ * TypeScript needs more than erasing is refused by Node.
+ */
+const revisionHooks = (namespace, revision) => {
+  const scoped = (url) =>
+    url !== undefined && url.startsWith("file:") && new URL(url).searchParams.get(namespaceParameter) === namespace
+  return {
+    resolve: (specifier, context, nextResolve) => {
+      try {
+        return nextResolve(specifier, context)
+      } catch (cause) {
+        if (!scoped(context.parentURL) || !/^(?:\.\.?\/|file:)/.test(specifier)) throw cause
+        const named = fileURLToPath(new URL(specifier, fileModuleBase(context.parentURL)))
+        // An import may spell a TypeScript module by the JavaScript name it compiles to.
+        const held = [named, named.replace(/\.(m?)js$/, ".$1ts")].find((path) => revision.texts.has(path))
+        if (held === undefined) throw cause
+        return {
+          url: `${pathToFileURL(held).href}?${namespaceParameter}=${namespace}`,
+          format: "module",
+          shortCircuit: true
+        }
+      }
+    },
+    load: (loaded, context, nextLoad) => {
+      const path = scoped(loaded) ? fileURLToPath(fileModuleBase(loaded)) : undefined
+      if (path === undefined || !revision.changed.has(path)) return nextLoad(loaded, context)
+      const source = revision.texts.get(path)
+      if (source === undefined) {
+        throw Object.assign(new Error(`${path} changed since the revision, which holds no module there`), {
+          code: "ERR_MODULE_NOT_FOUND"
+        })
+      }
+      const format = /\.m?ts$/.test(path) ? "module-typescript" : path.endsWith(".json") ? "json" : context.format
+      return { format, source, shortCircuit: true }
+    }
+  }
+}
+
+/**
  * Evaluates one declaration module through tsx with the parent resolver in
  * front of tsx's namespace loader. With `source`, the module is that text at
- * `url`, and no file needs to exist there.
+ * `url`, and no file needs to exist there. With `revision`, every file changed
+ * since that revision is read as the revision held it; see {@link revisionHooks}.
  *
  * `tsImport` registers that loader and imports in one call, which leaves no
  * point at which the resolver can be moved back to the front. The two steps
@@ -480,7 +530,7 @@ const sourceHooks = (url, namespace, source) => {
  * lazily still resolves.
  * @slop
  */
-export const importDeclarationModule = async (url, parentURL, source) => {
+export const importDeclarationModule = async (url, parentURL, source, revision) => {
   installEffectResolution()
   const namespace = declarationNamespace(url)
   // Both halves, as `tsImport` registers them. The CommonJS half is what
@@ -491,9 +541,11 @@ export const importDeclarationModule = async (url, parentURL, source) => {
   const loader = registerModule({ namespace, parentURL, tsconfig: false })
   reassert()
   const answering = source === undefined ? undefined : registerHooks(sourceHooks(url, namespace, source))
+  const revising = revision === undefined ? undefined : registerHooks(revisionHooks(namespace, revision))
   try {
     return await loader.import(url, parentURL)
   } finally {
+    revising?.deregister()
     answering?.deregister()
   }
 }

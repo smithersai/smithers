@@ -6,6 +6,10 @@ import { promisify } from "node:util"
 import { afterAll, describe, expect, it } from "vitest"
 import * as FoundryExec from "../src/FoundryExec.ts"
 import * as HostProbes from "../src/internal/HostProbes.ts"
+import * as PackageDiscovery from "../src/PackageDiscovery.ts"
+import * as PackageExec from "../src/PackageExec.ts"
+import { PackageIndex } from "../src/PackageIndex.ts"
+import * as PackageLoader from "../src/PackageLoader.ts"
 
 const temporaryDirectories: Array<string> = []
 afterAll(async () => {
@@ -489,5 +493,64 @@ describe("Foundry plans", () => {
     await expect(Fs.access(log)).rejects.toThrow()
     await FoundryExec.plan({ ...options, attrs: { profile: "ci" } as never })
     expect(await Fs.readFile(log, "utf8")).toContain("|ci\n")
+  })
+})
+
+describe("Foundry cache contract", () => {
+  it("plans a build and a test that declare no Solidity sources as uncacheable, and keys the declared ones", async () => {
+    const { root, environment } = await host()
+    await write(
+      root,
+      "WORKSPACE.ts",
+      `import { Smithers as S } from "@smthrs/targets"
+export const Workspace = S.Workspace("foundry-cache", {
+  repository: "git+https://example.invalid/foundry-cache.git",
+  cache: S.Cache({ directory: ".flows" })
+})
+`
+    )
+    await write(
+      root,
+      "PACKAGE.ts",
+      `import { Smithers as S } from "@smthrs/targets"
+const solidity = S.glob(["src/**", "test/**", "foundry.toml"])
+export const Package = S.Package({ targets: {
+  build: S.Foundry.Build({ outDirs: ["out"] }),
+  test: S.Foundry.Test({}),
+  keyedBuild: S.Foundry.Build({ data: [solidity], outDirs: ["out"] }),
+  keyedTest: S.Foundry.Test({ data: [solidity] })
+} })
+`
+    )
+    await write(root, "foundry.toml", "[profile.default]\nsrc = \"src\"\n")
+    await write(root, "src/Counter.sol", "contract Counter { uint256 x; }\n")
+    const plan = async () => {
+      const index = PackageIndex.make(await PackageLoader.load(await PackageDiscovery.discover(root)), root)
+      const planned = await PackageExec.plan({
+        index,
+        cacheDirectory: ".flows",
+        verb: "auto",
+        patterns: ["//..."],
+        environment
+      })
+      return (label: string) => planned.nodes.get(label)!
+    }
+    const before = await plan()
+    for (const label of ["//:build", "//:test", "//:keyedBuild", "//:keyedTest"]) {
+      expect(before(label).refusal, label).toBeUndefined()
+    }
+    // Nothing keys forge's `src`, `test`, `script` or `libs` for these two, so a hit could replay a stale verdict.
+    expect(before("//:build").cacheable).toBe(false)
+    expect(before("//:test").cacheable).toBe(false)
+    expect(before("//:keyedBuild").cacheable).toBe(true)
+    expect(before("//:keyedTest").cacheable).toBe(true)
+
+    await write(root, "src/Counter.sol", "contract Counter { uint256 y; }\n")
+    const after = await plan()
+    for (const label of ["//:keyedBuild", "//:keyedTest"]) {
+      expect(after(label).keyPreview, label).not.toBe(before(label).keyPreview)
+    }
+    expect(after("//:build").cacheable).toBe(false)
+    expect(after("//:test").cacheable).toBe(false)
   })
 })

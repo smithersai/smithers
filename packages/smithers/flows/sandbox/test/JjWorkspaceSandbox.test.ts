@@ -21,6 +21,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { afterAll } from "vitest"
+import { legacySessionSlug } from "../src/internal/sessionSlug.ts"
 import * as JjWorkspaceSandbox from "../src/JjWorkspaceSandbox/index.ts"
 import { ProviderError } from "../src/RemoteChildProcessSpawner/ProviderError.ts"
 import * as Sandbox from "../src/Sandbox/index.ts"
@@ -174,6 +175,31 @@ const durableApply = (work: Sandbox.Work, repository: string, onto: string) =>
   ).pipe(Effect.provide(mergeRuntime))
 
 describe("JjWorkspaceSandbox", () => {
+  it.effect("adopts a legacy workspace without adding a second lane", () =>
+    Effect.gen(function*() {
+      const { fs, path, spawner } = yield* getPlatform
+      const workspacesRoot = freshDir("legacy-workspaces")
+      const key = "legacy/workspace"
+      const name = `smthrs-${legacySessionSlug(key).toLowerCase().replaceAll(/[^a-z0-9_-]/g, "-")}`
+      const workdir = join(workspacesRoot, name)
+      mkdirSync(join(workdir, ".jj"), { recursive: true })
+      writeFileSync(join(workdir, "proof"), "retained")
+      const stub = makeStubJj(fs)
+      const provider = JjWorkspaceSandbox.make({
+        fs,
+        path,
+        spawner,
+        jj: stub.jj,
+        workspacesRoot,
+        workspacePrefix: "smthrs-",
+        git: false,
+        persistence: "sticky"
+      })
+      const session = yield* Effect.scoped(provider.acquire(key))
+      expect(session.remoteId).toBe(name)
+      expect(new TextDecoder().decode(yield* session.readFile(join(workdir, "proof")))).toBe("retained")
+      expect(stub.added).toEqual([])
+    }))
   describe("construction validation and workspace naming", () => {
     it("rejects invalid workspacesRoot, network policies, limits, prefixes, and baseRevisions before touching services", () => {
       const jjU = untouchable<Jj.Jj>()
@@ -697,7 +723,7 @@ describe("JjWorkspaceSandbox", () => {
             ...fs,
             exists: () => {
               existsCalls += 1
-              return existsCalls === 1 ? Effect.succeed(false) : Effect.fail(fakeFsError("exists"))
+              return existsCalls <= 2 ? Effect.succeed(false) : Effect.fail(fakeFsError("exists"))
             }
           }
           const jj = Jj.makeNoop({
@@ -727,7 +753,7 @@ describe("JjWorkspaceSandbox", () => {
             ...fs,
             exists: () => {
               existsCalls2 += 1
-              return Effect.succeed(existsCalls2 > 1)
+              return Effect.succeed(existsCalls2 > 2)
             },
             remove: () => Effect.fail(fakeFsError("remove"))
           }

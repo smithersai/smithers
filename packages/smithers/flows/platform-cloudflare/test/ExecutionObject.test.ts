@@ -731,7 +731,7 @@ describe("ExecutionObject without a database", () => {
       })
     }))
 
-  it.effect("an unknown flow settles and retires without rebuilding its runtime", () =>
+  it.effect("an unknown flow keeps retrying without settlement or retention", () =>
     Effect.gen(function*() {
       const memory = MemoryStorage.make()
       const value = yield* ExecutionObject.intent(Answer, {
@@ -740,10 +740,13 @@ describe("ExecutionObject without a database", () => {
       })
       yield* ExecutionObject.start(memory.storage, value, Effect.void)
       const options = { flows: [], runtime: unbuildable, router: Objects.unrouted, settledRetentionMs: 20 }
-      expect(yield* ExecutionObject.alarm(memory.storage, options)).toEqual({ _tag: "Settled", forgetAtMs: 20 })
-      yield* TestClock.setTime(20)
-      expect(yield* ExecutionObject.alarm(memory.storage, options)).toEqual({ _tag: "Forgotten" })
-      expect(memory.alarm()).toBeNull()
+      for (let attempt = 1; attempt <= 6; attempt++) {
+        const outcome = yield* ExecutionObject.alarm(memory.storage, options)
+        expect(outcome).toMatchObject({ _tag: "Retrying", attempt, failure: "@smthrs/platform-cloudflare/UnknownFlow" })
+        expect(memory.values.has(ExecutionObject.settledKey)).toBe(false)
+        expect(memory.values.has(ExecutionObject.intentKey)).toBe(true)
+        yield* TestClock.setTime(memory.alarm()!)
+      }
     }))
 
   it.effect("wake moves the alarm to now when an intent is stored, and leaves an empty object idle", () =>

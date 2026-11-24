@@ -1,6 +1,12 @@
+import { Effect, type Layer } from "effect"
+import { SqlClient } from "effect/sql/SqlClient"
+import { mkdtempSync, rmSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
 import { afterEach, expect, it, vi } from "vitest"
 import * as Selection from "../src/internal/PostgresSelection.ts"
 import { isUnsupportedDatabase } from "../src/internal/UnsupportedDatabase.ts"
+import * as NodeDatabase from "../src/node/NodeDatabase.ts"
 
 /** The tagged refusal a selection throws, as its code and message; never its credentials. */
 const refusal = (select: () => unknown) => {
@@ -99,16 +105,49 @@ it("locates a store's schema the way the layer opens it", () => {
 
 afterEach(() => vi.unstubAllEnvs())
 
-it("selects from injected settings, not the ambient environment (R1-Fable-D1-030)", () => {
+it("selects from injected settings and never consults the ambient environment (R2-Astra-D1-012)", () => {
   vi.stubEnv("SMITHERS_BACKEND", "postgres")
   vi.stubEnv("SMITHERS_POSTGRES_URL", "postgres://ambient/database")
-  // Two stores in one process select independently of the environment.
   expect(Selection.location("local.db", {})).toBeUndefined()
   expect(Selection.layer("local.db", false, {})).toBeUndefined()
   expect(Selection.location("local.db", { SMITHERS_POSTGRES_URL: "postgres://injected/database" })?.url).toBe(
     "postgres://injected/database"
   )
-  // Without injected settings the native layers keep reading the process environment.
-  expect(Selection.location("local.db")?.url).toBe("postgres://ambient/database")
-  expect(Selection.layer("local.db")).toBeDefined()
+  // The selector declares no default source: omitting the settings is a type error, not an ambient read.
+  // @ts-expect-error settings are required
+  expect(() => Selection.location("local.db")).toThrow(TypeError)
+})
+
+/** The driver a layer opens, or the refusal code its selection raised. */
+const opened = (layer: Layer.Layer<SqlClient>) =>
+  Effect.runPromise(
+    Effect.provide(Effect.map(SqlClient, (sql) => sql.driver), layer).pipe(
+      Effect.catchDefect((defect) => Effect.succeed(isUnsupportedDatabase(defect) ? defect.code : "unknown"))
+    )
+  )
+
+it("two NodeDatabase layers with conflicting injected settings select independently in one process (R2-Fable-D1-011)", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "smithers-selection-"))
+  try {
+    const filename = join(directory, "store.db")
+    vi.stubEnv("SMITHERS_BACKEND", "postgres")
+    vi.stubEnv("SMITHERS_POSTGRES_URL", "postgres://ambient/database")
+    const before = { ...process.env }
+    const sqlite = NodeDatabase.layer({ filename, settings: {} })
+    const postgres = NodeDatabase.layer({ filename, settings: { SMITHERS_BACKEND: "postgres" } })
+    // Injected settings win over the host environment in both directions.
+    expect(await opened(sqlite)).toBe("sqlite-node")
+    expect(await opened(postgres)).toBe("postgres_url_missing")
+    expect(NodeDatabase.postgresLocation(filename, {})).toBeUndefined()
+    expect(NodeDatabase.postgresLocation(filename, { SMITHERS_POSTGRES_URL: "postgres://injected/database" })?.url)
+      .toBe("postgres://injected/database")
+    expect(process.env).toEqual(before)
+    // With no injected settings the host layer passes its own environment, read when built.
+    expect(NodeDatabase.postgresLocation(filename)?.url).toBe("postgres://ambient/database")
+    const hosted = NodeDatabase.layer({ filename })
+    vi.stubEnv("SMITHERS_BACKEND", "sqlite")
+    expect(await opened(hosted)).toBe("sqlite-node")
+  } finally {
+    rmSync(directory, { recursive: true, force: true })
+  }
 })

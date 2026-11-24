@@ -51,7 +51,8 @@ type GetOrCreateInput = {
  *
  * The SDK is injected rather than imported, keeping the package free of a
  * vendor dependency and preserving its browser bundle contract. The shapes
- * mirror the published `@vercel/sandbox` 3.2.1 typings: `getOrCreate`
+ * mirror the published `@vercel/sandbox` 3.2.1 typings: `get` retrieves a
+ * named sandbox without creating one (`resume: false` leaves it stopped), `getOrCreate`
  * resumes a named sandbox or creates it, `runCommand` resolves once the
  * command finishes and exposes its output as strings, `readFile` answers
  * `null` for an absent path, `resources.vcpus` sizes a created sandbox at
@@ -67,5 +68,15 @@ type GetOrCreateInput = {
 export interface Sdk {
   readonly Sandbox: {
     getOrCreate(input: GetOrCreateInput): Promise<SandboxInstance>
+    /** Native noncreating lookup; optional for minimal injected adapters. */
+    get?(
+      input: {
+        readonly name: string
+        readonly resume?: boolean | undefined
+        readonly token?: string | undefined
+        readonly teamId?: string | undefined
+        readonly projectId?: string | undefined
+      }
+    ): Promise<SandboxInstance>
   }
 }

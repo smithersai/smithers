@@ -703,6 +703,8 @@ describe("@smthrs/sandbox VercelSandbox, DaytonaSandbox, ContainerSandbox & Kube
                     const found = pods.get(name)
                     return found
                       ? canned({ stdout: JSON.stringify(found) })
+                      : args.includes("--ignore-not-found")
+                      ? canned({})
                       : canned({ exitCode: 1, stderr: `Error from server (NotFound): pods "${name}" not found` })
                   }
                   if (args[0] === "delete") {

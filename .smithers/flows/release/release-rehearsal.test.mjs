@@ -489,7 +489,7 @@ test("a prerelease runs the candidate and gates as separate lanes, and only the 
   // hands them that lane's result names it exactly as GitHub names a matrix
   // instance of the publish job, and reads nothing but this run's jobs.
   const result = release.jobs["candidate-result"]
-  assert.equal(release.jobs["installer-archive"].needs, "candidate-result")
+  assert.deepEqual(release.jobs["installer-archive"].needs, ["validate-source", "candidate-result"])
   assert.equal(result.needs, "native-helper")
   assert.deepEqual(result.permissions, { actions: "read" })
   assert.equal(result.steps.length, 1)
@@ -510,10 +510,8 @@ test("a prerelease runs the candidate and gates as separate lanes, and only the 
   assert.match(result.steps[0].run, /completed\*\) .*exit 1/)
   assert.ok(Number.isInteger(result["timeout-minutes"]) && result["timeout-minutes"] >= job["timeout-minutes"],
     "the wait outlasts the lane it waits for")
-  assert.equal(
-    release.jobs["installer-archive"].steps[0].with.ref,
-    "${{ inputs.sourceRef != '' && inputs.sourceRef || inputs.releaseTag != '' && inputs.releaseTag || github.ref }}"
-  )
+  // The commit validate-source found on main, the one the candidate was packed from.
+  assert.equal(release.jobs["installer-archive"].steps[0].with.ref, "${{ needs.validate-source.outputs.sha }}")
 })
 
 test("release builds the checked public graph and pins npm before smoke", () => {
@@ -936,10 +934,20 @@ test("the driver switches PATH to the toolchain each setup-node step pins", () =
 })
 
 test("release checks out the requested candidate, serializes its tag, and archives before publication", () => {
-  const contexts = { github: { ref: "refs/heads/main", ref_name: "main" }, inputs: { releaseTag: "v1.0.0-rc.0" } }
+  const validated = "a".repeat(40)
+  const contexts = {
+    github: { ref: "refs/heads/main", ref_name: "main" },
+    inputs: { releaseTag: "v1.0.0-rc.0" },
+    needs: { "validate-source": { outputs: { sha: validated } } }
+  }
   const steps = release.jobs.publish.steps
   const checkout = steps.find((item) => item.uses?.startsWith("actions/checkout@"))
-  assert.equal(interpolate(checkout.with.ref, contexts), "v1.0.0-rc.0")
+  // The candidate is the commit validate-source resolved the tag to, by SHA,
+  // and the driver hands the publish job the commit its own checkout is at.
+  assert.equal(interpolate(checkout.with.ref, contexts), validated)
+  assert.deepEqual(release.jobs.publish.needs, ["validate-source", "native-helper"])
+  assert.equal(interpolate(checkout.with.ref, rehearsalContexts({ tag: "v1.0.0-rc.0", sourceSha: validated })), validated)
+  assert.equal(interpolate(checkout.with.ref, rehearsalContexts({ tag: "v1.0.0-rc.0" })), "")
   assert.equal(interpolate(release.concurrency.group, contexts), "release-v1.0.0-rc.0")
   const pushed = { github: { ref: "refs/tags/v1.0.0-rc.0", ref_name: "v1.0.0-rc.0" }, inputs: {} }
   assert.equal(interpolate(release.concurrency.group, pushed), "release-v1.0.0-rc.0")
@@ -967,7 +975,12 @@ const withSourceRepository = (format, check) => {
     "--noprofile", "--norc", "-eo", "pipefail", "-c", interpolate(step(name).run, contexts)
   ], {
     cwd: root,
-    env: { ...env, ...jobEnv(contexts), GITHUB_EVENT_NAME: contexts.github.event_name },
+    env: {
+      ...env,
+      ...jobEnv(contexts),
+      ...Object.fromEntries(Object.entries(step(name).env ?? {}).map(([key, value]) => [key, interpolate(value, contexts)])),
+      GITHUB_EVENT_NAME: contexts.github.event_name
+    },
     encoding: "utf8",
     timeout: 10_000
   })
@@ -991,6 +1004,8 @@ const sourceContexts = (sourceRef) => {
   const contexts = dispatchContexts("v1.0.0-rc.0", true)
   contexts.github.ref = "refs/heads/main"
   contexts.inputs.sourceRef = sourceRef
+  // What validate-source hands on for a sourceRef: that commit, in lowercase.
+  contexts.needs = { "validate-source": { outputs: { sha: sourceRef.toLowerCase() } } }
   contexts.env = jobEnv(contexts)
   return contexts
 }
@@ -1006,10 +1021,16 @@ for (const format of ["sha1", "sha256"]) {
       assert.equal(interpolate(checkout.with.ref, contexts), candidate)
       assert.equal(contexts.env.RELEASE_TAG, "v1.0.0-rc.0")
       assert.equal(run("Validate explicit dry-run source", contexts).status, 0)
+      assert.equal(run("Require the validated release source", contexts).status, 0)
       assert.equal(run("Verify explicit dry-run source", contexts).status, 0)
       const uppercase = sourceContexts(candidate.toUpperCase())
       assert.equal(run("Validate explicit dry-run source", uppercase).status, 0)
+      assert.equal(run("Require the validated release source", uppercase).status, 0)
       assert.equal(run("Verify explicit dry-run source", uppercase).status, 0)
+      // Another commit of main checked out in place of the validated one.
+      const other = run("Require the validated release source", sourceContexts(tip))
+      assert.notEqual(other.status, 0)
+      assert.match(other.stderr, /is not the validated release source/)
       assert.equal(git("rev-parse", "HEAD"), candidate)
       assert.equal(git("status", "--porcelain"), "")
       assert.equal(condition(step("Publish packages in dependency order").if, contexts), false)
@@ -1017,6 +1038,7 @@ for (const format of ["sha1", "sha256"]) {
       assert.equal(condition(step("Publish packages in dependency order").if, contexts), false,
         "the explicit source input independently forbids publication")
       assert.ok(steps.indexOf(step("Validate explicit dry-run source")) < steps.indexOf(checkout))
+      assert.equal(steps.indexOf(step("Require the validated release source")), steps.indexOf(checkout) + 1)
       assert.ok(steps.indexOf(checkout) < steps.indexOf(step("Verify explicit dry-run source")))
       assert.ok(steps.indexOf(step("Verify explicit dry-run source")) < steps.indexOf(step("Install pinned Rust toolchain")))
     }))

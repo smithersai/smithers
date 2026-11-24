@@ -12,6 +12,12 @@
 
 ### Added
 
+- `NodeDatabaseOptions.settings` and `BunDatabaseOptions.settings` inject the
+  settings that select SQLite or PostgreSQL (`SMITHERS_BACKEND`,
+  `SMITHERS_POSTGRES_URL`, `DATABASE_URL`, `SMITHERS_POSTGRES_SCHEMA`), and
+  `NodeDatabase.postgresLocation` takes the same settings. The host layers pass
+  the process environment when none is given; the shared selection code no
+  longer reads it, so two stores in one process select independently.
 - `DurableWriter.afterRollback(undo, client?)` registers an undo of
   process-local state that runs when the managed write does not commit: a
   failed or interrupted body, a rejected COMMIT, or an attempt the writer

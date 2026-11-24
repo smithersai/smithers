@@ -25,18 +25,13 @@ const sqliteOwned = (filename: string): boolean =>
   filename === "" || filename === ":memory:" || filename.startsWith("file:")
 
 /** The settings a selection reads: `SMITHERS_BACKEND`, `SMITHERS_POSTGRES_URL`,
- * `DATABASE_URL` and `SMITHERS_POSTGRES_SCHEMA`. Callers inject their own
- * source; the native layers pass the process environment.
+ * `DATABASE_URL` and `SMITHERS_POSTGRES_SCHEMA`. Selection has no ambient
+ * source: the Node and Bun host layers pass their caller's settings, or the
+ * host environment when the caller gives none.
  * @since 1.0.0
  * @private
  */
 export type Settings = Readonly<Record<string, string | undefined>>
-
-/** The process environment, read at call time so a layer built later sees it.
- * @since 1.0.0
- * @private
- */
-const ambient = (): Settings => process.env
 
 /** Where a filename's store lives on PostgreSQL: the connection URL (without
  * its `schema` parameter) and the schema the store's tables are in, or
@@ -49,7 +44,7 @@ const ambient = (): Settings => process.env
  */
 export const location = (
   filename: string,
-  env: Settings = ambient()
+  env: Settings
 ): { readonly url: string; readonly schema: string } | undefined => {
   const explicit = isUrl(filename)
   const backend = env.SMITHERS_BACKEND
@@ -92,8 +87,8 @@ export const location = (
  */
 export const layer = (
   filename: string,
-  readOnly = false,
-  env: Settings = ambient()
+  readOnly: boolean,
+  env: Settings
 ): Layer.Layer<SqlClient.SqlClient> | undefined => {
   const selected = location(filename, env)
   if (selected === undefined) return undefined

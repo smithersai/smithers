@@ -29,6 +29,7 @@
  * @since 1.0.0-rc.1
  */
 
+import * as CommandLine from "@smthrs/kernel/CommandLine"
 import * as KernelProcessConfinement from "@smthrs/kernel/ProcessConfinement"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
@@ -108,8 +109,6 @@ interface Opened {
   readonly ino: number
 }
 
-const shellLine = (command: ChildProcess.StandardCommand): string => [command.command, ...command.args].join(" ")
-
 /**
  * The argv a stage executes, with a shell request made explicit.
  *
@@ -119,7 +118,10 @@ const shellLine = (command: ChildProcess.StandardCommand): string => [command.co
  * spawned stage no longer asks for one.
  */
 const argvOf = (command: ChildProcess.StandardCommand): ReadonlyArray<string> => {
-  const args = command.args.map((arg) => Redacted.isRedacted(arg) ? Redacted.value(arg) : arg)
+  const args = command.args.map((arg) => {
+    if (typeof arg !== "string") throw new Error("protected arguments require opaque secret references")
+    return arg
+  })
   const shell = command.options.shell
   if (shell === undefined || shell === false) return [command.command, ...args]
   return [shell === true ? "/bin/sh" : shell, "-c", [command.command, ...args].join(" ")]
@@ -146,7 +148,7 @@ const failure = (
     _tag: tag,
     module: "ProcessConfinement",
     method: "confine",
-    pathOrDescriptor: shellLine(command),
+    pathOrDescriptor: CommandLine.executable(command),
     description,
     cause
   })
@@ -180,7 +182,7 @@ const networkFilter = (architecture: string, network: "none" | "open", sequenced
     [0x06, 0, 0, 0x00050001], // io_uring can otherwise create sockets without socket()
     [0x15, 0, sequenced ? 7 : 6, abi.socketpair],
     [0x20, 0, 0, 16], // socketpair domain
-    [0x15, 0, sequenced ? 5 : 4, 1], // AF_UNIX
+    [0x15, 0, sequenced ? 4 : 3, 1], // AF_UNIX; every other domain goes to EPERM
     [0x20, 0, 0, 24], // socketpair type, low 32 bits of args[1]
     [0x54, 0, 0, 0xf], // strip SOCK_NONBLOCK and SOCK_CLOEXEC
     // Only connection-oriented pairs; Linux aliases SOCK_RAW to datagram
@@ -240,6 +242,17 @@ export const make = (options: Options = {}): KernelProcessConfinement.Service =>
     command: ChildProcess.StandardCommand,
     profile: KernelProcessConfinement.Profile
   ): Effect.fn.Return<ChildProcess.StandardCommand, PlatformError.PlatformError, Scope.Scope> {
+    // Refuse before selecting even an explicit unconfined fallback, allocating
+    // files, or preparing writes. A sandbox receives references, never values
+    // that the caller marked protected.
+    if (command.args.some(Redacted.isRedacted) || Object.values(command.options.env ?? {}).some(Redacted.isRedacted)) {
+      return yield* failure(
+        "PermissionDenied",
+        command,
+        "confined command arguments and environment require opaque references for secrets",
+        undefined
+      )
+    }
     const request: ProcessSandbox.Request = {
       network: profile.network,
       unixSockets: false,
@@ -324,15 +337,12 @@ export const make = (options: Options = {}): KernelProcessConfinement.Service =>
     // other startup variables must never configure the host sandbox launcher.
     // A null prototype keeps an own `__proto__` entry instead of running the setter.
     const targetEnvironment: Record<string, string> = Object.create(null)
-    const inherited = command.options.env === undefined || command.options.extendEnv === true
-    for (const [name, value] of Object.entries(inherited ? process.env : {})) {
-      // Bash exports functions as names such as BASH_FUNC_which%%. These
-      // ambient entries cannot be exported by the portable inner launcher.
-      if (typeof value === "string" && /^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) targetEnvironment[name] = value
-    }
+    // Never inherit ambient values, including when extendEnv is requested.
+    // This fixed search path is public host configuration; callers explicitly
+    // supply any toolchain path or other non-secret guest setting they need.
+    targetEnvironment.PATH = "/usr/bin:/bin:/usr/sbin:/sbin"
     for (const [name, value] of Object.entries(command.options.env ?? {})) {
-      if (Redacted.isRedacted(value)) targetEnvironment[name] = Redacted.value(value)
-      else if (typeof value === "string") targetEnvironment[name] = value
+      if (typeof value === "string") targetEnvironment[name] = value
       else delete targetEnvironment[name]
     }
     // A workspace link does not grant authority to its target on the host.

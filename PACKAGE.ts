@@ -218,7 +218,15 @@ const projectCopy = Smithers.Generate({
     Smithers.file("//apps/site/public/images/build-graph.gif"),
     Smithers.file("//apps/site/public/images/build-graph-light.gif")
   ],
-  changes: ["README.md", "package.json", "apps/site/src/content/docs/docs/index.mdx", "apps/site/src/content/docs/docs/developers.mdx"]
+  // Every file the generator writes, then the two retired pages it deletes
+  // when one reappears (project-copy-changes.test.mjs runs it and compares).
+  changes: [
+    "README.md",
+    "package.json",
+    "apps/site/docs/installation.mdx",
+    "apps/site/src/content/docs/docs/index.mdx",
+    "apps/site/src/content/docs/docs/developers.mdx"
+  ]
 })
 
 /**

@@ -20,7 +20,7 @@ import * as Layer from "effect/Layer"
 import { existsSync } from "node:fs"
 import { join } from "node:path"
 import { afterEach, beforeEach, vi } from "vitest"
-import { copyFixture, hashTree } from "../fixtures/helpers.ts"
+import { copyFixture, hashTree, unconfinedNode } from "../fixtures/helpers.ts"
 
 beforeEach(() => vi.stubEnv("AI_GATEWAY_API_KEY", ""))
 afterEach(() => vi.unstubAllEnvs())
@@ -91,7 +91,7 @@ describe("the smithers-migrate command in process", () => {
             expect(hashTree(root)).toEqual(before)
           }),
         Lock.release
-      ).pipe(Effect.provide(NodeServices.layer))
+      ).pipe(Effect.provide(unconfinedNode))
     }))
 
   it.live("refuses a report directory that could leave the project with exit 1", () =>

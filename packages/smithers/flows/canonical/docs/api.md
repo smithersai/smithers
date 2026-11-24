@@ -6,7 +6,15 @@ description: "Canonical JSON serialization, schema and errors, collection sortin
 The package provides canonical serialization, its schema and errors, collection sorting for durable identity, bounded JSON admission, and an array-excluding record guard.
 
 ```ts
-import { Canonical, CanonicalError, canonicalize, nativeBrand, sortCollections } from "@smthrs/canonical"
+import {
+  Canonical,
+  CanonicalError,
+  canonicalize,
+  isNativeUrl,
+  nativeBrand,
+  slotlessProxy,
+  sortCollections
+} from "@smthrs/canonical"
 import type { CanonicalErrorCode, NativeBrand } from "@smthrs/canonical"
 ```
 
@@ -14,7 +22,7 @@ The schema is also importable as `@smthrs/canonical/Canonical`. The shape guard 
 blocked in the export map.
 
 `@smthrs/canonical/Serializer` exports the same `canonicalize`, `CanonicalError`,
-`CanonicalErrorCode`, `nativeBrand` and `NativeBrand` without loading Effect. Wire contracts can use that
+`CanonicalErrorCode`, `nativeBrand`, `NativeBrand`, `isNativeUrl` and `slotlessProxy` without loading Effect. Wire contracts can use that
 entry point while retaining identical canonical bytes and error identities.
 
 The behavior every entry below shares is on
@@ -212,6 +220,46 @@ realm unboxes. Use it when another serializer must make the same decision.
 nativeBrand(Object.setPrototypeOf(new ArrayBuffer(4), null)) // "ArrayBuffer"
 nativeBrand(Object.create(Number.prototype)) // undefined
 ```
+
+A host that publishes `node:util/types` (Node, Bun, Cloudflare Workers) answers
+from its slot predicates, so an ordinary object costs no thrown error. On any
+other host, a browser included, each slot an object lacks costs one caught
+`TypeError`, paid once per object.
+
+## isNativeUrl
+
+```ts
+const isNativeUrl: (value: object) => boolean
+```
+
+`isNativeUrl(value)` is `true` only for a real `URL`, whatever its prototype.
+A `URL` keeps its address in internal slots and has no own keys, so one whose
+prototype was replaced has no `toJSON` and would serialize as `{}`.
+`canonicalize` refuses such a value as `canonical_unsupported_value: URL`; an
+ordinary `URL` still serializes through its `toJSON`.
+
+No host has a non-throwing `URL` predicate, so this check is separate from
+`nativeBrand`: an object that is not a `URL` costs one caught `TypeError`, once.
+`canonicalize` therefore runs it only for a record with no own enumerable keys
+or with a `null` prototype. A `URL` moved onto `Object.prototype` and then
+given own enumerable keys is not detected.
+
+```ts
+isNativeUrl(Object.setPrototypeOf(new URL("https://example.com/a"), null)) // true
+isNativeUrl({}) // false
+```
+
+## slotlessProxy
+
+```ts
+const slotlessProxy: <T extends object>(target: T, handler: ProxyHandler<T>) => T
+```
+
+Returns `new Proxy(target, handler)` and records that it has no internal
+slots, so `nativeBrand` and `isNativeUrl` answer for it without probing. A
+Proxy never has slots, whatever its target. Use it for a view that stands in
+for a value during canonicalization, so a host without slot predicates probes
+the value once and not its view as well.
 
 ## sortCollections
 

@@ -56,8 +56,10 @@ jobs:
   # v* tag push, a dispatched releaseTag and a sourceRef rehearsal all release a
   # commit that is on main, or nothing. The native-helper job runs the source's
   # Cargo build scripts on five runners, so it waits for this job and builds
-  # the exact commit this job checked. The publish job checks again on its own
-  # checkout, because a tag can move between two jobs.
+  # the exact commit this job checked. The publish and installer jobs check
+  # out that commit by SHA too, and the publish job refuses a tag that has
+  # moved off it, so the helpers, the packages and the installers are one
+  # commit.
   validate-source:
     name: validate release source
     runs-on: ubuntu-latest
@@ -161,7 +163,7 @@ jobs:
   publish:
     name: validate, build, and publish
     runs-on: ubuntu-latest
-    needs: native-helper
+    needs: [validate-source, native-helper]
     # A suffixed version (1.0.0-rc.2) is a prerelease. It publishes under npm
     # `next`, and only what proves it builds, installs and starts may block it.
     # A prerelease therefore runs this job as two parallel lanes:
@@ -248,12 +250,43 @@ jobs:
         shell: bash
       # Full history and tags. The changelog gate below reads the commit range
       # from the previous v* tag to the tag being released, and the default
-      # shallow checkout carries neither the tags nor the commits.
+      # shallow checkout carries neither the tags nor the commits. The commit
+      # is the one validate-source found on main, by SHA, which is the commit
+      # the native helpers were built from.
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           fetch-depth: 0
-          ref: ${{ inputs.sourceRef != '' && inputs.sourceRef || inputs.releaseTag != '' && inputs.releaseTag || github.ref }}
+          ref: ${{ needs.validate-source.outputs.sha }}
           persist-credentials: "false"
+      # A tag can move between validate-source and this checkout, which fetched
+      # every tag again. A release whose tag no longer names the validated
+      # commit stops here, before anything is built or packed: its helpers
+      # would be one commit and its tag another. A sourceRef rehearsal has no
+      # tag to compare.
+      - name: Require the validated release source
+        env:
+          VALIDATED_SHA: ${{ needs.validate-source.outputs.sha }}
+        run: |
+          set -euo pipefail
+          if ! [[ "$VALIDATED_SHA" =~ ^([0-9a-f]{40}|[0-9a-f]{64})$ ]]; then
+            echo "validate-source handed on no commit SHA." >&2
+            exit 1
+          fi
+          actual_source="$(git rev-parse --verify 'HEAD^{commit}')"
+          if [ "$actual_source" != "$VALIDATED_SHA" ]; then
+            echo "The checked-out source $actual_source is not the validated release source $VALIDATED_SHA." >&2
+            exit 1
+          fi
+          if [ -n "$SOURCE_REF" ]; then exit 0; fi
+          if ! tag_source="$(git rev-parse --verify --quiet "refs/tags/$RELEASE_TAG^{commit}")"; then
+            echo "The release tag $RELEASE_TAG no longer exists; the validated release source was $VALIDATED_SHA." >&2
+            exit 1
+          fi
+          if [ "$tag_source" != "$VALIDATED_SHA" ]; then
+            echo "The release tag $RELEASE_TAG moved to $tag_source after $VALIDATED_SHA was validated; nothing is packed." >&2
+            exit 1
+          fi
+        shell: bash
       # Every path, not only a sourceRef rehearsal: a v* tag pushed to a commit
       # that is not on main, or a releaseTag dispatched for one, stops here,
       # before any repository script runs in the job that holds the npm
@@ -833,11 +866,12 @@ jobs:
         shell: bash
   installer-archive:
     name: installed npm CLI (${{ matrix.platform }})
-    needs: candidate-result
+    needs: [validate-source, candidate-result]
     # This job installs the packed npm CLI on each platform and starts it, so
     # it is part of what a rehearsal must prove: a tag push runs it only after
-    # npm has published. A sourceRef rehearsal checks out that commit instead
-    # of the tag and runs it too. Signing stays tag-bound in the next job.
+    # npm has published. It checks out the commit validate-source found on
+    # main, by SHA, the one the candidate was packed from; a sourceRef
+    # rehearsal runs it too. Signing stays tag-bound in the next job.
     strategy:
       fail-fast: false
       matrix:
@@ -857,7 +891,7 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
-          ref: ${{ inputs.sourceRef != '' && inputs.sourceRef || inputs.releaseTag != '' && inputs.releaseTag || github.ref }}
+          ref: ${{ needs.validate-source.outputs.sha }}
           persist-credentials: false
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:

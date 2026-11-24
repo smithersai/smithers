@@ -24,6 +24,7 @@ export {
   type Failure,
   type Item,
   type KanbanFlow,
+  legacyAliases,
   make,
   type MakeOptions,
   type RuntimeColumn,

@@ -18,7 +18,7 @@ test("timestamped fixture prefixes preserve age and identity across separately n
   vi.stubEnv("SMITHERS_POSTGRES_URL", "postgresql://localhost/test")
   vi.stubEnv("SMITHERS_POSTGRES_SCHEMA", prefix)
   vi.stubEnv("SMITHERS_BACKEND", "postgres")
-  expect(Selection.location("/project/engine.db")?.schema).toBe(engine)
+  expect(Selection.location("/project/engine.db", process.env)?.schema).toBe(engine)
 })
 
 test("hyphenated caller prefixes normalize into bounded reaper identities", () => {

@@ -27,6 +27,10 @@ const cp = require("node:child_process");
 const args = process.argv.slice(2);
 fs.appendFileSync(${JSON.stringify(calls)}, args.join(" ") + "\\n");
 const verb = args[0];
+if (verb === "container" && args[1] === "inspect" && !fs.existsSync(${JSON.stringify(resource)})) {
+  console.error("No such container: " + args[2]);
+  process.exit(1);
+}
 if (verb === "create" || verb === "run") fs.writeFileSync(${JSON.stringify(resource)}, "owned");
 if (verb === "exec") {
   const shell = args.indexOf("/bin/sh");

@@ -34,6 +34,21 @@
 
 ### Fixed
 
+- A declared action error keeps its tag and fields on a host with no proxy
+  detector, such as a browser. It was persisted as `null`, so replay took a
+  different catch branch and lost its non-retryable classification.
+- A handoff whose payload its codec rejects settles as a `Handoff` to its
+  destination on every host. A host with no proxy detector recorded the round
+  as a failed `Complete` while its successor ran.
+- The heartbeat wakes a parked parent whose child's wake was recorded by a
+  worker that died before announcing it, without recording it again.
+- A paged `waitingRuns` read continues past rows that do not decode, so one
+  malformed parked row no longer ends a sweep at its first page.
+- Migration `0011_parked_run_page` indexes parked runs in `run_id` order, so
+  the paged sweeps stop walking settled history on every heartbeat.
+- Retention ends on a corrupted `parent_run_id` cycle and lists each run once.
+  It looped until the process ran out of memory.
+
 - Long-running flows no longer load historical state payloads for lineage lifecycle decisions; these reads now use validated metadata.
 
 - A step answered from the shared cache records a succeeded attempt with the

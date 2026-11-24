@@ -177,6 +177,28 @@ describe("the memory cache", () => {
     expect(Option.isNone(result.metaGot)).toBe(true)
   })
 
+  it("answers too_large when the memory backend declines an entry over its total bound (R2-Astra-D1-014)", async () => {
+    const t = telemetry()
+    const key = ImmutableCache.key("t", "empty")
+    const outcomes = await Effect.runPromise(t.provide(Effect.provide(
+      Effect.gen(function*() {
+        // Zero bytes pass the entry bound; the URL and overhead alone exceed one byte.
+        const outcome = yield* put(key, { bytes: new Uint8Array(0), metadata: {} })
+        return { outcome, held: Option.isSome(yield* get(key)) }
+      }),
+      ImmutableCache.layerMemory({ maxTotalBytes: 1 })
+    )))
+    expect(outcomes).toEqual({ outcome: "too_large", held: false })
+    const labels = { backend: "memory", namespace: "t" }
+    expect(t.count(ImmutableCache.requests, { ...labels, operation: "put", outcome: "too_large" })).toBe(1)
+    expect(t.count(ImmutableCache.requests, { ...labels, operation: "put", outcome: "stored" })).toBe(0)
+    expect(t.count(ImmutableCache.requests, { ...labels, operation: "get", outcome: "miss" })).toBe(1)
+    // No entry ceiling admits nothing either, and the adapter says so itself.
+    const none = ImmutableCache.makeMemoryWebCache(1024, 0)
+    expect(await none.put("https://cache.invalid/a", new Response(""))).toBe("too_large")
+    expect(await ImmutableCache.makeMemoryWebCache().put("https://cache.invalid/a", new Response(""))).toBeUndefined()
+  })
+
   it("charges an empty entry and its metadata against the total bound", async () => {
     const keys = Array.from({ length: 64 }, (_, index) => ImmutableCache.key("t", `empty-${index}`))
     const empty = { bytes: new Uint8Array(0), metadata: { note: "n".repeat(200) } }

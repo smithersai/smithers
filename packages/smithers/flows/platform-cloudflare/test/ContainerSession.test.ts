@@ -6,7 +6,9 @@
  */
 import { describe, expect, it } from "@effect/vitest"
 import { SandboxTools } from "@smthrs/sandbox"
+import * as Deferred from "effect/Deferred"
 import * as Effect from "effect/Effect"
+import * as Sink from "effect/Sink"
 import * as Stream from "effect/Stream"
 import { execFileSync } from "node:child_process"
 import { mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs"
@@ -48,7 +50,7 @@ describe("ContainerSession", () => {
       }))
       expect(out).toEqual({ stdout: `${root}\ncommand kept\nfed`, code: 0 })
       expect(commands[0]).toEqual({
-        argv: ["sh", "-c", "pwd; echo $SHARED $KEPT; cat"],
+        argv: ["sh", "-c", "unset DROPPED || exit 125; pwd; echo $SHARED $KEPT; cat"],
         options: {
           user: "100123:2000",
           cwd: root,
@@ -99,6 +101,99 @@ describe("ContainerSession", () => {
       const blocked = yield* Effect.flip(session.writeFile(join(root, "a-file/below"), bytes))
       expect(blocked).toMatchObject({ code: "unknown" })
       yield* session.ping!
+    }))
+
+  it.effect("removes a session and image variable from the guest environment", () =>
+    Effect.gen(function*() {
+      const { container } = ProcessContainer.make()
+      const session = yield* ContainerSession.make(container, {
+        id: "env-delete",
+        workdir: root,
+        env: { HOME: "/session" }
+      })
+      const read = (env: { HOME?: string | undefined }) =>
+        Effect.scoped(Effect.gen(function*() {
+          const process = yield* session.spawn("printf '%s' \"${HOME-unset}\"", { env })
+          return yield* text(process.stdout)
+        }))
+      expect(yield* read({})).toBe("/session")
+      expect(yield* read({ HOME: undefined })).toBe("unset")
+      const image = yield* ContainerSession.make(container, { id: "image-delete", workdir: root })
+      expect(
+        yield* Effect.scoped(Effect.flatMap(
+          image.spawn("printf '%s' \"${HOME-unset}\"", { env: { HOME: undefined } }),
+          (process) => text(process.stdout)
+        ))
+      ).toBe("unset")
+      expect(yield* Effect.flip(Effect.scoped(image.spawn("true", { env: { "a-b": undefined } })))).toMatchObject({
+        code: "spawn_error"
+      })
+    }))
+
+  it.live("returns the real exit code when stdin feeding is stalled and interrupts the feed", () =>
+    Effect.gen(function*() {
+      const real = ProcessContainer.make().container
+      let interrupted = false
+      const faulty: ContainerSession.Container<ProcessContainer.ProcessFailure> = {
+        exec: (argv, options) =>
+          Effect.map(real.exec(argv, options), (child) => ({
+            ...child,
+            stdin: Sink.forEach((_chunk: Uint8Array) =>
+              Effect.never.pipe(Effect.ensuring(Effect.sync(() => {
+                interrupted = true
+              })))
+            )
+          }))
+      }
+      const session = yield* ContainerSession.make(faulty, { id: "early-exit", workdir: root })
+      const code = yield* Effect.scoped(Effect.gen(function*() {
+        const child = yield* session.spawn("exit 7", { stdin: new Uint8Array([1, 2]) })
+        return yield* child.exitCode.pipe(Effect.timeout("2 seconds"))
+      }))
+      expect(code).toBe(7)
+      expect(interrupted).toBe(true)
+    }))
+
+  it.effect("preserves an early exit code after its stdin sink has already failed", () =>
+    Effect.gen(function*() {
+      const failed = yield* Deferred.make<void>()
+      const real = ProcessContainer.make().container
+      const faulty: ContainerSession.Container<ProcessContainer.ProcessFailure> = {
+        exec: (argv, options) =>
+          Effect.map(real.exec(argv, options), (child) => ({
+            ...child,
+            stdin: Sink.forEach((_chunk: Uint8Array) =>
+              Effect.fail(new ProcessContainer.ProcessFailure({ message: "closed pipe" })).pipe(
+                Effect.ensuring(Deferred.succeed(failed, undefined))
+              )
+            ),
+            exitCode: Effect.andThen(Deferred.await(failed), child.exitCode)
+          }))
+      }
+      const session = yield* ContainerSession.make(faulty, { id: "failed-feed", workdir: root })
+      expect(
+        yield* Effect.scoped(Effect.gen(function*() {
+          const child = yield* session.spawn("exit 7", { stdin: new Uint8Array([1]) })
+          return yield* child.exitCode
+        }))
+      ).toBe(7)
+    }))
+
+  it.effect("bounds file collection before allocation and can read another file after refusal", () =>
+    Effect.gen(function*() {
+      const session = yield* ContainerSession.make(ProcessContainer.make().container, {
+        id: "bounded",
+        workdir: root,
+        maxFileBytes: 1024
+      })
+      const path = join(root, "oversized")
+      writeFileSync(path, new Uint8Array(100_000))
+      expect(yield* Effect.flip(session.readFile(path))).toMatchObject({
+        code: "unknown",
+        message: "container session: file byte limit exceeded"
+      })
+      writeFileSync(path, new Uint8Array([1, 2, 3]))
+      expect(yield* session.readFile(path)).toEqual(new Uint8Array([1, 2, 3]))
     }))
 
   it.effect("carries SandboxTools: a command at most once, a file, the status and the diff", () =>

@@ -53,3 +53,28 @@ test("reads the PostgreSQL environment when building a previously constructed la
   )
   expect(code).toBe("postgres_url_missing")
 })
+
+test("layers with conflicting injected settings select independently of the process environment", async () => {
+  clear()
+  process.env.SMITHERS_BACKEND = "postgres"
+  process.env.SMITHERS_POSTGRES_URL = "postgres://ambient/database"
+  const before = { ...process.env }
+  const open = (settings: BunDatabase.BunDatabaseOptions["settings"]) =>
+    Effect.runPromise(
+      Effect.provide(
+        Effect.map(SqlClient, (sql) => sql.driver),
+        BunDatabase.layer({ filename: "selection.db", sqlite: { readonly: true }, readOnly: true, settings })
+      ).pipe(
+        Effect.catchDefect((defect) =>
+          Effect.succeed(BunDatabase.isUnsupportedDatabase(defect) ? defect.code : "unknown")
+        )
+      )
+    )
+  // An injected SQLite selection reaches the SQLite open, which refuses the missing read-only file.
+  expect(await open({})).not.toBe("postgres_url_missing")
+  expect(await open({ SMITHERS_BACKEND: "postgres" })).toBe("postgres_url_missing")
+  expect(await open({ SMITHERS_BACKEND: "postgres", SMITHERS_POSTGRES_URL: "mysql://host/database" })).toBe(
+    "postgres_url_invalid"
+  )
+  expect(process.env).toEqual(before)
+})

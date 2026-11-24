@@ -416,6 +416,21 @@ describe("PresenceRoom", () => {
       }))
     }))
 
+  it.effect("counts open connections across rooms and rehydrated hosts", () =>
+    isolated(Effect.gen(function*() {
+      const first = makeHost()
+      const second = makeHost()
+      const [ada, bob] = yield* joinAll(first, ["ada", "bob"])
+      yield* joinAll(second, ["cy"])
+      expect((yield* Metric.value(PresenceRoom.open)).count).toBe(3)
+      yield* PresenceRoom.leave(hostOver(first.raws), ada!)
+      expect((yield* Metric.value(PresenceRoom.open)).count).toBe(2)
+      const next = yield* joinAll(first, ["dee"])
+      first.drop(bob!)
+      yield* PresenceRoom.receive(hostOver(first.raws), next[0]!, stateFrame("back"))
+      expect((yield* Metric.value(PresenceRoom.open)).count).toBe(2)
+    })))
+
   it.effect("counts open connections up on a join and down on every way out", () =>
     isolated(Effect.gen(function*() {
       const room = makeHost()

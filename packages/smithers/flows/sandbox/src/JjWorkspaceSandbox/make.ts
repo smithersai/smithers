@@ -619,7 +619,13 @@ export const make = (options: JjWorkspaceSandboxOptions): Provider => {
         )
       }
       const attachOnly = attachedName !== undefined
-      const workspaceName = attachedName ?? workspaceNameOf(sessionKey, prefix)
+      const legacyName = `${prefix}${legacySessionSlug(sessionKey).toLowerCase().replaceAll(/[^a-z0-9_-]/g, "-")}`
+      const legacyPath = yield* confineWorkdir(options.path, options.workspacesRoot, legacyName)
+      const legacyExists = attachedName === undefined && parent === undefined &&
+        (yield* options.fs.exists(legacyPath.workdir).pipe(
+          Effect.mapError(providerFailure("unavailable", "legacy jj workspace lookup failed"))
+        ))
+      const workspaceName = attachedName ?? (legacyExists ? legacyName : workspaceNameOf(sessionKey, prefix))
       const { root, workdir } = yield* confineWorkdir(options.path, options.workspacesRoot, workspaceName)
       const lane: Lane = { released: false, activeHandles: new Set() }
       let setupCompleted = false

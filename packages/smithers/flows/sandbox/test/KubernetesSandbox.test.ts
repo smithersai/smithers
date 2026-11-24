@@ -15,7 +15,9 @@ import { createHmac } from "node:crypto"
 import { chmodSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import { configurationFingerprint } from "../src/internal/configurationFingerprint.ts"
 import { sessionSlug } from "../src/internal/sessionSlug.ts"
+import { legacySessionSlug } from "../src/internal/sessionSlug.ts"
 import * as KubernetesSandbox from "../src/KubernetesSandbox/index.ts"
 import { ProviderError } from "../src/RemoteChildProcessSpawner/ProviderError.ts"
 import type { Session } from "../src/Sandbox/index.ts"
@@ -205,7 +207,9 @@ const cluster = (fault: (args: ReadonlyArray<string>) => Response | undefined = 
       if (args[0] === "get") {
         const pod = pods.get(args[2]!)
         return pod === undefined
-          ? canned({ exitCode: 1, stderr: `Error from server (NotFound): pods "${args[2]}" not found\n` })
+          ? args.includes("--ignore-not-found")
+            ? canned({})
+            : canned({ exitCode: 1, stderr: `Error from server (NotFound): pods "${args[2]}" not found\n` })
           : canned({
             stdout: args.at(-1) === "json"
               ? JSON.stringify({ ...pod.manifest, status: { phase: pod.phase } })
@@ -289,6 +293,61 @@ const output = (session: Session, command: string, options: Parameters<Session["
   )
 
 describe("KubernetesSandbox", () => {
+  it.effect("adopts a sealed legacy pod without creating a second pod", () =>
+    Effect.gen(function*() {
+      const fake = cluster()
+      const key = "legacy/pod"
+      const name = `smthrs-sbx-${legacySessionSlug(key)}`
+      const fingerprint = yield* configurationFingerprint({
+        provider: "KubernetesSandbox/v1",
+        owner: key,
+        name,
+        image: "img",
+        workdir,
+        env: {},
+        labels: {},
+        createArgs: []
+      })
+      const uid = "legacy-uid"
+      const seal = "s1-" +
+        createHmac("sha256", "operator-key").update(`${fingerprint}\0${uid}`).digest("hex").slice(0, 60)
+      fake.pods.set(name, {
+        phase: "Running",
+        env: {},
+        manifest: {
+          metadata: {
+            uid,
+            labels: { "smithers.dev/sandbox-fingerprint": fingerprint, "smithers.dev/sandbox-seal": seal }
+          },
+          spec: { containers: [{ name, image: "img" }] }
+        }
+      })
+      const provider = KubernetesSandbox.make({
+        spawner: fake.spawner,
+        image: "img",
+        workdir,
+        reattachKey: "operator-key"
+      })
+      const session = yield* acquired(provider, Effect.succeed, key)
+      expect(session.remoteId).toBe(name)
+      expect(fake.calls.filter((call) => call.args[0] === "run")).toEqual([])
+      expect(fake.pods.size).toBe(0)
+      fake.pods.set(name, {
+        phase: "Running",
+        env: {},
+        manifest: {
+          metadata: { uid, labels: { "smithers.dev/sandbox-fingerprint": fingerprint } },
+          spec: { containers: [{ name, image: "img" }] }
+        }
+      })
+      const before = fake.calls.length
+      expect(yield* Effect.flip(acquired(provider, Effect.succeed, key))).toMatchObject({
+        code: "unavailable",
+        message: expect.stringContaining("cannot be adopted safely")
+      })
+      expect(fake.pods.has(name)).toBe(true)
+      expect(fake.calls.slice(before).some((call) => call.args[0] === "delete" || call.args[0] === "run")).toBe(false)
+    }))
   it("refuses every network restriction and accepts \"open\" at construction, before touching its dependencies", () => {
     const deps = untouchable<never>()
     for (const network of ["none", { allow: ["example.com"] }] as const) {
@@ -334,7 +393,7 @@ describe("KubernetesSandbox", () => {
             label = args[args.indexOf("--labels") + 1]!.split("=")[1]!
             return { exitCode: 1, stderr: "AlreadyExists" }
           }
-          if (args[0] !== "get") return undefined
+          if (args[0] !== "get" || args.includes("--ignore-not-found")) return undefined
           return {
             stdout: change === "json" ? "{" : JSON.stringify({
               metadata: {
@@ -378,7 +437,7 @@ describe("KubernetesSandbox", () => {
             label = args[args.indexOf("--labels") + 1]!.split("=")[1]!
             return { exitCode: 1, stderr: "AlreadyExists" }
           }
-          if (args[0] === "get") {
+          if (args[0] === "get" && !args.includes("--ignore-not-found")) {
             return {
               stdout: JSON.stringify({
                 metadata: {
@@ -786,7 +845,9 @@ describe("KubernetesSandbox", () => {
         expect(Exit.isSuccess(yield* Effect.exit(Scope.close(leaked, Exit.void)))).toBe(true)
 
         // An unreadable Pod is neither adopted nor removed.
-        const unreadable = cluster((args) => args[0] === "get" ? { exitCode: 1, stderr: "rbac denied" } : undefined)
+        const unreadable = cluster((args) =>
+          args[0] === "get" && !args.includes("--ignore-not-found") ? { exitCode: 1, stderr: "rbac denied" } : undefined
+        )
         const blindProvider = KubernetesSandbox.make({ spawner: unreadable.spawner, image: "img", workdir })
         const leakedToo = yield* Scope.make()
         const seeded = yield* Effect.provideService(blindProvider.acquire("blind"), Scope.Scope, leakedToo)
@@ -854,10 +915,10 @@ describe("KubernetesSandbox", () => {
           code: "unavailable",
           message: expect.stringContaining("reported no uid to seal")
         })
-        const name = fake.calls[0]!.args.map(plainWord)[1]!
-        expect(fake.calls.map(({ args }) => args[0])).toEqual(["run", "get", "delete"])
-        expect(fake.calls[1]!.args.map(plainWord)).toEqual(["get", "pod", name, "-o", "jsonpath={.metadata.uid}"])
-        expect(fake.calls[2]!.args.map(plainWord)).toEqual(["delete", `pod/${name}`, "--force", "--grace-period=0"])
+        const name = fake.calls.find((call) => call.args.includes("run"))!.args.map(plainWord)[1]!
+        expect(fake.calls.map(({ args }) => args[0])).toEqual(["get", "run", "get", "delete"])
+        expect(fake.calls[2]!.args.map(plainWord)).toEqual(["get", "pod", name, "-o", "jsonpath={.metadata.uid}"])
+        expect(fake.calls[3]!.args.map(plainWord)).toEqual(["delete", `pod/${name}`, "--force", "--grace-period=0"])
         expect(fake.pods.size).toBe(0)
       }
     }))
@@ -1139,7 +1200,7 @@ describe("KubernetesSandbox", () => {
           limits: { cpus: 1.5, memoryMib: 512, timeoutSecs: 3600 }
         }).acquire("limits")
       )
-      const overrides = overridesOf(limited.calls[0]!.args.map(plainWord))
+      const overrides = overridesOf(limited.calls.find((call) => call.args.includes("run"))!.args.map(plainWord))
       expect(overrides.spec.activeDeadlineSeconds).toBe(3600)
       expect(overrides.spec.containers[0].resources).toEqual({
         requests: { cpu: "250m" },
@@ -1150,13 +1211,17 @@ describe("KubernetesSandbox", () => {
         KubernetesSandbox.make({ spawner: lifetimeOnly.spawner, image: "img", workdir, limits: { timeoutSecs: 60 } })
           .acquire("limits")
       )
-      expect(overridesOf(lifetimeOnly.calls[0]!.args.map(plainWord)).spec).toEqual({ activeDeadlineSeconds: 60 })
+      expect(overridesOf(lifetimeOnly.calls.find((call) => call.args.includes("run"))!.args.map(plainWord)).spec)
+        .toEqual({ activeDeadlineSeconds: 60 })
       const cpuOnly = cluster()
       yield* Effect.scoped(
         KubernetesSandbox.make({ spawner: cpuOnly.spawner, image: "img", workdir, limits: { cpus: 2 } })
           .acquire("limits")
       )
-      expect(overridesOf(cpuOnly.calls[0]!.args.map(plainWord)).spec.containers[0].resources).toEqual({
+      expect(
+        overridesOf(cpuOnly.calls.find((call) => call.args.includes("run"))!.args.map(plainWord)).spec.containers[0]
+          .resources
+      ).toEqual({
         limits: { cpu: "2" }
       })
       const memoryOnly = cluster()
@@ -1164,16 +1229,21 @@ describe("KubernetesSandbox", () => {
         KubernetesSandbox.make({ spawner: memoryOnly.spawner, image: "img", workdir, limits: { memoryMib: 256 } })
           .acquire("limits")
       )
-      expect(overridesOf(memoryOnly.calls[0]!.args.map(plainWord)).spec.containers[0].resources).toEqual({
+      expect(
+        overridesOf(memoryOnly.calls.find((call) => call.args.includes("run"))!.args.map(plainWord)).spec.containers[0]
+          .resources
+      ).toEqual({
         limits: { memory: "256Mi" }
       })
       const unlimited = cluster()
       yield* Effect.scoped(
         KubernetesSandbox.make({ spawner: unlimited.spawner, image: "img", workdir }).acquire("limits")
       )
-      expect(unlimited.calls[0]!.args.map(plainWord)).not.toContain("--overrides")
-      expect(labelOf(lifetimeOnly.calls[0]!.args.map(plainWord))).not.toBe(
-        labelOf(unlimited.calls[0]!.args.map(plainWord))
+      expect(unlimited.calls.find((call) => call.args.includes("run"))!.args.map(plainWord)).not.toContain(
+        "--overrides"
+      )
+      expect(labelOf(lifetimeOnly.calls.find((call) => call.args.includes("run"))!.args.map(plainWord))).not.toBe(
+        labelOf(unlimited.calls.find((call) => call.args.includes("run"))!.args.map(plainWord))
       )
     }))
 
@@ -1241,7 +1311,7 @@ describe("KubernetesSandbox", () => {
       }
       expect(session.remoteId).toMatch(/^[a-z0-9-]+$/)
       expect(session.remoteId).toHaveLength(63)
-      const create = fake.calls[0]!.args.map(plainWord)
+      const create = fake.calls.find((call) => call.args.includes("run"))!.args.map(plainWord)
       const overrides = JSON.parse(create[create.indexOf("--overrides") + 1]!)
       expect(overrides.spec.containers[0].resources).toEqual({})
     }))

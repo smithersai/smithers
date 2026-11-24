@@ -1510,7 +1510,10 @@ test("npm-dist-tag.yml checks a request against the release's package list befor
   assert.match(steps[checkout].with["sparse-checkout"], /\.smithers\/flows\/release/)
   assert.ok(check > checkout, "the request is checked after the checkout")
   assert.ok(check < write, "the request is checked before the write")
-  assert.ok(steps[check].run.indexOf("dist-tag-request.mjs") < steps[check].run.indexOf("npm view"), "before the registry is read")
+  const read = steps.findIndex((step) => step.run?.includes("npm view"))
+  assert.ok(check < read && read < write, "before the registry is read")
+  // The request check is a script of the checkout: it holds no npm credential.
+  assert.equal(steps[check].env, undefined)
   // One list: no second rule for which names may move.
   assert.doesNotMatch(JSON.stringify(steps), /@smthrs\/\[a-z0-9-\]/)
 })

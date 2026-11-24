@@ -4,6 +4,9 @@
 
 ### Fixed
 
+- A fork no longer forgets the oldest tracked lane once its scope holds 256:
+  every non-retained lane stays registered until the service scope closes, so a
+  live fork's child run keeps its jj workspace.
 - Rewinds that fail before writing an audit now report a failed run-state
   restoration alongside the original error instead of hiding it.
 

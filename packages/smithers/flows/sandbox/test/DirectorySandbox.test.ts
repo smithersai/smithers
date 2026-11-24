@@ -13,6 +13,7 @@ import { afterAll } from "vitest"
 import * as ProcessTable from "../../../../testing/src/ProcessTable.ts"
 import * as DirectorySandbox from "../src/DirectorySandbox/index.ts"
 import { credentialFiles } from "../src/internal/credentialFiles.ts"
+import { legacySessionSlug, sessionSlug } from "../src/internal/sessionSlug.ts"
 import type { RemoteProcess } from "../src/RemoteChildProcessSpawner/Provider.ts"
 import { ProviderError } from "../src/RemoteChildProcessSpawner/ProviderError.ts"
 import * as Sandbox from "../src/Sandbox/index.ts"
@@ -163,6 +164,40 @@ const provider = Effect.map(
 const budget = 30_000
 
 describe("DirectorySandbox", () => {
+  it.effect("adopts a legacy directory and preserves its files", () =>
+    Effect.gen(function*() {
+      const { fs, spawner } = yield* services
+      const sessionKey = "legacy/directory"
+      const providerRoot = `${root}/legacy-scratch`
+      const legacy = `${providerRoot}/${legacySessionSlug(sessionKey)}`
+      yield* fs.makeDirectory(legacy, { recursive: true })
+      yield* fs.writeFileString(`${legacy}/proof`, "retained")
+      const directory = DirectorySandbox.make({ fs, spawner, root: providerRoot, persistence: "sticky" })
+      const session = yield* Effect.scoped(directory.acquire(sessionKey))
+      expect(session.remoteId).toBe(legacy)
+      expect(new TextDecoder().decode(yield* session.readFile(`${legacy}/proof`))).toBe("retained")
+      expect(yield* fs.exists(`${providerRoot}/${sessionSlug(sessionKey)}`)).toBe(false)
+      let lookedUp = false
+      const disappearingFs: FileSystem.FileSystem = {
+        ...fs,
+        exists: (path) => {
+          if (path !== legacy) return fs.exists(path)
+          if (!lookedUp) {
+            lookedUp = true
+            return fs.exists(path)
+          }
+          return fs.remove(path, { recursive: true }).pipe(Effect.as(false))
+        }
+      }
+      const disappearing = DirectorySandbox.make({
+        fs: disappearingFs,
+        spawner,
+        root: providerRoot,
+        persistence: "sticky"
+      })
+      expect(yield* Effect.flip(Effect.scoped(disappearing.acquire(sessionKey)))).toMatchObject({ code: "not_found" })
+      expect(yield* fs.exists(legacy)).toBe(false)
+    }), budget)
   it.effect("preserves default bootstrap inheritance and accepts an empty environment", () =>
     Effect.scoped(Effect.gen(function*() {
       yield* Effect.acquireRelease(
@@ -888,7 +923,7 @@ describe("DirectorySandbox", () => {
       expect((undelivered as ProviderError).message).toContain("SIGTERM")
     }), budget)
 
-  it.effect("reattaches and destroys an older recorded directory while fresh acquisitions use the new identity", () =>
+  it.effect("reuses an older recorded directory until destruction, then creates the new identity", () =>
     Effect.gen(function*() {
       const { fs, spawner } = yield* services
       const directory = DirectorySandbox.make({ fs, spawner, root, persistence: "sticky" })
@@ -898,10 +933,12 @@ describe("DirectorySandbox", () => {
       yield* Effect.scoped(Effect.gen(function*() {
         const resumed = yield* directory.attach!(recorded)
         expect(new TextDecoder().decode(yield* resumed.readFile(join(resumed.workdir, "proof")))).toBe("saved")
-        const fresh = yield* directory.acquire("a")
-        expect(fresh.remoteId).not.toBe(resumed.remoteId)
+        const acquired = yield* directory.acquire("a")
+        expect(acquired.remoteId).toBe(resumed.remoteId)
         yield* directory.destroy!(recorded)
         expect(yield* fs.exists(recorded.remoteId)).toBe(false)
+        const fresh = yield* directory.acquire("a")
+        expect(fresh.remoteId).not.toBe(resumed.remoteId)
         expect(yield* fs.exists(fresh.remoteId)).toBe(true)
         yield* directory.destroy!(fresh)
       }))

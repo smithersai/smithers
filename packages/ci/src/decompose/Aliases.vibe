@@ -30,7 +30,7 @@ const blank = (text: string, spans: ReadonlyArray<readonly [start: number, end: 
 const tsconfigAliases = (
   file: string, text: string, directories: ReadonlyMap<string, string>
 ): ReadonlyArray<readonly [number, number]> => {
-  const errors: ParseError[] = []
+  const errors: Array<ParseError> = []
   const tree = parseTree(text, errors, { allowTrailingComma: true })
   if (tree === undefined || errors.length > 0 || findNodeAtLocation(tree, ["extends"]) !== undefined) return []
   const paths = findNodeAtLocation(tree, ["compilerOptions", "paths"])

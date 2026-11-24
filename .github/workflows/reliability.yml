@@ -11,6 +11,7 @@ on:
         options:
           - all
           - faults-linux
+          - faults-reference
       seed:
         description: 'Replay seed; empty chooses the current UTC day'
         type: string
@@ -22,7 +23,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   benchmark-observations:
-    if: ${{ inputs.campaign != 'faults-linux' }}
+    if: ${{ inputs.campaign != 'faults-linux' && inputs.campaign != 'faults-reference' }}
     name: scheduler and journal counters, latency and retained resources
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -50,7 +51,7 @@ jobs:
           if-no-files-found: error
           retention-days: 30
   sync-long-soak:
-    if: ${{ inputs.campaign != 'faults-linux' }}
+    if: ${{ inputs.campaign != 'faults-linux' && inputs.campaign != 'faults-reference' }}
     name: sync subscriber lifecycle (60 minute soak, Node ${{ matrix.node }})
     runs-on: ubuntu-latest
     timeout-minutes: 70
@@ -98,7 +99,7 @@ jobs:
           if-no-files-found: error
           retention-days: 30
   signal-state-machine:
-    if: ${{ inputs.campaign != 'faults-linux' }}
+    if: ${{ inputs.campaign != 'faults-linux' && inputs.campaign != 'faults-reference' }}
     name: durable signal state machine (rotating seed)
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -146,7 +147,7 @@ jobs:
           if-no-files-found: error
           retention-days: 30
   run-lifecycle-state-model:
-    if: ${{ inputs.campaign != 'faults-linux' }}
+    if: ${{ inputs.campaign != 'faults-linux' && inputs.campaign != 'faults-reference' }}
     name: run lifecycle state model (rotating seed)
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -195,7 +196,7 @@ jobs:
           if-no-files-found: error
           retention-days: 30
   jj-native-wasm-abi:
-    if: ${{ inputs.campaign != 'faults-linux' }}
+    if: ${{ inputs.campaign != 'faults-linux' && inputs.campaign != 'faults-reference' }}
     name: generated native and real WASM ABI corpus
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -256,7 +257,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        host: ${{ fromJSON(inputs.campaign == 'faults-linux' && '["linux"]' || '["linux","reference"]') }}
+        # The reference host refuses every case until approved main-bundle
+        # provenance and authenticated host selection are composed, so the
+        # nightly run and `all` leave it out: it runs, and refuses, only when
+        # a dispatch selects faults-reference.
+        host: ${{ fromJSON(inputs.campaign == 'faults-reference' && '["reference"]' || '["linux"]') }}
         # release is the release gate's matrix, //packages/...:faults.
         tier: [release]
     runs-on: ${{ matrix.host == 'reference' && fromJSON('["self-hosted","macOS","ARM64","smithers-reference"]') || fromJSON('["ubuntu-latest"]') }}

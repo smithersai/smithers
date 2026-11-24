@@ -658,6 +658,7 @@ describe("@smthrs/sandbox fuzz invariants", () => {
                     stderr: ""
                   }),
                   startProcess: async () => ({
+                    kill: async () => {},
                     exitCode: input.exitCode,
                     waitForExit: async () => ({ exitCode: input.exitCode }),
                     getLogs: async () => ({ stdout: safePayload, stderr: "" })

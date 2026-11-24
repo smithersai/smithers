@@ -347,7 +347,10 @@ Fault.register("@smthrs/flow/DurableQueue/CompletionUnavailable", "infra")
  * How an item's completion is retried: from half a second, growing by half,
  * to a minute between tries, for at most a day. A store that comes back
  * records the result; until then the waiting flow stays parked on its own
- * deferred. Only a store that could not record the result is retried: a
+ * deferred. When the day runs out the item's execution ends holding the
+ * handler's exit, undelivered, and the worker records that exit against the
+ * caller's deferred on each later delivery of the item until the store takes
+ * it. Only a store that could not record the result is retried: a
  * completion that dies with a programming error (`TypeError`, `RangeError`,
  * `ReferenceError`, `SyntaxError`, `EvalError`, `URIError`) fails the item at
  * once.
@@ -413,7 +416,8 @@ interface ItemExecution {
   readonly flow: Flow.Flow<
     string,
     Schema.Struct<{ token: typeof DurableDeferred.Token; payload: Schema.Top }>,
-    typeof Schema.Void,
+    // Nothing once the caller's deferred holds the handler's exit; that exit when the completion gave up first.
+    Schema.Union<readonly [Schema.Top, typeof Schema.Void]>,
     typeof CompletionUnavailable,
     any
   >
@@ -466,14 +470,21 @@ const itemExecutionOf = <Payload extends Schema.Top, Success extends Schema.Top,
   })
   const flow = Flow.make(`DurableQueue/${self.name}/item`, {
     payload: { token, payload },
-    // The completion is retried without a limit, so this error is never the execution's in practice.
+    // The handler's exit, when the completion's retries ran out before the store recorded it: the worker delivers
+    // it outside this execution, which has ended. Nothing otherwise.
+    success: Schema.Union([recorded, Schema.Void]),
+    // No execution ends with this error: the body catches it. It stays declared so that an execution recorded as
+    // failed with it, before the body caught it, still decodes.
     error: CompletionUnavailable,
     body: Node.capture(
       { handle: handle.name, complete: complete.name },
       (item) =>
         handle.call(item).pipe(
           Node.bindPlanned(
-            Node.capture({ complete: complete.name }, (exit) => complete.call({ token: item.token, exit }))
+            Node.capture({ complete: complete.name }, (exit) =>
+              complete.call({ token: item.token, exit }).pipe(
+                Node.catch({ onFailure: () => Node.succeed(exit) })
+              ))
           )
         )
     )
@@ -590,10 +601,25 @@ const makeWorkerEffect = Effect.fnUntraced(
           // The item runs as a durable execution named by its deferred: a redelivery attaches to the same
           // execution, a recorded handler result is replayed rather than run again, and the completion is retried
           // under the engine's policy until it is recorded.
-          yield* engine.execute(execution.flow, {
+          const undelivered = yield* engine.execute(execution.flow, {
             executionId: expected,
             payload: { token: item.token, payload: item.payload }
           })
+          // The completion step gave up before the store recorded the handler's exit, and the execution ended
+          // holding that exit. Every delivery replays it, so it is recorded here, outside the ended execution: the
+          // item is acknowledged only once the caller's deferred holds the exit, and redelivered until then.
+          if (undelivered !== undefined) {
+            yield* Effect.logWarning(
+              "DurableQueue completion retries ran out; the recorded handler result is delivered again"
+            ).pipe(Effect.annotateLogs({ item: metadata.id }))
+            yield* DurableDeferred.done(
+              DurableDeferred.make(expected, {
+                success: self.deferred.successSchema,
+                error: self.deferred.errorSchema
+              }),
+              { token: item.token, exit: undelivered as Exit.Exit<Success["Type"], Error["Type"]> }
+            ).pipe(Effect.provideService(FlowRuntime, engine))
+          }
           yield* countItem(self.name, "completed")
         }).pipe(
           Effect.catchTag("@smthrs/flow/DurableDeferred/TokenInvalid", (error) =>
@@ -676,9 +702,11 @@ const makeWorkerEffect = Effect.fnUntraced(
  * the worker goes on to its next item.
  * Each item runs as a durable execution named by its completion address: the
  * handler's exit is recorded as a step, then recorded against the caller's
- * deferred as a second step that the engine retries without a limit. A failure
- * to record the result never runs the handler again, and the caller always
- * receives the handler's exit once the store records it. Until the handler's
+ * deferred as a second step that the engine retries for a day. When that day
+ * runs out the execution ends holding the exit, and each later delivery of the
+ * item records it against the caller's deferred until the store takes it. A
+ * failure to record the result never runs the handler again, and the caller
+ * always receives the handler's exit once the store records it. Until the handler's
  * exit is recorded, a crash runs the handler again, so its side effects must
  * be idempotent. A handler that exits with interruption alone records nothing:
  * the same step runs it again, from half a second up to a minute between

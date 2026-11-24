@@ -14,8 +14,9 @@ For the full picture of the three packages, see the
 - An npm-compatible package manager. The workspace declaration names the one
   targets run their tools through, pnpm or Bun.
 - Git, for the parts of a run that read the tree: write-set confinement, the
-  gitignored census, `owners --diff`, and `Git.Commit` targets. Declaration
-  discovery itself never asks git anything.
+  gitignored census, and `Git.Commit` targets. `affected` and `owners --diff`
+  read a diff from Git, or from Jujutsu in a workspace without `.git`.
+  Declaration discovery itself never asks git anything.
 
 ## Add the dependency
 

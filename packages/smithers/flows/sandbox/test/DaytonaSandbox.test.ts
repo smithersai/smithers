@@ -17,7 +17,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import * as DaytonaSandbox from "../src/DaytonaSandbox/index.ts"
 import type { Sdk } from "../src/DaytonaSandbox/Sdk.ts"
-import { sessionSlug } from "../src/internal/sessionSlug.ts"
+import { legacySessionSlug, sessionSlug } from "../src/internal/sessionSlug.ts"
 import { ProviderError } from "../src/RemoteChildProcessSpawner/ProviderError.ts"
 import type { Session } from "../src/Sandbox/Session.ts"
 import * as SandboxConformance from "../src/SandboxConformance/index.ts"
@@ -290,6 +290,16 @@ const output = (session: Session, command: string, options: Parameters<Session["
   )
 
 describe("DaytonaSandbox", () => {
+  it.effect("adopts a legacy machine without creating a second machine", () =>
+    Effect.gen(function*() {
+      const fake = fakeSdk()
+      const name = `smthrs-${legacySessionSlug("run-1")}`
+      const machine = fake.seed(name)
+      const session = yield* acquired(DaytonaSandbox.make({ sdk: fake.sdk }), Effect.succeed)
+      expect(session.remoteId).toBe(machine.id)
+      expect(fake.recorded.gets).toEqual([name])
+      expect(fake.recorded.creates).toEqual([])
+    }))
   const policies = [
     { network: "none", settings: { networkBlockAll: true } },
     { network: "open", settings: { networkBlockAll: false } },
@@ -494,7 +504,10 @@ describe("DaytonaSandbox", () => {
         }))
 
       expect(answer).toEqual({ stdout: "static:spawn", code: 0 })
-      expect(fake.recorded.gets).toEqual([name])
+      expect(fake.recorded.gets).toEqual([
+        `lane-${legacySessionSlug("run-1")}`.toLowerCase().replaceAll(/[._]/g, "-"),
+        name
+      ])
       expect(fake.recorded.creates).toEqual([])
       expect(fake.recorded.starts).toEqual([{ id: machine.id, timeout: 17 }])
       expect(fake.recorded.deletes).toEqual([{ id: machine.id, timeout: 29, wait: true }])
