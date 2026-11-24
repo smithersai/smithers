@@ -14,6 +14,7 @@
  */
 
 import { Context, Effect, Layer, Schema } from "effect"
+import { isWellFormed } from "./internal/unicode.ts"
 import * as JsonBoundary from "./JsonBoundary.ts"
 import * as Outcome from "./Outcome.ts"
 import type * as Script from "./Script.ts"
@@ -159,7 +160,7 @@ const runInProcess = <E>(
           // The same in-realm checks the QuickJS prelude performs: a
           // non-string name and a non-JSON payload reject identically, and
           // the payload crosses as a structural copy.
-          if (typeof name !== "string") {
+          if (typeof name !== "string" || !isWellFormed(name)) {
             reject(new TypeError(JsonBoundary.missingCallName))
             return
           }

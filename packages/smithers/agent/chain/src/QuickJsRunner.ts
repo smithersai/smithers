@@ -278,6 +278,11 @@ const prelude = `(function () {
       if (typeof name !== "string") {
         return intrinsicPromiseReject(new IntrinsicTypeError(${JSON.stringify(JsonBoundary.missingCallName)}))
       }
+      try {
+        assertWellFormed(name)
+      } catch (error) {
+        return intrinsicPromiseReject(new IntrinsicTypeError(${JSON.stringify(JsonBoundary.missingCallName)}))
+      }
       var encoded
       try {
         encoded = encodeInput(input === undefined ? null : input)

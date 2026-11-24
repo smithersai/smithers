@@ -152,14 +152,15 @@ export function resolveLink(
   const base = bare.startsWith("/") ? [] : parentOf(from).split("/").filter(Boolean);
   const resolved = [...base];
   for (const raw of bare.split("/")) {
-    if (raw === "" || raw === ".") continue;
-    if (raw === "..") {
+    if (raw === "") continue;
+    const segment = decode(raw);
+    if (segment === undefined || segment.includes("/") || segment.includes("\0")) return undefined;
+    if (segment === ".") continue;
+    if (segment === "..") {
       if (resolved.length === 0) return undefined;
       resolved.pop();
       continue;
     }
-    const segment = decode(raw);
-    if (segment === undefined) return undefined;
     resolved.push(segment);
   }
   const path = resolved.join("/");
