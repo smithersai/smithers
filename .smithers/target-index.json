@@ -51583,11 +51583,35 @@
       },
       {
         "kind": "file",
+        "path": "packages/smithers/agent/examples/use-cases/extract-intent/src/assemble.d.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/examples/use-cases/extract-intent/src/assemble.d.vibe.ts"
+      },
+      {
+        "kind": "file",
         "path": "packages/smithers/agent/examples/use-cases/extract-intent/src/assemble.vibe"
       },
       {
         "kind": "file",
+        "path": "packages/smithers/agent/examples/use-cases/extract-intent/src/collect.d.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/examples/use-cases/extract-intent/src/collect.d.vibe.ts"
+      },
+      {
+        "kind": "file",
         "path": "packages/smithers/agent/examples/use-cases/extract-intent/src/collect.vibe"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/examples/use-cases/extract-intent/src/flow.d.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/examples/use-cases/extract-intent/src/flow.d.vibe.ts"
       },
       {
         "kind": "file",
@@ -51599,11 +51623,35 @@
       },
       {
         "kind": "file",
+        "path": "packages/smithers/agent/examples/use-cases/extract-intent/src/label.d.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/examples/use-cases/extract-intent/src/label.d.vibe.ts"
+      },
+      {
+        "kind": "file",
         "path": "packages/smithers/agent/examples/use-cases/extract-intent/src/label.vibe"
       },
       {
         "kind": "file",
+        "path": "packages/smithers/agent/examples/use-cases/extract-intent/src/main.d.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/examples/use-cases/extract-intent/src/main.d.vibe.ts"
+      },
+      {
+        "kind": "file",
         "path": "packages/smithers/agent/examples/use-cases/extract-intent/src/main.vibe"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/examples/use-cases/extract-intent/src/prepare.d.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/examples/use-cases/extract-intent/src/prepare.d.vibe.ts"
       },
       {
         "kind": "file",
@@ -62011,6 +62059,9 @@
       "//packages/effect-electric:sources-packages-fuzz",
       "//packages/effect-electric:sources-packages-smithers-flows-database",
       "//packages/effect-tanstack-db:lib"
+    ],
+    "hosts": [
+      "linux"
     ],
     "source": {
       "file": "packages/effect-electric/PACKAGE.ts"
@@ -110350,6 +110401,9 @@
     "outputs": [],
     "dependencies": [
       "//packages/smithers/flows/jj-wasm:nativeSources"
+    ],
+    "hosts": [
+      "linux"
     ],
     "source": {
       "file": "packages/smithers/flows/jj-wasm/PACKAGE.ts"

@@ -3,11 +3,11 @@ import { ModelRequest } from "@smthrs/model"
 import * as Evaluator from "@smthrs/model/Evaluator"
 import { Arbitrary, Effect, Exit, Layer, Schema } from "effect"
 import { describe, expect, it } from "vitest"
+import * as Refusal from "../src/internal/refusal.ts"
+import * as UnfinishedWork from "../src/internal/unfinishedWork.ts"
 import * as NarrowedCheck from "../src/NarrowedCheck.ts"
 import * as Steering from "../src/Steering.ts"
 import * as TruncatedOutput from "../src/TruncatedOutput.ts"
-import * as Refusal from "../src/internal/refusal.ts"
-import * as UnfinishedWork from "../src/internal/unfinishedWork.ts"
 
 const seed = Number(process.env.EFFECT_FUZZ_SEED ?? "20261143")
 const baseExecutions = Number(process.env.EFFECT_FUZZ_EXECUTIONS ?? "100")
@@ -37,7 +37,10 @@ describe("Harness Wave 9 deep fuzzing", () => {
           Effect.gen(function*() {
             const evalLayer = evalFails
               ? Evaluator.layerUnavailable("down")
-              : Layer.succeed(Evaluator.Evaluator)(Evaluator.Evaluator.of({ evaluate: () => Effect.succeed({ answers: { unfinished: { type: "boolean", probability: prob } }, latencyMs: 2 }) }))
+              : Layer.succeed(Evaluator.Evaluator)(Evaluator.Evaluator.of({
+                evaluate: () =>
+                  Effect.succeed({ answers: { unfinished: { type: "boolean", probability: prob } }, latencyMs: 2 })
+              }))
 
             const evidence = {
               task: "Fix all tests",
@@ -176,8 +179,18 @@ describe("Harness Wave 9 deep fuzzing", () => {
 
             // Steering
             let q = Steering.empty()
-            q = Steering.enqueue(q, { _tag: "Insert", delivery: "steer", admittedAt: 100, message: ModelRequest.Message.user("focus") })
-            q = Steering.enqueue(q, { _tag: "Insert", delivery: "queue", admittedAt: 200, message: ModelRequest.Message.user("next") })
+            q = Steering.enqueue(q, {
+              _tag: "Insert",
+              delivery: "steer",
+              admittedAt: 100,
+              message: ModelRequest.Message.user("focus")
+            })
+            q = Steering.enqueue(q, {
+              _tag: "Insert",
+              delivery: "queue",
+              admittedAt: 200,
+              message: ModelRequest.Message.user("next")
+            })
             q = Steering.enqueue(q, { _tag: "SeatChange", delivery: "steer", admittedAt: 300, seat: "openai:gpt-5" })
             q = Steering.enqueue(q, { _tag: "ThinkingChange", delivery: "steer", admittedAt: 400, thinking: "high" })
             const drain = Steering.drainAtClose(q, cutoff, wouldIdle)
@@ -186,14 +199,21 @@ describe("Harness Wave 9 deep fuzzing", () => {
             expect(rec.seatChanges.length).toBe(drain.seatChanges.length)
             const tl = Steering.timeLeft(leftMs, budgetMs)
             expect(tl).toContain("Time left:")
-            const wrapped = Steering.withTimeLeft(Steering.makeNoop(), { startedAt: Date.now() - Math.max(0, budgetMs - leftMs), budgetMs })
+            const wrapped = Steering.withTimeLeft(Steering.makeNoop(), {
+              startedAt: Date.now() - Math.max(0, budgetMs - leftMs),
+              budgetMs
+            })
             const timedDrain = yield* wrapped.drain({ boundary: "b-1", wouldIdle })
             if (wouldIdle) {
               expect(timedDrain.notes).toBeUndefined()
             } else {
               expect(timedDrain.notes?.length).toBe(1)
             }
-            const parkedDrain = yield* wrapped.drain({ boundary: "b-2", wouldIdle: false, park: { reason: "waiting-input", message: "need input" } })
+            const parkedDrain = yield* wrapped.drain({
+              boundary: "b-2",
+              wouldIdle: false,
+              park: { reason: "waiting-input", message: "need input" }
+            })
             expect(parkedDrain.notes).toBeUndefined()
 
             // TruncatedOutput

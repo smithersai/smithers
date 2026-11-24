@@ -198,7 +198,7 @@ describe("@smthrs/platform-node Wave 7 deep fuzz (ProcessReaper, DestinationProx
             arb,
             ({ mode, token }) =>
               Effect.gen(function*() {
-                const dir = mkdtempSync(join(tmpdir(), "dest-proxy-w7-"))
+                const dir = mkdtempSync(join(tmpdir(), "dp-"))
                 const sock = join(dir, "proxy.sock")
                 const goodAuth = "Basic " + Buffer.from(`broker:${token}`).toString("base64")
                 const wrongAuth = "Basic " + Buffer.from("broker:wrong-token").toString("base64")

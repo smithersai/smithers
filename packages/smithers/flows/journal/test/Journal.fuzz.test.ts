@@ -2467,6 +2467,7 @@ describe("@smthrs/journal SqlJournal fuzz invariants", () => {
                 }
               })
               let captures = 0
+              const captureStarted = yield* Deferred.make<void>()
               const db = yield* Layer.build(migratedDb())
               const sql = Context.get(db, SqlClient.SqlClient)
 
@@ -2480,7 +2481,12 @@ describe("@smthrs/journal SqlJournal fuzz invariants", () => {
                     capture: (_runId, upTo) => {
                       captures++
                       if (captureMode === "fail") return Effect.fail(new Error("capture failed"))
-                      if (captureMode === "timeout") return Effect.sleep(Duration.seconds(45)).pipe(Effect.as({ upTo }))
+                      if (captureMode === "timeout") {
+                        return Deferred.succeed(captureStarted, undefined).pipe(
+                          Effect.andThen(Effect.sleep(Duration.seconds(45))),
+                          Effect.as({ upTo })
+                        )
+                      }
                       return Effect.succeed({ capturedUpTo: upTo })
                     }
                   }
@@ -2514,7 +2520,10 @@ describe("@smthrs/journal SqlJournal fuzz invariants", () => {
                   }
                   yield* j.flush
                 }).pipe(Effect.forkChild({ startImmediately: true }))
-                // Advance virtual clock so 30s capture timeout fires cleanly
+                // Wait until capture actually enters Effect.sleep (critical on Postgres where
+                // async I/O takes real wall time before capture runs), then advance TestClock.
+                yield* Deferred.await(captureStarted)
+                yield* Effect.yieldNow
                 for (let step = 0; step < 5; step++) {
                   yield* TestClock.adjust(Duration.seconds(10))
                   yield* Effect.yieldNow

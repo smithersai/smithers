@@ -37,6 +37,14 @@ jobs:
           node-version: 26.5.0
           cache: pnpm
       - run: pnpm install --frozen-lockfile --ignore-scripts
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
+      - name: Install native smithers-jj-export
+        run: |
+          rustup toolchain install '1.98.0' --profile minimal
+          cargo +1.98.0 build --locked -p 'smithers-ffi' --bin 'smithers-jj-export'
+          mkdir -p "$RUNNER_TEMP/smithers-native"
+          install -m 755 "target/debug/smithers-jj-export" "$RUNNER_TEMP/smithers-native/smithers-jj-export"
+          printf '%s=%s\n' 'SMITHERS_WORKSPACE_JJ_EXPORT_BINARY' "$RUNNER_TEMP/smithers-native/smithers-jj-export" >> "$GITHUB_ENV"
       - name: Measure cold, warmup and repeated warm fixtures without result-cache reuse
         env:
           SMITHERS_BENCH_ARTIFACT_DIR: ${{ github.workspace }}/reliability-artifacts/bench
@@ -74,6 +82,14 @@ jobs:
           node-version: ${{ matrix.node }}
           cache: pnpm
       - run: pnpm install --frozen-lockfile --ignore-scripts
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
+      - name: Install native smithers-jj-export
+        run: |
+          rustup toolchain install '1.98.0' --profile minimal
+          cargo +1.98.0 build --locked -p 'smithers-ffi' --bin 'smithers-jj-export'
+          mkdir -p "$RUNNER_TEMP/smithers-native"
+          install -m 755 "target/debug/smithers-jj-export" "$RUNNER_TEMP/smithers-native/smithers-jj-export"
+          printf '%s=%s\n' 'SMITHERS_WORKSPACE_JJ_EXPORT_BINARY' "$RUNNER_TEMP/smithers-native/smithers-jj-export" >> "$GITHUB_ENV"
       - name: Record the deterministic soak workload
         run: |
           mkdir -p reliability-artifacts/sync
@@ -125,6 +141,14 @@ jobs:
           appendFileSync(process.env.GITHUB_ENV, configuration)
           console.log(configuration)
           JS
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
+      - name: Install native smithers-jj-export
+        run: |
+          rustup toolchain install '1.98.0' --profile minimal
+          cargo +1.98.0 build --locked -p 'smithers-ffi' --bin 'smithers-jj-export'
+          mkdir -p "$RUNNER_TEMP/smithers-native"
+          install -m 755 "target/debug/smithers-jj-export" "$RUNNER_TEMP/smithers-native/smithers-jj-export"
+          printf '%s=%s\n' 'SMITHERS_WORKSPACE_JJ_EXPORT_BINARY' "$RUNNER_TEMP/smithers-native/smithers-jj-export" >> "$GITHUB_ENV"
       - name: Run generated durable histories
         env:
           SMITHERS_FUZZ_ARTIFACT_DIR: ${{ github.workspace }}/reliability-artifacts
@@ -213,6 +237,13 @@ jobs:
       - name: Install pinned Rust toolchain
         run: rustup toolchain install
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
+      - name: Install native smithers-jj-export
+        run: |
+          rustup toolchain install '1.98.0' --profile minimal
+          cargo +1.98.0 build --locked -p 'smithers-ffi' --bin 'smithers-jj-export'
+          mkdir -p "$RUNNER_TEMP/smithers-native"
+          install -m 755 "target/debug/smithers-jj-export" "$RUNNER_TEMP/smithers-native/smithers-jj-export"
+          printf '%s=%s\n' 'SMITHERS_WORKSPACE_JJ_EXPORT_BINARY' "$RUNNER_TEMP/smithers-native/smithers-jj-export" >> "$GITHUB_ENV"
       - name: Execute and verify parser, native and WASM ABI tiers
         env:
           REQUESTED_SEED: ${{ inputs.seed }}

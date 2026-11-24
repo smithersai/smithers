@@ -358,31 +358,35 @@ exec "${process.execPath}" -e "setInterval(() => {}, 1000)"
           Effect.sync(() => {
             const cleanNote = note.replace(/[\r\n|"]/g, "x")
             const jsonl = [
-              `BENCH_METRIC ${JSON.stringify({
-                name: "full-row",
-                suite: "core",
-                hz: hz1,
-                minMs: mean1 * 0.5,
-                maxMs: mean1 * 1.5,
-                meanMs: mean1,
-                p75Ms: mean1 * 1.1,
-                p99Ms: mean1 * 1.4,
-                samples: 20,
-                rme: "±1.2%",
-                note: cleanNote || "fast"
-              })}`,
+              `BENCH_METRIC ${
+                JSON.stringify({
+                  name: "full-row",
+                  suite: "core",
+                  hz: hz1,
+                  minMs: mean1 * 0.5,
+                  maxMs: mean1 * 1.5,
+                  meanMs: mean1,
+                  p75Ms: mean1 * 1.1,
+                  p99Ms: mean1 * 1.4,
+                  samples: 20,
+                  rme: "±1.2%",
+                  note: cleanNote || "fast"
+                })
+              }`,
               `BENCH_METRIC ${JSON.stringify({ name: "mean-only", meanMs: mean1 })}`,
               `BENCH_METRIC ${JSON.stringify({ name: "bare-row" })}`,
-              `BENCH_METRIC ${JSON.stringify({
-                name: "bad-nums",
-                hz: "NaN",
-                minMs: null,
-                maxMs: null,
-                meanMs: null,
-                p75Ms: null,
-                rme: "",
-                note: ""
-              })}`,
+              `BENCH_METRIC ${
+                JSON.stringify({
+                  name: "bad-nums",
+                  hz: "NaN",
+                  minMs: null,
+                  maxMs: null,
+                  meanMs: null,
+                  p75Ms: null,
+                  rme: "",
+                  note: ""
+                })
+              }`,
               "BENCH_METRIC {not-json"
             ].join("\n")
 
@@ -390,7 +394,9 @@ exec "${process.execPath}" -e "setInterval(() => {}, 1000)"
               " ✓ single-heading",
               " ✓ root > nested > suite",
               "   name                  hz     min     max    mean     p75     p99    p995    p999     rme  samples",
-              ` · tbl-full        ${hz1.toFixed(2)}  0.1000  2.0000  ${mean1.toFixed(4)}  0.5000  1.5000  1.8000  1.9000  ±1.10%      100   ${cleanNote || "fastest"}`,
+              ` · tbl-full        ${hz1.toFixed(2)}  0.1000  2.0000  ${
+                mean1.toFixed(4)
+              }  0.5000  1.5000  1.8000  1.9000  ±1.10%      100   ${cleanNote || "fastest"}`,
               " · tbl-bad         1000.00  0.1  0.2  0.15  0.16  0.18  ±1.0%  10",
               "plain non-table line that resets inTable"
             ].join("\n")
@@ -465,262 +471,286 @@ exec "${process.execPath}" -e "setInterval(() => {}, 1000)"
     assertPassed(report)
   }, 60_000)
 
-  it("KnownRed, Shards, Diagnostic, ApprovalBridge, RecordStore, CacheAdmin, DeclarationLabels & Dependencies", async () => {
-    const arb = Arbitrary.schema(Schema.Struct({
-      shardBad: Schema.String.pipe(Schema.check(Schema.isMaxLength(12))),
-      idx: Schema.Int.pipe(Schema.check(Schema.isBetween({ minimum: 0, maximum: 5 })))
-    }))
-    const report = await Effect.runPromise(
-      Fuzz.run(
-        arb,
-        ({ shardBad, idx }) =>
-          Effect.sync(() => {
-            expect(() =>
-              KnownRed.parse("kr.json", JSON.stringify([{
-                label: "//a:b",
-                reason: "r",
-                owner: "o",
-                expires: "2099-01-01",
-                platforms: []
-              }]))
-            ).toThrow(KnownRed.KnownRedError)
-            expect(() =>
-              KnownRed.parse("kr.json", JSON.stringify([{
-                label: "//a:b",
-                reason: "r",
-                owner: "o",
-                expires: "2099-01-01",
-                failureDigest: "md5:1234"
-              }]))
-            ).toThrow(KnownRed.KnownRedError)
-
-            const judged = KnownRed.judge(
-              {
-                ok: false,
-                counts: { hit: 0, miss: 0, failed: 0, skipped: 0, cancelled: 1 },
-                results: [
-                  { label: "//a:c", target: "T", status: "cancelled", key: "k", durationMs: 1 },
-                  { label: "//a:g", target: "T", status: "hit", key: "k2", durationMs: 1 }
-                ]
-              } as never,
-              {
-                source: "kr.json",
-                entries: [
-                  { label: "//a:g", reason: "old", owner: "o", expires: "2099-01-01", issue: "#1", failureDigest: `sha256:${"0".repeat(64)}` },
-                  { label: "//a:exp", reason: "exp", owner: "o", expires: "2000-01-01", issue: "#2", failureDigest: `sha256:${"1".repeat(64)}` }
-                ]
-              },
-              { today: "2026-11-24", platform: "linux" }
-            )
-            expect(judged.ok).toBe(false)
-            const desc = KnownRed.describe(judged.knownRed)
-            expect(desc.some((l) => l.includes("green again"))).toBe(true)
-
-            const badShards = ["0/0", "2/2", "0/9999", "abc", `bad-${shardBad}`]
-            expect(() => Shards.parse(badShards[idx % badShards.length]!)).toThrow()
-            const measured = new Map<string, number>()
-            expect(() => Shards.measure("t.json", "{not-json", measured)).toThrow()
-            expect(() => Shards.measure("t.json", JSON.stringify({}), measured)).toThrow()
-            expect(() => Shards.measure("t.json", JSON.stringify({ results: [{ label: 1 }] }), measured)).toThrow()
-            expect(() =>
-              Shards.measure(
-                "t.json",
-                JSON.stringify({ results: [{ label: "//a:b", status: "ran", durationMs: -5 }] }),
-                measured
-              )
-            ).toThrow()
-
-            const sel = Shards.select(
-              {
-                roots: ["//a:b", "//a:c"],
-                targets: [
-                  {
+  it(
+    "KnownRed, Shards, Diagnostic, ApprovalBridge, RecordStore, CacheAdmin, DeclarationLabels & Dependencies",
+    async () => {
+      const arb = Arbitrary.schema(Schema.Struct({
+        shardBad: Schema.String.pipe(Schema.check(Schema.isMaxLength(12))),
+        idx: Schema.Int.pipe(Schema.check(Schema.isBetween({ minimum: 0, maximum: 5 })))
+      }))
+      const report = await Effect.runPromise(
+        Fuzz.run(
+          arb,
+          ({ shardBad, idx }) =>
+            Effect.sync(() => {
+              expect(() =>
+                KnownRed.parse(
+                  "kr.json",
+                  JSON.stringify([{
                     label: "//a:b",
-                    target: "T",
-                    kinds: ["test"],
-                    attrs: {},
-                    dependencies: [],
-                    declaredInputs: [],
-                    declaredOutputs: undefined,
-                    cacheable: true,
-                    cacheLookup: "not-wired",
-                    wouldRun: true,
-                    keyMaterial: {} as never,
-                    keyPreview: "k1"
-                  },
-                  {
-                    label: "//a:c",
-                    target: "T",
-                    kinds: ["test"],
-                    attrs: {},
-                    dependencies: ["//a:b"],
-                    declaredInputs: [],
-                    declaredOutputs: undefined,
-                    cacheable: true,
-                    cacheLookup: "not-wired",
-                    wouldRun: true,
-                    keyMaterial: {} as never,
-                    keyPreview: "k2"
-                  }
-                ],
-                edges: [{ from: "//a:c", to: "//a:b" }],
-                warnings: []
-              },
-              Shards.parse("0/2")
-            )
-            expect(sel.targets.length).toBeGreaterThanOrEqual(0)
+                    reason: "r",
+                    owner: "o",
+                    expires: "2099-01-01",
+                    platforms: []
+                  }])
+                )
+              ).toThrow(KnownRed.KnownRedError)
+              expect(() =>
+                KnownRed.parse(
+                  "kr.json",
+                  JSON.stringify([{
+                    label: "//a:b",
+                    reason: "r",
+                    owner: "o",
+                    expires: "2099-01-01",
+                    failureDigest: "md5:1234"
+                  }])
+                )
+              ).toThrow(KnownRed.KnownRedError)
 
-            const longSurrogate = `${"a".repeat(64 * 1024 - 4)}\ud83d\ude00tail`
-            const boundedMsg = Diagnostic.message(longSurrogate, "fb")
-            expect(boundedMsg.endsWith("...")).toBe(true)
-            expect(Diagnostic.message(Symbol("sym"), "fb")).toContain("Symbol")
-            const hostileErr = new Error("ok")
-            Object.defineProperty(hostileErr, "message", {
-              get: () => {
-                throw new Error("getter-boom")
-              }
-            })
-            expect(Diagnostic.message(hostileErr, "fb")).toBe("fb")
-            const hostileObj = {}
-            Object.defineProperty(hostileObj, "message", {
-              get: () => {
-                throw new Error("boom")
-              }
-            })
-            expect(Diagnostic.message(hostileObj, "fb")).toBe("fb")
-            expect(Diagnostic.message(new Proxy(new Error("p"), {}), "fb")).toBe("fb")
-            expect(Diagnostic.report(hostileErr, { verbose: false })).toBeTruthy()
-            expect(Diagnostic.report(hostileErr, { verbose: true })).toBeTruthy()
+              const judged = KnownRed.judge(
+                {
+                  ok: false,
+                  counts: { hit: 0, miss: 0, failed: 0, skipped: 0, cancelled: 1 },
+                  results: [
+                    { label: "//a:c", target: "T", status: "cancelled", key: "k", durationMs: 1 },
+                    { label: "//a:g", target: "T", status: "hit", key: "k2", durationMs: 1 }
+                  ]
+                } as never,
+                {
+                  source: "kr.json",
+                  entries: [
+                    {
+                      label: "//a:g",
+                      reason: "old",
+                      owner: "o",
+                      expires: "2099-01-01",
+                      issue: "#1",
+                      failureDigest: `sha256:${"0".repeat(64)}`
+                    },
+                    {
+                      label: "//a:exp",
+                      reason: "exp",
+                      owner: "o",
+                      expires: "2000-01-01",
+                      issue: "#2",
+                      failureDigest: `sha256:${"1".repeat(64)}`
+                    }
+                  ]
+                },
+                { today: "2026-11-24", platform: "linux" }
+              )
+              expect(judged.ok).toBe(false)
+              const desc = KnownRed.describe(judged.knownRed)
+              expect(desc.some((l) => l.includes("green again"))).toBe(true)
 
-            // DeclarationLabels expansion over unlabeled dependency
-            const dep = S.Shell.Test({ shell: "true" })
-            const rootTarget = S.Shell.Test({ shell: "true", data: [dep] })
-            const fakeIndex = {
-              targets: () => [{ label: "//pkg:root", target: rootTarget }],
-              labelOf: (t: Target.AnyTarget) => (t === rootTarget ? "//pkg:root" : undefined)
-            } as unknown as PackageIndex
-            const lbls = declarationLabels(fakeIndex, () => "pkg")
-            expect(lbls.get(rootTarget)).toBe("//pkg:root")
-            expect(lbls.get(dep)).toBeDefined()
-            return true
-          }),
-        { executions: fastExecutions, seed: 9104 }
-      )
-    )
-    assertPassed(report)
+              const badShards = ["0/0", "2/2", "0/9999", "abc", `bad-${shardBad}`]
+              expect(() => Shards.parse(badShards[idx % badShards.length]!)).toThrow()
+              const measured = new Map<string, number>()
+              expect(() => Shards.measure("t.json", "{not-json", measured)).toThrow()
+              expect(() => Shards.measure("t.json", JSON.stringify({}), measured)).toThrow()
+              expect(() => Shards.measure("t.json", JSON.stringify({ results: [{ label: 1 }] }), measured)).toThrow()
+              expect(() =>
+                Shards.measure(
+                  "t.json",
+                  JSON.stringify({ results: [{ label: "//a:b", status: "ran", durationMs: -5 }] }),
+                  measured
+                )
+              ).toThrow()
 
-    await withTempDir("wave9a-io-", async (dir) => {
-      await expect(KnownRed.read(dir, ".")).rejects.toThrow(KnownRed.KnownRedError)
+              const sel = Shards.select(
+                {
+                  roots: ["//a:b", "//a:c"],
+                  targets: [
+                    {
+                      label: "//a:b",
+                      target: "T",
+                      kinds: ["test"],
+                      attrs: {},
+                      dependencies: [],
+                      declaredInputs: [],
+                      declaredOutputs: undefined,
+                      cacheable: true,
+                      cacheLookup: "not-wired",
+                      wouldRun: true,
+                      keyMaterial: {} as never,
+                      keyPreview: "k1"
+                    },
+                    {
+                      label: "//a:c",
+                      target: "T",
+                      kinds: ["test"],
+                      attrs: {},
+                      dependencies: ["//a:b"],
+                      declaredInputs: [],
+                      declaredOutputs: undefined,
+                      cacheable: true,
+                      cacheLookup: "not-wired",
+                      wouldRun: true,
+                      keyMaterial: {} as never,
+                      keyPreview: "k2"
+                    }
+                  ],
+                  edges: [{ from: "//a:c", to: "//a:b" }],
+                  warnings: []
+                },
+                Shards.parse("0/2")
+              )
+              expect(sel.targets.length).toBeGreaterThanOrEqual(0)
 
-      const winEp = await ApprovalBridge.endpoint("win32")
-      expect(winEp.path).toContain("\\\\.\\pipe\\")
-      await winEp.remove()
+              const longSurrogate = `${"a".repeat(64 * 1024 - 4)}\ud83d\ude00tail`
+              const boundedMsg = Diagnostic.message(longSurrogate, "fb")
+              expect(boundedMsg.endsWith("...")).toBe(true)
+              expect(Diagnostic.message(Symbol("sym"), "fb")).toContain("Symbol")
+              const hostileErr = new Error("ok")
+              Object.defineProperty(hostileErr, "message", {
+                get: () => {
+                  throw new Error("getter-boom")
+                }
+              })
+              expect(Diagnostic.message(hostileErr, "fb")).toBe("fb")
+              const hostileObj = {}
+              Object.defineProperty(hostileObj, "message", {
+                get: () => {
+                  throw new Error("boom")
+                }
+              })
+              expect(Diagnostic.message(hostileObj, "fb")).toBe("fb")
+              expect(Diagnostic.message(new Proxy(new Error("p"), {}), "fb")).toBe("fb")
+              expect(Diagnostic.report(hostileErr, { verbose: false })).toBeTruthy()
+              expect(Diagnostic.report(hostileErr, { verbose: true })).toBeTruthy()
 
-      const bridge = await ApprovalBridge.serve({
-        granted: async () => true
-      })
-      try {
-        const rawEnv = bridge.environment[ApprovalBridge.environmentName]!
-        const atIdx = rawEnv.indexOf("@")
-        const parsedEnv = { token: rawEnv.slice(0, atIdx), socket: rawEnv.slice(atIdx + 1) }
-        const sendRaw = (payload: string) =>
-          new Promise<string>((resolve, reject) => {
-            const sock = Net.createConnection(parsedEnv.socket)
-            let out = ""
-            sock.on("data", (d) => {
-              out += d.toString("utf8")
-            })
-            sock.on("end", () => resolve(out))
-            sock.on("error", reject)
-            sock.once("connect", () => sock.write(payload))
-          })
-
-        const unauth = JSON.parse(await sendRaw(`${JSON.stringify({ token: "wrong", request: {} })}\n`))
-        expect(unauth.error).toBe("unauthorized")
-        const malformed = JSON.parse(
-          await sendRaw(`${JSON.stringify({ token: parsedEnv.token, request: { bad: true } })}\n`)
+              // DeclarationLabels expansion over unlabeled dependency
+              const dep = S.Shell.Test({ shell: "true" })
+              const rootTarget = S.Shell.Test({ shell: "true", data: [dep] })
+              const fakeIndex = {
+                targets: () => [{ label: "//pkg:root", target: rootTarget }],
+                labelOf: (t: Target.AnyTarget) => (t === rootTarget ? "//pkg:root" : undefined)
+              } as unknown as PackageIndex
+              const lbls = declarationLabels(fakeIndex, () => "pkg")
+              expect(lbls.get(rootTarget)).toBe("//pkg:root")
+              expect(lbls.get(dep)).toBeDefined()
+              return true
+            }),
+          { executions: fastExecutions, seed: 9104 }
         )
-        expect(malformed.error).toBe("malformed request")
-        const badJson = JSON.parse(await sendRaw("not-json\n"))
-        expect(badJson.error).toBeTruthy()
-        const oversize = await sendRaw("x".repeat(70 * 1024)).catch(() => "")
-        expect(typeof oversize).toBe("string")
-
-        const badClient = ApprovalBridge.client(`wrong@${parsedEnv.socket}`)!
-        await expect(
-          badClient.granted({
-            rule: "test",
-            label: "//a:b",
-            action: "publish",
-            subject: "pkg"
-          } as never)
-        ).rejects.toThrow()
-      } finally {
-        await bridge.close()
-      }
-
-      const cas = NodePath.join(dir, "cas")
-      await Fs.mkdir(cas, { recursive: true })
-      const longPath = `${"a".repeat(200)}/${"b".repeat(200)}/file.txt`
-      const body = {
-        reads: [[longPath, "d".repeat(64)]] as const,
-        lists: [] as const,
-        from: [["//a:b", "prev"]] as const,
-        given: [[longPath, "v".repeat(70_000), 0]] as const
-      }
-      const bigRecord: ObservedReads.Record = {
-        ...body,
-        id: ObservedReads.idOf(body)
-      }
-      const ref = await RecordStore.write(cas, bigRecord)
-      const loaded = await RecordStore.read(cas, ref)
-      expect(loaded?.given?.[0]?.[0]).toBe(longPath)
-      const badLoaded = await RecordStore.read(cas, { ...ref, digest: "0".repeat(64) })
-      expect(badLoaded).toBeUndefined()
-
-      const extraContent = [
-        JSON.stringify({ id: "i", reads: 0, lists: 0, given: 0 }),
-        JSON.stringify(["unexpected", "extra", 0])
-      ].join("\n") + "\n"
-      const extraDigest = createHash("sha256").update(extraContent).digest("hex")
-      const extraShard = NodePath.join(cas, extraDigest.slice(0, 2))
-      await Fs.mkdir(extraShard, { recursive: true })
-      await Fs.writeFile(NodePath.join(extraShard, extraDigest), extraContent)
-      const extraLoaded = await RecordStore.read(cas, {
-        digest: extraDigest,
-        bytes: Buffer.byteLength(extraContent),
-        paths: 1
-      })
-      expect(extraLoaded).toBeUndefined()
-
-      const fileAsDir = NodePath.join(dir, "not-a-dir")
-      await Fs.writeFile(fileAsDir, "x")
-      await expect(CacheAdmin.directory(dir, "not-a-dir/sub")).rejects.toThrow()
-
-      const cacheDir = NodePath.join(dir, ".cache")
-      const shardDir = NodePath.join(cacheDir, "results", "aa")
-      await Fs.mkdir(shardDir, { recursive: true })
-      const badEntryPath = NodePath.join(shardDir, `${"a".repeat(64)}.json`)
-      await Fs.writeFile(
-        badEntryPath,
-        JSON.stringify({ label: "//a:b", target: "T", exitOk: "not-bool", storedAt: "2026-01-01T00:00:00.000Z" })
       )
-      const inspected = await CacheAdmin.inspect(dir, ".cache", "a".repeat(64))
-      expect(inspected).toBeUndefined()
-      const removed = await CacheAdmin.remove({
-        root: dir,
-        cacheDirectory: ".cache",
-        maxSizeBytes: 0,
-        dryRun: false,
-        yes: true
-      })
-      expect(removed.removed).toBeGreaterThanOrEqual(0)
+      assertPassed(report)
 
-      const badPkg = NodePath.join(dir, "PACKAGE.ts")
-      await Fs.writeFile(badPkg, `import * as X from "definitely-missing-pkg-wave9a"\nexport default {}\n`)
-      expect(() => assertDeclarationDependencies([badPkg], { bootstrap: false })).toThrow()
-    })
-  }, 60_000)
+      await withTempDir("wave9a-io-", async (dir) => {
+        await expect(KnownRed.read(dir, ".")).rejects.toThrow(KnownRed.KnownRedError)
+
+        const winEp = await ApprovalBridge.endpoint("win32")
+        expect(winEp.path).toContain("\\\\.\\pipe\\")
+        await winEp.remove()
+
+        const bridge = await ApprovalBridge.serve({
+          granted: async () => true
+        })
+        try {
+          const rawEnv = bridge.environment[ApprovalBridge.environmentName]!
+          const atIdx = rawEnv.indexOf("@")
+          const parsedEnv = { token: rawEnv.slice(0, atIdx), socket: rawEnv.slice(atIdx + 1) }
+          const sendRaw = (payload: string) =>
+            new Promise<string>((resolve, reject) => {
+              const sock = Net.createConnection(parsedEnv.socket)
+              let out = ""
+              sock.on("data", (d) => {
+                out += d.toString("utf8")
+              })
+              sock.on("end", () => resolve(out))
+              sock.on("error", reject)
+              sock.once("connect", () => sock.write(payload))
+            })
+
+          const unauth = JSON.parse(await sendRaw(`${JSON.stringify({ token: "wrong", request: {} })}\n`))
+          expect(unauth.error).toBe("unauthorized")
+          const malformed = JSON.parse(
+            await sendRaw(`${JSON.stringify({ token: parsedEnv.token, request: { bad: true } })}\n`)
+          )
+          expect(malformed.error).toBe("malformed request")
+          const badJson = JSON.parse(await sendRaw("not-json\n"))
+          expect(badJson.error).toBeTruthy()
+          const oversize = await sendRaw("x".repeat(70 * 1024)).catch(() => "")
+          expect(typeof oversize).toBe("string")
+
+          const badClient = ApprovalBridge.client(`wrong@${parsedEnv.socket}`)!
+          await expect(
+            badClient.granted({
+              rule: "test",
+              label: "//a:b",
+              action: "publish",
+              subject: "pkg"
+            } as never)
+          ).rejects.toThrow()
+        } finally {
+          await bridge.close()
+        }
+
+        const cas = NodePath.join(dir, "cas")
+        await Fs.mkdir(cas, { recursive: true })
+        const longPath = `${"a".repeat(200)}/${"b".repeat(200)}/file.txt`
+        const body = {
+          reads: [[longPath, "d".repeat(64)]] as const,
+          lists: [] as const,
+          from: [["//a:b", "prev"]] as const,
+          given: [[longPath, "v".repeat(70_000), 0]] as const
+        }
+        const bigRecord: ObservedReads.Record = {
+          ...body,
+          id: ObservedReads.idOf(body)
+        }
+        const ref = await RecordStore.write(cas, bigRecord)
+        const loaded = await RecordStore.read(cas, ref)
+        expect(loaded?.given?.[0]?.[0]).toBe(longPath)
+        const badLoaded = await RecordStore.read(cas, { ...ref, digest: "0".repeat(64) })
+        expect(badLoaded).toBeUndefined()
+
+        const extraContent = [
+          JSON.stringify({ id: "i", reads: 0, lists: 0, given: 0 }),
+          JSON.stringify(["unexpected", "extra", 0])
+        ].join("\n") + "\n"
+        const extraDigest = createHash("sha256").update(extraContent).digest("hex")
+        const extraShard = NodePath.join(cas, extraDigest.slice(0, 2))
+        await Fs.mkdir(extraShard, { recursive: true })
+        await Fs.writeFile(NodePath.join(extraShard, extraDigest), extraContent)
+        const extraLoaded = await RecordStore.read(cas, {
+          digest: extraDigest,
+          bytes: Buffer.byteLength(extraContent),
+          paths: 1
+        })
+        expect(extraLoaded).toBeUndefined()
+
+        const fileAsDir = NodePath.join(dir, "not-a-dir")
+        await Fs.writeFile(fileAsDir, "x")
+        await expect(CacheAdmin.directory(dir, "not-a-dir/sub")).rejects.toThrow()
+
+        const cacheDir = NodePath.join(dir, ".cache")
+        const shardDir = NodePath.join(cacheDir, "results", "aa")
+        await Fs.mkdir(shardDir, { recursive: true })
+        const badEntryPath = NodePath.join(shardDir, `${"a".repeat(64)}.json`)
+        await Fs.writeFile(
+          badEntryPath,
+          JSON.stringify({ label: "//a:b", target: "T", exitOk: "not-bool", storedAt: "2026-01-01T00:00:00.000Z" })
+        )
+        const inspected = await CacheAdmin.inspect(dir, ".cache", "a".repeat(64))
+        expect(inspected).toBeUndefined()
+        const removed = await CacheAdmin.remove({
+          root: dir,
+          cacheDirectory: ".cache",
+          maxSizeBytes: 0,
+          dryRun: false,
+          yes: true
+        })
+        expect(removed.removed).toBeGreaterThanOrEqual(0)
+
+        const badPkg = NodePath.join(dir, "PACKAGE.ts")
+        await Fs.writeFile(badPkg, `import * as X from "definitely-missing-pkg-wave9a"\nexport default {}\n`)
+        expect(() => assertDeclarationDependencies([badPkg], { bootstrap: false })).toThrow()
+      })
+    },
+    60_000
+  )
 
   it("engine.ts validation/toolchain branches & GithubRender error/toolchain matrix", async () => {
     const arb = Arbitrary.schema(Schema.Struct({
@@ -797,17 +827,25 @@ exec "${process.execPath}" -e "setInterval(() => {}, 1000)"
                 repository: "git+https://github.com/org/repo.git",
                 cache: WorkspaceDeclaration.Cache({ directory: ".flows" }),
                 runtime: nodeRuntime,
-                packageManager: PackageManager.Pnpm({ manifest: S.file("//package.json"), lockfile: S.file("//pnpm-lock.yaml") }),
+                packageManager: PackageManager.Pnpm({
+                  manifest: S.file("//package.json"),
+                  lockfile: S.file("//pnpm-lock.yaml")
+                }),
                 nodeModules: nm
               })
               const setup1 = GithubTarget.Setup({})
               const setup2 = GithubTarget.Setup({ cacheUrl: S.Secret("CACHE_URL") })
-                            const pushMain = { push: { branches: ["main"] } }
+              const pushMain = { push: { branches: ["main"] } }
               const wf1 = GithubTarget.Workflow({ name: "ci", on: pushMain, setup: setup1, run: [runTarget] })
               const wfDup = GithubTarget.Workflow({ name: "ci", on: pushMain, run: [runTarget] })
               const wf2 = GithubTarget.Workflow({ name: "ci2", on: pushMain, setup: setup2, run: [runTarget] })
-              const wfBadSetup = GithubTarget.Workflow({ name: "ci3", on: pushMain, setup: runTarget, run: [runTarget] })
-                            const ciBun = GithubTarget.CiGen({
+              const wfBadSetup = GithubTarget.Workflow({
+                name: "ci3",
+                on: pushMain,
+                setup: runTarget,
+                run: [runTarget]
+              })
+              const ciBun = GithubTarget.CiGen({
                 workflows: [wf1],
                 preserve: ["workflows/keep-*.yml", "workflows/re[a-z]+(1)?.yml"]
               })
@@ -875,7 +913,9 @@ exec "${process.execPath}" -e "setInterval(() => {}, 1000)"
                 })
               ).toThrow(GithubRender.GithubRenderError)
               const ciWithSetup = GithubTarget.CiGen({
-                workflows: [GithubTarget.Workflow({ name: "cron-daily", on: pushMain, setup: setup1, run: [runTarget] })]
+                workflows: [
+                  GithubTarget.Workflow({ name: "cron-daily", on: pushMain, setup: setup1, run: [runTarget] })
+                ]
               })
               expect(() =>
                 GithubRender.render({
@@ -904,7 +944,11 @@ exec "${process.execPath}" -e "setInterval(() => {}, 1000)"
                 })
               ).toThrow(GithubRender.GithubRenderError)
               expect(() => {
-                const wfCtrl = GithubTarget.Workflow({ name: "ci", on: { push: { branches: ["main\x01"] } }, run: [runTarget] })
+                const wfCtrl = GithubTarget.Workflow({
+                  name: "ci",
+                  on: { push: { branches: ["main\x01"] } },
+                  run: [runTarget]
+                })
                 const ciCtrl = GithubTarget.CiGen({ workflows: [wfCtrl] })
                 return GithubRender.render({
                   ciGen: ciCtrl,
@@ -915,7 +959,14 @@ exec "${process.execPath}" -e "setInterval(() => {}, 1000)"
                   }
                 })
               }).toThrow(GithubRender.GithubRenderError)
-              expect(() => GithubRender.render({ ciGen: ciBun, workspace: wsBun, packageDir: ".github", resolve: { labelOf: () => undefined } })).toThrow(GithubRender.GithubRenderError)
+              expect(() =>
+                GithubRender.render({
+                  ciGen: ciBun,
+                  workspace: wsBun,
+                  packageDir: ".github",
+                  resolve: { labelOf: () => undefined }
+                })
+              ).toThrow(GithubRender.GithubRenderError)
             }
             return true
           }),
@@ -931,15 +982,26 @@ exec "${process.execPath}" -e "setInterval(() => {}, 1000)"
     await expect(Engine.runInstall("/tmp", { signal: {} as never })).rejects.toThrow(TypeError)
     await expect(Engine.runInstall("/tmp", { toolchain: { runtime: "" } as never })).rejects.toThrow(TypeError)
     await expect(
-      Engine.runInstall("/tmp", new Proxy({}, {
-        ownKeys: () => {
-          throw new Error("bad")
-        }
-      }) as never)
+      Engine.runInstall(
+        "/tmp",
+        new Proxy({}, {
+          ownKeys: () => {
+            throw new Error("bad")
+          }
+        }) as never
+      )
     ).rejects.toThrow(TypeError)
 
     await withTempDir("wave9a-gh-", async (dir) => {
-      await expect(GithubRender.write(dir, { label: "//.github:ci", packageDir: ".github", changes: ["workflows/**"], preserve: [], files: [{ path: "../escape/ci.yml", content: "x" }] })).rejects.toThrow(GithubRender.GithubRenderError)
+      await expect(
+        GithubRender.write(dir, {
+          label: "//.github:ci",
+          packageDir: ".github",
+          changes: ["workflows/**"],
+          preserve: [],
+          files: [{ path: "../escape/ci.yml", content: "x" }]
+        })
+      ).rejects.toThrow(GithubRender.GithubRenderError)
       await expect(
         GithubRender.write(dir, {
           label: "//.github:ci",

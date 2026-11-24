@@ -159,7 +159,7 @@ describe("SandboxedFlow carries the caller's capability ceiling to the guest", (
         expect(local).toBeInstanceOf(PermissionDenied)
         const shape = (denied: unknown) => {
           const { capability, code, reason } = denied as PermissionDenied
-          return { code, reason, action: capability.action, file: capability.resource.split("/").at(-1) }
+          return { code, reason, action: capability.action, file: capability.resource.split(/[/\\]/).at(-1) }
         }
         expect(shape(remote)).toEqual({
           code: "permission_denied",

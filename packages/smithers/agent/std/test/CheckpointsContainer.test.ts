@@ -296,5 +296,14 @@ describe("Checkpoints in a container with a filesystem of its own", () => {
         .pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, Layer.succeed(Container.Container)(missing))))
     )
     expect(JSON.stringify(exit)).toContain("Command failed to start")
+
+    const timedOut = Container.make({
+      exec: () => Effect.succeed({ file: process.execPath, args: ["-e", "process.exit(124)"] })
+    })
+    const timeoutExit = await Effect.runPromiseExit(
+      Effect.flatMap(Checkpoints.makeContainer({ container: "task" }), (store) => store.capture("cp-1-1"))
+        .pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, Layer.succeed(Container.Container)(timedOut))))
+    )
+    expect(JSON.stringify(timeoutExit)).toContain("git in container task timed out")
   }, 60_000)
 })

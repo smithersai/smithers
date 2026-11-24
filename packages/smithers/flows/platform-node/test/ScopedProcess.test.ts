@@ -331,7 +331,11 @@ describe("supervisor startup budget", () => {
   it("bounds the start by the caller's budget, and a generous one starts the command", async () => {
     const spawned = (startupTimeoutMs: number) =>
       Effect.runPromiseExit(Effect.scoped(Effect.gen(function*() {
-        const handle = yield* ScopedProcess.spawn({ command: "/bin/sh", args: ["-c", "exit 0"], startupTimeoutMs })
+        const handle = yield* ScopedProcess.spawn({
+          command: process.execPath,
+          args: ["-e", "process.exit(0)"],
+          startupTimeoutMs
+        })
         return yield* ScopedProcess.status(handle)
       })))
     // 1 ms misses before the owner can connect: a typed, retryable miss whose
@@ -344,7 +348,8 @@ describe("supervisor startup budget", () => {
     if (Exit.isFailure(starved)) {
       expect(Cause.hasDies(starved.cause)).toBe(false)
       expect(Cause.squash(starved.cause)).toMatchObject({
-        message: "TimedOut: ChildProcess.spawn (/bin/sh): The machine was too busy to start the process within 0.001 s",
+        message:
+          `TimedOut: ChildProcess.spawn (${process.execPath}): The machine was too busy to start the process within 0.001 s`,
         reason: { _tag: "TimedOut", cause: { code: "startup_timeout" } }
       })
     }
@@ -352,8 +357,8 @@ describe("supervisor startup budget", () => {
     expect(Exit.isSuccess(started), String(started)).toBe(true)
     const activated = await Effect.runPromiseExit(Effect.scoped(Effect.gen(function*() {
       const handle = yield* ScopedProcess.spawn({
-        command: "/bin/sh",
-        args: ["-c", "exit 0"],
+        command: process.execPath,
+        args: ["-e", "process.exit(0)"],
         startupTimeoutMs: 120_000,
         activationTimeoutMs: 120_000
       })

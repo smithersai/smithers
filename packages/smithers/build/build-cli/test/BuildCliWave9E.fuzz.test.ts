@@ -77,45 +77,49 @@ const serveCli = async (
 }
 
 describe("BuildCliWave9E Cli, PackageLoader, PackageDiscovery, GitCommit, RepoResolution, TestUnits, InstalledTree", () => {
-  it("Cli commands: cache clear/status, show workspace, info, affected, units, bench regression, remote/results errors", async () => {
-    await withTempDir("wave9e-cli-", async (dir) => {
-      const nonWs = NodePath.join(dir, "empty")
-      await Fs.mkdir(nonWs, { recursive: true })
+  it(
+    "Cli commands: cache clear/status, show workspace, info, affected, units, bench regression, remote/results errors",
+    async () => {
+      await withTempDir("wave9e-cli-", async (dir) => {
+        const nonWs = NodePath.join(dir, "empty")
+        await Fs.mkdir(nonWs, { recursive: true })
 
-      // Commands outside a workspace -> not a workspace error paths
-      for (const cmd of [
-        ["cache", "status"],
-        ["cache", "clear", "--yes"],
-        ["show", "workspace"],
-        ["info"],
-        ["affected", "--base", "HEAD", "--plan"]
-      ]) {
-        const res = await serveCli(nonWs, cmd)
-        expect(res.exitCode !== 0 || res.stdout.includes("error") || res.stderr.length > 0).toBe(true)
-      }
+        // Commands outside a workspace -> not a workspace error paths
+        for (
+          const cmd of [
+            ["cache", "status"],
+            ["cache", "clear", "--yes"],
+            ["show", "workspace"],
+            ["info"],
+            ["affected", "--base", "HEAD", "--plan"]
+          ]
+        ) {
+          const res = await serveCli(nonWs, cmd)
+          expect(res.exitCode !== 0 || res.stdout.includes("error") || res.stderr.length > 0).toBe(true)
+        }
 
-      // Create a minimal real workspace with a fast passing test, failing test, and bench target
-      const ws = NodePath.join(dir, "ws")
-      await Fs.mkdir(NodePath.join(ws, ".smithers"), { recursive: true })
-      await Fs.mkdir(NodePath.join(ws, "pkg"), { recursive: true })
-      NodeChildProcess.execFileSync("jj", ["git", "init", "--colocate"], { cwd: ws, stdio: "ignore" })
-      // Point @smthrs/targets & effect via symlinked node_modules so PACKAGE.ts imports resolve instantly
-      const repoRoot = NodePath.resolve(import.meta.dirname, "../../../../..")
-      await Fs.symlink(NodePath.join(repoRoot, "node_modules"), NodePath.join(ws, "node_modules"))
+        // Create a minimal real workspace with a fast passing test, failing test, and bench target
+        const ws = NodePath.join(dir, "ws")
+        await Fs.mkdir(NodePath.join(ws, ".smithers"), { recursive: true })
+        await Fs.mkdir(NodePath.join(ws, "pkg"), { recursive: true })
+        NodeChildProcess.execFileSync("jj", ["git", "init", "--colocate"], { cwd: ws, stdio: "ignore" })
+        // Point @smthrs/targets & effect via symlinked node_modules so PACKAGE.ts imports resolve instantly
+        const repoRoot = NodePath.resolve(import.meta.dirname, "../../../../..")
+        await Fs.symlink(NodePath.join(repoRoot, "node_modules"), NodePath.join(ws, "node_modules"))
 
-      await Fs.writeFile(
-        NodePath.join(ws, ".smithers", "WORKSPACE.ts"),
-        `import { Smithers as S } from "@smthrs/targets"
+        await Fs.writeFile(
+          NodePath.join(ws, ".smithers", "WORKSPACE.ts"),
+          `import { Smithers as S } from "@smthrs/targets"
 export const Workspace = S.Workspace("wave9e", {
   repository: "git+https://github.com/org/wave9e.git",
   cache: S.Cache({ directory: ".cache" }),
   owners: { owners: ["root-owner"] }
 })
 `
-      )
-      await Fs.writeFile(
-        NodePath.join(ws, "pkg", "PACKAGE.ts"),
-        `import { Smithers as S } from "@smthrs/targets"
+        )
+        await Fs.writeFile(
+          NodePath.join(ws, "pkg", "PACKAGE.ts"),
+          `import { Smithers as S } from "@smthrs/targets"
 export const Package = S.Package({
   targets: {
   ok: S.Shell.Test({ shell: "echo ok", sandbox: "none" }),
@@ -131,89 +135,91 @@ export const Package = S.Package({
   }
 })
 `
-      )
-      NodeChildProcess.execFileSync("jj", ["new", "-m", "init"], { cwd: ws, stdio: "ignore" })
+        )
+        NodeChildProcess.execFileSync("jj", ["new", "-m", "init"], { cwd: ws, stdio: "ignore" })
 
-      // show workspace & info (human + TTY + agent)
-      const showHuman = await serveCli(ws, ["show", "workspace"], { audience: "human", isTTY: true })
-      expect(showHuman.stdout.length).toBeGreaterThan(0)
-      const showAgent = await serveCli(ws, ["show", "workspace"], { audience: "agent" })
-      expect(showAgent.stdout.length).toBeGreaterThan(0)
-      const infoRes = await serveCli(ws, ["info"], { audience: "human" })
-      expect(infoRes.stdout.length).toBeGreaterThan(0)
-      const ownersRes = await serveCli(ws, ["owners", "pkg/PACKAGE.ts"], { audience: "agent" })
-      expect(ownersRes.stdout.length).toBeGreaterThan(0)
+        // show workspace & info (human + TTY + agent)
+        const showHuman = await serveCli(ws, ["show", "workspace"], { audience: "human", isTTY: true })
+        expect(showHuman.stdout.length).toBeGreaterThan(0)
+        const showAgent = await serveCli(ws, ["show", "workspace"], { audience: "agent" })
+        expect(showAgent.stdout.length).toBeGreaterThan(0)
+        const infoRes = await serveCli(ws, ["info"], { audience: "human" })
+        expect(infoRes.stdout.length).toBeGreaterThan(0)
+        const ownersRes = await serveCli(ws, ["owners", "pkg/PACKAGE.ts"], { audience: "agent" })
+        expect(ownersRes.stdout.length).toBeGreaterThan(0)
 
-      // cache clear without --yes (error) & with --dry-run & with --yes
-      const clearErr = await serveCli(ws, ["cache", "clear"])
-      expect(clearErr.exitCode !== 0 || clearErr.stdout.includes("error")).toBe(true)
-      const clearDry = await serveCli(ws, ["cache", "clear", "--dry-run"])
-      if (clearDry.exitCode !== 0) throw new Error(`clearDry failed: ${clearDry.stdout} | ${clearDry.stderr}`)
-      const clearYes = await serveCli(ws, ["cache", "clear", "--yes"])
-      expect(clearYes.exitCode).toBe(0)
+        // cache clear without --yes (error) & with --dry-run & with --yes
+        const clearErr = await serveCli(ws, ["cache", "clear"])
+        expect(clearErr.exitCode !== 0 || clearErr.stdout.includes("error")).toBe(true)
+        const clearDry = await serveCli(ws, ["cache", "clear", "--dry-run"])
+        if (clearDry.exitCode !== 0) throw new Error(`clearDry failed: ${clearDry.stdout} | ${clearDry.stderr}`)
+        const clearYes = await serveCli(ws, ["cache", "clear", "--yes"])
+        expect(clearYes.exitCode).toBe(0)
 
-      // test --remote unknown -> CommandRefused
-      const badRemote = await serveCli(ws, ["test", "//pkg:ok", "--remote", "nope"])
-      expect(badRemote.exitCode !== 0 || badRemote.stdout.includes("error")).toBe(true)
+        // test --remote unknown -> CommandRefused
+        const badRemote = await serveCli(ws, ["test", "//pkg:ok", "--remote", "nope"])
+        expect(badRemote.exitCode !== 0 || badRemote.stdout.includes("error")).toBe(true)
 
-      // test --results-file pointing to a directory -> results file error
-      const resDir = NodePath.join(dir, "results-is-dir")
-      await Fs.mkdir(resDir, { recursive: true })
-      const badResultsFile = await serveCli(ws, ["test", "//pkg:ok", "--results-file", resDir])
-      expect(badResultsFile.exitCode !== 0 || badResultsFile.stdout.includes("results file")).toBe(true)
+        // test --results-file pointing to a directory -> results file error
+        const resDir = NodePath.join(dir, "results-is-dir")
+        await Fs.mkdir(resDir, { recursive: true })
+        const badResultsFile = await serveCli(ws, ["test", "//pkg:ok", "--results-file", resDir])
+        expect(badResultsFile.exitCode !== 0 || badResultsFile.stdout.includes("results file")).toBe(true)
 
-      // test --results-file valid file + human failure with config.exit(1)
-      const validResults = NodePath.join(dir, "results.json")
-      const okRun = await serveCli(ws, ["test", "//pkg:ok", "--results-file", validResults], {
-        audience: "human",
-        passExit: true
-      })
-      expect(okRun.exitCode).toBe(0)
-      const failHuman = await serveCli(ws, ["test", "//pkg:fail"], { audience: "human", passExit: true })
-      expect(failHuman.exitCode).toBe(1)
-
-      // affected --base HEAD --plan --shard 0/2 + --lifecycle experimental
-      await Fs.writeFile(NodePath.join(ws, "pkg", "extra.txt"), "touched\n")
-      const affPlan = await serveCli(ws, ["affected", "--base", "HEAD", "--plan", "--shard", "0/2"])
-      expect(affPlan.stdout.length).toBeGreaterThan(0)
-      const affLife = await serveCli(ws, ["affected", "--base", "HEAD", "--plan", "--lifecycle", "experimental"])
-      expect(affLife.stdout.length).toBeGreaterThan(0)
-
-      // units failure path
-      const unitsFail = await serveCli(ws, ["units", "//pkg:ok"])
-      expect(unitsFail.exitCode !== 0 || unitsFail.stdout.includes("units_failed")).toBe(true)
-
-      // bench regression: baseline hz=1000 vs current hz=100 -> -90% regression (human + agent!)
-      const baseBench = NodePath.join(dir, "baseline-bench.json")
-      await Fs.writeFile(
-        baseBench,
-        JSON.stringify({
-          results: [
-            {
-              label: "//pkg:bench",
-              status: "ran",
-              benchmarks: [{ name: "op", hz: 1000, meanMs: 1 }]
-            }
-          ]
+        // test --results-file valid file + human failure with config.exit(1)
+        const validResults = NodePath.join(dir, "results.json")
+        const okRun = await serveCli(ws, ["test", "//pkg:ok", "--results-file", validResults], {
+          audience: "human",
+          passExit: true
         })
-      )
-      const benchHuman = await serveCli(
-        ws,
-        ["test", "//pkg:bench", "--baseline", baseBench, "--fail-on-regression", "5"],
-        { audience: "human", passExit: true }
-      )
-      expect(benchHuman.exitCode).toBe(1)
-      const benchAgent = await serveCli(
-        ws,
-        ["test", "//pkg:bench", "--baseline", baseBench, "--fail-on-regression", "5"],
-        { audience: "agent" }
-      )
-      expect(benchAgent.exitCode !== 0 || benchAgent.stdout.includes("bench_regression")).toBe(true)
+        expect(okRun.exitCode).toBe(0)
+        const failHuman = await serveCli(ws, ["test", "//pkg:fail"], { audience: "human", passExit: true })
+        expect(failHuman.exitCode).toBe(1)
 
-      // approvalRevision on target without approval: "required"
-      await expect(Cli.approvalRevision("//pkg:ok", { workspace: ws }, {})).rejects.toThrow(/approval/)
-    })
-  }, 120_000)
+        // affected --base HEAD --plan --shard 0/2 + --lifecycle experimental
+        await Fs.writeFile(NodePath.join(ws, "pkg", "extra.txt"), "touched\n")
+        const affPlan = await serveCli(ws, ["affected", "--base", "HEAD", "--plan", "--shard", "0/2"])
+        expect(affPlan.stdout.length).toBeGreaterThan(0)
+        const affLife = await serveCli(ws, ["affected", "--base", "HEAD", "--plan", "--lifecycle", "experimental"])
+        expect(affLife.stdout.length).toBeGreaterThan(0)
+
+        // units failure path
+        const unitsFail = await serveCli(ws, ["units", "//pkg:ok"])
+        expect(unitsFail.exitCode !== 0 || unitsFail.stdout.includes("units_failed")).toBe(true)
+
+        // bench regression: baseline hz=1000 vs current hz=100 -> -90% regression (human + agent!)
+        const baseBench = NodePath.join(dir, "baseline-bench.json")
+        await Fs.writeFile(
+          baseBench,
+          JSON.stringify({
+            results: [
+              {
+                label: "//pkg:bench",
+                status: "ran",
+                benchmarks: [{ name: "op", hz: 1000, meanMs: 1 }]
+              }
+            ]
+          })
+        )
+        const benchHuman = await serveCli(
+          ws,
+          ["test", "//pkg:bench", "--baseline", baseBench, "--fail-on-regression", "5"],
+          { audience: "human", passExit: true }
+        )
+        expect(benchHuman.exitCode).toBe(1)
+        const benchAgent = await serveCli(
+          ws,
+          ["test", "//pkg:bench", "--baseline", baseBench, "--fail-on-regression", "5"],
+          { audience: "agent" }
+        )
+        expect(benchAgent.exitCode !== 0 || benchAgent.stdout.includes("bench_regression")).toBe(true)
+
+        // approvalRevision on target without approval: "required"
+        await expect(Cli.approvalRevision("//pkg:ok", { workspace: ws }, {})).rejects.toThrow(/approval/)
+      })
+    },
+    120_000
+  )
 
   it("PackageLoader errors, PackageDiscovery limits, GitCommit, RepoResolution, TestUnits, InstalledTree", async () => {
     await withTempDir("wave9e-mods-", async (dir) => {

@@ -98,12 +98,18 @@ describe("BuildCliWave9H medium module sweep", () => {
       await Fs.writeFile(NodePath.join(cas, badIdxDigest), badIdxText)
       await expect(OutputCas.readIndex(cas, badIdxDigest)).rejects.toThrow(/invalid CAS chunk index/)
 
-      await expect(OutputCas.prepare(cas, { kind: "target-outputs", manifests: [], files: [null] })).rejects.toThrow(/invalid output file/)
+      await expect(OutputCas.prepare(cas, { kind: "target-outputs", manifests: [], files: [null] })).rejects.toThrow(
+        /invalid output file/
+      )
       await expect(
         OutputCas.prepare(cas, { kind: "target-outputs", manifests: [], files: [{ path: "a", digest: "not-hex" }] })
       ).rejects.toThrow(/invalid output content identity/)
-      await expect(OutputCas.prepare(cas, { kind: "target-outputs", manifests: "not-array" })).rejects.toThrow(/invalid output manifests/)
-      await expect(OutputCas.prepare(cas, { kind: "target-outputs", manifests: [{ outDir: 123 }] })).rejects.toThrow(/invalid output manifest/)
+      await expect(OutputCas.prepare(cas, { kind: "target-outputs", manifests: "not-array" })).rejects.toThrow(
+        /invalid output manifests/
+      )
+      await expect(OutputCas.prepare(cas, { kind: "target-outputs", manifests: [{ outDir: 123 }] })).rejects.toThrow(
+        /invalid output manifest/
+      )
 
       const chunkBytesData = Buffer.from("hello")
       const chunkHash = createHash("sha256").update(chunkBytesData).digest("hex")
@@ -161,7 +167,9 @@ describe("BuildCliWave9H medium module sweep", () => {
 
       expect(DockerExec.pushTagRefusal("bad tag!")).toBeDefined()
       expect(DockerExec.loadedImageIds("Loaded image ID: sha256:abc\nLoaded image: img:1\n").length).toBeGreaterThan(0)
-      expect(DockerExec.pushedDigest(`latest: digest: sha256:${"b".repeat(64)} size: 123`)).toBe(`sha256:${"b".repeat(64)}`)
+      expect(DockerExec.pushedDigest(`latest: digest: sha256:${"b".repeat(64)} size: 123`)).toBe(
+        `sha256:${"b".repeat(64)}`
+      )
       expect(DockerExec.manifestConfig("not-json")).toBeUndefined()
     })
   }, 60_000)
@@ -176,21 +184,32 @@ describe("BuildCliWave9H medium module sweep", () => {
           SkillsInstallRule.install(req, { root: dir, home: homeDir }).pipe(Effect.provide(NodeServices.layer))
         )
 
-      expect((await runSkills({ library: { root: "missing-lib" }, select: ["a"], agents: ["claude"] }))._tag).toBe("Failure")
+      expect((await runSkills({ library: { root: "missing-lib" }, select: ["a"], agents: ["claude"] }))._tag).toBe(
+        "Failure"
+      )
 
       await Fs.mkdir(NodePath.join(libDir, "good-skill"), { recursive: true })
-      await Fs.writeFile(NodePath.join(libDir, "good-skill", "SKILL.md"), "---\nname: good-skill\ndescription: test\n---\n# Good\n")
-      expect((await runSkills({ library: { root: "skills" }, select: ["nope"], agents: ["claude"] }))._tag).toBe("Failure")
+      await Fs.writeFile(
+        NodePath.join(libDir, "good-skill", "SKILL.md"),
+        "---\nname: good-skill\ndescription: test\n---\n# Good\n"
+      )
+      expect((await runSkills({ library: { root: "skills" }, select: ["nope"], agents: ["claude"] }))._tag).toBe(
+        "Failure"
+      )
 
       const realTarget = NodePath.join(dir, "real-agent-skills")
       await Fs.mkdir(realTarget, { recursive: true })
       await Fs.mkdir(NodePath.join(homeDir, ".claude"), { recursive: true })
       await Fs.symlink(realTarget, NodePath.join(homeDir, ".claude", "skills"))
-      expect((await runSkills({ library: { root: "skills" }, select: ["good-skill"], agents: ["claude"] }))._tag).toBe("Failure")
+      expect((await runSkills({ library: { root: "skills" }, select: ["good-skill"], agents: ["claude"] }))._tag).toBe(
+        "Failure"
+      )
       await Fs.rm(NodePath.join(homeDir, ".claude", "skills"))
 
       await Fs.mkdir(NodePath.join(homeDir, ".claude", "skills", "good-skill"), { recursive: true })
-      expect((await runSkills({ library: { root: "skills" }, select: ["good-skill"], agents: ["claude"] }))._tag).toBe("Failure")
+      expect((await runSkills({ library: { root: "skills" }, select: ["good-skill"], agents: ["claude"] }))._tag).toBe(
+        "Failure"
+      )
       await Fs.rm(NodePath.join(homeDir, ".claude", "skills", "good-skill"), { recursive: true, force: true })
 
       const okSk = await runSkills({ library: { root: "skills" }, select: ["good-skill"], agents: ["claude"] })
@@ -198,8 +217,12 @@ describe("BuildCliWave9H medium module sweep", () => {
 
       // FetchExecutor
       expect(FetchExecutor.redactUrl("not a url")).toBe("<unparsable url>")
-      expect(() => FetchExecutor.redirectTarget("https://example.com/a", "http://[bad")).toThrow(FetchExecutor.FetchError)
-      expect(() => FetchExecutor.redirectTarget("https://example.com/a", "ftp://example.com/b")).toThrow(FetchExecutor.FetchError)
+      expect(() => FetchExecutor.redirectTarget("https://example.com/a", "http://[bad")).toThrow(
+        FetchExecutor.FetchError
+      )
+      expect(() => FetchExecutor.redirectTarget("https://example.com/a", "ftp://example.com/b")).toThrow(
+        FetchExecutor.FetchError
+      )
 
       const srv = Http.createServer((req, res) => {
         if (req.url === "/404") {
@@ -343,15 +366,27 @@ describe("BuildCliWave9H medium module sweep", () => {
 
   it("CacheLocation, DprintPlugins, DigestIndexFile, GoCache, and AgentFake edge paths", async () => {
     await withTempDir("wave9h-part3-", async (dir) => {
-      expect(CacheLocation.userCacheDirectory({ platform: "darwin", home: "/Users/x", environment: {} })).toContain("Caches")
+      expect(CacheLocation.userCacheDirectory({ platform: "darwin", home: "/Users/x", environment: {} })).toContain(
+        "Caches"
+      )
       expect(
         CacheLocation.userCacheDirectory({ platform: "win32", home: "/Users/x", environment: { LOCALAPPDATA: "/App" } })
       ).toContain("App")
       expect(
-        CacheLocation.userCacheDirectory({ platform: "linux", home: "/home/x", environment: { XDG_CACHE_HOME: "/xdg" } })
+        CacheLocation.userCacheDirectory({
+          platform: "linux",
+          home: "/home/x",
+          environment: { XDG_CACHE_HOME: "/xdg" }
+        })
       ).toContain("/xdg")
       expect(
-        CacheLocation.resolve(dir, undefined, { directory: ".cache", outside: true }, "w", CacheLocation.ambientHost({}))
+        CacheLocation.resolve(
+          dir,
+          undefined,
+          { directory: ".cache", outside: true },
+          "w",
+          CacheLocation.ambientHost({})
+        )
       ).toBeTruthy()
       expect(CacheLocation.absolute(dir, ".cache")).toBe(NodePath.join(dir, ".cache"))
 
@@ -387,7 +422,8 @@ describe("BuildCliWave9H medium module sweep", () => {
       expect(evicted.removed).toBeGreaterThanOrEqual(0)
 
       expect(AgentFake.sessionTimeoutFromEnvironment({ [AgentFake.timeoutEnvironmentVariable]: "5000" })).toBe(5000)
-      expect(() => AgentFake.sessionTimeoutFromEnvironment({ [AgentFake.timeoutEnvironmentVariable]: "not-num" })).toThrow()
+      expect(() => AgentFake.sessionTimeoutFromEnvironment({ [AgentFake.timeoutEnvironmentVariable]: "not-num" }))
+        .toThrow()
       const scriptPath = NodePath.join(dir, "fake-agent.json")
       await Fs.writeFile(
         scriptPath,

@@ -1298,3 +1298,29 @@ it.effect("fails closed when directory metadata cannot be inspected", () =>
     expect(errorOf(exit)).toMatchObject({ code: "unavailable" })
     expect(host.writes).toEqual([])
   }))
+
+it.effect("stops ancestor sync walk when an ancestor refuses sync with PermissionDenied", () =>
+  Effect.gen(function*() {
+    const host = memoryFs()
+    const ancestor = ".flows"
+    const fs = {
+      ...host.fs,
+      open: (path: string, options?: Parameters<typeof host.fs.open>[1]) =>
+        host.fs.open(path, options).pipe(
+          Effect.map((file) =>
+            path === ancestor
+              ? {
+                ...file,
+                sync: Effect.fail(PlatformError.systemError({
+                  _tag: "PermissionDenied",
+                  module: "test",
+                  method: "sync"
+                }))
+              }
+              : file
+          )
+        )
+    }
+    const stored = yield* withCrypto(ArtifactStore.makeFileSystem(fs, hostPath).put(bytes(artifact)))
+    expect(stored).toMatch(/^[0-9a-f]{64}$/)
+  }))

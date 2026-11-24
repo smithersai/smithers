@@ -99,7 +99,7 @@ const readBack = <A>(filename: string, query: (database: DatabaseSync) => A): A 
   }
 }
 
-describe("a signalled host", () => {
+describe.skipIf(process.platform === "win32")("a signalled host", () => {
   it("releases the run it was driving and exits on its own", async () => {
     const filename = join(directory, "signal", "runtime.sqlite")
 

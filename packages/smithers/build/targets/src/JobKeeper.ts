@@ -761,6 +761,7 @@ export const commandLineOf = (pid: number): string =>
  */
 export const stillIn = (first: ReadonlyArray<number>): ReadonlyArray<Left> => {
   const own = namespaceOf(process.pid)
+  if (own === undefined) return []
   const spaces = new Set(first.map(namespaceOf).filter((space) => space !== undefined && space !== own))
   const pids = first.filter((pid) => namespaceOf(pid) === own)
   if (spaces.size > 0) {

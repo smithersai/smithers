@@ -1,8 +1,8 @@
-import * as NodeCrypto from "node:crypto"
 import { Fuzz } from "@smthrs/fuzz"
 import * as Input from "@smthrs/targets/Input"
 import { Arbitrary, Effect, Schema } from "effect"
 import * as NodeChildProcess from "node:child_process"
+import * as NodeCrypto from "node:crypto"
 import * as Fs from "node:fs/promises"
 import * as NodeHttp from "node:http"
 import * as Os from "node:os"
@@ -158,7 +158,10 @@ describe("BuildCliWave9J Resolver, PackageTree, Cache, Cli, GoExec deep sweep", 
                 JSON.stringify({ name: "pkg-null-exp", exports: null })
               )
 
-              await Fs.writeFile(NodePath.join(ws, "bad-imports/package.json"), JSON.stringify({ name: "bi", imports: "nope" }))
+              await Fs.writeFile(
+                NodePath.join(ws, "bad-imports/package.json"),
+                JSON.stringify({ name: "bi", imports: "nope" })
+              )
               await Fs.writeFile(NodePath.join(ws, "bad-imports/entry.ts"), `import "#foo"\n`)
               await Fs.writeFile(
                 NodePath.join(ws, "pat-imports/package.json"),
@@ -214,7 +217,9 @@ describe("BuildCliWave9J Resolver, PackageTree, Cache, Cli, GoExec deep sweep", 
               await expect(
                 Resolver.loadResolverConfig({ workspaceRoot: ws, tsconfig: "../outside.json" })
               ).rejects.toThrow(/outside the workspace/)
-              expect(() => Resolver.packageDirectoryOf(ws, NodePath.join(dir, "outside"))).toThrow(/outside the workspace/)
+              expect(() => Resolver.packageDirectoryOf(ws, NodePath.join(dir, "outside"))).toThrow(
+                /outside the workspace/
+              )
 
               await expect(
                 Resolver.expandAnchoredSources({
@@ -321,14 +326,24 @@ describe("BuildCliWave9J Resolver, PackageTree, Cache, Cli, GoExec deep sweep", 
 
               const badManifest = {
                 ...manifest,
-                entries: [{ kind: "file" as const, path: "../escape.txt", digest: "0".repeat(64), mode: 0o644, size: 1 }]
+                entries: [{
+                  kind: "file" as const,
+                  path: "../escape.txt",
+                  digest: "0".repeat(64),
+                  mode: 0o644,
+                  size: 1
+                }]
               }
-              await expect(PackageTree.materializeManifest(ws, cacheDir, badManifest as never)).rejects.toThrow(/leaves the outDir/)
+              await expect(PackageTree.materializeManifest(ws, cacheDir, badManifest as never)).rejects.toThrow(
+                /leaves the outDir/
+              )
 
               const lockOwner = NodeCrypto.createHash("sha256").update(NodePath.join(ws, "out")).digest("hex")
               const lockPath = NodePath.join(ws, `.smthrs-lock-${lockOwner}`)
               await Fs.mkdir(lockPath)
-              await expect(PackageTree.materializeManifest(ws, cacheDir, manifest)).rejects.toThrow(/publication lock exists/)
+              await expect(PackageTree.materializeManifest(ws, cacheDir, manifest)).rejects.toThrow(
+                /publication lock exists/
+              )
               await Fs.rmdir(lockPath)
             })
             return true
@@ -446,133 +461,151 @@ describe("BuildCliWave9J Resolver, PackageTree, Cache, Cli, GoExec deep sweep", 
     assertPassed(report)
   }, 60_000)
 
-  it("Cli errors, bench regression (human+agent), results-file fail, affected shard, review, target, GoExec", async () => {
-    const report = await Effect.runPromise(
-      Fuzz.run(
-        Arbitrary.schema(Schema.Literal(1)),
-        () =>
-          Effect.promise(async () => {
-            await withTempDir("wave9j-cli-", async (dir) => {
-              const emptyDir = NodePath.join(dir, "empty")
-              await Fs.mkdir(emptyDir, { recursive: true })
-              for (const cmd of [["index"], ["owners"], ["graph"], ["review", "--policy-revision", "HEAD", "--base", "HEAD"]]) {
-                const res = await serveCli(emptyDir, cmd)
-                expect(res.exitCode !== 0 || res.stdout.includes("error") || res.stderr.length > 0).toBe(true)
-              }
+  it(
+    "Cli errors, bench regression (human+agent), results-file fail, affected shard, review, target, GoExec",
+    async () => {
+      const report = await Effect.runPromise(
+        Fuzz.run(
+          Arbitrary.schema(Schema.Literal(1)),
+          () =>
+            Effect.promise(async () => {
+              await withTempDir("wave9j-cli-", async (dir) => {
+                const emptyDir = NodePath.join(dir, "empty")
+                await Fs.mkdir(emptyDir, { recursive: true })
+                for (
+                  const cmd of [["index"], ["owners"], ["graph"], [
+                    "review",
+                    "--policy-revision",
+                    "HEAD",
+                    "--base",
+                    "HEAD"
+                  ]]
+                ) {
+                  const res = await serveCli(emptyDir, cmd)
+                  expect(res.exitCode !== 0 || res.stdout.includes("error") || res.stderr.length > 0).toBe(true)
+                }
 
-              const ws = NodePath.join(dir, "ws")
-              await Fs.mkdir(NodePath.join(ws, "lib"), { recursive: true })
-              await Fs.mkdir(NodePath.join(ws, "app"), { recursive: true })
-              NodeChildProcess.execFileSync("jj", ["git", "init", "--colocate"], { cwd: ws, stdio: "ignore" })
-              await Fs.writeFile(
-                NodePath.join(ws, "WORKSPACE.ts"),
-                [
-                  `import { Smithers as S } from "@smthrs/targets"`,
-                  `export const Workspace = S.Workspace("cli9j", {`,
-                  `  repository: "git+https://github.com/org/cli9j.git",`,
-                  `  cache: S.Cache({ directory: ".cache" }),`,
-                  `  flags: S.Flags({ mode: "fast" })`,
-                  `})`
-                ].join("\n")
-              )
-              await Fs.writeFile(
-                NodePath.join(ws, "lib/PACKAGE.ts"),
-                [
-                  `import { Smithers as S } from "@smthrs/targets"`,
-                  `export const Package = S.Package({`,
-                  `  owners: { owners: ["core"] },`,
-                  `  targets: {`,
-                  `    ok: S.Shell.Test({ shell: "echo ok", data: [S.file("a.txt")] })`,
-                  `  }`,
-                  `})`
-                ].join("\n")
-              )
-              await Fs.writeFile(NodePath.join(ws, "lib/a.txt"), "v1\n")
-              await Fs.writeFile(
-                NodePath.join(ws, "app/PACKAGE.ts"),
-                [
-                  `import { Smithers as S } from "@smthrs/targets"`,
-                  `import { Package as Lib } from "../lib/PACKAGE.ts"`,
-                  `export const Package = S.Package({`,
-                  `  owners: { owners: ["app"] },`,
-                  `  targets: {`,
-                  `    fail: S.Shell.Test({ shell: "exit 1", data: [Lib.ok] }),`,
-                  `    benchTarget: S.Shell.Test({ shell: "printf 'BENCH_METRIC latency 100\\n'", data: [S.file("b.txt")] })`,
-                  `  }`,
-                  `})`
-                ].join("\n")
-              )
-              await Fs.writeFile(NodePath.join(ws, "app/b.txt"), "b1\n")
-              await PackageTree.runGit(ws, ["config", "user.email", "test@example.com"])
-              await PackageTree.runGit(ws, ["config", "user.name", "Test"])
-              await PackageTree.runGit(ws, ["add", "."])
-              await PackageTree.runGit(ws, ["commit", "-m", "init"])
+                const ws = NodePath.join(dir, "ws")
+                await Fs.mkdir(NodePath.join(ws, "lib"), { recursive: true })
+                await Fs.mkdir(NodePath.join(ws, "app"), { recursive: true })
+                NodeChildProcess.execFileSync("jj", ["git", "init", "--colocate"], { cwd: ws, stdio: "ignore" })
+                await Fs.writeFile(
+                  NodePath.join(ws, "WORKSPACE.ts"),
+                  [
+                    `import { Smithers as S } from "@smthrs/targets"`,
+                    `export const Workspace = S.Workspace("cli9j", {`,
+                    `  repository: "git+https://github.com/org/cli9j.git",`,
+                    `  cache: S.Cache({ directory: ".cache" }),`,
+                    `  flags: S.Flags({ mode: "fast" })`,
+                    `})`
+                  ].join("\n")
+                )
+                await Fs.writeFile(
+                  NodePath.join(ws, "lib/PACKAGE.ts"),
+                  [
+                    `import { Smithers as S } from "@smthrs/targets"`,
+                    `export const Package = S.Package({`,
+                    `  owners: { owners: ["core"] },`,
+                    `  targets: {`,
+                    `    ok: S.Shell.Test({ shell: "echo ok", data: [S.file("a.txt")] })`,
+                    `  }`,
+                    `})`
+                  ].join("\n")
+                )
+                await Fs.writeFile(NodePath.join(ws, "lib/a.txt"), "v1\n")
+                await Fs.writeFile(
+                  NodePath.join(ws, "app/PACKAGE.ts"),
+                  [
+                    `import { Smithers as S } from "@smthrs/targets"`,
+                    `import { Package as Lib } from "../lib/PACKAGE.ts"`,
+                    `export const Package = S.Package({`,
+                    `  owners: { owners: ["app"] },`,
+                    `  targets: {`,
+                    `    fail: S.Shell.Test({ shell: "exit 1", data: [Lib.ok] }),`,
+                    `    benchTarget: S.Shell.Test({ shell: "printf 'BENCH_METRIC latency 100\\n'", data: [S.file("b.txt")] })`,
+                    `  }`,
+                    `})`
+                  ].join("\n")
+                )
+                await Fs.writeFile(NodePath.join(ws, "app/b.txt"), "b1\n")
+                await PackageTree.runGit(ws, ["config", "user.email", "test@example.com"])
+                await PackageTree.runGit(ws, ["config", "user.name", "Test"])
+                await PackageTree.runGit(ws, ["add", "."])
+                await PackageTree.runGit(ws, ["commit", "-m", "init"])
 
-              const baselinePath = NodePath.join(dir, "baseline.json")
-              await Fs.writeFile(
-                baselinePath,
-                JSON.stringify({
-                  results: [{ label: "//app:benchTarget", status: "ran", output: { stdout: "BENCH_METRIC latency 1000\n" } }]
-                })
-              )
-              const benchAgent = await serveCli(ws, [
-                "test",
-                "//app:benchTarget",
-                "--baseline",
-                baselinePath,
-                "--fail-on-regression",
-                "5"
-              ])
-              expect(benchAgent.exitCode !== 0 || benchAgent.stdout.includes("regression")).toBe(true)
+                const baselinePath = NodePath.join(dir, "baseline.json")
+                await Fs.writeFile(
+                  baselinePath,
+                  JSON.stringify({
+                    results: [{
+                      label: "//app:benchTarget",
+                      status: "ran",
+                      output: { stdout: "BENCH_METRIC latency 1000\n" }
+                    }]
+                  })
+                )
+                const benchAgent = await serveCli(ws, [
+                  "test",
+                  "//app:benchTarget",
+                  "--baseline",
+                  baselinePath,
+                  "--fail-on-regression",
+                  "5"
+                ])
+                expect(benchAgent.exitCode !== 0 || benchAgent.stdout.includes("regression")).toBe(true)
 
-              const benchHuman = await serveCli(
-                ws,
-                ["test", "//app:benchTarget", "--baseline", baselinePath, "--fail-on-regression", "5"],
-                { audience: "human", passExit: true }
-              )
-              expect(benchHuman.exitCode === 1 || benchHuman.stderr.includes("regression")).toBe(true)
+                const benchHuman = await serveCli(
+                  ws,
+                  ["test", "//app:benchTarget", "--baseline", baselinePath, "--fail-on-regression", "5"],
+                  { audience: "human", passExit: true }
+                )
+                expect(benchHuman.exitCode === 1 || benchHuman.stderr.includes("regression")).toBe(true)
 
-              const failHuman = await serveCli(ws, ["test", "//app:fail"], { audience: "human", passExit: true })
-              expect(failHuman.exitCode).toBe(1)
+                const failHuman = await serveCli(ws, ["test", "//app:fail"], { audience: "human", passExit: true })
+                expect(failHuman.exitCode).toBe(1)
 
-              const badResultsDir = NodePath.join(dir, "dir-not-file")
-              await Fs.mkdir(badResultsDir)
-              const badResults = await serveCli(ws, ["test", "//lib:ok", "--results-file", badResultsDir])
-              expect(badResults.exitCode !== 0 || badResults.stdout.includes("results")).toBe(true)
+                const badResultsDir = NodePath.join(dir, "dir-not-file")
+                await Fs.mkdir(badResultsDir)
+                const badResults = await serveCli(ws, ["test", "//lib:ok", "--results-file", badResultsDir])
+                expect(badResults.exitCode !== 0 || badResults.stdout.includes("results")).toBe(true)
 
-              const badFlag = await serveCli(ws, ["test", "//lib:ok", "--flag", "noSuchFlag=1"])
-              expect(badFlag.exitCode !== 0 || badFlag.stdout.includes("noSuchFlag")).toBe(true)
+                const badFlag = await serveCli(ws, ["test", "//lib:ok", "--flag", "noSuchFlag=1"])
+                expect(badFlag.exitCode !== 0 || badFlag.stdout.includes("noSuchFlag")).toBe(true)
 
-              const bareTarget = await serveCli(ws, ["target", "//lib:ok"])
-              if (bareTarget.exitCode !== 0) throw new Error("BARE: " + bareTarget.stdout + " | " + bareTarget.stderr)
+                const bareTarget = await serveCli(ws, ["target", "//lib:ok"])
+                if (bareTarget.exitCode !== 0) throw new Error("BARE: " + bareTarget.stdout + " | " + bareTarget.stderr)
 
-              const ownersRes = await serveCli(ws, ["owners", "app/b.txt"])
-              expect(ownersRes.stdout).toContain("app")
+                const ownersRes = await serveCli(ws, ["owners", "app/b.txt"])
+                expect(ownersRes.stdout).toContain("app")
 
-              await Fs.writeFile(NodePath.join(ws, "lib/a.txt"), "v2\n")
-              const affShard = await serveCli(ws, ["affected", "test", "//...", "--base", "HEAD", "--shard", "1/2"])
-              expect(affShard.stdout.length + affShard.stderr.length).toBeGreaterThan(0)
-              const affPlan = await serveCli(ws, ["affected", "test", "//...", "--base", "HEAD", "--plan"])
-              expect(affPlan.stdout.length + affPlan.stderr.length).toBeGreaterThan(0)
-              const affBadBase = await serveCli(ws, ["affected", "//...", "--base", "nonexistent-ref-9j"])
-              expect(affBadBase.exitCode !== 0 || affBadBase.stdout.includes("error")).toBe(true)
+                await Fs.writeFile(NodePath.join(ws, "lib/a.txt"), "v2\n")
+                const affShard = await serveCli(ws, ["affected", "test", "//...", "--base", "HEAD", "--shard", "1/2"])
+                expect(affShard.stdout.length + affShard.stderr.length).toBeGreaterThan(0)
+                const affPlan = await serveCli(ws, ["affected", "test", "//...", "--base", "HEAD", "--plan"])
+                expect(affPlan.stdout.length + affPlan.stderr.length).toBeGreaterThan(0)
+                const affBadBase = await serveCli(ws, ["affected", "//...", "--base", "nonexistent-ref-9j"])
+                expect(affBadBase.exitCode !== 0 || affBadBase.stdout.includes("error")).toBe(true)
 
-              // GoExec error & probe edge cases
-              const goRes = await GoExec.resolveGo({ workspaceRoot: ws, packagePath: "", environment: { PATH: "" } } as never)
-              expect(goRes.ok).toBe(false)
-              const nixRes = await GoExec.resolveNix("missing-bin", {
-                workspaceRoot: ws,
-                packagePath: "",
-                environment: { PATH: "" },
-                nix: { hash: "abc", inputs: [], path: [ws] }
-              } as never)
-              expect(nixRes.ok).toBe(false)
-            })
-            return true
-          }),
-        { executions: 1 }
+                // GoExec error & probe edge cases
+                const goRes = await GoExec.resolveGo(
+                  { workspaceRoot: ws, packagePath: "", environment: { PATH: "" } } as never
+                )
+                expect(goRes.ok).toBe(false)
+                const nixRes = await GoExec.resolveNix("missing-bin", {
+                  workspaceRoot: ws,
+                  packagePath: "",
+                  environment: { PATH: "" },
+                  nix: { hash: "abc", inputs: [], path: [ws] }
+                } as never)
+                expect(nixRes.ok).toBe(false)
+              })
+              return true
+            }),
+          { executions: 1 }
+        )
       )
-    )
-    assertPassed(report)
-  }, 120_000)
+      assertPassed(report)
+    },
+    120_000
+  )
 })

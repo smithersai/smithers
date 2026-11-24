@@ -167,14 +167,14 @@ export const job = <Payload = unknown>(provider: Provider, options: JobOptions<P
 kill -0 -$$ 2>/dev/null || { echo 'sandbox-job: the worker leads no process group: no setsid, and /bin/sh has no job control' >&2; exit 125; }
 if mkdir ${at("worker")} 2>/dev/null; then :; elif test -d ${at("worker")}; then exit 0; else exit 125; fi
 exec >${at("out")} 2>${at("err")} || exit 125
-echo $$ >${at("pid.tmp")} && mv ${at("pid.tmp")} ${at("pid")} || exit 125
+echo $$ >${at("pid.tmp")}.$$ && mv ${at("pid.tmp")}.$$ ${at("pid")} || exit 125
 if test -e ${at("cancelled")}; then code=143; else
 (
 ${command}
 )
 code=$?
 fi
-printf '%s\n' "$code" >${at("exit.tmp")} && mv ${at("exit.tmp")} ${at("exit")}`
+printf '%s\n' "$code" >${at("exit.tmp")}.$$ && mv ${at("exit.tmp")}.$$ ${at("exit")}`
         // The worker leads a session of its own where the guest has setsid, and
         // otherwise a process group of its own where /bin/sh has job control, as
         // macOS's does. `launched` is a child of the launcher that lives exactly

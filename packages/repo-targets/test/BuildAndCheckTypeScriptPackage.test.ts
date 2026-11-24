@@ -895,3 +895,15 @@ it("emits a NodeBench target when benchProgram is declared, with and without pac
   })
   expect(Target.metadata(withoutMgr.bench).target).toBe("NodeBench")
 })
+
+it("forwards testEnv and testHosts when testProgram is declared", () => {
+  const targets = BuildAndCheckTypeScriptPackage({
+    packageManager,
+    cwd: "packages/example",
+    testProgram: Input.file("scripts/test-matrix.mjs"),
+    testEnv: { MATRIX_MODE: "1" },
+    testHosts: ["linux"]
+  })
+  expect(Target.metadata(targets.test).target).toBe("NodeTest")
+  expect(Target.metadata(targets.test).hosts).toEqual(["linux"])
+})

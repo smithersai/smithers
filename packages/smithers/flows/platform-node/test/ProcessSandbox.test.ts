@@ -2804,4 +2804,29 @@ describe("a staged workspace", () => {
       }
     }
   )
+
+  it("splits semicolon-delimited Windows PATH entries without breaking drive letters", () => {
+    const winHost = {
+      ...host("linux", { bwrap: "/usr/bin/bwrap", "C:\\tools\\mytool": "C:\\tools\\mytool" }, ["C:\\tools\\mytool"], [
+        "C:\\tools",
+        "C:\\work"
+      ]),
+      entries: (candidate: string) => (candidate === "C:\\tools" ? ["mytool"] : []),
+      realpath: (candidate: string) => candidate
+    }
+    const reads = ProcessSandbox.toolchainReads("C:\\tools;C:\\other", "C:\\work", winHost)
+    expect(reads).toContain("C:\\tools")
+    const found = ProcessSandbox.plan(
+      {
+        command: "mytool",
+        args: [],
+        env: { PATH: "C:\\tools;C:\\other" },
+        reads: [],
+        writes: []
+      },
+      { workspaceRoot: "C:\\work", cwd: "C:\\work", tmp: "C:\\tmp" },
+      { ...winHost, bwrap: "/usr/bin/bwrap" }
+    )
+    expect(found).toBeDefined()
+  })
 })

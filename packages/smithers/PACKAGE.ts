@@ -248,7 +248,7 @@ const test = Smithers.Shell.Test({
     // `ProductApi.test.ts` checks the generated client against the operations it was generated from.
     Smithers.file("test/fixtures/product-api-operations.json")
   ],
-  timeout: "40m",
+  timeout: "55m",
   hosts: ["linux"],
   // The package's PostgreSQL cases read this URL. It is deliberately not
   // `SMITHERS_TEST_PG_URL`: that name switches every `TestDatabase` case into

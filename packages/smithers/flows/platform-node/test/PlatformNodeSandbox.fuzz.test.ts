@@ -522,7 +522,7 @@ describe("@smthrs/platform-node ProcessSandbox, DestinationProxy, ProcessReaper 
   })
 
   it("DestinationProxy.open enforces proxy authentication, exact host allowlist, CONNECT rejection, and strips hop-by-hop headers", async () => {
-    const tmpBase = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "smthrs-dproxy-fuzz-")))
+    const tmpBase = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "dp-")))
     const socketPath = path.join(tmpBase, "broker.sock")
     const token = "fuzz-broker-secret-token"
     let lastHeaders: http.IncomingHttpHeaders = {}

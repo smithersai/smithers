@@ -91,7 +91,7 @@ describe("the write-protected argv", () => {
   })
 })
 
-describe("why a host cannot write-protect", () => {
+describe.skipIf(process.platform === "win32")("why a host cannot write-protect", () => {
   it("names the platform when it is not Linux", () => {
     expect(ProcessSandbox.writeProtectionRefusal({ ...linux, platform: "darwin" })).toBe(
       "write protection needs bubblewrap, which runs only on Linux; this host is darwin"

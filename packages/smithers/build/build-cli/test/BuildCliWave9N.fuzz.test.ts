@@ -142,300 +142,341 @@ describe("BuildCli Wave-9N: ObservedReads, Cache remote CAS, Cli bench/TTY/base,
     assertPassed(report)
   }, 60_000)
 
-  it("Cache remote CAS findMissing (429 HTTP-date, 403, bad-list, timeout degrade, 409 conflict) & hydrate fallback", async () => {
-    const report = await Effect.runPromise(
-      Fuzz.run(
-        Arbitrary.schema(Schema.Literal(1)),
-        () =>
-          Effect.promise(async () => {
-            await withTempDir("wave9n-cas-", async (dir) => {
-              const blobBytes = Buffer.from("wave9n-blob-content-1234567890")
-              const blobDigest = NodeCrypto.createHash("sha256").update(blobBytes).digest("hex")
-              const manifest = {
-                kind: "target-outputs",
-                manifests: [
-                  {
-                    outDir: "dist",
-                    entries: [{ kind: "file", path: "a.txt", digest: blobDigest, mode: 0o644, size: blobBytes.length }]
-                  }
-                ],
-                files: []
-              }
+  it(
+    "Cache remote CAS findMissing (429 HTTP-date, 403, bad-list, timeout degrade, 409 conflict) & hydrate fallback",
+    async () => {
+      const report = await Effect.runPromise(
+        Fuzz.run(
+          Arbitrary.schema(Schema.Literal(1)),
+          () =>
+            Effect.promise(async () => {
+              await withTempDir("wave9n-cas-", async (dir) => {
+                const blobBytes = Buffer.from("wave9n-blob-content-1234567890")
+                const blobDigest = NodeCrypto.createHash("sha256").update(blobBytes).digest("hex")
+                const manifest = {
+                  kind: "target-outputs",
+                  manifests: [
+                    {
+                      outDir: "dist",
+                      entries: [{
+                        kind: "file",
+                        path: "a.txt",
+                        digest: blobDigest,
+                        mode: 0o644,
+                        size: blobBytes.length
+                      }]
+                    }
+                  ],
+                  files: []
+                }
 
-              type Mode = "429-date" | "403" | "bad-list" | "timeout" | "conflict-409" | "hydrate-404" | "hydrate-429"
-              let mode: Mode = "429-date"
-              const server = NodeHttp.createServer((req, res) => {
-                const chunks: Array<Buffer> = []
-                req.on("data", (c) => chunks.push(c as Buffer))
-                req.on("end", () => {
-                  const url = req.url ?? ""
-                  if (req.method === "POST" && url.endsWith("/cas/findMissing")) {
-                    if (mode === "429-date") {
-                      res.writeHead(429, { "Retry-After": new Date(Date.now() + 20).toUTCString() })
-                      res.end("busy")
+                type Mode = "429-date" | "403" | "bad-list" | "timeout" | "conflict-409" | "hydrate-404" | "hydrate-429"
+                let mode: Mode = "429-date"
+                const server = NodeHttp.createServer((req, res) => {
+                  const chunks: Array<Buffer> = []
+                  req.on("data", (c) => chunks.push(c as Buffer))
+                  req.on("end", () => {
+                    const url = req.url ?? ""
+                    if (req.method === "POST" && url.endsWith("/cas/findMissing")) {
+                      if (mode === "429-date") {
+                        res.writeHead(429, { "Retry-After": new Date(Date.now() + 20).toUTCString() })
+                        res.end("busy")
+                        return
+                      }
+                      if (mode === "403") {
+                        res.writeHead(403)
+                        res.end("denied")
+                        return
+                      }
+                      if (mode === "bad-list") {
+                        res.writeHead(200, { "Content-Type": "application/json" })
+                        res.end(JSON.stringify({ missing: ["f".repeat(64)] }))
+                        return
+                      }
+                      if (mode === "timeout") {
+                        setTimeout(() => {
+                          if (!res.writableEnded) {
+                            res.writeHead(200, { "Content-Type": "application/json" })
+                            res.end(JSON.stringify({ missing: [] }))
+                          }
+                        }, 350)
+                        return
+                      }
+                      if (mode === "conflict-409") {
+                        res.writeHead(200, { "Content-Type": "application/json" })
+                        res.end(JSON.stringify({ missing: [blobDigest] }))
+                        return
+                      }
+                    }
+                    if (req.method === "PUT" && url.startsWith("/cas/")) {
+                      res.writeHead(201)
+                      res.end()
                       return
                     }
-                    if (mode === "403") {
-                      res.writeHead(403)
-                      res.end("denied")
+                    if (req.method === "PUT" && url.startsWith("/ac/")) {
+                      if (mode === "conflict-409") {
+                        res.writeHead(409)
+                        res.end("conflict")
+                        return
+                      }
+                      res.writeHead(201)
+                      res.end()
                       return
                     }
-                    if (mode === "bad-list") {
+                    if (req.method === "GET" && url.startsWith("/ac/")) {
+                      const key = decodeURIComponent(url.slice("/ac/".length))
                       res.writeHead(200, { "Content-Type": "application/json" })
-                      res.end(JSON.stringify({ missing: ["f".repeat(64)] }))
+                      res.end(
+                        JSON.stringify({
+                          keyDigest: key,
+                          result: {
+                            key,
+                            target: "Shell.Build",
+                            label: "//:b",
+                            exitOk: true,
+                            output: manifest,
+                            storedAt: new Date().toISOString()
+                          },
+                          createdAtMs: Date.now()
+                        })
+                      )
                       return
                     }
-                    if (mode === "timeout") {
-                      setTimeout(() => {
-                        if (!res.writableEnded) {
-                          res.writeHead(200, { "Content-Type": "application/json" })
-                          res.end(JSON.stringify({ missing: [] }))
-                        }
-                      }, 350)
+                    if (req.method === "GET" && url.startsWith("/cas/")) {
+                      if (mode === "hydrate-429") {
+                        res.writeHead(429, { "Retry-After": "0" })
+                        res.end("busy")
+                        return
+                      }
+                      res.writeHead(404)
+                      res.end("not found")
                       return
                     }
-                    if (mode === "conflict-409") {
-                      res.writeHead(200, { "Content-Type": "application/json" })
-                      res.end(JSON.stringify({ missing: [blobDigest] }))
-                      return
-                    }
-                  }
-                  if (req.method === "PUT" && url.startsWith("/cas/")) {
-                    res.writeHead(201)
-                    res.end()
-                    return
-                  }
-                  if (req.method === "PUT" && url.startsWith("/ac/")) {
-                    if (mode === "conflict-409") {
-                      res.writeHead(409)
-                      res.end("conflict")
-                      return
-                    }
-                    res.writeHead(201)
-                    res.end()
-                    return
-                  }
-                  if (req.method === "GET" && url.startsWith("/ac/")) {
-                    const key = decodeURIComponent(url.slice("/ac/".length))
-                    res.writeHead(200, { "Content-Type": "application/json" })
-                    res.end(
-                      JSON.stringify({
-                        keyDigest: key,
-                        result: {
+                    res.writeHead(404)
+                    res.end("not found")
+                  })
+                })
+                await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve))
+                const addr = server.address() as { readonly port: number }
+                const endpoint = `http://127.0.0.1:${addr.port}`
+
+                try {
+                  const warnings: Array<string> = []
+                  for (const nextMode of ["429-date", "403", "bad-list", "timeout", "conflict-409"] as const) {
+                    mode = nextMode
+                    const subDir = `rc-${nextMode}`
+                    const casDir = NodePath.join(dir, subDir, "cas")
+                    await Fs.mkdir(casDir, { recursive: true })
+                    await OutputCas.writeBlob(casDir, blobDigest, blobBytes)
+                    const c = await Cache.openCache({
+                      workspaceRoot: dir,
+                      cacheDirectory: subDir,
+                      endpoint,
+                      readToken: () => "tok-r",
+                      writeToken: () => "tok-w",
+                      warn: (m: string) => warnings.push(m),
+                      timeouts: nextMode === "timeout" ? { get: 40, put: 40 } : { get: 2000, put: 2000 }
+                    })
+                    try {
+                      const rounds = nextMode === "timeout" ? Cache.findMissingTimeoutLimit : 1
+                      for (let i = 0; i < rounds; i++) {
+                        const key = `k-${nextMode}-${i}`
+                        await c.put(key, {
                           key,
                           target: "Shell.Build",
                           label: "//:b",
                           exitOk: true,
                           output: manifest,
                           storedAt: new Date().toISOString()
-                        },
-                        createdAtMs: Date.now()
-                      })
-                    )
-                    return
-                  }
-                  if (req.method === "GET" && url.startsWith("/cas/")) {
-                    if (mode === "hydrate-429") {
-                      res.writeHead(429, { "Retry-After": "0" })
-                      res.end("busy")
-                      return
+                        })
+                      }
+                    } finally {
+                      await c.close()
                     }
-                    res.writeHead(404)
-                    res.end("not found")
-                    return
                   }
-                  res.writeHead(404)
-                  res.end("not found")
-                })
+
+                  // hydrate-404 & hydrate-429: GET /ac returns cached manifest, GET /cas returns 404 or 429 -> returns null
+                  for (const hMode of ["hydrate-404", "hydrate-429"] as const) {
+                    mode = hMode
+                    const cHyd = await Cache.openCache({
+                      workspaceRoot: dir,
+                      cacheDirectory: `rc-${hMode}`,
+                      endpoint,
+                      readToken: () => "tok-r",
+                      warn: (m: string) => warnings.push(m),
+                      timeouts: { get: 1500, put: 1500 }
+                    })
+                    try {
+                      const got = await cHyd.get(`k-${hMode}`)
+                      expect(got).toBeNull()
+                    } finally {
+                      await cHyd.close()
+                    }
+                  }
+                  expect(warnings.length).toBeGreaterThan(0)
+                } finally {
+                  await new Promise<void>((resolve) => server.close(() => resolve()))
+                }
               })
-              await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve))
-              const addr = server.address() as { readonly port: number }
-              const endpoint = `http://127.0.0.1:${addr.port}`
-
-              try {
-                const warnings: Array<string> = []
-                for (const nextMode of ["429-date", "403", "bad-list", "timeout", "conflict-409"] as const) {
-                  mode = nextMode
-                  const subDir = `rc-${nextMode}`
-                  const casDir = NodePath.join(dir, subDir, "cas")
-                  await Fs.mkdir(casDir, { recursive: true })
-                  await OutputCas.writeBlob(casDir, blobDigest, blobBytes)
-                  const c = await Cache.openCache({
-                    workspaceRoot: dir,
-                    cacheDirectory: subDir,
-                    endpoint,
-                    readToken: () => "tok-r",
-                    writeToken: () => "tok-w",
-                    warn: (m: string) => warnings.push(m),
-                    timeouts: nextMode === "timeout" ? { get: 40, put: 40 } : { get: 2000, put: 2000 }
-                  })
-                  try {
-                    const rounds = nextMode === "timeout" ? Cache.findMissingTimeoutLimit : 1
-                    for (let i = 0; i < rounds; i++) {
-                      const key = `k-${nextMode}-${i}`
-                      await c.put(key, {
-                        key,
-                        target: "Shell.Build",
-                        label: "//:b",
-                        exitOk: true,
-                        output: manifest,
-                        storedAt: new Date().toISOString()
-                      })
-                    }
-                  } finally {
-                    await c.close()
-                  }
-                }
-
-                // hydrate-404 & hydrate-429: GET /ac returns cached manifest, GET /cas returns 404 or 429 -> returns null
-                for (const hMode of ["hydrate-404", "hydrate-429"] as const) {
-                  mode = hMode
-                  const cHyd = await Cache.openCache({
-                    workspaceRoot: dir,
-                    cacheDirectory: `rc-${hMode}`,
-                    endpoint,
-                    readToken: () => "tok-r",
-                    warn: (m: string) => warnings.push(m),
-                    timeouts: { get: 1500, put: 1500 }
-                  })
-                  try {
-                    const got = await cHyd.get(`k-${hMode}`)
-                    expect(got).toBeNull()
-                  } finally {
-                    await cHyd.close()
-                  }
-                }
-                expect(warnings.length).toBeGreaterThan(0)
-              } finally {
-                await new Promise<void>((resolve) => server.close(() => resolve()))
-              }
-            })
-            return true
-          }),
-        { executions: 1 }
+              return true
+            }),
+          { executions: 1 }
+        )
       )
-    )
-    assertPassed(report)
-  }, 60_000)
+      assertPassed(report)
+    },
+    60_000
+  )
 
-  it("Cli NodeBench regression (human+agent), no-workspace error, TTY palette, owners --base HEAD~1, bad baseline, approvalRevision", async () => {
-    const report = await Effect.runPromise(
-      Fuzz.run(
-        Arbitrary.schema(Schema.Literal(1)),
-        () =>
-          Effect.promise(async () => {
-            await withTempDir("wave9n-cli-", async (dir) => {
-              // 1. No-workspace error WITHOUT --workspace (L546-557)
-              const noWs = NodePath.join(dir, "nowhere")
-              await Fs.mkdir(noWs, { recursive: true })
-              const noWsRes = await serveCli(noWs, ["targets"])
-              expect(noWsRes.exitCode !== 0 || noWsRes.stdout.includes("workspace")).toBe(true)
+  it(
+    "Cli NodeBench regression (human+agent), no-workspace error, TTY palette, owners --base HEAD~1, bad baseline, approvalRevision",
+    async () => {
+      const report = await Effect.runPromise(
+        Fuzz.run(
+          Arbitrary.schema(Schema.Literal(1)),
+          () =>
+            Effect.promise(async () => {
+              await withTempDir("wave9n-cli-", async (dir) => {
+                // 1. No-workspace error WITHOUT --workspace (L546-557)
+                const noWs = NodePath.join(dir, "nowhere")
+                await Fs.mkdir(noWs, { recursive: true })
+                const noWsRes = await serveCli(noWs, ["targets"])
+                expect(noWsRes.exitCode !== 0 || noWsRes.stdout.includes("workspace")).toBe(true)
 
-              // 2. Real workspace with working NodeBench, approved target, and modified PACKAGE.ts for owners --base HEAD~1
-              const ws = NodePath.join(dir, "ws")
-              await Fs.mkdir(NodePath.join(ws, "lib"), { recursive: true })
-              await Fs.mkdir(NodePath.join(ws, "app"), { recursive: true })
-              NodeChildProcess.execFileSync("jj", ["git", "init", "--colocate"], { cwd: ws, stdio: "ignore" })
+                // 2. Real workspace with working NodeBench, approved target, and modified PACKAGE.ts for owners --base HEAD~1
+                const ws = NodePath.join(dir, "ws")
+                await Fs.mkdir(NodePath.join(ws, "lib"), { recursive: true })
+                await Fs.mkdir(NodePath.join(ws, "app"), { recursive: true })
+                NodeChildProcess.execFileSync("jj", ["git", "init", "--colocate"], { cwd: ws, stdio: "ignore" })
 
-              await Fs.writeFile(NodePath.join(ws, "package.json"), JSON.stringify({ name: "cli9n", private: true }) + "\n")
-              await Fs.writeFile(NodePath.join(ws, "yarn.lock"), "# yarn lockfile v1\n")
-              await Fs.mkdir(NodePath.join(ws, "node_modules"), { recursive: true })
-              await Fs.writeFile(
-                NodePath.join(ws, "WORKSPACE.ts"),
-                [
-                  `import { Smithers as S } from "@smthrs/targets"`,
-                  `const manifest = S.file("//package.json")`,
-                  `export const Workspace = S.Workspace("cli9n", {`,
-                  `  repository: "git+https://github.com/org/cli9n.git",`,
-                  `  cache: S.Cache({ directory: ".cache" }),`,
-                  `  runtime: S.Runtime.Node({ version: ${JSON.stringify(process.versions.node)} }),`,
-                  `  packageManager: S.PackageManager.Yarn({ manifest, lockfile: S.file("//yarn.lock") }),`,
-                  `  nodeModules: S.Npm.NodeModules({ packageJson: manifest })`,
-                  `})`
-                ].join("\n")
-              )
-              await Fs.writeFile(
-                NodePath.join(ws, "bench.mjs"),
-                `console.log("BENCH_METRIC " + JSON.stringify({ name: "op", meanMs: 50, hz: 20 }))\n`
-              )
-              await Fs.writeFile(
-                NodePath.join(ws, "baseline.json"),
-                JSON.stringify({
-                  results: [{ label: "//:bench", status: "ran", benchmarks: [{ name: "op", meanMs: 1, hz: 1000 }] }]
+                await Fs.writeFile(
+                  NodePath.join(ws, "package.json"),
+                  JSON.stringify({ name: "cli9n", private: true }) + "\n"
+                )
+                await Fs.writeFile(NodePath.join(ws, "yarn.lock"), "# yarn lockfile v1\n")
+                await Fs.mkdir(NodePath.join(ws, "node_modules"), { recursive: true })
+                await Fs.writeFile(
+                  NodePath.join(ws, "WORKSPACE.ts"),
+                  [
+                    `import { Smithers as S } from "@smthrs/targets"`,
+                    `const manifest = S.file("//package.json")`,
+                    `export const Workspace = S.Workspace("cli9n", {`,
+                    `  repository: "git+https://github.com/org/cli9n.git",`,
+                    `  cache: S.Cache({ directory: ".cache" }),`,
+                    `  runtime: S.Runtime.Node({ version: ${JSON.stringify(process.versions.node)} }),`,
+                    `  packageManager: S.PackageManager.Yarn({ manifest, lockfile: S.file("//yarn.lock") }),`,
+                    `  nodeModules: S.Npm.NodeModules({ packageJson: manifest })`,
+                    `})`
+                  ].join("\n")
+                )
+                await Fs.writeFile(
+                  NodePath.join(ws, "bench.mjs"),
+                  `console.log("BENCH_METRIC " + JSON.stringify({ name: "op", meanMs: 50, hz: 20 }))\n`
+                )
+                await Fs.writeFile(
+                  NodePath.join(ws, "baseline.json"),
+                  JSON.stringify({
+                    results: [{ label: "//:bench", status: "ran", benchmarks: [{ name: "op", meanMs: 1, hz: 1000 }] }]
+                  })
+                )
+                await Fs.writeFile(NodePath.join(ws, "bad-baseline.json"), "{not-json")
+                await Fs.writeFile(
+                  NodePath.join(ws, "PACKAGE.ts"),
+                  [
+                    `import { Smithers as S } from "@smthrs/targets"`,
+                    `const ok = S.Shell.Test({ shell: "echo ok" })`,
+                    `const approved = S.Shell.Run({ shell: "echo ap", approval: "required" })`,
+                    `const bench = S.NodeBench({ entry: S.file("//bench.mjs"), srcs: [S.file("//bench.mjs")], deps: [] })`,
+                    `export const Package = S.Package({ targets: { ok, approved, bench } })`
+                  ].join("\n")
+                )
+                await Fs.writeFile(
+                  NodePath.join(ws, "lib/PACKAGE.ts"),
+                  `import { Smithers as S } from "@smthrs/targets"\nexport const Package = S.Package({ owners: { owners: ["alice"] }, targets: { t: S.Shell.Test({ shell: "true" }) } })\n`
+                )
+                await Fs.writeFile(
+                  NodePath.join(ws, "app/PACKAGE.ts"),
+                  `import { Smithers as S } from "@smthrs/targets"\nimport { Package as L } from "../lib/PACKAGE.ts"\nexport const Package = S.Package({ owners: { owners: ["bob"] }, targets: { t: S.Shell.Test({ shell: "true", data: [L.t] }) } })\n`
+                )
+
+                await PackageTree.runGit(ws, ["config", "user.email", "test@example.com"])
+                await PackageTree.runGit(ws, ["config", "user.name", "Test"])
+                await PackageTree.runGit(ws, ["add", "."])
+                await PackageTree.runGit(ws, ["commit", "-m", "v1"])
+
+                // Edit PACKAGE.ts & commit so owners --base HEAD~1 exercises openBase L619-624
+                await Fs.writeFile(
+                  NodePath.join(ws, "lib/PACKAGE.ts"),
+                  `import { Smithers as S } from "@smthrs/targets"\nexport const Package = S.Package({ owners: { owners: ["alice"] }, targets: { t: S.Shell.Test({ shell: "echo v2" }) } })\n`
+                )
+                await PackageTree.runGit(ws, ["add", "lib/PACKAGE.ts"])
+                await PackageTree.runGit(ws, ["commit", "-m", "v2"])
+
+                const ownersBase = await serveCli(ws, ["owners", "--base", "HEAD~1"], {
+                  audience: "human",
+                  isTTY: true
                 })
-              )
-              await Fs.writeFile(NodePath.join(ws, "bad-baseline.json"), "{not-json")
-              await Fs.writeFile(
-                NodePath.join(ws, "PACKAGE.ts"),
-                [
-                  `import { Smithers as S } from "@smthrs/targets"`,
-                  `const ok = S.Shell.Test({ shell: "echo ok" })`,
-                  `const approved = S.Shell.Run({ shell: "echo ap", approval: "required" })`,
-                  `const bench = S.NodeBench({ entry: S.file("//bench.mjs"), srcs: [S.file("//bench.mjs")], deps: [] })`,
-                  `export const Package = S.Package({ targets: { ok, approved, bench } })`
-                ].join("\n")
-              )
-              await Fs.writeFile(
-                NodePath.join(ws, "lib/PACKAGE.ts"),
-                `import { Smithers as S } from "@smthrs/targets"\nexport const Package = S.Package({ owners: { owners: ["alice"] }, targets: { t: S.Shell.Test({ shell: "true" }) } })\n`
-              )
-              await Fs.writeFile(
-                NodePath.join(ws, "app/PACKAGE.ts"),
-                `import { Smithers as S } from "@smthrs/targets"\nimport { Package as L } from "../lib/PACKAGE.ts"\nexport const Package = S.Package({ owners: { owners: ["bob"] }, targets: { t: S.Shell.Test({ shell: "true", data: [L.t] }) } })\n`
-              )
+                expect(ownersBase.stdout.length + ownersBase.stderr.length).toBeGreaterThan(0)
 
-              await PackageTree.runGit(ws, ["config", "user.email", "test@example.com"])
-              await PackageTree.runGit(ws, ["config", "user.name", "Test"])
-              await PackageTree.runGit(ws, ["add", "."])
-              await PackageTree.runGit(ws, ["commit", "-m", "v1"])
+                // Cli.approvalRevision on approved target -> L961
+                const rev = await Cli.approvalRevision("//:approved", { workspace: ws }, {})
+                expect(rev.label).toBe("//:approved")
+                expect(rev.digest.length).toBeGreaterThan(0)
 
-              // Edit PACKAGE.ts & commit so owners --base HEAD~1 exercises openBase L619-624
-              await Fs.writeFile(
-                NodePath.join(ws, "lib/PACKAGE.ts"),
-                `import { Smithers as S } from "@smthrs/targets"\nexport const Package = S.Package({ owners: { owners: ["alice"] }, targets: { t: S.Shell.Test({ shell: "echo v2" }) } })\n`
-              )
-              await PackageTree.runGit(ws, ["add", "lib/PACKAGE.ts"])
-              await PackageTree.runGit(ws, ["commit", "-m", "v2"])
+                // --fail-on-regression without --compare -> L1447-1451
+                const noCompare = await serveCli(ws, ["bench", "//:bench", "--fail-on-regression", "5"])
+                expect(noCompare.exitCode !== 0 || noCompare.stdout.includes("requires --compare")).toBe(true)
 
-              const ownersBase = await serveCli(ws, ["owners", "--base", "HEAD~1"], { audience: "human", isTTY: true })
-              expect(ownersBase.stdout.length + ownersBase.stderr.length).toBeGreaterThan(0)
+                // Bad baseline JSON -> L1461
+                const badBase = await serveCli(ws, [
+                  "bench",
+                  "//:bench",
+                  "--compare",
+                  NodePath.join(ws, "bad-baseline.json")
+                ])
+                expect(badBase.exitCode !== 0 || badBase.stdout.includes("baseline")).toBe(true)
 
-              // Cli.approvalRevision on approved target -> L961
-              const rev = await Cli.approvalRevision("//:approved", { workspace: ws }, {})
-              expect(rev.label).toBe("//:approved")
-              expect(rev.digest.length).toBeGreaterThan(0)
+                // Bench regression: human TTY with passExit (L1538-1555) AND agent JSON (L1557-1562)
+                const benchHuman = await serveCli(
+                  ws,
+                  [
+                    "bench",
+                    "//:bench",
+                    "--compare",
+                    NodePath.join(ws, "baseline.json"),
+                    "--fail-on-regression",
+                    "5",
+                    "--no-cache"
+                  ],
+                  { audience: "human", isTTY: true, passExit: true }
+                )
+                expect(benchHuman.exitCode).toBe(1)
+                expect(benchHuman.stderr).toContain("regressed")
 
-              // --fail-on-regression without --compare -> L1447-1451
-              const noCompare = await serveCli(ws, ["bench", "//:bench", "--fail-on-regression", "5"])
-              expect(noCompare.exitCode !== 0 || noCompare.stdout.includes("requires --compare")).toBe(true)
-
-              // Bad baseline JSON -> L1461
-              const badBase = await serveCli(ws, ["bench", "//:bench", "--compare", NodePath.join(ws, "bad-baseline.json")])
-              expect(badBase.exitCode !== 0 || badBase.stdout.includes("baseline")).toBe(true)
-
-              // Bench regression: human TTY with passExit (L1538-1555) AND agent JSON (L1557-1562)
-              const benchHuman = await serveCli(
-                ws,
-                ["bench", "//:bench", "--compare", NodePath.join(ws, "baseline.json"), "--fail-on-regression", "5", "--no-cache"],
-                { audience: "human", isTTY: true, passExit: true }
-              )
-              expect(benchHuman.exitCode).toBe(1)
-              expect(benchHuman.stderr).toContain("regressed")
-
-              const benchAgent = await serveCli(
-                ws,
-                ["bench", "//:bench", "--compare", NodePath.join(ws, "baseline.json"), "--fail-on-regression", "5", "--no-cache"],
-                { audience: "agent" }
-              )
-              expect(benchAgent.stdout).toContain("bench_regression")
-            })
-            return true
-          }),
-        { executions: 1 }
+                const benchAgent = await serveCli(
+                  ws,
+                  [
+                    "bench",
+                    "//:bench",
+                    "--compare",
+                    NodePath.join(ws, "baseline.json"),
+                    "--fail-on-regression",
+                    "5",
+                    "--no-cache"
+                  ],
+                  { audience: "agent" }
+                )
+                expect(benchAgent.stdout).toContain("bench_regression")
+              })
+              return true
+            }),
+          { executions: 1 }
+        )
       )
-    )
-    assertPassed(report)
-  }, 120_000)
+      assertPassed(report)
+    },
+    120_000
+  )
 
   it("TestUnits select/run stale blobs & GoExec nix/go fake bin + pattern/JSON/stamp/ModDownload", async () => {
     const report = await Effect.runPromise(

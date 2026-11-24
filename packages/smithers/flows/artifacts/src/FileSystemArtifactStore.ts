@@ -262,8 +262,9 @@ export const makeFileSystem = (
         Effect.catchIf(isPermissionDenied, () => Effect.succeedNone)
       )
       if (Option.isNone(opened)) return false
-      yield* opened.value.sync
-      return true
+      return yield* Effect.as(opened.value.sync, true).pipe(
+        Effect.catchIf(isPermissionDenied, () => Effect.succeed(false))
+      )
     })).pipe(Effect.mapError(hostFailure))
     return durability === "best-effort" ? Effect.orElseSucceed(sync, () => true) : sync
   }

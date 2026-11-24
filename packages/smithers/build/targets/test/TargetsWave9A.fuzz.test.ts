@@ -21,6 +21,11 @@ import * as GithubTarget from "../src/GithubTarget.ts"
 import * as GitTarget from "../src/GitTarget.ts"
 import * as Go from "../src/Go.ts"
 import * as Input from "../src/Input.ts"
+import * as DeclarationSource from "../src/internal/DeclarationSource.ts"
+import * as ExecEnvironment from "../src/internal/ExecEnvironment.ts"
+import * as ReviewEnvironment from "../src/internal/ReviewEnvironment.ts"
+import * as ReviewExecutable from "../src/internal/ReviewExecutable.ts"
+import * as ReviewModel from "../src/internal/ReviewModel.ts"
 import * as ManifestJson from "../src/ManifestJson.ts"
 import * as Mount from "../src/Mount.ts"
 import * as Nix from "../src/Nix.ts"
@@ -28,8 +33,8 @@ import * as NodeArtifact from "../src/NodeArtifact.ts"
 import * as NpmTarget from "../src/NpmTarget.ts"
 import * as Owners from "../src/Owners.ts"
 import * as PackageJson from "../src/PackageJson.ts"
-import * as PackageManager from "../src/PackageManager.ts"
 import * as PackageJsonTemplate from "../src/PackageJsonTemplate.ts"
+import * as PackageManager from "../src/PackageManager.ts"
 import * as Reference from "../src/Reference.ts"
 import * as Runtime from "../src/Runtime.ts"
 import * as RustToolchain from "../src/RustToolchain.ts"
@@ -39,11 +44,6 @@ import * as Shell from "../src/Shell.ts"
 import * as Target from "../src/Target.ts"
 import * as TsBuild from "../src/TsBuild.ts"
 import * as WorkspaceDeclaration from "../src/WorkspaceDeclaration.ts"
-import * as DeclarationSource from "../src/internal/DeclarationSource.ts"
-import * as ExecEnvironment from "../src/internal/ExecEnvironment.ts"
-import * as ReviewEnvironment from "../src/internal/ReviewEnvironment.ts"
-import * as ReviewExecutable from "../src/internal/ReviewExecutable.ts"
-import * as ReviewModel from "../src/internal/ReviewModel.ts"
 
 const executions = Number(process.env["EFFECT_FUZZ_EXECUTIONS"] ?? (process.env["EFFECT_FUZZ"] ? "250" : "100"))
 const seed = Number(process.env["EFFECT_FUZZ_SEED"] ?? "20261124")
@@ -101,9 +101,18 @@ describe("@smthrs/targets Wave-9A: rule catalog, validators, declarations, notIm
               }
             })
             expect(Target.isTarget(throwingObj)).toBe(false)
-            expect(Target.isTarget({ _tag: "X", [Target.TargetTypeId]: { target: "X", kinds: "not-array" } })).toBe(false)
-            expect(Target.isTarget({ _tag: "X", [Target.TargetTypeId]: { target: "X", kinds: ["build"], verbGate: "bad" } })).toBe(false)
-            expect(Target.isTarget({ _tag: "X", [Target.TargetTypeId]: { target: "X", kinds: ["build"], verbGate: ["not-a-kind"] } })).toBe(false)
+            expect(Target.isTarget({ _tag: "X", [Target.TargetTypeId]: { target: "X", kinds: "not-array" } })).toBe(
+              false
+            )
+            expect(
+              Target.isTarget({ _tag: "X", [Target.TargetTypeId]: { target: "X", kinds: ["build"], verbGate: "bad" } })
+            ).toBe(false)
+            expect(
+              Target.isTarget({
+                _tag: "X",
+                [Target.TargetTypeId]: { target: "X", kinds: ["build"], verbGate: ["not-a-kind"] }
+              })
+            ).toBe(false)
 
             // Dependency selectors + attrsForKind failure + Proxy rejection
             const dummyRule = Target.make("Wave9Dummy", {
@@ -148,14 +157,16 @@ describe("@smthrs/targets Wave-9A: rule catalog, validators, declarations, notIm
             // Target.layerNotImplemented executes the action and fails with NotImplemented
             type NotImplFn = (p: { readonly target: string }, id: string) => Effect.Effect<never, Target.NotImplemented>
             let registered: NotImplFn | undefined
-            const runtime = FlowRuntime.FlowRuntime.of({
-              register: (_flow: unknown, exec: NotImplFn) =>
-                Effect.sync(() => {
-                  registered = exec
-                }),
-              actionExecute: (action: { readonly execute: Effect.Effect<unknown, unknown> }) =>
-                Effect.map(Effect.exit(action.execute), (exit) => new Flow.Complete({ exit }))
-            } as unknown as FlowRuntime.FlowRuntime["Service"])
+            const runtime = FlowRuntime.FlowRuntime.of(
+              {
+                register: (_flow: unknown, exec: NotImplFn) =>
+                  Effect.sync(() => {
+                    registered = exec
+                  }),
+                actionExecute: (action: { readonly execute: Effect.Effect<unknown, unknown> }) =>
+                  Effect.map(Effect.exit(action.execute), (exit) => new Flow.Complete({ exit }))
+              } as unknown as FlowRuntime.FlowRuntime["Service"]
+            )
             const exit = await Effect.runPromiseExit(
               Effect.gen(function*() {
                 yield* Layer.build(
@@ -206,13 +217,17 @@ describe("@smthrs/targets Wave-9A: rule catalog, validators, declarations, notIm
         arb,
         (input) =>
           Effect.sync(() => {
-                        // Cargo: unsupported rule, bins with target, >1 selectors, all .implementation()
+            // Cargo: unsupported rule, bins with target, >1 selectors, all .implementation()
             expect(() => Cargo.packageArgs("NotACargoRule", {}, { _tag: "Workspace" })).toThrow(
               /not a build-system cargo rule/
             )
             const bins = Cargo.binaries({ bins: [input.binName], target: input.triple, profile: "release" })
             expect(bins.some((p) => p.includes(input.triple))).toBe(true)
-            expect(() => Cargo.Fetch({ workspace: true, crates: Cargo.AppSet({ manifests: Input.glob("crates/*/Cargo.toml") }) } as never)).toThrow(/at most one/)
+            expect(() =>
+              Cargo.Fetch(
+                { workspace: true, crates: Cargo.AppSet({ manifests: Input.glob("crates/*/Cargo.toml") }) } as never
+              )
+            ).toThrow(/at most one/)
 
             const cargoTargets: ReadonlyArray<Target.AnyTarget> = [
               Cargo.Fetch({}),
@@ -247,7 +262,8 @@ describe("@smthrs/targets Wave-9A: rule catalog, validators, declarations, notIm
             // Foundry: Toolchain validation errors + Build/Test/Fmt implementations
             expect(() => Foundry.Toolchain("bad" as never)).toThrow(/must be an object/)
             expect(() => Foundry.Toolchain({ [input.badKey]: true } as never)).toThrow(/unknown option/)
-            expect(() => Foundry.Toolchain({ config: Input.file("foundry.toml"), versions: "not-mise" as never })).toThrow(/S\.Mise/)
+            expect(() => Foundry.Toolchain({ config: Input.file("foundry.toml"), versions: "not-mise" as never }))
+              .toThrow(/S\.Mise/)
             for (
               const t of [
                 Foundry.Build({ outDirs: ["out"] }),
@@ -280,7 +296,15 @@ describe("@smthrs/targets Wave-9A: rule catalog, validators, declarations, notIm
             const catalogTargets: ReadonlyArray<Target.AnyTarget> = [
               dockerBuild,
               Docker.Bake({ config: Input.file("docker-bake.hcl"), target: "app" }),
-              Docker.Push({ image: dockerBuild, registry: "ghcr.io", name: "org/app", tags: ["latest"], approval: "required" } as never),
+              Docker.Push(
+                {
+                  image: dockerBuild,
+                  registry: "ghcr.io",
+                  name: "org/app",
+                  tags: ["latest"],
+                  approval: "required"
+                } as never
+              ),
               Docker.Serve({ image: "postgres:18" } as never),
               Docker.Service({ image: "postgres:18" } as never),
               GitTarget.Commit({ gates: [ghSetup], message: "chore: update" }),
@@ -294,7 +318,11 @@ describe("@smthrs/targets Wave-9A: rule catalog, validators, declarations, notIm
               NpmTarget.Publish({ pack: npmPack, gates: [ghSetup] }),
               NpmTarget.Published({ manifest: Input.file("package.json") }),
               NpmTarget.Downstream({ repository: "org/down", overrides: { a: npmPack }, run: ["test"] }),
-              DocsCheck.Check({ output: Input.file("README.md"), stamp: Input.file("README.stamp"), inputs: [Input.file("src/a.ts")] })
+              DocsCheck.Check({
+                output: Input.file("README.md"),
+                stamp: Input.file("README.stamp"),
+                inputs: [Input.file("src/a.ts")]
+              })
             ]
             for (const t of catalogTargets) {
               try {
@@ -305,15 +333,49 @@ describe("@smthrs/targets Wave-9A: rule catalog, validators, declarations, notIm
             }
 
             // BiomeCheck: format-only, check+format, explicit sources, glob sources
-            const biomeFormatOnly = BiomeCheck.BiomeCheck({ lint: false, format: true, packageManager: PackageManager.Pnpm({ version: "11.25.0", runtime: Runtime.Node({ version: ">=26.4.0" }) } as never), deps: [], config: Input.file("biome.json"), sources: [Input.file("src/a.ts")] } as never)
-            const biomeBoth = BiomeCheck.BiomeCheck({ lint: true, format: true, packageManager: PackageManager.Pnpm({ version: "11.25.0", runtime: Runtime.Node({ version: ">=26.4.0" }) } as never), deps: [], config: Input.file("biome.json"), sources: [Input.file("src/a.ts")] } as never)
-            const biomeGlob = BiomeCheck.BiomeCheck({ lint: true, format: true, packageManager: PackageManager.Pnpm({ version: "11.25.0", runtime: Runtime.Node({ version: ">=26.4.0" }) } as never), deps: [], config: Input.file("biome.json"), sources: [Input.glob("src/**/*.ts")] } as never)
+            const biomeFormatOnly = BiomeCheck.BiomeCheck(
+              {
+                lint: false,
+                format: true,
+                packageManager: PackageManager.Pnpm(
+                  { version: "11.25.0", runtime: Runtime.Node({ version: ">=26.4.0" }) } as never
+                ),
+                deps: [],
+                config: Input.file("biome.json"),
+                sources: [Input.file("src/a.ts")]
+              } as never
+            )
+            const biomeBoth = BiomeCheck.BiomeCheck(
+              {
+                lint: true,
+                format: true,
+                packageManager: PackageManager.Pnpm(
+                  { version: "11.25.0", runtime: Runtime.Node({ version: ">=26.4.0" }) } as never
+                ),
+                deps: [],
+                config: Input.file("biome.json"),
+                sources: [Input.file("src/a.ts")]
+              } as never
+            )
+            const biomeGlob = BiomeCheck.BiomeCheck(
+              {
+                lint: true,
+                format: true,
+                packageManager: PackageManager.Pnpm(
+                  { version: "11.25.0", runtime: Runtime.Node({ version: ">=26.4.0" }) } as never
+                ),
+                deps: [],
+                config: Input.file("biome.json"),
+                sources: [Input.glob("src/**/*.ts")]
+              } as never
+            )
             for (const t of [biomeFormatOnly, biomeBoth, biomeGlob]) {
               expect(Target.plan(t as never)).toBeDefined()
             }
 
             // BundlerTarget: Rspack validation errors + build/resolve implementations
-            expect(() => BundlerTarget.Rspack({ config: Input.file("rspack.config.ts"), [input.badKey]: 1 } as never)).toThrow(/unknown option/)
+            expect(() => BundlerTarget.Rspack({ config: Input.file("rspack.config.ts"), [input.badKey]: 1 } as never))
+              .toThrow(/unknown option/)
             expect(() => BundlerTarget.Rspack({ config: "bad" as never })).toThrow(/declared config file/)
             const rspack = BundlerTarget.Rspack({ config: Input.file("rspack.config.ts") })
             expect(() => rspack.resolve("bad" as never)).toThrow(/must be an object/)
@@ -357,7 +419,8 @@ describe("@smthrs/targets Wave-9A: rule catalog, validators, declarations, notIm
             expect(() => CiToolchain.Node({} as never)).toThrow(/exactly one/)
             expect(() => CiToolchain.Node({ release: "26.4.0" as never, versionFile: ".nvmrc" })).toThrow(/exactly one/)
             expect(() => CiToolchain.Node({ versionFile: "../.nvmrc" })).toThrow(/workspace-relative/)
-            expect(() => CiToolchain.Docker({ imageStore: "containerd", registryMirrors: ["http://insecure.local"] })).toThrow(/https URL/)
+            expect(() => CiToolchain.Docker({ imageStore: "containerd", registryMirrors: ["http://insecure.local"] }))
+              .toThrow(/https URL/)
             expect(() => CiToolchain.Nix({ environment: "bad" as never })).toThrow(/S\.Nix\.Environment/)
             const nixEnv = Nix.Environment({ flake: Input.file("flake.nix") })
             expect(() => CiToolchain.Nix({ environment: nixEnv, substituter: "bad" as never })).toThrow(/S\.Secret/)
@@ -375,10 +438,12 @@ describe("@smthrs/targets Wave-9A: rule catalog, validators, declarations, notIm
             expect(() => CiToolchain.Needs({ fetchDepth: -1 })).toThrow(/whole number/)
 
             // DocsCheck validation + judge missing/policy/stale
-            expect(() => DocsCheck.closureDigest([
-              { path: "a.ts", digest: "a".repeat(64) },
-              { path: "a.ts", digest: "b".repeat(64) }
-            ])).toThrow(/two different digests/)
+            expect(() =>
+              DocsCheck.closureDigest([
+                { path: "a.ts", digest: "a".repeat(64) },
+                { path: "a.ts", digest: "b".repeat(64) }
+              ])
+            ).toThrow(/two different digests/)
             const stamp = DocsCheck.makeStamp({
               producer: undefined,
               output: { path: "docs/a.md", digest: "c".repeat(64) },
@@ -403,66 +468,96 @@ describe("@smthrs/targets Wave-9A: rule catalog, validators, declarations, notIm
               ignore: { sections: ["bar"] }
             })
             expect(policyRes?.reason).toBe("modified")
-            expect(() => DocsCheck.Check({
-              output: Input.file("docs/a.md"),
-              stamp: Input.file("docs/a.md"),
-              inputs: [Input.file("src/a.ts")]
-            })).toThrow()
-            expect(() => DocsCheck.Check({
-              output: Input.file("docs/a.md"),
-              stamp: Input.file("docs/a.stamp"),
-              inputs: [Input.file("docs/a.md")]
-            })).toThrow(/own input/)
-            expect(() => DocsCheck.Check({
-              output: Input.file("docs/a.md"),
-              stamp: Input.file("docs/a.stamp"),
-              inputs: [Input.file("src/a.ts")],
-              evidence: [{ file: Input.file("docs/ev.json"), dependency: "//pkg:test", ttlMs: -5 }]
-            })).toThrow(/ttlMs/)
-            expect(() => DocsCheck.Check({
-              output: Input.file("docs/a.md"),
-              stamp: Input.file("docs/a.stamp"),
-              inputs: [Input.file("src/a.ts")],
-              evidence: [
-                { file: Input.file("docs/ev.json"), dependency: "//pkg:test", ttlMs: 1000 },
-                { file: Input.file("docs/ev.json"), dependency: "//pkg:test", ttlMs: 1000 }
-              ]
-            })).toThrow(/distinct/)
+            expect(() =>
+              DocsCheck.Check({
+                output: Input.file("docs/a.md"),
+                stamp: Input.file("docs/a.md"),
+                inputs: [Input.file("src/a.ts")]
+              })
+            ).toThrow()
+            expect(() =>
+              DocsCheck.Check({
+                output: Input.file("docs/a.md"),
+                stamp: Input.file("docs/a.stamp"),
+                inputs: [Input.file("docs/a.md")]
+              })
+            ).toThrow(/own input/)
+            expect(() =>
+              DocsCheck.Check({
+                output: Input.file("docs/a.md"),
+                stamp: Input.file("docs/a.stamp"),
+                inputs: [Input.file("src/a.ts")],
+                evidence: [{ file: Input.file("docs/ev.json"), dependency: "//pkg:test", ttlMs: -5 }]
+              })
+            ).toThrow(/ttlMs/)
+            expect(() =>
+              DocsCheck.Check({
+                output: Input.file("docs/a.md"),
+                stamp: Input.file("docs/a.stamp"),
+                inputs: [Input.file("src/a.ts")],
+                evidence: [
+                  { file: Input.file("docs/ev.json"), dependency: "//pkg:test", ttlMs: 1000 },
+                  { file: Input.file("docs/ev.json"), dependency: "//pkg:test", ttlMs: 1000 }
+                ]
+              })
+            ).toThrow(/distinct/)
 
             // Factory Policy + Factory + FactoryPolicy
             expect(() => Factory.Policy({ todoSince: "not-a-date" })).toThrow(/RFC 3339/)
             expect(() => Factory.Policy({ dailyTokens: 0 })).toThrow(/positive/)
             expect(() => Factory.Policy({ maintainers: ["  bad  "] })).toThrow(/not a login/)
             expect(() => Factory.Policy({ protectedPaths: ["../bad"] })).toThrow(/repository-relative/)
-            expect(() => Factory.Factory({
-              flows: ["not-a-flow" as never],
-              on: {}
-            } as never)).toThrow(/Smithers\.Flow/)
-            expect(() => Factory.Factory({
-              flows: [],
-              on: "not-record" as never
-            } as never)).toThrow(/record/)
+            expect(() =>
+              Factory.Factory({
+                flows: ["not-a-flow" as never],
+                on: {}
+              } as never)
+            ).toThrow(/Smithers\.Flow/)
+            expect(() =>
+              Factory.Factory({
+                flows: [],
+                on: "not-record" as never
+              } as never)
+            ).toThrow(/record/)
             expect(() => FactoryPolicy.make({ unknownField: 1 } as never)).toThrow()
 
             // Shell validation + execPayload forms
             const fakeService = Docker.Service({ image: "postgres:18" } as never)
-            expect(() => Shell.Test({ shell: "echo hi", machine: "linux", sandbox: "none", services: [fakeService] } as never)).toThrow(/services/)
+            expect(() =>
+              Shell.Test({ shell: "echo hi", machine: "linux", sandbox: "none", services: [fakeService] } as never)
+            ).toThrow(/services/)
             expect(() => Shell.Test({ shell: "echo hi", observe: true } as never)).toThrow(/sandbox: "none"/)
-            expect(() => Shell.Test({ shell: "echo hi", observe: true, sandbox: "none", services: [fakeService] } as never)).toThrow(/services/)
-            expect(() => Shell.execPayload({ bin: fakeService, runtimeArgs: ["--inspect"] } as never)).toThrow(); expect(Shell.execPayload({ bin: fakeService, args: ["a"] } as never)).toBeDefined(); expect(Shell.execPayload({ bin: Reference.hostBin("echo"), runtimeArgs: ["-n"], args: ["hi"] } as never)).toBeDefined()
+            expect(() =>
+              Shell.Test({ shell: "echo hi", observe: true, sandbox: "none", services: [fakeService] } as never)
+            ).toThrow(/services/)
+            expect(() => Shell.execPayload({ bin: fakeService, runtimeArgs: ["--inspect"] } as never)).toThrow()
+            expect(Shell.execPayload({ bin: fakeService, args: ["a"] } as never)).toBeDefined()
+            expect(Shell.execPayload({ bin: Reference.hostBin("echo"), runtimeArgs: ["-n"], args: ["hi"] } as never))
+              .toBeDefined()
             expect(Shell.execPayload({ bin: Reference.hostBin("echo"), args: ["hi"] } as never)).toBeDefined()
-            expect(Shell.execPayload({ bin: Reference.NodeModule.Bin("vitest"), runtimeArgs: ["--max-old-space-size=512"], args: ["run"] } as never)).toBeDefined()
+            expect(
+              Shell.execPayload(
+                {
+                  bin: Reference.NodeModule.Bin("vitest"),
+                  runtimeArgs: ["--max-old-space-size=512"],
+                  args: ["run"]
+                } as never
+              )
+            ).toBeDefined()
             expect(() => Shell.execPayload({} as never)).toThrow(/no executable/)
 
             // WorkspaceDeclaration: Flags, Sandbox.Microsandbox
             expect(() => WorkspaceDeclaration.Flags("bad" as never)).toThrow(/record/)
             expect(() => WorkspaceDeclaration.Flags({ flag: "" })).toThrow(/non-empty/)
             expect(() => WorkspaceDeclaration.Sandbox.Microsandbox("bad" as never)).toThrow(/object/)
-            expect(() => WorkspaceDeclaration.Sandbox.Microsandbox({ [input.badKey]: 1 } as never)).toThrow(/unknown option/)
+            expect(() => WorkspaceDeclaration.Sandbox.Microsandbox({ [input.badKey]: 1 } as never)).toThrow(
+              /unknown option/
+            )
 
             // Nix
             expect(() => Nix.Environment({} as never)).toThrow(/flake or a file/)
-            expect(() => Nix.Environment({ file: Input.file("shell.nix"), lock: Input.file("flake.lock") } as never)).toThrow(/not a file/)
+            expect(() => Nix.Environment({ file: Input.file("shell.nix"), lock: Input.file("flake.lock") } as never))
+              .toThrow(/not a file/)
             expect(() => Nix.Environment({ file: "not-a-file" as never })).toThrow(/S\.file/)
             const nixFromFile = Nix.Environment({ file: Input.file("shell.nix") })
             expect(Nix.isEnvironment(nixFromFile)).toBe(true)
@@ -473,7 +568,9 @@ describe("@smthrs/targets Wave-9A: rule catalog, validators, declarations, notIm
             // Runtime
             expect(() => Runtime.Node("bad" as never)).toThrow(/object/)
             expect(() => Runtime.Node({} as never)).toThrow(/manifest or a version/)
-            expect(() => Runtime.Node({ version: ">=26.4.0", manifest: Input.file("package.json") } as never)).toThrow(/not both/)
+            expect(() => Runtime.Node({ version: ">=26.4.0", manifest: Input.file("package.json") } as never)).toThrow(
+              /not both/
+            )
             expect(Runtime.Node({ manifest: Input.file("package.json") })).toBeDefined()
             expect(Runtime.Node({ version: ">=26.4.0" })).toBeDefined()
             expect(() => Runtime.Node({ version: "bad\u0000ver" } as never)).toThrow(/control characters/)
@@ -490,7 +587,9 @@ describe("@smthrs/targets Wave-9A: rule catalog, validators, declarations, notIm
             expect(() => PackageJsonTemplate.make({ sideEffects: 123 as never })).toThrow(/boolean or an array/)
             const tmplSide = PackageJsonTemplate.make({ sideEffects: ["*.css"] })
             expect(tmplSide.fields["sideEffects"]).toEqual(["*.css"])
-            expect(() => PackageJsonTemplate.make({ type: "module", fields: { type: "module" } } as never)).toThrow(/twice/)
+            expect(() => PackageJsonTemplate.make({ type: "module", fields: { type: "module" } } as never)).toThrow(
+              /twice/
+            )
 
             // Reference
             expect(() => Reference.NodeModule("bad\u0000pkg")).toThrow(/control characters/)
@@ -526,7 +625,8 @@ describe("@smthrs/targets Wave-9A: rule catalog, validators, declarations, notIm
             expect(() => RustToolchain.Toolchain({ [input.badKey]: 1 } as never)).toThrow(/unknown option/)
             expect(() => RustToolchain.Toolchain({ channel: "1.85\u0000" })).toThrow(/control characters/)
             expect(() => RustToolchain.Toolchain({ toolchain: "not-file" as never })).toThrow(/S\.file/)
-            expect(() => RustToolchain.Toolchain({ channel: "stable", toolchain: Input.file("rust-toolchain.toml") })).toThrow()
+            expect(() => RustToolchain.Toolchain({ channel: "stable", toolchain: Input.file("rust-toolchain.toml") }))
+              .toThrow()
             expect(RustToolchain.isToolchainDeclaration({ _tag: "Nope" })).toBe(false)
             const rt = RustToolchain.Toolchain({ toolchain: Input.file("rust-toolchain.toml") })
             expect(RustToolchain.toolchainInstall(rt)).toBeDefined()
@@ -536,43 +636,57 @@ describe("@smthrs/targets Wave-9A: rule catalog, validators, declarations, notIm
             expect(() => AgentTarget.Pool([] as never)).toThrow(/non-empty/)
             expect(() => AgentTarget.Agents("bad" as never)).toThrow(/record/)
             expect(() => AgentTarget.Agents({ a: "not-agent" as never })).toThrow(/not an agent/)
-            expect(() => AgentTarget.Agents({
-              pool: AgentTarget.Pool(["missing"])
-            })).toThrow(/not a declared agent/)
+            expect(() =>
+              AgentTarget.Agents({
+                pool: AgentTarget.Pool(["missing"])
+              })
+            ).toThrow(/not a declared agent/)
 
             // FlowCatalog
-            expect(() => FlowCatalog.rows(
-              [
-                { id: "dup", path: ".smithers/flows/dup/flow.ts", kind: "ts", description: "a" },
-                { id: "dup", path: ".smithers/flows/dup/flow.ts", kind: "ts", description: "b" }
-              ] as never,
-              {} as never
-            )).toThrow(/twice/)
-            expect(() => FlowCatalog.rows(
-              [{ id: "known", path: ".smithers/flows/known/flow.ts", kind: "ts", description: "a" }] as never,
-              { unknownFlow: {} } as never
-            )).toThrow()
+            expect(() =>
+              FlowCatalog.rows(
+                [
+                  { id: "dup", path: ".smithers/flows/dup/flow.ts", kind: "ts", description: "a" },
+                  { id: "dup", path: ".smithers/flows/dup/flow.ts", kind: "ts", description: "b" }
+                ] as never,
+                {} as never
+              )
+            ).toThrow(/twice/)
+            expect(() =>
+              FlowCatalog.rows(
+                [{ id: "known", path: ".smithers/flows/known/flow.ts", kind: "ts", description: "a" }] as never,
+                { unknownFlow: {} } as never
+              )
+            ).toThrow()
 
             // Mount
-            expect(() => Mount.Mount({
-              repository: "org/repo",
-              ref: "main",
-              path: "vendor/repo"
-            } as never)).toThrow(/full commit id/)
-            expect(() => Mount.Mount({
-              repository: "org/repo",
-              ref: "a".repeat(40),
-              path: "vendor/repo",
-              drift: "fail"
-            } as never)).toThrow(/track/)
-            expect(() => Mount.Mounts({
-              Bad_Name: Mount.Mount({ repository: "org/repo", ref: "a".repeat(40), path: "vendor/a" } as never)
-            })).toThrow(/lowercase/)
+            expect(() =>
+              Mount.Mount({
+                repository: "org/repo",
+                ref: "main",
+                path: "vendor/repo"
+              } as never)
+            ).toThrow(/full commit id/)
+            expect(() =>
+              Mount.Mount({
+                repository: "org/repo",
+                ref: "a".repeat(40),
+                path: "vendor/repo",
+                drift: "fail"
+              } as never)
+            ).toThrow(/track/)
+            expect(() =>
+              Mount.Mounts({
+                Bad_Name: Mount.Mount({ repository: "org/repo", ref: "a".repeat(40), path: "vendor/a" } as never)
+              })
+            ).toThrow(/lowercase/)
 
             // Owners
             expect(() => Owners.declare({ owners: ["alice"], noparent: "yes" as never })).toThrow(/boolean/)
             expect(() => Owners.declare({ owners: [], noparent: true })).toThrow(/at least one owner/)
-            expect(() => Owners.declare({ owners: ["alice"], agents: { default: "bogus" as never } })).toThrow(/auto-land/)
+            expect(() => Owners.declare({ owners: ["alice"], agents: { default: "bogus" as never } })).toThrow(
+              /auto-land/
+            )
             expect(() => Owners.declare({ owners: ["alice"], perFile: { "": ["bob"] } } as never)).toThrow(/non-empty/)
             expect(() => Owners.Teams({ core: [input.badLogin] })).toThrow(/not a login/)
             expect(() => Owners.Teams({ huge: Array.from({ length: 100 }, (_, i) => `u${i}`) })).toThrow(/more than/)
@@ -580,7 +694,9 @@ describe("@smthrs/targets Wave-9A: rule catalog, validators, declarations, notIm
             // DependencyDocs
             expect(() => DependencyDocs.Package("BAD NAME!!", { files: ["README.md"] })).toThrow(/npm package name/)
             expect(() => DependencyDocs.Package("effect", { files: ["../escape.md"] })).toThrow(/package-relative/)
-            expect(() => DependencyDocs.Url("http://insecure.example/doc.md", { sha256: "a".repeat(64) })).toThrow(/https URL/)
+            expect(() => DependencyDocs.Url("http://insecure.example/doc.md", { sha256: "a".repeat(64) })).toThrow(
+              /https URL/
+            )
             expect(() => DependencyDocs.Url("https://example.com/doc.md", { sha256: "not-hex" })).toThrow(/sha256/)
             const docUrl = DependencyDocs.Url("https://example.com/doc.md", { sha256: "a".repeat(64) })
             expect(docUrl._tag).toBe("DocsUrl")
@@ -597,50 +713,108 @@ describe("@smthrs/targets Wave-9A: rule catalog, validators, declarations, notIm
             expect(() => ManifestJson.cloneValue(accObj, "obj")).toThrow(/accessor/)
 
             // PackageJson validation errors
-            const tsEntry = TsBuild.TsBuild({ srcs: [Input.file("src/index.ts")], entries: [Input.file("src/index.ts")], deps: [], tsconfig: Input.file("tsconfig.json"), tool: { name: "tsc" }, format: "esm", outDir: "dist" })
+            const tsEntry = TsBuild.TsBuild({
+              srcs: [Input.file("src/index.ts")],
+              entries: [Input.file("src/index.ts")],
+              deps: [],
+              tsconfig: Input.file("tsconfig.json"),
+              tool: { name: "tsc" },
+              format: "esm",
+              outDir: "dist"
+            })
             expect(() => PackageJson.PackageJson(new Date() as never)).toThrow(/plain object/)
-            expect(() => PackageJson.PackageJson({ name: "a", version: "1.0.0", [Symbol("s")]: 1 } as never)).toThrow(/symbol/)
-            expect(() => PackageJson.PackageJson({ name: "a", version: "1.0.0", [input.badKey]: 1 } as never)).toThrow(/unknown option/)
+            expect(() => PackageJson.PackageJson({ name: "a", version: "1.0.0", [Symbol("s")]: 1 } as never)).toThrow(
+              /symbol/
+            )
+            expect(() => PackageJson.PackageJson({ name: "a", version: "1.0.0", [input.badKey]: 1 } as never)).toThrow(
+              /unknown option/
+            )
             const pkAcc = { name: "a", version: "1.0.0" }
             Object.defineProperty(pkAcc, "description", { get: () => "d", enumerable: true })
             expect(() => PackageJson.PackageJson(pkAcc as never)).toThrow(/accessor/)
-            expect(() => PackageJson.PackageJson({ name: "a", version: "1.0.0", scripts: "bad" as never })).toThrow(/scripts must be a plain object/)
-            expect(() => PackageJson.PackageJson({ name: "a", version: "1.0.0", scripts: { [Symbol("s")]: "x" } as never })).toThrow(/symbol keys/)
+            expect(() => PackageJson.PackageJson({ name: "a", version: "1.0.0", scripts: "bad" as never })).toThrow(
+              /scripts must be a plain object/
+            )
+            expect(() =>
+              PackageJson.PackageJson({ name: "a", version: "1.0.0", scripts: { [Symbol("s")]: "x" } as never })
+            ).toThrow(/symbol keys/)
             const scrAcc = {}
             Object.defineProperty(scrAcc, "build", { get: () => "x", enumerable: true })
-            expect(() => PackageJson.PackageJson({ name: "a", version: "1.0.0", scripts: scrAcc as never })).toThrow(/accessor/)
-            expect(() => PackageJson.PackageJson({ name: "a", version: "1.0.0", scripts: { "": "x" } as never })).toThrow(/script name is invalid/)
-            expect(() => PackageJson.PackageJson({ name: "a", version: "1.0.0", publish: { entry: tsEntry, [Symbol("s")]: 1 } as never })).toThrow(/symbol keys/)
+            expect(() => PackageJson.PackageJson({ name: "a", version: "1.0.0", scripts: scrAcc as never })).toThrow(
+              /accessor/
+            )
+            expect(() => PackageJson.PackageJson({ name: "a", version: "1.0.0", scripts: { "": "x" } as never }))
+              .toThrow(/script name is invalid/)
+            expect(() =>
+              PackageJson.PackageJson({
+                name: "a",
+                version: "1.0.0",
+                publish: { entry: tsEntry, [Symbol("s")]: 1 } as never
+              })
+            ).toThrow(/symbol keys/)
             const pubAcc = { entry: tsEntry }
             Object.defineProperty(pubAcc, "access", { get: () => "public", enumerable: true })
-            expect(() => PackageJson.PackageJson({ name: "a", version: "1.0.0", publish: pubAcc as never })).toThrow(/accessor/)
-            expect(() => PackageJson.PackageJson({ name: "a", version: "1.0.0", publish: { entry: tsEntry, access: "private" as never } })).toThrow(/public/)
-            expect(() => PackageJson.PackageJson({ name: "a", version: "1.0.0", fields: { name: "dup" } } as never)).toThrow(/twice/)
-            expect(() => PackageJson.PackageJson({ name: "a", version: "1.0.0", readme: "README.md" as never })).toThrow(/Input\.File/)
-            expect(() => PackageJson.PackageJson({ name: "a", version: "1.0.0", sources: "src/*.ts" as never })).toThrow(/Input\.Glob/)
-            expect(() => PackageJson.PackageJson({ name: "a", version: "1.0.0", model: "  bad  " } as never)).toThrow(/model/)
+            expect(() => PackageJson.PackageJson({ name: "a", version: "1.0.0", publish: pubAcc as never })).toThrow(
+              /accessor/
+            )
+            expect(() =>
+              PackageJson.PackageJson({
+                name: "a",
+                version: "1.0.0",
+                publish: { entry: tsEntry, access: "private" as never }
+              })
+            ).toThrow(/public/)
+            expect(() => PackageJson.PackageJson({ name: "a", version: "1.0.0", fields: { name: "dup" } } as never))
+              .toThrow(/twice/)
+            expect(() => PackageJson.PackageJson({ name: "a", version: "1.0.0", readme: "README.md" as never }))
+              .toThrow(/Input\.File/)
+            expect(() => PackageJson.PackageJson({ name: "a", version: "1.0.0", sources: "src/*.ts" as never }))
+              .toThrow(/Input\.Glob/)
+            expect(() => PackageJson.PackageJson({ name: "a", version: "1.0.0", model: "  bad  " } as never)).toThrow(
+              /model/
+            )
 
             // SecurityReview validators
-            expect(() => SecurityReview.SecurityReview({
-              cwd: ".",
-              checks: [{ id: "bad\nid", title: "t", rule: "g" }] as never
-            })).toThrow(/nonempty line/)
-            expect(() => SecurityReview.SecurityReview({
-              cwd: ".",
-              checks: [],
-              boundaries: []
-            })).toThrow(/at least one boundary/)
-            expect(() => SecurityReview.SecurityReview({
-              cwd: ".",
-              checks: [],
-              boundaries: [{ id: "b1", entrypoints: [], invariants: ["inv"] }] as never
-            })).toThrow(/at least one item/)
+            expect(() =>
+              SecurityReview.SecurityReview({
+                cwd: ".",
+                checks: [{ id: "bad\nid", title: "t", rule: "g" }] as never
+              })
+            ).toThrow(/nonempty line/)
+            expect(() =>
+              SecurityReview.SecurityReview({
+                cwd: ".",
+                checks: [],
+                boundaries: []
+              })
+            ).toThrow(/at least one boundary/)
+            expect(() =>
+              SecurityReview.SecurityReview({
+                cwd: ".",
+                checks: [],
+                boundaries: [{ id: "b1", entrypoints: [], invariants: ["inv"] }] as never
+              })
+            ).toThrow(/at least one item/)
 
             // Internal small helpers
             expect(ExecEnvironment.nameKey("Path", "win32")).toBe("PATH")
             expect(ExecEnvironment.nameKey("Path", "linux")).toBe("Path")
-            expect(ReviewEnvironment.spawnEnvironment(["SECRET"], false, "/home/u", "claude", { ANTHROPIC_API_KEY: "k", SECRET: "s", OTHER: "v" }, "linux", NodePath.join)).toBeDefined()
-            expect(ReviewExecutable.nodeModule("C:/tool.mjs", { platform: "win32", stat: (() => ({ isFile: () => false })) as never, isAbsolute: () => true })).toBe(false)
+            expect(
+              ReviewEnvironment.spawnEnvironment(
+                ["SECRET"],
+                false,
+                "/home/u",
+                "claude",
+                { ANTHROPIC_API_KEY: "k", SECRET: "s", OTHER: "v" },
+                "linux",
+                NodePath.join
+              )
+            ).toBeDefined()
+            expect(ReviewExecutable.nodeModule("C:/tool.mjs", {
+              platform: "win32",
+              stat: (() => ({ isFile: () => false })) as never,
+              isAbsolute: () => true
+            })).toBe(false)
             expect(ReviewModel.configuredRoute({ _tag: "Success", success: "ok" } as never)).toBeDefined()
             expect(DeclarationSource.capture({
               callSites: () => {
@@ -699,32 +873,36 @@ describe("@smthrs/targets Wave-9A: rule catalog, validators, declarations, notIm
         }]
       })
       expect(sec.security).toBeDefined()
-      expect(() => SecurityReview.SecurityReview({
-        cwd: ".",
-        workspaceRoot: root,
-        checks: [],
-        context: ["src/does-not-exist.ts"]
-      })).toThrow(/matches no file/)
-      expect(() => SecurityReview.SecurityReview({
-        cwd: ".",
-        workspaceRoot: root,
-        checks: [],
-        boundaries: [{
-          id: "b2",
-          actors: ["user"],
-          assets: ["secret"],
-          entryPoints: ["src/missing.ts"],
-          identityTransformations: ["none"],
-          enforcementPoints: ["src/app.ts"],
-          deploymentAssumptions: ["trusted host"],
-          path: {
-            caller: ["src/missing.ts"],
-            authorization: ["src/app.ts"],
-            service: ["src/app.ts"],
-            storageOrEgress: ["src/app.ts"]
-          }
-        }]
-      })).toThrow(/matches no file/)
+      expect(() =>
+        SecurityReview.SecurityReview({
+          cwd: ".",
+          workspaceRoot: root,
+          checks: [],
+          context: ["src/does-not-exist.ts"]
+        })
+      ).toThrow(/matches no file/)
+      expect(() =>
+        SecurityReview.SecurityReview({
+          cwd: ".",
+          workspaceRoot: root,
+          checks: [],
+          boundaries: [{
+            id: "b2",
+            actors: ["user"],
+            assets: ["secret"],
+            entryPoints: ["src/missing.ts"],
+            identityTransformations: ["none"],
+            enforcementPoints: ["src/app.ts"],
+            deploymentAssumptions: ["trusted host"],
+            path: {
+              caller: ["src/missing.ts"],
+              authorization: ["src/app.ts"],
+              service: ["src/app.ts"],
+              storageOrEgress: ["src/app.ts"]
+            }
+          }]
+        })
+      ).toThrow(/matches no file/)
     })
   })
 })

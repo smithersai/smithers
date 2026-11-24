@@ -189,7 +189,7 @@ describe("@smthrs/platform-node fuzz invariants", () => {
   it("DestinationProxy enforces Proxy-Authorization, host allowlists, and rejects SSRF/userinfo smuggling", async () => {
     const token = "fuzz-broker-token-99"
     const goodAuth = "Basic " + Buffer.from(`broker:${token}`).toString("base64")
-    const sockDir = nodeFs.mkdtempSync(join(tempRoot, "proxy-"))
+    const sockDir = nodeFs.mkdtempSync(join(tmpdir(), "dp-"))
     const sockPath = join(sockDir, "p.sock")
 
     const arb = Arbitrary.schema(
@@ -750,7 +750,7 @@ describe("@smthrs/platform-node fuzz invariants", () => {
   it("DestinationProxy CONNECT tunnel & EgressHttpClient proxy/resolveHost enforce allowlists", async () => {
     const token = "tunnel-token-77"
     const goodAuth = "Basic " + Buffer.from(`broker:${token}`).toString("base64")
-    const sockDir = nodeFs.mkdtempSync(join(tempRoot, "tun-"))
+    const sockDir = nodeFs.mkdtempSync(join(tmpdir(), "dt-"))
     const sockPath = join(sockDir, "t.sock")
 
     const arb = Arbitrary.schema(

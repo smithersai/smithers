@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it } from "@effect/vitest"
 import { CapabilityPattern } from "@smthrs/capability/Capability"
 import { Rule } from "@smthrs/capability/Permission"
 import { Deferred, Effect, Fiber, FileSystem as EffectFileSystem, Layer, Stream } from "effect"
-import { mkdir, mkdtemp, readFile, rename, rm, symlink, unlink, writeFile } from "node:fs/promises"
+import { mkdir, mkdtemp, readFile, realpath, rename, rm, symlink, unlink, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import * as FileSystem from "../src/FileSystem.ts"
@@ -14,7 +14,7 @@ import * as Workspace from "../src/Workspace.ts"
 const directories = new Set<string>()
 
 const temporaryDirectory = async (): Promise<string> => {
-  const directory = await mkdtemp(join(tmpdir(), "flows-kernel-fs-"))
+  const directory = await realpath(await mkdtemp(join(tmpdir(), "flows-kernel-fs-")))
   directories.add(directory)
   return directory
 }

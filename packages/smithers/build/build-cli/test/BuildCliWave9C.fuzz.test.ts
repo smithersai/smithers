@@ -26,111 +26,115 @@ const withTempDir = async <A>(prefix: string, body: (dir: string) => Promise<A>)
 }
 
 describe("BuildCliWave9C PackageTree, Cache, Resolver, Owners, Affected, TrustedReview", () => {
-  it("PackageTree outDir/file capture, materialize, limits, symlink confinement, ignored & snapshotTree faults", async () => {
-    await withTempDir("wave9c-tree-", async (dir) => {
-      const ws = NodePath.join(dir, "ws")
-      const outside = NodePath.join(dir, "outside")
-      await Fs.mkdir(ws, { recursive: true })
-      await Fs.mkdir(outside, { recursive: true })
+  it(
+    "PackageTree outDir/file capture, materialize, limits, symlink confinement, ignored & snapshotTree faults",
+    async () => {
+      await withTempDir("wave9c-tree-", async (dir) => {
+        const ws = NodePath.join(dir, "ws")
+        const outside = NodePath.join(dir, "outside")
+        await Fs.mkdir(ws, { recursive: true })
+        await Fs.mkdir(outside, { recursive: true })
 
-      await expect(PackageTree.captureOutDir(ws, ".cache", "missing-dist")).rejects.toThrow()
+        await expect(PackageTree.captureOutDir(ws, ".cache", "missing-dist")).rejects.toThrow()
 
-      await Fs.symlink(outside, NodePath.join(ws, "escape-parent"))
-      await Fs.mkdir(NodePath.join(outside, "dist"), { recursive: true })
-      await expect(PackageTree.captureOutDir(ws, ".cache", "escape-parent/dist")).rejects.toThrow()
+        await Fs.symlink(outside, NodePath.join(ws, "escape-parent"))
+        await Fs.mkdir(NodePath.join(outside, "dist"), { recursive: true })
+        await expect(PackageTree.captureOutDir(ws, ".cache", "escape-parent/dist")).rejects.toThrow()
 
-      const dist = NodePath.join(ws, "dist")
-      await Fs.mkdir(NodePath.join(dist, "sub"), { recursive: true })
-      await Fs.writeFile(NodePath.join(dist, "a.txt"), "hello world")
-      await Fs.writeFile(NodePath.join(dist, "sub", "b.txt"), "sub content")
-      await Fs.symlink("a.txt", NodePath.join(dist, "link-a.txt"))
-      const manifest = await PackageTree.captureOutDir(ws, ".cache", "dist")
-      expect(manifest.entries.some((e) => e.kind === "link")).toBe(true)
-      expect(PackageTree.decodeManifest(manifest)).toBeDefined()
-      expect(
-        PackageTree.decodeManifest({
+        const dist = NodePath.join(ws, "dist")
+        await Fs.mkdir(NodePath.join(dist, "sub"), { recursive: true })
+        await Fs.writeFile(NodePath.join(dist, "a.txt"), "hello world")
+        await Fs.writeFile(NodePath.join(dist, "sub", "b.txt"), "sub content")
+        await Fs.symlink("a.txt", NodePath.join(dist, "link-a.txt"))
+        const manifest = await PackageTree.captureOutDir(ws, ".cache", "dist")
+        expect(manifest.entries.some((e) => e.kind === "link")).toBe(true)
+        expect(PackageTree.decodeManifest(manifest)).toBeDefined()
+        expect(
+          PackageTree.decodeManifest({
+            ...manifest,
+            entries: [{ path: "bad", kind: "link", digest: "", executable: false, target: "../../etc/passwd" }]
+          })
+        ).toBeUndefined()
+
+        await expect(
+          PackageTree.captureOutDir(ws, ".cache", "dist", ws, { ...PackageTree.outDirLimits, fileBytes: 2 })
+        ).rejects.toThrow(PackageTree.OutDirLimitError)
+        await expect(
+          PackageTree.captureOutDir(ws, ".cache", "dist", ws, { ...PackageTree.outDirLimits, manifestBytes: 10 })
+        ).rejects.toThrow(PackageTree.OutDirLimitError)
+
+        const fakeManifest: PackageTree.OutDirManifest = {
           ...manifest,
-          entries: [{ path: "bad", kind: "link", digest: "", executable: false, target: "../../etc/passwd" }]
-        })
-      ).toBeUndefined()
-
-      await expect(
-        PackageTree.captureOutDir(ws, ".cache", "dist", ws, { ...PackageTree.outDirLimits, fileBytes: 2 })
-      ).rejects.toThrow(PackageTree.OutDirLimitError)
-      await expect(
-        PackageTree.captureOutDir(ws, ".cache", "dist", ws, { ...PackageTree.outDirLimits, manifestBytes: 10 })
-      ).rejects.toThrow(PackageTree.OutDirLimitError)
-
-      const fakeManifest: PackageTree.OutDirManifest = {
-        ...manifest,
-        entries: [{ path: "a.txt", kind: "file", digest: "f".repeat(64), executable: false, target: "" }]
-      }
-      const missingMsg = await PackageTree.verifyManifestBlobs(ws, ".cache", fakeManifest)
-      expect(missingMsg).toContain("cas blob missing")
-
-      await Fs.rm(dist, { recursive: true, force: true })
-      await PackageTree.materializeManifest(ws, ".cache", manifest)
-      expect(await PackageTree.treeMatchesManifest(ws, manifest)).toBeUndefined()
-
-      await Fs.writeFile(NodePath.join(dist, "extra.txt"), "nope")
-      expect(await PackageTree.treeMatchesManifest(ws, manifest)).toContain("not in the captured tree")
-      await Fs.rm(NodePath.join(dist, "extra.txt"))
-
-      await Fs.mkdir(NodePath.join(dist, "extra-dir"))
-      expect(await PackageTree.treeMatchesManifest(ws, manifest)).toContain("not in the captured tree")
-      await Fs.rm(NodePath.join(dist, "extra-dir"), { recursive: true, force: true })
-
-      // Colocated jj repo creates .git & .jj cleanly
-      NodeChildProcess.execFileSync("jj", ["git", "init", "--colocate"], { cwd: ws, stdio: "ignore" })
-      await PackageTree.runGit(ws, ["config", "user.email", "test@example.com"])
-      await PackageTree.runGit(ws, ["config", "user.name", "Test"])
-      await Fs.writeFile(NodePath.join(ws, ".gitignore"), "ignored-*\n.cache/\n.jj/\n")
-      await Fs.writeFile(NodePath.join(ws, "tracked.txt"), "v1\n")
-      await PackageTree.runGit(ws, ["add", ".gitignore", "tracked.txt"])
-      await PackageTree.runGit(ws, ["commit", "-q", "-m", "init"])
-
-      await Fs.writeFile(NodePath.join(ws, "tracked.txt"), "v2\n")
-      const faultyIo: PackageTree.TreeIo = {
-        ...Fs,
-        lstat: async () => {
-          throw Object.assign(new Error("denied"), { code: "EACCES" })
+          entries: [{ path: "a.txt", kind: "file", digest: "f".repeat(64), executable: false, target: "" }]
         }
-      }
-      await expect(PackageTree.snapshotTree(ws, ".cache", faultyIo)).rejects.toThrow()
+        const missingMsg = await PackageTree.verifyManifestBlobs(ws, ".cache", fakeManifest)
+        expect(missingMsg).toContain("cas blob missing")
 
-      const snap = await PackageTree.snapshotTree(ws, ".cache")
-      try {
-        await Fs.writeFile(NodePath.join(ws, "brand-new.txt"), "new")
-        const changed = await PackageTree.changedSinceSnapshot(snap, ".cache")
-        expect(changed).toContain("brand-new.txt")
-        await PackageTree.revertPath(snap, "brand-new.txt")
-        await expect(Fs.access(NodePath.join(ws, "brand-new.txt"))).rejects.toThrow()
-      } finally {
-        await PackageTree.releaseSnapshot(snap)
-      }
+        await Fs.rm(dist, { recursive: true, force: true })
+        await PackageTree.materializeManifest(ws, ".cache", manifest)
+        expect(await PackageTree.treeMatchesManifest(ws, manifest)).toBeUndefined()
 
-      await Fs.symlink("tracked.txt", NodePath.join(ws, "ignored-link"))
-      await Fs.writeFile(NodePath.join(ws, "ignored-file"), "orig")
-      const igStash = await PackageTree.openIgnoredStash()
-      try {
-        const igSnap = await PackageTree.snapshotIgnored(ws, ".cache", PackageTree.ignoredLimits, igStash)
+        await Fs.writeFile(NodePath.join(dist, "extra.txt"), "nope")
+        expect(await PackageTree.treeMatchesManifest(ws, manifest)).toContain("not in the captured tree")
+        await Fs.rm(NodePath.join(dist, "extra.txt"))
+
+        await Fs.mkdir(NodePath.join(dist, "extra-dir"))
+        expect(await PackageTree.treeMatchesManifest(ws, manifest)).toContain("not in the captured tree")
+        await Fs.rm(NodePath.join(dist, "extra-dir"), { recursive: true, force: true })
+
+        // Colocated jj repo creates .git & .jj cleanly
+        NodeChildProcess.execFileSync("jj", ["git", "init", "--colocate"], { cwd: ws, stdio: "ignore" })
+        await PackageTree.runGit(ws, ["config", "user.email", "test@example.com"])
+        await PackageTree.runGit(ws, ["config", "user.name", "Test"])
+        await Fs.writeFile(NodePath.join(ws, ".gitignore"), "ignored-*\n.cache/\n.jj/\n")
+        await Fs.writeFile(NodePath.join(ws, "tracked.txt"), "v1\n")
+        await PackageTree.runGit(ws, ["add", ".gitignore", "tracked.txt"])
+        await PackageTree.runGit(ws, ["commit", "-q", "-m", "init"])
+
+        await Fs.writeFile(NodePath.join(ws, "tracked.txt"), "v2\n")
+        const faultyIo: PackageTree.TreeIo = {
+          ...Fs,
+          lstat: async () => {
+            throw Object.assign(new Error("denied"), { code: "EACCES" })
+          }
+        }
+        await expect(PackageTree.snapshotTree(ws, ".cache", faultyIo)).rejects.toThrow()
+
+        const snap = await PackageTree.snapshotTree(ws, ".cache")
         try {
-          await Fs.rm(NodePath.join(ws, "ignored-link"))
-          await Fs.writeFile(NodePath.join(ws, "ignored-link"), "replaced-with-file")
-          await Fs.writeFile(NodePath.join(ws, "ignored-file"), "modified")
-          const igChanged = await PackageTree.changedIgnored(igSnap, ".cache")
-          expect(igChanged).toContain("ignored-link")
-          await PackageTree.revertIgnored(igSnap, "ignored-link")
-          const st = await Fs.lstat(NodePath.join(ws, "ignored-link"))
-          expect(st.isSymbolicLink()).toBe(true)
+          await Fs.writeFile(NodePath.join(ws, "brand-new.txt"), "new")
+          const changed = await PackageTree.changedSinceSnapshot(snap, ".cache")
+          expect(changed).toContain("brand-new.txt")
+          await PackageTree.revertPath(snap, "brand-new.txt")
+          await expect(Fs.access(NodePath.join(ws, "brand-new.txt"))).rejects.toThrow()
         } finally {
-          await PackageTree.releaseIgnored(igSnap)
+          await PackageTree.releaseSnapshot(snap)
         }
-      } finally {
-        await PackageTree.releaseIgnoredStash(igStash)
-      }
-    })
-  }, 60_000)
+
+        await Fs.symlink("tracked.txt", NodePath.join(ws, "ignored-link"))
+        await Fs.writeFile(NodePath.join(ws, "ignored-file"), "orig")
+        const igStash = await PackageTree.openIgnoredStash()
+        try {
+          const igSnap = await PackageTree.snapshotIgnored(ws, ".cache", PackageTree.ignoredLimits, igStash)
+          try {
+            await Fs.rm(NodePath.join(ws, "ignored-link"))
+            await Fs.writeFile(NodePath.join(ws, "ignored-link"), "replaced-with-file")
+            await Fs.writeFile(NodePath.join(ws, "ignored-file"), "modified")
+            const igChanged = await PackageTree.changedIgnored(igSnap, ".cache")
+            expect(igChanged).toContain("ignored-link")
+            await PackageTree.revertIgnored(igSnap, "ignored-link")
+            const st = await Fs.lstat(NodePath.join(ws, "ignored-link"))
+            expect(st.isSymbolicLink()).toBe(true)
+          } finally {
+            await PackageTree.releaseIgnored(igSnap)
+          }
+        } finally {
+          await PackageTree.releaseIgnoredStash(igStash)
+        }
+      })
+    },
+    60_000
+  )
 
   it("Cache validation errors, limits, surrogate handling, and remote HTTP status/degrade paths", async () => {
     await withTempDir("wave9c-cache-", async (dir) => {
@@ -264,7 +268,10 @@ describe("BuildCliWave9C PackageTree, Cache, Resolver, Owners, Affected, Trusted
         JSON.stringify({ compilerOptions: { baseUrl: ".", paths: { "@exact": ["src/exact.ts"] } } })
       )
       await Fs.writeFile(NodePath.join(ws, "src", "exact.ts"), `export const e = 1\n`)
-      await Fs.writeFile(NodePath.join(ws, "src", "main.ts"), `import { e } from "@exact"\nimport "#nope"\nexport { e }\n`)
+      await Fs.writeFile(
+        NodePath.join(ws, "src", "main.ts"),
+        `import { e } from "@exact"\nimport "#nope"\nexport { e }\n`
+      )
       const okConfig = await Resolver.loadResolverConfig({ workspaceRoot: ws, tsconfig: "tsconfig.ok.json" })
       const closure = await Resolver.computeClosure({
         config: okConfig,
@@ -321,11 +328,23 @@ describe("BuildCliWave9C PackageTree, Cache, Resolver, Owners, Affected, Trusted
       await expect(Affected.changedPaths(ws, { base: "HEAD", timeoutMs: 0 })).rejects.toThrow(Affected.AffectedGitError)
       const ac = new AbortController()
       ac.abort(new Error("stop"))
-      await expect(Affected.changedPaths(ws, { base: "HEAD", signal: ac.signal })).rejects.toThrow(Affected.AffectedGitError)
+      await expect(Affected.changedPaths(ws, { base: "HEAD", signal: ac.signal })).rejects.toThrow(
+        Affected.AffectedGitError
+      )
 
       const privDep = S.Shell.Test({ shell: "true" })
       const pubTarget = S.Shell.Test({ shell: "true", data: [privDep] })
-      const affIndex = PackageIndex.make({ root: ws, workspace: WorkspaceDeclaration.Workspace("w", { repository: "git+https://github.com/org/repo.git", cache: WorkspaceDeclaration.Cache({ directory: ".cache" }) }), factory: undefined, packages: [{ packagePath: "pkg", file: "pkg/PACKAGE.ts", value: S.Package({ targets: { pub: pubTarget } }) }], modules: [], moduleRoots: [] }, ws)
+      const affIndex = PackageIndex.make({
+        root: ws,
+        workspace: WorkspaceDeclaration.Workspace("w", {
+          repository: "git+https://github.com/org/repo.git",
+          cache: WorkspaceDeclaration.Cache({ directory: ".cache" })
+        }),
+        factory: undefined,
+        packages: [{ packagePath: "pkg", file: "pkg/PACKAGE.ts", value: S.Package({ targets: { pub: pubTarget } }) }],
+        modules: [],
+        moduleRoots: []
+      }, ws)
       expect(() => Affected.select(affIndex, ["//..."], ["../escape"])).toThrow()
       expect(() => Affected.select(affIndex, ["//..."], ["/abs"])).toThrow()
       expect(() => Affected.select(affIndex, ["//..."], [""])).toThrow()
@@ -343,7 +362,10 @@ describe("BuildCliWave9C PackageTree, Cache, Resolver, Owners, Affected, Trusted
             [".smithers/targets.json", { id: "100644 blob " + "a".repeat(40), regular: true }],
             ["pkg/a.ts", { id: "100644 blob " + "b".repeat(40), regular: true }]
           ]),
-        read: async (_rev, path) => (path === ".smithers/targets.json" ? JSON.stringify(indexJson) : "export const a = 1\n"),
+        read: async (
+          _rev,
+          path
+        ) => (path === ".smithers/targets.json" ? JSON.stringify(indexJson) : "export const a = 1\n"),
         grep: async () => []
       })
 
@@ -351,7 +373,13 @@ describe("BuildCliWave9C PackageTree, Cache, Resolver, Owners, Affected, Trusted
         TrustedReview.prepareSource(
           makeSource({
             version: 1,
-            targets: [{ label: "//wrong:name", package: "pkg", name: "other", target: "SecurityReview", kinds: ["lint"] }]
+            targets: [{
+              label: "//wrong:name",
+              package: "pkg",
+              name: "other",
+              target: "SecurityReview",
+              kinds: ["lint"]
+            }]
           }),
           { policyRevision: "rev0", revision: "rev1", patterns: [] }
         )

@@ -103,7 +103,9 @@ describe("BuildCliWave9L 16-module surgical sweep", () => {
                 }
               }
             )
-            expect(() => Engine.packageManagerEnvironment(throwingEnv as never)).toThrow(/could not be inspected safely/)
+            expect(() => Engine.packageManagerEnvironment(throwingEnv as never)).toThrow(
+              /could not be inspected safely/
+            )
 
             expect(() => Engine.packageManagerEnvironment({ BAD: "x\uD800y" })).toThrow(/not usable text/)
 
@@ -140,7 +142,9 @@ describe("BuildCliWave9L 16-module surgical sweep", () => {
             expect(() => Executor.decodeCacheOutput(nonPlainEnv)).not.toThrow()
             const getterEnv = { ...envTag }
             Object.defineProperty(getterEnv, "value", { get: () => 1, enumerable: true })
-            try { Executor.decodeCacheOutput(getterEnv) } catch {}
+            try {
+              Executor.decodeCacheOutput(getterEnv)
+            } catch {}
 
             const hugeObj: Record<string, unknown> = {}
             for (let i = 0; i < 6000; i++) hugeObj[`k${i}`] = { a: i, b: [i, i + 1] }
@@ -179,7 +183,13 @@ describe("BuildCliWave9L 16-module surgical sweep", () => {
               /not a URL/
             )
             await runAcquireFail(
-              { key: "svc-bad-sig", cwd: "/tmp", argv: ["/bin/true"], readiness: { kind: "none" }, stop: { signal: "NOT_A_REAL_SIGNAL" } },
+              {
+                key: "svc-bad-sig",
+                cwd: "/tmp",
+                argv: ["/bin/true"],
+                readiness: { kind: "none" },
+                stop: { signal: "NOT_A_REAL_SIGNAL" }
+              },
               /not a signal name/
             )
             await runAcquireFail(
@@ -265,7 +275,11 @@ describe("BuildCliWave9L 16-module surgical sweep", () => {
                     name: "index.json",
                     content: JSON.stringify({
                       schemaVersion: 2,
-                      manifests: [{ mediaType: "application/vnd.oci.image.manifest.v1+json", digest: "sha256:not-hex!", size: 10 }]
+                      manifests: [{
+                        mediaType: "application/vnd.oci.image.manifest.v1+json",
+                        digest: "sha256:not-hex!",
+                        size: 10
+                      }]
                     })
                   }
                 ])
@@ -281,7 +295,11 @@ describe("BuildCliWave9L 16-module surgical sweep", () => {
                 const body = JSON.stringify({
                   schemaVersion: 2,
                   mediaType: "application/vnd.oci.image.index.v1+json",
-                  manifests: [{ mediaType: "application/vnd.oci.image.index.v1+json", digest: prevDigest, size: prevSize }]
+                  manifests: [{
+                    mediaType: "application/vnd.oci.image.index.v1+json",
+                    digest: prevDigest,
+                    size: prevSize
+                  }]
                 })
                 const h = NodeCrypto.createHash("sha256").update(body).digest("hex")
                 if (i === 66) entries.push({ name: "index.json", content: body })
@@ -334,9 +352,8 @@ describe("BuildCliWave9L 16-module surgical sweep", () => {
               expect(logs.length).toBeGreaterThanOrEqual(3)
 
               // 5. GoCache: relative SMITHERS_GO_CACHE & file at cache path
-              expect(() =>
-                GoCache.directory(dir, ".cache", { [GoCache.environmentName]: "relative/go-cache" })
-              ).toThrow(/must be an absolute directory/)
+              expect(() => GoCache.directory(dir, ".cache", { [GoCache.environmentName]: "relative/go-cache" }))
+                .toThrow(/must be an absolute directory/)
 
               const fileAtCache = NodePath.join(dir, "go-cache-file")
               await Fs.writeFile(fileAtCache, "x")
@@ -352,149 +369,157 @@ describe("BuildCliWave9L 16-module surgical sweep", () => {
     assertPassed(report)
   }, 60_000)
 
-  it("FactoryProjectionExec, NixExec, Mount, GitSubmoduleExec, MemoryBackend, PackageDiscovery, GitCommit, Machine", async () => {
-    const report = await Effect.runPromise(
-      Fuzz.run(
-        Arbitrary.schema(Schema.Literal(1)),
-        () =>
-          Effect.promise(async () => {
-            await withTempDir("wave9l-m3-", async (dir) => {
-              // 1. FactoryProjectionExec: discoverFlows with flow.ts, flow.mdx, flow.txt + renderProjection null factory
-              const flowsDir = NodePath.join(dir, ".smithers/flows")
-              await Fs.mkdir(NodePath.join(flowsDir, "f-ts"), { recursive: true })
-              await Fs.mkdir(NodePath.join(flowsDir, "f-mdx"), { recursive: true })
-              await Fs.mkdir(NodePath.join(flowsDir, "f-other"), { recursive: true })
-              await Fs.writeFile(NodePath.join(flowsDir, "f-ts/flow.ts"), "export default {}\n")
-              await Fs.writeFile(NodePath.join(flowsDir, "f-mdx/flow.mdx"), "# Flow\n")
-              await Fs.writeFile(NodePath.join(flowsDir, "f-other/flow.txt"), "ignored\n")
-              const fsLayer = Layer.merge(NodeFileSystem.layer, EffectNodePath.layer)
-              const discovered = await Effect.runPromise(
-                FactoryProjectionExec.discoverFlows(dir, ".smithers/flows").pipe(Effect.provide(fsLayer))
-              )
-              expect(Array.isArray(discovered)).toBe(true)
+  it(
+    "FactoryProjectionExec, NixExec, Mount, GitSubmoduleExec, MemoryBackend, PackageDiscovery, GitCommit, Machine",
+    async () => {
+      const report = await Effect.runPromise(
+        Fuzz.run(
+          Arbitrary.schema(Schema.Literal(1)),
+          () =>
+            Effect.promise(async () => {
+              await withTempDir("wave9l-m3-", async (dir) => {
+                // 1. FactoryProjectionExec: discoverFlows with flow.ts, flow.mdx, flow.txt + renderProjection null factory
+                const flowsDir = NodePath.join(dir, ".smithers/flows")
+                await Fs.mkdir(NodePath.join(flowsDir, "f-ts"), { recursive: true })
+                await Fs.mkdir(NodePath.join(flowsDir, "f-mdx"), { recursive: true })
+                await Fs.mkdir(NodePath.join(flowsDir, "f-other"), { recursive: true })
+                await Fs.writeFile(NodePath.join(flowsDir, "f-ts/flow.ts"), "export default {}\n")
+                await Fs.writeFile(NodePath.join(flowsDir, "f-mdx/flow.mdx"), "# Flow\n")
+                await Fs.writeFile(NodePath.join(flowsDir, "f-other/flow.txt"), "ignored\n")
+                const fsLayer = Layer.merge(NodeFileSystem.layer, EffectNodePath.layer)
+                const discovered = await Effect.runPromise(
+                  FactoryProjectionExec.discoverFlows(dir, ".smithers/flows").pipe(Effect.provide(fsLayer))
+                )
+                expect(Array.isArray(discovered)).toBe(true)
 
-              const nullProjExit = await Effect.runPromiseExit(
-                FactoryProjectionExec.renderProjection(dir, {
-                  factory: null,
-                  mode: "check",
-                  homeOutput: "HOME.md"
-                } as never).pipe(Effect.provide(fsLayer))
-              )
-              expect(nullProjExit._tag).toBe("Failure")
+                const nullProjExit = await Effect.runPromiseExit(
+                  FactoryProjectionExec.renderProjection(dir, {
+                    factory: null,
+                    mode: "check",
+                    homeOutput: "HOME.md"
+                  } as never).pipe(Effect.provide(fsLayer))
+                )
+                expect(nullProjExit._tag).toBe("Failure")
 
-              // 2. NixExec: fake nix script returning invalid JSON, missing variables, non-zero exit
-              const nixBin = NodePath.join(dir, "nixbin")
-              await Fs.mkdir(nixBin, { recursive: true })
-              await Fs.writeFile(NodePath.join(dir, "flake.nix"), "{ }\n")
-              await Fs.writeFile(NodePath.join(dir, "flake.lock"), "{}\n")
-              const nixScript = NodePath.join(nixBin, "nix")
-              const nixDecl = Nix.Environment({ flake: S.file("//flake.nix"), lock: S.file("//flake.lock") })
+                // 2. NixExec: fake nix script returning invalid JSON, missing variables, non-zero exit
+                const nixBin = NodePath.join(dir, "nixbin")
+                await Fs.mkdir(nixBin, { recursive: true })
+                await Fs.writeFile(NodePath.join(dir, "flake.nix"), "{ }\n")
+                await Fs.writeFile(NodePath.join(dir, "flake.lock"), "{}\n")
+                const nixScript = NodePath.join(nixBin, "nix")
+                const nixDecl = Nix.Environment({ flake: S.file("//flake.nix"), lock: S.file("//flake.lock") })
 
-              for (const body of [
-                "#!/bin/sh\necho 'not-json'\n",
-                "#!/bin/sh\necho '{\"noVars\":true}'\n",
-                "#!/bin/sh\necho 'nix boom' >&2\nexit 1\n"
-              ]) {
-                await Fs.writeFile(nixScript, body, { mode: 0o755 })
-                await expect(
-                  NixExec.resolveEnvironment({
-                    root: dir,
-                    declaration: nixDecl,
-                    environment: { PATH: `${nixBin}:${process.env["PATH"] ?? ""}` }
-                  })
-                ).rejects.toThrow()
-              }
+                for (
+                  const body of [
+                    "#!/bin/sh\necho 'not-json'\n",
+                    "#!/bin/sh\necho '{\"noVars\":true}'\n",
+                    "#!/bin/sh\necho 'nix boom' >&2\nexit 1\n"
+                  ]
+                ) {
+                  await Fs.writeFile(nixScript, body, { mode: 0o755 })
+                  await expect(
+                    NixExec.resolveEnvironment({
+                      root: dir,
+                      declaration: nixDecl,
+                      environment: { PATH: `${nixBin}:${process.env["PATH"] ?? ""}` }
+                    })
+                  ).rejects.toThrow()
+                }
 
-              // 3. Mount: loadConfig missing/invalid + resolveWorkspace non-overlay
-              await expect(Mount.loadConfig(dir)).rejects.toThrow()
-              const resolvedWs = await Mount.resolveWorkspace(dir, { environment: {}, report: () => {} })
-              expect(resolvedWs.mount).toBeUndefined()
+                // 3. Mount: loadConfig missing/invalid + resolveWorkspace non-overlay
+                await expect(Mount.loadConfig(dir)).rejects.toThrow()
+                const resolvedWs = await Mount.resolveWorkspace(dir, { environment: {}, report: () => {} })
+                expect(resolvedWs.mount).toBeUndefined()
 
-              // 4. GitSubmoduleExec: SMITHERS_SUBMODULE_ALLOW + invalid local URLs (/, outside, non-git)
-              const smWs = NodePath.join(dir, "sm-ws")
-              const nonGitSub = NodePath.join(dir, "nongit-sub")
-              await Fs.mkdir(smWs, { recursive: true })
-              await Fs.mkdir(nonGitSub, { recursive: true })
-              NodeChildProcess.execFileSync("jj", ["git", "init", "--colocate"], { cwd: smWs, stdio: "ignore" })
-              await Fs.writeFile(
-                NodePath.join(smWs, ".gitmodules"),
-                [
-                  `[submodule "rootbad"]`,
-                  `  path = sub/rootbad`,
-                  `  url = /`,
-                  `[submodule "outbad"]`,
-                  `  path = sub/outbad`,
-                  `  url = ${nonGitSub}`
-                ].join("\n")
-              )
-              const smPlan1 = await GitSubmoduleExec.plan({
-                root: smWs,
-                packagePath: "",
-                rule: "Git.Submodules",
-                attrs: { config: S.file(".gitmodules"), paths: ["sub/rootbad", "sub/outbad"] } as never,
-                environment: { [GitSubmoduleExec.submoduleSourcesVariable]: nonGitSub }
-              })
-              expect(smPlan1).toBeDefined()
-
-              // 5. MemoryBackend: aborted subprocess
-              const ac = new AbortController()
-              ac.abort(new Error("mem-abort"))
-              await expect(
-                MemoryBackend.spawnCli({ signal: ac.signal }).run("/bin/sleep", ["5"], dir)
-              ).rejects.toThrow()
-
-              // 6. PackageDiscovery: two declarations, non-regular PACKAGE.ts, repositories
-              const pdWs = NodePath.join(dir, "pd-ws")
-              await Fs.mkdir(NodePath.join(pdWs, "a/b/c"), { recursive: true })
-              await Fs.writeFile(NodePath.join(pdWs, "WORKSPACE.ts"), "export const Workspace = {}\n")
-              await Fs.writeFile(NodePath.join(pdWs, "a/PACKAGE.ts"), "export const Package = {}\n")
-              await Fs.writeFile(NodePath.join(pdWs, "a/PACKAGE.vibe"), "export const Package = {}\n")
-              await expect(PackageDiscovery.discover(pdWs)).rejects.toThrow()
-              await Fs.unlink(NodePath.join(pdWs, "a/PACKAGE.vibe"))
-              await Fs.unlink(NodePath.join(pdWs, "a/PACKAGE.ts"))
-              await Fs.symlink(NodePath.join(pdWs, "WORKSPACE.ts"), NodePath.join(pdWs, "a/PACKAGE.ts"))
-              await expect(PackageDiscovery.discover(pdWs)).rejects.toThrow(/module_not_regular/)
-              await Fs.unlink(NodePath.join(pdWs, "a/PACKAGE.ts"))
-              const subRepo = NodePath.join(pdWs, "subrepo")
-              await Fs.mkdir(subRepo, { recursive: true })
-              await Fs.writeFile(NodePath.join(subRepo, "WORKSPACE.ts"), "export const Workspace = {}\n")
-              const discWithRepo = await PackageDiscovery.discover(pdWs, { repositories: { sub: { path: "subrepo" } } })
-              expect(discWithRepo.root).toBe(pdWs)
-
-              // 7. GitCommit: gate failure after staging both an added file and a modified file -> rollback L277-312!
-              const gcWs = NodePath.join(dir, "gc-ws")
-              await Fs.mkdir(gcWs, { recursive: true })
-              NodeChildProcess.execFileSync("jj", ["git", "init", "--colocate"], { cwd: gcWs, stdio: "ignore" })
-              await PackageTree.runGit(gcWs, ["config", "user.email", "test@example.com"])
-              await PackageTree.runGit(gcWs, ["config", "user.name", "Test"])
-              await Fs.writeFile(NodePath.join(gcWs, "existing.txt"), "v1\n")
-              await PackageTree.runGit(gcWs, ["add", "existing.txt"])
-              await PackageTree.runGit(gcWs, ["commit", "-m", "base"])
-
-              await Fs.writeFile(NodePath.join(gcWs, "existing.txt"), "v2\n")
-              await Fs.writeFile(NodePath.join(gcWs, "added.txt"), "new\n")
-              const target = GitTarget.Commit({
-                changes: ["existing.txt", "added.txt"],
-                message: "feat: will rollback",
-                gates: [S.Shell.Test({ shell: "exit 1" })]
-              })
-              await expect(
-                GitCommit.commit({
-                  root: gcWs,
+                // 4. GitSubmoduleExec: SMITHERS_SUBMODULE_ALLOW + invalid local URLs (/, outside, non-git)
+                const smWs = NodePath.join(dir, "sm-ws")
+                const nonGitSub = NodePath.join(dir, "nongit-sub")
+                await Fs.mkdir(smWs, { recursive: true })
+                await Fs.mkdir(nonGitSub, { recursive: true })
+                NodeChildProcess.execFileSync("jj", ["git", "init", "--colocate"], { cwd: smWs, stdio: "ignore" })
+                await Fs.writeFile(
+                  NodePath.join(smWs, ".gitmodules"),
+                  [
+                    `[submodule "rootbad"]`,
+                    `  path = sub/rootbad`,
+                    `  url = /`,
+                    `[submodule "outbad"]`,
+                    `  path = sub/outbad`,
+                    `  url = ${nonGitSub}`
+                  ].join("\n")
+                )
+                const smPlan1 = await GitSubmoduleExec.plan({
+                  root: smWs,
                   packagePath: "",
-                  target,
-                  gateRunner: async () => [{ label: "//:gate", ok: false, detail: "red" }]
-                } as never)
-              ).rejects.toThrow()
+                  rule: "Git.Submodules",
+                  attrs: { config: S.file(".gitmodules"), paths: ["sub/rootbad", "sub/outbad"] } as never,
+                  environment: { [GitSubmoduleExec.submoduleSourcesVariable]: nonGitSub }
+                })
+                expect(smPlan1).toBeDefined()
 
-              // 8. Machine: holding default fallback
-              expect(Machine.holding(dir, {})).toContain("machines")
-            })
-            return true
-          }),
-        { executions: 1 }
+                // 5. MemoryBackend: aborted subprocess
+                const ac = new AbortController()
+                ac.abort(new Error("mem-abort"))
+                await expect(
+                  MemoryBackend.spawnCli({ signal: ac.signal }).run("/bin/sleep", ["5"], dir)
+                ).rejects.toThrow()
+
+                // 6. PackageDiscovery: two declarations, non-regular PACKAGE.ts, repositories
+                const pdWs = NodePath.join(dir, "pd-ws")
+                await Fs.mkdir(NodePath.join(pdWs, "a/b/c"), { recursive: true })
+                await Fs.writeFile(NodePath.join(pdWs, "WORKSPACE.ts"), "export const Workspace = {}\n")
+                await Fs.writeFile(NodePath.join(pdWs, "a/PACKAGE.ts"), "export const Package = {}\n")
+                await Fs.writeFile(NodePath.join(pdWs, "a/PACKAGE.vibe"), "export const Package = {}\n")
+                await expect(PackageDiscovery.discover(pdWs)).rejects.toThrow()
+                await Fs.unlink(NodePath.join(pdWs, "a/PACKAGE.vibe"))
+                await Fs.unlink(NodePath.join(pdWs, "a/PACKAGE.ts"))
+                await Fs.symlink(NodePath.join(pdWs, "WORKSPACE.ts"), NodePath.join(pdWs, "a/PACKAGE.ts"))
+                await expect(PackageDiscovery.discover(pdWs)).rejects.toThrow(/module_not_regular/)
+                await Fs.unlink(NodePath.join(pdWs, "a/PACKAGE.ts"))
+                const subRepo = NodePath.join(pdWs, "subrepo")
+                await Fs.mkdir(subRepo, { recursive: true })
+                await Fs.writeFile(NodePath.join(subRepo, "WORKSPACE.ts"), "export const Workspace = {}\n")
+                const discWithRepo = await PackageDiscovery.discover(pdWs, {
+                  repositories: { sub: { path: "subrepo" } }
+                })
+                expect(discWithRepo.root).toBe(pdWs)
+
+                // 7. GitCommit: gate failure after staging both an added file and a modified file -> rollback L277-312!
+                const gcWs = NodePath.join(dir, "gc-ws")
+                await Fs.mkdir(gcWs, { recursive: true })
+                NodeChildProcess.execFileSync("jj", ["git", "init", "--colocate"], { cwd: gcWs, stdio: "ignore" })
+                await PackageTree.runGit(gcWs, ["config", "user.email", "test@example.com"])
+                await PackageTree.runGit(gcWs, ["config", "user.name", "Test"])
+                await Fs.writeFile(NodePath.join(gcWs, "existing.txt"), "v1\n")
+                await PackageTree.runGit(gcWs, ["add", "existing.txt"])
+                await PackageTree.runGit(gcWs, ["commit", "-m", "base"])
+
+                await Fs.writeFile(NodePath.join(gcWs, "existing.txt"), "v2\n")
+                await Fs.writeFile(NodePath.join(gcWs, "added.txt"), "new\n")
+                const target = GitTarget.Commit({
+                  changes: ["existing.txt", "added.txt"],
+                  message: "feat: will rollback",
+                  gates: [S.Shell.Test({ shell: "exit 1" })]
+                })
+                await expect(
+                  GitCommit.commit({
+                    root: gcWs,
+                    packagePath: "",
+                    target,
+                    gateRunner: async () => [{ label: "//:gate", ok: false, detail: "red" }]
+                  } as never)
+                ).rejects.toThrow()
+
+                // 8. Machine: holding default fallback
+                expect(Machine.holding(dir, {})).toContain("machines")
+              })
+              return true
+            }),
+          { executions: 1 }
+        )
       )
-    )
-    assertPassed(report)
-  }, 90_000)
+      assertPassed(report)
+    },
+    90_000
+  )
 })

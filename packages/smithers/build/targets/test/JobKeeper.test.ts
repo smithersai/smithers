@@ -497,4 +497,20 @@ describe.runIf(process.platform === "linux")("what still runs when a job's end i
       holder.kill("SIGKILL")
     }
   })
+
+  it("orphansIn filters self and honors adopted=false vs adopted=true", async () => {
+    const before = new Map<number, number>([[100, 1]])
+    const fakeList = async (): Promise<ReadonlyMap<number, number>> =>
+      new Map<number, number>([
+        [100, 1],
+        [200, 1], // self
+        [201, 200], // child of self (excluded when adopted=true, included when adopted=false)
+        [202, 1], // reparented to init (included when adopted=true)
+        [203, 100] // child of pre-existing process (included when adopted=true)
+      ])
+    const resAdopted = await JobKeeper.orphansIn(before, "/nonexistent-dir-jk-test", "linux", 200, fakeList, true)
+    expect(resAdopted).toEqual([])
+    const resAll = await JobKeeper.orphansIn(before, "/nonexistent-dir-jk-test", "linux", 200, fakeList, false)
+    expect(resAll).toEqual([])
+  })
 })

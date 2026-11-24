@@ -17,6 +17,7 @@
 
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
+import * as Attr from "./Attr.ts"
 import * as Exec from "./Exec.ts"
 import * as Input from "./Input.ts"
 import * as Runtime from "./Runtime.ts"
@@ -204,6 +205,8 @@ export const Attrs = Schema.Struct({
    * it, and once selected it runs alone in its executor invocation. Declare
    * it on slow browser and end-to-end tiers that CI selects by label.
    */
+  /** The hosts the gate runs on, as `process.platform` names them. */
+  hosts: Schema.optional(Attr.HostPlatforms),
   exclusive: Schema.optional(Schema.Boolean),
   /**
    * Replays a green verdict from the result cache without proof of what the
@@ -272,6 +275,7 @@ export const runArgv = (attrs: Attrs): ReadonlyArray<string> => {
  */
 export const NodeTest = Target.make("NodeTest", {
   attrs: Attrs,
+  hosts: (attrs) => attrs.hosts,
   workspaceAttrs: ["runtime"],
   kinds: ["test"],
   success: Exec.Result,

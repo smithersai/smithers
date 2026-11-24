@@ -1,8 +1,9 @@
 import { Fuzz } from "@smthrs/fuzz"
+import { JjError } from "@smthrs/jj"
 import { Arbitrary, Cause, Duration, Effect, Exit, Fiber, Layer, Schema, type Scope, Stream } from "effect"
 import * as ChildProcess from "effect/process/ChildProcess"
 import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner"
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs"
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import * as os from "node:os"
 import * as nodePath from "node:path"
 import { afterAll, describe, expect, it } from "vitest"
@@ -13,7 +14,6 @@ import * as ContainerSandbox from "../src/ContainerSandbox/index.ts"
 import * as JjWorkspaceSandbox from "../src/JjWorkspaceSandbox/index.ts"
 import * as KubernetesSandbox from "../src/KubernetesSandbox/index.ts"
 import * as MicrosandboxSandbox from "../src/MicrosandboxSandbox/index.ts"
-import { JjError } from "@smthrs/jj"
 import { platform } from "./helpers/containedPlatform.ts"
 
 const executions = Math.max(1, Number(process.env["EFFECT_FUZZ_EXECUTIONS"] ?? "10"))
@@ -146,7 +146,7 @@ describe("Wave9 Final Boost — flows/sandbox deep provider lifecycles", () => {
                 write: async () => {},
                 read: async () => enc.encode("data"),
                 remove: async () => {},
-              destroy: async () => {},
+                destroy: async () => {},
                 removeDir: async () => {},
                 stat: async () => ({ kind: "file", size: 4 }),
                 list: async () => []
@@ -287,7 +287,10 @@ describe("Wave9 Final Boost — flows/sandbox deep provider lifecycles", () => {
               return Exit.isFailure(ex)
             }
 
-            if (c.mode === "revive-running-ok" || c.mode === "revive-running-transient-then-start" || c.mode === "revive-network-replaced") {
+            if (
+              c.mode === "revive-running-ok" || c.mode === "revive-running-transient-then-start" ||
+              c.mode === "revive-network-replaced"
+            ) {
               const res = yield* Effect.exit(
                 Effect.scoped(
                   Effect.gen(function*() {
@@ -310,11 +313,16 @@ describe("Wave9 Final Boost — flows/sandbox deep provider lifecycles", () => {
                 )
               )
               if (c.mode === "revive-network-replaced") return Exit.isFailure(res)
-              if (Exit.isFailure(res)) throw new Error("Msb revive failed (" + c.mode + "): " + JSON.stringify(res.cause))
+              if (Exit.isFailure(res)) {
+                throw new Error("Msb revive failed (" + c.mode + "): " + JSON.stringify(res.cause))
+              }
               return true
             }
 
-            const retainedProvider = provider as unknown as { attach: (s: any) => Effect.Effect<any, any, Scope.Scope>; destroy: (s: any) => Effect.Effect<void, any> }
+            const retainedProvider = provider as unknown as {
+              attach: (s: any) => Effect.Effect<any, any, Scope.Scope>
+              destroy: (s: any) => Effect.Effect<void, any>
+            }
             if (c.mode === "retained-attach-variants") {
               // Acquire once so labels are captured and we know remoteId
               const captured = yield* Effect.scoped(
@@ -354,7 +362,10 @@ describe("Wave9 Final Boost — flows/sandbox deep provider lifecycles", () => {
                 ok: Exit.isSuccess(ok),
                 okCause: Exit.isFailure(ok) ? Cause.pretty(ok.cause) : null
               }
-              if (!(checks.mismatch && checks.notFound && checks.rpcErr && checks.badLabels && checks.stopped && checks.creating && checks.ok)) {
+              if (
+                !(checks.mismatch && checks.notFound && checks.rpcErr && checks.badLabels && checks.stopped &&
+                  checks.creating && checks.ok)
+              ) {
                 throw new Error("msb attach: " + JSON.stringify(checks))
               }
               return true
@@ -371,7 +382,12 @@ describe("Wave9 Final Boost — flows/sandbox deep provider lifecycles", () => {
             const errFail = yield* Effect.exit(retainedProvider.destroy(captured))
             getError = undefined
             const okDest = yield* Effect.exit(retainedProvider.destroy(captured))
-            if (!(Exit.isFailure(badId) && Exit.isSuccess(nfOk) && Exit.isFailure(errFail) && Exit.isSuccess(okDest))) throw new Error("Msb dest: " + JSON.stringify({ badId: Exit.isFailure(badId), nfOk, errFail: Exit.isFailure(errFail), okDest }))
+            if (!(Exit.isFailure(badId) && Exit.isSuccess(nfOk) && Exit.isFailure(errFail) && Exit.isSuccess(okDest))) {
+              throw new Error(
+                "Msb dest: " +
+                  JSON.stringify({ badId: Exit.isFailure(badId), nfOk, errFail: Exit.isFailure(errFail), okDest })
+              )
+            }
             return true
           }),
         { executions: Math.min(executions, 24), seed: 9101 }
@@ -544,12 +560,12 @@ describe("Wave9 Final Boost — flows/sandbox deep provider lifecycles", () => {
                   if (args[0] === "run") {
                     for (const a of args) {
                       if (a === "--labels") {
-                    const next = args[args.indexOf(a) + 1] ?? ""
-                    for (const part of next.split(",")) {
-                      const [k, v] = part.split("=")
-                      if (k === "smithers.dev/sandbox-fingerprint" && v) capturedFingerprint = v
-                    }
-                  }
+                        const next = args[args.indexOf(a) + 1] ?? ""
+                        for (const part of next.split(",")) {
+                          const [k, v] = part.split("=")
+                          if (k === "smithers.dev/sandbox-fingerprint" && v) capturedFingerprint = v
+                        }
+                      }
                     }
                     return Effect.succeed(makeStubHandle("ok", "", 0))
                   }
@@ -574,7 +590,9 @@ describe("Wave9 Final Boost — flows/sandbox deep provider lifecycles", () => {
             createAttempts = 0
             const second = yield* Effect.exit(Effect.scoped(provider.acquire("k8s-reattach")))
             if (c.mode === "unsealed-replace-fail") return Exit.isFailure(second)
-            if (Exit.isFailure(second)) throw new Error("K8s second failed (" + c.mode + "): " + JSON.stringify(second.cause))
+            if (Exit.isFailure(second)) {
+              throw new Error("K8s second failed (" + c.mode + "): " + JSON.stringify(second.cause))
+            }
             return true
           }),
         { executions: Math.min(executions, 24), seed: 9102 }
@@ -681,7 +699,9 @@ describe("Wave9 Final Boost — flows/sandbox deep provider lifecycles", () => {
               }
               if (args[0] === "rm") {
                 if (c.mode === "rm-spawner-error") {
-                  return Effect.fail({ _tag: "PlatformError", reason: { _tag: "Unknown", description: "rm fail" } } as any)
+                  return Effect.fail(
+                    { _tag: "PlatformError", reason: { _tag: "Unknown", description: "rm fail" } } as any
+                  )
                 }
                 return Effect.succeed(makeStubHandle("", "", 0))
               }
@@ -810,7 +830,7 @@ describe("Wave9 Final Boost — flows/sandbox deep provider lifecycles", () => {
 
             // Seed pass to capture exact startedBy + fingerprint tag + taskDefinitionArn
             const s1 = yield* Effect.exit(Effect.scoped(provider.acquire("aws-adopt-key")))
-            if (Exit.isFailure(s1)) { throw new Error("AWS s1 failed: " + JSON.stringify(s1.cause)) }
+            if (Exit.isFailure(s1)) throw new Error("AWS s1 failed: " + JSON.stringify(s1.cause))
 
             phase = "adopt"
             readyPolls = 0
@@ -818,7 +838,9 @@ describe("Wave9 Final Boost — flows/sandbox deep provider lifecycles", () => {
             if (c.mode === "foreign-task-refused") return Exit.isFailure(s2)
             if (Exit.isFailure(s2)) throw new Error("AWS s2 failed (" + c.mode + "): " + JSON.stringify(s2.cause))
             if (c.mode === "adopt-provisioning-with-stale") {
-              if (!stoppedArns.includes("arn:aws:ecs:us-east-1:123:task/c/b-dup")) throw new Error("AWS stale not stopped: " + JSON.stringify(stoppedArns))
+              if (!stoppedArns.includes("arn:aws:ecs:us-east-1:123:task/c/b-dup")) {
+                throw new Error("AWS stale not stopped: " + JSON.stringify(stoppedArns))
+              }
               return true
             }
             return true
@@ -878,8 +900,12 @@ describe("Wave9 Final Boost — flows/sandbox deep provider lifecycles", () => {
                 const { fs, path, spawner } = yield* Effect.gen(function*() {
                   const ctx = yield* Layer.build(platform)
                   const all = Array.from(ctx.mapUnsafe.values())
-                  const fsSvc = all.find((v: any) => typeof v?.readDirectory === "function" && typeof v?.makeDirectory === "function")
-                  const pathSvc = all.find((v: any) => typeof v?.join === "function" && typeof v?.resolve === "function")
+                  const fsSvc = all.find((v: any) =>
+                    typeof v?.readDirectory === "function" && typeof v?.makeDirectory === "function"
+                  )
+                  const pathSvc = all.find((v: any) =>
+                    typeof v?.join === "function" && typeof v?.resolve === "function"
+                  )
                   const spawnerSvc = all.find((v: any) => typeof v?.spawn === "function")
                   return { fs: fsSvc, path: pathSvc, spawner: spawnerSvc }
                 })
@@ -893,24 +919,36 @@ describe("Wave9 Final Boost — flows/sandbox deep provider lifecycles", () => {
                   ...fs,
                   remove: (p: string, opts?: any) =>
                     failRemove
-                      ? Effect.fail({ _tag: "PlatformError", reason: { _tag: "Unknown", description: "rm boom" } } as any)
+                      ? Effect.fail(
+                        { _tag: "PlatformError", reason: { _tag: "Unknown", description: "rm boom" } } as any
+                      )
                       : fs.remove(p, opts)
                 }
 
                 const jjStub: any = {
                   workspaceAdd: (_wsName: string, destination: string) => {
                     if (failAddMode === "pre") {
-                      return Effect.fail(new JjError({ code: "not_installed", command: "workspace add", message: "destination path already exists" }))
+                      return Effect.fail(
+                        new JjError({
+                          code: "not_installed",
+                          command: "workspace add",
+                          message: "destination path already exists"
+                        })
+                      )
                     }
                     mkdirSync(nodePath.join(destination, ".jj"), { recursive: true })
                     if (failAddMode === "post") {
-                      return Effect.fail(new JjError({ code: "unknown", command: "workspace add", message: "post-create failure" }))
+                      return Effect.fail(
+                        new JjError({ code: "unknown", command: "workspace add", message: "post-create failure" })
+                      )
                     }
                     return Effect.void
                   },
                   workspaceForget: () =>
                     failForget
-                      ? Effect.fail(new JjError({ code: "unknown", command: "workspace forget", message: "forget boom" }))
+                      ? Effect.fail(
+                        new JjError({ code: "unknown", command: "workspace forget", message: "forget boom" })
+                      )
                       : Effect.void,
                   currentCommitId: () => Effect.succeed("a".repeat(40))
                 }
@@ -918,9 +956,10 @@ describe("Wave9 Final Boost — flows/sandbox deep provider lifecycles", () => {
                 const prov = JjWorkspaceSandbox.make({
                   workspacesRoot: root,
                   git: false,
-                  persistence: c.scenario === "jj-sticky-reattach-and-absent-attach" || c.scenario === "jj-unmigrated-config"
-                    ? "sticky"
-                    : "ephemeral",
+                  persistence:
+                    c.scenario === "jj-sticky-reattach-and-absent-attach" || c.scenario === "jj-unmigrated-config"
+                      ? "sticky"
+                      : "ephemeral",
                   spawner,
                   fs: wrappedFs,
                   path,
@@ -948,9 +987,19 @@ describe("Wave9 Final Boost — flows/sandbox deep provider lifecycles", () => {
                   // Re-acquire existing sticky dir
                   const s2 = yield* Effect.exit(Effect.scoped(prov.acquire("sticky-k")))
                   // Attach absent workspace
-                  const absent = yield* Effect.exit(Effect.scoped(((prov as any).attach({ id: "missing", remoteId: "ws-missing" }) as Effect.Effect<unknown, unknown, Scope.Scope>)))
+                  const absent = yield* Effect.exit(
+                    Effect.scoped(
+                      (prov as any).attach({ id: "missing", remoteId: "ws-missing" }) as Effect.Effect<
+                        unknown,
+                        unknown,
+                        Scope.Scope
+                      >
+                    )
+                  )
                   // Attach existing workspace
-                  const attached = yield* Effect.exit(Effect.scoped(((prov as any).attach(s1) as Effect.Effect<unknown, unknown, Scope.Scope>)))
+                  const attached = yield* Effect.exit(
+                    Effect.scoped((prov as any).attach(s1) as Effect.Effect<unknown, unknown, Scope.Scope>)
+                  )
                   return Exit.isSuccess(s2) && Exit.isFailure(absent) && Exit.isSuccess(attached)
                 }
 
@@ -973,7 +1022,21 @@ describe("Wave9 Final Boost — flows/sandbox deep provider lifecycles", () => {
                 const postFail = yield* Effect.exit(Effect.scoped(prov.acquire("rb-post")))
                 failAddMode = "none"
                 const teardownRun = yield* Effect.exit(Effect.scoped(prov.acquire("td-fail")))
-                if (!(Exit.isFailure(preFail) && Exit.isFailure(postFail) && Exit.isSuccess(teardownRun) && reported.length >= 2)) throw new Error("jj teardown: " + JSON.stringify({ preFail: Exit.isFailure(preFail), postFail: Exit.isFailure(postFail), teardownRun: Exit.isSuccess(teardownRun), reportedLen: reported.length, tdCause: Exit.isFailure(teardownRun) ? Cause.pretty(teardownRun.cause) : null }))
+                if (
+                  !(Exit.isFailure(preFail) && Exit.isFailure(postFail) && Exit.isSuccess(teardownRun) &&
+                    reported.length >= 2)
+                ) {
+                  throw new Error(
+                    "jj teardown: " +
+                      JSON.stringify({
+                        preFail: Exit.isFailure(preFail),
+                        postFail: Exit.isFailure(postFail),
+                        teardownRun: Exit.isSuccess(teardownRun),
+                        reportedLen: reported.length,
+                        tdCause: Exit.isFailure(teardownRun) ? Cause.pretty(teardownRun.cause) : null
+                      })
+                  )
+                }
                 return true
               }).pipe(Effect.scoped)
             }
@@ -1047,7 +1110,9 @@ describe("Wave9 Final Boost — flows/sandbox deep provider lifecycles", () => {
                     const h = yield* sess.spawn("sleep 1", {})
                     const codeEx = yield* Effect.exit(h.exitCode)
                     if (!Exit.isFailure(nulEx)) throw new Error("expected nulEx failure")
-                    if (!Exit.isFailure(codeEx)) throw new Error("expected codeEx failure, got " + JSON.stringify(codeEx))
+                    if (!Exit.isFailure(codeEx)) {
+                      throw new Error("expected codeEx failure, got " + JSON.stringify(codeEx))
+                    }
                     return true
                   })
                 )
@@ -1120,8 +1185,10 @@ describe("Wave9 Final Boost — flows/sandbox deep provider lifecycles", () => {
                 return { id: s.id, remoteId: s.remoteId }
               })
             )
-            const attEx = yield* Effect.exit(Effect.scoped(((cfRetained as any).attach(retInfo) as Effect.Effect<unknown, unknown, Scope.Scope>)))
-            const desEx = yield* Effect.exit(((cfRetained as any).destroy(retInfo) as Effect.Effect<unknown, unknown>))
+            const attEx = yield* Effect.exit(
+              Effect.scoped((cfRetained as any).attach(retInfo) as Effect.Effect<unknown, unknown, Scope.Scope>)
+            )
+            const desEx = yield* Effect.exit((cfRetained as any).destroy(retInfo) as Effect.Effect<unknown, unknown>)
             return execRes && Exit.isSuccess(attEx) && Exit.isSuccess(desEx) && killCalled
           }),
         { executions: Math.min(executions, 24), seed: 9105 }

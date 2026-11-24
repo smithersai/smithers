@@ -102,7 +102,7 @@ describe("BuildCliWave9D PackagePlanner, PackageRunner, FoundryExec, GoExec, Git
         data: [S.file("src/dir-link")],
         sandbox: "none"
       })
-                  const shardedShellTest = S.Shell.Test({
+      const shardedShellTest = S.Shell.Test({
         shell: "echo ok",
         shards: 2,
         sandbox: "none"
@@ -159,13 +159,15 @@ describe("BuildCliWave9D PackagePlanner, PackageRunner, FoundryExec, GoExec, Git
       }
 
       // 1) Plan refusal targets (fast, pure planning!)
-      for (const label of [
-        "//:badEnvTest",
-        "//:shardedShellTest",
-        "//:nonServiceTest",
-        "//:svcNoNetTest",
-        "//:missingEnvToolTest"
-      ]) {
+      for (
+        const label of [
+          "//:badEnvTest",
+          "//:shardedShellTest",
+          "//:nonServiceTest",
+          "//:svcNoNetTest",
+          "//:missingEnvToolTest"
+        ]
+      ) {
         const planned = await PackageExec.plan({
           index: idx,
           verb: "test",
@@ -273,180 +275,184 @@ describe("BuildCliWave9D PackagePlanner, PackageRunner, FoundryExec, GoExec, Git
     })
   }, 120_000)
 
-  it("FoundryExec.resolveMiseBin, GoExec.resolveNix/resolveGo, GitHooks, Watch, and AgentSession edge paths", async () => {
-    await withTempDir("wave9d-tools-", async (dir) => {
-      const ws = NodePath.join(dir, "ws")
-      const binDir = NodePath.join(dir, "bin")
-      await Fs.mkdir(ws, { recursive: true })
-      await Fs.mkdir(binDir, { recursive: true })
+  it(
+    "FoundryExec.resolveMiseBin, GoExec.resolveNix/resolveGo, GitHooks, Watch, and AgentSession edge paths",
+    async () => {
+      await withTempDir("wave9d-tools-", async (dir) => {
+        const ws = NodePath.join(dir, "ws")
+        const binDir = NodePath.join(dir, "bin")
+        await Fs.mkdir(ws, { recursive: true })
+        await Fs.mkdir(binDir, { recursive: true })
 
-      await Fs.writeFile(NodePath.join(ws, "mise.toml"), `[tools]\nforge = "1.0.0"\n`)
-      const wsMise = WorkspaceDeclaration.Workspace("mise-ws", {
-        repository: "git+https://github.com/org/repo.git",
-        cache: WorkspaceDeclaration.Cache({ directory: ".cache" }),
-        toolchains: [S.Mise({ config: S.file("//mise.toml") })]
-      })
-      const noMise = await FoundryExec.resolveMiseBin(ws, wsMise, "forge", { PATH: "/nonexistent" })
-      expect(noMise.ok).toBe(false)
+        await Fs.writeFile(NodePath.join(ws, "mise.toml"), `[tools]\nforge = "1.0.0"\n`)
+        const wsMise = WorkspaceDeclaration.Workspace("mise-ws", {
+          repository: "git+https://github.com/org/repo.git",
+          cache: WorkspaceDeclaration.Cache({ directory: ".cache" }),
+          toolchains: [S.Mise({ config: S.file("//mise.toml") })]
+        })
+        const noMise = await FoundryExec.resolveMiseBin(ws, wsMise, "forge", { PATH: "/nonexistent" })
+        expect(noMise.ok).toBe(false)
 
-      const fakeForge = NodePath.join(binDir, "forge")
-      await writeExecutable(fakeForge, "#!/bin/sh\necho forge 1.0.0\n")
-      const fakeMise = NodePath.join(binDir, "mise")
-      await writeExecutable(
-        fakeMise,
-        `#!/bin/sh
+        const fakeForge = NodePath.join(binDir, "forge")
+        await writeExecutable(fakeForge, "#!/bin/sh\necho forge 1.0.0\n")
+        const fakeMise = NodePath.join(binDir, "mise")
+        await writeExecutable(
+          fakeMise,
+          `#!/bin/sh
 if [ "$1" = "--version" ]; then echo "mise 2026.1.0"; exit 0; fi
 if [ "$1" = "which" ] && [ "$2" = "forge" ]; then echo "${fakeForge}"; exit 0; fi
 exit 1
 `
-      )
-      const okMise = await FoundryExec.resolveMiseBin(
-        ws,
-        wsMise,
-        "forge",
-        { PATH: `${binDir}:${process.env["PATH"] ?? ""}` },
-        HostProbes.none()
-      )
-      expect(okMise.ok).toBe(true)
-      const missMise = await FoundryExec.resolveMiseBin(
-        ws,
-        wsMise,
-        "missing-tool",
-        { PATH: `${binDir}:${process.env["PATH"] ?? ""}` },
-        HostProbes.none()
-      )
-      expect(missMise.ok).toBe(false)
+        )
+        const okMise = await FoundryExec.resolveMiseBin(
+          ws,
+          wsMise,
+          "forge",
+          { PATH: `${binDir}:${process.env["PATH"] ?? ""}` },
+          HostProbes.none()
+        )
+        expect(okMise.ok).toBe(true)
+        const missMise = await FoundryExec.resolveMiseBin(
+          ws,
+          wsMise,
+          "missing-tool",
+          { PATH: `${binDir}:${process.env["PATH"] ?? ""}` },
+          HostProbes.none()
+        )
+        expect(missMise.ok).toBe(false)
 
-      const goCtx: GoExec.Context = {
-        root: ws,
-        packagePath: "",
-        workspace: wsMise,
-        cacheDirectory: ".cache",
-        environment: { PATH: "/nonexistent" },
-      }
-      const noGo = await GoExec.resolveGo(goCtx)
-      expect(noGo.ok).toBe(false)
-      const noNix = await GoExec.resolveNix("go", goCtx)
-      expect(noNix.ok).toBe(false)
+        const goCtx: GoExec.Context = {
+          root: ws,
+          packagePath: "",
+          workspace: wsMise,
+          cacheDirectory: ".cache",
+          environment: { PATH: "/nonexistent" }
+        }
+        const noGo = await GoExec.resolveGo(goCtx)
+        expect(noGo.ok).toBe(false)
+        const noNix = await GoExec.resolveNix("go", goCtx)
+        expect(noNix.ok).toBe(false)
 
-      const rendered = GitHooks.render({ preCommit: "//pkg:lint", prePush: "//pkg:test" })
-      expect(rendered.length).toBe(2)
-      await expect(GitHooks.check(ws, rendered)).rejects.toThrow(GitHooks.GitHooksError)
+        const rendered = GitHooks.render({ preCommit: "//pkg:lint", prePush: "//pkg:test" })
+        expect(rendered.length).toBe(2)
+        await expect(GitHooks.check(ws, rendered)).rejects.toThrow(GitHooks.GitHooksError)
 
-      NodeChildProcess.execFileSync("jj", ["git", "init", "--colocate"], { cwd: ws, stdio: "ignore" })
-      const hooksDir = NodePath.join(ws, ".git", "hooks")
-      await Fs.mkdir(hooksDir, { recursive: true })
-      await writeExecutable(NodePath.join(hooksDir, "pre-commit"), "#!/bin/sh\necho handwritten\n")
+        NodeChildProcess.execFileSync("jj", ["git", "init", "--colocate"], { cwd: ws, stdio: "ignore" })
+        const hooksDir = NodePath.join(ws, ".git", "hooks")
+        await Fs.mkdir(hooksDir, { recursive: true })
+        await writeExecutable(NodePath.join(hooksDir, "pre-commit"), "#!/bin/sh\necho handwritten\n")
 
-      const checkBefore = await GitHooks.check(ws, rendered)
-      expect(checkBefore.clean).toBe(false)
-      const installed = await GitHooks.install(ws, rendered)
-      expect(installed.wrote.length).toBe(2)
-      const checkClean = await GitHooks.check(ws, rendered)
-      expect(checkClean.clean).toBe(true)
-      const reduced = GitHooks.render({ preCommit: "//pkg:lint" })
-      const checkUnbound = await GitHooks.check(ws, reduced)
-      expect(checkUnbound.clean).toBe(false)
-      await GitHooks.install(ws, reduced)
+        const checkBefore = await GitHooks.check(ws, rendered)
+        expect(checkBefore.clean).toBe(false)
+        const installed = await GitHooks.install(ws, rendered)
+        expect(installed.wrote.length).toBe(2)
+        const checkClean = await GitHooks.check(ws, rendered)
+        expect(checkClean.clean).toBe(true)
+        const reduced = GitHooks.render({ preCommit: "//pkg:lint" })
+        const checkUnbound = await GitHooks.check(ws, reduced)
+        expect(checkUnbound.clean).toBe(false)
+        await GitHooks.install(ws, reduced)
 
-      let digestCount = 0
-      let triggerNotify: ((file: string | null) => void) | undefined
-      let triggerError: ((err: Error) => void) | undefined
-      const cycles: Array<number> = []
-      const ac = new AbortController()
-      const watchServices: Watch.Services["Service"] = {
-        notifier: (_root, onEvent, onError) =>
-          Effect.sync(() => {
-            triggerNotify = onEvent
-            triggerError = onError
-            return () => {}
-          }),
-        digest: () =>
-          Effect.promise(async () => {
-            digestCount += 1
-            return `digest-${digestCount}`
-          }),
-        processRunner: (opts) =>
-          Effect.promise(async () => {
-            opts.stdout?.("cycle-out\n")
-            opts.stderr?.("cycle-err\n")
-            if (cycles.length === 0) {
-              setTimeout(() => {
-                triggerNotify?.("src/a.ts")
-                triggerNotify?.("src/b.ts")
-              }, 20)
-            } else {
-              setTimeout(() => ac.abort(), 30)
-            }
-            return 0
-          })
-      }
-      await Watch.run({
-        services: watchServices,
-        root: ws,
-        args: ["test"],
-        ignored: [".cache"],
-        signal: ac.signal,
-        debounceMs: 15,
-        rescanMs: 25,
-        once: false,
-        stdout: () => {},
-        stderr: () => {},
-        cycleCompleted: (c) => cycles.push(c.number)
-      }).catch(() => undefined)
-      expect(cycles.length).toBeGreaterThanOrEqual(1)
-      expect(triggerError).toBeDefined()
-
-      const errServices: Watch.Services["Service"] = {
-        ...watchServices,
-        notifier: (_root, _onEvent, onError) =>
-          Effect.sync(() => {
-            setTimeout(() => onError(new Error("watcher-died")), 15)
-            return () => {}
-          }),
-        processRunner: () => Effect.promise(() => new Promise(() => {}))
-      }
-      await expect(
-        Watch.run({
-          services: errServices,
+        let digestCount = 0
+        let triggerNotify: ((file: string | null) => void) | undefined
+        let triggerError: ((err: Error) => void) | undefined
+        const cycles: Array<number> = []
+        const ac = new AbortController()
+        const watchServices: Watch.Services["Service"] = {
+          notifier: (_root, onEvent, onError) =>
+            Effect.sync(() => {
+              triggerNotify = onEvent
+              triggerError = onError
+              return () => {}
+            }),
+          digest: () =>
+            Effect.promise(async () => {
+              digestCount += 1
+              return `digest-${digestCount}`
+            }),
+          processRunner: (opts) =>
+            Effect.promise(async () => {
+              opts.stdout?.("cycle-out\n")
+              opts.stderr?.("cycle-err\n")
+              if (cycles.length === 0) {
+                setTimeout(() => {
+                  triggerNotify?.("src/a.ts")
+                  triggerNotify?.("src/b.ts")
+                }, 20)
+              } else {
+                setTimeout(() => ac.abort(), 30)
+              }
+              return 0
+            })
+        }
+        await Watch.run({
+          services: watchServices,
           root: ws,
           args: ["test"],
-          ignored: [],
-          debounceMs: 10,
-          rescanMs: 5000,
+          ignored: [".cache"],
+          signal: ac.signal,
+          debounceMs: 15,
+          rescanMs: 25,
           once: false,
           stdout: () => {},
-          stderr: () => {}
+          stderr: () => {},
+          cycleCompleted: (c) => cycles.push(c.number)
+        }).catch(() => undefined)
+        expect(cycles.length).toBeGreaterThanOrEqual(1)
+        expect(triggerError).toBeDefined()
+
+        const errServices: Watch.Services["Service"] = {
+          ...watchServices,
+          notifier: (_root, _onEvent, onError) =>
+            Effect.sync(() => {
+              setTimeout(() => onError(new Error("watcher-died")), 15)
+              return () => {}
+            }),
+          processRunner: () => Effect.promise(() => new Promise(() => {}))
+        }
+        await expect(
+          Watch.run({
+            services: errServices,
+            root: ws,
+            args: ["test"],
+            ignored: [],
+            debounceMs: 10,
+            rescanMs: 5000,
+            once: false,
+            stdout: () => {},
+            stderr: () => {}
+          })
+        ).rejects.toThrow("watcher-died")
+
+        const mcpJson = AgentSession.claudeMcpConfig([
+          { _tag: "McpHttp", name: "docs", url: "https://mcp.example.com/v1\u007f" } as never
+        ])
+        expect(mcpJson).toContain("docs")
+        expect(
+          await Effect.runPromiseExit(AgentSession.unavailableGateRunner.run(["//pkg:t"], {} as never, 1))
+        ).toMatchObject({ _tag: "Failure" })
+        expect(
+          await Effect.runPromiseExit(AgentSession.unavailablePrOpener.open({} as never))
+        ).toMatchObject({ _tag: "Failure" })
+        const vStore = AgentSession.makeFileVerdictStore(NodePath.join(dir, "verdicts"))
+        const vKey = AgentSession.verdictKey({
+          kind: "lint",
+          diffDigest: "d",
+          promptDigest: "p",
+          agentIdentity: "claude",
+          mode: "review",
+          gateIdentities: []
         })
-      ).rejects.toThrow("watcher-died")
+        await Effect.runPromise(vStore.put(vKey, JSON.stringify({ ok: true, summary: "clean", findings: [] })))
+        const loadedVerdict = await Effect.runPromise(vStore.get(vKey))
+        expect(loadedVerdict).toBeDefined()
 
-      const mcpJson = AgentSession.claudeMcpConfig([
-        { _tag: "McpHttp", name: "docs", url: "https://mcp.example.com/v1\u007f" } as never
-      ])
-      expect(mcpJson).toContain("docs")
-      expect(
-        await Effect.runPromiseExit(AgentSession.unavailableGateRunner.run(["//pkg:t"], {} as never, 1))
-      ).toMatchObject({ _tag: "Failure" })
-      expect(
-        await Effect.runPromiseExit(AgentSession.unavailablePrOpener.open({} as never))
-      ).toMatchObject({ _tag: "Failure" })
-      const vStore = AgentSession.makeFileVerdictStore(NodePath.join(dir, "verdicts"))
-      const vKey = AgentSession.verdictKey({
-        kind: "lint",
-        diffDigest: "d",
-        promptDigest: "p",
-        agentIdentity: "claude",
-        mode: "review",
-        gateIdentities: []
+        const badRegexExit = await Effect.runPromiseExit(
+          AgentSession.expandDiffSlice(ws, [{ _tag: "GitDiff", base: "HEAD", addedLines: "[unclosed-regex" }])
+        )
+        expect(badRegexExit._tag).toBe("Failure")
       })
-      await Effect.runPromise(vStore.put(vKey, JSON.stringify({ ok: true, summary: "clean", findings: [] })))
-      const loadedVerdict = await Effect.runPromise(vStore.get(vKey))
-      expect(loadedVerdict).toBeDefined()
-
-      const badRegexExit = await Effect.runPromiseExit(
-        AgentSession.expandDiffSlice(ws, [{ _tag: "GitDiff", base: "HEAD", addedLines: "[unclosed-regex" }])
-      )
-      expect(badRegexExit._tag).toBe("Failure")
-    })
-  }, 90_000)
+    },
+    90_000
+  )
 })

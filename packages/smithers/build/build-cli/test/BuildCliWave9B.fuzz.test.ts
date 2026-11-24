@@ -186,7 +186,9 @@ describe("BuildCliWave9B ObservedReads, Machine, and effect-resolution coverage"
               ],
               [`1 openat(AT_FDCWD, "/proc/self/fd/3", O_RDONLY) = 4</work/${safe}>`],
               [`1 openat2(3</>, "proc/self/status", {flags=O_RDONLY, resolve=RESOLVE_IN_ROOT}, 24) = 4</proc/self/status>`],
-              [`1 openat2(3</work>, "${"a/".repeat(2100)}f", {flags=O_RDONLY, resolve=RESOLVE_IN_ROOT}, 24) = -1 ENAMETOOLONG`],
+              [`1 openat2(3</work>, "${
+                "a/".repeat(2100)
+              }f", {flags=O_RDONLY, resolve=RESOLVE_IN_ROOT}, 24) = -1 ENAMETOOLONG`],
               [`1 openat(AT_FDCWD, "${"a/".repeat(2100)}f", O_RDONLY) = -1 ENAMETOOLONG`],
               [`1 openat(AT_FDCWD, "loop1", O_RDONLY) = 3</work/loop1>`]
             ]
@@ -301,7 +303,9 @@ describe("BuildCliWave9B ObservedReads, Machine, and effect-resolution coverage"
     expect("refusal" in ObservedReads.record(mismatchWalk, baseOpts())).toBe(true)
 
     const procWalk = ObservedReads.read(
-      () => [`1 openat2(3</>, "proc/self/status", {flags=O_RDONLY, resolve=RESOLVE_IN_ROOT}, 24) = 4</proc/self/status>`],
+      () => [
+        `1 openat2(3</>, "proc/self/status", {flags=O_RDONLY, resolve=RESOLVE_IN_ROOT}, 24) = 4</proc/self/status>`
+      ],
       root
     )
     expect("refusal" in ObservedReads.record(procWalk, baseOpts())).toBe(true)
@@ -532,7 +536,8 @@ describe("BuildCliWave9B ObservedReads, Machine, and effect-resolution coverage"
             rename: async () => {
               throw Object.assign(new Error("enotdir"), { code: "ENOTDIR" })
             },
-            lstat: async () => ({ isFile: () => true, isDirectory: () => false, mtimeMs: 0 }) as unknown as NodeFs.Stats,
+            lstat: async () =>
+              ({ isFile: () => true, isDirectory: () => false, mtimeMs: 0 }) as unknown as NodeFs.Stats,
             unlink: async () => {
               throw Object.assign(new Error("eacces"), { code: "EACCES" })
             }
@@ -580,7 +585,15 @@ describe("BuildCliWave9B ObservedReads, Machine, and effect-resolution coverage"
       const wsRoot = NodePath.join(dir, "ws-src")
       await Fs.mkdir(wsRoot, { recursive: true })
       const mach = Machine.named(NodePath.join(dir, "mkept"), wsRoot, "m1")
-      await Machine.make({ machine: mach, root: wsRoot, cacheDirectory: ".cache", held: undefined, kept: NodePath.join(dir, "mkept"), homeTemplate: tpl, links: [] })
+      await Machine.make({
+        machine: mach,
+        root: wsRoot,
+        cacheDirectory: ".cache",
+        held: undefined,
+        kept: NodePath.join(dir, "mkept"),
+        homeTemplate: tpl,
+        links: []
+      })
       expect(await Fs.readFile(NodePath.join(mach.home, ".profile"), "utf8")).toContain("X=1")
 
       const dTarget = NodePath.join(dir, "to-discard")

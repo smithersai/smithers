@@ -1,7 +1,6 @@
 import * as Action from "@smthrs/flow/Action"
 import * as Flow from "@smthrs/flow/Flow"
 import * as Interpreter from "@smthrs/flow/Interpreter"
-import * as NodeRuntime from "../src/NodeRuntime.ts"
 import { Fuzz } from "@smthrs/fuzz"
 import { Destination } from "@smthrs/kernel/HttpClient"
 import * as Sandbox from "@smthrs/sandbox/Sandbox"
@@ -10,7 +9,7 @@ import * as HttpClient from "effect/http/HttpClient"
 import * as HttpClientRequest from "effect/http/HttpClientRequest"
 import * as ChildProcess from "effect/process/ChildProcess"
 import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner"
-import { mkdtempSync, mkdirSync, rmSync, unlinkSync, writeFileSync } from "node:fs"
+import { mkdirSync, mkdtempSync, rmSync, unlinkSync, writeFileSync } from "node:fs"
 import * as Http from "node:http"
 import * as Net from "node:net"
 import * as os from "node:os"
@@ -19,14 +18,15 @@ import { afterAll, describe, expect, it } from "vitest"
 import * as DestinationProxy from "../src/DestinationProxy.ts"
 import * as EgressHttpClient from "../src/EgressHttpClient.ts"
 import * as FetchTransport from "../src/FetchTransport.ts"
-import * as ProcessConfinement from "../src/ProcessConfinement.ts"
-import * as ProcessSandbox from "../src/ProcessSandbox.ts"
-import * as ProcessExit from "../src/internal/ProcessExit.ts"
-import * as SandboxedFlow from "../src/SandboxedFlow.ts"
 import * as AtomicFileSystemExecutable from "../src/internal/AtomicFileSystemExecutable.ts"
 import * as AtomicFileSystemProtocol from "../src/internal/AtomicFileSystemProtocol.ts"
 import * as PipedProcess from "../src/internal/PipedProcess.ts"
+import * as ProcessExit from "../src/internal/ProcessExit.ts"
 import * as ProcessSupervisor from "../src/internal/ProcessSupervisor.ts"
+import * as NodeRuntime from "../src/NodeRuntime.ts"
+import * as ProcessConfinement from "../src/ProcessConfinement.ts"
+import * as ProcessSandbox from "../src/ProcessSandbox.ts"
+import * as SandboxedFlow from "../src/SandboxedFlow.ts"
 
 const executions = Math.max(1, Number(process.env["EFFECT_FUZZ_EXECUTIONS"] ?? "10"))
 const enc = new TextEncoder()
@@ -270,8 +270,13 @@ describe("Wave9 Final Boost — flows/platform-node deep coverage", () => {
                         code = 1
                       } else if (cmd.includes("git status")) {
                         stdoutText = " M a.txt\n"
-                      } else if (cmd.includes("git diff") || cmd.includes("git write-tree") || cmd.includes("git add")) {
-                        stdoutText = cmd.includes("git write-tree") ? "1".repeat(40) + "\n" : "diff --git a/a.txt b/a.txt\n--- a/a.txt\n+++ b/a.txt\n@@ -1 +1 @@\n-old\n+" + "A".repeat(200) + "\n"
+                      } else if (
+                        cmd.includes("git diff") || cmd.includes("git write-tree") || cmd.includes("git add")
+                      ) {
+                        stdoutText = cmd.includes("git write-tree")
+                          ? "1".repeat(40) + "\n"
+                          : "diff --git a/a.txt b/a.txt\n--- a/a.txt\n+++ b/a.txt\n@@ -1 +1 @@\n-old\n+" +
+                            "A".repeat(200) + "\n"
                       }
 
                       return {
@@ -304,12 +309,21 @@ describe("Wave9 Final Boost — flows/platform-node deep coverage", () => {
               }))
               const dbDir = makeTmp("wave9-sf-db-")
               const host = NodeRuntime.layerHost(
-                { filename: nodePath.join(dbDir, "state.sqlite"), workspaceRoot: dbDir, owner: { hostId: "wave9-sf" }, signals: [] },
-                Interpreter.layer(parentFlow).pipe(Layer.provideMerge(childLayer), Layer.provideMerge(Action.layerImplementations))
+                {
+                  filename: nodePath.join(dbDir, "state.sqlite"),
+                  workspaceRoot: dbDir,
+                  owner: { hostId: "wave9-sf" },
+                  signals: []
+                },
+                Interpreter.layer(parentFlow).pipe(
+                  Layer.provideMerge(childLayer),
+                  Layer.provideMerge(Action.layerImplementations)
+                )
               )
               const out = yield* Effect.scoped(
-                Effect.flatMap(Layer.build(host), (ctx) =>
-                  parentFlow.execute({ x: 41 }, { executionId: "wave9-parent-exec" }).pipe(Effect.provide(ctx))
+                Effect.flatMap(
+                  Layer.build(host),
+                  (ctx) => parentFlow.execute({ x: 41 }, { executionId: "wave9-parent-exec" }).pipe(Effect.provide(ctx))
                 )
               ).pipe(Effect.provide(silentLogger))
               return out.output.y === 42
@@ -362,7 +376,10 @@ describe("Wave9 Final Boost — flows/platform-node deep coverage", () => {
       Effect.exit(
         Effect.scoped(
           conf.confine(
-            ChildProcess.make(process.execPath, ["-e", "process.exit(0)"], { cwd: ws, env: { KEEP: "1", DROP_ME: undefined } }),
+            ChildProcess.make(process.execPath, ["-e", "process.exit(0)"], {
+              cwd: ws,
+              env: { KEEP: "1", DROP_ME: undefined }
+            }),
             { workspaceRoot: ws, network: "none", reads: [], writes: [], readOnly: [] }
           )
         )
@@ -418,7 +435,11 @@ describe("Wave9 Final Boost — flows/platform-node deep coverage", () => {
 
     // 2. NativeRuntime invalid signals & invalid rules + signal handler double-signal
     const nrDir = makeTmp("wave9-nr-")
-    const baseHost = { filename: nodePath.join(nrDir, "nr.sqlite"), workspaceRoot: nrDir, owner: { hostId: "wave9-nr" } }
+    const baseHost = {
+      filename: nodePath.join(nrDir, "nr.sqlite"),
+      workspaceRoot: nrDir,
+      owner: { hostId: "wave9-nr" }
+    }
     expect(() => (NodeRuntime.layerHost as any)({ ...baseHost, signals: "SIGINT" }, Layer.empty)).toThrow()
     expect(() => (NodeRuntime.layerHost as any)({ ...baseHost, signals: ["SIGKILL"] }, Layer.empty)).toThrow()
     expect(() => (NodeRuntime.layerHost as any)({ ...baseHost, rules: "not-array" }, Layer.empty)).toThrow()
@@ -486,7 +507,12 @@ describe("Wave9 Final Boost — flows/platform-node deep coverage", () => {
     )
     expect(darwinPlan).toBeDefined()
     if (!ProcessSandbox.isUnenforceable(darwinPlan)) {
-      const wrappedDarwin = ProcessSandbox.wrap(darwinPlan, ["/bin/sh", "-c", "true"], { PATH: "/usr/bin:/bin" }, darwinHost)
+      const wrappedDarwin = ProcessSandbox.wrap(
+        darwinPlan,
+        ["/bin/sh", "-c", "true"],
+        { PATH: "/usr/bin:/bin" },
+        darwinHost
+      )
       expect(wrappedDarwin.argv.length).toBeGreaterThan(0)
     }
     const tcReads = ProcessSandbox.toolchainReads(`${shimBin}:/usr/bin:/bin`, fakeWs, darwinHost)
@@ -519,7 +545,14 @@ describe("Wave9 Final Boost — flows/platform-node deep coverage", () => {
     }
     try {
       ProcessSandbox.plan(
-        { network: "none", unixSockets: false, strict: true, reads: [nodePath.join(fakeWs, "alias-target")], writes: [], readOnly: [] },
+        {
+          network: "none",
+          unixSockets: false,
+          strict: true,
+          reads: [nodePath.join(fakeWs, "alias-target")],
+          writes: [],
+          readOnly: []
+        },
         { workspaceRoot: fakeWs, cwd: fakeWs, tmp: fakeTmp },
         badAliasHost
       )
@@ -547,8 +580,8 @@ describe("Wave9 Final Boost — flows/platform-node deep coverage", () => {
   })
 
   it("fuzzes DestinationProxy, EgressHttpClient proxy/lookup, and FetchTransport diagnostics", async () => {
-    const dir = makeTmp("wave9-net-")
-    const sock = nodePath.join(dir, "proxy.sock")
+    const dir = makeTmp("dp-")
+    const sock = nodePath.join(dir, "p.sock")
     const token = "wave9-secret-token"
     const authHeader = `Basic ${Buffer.from(`broker:${token}`).toString("base64")}`
 
@@ -756,7 +789,13 @@ describe("Wave9 Final Boost — flows/platform-node deep coverage", () => {
                 sock.once("error", reject)
               })
               // Send ready frame first so protocol accepts activation
-              sock.write(JSON.stringify({ type: "ready", pid: process.pid, nonce: ctrl.environment()["SMITHERS_SUPERVISOR_NONCE"] ?? "n" }) + "\n")
+              sock.write(
+                JSON.stringify({
+                  type: "ready",
+                  pid: process.pid,
+                  nonce: ctrl.environment()["SMITHERS_SUPERVISOR_NONCE"] ?? "n"
+                }) + "\n"
+              )
               await new Promise((r) => setTimeout(r, 15))
               if (c.frame === "bad-started") {
                 sock.write(JSON.stringify({ type: "started", pid: 0 }) + "\n")
@@ -857,7 +896,8 @@ describe("Wave9 Final Boost — flows/platform-node deep coverage", () => {
     writeFileSync(nodePath.join(pkgDir, "package.json"), JSON.stringify({ name: "@smthrs/platform-node" }))
     mkdirSync(nodePath.join(pkgDir, "sub"), { recursive: true })
     expect(typeof AtomicFileSystemExecutable.resolvePackageRoot(nodePath.join(pkgDir, "sub"))).toBe("string")
-    expect(typeof AtomicFileSystemExecutable.installedPackageRoot(nodePath.join(pkgDir, "sub", "index.js"), pkgDir)).toBe("string")
+    expect(typeof AtomicFileSystemExecutable.installedPackageRoot(nodePath.join(pkgDir, "sub", "index.js"), pkgDir))
+      .toBe("string")
 
     const wsDir = makeTmp("wave9-afe-ws-")
     const insideExec = nodePath.join(wsDir, "helper.js")

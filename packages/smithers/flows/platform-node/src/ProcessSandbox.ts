@@ -632,6 +632,9 @@ export const select = (
 
 // A plan can describe a foreign host. Absolute paths carry their dialect;
 // resolving a POSIX root with win32 would silently add the current drive.
+const pathDelimiter = (searchPath: string): string =>
+  /^[A-Za-z]:[\\/]/.test(searchPath) || searchPath.includes(";") ? ";" : ":"
+
 const pathApi = (path: string): typeof NodePath.posix =>
   /^(?:[a-z]:[\\/]|\\\\)/i.test(path) ? NodePath.win32 : NodePath.posix
 
@@ -1144,7 +1147,7 @@ export const launcher = (
     ? hostFacts.executable(program)
     : searchPath === undefined
     ? hostFacts.executable(program)
-    : searchPath.split(":").filter((entry) => pathApi(entry).isAbsolute(entry))
+    : searchPath.split(pathDelimiter(searchPath)).filter((entry) => pathApi(entry).isAbsolute(entry))
       .map((entry) => hostFacts.executable(pathApi(entry).join(entry, program)))
       .find((candidate) => candidate !== undefined)
   if (found === undefined) return unchanged
@@ -1238,7 +1241,7 @@ export const toolchainReads = (
     !closed.some((kept) => insideRoot(path, kept)) &&
     !credentials.some((kept) => insideRoot(kept, path))
   const found: Array<string> = []
-  for (const entry of (searchPath ?? "").split(":")) {
+  for (const entry of (searchPath ?? "").split(pathDelimiter(searchPath ?? ""))) {
     if (entry === "" || !pathApi(entry).isAbsolute(entry) || !hostFacts.isDirectory(entry)) continue
     found.push(entry, hostFacts.realpath?.(entry) ?? entry)
   }
@@ -1468,7 +1471,7 @@ export const toolchain = (
   const visited = new Set<string>()
   const drives = hostFacts.windowsDrives ?? []
   const onDrive = (path: string): boolean => drives.some((drive) => insideRoot(drive, path))
-  for (const entry of (searchPath ?? "").split(":")) {
+  for (const entry of (searchPath ?? "").split(pathDelimiter(searchPath ?? ""))) {
     // WSL appends the Windows `PATH`; listing it over the drive mount took
     // minutes, for programs the run could not start.
     if (entry === "" || !api.isAbsolute(entry) || onDrive(entry) || !hostFacts.isDirectory(entry)) continue

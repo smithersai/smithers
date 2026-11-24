@@ -160,7 +160,7 @@ const settled = async (pgid: number): Promise<boolean> => {
   return !groupIsAlive(pgid)
 }
 
-describe("a host that was killed", () => {
+describe.skipIf(process.platform === "win32")("a host that was killed", () => {
   it("starts no jj probe, so its live child is the only process it journals", async () => {
     const filename = join(directory, "probe", "runtime.sqlite")
     const pgid = await killHost(filename, "probe-host")

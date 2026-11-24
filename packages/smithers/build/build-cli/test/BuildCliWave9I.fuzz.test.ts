@@ -86,25 +86,41 @@ describe("BuildCliWave9I ObservedReads, AgentSession, PackageIndex, PackageLoade
         () =>
           Effect.promise(async () => {
             // 1. commandFor, supervisorPath, unsupervised, observer variants
-            const supKeep = ObservedReads.commandFor({ tracer: "/bin/obs", supervisor: true }, "/tmp/t", ["echo", "hi"], true)
+            const supKeep = ObservedReads.commandFor(
+              { tracer: "/bin/obs", supervisor: true },
+              "/tmp/t",
+              ["echo", "hi"],
+              true
+            )
             expect(supKeep).toContain("--keep")
-            const supNoKeep = ObservedReads.commandFor({ tracer: "/bin/obs", supervisor: true }, "/tmp/t", ["echo", "hi"], false)
+            const supNoKeep = ObservedReads.commandFor({ tracer: "/bin/obs", supervisor: true }, "/tmp/t", [
+              "echo",
+              "hi"
+            ], false)
             expect(supNoKeep).not.toContain("--keep")
-            const guarded = ObservedReads.commandFor({ tracer: "/bin/strace", guard: "/bin/guard" }, "/tmp/t", ["echo", "hi"], false)
+            const guarded = ObservedReads.commandFor({ tracer: "/bin/strace", guard: "/bin/guard" }, "/tmp/t", [
+              "echo",
+              "hi"
+            ], false)
             expect(guarded).toContain("--guard")
 
             expect(ObservedReads.supervisorPath("darwin", "x64", {})).toBeUndefined()
             expect(ObservedReads.supervisorPath("linux", "ppc64", {})).toBeUndefined()
-            expect(ObservedReads.supervisorPath("linux", "arm64", { [ObservedReads.recorderVariable]: "strace" })).toBeUndefined()
+            expect(ObservedReads.supervisorPath("linux", "arm64", { [ObservedReads.recorderVariable]: "strace" }))
+              .toBeUndefined()
             expect(ObservedReads.supervisorPath("linux", "x64", {}, "not-a-valid-url://\0")).toBeUndefined()
 
             expect(ObservedReads.unsupervised("darwin", "x64", {})).toBeUndefined()
             expect(ObservedReads.unsupervised("linux", "ppc64", {})).toBeUndefined()
-            expect(ObservedReads.unsupervised("linux", "arm64", { [ObservedReads.recorderVariable]: "strace" })).toContain("strace")
+            expect(ObservedReads.unsupervised("linux", "arm64", { [ObservedReads.recorderVariable]: "strace" }))
+              .toContain("strace")
             const unsupBadUrl = ObservedReads.unsupervised("linux", "x64", {}, "not-a-valid-url://\0")
             expect(unsupBadUrl).toContain("smthrs-observe")
 
-            const obsDarwin = ObservedReads.observer({ platform: "darwin", executable: () => undefined })
+            const obsDarwin = ObservedReads.observer({
+              platform: "darwin",
+              executable: () => undefined
+            })
             expect("reason" in obsDarwin).toBe(true)
             const obsNoStrace = ObservedReads.observer({
               platform: "linux",
@@ -117,14 +133,25 @@ describe("BuildCliWave9I ObservedReads, AgentSession, PackageIndex, PackageLoade
             expect(typeof ObservedReads.lockedInstall(["yarnpkg", "--frozen-lockfile"], "/ws")).toBe("boolean")
             expect(typeof ObservedReads.lockedInstall(["yarnpkg", "install", "--immutable"], "/ws")).toBe("boolean")
             expect(typeof ObservedReads.lockedInstall(["yarnpkg"], "/ws")).toBe("boolean")
-            expect(typeof ObservedReads.lockedInstall(["pip3", "install", "-r", "requirements.txt"], "/ws")).toBe("boolean")
-            expect(typeof ObservedReads.lockedInstall(["cargo", "+nightly", "fetch", "--locked"], "/ws")).toBe("boolean")
-            expect(typeof ObservedReads.lockedInstall(["cargo", "+nightly", "build", "--locked"], "/ws")).toBe("boolean")
+            expect(typeof ObservedReads.lockedInstall(["pip3", "install", "-r", "requirements.txt"], "/ws")).toBe(
+              "boolean"
+            )
+            expect(typeof ObservedReads.lockedInstall(["cargo", "+nightly", "fetch", "--locked"], "/ws")).toBe(
+              "boolean"
+            )
+            expect(typeof ObservedReads.lockedInstall(["cargo", "+nightly", "build", "--locked"], "/ws")).toBe(
+              "boolean"
+            )
             expect(typeof ObservedReads.lockedInstall(["uv", "run", "--locked", "pytest"], "/ws")).toBe("boolean")
             expect(typeof ObservedReads.lockedInstall(["uv", "run", "--frozen", "pytest"], "/ws")).toBe("boolean")
-            expect(typeof ObservedReads.lockedInstall(["python3", "-m", "pip", "install", "--no-deps", "."], "/ws")).toBe("boolean")
-            expect(typeof ObservedReads.lockedInstall(["env", "-u", "FOO", "pnpm", "install", "--frozen-lockfile"], "/ws")).toBe("boolean")
-            expect(typeof ObservedReads.lockedInstall(["pnpm", "install", "--unknown-flag-xyz", "--frozen-lockfile"], "/ws")).toBe("boolean")
+            expect(typeof ObservedReads.lockedInstall(["python3", "-m", "pip", "install", "--no-deps", "."], "/ws"))
+              .toBe("boolean")
+            expect(
+              typeof ObservedReads.lockedInstall(["env", "-u", "FOO", "pnpm", "install", "--frozen-lockfile"], "/ws")
+            ).toBe("boolean")
+            expect(
+              typeof ObservedReads.lockedInstall(["pnpm", "install", "--unknown-flag-xyz", "--frozen-lockfile"], "/ws")
+            ).toBe("boolean")
             expect(typeof ObservedReads.lockedInstall([], "/ws")).toBe("boolean")
             expect(ObservedReads.lockedBuild(["cargo", "+nightly", "build", "--locked"], "/ws")).toBeDefined()
             expect(ObservedReads.lockedBuild([], "/ws")).toBeUndefined()
@@ -322,7 +349,15 @@ describe("BuildCliWave9I ObservedReads, AgentSession, PackageIndex, PackageLoade
 
               const obsWalkReplaced = ObservedReads.observe(
                 makeEmptyTrace({
-                  walks: [{ at: 1, start: dir, path: "changing", resolve: [], follow: true, reads: true, opened: NodePath.join(dir, "changing") }]
+                  walks: [{
+                    at: 1,
+                    start: dir,
+                    path: "changing",
+                    resolve: [],
+                    follow: true,
+                    reads: true,
+                    opened: NodePath.join(dir, "changing")
+                  }]
                 }),
                 { root: dir, ignore: [], startedMs: 500, io: fakeIo }
               )
@@ -337,8 +372,15 @@ describe("BuildCliWave9I ObservedReads, AgentSession, PackageIndex, PackageLoade
               const vDir = "/sandbox-view"
               expect(ObservedReads.listing(dir, [], fakeIo, [[vDir, dir], [vDir + "/mnt", linkA]])).toBeDefined()
               expect(ObservedReads.listing(dir, [], loopIo, [[vDir, dir], [vDir + "/mnt", loopLink]])).toBeUndefined()
-              expect(ObservedReads.listing(dir, [], fakeIo, [[vDir, dir], [vDir + "/mnt", NodePath.join(dir, "enoent-missing")]])).toBeUndefined()
-              expect(ObservedReads.listing(dir, [], fakeIo, [[vDir, dir], [vDir + "/mnt", NodePath.join(dir, "eacces")]])).toBeUndefined()
+              expect(
+                ObservedReads.listing(dir, [], fakeIo, [[vDir, dir], [
+                  vDir + "/mnt",
+                  NodePath.join(dir, "enoent-missing")
+                ]])
+              ).toBeUndefined()
+              expect(
+                ObservedReads.listing(dir, [], fakeIo, [[vDir, dir], [vDir + "/mnt", NodePath.join(dir, "eacces")]])
+              ).toBeUndefined()
             })
             return true
           }),
@@ -368,7 +410,9 @@ describe("BuildCliWave9I ObservedReads, AgentSession, PackageIndex, PackageLoade
               )
               await Fs.writeFile(
                 fakeClaudeBig,
-                `#!/bin/sh\nnode -e 'process.stdout.write("A".repeat(${AgentSession.maximumSessionOutputBytes + 128}))'\n`,
+                `#!/bin/sh\nnode -e 'process.stdout.write("A".repeat(${
+                  AgentSession.maximumSessionOutputBytes + 128
+                }))'\n`,
                 { mode: 0o755 }
               )
               await Fs.writeFile(
@@ -604,171 +648,193 @@ describe("BuildCliWave9I ObservedReads, AgentSession, PackageIndex, PackageLoade
     assertPassed(report)
   }, 90_000)
 
-  it("PackageIndex validation errors, PackageLoader escapes/factory/repos, and Affected jj/symlinks/selectors", async () => {
-    const report = await Effect.runPromise(
-      Fuzz.run(
-        Arbitrary.schema(Schema.Literal(1)),
-        () =>
-          Effect.promise(async () => {
-            // 1. PackageIndex validation error matrix + private helper transitive edges
-            const dummyTarget = S.Shell.Test({ shell: "echo ok" })
-            const makeGraph = (packages: PackageLoader.LoadedGraph["packages"]): PackageLoader.LoadedGraph => ({
-              root: "/ws",
-              workspace: WorkspaceDeclaration.Workspace("ws", {
-                repository: "git+https://github.com/org/ws.git",
-                cache: WorkspaceDeclaration.Cache({ directory: ".cache" }),
-                host: WorkspaceDeclaration.Host({ bins: ["echo"] })
-              }),
-              factory: undefined,
-              packages,
-              modules: packages.map((p) => p.file),
-              moduleRoots: []
-            })
+  it(
+    "PackageIndex validation errors, PackageLoader escapes/factory/repos, and Affected jj/symlinks/selectors",
+    async () => {
+      const report = await Effect.runPromise(
+        Fuzz.run(
+          Arbitrary.schema(Schema.Literal(1)),
+          () =>
+            Effect.promise(async () => {
+              // 1. PackageIndex validation error matrix + private helper transitive edges
+              const dummyTarget = S.Shell.Test({ shell: "echo ok" })
+              const makeGraph = (packages: PackageLoader.LoadedGraph["packages"]): PackageLoader.LoadedGraph => ({
+                root: "/ws",
+                workspace: WorkspaceDeclaration.Workspace("ws", {
+                  repository: "git+https://github.com/org/ws.git",
+                  cache: WorkspaceDeclaration.Cache({ directory: ".cache" }),
+                  host: WorkspaceDeclaration.Host({ bins: ["echo"] })
+                }),
+                factory: undefined,
+                packages,
+                modules: packages.map((p) => p.file),
+                moduleRoots: []
+              })
 
-            const pkgA = S.Package({ targets: { a: S.Shell.Test({ shell: "echo a" }) } })
-            expect(() =>
-              PackageIndex.make(
-                makeGraph([
-                  { file: "pkg/PACKAGE.ts", packagePath: "pkg", value: pkgA },
-                  { file: "pkg/PACKAGE.vibe", packagePath: "pkg", value: S.Package({ targets: { b: S.Shell.Test({ shell: "echo b" }) } }) }
-                ])
-              )
-            ).toThrow(/two Package modules/)
+              const pkgA = S.Package({ targets: { a: S.Shell.Test({ shell: "echo a" }) } })
+              expect(() =>
+                PackageIndex.make(
+                  makeGraph([
+                    { file: "pkg/PACKAGE.ts", packagePath: "pkg", value: pkgA },
+                    {
+                      file: "pkg/PACKAGE.vibe",
+                      packagePath: "pkg",
+                      value: S.Package({ targets: { b: S.Shell.Test({ shell: "echo b" }) } })
+                    }
+                  ])
+                )
+              ).toThrow(/two Package modules/)
 
-            expect(() =>
-              PackageIndex.make(
-                makeGraph([
-                  {
+              expect(() =>
+                PackageIndex.make(
+                  makeGraph([
+                    {
+                      file: "PACKAGE.ts",
+                      packagePath: "",
+                      value: S.Package({ targets: { first: dummyTarget, second: dummyTarget } })
+                    }
+                  ])
+                )
+              ).toThrow(/both/)
+
+              const refAgentTarget = S.Agent.Lint({
+                agent: S.Agents.missingAgent,
+                prompt: S.file("//p.md"),
+                data: []
+              } as never)
+              expect(() =>
+                PackageIndex.make(
+                  makeGraph([{
                     file: "PACKAGE.ts",
                     packagePath: "",
-                    value: S.Package({ targets: { first: dummyTarget, second: dummyTarget } })
-                  }
-                ])
-              )
-            ).toThrow(/both/)
+                    value: S.Package({ targets: { a: refAgentTarget } })
+                  }])
+                )
+              ).toThrow(/no declared workspace agent/i)
 
-            const refAgentTarget = S.Agent.Lint({
-              agent: S.Agents.missingAgent,
-              prompt: S.file("//p.md"),
-              data: []
-            } as never)
-            expect(() =>
-              PackageIndex.make(
-                makeGraph([{ file: "PACKAGE.ts", packagePath: "", value: S.Package({ targets: { a: refAgentTarget } }) }])
-              )
-            ).toThrow(/no declared workspace agent/i)
+              const refFlagTarget = S.Shell.Test({
+                bin: S.Host.bin("echo"),
+                args: [S.Flags.missingFlag!]
+              })
+              expect(() =>
+                PackageIndex.make(
+                  makeGraph([{
+                    file: "PACKAGE.ts",
+                    packagePath: "",
+                    value: S.Package({ targets: { a: refFlagTarget } })
+                  }])
+                )
+              ).toThrow(/no declared workspace flag/i)
 
-            const refFlagTarget = S.Shell.Test({
-              bin: S.Host.bin("echo"),
-              args: [S.Flags.missingFlag!]
-            })
-            expect(() =>
-              PackageIndex.make(
-                makeGraph([{ file: "PACKAGE.ts", packagePath: "", value: S.Package({ targets: { a: refFlagTarget } }) }])
-              )
-            ).toThrow(/no declared workspace flag/i)
+              const refHostBin = S.Shell.Test({
+                bin: S.Host.bin("missing_host_bin")
+              })
+              expect(() =>
+                PackageIndex.make(
+                  makeGraph([{ file: "PACKAGE.ts", packagePath: "", value: S.Package({ targets: { a: refHostBin } }) }])
+                )
+              ).toThrow(/no binary in the workspace/)
 
-            const refHostBin = S.Shell.Test({
-              bin: S.Host.bin("missing_host_bin")
-            })
-            expect(() =>
-              PackageIndex.make(
-                makeGraph([{ file: "PACKAGE.ts", packagePath: "", value: S.Package({ targets: { a: refHostBin } }) }])
+              const leaf = S.Shell.Test({ shell: "echo leaf" })
+              const privateHelper = S.Shell.Test({ shell: "echo priv", data: [leaf] })
+              const topTarget = S.Shell.Test({ shell: "echo top", data: [privateHelper, leaf] })
+              const idx = PackageIndex.make(
+                makeGraph([{
+                  file: "PACKAGE.ts",
+                  packagePath: "",
+                  value: S.Package({ targets: { leaf, top: topTarget } })
+                }])
               )
-            ).toThrow(/no binary in the workspace/)
+              const edges = idx.edges(idx.resolve("//..."))
+              expect(edges.some((e) => e.from === "//:top" && e.to === "//:leaf")).toBe(true)
 
-            const leaf = S.Shell.Test({ shell: "echo leaf" })
-            const privateHelper = S.Shell.Test({ shell: "echo priv", data: [leaf] })
-            const topTarget = S.Shell.Test({ shell: "echo top", data: [privateHelper, leaf] })
-            const idx = PackageIndex.make(
-              makeGraph([{ file: "PACKAGE.ts", packagePath: "", value: S.Package({ targets: { leaf, top: topTarget } }) }])
-            )
-            const edges = idx.edges(idx.resolve("//..."))
-            expect(edges.some((e) => e.from === "//:top" && e.to === "//:leaf")).toBe(true)
+              // 2. PackageLoader: FACTORY.ts, relative helper with string escapes, default export error, undefined property error
+              await withTempDir("wave9i-loader-", async (dir) => {
+                await Fs.writeFile(
+                  NodePath.join(dir, "WORKSPACE.ts"),
+                  `import { Smithers as S } from "@smthrs/targets"\nexport const Workspace = S.Workspace("w9i", { repository: "git+https://github.com/org/w9i.git", cache: S.Cache({ directory: ".cache" }) })\n`
+                )
+                await Fs.writeFile(
+                  NodePath.join(dir, "FACTORY.ts"),
+                  `export const factoryMarker = "wave9i"\n`
+                )
+                await Fs.mkdir(NodePath.join(dir, "lib"), { recursive: true })
+                await Fs.writeFile(
+                  NodePath.join(dir, "lib/helper.ts"),
+                  `export const msg = "hi\\n\\t\\0\\x41"\n`
+                )
+                await Fs.writeFile(
+                  NodePath.join(dir, "PACKAGE.ts"),
+                  `import { Smithers as S } from "@smthrs/targets"\nimport { msg } from "./lib/helper.ts"\nexport const Package = S.Package({ targets: { ok: S.Shell.Test({ shell: "echo " + msg }) } })\n`
+                )
+                await expect(PackageLoader.load(await PackageDiscovery.discover(dir))).rejects.toThrow(
+                  /factory_export_missing|no factory export/
+                )
+                await Fs.unlink(NodePath.join(dir, "FACTORY.ts"))
+                const disc = await PackageDiscovery.discover(dir)
+                const loaded = await PackageLoader.load(disc)
+                expect(loaded.packages.length).toBe(1)
 
-            // 2. PackageLoader: FACTORY.ts, relative helper with string escapes, default export error, undefined property error
-            await withTempDir("wave9i-loader-", async (dir) => {
-              await Fs.writeFile(
-                NodePath.join(dir, "WORKSPACE.ts"),
-                `import { Smithers as S } from "@smthrs/targets"\nexport const Workspace = S.Workspace("w9i", { repository: "git+https://github.com/org/w9i.git", cache: S.Cache({ directory: ".cache" }) })\n`
-              )
-              await Fs.writeFile(
-                NodePath.join(dir, "FACTORY.ts"),
-                `export const factoryMarker = "wave9i"\n`
-              )
-              await Fs.mkdir(NodePath.join(dir, "lib"), { recursive: true })
-              await Fs.writeFile(
-                NodePath.join(dir, "lib/helper.ts"),
-                `export const msg = "hi\\n\\t\\0\\x41"\n`
-              )
-              await Fs.writeFile(
-                NodePath.join(dir, "PACKAGE.ts"),
-                `import { Smithers as S } from "@smthrs/targets"\nimport { msg } from "./lib/helper.ts"\nexport const Package = S.Package({ targets: { ok: S.Shell.Test({ shell: "echo " + msg }) } })\n`
-              )
-              await expect(PackageLoader.load(await PackageDiscovery.discover(dir))).rejects.toThrow(/factory_export_missing|no factory export/)
-              await Fs.unlink(NodePath.join(dir, "FACTORY.ts"))
-              const disc = await PackageDiscovery.discover(dir)
-              const loaded = await PackageLoader.load(disc)
-              expect(loaded.packages.length).toBe(1)
+                await Fs.writeFile(
+                  NodePath.join(dir, "PACKAGE.ts"),
+                  `import { Smithers as S } from "@smthrs/targets"\nexport default S.Package({ targets: { ok: S.Shell.Test({ shell: "echo x" }) } })\n`
+                )
+                await expect(PackageLoader.load(await PackageDiscovery.discover(dir))).rejects.toThrow()
 
-              await Fs.writeFile(
-                NodePath.join(dir, "PACKAGE.ts"),
-                `import { Smithers as S } from "@smthrs/targets"\nexport default S.Package({ targets: { ok: S.Shell.Test({ shell: "echo x" }) } })\n`
-              )
-              await expect(PackageLoader.load(await PackageDiscovery.discover(dir))).rejects.toThrow()
+                await Fs.writeFile(
+                  NodePath.join(dir, "PACKAGE.ts"),
+                  `const x: any = undefined\nexport const Package = x.foo\n`
+                )
+                await expect(PackageLoader.load(await PackageDiscovery.discover(dir))).rejects.toThrow(/\.foo/)
+              })
 
-              await Fs.writeFile(
-                NodePath.join(dir, "PACKAGE.ts"),
-                `const x: any = undefined\nexport const Package = x.foo\n`
-              )
-              await expect(PackageLoader.load(await PackageDiscovery.discover(dir))).rejects.toThrow(/\.foo/)
-            })
+              // 3. Affected: real colocated jj repo (changedPaths + baseFiles), symlinks, NodeModules, dependencySelectors, private targets
+              await withTempDir("wave9i-aff-", async (dir) => {
+                NodeChildProcess.execFileSync("jj", ["git", "init", "--colocate"], { cwd: dir, stdio: "ignore" })
+                await Fs.writeFile(
+                  NodePath.join(dir, "WORKSPACE.ts"),
+                  `import { Smithers as S } from "@smthrs/targets"\nexport const Workspace = S.Workspace("aff9i", { repository: "git+https://github.com/org/aff9i.git", cache: S.Cache({ directory: ".cache" }) })\n`
+                )
+                await Fs.mkdir(NodePath.join(dir, "pkg/src"), { recursive: true })
+                await Fs.writeFile(NodePath.join(dir, "pkg/src/a.ts"), "export const a = 1\n")
+                await Fs.writeFile(NodePath.join(dir, "pkg/package.json"), JSON.stringify({ name: "pkg" }))
+                await Fs.mkdir(NodePath.join(dir, "pkg/node_modules"), { recursive: true })
+                await Fs.writeFile(NodePath.join(dir, "pkg/node_modules/dep.txt"), "dep")
+                await Fs.symlink("src/a.ts", NodePath.join(dir, "pkg/link-a.ts"))
+                await Fs.writeFile(
+                  NodePath.join(dir, "pkg/PACKAGE.ts"),
+                  [
+                    `import { Smithers as S } from "@smthrs/targets"`,
+                    `const priv = S.Shell.Test({ shell: "echo p", data: [S.glob("src/**")] })`,
+                    `export const Package = S.Package({ targets: {`,
+                    `  base: S.Shell.Test({ shell: "echo b", data: [S.glob("src/**"), S.file("link-a.ts"), S.nodeModules("node_modules")] }),`,
+                    `  top: S.Shell.Test({ shell: "echo t", data: [priv, S.Target.subtree("//pkg/...", "base")] })`,
+                    `} })`
+                  ].join("\n")
+                )
+                await PackageTree.runGit(dir, ["config", "user.email", "test@example.com"])
+                await PackageTree.runGit(dir, ["config", "user.name", "Test"])
+                await PackageTree.runGit(dir, ["add", "."])
+                await PackageTree.runGit(dir, ["commit", "-m", "init"])
+                await Fs.writeFile(NodePath.join(dir, "pkg/src/a.ts"), "export const a = 2\n")
 
-            // 3. Affected: real colocated jj repo (changedPaths + baseFiles), symlinks, NodeModules, dependencySelectors, private targets
-            await withTempDir("wave9i-aff-", async (dir) => {
-              NodeChildProcess.execFileSync("jj", ["git", "init", "--colocate"], { cwd: dir, stdio: "ignore" })
-              await Fs.writeFile(
-                NodePath.join(dir, "WORKSPACE.ts"),
-                `import { Smithers as S } from "@smthrs/targets"\nexport const Workspace = S.Workspace("aff9i", { repository: "git+https://github.com/org/aff9i.git", cache: S.Cache({ directory: ".cache" }) })\n`
-              )
-              await Fs.mkdir(NodePath.join(dir, "pkg/src"), { recursive: true })
-              await Fs.writeFile(NodePath.join(dir, "pkg/src/a.ts"), "export const a = 1\n")
-              await Fs.writeFile(NodePath.join(dir, "pkg/package.json"), JSON.stringify({ name: "pkg" }))
-              await Fs.mkdir(NodePath.join(dir, "pkg/node_modules"), { recursive: true })
-              await Fs.writeFile(NodePath.join(dir, "pkg/node_modules/dep.txt"), "dep")
-              await Fs.symlink("src/a.ts", NodePath.join(dir, "pkg/link-a.ts"))
-              await Fs.writeFile(
-                NodePath.join(dir, "pkg/PACKAGE.ts"),
-                [
-                  `import { Smithers as S } from "@smthrs/targets"`,
-                  `const priv = S.Shell.Test({ shell: "echo p", data: [S.glob("src/**")] })`,
-                  `export const Package = S.Package({ targets: {`,
-                  `  base: S.Shell.Test({ shell: "echo b", data: [S.glob("src/**"), S.file("link-a.ts"), S.nodeModules("node_modules")] }),`,
-                  `  top: S.Shell.Test({ shell: "echo t", data: [priv, S.Target.subtree("//pkg/...", "base")] })`,
-                  `} })`
-                ].join("\n")
-              )
-              await PackageTree.runGit(dir, ["config", "user.email", "test@example.com"])
-              await PackageTree.runGit(dir, ["config", "user.name", "Test"])
-              await PackageTree.runGit(dir, ["add", "."])
-              await PackageTree.runGit(dir, ["commit", "-m", "init"])
-              await Fs.writeFile(NodePath.join(dir, "pkg/src/a.ts"), "export const a = 2\n")
+                const changed = await Affected.changedPaths(dir, { base: "HEAD" })
+                expect(changed).toContain("pkg/src/a.ts")
+                const baseFiles = await Affected.baseFiles(dir, { base: "HEAD" })
+                expect(baseFiles).toContain("pkg/src/a.ts")
 
-              const changed = await Affected.changedPaths(dir, { base: "HEAD" })
-              expect(changed).toContain("pkg/src/a.ts")
-              const baseFiles = await Affected.baseFiles(dir, { base: "HEAD" })
-              expect(baseFiles).toContain("pkg/src/a.ts")
-
-              const loaded = await PackageLoader.load(await PackageDiscovery.discover(dir))
-              const index = PackageIndex.make(loaded)
-              const sel = Affected.select(index, ["//..."], ["pkg/src/a.ts"], { explain: true })
-              expect(sel.targets.length).toBeGreaterThan(0)
-            })
-            return true
-          }),
-        { executions: 1 }
+                const loaded = await PackageLoader.load(await PackageDiscovery.discover(dir))
+                const index = PackageIndex.make(loaded)
+                const sel = Affected.select(index, ["//..."], ["pkg/src/a.ts"], { explain: true })
+                expect(sel.targets.length).toBeGreaterThan(0)
+              })
+              return true
+            }),
+          { executions: 1 }
+        )
       )
-    )
-    assertPassed(report)
-  }, 120_000)
+      assertPassed(report)
+    },
+    120_000
+  )
 })

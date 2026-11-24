@@ -127,6 +127,7 @@ const wasmReproducibility = Smithers.NodeTest({
   srcs: [...sources, Smithers.file("//packages/smithers/flows/jj/wasm/flows_jj.wasm")],
   deps: [nativeSources],
   env: { CARGO_TARGET_DIR: "target/wasm-reproducibility" },
+  hosts: ["linux"],
   cwd: "."
 })
 

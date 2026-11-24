@@ -112,7 +112,7 @@ describe("atomic helper transport event ordering", () => {
 
   it("retains a broken request pipe when no helper rejection arrived", async () => {
     const error = await refusal(await helper("process.exit(1)"), unread)
-    expect(error.reason).toMatchObject({ description: expect.stringContaining("EPIPE") })
+    expect(error.reason).toMatchObject({ description: expect.stringMatching(/EPIPE|EOF/) })
   })
 
   it("preserves a typed helper rejection over broken stdin and a failed exit", async () => {

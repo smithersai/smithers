@@ -363,6 +363,7 @@ export const BuildAndCheckTypeScriptPackage = (options: Options): PackageTargets
       ...(options.testTools === undefined ? {} : { tools: options.testTools }),
       ...(options.testEnv === undefined ? {} : { env: options.testEnv }),
       ...(options.testHosts === undefined ? {} : { hosts: options.testHosts }),
+      ...(options.testHosts === undefined ? {} : { hosts: options.testHosts }),
       tests: [tests],
       sources: [
         sources,
@@ -413,6 +414,7 @@ export const BuildAndCheckTypeScriptPackage = (options: Options): PackageTargets
       ],
       deps: [lib, ...deps, ...reads],
       ...(options.testEnv === undefined ? {} : { env: options.testEnv }),
+      ...(options.testHosts === undefined ? {} : { hosts: options.testHosts }),
       timeout: `${options.testTimeoutMs ?? 1_200_000}ms`,
       cwd
     })

@@ -465,7 +465,7 @@ describe("@smthrs/targets Wave-7D: RemoteCache, Nix, Home, PackageJsonTemplate, 
             const deadDone = await JobKeeper.allEnded([999_999_999], 20, plat)
             expect(deadDone).toBe(true)
             // Current PID is alive, so short deadline returns false
-            const selfDone = await JobKeeper.allEnded([process.pid], 15, plat)
+            const selfDone = await JobKeeper.allEnded([process.pid], 15, process.platform)
             expect(selfDone).toBe(false)
             return true
           }),

@@ -41,7 +41,7 @@ afterEach(() => {
 
 const run = <A, E>(effect: Effect.Effect<A, E, Scope.Scope>) => Effect.runPromise(Effect.scoped(effect))
 
-describe("native ProcessConfinement", () => {
+describe.skipIf(process.platform === "win32")("native ProcessConfinement", () => {
   it("rejects a private-file assertion after granting broad read access", () => {
     const f = fixture()
     const file = NodePath.join(f.base, "private fixture.txt")

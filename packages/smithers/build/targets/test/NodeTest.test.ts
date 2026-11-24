@@ -282,4 +282,22 @@ describe("NodeBinary", () => {
     expect(Target.metadata(target).dependencies).toEqual([])
     expect(Target.metadata(target).dependencySelectors).toEqual([selector])
   })
+
+  it("carries declared host platforms in NodeTest metadata", () => {
+    const linuxOnly = NodeTest.NodeTest({
+      runtime,
+      runner: NodeTest.entrypoint(Input.file("//scripts/linux.mjs")),
+      srcs: [],
+      deps: [],
+      hosts: ["linux"]
+    })
+    expect(Target.metadata(linuxOnly).hosts).toEqual(["linux"])
+    const anyHost = NodeTest.NodeTest({
+      runtime,
+      runner: NodeTest.entrypoint(Input.file("//scripts/any.mjs")),
+      srcs: [],
+      deps: []
+    })
+    expect(Target.metadata(anyHost).hosts).toBeUndefined()
+  })
 })

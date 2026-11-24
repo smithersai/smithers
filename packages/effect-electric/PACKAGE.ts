@@ -13,6 +13,7 @@ const { bench, check, circular, docs, docsFiles, fmt, lib, lint, test } = BuildA
   sources: Input.glob("{src,examples}/**/*.ts"),
   testProgram: Smithers.file("//packages/effect-electric/scripts/test-services.mjs"),
   testData: ["scripts/test-services.yaml"],
+  testHosts: ["linux"],
   cwd
 })
 

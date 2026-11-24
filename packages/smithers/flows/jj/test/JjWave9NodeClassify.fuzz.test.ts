@@ -87,8 +87,8 @@ describe("@smthrs/jj Wave 9 deep NodeJj.layerSpawner classification fuzzing", ()
                   const verText = scenario === "version-too-old"
                     ? "jj 0.25.0\n"
                     : scenario === "version-garbage"
-                      ? "not-a-jj-version\n"
-                      : "jj 0.39.0\n"
+                    ? "not-a-jj-version\n"
+                    : "jj 0.39.0\n"
                   return Effect.succeed(
                     makeHandle({
                       pid: ProcessId(1),
@@ -111,7 +111,13 @@ describe("@smthrs/jj Wave 9 deep NodeJj.layerSpawner classification fuzzing", ()
                 let code = 0
                 switch (scenario) {
                   case "ok-status":
-                    stdout = args.includes("op") ? "0123456789abcdef\n" : op === "diff" ? "" : op === "root" ? "/tmp/repo\n" : "The working copy is clean\n"
+                    stdout = args.includes("op")
+                      ? "0123456789abcdef\n"
+                      : op === "diff"
+                      ? ""
+                      : op === "root"
+                      ? "/tmp/repo\n"
+                      : "The working copy is clean\n"
                     break
                   case "ok-refused-warning":
                     stdout = op === "opId" ? "0123456789abcdef\n" : "ok\n"
@@ -134,7 +140,7 @@ describe("@smthrs/jj Wave 9 deep NodeJj.layerSpawner classification fuzzing", ()
                     code = 1
                     break
                   case "revision-doesnt-exist":
-                    stderr = 'Error: Revision "conflict-fix" doesn\'t exist\n'
+                    stderr = "Error: Revision \"conflict-fix\" doesn't exist\n"
                     code = 1
                     break
                   case "revset-parse":
