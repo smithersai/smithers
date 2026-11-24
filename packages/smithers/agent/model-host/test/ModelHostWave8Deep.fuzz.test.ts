@@ -4,14 +4,15 @@ import { AgentCommands, AgentTurnJournal, ContextPreflight, type NativeAgent } f
 import { Arbitrary, Effect, Exit, Schema, Stream } from "effect"
 import { createHash } from "node:crypto"
 import { describe, expect, it } from "vitest"
-import { createHostDiagnostics, type DurableChatGrant, DurableChatProducer, type HostTransport } from "../src/index.ts"
+import type { HostTransport } from "../src/HostTools.ts"
+import { createHostDiagnostics, type DurableChatGrant, DurableChatProducer } from "../src/index.ts"
 import { runDurableChatTurn, runHostTurn } from "./fixtures/durable.ts"
 
 const seed = Number(process.env.EFFECT_FUZZ_SEED ?? "20261128")
 const baseExecutions = Number(process.env.EFFECT_FUZZ_EXECUTIONS ?? "100")
 const executions = Math.max(18, Math.min(Math.ceil(baseExecutions / 6), 36))
 
-const assertPassed = <A>(report: Fuzz.Report<A>): void => {
+const assertPassed = <A, E = unknown>(report: Fuzz.Report<A, E>): void => {
   expect(report._tag, Fuzz.formatReport(report)).toBe("Passed")
 }
 
@@ -22,7 +23,7 @@ const makeGrant = (opts: {
   readonly api?: boolean
   readonly source?: boolean
   readonly shared?: boolean
-  readonly agentInstructions?: string
+  readonly agentInstructions?: string | undefined
 }): DurableChatGrant => ({
   turnId: "turn-w8",
   ownerId: 1,
@@ -54,23 +55,17 @@ const makeToolCallModel = (calls: ReadonlyArray<{ readonly name: string; readonl
         const call = calls[idx]!
         const events: Array<ModelEvent.ModelEvent> = [
           { type: "tool-call-start", id: `tc-${idx}`, name: call.name },
-          { type: "tool-call-delta", id: `tc-${idx}`, delta: call.args },
-          { type: "tool-call-end", id: `tc-${idx}`, name: call.name, arguments: call.args },
-          {
-            type: "settle",
-            stopReason: "tool-calls",
-            usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15 }
-          }
+          { type: "tool-call-delta", id: `tc-${idx}`, arguments: call.args },
+          { type: "tool-call-end", id: `tc-${idx}`, arguments: call.args },
+          { type: "usage", inputTokens: 10, outputTokens: 5, totalTokens: 15 },
+          { type: "settle", stopReason: "tool-calls" }
         ]
         return Stream.fromIterable(events)
       }
       return Stream.fromIterable<ModelEvent.ModelEvent>([
         { type: "text-delta", id: "t-final", text: "Done." },
-        {
-          type: "settle",
-          stopReason: "stop",
-          usage: { inputTokens: 12, outputTokens: 4, totalTokens: 16 }
-        }
+        { type: "usage", inputTokens: 12, outputTokens: 4, totalTokens: 16 },
+        { type: "settle", stopReason: "stop" }
       ])
     }
   })
@@ -150,36 +145,34 @@ describe("ModelHost Wave 8 deep fuzzing", () => {
               const transport: HostTransport = {
                 docs: sampleDocs,
                 read: (path) =>
-                  Effect.succeed(
-                    errorCode === "ok"
-                      ? {
-                        file: {
-                          path,
-                          content: "export const ok = true\n",
-                          lines: 1,
-                          sizeBytes: 23,
-                          truncated: false,
-                          revision: "rev-1"
-                        }
+                  errorCode === "ok"
+                    ? Effect.succeed({
+                      file: {
+                        repository: "acme/demo",
+                        path,
+                        commit: "rev-1",
+                        content: "export const ok = true\n",
+                        binary: false
                       }
-                      : { code: errorCode === "bad_status" || errorCode === "invalid_body" ? "not_found" : errorCode }
-                  ),
+                    })
+                    : Effect.succeed({
+                      code: errorCode === "bad_status" || errorCode === "invalid_body" ? "not_found" : errorCode
+                    }),
                 list: (path) =>
-                  Effect.succeed(
-                    errorCode === "ok"
-                      ? {
-                        directory: {
-                          path,
-                          entries: [
-                            { name: "src", path: "src", kind: "dir" as const },
-                            { name: "README.md", path: "README.md", kind: "file" as const, sizeBytes: 120 }
-                          ],
-                          truncated: false,
-                          revision: "rev-1"
-                        }
+                  errorCode === "ok"
+                    ? Effect.succeed({
+                      directory: {
+                        repository: "acme/demo",
+                        path,
+                        commit: "rev-1",
+                        entries: [
+                          { name: "src", kind: "dir" as const },
+                          { name: "README.md", kind: "file" as const }
+                        ],
+                        truncated: false
                       }
-                      : { code: errorCode === "path_refused" ? "path_refused" : "not_found" }
-                  ),
+                    })
+                    : Effect.succeed({ code: errorCode === "path_refused" ? "path_refused" : "not_found" }),
                 api: (path, req) => {
                   if (errorCode === "forbidden") return Effect.succeed({ code: "forbidden" })
                   if (errorCode === "bad_status") return Effect.succeed({ status: 500, body: { error: "boom" } })
@@ -224,7 +217,7 @@ describe("ModelHost Wave 8 deep fuzzing", () => {
                     }
                     return Effect.succeed({ status: 404, body: { error: "not_found" } })
                   }
-                  if (path.startsWith("/api/todos/") && req.method === "GET") {
+                  if (path.startsWith("/api/todos/") && req?.method === "GET") {
                     const n = Number(path.split("/").pop()) || 1
                     return Effect.succeed({
                       status: 200,
@@ -250,7 +243,7 @@ describe("ModelHost Wave 8 deep fuzzing", () => {
                       }
                     })
                   }
-                  if (req.method === "POST") {
+                  if (req?.method === "POST") {
                     return Effect.succeed({
                       status: errorCode === "not_found" ? 200 : 202,
                       body: errorCode === "not_found"
@@ -458,7 +451,8 @@ describe("ModelHost Wave 8 deep fuzzing", () => {
                   modelCalls++
                   return Stream.fromIterable<ModelEvent.ModelEvent>([
                     { type: "text-delta", id: "d1", text: "Answer text" },
-                    { type: "settle", stopReason: "stop", usage: { inputTokens: 5, outputTokens: 2, totalTokens: 7 } }
+                    { type: "usage", inputTokens: 5, outputTokens: 2, totalTokens: 7 },
+                    { type: "settle", stopReason: "stop" }
                   ])
                 }
               })
@@ -504,7 +498,7 @@ describe("ModelHost Wave 8 deep fuzzing", () => {
                   batch: parsed.expected.batch + 1,
                   from: parsed.expected.position + 1,
                   previousHash: parsed.expected.hash,
-                  frames: parsed.frames
+                  frames: [...parsed.frames]
                 }
                 const hash = sha256(AgentTurnJournal.agentTurnJournalDigestInput("batch", unsigned))
                 const batch: AgentTurnJournal.AgentTurnBatch = {

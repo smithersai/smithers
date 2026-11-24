@@ -72,7 +72,7 @@ test("the ordinary PR CLI entrypoint plans a package's example typecheck and sui
   const entry = fileURLToPath(new URL(manifest.bin.smthrs, cliRoot))
   const plan = JSON.parse(execFileSync(process.execPath, [
     entry, "ci", "//packages/smithers/agent:check", "//packages/smithers/agent:test", "--plan", "--json"
-  ], { cwd: new URL("../../..", import.meta.url), encoding: "utf8", timeout: 300_000 }))
+  ], { cwd: new URL("../../..", import.meta.url), encoding: "utf8", timeout: 300_000, maxBuffer: 16 * 1024 * 1024 }))
   // A package's examples are type-checked by its `check` and run by its `test`.
   assert.ok(plan.roots.includes("//packages/smithers/agent:check"), "package CI must typecheck the executable examples")
   assert.ok(plan.roots.includes("//packages/smithers/agent:test"), "package CI must execute the example suite")

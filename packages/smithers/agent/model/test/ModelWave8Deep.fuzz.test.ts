@@ -22,7 +22,7 @@ const seed = Number(process.env.EFFECT_FUZZ_SEED ?? "20261131")
 const baseExecutions = Number(process.env.EFFECT_FUZZ_EXECUTIONS ?? "100")
 const fastExec = Math.max(30, Math.min(baseExecutions, 100))
 
-const assertPassed = <A>(report: Fuzz.Report<A>): void => {
+const assertPassed = <A, E = unknown>(report: Fuzz.Report<A, E>): void => {
   expect(report._tag, Fuzz.formatReport(report)).toBe("Passed")
 }
 
@@ -183,7 +183,7 @@ describe("Model Wave 8 deep fuzzing", () => {
                   outcome: status === 200 ? "settled" : "provider_internal",
                   stopReason: status === 200 ? "stop" : undefined,
                   status,
-                  timing: { ttfbMs: 5, totalMs: 12 },
+                  timing: { headersMs: 5, closedMs: 12 },
                   usage: { inputTokens: 10, outputTokens: 4, totalTokens: 14 },
                   headers: {
                     "x-request-id": "req-1",
@@ -245,9 +245,9 @@ describe("Model Wave 8 deep fuzzing", () => {
             Effect.gen(function*() {
               const apiKey = Redacted.make("test-key-w8")
               const routeRes = kind === "anthropic"
-                ? Route.anthropic({ id: "a", apiKey, baseUrl: "http://127.0.0.1:1" })
+                ? Route.anthropic({ apiKey, baseUrl: "http://127.0.0.1:1" })
                 : kind === "openai"
-                ? Route.openai({ id: "o", apiKey, baseUrl: "http://127.0.0.1:1" })
+                ? Route.openai({ apiKey, baseUrl: "http://127.0.0.1:1" })
                 : kind === "responses-compat"
                 ? Route.openaiResponsesCompatible({
                   id: "rc",
@@ -261,8 +261,9 @@ describe("Model Wave 8 deep fuzzing", () => {
                   apiKey,
                   baseUrl: "http://127.0.0.1:1"
                 })
-              expect(Result.isSuccess(routeRes)).toBe(true)
-              const route = Result.getOrThrow(routeRes)
+              expect(routeRes._tag).toBe("Success")
+              if (routeRes._tag !== "Success") return false
+              const route = routeRes.success
 
               const req = ModelRequest.ModelRequest.make({
                 modelId: kind === "anthropic" ? "claude-sonnet-4-20250514" : "gpt-4o-mini",

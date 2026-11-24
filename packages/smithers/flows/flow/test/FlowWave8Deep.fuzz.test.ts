@@ -1,7 +1,7 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import { FlowEngine } from "@smthrs/engine"
 import { Fuzz } from "@smthrs/fuzz"
-import * as Node from "@smthrs/plan/Node"
+import { Node } from "@smthrs/plan"
 import { Arbitrary, Cause, Context, Duration, Effect, Exit, Fiber, Layer, Logger, Option, Schema } from "effect"
 import { TestClock } from "effect/testing"
 import { describe, expect, it } from "vitest"

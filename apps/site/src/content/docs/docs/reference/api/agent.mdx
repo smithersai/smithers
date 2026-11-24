@@ -2831,10 +2831,10 @@ digest.
 
 Vendor-neutral model selection policy enforced on an external agent session before any prompt turn is sent.
 
-- `ModelPolicy` — schema constraining `model`, `allowedPrefixes`, and `deniedPrefixes`.
-- `REFUSAL_REASONS` — `["missing_model", "denied_prefix", "not_allowed", "mismatch"]`.
-- `ModelPolicyRefused` — tagged error (`modelId`, `reason`) raised when a session model violates the policy.
-- `checkModel(policy, modelId)` — validates `modelId` against `policy`, failing closed with `ModelPolicyRefused`.
+- `ModelPolicy`: schema constraining `model`, `allowedPrefixes`, and `deniedPrefixes`.
+- `REFUSAL_REASONS`: `["missing_model", "denied_prefix", "not_allowed", "mismatch"]`.
+- `ModelPolicyRefused`: tagged error (`modelId`, `reason`) raised when a session model violates the policy.
+- `checkModel(policy, modelId)`: validates `modelId` against `policy`, failing closed with `ModelPolicyRefused`.
 
 ## ModelStep
 
