@@ -399,6 +399,7 @@ const config: (options?: { readonly url?: string }) => Config.Config<Connection>
 
 const defaultMetric: Metric.Counter<number>
 const responses: Metric.Counter<number>
+const defaultMaxGuardedBodyBytes: number
 
 class Upstream extends Context.Service<Upstream, HttpClient.HttpClient>()(
   "@smthrs/effect-electric/ShapeProxy/Upstream"
@@ -411,13 +412,13 @@ class Refused extends Data.TaggedError("Refused")<{
 }> {}
 ```
 
-| Model        | Fields                                                                                                                                                               |
-| ------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `Connection` | `url: string`, `secret?: Redacted<string>`, `secretAs?: SecretAs`, `sourceId?: string`                                                                               |
-| `SecretAs`   | `"parameter"` (Electric's `secret` query parameter; the default) or `"bearer"` (`authorization: Bearer <secret>`, for a gateway in front of Electric)                |
-| `Shape`      | `table: string`, `where?: string`, `params?: Readonly<Record<string, string>>`, `columns?: ReadonlyArray<string>` (the only columns sent; every column when omitted) |
-| `Cache`      | `"no-store"` (every response `private, no-store`; the default) or `"public"` (Electric's caching headers pass through, unless `rowAccess` is set)                    |
-| `Options<R>` | everything in `Connection`, and `shape: Shape \| Effect<Shape, Refused, R>`, `cache?: Cache`, `name?: string`, `metric?: Metric.Counter<number>`                     |
+| Model        | Fields                                                                                                                                                                                                                              |
+| ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Connection` | `url: string`, `secret?: Redacted<string>`, `secretAs?: SecretAs`, `sourceId?: string`                                                                                                                                              |
+| `SecretAs`   | `"parameter"` (Electric's `secret` query parameter; the default) or `"bearer"` (`authorization: Bearer <secret>`, for a gateway in front of Electric)                                                                               |
+| `Shape`      | `table: string`, `where?: string`, `params?: Readonly<Record<string, string>>`, `columns?: ReadonlyArray<string>` (the only columns sent; every column when omitted)                                                                |
+| `Cache`      | `"no-store"` (every response `private, no-store`; the default) or `"public"` (Electric's caching headers pass through, unless `rowAccess` is set)                                                                                   |
+| `Options<R>` | everything in `Connection`, and `shape: Shape \| Effect<Shape, Refused, R>`, `cache?: Cache`, `maxGuardedBodyBytes?: number` (16 MiB, `defaultMaxGuardedBodyBytes`, unless set), `name?: string`, `metric?: Metric.Counter<number>` |
 
 `make` serves one shape, fixed or decided per request, and answers a
 `Refused` with its status; `config` reads `ELECTRIC_URL`, `ELECTRIC_SECRET`,

@@ -1400,6 +1400,142 @@ describe("principal", () => {
     }))
     expect({ offered, listed }).toEqual({ offered: ["ben-1"], listed: ["ben-1"] })
   })
+
+  test("a principal change while one parked write is being taken withholds the next: it stays parked for its owner", async () => {
+    const world = await setup([])
+    for (const id of ["ann-1", "ann-2"]) {
+      world.storage.entries.set(
+        `parked:${id}`,
+        JSON.stringify({
+          reason: "negative",
+          name: "save",
+          write: JSON.stringify({
+            mutationFnName: "save",
+            mutations: [{ modified: note(id, -1) }],
+            metadata: { principal: "ann" }
+          })
+        })
+      )
+    }
+    const { state, principal } = as("ann")
+    const offered: Array<string> = []
+    await scoped(Effect.gen(function*() {
+      const entered = yield* Deferred.make<void>()
+      const release = yield* Deferred.make<void>()
+      const starting = yield* start({
+        ...world,
+        principal,
+        parked: {
+          save: (write) =>
+            Effect.gen(function*() {
+              offered.push(`${state.now}:${write.id}`)
+              yield* Deferred.succeed(entered, undefined)
+              yield* Deferred.await(release)
+              return false
+            })
+        }
+      }).pipe(Effect.forkChild)
+      yield* Deferred.await(entered)
+      // Ben signs in on this device while the first feature is still deciding about Ann's first write.
+      state.now = "ben"
+      yield* Deferred.succeed(release, undefined)
+      const { outbox } = yield* Fiber.join(starting)
+      // Ann's second write was never handed to a feature running as Ben, and Ben sees neither.
+      expect(offered).toEqual(["ann:ann-1"])
+      expect(yield* outbox.parked).toEqual([])
+      expect([...world.storage.entries.keys()].filter((key) => key.startsWith("parked:")).sort()).toEqual([
+        "parked:ann-1",
+        "parked:ann-2"
+      ])
+      // Ann returns: both writes are still hers to recover.
+      state.now = "ann"
+      expect((yield* outbox.parked).map(({ id }) => id).sort()).toEqual(["ann-1", "ann-2"])
+    }))
+    // Her next load offers both again.
+    offered.length = 0
+    await scoped(start({
+      ...world,
+      principal: as("ann").principal,
+      parked: { save: (write) => Effect.sync(() => (offered.push(write.id), false)) }
+    }))
+    expect(offered.sort()).toEqual(["ann-1", "ann-2"])
+  })
+
+  test("a live receipt is the principal's that queued it: another principal reusing the key queues its own write", async () => {
+    const world = await setup([])
+    const { state, principal } = as("ann")
+    await scoped(Effect.gen(function*() {
+      const { notes, outbox } = yield* start({ ...world, online: offline(), principal })
+      const anns = yield* outbox.transact("save", { idempotencyKey: "k" }, Effect.asVoid(notes.insert(note("a", 1))))
+      yield* anns.admitted
+      expect((yield* outbox.admission("save", "k")).pipe(Option.map((write) => write.id))).toEqual(
+        Option.some(anns.id)
+      )
+      state.now = "ben"
+      // Ben reuses Ann's key while her write is pending: her receipt is not his.
+      expect(yield* outbox.admission("save", "k")).toEqual(Option.none())
+      let ran = 0
+      const bens = yield* outbox.transact(
+        "save",
+        { idempotencyKey: "k", joinExisting: true },
+        Effect.andThen(Effect.sync(() => void ran++), Effect.asVoid(notes.insert(note("b", 2))))
+      )
+      yield* bens.admitted
+      expect(ran).toBe(1)
+      expect(bens.id).not.toBe(anns.id)
+      const joined = yield* outbox.transact(
+        "save",
+        { idempotencyKey: "k", joinExisting: true },
+        Effect.sync(() => void ran++)
+      )
+      expect([joined.id, ran]).toEqual([bens.id, 1])
+      expect((yield* outbox.admission("save", "k")).pipe(Option.map((write) => write.id))).toEqual(
+        Option.some(bens.id)
+      )
+      const stamps = [...world.storage.entries].filter(([key]) => key.startsWith("tx:")).map(([, value]) =>
+        JSON.parse(value).metadata.principal
+      )
+      expect(stamps.sort()).toEqual(["ann", "ben"])
+      // Ann returns to her own receipt, untouched by Ben's.
+      state.now = "ann"
+      expect((yield* outbox.admission("save", "k")).pipe(Option.map((write) => write.id))).toEqual(
+        Option.some(anns.id)
+      )
+    }))
+  })
+
+  test("an unstamped live receipt is read only by a principal that owns unstamped writes", async () => {
+    const world = await setup([])
+    const { state, principal } = as(undefined, true)
+    await scoped(Effect.gen(function*() {
+      const { notes, outbox } = yield* start({ ...world, online: offline(), principal })
+      // Nobody is signed in: the write names no principal.
+      const unstamped = yield* outbox.transact(
+        "save",
+        { idempotencyKey: "k" },
+        Effect.asVoid(notes.insert(note("a", 1)))
+      )
+      yield* unstamped.admitted
+      const seen = Effect.map(outbox.admission("save", "k"), Option.map((write) => write.id))
+      expect(yield* seen).toEqual(Option.some(unstamped.id))
+      state.ownsUnstamped = false
+      expect(yield* seen).toEqual(Option.none())
+      // Ann signs in and does not own the device's unstamped writes: the receipt is not hers.
+      state.now = "ann"
+      expect(yield* seen).toEqual(Option.none())
+      // Once she owns them, it is; her own stamped receipt for the same key then comes first.
+      state.ownsUnstamped = true
+      expect(yield* seen).toEqual(Option.some(unstamped.id))
+      const anns = yield* outbox.transact(
+        "save",
+        { idempotencyKey: "k" },
+        Effect.asVoid(notes.insert(note("b", 2)))
+      )
+      yield* anns.admitted
+      expect(anns.id).not.toBe(unstamped.id)
+      expect(yield* seen).toEqual(Option.some(anns.id))
+    }))
+  })
 })
 
 for (const accepts of [true, false]) {

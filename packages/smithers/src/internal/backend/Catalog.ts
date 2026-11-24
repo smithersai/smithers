@@ -6,7 +6,10 @@
 
 import { Cli, z } from "incur"
 import { randomUUID } from "node:crypto"
+import { mkdtemp, rm, writeFile } from "node:fs/promises"
 import { isIP } from "node:net"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
 import { catalogDescriptors } from "../../Catalog.ts"
 import { catalogRequest } from "../../CatalogRequest.ts"
 import type { Runtime } from "../../cli/ControlBridge.ts"
@@ -18,6 +21,7 @@ import { definitions } from "./Definitions.ts"
 import { targetsInstall } from "./Destination.ts"
 import { draftFromIssue } from "./IssueDraft.ts"
 import { spawn } from "./Process.ts"
+import * as SSH from "./SSH.ts"
 
 /**
  * Generated operations with a CLI door and external-agent policy.
@@ -193,16 +197,40 @@ export const dispatchCatalog = async (
     ) {
       throw new Refused({ fault: "infra", code: "invalid_ssh_endpoint", message: "Invalid SSH address" })
     }
-    const child = spawn(
-      "ssh",
-      ["-F", "/dev/null", "-o", "StrictHostKeyChecking=yes", "-p", "2222", "-l", branch, host],
-      {
-        env: client.env,
-        stdio: "inherit",
-        signal: client.runtime.signal
-      }
-    )
-    const code = await child.exited
+    const keys = SSH.hostKeys(endpoint.host_keys)
+    if (!keys.length) {
+      throw new Refused({ fault: "infra", code: "ssh_endpoint_refused", message: "Branch SSH host keys unavailable" })
+    }
+    const directory = await mkdtemp(join(tmpdir(), "smithers-branch-ssh-"))
+    const knownHosts = join(directory, "known_hosts")
+    const alias = "smithers-branch"
+    let code: number
+    try {
+      await writeFile(knownHosts, keys.map((key) => `${alias} ${key}\n`).join(""), { mode: 0o600 })
+      code = await spawn("ssh", [
+        "-o",
+        "StrictHostKeyChecking=yes",
+        "-o",
+        `UserKnownHostsFile="${knownHosts}"`,
+        "-o",
+        "GlobalKnownHostsFile=/dev/null",
+        "-o",
+        `HostKeyAlias=${alias}`,
+        "-o",
+        "ControlPath=none",
+        "-o",
+        "KnownHostsCommand=none",
+        "-o",
+        "VerifyHostKeyDNS=no",
+        "-p",
+        "2222",
+        "-l",
+        branch,
+        host
+      ], { env: client.env, stdio: "inherit", signal: client.runtime.signal }).exited
+    } finally {
+      await rm(directory, { recursive: true, force: true })
+    }
     client.runtime.exit?.(code)
     return { code }
   }

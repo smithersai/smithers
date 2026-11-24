@@ -2000,13 +2000,25 @@ const makeRuntime = (
         return started
       }),
       launchPending: (id) =>
-        sql`SELECT run_id FROM control_runs WHERE run_id = ${id} AND launch_pending = 1`.pipe(
+        sql`SELECT run_id FROM control_runs WHERE run_id = ${id} AND launch_pending IN (1, 2)`.pipe(
           Effect.map((rows) => rows.length > 0),
           Effect.mapError(persistence("read pending launch"))
         ),
       takeLaunch: (id) =>
-        sql`UPDATE control_runs SET launch_pending = 0 WHERE run_id = ${id} AND launch_pending = 1 RETURNING run_id`
-          .pipe(Effect.map((rows) => rows.length > 0), Effect.mapError(persistence("take pending launch"))),
+        sql<{ handing_nonce: string }>`UPDATE control_runs SET launch_pending = 2, handing_nonce = runs.owner_nonce
+          FROM flows_runs AS runs WHERE control_runs.run_id = ${id} AND runs.run_id = control_runs.run_id
+          AND runs.status = 'running' AND runs.owner_host_id = ${owner.hostId} AND runs.owner_pid = ${owner.pid}
+          AND (launch_pending = 1 OR (launch_pending = 2 AND handing_nonce <> runs.owner_nonce))
+          RETURNING handing_nonce`.pipe(
+          Effect.map((rows) => rows[0]?.handing_nonce),
+          Effect.mapError(persistence("claim pending launch"))
+        ),
+      finishLaunch: (id, nonce, pending) =>
+        sql`UPDATE control_runs SET launch_pending = ${pending ? 1 : 0}, handing_nonce = NULL
+          WHERE run_id = ${id} AND handing_nonce = ${nonce}`.pipe(
+          Effect.asVoid,
+          Effect.mapError(persistence("finish launch"))
+        ),
       getRun: Effect.fn("SqlControlRuntime.getRun")((runId: RunId) =>
         Effect.gen(function*() {
           const row = yield* requireRow(runId)

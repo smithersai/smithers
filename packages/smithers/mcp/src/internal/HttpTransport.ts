@@ -363,12 +363,15 @@ export const connect = (
           sessionId = undefined
           return yield* Effect.fail(terminal)
         }
-        if (response.status >= 300 && response.status <= 399) {
+        // Status 0 is what a fetch host reports for a redirect it was told not to follow.
+        if ((response.status >= 300 && response.status <= 399) || response.status === 0) {
           diagnostic("remote-error", { status: response.status })
-          return yield* Effect.fail(Limits.protocolError(
+          // Terminal: a server that redirects is sent no further credential, session id or message.
+          terminal = Limits.protocolError(
             server,
             `MCP server "${server}" answered ${method} with an HTTP ${response.status} redirect, which is not followed`
-          ))
+          )
+          return yield* Effect.fail(terminal)
         }
         if (response.status < 200 || response.status > 299) {
           diagnostic("remote-error", { status: response.status })
@@ -395,6 +398,9 @@ export const connect = (
               `MCP server "${server}" answered ${method} with HTTP ${response.status}, not the 202 that accepts it`
             ))
             : response.stream.pipe(
+              // A fetch host answers `new Response(null, { status: 202 })` with no body stream at all,
+              // which is the empty body an acceptance carries.
+              Stream.catch((error) => error.reason._tag === "EmptyBodyError" ? Stream.empty : Stream.fail(error)),
               Stream.mapError(unreachable),
               Stream.filter((chunk) => chunk.byteLength > 0),
               Stream.runHead,

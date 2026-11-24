@@ -40,6 +40,7 @@ import * as Context from "effect/Context"
 import * as Data from "effect/Data"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
+import * as FetchHttpClient from "effect/http/FetchHttpClient"
 import * as HttpClient from "effect/http/HttpClient"
 import * as HttpClientRequest from "effect/http/HttpClientRequest"
 import * as HttpServerRequest from "effect/http/HttpServerRequest"
@@ -180,6 +181,7 @@ export interface Options<R = never> extends Connection {
    * SSE is refused with this guard; finite long polls retain their handle, offset and control messages.
    * Every response is `private, no-store` without Electric's validators, whatever `cache` says. A successful answer
    * other than a 200 JSON log or a bodyless 204, 205 or 304 is a bodyless 502: the guard never saw its rows.
+   * So is a 200 whose body is larger than `maxGuardedBodyBytes`.
    */
   readonly rowAccess?: {
     readonly keyColumns: ReadonlyArray<string>
@@ -196,11 +198,28 @@ export interface Options<R = never> extends Connection {
    * @since 0.2.0
    */
   readonly cache?: Cache | undefined
+  /**
+   * The most bytes of Electric's 200 body a `rowAccess` guard buffers, counted as they arrive and before any JSON is
+   * decoded; 16 MiB (`defaultMaxGuardedBodyBytes`) when omitted. A larger body is cancelled and answered with a
+   * bodyless, no-store 502 without a cursor, and `allows` is never called. Ignored without `rowAccess`, whose
+   * responses stream and are never buffered.
+   *
+   * @since 0.2.0
+   */
+  readonly maxGuardedBodyBytes?: number | undefined
   readonly name?: string | undefined
   readonly metric?: Metric.Counter<number> | undefined
 }
 
-// Closed, content-free causes of a 503 response.
+/**
+ * The guarded body limit `make` applies when `Options.maxGuardedBodyBytes` is omitted: 16 MiB.
+ *
+ * @category models
+ * @since 0.2.0
+ */
+export const defaultMaxGuardedBodyBytes: number = 16 * 1024 * 1024
+
+// Closed, content-free causes of a 503 response, and of a guarded 502.
 type Reason =
   | "sse_refused"
   | "shape_refused"
@@ -209,6 +228,7 @@ type Reason =
   | "validate_failed"
   | "validate_superseded"
   | "replay_required"
+  | "guarded_body_too_large"
 
 // How a request ended: complete, aborted by the browser, failed while reading, or superseded by access.
 type Outcome = "complete" | "aborted" | "failed" | "superseded"
@@ -333,10 +353,13 @@ const noStore = { "cache-control": "private, no-store" } as const
  * - A request URL that does not parse is 400, without calling Electric.
  * - Electric unreachable is 502, and Electric's own 401 or 403, or a redirect,
  *   is a no-store 503 with its body cancelled, so an outward 401 or 403 is only
- *   ever the host's. Otherwise Electric's status, headers and body stream back.
+ *   ever the host's. A fetch transport is told not to follow a redirect
+ *   (`redirect: "manual"`), so Electric's secret never reaches its target. Otherwise Electric's status, headers and body stream back.
  * - With `rowAccess`, Electric's 200 is filtered by the guard and stripped of
  *   every `old_value`; any other successful answer with a body, a 206
- *   included, is a bodyless 502 with its body cancelled.
+ *   included, is a bodyless 502 with its body cancelled, and so is a 200 body
+ *   larger than `maxGuardedBodyBytes` (16 MiB unless set), before it is
+ *   decoded and without calling the guard.
  * - A refusal, and unless `cache` is `"public"` without `rowAccess` every
  *   other response, a 405 and a 502 included, carries `cache-control: private,
  *   no-store` in place of Electric's caching headers. Electric's `cursor` and
@@ -516,7 +539,12 @@ export const make = <R = never>(
 
     const injected = yield* Effect.serviceOption(Upstream)
     const client = Option.isSome(injected) ? injected.value : yield* HttpClient.HttpClient
+    // The request carries Electric's secret. A fetch that followed a redirect would send it on to an origin the host
+    // never named, and hand back that origin's answer as Electric's, so the transport is told not to follow one,
+    // keeping every other fetch option the host set. The redirect itself is refused below.
+    const hostInit = yield* Effect.serviceOption(FetchHttpClient.RequestInit)
     const response = yield* client.execute(upstream).pipe(
+      Effect.provideService(FetchHttpClient.RequestInit, { ...Option.getOrUndefined(hostInit), redirect: "manual" }),
       Effect.option,
       // The browser went away before Electric answered, as it does with a live request it no longer needs.
       Effect.onInterrupt(() => ended(499, "electric", "aborted"))
@@ -527,11 +555,12 @@ export const make = <R = never>(
     }
     // Electric refusing this proxy is a bad deploy (its secret, its gateway), and says nothing of the person asking: a
     // browser reads an outward 401 or 403 as the host's own decision (`Refused`). A redirect is no answer either: the
-    // browser's fetch follows it by default, to a target whose 403 would skip this. Each stays a retryable failure,
-    // never cached, and its body is cancelled, so a bad deploy's retries hold no upstream connection open.
+    // browser's fetch follows it by default, to a target whose 403 would skip this. A redirect the transport did not
+    // follow arrives as its 3xx, or as the status 0 a browser gives an opaque redirect. Each stays a retryable
+    // failure, never cached, and its body is cancelled, so a bad deploy's retries hold no upstream connection open.
     const upstreamStatus = response.value.status
     if (
-      upstreamStatus === 401 || upstreamStatus === 403 ||
+      upstreamStatus === 401 || upstreamStatus === 403 || upstreamStatus === 0 ||
       (upstreamStatus >= 300 && upstreamStatus < 400 && upstreamStatus !== 304)
     ) {
       yield* Stream.runDrain(response.value.stream).pipe(Effect.timeout("10 millis"), Effect.ignore)
@@ -583,7 +612,26 @@ export const make = <R = never>(
       }
       if (status === 200 && options.rowAccess !== undefined) {
         const guard = options.rowAccess
-        const messages = yield* response.value.json.pipe(Effect.option)
+        // The body is counted as it arrives, before any of it is decoded as JSON: one oversized answer would otherwise
+        // be held whole, and again as parsed rows, even when the guard goes on to drop every row. Failing the read
+        // ends the stream, which cancels the upstream body. A limit that is no number admits nothing.
+        const limit = options.maxGuardedBodyBytes ?? defaultMaxGuardedBodyBytes
+        const decoder = new TextDecoder()
+        let size = 0
+        let text = ""
+        const read = yield* Stream.runForEach(stream, (chunk) => {
+          size += chunk.byteLength
+          if (!(size <= limit)) return Effect.fail("too_large" as const)
+          text += decoder.decode(chunk, { stream: true })
+          return Effect.void
+        }).pipe(Effect.result)
+        if (Result.isFailure(read) && read.failure === "too_large") {
+          yield* ended(502, "electric", "failed", "guarded_body_too_large")
+          return HttpServerResponse.empty({ status: 502, headers: ownHeaders })
+        }
+        const messages = Result.isFailure(read)
+          ? Option.none<unknown>()
+          : yield* Effect.try(() => JSON.parse(text + decoder.decode()) as unknown).pipe(Effect.option)
         if (Option.isNone(messages) || !Array.isArray(messages.value) || guard.keyColumns.length === 0) {
           yield* ended(502, "electric", "failed")
           return HttpServerResponse.empty({ status: 502, headers: ownHeaders })

@@ -11,7 +11,9 @@ const schemeOf = (value: string): string | undefined => /^([^/?#]*):/.exec(value
 
 /** A link a click may follow: http(s), mailto, or a path, query or anchor in this document. */
 export const navigableLink = (value: string): boolean => {
-  const scheme = schemeOf(normalize(value));
+  const url = normalize(value);
+  if (/^[/\\]{2}/.test(url)) return false;
+  const scheme = schemeOf(url);
   return scheme === undefined || scheme === "http" || scheme === "https" || scheme === "mailto";
 };
 

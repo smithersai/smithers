@@ -80,3 +80,12 @@ test("a read-only javascript: link renders without its href and a click on it ne
   expect(click.defaultPrevented).toBe(true);
   expect((globalThis as { __pwned?: unknown }).__pwned).toBeUndefined();
 });
+
+test.each(["//evil.example/phish", "\\\\evil.example/phish"])("a read-only click blocks %s", async href => {
+  const content = await mount("[Docs](docs/guide.md)");
+  const link = content.querySelector("a")!;
+  link.setAttribute("href", href);
+  const event = new MouseEvent("click", { bubbles: true, cancelable: true });
+  link.dispatchEvent(event);
+  expect(event.defaultPrevented).toBe(true);
+});

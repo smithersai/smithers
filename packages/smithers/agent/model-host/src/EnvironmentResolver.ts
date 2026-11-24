@@ -6,6 +6,7 @@
 
 import { ConfiguredModel } from "@smthrs/rpc"
 import { Duration, Effect, Redacted } from "effect"
+import * as FetchHttpClient from "effect/http/FetchHttpClient"
 import type { PlannedModel } from "./ConfiguredModelRoute.ts"
 import { toModel } from "./ConfiguredModelRoute.ts"
 import type { ModelSource } from "./FastModelFallback.ts"
@@ -61,148 +62,151 @@ export const environmentModelResolver = (options: EnvironmentModelResolverOption
   }
   // The fast proxy and its fallbacks answer quickly or not at all: one try, and 9 s for a response to start.
   const fastExecution = { maxRetries: 0, responseStartMs: 9000 }
-  const modelOf = (plan: ConfiguredModel.ModelPlan, key: string, fast = plan.credential === "SMITHERS_FAST_PROXY") =>
-    Effect.map(
-      toModel(plan, Redacted.make(key), { fetch: options.fetchImpl, ...(fast ? { execution: fastExecution } : {}) }),
-      (source) => source
-    )
-  return modelOf(planned.plan, credential).pipe(
-    Effect.flatMap((model) =>
-      Effect.gen(function*() {
-        const withFallback = (
-          primary: PlannedModel,
-          plan: ConfiguredModel.ModelPlan,
-          primaryCredential: string
-        ) =>
-          Effect.gen(function*() {
-            const additionalCredentials: Array<string> = []
-            if (plan.credential !== "SMITHERS_FAST_PROXY") {
-              return { ...primary, additionalCredentials, fallbacks: [] as Array<ModelSource>, onFallback: undefined }
-            }
-            let bindings: unknown
-            try {
-              bindings = JSON.parse(options.env.SMITHERS_FAST_FALLBACK_MODELS ?? "[]")
-            } catch {
-              return yield* Effect.fail(new ResolveFailed({ message: "fast-model fallback unavailable" }))
-            }
-            if (!Array.isArray(bindings)) {
-              return yield* Effect.fail(new ResolveFailed({ message: "fast-model fallback unavailable" }))
-            }
-            const sources: Array<ModelSource> = []
-            for (const binding of bindings) {
-              const fallback = ConfiguredModel.planModelBinding(binding, credentials, { kind: "generation" })
-              if (!fallback.ok) {
+  return Effect.gen(function*() {
+    const fetch = options.fetchImpl ?? (yield* FetchHttpClient.Fetch)
+    const modelOf = (plan: ConfiguredModel.ModelPlan, key: string, fast = plan.credential === "SMITHERS_FAST_PROXY") =>
+      Effect.map(
+        toModel(plan, Redacted.make(key), { fetch, ...(fast ? { execution: fastExecution } : {}) }),
+        (source) => source
+      )
+    return yield* modelOf(planned.plan, credential).pipe(
+      Effect.flatMap((model) =>
+        Effect.gen(function*() {
+          const withFallback = (
+            primary: PlannedModel,
+            plan: ConfiguredModel.ModelPlan,
+            primaryCredential: string
+          ) =>
+            Effect.gen(function*() {
+              const additionalCredentials: Array<string> = []
+              if (plan.credential !== "SMITHERS_FAST_PROXY") {
+                return { ...primary, additionalCredentials, fallbacks: [] as Array<ModelSource>, onFallback: undefined }
+              }
+              let bindings: unknown
+              try {
+                bindings = JSON.parse(options.env.SMITHERS_FAST_FALLBACK_MODELS ?? "[]")
+              } catch {
                 return yield* Effect.fail(new ResolveFailed({ message: "fast-model fallback unavailable" }))
               }
-              const key = options.env[ConfiguredModel.modelCredentialEnvName(fallback.plan.credential)]?.trim()
-              if (!key) {
+              if (!Array.isArray(bindings)) {
                 return yield* Effect.fail(new ResolveFailed({ message: "fast-model fallback unavailable" }))
               }
-              const model = yield* modelOf(fallback.plan, key, true)
-              additionalCredentials.push(key)
-              sources.push({
-                ...model,
-                credential: key,
-                modelId: fallback.plan.modelId,
-                outputTokenLimitSupported: fallback.plan.protocol !== "openai-responses-chatgpt"
-              })
-            }
-            return {
-              additionalCredentials,
-              ...primary,
-              fallbacks: sources,
-              onFallback: (index: number) =>
-                Effect.tryPromise({
-                  try: async (signal) => {
-                    const endpoint = new URL(plan.baseUrl)
-                    endpoint.pathname = endpoint.pathname.replace(/\/fast$/, "/fast/selected")
-                    const response = await refusingRedirects(options.fetchImpl ?? globalThis.fetch)(endpoint, {
-                      method: "POST",
-                      headers: { "content-type": "application/json", authorization: `Bearer ${primaryCredential}` },
-                      body: JSON.stringify({ index }),
-                      signal
-                    })
-                    await response.body?.cancel()
-                  },
-                  catch: () => undefined
-                }).pipe(Effect.ignore)
-            }
-          })
-        const routedModel = yield* withFallback(model, planned.plan, credential)
-        const resolved = {
-          model: routedModel.model,
-          options: {
-            route: routedModel.route,
-            ...(routedModel.fallbacks.length === 0 ? {} : { fallbacks: routedModel.fallbacks }),
-            ...(routedModel.onFallback === undefined ? {} : { onFallback: routedModel.onFallback }),
-            modelId: planned.plan.modelId,
-            ...(planned.plan.protocol === "openai-responses-chatgpt" ? { outputTokenLimitSupported: false } : {}),
-            credential,
-            ...(routedModel.additionalCredentials.length === 0
-              ? {}
-              : { additionalCredentials: routedModel.additionalCredentials }),
-            ...(options.maxTokens === undefined ? {} : { maxTokens: options.maxTokens })
-          }
-        }
-        // A selection-only request brings its own host-read input; a chat
-        // turn's preflight reads authorized SharedEntries through the callback.
-        if (grant.request.sharedConversation !== true && selection === undefined) return resolved
-        const input = selection !== undefined ? selection : yield* Effect.tryPromise({
-          try: async (signal) => {
-            const response = await refusingRedirects(options.fetchImpl ?? globalThis.fetch)(
-              new URL("/internal/chat/context", grant.producerBaseUrl),
-              {
-                method: "POST",
-                headers: { "content-type": "application/json", authorization: `Bearer ${grant.token}` },
-                body: JSON.stringify({ turnId: grant.turnId, generation: grant.generation }),
-                signal
+              const sources: Array<ModelSource> = []
+              for (const binding of bindings) {
+                const fallback = ConfiguredModel.planModelBinding(binding, credentials, { kind: "generation" })
+                if (!fallback.ok) {
+                  return yield* Effect.fail(new ResolveFailed({ message: "fast-model fallback unavailable" }))
+                }
+                const key = options.env[ConfiguredModel.modelCredentialEnvName(fallback.plan.credential)]?.trim()
+                if (!key) {
+                  return yield* Effect.fail(new ResolveFailed({ message: "fast-model fallback unavailable" }))
+                }
+                const model = yield* modelOf(fallback.plan, key, true)
+                additionalCredentials.push(key)
+                sources.push({
+                  ...model,
+                  credential: key,
+                  modelId: fallback.plan.modelId,
+                  outputTokenLimitSupported: fallback.plan.protocol !== "openai-responses-chatgpt"
+                })
               }
-            )
-            if (response.status !== 200) {
-              await response.body?.cancel()
-              throw new Error("context unavailable")
-            }
-            return readContextStream(response)
-          },
-          catch: () => new ResolveFailed({ message: "shared conversation context is unavailable" })
-        }).pipe(
-          // Interruption at the deadline aborts the request and its body read.
-          Effect.timeoutOrElse({
-            duration: Duration.millis(CHAT_CALLBACK_DEADLINE_MS),
-            orElse: () => Effect.fail(new ResolveFailed({ message: "shared conversation context timed out" }))
-          })
-        )
-        if (options.preflightBinding === undefined) return { ...resolved, preflight: { ...resolved, input } }
-        // This binding is supplied by the host launcher, never by the prompt.
-        // It may spend a different owner key, but keeps that key's own origin.
-        const fast = ConfiguredModel.planModelBinding(options.preflightBinding, credentials, { kind: "generation" })
-        if (!fast.ok) return yield* Effect.fail(new ResolveFailed({ message: "preflight model is unavailable" }))
-        const fastCredential = options.env[ConfiguredModel.modelCredentialEnvName(fast.plan.credential)]?.trim()
-        if (fastCredential === undefined || fastCredential === "") {
-          return yield* Effect.fail(new ResolveFailed({ message: "preflight model credential is unavailable" }))
-        }
-        const fastModel = yield* modelOf(fast.plan, fastCredential)
-        const routedFast = yield* withFallback(fastModel, fast.plan, fastCredential)
-        return {
-          ...resolved,
-          preflight: {
-            input,
-            model: routedFast.model,
+              return {
+                additionalCredentials,
+                ...primary,
+                fallbacks: sources,
+                onFallback: (index: number) =>
+                  Effect.tryPromise({
+                    try: async (signal) => {
+                      const endpoint = new URL(plan.baseUrl)
+                      endpoint.pathname = endpoint.pathname.replace(/\/fast$/, "/fast/selected")
+                      const response = await refusingRedirects(fetch)(endpoint, {
+                        method: "POST",
+                        headers: { "content-type": "application/json", authorization: `Bearer ${primaryCredential}` },
+                        body: JSON.stringify({ index }),
+                        signal
+                      })
+                      await response.body?.cancel()
+                    },
+                    catch: () => undefined
+                  }).pipe(Effect.ignore)
+              }
+            })
+          const routedModel = yield* withFallback(model, planned.plan, credential)
+          const resolved = {
+            model: routedModel.model,
             options: {
-              route: routedFast.route,
-              ...(routedFast.fallbacks.length === 0 ? {} : { fallbacks: routedFast.fallbacks }),
-              ...(routedFast.onFallback === undefined ? {} : { onFallback: routedFast.onFallback }),
-              modelId: fast.plan.modelId,
-              ...(fast.plan.protocol === "openai-responses-chatgpt" ? { outputTokenLimitSupported: false } : {}),
-              credential: fastCredential,
-              ...(routedFast.additionalCredentials.length === 0
+              route: routedModel.route,
+              ...(routedModel.fallbacks.length === 0 ? {} : { fallbacks: routedModel.fallbacks }),
+              ...(routedModel.onFallback === undefined ? {} : { onFallback: routedModel.onFallback }),
+              modelId: planned.plan.modelId,
+              ...(planned.plan.protocol === "openai-responses-chatgpt" ? { outputTokenLimitSupported: false } : {}),
+              credential,
+              ...(routedModel.additionalCredentials.length === 0
                 ? {}
-                : { additionalCredentials: routedFast.additionalCredentials })
+                : { additionalCredentials: routedModel.additionalCredentials }),
+              ...(options.maxTokens === undefined ? {} : { maxTokens: options.maxTokens })
             }
           }
-        }
-      })
-    ),
-    Effect.mapError(() => new ResolveFailed({ message: "configured model route is unavailable" }))
-  )
+          // A selection-only request brings its own host-read input; a chat
+          // turn's preflight reads authorized SharedEntries through the callback.
+          if (grant.request.sharedConversation !== true && selection === undefined) return resolved
+          const input = selection !== undefined ? selection : yield* Effect.tryPromise({
+            try: async (signal) => {
+              const response = await refusingRedirects(fetch)(
+                new URL("/internal/chat/context", grant.producerBaseUrl),
+                {
+                  method: "POST",
+                  headers: { "content-type": "application/json", authorization: `Bearer ${grant.token}` },
+                  body: JSON.stringify({ turnId: grant.turnId, generation: grant.generation }),
+                  signal
+                }
+              )
+              if (response.status !== 200) {
+                await response.body?.cancel()
+                throw new Error("context unavailable")
+              }
+              return readContextStream(response)
+            },
+            catch: () => new ResolveFailed({ message: "shared conversation context is unavailable" })
+          }).pipe(
+            // Interruption at the deadline aborts the request and its body read.
+            Effect.timeoutOrElse({
+              duration: Duration.millis(CHAT_CALLBACK_DEADLINE_MS),
+              orElse: () => Effect.fail(new ResolveFailed({ message: "shared conversation context timed out" }))
+            })
+          )
+          if (options.preflightBinding === undefined) return { ...resolved, preflight: { ...resolved, input } }
+          // This binding is supplied by the host launcher, never by the prompt.
+          // It may spend a different owner key, but keeps that key's own origin.
+          const fast = ConfiguredModel.planModelBinding(options.preflightBinding, credentials, { kind: "generation" })
+          if (!fast.ok) return yield* Effect.fail(new ResolveFailed({ message: "preflight model is unavailable" }))
+          const fastCredential = options.env[ConfiguredModel.modelCredentialEnvName(fast.plan.credential)]?.trim()
+          if (fastCredential === undefined || fastCredential === "") {
+            return yield* Effect.fail(new ResolveFailed({ message: "preflight model credential is unavailable" }))
+          }
+          const fastModel = yield* modelOf(fast.plan, fastCredential)
+          const routedFast = yield* withFallback(fastModel, fast.plan, fastCredential)
+          return {
+            ...resolved,
+            preflight: {
+              input,
+              model: routedFast.model,
+              options: {
+                route: routedFast.route,
+                ...(routedFast.fallbacks.length === 0 ? {} : { fallbacks: routedFast.fallbacks }),
+                ...(routedFast.onFallback === undefined ? {} : { onFallback: routedFast.onFallback }),
+                modelId: fast.plan.modelId,
+                ...(fast.plan.protocol === "openai-responses-chatgpt" ? { outputTokenLimitSupported: false } : {}),
+                credential: fastCredential,
+                ...(routedFast.additionalCredentials.length === 0
+                  ? {}
+                  : { additionalCredentials: routedFast.additionalCredentials })
+              }
+            }
+          }
+        })
+      ),
+      Effect.mapError(() => new ResolveFailed({ message: "configured model route is unavailable" }))
+    )
+  })
 }

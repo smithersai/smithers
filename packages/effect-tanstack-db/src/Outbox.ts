@@ -479,14 +479,25 @@ const carry = (storage: StorageAdapter, upgrade: OutboxUpgrade) => {
   })).pipe(Effect.withSpan("outbox.carry"))
 }
 
+// A parked write with the principal its stored write names (none: unstamped). The stamp outlives the enumeration, so
+// ownership can be asked again at the moment the write is handed to a feature.
+interface StampedParked {
+  readonly stamp: string | undefined
+  readonly write: Parked
+}
+
 /**
- * The writes parked in `storage` that are `principal`'s. A storage that fails reads as none, and is logged. A parked
- * value that can't be read is skipped, and logged as `outbox parked write unreadable` with its `id`.
+ * The writes parked in `storage` that are `principal`'s, each with its stamp. A storage that fails reads as none, and
+ * is logged. A parked value that can't be read is skipped, and logged as `outbox parked write unreadable` with its
+ * `id`.
  */
-const parkedIn = (storage: StorageAdapter, principal: Principal | undefined): Effect.Effect<ReadonlyArray<Parked>> =>
+const stampedParkedIn = (
+  storage: StorageAdapter,
+  principal: Principal | undefined
+): Effect.Effect<ReadonlyArray<StampedParked>> =>
   Effect.gen(function*() {
     const keys = yield* Effect.tryPromise(() => storage.keys())
-    const writes: Array<Parked> = []
+    const writes: Array<StampedParked> = []
     for (const key of keys.filter((key) => key.startsWith(PARKED_PREFIX))) {
       const stored = yield* Effect.tryPromise(() => storage.get(key))
       if (stored === null) continue
@@ -497,12 +508,16 @@ const parkedIn = (storage: StorageAdapter, principal: Principal | undefined): Ef
         )
         continue
       }
-      if (!owns(principal, stampOf(parked.write))) continue
+      const stamp = stampOf(parked.write)
+      if (!owns(principal, stamp)) continue
       writes.push({
-        id: key.slice(PARKED_PREFIX.length),
-        name: parked.name,
-        reason: parked.reason,
-        rows: readWrite(parked.write).rows
+        stamp,
+        write: {
+          id: key.slice(PARKED_PREFIX.length),
+          name: parked.name,
+          reason: parked.reason,
+          rows: readWrite(parked.write).rows
+        }
       })
     }
     return writes
@@ -514,6 +529,10 @@ const parkedIn = (storage: StorageAdapter, principal: Principal | undefined): Ef
       []
     )
   ))
+
+/** The writes parked in `storage` that are `principal`'s. Fails and skips as `stampedParkedIn` does. */
+const parkedIn = (storage: StorageAdapter, principal: Principal | undefined): Effect.Effect<ReadonlyArray<Parked>> =>
+  Effect.map(stampedParkedIn(storage, principal), (writes) => writes.map(({ write }) => write))
 
 // The error names a mutation's failure becomes. Their messages are fixed, so the library's substring rules never read
 // anything else, and `shouldRetry` decides on the name alone.
@@ -1180,16 +1199,25 @@ export const layer = <R>(options: Options<R>): Layer.Layer<Outbox, never, R> =>
         return recovering ?? Promise.resolve()
       }
 
-      // Who a write is queued by, stamped into its metadata when the outbox has a principal.
-      const principalStamp = (): { readonly principal?: string } => {
+      // A live receipt belongs to the principal that queued its write: the key names the stamp (none: unstamped), so
+      // two principals reusing one idempotency key hold two receipts and neither reads the other's.
+      const receiptKey = (name: string, idempotencyKey: string, stamp: string | undefined): string =>
+        JSON.stringify([name, idempotencyKey, stamp ?? null])
+      // The receipt that is the principal's now: the one stamped with it, else an unstamped one it owns.
+      const receipt = (name: string, idempotencyKey: string): Write | undefined => {
         const now = options.principal?.now()
-        return now === undefined ? {} : { principal: now }
+        const stamped = now === undefined ? undefined : liveAdmissions.get(receiptKey(name, idempotencyKey, now))
+        if (stamped !== undefined || !owns(options.principal, undefined)) return stamped
+        return liveAdmissions.get(receiptKey(name, idempotencyKey, undefined))
       }
 
       const transact: Service["transact"] = (name, { idempotencyKey, joinExisting }, mutate) =>
         Effect.gen(function*() {
-          const key = JSON.stringify([name, idempotencyKey])
-          const existing = liveAdmissions.get(key)
+          // Who the write is queued by, read once: the receipt it joins or leaves, and the stamp in its metadata, name
+          // the same principal even when the program's principal changes while admission waits.
+          const stamp = options.principal?.now()
+          const key = receiptKey(name, idempotencyKey, stamp)
+          const existing = receipt(name, idempotencyKey)
           if (joinExisting && existing !== undefined) return existing
           // A follower would get the library's online-only transaction, with no storage and no retry: refuse instead.
           if (closing || !executor.isOfflineEnabled) return yield* new NotAdmitted({ reason: "follower" })
@@ -1205,7 +1233,7 @@ export const layer = <R>(options: Options<R>): Layer.Layer<Outbox, never, R> =>
             queuedAt,
             ...(Option.isSome(span) ? { trace: { traceId: span.value.traceId, spanId: span.value.spanId } } : {}),
             ...(options.upgrade === undefined ? {} : { versions: options.upgrade.stamp }),
-            ...principalStamp()
+            ...(stamp === undefined ? {} : { principal: stamp })
           }
           const offline = executor.createOfflineTransaction({
             mutationFnName: name,
@@ -1357,7 +1385,11 @@ export const layer = <R>(options: Options<R>): Layer.Layer<Outbox, never, R> =>
 
       // Each parked write goes to its feature, which shows it Not sent; one it took leaves the outbox.
       // One no feature takes stays parked, never sent: it is logged again on each load, so it is never forgotten silently.
-      for (const write of yield* parkedIn(options.storage, options.principal)) {
+      for (const { stamp, write } of yield* stampedParkedIn(options.storage, options.principal)) {
+        // An earlier feature's `take` may still have been pending when the principal changed. The writes were chosen
+        // for the principal that was current then, so each is asked again here, with nothing between this and its
+        // `take`: one that is no longer the principal's is not handed over, and stays parked for its owner's return.
+        if (!owns(options.principal, stamp)) continue
         const take = options.parked?.[write.name]
         if (take !== undefined && (yield* take(write))) yield* discard(write.id)
         else {
@@ -1368,8 +1400,7 @@ export const layer = <R>(options: Options<R>): Layer.Layer<Outbox, never, R> =>
       }
 
       return Outbox.of({
-        admission: (name, key) =>
-          Effect.sync(() => Option.fromUndefinedOr(liveAdmissions.get(JSON.stringify([name, key])))),
+        admission: (name, key) => Effect.sync(() => Option.fromUndefinedOr(receipt(name, key))),
         transact,
         status: SubscriptionRef.changes(status),
         retryNow: Effect.sync(() => {

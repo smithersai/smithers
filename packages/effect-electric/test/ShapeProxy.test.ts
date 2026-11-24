@@ -65,11 +65,17 @@ type Fault =
   | { readonly _tag: "endlessBody" }
   | { readonly _tag: "redirect"; readonly status: number; readonly location: string }
   | { readonly _tag: "refuseEndless"; readonly status: number }
+  | { readonly _tag: "opaqueRedirect" }
+  | { readonly _tag: "chunks"; readonly headers: Record<string, string>; readonly chunks: ReadonlyArray<Uint8Array> }
 
 /** The proxy with `options`, recording every log line, span, count and upstream URL. */
-const harness = (options: Partial<ShapeProxy.Options<HttpServerRequest.HttpServerRequest>> = {}) => {
+const harness = (
+  options: Partial<ShapeProxy.Options<HttpServerRequest.HttpServerRequest>> = {},
+  hostInit?: RequestInit
+) => {
   const upstream: Array<URL> = []
   const upstreamHeaders: Array<Headers> = []
+  const upstreamInits: Array<RequestInit | undefined> = []
   const logs: Array<{ message: unknown; level: string; annotations: Record<string, unknown> }> = []
   const spans: Array<Tracer.NativeSpan> = []
   const registry = new Map()
@@ -81,6 +87,7 @@ const harness = (options: Partial<ShapeProxy.Options<HttpServerRequest.HttpServe
     const url = new URL(input instanceof Request ? input.url : String(input))
     upstream.push(url)
     upstreamHeaders.push(new Headers(input instanceof Request ? input.headers : init?.headers))
+    upstreamInits.push(init)
     switch (fault?._tag) {
       case "empty":
         return new Response(null, { status: fault.status, headers: { "retry-after": "5" } })
@@ -128,6 +135,28 @@ const harness = (options: Partial<ShapeProxy.Options<HttpServerRequest.HttpServe
           }),
           { status: fault.status }
         )
+      case "opaqueRedirect":
+        // What a browser's fetch hands back for a redirect it was told not to follow: status 0, no headers, no body.
+        return Object.defineProperties(new Response(null), {
+          status: { value: 0 },
+          type: { value: "opaqueredirect" }
+        })
+      case "chunks": {
+        // A chunked answer with no content-length. Nothing is queued ahead of a read (`highWaterMark: 0`), so the
+        // body ends only when the reader asks past its last chunk: a reader that stops at the last chunk cancels it.
+        const chunks = fault.chunks
+        let sent = 0
+        return new Response(
+          new ReadableStream({
+            pull: (controller) => {
+              if (sent < chunks.length) controller.enqueue(chunks[sent++]!)
+              else controller.close()
+            },
+            cancel: () => void cancelled++
+          }, { highWaterMark: 0 }),
+          { status: 200, headers: fault.headers }
+        )
+      }
       case undefined:
         return globalThis.fetch(input, init)
     }
@@ -143,6 +172,8 @@ const harness = (options: Partial<ShapeProxy.Options<HttpServerRequest.HttpServe
     logs.push({ message, level: logLevel, annotations: { ...fiber.getRef(References.CurrentLogAnnotations) } })
   })
   const program = ShapeProxy.make({ url: ELECTRIC_URL, shape: { table: "items" }, ...options }).pipe(
+    // The host's own fetch options, set below the proxy as a host's layer would: the proxy keeps them.
+    hostInit === undefined ? (self) => self : Effect.provideService(FetchHttpClient.RequestInit, hostInit),
     Effect.provide(Layer.mergeAll(FetchHttpClient.layer, Logger.layer([recorder]))),
     Effect.provideService(FetchHttpClient.Fetch, fetch),
     Effect.provideService(Tracer.Tracer, tracer),
@@ -152,6 +183,7 @@ const harness = (options: Partial<ShapeProxy.Options<HttpServerRequest.HttpServe
   return {
     upstream,
     upstreamHeaders,
+    upstreamInits,
     logs,
     spans,
     held: () => held,
@@ -769,6 +801,40 @@ describe("faults: no Electric needed", () => {
     })
   })
 
+  // Neon on 5a9bc05b: the proxy refused a 3xx it was handed, but never told fetch not to follow one, so with the
+  // default transport the secret went on to the redirect's target and that target's answer came back as Electric's.
+  test("Electric is called with redirect: manual, so a 302 is a 503 and its Location is never requested", async () => {
+    const sentinel = "electric-secret-sentinel-2c1d"
+    const h = harness({ secret: Redacted.make(sentinel), secretAs: "bearer" })
+    h.fault({ _tag: "redirect", status: 302, location: "http://elsewhere.test/v1/shape" })
+    const response = await h.request("?offset=-1")
+    expect(response.status).toBe(503)
+    expect(response.headers.get("location")).toBeNull()
+    expect(response.headers.get("cache-control")).toBe("private, no-store")
+    expect(h.upstreamInits).toHaveLength(1)
+    expect(h.upstreamInits[0]?.redirect).toBe("manual")
+    expect(h.upstream.map(({ host }) => host)).toEqual([new URL(ELECTRIC_URL).host])
+    expect(h.line()?.annotations).toMatchObject({ status: 503, upstream: "electric", reason: "electric_unavailable" })
+  })
+
+  test("the host's own fetch options are kept, except that a redirect is never followed", async () => {
+    const h = harness({}, { redirect: "follow", credentials: "omit", keepalive: true })
+    h.fault({ _tag: "down" })
+    await h.request("?offset=-1")
+    expect(h.upstreamInits[0]).toMatchObject({ redirect: "manual", credentials: "omit", keepalive: true })
+  })
+
+  test("an opaque redirect, the status 0 a browser's fetch gives one it did not follow, is a no-store 503", async () => {
+    const h = harness({ rowAccess: { keyColumns: ["id"], allows: () => true } })
+    h.fault({ _tag: "opaqueRedirect" })
+    const response = await h.request("?offset=-1")
+    expect(response.status).toBe(503)
+    expect(response.headers.get("retry-after")).toBe("5")
+    expect(response.headers.get("cache-control")).toBe("private, no-store")
+    expect(await response.text()).toBe("")
+    expect(h.line()?.annotations).toMatchObject({ status: 503, upstream: "electric", reason: "electric_unavailable" })
+  })
+
   test("a browser that stops reading mid-body is recorded at Info as aborted", async () => {
     const h = harness()
     h.fault({ _tag: "endlessBody" })
@@ -1264,6 +1330,97 @@ describe("row access fails closed: no Electric needed", () => {
       expect(JSON.stringify(h.logs)).not.toContain("SENTINEL")
     }
   )
+
+  describe("a guarded body is bounded before it is decoded", () => {
+    // Astra on 5a9bc05b: the guard read Electric's whole 200 through `json`, so one oversized catch-up was held, and
+    // parsed, before the guard could drop a row of it.
+    const encoder = new TextEncoder()
+    const rows = JSON.stringify([
+      { key: "k1", headers: { operation: "insert" }, value: { id: "a", owner: "me", text: "né" } },
+      { key: "k2", headers: { operation: "insert" }, value: { id: "b", owner: "them", text: "SENTINEL" } },
+      { headers: { control: "up-to-date" } }
+    ])
+    const bytes = encoder.encode(rows)
+    // Three chunks, the first split inside the two-byte "é", as a network splits a body wherever it likes.
+    const split = bytes.indexOf(0xc3) + 1
+    const chunks = [bytes.subarray(0, split), bytes.subarray(split, bytes.length - 5), bytes.subarray(bytes.length - 5)]
+    const guarded = (maxGuardedBodyBytes: number | undefined) => {
+      const allowed: Array<unknown> = []
+      let validated = 0
+      const h = harness({
+        cache: "public",
+        ...(maxGuardedBodyBytes === undefined ? {} : { maxGuardedBodyBytes }),
+        rowAccess: {
+          keyColumns: ["id"],
+          allows: (value) => {
+            allowed.push(value["id"])
+            return value["owner"] === "me"
+          },
+          validate: Effect.sync(() => {
+            validated++
+            return true
+          })
+        }
+      })
+      h.fault({ _tag: "chunks", headers: { "content-type": "application/json", ...kept, ...cursor }, chunks })
+      return { h, allowed, validated: () => validated }
+    }
+
+    test("a chunked body exactly at the limit is filtered as usual", async () => {
+      const { h, allowed, validated } = guarded(bytes.byteLength)
+      const response = await h.request("?handle=h-1&offset=0_0")
+      expect(response.status).toBe(200)
+      expect(response.headers.get("content-length")).not.toBe(String(bytes.byteLength))
+      for (const [name, value] of Object.entries(cursor)) expect(response.headers.get(name)).toBe(value)
+      expect(await response.json()).toEqual([
+        { key: "k1", headers: { operation: "insert" }, value: { id: "a", owner: "me", text: "né" } },
+        { headers: { control: "up-to-date" } }
+      ])
+      expect([allowed, validated(), h.cancelled()]).toEqual([["a", "b"], 1, 0])
+    })
+
+    test("a body one byte over the limit is cancelled: a bodyless no-store 502, no cursor, and the guard never asked", async () => {
+      const { h, allowed, validated } = guarded(bytes.byteLength - 1)
+      const response = await h.request("?handle=h-1&offset=0_0")
+      expect(response.status).toBe(502)
+      expect(await response.text()).toBe("")
+      expect(response.headers.get("cache-control")).toBe("private, no-store")
+      for (const name of [...Object.keys(kept).slice(1), ...Object.keys(cursor)]) {
+        expect([name, response.headers.get(name)]).toEqual([name, null])
+      }
+      expect([allowed, validated()]).toEqual([[], 0])
+      await until(() => expect(h.cancelled()).toBe(1))
+      expect(h.logs).toHaveLength(1)
+      expect(h.line()).toMatchObject({
+        level: "Error",
+        annotations: {
+          status: 502,
+          upstream: "electric",
+          outcome: "failed",
+          bytes: 0,
+          reason: "guarded_body_too_large"
+        }
+      })
+      expect(JSON.stringify(h.logs)).not.toContain("SENTINEL")
+    })
+
+    test("the default limit is 16 MiB, and a limit that is no number admits nothing", async () => {
+      expect(ShapeProxy.defaultMaxGuardedBodyBytes).toBe(16 * 1024 * 1024)
+      const byDefault = guarded(undefined)
+      expect((await byDefault.h.request("")).status).toBe(200)
+      const nan = guarded(Number.NaN)
+      expect((await nan.h.request("")).status).toBe(502)
+      expect(nan.allowed).toEqual([])
+    })
+
+    test("a guarded body that breaks off mid-read is a bodyless 502, not a too-large one", async () => {
+      const h = harness({ rowAccess: { keyColumns: ["id"], allows: () => true } })
+      h.fault({ _tag: "breakBody" })
+      const response = await h.request("")
+      expect(response.status).toBe(502)
+      expect(h.line()?.annotations).not.toHaveProperty("reason")
+    })
+  })
 
   test("an unguarded shape still streams a partial answer: the 502 belongs to the guard", async () => {
     const h = harness()

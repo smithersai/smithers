@@ -517,11 +517,13 @@ export const layer: Layer.Layer<
     const settleUnlaunched = (
       runId: RunId,
       cause: string,
-      fault: Fault.Fault
+      fault: Fault.Fault,
+      nonce: string
     ): Effect.Effect<void> =>
       Effect.gen(function*() {
         const fence = yield* runtime.claimFence(runId)
         const run = yield* runtime.writeStatus(runId, fence, "failed")
+        yield* runtime.finishLaunch(runId, nonce, false)
         yield* emit(
           runId,
           "control.run.failed",
@@ -648,36 +650,43 @@ export const layer: Layer.Layer<
      * and its receipt are committed before any execution crosses this line.
      */
     const hand = (launch: Launch) =>
-      Effect.gen(function*() {
-        if (!(yield* runtime.takeLaunch(launch.run.runId))) return
-        const acceptance = Option.isSome(executor)
-          ? yield* executor.value.launch(launch).pipe(
-            Effect.tapError((error) => settleUnlaunched(error.runId, error.message, Fault.of(error)))
-          )
-          : "pending"
-        yield* transact(
-          "run.acceptance",
-          Effect.gen(function*() {
-            // A fast executor may already have completed or parked. Never
-            // regress its durable outcome with the launch acknowledgment.
-            const current = yield* runtime.getRun(launch.run.runId)
-            if (current.status !== "accepted") return
-            const fence = yield* runtime.claimFence(current.runId)
-            const run = acceptance === "accepted"
-              ? yield* runtime.writeStatus(current.runId, fence, "running")
-              : yield* runtime.releasePending(current.runId, fence)
-            yield* emit(
-              run.runId,
-              acceptance === "accepted" ? "control.run.running" : "control.run.pending",
-              {
-                runId: run.runId,
-                status: run.status,
-                ...ControlFacts.runFact(run)
-              } as ControlEvent["payload"]
+      Effect.uninterruptibleMask((restore) =>
+        Effect.gen(function*() {
+          const id = launch.run.runId
+          const nonce = yield* runtime.takeLaunch(id)
+          if (nonce === undefined) return
+          return yield* Effect.gen(function*() {
+            const acceptance = Option.isSome(executor)
+              ? yield* restore(executor.value.launch(launch)).pipe(
+                Effect.tapError((error) => settleUnlaunched(error.runId, error.message, Fault.of(error), nonce))
+              )
+              : "pending"
+            yield* transact(
+              "run.acceptance",
+              Effect.gen(function*() {
+                yield* runtime.finishLaunch(id, nonce, false)
+                // A fast executor may already have completed or parked. Never
+                // regress its durable outcome with the launch acknowledgment.
+                const current = yield* runtime.getRun(launch.run.runId)
+                if (current.status !== "accepted") return
+                const fence = yield* runtime.claimFence(current.runId)
+                const run = acceptance === "accepted"
+                  ? yield* runtime.writeStatus(current.runId, fence, "running")
+                  : yield* runtime.releasePending(current.runId, fence)
+                yield* emit(
+                  run.runId,
+                  acceptance === "accepted" ? "control.run.running" : "control.run.pending",
+                  {
+                    runId: run.runId,
+                    status: run.status,
+                    ...ControlFacts.runFact(run)
+                  } as ControlEvent["payload"]
+                )
+              })
             )
-          })
-        )
-      })
+          }).pipe(Effect.onExit((exit) => Exit.isFailure(exit) ? runtime.finishLaunch(id, nonce, true) : Effect.void))
+        })
+      )
 
     /**
      * Launches a run whose admitting process died before handing it over.
@@ -686,21 +695,15 @@ export const layer: Layer.Layer<
      * between left the run `accepted` under its dead admitter, and a retry of
      * the same key only read the receipt back: nothing ever launched it. The
      * acknowledgment is what `accepted` with an owner lacks — a queued launch
-     * releases its owner. This process owning the run means another call here
-     * is between its admission and its launch; a live peer owning it is the
-     * same case elsewhere and keeps it (`ClaimLost`). Only a dead owner's run is
-     * claimed, under the run store's fence, so two retries launch it once.
+     * releases its owner. A live peer retains its run. The current
+     * owner may retry a released handoff, and a successor may take a dead
+     * owner's handoff only under a fresh run-store fence.
      */
     const relaunchStranded = (runId: RunId) =>
       Effect.gen(function*() {
         const current = yield* runtime.getRun(runId)
         if (current.status !== "accepted" || current.ownerId === undefined || current.planId === undefined) return
         if (!(yield* runtime.launchPending(runId))) return
-        const ours = yield* runtime.claimFence(runId).pipe(
-          Effect.as(true),
-          Effect.catchTag("/control/ClaimLost", () => Effect.succeed(false))
-        )
-        if (ours) return
         yield* refuseCodeDrift(runId)
         // A failed read must leave the dead owner's claim available to retry.
         const plan = yield* runtime.getPlan(current.planId)

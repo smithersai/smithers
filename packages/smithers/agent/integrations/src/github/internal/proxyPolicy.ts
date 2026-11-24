@@ -12,7 +12,13 @@
  *
  * The path is judged in the form GitHub routes it: percent-decoded, lower
  * case, with empty segments dropped, so `/REPOS/o/r/pulls/7/%6Derge/` is the
- * merge endpoint here too.
+ * merge endpoint here too. A repository is `/repos/{owner}/{name}` or
+ * `/repositories/{id}`, each also under GitHub's `/api/v3` prefix; the same
+ * rules apply to what follows either.
+ *
+ * A GraphQL document is judged as GitHub's lexer reads it: comments and string
+ * literals are taken out in source order, so a quote inside a comment opens no
+ * string and a mutation between two such comments is still seen.
  *
  * @since 1.0.0
  * @private
@@ -26,8 +32,6 @@ const DISMISS_MUTATIONS = /\bdismissPullRequestReview\b/
 const REVIEW_MUTATIONS = /\b(?:addPullRequestReview|submitPullRequestReview)\b/
 const PEOPLE_EVENTS = new Set(["APPROVE", "REQUEST_CHANGES", "DISMISS"])
 const PEOPLE_EVENT = /\b(?:APPROVE|REQUEST_CHANGES|DISMISS)\b/
-// GraphQL string literals, block strings first; a review body may say "APPROVE".
-const GRAPHQL_STRINGS = /"""[\s\S]*?"""|"(?:[^"\\\n]|\\.)*"/g
 
 const MERGE = "merging is a person's action; the Smithers GitHub proxy does not forward it"
 const REVIEW = "approving, requesting changes, and dismissing a review are a person's actions; "
@@ -70,15 +74,75 @@ const namesPeopleEvent = (value: unknown): boolean => {
   return false
 }
 
+// Where the block string opened before `from` ends, or undefined when it never does. Only `\"""` escapes.
+const blockStringEnd = (query: string, from: number): number | undefined => {
+  let index = from
+  while (index < query.length) {
+    if (query.startsWith("\\\"\"\"", index)) index += 4
+    else if (query.startsWith("\"\"\"", index)) return index + 3
+    else index++
+  }
+  return undefined
+}
+
+// Where the string opened before `from` ends, or undefined when its line or the document ends first.
+const stringEnd = (query: string, from: number): number | undefined => {
+  let index = from
+  while (index < query.length) {
+    const char = query[index]
+    if (char === "\"") return index + 1
+    if (char === "\n" || char === "\r") return undefined
+    const next = query[index + 1]
+    index += char === "\\" && (next === "\"" || next === "\\") ? 2 : 1
+  }
+  return undefined
+}
+
+/**
+ * A GraphQL document's code: one pass in source order that drops each `#`
+ * comment up to its line's end and puts a space where each string literal
+ * stood, block strings included. Undefined for a string that never closes,
+ * which GitHub does not execute and the proxy does not guess at.
+ */
+const codeOf = (query: string): string | undefined => {
+  const code: Array<string> = []
+  let index = 0
+  let kept = 0
+  while (index < query.length) {
+    const char = query[index]
+    if (char !== "#" && char !== "\"") {
+      index++
+      continue
+    }
+    code.push(query.slice(kept, index), " ")
+    if (char === "#") {
+      while (index < query.length && query[index] !== "\n" && query[index] !== "\r") index++
+    } else {
+      const end = query.startsWith("\"\"\"", index) ? blockStringEnd(query, index + 3) : stringEnd(query, index + 1)
+      if (end === undefined) return undefined
+      index = end
+    }
+    kept = index
+  }
+  code.push(query.slice(kept))
+  return code.join("")
+}
+
 const graphql = (body: Uint8Array): string | undefined => {
   const document = jsonObject(body)
   const query = document?.["query"]
   if (document === undefined || typeof query !== "string") return UNREADABLE
-  const code = query.replace(GRAPHQL_STRINGS, "\"\"")
+  const code = codeOf(query)
+  if (code === undefined) return UNREADABLE
   if (MERGE_MUTATIONS.test(code)) return MERGE
   if (DISMISS_MUTATIONS.test(code)) return REVIEW
   if (!REVIEW_MUTATIONS.test(code)) return undefined
-  return PEOPLE_EVENT.test(code) || namesPeopleEvent(document["variables"]) ? REVIEW : undefined
+  // GitHub reads variables as a JSON object; any other form could carry an event this check cannot see.
+  const variables = document["variables"]
+  if (variables !== undefined && variables !== null && (typeof variables !== "object" || Array.isArray(variables))) {
+    return UNREADABLE
+  }
+  return PEOPLE_EVENT.test(code) || namesPeopleEvent(variables) ? REVIEW : undefined
 }
 
 // `event` absent leaves a review pending, which approves nothing.
@@ -89,12 +153,20 @@ const review = (body: Uint8Array, pendingAllowed: boolean): string | undefined =
   return event === "COMMENT" || (event === undefined && pendingAllowed) ? undefined : REVIEW
 }
 
-const byPath = (segments: ReadonlyArray<string>): string | undefined => {
-  if (segments[0] !== "repos") return undefined
-  if (segments.length === 4 && segments[3] === "merges") return MERGE
-  if (segments[3] !== "pulls") return undefined
-  if (segments.length === 6 && segments[5] === "merge") return MERGE
-  if (segments.length === 8 && segments[5] === "reviews" && segments[7] === "dismissals") return REVIEW
+// The segments after the repository a path names, or undefined when it names none. GitHub routes
+// `/repositories/{id}` as it does `/repos/{owner}/{name}`, and both under `/api/v3` as well.
+const repositoryTail = (segments: ReadonlyArray<string>): ReadonlyArray<string> | undefined => {
+  const routed = segments[0] === "api" && segments[1] === "v3" ? segments.slice(2) : segments
+  if (routed[0] === "repos") return routed.slice(3)
+  if (routed[0] === "repositories") return routed.slice(2)
+  return undefined
+}
+
+const byPath = (tail: ReadonlyArray<string>): string | undefined => {
+  if (tail.length === 1 && tail[0] === "merges") return MERGE
+  if (tail[0] !== "pulls") return undefined
+  if (tail.length === 3 && tail[2] === "merge") return MERGE
+  if (tail.length === 5 && tail[2] === "reviews" && tail[4] === "dismissals") return REVIEW
   return undefined
 }
 
@@ -109,11 +181,12 @@ export const refusal = (method: string, pathname: string, body: Uint8Array): str
   if (method === "GET" || method === "HEAD") return undefined
   const segments = segmentsOf(pathname)
   if (segments === undefined) return UNREADABLE
-  const path = byPath(segments)
+  const tail = repositoryTail(segments)
+  const path = tail === undefined ? undefined : byPath(tail)
   if (path !== undefined) return path
   if (segments[segments.length - 1] === "graphql") return graphql(body)
-  if (segments[0] !== "repos" || segments[3] !== "pulls" || segments[5] !== "reviews") return undefined
-  if (segments.length === 6) return review(body, true)
-  if (segments.length === 8 && segments[7] === "events") return review(body, false)
+  if (tail === undefined || tail[0] !== "pulls" || tail[2] !== "reviews") return undefined
+  if (tail.length === 3) return review(body, true)
+  if (tail.length === 5 && tail[4] === "events") return review(body, false)
   return undefined
 }

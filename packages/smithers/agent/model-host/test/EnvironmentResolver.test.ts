@@ -1,4 +1,5 @@
 import { Effect } from "effect"
+import * as FetchHttpClient from "effect/http/FetchHttpClient"
 import { afterEach, expect, test, vi } from "vitest"
 import { environmentModelResolver } from "../src/EnvironmentResolver.ts"
 import type { DurableChatGrant } from "./fixtures/durable.ts"
@@ -25,7 +26,6 @@ const grant: DurableChatGrant = {
 }
 afterEach(() => {
   vi.restoreAllMocks()
-  vi.unstubAllGlobals()
 })
 
 const contextInput = {
@@ -55,11 +55,12 @@ const contextResponse = (input: typeof contextInput = contextInput): Response =>
 }
 const sharedGrant = { ...grant, request: { ...grant.request, sharedConversation: true } }
 
-test.each([false, true])("resolves shared context from the authenticated host callback (%s)", async (global) => {
+test.each([false, true])("resolves shared context from the authenticated host callback (%s)", async (injected) => {
   const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(contextResponse())
-  vi.stubGlobal("fetch", fetchImpl)
   const resolved = await Effect.runPromise(
-    environmentModelResolver({ binding, env, ...(global ? {} : { fetchImpl }) })(sharedGrant)
+    environmentModelResolver({ binding, env, ...(injected ? {} : { fetchImpl }) })(sharedGrant).pipe(
+      Effect.provideService(FetchHttpClient.Fetch, fetchImpl)
+    )
   )
   expect(fetchImpl).toHaveBeenCalledTimes(1)
   const [url, init] = fetchImpl.mock.calls[0]!
@@ -138,7 +139,6 @@ test.each([false, true])(
         { headers: { "content-type": "text/event-stream" } }
       )
     }, { preconnect() {} }))
-    vi.stubGlobal("fetch", fetchImpl)
     const chosenGrant = override
       ? { ...grant, request: { ...grant.request, model: { ...binding, modelId: "override" } } }
       : grant
@@ -147,7 +147,7 @@ test.each([false, true])(
         binding,
         env,
         ...(override ? { fetchImpl, maxTokens: 123 } : {})
-      })(chosenGrant)
+      })(chosenGrant).pipe(Effect.provideService(FetchHttpClient.Fetch, fetchImpl))
     )
     expect(resolved.options).toEqual({
       route: { prepare: expect.any(Function) },
@@ -454,7 +454,7 @@ test("ChatGPT answer and fast roles suppress unsupported token limits", async ()
   expect(resolved.preflight?.options).toMatchObject({ outputTokenLimitSupported: false })
 })
 
-test("fallback selection uses the host's global fetch when no transport override is supplied", async () => {
+test("fallback selection uses the host's injected fetch when no transport override is supplied", async () => {
   const fetchImpl = vi.fn<typeof fetch>().mockImplementation(async (url) => {
     if (String(url).includes("/selected")) return Response.json({})
     if (String(url).startsWith("https://proxy.test")) {
@@ -464,12 +464,11 @@ test("fallback selection uses the host's global fetch when no transport override
       "data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"answer\"},\"finish_reason\":null}]}\n\ndata: {\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n"
     )
   })
-  vi.stubGlobal("fetch", fetchImpl)
   const resolved = await Effect.runPromise(
     environmentModelResolver({
       binding: proxyBinding,
       env: { ...proxyEnv, SMITHERS_FAST_FALLBACK_MODELS: JSON.stringify([binding]) }
-    })(grant)
+    })(grant).pipe(Effect.provideService(FetchHttpClient.Fetch, fetchImpl))
   )
   await Effect.runPromise(runModelTurn(resolved.model, grant.request, resolved.options, () => Effect.void))
   expect(fetchImpl.mock.calls.map(([url]) => String(url))).toContain("https://proxy.test/fast/selected")

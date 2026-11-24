@@ -577,7 +577,8 @@ export interface Service {
     PlanNotFound | PlanDenied | PlanDigestMismatch | EnvelopeMismatch | ClaimLost | PersistenceError
   >
   readonly launchPending: (runId: RunId) => Effect.Effect<boolean, PersistenceError>
-  readonly takeLaunch: (runId: RunId) => Effect.Effect<boolean, PersistenceError>
+  readonly takeLaunch: (runId: RunId) => Effect.Effect<string | undefined, PersistenceError>
+  readonly finishLaunch: (runId: RunId, nonce: string, pending: boolean) => Effect.Effect<void, PersistenceError>
   readonly getRun: (runId: RunId) => Effect.Effect<RunSummary, RunNotFound | PersistenceError>
   /**
    * Every durable run id in insertion order, one bounded page at a time, for
@@ -951,7 +952,8 @@ export const layerMemory = (options: MemoryOptions = {}): Layer.Layer<ControlRun
       }>()
       const tokens = new Map<string, MutableToken>()
       const runs = new Map<RunId, MutableRun>()
-      const pendingLaunches = new Set<RunId>()
+      const pendingLaunches = new Map<RunId, string | null>()
+      let launchSequence = 0
       const authorizeApproval: Service["authorizeApproval"] = (request) =>
         approvalAuthority.authorize(request, {
           flowId: Effect.sync(() =>
@@ -1302,7 +1304,7 @@ export const layerMemory = (options: MemoryOptions = {}): Layer.Layer<ControlRun
               createdAt: timestamp,
               updatedAt: timestamp
             }
-            pendingLaunches.add(runId)
+            pendingLaunches.set(runId, null)
             runIds.set(sequence, runId)
             runs.set(runId, {
               summary: snapshot(summary),
@@ -1318,7 +1320,19 @@ export const layerMemory = (options: MemoryOptions = {}): Layer.Layer<ControlRun
           }
         ),
         launchPending: (id) => Effect.sync(() => pendingLaunches.has(id)),
-        takeLaunch: (id) => Effect.sync(() => pendingLaunches.delete(id)),
+        takeLaunch: (id) =>
+          Effect.sync(() => {
+            if (pendingLaunches.get(id) !== null) return undefined
+            const nonce = String(++launchSequence)
+            pendingLaunches.set(id, nonce)
+            return nonce
+          }),
+        finishLaunch: (id, nonce, pending) =>
+          Effect.sync(() => {
+            if (pendingLaunches.get(id) !== nonce) return
+            if (pending) pendingLaunches.set(id, null)
+            else pendingLaunches.delete(id)
+          }),
         getRun: Effect.fn("ControlRuntime.getRun")((runId) =>
           Effect.map(requireRun(runId), (run) => snapshot(run.summary))
         ),

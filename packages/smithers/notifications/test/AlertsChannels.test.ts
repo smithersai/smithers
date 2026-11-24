@@ -6,6 +6,9 @@
 import { Journal, JournalEvent } from "@smthrs/journal"
 import * as TestJournal from "@smthrs/journal/test/TestJournal"
 import { Duration, Effect, Layer, Redacted, Schema } from "effect"
+import * as FetchHttpClient from "effect/http/FetchHttpClient"
+import * as HttpClient from "effect/http/HttpClient"
+import * as HttpClientResponse from "effect/http/HttpClientResponse"
 import { TestClock } from "effect/testing"
 import { createServer, type Server } from "node:http"
 import type { AddressInfo } from "node:net"
@@ -285,6 +288,45 @@ describe("Alerts.layerChannels", () => {
     // Only a send the provider refused would be refused again. A provider that
     // is missing costs no request and may be configured before the next tick.
     expect([refused.retryable, slow.retryable, unconfigured.retryable]).toEqual([false, undefined, undefined])
+  })
+})
+
+// R2-Neon-D2-011: a host that routes egress through its own client routes a page through it too.
+describe("Channels.layerClient", () => {
+  it("sends an alert through the HttpClient the host provides, and never through fetch", async () => {
+    const sent: Array<string> = []
+    const host = HttpClient.make((request) =>
+      Effect.sync(() => {
+        sent.push(`${request.method} ${request.url}`)
+        return HttpClientResponse.fromWeb(
+          request,
+          new Response(JSON.stringify({ ok: true, result: { message_id: 41 } }), {
+            status: 200,
+            headers: { "content-type": "application/json" }
+          })
+        )
+      })
+    )
+    const fetched: Array<string> = []
+    const channels = Channels.layerClient({ telegram: { token: Redacted.make(BOT_TOKEN), url: origin } }).pipe(
+      Layer.provide(Layer.succeed(HttpClient.HttpClient)(host))
+    )
+    const receipt = await Effect.runPromise(
+      Effect.flatMap(
+        Channels.Channels,
+        (service) => service.send(chat, { id: "alert-1", subject: "site-freshness", text: "site lags main" })
+      ).pipe(
+        Effect.provide(channels),
+        Effect.provideService(FetchHttpClient.Fetch, (input) => {
+          fetched.push(String(input))
+          return Promise.reject(new Error("the owned fetch transport was used"))
+        })
+      )
+    )
+    expect(receipt).toEqual({ channel: "telegram", providerId: "41" })
+    expect(sent).toEqual([`POST ${origin}/bot${BOT_TOKEN}/sendMessage`])
+    expect(fetched).toEqual([])
+    expect(received).toEqual([])
   })
 })
 

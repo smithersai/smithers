@@ -901,6 +901,112 @@ describe("Streamable HTTP hardening", () => {
     })
   })
 
+  /** An MCP server behind `fetch` itself, answering as `listen` does unless `answer` does. */
+  const fetching = (answer: (message: Message) => Response | undefined) => {
+    const seen: Array<string> = []
+    const fetch: typeof globalThis.fetch = async (_input, init) => {
+      const text = await new Response(init?.body).text()
+      if (text === "") {
+        seen.push(init?.method ?? "")
+        return new Response(null, { status: 200 })
+      }
+      const message = JSON.parse(text) as Message
+      seen.push(`POST ${String(message.method ?? "")}`.trim())
+      const own = answer(message)
+      if (own !== undefined) return own
+      if (!Object.hasOwn(message, "id")) return new Response(null, { status: 202 })
+      return new Response(JSON.stringify({ jsonrpc: "2.0", id: message.id, result: resultOf(message) }), {
+        status: 200,
+        headers: {
+          "content-type": "application/json",
+          ...(message.method === "initialize" ? { "mcp-session-id": "session-1" } : {})
+        }
+      })
+    }
+    const through = <A, E>(effect: Effect.Effect<A, E, HttpClient.HttpClient | Scope.Scope>) =>
+      Effect.runPromise(
+        Effect.scoped(effect).pipe(
+          Effect.provide(FetchHttpClient.layer),
+          Effect.provideService(FetchHttpClient.Fetch, fetch)
+        )
+      )
+    return { seen, through }
+  }
+  const accepting = (accept: () => Response) =>
+    fetching((message) => message.method === "notifications/initialized" ? accept() : undefined)
+
+  // R2-Astra-D2-003, R2-Neon-D2-003: Effect's fetch client reads a null body as `EmptyBodyError`,
+  // and a null body is how a Worker, a browser or a fetch adapter answers 202.
+  it("accepts a 202 that has no body stream, as a fetch host answers one", async () => {
+    const bare = accepting(() => new Response(null, { status: 202 }))
+    const result = await bare.through(add("http://mcp.invalid/mcp"))
+    expect(result.content).toEqual([{ type: "text", text: "5" }])
+    expect(bare.seen).toEqual([
+      "POST initialize",
+      "POST notifications/initialized",
+      "POST tools/list",
+      "POST tools/call",
+      "DELETE"
+    ])
+  })
+
+  it("still fails a fetch host's 202 that carries a byte, or whose body is lost", async () => {
+    const wordy = accepting(() => new Response("x", { status: 202 }))
+    expect(await wordy.through(Effect.flip(connect("http://mcp.invalid/mcp")))).toMatchObject({
+      code: "protocol_error",
+      message: "MCP server \"remote\" accepted notifications/initialized with a body; an acceptance carries none"
+    })
+    expect(wordy.seen).not.toContain("POST tools/list")
+    const lost = accepting(() =>
+      new Response(
+        new ReadableStream<Uint8Array>({
+          pull(controller) {
+            controller.error(new Error("connection reset"))
+          }
+        }),
+        { status: 202 }
+      )
+    )
+    expect(await lost.through(Effect.flip(connect("http://mcp.invalid/mcp")))).toMatchObject({
+      code: "connection_closed",
+      message: "MCP server \"remote\" is not reachable; transport details withheld"
+    })
+    expect(lost.seen).not.toContain("POST tools/list")
+  })
+
+  // R2-Neon-D2-009: a redirect is refused once and for all, so nothing more goes to the server that sent it.
+  it("fails every later call with a redirect's refusal and sends nothing more", async () => {
+    const moved = await answering("tools/call", (_, response) => {
+      response.writeHead(302, { location: "http://127.0.0.1:9/elsewhere" }).end()
+    })
+    const [first, second] = await twice(moved.url)
+    expect(Result.isFailure(first) && first.failure).toMatchObject({
+      code: "protocol_error",
+      message: "MCP server \"remote\" answered tools/call with an HTTP 302 redirect, which is not followed"
+    })
+    expect(Result.isFailure(second) && Result.isFailure(first) && second.failure === first.failure).toBe(true)
+    expect(calls(moved.hits)).toBe(1)
+
+    // A fetch host told not to follow a redirect reports it as status 0.
+    const opaque = fetching((message) =>
+      message.method === "tools/call"
+        ? Object.defineProperty(new Response(null), "status", { value: 0 })
+        : undefined
+    )
+    const [third, fourth] = await opaque.through(Effect.gen(function*() {
+      const client = yield* connect("http://mcp.invalid/mcp")
+      const one = yield* Effect.result(client.callTool("add", { a: 2, b: 3 }))
+      const two = yield* Effect.result(client.callTool("add", { a: 2, b: 3 }))
+      return [one, two] as const
+    }))
+    expect(Result.isFailure(third) && third.failure).toMatchObject({
+      code: "protocol_error",
+      message: "MCP server \"remote\" answered tools/call with an HTTP 0 redirect, which is not followed"
+    })
+    expect(Result.isFailure(fourth) && Result.isFailure(third) && fourth.failure === third.failure).toBe(true)
+    expect(opaque.seen.filter((rpc) => rpc === "POST tools/call")).toHaveLength(1)
+  })
+
   // R1-Fable-D2-065: "every later call fails with that error".
   it("fails every later call with the ended session's error and sends nothing more", async () => {
     const expired = await answering("tools/call", (_, response) => {

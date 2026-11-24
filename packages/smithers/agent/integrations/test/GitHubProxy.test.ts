@@ -15,6 +15,7 @@ import { fileURLToPath } from "node:url"
 import { promisify } from "node:util"
 import { afterEach, describe, expect, it } from "vitest"
 import { IntegrationError } from "../src/core/IntegrationError.ts"
+import { refusal } from "../src/github/internal/proxyPolicy.ts"
 import {
   type Credential,
   DEFAULT_MAX_BODY_BYTES,
@@ -221,7 +222,136 @@ const PEOPLE_ACTIONS: ReadonlyArray<readonly [name: string, method: string, path
     })
   ],
   ["a GraphQL request that is not JSON", "POST", "/graphql", "mutation { mergePullRequest }"],
-  ["a GraphQL request with no query", "POST", "/graphql", "{\"variables\":{}}"]
+  ["a GraphQL request with no query", "POST", "/graphql", "{\"variables\":{}}"],
+  // R2-Fable-D2-002, R2-Neon-D2-002: GitHub routes a repository by id as it does by name.
+  ["a pull request merge by repository id", "PUT", "/repositories/42/pulls/7/merge", "{}"],
+  ["a merge by repository id in another case", "PUT", "/REPOSITORIES/42/PULLS/7/MERGE", "{}"],
+  ["a branch merge by repository id", "POST", "/repositories/42/merges", "{\"base\":\"main\",\"head\":\"x\"}"],
+  ["an approval by repository id", "POST", "/repositories/42/pulls/7/reviews", "{\"event\":\"APPROVE\"}"],
+  ["a change request by repository id", "POST", "/repositories/42/pulls/7/reviews", "{\"event\":\"REQUEST_CHANGES\"}"],
+  ["a review by repository id that is not JSON", "POST", "/repositories/42/pulls/7/reviews", "event=COMMENT"],
+  [
+    "a submitted approval by repository id",
+    "POST",
+    "/repositories/42/pulls/7/reviews/9/events",
+    "{\"event\":\"APPROVE\"}"
+  ],
+  ["a submission by repository id naming no event", "POST", "/repositories/42/pulls/7/reviews/9/events", "{}"],
+  ["a dismissal by repository id", "PUT", "/repositories/42/pulls/7/reviews/9/dismissals", "{\"message\":\"stale\"}"],
+  ["a merge under the /api/v3 prefix", "PUT", "/api/v3/repos/o/r/pulls/7/merge", "{}"],
+  [
+    "an approval by repository id under /api/v3",
+    "POST",
+    "/API/V3/repositories/42/pulls/7/reviews",
+    "{\"event\":\"APPROVE\"}"
+  ],
+  // R2-Fable-D2-001, R2-Neon-D2-001: a quote inside a comment opens no string.
+  [
+    "a GraphQL merge between two comments that hold block quotes",
+    "POST",
+    "/graphql",
+    JSON.stringify({
+      query:
+        "# \"\"\"\nmutation { mergePullRequest(input: { pullRequestId: \"PR_1\" }) { pullRequest { merged } } }\n# \"\"\""
+    })
+  ],
+  [
+    "a GraphQL merge between comments inside the mutation",
+    "POST",
+    "/graphql",
+    JSON.stringify({
+      query: "mutation {\n# \"\"\"\n mergePullRequest(input:{pullRequestId:\"PR_1\"}){clientMutationId}\n# \"\"\"\n}"
+    })
+  ],
+  [
+    "a GraphQL approval between two such comments",
+    "POST",
+    "/graphql",
+    JSON.stringify({
+      query:
+        "mutation {\r# \"\"\"\r addPullRequestReview(input:{pullRequestId:\"PR_1\",event:APPROVE}){clientMutationId}\r# \"\"\"\r}"
+    })
+  ],
+  [
+    "a GraphQL dismissal between two such comments",
+    "POST",
+    "/graphql",
+    JSON.stringify({
+      query:
+        "#\"\"\"\r\nmutation { dismissPullRequestReview(input:{pullRequestReviewId:\"R\",message:\"x\"}){clientMutationId} }\r\n#\"\"\""
+    })
+  ],
+  [
+    "a GraphQL merge between comments that hold one quote each",
+    "POST",
+    "/graphql",
+    JSON.stringify({ query: "# \" \nmutation { mergeBranch(input:{base:$b}){clientMutationId} } # \"" })
+  ],
+  [
+    "a GraphQL merge after a block string that holds an escaped block quote",
+    "POST",
+    "/graphql",
+    JSON.stringify({
+      query: "mutation { a: addComment(input:{subjectId:$s,body:\"\"\"x \\\"\"\" \"\"\"}){clientMutationId} "
+        + "enqueuePullRequest(input:{pullRequestId:$p}){clientMutationId} "
+        + "b: addComment(input:{subjectId:$s,body:\"\"\" y\"\"\"}){clientMutationId} }"
+    })
+  ],
+  [
+    "a GraphQL merge after a string that ends in an escaped backslash",
+    "POST",
+    "/graphql",
+    JSON.stringify({
+      query: "mutation { a: addComment(input:{subjectId:$s,body:\"x\\\\\"}){clientMutationId} "
+        + "mergePullRequest(input:{pullRequestId:$p}){clientMutationId} b: addComment(input:{body:\"\"}){clientMutationId} }"
+    })
+  ],
+  [
+    "a GraphQL document whose string never closes",
+    "POST",
+    "/graphql",
+    JSON.stringify({ query: "query { a(b: \"x\\\" }" })
+  ],
+  [
+    "a GraphQL document whose string runs past its line",
+    "POST",
+    "/graphql",
+    JSON.stringify({ query: "query { a(b: \"x\n\") }" })
+  ],
+  [
+    "a GraphQL document whose string runs past a carriage return",
+    "POST",
+    "/graphql",
+    JSON.stringify({ query: "query { a(b: \"x\r\") }" })
+  ],
+  [
+    "a GraphQL document whose block string never closes",
+    "POST",
+    "/graphql",
+    JSON.stringify({ query: "query { a(b: \"\"\"x \\\"\"\" \"\") }" })
+  ],
+  // R2-Fable-D2-005: variables in any form but an object could carry an event unseen.
+  [
+    "a GraphQL review whose variables are a JSON string",
+    "POST",
+    "/graphql",
+    JSON.stringify({
+      query: GRAPHQL_REVIEW,
+      variables: "{\"input\":{\"pullRequestId\":\"PR_1\",\"event\":\"APPROVE\"}}"
+    })
+  ],
+  [
+    "a GraphQL review whose variables are an array",
+    "POST",
+    "/graphql",
+    JSON.stringify({ query: GRAPHQL_REVIEW, variables: [{ input: { event: "COMMENT" } }] })
+  ],
+  [
+    "a GraphQL review whose variables are a number",
+    "POST",
+    "/graphql",
+    JSON.stringify({ query: GRAPHQL_REVIEW, variables: 1 })
+  ]
 ]
 
 // What an agent may still send on the same routes.
@@ -248,6 +378,45 @@ const AGENT_ACTIONS: ReadonlyArray<readonly [name: string, method: string, path:
       query:
         "mutation($input: AddPullRequestReviewInput!) { addPullRequestReview(input: $input) { clientMutationId } } # \"APPROVE\"",
       variables: { input: { pullRequestId: "PR_1", event: "COMMENT", body: "I would APPROVE this", n: 1, x: null } }
+    })
+  ],
+  ["a comment review by repository id", "POST", "/repositories/42/pulls/7/reviews", "{\"event\":\"COMMENT\"}"],
+  ["a pending review by repository id", "POST", "/repositories/42/pulls/7/reviews", "{\"body\":\"draft\"}"],
+  [
+    "a submitted comment review by repository id",
+    "POST",
+    "/repositories/42/pulls/7/reviews/9/events",
+    "{\"event\":\"COMMENT\"}"
+  ],
+  ["an edited review body by repository id", "PUT", "/repositories/42/pulls/7/reviews/9", "{\"body\":\"edited\"}"],
+  ["an issue comment by repository id", "POST", "/repositories/42/issues/7/comments", "{\"body\":\"merge\"}"],
+  ["a write on a repository id alone", "PATCH", "/repositories/42", "{\"description\":\"merges\"}"],
+  ["a write under /api/v3 outside repositories", "POST", "/api/v3/user/repos", "{\"name\":\"merges\"}"],
+  ["a write under a lone /api prefix", "POST", "/api/repos", "{}"],
+  [
+    "a GraphQL comment review with null variables",
+    "POST",
+    "/graphql",
+    JSON.stringify({
+      query:
+        "mutation { submitPullRequestReview(input: {event: COMMENT, pullRequestReviewId: \"R\"}) { clientMutationId } }",
+      variables: null
+    })
+  ],
+  [
+    "a GraphQL query whose comment names a merge after a quote",
+    "POST",
+    "/graphql",
+    JSON.stringify({ query: "query { viewer { login } } # \" mergePullRequest" })
+  ],
+  [
+    "a GraphQL comment whose strings name a merge around escapes",
+    "POST",
+    "/graphql",
+    JSON.stringify({
+      query:
+        "mutation { addComment(input: {subjectId: \"S\", body: \"say \\\"mergePullRequest\\\" \\n \\\\\"}) { clientMutationId } "
+        + "b: addComment(input: {subjectId: \"S\", body: \"\"\"a \\\"\"\" dismissPullRequestReview # \"\"\"}) { clientMutationId } }"
     })
   ],
   [
@@ -297,6 +466,126 @@ describe("GitHub proxy people-only actions", () => {
     const response = await fetch(`${origin}/repos/o/r/pulls/7/merge`, { method: "PUT", body: "{}" })
     expect(await response.json()).toEqual({ merged: true })
     expect(upstream.requests.map((request) => request.url)).toEqual(["/repos/o/r/pulls/7/merge"])
+  })
+})
+
+// A fixed-seed generator: the cases are the same on every run.
+const random = (seed: number) => () => {
+  seed = (seed + 0x6D_2B_79_F5) | 0
+  let mixed = Math.imul(seed ^ (seed >>> 15), 1 | seed)
+  mixed = (mixed + Math.imul(mixed ^ (mixed >>> 7), 61 | mixed)) ^ mixed
+  return ((mixed ^ (mixed >>> 14)) >>> 0) / 4_294_967_296
+}
+
+// R2-Fable-D2-001, R2-Neon-D2-001: what GitHub's lexer ignores, in the forms that fooled a regular expression.
+describe("GitHub proxy GraphQL comments and strings", () => {
+  // Comments run to the end of their line; each names what only code may name.
+  const COMMENTS = [
+    "# \"\"\"",
+    "#\"\"\"",
+    "# \"",
+    "# \\\"\"\"",
+    "# \"\"\" mergePullRequest APPROVE \"",
+    "#",
+    "# dismissPullRequestReview"
+  ]
+  // String literals, lexically whole, that hold comment marks, quotes and the same names.
+  const STRINGS = [
+    "\"\"",
+    "\"\"\"\"\"\"",
+    "\"# \\\" mergePullRequest\"",
+    "\"APPROVE \\\\\"",
+    "\"\"\"block # \\\"\"\" mergeBranch \n \"\" \"\"\"",
+    "\"\"\"\n# \"\n\"\"\""
+  ]
+  const LINE_ENDS = ["\n", "\r", "\r\n"]
+  const PEOPLE = [
+    "mutation { mergePullRequest(input: {pullRequestId: \"PR_1\"}) { clientMutationId } }",
+    "mutation { enablePullRequestAutoMerge(input: {pullRequestId: \"PR_1\"}) { clientMutationId } }",
+    "mutation { enqueuePullRequest(input: {pullRequestId: \"PR_1\"}) { clientMutationId } }",
+    "mutation { mergeBranch(input: {base: \"main\", head: \"x\"}) { clientMutationId } }",
+    "mutation { dismissPullRequestReview(input: {pullRequestReviewId: \"R\", message: \"x\"}) { clientMutationId } }",
+    "mutation { addPullRequestReview(input: {pullRequestId: \"PR_1\", event: APPROVE}) { clientMutationId } }",
+    "mutation { submitPullRequestReview(input: {pullRequestReviewId: \"R\", event: REQUEST_CHANGES}) { clientMutationId } }"
+  ]
+  const AGENT = [
+    "query { viewer { login } }",
+    "mutation { addComment(input: {subjectId: \"S\", body: \"merge\"}) { clientMutationId } }",
+    "mutation { addPullRequestReview(input: {pullRequestId: \"PR_1\", event: COMMENT}) { clientMutationId } }"
+  ]
+  const encoder = new TextEncoder()
+  const judged = (query: string) => refusal("POST", "/graphql", encoder.encode(JSON.stringify({ query })))
+
+  it("judges a mutation the same whatever comments and strings surround it", () => {
+    const next = random(20_261_123)
+    const pick = <A>(values: ReadonlyArray<A>): A => values[Math.floor(next() * values.length)]!
+    // Ignored tokens, each ended so the next token starts clean: a comment by a line end, a string by a space.
+    const noise = () =>
+      Array.from(
+        { length: Math.floor(next() * 5) },
+        () => next() < 0.6 ? `${pick(COMMENTS)}${pick(LINE_ENDS)}` : `${pick(STRINGS)} `
+      ).join("")
+    const forwarded: Array<string> = []
+    const refused: Array<string> = []
+    let cases = 0
+    while (cases < 600) {
+      cases++
+      // The trailing comment has no line end: it runs to the end of the document.
+      const people = `${noise()}${pick(PEOPLE)}${pick(LINE_ENDS)}${noise()}${pick(COMMENTS)}`
+      if (judged(people) === undefined) forwarded.push(people)
+      const agent = `${noise()}${pick(AGENT)}${pick(LINE_ENDS)}${noise()}${pick(COMMENTS)}`
+      if (judged(agent) !== undefined) refused.push(agent)
+    }
+    expect(forwarded).toEqual([])
+    expect(refused).toEqual([])
+  })
+})
+
+describe("GitHub proxy request targets", () => {
+  const TARGET = { message: "The request target must be an origin-form path" }
+
+  // R2-Neon-D2-008: a target that is not a path names a host of its own once it meets a base URL.
+  // The Node server rewrites or rejects these two before the proxy sees them; other hosts hand them over as sent.
+  it.each(["http://api.github.com/repos/o/r/pulls/7/merge", "@evil.example/repos/o/r/issues", "?x"])(
+    "answers 400, not a defect, for the request target %s",
+    async (target) => {
+      const upstream = await github((_request, response) => json(response, 200, {}))
+      let credentials = 0
+      const response = await exchange(
+        {
+          upstream: upstream.origin,
+          credential: (repository) => {
+            credentials++
+            return operator(repository)
+          }
+        },
+        HttpServerRequest.fromWeb(new Request("http://proxy.invalid/", { method: "PUT", body: "{}" })).modify({
+          url: target
+        })
+      )
+      expect(response.status).toBe(400)
+      expect(JSON.parse(new TextDecoder().decode((response.body as { readonly body: Uint8Array }).body))).toEqual(
+        TARGET
+      )
+      expect(upstream.requests).toHaveLength(0)
+      expect(credentials).toBe(0)
+    }
+  )
+
+  it("answers 400 for the asterisk target a socket client sends", async () => {
+    const upstream = await github((_request, response) => json(response, 200, {}))
+    const origin = await proxy(upstream)
+    const answer = await new Promise<{ readonly status: number; readonly body: string }>((resolve, reject) => {
+      httpRequest(origin, { method: "POST", path: "*" }, (response) => {
+        let body = ""
+        response.setEncoding("utf8")
+        response.on("data", (chunk: string) => (body += chunk))
+        response.on("end", () => resolve({ status: response.statusCode ?? 0, body }))
+      }).on("error", reject).end("{}")
+    })
+    expect(answer.status).toBe(400)
+    expect(JSON.parse(answer.body)).toEqual(TARGET)
+    expect(upstream.requests).toHaveLength(0)
   })
 })
 
@@ -400,6 +689,13 @@ describe("GitHub proxy route case", () => {
     expect(upstream.requests.map((request) => [request.url, request.headers["authorization"]])).toEqual([
       ["/repos/other/r/issues?x=1", "Bearer ghs_other"]
     ])
+  })
+
+  it("forwards /REPOSITORIES/ as the canonical /repositories/ path", async () => {
+    const upstream = await github((_request, response) => json(response, 200, {}))
+    const origin = await proxy(upstream)
+    expect((await fetch(`${origin}/REPOSITORIES/42/Issues?x=1`)).status).toBe(200)
+    expect(upstream.requests.map((request) => request.url)).toEqual(["/repositories/42/Issues?x=1"])
   })
 })
 

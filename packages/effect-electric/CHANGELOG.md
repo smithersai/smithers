@@ -4,6 +4,16 @@
 
 ### Fixed
 
+- Electric is called with `redirect: "manual"`, keeping the host's other
+  `FetchHttpClient.RequestInit` options. The default fetch transport used to
+  follow a redirect, sending Electric's secret to its target and returning
+  that target's answer as Electric's. An opaque redirect (status 0) is the
+  same no-store 503 as a 3xx.
+- A guarded shape's 200 body is bounded while it is read, before any JSON is
+  decoded: `maxGuardedBodyBytes`, 16 MiB (`defaultMaxGuardedBodyBytes`) unless
+  set. A larger body is cancelled and answered with a bodyless, no-store 502
+  without a cursor, recorded with reason `guarded_body_too_large`; `allows`
+  and `validate` are never called. It used to be buffered and parsed whole.
 - A shape with `rowAccess` is never kept by a browser or CDN. `cache: "public"`
   beside a guard used to pass Electric's `cache-control: public` and `etag`
   through on the filtered 200 and on bodyless polls, so a shared cache could

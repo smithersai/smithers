@@ -19,6 +19,7 @@ import * as ControlLive from "../src/ControlLive.ts"
 import { ControlRuntime } from "../src/ControlRuntime.ts"
 import type { PlanCard } from "../src/ControlSchema.ts"
 import { durable, type DurableStack, fileBundle } from "./DurableStack.ts"
+import { live } from "./TestStack.ts"
 
 const directory = mkdtempSync(join(tmpdir(), "flows-control-stranded-"))
 afterAll(() => rmSync(directory, { recursive: true, force: true }))
@@ -60,15 +61,19 @@ const retry = (card: PlanCard) =>
     })
   })
 
-it("never repeats an executor handoff after the admitter dies and its key is retried", async () => {
-  const filename = join(directory, "stranded.sqlite")
+it.each(["interruption", "defect"])("recovers an unacknowledged launch after %s", async (failure) => {
+  const filename = join(directory, `stranded-${failure}.sqlite`)
   const planned = await run(stack(filename, 101, ControlExecutor.makeNoop()), admit)
   if (!Exit.isSuccess(planned)) throw new Error("plan failed")
   const card = planned.value
 
   // The host dies inside launch, after the durable handoff.
   const crashed = await run(
-    stack(filename, 101, ControlExecutor.makeNoop({ launch: () => Effect.die("host died") })),
+    stack(
+      filename,
+      101,
+      ControlExecutor.makeNoop({ launch: () => failure === "defect" ? Effect.die("host died") : Effect.interrupt })
+    ),
     retry(card)
   )
   expect(Exit.isFailure(crashed)).toBe(true)
@@ -101,8 +106,8 @@ it("never repeats an executor handoff after the admitter dies and its key is ret
   // A replay returns the receipt without calling either executor again.
   expect(retried.value.receipt).toMatchObject({ _tag: "AlreadyApplied", receiptId: "run:stranded" })
   expect(retried.value.again).toEqual(retried.value.receipt)
-  expect(launched).toEqual([])
-  expect(retried.value.status).toBe("accepted")
+  expect(launched).toEqual([retried.value.runId])
+  expect(retried.value.status).toBe("running")
   expect(retried.value.runId).toBe("dispatch:stranded-caller-reservation")
 })
 
@@ -170,13 +175,11 @@ it("retries stranded recovery in the same process after the plan read fails", as
   )
   expect(Exit.isFailure(crashed)).toBe(true)
 
-  for (const [pid, alive] of [[101, []], [202, [101]]] as const) {
-    const guarded = await run(
-      stack(filename, pid, ControlExecutor.makeNoop({ launch: () => Effect.die("live admitter was bypassed") }), alive),
-      retry(card)
-    )
-    expect(Exit.isSuccess(guarded) && guarded.value._tag).toBe("AlreadyApplied")
-  }
+  const guarded = await run(
+    stack(filename, 202, ControlExecutor.makeNoop({ launch: () => Effect.die("live admitter was bypassed") }), [101]),
+    retry(card)
+  )
+  expect(Exit.isSuccess(guarded) && guarded.value._tag).toBe("AlreadyApplied")
   const launched: Array<string> = []
   let failNextPlanRead = true
   const base = stack(
@@ -214,4 +217,67 @@ it("retries stranded recovery in the same process after the plan read fails", as
     })
   )
   if (!Exit.isSuccess(recovered)) throw new Error(String(recovered.cause))
+})
+
+it("a live claimant retains its in-flight handoff until another owner proves it dead", async () => {
+  const filename = join(directory, "in-flight.sqlite")
+  const ready = Effect.runSync(Deferred.make<void>())
+  const release = Effect.runSync(Deferred.make<void>())
+  const first = stack(
+    filename,
+    101,
+    ControlExecutor.makeNoop({
+      launch: () =>
+        Deferred.succeed(ready, undefined).pipe(
+          Effect.andThen(Deferred.await(release)),
+          Effect.andThen(Effect.interrupt)
+        )
+    })
+  )
+  const planned = await run(first, admit)
+  if (!Exit.isSuccess(planned)) throw new Error("plan failed")
+  const original = run(first, retry(planned.value))
+  const calls: string[] = []
+  const peer = ControlExecutor.makeNoop({
+    launch: ({ run }) =>
+      Effect.sync(() => {
+        calls.push(run.runId)
+        return "accepted" as const
+      })
+  })
+  try {
+    await Effect.runPromise(Deferred.await(ready))
+    expect(Exit.isSuccess(await run(stack(filename, 202, peer, [101]), retry(planned.value)))).toBe(true)
+    expect(calls).toEqual([])
+    expect(Exit.isSuccess(await run(stack(filename, 202, peer), retry(planned.value)))).toBe(true)
+  } finally {
+    await Effect.runPromise(Deferred.succeed(release, undefined))
+  }
+  expect(Exit.isFailure(await original)).toBe(true)
+  expect(calls).toEqual(["dispatch:stranded-caller-reservation"])
+  expect(Exit.isSuccess(await run(stack(filename, 303, peer), retry(planned.value)))).toBe(true)
+  expect(calls).toHaveLength(1)
+})
+
+it("the memory owner can retry a failed handoff and ignores an obsolete release", async () => {
+  let attempts = 0
+  const executor = ControlExecutor.makeNoop({
+    launch: () => ++attempts === 1 ? Effect.interrupt : Effect.succeed("accepted" as const)
+  })
+  await Effect.runPromise(
+    Effect.gen(function*() {
+      const card = yield* admit
+      expect(Exit.isFailure(yield* Effect.exit(retry(card)))).toBe(true)
+      const runtime = yield* ControlRuntime
+      const id = "dispatch:stranded-caller-reservation"
+      const nonce = yield* runtime.takeLaunch(id)
+      expect(nonce).toBeDefined()
+      yield* runtime.finishLaunch(id, "obsolete", false)
+      expect(yield* runtime.takeLaunch(id)).toBeUndefined()
+      yield* runtime.finishLaunch(id, nonce!, true)
+      yield* retry(card)
+      expect((yield* runtime.getRun(id)).status).toBe("running")
+      expect(attempts).toBe(2)
+    }).pipe(Effect.provide(live({ executor })))
+  )
 })

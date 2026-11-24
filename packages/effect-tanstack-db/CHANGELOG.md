@@ -4,6 +4,19 @@
 
 ### Fixed
 
+- A parked write is handed to its feature only while it is still the
+  principal's. The outbox chose the parked writes once at start, so a
+  principal change while one feature's `parked` callback was pending handed
+  the previous principal's next write to the new one. Ownership is now asked
+  again immediately before each callback; a write that is no longer the
+  principal's stays parked for its owner.
+- A live receipt belongs to the principal that queued its write. `admission`
+  and `transact({ joinExisting: true })` looked a receipt up by mutation name
+  and idempotency key alone, so a second principal reusing the key received
+  the first one's receipt and its own mutation never ran. An unstamped
+  receipt is read only by a principal that owns unstamped writes. The stamp
+  in a write's metadata is read once, when `transact` starts.
+
 - Interrupted device migrations roll back before the connection is reused.
   Resets and retirements warn whenever rows are set aside or dropped.
   The API reference includes pending writes, query publication, outbox holds

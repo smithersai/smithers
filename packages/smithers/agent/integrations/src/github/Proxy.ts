@@ -323,8 +323,13 @@ export const make = (
         if (!authorized(request)) return json(401, { message: "GitHub proxy capability required" })
         const origin = linkOrigin(request)
         if (origin === undefined) return json(400, { message: "The Host header must be a host name and port" })
-        // GitHub routes `/REPOS/` as `/repos/`; the proxy forwards the one form its budget and credential read.
-        const path = `${url.pathname.replace(/^\/repos\//i, "/repos/")}${url.search}`
+        // GitHub routes `/REPOS/` as `/repos/`, and `/REPOSITORIES/` as `/repositories/`; the proxy forwards the
+        // one form its budget and credential read.
+        const pathname = url.pathname.replace(
+          /^\/(repos|repositories)\//i,
+          (_prefix, route: string) => `/${route.toLowerCase()}/`
+        )
+        const path = `${pathname}${url.search}`
         const body = request.method === "GET" || request.method === "HEAD" ? undefined : yield* readBody(request)
         if (body === "too-large") {
           return json(413, { message: `The request body is larger than ${maxBodyBytes} bytes` })
@@ -403,7 +408,11 @@ export const make = (
     return Effect.gen(function*() {
       const request = yield* HttpServerRequest.HttpServerRequest
       // Appended, not resolved: `//repos/o/r` resolved against a base names the host `repos`,
-      // and the path GitHub would then see is not the one the proxy judged.
+      // and the path GitHub would then see is not the one the proxy judged. A target that is not a
+      // path, such as `http://host/…` or `@host/…`, would name a host of its own, so it is refused.
+      if (!request.url.startsWith("/") || !URL.canParse(`http://proxy.invalid${request.url}`)) {
+        return json(400, { message: "The request target must be an origin-form path" })
+      }
       const url = new URL(`http://proxy.invalid${request.url}`)
       return yield* url.pathname.startsWith(CONTROL_PREFIX) ? control(request, url) : forward(request, url)
     })

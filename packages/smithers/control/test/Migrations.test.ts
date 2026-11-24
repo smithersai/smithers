@@ -74,7 +74,7 @@ describe("control migrations", () => {
         const sql = yield* SqlClient.SqlClient
         expect(yield* sql`SELECT * FROM control_runs`).toEqual([])
         expect(yield* sql`SELECT * FROM flows_migrations`).toEqual([])
-        expect(yield* Migrations.run).toHaveLength(10)
+        expect(yield* Migrations.run).toHaveLength(11)
       }).pipe(Effect.provide(NodeDatabase.layer({ filename })))
     })))
 
@@ -108,7 +108,7 @@ describe("control migrations", () => {
     withDatabase(Effect.gen(function*() {
       yield* SqlControlRuntime.migrate
       const completed = yield* Migrations.run
-      expect(completed).toHaveLength(10)
+      expect(completed).toHaveLength(11)
       expect(completed[0]?.[0]).toBe(Migrations.set.idOffset + 1)
     })))
 
@@ -127,7 +127,8 @@ describe("control migrations", () => {
         Migrations.set.idOffset + 7,
         Migrations.set.idOffset + 8,
         Migrations.set.idOffset + 9,
-        Migrations.set.idOffset + 10
+        Migrations.set.idOffset + 10,
+        Migrations.set.idOffset + 11
       ])
       expect(yield* sql`SELECT * FROM control_run_keys`).toEqual([])
       expect(yield* sql`SELECT value FROM control_sequences WHERE name = 'upgrade-sentinel'`).toEqual([{ value: 42 }])

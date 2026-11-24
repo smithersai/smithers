@@ -6,6 +6,7 @@ import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { afterAll, beforeAll, describe, expect, it, onTestFailed } from "vitest"
 import * as Environments from "../src/ExecutionEnvironment.ts"
+import { invokeBranchSsh } from "./support/branch-ssh.ts"
 import { childEnvironment } from "./support/node-child.ts"
 
 // A real SSH server and transport; only the synthetic native application is a fixture.
@@ -145,6 +146,37 @@ describe.skipIf(process.platform === "win32")("execution environments over real 
     const expected = `${home}\n${directory}\n`
     expect(await readFile(join(home, "executed"), "utf8")).toBe(expected)
     expect(await readFile(join(home, "tui-executed"), "utf8")).toBe(expected)
+  })
+  it("pins the branch API key on first connection and rejects a different key", async () => {
+    const sshHome = join(root, "branch-home")
+    await mkdir(join(sshHome, ".ssh"), { recursive: true })
+    const empty = join(sshHome, ".ssh/known_hosts")
+    await writeFile(empty, "")
+    // Route the fixed branch port to the isolated sshd through the existing fixture tunnel.
+    const port = (await readFile(config, "utf8")).match(/Port (\d+)/)![1]
+    await writeFile(
+      config,
+      [
+        "\nHost branch-fixture",
+        `ProxyCommand /usr/bin/ssh -F '${config}' -W 127.0.0.1:${port} fixture`,
+        `IdentityFile ${join(root, "user")}`,
+        `UserKnownHostsFile ${empty}`,
+        "BatchMode yes",
+        "RemoteCommand true"
+      ].join("\n"),
+      { flag: "a" }
+    )
+    for (const [file, expected] of [["host", 0], ["wrong", 255]] as const) {
+      const key = (await readFile(join(root, file + ".pub"), "utf8")).split(" ").slice(0, 2).join(" ")
+      const result = await invokeBranchSsh({
+        branch: userInfo().username,
+        host: "branch-fixture",
+        port: 2222,
+        host_keys: [{ known_hosts_line: key }]
+      }, { HOME: sshHome, PATH: source.PATH })
+      expect(result.code).toBe(expected)
+    }
+    expect(await readFile(empty, "utf8")).toBe("")
   })
   it("refuses a changed host key before executing a remote sentinel", async () => {
     const original = await readFile(join(root, "known_hosts"), "utf8")

@@ -1,6 +1,7 @@
-import { Effect, Exit } from "effect"
+import { Effect, Exit, Layer } from "effect"
+import * as FetchHttpClient from "effect/http/FetchHttpClient"
 import { HttpClient } from "effect/http/HttpClient"
-import { afterEach, describe, expect, test, vi } from "vitest"
+import { describe, expect, test } from "vitest"
 import { providerTransport, refusingRedirects } from "../src/ProviderTransport.ts"
 
 type Fetch = typeof globalThis.fetch
@@ -15,17 +16,13 @@ const opaqueRedirect = (): Response => {
   return response
 }
 
-const get = (layer: ReturnType<typeof providerTransport>) =>
+const get = (layer: ReturnType<typeof providerTransport>, url = "https://fixture.test/") =>
   Effect.runPromiseExit(
     Effect.gen(function*() {
       const client = yield* HttpClient
-      return (yield* client.get("https://fixture.test/")).status
+      return (yield* client.get(url)).status
     }).pipe(Effect.provide(layer))
   )
-
-afterEach(() => {
-  vi.unstubAllGlobals()
-})
 
 describe("refusingRedirects", () => {
   test("never follows a redirect: the call fails and the refused status is told", async () => {
@@ -78,7 +75,11 @@ describe("providerTransport", () => {
   })
 
   test("defaults to the runtime's global fetch", async () => {
-    vi.stubGlobal("fetch", fetchOf(async () => new Response(null, { status: 204 })))
-    expect(await get(providerTransport())).toEqual(Exit.succeed(204))
+    expect(await get(providerTransport(), "data:text/plain,ok")).toEqual(Exit.succeed(200))
+  })
+
+  test("uses the injected fetch", async () => {
+    const layer = Layer.succeed(FetchHttpClient.Fetch)(fetchOf(async () => new Response(null, { status: 204 })))
+    expect(await get(providerTransport().pipe(Layer.provide(layer)))).toEqual(Exit.succeed(204))
   })
 })

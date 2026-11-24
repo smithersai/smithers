@@ -2,8 +2,8 @@
  * Delivery channels: one short message sent to people outside the app, by
  * email or Telegram.
  *
- * A deployment configures a provider per channel and hands {@link layer} the
- * credentials; a caller hands {@link ChannelsService.send} a {@link Destination}
+ * A deployment configures a provider per channel and hands {@link layer} (or
+ * {@link layerClient}, over the host's own `HttpClient`) the credentials; a caller hands {@link ChannelsService.send} a {@link Destination}
  * and a {@link Message}. Each send is one HTTP request, so a caller that wants
  * it durable runs it as a flow step and lets the engine retry it: every failure
  * is classified once, here, as a {@link DeliveryFailed} another attempt may
@@ -493,11 +493,14 @@ const decodeMessage = Schema.decodeUnknownOption(Message)
  * Telegram through the Bot API when `telegram` is, each send bounded by
  * `timeout` ({@link defaultTimeout}).
  *
- * The layer owns its Fetch transport and makes every request with redirect
- * following off, so a 3xx is refused `rejected` rather than followed with the
- * credential. Tests and hosts supply the transport as `FetchHttpClient.Fetch`.
- * A provider url that isn't absolute `http:` or `https:` fails the layer as a
- * defect whose message names no url.
+ * Every send goes through the `HttpClient` the host provides, so the host's
+ * destination policy, proxy, TLS and instrumentation apply to it. The client
+ * must make one request and return its answer: each request sets the fetch
+ * redirect mode to `manual`, which `FetchHttpClient.layer` and the kernel's
+ * guarded client obey, so a 3xx is refused `rejected` rather than followed
+ * with the credential. Do not provide a client that follows redirects
+ * regardless. A provider url that isn't absolute `http:` or `https:` fails the
+ * layer as a defect whose message names no url.
  *
  * Each send is a span `notifications.channel.send` with the channel, the
  * answering status and the outcome, and nothing of the request: the HTTP
@@ -507,7 +510,7 @@ const decodeMessage = Schema.decodeUnknownOption(Message)
  * @category layers
  * @since 1.0.0
  */
-export const layer = (options: Options): Layer.Layer<Channels> =>
+export const layerClient = (options: Options): Layer.Layer<Channels, never, HttpClient.HttpClient> =>
   Layer.effect(
     Channels,
     Effect.gen(function*() {
@@ -596,4 +599,16 @@ export const layer = (options: Options): Layer.Layer<Channels> =>
 
       return Channels.of({ available, send })
     })
-  ).pipe(Layer.provide(FetchHttpClient.layer))
+  )
+
+/**
+ * {@link layerClient} over a Fetch transport the layer owns. An `HttpClient`
+ * the host provides is not used; a host with a client of its own composes
+ * {@link layerClient}. Tests and hosts supply the transport as
+ * `FetchHttpClient.Fetch`.
+ *
+ * @category layers
+ * @since 1.0.0
+ */
+export const layer = (options: Options): Layer.Layer<Channels> =>
+  layerClient(options).pipe(Layer.provide(FetchHttpClient.layer))
