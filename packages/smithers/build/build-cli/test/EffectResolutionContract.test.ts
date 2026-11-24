@@ -196,6 +196,31 @@ describe("declaration dependency preflight", () => {
       .toThrowError(expect.objectContaining({ code: "declaration_dependency_mismatch", path: directImportFile }))
   })
 
+  it("allows a locally installed CLI targets package beside another Effect major when not importing effect", async () => {
+    // A monorepo installs the CLI's @smthrs/targets at its root while one of
+    // its packages depends on Effect v3 for application code, as
+    // evmts/tevm's bundler-packages/compiler does.
+    const directory = await fixture(true)
+    const packageDirectory = Path.join(directory, "packages/compiler")
+    await Fs.mkdir(Path.join(packageDirectory, "node_modules/effect"), { recursive: true })
+    await Fs.writeFile(Path.join(packageDirectory, "package.json"), "{\"type\":\"module\"}")
+    await Fs.writeFile(
+      Path.join(packageDirectory, "node_modules/effect/package.json"),
+      JSON.stringify({ name: "effect", version: "3.21.2" })
+    )
+    const pkgFile = Path.join(packageDirectory, "PACKAGE.ts")
+    await Fs.writeFile(
+      pkgFile,
+      `import { Smithers as S } from "@smthrs/targets"\nexport const Package = S.Package({ targets: {} })\n`
+    )
+    expect(() => assertDeclarationDependencies([pkgFile], { bootstrap: true })).not.toThrow()
+
+    const directImportFile = Path.join(packageDirectory, "direct.ts")
+    await Fs.writeFile(directImportFile, `import * as Effect from "effect/Effect"\nexport const x = Effect\n`)
+    expect(() => assertDeclarationDependencies([pkgFile, directImportFile], { bootstrap: true }))
+      .toThrowError(expect.objectContaining({ code: "declaration_dependency_mismatch", path: directImportFile }))
+  })
+
   it("refuses a foreign installation even when its metadata cannot be parsed", async () => {
     const directory = await fixture(false)
     await Fs.mkdir(Path.join(directory, "node_modules/effect"), { recursive: true })

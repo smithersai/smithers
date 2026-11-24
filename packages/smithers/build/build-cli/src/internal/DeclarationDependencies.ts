@@ -40,6 +40,23 @@ const hasLocalSmithersTargets = (file: string): boolean => {
   }
 }
 
+/**
+ * Whether the declaration resolves the CLI's own `@smthrs/targets`. The
+ * authoring API then imports Effect from its own installation, the CLI's, so a
+ * different Effect a sibling package installs for its application code never
+ * reaches a declaration that does not import `effect` itself.
+ */
+const resolvesCliTargets = (file: string): boolean => {
+  try {
+    const cli = findPackageJSON("@smthrs/targets", import.meta.url)
+    const declared = findPackageJSON("@smthrs/targets", pathToFileURL(file))
+    return cli !== undefined && declared !== undefined &&
+      realpathSync.native(cli) === realpathSync.native(declared)
+  } catch {
+    return false
+  }
+}
+
 const declarationImportsEffect = (file: string): boolean => {
   try {
     const source = readFileSync(file, "utf8")
@@ -121,16 +138,17 @@ export const assertDeclarationDependencies = (
         )
       }
       if (actual !== expected) {
-        // In bootstrap mode (no local @smthrs/targets install), a consumer repo
-        // may depend on a different major version of Effect (e.g. Effect v3) for
-        // its own application code while its PACKAGE.ts only imports @smthrs/targets.
+        // A consumer repo may depend on a different major version of Effect
+        // (e.g. Effect v3) for its own application code while its PACKAGE.ts
+        // only imports @smthrs/targets: either with no local install
+        // (bootstrap) or with a local install that is the CLI's own copy.
         // The CLI's ESM resolve hooks pin @smthrs/targets and its Effect v4 runtime
         // to the CLI installation, so allow this when the declaration does not import
         // effect directly and the consumer manifest parses cleanly as another major.
         if (
           options.bootstrap &&
           dependency === "effect" &&
-          !hasLocalSmithersTargets(file) &&
+          (!hasLocalSmithersTargets(file) || resolvesCliTargets(file)) &&
           !declarationImportsEffect(file)
         ) {
           const expectedMajor = majorVersionOf(expected)
