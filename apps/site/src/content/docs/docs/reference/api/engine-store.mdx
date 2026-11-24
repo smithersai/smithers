@@ -409,7 +409,7 @@ permit deadlocks against a fiber doing the opposite.
 | `pendingRunTail`          | `(flowName: string, eligibleBeforeMs?: number) => Effect<Option<PendingRunCursor>>`                                                                                                                     |
 | `pendingCancellationRuns` | `(limit: number, after?: PendingRunCursor, through?: PendingRunCursor) => Effect<ReadonlyArray<PendingRunCursor>>`                                                                                      |
 | `pendingCancellationTail` | `() => Effect<Option<PendingRunCursor>>`                                                                                                                                                                |
-| `staleRunningRuns`        | `(staleBeforeMs: number, limit?: number) => Effect<ReadonlyArray<StaleRunningRow>>`                                                                                                                     |
+| `staleRunningRuns`        | `(staleBeforeMs: number, limit?: number, after?: StaleRunningRow) => Effect<ReadonlyArray<StaleRunningRow>>`                                                                                            |
 | `attemptSurvivors`        | `((runId: string, stepKeyDigest: string) => Effect<Option<AttemptSurvivors>>)` (optional)                                                                                                               |
 | `copyAttempts`            | `((options: { from: string; to: string; attempts: ReadonlyArray<AttemptRef> }) => Effect<number>)` (optional)                                                                                           |
 | `recordRunParent`         | `(childId: string, parentId: string) => Effect<RecordRunParentOutcome, RunParentCycleError>`                                                                                                            |
@@ -512,7 +512,7 @@ protected execution snapshot reader, independently of its redacted event view.
 | `WaitingRow`              | `{ runId, reason, wakeAt: number \| null, token: string \| null, request?: Json }`                   |
 | `StaleRunningRow`         | `{ runId, heartbeatAtMs }`: a stale `running` row and the lease heartbeat it froze on                |
 | `WaitingReason`           | a non-empty string; the open taxonomy the driver writes (`timer`, `event`, `released`, `quarantine`) |
-| `WaitingRunsFilter`       | `{ reason?, dueBeforeMs?, cancelRequested? }`                                                        |
+| `WaitingRunsFilter`       | `{ reason?, dueBeforeMs?, cancelRequested?, hasChildren?, page? }`                                   |
 | `RunParentEdge`           | `{ childId, parentId, seq }`, where `seq` is ordering only                                           |
 | `AttemptSurvivors`        | `{ earliestAttempt, earliestStartedAtMs, latest }`                                                   |
 | `CompleteDeferredOutcome` | `Completed`, `Existing`, or `NotFound` (no such run: nothing stored)                                 |

@@ -2171,7 +2171,7 @@ group ids are a no-op. Never throws: this is teardown.
 ```ts
 const skewClock: (skewMs: number) => SkewedClock
 
-interface SkewedClock {
+interface SkewedClock extends Disposable {
   readonly now: () => number
   readonly advance: (ms: number) => void
   readonly restore: () => void
@@ -2187,6 +2187,8 @@ Each skew is relative to the real clock, and the latest installation controls
 the global clock. Restoring any live handle reinstalls the Date constructor and
 `Date.now` captured at module load, even when handles are restored out of order.
 `restore` is idempotent; it does not reinstate an earlier skew.
+
+Use `using clock = skewClock(ms)` for lexical cleanup, or `yield* skewClockScoped(ms)` in an Effect scope.
 
 `skewClock` and `advance` throw `RangeError` when given a value that is not a
 finite number of milliseconds, so `NaN` or `Infinity` can never reach `Date.now`.

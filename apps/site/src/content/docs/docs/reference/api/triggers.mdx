@@ -243,6 +243,14 @@ Parses an expression in an optional timezone. Reports a malformed expression as
 The satisfiability probe searches forward from the current instant, which is
 the same search every tick performs.
 
+An expression with no timezone is a UTC schedule, whatever the host's zone.
+
+`parse` remembers the parsed fields of up to 1,024 expression and timezone
+pairs, so a scheduler that parses every trigger on every tick gets a cron with
+the same `value` each time and its occurrence searches reuse what they compiled
+for it. The probe still runs on every call. A full memo is emptied and filled
+again.
+
 ### Cron.next
 
 ```ts
@@ -663,6 +671,12 @@ Construction applies the package's migrations, so a host runs nothing itself. A
 migration refusal from the migrator's typed error channel is reported as `store`,
 because the constructor's signature promises a `TriggerError`.
 
+A launch reservation id carries a random attempt id. The store draws it from
+the `SecureRandom` service of `effect/crypto` when the composition provides
+one, read once at construction, and from the platform's `crypto.randomUUID`
+otherwise. The service is optional, so it is not in the signature; a test that
+provides a deterministic `SecureRandom` determines every reservation id.
+
 ## Scheduler
 
 The ticks, the durable flow lineage `layer` runs them on, and the launcher port
@@ -960,7 +974,7 @@ interface TickOptions extends Omit<Options, "pollInterval" | "runPollInterval"> 
 
 interface Ticked {
   readonly at: number
-  readonly watermark: number
+  readonly watermark: number | undefined
 }
 
 const tick: (
@@ -981,17 +995,24 @@ for the five-minute reservation lease.
 `tick` takes the watermark as `since` and answers the next one:
 
 - `since` is the `watermark` the previous tick answered, in epoch
-  milliseconds. Each trigger starts from `since`, or from the last fire the
-  store recorded when that is later, and the catch-up policy decides what the
-  interval owes, exactly as it does for a stalled poll. Absent, the tick is a
-  first tick. A `since` that is not a safe integer is refused with
+  milliseconds. Each trigger starts from `since`, or from what the store
+  recorded for it when that is later: its last fire, or its registration while
+  it has never fired. A trigger registered after `since` therefore owes
+  nothing for the boundaries before it existed. The catch-up policy decides
+  what the interval owes, exactly as it does for a stalled poll. Absent, the
+  tick is a first tick. A `since` that is not a safe integer is refused with
   `invalid_options` at `since`.
 - `at` is when the tick read the clock.
 - `watermark` is what the next tick passes as `since`. It is `at` when every
-  trigger finished dispatching. When one did not (a claim failed, a row would
-  not decode, a declaration changed mid-tick), it is this tick's own `since`,
-  so the next tick asks the policy about the same interval again; the claim
-  protocol refuses the occurrences that already fired.
+  trigger finished dispatching. When one did not (a claim failed, a
+  declaration changed mid-tick), it is this tick's own `since`, so the next
+  tick asks the policy about the same interval again; the claim protocol
+  refuses the occurrences that already fired. A first tick that did not finish
+  answers `undefined`, so the next tick is a first tick again and starts each
+  trigger from what the store recorded. A row the store cannot decode is
+  logged and does not hold the watermark: it has no schedule to owe an
+  occurrence for, and holding `since` for it would hold every healthy trigger
+  at one instant for as long as the row stayed corrupt.
 
 Keep the watermark wherever the host keeps durable state. A durable flow keeps
 it in the payload of its next round, as `Scheduler.Tick` does for `layer`.
@@ -1153,20 +1174,42 @@ folded into the result, so inputs of unequal length always disagree.
 ### Webhook.SignatureConfig and makeSignatureVerifier
 
 ```ts
+interface TimestampConfig {
+  readonly header: string
+  readonly tolerance: Duration.Duration
+  readonly parse?: ((value: string) => number | undefined) | undefined
+}
+
 interface SignatureConfig {
   readonly header: string
   readonly expected: (
     body: Uint8Array,
-    credential: Redacted.Redacted<CredentialRef>
+    credential: Redacted.Redacted<CredentialRef>,
+    headers: Channel.RawInbound["headers"]
   ) => Effect.Effect<Uint8Array, TriggerError>
+  readonly timestamp?: TimestampConfig | undefined
 }
+
+const epochSeconds: (value: string) => number | undefined
 
 const makeSignatureVerifier: (config: SignatureConfig) => Channel.Verify
 ```
 
-`expected` receives a private copy of the request bytes and the redacted
-credential reference, and answers with the signature bytes the request must
-carry in `header`. It returns an Effect so the secret is resolved through the
+`expected` receives a private copy of the request bytes, the redacted
+credential reference, and a private copy of the request headers, and answers
+with the signature bytes the request must carry in `header`. The headers let
+it sign more than the body, such as a `v0:{timestamp}:{body}` scheme.
+
+`timestamp` binds the request to the clock. The verifier reads
+`timestamp.header`, turns its value into epoch milliseconds with
+`timestamp.parse` (`epochSeconds` by default: whole decimal seconds), and
+refuses the request with `verification_failed` when the header is absent or
+unreadable or the instant is further than `timestamp.tolerance` from the
+`Clock`, in the past or the future. The check runs before `expected`. It proves
+freshness only when `expected` signs the same header; without `timestamp` a
+captured request verifies for as long as the secret lives.
+
+`expected` returns an Effect so the secret is resolved through the
 host's resolver per request, and so a resolution or HMAC failure arrives as a
 typed `verification_failed` instead of a defect.
 
@@ -1224,7 +1267,9 @@ database. It applies the same claim decision as the SQL store, so it returns the
 same refusal codes in the same order, holds the same reservation lease, and
 reclaims an expired reservation the same way. Registration validates the
 declaration and serializes its input at the call boundary, `list` and
-`listEnabled` order by id, and every reading is an independent value.
+`listEnabled` order by id, and every reading is an independent value. Like the
+SQL store, it draws a reservation's attempt id from `SecureRandom` when the
+composition provides one.
 
 It holds one process's state, so it never reports a `store` failure from a
 write, never shows contention between connections, and applies no migrations.
@@ -1388,6 +1433,7 @@ accepting traffic.
 Migrations are internal. The export map null-maps
 `@smthrs/triggers/migrations/*`. Use `SqlTriggerStore.layer`; it applies
 `0001_triggers`, `0002_reservation_lease`, `0003_heartbeat`,
-`0004_fire_run_index`, and `0005_registered_at` in order. The package exports
+`0004_fire_run_index`, `0005_registered_at`, and `0006_fire_newest_index` in
+order. The package exports
 `@smthrs/triggers/package.json`. It does not export `internal/*` or nested
 `*/index` subpaths.

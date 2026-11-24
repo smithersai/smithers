@@ -123,35 +123,62 @@ The result of one `tools/call`.
 | `isError`           | `boolean`                                | Whether the tool reported a problem. A successful call may carry `true`; this is not a failure.   |
 | `structuredContent` | `Record<string, unknown> \| undefined`   | The tool's structured result, validated against its declared `outputSchema` when it declared one. |
 
+A result with `isError: true` is the tool's own report of a failure and is
+returned as sent: its `structuredContent` is not held to the `outputSchema`,
+and may be absent. A result that is not an error must carry `structuredContent`
+when the tool declared an `outputSchema`, or the call fails with
+`invalid_response`.
+
+A tool's `description` in the catalog has its control and format characters
+removed (Unicode categories Cc, Cf, Cs, Zl and Zp, which include bidi overrides
+and zero-width marks). Line feeds and tabs are kept.
+
 ### McpClient.ConnectOptions
 
 `StdioConnectOptions | HttpConnectOptions`. The stdio form:
 
-| Field                   | Type                                               | Meaning                                                                                                   |
-| ----------------------- | -------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
-| `server`                | `string`                                           | The name this server is known by, for flow naming and error messages. Required.                           |
-| `command`               | `string`                                           | The executable to spawn. Required.                                                                        |
-| `args`                  | `ReadonlyArray<string>`                            | Its arguments. Required.                                                                                  |
-| `cwd`                   | `string \| undefined`                              | The child's working directory.                                                                            |
-| `env`                   | `Record<string, string \| undefined> \| undefined` | Values overlaid on the bootstrap child environment.                                                       |
-| `handshakeTimeoutMs`    | `number \| undefined`                              | Deadline for each `initialize` and `tools/list` request. Default 10000.                                   |
-| `requestTimeoutMs`      | `number \| undefined`                              | Deadline for each later tool request. Default 120000.                                                     |
-| `queueCapacity`         | `number \| undefined`                              | Maximum outbound frames waiting to be written. Default 64.                                                |
-| `maxFrameBytes`         | `number \| undefined`                              | Maximum UTF-8 bytes in one inbound JSON-RPC frame. Default 1048576.                                       |
-| `maxOutboundFrameBytes` | `number \| undefined`                              | Maximum UTF-8 bytes in one outbound JSON-RPC frame. Default 1048576.                                      |
-| `maxStderrBytes`        | `number \| undefined`                              | Maximum diagnostic stderr bytes retained in memory and rendered after credential redaction. Default 2048. |
-| `maxTools`              | `number \| undefined`                              | Maximum tools accepted across every catalog page. Default 256.                                            |
-| `maxToolNameBytes`      | `number \| undefined`                              | Maximum UTF-8 bytes in a tool name. Default 128.                                                          |
-| `maxToolDocumentBytes`  | `number \| undefined`                              | Maximum UTF-8 bytes of one tool's description plus its JSON-encoded `inputSchema`. Default 65536.         |
-| `maxCatalogPages`       | `number \| undefined`                              | Maximum `tools/list` pages walked. Default 32.                                                            |
+| Field                     | Type                                               | Meaning                                                                                                                               |
+| ------------------------- | -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| `server`                  | `string`                                           | The name this server is known by, for flow naming and error messages. Required. Follows the tool-name rules, at most 128 UTF-8 bytes. |
+| `command`                 | `string`                                           | The executable to spawn. Required.                                                                                                    |
+| `args`                    | `ReadonlyArray<string>`                            | Its arguments. Required.                                                                                                              |
+| `cwd`                     | `string \| undefined`                              | The child's working directory.                                                                                                        |
+| `env`                     | `Record<string, string \| undefined> \| undefined` | Values overlaid on the bootstrap child environment.                                                                                   |
+| `handshakeTimeoutMs`      | `number \| undefined`                              | Deadline for each `initialize` and `tools/list` request. Default 10000.                                                               |
+| `requestTimeoutMs`        | `number \| undefined`                              | Deadline for each later tool request. Default 120000.                                                                                 |
+| `queueCapacity`           | `number \| undefined`                              | Maximum outbound frames waiting to be written. Default 64.                                                                            |
+| `maxFrameBytes`           | `number \| undefined`                              | Maximum UTF-8 bytes in one inbound JSON-RPC frame. Default 1048576.                                                                   |
+| `maxOutboundFrameBytes`   | `number \| undefined`                              | Maximum UTF-8 bytes in one outbound JSON-RPC frame. Default 1048576.                                                                  |
+| `maxStderrBytes`          | `number \| undefined`                              | Maximum diagnostic stderr bytes retained in memory and rendered after credential redaction. Default 2048.                             |
+| `maxTools`                | `number \| undefined`                              | Maximum tools accepted across every catalog page. Default 256.                                                                        |
+| `maxToolNameBytes`        | `number \| undefined`                              | Maximum UTF-8 bytes in a tool name. Default 128.                                                                                      |
+| `maxToolDocumentBytes`    | `number \| undefined`                              | Maximum UTF-8 bytes of one tool's description plus its JSON-encoded `inputSchema`. Default 65536.                                     |
+| `maxCatalogDocumentBytes` | `number \| undefined`                              | Maximum UTF-8 bytes of every tool's description plus JSON-encoded `inputSchema`, summed across the catalog. Default 1048576.          |
+| `maxCatalogPages`         | `number \| undefined`                              | Maximum `tools/list` pages walked. Default 32.                                                                                        |
 
 `HttpConnectOptions` has `server`, the catalog limits, `requestTimeoutMs`,
 `maxFrameBytes`, and `maxOutboundFrameBytes` from the table above, plus:
 
-| Field          | Type                        | Meaning                                                                                        |
-| -------------- | --------------------------- | ---------------------------------------------------------------------------------------------- |
-| `url`          | `string`                    | The server's MCP endpoint, an absolute `http:` or `https:` URL without credentials. Required.  |
-| `authProvider` | `AuthProvider \| undefined` | `{ token: Effect<Redacted<string>, McpError> }`, read once per HTTP message as a bearer token. |
+| Field                 | Type                        | Meaning                                                                                                     |
+| --------------------- | --------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| `url`                 | `string`                    | The server's MCP endpoint, an absolute `http:` or `https:` URL without credentials. Required.               |
+| `authProvider`        | `AuthProvider \| undefined` | `{ token: Effect<Redacted<string>, McpError> }`, read once per HTTP message as a bearer token.              |
+| `maxEventStreamBytes` | `number \| undefined`       | Maximum bytes read from one `text/event-stream` response, across every event and comment. Default 16777216. |
+| `maxServerRequests`   | `number \| undefined`       | Maximum server requests answered while one request awaits its reply. Default 32.                            |
+
+A `server` name is one segment of every flow name, `mcp/<server>/<tool>`. A
+name that is empty, longer than 128 UTF-8 bytes, `.` or `..`, not NFC, or that
+holds `/`, a leading, trailing or doubled space, or an invisible or control
+character fails with `protocol_error` before the process is spawned or a
+request is sent.
+
+Over Streamable HTTP a redirect is never followed. A `3xx` answer fails that
+message with `protocol_error`, and the bearer token, the session id and the
+message are not sent to the redirect's target. A notification, and the
+client's reply to a server request, must be answered with `202 Accepted` and no
+body; any other answer is a `protocol_error`, and the body is not reported. A
+JSON-RPC batch (a JSON array of messages) is read as its messages in order, on
+either transport.
 
 Every numeric field must be a positive safe integer. Anything else fails with
 `protocol_error` naming the option, before the process is spawned or a request
@@ -180,7 +207,7 @@ entries in `env` are explicit declarations and are applied last.
 
 ```ts
 const ConnectOptionsSchema = Schema.Struct({
-  server: Schema.NonEmptyString,
+  server: ServerName, // a flow-name segment: see ConnectOptions
   command: Schema.NonEmptyString,
   args: Schema.Array(Schema.String),
   cwd: Schema.optional(Schema.NonEmptyString),
@@ -193,7 +220,7 @@ const ConnectOptionsSchema = Schema.Struct({
 ```
 
 The authoritative decoder for a persisted stdio MCP server entry. It requires
-non-empty `server` and `command` strings, string `args`, an optional
+a `server` name usable as a flow-name segment, a non-empty `command` string, string `args`, an optional
 string-valued `env` record, and positive integers for every limit. The entry
 never holds a credential: `envFrom` maps a variable the child reads to the
 environment variable holding its value. Like `bearerTokenEnv`, it is for the
@@ -206,7 +233,7 @@ file or a database.
 
 ```ts
 const HttpConnectOptionsSchema = Schema.Struct({
-  server: Schema.NonEmptyString,
+  server: ServerName, // a flow-name segment: see ConnectOptions
   url: Schema.String, // absolute http: or https:, no userinfo
   bearerTokenEnv: Schema.optionalKey(Schema.String), // an environment variable name
   // every limit HttpConnectOptions accepts, each a positive integer
@@ -216,7 +243,7 @@ const HttpConnectOptionsSchema = Schema.Struct({
 ```
 
 The authoritative decoder for a persisted Streamable HTTP server entry. It
-requires a non-empty `server`, an absolute `http:` or `https:` `url` without
+requires a `server` name usable as a flow-name segment, an absolute `http:` or `https:` `url` without
 a user or password, and positive integers for every limit. The entry never
 holds a credential: `bearerTokenEnv` names the environment variable the host
 reads the bearer token from and supplies as `authProvider`. Connecting an entry
@@ -247,18 +274,21 @@ decodes, frozen, always proposing the first entry:
 Each option's default is exported as a constant, so a caller can read or
 adjust one without restating a literal.
 
-| Constant                       | Value   | Option                  |
-| ------------------------------ | ------- | ----------------------- |
-| `defaultHandshakeTimeoutMs`    | 10000   | `handshakeTimeoutMs`    |
-| `defaultRequestTimeoutMs`      | 120000  | `requestTimeoutMs`      |
-| `defaultQueueCapacity`         | 64      | `queueCapacity`         |
-| `defaultMaxFrameBytes`         | 1048576 | `maxFrameBytes`         |
-| `defaultMaxOutboundFrameBytes` | 1048576 | `maxOutboundFrameBytes` |
-| `defaultMaxStderrBytes`        | 2048    | `maxStderrBytes`        |
-| `defaultMaxTools`              | 256     | `maxTools`              |
-| `defaultMaxToolNameBytes`      | 128     | `maxToolNameBytes`      |
-| `defaultMaxToolDocumentBytes`  | 65536   | `maxToolDocumentBytes`  |
-| `defaultMaxCatalogPages`       | 32      | `maxCatalogPages`       |
+| Constant                         | Value    | Option                    |
+| -------------------------------- | -------- | ------------------------- |
+| `defaultHandshakeTimeoutMs`      | 10000    | `handshakeTimeoutMs`      |
+| `defaultRequestTimeoutMs`        | 120000   | `requestTimeoutMs`        |
+| `defaultQueueCapacity`           | 64       | `queueCapacity`           |
+| `defaultMaxFrameBytes`           | 1048576  | `maxFrameBytes`           |
+| `defaultMaxOutboundFrameBytes`   | 1048576  | `maxOutboundFrameBytes`   |
+| `defaultMaxStderrBytes`          | 2048     | `maxStderrBytes`          |
+| `defaultMaxTools`                | 256      | `maxTools`                |
+| `defaultMaxToolNameBytes`        | 128      | `maxToolNameBytes`        |
+| `defaultMaxToolDocumentBytes`    | 65536    | `maxToolDocumentBytes`    |
+| `defaultMaxCatalogDocumentBytes` | 1048576  | `maxCatalogDocumentBytes` |
+| `defaultMaxCatalogPages`         | 32       | `maxCatalogPages`         |
+| `defaultMaxEventStreamBytes`     | 16777216 | `maxEventStreamBytes`     |
+| `defaultMaxServerRequests`       | 32       | `maxServerRequests`       |
 
 `McpClient.maxJsonDepth` is a fixed safety limit of **128 nested containers**,
 including the JSON-RPC envelope. Arrays and objects each count as one container;

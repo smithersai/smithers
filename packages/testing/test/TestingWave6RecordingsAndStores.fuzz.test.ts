@@ -1,7 +1,24 @@
 import { Fuzz } from "@smthrs/fuzz"
 import * as Kernel from "@smthrs/kernel"
 import { NodeHost } from "@smthrs/platform-node"
-import { Arbitrary, Cause, Clock, Data, Effect, Exit, FileSystem, Layer, Option, Path, Random, Redacted, Schema, Scope, Sink, Stream } from "effect"
+import {
+  Arbitrary,
+  Cause,
+  Clock,
+  Data,
+  Effect,
+  Exit,
+  FileSystem,
+  Layer,
+  Option,
+  Path,
+  Random,
+  Redacted,
+  Schema,
+  Scope,
+  Sink,
+  Stream
+} from "effect"
 import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/http"
 import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 import { spawn } from "node:child_process"
@@ -78,11 +95,13 @@ describe("Wave-6 testing recordings, stores, faults & test layers fuzz propertie
           }
 
           const observed: Array<ContainerRecording.Call> = []
-          const normalize: ContainerRecording.Normalize = (op, input) =>
-            op === "setInactivityTimeout" ? 1000 : input
+          const normalize: ContainerRecording.Normalize = (op, input) => op === "setInactivityTimeout" ? 1000 : input
           const rec = ContainerRecording.record(live, {
             normalize,
-            onCall: (c) => Effect.sync(() => { observed.push(c) })
+            onCall: (c) =>
+              Effect.sync(() => {
+                observed.push(c)
+              })
           })
 
           // Run all 9 operations
@@ -208,19 +227,25 @@ describe("Wave-6 testing recordings, stores, faults & test layers fuzz propertie
           const dir = mkdtempSync(join(tmpdir(), "testing-wave6-termrec-"))
           try {
             // Invalid options
-            for (const bad of [
-              { title: "   " },
-              { title: "ok", frameDurationMs: 205 },
-              { title: "ok", columns: 0 },
-              { title: "ok", rows: 999 },
-              { title: "ok", maxFrames: 0 }
-            ]) {
+            for (
+              const bad of [
+                { title: "   " },
+                { title: "ok", frameDurationMs: 205 },
+                { title: "ok", columns: 0 },
+                { title: "ok", rows: 999 },
+                { title: "ok", maxFrames: 0 }
+              ]
+            ) {
               const ex = yield* Effect.exit(TerminalRecording.make(bad))
               expect(Exit.isFailure(ex)).toBe(true)
             }
 
-                        const okGifScript = join(dir, "ok-ffmpeg.sh")
-            writeFileSync(okGifScript, "#!/bin/sh\n[ -f terminal.cast ] && [ -f terminal.filter ] || exit 2\nprintf \"GIF89a0000\" > terminal.gif\n", { mode: 0o755 })
+            const okGifScript = join(dir, "ok-ffmpeg.sh")
+            writeFileSync(
+              okGifScript,
+              "#!/bin/sh\n[ -f terminal.cast ] && [ -f terminal.filter ] || exit 2\nprintf \"GIF89a0000\" > terminal.gif\n",
+              { mode: 0o755 }
+            )
             const rec = yield* TerminalRecording.make({
               title: s.title,
               columns: s.cols,
@@ -235,13 +260,15 @@ describe("Wave-6 testing recordings, stores, faults & test layers fuzz propertie
             expect(Exit.isFailure(emptyWrite)).toBe(true)
 
             // Invalid frames
-            for (const [label, screen] of [
-              [" ", "ok"],
-              ["ok", "   "],
-              ["ok", "\x1b[31mred"],
-              ["ok", "a\n".repeat(s.rows + 2)],
-              ["ok", "x".repeat(s.cols + 5)]
-            ] as const) {
+            for (
+              const [label, screen] of [
+                [" ", "ok"],
+                ["ok", "   "],
+                ["ok", "\x1b[31mred"],
+                ["ok", "a\n".repeat(s.rows + 2)],
+                ["ok", "x".repeat(s.cols + 5)]
+              ] as const
+            ) {
               const ex = yield* Effect.exit(rec.capture(label, screen))
               expect(Exit.isFailure(ex)).toBe(true)
             }
@@ -254,7 +281,16 @@ describe("Wave-6 testing recordings, stores, faults & test layers fuzz propertie
 
             // Real ffmpeg render!
             const outDir = join(dir, "rendered")
-            const receiptExit = yield* Effect.exit(rec.write(outDir)); if (Exit.isFailure(receiptExit)) { throw new Error("renderer.log: " + (existsSync(join(outDir, "renderer.log")) ? readFileSync(join(outDir, "renderer.log"), "utf8") : "missing") + " cause: " + Cause.pretty(receiptExit.cause)) }; const receipt = receiptExit.value
+            const receiptExit = yield* Effect.exit(rec.write(outDir))
+            if (Exit.isFailure(receiptExit)) {
+              throw new Error(
+                "renderer.log: " + (existsSync(join(outDir, "renderer.log"))
+                  ? readFileSync(join(outDir, "renderer.log"), "utf8")
+                  : "missing") +
+                  " cause: " + Cause.pretty(receiptExit.cause)
+              )
+            }
+            const receipt = receiptExit.value
             expect(existsSync(receipt.gif)).toBe(true)
             expect(existsSync(receipt.cast)).toBe(true)
             expect(existsSync(receipt.manifest)).toBe(true)
@@ -289,168 +325,195 @@ describe("Wave-6 testing recordings, stores, faults & test layers fuzz propertie
         }).pipe(Effect.provide(NodeHost.layer))
     ), 120_000)
 
-  it("fuzzes HttpRecording record/replay/make/layer, Location scrubbing, prune, binary/UTF-8 rejection & FixtureStore edge cases", () =>
-    property(
-      Arbitrary.all({
-        pathSeg: safeWord,
-        locKind: intBetween(0, 4),
-        bodyKind: intBetween(0, 3),
-        usePrune: bool,
-        failScope: bool
-      }),
-      ioExecs,
-      (s) =>
-        Effect.gen(function*() {
-          const dir = mkdtempSync(join(tmpdir(), "testing-wave6-httprec-"))
-          try {
-            const secret = "top-secret-token-abcdef123456"
-            const locHeader = s.locKind === 0
-              ? `https://user:pass@example.com/next?access_token=${secret}&ok=1#frag`
-              : s.locKind === 1
-              ? `//other.example.com/p?token=${secret}`
-              : s.locKind === 2
-              ? `/rel/path?api_key=${secret}&a=2#h`
-              : s.locKind === 3
-              ? "/rel/no-query"
-              : "http://[::1" // malformed -> placeholder
+  it(
+    "fuzzes HttpRecording record/replay/make/layer, Location scrubbing, prune, binary/UTF-8 rejection & FixtureStore edge cases",
+    () =>
+      property(
+        Arbitrary.all({
+          pathSeg: safeWord,
+          locKind: intBetween(0, 4),
+          bodyKind: intBetween(0, 3),
+          usePrune: bool,
+          failScope: bool
+        }),
+        ioExecs,
+        (s) =>
+          Effect.gen(function*() {
+            const dir = mkdtempSync(join(tmpdir(), "testing-wave6-httprec-"))
+            try {
+              const secret = "top-secret-token-abcdef123456"
+              const locHeader = s.locKind === 0
+                ? `https://user:pass@example.com/next?access_token=${secret}&ok=1#frag`
+                : s.locKind === 1
+                ? `//other.example.com/p?token=${secret}`
+                : s.locKind === 2
+                ? `/rel/path?api_key=${secret}&a=2#h`
+                : s.locKind === 3
+                ? "/rel/no-query"
+                : "http://[::1" // malformed -> placeholder
 
-            const liveClient = HttpClient.make((req) => {
-              const url = req.url
-              if (url.includes("/binary")) {
+              const liveClient = HttpClient.make((req) => {
+                const url = req.url
+                if (url.includes("/binary")) {
+                  return Effect.succeed(
+                    HttpClientResponse.fromWeb(
+                      req,
+                      new Response(new Uint8Array([1, 2, 3]), {
+                        status: 200,
+                        headers: { "content-type": "application/octet-stream" }
+                      })
+                    )
+                  )
+                }
+                if (url.includes("/bad-utf8")) {
+                  return Effect.succeed(
+                    HttpClientResponse.fromWeb(
+                      req,
+                      new Response(new Uint8Array([0xff, 0xfe]), {
+                        status: 200,
+                        headers: { "content-type": "text/plain" }
+                      })
+                    )
+                  )
+                }
+                const payload = s.bodyKind === 0
+                  ? JSON.stringify({ ok: true, secret, name: s.pathSeg })
+                  : s.bodyKind === 1
+                  ? JSON.stringify(`scalar-${secret}`)
+                  : s.bodyKind === 2
+                  ? `plain-${secret}`
+                  : ""
+                const ct = s.bodyKind <= 1 ? "application/json" : "text/plain"
                 return Effect.succeed(
-                  HttpClientResponse.fromWeb(req, new Response(new Uint8Array([1, 2, 3]), {
-                    status: 200,
-                    headers: { "content-type": "application/octet-stream" }
-                  }))
+                  HttpClientResponse.fromWeb(
+                    req,
+                    new Response(payload, {
+                      status: 200,
+                      headers: {
+                        "content-type": ct,
+                        location: locHeader,
+                        "x-ignored-header": "should-drop"
+                      }
+                    })
+                  )
                 )
-              }
-              if (url.includes("/bad-utf8")) {
-                return Effect.succeed(
-                  HttpClientResponse.fromWeb(req, new Response(new Uint8Array([0xff, 0xfe]), {
-                    status: 200,
-                    headers: { "content-type": "text/plain" }
-                  }))
-                )
-              }
-              const payload = s.bodyKind === 0
-                ? JSON.stringify({ ok: true, secret, name: s.pathSeg })
-                : s.bodyKind === 1
-                ? JSON.stringify(`scalar-${secret}`)
-                : s.bodyKind === 2
-                ? `plain-${secret}`
-                : ""
-              const ct = s.bodyKind <= 1 ? "application/json" : "text/plain"
-              return Effect.succeed(
-                HttpClientResponse.fromWeb(req, new Response(payload, {
-                  status: 200,
-                  headers: {
-                    "content-type": ct,
-                    location: locHeader,
-                    "x-ignored-header": "should-drop"
-                  }
-                }))
-              )
-            })
-
-            const recFile = join(dir, "http-rec.json")
-            const recEffect = Effect.scoped(
-              Effect.gen(function*() {
-                const client = yield* HttpRecording.make({
-                  mode: "record",
-                  path: recFile,
-                  live: liveClient,
-                  label: s.pathSeg,
-                  secrets: [secret],
-                  prune: s.usePrune
-                    ? (body) => (typeof body === "object" && body !== null ? { ...(body as object), pruned: true } : body)
-                    : undefined
-                })
-                const req = HttpClientRequest.get(`https://api.example.com/${encodeURIComponent(s.pathSeg)}?token=${secret}`)
-                const res = yield* client.execute(req)
-                expect(res.status).toBe(200)
-                yield* res.text
-
-                // Binary & invalid UTF-8 die
-                const binEx = yield* Effect.exit(client.execute(HttpClientRequest.get("https://api.example.com/binary")))
-                expect(Exit.isFailure(binEx)).toBe(true)
-                const utfEx = yield* Effect.exit(client.execute(HttpClientRequest.get("https://api.example.com/bad-utf8")))
-                expect(Exit.isFailure(utfEx)).toBe(true)
-
-                if (s.failScope) return yield* Effect.fail("abort-record")
               })
-            )
-            const recExit = yield* Effect.exit(recEffect)
-            expect(Exit.isSuccess(recExit)).toBe(!s.failScope)
-            expect(existsSync(recFile)).toBe(!s.failScope)
 
-            if (!s.failScope) {
-              const raw = readFileSync(recFile, "utf8")
-              expect(raw).not.toContain(secret)
-              // Replay via HttpRecording.layer
-              yield* Effect.scoped(
+              const recFile = join(dir, "http-rec.json")
+              const recEffect = Effect.scoped(
                 Effect.gen(function*() {
-                  const client = yield* HttpClient.HttpClient
-                  const req = HttpClientRequest.get(`https://api.example.com/${encodeURIComponent(s.pathSeg)}?token=${secret}`)
+                  const client = yield* HttpRecording.make({
+                    mode: "record",
+                    path: recFile,
+                    live: liveClient,
+                    label: s.pathSeg,
+                    secrets: [secret],
+                    prune: s.usePrune
+                      ? (
+                        body
+                      ) => (typeof body === "object" && body !== null ? { ...(body as object), pruned: true } : body)
+                      : undefined
+                  })
+                  const req = HttpClientRequest.get(
+                    `https://api.example.com/${encodeURIComponent(s.pathSeg)}?token=${secret}`
+                  )
                   const res = yield* client.execute(req)
                   expect(res.status).toBe(200)
-                }).pipe(
-                  Effect.provide(HttpRecording.layer({ mode: "replay", path: recFile, secrets: [secret] }))
-                )
+                  yield* res.text
+
+                  // Binary & invalid UTF-8 die
+                  const binEx = yield* Effect.exit(
+                    client.execute(HttpClientRequest.get("https://api.example.com/binary"))
+                  )
+                  expect(Exit.isFailure(binEx)).toBe(true)
+                  const utfEx = yield* Effect.exit(
+                    client.execute(HttpClientRequest.get("https://api.example.com/bad-utf8"))
+                  )
+                  expect(Exit.isFailure(utfEx)).toBe(true)
+
+                  if (s.failScope) return yield* Effect.fail("abort-record")
+                })
               )
-            }
+              const recExit = yield* Effect.exit(recEffect)
+              expect(Exit.isSuccess(recExit)).toBe(!s.failScope)
+              expect(existsSync(recFile)).toBe(!s.failScope)
 
-            // passthrough mode + missing live dies
-            const pt = yield* Effect.scoped(HttpRecording.make({ mode: "passthrough", path: recFile, live: liveClient }))
-            expect(pt).toBe(liveClient)
-            const noLivePt = yield* Effect.exit(Effect.scoped(HttpRecording.make({ mode: "passthrough", path: recFile })))
-            expect(Exit.isFailure(noLivePt)).toBe(true)
-            const noLiveRec = yield* Effect.exit(Effect.scoped(HttpRecording.make({ mode: "record", path: recFile })))
-            expect(Exit.isFailure(noLiveRec)).toBe(true)
+              if (!s.failScope) {
+                const raw = readFileSync(recFile, "utf8")
+                expect(raw).not.toContain(secret)
+                // Replay via HttpRecording.layer
+                yield* Effect.scoped(
+                  Effect.gen(function*() {
+                    const client = yield* HttpClient.HttpClient
+                    const req = HttpClientRequest.get(
+                      `https://api.example.com/${encodeURIComponent(s.pathSeg)}?token=${secret}`
+                    )
+                    const res = yield* client.execute(req)
+                    expect(res.status).toBe(200)
+                  }).pipe(
+                    Effect.provide(HttpRecording.layer({ mode: "replay", path: recFile, secrets: [secret] }))
+                  )
+                )
+              }
 
-            // FixtureStore: layerMemory, layerFile, journal truncation recovery, invalid journal index, symlink dir refusal
-            const memRes = yield* Effect.gen(function*() {
-              const st = yield* FixtureStore.FixtureStore
-              return yield* st.load()
-            }).pipe(Effect.provide(FixtureStore.layerMemory()))
-            expect(Option.isNone(memRes) || Option.isSome(memRes)).toBe(true)
+              // passthrough mode + missing live dies
+              const pt = yield* Effect.scoped(
+                HttpRecording.make({ mode: "passthrough", path: recFile, live: liveClient })
+              )
+              expect(pt).toBe(liveClient)
+              const noLivePt = yield* Effect.exit(
+                Effect.scoped(HttpRecording.make({ mode: "passthrough", path: recFile }))
+              )
+              expect(Exit.isFailure(noLivePt)).toBe(true)
+              const noLiveRec = yield* Effect.exit(Effect.scoped(HttpRecording.make({ mode: "record", path: recFile })))
+              expect(Exit.isFailure(noLiveRec)).toBe(true)
 
-            const fxFile = join(dir, "sub", "fx.json")
-            const dummyCall: Fixture.RecordedCall = {
-              request: { modelId: "m1", system: [], messages: [], tools: [], params: {} },
-              model: "m1",
-                            events: [{ type: "settle", stopReason: "stop" }]
-            }
-            yield* Effect.scoped(
-              Effect.gen(function*() {
+              // FixtureStore: layerMemory, layerFile, journal truncation recovery, invalid journal index, symlink dir refusal
+              const memRes = yield* Effect.gen(function*() {
                 const st = yield* FixtureStore.FixtureStore
-                yield* st.append(dummyCall)
-              }).pipe(Effect.provide(FixtureStore.layerFile(fxFile)))
-            )
-            expect(existsSync(fxFile)).toBe(true)
+                return yield* st.load()
+              }).pipe(Effect.provide(FixtureStore.layerMemory()))
+              expect(Option.isNone(memRes) || Option.isSome(memRes)).toBe(true)
 
-            // Truncated trailing journal line recovery
-            writeFileSync(`${fxFile}.journal`, `${JSON.stringify({ index: 1, call: dummyCall })}\n{"partial":true`)
-            const recovered = yield* FixtureStore.makeFile(fxFile)
-            const loaded = yield* recovered.load()
-            expect(Option.isSome(loaded) && loaded.value.calls.length === 2).toBe(true)
-            yield* recovered.flush()
+              const fxFile = join(dir, "sub", "fx.json")
+              const dummyCall: Fixture.RecordedCall = {
+                request: { modelId: "m1", system: [], messages: [], tools: [], params: {} },
+                model: "m1",
+                events: [{ type: "settle", stopReason: "stop" }]
+              }
+              yield* Effect.scoped(
+                Effect.gen(function*() {
+                  const st = yield* FixtureStore.FixtureStore
+                  yield* st.append(dummyCall)
+                }).pipe(Effect.provide(FixtureStore.layerFile(fxFile)))
+              )
+              expect(existsSync(fxFile)).toBe(true)
 
-            // Invalid journal index dies
-            writeFileSync(`${fxFile}.journal`, `${JSON.stringify({ index: 99, call: dummyCall })}\n`)
-            const badIdx = yield* Effect.exit(FixtureStore.makeFile(fxFile))
-            expect(Exit.isFailure(badIdx)).toBe(true)
-            rmSync(`${fxFile}.journal`, { force: true })
+              // Truncated trailing journal line recovery
+              writeFileSync(`${fxFile}.journal`, `${JSON.stringify({ index: 1, call: dummyCall })}\n{"partial":true`)
+              const recovered = yield* FixtureStore.makeFile(fxFile)
+              const loaded = yield* recovered.load()
+              expect(Option.isSome(loaded) && loaded.value.calls.length === 2).toBe(true)
+              yield* recovered.flush()
 
-            // Non-regular journal (directory) refused
-            const badJournalFx = join(dir, "bad-journal.json")
-            mkdirSync(`${badJournalFx}.journal`)
-            const symEx = yield* Effect.exit(FixtureStore.makeFile(badJournalFx))
-            expect(Exit.isFailure(symEx)).toBe(true)
-          } finally {
-            rmSync(dir, { recursive: true, force: true })
-          }
-        }).pipe(Effect.provide(NodeHost.layer))
-    ), 120_000)
+              // Invalid journal index dies
+              writeFileSync(`${fxFile}.journal`, `${JSON.stringify({ index: 99, call: dummyCall })}\n`)
+              const badIdx = yield* Effect.exit(FixtureStore.makeFile(fxFile))
+              expect(Exit.isFailure(badIdx)).toBe(true)
+              rmSync(`${fxFile}.journal`, { force: true })
+
+              // Non-regular journal (directory) refused
+              const badJournalFx = join(dir, "bad-journal.json")
+              mkdirSync(`${badJournalFx}.journal`)
+              const symEx = yield* Effect.exit(FixtureStore.makeFile(badJournalFx))
+              expect(Exit.isFailure(symEx)).toBe(true)
+            } finally {
+              rmSync(dir, { recursive: true, force: true })
+            }
+          }).pipe(Effect.provide(NodeHost.layer))
+      ),
+    120_000
+  )
 
   it("fuzzes Faults (process kill, reparent, waitFor, skewClock) and TestLayers (unit, poisoned)", () =>
     property(
@@ -562,27 +625,31 @@ describe("Wave-6 testing recordings, stores, faults & test layers fuzz propertie
 
             expect((fs as unknown as Record<string, unknown>).then).toBeUndefined()
             expect((fs as unknown as Record<symbol, unknown>)[Symbol.toStringTag]).toBeUndefined()
-            for (const touch of [
-              () => (fs as unknown as Record<string, unknown>).exists,
-              () => (p as unknown as Record<string, unknown>).sep,
-              () => (spawner as unknown as Record<string, unknown>).spawn,
-              () => (jj as unknown as Record<string, unknown>).status,
-              () => (http as unknown as Record<string, unknown>).execute,
-              () => clk.currentTimeMillisUnsafe(),
-              () => clk.currentTimeNanosUnsafe(),
-              () => clk.monotonicTimeNanosUnsafe(),
-              () => rnd.nextIntUnsafe(),
-              () => rnd.nextDoubleUnsafe()
-            ]) {
+            for (
+              const touch of [
+                () => (fs as unknown as Record<string, unknown>).exists,
+                () => (p as unknown as Record<string, unknown>).sep,
+                () => (spawner as unknown as Record<string, unknown>).spawn,
+                () => (jj as unknown as Record<string, unknown>).status,
+                () => (http as unknown as Record<string, unknown>).execute,
+                () => clk.currentTimeMillisUnsafe(),
+                () => clk.currentTimeNanosUnsafe(),
+                () => clk.monotonicTimeNanosUnsafe(),
+                () => rnd.nextIntUnsafe(),
+                () => rnd.nextDoubleUnsafe()
+              ]
+            ) {
               expect(touch).toThrow()
             }
-            for (const eff of [
-              clk.currentTimeMillis,
-              clk.currentTimeNanos,
-              clk.monotonicTimeNanos,
-              clk.sleep(1 as never),
-              Stream.runDrain(model.stream({ modelId: "m", system: [], messages: [], tools: [], params: {} }))
-            ]) {
+            for (
+              const eff of [
+                clk.currentTimeMillis,
+                clk.currentTimeNanos,
+                clk.monotonicTimeNanos,
+                clk.sleep(1 as never),
+                Stream.runDrain(model.stream({ modelId: "m", system: [], messages: [], tools: [], params: {} }))
+              ]
+            ) {
               const ex = yield* Effect.exit(eff)
               expect(Exit.isFailure(ex)).toBe(true)
               if (Exit.isFailure(ex)) {

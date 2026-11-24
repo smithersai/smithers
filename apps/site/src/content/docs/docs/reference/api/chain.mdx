@@ -59,9 +59,11 @@ no promise.
 
 ## Composing a run
 
-`Chain.run` needs four services (`Journal`, `Catalog`, `Author`, and
-`ScriptRunner`) and picks up `Authorize` and `Steering` when they are
-mounted.
+`Chain.run` needs five services (`Journal`, `Catalog`, `Author`,
+`ScriptRunner`, and `Authorize`) and picks up `Steering` when it is mounted.
+The authorization seam is required: a host with no policy mounts
+`Authorize.layerAllowAll` by name, and a chain composed without any seam does
+not compile.
 
 Neither `Chain` nor `ModelAuthor` writes a prompt. `Chain.run` defaults
 `prefix` to the empty string and `ModelAuthor` sends no system part for an
@@ -71,16 +73,18 @@ call. Assemble the prefix from the mounted catalog with `Prompt.forCatalog`
 and pass it to every `Chain.run`.
 
 ```ts
-import { Catalog, Chain, Journal, ModelAuthor, Prompt, QuickJsRunner } from "@smthrs/chain"
+import { Authorize, Catalog, Chain, Journal, ModelAuthor, Prompt, QuickJsRunner } from "@smthrs/chain"
 import { Effect, Layer } from "effect"
 
-// `ModelAuthor.layer` needs `Model.Model`, and `Layer.mergeAll` does not
-// satisfy one sibling from another: the model layer goes UNDER the author
-// layer, not beside it.
-const author = ModelAuthor.layer(authorConfig).pipe(Layer.provide(modelLayer))
+// `ModelAuthor.layer` needs the durable `ModelAuthor.Step` port, and
+// `Layer.mergeAll` does not satisfy one sibling from another: the step
+// layer goes UNDER the author layer, not beside it. `stepLayer` is the
+// host's binding of the port to its durable engine.
+const author = ModelAuthor.layer(authorConfig).pipe(Layer.provide(stepLayer))
 
 const layers = Layer.mergeAll(
   Journal.layerMemory(),
+  Authorize.layerAllowAll,
   author,
   QuickJsRunner.layer(),
   Catalog.layer(Catalog.withSystem(hostEntries))
@@ -136,9 +140,17 @@ The chain trampoline: bootstrap, links, gates, and prefix replay.
   - `prefix?: string`: the stable fixed prefix handed to the author seat.
   - `maxLinks?: number`: link budget, default `defaultMaxLinks`.
   - `maxCallsPerLink?: number`: per-link call budget, default
-    `defaultMaxCallsPerLink`. Both budgets must be non-negative integers; a
-    `NaN`, negative, fractional, or infinite budget fails the run with
-    `invalid_journal` before it writes anything.
+    `defaultMaxCallsPerLink`.
+  - `maxTotalCalls?: number`: the call budget of the whole tree. This run
+    and every sub-chain it spawns, at any depth, spend from it. It defaults
+    to `maxLinks` times `maxCallsPerLink`, the most this run could spend
+    alone, so spawning sub-chains never buys more calls. A live call past it
+    is rejected as a `fuel` observation and the chain that made it parks
+    with `quota`. A resumed run starts from the settled calls its journal
+    already holds for the tree. A sub-chain ignores the option. Every budget
+    must be a non-negative integer; a `NaN`, negative, fractional, or
+    infinite budget fails the run with `invalid_journal` before it writes
+    anything.
   - `context?: ReadonlyArray<string>`: caller-supplied context lines
     appended after the goal in harness-driven author calls.
   - `chain?: string`: the journal scope this run owns (default `""`, the
@@ -186,6 +198,7 @@ The chain trampoline: bootstrap, links, gates, and prefix replay.
     | Catalog.Catalog
     | Author.Author
     | ScriptRunner.ScriptRunner
+    | Authorize.Authorize
   ```
 
   A script failure, a handler failure, and an unserializable value become
@@ -438,13 +451,31 @@ pins, and the pure prompt module never imports the runtime.
 
 ## `ModelAuthor`
 
-The model-backed author seat over `Model.Model` from
-[@smthrs/model](/docs/reference/api/model/).
+The model-backed author seat. It never calls a model itself: it asks the
+`Step` port to run one model call as a durable step, and the host binds that
+port to its durable engine (`ModelStep.run` from `@smthrs/agent`, one
+`@smthrs/flow` action per call). The engine supplies the retries, the
+deadline, and the sealed record a resumed run replays, so a transient
+provider failure never reaches the chain.
 
 ### Models
 
-- `Config`: `{ modelId: string, params?: ModelRequest.GenerationParams }`.
-  Which model the seat calls, and the generation parameters it calls with.
+- `Config`: `{ modelId: string, params?: ModelRequest.GenerationParams,
+  stepName?: string }`. Which model the seat calls, the generation
+  parameters it calls with, and the name its durable step runs under.
+- `StepCall`: `{ name: string, request: ModelRequest.ModelRequest }`. One
+  model call for the durable engine to run. Both fields are stable for one
+  author input, so an engine that keys a step on them replays the recorded
+  answer.
+- `StepService`: `{ run(call: StepCall): Effect<ReadonlyArray<ModelEvent>,
+  unknown> }`. The port's one operation: run the call as one durable step
+  and return the provider's events in order. The binding owns retries and
+  the deadline, and fails only once its engine has given up.
+
+### Services
+
+- `Step extends Context.Service`: the durable model step port, key
+  `/chain/ModelAuthor/Step`.
 
 ### Constructors and layers
 
@@ -456,13 +487,21 @@ The model-backed author seat over `Model.Model` from
   all, and an empty context becomes one placeholder line, because providers
   reject empty system blocks and empty user content outright. The request
   declares no tools and `toolChoice: "none"`.
-- `make(config): Effect<Author.Service, never, Model.Model>`: builds the
-  author seat over the ambient model. A stream that settles with a stop
+- `defaultStepName = "chain/author/model"`: the step name used when
+  `Config.stepName` is unset.
+- `make(config): Effect<Author.Service, never, Step>`: builds the author
+  seat over the ambient step port. The seat makes one step call per author
+  input and never retries it. A stream that settles with a stop
   reason other than `stop` fails `author_unavailable` with the stop reason
   as `cause`; a settlement with no visible text fails with cause `no_text`;
   other model failures carry their code (or tag, or `unknown`) as `cause`.
-- `layer(config): Layer.Layer<Author.Author, never, Model.Model>`: the
-  production author layer. `Author` from `Model.Model`.
+- `layer(config): Layer.Layer<Author.Author, never, Step>`: the production
+  author layer. `Author` from the durable `Step` port.
+- `layerStepUnsealed: Layer.Layer<Step, never, Model.Model>`: binds the port
+  straight to the ambient `Model.Model` from [@smthrs/model](/docs/reference/api/model/),
+  with no engine between them: one stream per call, no retry, nothing
+  sealed. For tests, replay models, and a host whose `Model.Model` is itself
+  a sealed step (`ModelStep.model` from `@smthrs/agent`).
 
 ## `Script`
 
@@ -877,7 +916,10 @@ primitive.
   - `maxDepth?: number`: maximum nesting depth, counted in derived child
     segments.
   - `maxLinks?: number`, `maxCallsPerLink?: number`, `prefix?: string`:
-    per-child budgets and prefix, independent of the parent's.
+    per-child budgets and prefix, independent of the parent's. Whatever
+    they allow, every child also spends the root's tree budget
+    (`Chain.Options.maxTotalCalls`) and runs under the root's `Authorize`
+    seam.
 
 ### Constructors and layers
 
@@ -957,7 +999,8 @@ Gate 4's seam: per-call authorization against declared capabilities.
   claim asks. The rules are copied when the layer is constructed, so a later
   edit of the caller's array changes no verdict.
 - `layerAllowAll: Layer.Layer<Authorize>`: an allow-everything seam for
-  hosts that enforce elsewhere.
+  hosts that enforce elsewhere. `Chain.run` requires a seam, so a host with
+  no policy mounts this one explicitly.
 
 ## `Steering`
 

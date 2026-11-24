@@ -64,8 +64,7 @@
       "path": ".smithers/flows/pr-triage/flow.mdx",
       "capabilities": [
         "fs:read:**",
-        "fs:write:.triage/report.json",
-        "proc:spawn:rg *"
+        "fs:write:.triage/report.json"
       ],
       "model": "luna",
       "modelInvocable": true,
@@ -100,12 +99,7 @@
       "path": ".smithers/flows/issue-triage/flow.mdx",
       "capabilities": [
         "fs:read:**",
-        "fs:write:.triage/report.json",
-        "proc:spawn:rg *",
-        "proc:spawn:git status *",
-        "proc:spawn:git diff *",
-        "proc:spawn:pnpm test *",
-        "proc:spawn:pnpm exec vitest *"
+        "fs:write:.triage/report.json"
       ],
       "model": "luna",
       "modelInvocable": true,
@@ -177,6 +171,7 @@
         "proc:spawn:gh api *",
         "proc:spawn:node /*/flows/issue-claim/github-proxy.mjs --ensure",
         "proc:spawn:node /*/flows/issue-claim/issue-claim.mjs *",
+        "proc:spawn:node /*/flows/land/review.mjs --require *",
         "proc:spawn:jj -R *",
         "proc:spawn:lockf *",
         "proc:spawn:pnpm *",
@@ -1296,10 +1291,7 @@
       "path": ".smithers/flows/issue/poc/flow.mdx",
       "capabilities": [
         "fs:read:**",
-        "fs:write:**",
-        "proc:spawn:rg *",
-        "proc:spawn:pnpm test *",
-        "proc:spawn:npm test *"
+        "fs:write:**"
       ],
       "model": "coding/poc",
       "modelInvocable": true,
@@ -1333,10 +1325,7 @@
       "kind": "mdx",
       "path": ".smithers/flows/issue/repro/flow.mdx",
       "capabilities": [
-        "fs:read:**",
-        "proc:spawn:rg *",
-        "proc:spawn:pnpm test *",
-        "proc:spawn:npm test *"
+        "fs:read:**"
       ],
       "model": "repository/research",
       "modelInvocable": true,
@@ -1943,7 +1932,7 @@
       "kind": "ts",
       "path": ".smithers/flows/telegram-inbox/flow.ts",
       "capabilities": [
-        "net:post:**"
+        "net:post:https://api.telegram.org/**"
       ],
       "model": null,
       "modelInvocable": false,

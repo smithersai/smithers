@@ -294,6 +294,28 @@ The `Plugins` service tag, `layer`, and `layerNoop` hold one dispatcher over the
 process-wide augmented `FlowsHooks`. A host typed against a separate hook
 interface holds its `Service<H>` directly and uses none of the three.
 
+### Observability
+
+The kernel records spans and counters through Effect's `Tracer` and `Metric`
+services; a host exports them with its own telemetry layer. Attributes carry
+plugin names, hook names, failure codes, refusal reasons and counts, never a
+handler argument, a config value or a failure's `cause`.
+
+| Span              | Around                             | Attributes                                                         |
+| ----------------- | ---------------------------------- | ------------------------------------------------------------------ |
+| `Plugins.hook`    | One handler run, timeout included. | `plugin.name`, `plugin.hook`; `error.code` when the handler fails. |
+| `Plugins.resolve` | `Resolve.resolve`.                 | `error.code` when resolution fails.                                |
+| `Plugins.load`    | `Load.load`.                       | `plugin.candidates`, `plugin.loaded`, `plugin.refused`.            |
+
+| Counter                       | Attributes                                                        |
+| ----------------------------- | ----------------------------------------------------------------- |
+| `smithers_plugin_hook_runs`   | `hook`, `outcome`: `success` or a `PluginError` code.             |
+| `smithers_plugin_resolutions` | `outcome`: `success` or a `PluginError` code.                     |
+| `smithers_plugin_loads`       | `outcome`: `loaded` or a refusal reason, one count per candidate. |
+
+A handler that outlives `handlerTimeout` ends its span with `error.code`
+`hook_failed`. An interrupted handler ends its span and is not counted.
+
 ## Resolve
 
 ```ts
@@ -606,8 +628,15 @@ A `uses` entry owned by another plugin requires that owner's id in
 refuses `missing_dependency` at `uses[n]`. Own flows and core catalog flows
 need no plugin dependency. Tiers rank `built-in`, `repository`, then `personal`. A repository or personal
 plugin owns only flow tags starting with its `<id>/` prefix. Collision refusals
-name both plugins and their tiers. Refusals are ordered by plugin id. `maximumHeaderEntries` (6) bounds
-`shell.header` across all plugins. The checks and their reasons are listed in
+name both plugins and their tiers. A candidate refused at decode or at
+`requires.api` still holds its id: a plugin of the same or a lower tier sharing
+it refuses `conflict` at `id`, so a built-in that stops loading never hands its
+namespace to a repository or personal plugin. `maximumCandidates` (1,024) bounds
+the candidates one call considers. Past it, candidates are kept by tier and then
+input order; the rest refuse `invalid` with no `path` before their manifests are
+decoded, and hold their ids the same way. Ordering is iterative, so a long
+`requires.plugins` chain cannot overflow the call stack. Refusals are ordered by
+plugin id. `maximumHeaderEntries` (6) bounds `shell.header` across all plugins. The checks and their reasons are listed in
 [Plugin manifests](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/plugin/docs/concepts/manifests.md#what-the-loader-checks).
 
 A plugin layer must have a callable `build`. Missing or non-callable builders
@@ -639,6 +668,13 @@ reported as `layer_failed` with the plugin's name, like any other build failure.
 | `Resolved`, `TypeName`, `Json`                   | The resolved schema shape.                                                                              |
 | `maximumBytes`, `maximumDepth`                   | 16,384 bytes, 32 levels.                                                                                |
 | `budget()`, `Budget`, `maximumInlinedBytes`      | A `{ remaining }` count of inlined bytes several `resolve` calls share: 65,536 bytes.                   |
+
+`property` and `at` look in the schema's own `properties` and `items` first,
+then in every `oneOf` and `anyOf` member. When several members declare the
+step, the answer is an `anyOf` of their schemas, so a literal event arg or key
+field is accepted when any declaring member admits it: `{ kind: "b" }` loads
+against a payload discriminated on `kind`, and `{ kind: "c" }` refuses
+`invalid`.
 
 The admitted keywords are `type`, `properties`, `required`,
 `additionalProperties` (boolean only), `items` (one schema), `enum`, `const`,

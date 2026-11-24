@@ -139,10 +139,16 @@ describe("Wave-6 testing scripts, models, server, CLI, process table & CLI drive
             }]
           })
 
-          const wrapPayload = (teaching: string, payload: Record<string, unknown>): ReadonlyArray<BuiltinScript.ChatMessage> => {
+          const wrapPayload = (
+            teaching: string,
+            payload: Record<string, unknown>
+          ): ReadonlyArray<BuiltinScript.ChatMessage> => {
             if (s.payloadStyle === 0) {
               return [
-                { role: "system", content: [{ text: `${teaching}\nThe task for this run: ${JSON.stringify(payload)} trailing` }] },
+                {
+                  role: "system",
+                  content: [{ text: `${teaching}\nThe task for this run: ${JSON.stringify(payload)} trailing` }]
+                },
                 { role: "user", content: "go" }
               ]
             }
@@ -264,7 +270,9 @@ describe("Wave-6 testing scripts, models, server, CLI, process table & CLI drive
           }
           const r11 = script.respond([{
             role: "system",
-            content: `${BuiltinScript.teachings["wiki/review-page"]}\nThe task for this run:\n${JSON.stringify(wikiEvidence)}`
+            content: `${BuiltinScript.teachings["wiki/review-page"]}\nThe task for this run:\n${
+              JSON.stringify(wikiEvidence)
+            }`
           }])
           expect(r11?.name).toBe("wiki/review-page")
           // Malformed wiki evidence returns undefined
@@ -284,8 +292,14 @@ describe("Wave-6 testing scripts, models, server, CLI, process table & CLI drive
           expect(BuiltinScript.isJudgement({ needed_1: {} })).toBe(true)
           expect(BuiltinScript.isJudgement({ unrelated: {} })).toBe(false)
           expect(BuiltinScript.isJudgement(null)).toBe(false)
-          expect(BuiltinScript.answer("complete", { type: "boolean" })).toStrictEqual({ type: "boolean", probability: 0.99 })
-          expect(BuiltinScript.answer("overclaims", { type: "boolean" })).toStrictEqual({ type: "boolean", probability: 0.01 })
+          expect(BuiltinScript.answer("complete", { type: "boolean" })).toStrictEqual({
+            type: "boolean",
+            probability: 0.99
+          })
+          expect(BuiltinScript.answer("overclaims", { type: "boolean" })).toStrictEqual({
+            type: "boolean",
+            probability: 0.01
+          })
           expect(BuiltinScript.answer("confident", { type: "score", criteria: ["a", "b", "c"] })).toStrictEqual({
             type: "score",
             score: 2
@@ -403,12 +417,14 @@ describe("Wave-6 testing scripts, models, server, CLI, process table & CLI drive
               evaluate: () => {
                 liveCalls++
                 if (s.shouldFail) {
-                  return Effect.fail(new Evaluator.EvaluatorError({
-                    code: s.errorCode,
-                    message: "eval failed",
-                    status: 503,
-                    resetAtEpochMillis: 12345
-                  }))
+                  return Effect.fail(
+                    new Evaluator.EvaluatorError({
+                      code: s.errorCode,
+                      message: "eval failed",
+                      status: 503,
+                      resetAtEpochMillis: 12345
+                    })
+                  )
                 }
                 return Effect.succeed({
                   answers: { complete: { type: "boolean", probability: 0.9 } },
@@ -428,7 +444,9 @@ describe("Wave-6 testing scripts, models, server, CLI, process table & CLI drive
             )
             const evalReq: Evaluator.Request = {
               state: { key: s.key },
-              questions: { complete: { type: "boolean", instructions: "done?", criteria: { true: "yes", false: "no" } } }
+              questions: {
+                complete: { type: "boolean", instructions: "done?", criteria: { true: "yes", false: "no" } }
+              }
             }
             const res1 = yield* Effect.exit(cached.evaluate(evalReq))
             const res2 = yield* Effect.exit(
@@ -464,322 +482,418 @@ describe("Wave-6 testing scripts, models, server, CLI, process table & CLI drive
         })
     ), 120_000)
 
-  it("fuzzes ModelServer HTTP routes, SSE streaming, heartbeats, errors, and ModelServerCli parse/serve/run", () =>
-    property(
-      Arbitrary.all({
-        text: safeWord,
-        toolName: safeWord,
-        holdKey: safeWord,
-        stopReason: Arbitrary.schema(Schema.Literals(["stop", "length", "tool-calls", "content-filter", "error", "aborted", "unknown"])),
-        evalStatusCode: Arbitrary.schema(Schema.Literals(["invalid_question", "timeout", "unreachable"])),
-        withHeartbeat: bool
-      }),
-      Math.min(ioExecs, 10),
-      (s) =>
-        Effect.gen(function*() {
-          const dir = mkdtempSync(join(tmpdir(), "testing-wave6-modelserver-"))
-          try {
-            const cleanKey = s.holdKey.replace(/[^A-Za-z0-9._-]/g, "_")
-            const gate = yield* TurnGate.make()
-            const log = yield* TurnLog.make()
-
-            const backingModel = Model.make({
-              stream: (req) => {
-                if (req.modelId === "die-before") return Stream.die(new Error("unrecorded")) as Stream.Stream<ModelEvent.ModelEvent, ModelError>
-                if (req.modelId === "die-mid") {
-                  return Stream.concat(
-                    Stream.fromIterable<ModelEvent.ModelEvent>([{ type: "text-delta", id: "1", text: "part" }]),
-                    Stream.die(new Error("mid-die"))
-                  )
-                }
-                if (req.modelId === "fail-before") {
-                  return Stream.fail(new ModelError({ code: "rate_limited", providerCode: "429", message: "slow down", httpStatus: 429 }))
-                }
-                if (req.modelId === "fail-mid") {
-                  return Stream.concat(
-                    Stream.fromIterable<ModelEvent.ModelEvent>([{ type: "text-delta", id: "1", text: "part" }]),
-                    Stream.fail(new ModelError({ code: "unknown", message: "mid-fail" }))
-                  )
-                }
-                if (req.modelId === "held-heartbeat") {
-                  return Stream.unwrap(
-                    Effect.sleep("40 millis").pipe(
-                      Effect.as(Stream.fromIterable<ModelEvent.ModelEvent>([
-                        { type: "text-delta", id: "1", text: s.text },
-                        { type: "settle", stopReason: "stop" }
-                      ]))
-                    )
-                  )
-                }
-                return Stream.fromIterable<ModelEvent.ModelEvent>([
-                  { type: "text-start", id: "1" },
-                  { type: "text-delta", id: "1", text: s.text },
-                  { type: "tool-call-start", id: "tc1", name: s.toolName },
-                  { type: "tool-call-delta", id: "tc1", arguments: "{\"a\":1}" },
-                  { type: "usage", inputTokens: 12, outputTokens: 5, totalTokens: 17, cachedInputTokens: 3, costUsd: 0.001 },
-                  { type: "settle", stopReason: s.stopReason, responseId: "resp-1", servedTier: "default" },
-                  { type: "usage", inputTokens: 12, outputTokens: 5, totalTokens: 17 }
-                ])
-              }
-            })
-
-            const backingEvaluator: Evaluator.Evaluator = {
-              evaluate: (req) => {
-                if ("die" in req.questions) return Effect.die(new Error("unrecorded-eval"))
-                if ("fail" in req.questions) {
-                  return Effect.fail(new Evaluator.EvaluatorError({ code: s.evalStatusCode, message: "eval err" }))
-                }
-                return Effect.succeed({
-                  answers: { complete: { type: "boolean", probability: 0.95 } },
-                  usage: { inputTokens: 5, outputTokens: 1 },
-                  confidence: { complete: 0.95 },
-                  latencyMs: 0
-                })
-              }
-            }
-
-            const scope = yield* Scope.make()
+  it(
+    "fuzzes ModelServer HTTP routes, SSE streaming, heartbeats, errors, and ModelServerCli parse/serve/run",
+    () =>
+      property(
+        Arbitrary.all({
+          text: safeWord,
+          toolName: safeWord,
+          holdKey: safeWord,
+          stopReason: Arbitrary.schema(
+            Schema.Literals(["stop", "length", "tool-calls", "content-filter", "error", "aborted", "unknown"])
+          ),
+          evalStatusCode: Arbitrary.schema(Schema.Literals(["invalid_question", "timeout", "unreachable"])),
+          withHeartbeat: bool
+        }),
+        Math.min(ioExecs, 10),
+        (s) =>
+          Effect.gen(function*() {
+            const dir = mkdtempSync(join(tmpdir(), "testing-wave6-modelserver-"))
             try {
-              const server = yield* Scope.provide(
-                ModelServer.make({
-                  model: TurnLog.model(backingModel, { log, step: (r) => r.modelId }),
-                  evaluator: backingEvaluator,
-                  gate,
-                  log,
-                  heartbeatMs: s.withHeartbeat ? 15 : 15_000
-                }),
-                scope
-              )
+              const cleanKey = s.holdKey.replace(/[^A-Za-z0-9._-]/g, "_")
+              const gate = yield* TurnGate.make()
+              const log = yield* TurnLog.make()
 
-              // 1. Health + 404 + control routes
-              const health = yield* Effect.promise(() => fetch(`${server.url}${ModelServer.paths.health}`))
-              expect(health.status).toBe(200)
-              const notFound = yield* Effect.promise(() => fetch(`${server.url}/nope`))
-              expect(notFound.status).toBe(404)
-              const heldRes = yield* Effect.promise(() => fetch(`${server.url}${ModelServer.paths.held}`))
-              expect(heldRes.status).toBe(200)
-              const relRes = yield* Effect.promise(() =>
-                fetch(`${server.url}${ModelServer.paths.release}${cleanKey}`, { method: "POST" })
-              )
-              expect(relRes.status).toBe(204)
-
-              // 2. Chat valid with all message roles + max_completion_tokens alias
-              const chatBody = {
-                model: "ok-model",
-                stream: true,
-                max_completion_tokens: 64,
-                temperature: 0.5,
-                top_p: 0.9,
-                reasoning_effort: "low",
-                tools: [{ type: "function", function: { name: s.toolName, description: "d", parameters: {} } }],
-                messages: [
-                  { role: "system", content: "sys" },
-                  { role: "user", content: "hi" },
-                  { role: "assistant", content: "thinking", tool_calls: [{ id: "tc1", type: "function", function: { name: s.toolName, arguments: "{}" } }] },
-                  { role: "tool", tool_call_id: "tc1", content: "r1" },
-                  { role: "tool", tool_call_id: "tc2", content: "r2" }
-                ]
-              }
-              const okChat = yield* Effect.promise(() =>
-                fetch(`${server.url}${ModelServer.paths.chat}`, {
-                  method: "POST",
-                  headers: { "content-type": "application/json" },
-                  body: JSON.stringify(chatBody)
-                }).then((r) => r.text().then((body) => ({ status: r.status, body })))
-              )
-              expect(okChat.status).toBe(200)
-              expect(okChat.body).toContain("data: [DONE]")
-
-              // Heartbeat SSE comment when slow
-              if (s.withHeartbeat) {
-                const hbChat = yield* Effect.promise(() =>
-                  fetch(`${server.url}${ModelServer.paths.chat}`, {
-                    method: "POST",
-                    body: JSON.stringify({ model: "held-heartbeat", stream: true, messages: [{ role: "user", content: "wait" }] })
-                  }).then((r) => r.text())
-                )
-                expect(hbChat).toContain(": held")
-              }
-
-              // Chat 400s (bad JSON, response_format)
-              const badJson = yield* Effect.promise(() =>
-                fetch(`${server.url}${ModelServer.paths.chat}`, { method: "POST", body: "{not-json" })
-              )
-              expect(badJson.status).toBe(400)
-              const respFmt = yield* Effect.promise(() =>
-                fetch(`${server.url}${ModelServer.paths.chat}`, {
-                  method: "POST",
-                  body: JSON.stringify({
-                    model: "ok",
-                    stream: true,
-                    response_format: { type: "json_object" },
-                    messages: [{ role: "user", content: "hi" }]
-                  })
-                })
-              )
-              expect(respFmt.status).toBe(400)
-
-              // Chat 501 / mid-stream die / 429 / mid-stream error
-              for (const [m, expectedStatus] of [["die-before", 501], ["die-mid", 200], ["fail-before", 429], ["fail-mid", 200]] as const) {
-                const res = yield* Effect.promise(() =>
-                  fetch(`${server.url}${ModelServer.paths.chat}`, {
-                    method: "POST",
-                    body: JSON.stringify({ model: m, stream: true, messages: [{ role: "user", content: "x" }] })
-                  })
-                )
-                expect(res.status).toBe(expectedStatus)
-                yield* Effect.promise(() => res.text())
-              }
-
-              // Evaluation routes (200, 400, 501, error)
-              const evOk = yield* Effect.promise(() =>
-                fetch(`${server.url}${ModelServer.paths.evaluation}`, {
-                  method: "POST",
-                  body: JSON.stringify({ state: { a: 1 }, questions: { complete: { type: "boolean", instructions: "q", criteria: { true: "yes", false: "no" } } } })
-                })
-              )
-              expect(evOk.status).toBe(200)
-              const evBad = yield* Effect.promise(() =>
-                fetch(`${server.url}${ModelServer.paths.evaluation}`, { method: "POST", body: "{}" })
-              )
-              expect(evBad.status).toBe(400)
-              const evDie = yield* Effect.promise(() =>
-                fetch(`${server.url}${ModelServer.paths.evaluation}`, {
-                  method: "POST",
-                  body: JSON.stringify({ state: {}, questions: { die: { type: "boolean", instructions: "q", criteria: { true: "yes", false: "no" } } } })
-                })
-              )
-              expect(evDie.status).toBe(501)
-              const evFail = yield* Effect.promise(() =>
-                fetch(`${server.url}${ModelServer.paths.evaluation}`, {
-                  method: "POST",
-                  body: JSON.stringify({ state: {}, questions: { fail: { type: "boolean", instructions: "q", criteria: { true: "yes", false: "no" } } } })
-                })
-              )
-              expect([400, 502, 504]).toContain(evFail.status)
-
-              // Turns summary
-              const turnsRes = (yield* Effect.promise(() =>
-                fetch(`${server.url}${ModelServer.paths.turns}`).then((r) => r.json())
-              )) as { total: number }
-              expect(turnsRes.total).toBeGreaterThan(0)
-
-              // ModelServerCli.parse validation + serve + run (record from upstream server, then replay!)
-              const flowPath = join(dir, "flow.ts")
-              writeFileSync(flowPath, "export default () => Request.call(input)")
-              const cfgPath = join(dir, "script-config.json")
-              writeFileSync(cfgPath, JSON.stringify({ greeting: s.text, todoFlow: "flow.ts" }))
-              const badCfgPath = join(dir, "bad.json")
-              writeFileSync(badCfgPath, "[]")
-              const missingFlowCfg = join(dir, "missing-flow.json")
-              writeFileSync(missingFlowCfg, JSON.stringify({ todoFlow: "nope.ts" }))
-
-              const parsedBuiltin = ModelServerCli.parse(
-                ["--script", "builtin", "--script-config", cfgPath, "--hold", `HOLD:(${cleanKey})`, "--normalize", "foo", "--host", "127.0.0.1", "--port", "0", "--trace", join(dir, "trace.jsonl"), "--trace-messages"],
-                {}
-              )
-              expect(parsedBuiltin.script?.greeting).toBe(s.text)
-
-              for (const badArgs of [
-                ["--bogus"],
-                ["--fixture"],
-                ["--script", "other"],
-                ["--script-config", cfgPath],
-                ["--trace-messages", "--script", "builtin"],
-                [],
-                ["--fixture", "a.json", "--upstream", "http://127.0.0.1:1"],
-                ["--script", "builtin", "--port", "abc"],
-                ["--fixture", "a.json", "--record"],
-                ["--fixture", "a.json", "--record", "--upstream", "http://127.0.0.1:1"],
-                ["--fixture", "a.json", "--record", "--upstream", "http://127.0.0.1:1", "--key-env", "MISSING_KEY"],
-                ["--script", "builtin", "--hold", "["],
-                ["--script", "builtin", "--hold", "no-group"],
-                ["--script", "builtin", "--script-config", join(dir, "missing.json")],
-                ["--script", "builtin", "--script-config", badCfgPath],
-                ["--script", "builtin", "--script-config", missingFlowCfg]
-              ]) {
-                expect(() => ModelServerCli.parse(badArgs, {})).toThrow()
-              }
-
-              // ModelServerCli.run in --record mode against our real loopback server, then replay!
-              const fixturePath = join(dir, "recorded.json")
-              let stopRec!: () => void
-              const stoppedRec = new Promise<void>((resolve) => {
-                stopRec = resolve
+              const backingModel = Model.make({
+                stream: (req) => {
+                  if (req.modelId === "die-before") {
+                    return Stream.die(new Error("unrecorded")) as Stream.Stream<ModelEvent.ModelEvent, ModelError>
+                  }
+                  if (req.modelId === "die-mid") {
+                    return Stream.concat(
+                      Stream.fromIterable<ModelEvent.ModelEvent>([{ type: "text-delta", id: "1", text: "part" }]),
+                      Stream.die(new Error("mid-die"))
+                    )
+                  }
+                  if (req.modelId === "fail-before") {
+                    return Stream.fail(
+                      new ModelError({
+                        code: "rate_limited",
+                        providerCode: "429",
+                        message: "slow down",
+                        httpStatus: 429
+                      })
+                    )
+                  }
+                  if (req.modelId === "fail-mid") {
+                    return Stream.concat(
+                      Stream.fromIterable<ModelEvent.ModelEvent>([{ type: "text-delta", id: "1", text: "part" }]),
+                      Stream.fail(new ModelError({ code: "unknown", message: "mid-fail" }))
+                    )
+                  }
+                  if (req.modelId === "held-heartbeat") {
+                    return Stream.unwrap(
+                      Effect.sleep("40 millis").pipe(
+                        Effect.as(Stream.fromIterable<ModelEvent.ModelEvent>([
+                          { type: "text-delta", id: "1", text: s.text },
+                          { type: "settle", stopReason: "stop" }
+                        ]))
+                      )
+                    )
+                  }
+                  return Stream.fromIterable<ModelEvent.ModelEvent>([
+                    { type: "text-start", id: "1" },
+                    { type: "text-delta", id: "1", text: s.text },
+                    { type: "tool-call-start", id: "tc1", name: s.toolName },
+                    { type: "tool-call-delta", id: "tc1", arguments: "{\"a\":1}" },
+                    {
+                      type: "usage",
+                      inputTokens: 12,
+                      outputTokens: 5,
+                      totalTokens: 17,
+                      cachedInputTokens: 3,
+                      costUsd: 0.001
+                    },
+                    { type: "settle", stopReason: s.stopReason, responseId: "resp-1", servedTier: "default" },
+                    { type: "usage", inputTokens: 12, outputTokens: 5, totalTokens: 17 }
+                  ])
+                }
               })
-              let printedUrl = ""
-              const recRun = ModelServerCli.run(
-                [
-                  "--fixture", fixturePath,
-                  "--record",
-                  "--upstream", server.url,
-                  "--upstream-model", "ok-model",
-                  "--key-env", "UP_KEY",
-                  "--normalize", "nonce-[0-9]+",
-                  "--hold", "NEVER_MATCH_([a-z]+)",
-                  "--trace", join(dir, "rec-trace.jsonl")
-                ],
-                { UP_KEY: "test-secret-key" },
-                {
-                  print: (line) => {
-                    printedUrl = (JSON.parse(line) as { url: string }).url
-                    void fetch(`${printedUrl}${ModelServer.paths.chat}`, {
+
+              const backingEvaluator: Evaluator.Evaluator = {
+                evaluate: (req) => {
+                  if ("die" in req.questions) return Effect.die(new Error("unrecorded-eval"))
+                  if ("fail" in req.questions) {
+                    return Effect.fail(new Evaluator.EvaluatorError({ code: s.evalStatusCode, message: "eval err" }))
+                  }
+                  return Effect.succeed({
+                    answers: { complete: { type: "boolean", probability: 0.95 } },
+                    usage: { inputTokens: 5, outputTokens: 1 },
+                    confidence: { complete: 0.95 },
+                    latencyMs: 0
+                  })
+                }
+              }
+
+              const scope = yield* Scope.make()
+              try {
+                const server = yield* Scope.provide(
+                  ModelServer.make({
+                    model: TurnLog.model(backingModel, { log, step: (r) => r.modelId }),
+                    evaluator: backingEvaluator,
+                    gate,
+                    log,
+                    heartbeatMs: s.withHeartbeat ? 15 : 15_000
+                  }),
+                  scope
+                )
+
+                // 1. Health + 404 + control routes
+                const health = yield* Effect.promise(() => fetch(`${server.url}${ModelServer.paths.health}`))
+                expect(health.status).toBe(200)
+                const notFound = yield* Effect.promise(() => fetch(`${server.url}/nope`))
+                expect(notFound.status).toBe(404)
+                const heldRes = yield* Effect.promise(() => fetch(`${server.url}${ModelServer.paths.held}`))
+                expect(heldRes.status).toBe(200)
+                const relRes = yield* Effect.promise(() =>
+                  fetch(`${server.url}${ModelServer.paths.release}${cleanKey}`, { method: "POST" })
+                )
+                expect(relRes.status).toBe(204)
+
+                // 2. Chat valid with all message roles + max_completion_tokens alias
+                const chatBody = {
+                  model: "ok-model",
+                  stream: true,
+                  max_completion_tokens: 64,
+                  temperature: 0.5,
+                  top_p: 0.9,
+                  reasoning_effort: "low",
+                  tools: [{ type: "function", function: { name: s.toolName, description: "d", parameters: {} } }],
+                  messages: [
+                    { role: "system", content: "sys" },
+                    { role: "user", content: "hi" },
+                    {
+                      role: "assistant",
+                      content: "thinking",
+                      tool_calls: [{ id: "tc1", type: "function", function: { name: s.toolName, arguments: "{}" } }]
+                    },
+                    { role: "tool", tool_call_id: "tc1", content: "r1" },
+                    { role: "tool", tool_call_id: "tc2", content: "r2" }
+                  ]
+                }
+                const okChat = yield* Effect.promise(() =>
+                  fetch(`${server.url}${ModelServer.paths.chat}`, {
+                    method: "POST",
+                    headers: { "content-type": "application/json" },
+                    body: JSON.stringify(chatBody)
+                  }).then((r) => r.text().then((body) => ({ status: r.status, body })))
+                )
+                expect(okChat.status).toBe(200)
+                expect(okChat.body).toContain("data: [DONE]")
+
+                // Heartbeat SSE comment when slow
+                if (s.withHeartbeat) {
+                  const hbChat = yield* Effect.promise(() =>
+                    fetch(`${server.url}${ModelServer.paths.chat}`, {
                       method: "POST",
-                      headers: { "content-type": "application/json" },
-                      body: JSON.stringify({ model: "client-m", stream: true, messages: [{ role: "user", content: "nonce-42" }] })
-                    }).then((r) => r.text()).then(() =>
-                      fetch(`${printedUrl}${ModelServer.paths.evaluation}`, {
+                      body: JSON.stringify({
+                        model: "held-heartbeat",
+                        stream: true,
+                        messages: [{ role: "user", content: "wait" }]
+                      })
+                    }).then((r) => r.text())
+                  )
+                  expect(hbChat).toContain(": held")
+                }
+
+                // Chat 400s (bad JSON, response_format)
+                const badJson = yield* Effect.promise(() =>
+                  fetch(`${server.url}${ModelServer.paths.chat}`, { method: "POST", body: "{not-json" })
+                )
+                expect(badJson.status).toBe(400)
+                const respFmt = yield* Effect.promise(() =>
+                  fetch(`${server.url}${ModelServer.paths.chat}`, {
+                    method: "POST",
+                    body: JSON.stringify({
+                      model: "ok",
+                      stream: true,
+                      response_format: { type: "json_object" },
+                      messages: [{ role: "user", content: "hi" }]
+                    })
+                  })
+                )
+                expect(respFmt.status).toBe(400)
+
+                // Chat 501 / mid-stream die / 429 / mid-stream error
+                for (
+                  const [m, expectedStatus] of [["die-before", 501], ["die-mid", 200], ["fail-before", 429], [
+                    "fail-mid",
+                    200
+                  ]] as const
+                ) {
+                  const res = yield* Effect.promise(() =>
+                    fetch(`${server.url}${ModelServer.paths.chat}`, {
+                      method: "POST",
+                      body: JSON.stringify({ model: m, stream: true, messages: [{ role: "user", content: "x" }] })
+                    })
+                  )
+                  expect(res.status).toBe(expectedStatus)
+                  yield* Effect.promise(() => res.text())
+                }
+
+                // Evaluation routes (200, 400, 501, error)
+                const evOk = yield* Effect.promise(() =>
+                  fetch(`${server.url}${ModelServer.paths.evaluation}`, {
+                    method: "POST",
+                    body: JSON.stringify({
+                      state: { a: 1 },
+                      questions: {
+                        complete: { type: "boolean", instructions: "q", criteria: { true: "yes", false: "no" } }
+                      }
+                    })
+                  })
+                )
+                expect(evOk.status).toBe(200)
+                const evBad = yield* Effect.promise(() =>
+                  fetch(`${server.url}${ModelServer.paths.evaluation}`, { method: "POST", body: "{}" })
+                )
+                expect(evBad.status).toBe(400)
+                const evDie = yield* Effect.promise(() =>
+                  fetch(`${server.url}${ModelServer.paths.evaluation}`, {
+                    method: "POST",
+                    body: JSON.stringify({
+                      state: {},
+                      questions: { die: { type: "boolean", instructions: "q", criteria: { true: "yes", false: "no" } } }
+                    })
+                  })
+                )
+                expect(evDie.status).toBe(501)
+                const evFail = yield* Effect.promise(() =>
+                  fetch(`${server.url}${ModelServer.paths.evaluation}`, {
+                    method: "POST",
+                    body: JSON.stringify({
+                      state: {},
+                      questions: {
+                        fail: { type: "boolean", instructions: "q", criteria: { true: "yes", false: "no" } }
+                      }
+                    })
+                  })
+                )
+                expect([400, 502, 504]).toContain(evFail.status)
+
+                // Turns summary
+                const turnsRes = (yield* Effect.promise(() =>
+                  fetch(`${server.url}${ModelServer.paths.turns}`).then((r) => r.json())
+                )) as { total: number }
+                expect(turnsRes.total).toBeGreaterThan(0)
+
+                // ModelServerCli.parse validation + serve + run (record from upstream server, then replay!)
+                const flowPath = join(dir, "flow.ts")
+                writeFileSync(flowPath, "export default () => Request.call(input)")
+                const cfgPath = join(dir, "script-config.json")
+                writeFileSync(cfgPath, JSON.stringify({ greeting: s.text, todoFlow: "flow.ts" }))
+                const badCfgPath = join(dir, "bad.json")
+                writeFileSync(badCfgPath, "[]")
+                const missingFlowCfg = join(dir, "missing-flow.json")
+                writeFileSync(missingFlowCfg, JSON.stringify({ todoFlow: "nope.ts" }))
+
+                const parsedBuiltin = ModelServerCli.parse(
+                  [
+                    "--script",
+                    "builtin",
+                    "--script-config",
+                    cfgPath,
+                    "--hold",
+                    `HOLD:(${cleanKey})`,
+                    "--normalize",
+                    "foo",
+                    "--host",
+                    "127.0.0.1",
+                    "--port",
+                    "0",
+                    "--trace",
+                    join(dir, "trace.jsonl"),
+                    "--trace-messages"
+                  ],
+                  {}
+                )
+                expect(parsedBuiltin.script?.greeting).toBe(s.text)
+
+                for (
+                  const badArgs of [
+                    ["--bogus"],
+                    ["--fixture"],
+                    ["--script", "other"],
+                    ["--script-config", cfgPath],
+                    ["--trace-messages", "--script", "builtin"],
+                    [],
+                    ["--fixture", "a.json", "--upstream", "http://127.0.0.1:1"],
+                    ["--script", "builtin", "--port", "abc"],
+                    ["--fixture", "a.json", "--record"],
+                    ["--fixture", "a.json", "--record", "--upstream", "http://127.0.0.1:1"],
+                    ["--fixture", "a.json", "--record", "--upstream", "http://127.0.0.1:1", "--key-env", "MISSING_KEY"],
+                    ["--script", "builtin", "--hold", "["],
+                    ["--script", "builtin", "--hold", "no-group"],
+                    ["--script", "builtin", "--script-config", join(dir, "missing.json")],
+                    ["--script", "builtin", "--script-config", badCfgPath],
+                    ["--script", "builtin", "--script-config", missingFlowCfg]
+                  ]
+                ) {
+                  expect(() =>
+                    ModelServerCli.parse(badArgs, {})
+                  ).toThrow()
+                }
+
+                // ModelServerCli.run in --record mode against our real loopback server, then replay!
+                const fixturePath = join(dir, "recorded.json")
+                let stopRec!: () => void
+                const stoppedRec = new Promise<void>((resolve) => {
+                  stopRec = resolve
+                })
+                let printedUrl = ""
+                const recRun = ModelServerCli.run(
+                  [
+                    "--fixture",
+                    fixturePath,
+                    "--record",
+                    "--upstream",
+                    server.url,
+                    "--upstream-model",
+                    "ok-model",
+                    "--key-env",
+                    "UP_KEY",
+                    "--normalize",
+                    "nonce-[0-9]+",
+                    "--hold",
+                    "NEVER_MATCH_([a-z]+)",
+                    "--trace",
+                    join(dir, "rec-trace.jsonl")
+                  ],
+                  { UP_KEY: "test-secret-key" },
+                  {
+                    print: (line) => {
+                      printedUrl = (JSON.parse(line) as { url: string }).url
+                      void fetch(`${printedUrl}${ModelServer.paths.chat}`, {
                         method: "POST",
                         headers: { "content-type": "application/json" },
-                        body: JSON.stringify({ state: { n: "nonce-99" }, questions: { complete: { type: "boolean", instructions: "ok?", criteria: { true: "y", false: "n" } } } })
-                      }).then((r) => r.text())
-                    ).finally(() => stopRec())
-                  },
-                  stopped: stoppedRec
+                        body: JSON.stringify({
+                          model: "client-m",
+                          stream: true,
+                          messages: [{ role: "user", content: "nonce-42" }]
+                        })
+                      }).then((r) => r.text()).then(() =>
+                        fetch(`${printedUrl}${ModelServer.paths.evaluation}`, {
+                          method: "POST",
+                          headers: { "content-type": "application/json" },
+                          body: JSON.stringify({
+                            state: { n: "nonce-99" },
+                            questions: {
+                              complete: { type: "boolean", instructions: "ok?", criteria: { true: "y", false: "n" } }
+                            }
+                          })
+                        }).then((r) => r.text())
+                      ).finally(() => stopRec())
+                    },
+                    stopped: stoppedRec
+                  }
+                )
+                yield* Effect.promise(() => recRun)
+                expect(printedUrl).toMatch(/^http:\/\/127\.0\.0\.1:\d+$/)
+                expect(existsSync(fixturePath)).toBe(true)
+
+                // Replay mode over missing file dies
+                const missScope = yield* Scope.make()
+                const missExit = yield* Effect.exit(
+                  Scope.provide(
+                    ModelServerCli.serve(ModelServerCli.parse(["--fixture", join(dir, "nope.json")], {})),
+                    missScope
+                  )
+                )
+                yield* Scope.close(missScope, Exit.void)
+                expect(Exit.isFailure(missExit)).toBe(true)
+
+                // Builtin serve mode answers health + chat + evaluation
+                const builtinScope = yield* Scope.make()
+                try {
+                  const builtinSrv = yield* Scope.provide(ModelServerCli.serve(parsedBuiltin), builtinScope)
+                  const bChat = yield* Effect.promise(() =>
+                    fetch(`${builtinSrv.url}${ModelServer.paths.chat}`, {
+                      method: "POST",
+                      body: JSON.stringify({
+                        model: "m",
+                        stream: true,
+                        messages: [{ role: "user", content: "unscripted" }]
+                      })
+                    })
+                  )
+                  expect(bChat.status).toBe(200)
+                  yield* Effect.promise(() => bChat.text())
+                  const bEval = yield* Effect.promise(() =>
+                    fetch(`${builtinSrv.url}${ModelServer.paths.evaluation}`, {
+                      method: "POST",
+                      body: JSON.stringify({
+                        state: {},
+                        questions: {
+                          complete: { type: "boolean", instructions: "ok?", criteria: { true: "yes", false: "no" } }
+                        }
+                      })
+                    })
+                  )
+                  expect(bEval.status).toBe(200)
+                } finally {
+                  yield* Scope.close(builtinScope, Exit.void)
                 }
-              )
-              yield* Effect.promise(() => recRun)
-              expect(printedUrl).toMatch(/^http:\/\/127\.0\.0\.1:\d+$/)
-              expect(existsSync(fixturePath)).toBe(true)
-
-              // Replay mode over missing file dies
-              const missScope = yield* Scope.make()
-              const missExit = yield* Effect.exit(
-                Scope.provide(ModelServerCli.serve(ModelServerCli.parse(["--fixture", join(dir, "nope.json")], {})), missScope)
-              )
-              yield* Scope.close(missScope, Exit.void)
-              expect(Exit.isFailure(missExit)).toBe(true)
-
-              // Builtin serve mode answers health + chat + evaluation
-              const builtinScope = yield* Scope.make()
-              try {
-                const builtinSrv = yield* Scope.provide(ModelServerCli.serve(parsedBuiltin), builtinScope)
-                const bChat = yield* Effect.promise(() =>
-                  fetch(`${builtinSrv.url}${ModelServer.paths.chat}`, {
-                    method: "POST",
-                    body: JSON.stringify({ model: "m", stream: true, messages: [{ role: "user", content: "unscripted" }] })
-                  })
-                )
-                expect(bChat.status).toBe(200)
-                yield* Effect.promise(() => bChat.text())
-                const bEval = yield* Effect.promise(() =>
-                  fetch(`${builtinSrv.url}${ModelServer.paths.evaluation}`, {
-                    method: "POST",
-                    body: JSON.stringify({ state: {}, questions: { complete: { type: "boolean", instructions: "ok?", criteria: { true: "yes", false: "no" } } } })
-                  })
-                )
-                expect(bEval.status).toBe(200)
               } finally {
-                yield* Scope.close(builtinScope, Exit.void)
+                yield* Scope.close(scope, Exit.void)
               }
             } finally {
-              yield* Scope.close(scope, Exit.void)
+              rmSync(dir, { recursive: true, force: true })
             }
-          } finally {
-            rmSync(dir, { recursive: true, force: true })
-          }
-        })
-    ), 120_000)
+          })
+      ),
+    120_000
+  )
 
   it("fuzzes ProcessTable POSIX & Windows query paths and RealCliDriver real process execution/bounds", () =>
     property(
@@ -798,8 +912,15 @@ describe("Wave-6 testing scripts, models, server, CLI, process table & CLI drive
           expect(() => ProcessTable.query({ columns: ["pid"], pid: 0 })).toThrow()
           expect(() => ProcessTable.query({ columns: ["pid"], pid: -5 })).toThrow()
           // Injected spawn boundary for POSIX error / missing pid / failure
-          const fakeSpawn = (status: number, stdout: string, stderr = "", error?: Error): ProcessTable.Spawn =>
-            () => ({ pid: 1, output: [null, stdout, stderr], stdout, stderr, status, signal: null, ...(error === undefined ? {} : { error }) })
+          const fakeSpawn = (status: number, stdout: string, stderr = "", error?: Error): ProcessTable.Spawn => () => ({
+            pid: 1,
+            output: [null, stdout, stderr],
+            stdout,
+            stderr,
+            status,
+            signal: null,
+            ...(error === undefined ? {} : { error })
+          })
           expect(ProcessTable.query({ columns: ["pid"], pid: 999999 }, fakeSpawn(1, ""))).toBe("")
           expect(() => ProcessTable.query({ columns: ["pid"] }, fakeSpawn(1, "", "perm"))).toThrow()
           expect(() => ProcessTable.query({ columns: ["pid"] }, fakeSpawn(0, "", "", new Error("enoent")))).toThrow()
@@ -813,7 +934,8 @@ describe("Wave-6 testing scripts, models, server, CLI, process table & CLI drive
           expect(winOut).toContain("42")
           if (s.winError) {
             expect(() => ProcessTable.queryWindows({ columns: ["pid"] }, fakeSpawn(1, "", "boom"))).toThrow()
-            expect(() => ProcessTable.queryWindows({ columns: ["pid"] }, fakeSpawn(0, "", "", new Error("fail")))).toThrow()
+            expect(() => ProcessTable.queryWindows({ columns: ["pid"] }, fakeSpawn(0, "", "", new Error("fail"))))
+              .toThrow()
           }
 
           // RealCliDriver with real NodeHost services
@@ -847,7 +969,8 @@ describe("Wave-6 testing scripts, models, server, CLI, process table & CLI drive
               expect(Exit.isFailure(overLimit)).toBe(true)
               if (Exit.isFailure(overLimit)) {
                 const err = Cause.findErrorOption(overLimit.cause)
-                expect(err._tag === "Some" && err.value._tag === "DriverError" && err.value.reason === "output-limit").toBe(true)
+                expect(err._tag === "Some" && err.value._tag === "DriverError" && err.value.reason === "output-limit")
+                  .toBe(true)
               }
 
               // timeout

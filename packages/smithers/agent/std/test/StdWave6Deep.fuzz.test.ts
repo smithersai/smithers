@@ -121,7 +121,12 @@ const paxRecord = (key: string, value: string): Uint8Array => {
 }
 
 const scriptedSpawner = (
-  responses: ReadonlyArray<readonly [string, { readonly stdout?: string; readonly stderr?: string; readonly exitCode?: number; readonly failSpawn?: boolean }]>,
+  responses: ReadonlyArray<
+    readonly [
+      string,
+      { readonly stdout?: string; readonly stderr?: string; readonly exitCode?: number; readonly failSpawn?: boolean }
+    ]
+  >,
   recorded: Array<ReadonlyArray<string>>
 ) =>
   Layer.succeed(ChildProcessSpawner.ChildProcessSpawner)(
@@ -165,106 +170,121 @@ const scriptedSpawner = (
   )
 
 describe("@smthrs/std Wave 6 deep fuzz (Read/Write/Edit/Grep, Ignore, Tar, EnvelopePrecheck, FileMutation, Checkpoints/GitWorktree, TestRun)", () => {
-  it("Read.run, Write.run, Edit.run, and Grep.run enforce line slicing, binary/missing/dir/escape boundaries, edits, and search invariants", async () => {
-    const arb = Arbitrary.schema(
-      Schema.Struct({
-        mode: Schema.Literals(["text", "sliced", "edit", "grep", "binary", "missing", "dir", "escape", "empty"]),
-        lines: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 18 })),
-        offset: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 8 })),
-        limit: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 6 }))
-      })
-    )
-
-    const report = await Effect.runPromise(
-      Fuzz.run(
-        arb,
-        ({ mode, lines, offset, limit }) =>
-          Effect.promise(() =>
-            withTempDir("smthrs-std-w6-", async (dir) => {
-              const wsLayer = Layer.mergeAll(NodePlatform, Workspace.layer(dir)).pipe(
-                Layer.provideMerge(PortableSearch.layer.pipe(Layer.provide(NodePlatform)))
-              )
-              const content = Array.from({ length: lines }, (_, i) => `line-${i + 1}-payload`).join("\n") + "\n"
-
-              if (mode === "text" || mode === "sliced" || mode === "empty" || mode === "edit" || mode === "grep") {
-                const body = mode === "empty" ? "" : content
-                await Effect.runPromise(
-                  Write.run({ path: path.join(dir, "sub/doc.txt"), content: body }).pipe(Effect.provide(wsLayer))
-                )
-                if (mode === "sliced" && offset > lines) {
-                  const oor = await Effect.runPromise(
-                    Read.run({ path: path.join(dir, "sub/doc.txt"), offset, limit }).pipe(Effect.provide(wsLayer), Effect.exit)
-                  )
-                  expect(Exit.isFailure(oor)).toBe(true)
-                  return true
-                }
-                const res = await Effect.runPromise(
-                  Read.run(
-                    mode === "sliced"
-                      ? { path: path.join(dir, "sub/doc.txt"), offset, limit }
-                      : { path: path.join(dir, "sub/doc.txt") }
-                  ).pipe(Effect.provide(wsLayer))
-                )
-                expect(res.totalLines).toBeGreaterThanOrEqual(0)
-                if (mode === "text") {
-                  expect(res.content).toContain("line-1-payload")
-                  expect(res.startLine).toBe(1)
-                }
-                if (mode === "sliced") {
-                  expect(res.content).toContain(`line-${offset}-payload`)
-                  expect(res.startLine).toBe(offset)
-                }
-                if (mode === "edit") {
-                  const edited = await Effect.runPromise(
-                    Edit.run({
-                      path: path.join(dir, "sub/doc.txt"),
-                      oldString: "line-1-payload",
-                      newString: "LINE-1-REPLACED"
-                    }).pipe(Effect.provide(wsLayer))
-                  )
-                  expect(edited.replacements).toBe(1)
-                  const after = await Effect.runPromise(
-                    Read.run({ path: path.join(dir, "sub/doc.txt") }).pipe(Effect.provide(wsLayer))
-                  )
-                  expect(after.content).toContain("LINE-1-REPLACED")
-                  const noMatch = await Effect.runPromise(
-                    Edit.run({
-                      path: path.join(dir, "sub/doc.txt"),
-                      oldString: "does-not-exist-anywhere",
-                      newString: "noop"
-                    }).pipe(Effect.provide(wsLayer), Effect.exit)
-                  )
-                  expect(Exit.isFailure(noMatch)).toBe(true)
-                }
-                if (mode === "grep") {
-                  const found = await Effect.runPromise(
-                    Grep.run({ pattern: "line-1-payload", root: path.join(dir, "sub") }).pipe(Effect.provide(wsLayer))
-                  )
-                  expect(found.matches.length).toBeGreaterThanOrEqual(1)
-                }
-              } else if (mode === "binary") {
-                fs.writeFileSync(path.join(dir, "bin.dat"), Buffer.from([0, 1, 2, 255, 0, 128]))
-                const ex = await Effect.runPromise(Read.run({ path: path.join(dir, "bin.dat") }).pipe(Effect.provide(wsLayer), Effect.exit))
-                expect(Exit.isFailure(ex)).toBe(true)
-              } else if (mode === "missing") {
-                const ex = await Effect.runPromise(Read.run({ path: path.join(dir, "nope.txt") }).pipe(Effect.provide(wsLayer), Effect.exit))
-                expect(Exit.isFailure(ex)).toBe(true)
-              } else if (mode === "dir") {
-                fs.mkdirSync(path.join(dir, "adir"))
-                const ex = await Effect.runPromise(Read.run({ path: path.join(dir, "adir") }).pipe(Effect.provide(wsLayer), Effect.exit))
-                expect(Exit.isFailure(ex)).toBe(true)
-              } else {
-                const ex = await Effect.runPromise(Read.run({ path: "../../etc/passwd" }).pipe(Effect.provide(wsLayer), Effect.exit))
-                expect(Exit.isFailure(ex)).toBe(true)
-              }
-              return true
-            })
-          ),
-        { executions: Math.min(executions, 45), seed }
+  it(
+    "Read.run, Write.run, Edit.run, and Grep.run enforce line slicing, binary/missing/dir/escape boundaries, edits, and search invariants",
+    async () => {
+      const arb = Arbitrary.schema(
+        Schema.Struct({
+          mode: Schema.Literals(["text", "sliced", "edit", "grep", "binary", "missing", "dir", "escape", "empty"]),
+          lines: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 18 })),
+          offset: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 8 })),
+          limit: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 6 }))
+        })
       )
-    )
-    assertPassed(report)
-  }, 60_000)
+
+      const report = await Effect.runPromise(
+        Fuzz.run(
+          arb,
+          ({ mode, lines, offset, limit }) =>
+            Effect.promise(() =>
+              withTempDir("smthrs-std-w6-", async (dir) => {
+                const wsLayer = Layer.mergeAll(NodePlatform, Workspace.layer(dir)).pipe(
+                  Layer.provideMerge(PortableSearch.layer.pipe(Layer.provide(NodePlatform)))
+                )
+                const content = Array.from({ length: lines }, (_, i) => `line-${i + 1}-payload`).join("\n") + "\n"
+
+                if (mode === "text" || mode === "sliced" || mode === "empty" || mode === "edit" || mode === "grep") {
+                  const body = mode === "empty" ? "" : content
+                  await Effect.runPromise(
+                    Write.run({ path: path.join(dir, "sub/doc.txt"), content: body }).pipe(Effect.provide(wsLayer))
+                  )
+                  if (mode === "sliced" && offset > lines) {
+                    const oor = await Effect.runPromise(
+                      Read.run({ path: path.join(dir, "sub/doc.txt"), offset, limit }).pipe(
+                        Effect.provide(wsLayer),
+                        Effect.exit
+                      )
+                    )
+                    expect(Exit.isFailure(oor)).toBe(true)
+                    return true
+                  }
+                  const res = await Effect.runPromise(
+                    Read.run(
+                      mode === "sliced"
+                        ? { path: path.join(dir, "sub/doc.txt"), offset, limit }
+                        : { path: path.join(dir, "sub/doc.txt") }
+                    ).pipe(Effect.provide(wsLayer))
+                  )
+                  expect(res.totalLines).toBeGreaterThanOrEqual(0)
+                  if (mode === "text") {
+                    expect(res.content).toContain("line-1-payload")
+                    expect(res.startLine).toBe(1)
+                  }
+                  if (mode === "sliced") {
+                    expect(res.content).toContain(`line-${offset}-payload`)
+                    expect(res.startLine).toBe(offset)
+                  }
+                  if (mode === "edit") {
+                    const edited = await Effect.runPromise(
+                      Edit.run({
+                        path: path.join(dir, "sub/doc.txt"),
+                        oldString: "line-1-payload",
+                        newString: "LINE-1-REPLACED"
+                      }).pipe(Effect.provide(wsLayer))
+                    )
+                    expect(edited.replacements).toBe(1)
+                    const after = await Effect.runPromise(
+                      Read.run({ path: path.join(dir, "sub/doc.txt") }).pipe(Effect.provide(wsLayer))
+                    )
+                    expect(after.content).toContain("LINE-1-REPLACED")
+                    const noMatch = await Effect.runPromise(
+                      Edit.run({
+                        path: path.join(dir, "sub/doc.txt"),
+                        oldString: "does-not-exist-anywhere",
+                        newString: "noop"
+                      }).pipe(Effect.provide(wsLayer), Effect.exit)
+                    )
+                    expect(Exit.isFailure(noMatch)).toBe(true)
+                  }
+                  if (mode === "grep") {
+                    const found = await Effect.runPromise(
+                      Grep.run({ pattern: "line-1-payload", root: path.join(dir, "sub") }).pipe(Effect.provide(wsLayer))
+                    )
+                    expect(found.matches.length).toBeGreaterThanOrEqual(1)
+                  }
+                } else if (mode === "binary") {
+                  fs.writeFileSync(path.join(dir, "bin.dat"), Buffer.from([0, 1, 2, 255, 0, 128]))
+                  const ex = await Effect.runPromise(
+                    Read.run({ path: path.join(dir, "bin.dat") }).pipe(Effect.provide(wsLayer), Effect.exit)
+                  )
+                  expect(Exit.isFailure(ex)).toBe(true)
+                } else if (mode === "missing") {
+                  const ex = await Effect.runPromise(
+                    Read.run({ path: path.join(dir, "nope.txt") }).pipe(Effect.provide(wsLayer), Effect.exit)
+                  )
+                  expect(Exit.isFailure(ex)).toBe(true)
+                } else if (mode === "dir") {
+                  fs.mkdirSync(path.join(dir, "adir"))
+                  const ex = await Effect.runPromise(
+                    Read.run({ path: path.join(dir, "adir") }).pipe(Effect.provide(wsLayer), Effect.exit)
+                  )
+                  expect(Exit.isFailure(ex)).toBe(true)
+                } else {
+                  const ex = await Effect.runPromise(
+                    Read.run({ path: "../../etc/passwd" }).pipe(Effect.provide(wsLayer), Effect.exit)
+                  )
+                  expect(Exit.isFailure(ex)).toBe(true)
+                }
+                return true
+              })
+            ),
+          { executions: Math.min(executions, 45), seed }
+        )
+      )
+      assertPassed(report)
+    },
+    60_000
+  )
 
   it("Tar.files parses ustar, GNU L/K, POSIX PAX x/g, hard links, multi-archive concatenation, and rejects corrupt/truncated streams", async () => {
     const arb = Arbitrary.schema(
@@ -296,7 +316,10 @@ describe("@smthrs/std Wave 6 deep fuzz (Read/Write/Edit/Grep, Ignore, Tar, Envel
 
             if (variant === "ustar") {
               const stream = concatBytes([
-                makeTarEntry({ name: "file.txt", prefix: "deep/dir", size: payload.byteLength, typeFlag: "0" }, payload),
+                makeTarEntry(
+                  { name: "file.txt", prefix: "deep/dir", size: payload.byteLength, typeFlag: "0" },
+                  payload
+                ),
                 eof
               ])
               const map = Tar.files(stream)
@@ -305,7 +328,10 @@ describe("@smthrs/std Wave 6 deep fuzz (Read/Write/Edit/Grep, Ignore, Tar, Envel
             } else if (variant === "gnuLong") {
               const longPath = "very/long/path/".repeat(8) + "target.txt"
               const stream = concatBytes([
-                makeTarEntry({ name: "././@LongLink", size: 0, typeFlag: "L" }, new TextEncoder().encode(`${longPath}\0`)),
+                makeTarEntry(
+                  { name: "././@LongLink", size: 0, typeFlag: "L" },
+                  new TextEncoder().encode(`${longPath}\0`)
+                ),
                 makeTarEntry({ name: "truncated", size: payload.byteLength, typeFlag: "0" }, payload),
                 eof
               ])
@@ -331,7 +357,10 @@ describe("@smthrs/std Wave 6 deep fuzz (Read/Write/Edit/Grep, Ignore, Tar, Envel
               expect(map?.get("alias.txt")).toBe(map?.get("orig.txt"))
             } else if (variant === "hardLinkMissing") {
               const stream = concatBytes([
-                makeTarEntry({ name: "dangling.txt", size: 0, typeFlag: "1", linkName: "absent.txt" }, new Uint8Array(0)),
+                makeTarEntry(
+                  { name: "dangling.txt", size: 0, typeFlag: "1", linkName: "absent.txt" },
+                  new Uint8Array(0)
+                ),
                 eof
               ])
               expect(Tar.files(stream)).toBeUndefined()
@@ -354,7 +383,10 @@ describe("@smthrs/std Wave 6 deep fuzz (Read/Write/Edit/Grep, Ignore, Tar, Envel
               expect(map?.has("only.txt")).toBe(true)
             } else if (variant === "badChecksum") {
               const stream = concatBytes([
-                makeTarEntry({ name: "bad.txt", size: payload.byteLength, typeFlag: "0", corruptChecksum: true }, payload),
+                makeTarEntry(
+                  { name: "bad.txt", size: payload.byteLength, typeFlag: "0", corruptChecksum: true },
+                  payload
+                ),
                 eof
               ])
               expect(Tar.files(stream)).toBeUndefined()
@@ -474,7 +506,9 @@ describe("@smthrs/std Wave 6 deep fuzz (Read/Write/Edit/Grep, Ignore, Tar, Envel
               makeDirectory: (p) => {
                 calls++
                 if (fault !== "none" && fault !== "bodyFail" && calls === 1) {
-                  return Effect.fail(PlatformError.systemError({ _tag: fault, module: "FileSystem", method: "makeDirectory" }))
+                  return Effect.fail(
+                    PlatformError.systemError({ _tag: fault, module: "FileSystem", method: "makeDirectory" })
+                  )
                 }
                 return Effect.sync(() => {
                   held.add(p)
@@ -513,7 +547,15 @@ describe("@smthrs/std Wave 6 deep fuzz (Read/Write/Edit/Grep, Ignore, Tar, Envel
   it("Checkpoints (makeGit + makeContainer + makeNoop) and GitWorktree handle capture, materialize, config, resolveCommit, and fault injection", async () => {
     const arb = Arbitrary.schema(
       Schema.Struct({
-        mode: Schema.Literals(["gitOk", "gitSpawnFail", "gitMissingId", "containerOk", "containerFail", "worktreeConfig", "noop"]),
+        mode: Schema.Literals([
+          "gitOk",
+          "gitSpawnFail",
+          "gitMissingId",
+          "containerOk",
+          "containerFail",
+          "worktreeConfig",
+          "noop"
+        ]),
         snapId: Schema.Literals(["base", "step-1", "step-2"])
       })
     )
@@ -540,8 +582,8 @@ describe("@smthrs/std Wave 6 deep fuzz (Read/Write/Edit/Grep, Ignore, Tar, Envel
                 mode === "containerFail"
                   ? [["docker", { exitCode: 1, stderr: "container error" }]]
                   : [
-                      ["docker", { stdout: `${sha}\n`, exitCode: 0 }]
-                    ],
+                    ["docker", { stdout: `${sha}\n`, exitCode: 0 }]
+                  ],
                 spawns
               )
               const containerLayer = Layer.succeed(Container.Container, Container.makeCommand())
@@ -563,19 +605,19 @@ describe("@smthrs/std Wave 6 deep fuzz (Read/Write/Edit/Grep, Ignore, Tar, Envel
               mode === "gitSpawnFail"
                 ? [["git", { failSpawn: true }], ["sh", { failSpawn: true }]]
                 : [
-                    ["--show-toplevel", { stdout: "/work/repo\n/work/repo/.git\n/work/repo/.git/index\nsha1\n" }],
-                    ["--get-regexp", { stdout: `flows-checkpoint.base ${sha}\n`, exitCode: 0 }],
-                    ["rev-parse --verify", mode === "gitMissingId" ? { exitCode: 1 } : { stdout: `${sha}\n` }],
-                    ["write-tree", { stdout: `${"b".repeat(40)}\n` }],
-                    ["commit-tree", { stdout: `${sha}\n` }],
-                    ["update-ref", { stdout: "" }],
-                    ["config --file", { stdout: "" }],
-                    ["worktree add", { stdout: "" }],
-                    ["worktree remove", { stdout: "" }],
-                    ["stat -c %d", { stdout: "1\n1\n1\n" }],
-                    ["ls-files", { stdout: "" }],
-                    ["add -A", { stdout: "" }]
-                  ],
+                  ["--show-toplevel", { stdout: "/work/repo\n/work/repo/.git\n/work/repo/.git/index\nsha1\n" }],
+                  ["--get-regexp", { stdout: `flows-checkpoint.base ${sha}\n`, exitCode: 0 }],
+                  ["rev-parse --verify", mode === "gitMissingId" ? { exitCode: 1 } : { stdout: `${sha}\n` }],
+                  ["write-tree", { stdout: `${"b".repeat(40)}\n` }],
+                  ["commit-tree", { stdout: `${sha}\n` }],
+                  ["update-ref", { stdout: "" }],
+                  ["config --file", { stdout: "" }],
+                  ["worktree add", { stdout: "" }],
+                  ["worktree remove", { stdout: "" }],
+                  ["stat -c %d", { stdout: "1\n1\n1\n" }],
+                  ["ls-files", { stdout: "" }],
+                  ["add -A", { stdout: "" }]
+                ],
               spawns
             )
 
@@ -627,7 +669,10 @@ describe("@smthrs/std Wave 6 deep fuzz (Read/Write/Edit/Grep, Ignore, Tar, Envel
     const arb = Arbitrary.schema(
       Schema.Struct({
         outcome: Schema.Literals(["pass", "fail", "noopRunner", "baselineRefused"]),
-        tests: Schema.Array(Schema.Literals(["a.test.ts", "b.test.ts"])).check(Schema.isMinLength(0), Schema.isMaxLength(2))
+        tests: Schema.Array(Schema.Literals(["a.test.ts", "b.test.ts"])).check(
+          Schema.isMinLength(0),
+          Schema.isMaxLength(2)
+        )
       })
     )
 
@@ -652,15 +697,14 @@ describe("@smthrs/std Wave 6 deep fuzz (Read/Write/Edit/Grep, Ignore, Tar, Envel
               ],
               spawns
             )
-            const runnerLayer =
-              outcome === "noopRunner"
-                ? TestRunner.layerNoop
-                : TestRunner.layer({
-                    command: "vitest run",
-                    cwd: "/work/repo",
-                    root: "/work/repo",
-                    ...(outcome === "baselineRefused" ? { baseline: false as const } : {})
-                  })
+            const runnerLayer = outcome === "noopRunner"
+              ? TestRunner.layerNoop
+              : TestRunner.layer({
+                command: "vitest run",
+                cwd: "/work/repo",
+                root: "/work/repo",
+                ...(outcome === "baselineRefused" ? { baseline: false as const } : {})
+              })
             const evalLayer = Evaluator.layerUnavailable()
             const fullLayer = Layer.mergeAll(
               spawnerLayer,

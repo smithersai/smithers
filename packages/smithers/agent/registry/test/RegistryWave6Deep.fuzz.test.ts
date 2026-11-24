@@ -1,7 +1,7 @@
 import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
 import * as NodePath from "@effect/platform-node/NodePath"
-import { Fuzz } from "@smthrs/fuzz"
 import { Flow } from "@smthrs/flow"
+import { Fuzz } from "@smthrs/fuzz"
 import { Node } from "@smthrs/plan"
 import { Arbitrary, Effect, Exit, Layer, Option, Schema } from "effect"
 import { fileURLToPath } from "node:url"
@@ -161,24 +161,35 @@ describe("@smthrs/registry Wave 6 deep fuzz (Bundled, MarkdownFlow, deriveBudget
               naming: tc.regime,
               name: tc.regime === "path" ? Option.some("demo-skill") : Option.none(),
               dirBasename: "demo-skill",
-              provenance: new Descriptor.Provenance({ source: tc.regime === "path" ? "workspace" : "user", root: "/repo" })
+              provenance: new Descriptor.Provenance({
+                source: tc.regime === "path" ? "workspace" : "user",
+                root: "/repo"
+              })
             })
 
             const warnings: Array<Descriptor.DiscoveryWarning> = []
-            const budgetFields: Record<string, unknown> =
-              tc.budgetMode === "validNum" ? { budget: { tokens: 1000, milliseconds: 5000, usd: 0.5 } }
-              : tc.budgetMode === "validStr" ? { budget: { tokens: "2000", milliseconds: "9000", usd: "1.25" } }
-              : tc.budgetMode === "badArray" ? { budget: [1, 2] }
-              : tc.budgetMode === "badNeg" ? { budget: { tokens: -1, milliseconds: 0 } }
-              : tc.budgetMode === "badUsd" ? { budget: { usd: "not-a-num" } }
-              : tc.budgetMode === "badKey" ? { budget: { bogus: 1 } }
+            const budgetFields: Record<string, unknown> = tc.budgetMode === "validNum" ?
+              { budget: { tokens: 1000, milliseconds: 5000, usd: 0.5 } }
+              : tc.budgetMode === "validStr" ?
+              { budget: { tokens: "2000", milliseconds: "9000", usd: "1.25" } }
+              : tc.budgetMode === "badArray" ?
+              { budget: [1, 2] }
+              : tc.budgetMode === "badNeg" ?
+              { budget: { tokens: -1, milliseconds: 0 } }
+              : tc.budgetMode === "badUsd" ?
+              { budget: { usd: "not-a-num" } }
+              : tc.budgetMode === "badKey" ?
+              { budget: { bogus: 1 } }
               : {}
             const derived = MarkdownFlow.deriveBudget(budgetFields, "SKILL.md", warnings)
             if (tc.budgetMode === "validNum" || tc.budgetMode === "validStr") {
               expect(derived).toBeDefined()
             }
 
-            if (!tc.includeDesc || tc.budgetMode === "badArray" || tc.budgetMode === "badNeg" || tc.budgetMode === "badUsd" || tc.budgetMode === "badKey") {
+            if (
+              !tc.includeDesc || tc.budgetMode === "badArray" || tc.budgetMode === "badNeg" ||
+              tc.budgetMode === "badUsd" || tc.budgetMode === "badKey"
+            ) {
               expect(res.warnings.length).toBeGreaterThan(0)
             }
             if (Option.isSome(res.descriptor)) {
@@ -201,76 +212,80 @@ describe("@smthrs/registry Wave 6 deep fuzz (Bundled, MarkdownFlow, deriveBudget
     assertPassed(report)
   })
 
-  it("Discovery.scan + Executable.fromDescriptor + Executable.catalog + Registry.layer lower all 12 fixture flows cleanly and enforce delegate/refusal invariants", async () => {
-    const arb = Arbitrary.schema(
-      Schema.Struct({
-        flowName: Schema.Literals([
-          "cacheable",
-          "cacheable-expiring",
-          "cacheable-plain",
-          "cacheable-reads",
-          "cacheable-scoped",
-          "changelog",
-          "greet",
-          "orphan",
-          "scoped",
-          "standalone",
-          "tuned",
-          "undecided"
-        ]),
-        withDelegates: Schema.Boolean
-      })
-    )
-
-    const scanResult = await Effect.runPromise(
-      Effect.gen(function*() {
-        const discovery = yield* Discovery.Discovery
-        return yield* discovery.scan({ source: "project", root: flowsRoot, naming: "path" })
-      }).pipe(Effect.provide(Discovery.layer.pipe(Layer.provide(platform))), Effect.provide(platform))
-    )
-
-    const report = await Effect.runPromise(
-      Fuzz.run(
-        arb,
-        ({ flowName, withDelegates }) =>
-          Effect.gen(function*() {
-            const desc = scanResult.entries.find((e) => e.name === flowName)
-            if (desc === undefined) return true
-            const opts: Executable.Options = {
-              delegates: withDelegates ? [Echo, Other, Agent] : []
-            }
-            const lowered = yield* Executable.fromDescriptor(desc, opts).pipe(
-              Effect.provide(platform),
-              Effect.exit
-            )
-            // Lowering must either succeed cleanly with a valid Flow or fail with a typed ExecutableError
-            if (Exit.isSuccess(lowered)) {
-              expect(lowered.value.descriptor.name).toBe(flowName)
-              expect(lowered.value.flow._tag).toBe(flowName)
-            } else {
-              expect(lowered.cause.reasons.length).toBeGreaterThan(0)
-            }
-            return true
-          }),
-        { executions: Math.min(executions, 48), seed: seed + 2 }
+  it(
+    "Discovery.scan + Executable.fromDescriptor + Executable.catalog + Registry.layer lower all 12 fixture flows cleanly and enforce delegate/refusal invariants",
+    async () => {
+      const arb = Arbitrary.schema(
+        Schema.Struct({
+          flowName: Schema.Literals([
+            "cacheable",
+            "cacheable-expiring",
+            "cacheable-plain",
+            "cacheable-reads",
+            "cacheable-scoped",
+            "changelog",
+            "greet",
+            "orphan",
+            "scoped",
+            "standalone",
+            "tuned",
+            "undecided"
+          ]),
+          withDelegates: Schema.Boolean
+        })
       )
-    )
-    assertPassed(report)
 
-    // Exercise Registry.layer + Executable.catalog end-to-end across the fixture root
-    const regLayer = Registry.layer({
-      sources: [{ source: "project", root: flowsRoot, naming: "path" }]
-    }).pipe(Layer.provide(Layer.merge(Discovery.layer.pipe(Layer.provide(platform)), platform)))
+      const scanResult = await Effect.runPromise(
+        Effect.gen(function*() {
+          const discovery = yield* Discovery.Discovery
+          return yield* discovery.scan({ source: "project", root: flowsRoot, naming: "path" })
+        }).pipe(Effect.provide(Discovery.layer.pipe(Layer.provide(platform))), Effect.provide(platform))
+      )
 
-    const entries = await Effect.runPromise(
-      Effect.gen(function*() {
-        const reg = yield* Registry.Registry
-        const all = yield* reg.list()
-        const cat = yield* Executable.catalog({ delegates: [Echo, Other, Agent] })
-        return { all: all.length, exec: cat.executables.length, refused: cat.refused.length }
-      }).pipe(Effect.provide(Layer.merge(regLayer, platform)))
-    )
-    expect(entries.all).toBeGreaterThan(0)
-    expect(entries.exec).toBeGreaterThan(0)
-  }, 60_000)
+      const report = await Effect.runPromise(
+        Fuzz.run(
+          arb,
+          ({ flowName, withDelegates }) =>
+            Effect.gen(function*() {
+              const desc = scanResult.entries.find((e) => e.name === flowName)
+              if (desc === undefined) return true
+              const opts: Executable.Options = {
+                delegates: withDelegates ? [Echo, Other, Agent] : []
+              }
+              const lowered = yield* Executable.fromDescriptor(desc, opts).pipe(
+                Effect.provide(platform),
+                Effect.exit
+              )
+              // Lowering must either succeed cleanly with a valid Flow or fail with a typed ExecutableError
+              if (Exit.isSuccess(lowered)) {
+                expect(lowered.value.descriptor.name).toBe(flowName)
+                expect(lowered.value.flow._tag).toBe(flowName)
+              } else {
+                expect(lowered.cause.reasons.length).toBeGreaterThan(0)
+              }
+              return true
+            }),
+          { executions: Math.min(executions, 48), seed: seed + 2 }
+        )
+      )
+      assertPassed(report)
+
+      // Exercise Registry.layer + Executable.catalog end-to-end across the fixture root
+      const regLayer = Registry.layer({
+        sources: [{ source: "project", root: flowsRoot, naming: "path" }]
+      }).pipe(Layer.provide(Layer.merge(Discovery.layer.pipe(Layer.provide(platform)), platform)))
+
+      const entries = await Effect.runPromise(
+        Effect.gen(function*() {
+          const reg = yield* Registry.Registry
+          const all = yield* reg.list()
+          const cat = yield* Executable.catalog({ delegates: [Echo, Other, Agent] })
+          return { all: all.length, exec: cat.executables.length, refused: cat.refused.length }
+        }).pipe(Effect.provide(Layer.merge(regLayer, platform)))
+      )
+      expect(entries.all).toBeGreaterThan(0)
+      expect(entries.exec).toBeGreaterThan(0)
+    },
+    60_000
+  )
 })

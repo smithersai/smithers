@@ -1,4 +1,3 @@
-import { Node } from "@smthrs/plan"
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
 import * as NodePath from "@effect/platform-node/NodePath"
@@ -13,13 +12,13 @@ import * as FlowBinding from "@smthrs/harness/FlowBinding"
 import { Journal, JournalEvent } from "@smthrs/journal"
 import * as TestJournal from "@smthrs/journal/test/TestJournal"
 import * as CapabilitySet from "@smthrs/kernel/CapabilitySet"
-import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 import * as MemoryError from "@smthrs/memory/MemoryError"
 import * as MemoryStore from "@smthrs/memory/MemoryStore"
 import * as Recall from "@smthrs/memory/Recall"
 import * as RecallKeyword from "@smthrs/memory/RecallKeyword"
 import * as TestMemory from "@smthrs/memory/test/TestMemory"
 import * as Evaluator from "@smthrs/model/Evaluator"
+import { Node } from "@smthrs/plan"
 import * as Registry from "@smthrs/registry/Registry"
 import {
   Arbitrary,
@@ -34,6 +33,7 @@ import {
   Schema,
   Stream
 } from "effect"
+import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from "node:fs"
 import { rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
@@ -80,31 +80,31 @@ const makeFakeSpawner = (handlers: {
   readonly gitNotes?: string
   readonly gitCat?: string
 }): any => ({
-    spawn: (cmd: any) => {
-      const command: string = cmd?.command ?? ""
-      const args: ReadonlyArray<string> = cmd?.args ?? []
-      let out = ""
-      if (command === "jj") {
-        const revArg = args.find((a) => a.startsWith("present("))
-        out = revArg !== undefined ? (handlers.jjNamed ?? "") : (handlers.jjLog ?? "")
-      } else if (command === "git" && args[0] === "notes") {
-        out = handlers.gitNotes ?? ""
-      } else if (command === "git" && args[0] === "cat-file") {
-        out = handlers.gitCat ?? ""
-      }
-      const bytes = new TextEncoder().encode(out)
-      return Effect.succeed({
-        pid: 1,
-        exitCode: Effect.succeed(0),
-        isRunning: Effect.succeed(false),
-        kill: () => Effect.void,
-        stdin: undefined as any,
-        stdout: Stream.make(bytes),
-        stderr: Stream.empty,
-        all: Stream.make(bytes)
-      } as any)
+  spawn: (cmd: any) => {
+    const command: string = cmd?.command ?? ""
+    const args: ReadonlyArray<string> = cmd?.args ?? []
+    let out = ""
+    if (command === "jj") {
+      const revArg = args.find((a) => a.startsWith("present("))
+      out = revArg !== undefined ? (handlers.jjNamed ?? "") : (handlers.jjLog ?? "")
+    } else if (command === "git" && args[0] === "notes") {
+      out = handlers.gitNotes ?? ""
+    } else if (command === "git" && args[0] === "cat-file") {
+      out = handlers.gitCat ?? ""
     }
-  })
+    const bytes = new TextEncoder().encode(out)
+    return Effect.succeed({
+      pid: 1,
+      exitCode: Effect.succeed(0),
+      isRunning: Effect.succeed(false),
+      kill: () => Effect.void,
+      stdin: undefined as any,
+      stdout: Stream.make(bytes),
+      stderr: Stream.empty,
+      all: Stream.make(bytes)
+    } as any)
+  }
+})
 
 describe("@smthrs/agent Wave-6 support modules deep fuzz invariants", () => {
   it("Memory.thresholds, select (wiki/repo/commits/facts/seeds/symlinks), source & plugin invariants", async () => {
@@ -151,7 +151,10 @@ describe("@smthrs/agent Wave-6 support modules deep fuzz invariants", () => {
               mkdirSync(join(root, ".flows", "wiki", "deps", "effect"), { recursive: true })
               writeFileSync(join(wikiDir, "guide.md"), "# Guide\nSee `src/a.ts` for parser details.\n")
               writeFileSync(join(wikiDir, "decisions", "0001-wal.md"), "# WAL\nKeep SQLite WAL enabled.\n")
-              writeFileSync(join(root, ".agents", "skills", "parser-skill", "SKILL.md"), "# Parser Skill\nUse strict parser.\n")
+              writeFileSync(
+                join(root, ".agents", "skills", "parser-skill", "SKILL.md"),
+                "# Parser Skill\nUse strict parser.\n"
+              )
               writeFileSync(join(root, ".agents", "skills", "stray-file.txt"), "ignored")
               writeFileSync(join(root, ".flows", "wiki", "deps", "effect", "guide.md"), "# Effect\nUse Effect.gen.\n")
               if (wikiMode === "valid_index") {
@@ -173,7 +176,9 @@ describe("@smthrs/agent Wave-6 support modules deep fuzz invariants", () => {
               // Fake jj + git spawner returning real Commit records and notes
               const sep = "\u001f"
               const rec = "\u001e"
-              const jjLine = `${commitHex}${sep}chg-${idx}${sep}${JSON.stringify(`Fix parser in src/a.ts #${idx}`)}${rec}`
+              const jjLine = `${commitHex}${sep}chg-${idx}${sep}${
+                JSON.stringify(`Fix parser in src/a.ts #${idx}`)
+              }${rec}`
               const spawnerLayer = makeFakeSpawner({
                 jjLog: jjLine,
                 jjNamed: jjLine,
@@ -187,13 +192,20 @@ describe("@smthrs/agent Wave-6 support modules deep fuzz invariants", () => {
                 )
               )
 
-              const envLayer = Layer.mergeAll(NodeServices.layer, evalLayer, TestMemory.layer, RecallKeyword.layer.pipe(Layer.provide(TestMemory.layer)))
+              const envLayer = Layer.mergeAll(
+                NodeServices.layer,
+                evalLayer,
+                TestMemory.layer,
+                RecallKeyword.layer.pipe(Layer.provide(TestMemory.layer))
+              )
 
               return yield* Effect.gen(function*() {
                 // 1) Memory.thresholds
                 const tRes = yield* Effect.result(Memory.thresholds(root))
                 if (threshMode === "corrupt_json" || threshMode === "symlink_escape") {
-                  if (!Result.isFailure(tRes) || tRes.failure.code !== "thresholds_invalid") throw new Error("fail at L184")
+                  if (!Result.isFailure(tRes) || tRes.failure.code !== "thresholds_invalid") {
+                    throw new Error("fail at L184")
+                  }
                 } else {
                   if (Result.isFailure(tRes)) throw new Error("fail at L186")
                 }
@@ -249,7 +261,9 @@ describe("@smthrs/agent Wave-6 support modules deep fuzz invariants", () => {
                   )
                 )
                 if (factsMode === "fail") {
-                  if (!Result.isFailure(selRes) || selRes.failure.code !== "facts_failed") throw new Error("fail at L217")
+                  if (!Result.isFailure(selRes) || selRes.failure.code !== "facts_failed") {
+                    throw new Error("fail at L217")
+                  }
                 } else {
                   if (Result.isFailure(selRes)) throw new Error("fail at L219")
                   if (selRes.success.kept.length === 0) throw new Error("fail at L220")
@@ -417,12 +431,16 @@ describe("@smthrs/agent Wave-6 support modules deep fuzz invariants", () => {
               MemoryMine.add(tr, {
                 seq: 1,
                 eventType: "control.agent.model-settled",
-                payload: { text: "Always run pnpm test before landing.\n\n```ts\nconst x = 1\n```\n\nNever skip typecheck." }
+                payload: {
+                  text: "Always run pnpm test before landing.\n\n```ts\nconst x = 1\n```\n\nNever skip typecheck."
+                }
               })
               MemoryMine.add(tr, {
                 seq: 10,
                 eventType: "control.agent.model-settled",
-                payload: { message: { content: [{ type: "text", text: "Multi-part prose with unicode 😀 " + "x".repeat(420) }] } }
+                payload: {
+                  message: { content: [{ type: "text", text: "Multi-part prose with unicode 😀 " + "x".repeat(420) }] }
+                }
               })
               MemoryMine.add(tr, {
                 seq: 11,
@@ -460,8 +478,7 @@ describe("@smthrs/agent Wave-6 support modules deep fuzz invariants", () => {
                   Object.fromEntries(Object.keys(req.questions).map((k) => [k, { probability: 0.95 }]))
                 )
                 : Layer.succeed(Evaluator.Evaluator, {
-                  evaluate: () =>
-                    Effect.fail(new Evaluator.EvaluatorError({ code: "unreachable", message: "offline" }))
+                  evaluate: () => Effect.fail(new Evaluator.EvaluatorError({ code: "unreachable", message: "offline" }))
                 })
 
               const mineOk = yield* Effect.gen(function*() {
@@ -476,7 +493,9 @@ describe("@smthrs/agent Wave-6 support modules deep fuzz invariants", () => {
                   )
                 )
                 if (mineJudgeOk) {
-                  if (Result.isFailure(judgedRes) || judgedRes.success.facts.length === 0) throw new Error("fail at L414")
+                  if (Result.isFailure(judgedRes) || judgedRes.success.facts.length === 0) {
+                    throw new Error("fail at L414")
+                  }
                   const note1 = yield* MemoryMine.write(store, {
                     bank: "notes",
                     runId: `mine-run-${idx}`,
@@ -526,106 +545,111 @@ describe("@smthrs/agent Wave-6 support modules deep fuzz invariants", () => {
     assertPassed(report)
   }, 120_000)
 
-  it("Budget multi-model readings, LRU maxRuns eviction, reserveCall refund, SmithersPlugin & CellPlugin invariants", async () => {
-    const arb = Arbitrary.schema(
-      Schema.Struct({
-        onExceeded: Schema.Literals(["fail", "warn", "park", "skip-remaining"]),
-        runCount: Schema.Int.pipe(Schema.check(Schema.isBetween({ minimum: 2, maximum: 6 }))),
-        refundOnFail: Schema.Boolean
-      })
-    )
+  it(
+    "Budget multi-model readings, LRU maxRuns eviction, reserveCall refund, SmithersPlugin & CellPlugin invariants",
+    async () => {
+      const arb = Arbitrary.schema(
+        Schema.Struct({
+          onExceeded: Schema.Literals(["fail", "warn", "park", "skip-remaining"]),
+          runCount: Schema.Int.pipe(Schema.check(Schema.isBetween({ minimum: 2, maximum: 6 }))),
+          refundOnFail: Schema.Boolean
+        })
+      )
 
-    let seq = 0
-    const report = await Effect.runPromise(
-      Fuzz.run(
-        arb,
-        ({ onExceeded, runCount, refundOnFail }) =>
-          Effect.scoped(
-            Effect.gen(function*() {
-              const idx = ++seq
+      let seq = 0
+      const report = await Effect.runPromise(
+        Fuzz.run(
+          arb,
+          ({ onExceeded, runCount, refundOnFail }) =>
+            Effect.scoped(
+              Effect.gen(function*() {
+                const idx = ++seq
 
-              // 1) Budget.memoryLedger with small maxRuns to hit LRU eviction & multi-model USD accounting
-              const ledger = Budget.memoryLedger()
-              const budgetLayer = Budget.layer(
-                {
-                  tokens: { max: 500, onExceeded },
-                  usd: { max: 0.5, onExceeded },
-                  latency: { maxMillis: 60_000, onExceeded },
-                  daily: { max: 10 },
-                  weights: { default: { input: 1, output: 2, cacheRead: 0.1, cacheWrite: 1.25 } }
-                },
-                { ledger }
-              )
+                // 1) Budget.memoryLedger with small maxRuns to hit LRU eviction & multi-model USD accounting
+                const ledger = Budget.memoryLedger()
+                const budgetLayer = Budget.layer(
+                  {
+                    tokens: { max: 500, onExceeded },
+                    usd: { max: 0.5, onExceeded },
+                    latency: { maxMillis: 60_000, onExceeded },
+                    daily: { max: 10 },
+                    weights: { default: { input: 1, output: 2, cacheRead: 0.1, cacheWrite: 1.25 } }
+                  },
+                  { ledger }
+                )
 
-              const budgetOk = yield* Effect.gen(function*() {
-                const eng = yield* FlowRuntime.FlowRuntime
-                for (let r = 0; r < runCount; r++) {
-                  const fl = Flow.make(`w6/bud-${idx}-${r}`, {
-                    payload: {},
-                    success: Schema.Boolean,
-                    body: () => Node.succeed(true)
-                  })
-                  yield* eng.register(fl, () =>
-                    Effect.gen(function*() {
-                      const b = yield* Budget.Budget
-                      const res = yield* Effect.result(
-                        Effect.scoped(
-                          Effect.gen(function*() {
-                            const rsv = yield* b.reserve(`k-${idx}-${r}`)
-                            if (refundOnFail) return yield* Effect.fail("synthetic-call-fail")
-                            return rsv
-                          })
+                const budgetOk = yield* Effect.gen(function*() {
+                  const eng = yield* FlowRuntime.FlowRuntime
+                  for (let r = 0; r < runCount; r++) {
+                    const fl = Flow.make(`w6/bud-${idx}-${r}`, {
+                      payload: {},
+                      success: Schema.Boolean,
+                      body: () => Node.succeed(true)
+                    })
+                    yield* eng.register(fl, () =>
+                      Effect.gen(function*() {
+                        const b = yield* Budget.Budget
+                        const res = yield* Effect.result(
+                          Effect.scoped(
+                            Effect.gen(function*() {
+                              const rsv = yield* b.reserve(`k-${idx}-${r}`)
+                              if (refundOnFail) return yield* Effect.fail("synthetic-call-fail")
+                              return rsv
+                            })
+                          )
                         )
-                      )
-                      void res
-                      yield* b.record(`k-${idx}-${r}`, {
-                        inputTokens: 40,
-                        outputTokens: 20,
-                        costUsd: 0.01
-                      }).pipe(Effect.ignore)
-                      const rd = yield* Effect.result(b.admitReading(`rd-${idx}-${r}`))
-                      void rd
-                      yield* b.record(`rd-${idx}-${r}`, { inputTokens: 20, outputTokens: 10, costUsd: 0.005 }).pipe(Effect.ignore)
-                      return true
+                        void res
+                        yield* b.record(`k-${idx}-${r}`, {
+                          inputTokens: 40,
+                          outputTokens: 20,
+                          costUsd: 0.01
+                        }).pipe(Effect.ignore)
+                        const rd = yield* Effect.result(b.admitReading(`rd-${idx}-${r}`))
+                        void rd
+                        yield* b.record(`rd-${idx}-${r}`, { inputTokens: 20, outputTokens: 10, costUsd: 0.005 }).pipe(
+                          Effect.ignore
+                        )
+                        return true
+                      }))
+                    const out = yield* eng.execute(fl, { executionId: `bud-exec-${idx}-${r}`, payload: {} })
+                    if (out !== true) return false
+                  }
+                  return true
+                }).pipe(
+                  Effect.provide(Layer.mergeAll(FlowEngine.layerMemory, budgetLayer, NodeCrypto.layer))
+                )
+                if (!budgetOk) return false
+
+                // 2) Journal with undecodable budget entry exercises Budget recovery error handling
+                const jLayer = TestJournal.layer()
+                yield* Effect.gen(function*() {
+                  const journal = yield* Journal.Journal
+                  const rId = JournalEvent.RunId.make(`bad-bud-${idx}`)
+                  yield* journal.emitDurableUnfenced(
+                    new JournalEvent.Input({
+                      runId: rId,
+                      sourceId: JournalEvent.SourceId.make("/budget"),
+                      sourceSeq: JournalEvent.SourceSeq.make(0),
+                      eventType: "flows.agent.budget-started.v1",
+                      payload: { corrupt: true }
                     })
                   )
-                  const out = yield* eng.execute(fl, { executionId: `bud-exec-${idx}-${r}`, payload: {} })
-                  if (out !== true) return false
-                }
+                }).pipe(Effect.provide(jLayer))
+
+                // 3) CellPlugin & SmithersPlugin surface checks
+                const emptyPlug = CellPlugin.fromBindings({ name: "w6-empty", bindings: [] })
+                if (emptyPlug.name !== "w6-empty") return false
+                const smPlug = SmithersPlugin.make()
+                if (smPlug.name !== SmithersPlugin.name) return false
+
                 return true
-              }).pipe(
-                Effect.provide(Layer.mergeAll(FlowEngine.layerMemory, budgetLayer, NodeCrypto.layer))
-              )
-              if (!budgetOk) return false
-
-              // 2) Journal with undecodable budget entry exercises Budget recovery error handling
-              const jLayer = TestJournal.layer()
-              yield* Effect.gen(function*() {
-                const journal = yield* Journal.Journal
-                const rId = JournalEvent.RunId.make(`bad-bud-${idx}`)
-                yield* journal.emitDurableUnfenced(
-                  new JournalEvent.Input({
-                    runId: rId,
-                    sourceId: JournalEvent.SourceId.make("/budget"),
-                    sourceSeq: JournalEvent.SourceSeq.make(0),
-                    eventType: "flows.agent.budget-started.v1",
-                    payload: { corrupt: true }
-                  })
-                )
-              }).pipe(Effect.provide(jLayer))
-
-              // 3) CellPlugin & SmithersPlugin surface checks
-              const emptyPlug = CellPlugin.fromBindings({ name: "w6-empty", bindings: [] })
-              if (emptyPlug.name !== "w6-empty") return false
-              const smPlug = SmithersPlugin.make()
-              if (smPlug.name !== SmithersPlugin.name) return false
-
-              return true
-            })
-          ),
-        { executions: Math.min(executions, 24), seed: seed + 2 }
+              })
+            ),
+          { executions: Math.min(executions, 24), seed: seed + 2 }
+        )
       )
-    )
-    assertPassed(report)
-  }, 120_000)
+      assertPassed(report)
+    },
+    120_000
+  )
 })

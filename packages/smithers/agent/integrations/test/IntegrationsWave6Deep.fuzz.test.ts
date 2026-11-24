@@ -98,7 +98,14 @@ describe("@smthrs/integrations Wave 6 deep fuzz (SourceRecord, Connection, Sourc
             const decoded = yield* SourceRecord.decode(rec)
             expect(decoded.externalId).toBe("m1")
             const tomb = SourceRecord.tombstone(
-              { provider: rec.provider, connectionId: rec.connectionId, kind: rec.kind, externalId: rec.externalId, access: rec.access, thread: rec.thread },
+              {
+                provider: rec.provider,
+                connectionId: rec.connectionId,
+                kind: rec.kind,
+                externalId: rec.externalId,
+                access: rec.access,
+                thread: rec.thread
+              },
               t1 + 50
             )
             expect(tomb.deleted).toBe(true)
@@ -125,7 +132,8 @@ describe("@smthrs/integrations Wave 6 deep fuzz (SourceRecord, Connection, Sourc
             expect(canUse).toBe(personal ? principal === "alice" : true)
 
             const fakeCred = {
-              resolve: (r: { readonly id: string; readonly name: string }) => Effect.succeed(Redacted.make(`sec-${r.name}`))
+              resolve: (r: { readonly id: string; readonly name: string }) =>
+                Effect.succeed(Redacted.make(`sec-${r.name}`))
             } as unknown as Parameters<typeof Connection.resolveSecret>[0]["credentials"]
             const resolved = yield* Connection.resolveSecret({
               credentials: fakeCred,
@@ -146,269 +154,322 @@ describe("@smthrs/integrations Wave 6 deep fuzz (SourceRecord, Connection, Sourc
     assertPassed(report)
   })
 
-  it("Differential fuzz: SQLite SourceStore matches Memory SourceStore across apply, tombstones, container filtering, text search, and purge", async () => {
-    const arb = Arbitrary.schema(
-      Schema.Struct({
-        ops: Schema.Array(
-          Schema.Struct({
-            kind: Schema.Literals(["put", "tombstone", "search", "get", "validate", "revokeContainer", "revokeConn", "reinstate", "commit"]),
-            id: Schema.Literals(["m1", "m2", "m3", "m4"]),
-            container: Schema.Literals(["c-a", "c-b"]),
-            ts: Schema.Int.check(Schema.isBetween({ minimum: 1000, maximum: 1020 })),
-            text: Schema.Literals(["Deploy 100%_alpha", "release beta", "notes gamma"])
-          })
-        ).check(Schema.isMinLength(6), Schema.isMaxLength(16))
-      })
-    )
-
-    const report = await Effect.runPromise(
-      Fuzz.run(
-        arb,
-        ({ ops }) =>
-          Effect.promise(async () => {
-            const dir = mkdtempSync(join(tmpdir(), "smthrs-srcstore-"))
-            try {
-              const dbLayer = Layer.provideMerge(
-                DurableWriter.layer(),
-                NodeDatabase.layer({ filename: join(dir, "sources.sqlite") })
-              )
-              const migrated = Layer.provideMerge(CoreMigrations.layer, dbLayer)
-              const sqlLayer = Layer.provideMerge(sourceStoreSql, migrated)
-
-              const runWith = (layer: Layer.Layer<SourceStore, unknown, never>) =>
-                Effect.runPromise(
-                  Effect.gen(function*() {
-                    const store = yield* SourceStore
-                    const trace: Array<unknown> = []
-                    for (const op of ops) {
-                      if (op.kind === "put") {
-                        const r = yield* store.apply([makeRecord(op.id, op.text, op.ts, op.container, String(op.ts))])
-                        trace.push(["put", r.inserted, r.updated, r.unchanged, r.tombstoned])
-                      } else if (op.kind === "tombstone") {
-                        const t = SourceRecord.tombstone(
-                          { provider: "github", connectionId: "team-chat", kind: "message", externalId: op.id, access: { scope: "container", containerId: op.container }, thread: { containerId: op.container, threadId: "t1", parentId: null } },
-                          op.ts
-                        )
-                        const r = yield* store.apply([t])
-                        trace.push(["tomb", r.inserted, r.updated, r.unchanged, r.tombstoned])
-                      } else if (op.kind === "get") {
-                        const got = yield* store.get("team-chat", op.id)
-                        trace.push(["get", Option.isSome(got) ? [got.value.record.externalId, got.value.record.deleted, got.value.revoked] : null])
-                      } else if (op.kind === "search") {
-                        const found = yield* store.retrieve({
-                          allowed: [{ connectionId: "team-chat", containers: [op.container] }],
-                          query: op.text.split(" ")[0]!,
-                          limit: 10
-                        })
-                        trace.push(["search", found.map((f) => [f.externalId, f.updatedAtMs])])
-                      } else if (op.kind === "validate") {
-                        const v = yield* store.validate({
-                          allowed: [{ connectionId: "team-chat", containers: [op.container] }],
-                          references: [SourceRecord.reference(makeRecord(op.id, op.text, op.ts, op.container, String(op.ts)))]
-                        })
-                        trace.push(["validate", v.map((x) => x.validity)])
-                      } else if (op.kind === "revokeContainer") {
-                        const n = yield* store.revokeContainer("team-chat", op.container)
-                        const rev = yield* store.isRevoked("team-chat", op.container)
-                        trace.push(["revC", n, rev])
-                      } else if (op.kind === "revokeConn") {
-                        const n = yield* store.revokeConnection("team-chat")
-                        const rev = yield* store.isRevoked("team-chat")
-                        trace.push(["revAll", n, rev])
-                      } else if (op.kind === "reinstate") {
-                        yield* store.reinstate("team-chat")
-                        yield* store.reinstate("team-chat", op.container)
-                        trace.push(["rein", yield* store.isRevoked("team-chat"), yield* store.isRevoked("team-chat", op.container)])
-                      } else {
-                        const c = yield* store.commit({
-                          provider: "github",
-                          connectionId: "team-chat",
-                          stream: "s1",
-                          changes: {
-                            records: [makeRecord(op.id, op.text, op.ts, op.container, String(op.ts))],
-                            cursor: `cur-${op.ts}`,
-                            reset: op.ts % 2 === 0,
-                            done: true
-                          }
-                        })
-                        const cur = yield* store.cursor("team-chat", "s1")
-                        trace.push(["commit", c.inserted, c.updated, c.swept, cur])
-                      }
-                    }
-                    return trace
-                  }).pipe(Effect.provide(layer))
-                )
-
-              const memTrace = await runWith(sourceStoreMemory)
-              const sqlTrace = await runWith(sqlLayer)
-              expect(sqlTrace).toEqual(memTrace)
-              return true
-            } finally {
-              rmSync(dir, { recursive: true, force: true })
-            }
-          }),
-        { executions: Math.min(executions, 20), seed: seed + 1 }
+  it(
+    "Differential fuzz: SQLite SourceStore matches Memory SourceStore across apply, tombstones, container filtering, text search, and purge",
+    async () => {
+      const arb = Arbitrary.schema(
+        Schema.Struct({
+          ops: Schema.Array(
+            Schema.Struct({
+              kind: Schema.Literals([
+                "put",
+                "tombstone",
+                "search",
+                "get",
+                "validate",
+                "revokeContainer",
+                "revokeConn",
+                "reinstate",
+                "commit"
+              ]),
+              id: Schema.Literals(["m1", "m2", "m3", "m4"]),
+              container: Schema.Literals(["c-a", "c-b"]),
+              ts: Schema.Int.check(Schema.isBetween({ minimum: 1000, maximum: 1020 })),
+              text: Schema.Literals(["Deploy 100%_alpha", "release beta", "notes gamma"])
+            })
+          ).check(Schema.isMinLength(6), Schema.isMaxLength(16))
+        })
       )
-    )
-    assertPassed(report)
-  }, 60_000)
 
-  it("Channel.fromSource, signedBodyKey, constantSecret, and AuthBroker + AuthConsent enforce auth, PKCE, CSRF, and dedupe invariants", async () => {
-    const arb = Arbitrary.schema(
-      Schema.Struct({
-        routeKind: Schema.Literals(["flow", "signal"]),
-        fault: Schema.Literals(["none", "exchange", "user", "identity", "tamperReturn", "wrongOrigin", "badCookie", "wrongPkce", "replay"]),
-        eventId: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 50 })),
-        consentDecision: Schema.Literals(["approve", "deny"])
-      })
-    )
+      const report = await Effect.runPromise(
+        Fuzz.run(
+          arb,
+          ({ ops }) =>
+            Effect.promise(async () => {
+              const dir = mkdtempSync(join(tmpdir(), "smthrs-srcstore-"))
+              try {
+                const dbLayer = Layer.provideMerge(
+                  DurableWriter.layer(),
+                  NodeDatabase.layer({ filename: join(dir, "sources.sqlite") })
+                )
+                const migrated = Layer.provideMerge(CoreMigrations.layer, dbLayer)
+                const sqlLayer = Layer.provideMerge(sourceStoreSql, migrated)
 
-    const report = await Effect.runPromise(
-      Fuzz.run(
-        arb,
-        ({ routeKind, fault, eventId, consentDecision }) =>
-          Effect.gen(function*() {
-            const digest = yield* Channel.signedBodyKey(new TextEncoder().encode(`body-${eventId}`))
-            expect(digest.length).toBeGreaterThan(10)
-            const sec = yield* Channel.constantSecret(Redacted.make("s-1"))(Redacted.make({ id: "c1", name: "k" }) as never)
-            expect(Redacted.value(sec)).toBe("s-1")
+                const runWith = (layer: Layer.Layer<SourceStore, unknown, never>) =>
+                  Effect.runPromise(
+                    Effect.gen(function*() {
+                      const store = yield* SourceStore
+                      const trace: Array<unknown> = []
+                      for (const op of ops) {
+                        if (op.kind === "put") {
+                          const r = yield* store.apply([makeRecord(op.id, op.text, op.ts, op.container, String(op.ts))])
+                          trace.push(["put", r.inserted, r.updated, r.unchanged, r.tombstoned])
+                        } else if (op.kind === "tombstone") {
+                          const t = SourceRecord.tombstone(
+                            {
+                              provider: "github",
+                              connectionId: "team-chat",
+                              kind: "message",
+                              externalId: op.id,
+                              access: { scope: "container", containerId: op.container },
+                              thread: { containerId: op.container, threadId: "t1", parentId: null }
+                            },
+                            op.ts
+                          )
+                          const r = yield* store.apply([t])
+                          trace.push(["tomb", r.inserted, r.updated, r.unchanged, r.tombstoned])
+                        } else if (op.kind === "get") {
+                          const got = yield* store.get("team-chat", op.id)
+                          trace.push([
+                            "get",
+                            Option.isSome(got)
+                              ? [got.value.record.externalId, got.value.record.deleted, got.value.revoked]
+                              : null
+                          ])
+                        } else if (op.kind === "search") {
+                          const found = yield* store.retrieve({
+                            allowed: [{ connectionId: "team-chat", containers: [op.container] }],
+                            query: op.text.split(" ")[0]!,
+                            limit: 10
+                          })
+                          trace.push(["search", found.map((f) => [f.externalId, f.updatedAtMs])])
+                        } else if (op.kind === "validate") {
+                          const v = yield* store.validate({
+                            allowed: [{ connectionId: "team-chat", containers: [op.container] }],
+                            references: [
+                              SourceRecord.reference(makeRecord(op.id, op.text, op.ts, op.container, String(op.ts)))
+                            ]
+                          })
+                          trace.push(["validate", v.map((x) => x.validity)])
+                        } else if (op.kind === "revokeContainer") {
+                          const n = yield* store.revokeContainer("team-chat", op.container)
+                          const rev = yield* store.isRevoked("team-chat", op.container)
+                          trace.push(["revC", n, rev])
+                        } else if (op.kind === "revokeConn") {
+                          const n = yield* store.revokeConnection("team-chat")
+                          const rev = yield* store.isRevoked("team-chat")
+                          trace.push(["revAll", n, rev])
+                        } else if (op.kind === "reinstate") {
+                          yield* store.reinstate("team-chat")
+                          yield* store.reinstate("team-chat", op.container)
+                          trace.push([
+                            "rein",
+                            yield* store.isRevoked("team-chat"),
+                            yield* store.isRevoked("team-chat", op.container)
+                          ])
+                        } else {
+                          const c = yield* store.commit({
+                            provider: "github",
+                            connectionId: "team-chat",
+                            stream: "s1",
+                            changes: {
+                              records: [makeRecord(op.id, op.text, op.ts, op.container, String(op.ts))],
+                              cursor: `cur-${op.ts}`,
+                              reset: op.ts % 2 === 0,
+                              done: true
+                            }
+                          })
+                          const cur = yield* store.cursor("team-chat", "s1")
+                          trace.push(["commit", c.inserted, c.updated, c.swept, cur])
+                        }
+                      }
+                      return trace
+                    }).pipe(Effect.provide(layer))
+                  )
 
-            const seen = recorded()
-            const door = Channel.fromSource({
-              name: "chat",
-              route: routeKind === "flow" ? Channel.startFlow("triage") : Channel.signalRun(`run-${eventId}`)
-            })
-            const ev = {
-              source: "chat",
-              eventName: "integration:chat:msg",
-              correlationId: `room:${eventId}`,
-              payload: { eventId },
-              dedupeKey: `chat:${eventId}`,
-              receivedAtMs: 2_000 + eventId
-            }
-            const [r1, r2] = yield* Effect.promise(() =>
-              withChannels(
-                Effect.gen(function*() {
-                  yield* register(door)
-                  const first = yield* door.ingest(ev)
-                  const second = yield* door.ingest({ ...ev, receivedAtMs: 9_000 + eventId })
-                  return [first, second] as const
-                }),
-                seen
+                const memTrace = await runWith(sourceStoreMemory)
+                const sqlTrace = await runWith(sqlLayer)
+                expect(sqlTrace).toEqual(memTrace)
+                return true
+              } finally {
+                rmSync(dir, { recursive: true, force: true })
+              }
+            }),
+          { executions: Math.min(executions, 20), seed: seed + 1 }
+        )
+      )
+      assertPassed(report)
+    },
+    60_000
+  )
+
+  it(
+    "Channel.fromSource, signedBodyKey, constantSecret, and AuthBroker + AuthConsent enforce auth, PKCE, CSRF, and dedupe invariants",
+    async () => {
+      const arb = Arbitrary.schema(
+        Schema.Struct({
+          routeKind: Schema.Literals(["flow", "signal"]),
+          fault: Schema.Literals([
+            "none",
+            "exchange",
+            "user",
+            "identity",
+            "tamperReturn",
+            "wrongOrigin",
+            "badCookie",
+            "wrongPkce",
+            "replay"
+          ]),
+          eventId: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 50 })),
+          consentDecision: Schema.Literals(["approve", "deny"])
+        })
+      )
+
+      const report = await Effect.runPromise(
+        Fuzz.run(
+          arb,
+          ({ routeKind, fault, eventId, consentDecision }) =>
+            Effect.gen(function*() {
+              const digest = yield* Channel.signedBodyKey(new TextEncoder().encode(`body-${eventId}`))
+              expect(digest.length).toBeGreaterThan(10)
+              const sec = yield* Channel.constantSecret(Redacted.make("s-1"))(
+                Redacted.make({ id: "c1", name: "k" }) as never
               )
-            )
-            expect(r1._tag).toBe("Accepted")
-            expect(r2._tag).toBe("AlreadyApplied")
+              expect(Redacted.value(sec)).toBe("s-1")
 
-            const page = AuthConsent.pageOf(consentDecision === "approve" ? "https://github.test/login/oauth/authorize" : undefined, "https://github.test")
-            expect(["shown", "skipped"]).toContain(page)
-            expect(AuthConsent.hourlyBucket(eventId)).toBe(eventId >= AuthConsent.HOURLY_TOKENS ? "at_limit" : "under_limit")
-            yield* AuthConsent.observe({
-              page,
-              afterRevocation: consentDecision === "deny",
-              hourlyTokens: eventId,
-              path: routeKind === "flow" ? "sign_in" : "connect"
-            })
-
-            const origin = "https://vibelang.smithers.sh"
-            const otherOrigin = "https://other.smithers.sh"
-            const secret = Redacted.make("a".repeat(32))
-            const sites = [
-              { origin, secret },
-              { origin: otherOrigin, secret: Redacted.make("b".repeat(32)) }
-            ]
-            const keys = yield* Core.CookieKeys.make({ primary: secret }, "primary")
-            const github = GitHub.Auth.GitHubAuth.of({
-              authorizeUrl: ({ state, codeChallenge, redirectUri }) =>
-                "https://github.test/authorize?" +
-                new URLSearchParams({ state, code_challenge: codeChallenge, redirect_uri: redirectUri }),
-              exchange: () =>
-                fault === "exchange"
-                  ? Effect.fail(new GitHub.Auth.GitHubRefused({ step: "exchange", reason: "unavailable" }))
-                  : Effect.succeed({
-                    accessToken: Redacted.make("gh-secret-tok"),
-                    refreshToken: Redacted.make("gh-refresh-tok"),
-                    expiresAt: null
-                  }),
-              user: () =>
-                fault === "user"
-                  ? Effect.fail(new GitHub.Auth.GitHubRefused({ step: "user", reason: "unavailable" }))
-                  : Effect.succeed({ id: fault === "identity" ? 0 : 7, login: "ada" }),
-              refresh: () => Effect.fail(new GitHub.Auth.GitHubRefused({ step: "refresh", reason: "rejected" })),
-              permission: () => Effect.succeed("read"),
-              revoke: () => Effect.void,
-              deviceCode: () => Effect.fail(new GitHub.Auth.GitHubRefused({ step: "device", reason: "unavailable" })),
-              deviceToken: () => Effect.fail(new GitHub.Auth.GitHubRefused({ step: "device", reason: "unavailable" }))
-            })
-            expect(AuthConsent.githubOrigin(github)).toBe("https://github.test")
-            const store = yield* Broker.memoryStore()
-            const broker = durable(
-              yield* Broker.make({
-                origin: "https://smithers.sh",
-                sites,
-                keys,
-                store,
-                encryptionKey: Redacted.make("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="),
-                github
+              const seen = recorded()
+              const door = Channel.fromSource({
+                name: "chat",
+                route: routeKind === "flow" ? Channel.startFlow("triage") : Channel.signalRun(`run-${eventId}`)
               })
-            )
-            const siteClient = yield* Broker.site({ origin, brokerOrigin: "https://smithers.sh", secret })
-            const pending = yield* siteClient.begin()
+              const ev = {
+                source: "chat",
+                eventName: "integration:chat:msg",
+                correlationId: `room:${eventId}`,
+                payload: { eventId },
+                dedupeKey: `chat:${eventId}`,
+                receivedAtMs: 2_000 + eventId
+              }
+              const [r1, r2] = yield* Effect.promise(() =>
+                withChannels(
+                  Effect.gen(function*() {
+                    yield* register(door)
+                    const first = yield* door.ingest(ev)
+                    const second = yield* door.ingest({ ...ev, receivedAtMs: 9_000 + eventId })
+                    return [first, second] as const
+                  }),
+                  seen
+                )
+              )
+              expect(r1._tag).toBe("Accepted")
+              expect(r2._tag).toBe("AlreadyApplied")
 
-            if (fault === "tamperReturn") {
-              const ex = yield* broker.start(origin, pending.returnTo + "0").pipe(Effect.exit)
-              expect(Exit.isFailure(ex)).toBe(true)
-              return true
-            }
-            if (fault === "wrongOrigin") {
-              const ex = yield* broker.start(otherOrigin, pending.returnTo).pipe(Effect.exit)
-              expect(Exit.isFailure(ex)).toBe(true)
-              return true
-            }
+              const page = AuthConsent.pageOf(
+                consentDecision === "approve" ? "https://github.test/login/oauth/authorize" : undefined,
+                "https://github.test"
+              )
+              expect(["shown", "skipped"]).toContain(page)
+              expect(AuthConsent.hourlyBucket(eventId)).toBe(
+                eventId >= AuthConsent.HOURLY_TOKENS ? "at_limit" : "under_limit"
+              )
+              yield* AuthConsent.observe({
+                page,
+                afterRevocation: consentDecision === "deny",
+                hourlyTokens: eventId,
+                path: routeKind === "flow" ? "sign_in" : "connect"
+              })
 
-            const started = yield* broker.start(origin, pending.returnTo)
-            const state = new URL(started.location).searchParams.get("state")!
+              const origin = "https://vibelang.smithers.sh"
+              const otherOrigin = "https://other.smithers.sh"
+              const secret = Redacted.make("a".repeat(32))
+              const sites = [
+                { origin, secret },
+                { origin: otherOrigin, secret: Redacted.make("b".repeat(32)) }
+              ]
+              const keys = yield* Core.CookieKeys.make({ primary: secret }, "primary")
+              const github = GitHub.Auth.GitHubAuth.of({
+                authorizeUrl: ({ state, codeChallenge, redirectUri }) =>
+                  "https://github.test/authorize?" +
+                  new URLSearchParams({ state, code_challenge: codeChallenge, redirect_uri: redirectUri }),
+                exchange: () =>
+                  fault === "exchange"
+                    ? Effect.fail(new GitHub.Auth.GitHubRefused({ step: "exchange", reason: "unavailable" }))
+                    : Effect.succeed({
+                      accessToken: Redacted.make("gh-secret-tok"),
+                      refreshToken: Redacted.make("gh-refresh-tok"),
+                      expiresAt: null
+                    }),
+                user: () =>
+                  fault === "user"
+                    ? Effect.fail(new GitHub.Auth.GitHubRefused({ step: "user", reason: "unavailable" }))
+                    : Effect.succeed({ id: fault === "identity" ? 0 : 7, login: "ada" }),
+                refresh: () => Effect.fail(new GitHub.Auth.GitHubRefused({ step: "refresh", reason: "rejected" })),
+                permission: () => Effect.succeed("read"),
+                revoke: () => Effect.void,
+                deviceCode: () => Effect.fail(new GitHub.Auth.GitHubRefused({ step: "device", reason: "unavailable" })),
+                deviceToken: () => Effect.fail(new GitHub.Auth.GitHubRefused({ step: "device", reason: "unavailable" }))
+              })
+              expect(AuthConsent.githubOrigin(github)).toBe("https://github.test")
+              const store = yield* Broker.memoryStore()
+              const broker = durable(
+                yield* Broker.make({
+                  origin: "https://smithers.sh",
+                  sites,
+                  keys,
+                  store,
+                  encryptionKey: Redacted.make("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="),
+                  github
+                })
+              )
+              const siteClient = yield* Broker.site({ origin, brokerOrigin: "https://smithers.sh", secret })
+              const pending = yield* siteClient.begin()
 
-            if (fault === "badCookie") {
-              const ex = yield* broker.callback(state, "code-1", started.cookie + "0").pipe(Effect.exit)
-              expect(Exit.isFailure(ex)).toBe(true)
-              return true
-            }
-
-            const cb = yield* broker.callback(state, "code-1", started.cookie).pipe(Effect.exit)
-            if (fault === "exchange" || fault === "user" || fault === "identity") {
-              expect(Exit.isFailure(cb)).toBe(true)
-              return true
-            }
-            expect(Exit.isSuccess(cb)).toBe(true)
-            if (Exit.isSuccess(cb)) {
-              const fragment = new URLSearchParams(new URL(cb.value).hash.slice(1))
-              const handoffCode = fragment.get("code")!
-              if (fault === "wrongPkce") {
-                const badReq = yield* siteClient.redemption({ ...pending, verifier: "x".repeat(43) }, handoffCode)
-                const ex = yield* broker.exchange(origin, badReq).pipe(Effect.exit)
+              if (fault === "tamperReturn") {
+                const ex = yield* broker.start(origin, pending.returnTo + "0").pipe(Effect.exit)
                 expect(Exit.isFailure(ex)).toBe(true)
                 return true
               }
-              const reqPayload = yield* siteClient.redemption(pending, handoffCode)
-              const exchanged = yield* broker.exchange(origin, reqPayload)
-              expect(exchanged.login).toBe("ada")
-              if (fault === "replay") {
-                const replayCb = yield* broker.callback(state, "code-1", started.cookie).pipe(Effect.exit)
-                expect(Exit.isFailure(replayCb)).toBe(true)
-                const replayEx = yield* broker.exchange(origin, reqPayload).pipe(Effect.exit)
-                expect(Exit.isFailure(replayEx)).toBe(true)
+              if (fault === "wrongOrigin") {
+                const ex = yield* broker.start(otherOrigin, pending.returnTo).pipe(Effect.exit)
+                expect(Exit.isFailure(ex)).toBe(true)
+                return true
               }
-            }
-            const req = HttpServerRequest.fromWeb(new Request("https://smithers.sh/health"))
-            expect(req.url).toContain("/health")
-            return true
-          }),
-        { executions: Math.min(executions, 50), seed: seed + 2 }
+
+              const started = yield* broker.start(origin, pending.returnTo)
+              const state = new URL(started.location).searchParams.get("state")!
+
+              if (fault === "badCookie") {
+                const ex = yield* broker.callback(state, "code-1", started.cookie + "0").pipe(Effect.exit)
+                expect(Exit.isFailure(ex)).toBe(true)
+                return true
+              }
+
+              const cb = yield* broker.callback(state, "code-1", started.cookie).pipe(Effect.exit)
+              if (fault === "exchange" || fault === "user" || fault === "identity") {
+                expect(Exit.isFailure(cb)).toBe(true)
+                return true
+              }
+              expect(Exit.isSuccess(cb)).toBe(true)
+              if (Exit.isSuccess(cb)) {
+                const fragment = new URLSearchParams(new URL(cb.value).hash.slice(1))
+                const handoffCode = fragment.get("code")!
+                if (fault === "wrongPkce") {
+                  const badReq = yield* siteClient.redemption({ ...pending, verifier: "x".repeat(43) }, handoffCode)
+                  const ex = yield* broker.exchange(origin, badReq).pipe(Effect.exit)
+                  expect(Exit.isFailure(ex)).toBe(true)
+                  return true
+                }
+                const reqPayload = yield* siteClient.redemption(pending, handoffCode)
+                const exchanged = yield* broker.exchange(origin, reqPayload)
+                expect(exchanged.login).toBe("ada")
+                if (fault === "replay") {
+                  const replayCb = yield* broker.callback(state, "code-1", started.cookie).pipe(Effect.exit)
+                  expect(Exit.isFailure(replayCb)).toBe(true)
+                  const replayEx = yield* broker.exchange(origin, reqPayload).pipe(Effect.exit)
+                  expect(Exit.isFailure(replayEx)).toBe(true)
+                }
+              }
+              const req = HttpServerRequest.fromWeb(new Request("https://smithers.sh/health"))
+              expect(req.url).toContain("/health")
+              return true
+            }),
+          { executions: Math.min(executions, 50), seed: seed + 2 }
+        )
       )
-    )
-    assertPassed(report)
-  }, 60_000)
+      assertPassed(report)
+    },
+    60_000
+  )
 
   it("GitHub.Once trailer/branch/issue/comment/review/pull reconciliation resists foreign collisions", async () => {
     const arb = Arbitrary.schema(
@@ -441,21 +502,46 @@ describe("@smthrs/integrations Wave 6 deep fuzz (SourceRecord, Connection, Sourc
             const refs = new Map<string, string>([["main", BASE]])
             const issues: Array<Record<string, unknown>> = [
               {
-                id: 1, node_id: "I_1", number: 1, title: "T", body: Issues.withWriteMarker(msg, OTHER),
-                state: "open", state_reason: null, user: USER, labels: [], comments: 0,
-                closed_at: null, html_url: "https://github.test/o/r/issues/1",
-                created_at: "2026-10-20T10:00:00Z", updated_at: "2026-10-20T10:00:00Z"
+                id: 1,
+                node_id: "I_1",
+                number: 1,
+                title: "T",
+                body: Issues.withWriteMarker(msg, OTHER),
+                state: "open",
+                state_reason: null,
+                user: USER,
+                labels: [],
+                comments: 0,
+                closed_at: null,
+                html_url: "https://github.test/o/r/issues/1",
+                created_at: "2026-10-20T10:00:00Z",
+                updated_at: "2026-10-20T10:00:00Z"
               }
             ]
             const comments: Array<Record<string, unknown>> = [
               {
-                id: 10, node_id: "IC_10", body: Issues.withWriteMarker(msg, OTHER), user: USER,
-                html_url: "https://github.test/o/r/issues/7#c", issue_url: "https://api.github.test/repos/o/r/issues/7",
-                author_association: "OWNER", created_at: "2026-10-20T10:00:00Z", updated_at: "2026-10-20T10:00:00Z"
+                id: 10,
+                node_id: "IC_10",
+                body: Issues.withWriteMarker(msg, OTHER),
+                user: USER,
+                html_url: "https://github.test/o/r/issues/7#c",
+                issue_url: "https://api.github.test/repos/o/r/issues/7",
+                author_association: "OWNER",
+                created_at: "2026-10-20T10:00:00Z",
+                updated_at: "2026-10-20T10:00:00Z"
               }
             ]
             const reviews: Array<Record<string, unknown>> = [
-              { id: 20, node_id: "PRR_20", body: Issues.withWriteMarker(msg, OTHER), state: "COMMENTED", user: USER, commit_id: BASE, html_url: "https://github.test/o/r/pull/7#r", submitted_at: "2026-10-20T10:00:00Z" }
+              {
+                id: 20,
+                node_id: "PRR_20",
+                body: Issues.withWriteMarker(msg, OTHER),
+                state: "COMMENTED",
+                user: USER,
+                commit_id: BASE,
+                html_url: "https://github.test/o/r/pull/7#r",
+                submitted_at: "2026-10-20T10:00:00Z"
+              }
             ]
             const pulls: Array<Record<string, unknown>> = []
 
@@ -478,10 +564,20 @@ describe("@smthrs/integrations Wave 6 deep fuzz (SourceRecord, Connection, Sourc
               if (path === "/repos/o/r/issues" && request.method === "POST") {
                 const num = 10 + issues.length
                 const iss = {
-                  id: 100 + num, node_id: `I_${num}`, number: num, title: body.title, body: body.body,
-                  state: "open", state_reason: null, user: USER, labels: [], comments: 0, closed_at: null,
+                  id: 100 + num,
+                  node_id: `I_${num}`,
+                  number: num,
+                  title: body.title,
+                  body: body.body,
+                  state: "open",
+                  state_reason: null,
+                  user: USER,
+                  labels: [],
+                  comments: 0,
+                  closed_at: null,
                   html_url: `https://github.test/o/r/issues/${num}`,
-                  created_at: "2026-10-20T10:01:00Z", updated_at: "2026-10-20T10:01:00Z"
+                  created_at: "2026-10-20T10:01:00Z",
+                  updated_at: "2026-10-20T10:01:00Z"
                 }
                 issues.push(iss)
                 return jsonRes(response, 201, iss)
@@ -492,9 +588,15 @@ describe("@smthrs/integrations Wave 6 deep fuzz (SourceRecord, Connection, Sourc
               if (path === "/repos/o/r/issues/7/comments") {
                 if (request.method === "GET") return jsonRes(response, 200, comments)
                 const c = {
-                  id: 500 + comments.length, node_id: `IC_${comments.length}`, body: body.body, user: USER,
-                  html_url: "https://github.test/o/r/issues/7#c", issue_url: "https://api.github.test/repos/o/r/issues/7",
-                  author_association: "OWNER", created_at: "2026-10-20T10:01:00Z", updated_at: "2026-10-20T10:01:00Z"
+                  id: 500 + comments.length,
+                  node_id: `IC_${comments.length}`,
+                  body: body.body,
+                  user: USER,
+                  html_url: "https://github.test/o/r/issues/7#c",
+                  issue_url: "https://api.github.test/repos/o/r/issues/7",
+                  author_association: "OWNER",
+                  created_at: "2026-10-20T10:01:00Z",
+                  updated_at: "2026-10-20T10:01:00Z"
                 }
                 comments.push(c)
                 return jsonRes(response, 201, c)
@@ -502,9 +604,14 @@ describe("@smthrs/integrations Wave 6 deep fuzz (SourceRecord, Connection, Sourc
               if (path === "/repos/o/r/pulls/7/reviews") {
                 if (request.method === "GET") return jsonRes(response, 200, reviews)
                 const rv = {
-                  id: 900 + reviews.length, node_id: `PRR_${reviews.length}`, body: body.body,
-                  state: "COMMENTED", user: USER, commit_id: BASE,
-                  html_url: "https://github.test/o/r/pull/7#r", submitted_at: "2026-10-20T10:01:00Z"
+                  id: 900 + reviews.length,
+                  node_id: `PRR_${reviews.length}`,
+                  body: body.body,
+                  state: "COMMENTED",
+                  user: USER,
+                  commit_id: BASE,
+                  html_url: "https://github.test/o/r/pull/7#r",
+                  submitted_at: "2026-10-20T10:01:00Z"
                 }
                 reviews.push(rv)
                 return jsonRes(response, 201, rv)
@@ -512,19 +619,36 @@ describe("@smthrs/integrations Wave 6 deep fuzz (SourceRecord, Connection, Sourc
               if (path === "/repos/o/r/pulls" && request.method === "POST") {
                 const num = 1 + pulls.length
                 const pr = {
-                  id: 2000 + num, node_id: `PR_${num}`, number: num, title: body.title, body: body.body,
-                  state: "open", draft: false, merged: false, mergeable: true, closed_at: null, merged_at: null, merge_commit_sha: null,
-                  user: USER, labels: [], html_url: `https://github.test/o/r/pull/${num}`,
+                  id: 2000 + num,
+                  node_id: `PR_${num}`,
+                  number: num,
+                  title: body.title,
+                  body: body.body,
+                  state: "open",
+                  draft: false,
+                  merged: false,
+                  mergeable: true,
+                  closed_at: null,
+                  merged_at: null,
+                  merge_commit_sha: null,
+                  user: USER,
+                  labels: [],
+                  html_url: `https://github.test/o/r/pull/${num}`,
                   head: { ref: body.head, sha: refs.get(body.head) ?? nextSha() },
                   base: { ref: body.base, sha: BASE },
-                  created_at: "2026-10-20T10:01:00Z", updated_at: "2026-10-20T10:01:00Z"
+                  created_at: "2026-10-20T10:01:00Z",
+                  updated_at: "2026-10-20T10:01:00Z"
                 }
                 pulls.push(pr)
                 return jsonRes(response, 201, pr)
               }
               if (path === "/repos/o/r/pulls" && request.method === "GET") {
                 const head = url.searchParams.get("head")
-                return jsonRes(response, 200, pulls.filter((p) => `o:${(p["head"] as Record<string, unknown>)["ref"]}` === head))
+                return jsonRes(
+                  response,
+                  200,
+                  pulls.filter((p) => `o:${(p["head"] as Record<string, unknown>)["ref"]}` === head)
+                )
               }
               return jsonRes(response, 404, { message: "Not Found" })
             })
@@ -541,7 +665,12 @@ describe("@smthrs/integrations Wave 6 deep fuzz (SourceRecord, Connection, Sourc
                   expect(Option.isSome(bFound) && bFound.value.name === b1.name).toBe(true)
 
                   // Issue keyed action ignores foreign OTHER key
-                  const issueOp = Once.issue("o", "r", { title: "T", body: msg, since: "2026-10-20T00:00:00Z", author: "octocat" })
+                  const issueOp = Once.issue("o", "r", {
+                    title: "T",
+                    body: msg,
+                    since: "2026-10-20T00:00:00Z",
+                    author: "octocat"
+                  })
                   expect(Option.isNone(yield* issueOp.find(keyHex))).toBe(true)
                   const i1 = yield* issueOp.perform(keyHex)
                   const iFound = yield* issueOp.find(keyHex)

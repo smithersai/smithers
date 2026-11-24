@@ -8,7 +8,7 @@ editUrl: "https://github.com/smithersai/smithers/edit/main/packages/smithers/flo
 
 > **Source:** [implementation](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/sandbox/src) · [reference source](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/sandbox/docs/api.md) · [package docs](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/sandbox/docs)
 
-> **Related APIs:** [`@smthrs/capability`](/docs/reference/api/capability/) · [`@smthrs/flow`](/docs/reference/api/flow/) · [`@smthrs/jj`](/docs/reference/api/jj/) · [`@smthrs/kernel`](/docs/reference/api/kernel/) · [`@smthrs/plan`](/docs/reference/api/plan/)
+> **Related APIs:** [`@smthrs/capability`](/docs/reference/api/capability/) · [`@smthrs/crypto`](/docs/reference/api/crypto/) · [`@smthrs/flow`](/docs/reference/api/flow/) · [`@smthrs/jj`](/docs/reference/api/jj/) · [`@smthrs/kernel`](/docs/reference/api/kernel/) · [`@smthrs/plan`](/docs/reference/api/plan/)
 
 `@smthrs/sandbox` adapts a provider a caller hands it onto Effect's host
 services. The smallest composition adapts a spawn-only provider onto
@@ -75,7 +75,10 @@ A provider may add SDK details to `ProviderError.cause`, but it cannot create ne
 
 `Provider.kill` and `Provider.ping` are optional, because a transport that can only post a command line has neither. A provider that implements them buys two things it cannot otherwise have: one command can be stopped without tearing down the session that runs it, and the session's liveness can be supervised. When `kill` is present the adapter maps `ChildProcessHandle.kill` onto it and signals a still-running command when its scope closes, ahead of the provider's own release finalizer; a process this side has already seen exit is left alone. When `kill` is absent the adapter refuses with a `BadArgument` `PlatformError` rather than pretending to have delivered a signal.
 
-The command reaches the provider as the string `CommandLine.renderForExecution` produces, so a `Redacted` argument arrives as its value. Every `PlatformError` names the command by `CommandLine.render`, which shows that argument as `<redacted>`. `@smthrs/kernel`'s `proc:spawn` check is written against `CommandLine.resource`, which starts from the `CommandLine.render` string and adds a `sh -c` wrapper for a shell line holding control syntax, an `env <NAME>… --` prefix for overridden environment names, and a `cwd <path> --` prefix for a directory outside the workspace. The two strings match only when none of those apply.
+The adapter checks every pipeline stage before sending `CommandLine.render(command)`,
+its working directory and its environment to the provider. It refuses protected arguments
+and environment values. A guest can use an opaque placeholder issued by its host egress proxy.
+Command failures report the operation and typed reason.
 
 Unsupported semantics are declared rather than dropped. Each of these fails with a `BadArgument` `PlatformError` before the provider is asked to start anything:
 
@@ -195,7 +198,9 @@ Vercel, Daytona, Cloudflare, AWS, and Microsandbox tolerate teardown failures an
 
 `ContainerSandbox`, `KubernetesSandbox`, and `AwsSandbox` stamp a SHA-256 fingerprint of the provider, full session key, and requested machine configuration in `smithers.dev/sandbox-fingerprint` labels or tags. Reattachment requires matching metadata; missing, malformed, or mismatched inspection data fails with `unavailable` before starting, executing in, or deleting the candidate. This also applies before replacing terminal Pods or stopping duplicate ECS tasks. Leftovers created before fingerprinting must be removed explicitly before that key can be acquired again. Container image, workdir, and network mode and the Pod image and explicit service account are also checked against inspection output. With no `createArgs`, reattachment rejects host-networked or privileged Pods and host bind mounts in containers or hostPath volumes in Pods. The fingerprint includes all `createArgs`, environment, network, and role options; it is a configuration identity check, not attestation against an administrator who can rewrite provider metadata.
 
-Every bundled provider derives its machine's name from the session key the same way: the key's leading name-safe characters, for the operator reading a container or process list, plus a 64-bit digest of the whole key. The digest is what keeps `a/b` and `a-b` on separate machines, and what keeps two keys that merely start alike apart. It is a checksum and not a cryptographic one, so 64 bits over the whole key is the claim rather than "collision proof", and because the slug IS durable machine identity, changing it orphans whatever is running under the old names.
+New machine names contain up to 24 name-safe characters from the key and 128 bits of
+SHA-256 over its JSON string encoding. Recorded retained handles continue to address
+their existing machines under the earlier 64-bit naming scheme.
 
 Standard input for a transport with no input channel is staged under an unguessable name in a session-private directory under `/tmp/.smthrs-stdin` or `/var/tmp/.smthrs-stdin`, selected to stay outside the checkout, and its removal is a finalizer of the spawn's scope rather than a `rm` appended to the command. A checkout rooted at `/` cannot have an outside staging directory, so stdin-fed commands there fail with `spawn_error` before writing. Commands without stdin still run. The finalizer is registered before the first byte is written, so a write that fails partway still has its partial file taken away: no provider writes a file atomically, and `AwsSandbox` sends one remote round trip per `ExecTransport.chunkBytes` bytes. Removal is attempted even for a killed or interrupted command; failure or the five-second bound can leave staged bytes on the machine, and the unguessable name prevents a reattached session from finding a previous incarnation's staging file by guessing. Staged input stays outside the checkout, so `git add -A`, capture and checkpoint cannot include it even while the command runs or after removal fails. What is guaranteed is the unguessable name and the scope-bound removal: the staging file is created through the session's own `writeFile`, so its mode is the machine's umask like any other file the session writes.
 

@@ -105,152 +105,186 @@ export default Flow.make("wave6/flow", {
     assertPassed(report)
   })
 
-  it("ModuleClosure.specifiersOf, collect, analyze, snapshot, and linked enforce graph pinning, cycles, confinement, and bounds", async () => {
-    const arb = Arbitrary.schema(
-      Schema.Struct({
-        topology: Schema.Literals(["acyclic", "cycle", "escape", "hostImport", "dynamicImport", "reexport", "missingDep"]),
-        fileBound: Schema.Literals([1, 20]),
-        withTypeOnly: Schema.Boolean
-      })
-    )
+  it(
+    "ModuleClosure.specifiersOf, collect, analyze, snapshot, and linked enforce graph pinning, cycles, confinement, and bounds",
+    async () => {
+      const arb = Arbitrary.schema(
+        Schema.Struct({
+          topology: Schema.Literals([
+            "acyclic",
+            "cycle",
+            "escape",
+            "hostImport",
+            "dynamicImport",
+            "reexport",
+            "missingDep"
+          ]),
+          fileBound: Schema.Literals([1, 20]),
+          withTypeOnly: Schema.Boolean
+        })
+      )
 
-    const report = await Effect.runPromise(
-      Fuzz.run(
-        arb,
-        ({ topology, fileBound, withTypeOnly }) =>
-          Effect.gen(function*() {
-            const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "reg-closure-w6-")))
-            try {
-              const typeLine = withTypeOnly ? `import type { Foo } from "./types.ts"\n` : ""
-              const helperSource =
-                topology === "cycle"
+      const report = await Effect.runPromise(
+        Fuzz.run(
+          arb,
+          ({ topology, fileBound, withTypeOnly }) =>
+            Effect.gen(function*() {
+              const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "reg-closure-w6-")))
+              try {
+                const typeLine = withTypeOnly ? `import type { Foo } from "./types.ts"\n` : ""
+                const helperSource = topology === "cycle"
                   ? `import { entry } from "./entry.ts"\nexport const helper = () => entry\n`
                   : `export const helper = 42\n`
-              const entrySource =
-                topology === "acyclic"
+                const entrySource = topology === "acyclic"
                   ? `${typeLine}import { helper } from "./helper.ts"\nexport const entry = helper\n`
                   : topology === "cycle"
-                    ? `${typeLine}import { helper } from "./helper.ts"\nexport const entry = helper()\n`
-                    : topology === "escape"
-                      ? `import { x } from "../../../outside.ts"\nexport const entry = x\n`
-                      : topology === "hostImport"
-                        ? `import * as nodeFs from "node:fs"\nimport { helper } from "./helper.ts"\nexport const entry = [nodeFs, helper]\n`
-                        : topology === "dynamicImport"
-                          ? `export const entry = async (x: string) => import(x)\n`
-                          : topology === "reexport"
-                            ? `export * from "./helper.ts"\nexport { helper as h } from "./helper.ts"\n`
-                            : `import { nope } from "./does-not-exist.ts"\nexport const entry = nope\n`
+                  ? `${typeLine}import { helper } from "./helper.ts"\nexport const entry = helper()\n`
+                  : topology === "escape"
+                  ? `import { x } from "../../../outside.ts"\nexport const entry = x\n`
+                  : topology === "hostImport"
+                  ? `import * as nodeFs from "node:fs"\nimport { helper } from "./helper.ts"\nexport const entry = [nodeFs, helper]\n`
+                  : topology === "dynamicImport"
+                  ? `export const entry = async (x: string) => import(x)\n`
+                  : topology === "reexport"
+                  ? `export * from "./helper.ts"\nexport { helper as h } from "./helper.ts"\n`
+                  : `import { nope } from "./does-not-exist.ts"\nexport const entry = nope\n`
 
-              fs.writeFileSync(path.join(root, "entry.ts"), entrySource)
-              fs.writeFileSync(path.join(root, "helper.ts"), helperSource)
-              if (withTypeOnly) {
-                fs.writeFileSync(path.join(root, "types.ts"), `export interface Foo { readonly x: number }\n`)
-              }
+                fs.writeFileSync(path.join(root, "entry.ts"), entrySource)
+                fs.writeFileSync(path.join(root, "helper.ts"), helperSource)
+                if (withTypeOnly) {
+                  fs.writeFileSync(path.join(root, "types.ts"), `export interface Foo { readonly x: number }\n`)
+                }
 
-              const specs = ModuleClosure.specifiersOf(entrySource, "entry.ts")
-              expect(specs).toBeDefined()
+                const specs = ModuleClosure.specifiersOf(entrySource, "entry.ts")
+                expect(specs).toBeDefined()
 
-              const fsSvc = yield* FileSystem.FileSystem
-              const pathSvc = yield* Path.Path
-              const entryPath = path.join(root, "entry.ts")
-              const memo = ModuleClosure.cache()
+                const fsSvc = yield* FileSystem.FileSystem
+                const pathSvc = yield* Path.Path
+                const entryPath = path.join(root, "entry.ts")
+                const memo = ModuleClosure.cache()
 
-              const collected = yield* ModuleClosure.collect(fsSvc, pathSvc, entryPath, entrySource, memo, {
-                files: fileBound,
-                bytes: 1024 * 1024
-              })
-              expect(Array.isArray(collected)).toBe(true)
+                const collected = yield* ModuleClosure.collect(fsSvc, pathSvc, entryPath, entrySource, memo, {
+                  files: fileBound,
+                  bytes: 1024 * 1024
+                })
+                expect(Array.isArray(collected)).toBe(true)
 
-              const analyzed = yield* ModuleClosure.analyze(fsSvc, pathSvc, entryPath, entrySource, memo, {
-                root,
-                realRoot: root
-              })
-              expect(Array.isArray(analyzed.imports)).toBe(true)
-              expect(Array.isArray(analyzed.hostImports)).toBe(true)
-              if (topology === "hostImport") {
-                expect(analyzed.hostImports.some((h) => h.includes("node:fs") || h === "fs")).toBe(true)
-              }
+                const analyzed = yield* ModuleClosure.analyze(fsSvc, pathSvc, entryPath, entrySource, memo, {
+                  root,
+                  realRoot: root
+                })
+                expect(Array.isArray(analyzed.imports)).toBe(true)
+                expect(Array.isArray(analyzed.hostImports)).toBe(true)
+                if (topology === "hostImport") {
+                  expect(analyzed.hostImports.some((h) => h.includes("node:fs") || h === "fs")).toBe(true)
+                }
 
-              const snap = yield* ModuleClosure.snapshot(fsSvc, pathSvc, entryPath, new TextEncoder().encode(entrySource), { files: fileBound, bytes: 1024 * 1024 })
-              expect(snap).toBeDefined()
-              return true
-            } finally {
-              fs.rmSync(root, { recursive: true, force: true })
-            }
-          }).pipe(Effect.provide(NodePlatform)),
-        { executions: Math.min(executions, 45), seed: seed + 1 }
-      )
-    )
-    assertPassed(report)
-  }, 60_000)
-
-  it("Discovery.discover, Executable.fileSpecifier, and RegistryError/DiscoveryError preserve error & path invariants across project layouts", async () => {
-    const arb = Arbitrary.schema(
-      Schema.Struct({
-        layout: Schema.Literals(["promptFlow", "codeFlow", "mixed", "empty", "missingRoot", "badFrontmatter"]),
-        errCode: Schema.Literals(["not_found", "system_collision", "body_unavailable", "execution_changed", "not_prompt_flow", "invalid_pack", "incompatible_pack", "unreadable_pack_range", "unknown"])
-      })
-    )
-
-    const report = await Effect.runPromise(
-      Fuzz.run(
-        arb,
-        ({ layout, errCode }) =>
-          Effect.gen(function*() {
-            const err = new RegistryError.RegistryError({
-              code: errCode,
-              module: "Registry",
-              method: "fuzz",
-              path: "/a/b",
-              message: `fault:${errCode}`
-            })
-            expect(err.code).toBe(errCode)
-            expect(err.message).toContain(errCode)
-
-            const spec = Executable.fileSpecifier("/tmp/demo/flow with spaces.ts")
-            expect(spec.startsWith("file://")).toBe(true)
-
-            const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "reg-disc-w6-")))
-            try {
-              if (layout === "promptFlow" || layout === "mixed") {
-                const pdir = path.join(root, ".smithers", "flows", "summarize")
-                fs.mkdirSync(pdir, { recursive: true })
-                fs.writeFileSync(
-                  path.join(pdir, "SKILL.md"),
-                  `---\nname: summarize\ndescription: Summarize input\n---\n\nSummarize the diff cleanly.\n`
+                const snap = yield* ModuleClosure.snapshot(
+                  fsSvc,
+                  pathSvc,
+                  entryPath,
+                  new TextEncoder().encode(entrySource),
+                  { files: fileBound, bytes: 1024 * 1024 }
                 )
+                expect(snap).toBeDefined()
+                return true
+              } finally {
+                fs.rmSync(root, { recursive: true, force: true })
               }
-              if (layout === "codeFlow" || layout === "mixed") {
-                const cdir = path.join(root, ".smithers", "flows", "lint-check")
-                fs.mkdirSync(cdir, { recursive: true })
-                fs.writeFileSync(
-                  path.join(cdir, "flow.ts"),
-                  `import { Flow } from "@smthrs/flow"\nimport { Effect, Schema } from "effect"\nexport default Flow.make("lint-check", { description: "Run lint", capabilities: [], effects: { reads: ["**"], writes: [], mode: "hermetic", tier: "sealed" }, payload: Schema.Void, success: Schema.String, body: () => Effect.succeed("ok") })\n`
-                )
-              }
-              if (layout === "badFrontmatter") {
-                const bdir = path.join(root, ".smithers", "flows", "broken")
-                fs.mkdirSync(bdir, { recursive: true })
-                fs.writeFileSync(path.join(bdir, "SKILL.md"), `---\n: [unclosed yaml\n---\nbody\n`)
-              }
-
-              const targetRoot = layout === "missingRoot" ? path.join(root, "no-such-dir") : root
-              const fsSvc = yield* FileSystem.FileSystem
-              const pathSvc = yield* Path.Path
-              const disc = Discovery.make(fsSvc, pathSvc)
-              const result = yield* disc.scan({ kind: "project", root: path.join(targetRoot, ".smithers", "flows") } as never).pipe(Effect.exit)
-              const skillResult = yield* disc.scan({ kind: "project", root: path.join(targetRoot, ".smithers", "flows"), skills: true } as never).pipe(Effect.exit)
-              expect(result).toBeDefined()
-              expect(skillResult).toBeDefined()
-              expect(Discovery.makeNoop()).toBeDefined()
-              return true
-            } finally {
-              fs.rmSync(root, { recursive: true, force: true })
-            }
-          }).pipe(Effect.provide(NodePlatform)),
-        { executions: Math.min(executions, 45), seed: seed + 2 }
+            }).pipe(Effect.provide(NodePlatform)),
+          { executions: Math.min(executions, 45), seed: seed + 1 }
+        )
       )
-    )
-    assertPassed(report)
-  }, 60_000)
+      assertPassed(report)
+    },
+    60_000
+  )
+
+  it(
+    "Discovery.discover, Executable.fileSpecifier, and RegistryError/DiscoveryError preserve error & path invariants across project layouts",
+    async () => {
+      const arb = Arbitrary.schema(
+        Schema.Struct({
+          layout: Schema.Literals(["promptFlow", "codeFlow", "mixed", "empty", "missingRoot", "badFrontmatter"]),
+          errCode: Schema.Literals([
+            "not_found",
+            "system_collision",
+            "body_unavailable",
+            "execution_changed",
+            "not_prompt_flow",
+            "invalid_pack",
+            "incompatible_pack",
+            "unreadable_pack_range",
+            "unknown"
+          ])
+        })
+      )
+
+      const report = await Effect.runPromise(
+        Fuzz.run(
+          arb,
+          ({ layout, errCode }) =>
+            Effect.gen(function*() {
+              const err = new RegistryError.RegistryError({
+                code: errCode,
+                module: "Registry",
+                method: "fuzz",
+                path: "/a/b",
+                message: `fault:${errCode}`
+              })
+              expect(err.code).toBe(errCode)
+              expect(err.message).toContain(errCode)
+
+              const spec = Executable.fileSpecifier("/tmp/demo/flow with spaces.ts")
+              expect(spec.startsWith("file://")).toBe(true)
+
+              const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "reg-disc-w6-")))
+              try {
+                if (layout === "promptFlow" || layout === "mixed") {
+                  const pdir = path.join(root, ".smithers", "flows", "summarize")
+                  fs.mkdirSync(pdir, { recursive: true })
+                  fs.writeFileSync(
+                    path.join(pdir, "SKILL.md"),
+                    `---\nname: summarize\ndescription: Summarize input\n---\n\nSummarize the diff cleanly.\n`
+                  )
+                }
+                if (layout === "codeFlow" || layout === "mixed") {
+                  const cdir = path.join(root, ".smithers", "flows", "lint-check")
+                  fs.mkdirSync(cdir, { recursive: true })
+                  fs.writeFileSync(
+                    path.join(cdir, "flow.ts"),
+                    `import { Flow } from "@smthrs/flow"\nimport { Effect, Schema } from "effect"\nexport default Flow.make("lint-check", { description: "Run lint", capabilities: [], effects: { reads: ["**"], writes: [], mode: "hermetic", tier: "sealed" }, payload: Schema.Void, success: Schema.String, body: () => Effect.succeed("ok") })\n`
+                  )
+                }
+                if (layout === "badFrontmatter") {
+                  const bdir = path.join(root, ".smithers", "flows", "broken")
+                  fs.mkdirSync(bdir, { recursive: true })
+                  fs.writeFileSync(path.join(bdir, "SKILL.md"), `---\n: [unclosed yaml\n---\nbody\n`)
+                }
+
+                const targetRoot = layout === "missingRoot" ? path.join(root, "no-such-dir") : root
+                const fsSvc = yield* FileSystem.FileSystem
+                const pathSvc = yield* Path.Path
+                const disc = Discovery.make(fsSvc, pathSvc)
+                const result = yield* disc.scan(
+                  { kind: "project", root: path.join(targetRoot, ".smithers", "flows") } as never
+                ).pipe(Effect.exit)
+                const skillResult = yield* disc.scan(
+                  { kind: "project", root: path.join(targetRoot, ".smithers", "flows"), skills: true } as never
+                ).pipe(Effect.exit)
+                expect(result).toBeDefined()
+                expect(skillResult).toBeDefined()
+                expect(Discovery.makeNoop()).toBeDefined()
+                return true
+              } finally {
+                fs.rmSync(root, { recursive: true, force: true })
+              }
+            }).pipe(Effect.provide(NodePlatform)),
+          { executions: Math.min(executions, 45), seed: seed + 2 }
+        )
+      )
+      assertPassed(report)
+    },
+    60_000
+  )
 })

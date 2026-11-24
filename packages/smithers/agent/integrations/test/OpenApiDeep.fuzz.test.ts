@@ -104,7 +104,16 @@ describe("@smthrs/integrations OpenApi deep fuzz invariants", () => {
   it("OpenApi.fromSpec + toBindings + execution round-trip all methods, params, responses, and bindings while pinning origin and never leaking secrets", async () => {
     const arb = Arbitrary.schema(
       Schema.Struct({
-        method: Schema.Literals(["listItems", "createItem", "getItem", "replaceItem", "patchItem", "headItems", "optionsItems", "delete_items_itemId"]),
+        method: Schema.Literals([
+          "listItems",
+          "createItem",
+          "getItem",
+          "replaceItem",
+          "patchItem",
+          "headItems",
+          "optionsItems",
+          "delete_items_itemId"
+        ]),
         itemId: Schema.Literals(["abc", "item-42", "x_1", "99"]),
         limit: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 50 })),
         kind: Schema.Literals(["a", "b", "c"]),
@@ -134,12 +143,18 @@ describe("@smthrs/integrations OpenApi deep fuzz invariants", () => {
             const op = ops.find((o) => o.operationId === method) ?? ops[0]!
             const binding = bindings.find((b) => b.flow.name === op.name)!
             expect(binding).toBeDefined()
-            expect(op.capabilities.every((c) => c.includes(allowHttp ? "api.local.test" : "api.example.test"))).toBe(true)
+            expect(op.capabilities.every((c) => c.includes(allowHttp ? "api.local.test" : "api.example.test"))).toBe(
+              true
+            )
 
             const { sent, client } = makeTransport(() => {
               if (responseKind === "empty204") return new Response(null, { status: 204 })
-              if (responseKind === "text") return new Response("plain-ok", { status: 200, headers: { "content-type": "text/plain" } })
-              if (responseKind === "invalidJson") return new Response("{not-json", { status: 200, headers: { "content-type": "application/json" } })
+              if (responseKind === "text") {
+                return new Response("plain-ok", { status: 200, headers: { "content-type": "text/plain" } })
+              }
+              if (responseKind === "invalidJson") {
+                return new Response("{not-json", { status: 200, headers: { "content-type": "application/json" } })
+              }
               if (responseKind === "streamedOk") {
                 return new Response(
                   new ReadableStream({
@@ -158,27 +173,27 @@ describe("@smthrs/integrations OpenApi deep fuzz invariants", () => {
               })
             })
 
-            const input: OpenApi.OperationInput =
-              op.operationId === "listItems"
-                ? {
-                  query: { limit, tag: ["t1", "t2"], kind, score: 1.5, active, anyArr: ["x", "y"] },
-                  headers: { "x-trace": "tr-1" }
-                }
-                : op.operationId === "createItem"
-                ? { body: { name: itemId, active } }
-                : op.operationId === "replaceItem"
-                ? { path: { itemId }, query: { dry: active }, body: { name: itemId } }
-                : op.operationId === "patchItem"
-                ? { path: { itemId }, body: { active } }
-                : op.operationId === "getItem"
-                ? { path: { itemId } }
-                : op.method === "delete"
-                ? { path: { itemId: 42 } }
-                : {}
+            const input: OpenApi.OperationInput = op.operationId === "listItems"
+              ? {
+                query: { limit, tag: ["t1", "t2"], kind, score: 1.5, active, anyArr: ["x", "y"] },
+                headers: { "x-trace": "tr-1" }
+              }
+              : op.operationId === "createItem"
+              ? { body: { name: itemId, active } }
+              : op.operationId === "replaceItem"
+              ? { path: { itemId }, query: { dry: active }, body: { name: itemId } }
+              : op.operationId === "patchItem"
+              ? { path: { itemId }, body: { active } }
+              : op.operationId === "getItem"
+              ? { path: { itemId } }
+              : op.method === "delete"
+              ? { path: { itemId: 42 } }
+              : {}
 
             const out = yield* binding.handler(input).pipe(Effect.provideService(HttpClient.HttpClient, client))
             expect(sent.length).toBe(1)
-            expect(sent[0]!.url.startsWith(allowHttp ? "http://api.local.test/v1/" : "https://api.example.test/v1/")).toBe(true)
+            expect(sent[0]!.url.startsWith(allowHttp ? "http://api.local.test/v1/" : "https://api.example.test/v1/"))
+              .toBe(true)
             expect(sent[0]!.url).not.toContain("evil.invalid")
             expect(sent[0]!.headers["authorization"]).toBe(`Bearer ${secret}`)
             expect(out.status).toBe(responseKind === "empty204" ? 204 : 200)
@@ -325,20 +340,28 @@ describe("@smthrs/integrations OpenApi deep fuzz invariants", () => {
               case "missingRef":
                 exit = yield* runSpec({
                   openapi: "3.1.0",
-                  paths: { "/a": { get: { operationId: "a", parameters: [{ $ref: "#/components/parameters/Missing" }] } } }
+                  paths: {
+                    "/a": { get: { operationId: "a", parameters: [{ $ref: "#/components/parameters/Missing" }] } }
+                  }
                 })
                 break
               case "cyclicRef":
                 exit = yield* runSpec({
                   openapi: "3.1.0",
-                  components: { parameters: { A: { $ref: "#/components/parameters/B" }, B: { $ref: "#/components/parameters/A" } } },
+                  components: {
+                    parameters: { A: { $ref: "#/components/parameters/B" }, B: { $ref: "#/components/parameters/A" } }
+                  },
                   paths: { "/a": { get: { operationId: "a", parameters: [{ $ref: "#/components/parameters/A" }] } } }
                 })
                 break
               case "cookieParam":
                 exit = yield* runSpec({
                   openapi: "3.1.0",
-                  paths: { "/a": { get: { operationId: "a", parameters: [{ name: "sid", in: "cookie", schema: { type: "string" } }] } } }
+                  paths: {
+                    "/a": {
+                      get: { operationId: "a", parameters: [{ name: "sid", in: "cookie", schema: { type: "string" } }] }
+                    }
+                  }
                 })
                 break
               case "missingPathParamDecl":
@@ -350,7 +373,14 @@ describe("@smthrs/integrations OpenApi deep fuzz invariants", () => {
               case "extraPathParamDecl":
                 exit = yield* runSpec({
                   openapi: "3.1.0",
-                  paths: { "/a": { get: { operationId: "a", parameters: [{ name: "ghost", in: "path", required: true, schema: { type: "string" } }] } } }
+                  paths: {
+                    "/a": {
+                      get: {
+                        operationId: "a",
+                        parameters: [{ name: "ghost", in: "path", required: true, schema: { type: "string" } }]
+                      }
+                    }
+                  }
                 })
                 break
               case "nonJsonBody":
@@ -444,39 +474,69 @@ describe("@smthrs/integrations OpenApi deep fuzz invariants", () => {
             switch (fault) {
               case "pathTraversal":
                 expectedCode = "unsafe_path"
-                exit = yield* byId("getItem").execute({ path: { itemId: "../etc" } }).pipe(Effect.provideService(HttpClient.HttpClient, okClient), Effect.exit)
+                exit = yield* byId("getItem").execute({ path: { itemId: "../etc" } }).pipe(
+                  Effect.provideService(HttpClient.HttpClient, okClient),
+                  Effect.exit
+                )
                 break
               case "pathSlash":
                 expectedCode = "unsafe_path"
-                exit = yield* byId("getItem").execute({ path: { itemId: "a/b" } }).pipe(Effect.provideService(HttpClient.HttpClient, okClient), Effect.exit)
+                exit = yield* byId("getItem").execute({ path: { itemId: "a/b" } }).pipe(
+                  Effect.provideService(HttpClient.HttpClient, okClient),
+                  Effect.exit
+                )
                 break
               case "pathBackslash":
                 expectedCode = "unsafe_path"
-                exit = yield* byId("getItem").execute({ path: { itemId: "a\\b" } }).pipe(Effect.provideService(HttpClient.HttpClient, okClient), Effect.exit)
+                exit = yield* byId("getItem").execute({ path: { itemId: "a\\b" } }).pipe(
+                  Effect.provideService(HttpClient.HttpClient, okClient),
+                  Effect.exit
+                )
                 break
               case "missingRequiredPath":
-                exit = yield* byId("getItem").execute({}).pipe(Effect.provideService(HttpClient.HttpClient, okClient), Effect.exit)
+                exit = yield* byId("getItem").execute({}).pipe(
+                  Effect.provideService(HttpClient.HttpClient, okClient),
+                  Effect.exit
+                )
                 break
               case "missingRequiredQuery":
-                exit = yield* byId("replaceItem").execute({ path: { itemId: "1" } }).pipe(Effect.provideService(HttpClient.HttpClient, okClient), Effect.exit)
+                exit = yield* byId("replaceItem").execute({ path: { itemId: "1" } }).pipe(
+                  Effect.provideService(HttpClient.HttpClient, okClient),
+                  Effect.exit
+                )
                 break
               case "missingRequiredBody":
-                exit = yield* byId("createItem").execute({}).pipe(Effect.provideService(HttpClient.HttpClient, okClient), Effect.exit)
+                exit = yield* byId("createItem").execute({}).pipe(
+                  Effect.provideService(HttpClient.HttpClient, okClient),
+                  Effect.exit
+                )
                 break
               case "badEnum":
-                exit = yield* byId("listItems").execute({ query: { kind: "zzz" } }).pipe(Effect.provideService(HttpClient.HttpClient, okClient), Effect.exit)
+                exit = yield* byId("listItems").execute({ query: { kind: "zzz" } }).pipe(
+                  Effect.provideService(HttpClient.HttpClient, okClient),
+                  Effect.exit
+                )
                 break
               case "badInteger":
-                exit = yield* byId("listItems").execute({ query: { limit: 1.5 } }).pipe(Effect.provideService(HttpClient.HttpClient, okClient), Effect.exit)
+                exit = yield* byId("listItems").execute({ query: { limit: 1.5 } }).pipe(
+                  Effect.provideService(HttpClient.HttpClient, okClient),
+                  Effect.exit
+                )
                 break
               case "badHeaderVal":
-                exit = yield* byId("listItems").execute({ headers: { "x-trace": "a\r\nb" } }).pipe(Effect.provideService(HttpClient.HttpClient, okClient), Effect.exit)
+                exit = yield* byId("listItems").execute({ headers: { "x-trace": "a\r\nb" } }).pipe(
+                  Effect.provideService(HttpClient.HttpClient, okClient),
+                  Effect.exit
+                )
                 break
               case "http400":
                 expectedCode = "http_error"
                 expectedRetryable = false
                 exit = yield* byId("getItem").execute({ path: { itemId: "1" } }).pipe(
-                  Effect.provideService(HttpClient.HttpClient, makeTransport(() => new Response(bodySecret, { status: 400 })).client),
+                  Effect.provideService(
+                    HttpClient.HttpClient,
+                    makeTransport(() => new Response(bodySecret, { status: 400 })).client
+                  ),
                   Effect.exit
                 )
                 break
@@ -484,7 +544,10 @@ describe("@smthrs/integrations OpenApi deep fuzz invariants", () => {
                 expectedCode = "http_error"
                 expectedRetryable = true
                 exit = yield* byId("createItem").execute({ body: { x: 1 } }).pipe(
-                  Effect.provideService(HttpClient.HttpClient, makeTransport(() => new Response(bodySecret, { status: 408 })).client),
+                  Effect.provideService(
+                    HttpClient.HttpClient,
+                    makeTransport(() => new Response(bodySecret, { status: 408 })).client
+                  ),
                   Effect.exit
                 )
                 break
@@ -492,7 +555,10 @@ describe("@smthrs/integrations OpenApi deep fuzz invariants", () => {
                 expectedCode = "http_error"
                 expectedRetryable = true
                 exit = yield* byId("createItem").execute({ body: { x: 1 } }).pipe(
-                  Effect.provideService(HttpClient.HttpClient, makeTransport(() => new Response(bodySecret, { status: 429 })).client),
+                  Effect.provideService(
+                    HttpClient.HttpClient,
+                    makeTransport(() => new Response(bodySecret, { status: 429 })).client
+                  ),
                   Effect.exit
                 )
                 break
@@ -500,7 +566,10 @@ describe("@smthrs/integrations OpenApi deep fuzz invariants", () => {
                 expectedCode = "http_error"
                 expectedRetryable = true
                 exit = yield* byId("getItem").execute({ path: { itemId: "1" } }).pipe(
-                  Effect.provideService(HttpClient.HttpClient, makeTransport(() => new Response(bodySecret, { status: 500 })).client),
+                  Effect.provideService(
+                    HttpClient.HttpClient,
+                    makeTransport(() => new Response(bodySecret, { status: 500 })).client
+                  ),
                   Effect.exit
                 )
                 break
@@ -508,7 +577,10 @@ describe("@smthrs/integrations OpenApi deep fuzz invariants", () => {
                 expectedCode = "http_error"
                 expectedRetryable = false
                 exit = yield* byId("createItem").execute({ body: { x: 1 } }).pipe(
-                  Effect.provideService(HttpClient.HttpClient, makeTransport(() => new Response(bodySecret, { status: 500 })).client),
+                  Effect.provideService(
+                    HttpClient.HttpClient,
+                    makeTransport(() => new Response(bodySecret, { status: 500 })).client
+                  ),
                   Effect.exit
                 )
                 break
@@ -522,7 +594,10 @@ describe("@smthrs/integrations OpenApi deep fuzz invariants", () => {
                     })
                   )
                 )
-                exit = yield* byId("getItem").execute({ path: { itemId: "1" } }).pipe(Effect.provideService(HttpClient.HttpClient, failing), Effect.exit)
+                exit = yield* byId("getItem").execute({ path: { itemId: "1" } }).pipe(
+                  Effect.provideService(HttpClient.HttpClient, failing),
+                  Effect.exit
+                )
                 break
               }
               case "brokenStream": {
@@ -537,7 +612,10 @@ describe("@smthrs/integrations OpenApi deep fuzz invariants", () => {
                     })
                   )
                 ).client
-                exit = yield* byId("getItem").execute({ path: { itemId: "1" } }).pipe(Effect.provideService(HttpClient.HttpClient, broken), Effect.exit)
+                exit = yield* byId("getItem").execute({ path: { itemId: "1" } }).pipe(
+                  Effect.provideService(HttpClient.HttpClient, broken),
+                  Effect.exit
+                )
                 break
               }
               case "timeout":

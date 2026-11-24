@@ -14,6 +14,11 @@ import { join } from "node:path"
 import { describe, expect, it, type TestAPI, type TestContext } from "vitest"
 import * as FuzzV8Coverage from "../src/FuzzV8Coverage.ts"
 import * as HostSuite from "../src/HostSuite.ts"
+import * as InternalFuzz from "../src/internal/fuzz.ts"
+import * as FuzzRegistration from "../src/internal/FuzzRegistration.ts"
+import * as ScoreSuite from "../src/internal/ScoreSuite.ts"
+import * as Structural from "../src/internal/Structural.ts"
+import * as TestEffectRunner from "../src/internal/TestEffectRunner.ts"
 import { expectJournal } from "../src/JournalAssertions.ts"
 import * as Plan from "../src/Plan.ts"
 import { expectKeyGoldens, expectPlan, expectPlans, expectPure } from "../src/PlanAssertions.ts"
@@ -21,11 +26,6 @@ import * as ScoreGate from "../src/ScoreGate.ts"
 import * as TestHost from "../src/TestHost.ts"
 import * as TestLayers from "../src/TestLayers.ts"
 import * as VitestAdapter from "../src/Vitest.ts"
-import * as FuzzRegistration from "../src/internal/FuzzRegistration.ts"
-import * as ScoreSuite from "../src/internal/ScoreSuite.ts"
-import * as Structural from "../src/internal/Structural.ts"
-import * as TestEffectRunner from "../src/internal/TestEffectRunner.ts"
-import * as InternalFuzz from "../src/internal/fuzz.ts"
 
 const baseExecutions = Number(process.env.EFFECT_FUZZ_EXECUTIONS ?? "60")
 const pureExecs = Math.max(15, Math.min(baseExecutions, 80))
@@ -70,109 +70,113 @@ describe("Wave-6 testing HostSuite, TestHost, Plan/Journal assertions, Structura
       expect(typeof rnd.nextDoubleUnsafe()).toBe("number")
     }))
 
-  it("runs HostSuite against TestHost and fuzzes HostSuite capability/scratch edge cases + TestHost MemoryFs & StubBash", () =>
-    property(
-      Arbitrary.all({
-        fileName: word,
-        content: word,
-        cmdSeed: intBetween(1, 1000),
-        cmdExit: intBetween(0, 2)
-      }),
-      Math.min(ioExecs, 6),
-      (s) =>
-        Effect.gen(function*() {
-          const profile: HostSuite.HostProfile = {
-            fileSystem: { supported: true },
-            path: { supported: true },
-            shell: { supported: true, interruptCommand: ChildProcess.make("host-suite-pending") },
-            jj: { supported: false, code: "not_installed" },
-            httpTransport: { supported: false, code: "TransportError" },
-            clock: { supported: true },
-            random: { supported: true }
-          }
-          const bundle = TestHost.layer({
-            seed: s.cmdSeed,
-            files: { [`/init/${s.fileName}.txt`]: s.content },
-            commands: {
-              "host-suite-pending": { pending: true },
-              "echo-ok": { stdout: s.content, stderr: "err", exitCode: s.cmdExit, delayMs: 1 }
+  it(
+    "runs HostSuite against TestHost and fuzzes HostSuite capability/scratch edge cases + TestHost MemoryFs & StubBash",
+    () =>
+      property(
+        Arbitrary.all({
+          fileName: word,
+          content: word,
+          cmdSeed: intBetween(1, 1000),
+          cmdExit: intBetween(0, 2)
+        }),
+        Math.min(ioExecs, 6),
+        (s) =>
+          Effect.gen(function*() {
+            const profile: HostSuite.HostProfile = {
+              fileSystem: { supported: true },
+              path: { supported: true },
+              shell: { supported: true, interruptCommand: ChildProcess.make("host-suite-pending") },
+              jj: { supported: false, code: "not_installed" },
+              httpTransport: { supported: false, code: "TransportError" },
+              clock: { supported: true },
+              random: { supported: true }
             }
+            const bundle = TestHost.layer({
+              seed: s.cmdSeed,
+              files: { [`/init/${s.fileName}.txt`]: s.content },
+              commands: {
+                "host-suite-pending": { pending: true },
+                "echo-ok": { stdout: s.content, stderr: "err", exitCode: s.cmdExit, delayMs: 1 }
+              }
+            })
+
+            // Run ALL HostSuite cases against TestHost!
+            for (const tc of HostSuite.hostSuite(bundle, profile)) {
+              yield* tc.run
+            }
+
+            // Exercise HostSuite scratch error branches: dangling symlink + permission denied
+            const tmpDir = mkdtempSync(join(tmpdir(), "testing-wave6-hostsuite-"))
+            try {
+              const scratch = join(tmpDir, "scratch")
+              const target = join(tmpDir, "target")
+              yield* Effect.promise(() => NodeFs.symlink(target, scratch, "file"))
+              const symCase = HostSuite.hostSuite(
+                Layer.merge(bundle, Layer.succeed(FileSystem.FileSystem)(BrowserFileSystem.make(NodeFs))),
+                { ...profile, fileSystemScratchPath: scratch }
+              )[0]!
+              const symExit = yield* Effect.exit(symCase.run)
+              expect(Exit.isFailure(symExit)).toBe(true)
+
+              const denied = PlatformError.systemError({
+                _tag: "PermissionDenied",
+                module: "FileSystem",
+                method: "makeDirectory"
+              })
+              const permFs = FileSystem.makeNoop({
+                exists: () => Effect.succeed(false),
+                makeDirectory: () => Effect.fail(denied)
+              })
+              const permCase = HostSuite.hostSuite(
+                Layer.merge(bundle, Layer.succeed(FileSystem.FileSystem)(permFs)),
+                { ...profile, fileSystemScratchPath: "/denied" }
+              )[0]!
+              const permExit = yield* Effect.exit(permCase.run)
+              expect(Exit.isFailure(permExit)).toBe(true)
+            } finally {
+              rmSync(tmpDir, { recursive: true, force: true })
+            }
+
+            // Exercise TestHost MemoryFs + StubBash + layerSeededRandom deeply
+            yield* Effect.scoped(
+              Effect.gen(function*() {
+                const fs = yield* FileSystem.FileSystem
+                const spawner = yield* ChildProcessSpawner
+                expect(yield* fs.readFileString(`/init/${s.fileName}.txt`)).toBe(s.content)
+                yield* fs.makeDirectory("/sub/deep", { recursive: true })
+                yield* fs.writeFileString("/sub/deep/a.txt", s.content)
+                expect(yield* fs.exists("/sub/deep/a.txt")).toBe(true)
+                const st = yield* fs.stat("/sub/deep/a.txt")
+                expect(st.type).toBe("File")
+                yield* fs.writeFileString("/sub/deep/b.txt", s.content)
+                yield* fs.writeFileString("/sub/deep/c.txt", s.content)
+                const entries = yield* fs.readDirectory("/sub/deep")
+                expect(entries).toContain("c.txt")
+                yield* fs.remove("/sub/deep/c.txt")
+                expect(yield* fs.exists("/sub/deep/c.txt")).toBe(false)
+                // Missing file fails
+                expect(Exit.isFailure(yield* Effect.exit(fs.readFileString("/nope.txt")))).toBe(true)
+                // StubBash: known command & unknown command
+                const h1 = yield* spawner.spawn(ChildProcess.make("echo-ok"))
+                expect(Number(yield* h1.exitCode)).toBe(s.cmdExit)
+                const h2 = yield* spawner.spawn(ChildProcess.make("unknown-cmd"))
+                expect(Number(yield* h2.exitCode)).toBe(127)
+              })
+            ).pipe(Effect.provide(bundle))
+
+            // TestHost.layerSeededRandom determinism
+            const r1 = yield* Effect.map(Random.Random, (r) => r.nextDoubleUnsafe()).pipe(
+              Effect.provide(TestHost.layerSeededRandom(s.cmdSeed))
+            )
+            const r2 = yield* Effect.map(Random.Random, (r) => r.nextDoubleUnsafe()).pipe(
+              Effect.provide(TestHost.layerSeededRandom(s.cmdSeed))
+            )
+            expect(r1).toBe(r2)
           })
-
-          // Run ALL HostSuite cases against TestHost!
-          for (const tc of HostSuite.hostSuite(bundle, profile)) {
-            yield* tc.run
-          }
-
-          // Exercise HostSuite scratch error branches: dangling symlink + permission denied
-          const tmpDir = mkdtempSync(join(tmpdir(), "testing-wave6-hostsuite-"))
-          try {
-            const scratch = join(tmpDir, "scratch")
-            const target = join(tmpDir, "target")
-            yield* Effect.promise(() => NodeFs.symlink(target, scratch, "file"))
-            const symCase = HostSuite.hostSuite(
-              Layer.merge(bundle, Layer.succeed(FileSystem.FileSystem)(BrowserFileSystem.make(NodeFs))),
-              { ...profile, fileSystemScratchPath: scratch }
-            )[0]!
-            const symExit = yield* Effect.exit(symCase.run)
-            expect(Exit.isFailure(symExit)).toBe(true)
-
-            const denied = PlatformError.systemError({
-              _tag: "PermissionDenied",
-              module: "FileSystem",
-              method: "makeDirectory"
-            })
-            const permFs = FileSystem.makeNoop({
-              exists: () => Effect.succeed(false),
-              makeDirectory: () => Effect.fail(denied)
-            })
-            const permCase = HostSuite.hostSuite(
-              Layer.merge(bundle, Layer.succeed(FileSystem.FileSystem)(permFs)),
-              { ...profile, fileSystemScratchPath: "/denied" }
-            )[0]!
-            const permExit = yield* Effect.exit(permCase.run)
-            expect(Exit.isFailure(permExit)).toBe(true)
-          } finally {
-            rmSync(tmpDir, { recursive: true, force: true })
-          }
-
-          // Exercise TestHost MemoryFs + StubBash + layerSeededRandom deeply
-          yield* Effect.scoped(
-            Effect.gen(function*() {
-              const fs = yield* FileSystem.FileSystem
-              const spawner = yield* ChildProcessSpawner
-              expect(yield* fs.readFileString(`/init/${s.fileName}.txt`)).toBe(s.content)
-              yield* fs.makeDirectory("/sub/deep", { recursive: true })
-              yield* fs.writeFileString("/sub/deep/a.txt", s.content)
-              expect(yield* fs.exists("/sub/deep/a.txt")).toBe(true)
-              const st = yield* fs.stat("/sub/deep/a.txt")
-              expect(st.type).toBe("File")
-              yield* fs.writeFileString("/sub/deep/b.txt", s.content)
-              yield* fs.writeFileString("/sub/deep/c.txt", s.content)
-              const entries = yield* fs.readDirectory("/sub/deep")
-              expect(entries).toContain("c.txt")
-              yield* fs.remove("/sub/deep/c.txt")
-              expect(yield* fs.exists("/sub/deep/c.txt")).toBe(false)
-              // Missing file fails
-              expect(Exit.isFailure(yield* Effect.exit(fs.readFileString("/nope.txt")))).toBe(true)
-              // StubBash: known command & unknown command
-              const h1 = yield* spawner.spawn(ChildProcess.make("echo-ok"))
-              expect(Number(yield* h1.exitCode)).toBe(s.cmdExit)
-              const h2 = yield* spawner.spawn(ChildProcess.make("unknown-cmd"))
-              expect(Number(yield* h2.exitCode)).toBe(127)
-            })
-          ).pipe(Effect.provide(bundle))
-
-          // TestHost.layerSeededRandom determinism
-          const r1 = yield* Effect.map(Random.Random, (r) => r.nextDoubleUnsafe()).pipe(
-            Effect.provide(TestHost.layerSeededRandom(s.cmdSeed))
-          )
-          const r2 = yield* Effect.map(Random.Random, (r) => r.nextDoubleUnsafe()).pipe(
-            Effect.provide(TestHost.layerSeededRandom(s.cmdSeed))
-          )
-          expect(r1).toBe(r2)
-        })
-    ), 120_000)
+      ),
+    120_000
+  )
 
   it("fuzzes Plan, PlanAssertions, JournalAssertions, Structural, and ScoreSuite across passing & failing branches", () =>
     property(
@@ -192,15 +196,24 @@ describe("Wave-6 testing HostSuite, TestHost, Plan/Journal assertions, Structura
           const b = `b-${s.nodeB}`
 
           // 1. Plan.planOf, Plan.fromGraph, Plan.keys, Plan.make, Plan.render, Plan.node, Plan.edge
-          const actA = Action.make(`wave6/a/${s.nodeA}`, { payload: Schema.Struct({ x: Schema.String }), success: Schema.String, tier: "sealed" })
-          const actB = Action.make(`wave6/b/${s.nodeB}`, { payload: Schema.Struct({ x: Schema.String }), success: Schema.String, tier: "compensable" })
+          const actA = Action.make(`wave6/a/${s.nodeA}`, {
+            payload: Schema.Struct({ x: Schema.String }),
+            success: Schema.String,
+            tier: "sealed"
+          })
+          const actB = Action.make(`wave6/b/${s.nodeB}`, {
+            payload: Schema.Struct({ x: Schema.String }),
+            success: Schema.String,
+            tier: "compensable"
+          })
           const myFlow = Flow.make(`wave6-flow-${s.runId}`, {
             payload: Schema.Struct({ x: Schema.String }),
             success: Schema.String,
             body: (input) => actA.call(input)
           })
           const planned = yield* Plan.planOf(myFlow, { x: s.runId }, { runId: s.runId })
-          expect(Object.keys(Plan.keys(Graph.build(myFlow, { x: s.runId }), { runId: s.runId })).length).toBeGreaterThan(0)
+          expect(Object.keys(Plan.keys(Graph.build(myFlow, { x: s.runId }), { runId: s.runId })).length)
+            .toBeGreaterThan(0)
           expect(typeof Plan.render(planned)).toBe("string")
 
           const manualPlan = Plan.make({
@@ -273,13 +286,21 @@ describe("Wave-6 testing HostSuite, TestHost, Plan/Journal assertions, Structura
 
           // expectPure (pure passes, impure fails with purity_violation)
           yield* expectPure(Effect.succeed(42))
-          const impure = yield* Effect.exit(expectPure(Clock.currentTimeMillis).pipe(Effect.provide(TestLayers.poisoned)))
+          const impure = yield* Effect.exit(
+            expectPure(Clock.currentTimeMillis).pipe(Effect.provide(TestLayers.poisoned))
+          )
           expect(Exit.isFailure(impure)).toBe(true)
 
           // 3. JournalAssertions (all pass & fail codes)
           const journal = [
             { index: 1, stepKey: a, kind: "step" as const, outcome: "completed" as const },
-            { index: 2, stepKey: b, kind: "effect" as const, outcome: "completed" as const, value: { idempotencyKey: "ik-1" } }
+            {
+              index: 2,
+              stepKey: b,
+              kind: "effect" as const,
+              outcome: "completed" as const,
+              value: { idempotencyKey: "ik-1" }
+            }
           ]
           const ja = expectJournal(journal)
           yield* ja.executed(a)
@@ -455,7 +476,13 @@ describe("Wave-6 testing HostSuite, TestHost, Plan/Journal assertions, Structura
               (v: { n: number }) => v.n >= 0,
               { id: "wave6-target", revision: "1" }
             )
-            yield* InternalFuzz.runFuzz(target, store, { executions: 4, seed: 7 }, { executions: 4, seed: 7 }, () => Effect.void)
+            yield* InternalFuzz.runFuzz(
+              target,
+              store,
+              { executions: 4, seed: 7 },
+              { executions: 4, seed: 7 },
+              () => Effect.void
+            )
             const loaded = yield* store.load("wave6-target")
             expect(Array.isArray(loaded)).toBe(true)
 
@@ -482,9 +509,14 @@ describe("Wave-6 testing HostSuite, TestHost, Plan/Journal assertions, Structura
               methods.fuzz("sync-case", [Schema.Boolean], ([b]: [boolean]) => typeof b === "boolean", {
                 fuzz: { executions: 3, seed: 1 }
               })
-              methods.effect.fuzz("eff-case", { b: Schema.Boolean }, ({ b }) => Effect.succeed(typeof b === "boolean"), {
-                fuzz: { executions: 3, seed: 1 }
-              })
+              methods.effect.fuzz(
+                "eff-case",
+                { b: Schema.Boolean },
+                ({ b }) => Effect.succeed(typeof b === "boolean"),
+                {
+                  fuzz: { executions: 3, seed: 1 }
+                }
+              )
               const fakeCtx = {
                 task: { fullTestName: "wave6-reg-test", file: { filepath: join(dir, "reg.test.ts") } },
                 signal: new AbortController().signal

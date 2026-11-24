@@ -162,7 +162,10 @@ names its own time, `timeoutMs` as `bash` and `test` take or `timeoutSeconds`
 as a sandbox's `run` takes, runs that long and `callMs` more, for the work its
 flow does around the command (starting it, waking its machine, collecting its
 output), held to what the frame's `totalMs` has left less one second, so it
-settles as a `timeout` the cell reads rather than ending the frame.
+settles as a `timeout` the cell reads rather than ending the frame. The time a
+call names is the model's to write, so it is held to one hour: no input raises
+a call's ceiling past `callMs` and an hour, including for a flow in
+`pauseTotalMsFor`, which the frame keeps no clock for.
 `Sandbox.callLimit` computes the ceiling; the default equals the timeout
 `bash` and `test` document, so a command that names none is not cut sooner
 than its flow says.
@@ -1646,14 +1649,18 @@ host reading bytes decodes them with a streaming `TextDecoder` first.
 - `unsupported_record`: a complete, well-formed record, event, item, status
   line, attachment or content block of a kind this module does not name. The
   message names the kind.
-- `malformed_record`: a complete line is not a JSON record; a record names no
+- `malformed_record`: a complete line is not a JSON record; a line passes
+  64 MiB without ending; a record names no
   type; a conversation record has no `uuid`, session or message content; a
   message part has no text; a tool request names no call.
 
-Each error carries the 1-based `line` the decode stopped at, and a failed
-decode returns no entries from its chunk: a host that must keep the entries
-before the refused line decodes one record at a time. `Fault` classifies all
-four as `dependency`: the agent wrote a transcript this release cannot read.
+Each error carries the 1-based `line` the decode stopped at and `decoded`: the
+entries of the complete lines before it in the chunk and the state after the
+last of them, with nothing pending. A chunk and the same bytes fed one line at
+a time return the same entries before the same error. A last line that passes
+64 MiB without its newline is refused as `malformed_record`, so `state.pending`
+is bounded. `Fault` classifies all four as `dependency`: the agent wrote a
+transcript this release cannot read.
 
 ## Compaction
 

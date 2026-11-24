@@ -278,7 +278,10 @@ body yields kind `markdown`.
 
 Requires the `FileSystem.FileSystem` and `Path.Path` services; on Node,
 provide `NodeFileSystem.layer` and `NodePath.layer` from
-`@effect/platform-node`.
+`@effect/platform-node`. When the registry's `Discovery` service
+(`@smthrs/registry/Discovery`) is provided, the scan runs through it; without
+one, discovery is built over the file system. Providing it is optional and
+does not appear in the requirements.
 
 Errors: `invalid_root` when the root or configuration is invalid,
 `root_missing` when the root does not exist, `read_failed` when the root or a
@@ -411,6 +414,40 @@ Incur cannot represent a node that is both runnable and a command group, so
 `domains self` on the CLI and `/domains/self` over HTTP. The bare name keeps
 dispatching to the same route.
 
+### `Incur.Host`
+
+```ts
+interface Host {
+  readonly argv: () => ReadonlyArray<string>
+  readonly env: (name: string) => string | undefined
+  readonly stdout: (text: string) => void
+  readonly exit: (code: number) => void
+}
+```
+
+A VibeLang `service` declaration with a default value: the process facts a
+served CLI reads and the channels it writes. `argv` is the command line
+`serve()` defaults to, `env` reads one environment variable (`createCli` reads
+only `COMPLETE`), and `stdout` and `exit` are the channels `serve` uses when
+its call passes none.
+
+`@smthrs/fs` never reads `process` on its own. Without a provided host it uses
+the ambient `process` when the runtime has one, looked up on every call, and
+an empty, inert host when it does not: no arguments, no environment, and
+channels that do nothing. `createCli` reads the host once, so provide it
+around `createCli`:
+
+```ts
+const cli = yield * Incur.createCli("smithers", routes).pipe(
+  Effect.provideService(Incur.Host, { argv, env, stdout, exit })
+)
+```
+
+The `incur` dependency reads `process` itself while it renders help,
+completions, and a dispatched command's output, so those paths still need a
+runtime with `process`. A failure refused before dispatch, and `fetch`, do
+not.
+
 ### `Incur.createCli`
 
 ```ts
@@ -434,13 +471,16 @@ environment variable (an empty value is ignored); and the HTTP paths `/mcp`,
 
 The returned CLI overrides two members:
 
-- `serve(argv = process.argv.slice(2), options)` resolves the command tokens
-  ahead of the first flag, accepting a slash-joined or spaced first token.
-  Only an unmatched name falls back to the metadata surface's help output.
-  Every other typed failure is written to `options.stdout` (defaulting to
-  `process.stdout`) as a JSON envelope
+- `serve(argv, options)` resolves the command tokens ahead of the first flag,
+  accepting a slash-joined or spaced first token. `argv` defaults to the
+  `Incur.Host` command line. A first token that begins with `-` is an option
+  and is never split on slashes, so `--config=/etc/app.json` reaches Incur
+  whole. Only an unmatched name falls back to the metadata surface's help
+  output. Every other typed failure is written to `options.stdout` (defaulting
+  to the host's `stdout`) as a JSON envelope
   `{ "ok": false, "error": { "code", "message" } }`, followed by
-  `options.exit(1)` (defaulting to `process.exit`).
+  `options.exit(1)` (defaulting to the host's `exit`). The same channels are
+  passed to Incur for every call it serves.
 - `fetch(request)` resolves the percent-decoded request path the same way and
   honors `request.signal` during dispatch. A malformed percent escape fails
   with status 400 and the `parse_failed` envelope; other pre-dispatch typed

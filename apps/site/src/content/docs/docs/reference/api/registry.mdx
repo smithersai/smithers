@@ -234,8 +234,14 @@ interface Source {
 One discovery source. `source` is opaque caller-supplied metadata copied onto
 each descriptor's provenance. `naming` selects whether a flow's name comes from
 its directory path below `root` or from the file's own `name` field.
-`system: true` makes a name collision with this source a
-`system_collision` failure instead of a first-found resolution.
+`system: true` protects this source's names: a later source's flow of the same
+name is dropped with a `duplicate_name` warning, and a system source that
+arrives after the name was claimed is a `system_collision` failure.
+`confinementRoot` is a directory whose real path bounds the scan: a directory,
+entry file or imported module that resolves outside it is refused with
+`outside_root`. `undeclaredCapabilities` decides what a markdown flow with no
+`capabilities` field receives: `"all"` (the default) is the wildcard and
+`"none"` is the empty list.
 `optionalRoot: true` returns an empty scan when `root` is absent, checked on
 every scan. It does not suppress access failures or a non-directory root.
 Sources are required by default; declared pack roots remain required.
@@ -930,9 +936,12 @@ Scans the ordered sources and constructs the registry. Both copy the
 configuration they were given, so mutating the `sources` or `packs.installed`
 array afterwards changes nothing.
 
-A name claimed twice by ordinary sources resolves first-found with a
-`duplicate_name` warning. A name shared with a source declared `system: true`
-fails `RegistryError { code: "system_collision" }` in either direction.
+A name claimed twice resolves first-found with a `duplicate_name` warning. That
+includes a pack or a later source that reuses the name of a flow from a source
+declared `system: true`: the system flow is kept and the later flow is dropped,
+so one colliding flow cannot deny the catalog. Only a `system: true` source
+that arrives after another source claimed one of its names fails
+`RegistryError { code: "system_collision" }`.
 
 ### Registry.ProjectOptions, Registry.projectSource and Registry.layerProject
 
@@ -1887,7 +1896,7 @@ real path of the file the load resolved to:
 | -------------------------------------------- | --------------------------------------------------- |
 | A measured copy the loader wrote             | Loads.                                              |
 | Any other file under a protected source root | Refused with `UnmeasuredLoadError` naming the file. |
-| A path through `node_modules` under the root | Loads, as a static package import does.             |
+| A path through `node_modules` under the root | Refused the same way; nothing measured it.          |
 | Any file outside every protected source root | Loads with the host's authority.                    |
 
 The second row includes the original of a measured module: its live bytes are
@@ -1897,6 +1906,9 @@ on, including the repository that holds the flow: its packages, its compiler,
 its linters and its bundler configuration are the material the run operates on,
 in the same trust class as an installed package. Keep code that belongs to the
 flow under the source root and import it statically, so that it is measured.
+Keep installed packages outside the source root: a `node_modules` directory
+beneath it is committed beside the flow and is not part of the measured closure,
+so it could change after approval under the same execution digest.
 
 The decision never reads the text that named the file. A `..` segment, an
 absolute path, a `file:` URL with a query, or a symbolic link that leads back
