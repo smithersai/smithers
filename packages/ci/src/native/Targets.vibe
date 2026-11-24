@@ -90,55 +90,73 @@ const prefixes: ReadonlyArray<string> = [
 /** A variable set for one command, as in `CI=1 smthrs ci //...`. */
 const assignment = /^[A-Za-z_][A-Za-z0-9_]*=/
 
-/** The characters that end a command or its arguments: separators, grouping and redirections. */
-const operators = ";&|\n()<>"
+/** Shell redirections, with an optional adjoining, unquoted file descriptor. */
+const redirection = /(?:[0-9]+(?=[<>]))?(<<<|<<-|<<|>>|>\||<>|>&|<&|[<>]|&>>?)/y
+
+const substitution = /`|\$\(|\$\{(?![A-Za-z_][A-Za-z_0-9]*\})/y
+
+const unsupported = "unsupported shell redirection"
+type Command = ReadonlyArray<string> | typeof unsupported
 
 /**
  * The commands of a shell script, each as its words, unquoted as a shell
  * does it: quoted and bare pieces that touch are one word, a backslash keeps
  * the next character, and a backslash before a line end joins two lines. A
- * `#` that starts a word starts a comment. An operator ends a command.
+ * `#` that starts a word starts a comment. Redirections consume their operands without ending the command.
  */
-const commandsOf = (script: string): ReadonlyArray<ReadonlyArray<string>> => {
+const commandsOf = (script: string): ReadonlyArray<Command> => {
   const commands: Array<Array<string>> = [[]]
   const documents: Array<{ end: string; stripTabs: boolean }> = []
   let text: string | undefined = undefined
+  let redirect: string | undefined = undefined
   const close = (): void => {
-    if (text !== undefined) (commands.at(-1) as Array<string>).push(text)
+    if (text === undefined) return
+    if (redirect === undefined) (commands.at(-1) as Array<string>).push(text)
+    else if (redirect === "<<" || redirect === "<<-") documents.push({ end: text, stripTabs: redirect === "<<-" })
     text = undefined
+    redirect = undefined
+  }
+  // Substitutions can contain spaces, nested quotes or commands of their own.
+  const complexOperand = (at: number): boolean => {
+    substitution.lastIndex = at
+    return redirect !== undefined && substitution.test(script)
   }
   for (let at = 0; at < script.length; at++) {
     const char = script.charAt(at)
-    if (char === "'") {
+    redirection.lastIndex = at
+    // Digits already inside a word are part of that word, even when a redirect follows.
+    const op = text !== undefined && /[0-9]/.test(char) ? null : redirection.exec(script)
+    if (op !== null) {
+      close()
+      if (redirect !== undefined) return [...commands, unsupported]
+      redirect = op[1]
+      at = redirection.lastIndex - 1
+    } else if (complexOperand(at)) {
+      return [...commands, unsupported]
+    } else if (char === "'") {
       const end = script.indexOf("'", at + 1)
+      if (end === -1 && redirect !== undefined) return [...commands, unsupported]
       const stop = end === -1 ? script.length : end
       text = (text ?? "") + script.slice(at + 1, stop)
       at = stop
     } else if (char === "\"") {
       text = text ?? ""
       for (at += 1; at < script.length && script.charAt(at) !== "\""; at++) {
+        if (complexOperand(at)) return [...commands, unsupported]
         // Inside double quotes a backslash keeps a quote, a backslash, a dollar or a backtick.
         if (script.charAt(at) === "\\" && /["\\$`]/.test(script.charAt(at + 1))) at += 1
         text += script.charAt(at)
       }
+      if (at === script.length && redirect !== undefined) return [...commands, unsupported]
     } else if (char === "\\") {
       at += 1
       if (script.charAt(at) !== "\n") text = (text ?? "") + script.charAt(at)
     } else if (char === "#" && text === undefined) {
       const end = script.indexOf("\n", at)
       at = (end === -1 ? script.length : end) - 1
-    } else if (char === "<" && script.startsWith("<<<", at)) {
+    } else if (";&|\n()".includes(char)) {
       close()
-      at += 2
-    } else if (char === "<" && script.startsWith("<<", at)) {
-      close()
-      const marker = /^<<(-?)[ \t]*((?:[a-zA-Z0-9_./-]+|'[^'\n]*'|"[^"\n]*"|\\[^\n])+)/.exec(script.slice(at))
-      if (marker === null) break
-      const end = (marker[2] as string).replace(/'([^']*)'|"([^"]*)"|\\(.)/g, (_match, single, double, escaped) => single ?? double ?? escaped)
-      documents.push({ end, stripTabs: marker[1] === "-" })
-      at += marker[0].length - 1
-    } else if (operators.includes(char)) {
-      close()
+      if (redirect !== undefined) return [...commands, unsupported]
       commands.push([])
       if (char === "\n") {
         for (const document of documents.splice(0)) {
@@ -158,7 +176,7 @@ const commandsOf = (script: string): ReadonlyArray<ReadonlyArray<string>> => {
     }
   }
   close()
-  return commands
+  return redirect === undefined ? commands : [...commands, unsupported]
 }
 
 const nameOf = (word: string | undefined): string => (word ?? "").replace(/^.*\//, "")
@@ -167,7 +185,8 @@ const nameOf = (word: string | undefined): string => (word ?? "").replace(/^.*\/
 const isPattern = (word: string): boolean => word.startsWith("//") && !word.includes("$")
 
 /** The patterns one command gives Smithers build, or the patterns of the script it hands a shell. */
-const invocationsOf = (words: ReadonlyArray<string>): ReadonlyArray<ReadonlyArray<string>> => {
+const invocationsOf = (words: Command): ReadonlyArray<ReadonlyArray<string>> => {
+  if (words === unsupported) return [[]]
   const start = words.findIndex((word) => !assignment.test(word) && !prefixes.includes(word))
   const rest = start === -1 ? [] : words.slice(start)
   if (shells.includes(nameOf(rest[0]))) {

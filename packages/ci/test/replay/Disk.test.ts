@@ -4,7 +4,18 @@ import * as Effect from "effect/Effect"
 import * as Fiber from "effect/Fiber"
 import * as Ref from "effect/Ref"
 import { execFileSync } from "node:child_process"
-import { chmodSync, linkSync, mkdirSync, mkdtempSync, readdirSync, realpathSync, rmSync, writeFileSync } from "node:fs"
+import {
+  chmodSync,
+  linkSync,
+  lstatSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  realpathSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync
+} from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterAll, describe, expect, it } from "vitest"
@@ -73,21 +84,39 @@ describe("the disk as the machine says it is", () => {
     expect(said).toBeUndefined()
   })
 
-  it.skipIf(process.platform !== "linux")("counts files beyond the kernel pathname limit", async () => {
+  it.each(
+    [
+      ["darwin", 6],
+      ["linux", 22]
+    ] as const
+  )("counts hard-linked files beyond the %s byte limit once", async (platform, depth) => {
     const root = scratch()
+    // Non-ASCII names cross PATH_MAX in bytes before their JavaScript string length does.
+    const name = "é".repeat(100)
     try {
-      execFileSync(process.execPath, [
+      const data = join(root, "payload")
+      writeFileSync(data, Buffer.alloc(1_000_000))
+      symlinkSync(root, join(root, "loop"))
+      const deepBytes = Number(execFileSync(process.execPath, [
         "-e",
         [
-          "const fs = require(\"node:fs\"), name = \"d\".repeat(100)",
-          "for (let i = 0; i < 45; i++) { fs.mkdirSync(name); process.chdir(name) }",
-          "fs.writeFileSync(\"data\", Buffer.alloc(65536))"
-        ].join("\n")
-      ], { cwd: root })
-      expect(await heldUnder(root)).toBeGreaterThanOrEqual(65536)
+          "const fs = require('node:fs'), [name, depth, data] = process.argv.slice(1)",
+          "for (let i = 0; i < Number(depth); i++) { fs.mkdirSync(name); process.chdir(name) }",
+          "fs.linkSync(data, 'data')",
+          "fs.writeFileSync('only-deep', Buffer.alloc(500_000))",
+          "console.log(fs.lstatSync('only-deep').blocks * 512)",
+          "fs.linkSync('data', 'other-name')"
+        ].join("\n"),
+        name,
+        String(depth),
+        data
+      ], { cwd: root, encoding: "utf8" }))
+      // On Darwin the Linux-only descriptor namespace is unavailable.
+      const held = await heldUnder(root, undefined, process.platform === "darwin" ? "darwin" : platform)
+      expect(held).toBe(deepBytes + 512 * (lstatSync(data).blocks + lstatSync(join(root, "loop")).blocks))
     } finally {
       // Node's recursive removal also takes full pathnames.
-      execFileSync("rm", ["-rf", join(root, "d".repeat(100))])
+      execFileSync("rm", ["-rf", join(root, name)])
     }
   })
 
@@ -147,7 +176,12 @@ describe("a watch of the disk", () => {
     const walked: Array<string> = []
     const result = await Effect.runPromise(
       Effect.scoped(Effect.gen(function*() {
-        const watch = yield* diskWatch("/replay", "/replay/jobs", () => Effect.void, tick)
+        const watch = yield* diskWatch(
+          "/replay",
+          ["/replay/machines", "/replay/baseline-machines"],
+          () => Effect.void,
+          tick
+        )
         yield* Effect.flip(watch.ended)
         expect(yield* watch.most).toBe(0)
         expect(walked).toEqual([])
@@ -162,7 +196,8 @@ describe("a watch of the disk", () => {
       }))
     )
     expect(result[0]).toBe(result[1])
-    expect(walked).toEqual(["/replay", "/replay/jobs"])
+    expect(walked).toEqual(["/replay", "/replay/machines", "/replay/baseline-machines"])
+    expect(result[0]).toContain("2 GB of it in its jobs' machines")
   })
 
   it.each(["admission", "cleanup", "watchdog"] as const)(

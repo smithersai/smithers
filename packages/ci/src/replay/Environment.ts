@@ -68,8 +68,8 @@ export const skippedPart = (path: string): string | undefined =>
 
 /**
  * The variable that names, to Smithers build, the directory it keeps the
- * machines of its jobs in. Every way of a replay names the same one, so a
- * job's machine is at the same paths in the baseline and in each mode.
+ * machines of its jobs in. In the planner jail, the mode's directory is
+ * mounted at the same path the baseline job sees.
  *
  * @category constants
  * @since 0.1.0

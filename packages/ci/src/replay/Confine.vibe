@@ -79,16 +79,48 @@ export interface Confined extends Place {
  */
 export type Places = Readonly<Record<Way, Confined>>
 
-/** Makes everything under `directories` writable again: a step can leave a directory nothing can be removed from. */
-const unlock = (spawner: ChildProcessSpawner["Service"], directories: ReadonlyArray<string>) =>
-  ignore(scoped(effect {
-    const command = ChildProcess.make("chmod", ["-R", "u+rwX", ...directories], {
+/**
+ * Checks each name under the controller's work directory, including the root and the leaf.
+ * A missing component ends the walk. Removing the first link itself never enters its target.
+ */
+effect function checkPath(work: string, directory: string) {
+  const fs = try FileSystem.FileSystem
+  const path = try Path.Path
+  const parts = path.relative(work, directory).split(path.sep).filter(Boolean)
+  if (directory.split(path.sep).includes("..") || parts[0] === "..") throw new Error(`replay cleanup outside its work directory: ${directory}`)
+  let current = path.resolve(work)
+  for (const part of ["", ...parts]) {
+    current = path.join(current, part)
+    const info = fs.lstat(current) catch effect (error) => {
+      if (error.reason._tag !== "NotFound") throw error
+      return undefined
+    }
+    if (info === undefined) return false
+    if (info.type === "SymbolicLink") {
+      try fs.remove(current)
+      throw new Error(`replay cleanup refused a symlink: ${current}`)
+    }
+  }
+  return true
+}
+
+/** A step can leave a directory nothing can be removed from. Only chmod checked command-line operands. */
+effect function unlock(work: string, directories: ReadonlyArray<string>) {
+  const present: Array<string> = []
+  for (const directory of directories) {
+    if (try checkPath(work, directory)) present.push(directory)
+  }
+  if (present.length === 0) return
+  const spawner = try ChildProcessSpawner
+  try ignore(scoped(effect {
+    const command = ChildProcess.make("chmod", ["-R", "--", "u+rwX", ...present], {
       stdin: "ignore",
       stdout: "ignore",
       stderr: "ignore"
     })
     try (try spawner.spawn(command)).exitCode
   }))
+}
 
 /**
  * The name, in a replay's directory, of its clone of the person's repository.
@@ -108,9 +140,10 @@ export const sourceDirectory = "source"
 effect function unlockWork(work: string) {
   const fs = try FileSystem.FileSystem
   const path = try Path.Path
+  try checkPath(work, work)
   const names = fs.readDirectory(work) catch (): ReadonlyArray<string> => []
   const own = names.filter((name) => name !== sourceDirectory).map((name) => path.join(work, name))
-  if (own.length > 0) try unlock(try ChildProcessSpawner, own)
+  try unlock(work, own)
 }
 
 /**
@@ -216,7 +249,7 @@ export effect function confine(
   }
   // Not the homes and the temporary directories alone: the machines Smithers build set aside are there too, and
   // the command that removes them ends with the build when the build runs in a jail.
-  try addFinalizer(() => unlockWork(work))
+  try addFinalizer(() => ignore(unlockWork(work)))
   // Where a version manager looks for its versions: under the home, which is the step's own with a jail and
   // without one.
   const links = "refusal" in found ? found.homes ?? [] : found.tools.homes
@@ -448,15 +481,17 @@ export const held = (
 /**
  * Removes `directory` and everything in it. A step can leave a tree deeper
  * than the longest path the system takes, which the platform's removal cannot
- * walk: `rm` then removes it, a directory at a time. The removal fails only
- * when the directory is still there after both.
+ * walk: `rm` then removes it, a directory at a time. When removing a subtree,
+ * pass its work root so that every component is checked before either removal.
  *
  * @category constructors
  * @since 0.1.0
  */
-export effect function removeTree(directory: string) {
+export effect function removeTree(directory: string, work: string = directory) {
   const fs = try FileSystem.FileSystem
+  if (!(try checkPath(work, directory))) return
   fs.remove(directory, { recursive: true, force: true }) catch effect (cause) => {
+    if (!(try checkPath(work, directory))) return
     const spawner = try ChildProcessSpawner
     const command = ChildProcess.make("rm", ["-rf", "--", directory], { stdin: "ignore", stdout: "ignore", stderr: "ignore" })
     try ignore(scoped(effect {
@@ -474,13 +509,12 @@ export effect function removeTree(directory: string) {
  * @category constructors
  * @since 0.1.0
  */
-export effect function fresh(directory: string) {
+export effect function fresh(directory: string, work: string = directory) {
   const fs = try FileSystem.FileSystem
-  const spawner = try ChildProcessSpawner
   const clear = effect {
-    if (!(try fs.exists(directory))) return
-    try unlock(spawner, [directory])
-    try removeTree(directory)
+    if (!(try checkPath(work, directory))) return
+    try unlock(work, [directory])
+    try removeTree(directory, work)
   }
   try clear
   try fs.makeDirectory(directory, { recursive: true })
@@ -497,15 +531,17 @@ export effect function fresh(directory: string) {
  * @since 0.1.0
  */
 export effect function discard(directory: string, say: (line: string) => void!! = () => Effect.void) {
-  try unlockWork(directory)
-  removeTree(directory) catch effect () => { try say(`smithers-ci: replay left a directory it could not remove: ${directory}`) }
+  effect {
+    try unlockWork(directory)
+    try removeTree(directory)
+  } catch effect () => { try say(`smithers-ci: replay left a directory it could not remove: ${directory}`) }
 }
 
 /**
  * The place of one job: the home `home` and the temporary directory `tmp`,
  * beside the stand-ins, the daemon and what the jail hides of `place`, its
- * way. A runner gives every job the same paths, so a job is given the same
- * ones at every commit and in every way (`Summary.machinePaths`): a tool that
+ * way. A runner gives every job the same paths, so a job is given stable
+ * ones at every commit (`Summary.machinePaths`): a tool that
  * wrote one of them into what a cache step saved finds it again when a later
  * job restores it. Both are empty but for the hook, as a CI runner starts each
  * job, and both are removed when the scope closes: no other job and no other
@@ -522,8 +558,9 @@ export effect function discard(directory: string, say: (line: string) => void!! 
  * @since 0.1.0
  */
 export effect function machine(place: Confined, home: string, tmp: string, alone: boolean = false) {
-  try fresh(home)
-  try fresh(tmp)
+  const work = (try Path.Path).dirname(place.guard)
+  try fresh(home, work)
+  try fresh(tmp, work)
   try furnish(home, place.links, place.hooks)
   const own = alone ? place.caches ?? [] : []
   return {
@@ -548,9 +585,10 @@ export effect function machine(place: Confined, home: string, tmp: string, alone
  */
 export effect function renew(place: Confined) {
   const fs = try FileSystem.FileSystem
-  try unlock(try ChildProcessSpawner, [place.home, place.tmp])
-  try removeTree(place.home)
-  try removeTree(place.tmp)
+  const work = (try Path.Path).dirname(place.guard)
+  try unlock(work, [place.home, place.tmp])
+  try removeTree(place.home, work)
+  try removeTree(place.tmp, work)
   try fs.makeDirectory(place.tmp)
   try furnish(place.home, place.links, place.hooks)
 }

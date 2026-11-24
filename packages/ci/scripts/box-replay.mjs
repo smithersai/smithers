@@ -29,8 +29,7 @@ import {
   realpathSync,
   rmSync,
   statSync,
-  writeFileSync,
-  writeSync
+  writeFileSync
 } from "node:fs"
 import { basename, isAbsolute, join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -314,6 +313,27 @@ const artifactLimits = {
   "NOT-REPRODUCED.txt": 4 * MiB
 }
 
+/** Reserve space for the receipts and reports before admitting any optional log. */
+export const withinBudget = (entries) => {
+  let remaining = 256 * MiB
+  const results = entries.filter((entry) => !entry.name.endsWith(".log"))
+  for (const entry of results) {
+    if (entry.bytes > artifactLimits[entry.name]) {
+      throw new Error(`artifact exceeds the collection size limit at ${entry.name}`)
+    }
+    remaining -= entry.bytes
+  }
+  for (const entry of entries.filter((entry) => entry.name.endsWith(".log"))) {
+    if (entry.bytes > Math.min(remaining, 64 * MiB)) {
+      console.error(`box-replay: left in the artifact: ${entry.name} (collection size limit)`)
+      continue
+    }
+    remaining -= entry.bytes
+    results.push(entry)
+  }
+  return results
+}
+
 /** What a shell runs to print the bytes of the member `$2` of the artifact `$1`, and no more than `$3` of them. */
 const bytesOfMember = "tar -xzOf \"$1\" -- \"$2\" | head -c \"$3\""
 
@@ -343,20 +363,12 @@ export const unpack = (artifact, out) => {
       }
     }
     for (const entry of drop) console.error(plain(`box-replay: left in the artifact: ${entry.path} (${entry.why})`))
-    const eligible = keep.filter((entry) => entry.name !== "replay.log" || entry.bytes <= 64 * MiB)
-    let total = 0
-    for (const entry of eligible) {
-      if (ambiguous.has(entry.name)) continue
-      total += entry.bytes
-      if (entry.bytes > (artifactLimits[entry.name] ?? 64 * MiB) || total > 256 * MiB) {
-        throw new Error(`artifact exceeds the collection size limit at ${entry.name}`)
-      }
-    }
+    const eligible = withinBudget(keep.filter((entry) => {
+      if (!ambiguous.has(entry.name)) return true
+      console.error(`box-replay: left in the artifact: ${entry.name} (listed more than once)`)
+      return false
+    }))
     const taken = eligible.filter((entry) => {
-      if (ambiguous.has(entry.name)) {
-        console.error(`box-replay: left in the artifact: ${entry.name} (listed more than once)`)
-        return false
-      }
       const file = join(out, entry.name)
       // A new file: nothing that is there is written over, or written through.
       const to = openSync(file, "wx")
@@ -415,7 +427,7 @@ const terminalFilter = () => {
 const plain = (text) => terminalFilter()(text)
 
 /** Runs cfbox with these arguments, its output to the console and to `log`. */
-const cfbox = async (args, log, signal, timeout = 0) => {
+export const cfbox = async (args, log, signal, timeout = 0, logLimit = 64 * MiB) => {
   const fd = log === undefined ? undefined : openSync(log, "wx")
   try {
     const child = spawn(process.env.CFBOX ?? "cfbox", args, {
@@ -428,11 +440,21 @@ const cfbox = async (args, log, signal, timeout = 0) => {
     let startError
     child.once("error", (error) => { startError = error })
     const closed = new Promise((resolve) => child.once("close", resolve))
+    // Reserve the marker inside the shared byte limit. A negative balance means it was written.
+    const truncated = "\n[box-replay: box.log truncated]\n"
+    let remaining = logLimit - Buffer.byteLength(truncated)
+    const persist = (text) => {
+      if (fd === undefined || remaining < 0) return
+      const bytes = Buffer.from(text)
+      writeFileSync(fd, bytes.subarray(0, remaining))
+      remaining -= bytes.length
+      if (remaining < 0) writeFileSync(fd, truncated)
+    }
     const relay = async (from, to) => {
       const filter = terminalFilter()
       for await (const chunk of from.setEncoding("utf8")) {
         const text = filter(chunk)
-        if (fd !== undefined) writeSync(fd, text)
+        persist(text)
         if (!to.write(text)) await once(to, "drain")
       }
     }
@@ -445,7 +467,7 @@ const cfbox = async (args, log, signal, timeout = 0) => {
     }
     const code = await closed
     if (startError === undefined) return { code: code ?? 255 }
-    if (fd !== undefined) writeSync(fd, plain(`box-replay: could not start cfbox: ${startError.message}\n`))
+    persist(plain(`box-replay: could not start cfbox: ${startError.message}\n`))
     return { code: 125 }
   } finally {
     if (fd !== undefined) closeSync(fd)
@@ -479,23 +501,41 @@ export const reportIn = (out) => {
   }
 }
 
+const count = (value) => Number.isSafeInteger(value) && value >= 0
+const elapsed = (value) => Number.isFinite(value) && value >= 0
+const named = (value) => typeof value === "string" && value.length > 0
+const totals = (run) =>
+  typeof run.ok === "boolean" && [run.wallMs, run.workMs].every(elapsed) &&
+  ["hit", "ran", "failed", "skipped"].every((key) => count(run.counts[key]))
+
+/** The version-one report fields used for a collection receipt, its summary and its job table. */
+const reportShape = (report) =>
+  report.version === 1 && named(report.repository) &&
+  [report.baselineWallMs, report.normalWallMs, report.speedup].every(elapsed) &&
+  count(report.mismatches) && (report.speedupCommits === undefined || count(report.speedupCommits)) &&
+  (report.stopped === undefined || named(report.stopped)) &&
+  (report.jobs === undefined || [report.jobs.replayed, report.jobs.total].every(count)) &&
+  (report.recorder === undefined || (["smthrs-observe", "strace", "none"].includes(report.recorder.name) &&
+    (report.recorder.why === undefined || named(report.recorder.why)))) &&
+  Array.isArray(report.commits) && report.commits.every((commit) =>
+    named(commit.commit) && count(commit.changedFiles) && totals(commit.baseline) && totals(commit.normal) &&
+    Array.isArray(commit.mismatches))
+
 /**
  * The numbers the table reads of a job's report, or nothing for a text that is no report: `replay.json` holds what
  * the repository's code made the box write, and one job's must not take the table of the others away.
  */
 const figuresOf = (report) => {
   try {
+    if (!reportShape(report)) return undefined
     const counts = report.commits.map((commit) => commit.normal.counts)
-    const figures = {
+    return {
       baseline: report.baselineWallMs,
       normal: report.normalWallMs,
       hit: counts.reduce((sum, each) => sum + each.hit, 0),
       steps: counts.reduce((sum, each) => sum + each.hit + each.ran + each.failed + each.skipped, 0),
       mismatches: report.mismatches
     }
-    return Object.values(figures).every((figure) => typeof figure === "number" && Number.isFinite(figure))
-      ? figures
-      : undefined
   } catch {
     return undefined
   }
@@ -592,13 +632,8 @@ const collected = (out, cpu, code, receiveReport) => {
   const valid = figuresOf(report) !== undefined
   const replay = join(out, "replay.json")
   if (valid) {
-    try {
-      for (const line of summary(report, cpu)) console.log(plain(line))
-      receiveReport?.(report)
-    } catch {
-      console.error("box-replay: replay.json is not a report")
-      return code || 4
-    }
+    for (const line of summary(report, cpu)) console.log(plain(line))
+    receiveReport?.(report)
   } else if (existsSync(replay) && statSync(replay).size > 0) {
     console.error("box-replay: replay.json is not a report")
   } else {

@@ -876,8 +876,8 @@ export const runNames = (runs: ReadonlyArray<ReadonlyArray<Unit>>): ReadonlyArra
  * `checkout`, a real path, when it keeps its machines in `machines`: a
  * directory named by the checkout's path, and in it one named by the machine,
  * which holds the machine's home, its temporary directory, and its copy of
- * the checkout under the checkout's own name. A baseline job with a machine
- * runs at these paths, so every way runs the job at the same ones.
+ * the checkout under the checkout's own name. Baseline jobs use the same
+ * layout under their controller-owned root.
  *
  * @category baseline
  * @since 0.1.0

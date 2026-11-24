@@ -156,7 +156,7 @@ export interface DiskWatch {
  */
 export effect function diskWatch(
   folder: string,
-  machines: string,
+  machines: string | ReadonlyArray<string>,
   say: (line: string) => void!!,
   tick: Duration.Input = defaultDiskTick
 ) {
@@ -191,7 +191,12 @@ export effect function diskWatch(
   }
   // The report asks for sizes after active jobs have received the stop signal. All callers share the walk.
   const details = try cached(effect {
-    return stoppedLine(folder, stoppedAt as number, floor, try sampleHeld(), try disk.held(machines))
+    const held = try sampleHeld()
+    let jobs = 0
+    for (const root of typeof machines === "string" ? [machines] : machines) {
+      jobs += try disk.held(root)
+    }
+    return stoppedLine(folder, stoppedAt as number, floor, held, jobs)
   })
   effect function watching() {
     while (stoppedAt === undefined) {

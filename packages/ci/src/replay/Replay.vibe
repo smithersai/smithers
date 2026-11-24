@@ -661,18 +661,19 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
     const path = try Path.Path
     const options = try Options
     const progress = try Progress
-    const work = try orFail(fs.makeTempDirectory({ prefix: "smithers-ci-replay-" }), "could not make a directory")
-    try addFinalizer(() => discard(work, progress.say))
-    try (try WorkDirectory).at(work)
+    const workName = try orFail(fs.makeTempDirectory({ prefix: "smithers-ci-replay-" }), "could not make a directory")
+    try addFinalizer(() => discard(workName, progress.say))
+    try (try WorkDirectory).at(workName)
     // Every checkout of the replay is in this directory. Under one Biome skips, a lint the CI passes would fail here.
-    const workPath = try orFail(fs.realPath(work), "could not read a directory")
-    const machines = path.join(workPath, "machines")
-    const disk = try diskWatch(workPath, machines, progress.say, options.diskTick)
-    const skipped = skippedPart(workPath)
+    const work = try orFail(fs.realPath(workName), "could not read a directory")
+    const machines = path.join(work, "machines")
+    const baselineMachines = path.join(work, "baseline-machines")
+    const disk = try diskWatch(work, [machines, baselineMachines], progress.say, options.diskTick)
+    const skipped = skippedPart(work)
     if (skipped !== undefined) {
       throw failure(
         "unsupported",
-        `the replay's directory ${workPath} is under a directory named ${skipped}, where tools such as Biome skip a ` +
+        `the replay's directory ${work} is under a directory named ${skipped}, where tools such as Biome skip a ` +
           `project's own configuration files, so a check the CI passes could fail here. Set TMPDIR to a directory ` +
           `with no part named ${skippedNames.join(", ")}.`
       )
@@ -761,21 +762,23 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
      */
     effect function siteAt(way: Way, commit: string) {
       const copy = path.join(work, way, path.basename(root))
-      try cloneAt(copy, commit, places[way])
+      const base = places[way]
+      const place = base.jail === undefined ? base : { ...base, jail: { ...base.jail, machineMount: [machines, baselineMachines] as const } }
+      try cloneAt(copy, commit, place)
       // Not under `kept`, which a baseline step may write: no way reads what another way keeps.
       const cache = path.join(work, "state", way)
       const declared = path.join(work, "declared", way)
       try orFail(fs.makeDirectory(cache, { recursive: true }), "could not make a directory")
       try orFail(fs.makeDirectory(declared, { recursive: true }), "could not make a directory")
-      return { copy, place: places[way], cache, declared } satisfies Site
+      return { copy, place, cache, declared } satisfies Site
     }
 
+    // Only the planner writes machines. Its jail mounts that tree over the baseline machine path:
+    // jobs see stable absolute paths without giving the planner the controller's directories.
+    try orFail(fs.makeDirectory(machines), "could not make a directory")
+    try orFail(fs.makeDirectory(baselineMachines), "could not make a directory")
     const normal = try siteAt("normal", "HEAD")
     const normalCopy = normal.copy
-    // Every way keeps its jobs' machines in one directory and runs in one checkout, normal mode's. Smithers build
-    // names a job's machine by both, so a job's home, checkout and temporary directory are at the same paths in the
-    // baseline and in each mode, at every commit, as a runner's are (`machinePaths`).
-    try orFail(fs.makeDirectory(machines), "could not make a directory")
     const checkoutPath = try orFail(fs.realPath(normalCopy), "could not read a directory")
 
     /**
@@ -788,7 +791,7 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
       const home = homeOf(person)
       const advice: Array<TargetResult> = []
       for (const result of results) {
-        const named = couldNotStart(result) ? namedInStepHome(result.error, [work, path.dirname(machines)]) : []
+        const named = couldNotStart(result) ? namedInStepHome(result.error, [workName, work]) : []
         const kept: Array<string> = []
         for (const relative of named) {
           if (try orFail(fs.exists(path.join(home, relative)), "could not read a directory")) kept.push(relative)
@@ -821,7 +824,7 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
      * does, in the jail, so a command a step left in the copy's `.git/config` never runs outside it.
      */
     effect function onNormalCopy<A, E, S>(part: A!E!S) {
-      provide ChildProcessSpawner = reading(spawner, places.normal, normalCopy) {
+      provide ChildProcessSpawner = reading(spawner, normal.place, normalCopy) {
         return try part
       }
     }
@@ -969,7 +972,7 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
     const startEnv = (site: Site) => ({
       ...stepEnvironment({ ...software, ...site.place.daemon }, site.place),
       ...jobHomes(site.place),
-      [machinesVariable]: machines,
+      [machinesVariable]: site.place.jail === undefined ? machines : baselineMachines,
       // What a step leaves where nothing keeps it ends with the step, as in the baseline.
       [leftEndsVariable]: "step",
       // The recorder the person chose, which Smithers build reads itself.
@@ -1120,7 +1123,7 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
       return try scoped(effect {
         const start = try Clock.currentTimeMillis
         try progress.say(`${at} with the files apply writes`)
-        const copy = try orFail(fresh(path.join(work, "applied", path.basename(root))), "could not make a directory")
+        const copy = try orFail(fresh(path.join(work, "applied", path.basename(root)), work), "could not make a directory")
         try cloneAt(copy, commit, normal.place)
         const seen = try commitApplied(copy, commit, own, normal.place)
         const causes = new Map<string, string>()
@@ -1189,11 +1192,11 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
         // A job is a machine: its home and its temporary directory are its own, and gone when it ends.
         // A job with a machine runs where Smithers build puts that machine in each mode; one with none beside the way.
         const named = sequence[0]?.machine
-        const at = named === undefined ? undefined : machinePaths(machines, checkoutPath, named)
+        const at = named === undefined ? undefined : machinePaths(baselineMachines, checkoutPath, named)
         const home = at?.home ?? path.join(path.dirname(way.home), `${path.basename(way.home)}-job-${name}`)
         const tmp = at?.tmp ?? path.join(path.dirname(way.tmp), `${path.basename(way.tmp)}-job-${name}`)
         const place = try orFail(machine(way, home, tmp, at !== undefined), "could not make the home of a job")
-        const directory = try orFail(fresh(at?.tree ?? path.join(work, `${path.basename(way.home)}-copy-${name}`)), "could not make a directory")
+        const directory = try orFail(fresh(at?.tree ?? path.join(work, `${path.basename(way.home)}-copy-${name}`), work), "could not make a directory")
         // What Smithers build tells a target on a machine: where its home keeps configuration, data and state, its
         // temporary directory, and where git stops looking. A baseline step is told the same, so a tool finds each
         // of them at the same place both ways, and a step that reads one of the variables reads the same value.

@@ -45,7 +45,7 @@ const literal = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/g, "\
  * `.local/go/bin/go`; none for no text. `work` are the names of the replay's directory. Every
  * step's home is in it: the home of a way or of a baseline job at
  * `home/<name>`, and the home of a job's machine at
- * `machines/<id>/<job>/home`.
+ * `machines/<id>/<job>/home` or its controller-owned baseline counterpart.
  *
  * @category accessors
  * @since 0.1.0
@@ -54,7 +54,7 @@ export const namedInStepHome = (text: string | undefined, work: ReadonlyArray<st
   const found = new Set<string>()
   for (const directory of work) {
     const home = new RegExp(
-      `${literal(directory)}/(?:home/[^/\\s]+|machines/[^/\\s]+/[^/\\s]+/home)/([^\\s:'"]+)`,
+      `${literal(directory)}/(?:home/[^/\\s]+|(?:baseline-)?machines/[^/\\s]+/[^/\\s]+/home)/([^\\s:'"]+)`,
       "g"
     )
     for (const match of (text ?? "").matchAll(home)) found.add(match[1] as string)

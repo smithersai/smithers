@@ -29,6 +29,14 @@ interface Taken {
 }
 
 const box: {
+  readonly cfbox: (
+    args: ReadonlyArray<string>,
+    log: string,
+    signal: undefined,
+    timeout: number,
+    logLimit: number
+  ) => Promise<{ code: number }>
+  readonly withinBudget: (entries: ReadonlyArray<Taken>) => ReadonlyArray<Taken>
   readonly verifyIdentity: (
     path: string,
     opened: { dev: bigint; ino: bigint },
@@ -36,7 +44,7 @@ const box: {
   ) => void
   readonly tarballs: (source: string, to?: string, platform?: string) => ReadonlyArray<string>
   readonly main: (argv: ReadonlyArray<string>) => Promise<number>
-  readonly collect: (out: string, cpu: string, code: number) => number
+  readonly collect: (out: string, cpu: string, code: number, receive?: (value: unknown) => void) => number
   readonly sift: (listing: string) => {
     readonly keep: ReadonlyArray<Taken>
     readonly drop: ReadonlyArray<{ readonly path: string; readonly why: string }>
@@ -367,10 +375,13 @@ describe("box-replay results", () => {
     expect(printed).toContain("stopped: the replay stopped before the disk filled")
   })
 
-  it("gives the replay's own reason when it printed no report", () => {
+  it.each(["", "\n"])("gives the replay's own reason with line ending %j", (ending) => {
     const out = temporary()
     const refusal = "smithers-ci: replay: 0 of 49 CI jobs can be reproduced on this machine"
-    artifact({ "replay.json": "", "exit": "3\n", "replay.log": `smithers-ci: fetching 3 objects\n${refusal}\n` }, out)
+    artifact(
+      { "replay.json": "", "exit": "3\n", "replay.log": `smithers-ci: fetching 3 objects\n${refusal}${ending}` },
+      out
+    )
     const said: Array<string> = []
     vi.spyOn(console, "error").mockImplementation((line: string) => void said.push(line))
     expect(box.collect(out, "4", 0)).toBe(3)
@@ -483,12 +494,12 @@ describe("box replay collection boundaries", () => {
     }
   })
 
-  it("collects a valid report and receipt despite an oversized optional log", () => {
+  it("collects a valid report and receipt despite an oversized clone log", () => {
     const out = temporary()
     const root = temporary()
     writeFileSync(join(root, "exit"), "0")
-    writeFileSync(join(root, "replay.log"), "")
-    truncateSync(join(root, "replay.log"), 64 * 1024 * 1024 + 1)
+    writeFileSync(join(root, "clone.log"), "")
+    truncateSync(join(root, "clone.log"), 64 * 1024 * 1024 + 1)
     const report = readFileSync(join(import.meta.dirname, "fixtures", "replay-report.example.json"))
     writeFileSync(join(root, "replay.json"), report)
     expect(spawnSync("tar", ["-czf", join(out, "result.tgz"), "-C", root, "."]).status).toBe(0)
@@ -502,12 +513,59 @@ describe("box replay collection boundaries", () => {
     expect(box.collect(missing, "1", 0)).toBe(4)
   })
 
+  it("reserves the artifact budget for results before considering any log", () => {
+    const MiB = 1024 * 1024
+    const logs = ["setup.log", "install.log", "clone.log", "replay.log"].map((name) => ({
+      path: name,
+      name,
+      bytes: 64 * MiB
+    }))
+    const results = ["exit", "replay.json", "NOT-REPRODUCED.txt"].map((name) => ({ path: name, name, bytes: 1 }))
+    expect(box.withinBudget([...logs, ...results])).toEqual([...results, ...logs.slice(0, 3)])
+    const oversized = logs.map((entry) => ({ ...entry, bytes: entry.bytes + 1 }))
+    expect(box.withinBudget([...oversized, ...results])).toEqual(results)
+    expect(() => box.withinBudget([{ path: "exit", name: "exit", bytes: 4097 }])).toThrow(
+      "collection size limit at exit"
+    )
+  })
+
+  it("rejects incomplete or unknown report versions before printing or delivering the result", () => {
+    const fields = { commits: [], baselineWallMs: 0, normalWallMs: 0, mismatches: 0 }
+    const valid = { version: 1, repository: "example/empty", speedup: 0, ...fields }
+    const receive = vi.fn()
+    const printed = vi.spyOn(console, "log").mockImplementation(() => undefined)
+    for (
+      const invalid of [
+        fields,
+        { ...valid, version: 2 },
+        { ...valid, repository: "" },
+        { ...valid, speedup: "0" },
+        { ...valid, speedupCommits: -1 },
+        { ...valid, jobs: { total: 0 } },
+        { ...valid, recorder: { name: "unknown" } },
+        { ...valid, recorder: { name: "none", why: 0 } },
+        { ...valid, stopped: 1 }
+      ]
+    ) {
+      const directory = temporary()
+      artifact({ "replay.json": JSON.stringify(invalid), exit: "0" }, directory)
+      expect(box.collect(directory, "1", 0, receive)).toBe(4)
+    }
+    expect(printed).not.toHaveBeenCalled()
+    expect(receive).not.toHaveBeenCalled()
+    const directory = temporary()
+    const partial = { ...valid, stopped: "disk reserve reached" }
+    artifact({ "replay.json": JSON.stringify(partial), exit: "0" }, directory)
+    expect(box.collect(directory, "1", 0, receive)).toBe(0)
+    expect(receive).toHaveBeenCalledWith(partial)
+  })
+
   it("bounds the box-side log without closing the producer's pipe", () => {
     const shell = readFileSync(join(import.meta.dirname, "../scripts/box-replay.sh"), "utf8")
-    const append = shell.slice(shell.indexOf("append_log()"), shell.indexOf("start=$(date"))
+    const append = shell.slice(shell.indexOf("append_log()"), shell.indexOf("install_tools()"))
     const out = temporary()
     const fixture =
-      `set -eu -o pipefail\nout=$1\nlog_limit=7\n${append}\nprintf abc | append_log\nprintf defghijkl | append_log\nprintf xyz | append_log`
+      `set -eu -o pipefail\nout=$1\nlog_limit=7\n${append}\nprintf abc | append_log replay.log\nprintf defghijkl | append_log replay.log\nprintf xyz | append_log replay.log`
     expect(spawnSync("bash", ["-c", fixture, "test", out]).status).toBe(0)
     expect(readFileSync(join(out, "replay.log"), "utf8")).toBe("abcdefg")
   })
@@ -580,6 +638,35 @@ it("relays both transport streams and collects each job's report", async () => {
   expect(outcome.stdout).toContain("jobs replayed: 1 of 2")
   expect(readFileSync(join(result, "1", "box.log"), "utf8")).toContain("progress")
   expect(readFileSync(join(result, "jobs.txt"), "utf8")).toContain("68 of 80")
+})
+
+it("shares one byte cap across relay streams and drains them after truncation", async () => {
+  const directory = temporary()
+  const log = join(directory, "box.log")
+  const binary = join(directory, "cfbox")
+  writeFileSync(
+    binary,
+    "#!/bin/sh\nprintf 'é%.0s' ignored\nprintf 'abcdefghijk' >&2\nsleep 0.02\nprintf 'stdout-end'\nprintf 'stderr-end' >&2\n",
+    {
+      mode: 0o755
+    }
+  )
+  vi.stubEnv("CFBOX", binary)
+  const stdout = vi.spyOn(process.stdout, "write").mockReturnValue(true)
+  const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true)
+  const marker = "\n[box-replay: box.log truncated]\n"
+  const limit = 6 + Buffer.byteLength(marker)
+  try {
+    const result = await box.cfbox([], log, undefined, 0, limit)
+    expect(result.code).toBe(0)
+    expect(stdout.mock.calls.map(([text]) => text).join("")).toBe("éstdout-end")
+    expect(stderr.mock.calls.map(([text]) => text).join("")).toBe("abcdefghijkstderr-end")
+    const bytes = readFileSync(log)
+    expect(bytes.length).toBe(limit)
+    expect(bytes.subarray(6).toString()).toBe(marker)
+  } finally {
+    vi.unstubAllEnvs()
+  }
 })
 
 it.each(["SIGTERM", "SIGINT"] as const)("cancels running and queued jobs on %s", async (signal) => {

@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process"
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { expect, it } from "vitest"
@@ -23,22 +23,25 @@ command() {
       [[ "$stage" != "no strace" || "$2" != strace ]]
   else builtin command "$@"; fi
 }
-apt-get() { [[ "$stage" != "$1" && ( "$stage" != "apt" || "$1" != install ) ]]; }
-useradd() { [[ "$stage" != user ]]; }
+apt-get() { echo "apt output"; [[ "$stage" != "$1" && ( "$stage" != "apt" || "$1" != install ) ]]; }
+useradd() {
+  if [[ "$stage" == "unwritable setup log" ]]; then /bin/mkdir out/setup.log; fi
+  [[ "$stage" != user ]]
+}
 runuser() {
   shift 9
   case "$1" in
-    bwrap) [[ "$stage" != jail ]] ;;
+    bwrap) echo "jail output"; [[ "$stage" != jail ]] ;;
     node)
       shift
       /home/fixture-node "$@" || return 1
       if [[ "$stage" == "missing install directory" ]]; then mv /home/runner/inst /home/runner/moved; fi ;;
-    npm) [[ "$stage" != npm ]] ;;
+    npm) echo "npm output"; [[ "$stage" != npm ]] ;;
     git)
       case "$2" in
-        clone) [[ "$stage" != clone ]] && { [[ "$stage" == "missing checkout" ]] || /bin/mkdir /home/runner/repo; } ;;
+        clone) echo "clone output"; [[ "$stage" != clone ]] && { [[ "$stage" == "missing checkout" ]] || /bin/mkdir /home/runner/repo; } ;;
         symbolic-ref) [[ "$stage" == "no default branch" ]] || echo origin/trunk ;;
-        checkout) [[ "$stage" != checkout ]] ;;
+        checkout) echo "checkout output"; [[ "$stage" != checkout ]] ;;
         rev-parse) echo abcdef012345 ;;
       esac ;;
     env)
@@ -71,6 +74,7 @@ it.skipIf(!available)("exercises box provisioning, replay receipts, and both app
     ["apt", 4],
     ["user", 4],
     ["jail", 4],
+    ["unwritable setup log", 4],
     ["packs", 4],
     ["install dir", 4],
     ["packs owner", 4],
@@ -100,7 +104,12 @@ it.skipIf(!available)("exercises box provisioning, replay receipts, and both app
           { name: "fixture-dependency", filename: "dep.tgz" }
         ])
       )
-      copyFileSync(shell, join(root, "box.sh"))
+      const small = stage === "install tools"
+      const source = readFileSync(shell, "utf8")
+      writeFileSync(
+        join(root, "box.sh"),
+        small ? source.replace("log_limit=$((64 * 1024 * 1024))", "log_limit=7") : source
+      )
       writeFileSync(join(root, "setup"), provision)
       const seen = spawnSync("bwrap", [
         "--unshare-all",
@@ -139,11 +148,20 @@ it.skipIf(!available)("exercises box provisioning, replay receipts, and both app
         "2"
       ], { encoding: "utf8" })
       expect(seen.status, stage + " " + seen.stderr + seen.stdout).toBe(status)
+      if (stage === "unwritable setup log") {
+        expect(seen.stdout).toContain("the replay jail could not start for runner")
+        expect(existsSync(join(root, "out", "exit"))).toBe(false)
+      }
       if (status >= 3) continue
       const out = join(root, "out")
       expect(readFileSync(join(out, "exit"), "utf8").trim(), stage).toBe(String(status))
       expect(readFileSync(join(out, "replay.json"), "utf8").trim()).toBe("{\"commits\":[]}")
-      expect(readFileSync(join(out, "replay.log"), "utf8")).toBe("replay-output\napply-output\n")
+      expect(readFileSync(join(out, "replay.log"), "utf8")).toBe(small ? "replay-" : "replay-output\napply-output\n")
+      if (small) {
+        expect(readFileSync(join(out, "setup.log"), "utf8")).toBe("apt out")
+        expect(readFileSync(join(out, "install.log"), "utf8")).toBe("npm out")
+        expect(readFileSync(join(out, "clone.log"), "utf8")).toBe("clone o")
+      }
       expect(existsSync(join(out, "report.html.txt"))).toBe(stage !== "missing report" && stage !== "linked report")
       expect(existsSync(join(out, "NOT-REPRODUCED.txt"))).toBe(stage !== "apply failure")
     } finally {

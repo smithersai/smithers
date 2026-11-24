@@ -514,6 +514,8 @@ describe("unpack, on generated archives", () => {
 
 const counts = { hit: 1, ran: 2, failed: 0, skipped: 0 }
 const sound = {
+  version: 1,
+  repository: "example/fixture",
   baselineWallMs: 30_000,
   normalWallMs: 10_000,
   mismatches: 0,
@@ -521,8 +523,8 @@ const sound = {
   commits: [{
     commit: "a5a7dc0",
     changedFiles: 1,
-    baseline: { wallMs: 1 },
-    normal: { wallMs: 1, counts },
+    baseline: { ok: true, workMs: 1, wallMs: 1, counts },
+    normal: { ok: true, workMs: 1, wallMs: 1, counts },
     mismatches: []
   }]
 }
@@ -549,7 +551,8 @@ const reports: ReadonlyArray<unknown> = [
   { ...sound, baselineWallMs: Number.POSITIVE_INFINITY },
   { ...sound, commits: [{ normal: { counts: { ...counts, hit: "1" } } }] },
   { ...sound, commits: { map: "not a function" } },
-  { ...sound, commits: [], jobs: null, recorder: null }
+  { ...sound, commits: [], jobs: null, recorder: null },
+  { ...sound, commits: [] }
 ]
 
 describe("what a box reports", () => {

@@ -333,13 +333,13 @@ describe("a step on a machine with no jail", () => {
       expect(lines.length).toBeGreaterThanOrEqual(4)
       expect(readFileSync(join(out, name), "utf8")).not.toContain("Everything up-to-date")
     }
-    // The baseline's step and the target's saw one home: the home of the job's machine, where Smithers build keeps
-    // it, which the replay made and which is gone with the replay.
+    // Without a jail the two backing directories are visible by their separate host paths.
     const homes = [...new Set(readFileSync(join(out, "home"), "utf8").trim().split("\n"))]
-    expect(homes).toHaveLength(1)
-    const work = /^(.*\/smithers-ci-replay-[^/]+)\/machines\//.exec(homes[0] as string)?.[1] as string
-    expect(basename(homes[0] as string)).toBe("home")
-    expect(existsSync(work)).toBe(false)
+    expect(homes).toHaveLength(2)
+    const baseline = homes.find((home) => home.includes("/baseline-machines/"))!
+    expect(homes).toContain(baseline.replace("/baseline-machines/", "/machines/"))
+    expect(basename(baseline)).toBe("home")
+    expect(existsSync(baseline.split("/baseline-machines/")[0]!)).toBe(false)
     expect(existsSync(join(out, "written"))).toBe(true)
     expect(said.filter((line) => line.includes("jail"))).toEqual([unjailed(refusal)])
   }, 1_200_000)
@@ -572,6 +572,31 @@ describe("confine", () => {
     await expect(scoped(plannerRuntime(root, stage, [bin], () => Effect.succeed([])))).rejects.toThrow(
       "mount point is a symlink"
     )
+  })
+
+  it.skipIf(!jailable)("overlays planner storage without exposing baseline files", async () => {
+    const work = directory("planner-machines")
+    const normal = (await scoped(confine(work, () => found, () => Effect.void, [], false))).normal
+    const planner = join(work, "machines")
+    const baseline = join(work, "baseline-machines")
+    mkdirSync(planner)
+    mkdirSync(baseline)
+    writeFileSync(join(baseline, "private"), "baseline only")
+    const place = { ...normal, jail: { ...normal.jail!, machineMount: [planner, baseline] as const } }
+    for (const writable of [false, true]) {
+      const [command, ...args] = held(place, writable ? [planner] : [], [
+        "/bin/sh",
+        "-c",
+        "test ! -e \"$1/private\" && { echo plan > \"$1/visible\"; }",
+        "check",
+        baseline
+      ])
+      const child = spawnSync(command, args, { encoding: "utf8" })
+      expect(child.status, child.stderr).toBe(writable ? 0 : 2)
+      expect(existsSync(join(planner, "visible"))).toBe(writable)
+      expect(existsSync(join(baseline, "visible"))).toBe(false)
+    }
+    expect(readFileSync(join(baseline, "private"), "utf8")).toBe("baseline only")
   })
 
   it("preserves the checkout mask when Git metadata cannot be resolved", async () => {

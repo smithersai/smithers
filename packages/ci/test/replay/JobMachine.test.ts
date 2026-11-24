@@ -212,24 +212,30 @@ describe("a job's machine", () => {
       { place: "on a machine with no jail", asked: unconfined, runs: true }
     ]
   ) {
-    it.skipIf(!runs)(`is at the same paths at every commit, in the baseline and in each mode, ${place}`, async () => {
-      const report = await replay(
-        repository([...jobs, job("passes", "true")], two),
-        2,
-        asked,
-        ["normal", "fast"],
-        generating
-      )
-      for (const [name, end] of Object.entries(ends)) {
-        const said = report.commits.flatMap((commit) =>
-          [commit.baseline, commit.normal, commit.fast].map((totals) =>
-            totals?.failures?.find((failure) => failure.step.startsWith(name))?.reason
-          )
+    it.skipIf(!runs)(
+      `keeps stable job paths at every commit and isolates the baseline backing directory, ${place}`,
+      async () => {
+        const report = await replay(
+          repository([...jobs, job("passes", "true")], two),
+          2,
+          asked,
+          ["normal", "fast"],
+          generating
         )
-        expect(said).toHaveLength(6)
-        expect(new Set(said).size).toBe(1)
-        expect(said[0]).toMatch(new RegExp(`^/\\S+/machines/[0-9a-f]{16}/${name}-[0-9a-f]{8}/${end}$`))
-      }
-    }, 900_000)
+        for (const [name, end] of Object.entries(ends)) {
+          const paths = report.commits.map((commit) =>
+            [commit.baseline, commit.normal, commit.fast].map((totals) =>
+              totals?.failures?.find((failure) => failure.step.startsWith(name))?.reason
+            )
+          )
+          expect(paths[1]).toEqual(paths[0])
+          const [baseline, normal, fast] = paths[0]!
+          expect(baseline).toMatch(new RegExp(`^/\\S+/baseline-machines/[0-9a-f]{16}/${name}-[0-9a-f]{8}/${end}$`))
+          expect(normal).toBe(asked === jailed ? baseline : baseline!.replace("/baseline-machines/", "/machines/"))
+          expect(fast).toBe(normal)
+        }
+      },
+      900_000
+    )
   }
 })

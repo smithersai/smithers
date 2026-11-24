@@ -42,6 +42,57 @@ describe("patternsIn", () => {
     expect(patternsIn("if smthrs lint //a/...; then echo ok; fi")).toEqual(["//a/..."])
   })
 
+  it("keeps the target arguments on either side of shell redirections", () => {
+    for (
+      const redirect of [
+        ">run.log",
+        ">\"${RUNNER_TEMP}/run.log\"",
+        ">> '//log:name'",
+        "2>errors",
+        "2>&1",
+        "0<&3",
+        "3<>file",
+        "4>&-",
+        "10>>file",
+        "&>all",
+        "&>>all",
+        ">|file",
+        "<input",
+        "<<<'//input:only'",
+        ">a\\ b",
+        ">\"a>b\"' log'"
+      ]
+    ) {
+      const script = `smthrs ci ${redirect} //pkg:check 2>&1`
+      expect(chosenFor(inventory([job("ci", [script])])).patterns).toEqual(["//pkg:check"])
+      expect(plansFor(inventory([job("test", [script.replace("smthrs ci", "smthrs test")])])))
+        .toEqual([["test", "//pkg:check"]])
+    }
+    expect(patternsIn("smthrs ci //a:v2>file //b:t | tee //ignored:t")).toEqual(["//a:v2", "//b:t"])
+    expect(patternsIn(">out smthrs 2>err ci <<END //a:t\n//ignored:t\nEND")).toEqual(["//a:t"])
+    expect(plansFor(inventory([job("ci", ["smthrs ci '2'>out //pkg:check"])]))).toContain("cannot reproduce")
+    expect(plansFor(inventory([job("ci", ["smthrs ci 2&>out //pkg:check"])]))).toContain("cannot reproduce")
+  })
+
+  it("refuses selection when the redirect has a missing or compound operand", () => {
+    for (
+      const script of [
+        "smthrs ci >",
+        "smthrs ci > # missing\nsmthrs ci //next:t",
+        "smthrs ci > >out",
+        "smthrs ci > >(tee out) //pkg:check",
+        "smthrs ci >$(choose file) //pkg:check",
+        `smthrs ci >"$(choose file)" //pkg:check`,
+        "smthrs ci >`choose file` //pkg:check",
+        "smthrs ci >${LOG:-choose file} //pkg:check",
+        "smthrs ci >'unterminated //pkg:check",
+        "smthrs ci >\"unterminated //pkg:check"
+      ]
+    ) {
+      expect(plansFor(inventory([job("ci", [script])]))).toContain("cannot reproduce")
+    }
+  })
+
   it("reads the script a step is wrapped in, as the importer writes a workflow step", () => {
     const wrapped =
       `bash --noprofile --norc -eo pipefail -c 'pnpm exec smthrs ci '\\''//packages/ci:*'\\'' '\\''//packages/rpc:*'\\'' --known-red '\\''.github/ci-known-red.json'\\'' --verbose'`

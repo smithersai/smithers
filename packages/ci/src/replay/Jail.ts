@@ -391,6 +391,8 @@ export interface Jail {
   readonly tmp: string
   readonly temporary: ReadonlyArray<string>
   readonly runtime?: ReadonlyArray<readonly [string, string]> | undefined
+  /** The planner sees its own machine storage at the baseline jobs' path inside the jail. */
+  readonly machineMount?: readonly [source: string, destination: string]
   readonly visible: ReadonlyArray<string>
   readonly filter: string
   readonly scope?: string | undefined
@@ -596,6 +598,10 @@ export const jailed = (
     ].sort(([, , left], [, , right]) => left.length - right.length).flat(),
     ...(jail.runtime ?? []).flatMap(([source, target]) => ["--ro-bind", source, target]),
     ...writable.flatMap((path) => ["--bind", path, path]),
+    ...(jail.machineMount === undefined ? [] : [
+      writable.includes(jail.machineMount[0]) ? "--bind" : "--ro-bind",
+      ...jail.machineMount
+    ]),
     ...sealed.flatMap((path) => ["--ro-bind", path, path]),
     "--new-session",
     "--die-with-parent",
