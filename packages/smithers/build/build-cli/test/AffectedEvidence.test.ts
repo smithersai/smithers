@@ -47,7 +47,17 @@ const targets = () => {
       outDir: "dist",
       cwd: "pkg"
     }),
-    fmt: S.Dprint({ sources: [source], deps: [], config, fix: false, cwd: "pkg" })
+    fmt: S.Dprint({ sources: [source], deps: [], config, fix: false, cwd: "pkg" }),
+    bench: S.VitestBench({
+      benches: [S.file("case.bench.ts")],
+      sources: [source],
+      deps: [],
+      config,
+      environment: "node",
+      passWithNoTests: false,
+      cwd: "pkg"
+    }),
+    nodeBench: S.NodeBench({ entry: S.file("bench.mjs"), srcs: [source], deps: [], cwd: "pkg" })
   }
 }
 
@@ -67,7 +77,16 @@ const index = (sandboxes: ReturnType<typeof S.Sandboxes> | undefined) =>
     ]
   })
 
-const every = ["//pkg:build", "//pkg:check", "//pkg:fmt", "//pkg:lint", "//pkg:node", "//pkg:test"]
+const every = [
+  "//pkg:bench",
+  "//pkg:build",
+  "//pkg:check",
+  "//pkg:fmt",
+  "//pkg:lint",
+  "//pkg:node",
+  "//pkg:nodeBench",
+  "//pkg:test"
+]
 
 describe.each([
   ["with build confinement off", S.Sandboxes({ default: S.Sandbox.None() })],
@@ -101,7 +120,5 @@ describe("the rules that are reused with evidence", () => {
       )
     )
     for (const rule of CacheEvidence.rules) expect([...rules.values()]).toContain(rule)
-    // The two tool-backed rules that are never reused stay selected as well.
-    expect([...rules.values()]).toEqual(expect.arrayContaining(["TsBuild", "Dprint"]))
   })
 })

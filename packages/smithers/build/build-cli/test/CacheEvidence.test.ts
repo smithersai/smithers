@@ -31,8 +31,17 @@ const node = {
 } as const
 
 describe("rules", () => {
-  it("covers the test runners, the type checker, the linter, the formatter and the build", () => {
-    expect([...CacheEvidence.rules].sort()).toEqual(["Dprint", "EsLint", "NodeTest", "TsBuild", "Typecheck", "Vitest"])
+  it("covers the test runners, the benchmarks, the type checker, the linter, the formatter and the build", () => {
+    expect([...CacheEvidence.rules].sort()).toEqual([
+      "Dprint",
+      "EsLint",
+      "NodeBench",
+      "NodeTest",
+      "TsBuild",
+      "Typecheck",
+      "Vitest",
+      "VitestBench"
+    ])
   })
 })
 
