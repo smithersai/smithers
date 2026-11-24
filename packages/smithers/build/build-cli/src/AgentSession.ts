@@ -745,10 +745,12 @@ const nulPaths = (output: string): ReadonlyArray<string> => output.split("\0").f
 /** Decode the pathname in a Git +++ header (C-quoted bytes or a raw UTF-8 path). */
 const patchPath = (header: string): string | undefined => {
   if (header === "/dev/null") return undefined
+  // Git appends a trailing tab to paths containing spaces, whether or not the path is C-quoted.
+  const trimmed = header.endsWith("\t") ? header.slice(0, -1) : header
   let name: string
-  if (header.startsWith("\"")) {
-    if (!header.endsWith("\"")) throw new Error("unterminated quoted Git patch path")
-    const quoted = header.slice(1, -1)
+  if (trimmed.startsWith("\"")) {
+    if (!trimmed.endsWith("\"")) throw new Error("unterminated quoted Git patch path")
+    const quoted = trimmed.slice(1, -1)
     const bytes: Array<number> = []
     for (let index = 0; index < quoted.length;) {
       if (quoted[index] !== "\\") {
@@ -785,8 +787,7 @@ const patchPath = (header: string): string | undefined => {
     }
     name = new TextDecoder("utf-8", { fatal: true }).decode(Uint8Array.from(bytes))
   } else {
-    // Git separates an unquoted path containing spaces from the header with a tab.
-    name = header.endsWith("\t") ? header.slice(0, -1) : header
+    name = trimmed
   }
   if (!name.startsWith("b/")) throw new Error("invalid Git patch path prefix")
   return name.slice(2)

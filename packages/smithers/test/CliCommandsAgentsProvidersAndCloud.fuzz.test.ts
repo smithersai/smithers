@@ -597,8 +597,8 @@ describe("@smthrs/cli CloudSandbox, CloudSession, McpRemote, NativeEquipment, Pr
         const basePath = Evaluation.defaultBaselinePath(evalDir, "suite-a")
         assertInv(basePath.includes("suite-a"), "Evaluation.defaultBaselinePath")
         const pubFile = join(evalDir, "artifact.json")
-        await Evaluation.publishJson(pubFile, JSON.stringify({ ok: true }), true)
-        await Evaluation.writeJson(pubFile, JSON.stringify({ ok: true, v: 2 }))
+        await Effect.runPromise(Evaluation.publishJson(pubFile, JSON.stringify({ ok: true }), true))
+        await Evaluation.writeJson(pubFile, JSON.stringify({ ok: true, v: 2 }), true)
         const evalCli = EvalCli.createEvalCli()
         let evalOut = ""
         await evalCli.serve(["list", "--root", evalDir, "--json"], {

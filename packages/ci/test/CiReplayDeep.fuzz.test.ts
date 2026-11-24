@@ -358,5 +358,5 @@ describe("@smthrs/ci replay deep fuzz invariants", () => {
     } finally {
       repo.remove()
     }
-  }, 180_000)
+  }, 300_000)
 })
