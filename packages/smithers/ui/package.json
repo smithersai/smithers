@@ -118,6 +118,7 @@
   "dependencies": {
     "@smthrs/ui-css": "workspace:*",
     "@smthrs/ui-styleguide": "workspace:*",
+    "@types/d3-force": "^3.0.10",
     "@xterm/addon-fit": "^0.11.0",
     "@xterm/xterm": "^6.0.0",
     "class-variance-authority": "^0.7.1",
@@ -151,7 +152,6 @@
     "@smthrs/flow": "workspace:*",
     "@happy-dom/global-registrator": "^20.13.2",
     "@types/bun": "1.4.4",
-    "@types/d3-force": "^3.0.10",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.7",
     "react": "19.2.8",
