@@ -263,6 +263,16 @@
           "default": "./dist/cjs/MemorySnapshotRecorder.js"
         }
       },
+      "./ModelPolicy": {
+        "import": {
+          "types": "./dist/esm/ModelPolicy.d.ts",
+          "default": "./dist/esm/ModelPolicy.js"
+        },
+        "require": {
+          "types": "./dist/cjs/ModelPolicy.d.ts",
+          "default": "./dist/cjs/ModelPolicy.js"
+        }
+      },
       "./ModelStep": {
         "import": {
           "types": "./dist/esm/ModelStep.d.ts",

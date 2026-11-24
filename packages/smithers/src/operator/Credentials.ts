@@ -21,8 +21,8 @@ const refused = (message: string, fault: CliError.Fault = "user"): CliError.Refu
   new CliError.Refused({ fault, code: "operator_failed", message })
 
 // Every operator command reports failures as operator_failed.
-const execute = <A>(context: Presentation.Failing, body: () => Promise<A>) =>
-  Presentation.guard(context, body, {
+const executeEffect = <A, E>(context: Presentation.Failing, effect: Effect.Effect<A, E>) =>
+  Presentation.guardEffect(context, effect, {
     code: "operator_failed",
     next: Presentation.runs({
       otherwise: [{ command: "credentials list", description: "Inspect credential metadata without revealing secrets" }]
@@ -66,26 +66,37 @@ export const readSecret = (options: SecretOptions, root: string): Redacted.Redac
  * @category constructors
  * @since 1.0.0
  */
-export const withCredentials = <A, E>(
+const withCredentialsEffect = <A, E>(
   options: LocalOptions,
   operation: (service: Credential.Credential) => Effect.Effect<A, E>,
   needsKey = false
-): Promise<A> => {
-  const root = localRoot(options)
-  const key = process.env["SMITHERS_CREDENTIAL_KEY"]
-  if (
-    needsKey && (key === undefined || !/^[A-Za-z0-9+/]{43}=$/.test(key) || Buffer.from(key, "base64").byteLength !== 32)
-  ) {
-    throw refused("Set SMITHERS_CREDENTIAL_KEY to a base64-encoded 32-byte encryption key")
-  }
-  return Effect.runPromise(
-    Effect.gen(function*() {
+) =>
+  Effect.gen(function*() {
+    const root = localRoot(options)
+    const key = process.env["SMITHERS_CREDENTIAL_KEY"]
+    if (
+      needsKey &&
+      (key === undefined || !/^[A-Za-z0-9+/]{43}=$/.test(key) || Buffer.from(key, "base64").byteLength !== 32)
+    ) {
+      return yield* Effect.fail(refused("Set SMITHERS_CREDENTIAL_KEY to a base64-encoded 32-byte encryption key"))
+    }
+    return yield* Effect.gen(function*() {
       const store = yield* SqlCredentialStore.make
       const cipher = needsKey ? yield* WebCryptoCipher.make({ key: Redacted.make(key!) }) : CredentialCipher.makeNoop()
       return yield* operation(Credential.make({ store, cipher }))
     }).pipe(Effect.provide(databaseLayer(root)))
-  )
-}
+  })
+
+/**
+ * Runs an operation against the authoritative encrypted credential store.
+ * @category constructors
+ * @since 1.0.0
+ */
+export const withCredentials = <A, E>(
+  options: LocalOptions,
+  operation: (service: Credential.Credential) => Effect.Effect<A, E>,
+  needsKey = false
+): Promise<A> => Presentation.runBoundary(withCredentialsEffect(options, operation, needsKey))
 
 /** CLI fields shared by add and rotate. */
 const secretFields = {
@@ -104,7 +115,7 @@ export const createCredentialsCli = () =>
       description: "List credential IDs and connection names",
       mcp: { annotations: { readOnlyHint: true } },
       options: z.object(localFields),
-      run: (context) => execute(context, () => withCredentials(context.options, (service) => service.list()))
+      run: (context) => executeEffect(context, withCredentialsEffect(context.options, (service) => service.list()))
     })
     .command("add", {
       description: "Encrypt a credential using SMITHERS_CREDENTIAL_KEY",
@@ -112,11 +123,17 @@ export const createCredentialsCli = () =>
       args: z.object({ id: z.string().min(1) }),
       options: z.object({ ...localFields, ...secretFields, name: z.string().min(1) }),
       run: (context) =>
-        execute(context, () => {
-          const secret = readSecret(context.options, localRoot(context.options))
-          return withCredentials(context.options, (service) =>
-            service.create({ id: context.args.id, name: context.options.name, secret }), true)
-        })
+        executeEffect(
+          context,
+          Effect.suspend(() => {
+            const secret = readSecret(context.options, localRoot(context.options))
+            return withCredentialsEffect(
+              context.options,
+              (service) => service.create({ id: context.args.id, name: context.options.name, secret }),
+              true
+            )
+          })
+        )
     })
     .command("rotate", {
       description: "Replace an encrypted credential secret using a compare-and-set write",
@@ -124,13 +141,18 @@ export const createCredentialsCli = () =>
       args: z.object({ id: z.string().min(1) }),
       options: z.object({ ...localFields, ...secretFields }),
       run: (context) =>
-        execute(context, () => {
-          const secret = readSecret(context.options, localRoot(context.options))
-          return withCredentials(context.options, (service) =>
-            service.get(context.args.id).pipe(Effect.flatMap((reference) =>
-              service.rotate(reference, secret)
-            )), true)
-        })
+        executeEffect(
+          context,
+          Effect.suspend(() => {
+            const secret = readSecret(context.options, localRoot(context.options))
+            return withCredentialsEffect(
+              context.options,
+              (service) =>
+                service.get(context.args.id).pipe(Effect.flatMap((reference) => service.rotate(reference, secret))),
+              true
+            )
+          })
+        )
     })
     .command("revoke", {
       description: "Remove a stored credential reference and its encrypted secret",
@@ -138,10 +160,12 @@ export const createCredentialsCli = () =>
       args: z.object({ id: z.string().min(1) }),
       options: z.object(localFields),
       run: (context) =>
-        execute(context, () =>
-          withCredentials(context.options, (service) =>
+        executeEffect(
+          context,
+          withCredentialsEffect(context.options, (service) =>
             service.get(context.args.id).pipe(
               Effect.flatMap((reference) => service.revoke(reference)),
               Effect.as({ id: context.args.id, revoked: true })
-            )))
+            ))
+        )
     })

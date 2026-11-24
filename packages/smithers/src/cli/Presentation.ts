@@ -4,6 +4,11 @@
  * @since 1.0.0
  */
 
+import * as Cause from "effect/Cause"
+import * as Effect from "effect/Effect"
+import * as Exit from "effect/Exit"
+import type * as Fiber from "effect/Fiber"
+
 import * as clack from "@clack/prompts"
 import * as Audience from "@smthrs/build-cli/Audience"
 import type { RuntimeConfig } from "@smthrs/build-cli/Cli"
@@ -383,3 +388,63 @@ export const guard = async <A>(
     return fail(context, cause, options)
   }
 }
+
+/**
+ * The one Incur error boundary for Effect programs: executes `effect` once at
+ * the CLI command boundary, finishes its result with declared follow-ups, and
+ * reports any failure through `fail`.
+ * @category constructors
+ * @since 1.0.0
+ */
+export const guardEffect = async <A, E>(
+  context: Failing,
+  effect: Effect.Effect<A, E>,
+  options: Refusal & {
+    readonly next?: FollowUps | undefined
+    readonly render?: ((value: A) => Rendering) | undefined
+    readonly signal?: AbortSignal | undefined
+  } = {}
+): Promise<A> => {
+  const exit = await Effect.runPromiseExit(
+    effect,
+    options.signal === undefined ? undefined : { signal: options.signal }
+  )
+  if (Exit.isSuccess(exit)) {
+    return finish(context, exit.value, { next: options.next, ...options.render?.(exit.value) })
+  }
+  return fail(context, Cause.squash(exit.cause), options)
+}
+
+/**
+ * Executes an Effect program at a top-level Promise boundary.
+ * @private
+ * @since 1.0.0
+ */
+export const runBoundary = <A, E>(
+  effect: Effect.Effect<A, E>,
+  signal?: AbortSignal
+): Promise<A> => Effect.runPromise(effect, signal === undefined ? undefined : { signal })
+
+/**
+ * Executes an Effect program at a top-level Promise boundary and returns its Exit.
+ * @private
+ * @since 1.0.0
+ */
+export const runBoundaryExit = <A, E>(
+  effect: Effect.Effect<A, E>,
+  signal?: AbortSignal
+): Promise<Exit.Exit<A, E>> => Effect.runPromiseExit(effect, signal === undefined ? undefined : { signal })
+
+/**
+ * Executes a synchronous Effect program at a top-level boundary and returns its Exit.
+ * @private
+ * @since 1.0.0
+ */
+export const runBoundarySyncExit = <A, E>(effect: Effect.Effect<A, E>): Exit.Exit<A, E> => Effect.runSyncExit(effect)
+
+/**
+ * Forks an Effect fiber at a top-level boundary.
+ * @private
+ * @since 1.0.0
+ */
+export const runBoundaryFork = <A, E>(effect: Effect.Effect<A, E>): Fiber.Fiber<A, E> => Effect.runFork(effect)

@@ -291,9 +291,14 @@ describe("the sealed model step key", () => {
     // the declaration's capability schema is in this preimage, as it was for
     // `jj:op-restore` and `memory:*`. Runs already in flight finish on their
     // original revision.
-    expect(observed.encoding2).toBe("key1_8abb335185ba5d66bceda98f38971322131f3ba848e727e2edf9c4a27ddeb540")
-    expect(observed.encoding3).toBe("key1_c4a2ccf6b4f8d00563d61f77c853bde9583ad09e2c5c6e24e82b823c6ed89d24")
-    expect(observed.host).toBe("key1_537c51d05dd89569d92aa245f601a345aa0bced59b8a46f82430e53dd8899aea")
+    expect(observed.encoding2).not.toBe("key1_8abb335185ba5d66bceda98f38971322131f3ba848e727e2edf9c4a27ddeb540")
+    expect(observed.encoding3).not.toBe("key1_c4a2ccf6b4f8d00563d61f77c853bde9583ad09e2c5c6e24e82b823c6ed89d24")
+    expect(observed.host).not.toBe("key1_537c51d05dd89569d92aa245f601a345aa0bced59b8a46f82430e53dd8899aea")
+    // Moved again, under every key encoding, when `EvaluatorError` gained
+    // optional `permission: PermissionError` (02d74dc01bf7, #4727).
+    expect(observed.encoding2).toBe("key1_89d3e90a4d883a6cc3a8b4f0fc6a755e8dd482c28050e44b194619793f8d3092")
+    expect(observed.encoding3).toBe("key1_54e05e9c4d5886acfc07f300e247ff5144d7ca0c8f4477baa0afbb56c59948ce")
+    expect(observed.host).toBe("key1_1a12b9e4f06911a4831938ad5c161e50f49c5eded6f41d0c03c2e146d4c04ee8")
     // Sealed means content-addressed: the same declaration through a second
     // port of the same composition is one recorded answer, not two calls.
     expect(observed.again).toBe(observed.host)
@@ -345,9 +350,15 @@ describe("the sealed cell-call key", () => {
     expect(observed.host).not.toBe("key1_6e660a70edea56a06510877cbaa94eea27ffb96a7e7ce549344023d4cfb054cf")
     // `HarnessErrorCode` gained `realm_exhausted` (#4829), which moved it
     // under every key encoding; see `CellCallV1.realmExhaustedKey`.
-    expect(observed.encoding2).toBe("key1_2fb352392ce2a085f7f134eed416f7532ed7b90aa701a39c51b8b683c73c1458")
-    expect(observed.encoding3).toBe("key1_8007b26b04c33c3d23975776270fdfc14aa23c8994200c034aa72689d7abb135")
-    expect(observed.host).toBe("key1_a703e449614ccfa068ebb77b8945c903552bbc94e0798e20a0ff58bbd08ac128")
+    expect(observed.encoding2).not.toBe("key1_2fb352392ce2a085f7f134eed416f7532ed7b90aa701a39c51b8b683c73c1458")
+    expect(observed.encoding3).not.toBe("key1_8007b26b04c33c3d23975776270fdfc14aa23c8994200c034aa72689d7abb135")
+    expect(observed.host).not.toBe("key1_a703e449614ccfa068ebb77b8945c903552bbc94e0798e20a0ff58bbd08ac128")
+    // `EvaluatorError` gained optional `permission: PermissionError`
+    // (02d74dc01bf7, #4727), moving the error declaration under every key
+    // encoding; see `CellCallV1.judgePermissionKey`.
+    expect(observed.encoding2).toBe("key1_65827a85a2d82ccda364b1700f65ed7677ab0bc6fa0ea12df04ee078ae532f10")
+    expect(observed.encoding3).toBe("key1_65e5aef288094587a490ac284eff7776136f0280629a0ef8680fa4bbc6898da4")
+    expect(observed.host).toBe("key1_b52cc5639c33a81a42d5896c84d8f239d417f3af416b5313944f7192ecf119e4")
     // The composition really is in the key: the same call resolved under a
     // different layer set is a different boundary, not a cache hit.
     expect(observed.other).not.toBe(observed.host)

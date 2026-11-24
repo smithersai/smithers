@@ -3,7 +3,7 @@ title: "API reference"
 description: "Every public export of @smthrs/agent: the Agent service, the AgentSession and AgentAction adapters, seats, the quota and budget policies, the capability catalog, and the durable engine port."
 ---
 
-`@smthrs/agent` exports thirty-two modules from its root entry point, and each is
+`@smthrs/agent` exports thirty-three modules from its root entry point, and each is
 also importable from `@smthrs/agent/<Module>`:
 
 ```ts
@@ -2819,6 +2819,15 @@ set. `callBoundary` maps a hermetic mode to a hard boundary. `callMaterial` is
 the sandbox's separate content key, intentionally not equal to the durable
 activity key, which nests effects under the body and includes the composition
 digest.
+
+## ModelPolicy
+
+Vendor-neutral model selection policy enforced on an external agent session before any prompt turn is sent.
+
+- `ModelPolicy` — schema constraining `model`, `allowedPrefixes`, and `deniedPrefixes`.
+- `REFUSAL_REASONS` — `["missing_model", "denied_prefix", "not_allowed", "mismatch"]`.
+- `ModelPolicyRefused` — tagged error (`modelId`, `reason`) raised when a session model violates the policy.
+- `checkModel(policy, modelId)` — validates `modelId` against `policy`, failing closed with `ModelPolicyRefused`.
 
 ## ModelStep
 

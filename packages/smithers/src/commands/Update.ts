@@ -4,7 +4,8 @@
  * @since 1.0.0
  */
 
-import { Effect } from "effect"
+import { Effect, Option } from "effect"
+import * as FetchHttpClient from "effect/http/FetchHttpClient"
 import * as CliError from "../CliError.ts"
 import * as Update from "../Update.ts"
 import { packageVersion } from "../Version.ts"
@@ -27,9 +28,10 @@ export const check = (
 ): Effect.Effect<Update.Status, CliError.UnsupportedError | CliError.Refused> =>
   Effect.gen(function*() {
     yield* Globals.guard(globals)
+    const fetchFn = Option.getOrElse(yield* Effect.serviceOption(FetchHttpClient.Fetch), () => globalThis.fetch)
     const tags = yield* Effect.tryPromise({
       try: async () => {
-        const response = await fetch(Update.registryUrl, { signal: AbortSignal.timeout(10_000) })
+        const response = await fetchFn(Update.registryUrl, { signal: AbortSignal.timeout(10_000) })
         // An error page or a non-object body carries no dist-tags; reading one
         // as empty would report the install as current.
         if (!response.ok) throw registryUnavailable()

@@ -182,6 +182,7 @@ describe("agent checkpoint process recovery", () => {
     const filename = join(directory, "engine.sqlite")
     const runId = "killed-trace"
     const child = spawn(process.execPath, [
+      "--import=vibelang/register",
       fileURLToPath(new URL("./fixtures/step-trace-child.ts", import.meta.url)),
       filename,
       runId
@@ -249,6 +250,7 @@ describe("agent checkpoint process recovery", () => {
           // there too: Vitest rewrites callback source, which is plan identity.
           const recovered = yield* Effect.promise(() =>
             promisify(execFile)(process.execPath, [
+              "--import=vibelang/register",
               fileURLToPath(new URL("./fixtures/step-trace-child.ts", import.meta.url)),
               filename,
               runId,

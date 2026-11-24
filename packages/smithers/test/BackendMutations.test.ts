@@ -15,9 +15,11 @@ const dirs: string[] = [], cwd = process.cwd()
 afterEach(async () => {
   process.chdir(cwd)
   vi.restoreAllMocks()
-  vi.unstubAllGlobals()
   for (const dir of dirs.splice(0)) await rm(dir, { recursive: true, force: true })
 })
+const withFetch = (c: Client, fn: (...args: Array<any>) => Promise<Response>) => {
+  ;(c.runtime as { fetch?: typeof globalThis.fetch }).fetch = fn as typeof globalThis.fetch
+}
 const fixture = async () => {
   const home = await mkdtemp(join(tmpdir(), "one-cli-mutations-"))
   dirs.push(home)
@@ -150,7 +152,7 @@ describe("resource mutations", () => {
     const { c, request, home } = await fixture()
     request.mockResolvedValue({ download_url: "https://storage.test/signed", name: "../../download.txt", size: 4 })
     const fetch = vi.fn().mockResolvedValue(new Response("data"))
-    vi.stubGlobal("fetch", fetch)
+    withFetch(c, fetch)
     process.chdir(home)
     expect(await resources["artifact download"]!(c, { runId: 7, name: "artifact" }, options)).toMatchObject({
       path: join(process.cwd(), "download.txt"),
@@ -179,7 +181,7 @@ describe("resource mutations", () => {
       }
     })
     // fetch is the storage boundary; tests never reach a real bucket.
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(body)))
+    withFetch(c, vi.fn().mockResolvedValue(new Response(body)))
     await expect(
       resources["artifact download"]!(c, { runId: 7, name: "artifact" }, { ...options, output })
     ).rejects.toThrow()
@@ -189,7 +191,7 @@ describe("resource mutations", () => {
   it("reports failed storage downloads", async () => {
     const { c, request, home } = await fixture()
     request.mockResolvedValue({ download_url: "https://storage.test" })
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(null, { status: 503 })))
+    withFetch(c, vi.fn().mockResolvedValue(new Response(null, { status: 503 })))
     await expect(
       resources["artifact download"]!(c, { runId: 7, name: "artifact" }, { ...options, output: join(home, "out") })
     ).rejects.toThrow("503")

@@ -1,6 +1,13 @@
 import { Fuzz } from "@smthrs/fuzz"
 import { Arbitrary, Effect, Exit, Layer, Logger, Option, Redacted, Result, Schema } from "effect"
-import { HttpClient, HttpClientError, HttpClientRequest, HttpClientResponse, HttpServerRequest, HttpServerResponse } from "effect/http"
+import {
+  HttpClient,
+  HttpClientError,
+  HttpClientRequest,
+  HttpClientResponse,
+  HttpServerRequest,
+  HttpServerResponse
+} from "effect/http"
 import { DatabaseSync } from "node:sqlite"
 import { describe, expect, it } from "vitest"
 import * as ActionFailure from "../src/core/ActionFailure.ts"
@@ -16,8 +23,8 @@ import * as GitHubClient from "../src/github/GitHubClient.ts"
 import * as Once from "../src/github/Once.ts"
 import * as PublicRead from "../src/github/PublicRead.vibe"
 import * as ReadCache from "../src/github/ReadCache.vibe"
-import * as TelegramSource from "../src/telegram/Source.ts"
 import { Core } from "../src/index.ts"
+import * as TelegramSource from "../src/telegram/Source.ts"
 import { durable } from "./DurableBroker.vibe"
 
 const executions = Number(process.env.EFFECT_FUZZ_EXECUTIONS ?? "80")
@@ -115,8 +122,7 @@ describe("@smthrs/integrations Wave7 Deep Fuzz (AuthBroker, Delegation, PublicRe
                     refreshToken: Redacted.make("private-gh-ref"),
                     expiresAt: Date.now() + 60_000
                   }),
-                user: () =>
-                  Effect.succeed({ id: mode === "connect-person-mismatch" ? 99 : 7, login: "ada" }),
+                user: () => Effect.succeed({ id: mode === "connect-person-mismatch" ? 99 : 7, login: "ada" }),
                 refresh: () => Effect.die("unused"),
                 permission: () => Effect.succeed("read"),
                 revoke: () =>
@@ -135,8 +141,7 @@ describe("@smthrs/integrations Wave7 Deep Fuzz (AuthBroker, Delegation, PublicRe
                   encryptionKey: encKey,
                   github,
                   connections: {
-                    install: () =>
-                      Effect.succeed({ delegation: "d".repeat(43), expires: Date.now() + 60_000 })
+                    install: () => Effect.succeed({ delegation: "d".repeat(43), expires: Date.now() + 60_000 })
                   }
                 })
               )
@@ -220,7 +225,9 @@ describe("@smthrs/integrations Wave7 Deep Fuzz (AuthBroker, Delegation, PublicRe
               const pending = yield* client.begin(isConnect ? { connect: { person: 7 } } : undefined)
               const startRes = yield* runRoute(
                 new Request(
-                  `${brokerOrigin}${AuthBroker.START}?origin=${encodeURIComponent(siteOrigin)}&return_to=${encodeURIComponent(pending.returnTo)}`
+                  `${brokerOrigin}${AuthBroker.START}?origin=${encodeURIComponent(siteOrigin)}&return_to=${
+                    encodeURIComponent(pending.returnTo)
+                  }`
                 )
               )
               if (startRes.web.status !== 303) return false
@@ -355,7 +362,10 @@ describe("@smthrs/integrations Wave7 Deep Fuzz (AuthBroker, Delegation, PublicRe
                     return jsonResp(req, 200, [])
                   }
                   if (p.includes("/git/refs") && req.method === "POST") {
-                    return jsonResp(req, 201, { ref: "refs/heads/vibelang/test", object: { sha: "a".repeat(40), type: "commit" } })
+                    return jsonResp(req, 201, {
+                      ref: "refs/heads/vibelang/test",
+                      object: { sha: "a".repeat(40), type: "commit" }
+                    })
                   }
                   if (p.includes("/git/ref/heads/")) {
                     return jsonResp(req, 404, { message: "Not Found" })
@@ -453,16 +463,19 @@ describe("@smthrs/integrations Wave7 Deep Fuzz (AuthBroker, Delegation, PublicRe
               const routedHttp = HttpClient.make((request) =>
                 Effect.gen(function*() {
                   const webReq = yield* Effect.orDie(HttpClientRequest.toWeb(request))
-                  const resp = yield* Delegation.route({ origin: brokerOrigin, sites }, (_person, inner) =>
-                    Delegation.serve(server).pipe(Effect.provideService(HttpServerRequest.HttpServerRequest, inner))
+                  const resp = yield* Delegation.route(
+                    { origin: brokerOrigin, sites },
+                    (_person, inner) =>
+                      Delegation.serve(server).pipe(Effect.provideService(HttpServerRequest.HttpServerRequest, inner))
                   ).pipe(Effect.provideService(HttpServerRequest.HttpServerRequest, HttpServerRequest.fromWeb(webReq)))
                   return HttpClientResponse.fromWeb(request, HttpServerResponse.toWeb(resp))
                 })
               )
 
               if (op === "route-and-serve-errors") {
-                const r405 = yield* Delegation.route({ origin: brokerOrigin, sites }, () =>
-                  Effect.succeed(HttpServerResponse.empty())
+                const r405 = yield* Delegation.route(
+                  { origin: brokerOrigin, sites },
+                  () => Effect.succeed(HttpServerResponse.empty())
                 ).pipe(
                   Effect.provideService(
                     HttpServerRequest.HttpServerRequest,
@@ -487,8 +500,9 @@ describe("@smthrs/integrations Wave7 Deep Fuzz (AuthBroker, Delegation, PublicRe
                     )
                   )
                 )
-                const rBad = yield* Delegation.route({ origin: brokerOrigin, sites }, () =>
-                  Effect.succeed(HttpServerResponse.empty())
+                const rBad = yield* Delegation.route(
+                  { origin: brokerOrigin, sites },
+                  () => Effect.succeed(HttpServerResponse.empty())
                 ).pipe(
                   Effect.provideService(
                     HttpServerRequest.HttpServerRequest,
@@ -509,13 +523,20 @@ describe("@smthrs/integrations Wave7 Deep Fuzz (AuthBroker, Delegation, PublicRe
                 const ghClient = site.client(7, installed.delegation, routedHttp)
                 const list = yield* ghClient.request("GET", "/repos/smithersai/vibelang/issues", undefined, {
                   query: { state: "open", empty: undefined },
-                  schema: Schema.Array(Schema.Struct({ id: Schema.Number, number: Schema.Number, title: Schema.String }))
+                  schema: Schema.Array(
+                    Schema.Struct({ id: Schema.Number, number: Schema.Number, title: Schema.String })
+                  )
                 })
-                const paged = yield* ghClient.paginate("/repos/smithersai/vibelang/issues", { perPage: 10, maxPages: 1 })
+                const paged = yield* ghClient.paginate("/repos/smithersai/vibelang/issues", {
+                  perPage: 10,
+                  maxPages: 1
+                })
                 const badDecode = yield* Effect.exit(
                   ghClient.request("GET", "/repos/smithersai/vibelang/issues", undefined, { schema: Schema.Number })
                 )
-                const postDefect = yield* Effect.exit(ghClient.request("POST" as any, "/repos/smithersai/vibelang/issues"))
+                const postDefect = yield* Effect.exit(
+                  ghClient.request("POST" as any, "/repos/smithersai/vibelang/issues")
+                )
                 const countDefect = yield* Effect.exit(ghClient.count("/repos/smithersai/vibelang/issues"))
                 return (
                   list.length === 1 &&
@@ -540,7 +561,8 @@ describe("@smthrs/integrations Wave7 Deep Fuzz (AuthBroker, Delegation, PublicRe
                 const perf = yield* Effect.exit(
                   k.perform("0".repeat(64)).pipe(Effect.provideService(HttpClient.HttpClient, routedHttp))
                 )
-                return (Exit.isSuccess(found) || Exit.isFailure(found)) && (Exit.isSuccess(perf) || Exit.isFailure(perf))
+                return (Exit.isSuccess(found) || Exit.isFailure(found)) &&
+                  (Exit.isSuccess(perf) || Exit.isFailure(perf))
               }
 
               if (op === "issue-assign-close-link") {
@@ -614,7 +636,9 @@ describe("@smthrs/integrations Wave7 Deep Fuzz (AuthBroker, Delegation, PublicRe
               if (op === "revoke-and-connections") {
                 const conns = yield* server.connections()
                 if (conns.length !== 1) return false
-                yield* site.revoke(7, installed.delegation).pipe(Effect.provideService(HttpClient.HttpClient, routedHttp))
+                yield* site.revoke(7, installed.delegation).pipe(
+                  Effect.provideService(HttpClient.HttpClient, routedHttp)
+                )
                 const after = yield* server.connections()
                 return after.length === 0
               }
@@ -705,7 +729,12 @@ describe("@smthrs/integrations Wave7 Deep Fuzz (AuthBroker, Delegation, PublicRe
                 callCount++
                 if (sc === "readcache-304-and-stale") {
                   if (callCount === 1) return jsonResp(req, 200, { ok: 1 }, { etag: "\"e1\"" })
-                  if (callCount === 2) return HttpClientResponse.fromWeb(req, new Response(null, { status: 304, headers: { etag: "\"e1\"" } }))
+                  if (callCount === 2) {
+                    return HttpClientResponse.fromWeb(
+                      req,
+                      new Response(null, { status: 304, headers: { etag: "\"e1\"" } })
+                    )
+                  }
                   return null as any
                 }
                 if (callCount === 1) return jsonResp(req, 200, { ok: 1 }, { etag: "\"e1\"" })
@@ -805,7 +834,14 @@ describe("@smthrs/integrations Wave7 Deep Fuzz (AuthBroker, Delegation, PublicRe
     const oidA = "a".repeat(40)
     const oidB = "b".repeat(40)
     const oidC = "c".repeat(40)
-    const gitModes = ["tree-commit-read", "read-not-found", "update-applied", "update-conflict", "update-unavailable", "err-422"] as const
+    const gitModes = [
+      "tree-commit-read",
+      "read-not-found",
+      "update-applied",
+      "update-conflict",
+      "update-unavailable",
+      "err-422"
+    ] as const
     const gitArb = Arbitrary.schema(
       Schema.Struct({
         idx: Schema.Int.pipe(Schema.check(Schema.isBetween({ minimum: 0, maximum: gitModes.length - 1 })))
@@ -888,7 +924,10 @@ describe("@smthrs/integrations Wave7 Deep Fuzz (AuthBroker, Delegation, PublicRe
                 return Exit.isFailure(ex)
               }
               const ex = yield* Effect.exit(
-                gdb.updateRefs({ operation: "update", updates: [{ ref: "refs/heads/main", before: oidA, after: oidB }] })
+                gdb.updateRefs({
+                  operation: "update",
+                  updates: [{ ref: "refs/heads/main", before: oidA, after: oidB }]
+                })
               )
               return Exit.isSuccess(ex) || Exit.isFailure(ex)
             }).pipe(Effect.provide(ghLayer))
@@ -923,7 +962,9 @@ describe("@smthrs/integrations Wave7 Deep Fuzz (AuthBroker, Delegation, PublicRe
                 return Effect.succeed(HttpClientResponse.fromWeb(req, new Response("not-json", { status: 200 })))
               }
               if (mode === "rate-429") {
-                return Effect.succeed(jsonResp(req, 429, { ok: false, description: "Too Many Requests", parameters: { retry_after: 3 } }))
+                return Effect.succeed(
+                  jsonResp(req, 429, { ok: false, description: "Too Many Requests", parameters: { retry_after: 3 } })
+                )
               }
               if (mode === "non-array") {
                 return Effect.succeed(jsonResp(req, 200, { ok: true, result: "oops" }))

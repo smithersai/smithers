@@ -30,6 +30,7 @@ import * as SqlClient from "effect/sql/SqlClient"
 import { closeSync, mkdirSync, openSync, writeSync } from "node:fs"
 import { hostname } from "node:os"
 import { join } from "node:path"
+import * as Presentation from "../cli/Presentation.ts"
 import * as Project from "../Project.ts"
 import { databaseLayer } from "./Store.ts"
 
@@ -265,32 +266,45 @@ const decodeLaunch = (json: string) =>
  * @category queries
  * @since 1.0.0
  */
-export const inspectRun = (root: string, handle: string): Promise<StoredRun | null> =>
+/**
+ * Effect reading the recorded state of one build-target run, or `null` when
+ * the handle names none.
+ * @private
+ * @since 1.0.0
+ */
+export const inspectRunEffect = (root: string, handle: string): Effect.Effect<StoredRun | null, unknown> =>
   isHandle(handle)
-    ? Effect.runPromise(
-      Effect.gen(function*() {
-        const sql = yield* SqlClient.SqlClient
-        // A read: a project no scheduler has served has no table yet, and
-        // showing a trigger must not take the database's write lock.
-        const tables = yield* sql`
-          SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'control_trigger_target_runs'
-        `
-        const row = tables.length === 0
-          ? undefined
-          : (yield* sql<Row>`SELECT * FROM control_trigger_target_runs WHERE handle = ${handle}`)[0]
-        if (row === undefined) return null
-        return {
-          handle,
-          launch: yield* decodeLaunch(row.launch_json),
-          status: yield* Schema.decodeUnknownEffect(Status)(row.status),
-          exitCode: row.exit_code,
-          error: row.error,
-          attempts: row.attempts,
-          log: logOf(handle)
-        }
-      }).pipe(Effect.provide(databaseLayer(root)))
-    )
-    : Promise.resolve(null)
+    ? Effect.gen(function*() {
+      const sql = yield* SqlClient.SqlClient
+      // A read: a project no scheduler has served has no table yet, and
+      // showing a trigger must not take the database's write lock.
+      const tables = yield* sql`
+        SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'control_trigger_target_runs'
+      `
+      const row = tables.length === 0
+        ? undefined
+        : (yield* sql<Row>`SELECT * FROM control_trigger_target_runs WHERE handle = ${handle}`)[0]
+      if (row === undefined) return null
+      return {
+        handle,
+        launch: yield* decodeLaunch(row.launch_json),
+        status: yield* Schema.decodeUnknownEffect(Status)(row.status),
+        exitCode: row.exit_code,
+        error: row.error,
+        attempts: row.attempts,
+        log: logOf(handle)
+      }
+    }).pipe(Effect.provide(databaseLayer(root)))
+    : Effect.succeed(null)
+
+/**
+ * Reads the recorded state of one build-target run, or `null` when the handle
+ * names none.
+ * @category queries
+ * @since 1.0.0
+ */
+export const inspectRun = (root: string, handle: string): Promise<StoredRun | null> =>
+  Presentation.runBoundary(inspectRunEffect(root, handle))
 
 /**
  * Routes a launch with the reserved {@link flowId} to the build and every

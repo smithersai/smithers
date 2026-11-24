@@ -1,19 +1,22 @@
-import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises"
+import * as Effect from "effect/Effect"
+import { chmod, mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { inspect } from "node:util"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { Client } from "../src/internal/backend/Client.ts"
-import { NotFound, run } from "../src/internal/backend/Process.ts"
+import { NotFound, type Result } from "../src/internal/backend/Process.ts"
 import { normalizeOrigin, observeOrigin, Session } from "../src/internal/backend/Session.ts"
-vi.mock("../src/internal/backend/Process.ts", async (actual) => ({ ...await actual(), run: vi.fn() }))
-const spawn = vi.mocked(run)
+const spawn = vi.fn<(command: string, args: ReadonlyArray<string>, options: any) => Promise<Result>>()
+const commands = {
+  run: (command: string, args: ReadonlyArray<string>, options: any) =>
+    Effect.tryPromise({ try: () => spawn(command, args, options), catch: (error) => error })
+}
 const platform = Object.getOwnPropertyDescriptor(process, "platform")!
 const dirs: string[] = []
 afterEach(async () => {
   Object.defineProperty(process, "platform", platform)
   vi.restoreAllMocks()
-  vi.unstubAllGlobals()
   spawn.mockReset()
   for (const dir of dirs.splice(0)) await rm(dir, { recursive: true, force: true })
 })
@@ -27,7 +30,7 @@ const fixture = async (env: Record<string, string> = {}) => {
     SMITHERS_API_ORIGIN: "https://api.example.test",
     ...env
   }
-  return { home, environment, session: new Session(environment) }
+  return { home, environment, session: new Session(environment, commands) }
 }
 const result = (stdout = "", code = 0, stderr = "") => Promise.resolve({ code, stdout, stderr })
 const missing = () => new NotFound("pwsh")
@@ -176,6 +179,7 @@ describe("authenticated transport boundaries", () => {
     let output = ""
     const c = new Client({
       environment,
+      fetch: vi.fn<typeof globalThis.fetch>().mockResolvedValue(new Response("{}")),
       stdout: {
         write: (text) => {
           output += text
@@ -184,7 +188,6 @@ describe("authenticated transport boundaries", () => {
         columns: 80
       }
     }, true)
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("{}")))
     await c.request("GET", "/api/user")
     const bytes = Buffer.from("🙂 private-session-secret\ntail")
     for (let i = 0; i < bytes.length; i++) c.output(bytes.subarray(i, i + 1), Buffer.alloc(0))
@@ -269,11 +272,17 @@ describe("authenticated transport boundaries", () => {
     expect(await c.events("/stream")).toEqual([{ type: "log", data: "hello\nworld" }, { type: "log", data: "tail" }])
   })
   it("returns a bounded process error without stderr or secrets", async () => {
-    const { environment } = await fixture()
-    const c = new Client({ environment })
-    spawn.mockReturnValue(result("", 1, "secret diagnostic"))
+    const { home, environment } = await fixture()
+    const binDir = join(home, "bin")
+    await mkdir(binDir, { recursive: true })
+    const gitBin = join(binDir, "git")
+    const jjBin = join(binDir, "jj")
+    await writeFile(gitBin, `#!${process.execPath}\nprocess.stderr.write("secret diagnostic");\nprocess.exit(1);\n`)
+    await writeFile(jjBin, `#!${process.execPath}\nprocess.stdout.write("  output  \\n");\nprocess.exit(0);\n`)
+    await chmod(gitBin, 0o755)
+    await chmod(jjBin, 0o755)
+    const c = new Client({ environment: { ...environment, PATH: binDir } })
     await expect(c.exec("git", ["push"])).rejects.toThrow(/^git failed$/)
-    spawn.mockReturnValue(result("  output  \n"))
     expect(await c.exec("jj", ["status"])).toBe("output")
   })
 })

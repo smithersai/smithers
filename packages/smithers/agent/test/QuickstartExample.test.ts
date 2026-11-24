@@ -21,7 +21,7 @@ it("executes every quickstart code block and prints its documented result", () =
   try {
     const path = join(directory, "quickstart.ts")
     writeFileSync(path, code.join("\n"))
-    const result = spawnSync(process.execPath, ["--experimental-strip-types", path], {
+    const result = spawnSync(process.execPath, ["--experimental-strip-types", "--import=vibelang/register", path], {
       encoding: "utf8",
       timeout: 30_000
     })

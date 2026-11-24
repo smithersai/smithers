@@ -21,6 +21,7 @@ describe("queued cell-call trace replay on SQLite", () => {
       const filename = join(directory, "engine.sqlite")
       const runId = "queued-calls"
       const child = spawn(process.execPath, [
+        "--import=vibelang/register",
         fileURLToPath(new URL("./fixtures/step-trace-calls-child.ts", import.meta.url)),
         filename,
         runId,
@@ -92,6 +93,7 @@ describe("queued cell-call trace replay on SQLite", () => {
             // the exact callback source included in the recorded plan.
             const recovered = yield* Effect.promise(() =>
               promisify(execFile)(process.execPath, [
+                "--import=vibelang/register",
                 fileURLToPath(new URL("./fixtures/step-trace-calls-child.ts", import.meta.url)),
                 filename,
                 runId,

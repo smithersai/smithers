@@ -9,28 +9,31 @@ import { promisify } from "node:util"
 import { expect, it, vi } from "vitest"
 import * as BunControl from "../src/BunControl.ts"
 
-const implementation = vi.hoisted(() => ({
-  loaded: vi.fn(),
-  layerControl: vi.fn(),
-  layerRegistry: vi.fn()
-}))
-
-vi.mock("../src/internal/BunControl.ts", () => {
-  implementation.loaded()
-  return { native: implementation }
-})
-
 it("defers Bun adapters until building either public layer and forwards each root", async () => {
   const built: Array<string> = []
-  implementation.layerControl.mockReturnValue(Layer.effectDiscard(Effect.sync(() => {
-    built.push("control")
-  })))
-  implementation.layerRegistry.mockReturnValue(Layer.effectDiscard(Effect.sync(() => {
-    built.push("registry")
-  })))
+  const implementation = {
+    loaded: vi.fn(),
+    layerControl: vi.fn(() =>
+      Layer.effectDiscard(Effect.sync(() => {
+        built.push("control")
+      }))
+    ),
+    layerRegistry: vi.fn(() =>
+      Layer.effectDiscard(Effect.sync(() => {
+        built.push("registry")
+      }))
+    )
+  }
+  let cached: Promise<{ readonly native: typeof implementation }> | undefined
+  const deferred = BunControl.makeBunControl(() =>
+    cached ??= Promise.resolve().then(() => {
+      implementation.loaded()
+      return { native: implementation }
+    }) as any
+  )
   const controlConfig = { root: "/virtual/control" }
-  const control = BunControl.layerControl(controlConfig)
-  const registry = BunControl.layerRegistry("/virtual/registry")
+  const control = deferred.layerControl(controlConfig)
+  const registry = deferred.layerRegistry("/virtual/registry")
   expect(implementation.loaded).not.toHaveBeenCalled()
   expect(implementation.layerControl).not.toHaveBeenCalled()
   expect(implementation.layerRegistry).not.toHaveBeenCalled()

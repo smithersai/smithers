@@ -224,20 +224,34 @@ const secret = async (options: LocalOptions, entry: Integration): Promise<string
  * @category diagnostics
  * @since 1.0.0
  */
-export const probe = async (entry: Integration, token: string, timeoutMs = 10_000) => {
-  const env = Environment.ambientEnvironment()
-  const resolved = GitHub.Config.resolve({ token, apiBaseUrl: entry.apiBaseUrl }, env)
-  if (!endpoint.safeParse(resolved.apiBaseUrl).success) {
-    throw refused("user", `Integration ${entry.id} resolves an invalid ${entry.provider} API endpoint`)
-  }
-  authorize({ ...entry, apiBaseUrl: resolved.apiBaseUrl }, env)
-  const operation = Effect.flatMap(
-    GitHub.GitHubClient.make(resolved, {}),
-    (client) => client.request("GET", "/rate_limit")
-  )
-  await Effect.runPromise(operation.pipe(Effect.timeout(timeoutMs), Effect.provide(FetchHttpClient.layer)))
-  return { id: entry.id, provider: entry.provider, healthy: true }
-}
+const probeEffect = (entry: Integration, token: string, timeoutMs = 10_000) =>
+  Effect.gen(function*() {
+    const env = Environment.ambientEnvironment()
+    const resolved = GitHub.Config.resolve({ token, apiBaseUrl: entry.apiBaseUrl }, env)
+    if (!endpoint.safeParse(resolved.apiBaseUrl).success) {
+      return yield* Effect.fail(
+        refused("user", `Integration ${entry.id} resolves an invalid ${entry.provider} API endpoint`)
+      )
+    }
+    authorize({ ...entry, apiBaseUrl: resolved.apiBaseUrl }, env)
+    const operation = Effect.flatMap(
+      GitHub.GitHubClient.make(resolved, {}),
+      (client) => client.request("GET", "/rate_limit")
+    )
+    return yield* operation.pipe(
+      Effect.timeout(timeoutMs),
+      Effect.provide(FetchHttpClient.layer),
+      Effect.as({ id: entry.id, provider: entry.provider, healthy: true })
+    )
+  })
+
+/**
+ * Probes one configured integration against its upstream endpoint.
+ * @category queries
+ * @since 1.0.0
+ */
+export const probe = (entry: Integration, token: string, timeoutMs = 10_000) =>
+  Presentation.runBoundary(probeEffect(entry, token, timeoutMs))
 
 /** Builds provider discovery and diagnostics.
  * @category constructors

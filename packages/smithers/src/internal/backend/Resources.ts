@@ -302,7 +302,7 @@ add("artifact download", async (c, a, o) => {
   }
   const path = resolve(str(o.output) || safeName)
   const signal = AbortSignal.any([AbortSignal.timeout(300_000), ...(c.runtime.signal ? [c.runtime.signal] : [])])
-  const response = await fetch(str(record.download_url), { signal })
+  const response = await (c.runtime.fetch ?? fetch)(str(record.download_url), { signal })
   if (!response.ok) {
     throw new Refused({
       fault: "infra",

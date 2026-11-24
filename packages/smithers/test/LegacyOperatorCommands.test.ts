@@ -1,9 +1,11 @@
 import { NodeServices } from "@effect/platform-node"
 import * as TestControl from "@smthrs/control/test/TestControl"
 import * as MigrationLock from "@smthrs/migrate/flow/Lock"
+import * as SqliteStoreNode from "@smthrs/migrate/SqliteStoreNode"
 import { ProcessSandbox } from "@smthrs/platform-node"
 import { Cause, Effect, Exit, Layer, Option } from "effect"
 import { Command } from "effect/cli"
+import * as FetchHttpClient from "effect/http/FetchHttpClient"
 import { TestConsole } from "effect/testing"
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
@@ -30,12 +32,11 @@ beforeEach(() => {
   mkdirSync(join(root, "home"))
 })
 afterEach(() => {
-  vi.unstubAllGlobals()
   vi.restoreAllMocks()
   rmSync(root, { recursive: true, force: true })
 })
 
-const invoke = async (args: Array<string>) => {
+const invoke = async (args: Array<string>, fetchImpl?: typeof globalThis.fetch) => {
   if (args[0] === "suggest" || args[0] === "mcp") {
     const result = await invokeCanonical([...args, "--root", root, "--json"], {
       environment: { HOME: join(root, "home"), PATH: claudePath() }
@@ -61,7 +62,8 @@ const invoke = async (args: Array<string>) => {
       Effect.provideService(Project.MigrationRoot, root),
       Effect.provideService(CommandStatus, (code) => {
         codes.push(code)
-      })
+      }),
+      Effect.provide(fetchImpl === undefined ? Layer.empty : Layer.succeed(FetchHttpClient.Fetch, fetchImpl))
     )
   )
   return {
@@ -178,7 +180,9 @@ describe("legacy operator command contracts", () => {
     writeFileSync(source, JSON.stringify({ name: "unmigrated", private: true }))
     const before = readFileSync(source)
     const held = await Effect.runPromise(
-      MigrationLock.acquire({ root, reportDir: ".smithers-migrate" }).pipe(Effect.provide(NodeServices.layer))
+      MigrationLock.acquire({ root, reportDir: ".smithers-migrate" }).pipe(
+        Effect.provide(Layer.merge(NodeServices.layer, SqliteStoreNode.layer))
+      )
     )
     const record = readFileSync(held.file)
     try {
@@ -195,7 +199,9 @@ describe("legacy operator command contracts", () => {
       expect(readFileSync(source)).toEqual(before)
       expect(existsSync(join(root, ".smithers-migrate", "report.json"))).toBe(false)
     } finally {
-      await Effect.runPromise(MigrationLock.release(held).pipe(Effect.provide(NodeServices.layer)))
+      await Effect.runPromise(
+        MigrationLock.release(held).pipe(Effect.provide(Layer.merge(NodeServices.layer, SqliteStoreNode.layer)))
+      )
     }
   })
 
@@ -369,9 +375,8 @@ describe("legacy operator command contracts", () => {
   it.each([new Error("offline"), "offline"])(
     "turns update transport failure into an actionable error: %s",
     async (cause) => {
-      const fetch = vi.fn().mockRejectedValue(cause)
-      vi.stubGlobal("fetch", fetch)
-      const result = await invoke(["update", "--json"])
+      const fetch = vi.fn<typeof globalThis.fetch>().mockRejectedValue(cause)
+      const result = await invoke(["update", "--json"], fetch)
       expect(result.failure).toContain(
         "Could not reach the npm registry. Check your network and retry."
       )
@@ -391,9 +396,7 @@ describe("legacy operator command contracts", () => {
     ["a null document", new Response("null", { status: 200 })],
     ["an array document", new Response("[\"1.0.0\"]", { status: 200 })]
   ])("refuses an unusable registry answer instead of reporting current: %s", async (_label, response) => {
-    // fetch is the network boundary; tests never reach the real registry.
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response))
-    const result = await invoke(["update", "--json"])
+    const result = await invoke(["update", "--json"], vi.fn<typeof globalThis.fetch>().mockResolvedValue(response))
     expect(result.stdout).toBe("")
     expect(Exit.isFailure(result.exit) && Cause.squash(result.exit.cause)).toMatchObject({
       _tag: "/cli/Refused",

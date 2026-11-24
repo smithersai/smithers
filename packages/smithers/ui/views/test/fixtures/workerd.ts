@@ -4,6 +4,7 @@ import { Miniflare } from "miniflare"
 import { readFile } from "node:fs/promises"
 import { createRequire } from "node:module"
 import { fileURLToPath } from "node:url"
+import { emitModule } from "vibelang/emit"
 
 const require = createRequire(import.meta.url)
 
@@ -19,6 +20,14 @@ const worker = async (): Promise<string> => {
     conditions: ["workerd", "worker", "browser"],
     external: ["node:*", "cloudflare:*"],
     plugins: [{
+      name: "vibelang",
+      setup: (plugin) => {
+        plugin.onLoad({ filter: /\.vibe$/ }, (args) => ({
+          contents: emitModule(args.path).code,
+          loader: "js"
+        }))
+      }
+    }, {
       name: "compiled-wasm",
       setup: (plugin) => {
         plugin.onResolve({ filter: /^@jitl\/quickjs-wasmfile-release-sync\/wasm$/ }, () => ({

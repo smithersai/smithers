@@ -1,6 +1,6 @@
 import * as MemoryStore from "@smthrs/memory/MemoryStore"
 import type * as Namespace from "@smthrs/memory/Namespace"
-import { Effect } from "effect"
+import { Effect, type Layer } from "effect"
 import { Cli } from "incur"
 import { existsSync, mkdirSync, mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
@@ -9,16 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { createMemoryCli, withMemory } from "../src/operator/Memory.ts"
 import { localRoot } from "../src/operator/Store.ts"
 
-const ports = vi.hoisted(() => ({ layer: undefined as typeof MemoryStore.layer | undefined }))
-vi.mock("@smthrs/memory/MemoryStore", async (load) => {
-  const actual = await load<typeof import("@smthrs/memory/MemoryStore")>()
-  return {
-    ...actual,
-    get layer() {
-      return ports.layer ?? actual.layer
-    }
-  }
-})
+const ports = { layer: undefined as Layer.Layer<MemoryStore.MemoryStore> | undefined }
 const asNamespace = (input: MemoryStore.NamespaceInput): Namespace.Namespace => {
   if (typeof input === "string") throw new Error(`the CLI passed an undecoded namespace: ${input}`)
   return input
@@ -33,14 +24,17 @@ const fixture = () => {
 const invoke = async (root: string, args: Array<string>) => {
   let output = ""
   let code = 0
-  await Cli.create("smthrs").command(createMemoryCli()).serve(["memory", ...args, "--root", root, "--json"], {
-    stdout: (value) => {
-      output += value
-    },
-    exit: (value) => {
-      code = value
+  await Cli.create("smthrs").command(createMemoryCli(ports.layer)).serve(
+    ["memory", ...args, "--root", root, "--json"],
+    {
+      stdout: (value) => {
+        output += value
+      },
+      exit: (value) => {
+        code = value
+      }
     }
-  })
+  )
   return { code, data: JSON.parse(output) as any, output }
 }
 

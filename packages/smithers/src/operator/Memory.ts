@@ -25,8 +25,8 @@ const refused = (message: string, fault: CliError.Fault = "user"): CliError.Refu
   new CliError.Refused({ fault, code: "operator_failed", message })
 
 // Every operator command reports failures as operator_failed.
-const execute = <A>(context: Presentation.Failing, body: () => Promise<A>) =>
-  Presentation.guard(context, body, {
+const executeEffect = <A, E>(context: Presentation.Failing, effect: Effect.Effect<A, E>) =>
+  Presentation.guardEffect(context, effect, {
     code: "operator_failed",
     next: Presentation.runs({
       otherwise: [{ command: "memory recall --help", description: "Recall relevant stored context" }]
@@ -72,34 +72,55 @@ const noteStatus = z.enum(["pending", "accepted", "rejected"])
  * @category constructors
  * @since 1.0.0
  */
+const withMemoryEffect = <A, E>(
+  options: LocalOptions & { readonly namespace?: string | undefined; readonly id?: string | undefined },
+  effect: Effect.Effect<A, E, MemoryStore.MemoryStore>,
+  memoryLayer?: Layer.Layer<MemoryStore.MemoryStore>
+) =>
+  Effect.gen(function*() {
+    if (options.namespace !== undefined) namespace({ ...options, namespace: options.namespace })
+    // The host that registered the MCP server chose its project and memory store. A connected agent naming another
+    // root would read and write a store the host never offered it.
+    if (Presentation.current()?.transport === "mcp" && options.root !== undefined) {
+      return yield* Effect.fail(
+        new CliError.UsageError({
+          message: "--root is not accepted over MCP; the host selects the project and its memory store"
+        })
+      )
+    }
+    const layer = memoryLayer ?? (() => {
+      // The store the executor writes: `SMITHERS_MEMORY_DB` when set, else the control database.
+      const stores = SupervisorMemory.memoryDatabase({
+        environment: process.env,
+        database: (file) => ControlDatabase.layer(file).pipe(Layer.orDie),
+        stores: ControlDatabase.layer(NodeControl.databasePath(localRoot(options))).pipe(Layer.orDie)
+      })
+      return MemoryStore.layer.pipe(Layer.provide(Layer.mergeAll(stores, NodeCrypto.layer)))
+    })()
+    return yield* effect.pipe(Effect.provide(layer))
+  })
+
+/**
+ * Runs an operation against the authoritative local memory store.
+ * @category constructors
+ * @since 1.0.0
+ */
 export const withMemory = <A, E>(
   options: LocalOptions & { readonly namespace?: string | undefined; readonly id?: string | undefined },
-  effect: Effect.Effect<A, E, MemoryStore.MemoryStore>
-): Promise<A> => {
-  if (options.namespace !== undefined) namespace({ ...options, namespace: options.namespace })
-  // The host that registered the MCP server chose its project and memory store. A connected agent naming another
-  // root would read and write a store the host never offered it.
-  if (Presentation.current()?.transport === "mcp" && options.root !== undefined) {
-    throw new CliError.UsageError({
-      message: "--root is not accepted over MCP; the host selects the project and its memory store"
-    })
-  }
-  // The store the executor writes: `SMITHERS_MEMORY_DB` when set, else the control database.
-  const stores = SupervisorMemory.memoryDatabase({
-    environment: process.env,
-    database: (file) => ControlDatabase.layer(file).pipe(Layer.orDie),
-    stores: ControlDatabase.layer(NodeControl.databasePath(localRoot(options))).pipe(Layer.orDie)
-  })
-  const layer = MemoryStore.layer.pipe(Layer.provide(Layer.mergeAll(stores, NodeCrypto.layer)))
-  return Effect.runPromise(effect.pipe(Effect.provide(layer)))
-}
+  effect: Effect.Effect<A, E, MemoryStore.MemoryStore>,
+  memoryLayer?: Layer.Layer<MemoryStore.MemoryStore>
+): Promise<A> => Presentation.runBoundary(withMemoryEffect(options, effect, memoryLayer))
 
 /**
  * Builds the fact, note, thread, message, and recall commands.
  * @category constructors
  * @since 1.0.0
  */
-export const createMemoryCli = () => {
+export const createMemoryCli = (memoryLayer?: Layer.Layer<MemoryStore.MemoryStore>) => {
+  const runMemory = <A, E>(
+    options: LocalOptions & { readonly namespace?: string | undefined; readonly id?: string | undefined },
+    effect: Effect.Effect<A, E, MemoryStore.MemoryStore>
+  ) => withMemoryEffect(options, effect, memoryLayer)
   const notes = Cli.create("notes", { description: "Append-only notes, status gates, and supersession" })
     .command("list", {
       description: "List notes in a namespace",
@@ -109,8 +130,9 @@ export const createMemoryCli = () => {
         includeSuperseded: z.boolean().default(false)
       }),
       run: (context) =>
-        execute(context, () =>
-          withMemory(
+        executeEffect(
+          context,
+          runMemory(
             context.options,
             Effect.gen(function*() {
               const store = yield* MemoryStore.MemoryStore
@@ -121,7 +143,8 @@ export const createMemoryCli = () => {
                 includeSuperseded: context.options.includeSuperseded
               })
             })
-          ))
+          )
+        )
     })
     .command("get", {
       description: "Read one note of a namespace by its ID",
@@ -129,8 +152,9 @@ export const createMemoryCli = () => {
       args: z.object({ note: z.string() }),
       options,
       run: (context) =>
-        execute(context, () =>
-          withMemory(
+        executeEffect(
+          context,
+          runMemory(
             context.options,
             Effect.gen(function*() {
               const store = yield* MemoryStore.MemoryStore
@@ -138,7 +162,8 @@ export const createMemoryCli = () => {
               if (note === undefined) return yield* Effect.fail(refused(`Unknown note ${context.args.note}`))
               return note
             })
-          ))
+          )
+        )
     })
     .command("add", {
       description: "Append a note, optionally superseding older notes",
@@ -151,8 +176,9 @@ export const createMemoryCli = () => {
         supersedes: z.array(z.string()).default([])
       }),
       run: (context) =>
-        execute(context, () =>
-          withMemory(
+        executeEffect(
+          context,
+          runMemory(
             context.options,
             Effect.gen(function*() {
               const store = yield* MemoryStore.MemoryStore
@@ -166,7 +192,8 @@ export const createMemoryCli = () => {
                 provenance: {}
               })
             })
-          ))
+          )
+        )
     })
     .command("status", {
       description: "Accept, reject, or return a note to pending review",
@@ -174,8 +201,9 @@ export const createMemoryCli = () => {
       args: z.object({ note: z.string(), status: noteStatus }),
       options,
       run: (context) =>
-        execute(context, () =>
-          withMemory(
+        executeEffect(
+          context,
+          runMemory(
             context.options,
             Effect.gen(function*() {
               const store = yield* MemoryStore.MemoryStore
@@ -186,7 +214,8 @@ export const createMemoryCli = () => {
               })
               return { id: context.args.note, status: context.args.status }
             })
-          ))
+          )
+        )
     })
     .command("supersede", {
       description: "Mark an older note superseded by an existing note",
@@ -194,8 +223,9 @@ export const createMemoryCli = () => {
       args: z.object({ note: z.string(), replacement: z.string() }),
       options,
       run: (context) =>
-        execute(context, () =>
-          withMemory(
+        executeEffect(
+          context,
+          runMemory(
             context.options,
             Effect.gen(function*() {
               const store = yield* MemoryStore.MemoryStore
@@ -206,7 +236,8 @@ export const createMemoryCli = () => {
               })
               return { superseded: context.args.note, replacement: context.args.replacement }
             })
-          ))
+          )
+        )
     })
 
   const threads = Cli.create("threads", { description: "Inspect and maintain durable conversation history" })
@@ -215,22 +246,25 @@ export const createMemoryCli = () => {
       mcp: { annotations: { readOnlyHint: true } },
       options,
       run: (context) =>
-        execute(context, () =>
-          withMemory(
+        executeEffect(
+          context,
+          runMemory(
             context.options,
             Effect.gen(function*() {
               const store = yield* MemoryStore.MemoryStore
               return yield* store.listThreads({ namespace: namespace(context.options) })
             })
-          ))
+          )
+        )
     })
     .command("create", {
       description: "Create a durable history thread",
       mcp: { annotations: { readOnlyHint: false } },
       options: options.extend({ title: z.string().optional(), threadId: z.string().optional() }),
       run: (context) =>
-        execute(context, () =>
-          withMemory(
+        executeEffect(
+          context,
+          runMemory(
             context.options,
             Effect.gen(function*() {
               const store = yield* MemoryStore.MemoryStore
@@ -240,7 +274,8 @@ export const createMemoryCli = () => {
                 title: context.options.title
               })
             })
-          ))
+          )
+        )
     })
     .command("show", {
       description: "Show a thread and its ordered messages",
@@ -248,8 +283,9 @@ export const createMemoryCli = () => {
       args: z.object({ thread: z.string() }),
       options: limited,
       run: (context) =>
-        execute(context, () =>
-          withMemory(
+        executeEffect(
+          context,
+          runMemory(
             context.options,
             Effect.gen(function*() {
               const store = yield* MemoryStore.MemoryStore
@@ -261,7 +297,8 @@ export const createMemoryCli = () => {
                 messages: yield* store.listMessages({ ...thread, limit: context.options.limit })
               }
             })
-          ))
+          )
+        )
     })
     .command("rm", {
       description: "Delete one thread and its messages",
@@ -269,8 +306,9 @@ export const createMemoryCli = () => {
       args: z.object({ thread: z.string() }),
       options,
       run: (context) =>
-        execute(context, () =>
-          withMemory(
+        executeEffect(
+          context,
+          runMemory(
             context.options,
             Effect.gen(function*() {
               const store = yield* MemoryStore.MemoryStore
@@ -282,7 +320,8 @@ export const createMemoryCli = () => {
                 })
               }
             })
-          ))
+          )
+        )
     })
 
   const messages = Cli.create("messages", { description: "Read and append thread messages" })
@@ -295,25 +334,28 @@ export const createMemoryCli = () => {
         afterAt: z.number().int().nonnegative().optional()
       }),
       run: (context) =>
-        execute(context, () => {
-          if ((context.options.afterId === undefined) !== (context.options.afterAt === undefined)) {
-            throw refused("--after-id and --after-at must be supplied together")
-          }
-          return withMemory(
-            context.options,
-            Effect.gen(function*() {
-              const store = yield* MemoryStore.MemoryStore
-              return yield* store.listMessages({
-                namespace: namespace(context.options),
-                threadId: context.args.thread,
-                limit: context.options.limit,
-                cursor: context.options.afterId === undefined
-                  ? undefined
-                  : { id: context.options.afterId, at: context.options.afterAt! }
+        executeEffect(
+          context,
+          Effect.gen(function*() {
+            if ((context.options.afterId === undefined) !== (context.options.afterAt === undefined)) {
+              return yield* Effect.fail(refused("--after-id and --after-at must be supplied together"))
+            }
+            return yield* runMemory(
+              context.options,
+              Effect.gen(function*() {
+                const store = yield* MemoryStore.MemoryStore
+                return yield* store.listMessages({
+                  namespace: namespace(context.options),
+                  threadId: context.args.thread,
+                  limit: context.options.limit,
+                  cursor: context.options.afterId === undefined
+                    ? undefined
+                    : { id: context.options.afterId, at: context.options.afterAt! }
+                })
               })
-            })
-          )
-        })
+            )
+          })
+        )
     })
     .command("add", {
       description: "Append a message idempotently using its message ID",
@@ -325,8 +367,9 @@ export const createMemoryCli = () => {
         at: z.number().int().nonnegative().optional()
       }),
       run: (context) =>
-        execute(context, () =>
-          withMemory(
+        executeEffect(
+          context,
+          runMemory(
             context.options,
             Effect.gen(function*() {
               const store = yield* MemoryStore.MemoryStore
@@ -339,7 +382,8 @@ export const createMemoryCli = () => {
                 at: context.options.at
               })
             })
-          ))
+          )
+        )
     })
 
   return Cli.create("memory", { description: "Durable facts, notes, recall, and conversation history" })
@@ -348,8 +392,9 @@ export const createMemoryCli = () => {
       mcp: { annotations: { readOnlyHint: true } },
       options: limited.extend({ prefix: z.string().optional() }),
       run: (context) =>
-        execute(context, () =>
-          withMemory(
+        executeEffect(
+          context,
+          runMemory(
             context.options,
             Effect.gen(function*() {
               const store = yield* MemoryStore.MemoryStore
@@ -359,7 +404,8 @@ export const createMemoryCli = () => {
                 limit: context.options.limit
               })
             })
-          ))
+          )
+        )
     })
     .command("get", {
       description: "Read one fact",
@@ -367,8 +413,9 @@ export const createMemoryCli = () => {
       args: z.object({ key: z.string() }),
       options,
       run: (context) =>
-        execute(context, () =>
-          withMemory(
+        executeEffect(
+          context,
+          runMemory(
             context.options,
             Effect.gen(function*() {
               const store = yield* MemoryStore.MemoryStore
@@ -376,7 +423,8 @@ export const createMemoryCli = () => {
               if (fact === undefined) return yield* Effect.fail(refused(`Unknown fact ${context.args.key}`))
               return fact
             })
-          ))
+          )
+        )
     })
     .command("set", {
       description: "Write JSON when valid, otherwise a string; --value-json requires valid JSON",
@@ -390,8 +438,9 @@ export const createMemoryCli = () => {
         )
       }),
       run: (context) =>
-        execute(context, () =>
-          withMemory(
+        executeEffect(
+          context,
+          runMemory(
             context.options,
             Effect.gen(function*() {
               const store = yield* MemoryStore.MemoryStore
@@ -413,7 +462,8 @@ export const createMemoryCli = () => {
               })
               return { key: context.args.key, namespace: namespace(context.options), stored: true }
             })
-          ))
+          )
+        )
     })
     .command("rm", {
       description: "Delete one fact",
@@ -421,8 +471,9 @@ export const createMemoryCli = () => {
       args: z.object({ key: z.string() }),
       options,
       run: (context) =>
-        execute(context, () =>
-          withMemory(
+        executeEffect(
+          context,
+          runMemory(
             context.options,
             Effect.gen(function*() {
               const store = yield* MemoryStore.MemoryStore
@@ -431,7 +482,8 @@ export const createMemoryCli = () => {
                 deleted: yield* store.deleteFact({ namespace: namespace(context.options), key: context.args.key })
               }
             })
-          ))
+          )
+        )
     })
     .command("recall", {
       description: "Search authoritative facts and accepted notes using keyword or SQLite FTS recall",
@@ -443,8 +495,9 @@ export const createMemoryCli = () => {
         maxTokens: z.number().int().positive().max(65536).default(2048)
       }),
       run: (context) =>
-        execute(context, () =>
-          withMemory(
+        executeEffect(
+          context,
+          runMemory(
             context.options,
             Effect.gen(function*() {
               const input = yield* Schema.decodeUnknownEffect(Recall.Input)({
@@ -460,7 +513,8 @@ export const createMemoryCli = () => {
               }
               return yield* (context.options.method === "fts" ? RecallFts.recall(input) : RecallKeyword.recall(input))
             })
-          ))
+          )
+        )
     })
     .command("compact", {
       description: "Replace selected thread messages with a supplied summary atomically",
@@ -473,8 +527,9 @@ export const createMemoryCli = () => {
         dryRun: z.boolean().default(false)
       }),
       run: (context) =>
-        execute(context, () =>
-          withMemory(
+        executeEffect(
+          context,
+          runMemory(
             context.options,
             Effect.gen(function*() {
               const store = yield* MemoryStore.MemoryStore
@@ -509,7 +564,8 @@ export const createMemoryCli = () => {
               })
               return { threadId: context.args.thread, summaryId: summary.id, removed }
             })
-          ))
+          )
+        )
     })
     .command(notes).command(threads).command(messages)
 }

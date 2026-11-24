@@ -5,6 +5,7 @@
 import { build } from "esbuild"
 import { builtinModules } from "node:module"
 import { fileURLToPath } from "node:url"
+import { emitModule } from "vibelang/emit"
 import { describe, expect, it } from "vitest"
 
 const node = new Set(builtinModules)
@@ -17,6 +18,15 @@ const bundleOf = async (contents: string, conditions: Array<string>) => {
     format: "esm",
     platform: "browser",
     conditions,
+    plugins: [{
+      name: "vibelang",
+      setup: (plugin) => {
+        plugin.onLoad({ filter: /\.vibe$/ }, (args) => ({
+          contents: emitModule(args.path).code,
+          loader: "js"
+        }))
+      }
+    }],
     metafile: true,
     logLevel: "silent"
   })

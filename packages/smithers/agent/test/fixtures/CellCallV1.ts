@@ -79,6 +79,14 @@ export const realmExhaustedKey = "key1_2fb352392ce2a085f7f134eed416f7532ed7b90aa
 export const realmExhaustedEncoding3Key = "key1_8007b26b04c33c3d23975776270fdfc14aa23c8994200c034aa72689d7abb135"
 export const realmExhaustedEncoding4Key = "key1_a703e449614ccfa068ebb77b8945c903552bbc94e0798e20a0ff58bbd08ac128"
 
+// Moved when `EvaluatorError` gained optional `permission: PermissionError`
+// (02d74dc01bf7, #4727): `HarnessError.cause` embeds `EvaluatorError`, so the
+// error declaration folded into the preimage gained the capability permission
+// union and moved under every key encoding. Keep the preceding preimages above.
+export const judgePermissionKey = "key1_65827a85a2d82ccda364b1700f65ed7677ab0bc6fa0ea12df04ee078ae532f10"
+export const judgePermissionEncoding3Key = "key1_65e5aef288094587a490ac284eff7776136f0280629a0ef8680fa4bbc6898da4"
+export const judgePermissionEncoding4Key = "key1_b52cc5639c33a81a42d5896c84d8f239d417f3af416b5313944f7192ecf119e4"
+
 // Independent JSON oracle. This fixture contains only JSON values, no schema
 // classes, undefined, non-finite numbers or other normalization cases.
 export const canonical = (value: unknown): string => {

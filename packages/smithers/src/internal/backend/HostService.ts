@@ -4,6 +4,8 @@
  * @since 1.0.0
  */
 
+import * as Presentation from "../../cli/Presentation.ts"
+
 import { SpanFailure } from "@smthrs/flow"
 import * as Environment from "@smthrs/integrations/Environment"
 import { Cause, Effect, Exit, Metric } from "effect"
@@ -253,7 +255,7 @@ const serviceLocked = <A, E>(
   )
 
 const serviceLock = async <A>(system: Launchd, operation: "install" | "stop", use: () => Promise<A>): Promise<A> => {
-  const result = await Effect.runPromiseExit(serviceLocked(
+  const result = await Presentation.runBoundaryExit(serviceLocked(
     system,
     operation,
     Effect.tryPromise({
@@ -514,7 +516,7 @@ export const maintenance = (
     },
     catch: (error) => error
   })
-  const result = Effect.runSyncExit(operation === "restore" ? serviceLocked(system, "restore", use) : use)
+  const result = Presentation.runBoundarySyncExit(operation === "restore" ? serviceLocked(system, "restore", use) : use)
   if (Exit.isSuccess(result)) return result.value
   throw Cause.squash(result.cause)
 }

@@ -112,7 +112,7 @@ describe("test target inputs", () => {
         filesUnder("../test")
           .filter((path) => /\.(?:ts|vibe)$/.test(path))
           .flatMap((path) =>
-            [...read(`../${path}`).matchAll(/"(?:\.\.\/)+((?:docs|examples)\/[\w./-]+)"/g)].map((m) => m[1]!)
+            [...read(`../${path}`).matchAll(/"(?:\.\.\/)+((?:docs|examples)\/[\w./-]*[\w.-])"/g)].map((m) => m[1]!)
           )
       )
     ].sort()

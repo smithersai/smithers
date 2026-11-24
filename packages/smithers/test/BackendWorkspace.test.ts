@@ -6,19 +6,15 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { APIError, Client } from "../src/internal/backend/Client.ts"
-import { remote } from "../src/internal/backend/SSH.ts"
 import { workspaces, workspaceSSH } from "../src/internal/backend/Workspaces.ts"
 const key = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl"
 const hostKey = { algorithm: "ssh-ed25519", public_key: key.split(" ")[1], known_hosts_line: key }
 const guest = { command: "ssh guest", hostKeys: [key] }
-vi.mock(
-  "../src/internal/backend/SSH.ts",
-  async (original) => ({ ...await original<object>(), remote: vi.fn() })
-)
+const remote = vi.fn()
 const dirs: string[] = []
 afterEach(async () => {
   vi.restoreAllMocks()
-  vi.mocked(remote).mockReset()
+  remote.mockReset()
   for (const dir of dirs.splice(0)) await rm(dir, { recursive: true, force: true })
 })
 const success = (stdout = "", code = 0) => ({ code, stdout: Buffer.from(stdout), stderr: Buffer.alloc(0) })
@@ -35,7 +31,8 @@ const clientFixture = async (environment: Record<string, string> = {}) => {
       ...environment
     },
     exit,
-    signal: controller.signal
+    signal: controller.signal,
+    sshRemote: remote
   })
   return { c, home, exit, controller }
 }
@@ -58,7 +55,7 @@ const fixture = async (environment: Record<string, string> = {}) => {
     }
     throw new Error(`Unexpected ${method} ${path}`)
   })
-  vi.mocked(remote).mockResolvedValue(success())
+  remote.mockResolvedValue(success())
   return { c, home, exit, request, controller }
 }
 const options = { repo: "owner/repo" }
@@ -94,7 +91,7 @@ describe("box remote execution", () => {
   })
   it("opens an interactive SSH connection and returns its exit status", async () => {
     const { c, exit } = await fixture()
-    vi.mocked(remote).mockResolvedValue(success("", 7))
+    remote.mockResolvedValue(success("", 7))
     expect(await workspaces["workspace ssh"]!(c, { id: "box" }, options)).toMatchObject({ connected: false })
     expect(remote).toHaveBeenCalledWith(c, guest, undefined, 0, undefined, true)
     expect(exit).toHaveBeenCalledWith(7)

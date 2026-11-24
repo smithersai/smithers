@@ -108,7 +108,7 @@ export const ask: Handler = async (c, a, o) => {
     }
   } catch { /* no cache */ }
   try {
-    const response = await fetch(url, {
+    const response = await (c.runtime.fetch ?? fetch)(url, {
       headers: {
         ...(metadata.etag ? { "if-none-match": str(metadata.etag) } : {}),
         ...(metadata.lastModified ? { "if-modified-since": str(metadata.lastModified) } : {})

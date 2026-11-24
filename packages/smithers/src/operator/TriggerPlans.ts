@@ -15,6 +15,7 @@ import { TriggerError } from "@smthrs/triggers/TriggerError"
 import { Clock, Effect, Layer, Schema } from "effect"
 import * as SqlClient from "effect/sql/SqlClient"
 import { join } from "node:path"
+import * as Presentation from "../cli/Presentation.ts"
 import { standingPlanDigest, triggerDeclaration } from "../internal/ApprovalScope.ts"
 import { databaseLayer } from "./Store.ts"
 
@@ -105,12 +106,23 @@ const makeStore = Effect.gen(function*() {
  * @category queries
  * @since 1.0.0
  */
-export const inspect = (root: string, handle: string): Promise<StoredPlan | null> =>
+/**
+ * Effect reading the unchanged approval payload and launch state for a scheduler handle.
+ * @private
+ * @since 1.0.0
+ */
+export const inspectEffect = (root: string, handle: string): Effect.Effect<StoredPlan | null, unknown> =>
   handle.startsWith(prefix)
-    ? Effect.runPromise(
-      makeStore.pipe(Effect.flatMap((store) => store.read(handle)), Effect.provide(databaseLayer(root)))
-    )
-    : Promise.resolve(null)
+    ? makeStore.pipe(Effect.flatMap((store) => store.read(handle)), Effect.provide(databaseLayer(root)))
+    : Effect.succeed(null)
+
+/**
+ * Reads the unchanged approval payload and launch state for a scheduler handle.
+ * @category queries
+ * @since 1.0.0
+ */
+export const inspect = (root: string, handle: string): Promise<StoredPlan | null> =>
+  Presentation.runBoundary(inspectEffect(root, handle))
 
 /** Reviewable consent to one exact registration and executable plan.
  * @category schemas

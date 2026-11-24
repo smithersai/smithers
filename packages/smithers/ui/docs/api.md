@@ -1701,3 +1701,9 @@ optional `selected: string | null`, `onSelect(id)` and `onInspect(id)`.
 Repository hero install commands preserve one line and scroll inside their code field. The field accepts keyboard focus; Copy remains beside it at phone widths.
 
 `NotificationEntry.onActivate` makes the row open its subject directly; Details and E expand it. O and the body's Open button require `onOpen`; omit it when there is no destination.
+
+### Owner profiles and root namespaces
+
+`OwnerProfile` renders a user or organization profile header, contribution heatmap, pinned items, and filterable repository list (`OwnerProfileProps`, `OwnerProfileTab`, `OwnerProfileSort`, `OwnerProfileRepoFilter`, `OwnerProfileOrganization`, `OwnerProfileRepository`, `OwnerProfileContributionDay`, `OwnerProfileContributions`, `OwnerProfileLinkProps`). `OwnerProfileSkeleton` renders its loading placeholder, `contributionMonthLabels` formats heatmap month headings, and `LANGUAGE_COLORS` maps repository language names to swatch colors.
+
+The root entry also re-exports `FlowForm` as a namespace over `@smthrs/ui/flow-form`.

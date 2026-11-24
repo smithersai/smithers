@@ -227,311 +227,315 @@ const noteFlow = {
 } as const
 
 describe("@smthrs/agent session, action, memory, children & adapter fuzz invariants", () => {
-  it("AgentSession end-to-end durable lifecycle over SQLite + ControlLive (steer, ask/approve/deny/refuse, routing, fail)", async () => {
-    const arb = Arbitrary.schema(
-      Schema.Struct({
-        scenario: Schema.Literals([
-          "steer-ask-approve",
-          "ask-deny",
-          "ask-refuse",
-          "seatless-refuse",
-          "auto-seat-routed",
-          "role-seat-routed",
-          "effort-declared",
-          "model-fail",
-          "judged-memory-instructions",
-          "cancel-in-flight"
-        ])
-      })
-    )
-
-    const allDescs = new Map([
-      [agentDescriptor.name, agentDescriptor],
-      [effortDescriptor.name, effortDescriptor],
-      [seatlessDescriptor.name, seatlessDescriptor],
-      [autoDescriptor.name, autoDescriptor],
-      [roleDescriptor.name, roleDescriptor]
-    ])
-
-    const registryService = Registry.makeNoop({
-      list: () => Effect.succeed([...allDescs.values()]),
-      visible: () => Effect.succeed([]),
-      get: (name) =>
-        allDescs.has(name)
-          ? Effect.succeed(allDescs.get(name)!)
-          : Effect.flatMap(Registry.makeNoop().get(name), () => Effect.die("unreachable")),
-      getOption: (name) => Effect.succeed(Option.fromNullishOr(allDescs.get(name))),
-      loadBody: () =>
-        Effect.succeed(
-          new Descriptor.FlowBodyPrompt({ text: "Keep the note log tidy.", baseDirectory: "/flows/agents/notes" })
-        )
-    })
-
-    const memoryFlows: ReadonlyArray<ControlRuntime.MemoryFlow> = [...allDescs.values()].map((d) => ({
-      flowId: d.name,
-      executionDigest: Descriptor.executionDigest(d),
-      description: d.description,
-      deployClass: false,
-      envelope: { capabilities: ["fs:read:**"], flows: [], budget: {} }
-    }))
-
-    const principal: ControlSchema.Principal = { id: "operator", kind: "test", stampedAt: 1 }
-
-    let runCounter = 0
-    const report = await Effect.runPromise(
-      Fuzz.run(
-        arb,
-        ({ scenario }) =>
-          Effect.gen(function*() {
-            runCounter += 1
-            const root = makeScratch(`agent-sess-fuzz-${runCounter}-`)
-            const gate = yield* Deferred.make<void>()
-            const notes: Array<string> = []
-            let frameIdx = 0
-
-            const model = Model.make({
-              stream: () =>
-                Stream.suspend(() => {
-                  frameIdx += 1
-                  if (scenario === "model-fail") {
-                    return Stream.fail(
-                      new ModelError.ModelError({
-                        code: "authentication",
-                        message: "synthetic outage"
-                      })
-                    )
-                  }
-                  if (scenario === "cancel-in-flight") {
-                    const src = frameIdx === 1
-                      ? `await ctx.call("note/save", { text: "cancel-me" }); ctx.done("never")`
-                      : `ctx.done("never")`
-                    return Stream.fromIterable(cellEvents(src, `c-${frameIdx}`))
-                  }
-                  if (scenario === "steer-ask-approve" || scenario === "ask-deny") {
-                    const src = frameIdx === 1
-                      ? `await ctx.call("note/save", { text: "frame0" }); console.log("saved")`
-                      : `const d = await ctx.call("ask", { question: "ship?", options: ["yes", "no"] }); ctx.done("approved=" + d.approved)`
-                    return Stream.fromIterable(cellEvents(src, `c-${frameIdx}`))
-                  }
-                  if (scenario === "ask-refuse") {
-                    const src = frameIdx === 1
-                      ? `const d = await ctx.call("ask", { question: "ship?" }); ctx.done(JSON.stringify(d))`
-                      : `ctx.done("done")`
-                    return Stream.fromIterable(cellEvents(src, `c-${frameIdx}`))
-                  }
-                  return Stream.fromIterable(cellEvents(`ctx.done("ok-${scenario}")`, `c-${frameIdx}`))
-                })
-            })
-
-            const noteSource = FlowBinding.source("fuzz/notes", [
-              FlowBinding.make({
-                flow: noteFlow,
-                handler: (input) =>
-                  Deferred.await(gate).pipe(
-                    Effect.andThen(Effect.sync(() => {
-                      notes.push(input.text)
-                      return { saved: notes.length }
-                    }))
-                  )
-              })
-            ])
-
-            const journal = TestJournal.layer()
-            const notifications = NotificationQueue.layer.pipe(Layer.provide(journal))
-            const runtime = ControlRuntime.layerMemory({ flows: memoryFlows }).pipe(Layer.provide(NodeCrypto.layer))
-            const registry = Layer.succeed(Registry.Registry)(registryService)
-
-            const autoEval = Evaluator.layerScripted((req) => {
-              const keys = Object.keys(req.questions)
-              if (keys.includes("complete")) {
-                return {
-                  complete: { probability: 0.99 },
-                  overclaims: { probability: 0.01 },
-                  invented: { probability: 0.01 }
-                }
-              }
-              return Object.fromEntries(
-                Object.entries(req.questions).map(([id, q]) => [
-                  id,
-                  q.type === "boolean"
-                    ? { probability: 0.1 }
-                    : q.type === "score"
-                    ? { score: 0.2 }
-                    : {
-                      choice: id === "phase"
-                        ? "implement"
-                        : id === "size"
-                        ? "simple"
-                        : id === "clarity"
-                        ? "clear"
-                        : id === "variant"
-                        ? "sonnet"
-                        : Object.keys((q as { criteria: Record<string, string> }).criteria)[0]!
-                    }
-                ])
-              )
-            })
-
-            const routerCatalog: SeatRouter.Service = {
-              candidates: Effect.succeed(["sonnet", "opus", "fable"]),
-              variants: [{ id: "sonnet", description: "fast", system: ["Be concise."] }]
-            }
-
-            const registration = AgentSession.layer({
-              quotaPolicy: Safety.quotaPolicy,
-              budget: Safety.budget,
-              flows: [noteSource],
-              limits: { memoryBytes: 64 * 1024 * 1024, steps: 5_000_000 },
-              maxFrames: 4,
-              asks: scenario === "ask-refuse" ? "refuse" : "park",
-              reasoningEffort: "medium",
-              judged: scenario === "judged-memory-instructions",
-              instructions: scenario === "judged-memory-instructions"
-                ? () => Effect.succeed(["- Run tests.\n- Keep diffs small.\n"])
-                : undefined,
-              system: ["Fuzz system prompt."]
-            }).pipe(
-              Layer.provideMerge(Action.layerImplementations),
-              Layer.provide(
-                Layer.mergeAll(
-                  Agent.layer,
-                  SeatResolver.layer({
-                    resolve: (id) =>
-                      Effect.succeed(
-                        Seat.make({ id, modelId: "test-model", model, route, contextWindowTokens: 200_000 })
-                      ),
-                    routedAs: scenario === "role-seat-routed"
-                      ? (name) => name === "coding/plan" ? { phase: "plan" } : undefined
-                      : undefined
-                  }),
-                  scenario === "auto-seat-routed" || scenario === "role-seat-routed" ||
-                    scenario === "judged-memory-instructions"
-                    ? autoEval
-                    : ScriptedJudge.layer,
-                  scenario === "seatless-refuse" ? Layer.empty : SeatRouter.layer(routerCatalog)
-                ).pipe(Layer.provide(Safety.layer))
-              )
-            )
-
-            let snap = 0
-            const jj = Jj.layerNoop({
-              snapshot: () => Effect.sync(() => ({ commitId: `s-${snap++}`, changeId: `c-${snap}` })),
-              restore: () => Effect.void,
-              diff: () => Effect.succeed("")
-            })
-
-            let resumes: ControlRuntime.Service | undefined
-            const bindControl = Layer.effectDiscard(
-              Effect.map(ControlRuntime.ControlRuntime, (svc) => {
-                resumes = svc
-              })
-            )
-
-            const engine = NodeRuntime.layer(
-              {
-                filename: join(root, "engine.db"),
-                workspaceRoot: root,
-                owner: { hostId: `fuzz-sess-${runCounter}` },
-                isAlive: () => Effect.succeed(false),
-                requestResume: (runId) =>
-                  Effect.suspend(() =>
-                    resumes === undefined ? Effect.void : Effect.ignore(resumes.requestResume(runId))
-                  )
-              },
-              StepBoundary.layer,
-              WorkspaceSandbox.layerFileSystem(),
-              registration
-            ).pipe(Layer.provide([AtomicFileSystem.layer, NodeCrypto.layer, jj]))
-
-            const fullLayer = ControlLive.layer.pipe(
-              Layer.provideMerge(engine),
-              Layer.provideMerge(
-                bindControl.pipe(Layer.provideMerge(Layer.mergeAll(runtime, journal, notifications, registry)))
-              ),
-              Layer.provide(Action.layerImplementations)
-            )
-
-            const flowId = scenario === "seatless-refuse"
-              ? "agents/seatless"
-              : scenario === "auto-seat-routed"
-              ? "agents/auto"
-              : scenario === "role-seat-routed"
-              ? "agents/role"
-              : scenario === "effort-declared"
-              ? "agents/effort"
-              : "agents/notes"
-
-            return yield* Effect.gen(function*() {
-              const control = yield* Control.Control
-              const rt = yield* ControlRuntime.ControlRuntime
-              const card = yield* control.plan({ flowId, input: { topic: "fuzz" } })
-              yield* control.approve(card.approval)
-              const runRes = yield* Effect.result(
-                control.run({
-                  _tag: "Plan",
-                  planId: card.planId,
-                  digest: card.digest,
-                  envelope: card.envelope,
-                  idempotencyKey: `key:${scenario}:${runCounter}`
-                })
-              )
-
-              if (scenario === "seatless-refuse") {
-                return Result.isFailure(runRes) || runRes.success._tag !== "Accepted"
-              }
-              if (
-                Result.isFailure(runRes) || runRes.success._tag !== "Accepted" || runRes.success.runId === undefined
-              ) {
-                return false
-              }
-              const runId = runRes.success.runId
-
-              if (scenario === "steer-ask-approve" || scenario === "ask-deny") {
-                yield* control.steer({
-                  runId,
-                  message: { messageId: "m1", runId, body: "mention tests", principal, createdAt: 1 },
-                  idempotencyKey: `steer:${runCounter}`
-                })
-                yield* Deferred.succeed(gate, undefined)
-
-                const requested = yield* control.watch({ runId }).pipe(
-                  Stream.filter((ev) => ev.kind === "control.approval.requested"),
-                  Stream.take(1),
-                  Stream.runCollect
-                )
-                const reqPayload = (requested[0]?.payload as { readonly payload?: unknown })?.payload
-                yield* awaitStatus(rt, runId, "waiting-approval")
-                const approval = Schema.decodeUnknownSync(ControlSchema.ApprovalPayload)(reqPayload)
-                if (scenario === "steer-ask-approve") {
-                  yield* control.approve(approval)
-                  yield* awaitStatus(rt, runId, "completed")
-                } else {
-                  yield* control.deny(approval)
-                  yield* awaitStatus(rt, runId, "completed")
-                }
-                return notes.length === 1
-              }
-
-              if (scenario === "cancel-in-flight") {
-                yield* control.cancel({ runId, reason: "operator cancelled", idempotencyKey: `cancel:${runCounter}` })
-                yield* Deferred.succeed(gate, undefined)
-                yield* awaitStatus(rt, runId, "cancelled")
-                return true
-              }
-              yield* Deferred.succeed(gate, undefined)
-              if (scenario === "model-fail") {
-                yield* awaitStatus(rt, runId, "failed")
-                return true
-              }
-              yield* awaitStatus(rt, runId, "completed")
-              return true
-            }).pipe(Effect.provide(fullLayer), Effect.scoped, Effect.orDie)
-          }),
-        { seed: seed + 20, executions: Math.min(executions, 12) }
+  it(
+    "AgentSession end-to-end durable lifecycle over SQLite + ControlLive (steer, ask/approve/deny/refuse, routing, fail)",
+    async () => {
+      const arb = Arbitrary.schema(
+        Schema.Struct({
+          scenario: Schema.Literals([
+            "steer-ask-approve",
+            "ask-deny",
+            "ask-refuse",
+            "seatless-refuse",
+            "auto-seat-routed",
+            "role-seat-routed",
+            "effort-declared",
+            "model-fail",
+            "judged-memory-instructions",
+            "cancel-in-flight"
+          ])
+        })
       )
-    )
-    assertPassed(report)
-  }, 120_000)
+
+      const allDescs = new Map([
+        [agentDescriptor.name, agentDescriptor],
+        [effortDescriptor.name, effortDescriptor],
+        [seatlessDescriptor.name, seatlessDescriptor],
+        [autoDescriptor.name, autoDescriptor],
+        [roleDescriptor.name, roleDescriptor]
+      ])
+
+      const registryService = Registry.makeNoop({
+        list: () => Effect.succeed([...allDescs.values()]),
+        visible: () => Effect.succeed([]),
+        get: (name) =>
+          allDescs.has(name)
+            ? Effect.succeed(allDescs.get(name)!)
+            : Effect.flatMap(Registry.makeNoop().get(name), () => Effect.die("unreachable")),
+        getOption: (name) => Effect.succeed(Option.fromNullishOr(allDescs.get(name))),
+        loadBody: () =>
+          Effect.succeed(
+            new Descriptor.FlowBodyPrompt({ text: "Keep the note log tidy.", baseDirectory: "/flows/agents/notes" })
+          )
+      })
+
+      const memoryFlows: ReadonlyArray<ControlRuntime.MemoryFlow> = [...allDescs.values()].map((d) => ({
+        flowId: d.name,
+        executionDigest: Descriptor.executionDigest(d),
+        description: d.description,
+        deployClass: false,
+        envelope: { capabilities: ["fs:read:**"], flows: [], budget: {} }
+      }))
+
+      const principal: ControlSchema.Principal = { id: "operator", kind: "test", stampedAt: 1 }
+
+      let runCounter = 0
+      const report = await Effect.runPromise(
+        Fuzz.run(
+          arb,
+          ({ scenario }) =>
+            Effect.gen(function*() {
+              runCounter += 1
+              const root = makeScratch(`agent-sess-fuzz-${runCounter}-`)
+              const gate = yield* Deferred.make<void>()
+              const notes: Array<string> = []
+              let frameIdx = 0
+
+              const model = Model.make({
+                stream: () =>
+                  Stream.suspend(() => {
+                    frameIdx += 1
+                    if (scenario === "model-fail") {
+                      return Stream.fail(
+                        new ModelError.ModelError({
+                          code: "authentication",
+                          message: "synthetic outage"
+                        })
+                      )
+                    }
+                    if (scenario === "cancel-in-flight") {
+                      const src = frameIdx === 1
+                        ? `await ctx.call("note/save", { text: "cancel-me" }); ctx.done("never")`
+                        : `ctx.done("never")`
+                      return Stream.fromIterable(cellEvents(src, `c-${frameIdx}`))
+                    }
+                    if (scenario === "steer-ask-approve" || scenario === "ask-deny") {
+                      const src = frameIdx === 1
+                        ? `await ctx.call("note/save", { text: "frame0" }); console.log("saved")`
+                        : `const d = await ctx.call("ask", { question: "ship?", options: ["yes", "no"] }); ctx.done("approved=" + d.approved)`
+                      return Stream.fromIterable(cellEvents(src, `c-${frameIdx}`))
+                    }
+                    if (scenario === "ask-refuse") {
+                      const src = frameIdx === 1
+                        ? `const d = await ctx.call("ask", { question: "ship?" }); ctx.done(JSON.stringify(d))`
+                        : `ctx.done("done")`
+                      return Stream.fromIterable(cellEvents(src, `c-${frameIdx}`))
+                    }
+                    return Stream.fromIterable(cellEvents(`ctx.done("ok-${scenario}")`, `c-${frameIdx}`))
+                  })
+              })
+
+              const noteSource = FlowBinding.source("fuzz/notes", [
+                FlowBinding.make({
+                  flow: noteFlow,
+                  handler: (input) =>
+                    Deferred.await(gate).pipe(
+                      Effect.andThen(Effect.sync(() => {
+                        notes.push(input.text)
+                        return { saved: notes.length }
+                      }))
+                    )
+                })
+              ])
+
+              const journal = TestJournal.layer()
+              const notifications = NotificationQueue.layer.pipe(Layer.provide(journal))
+              const runtime = ControlRuntime.layerMemory({ flows: memoryFlows }).pipe(Layer.provide(NodeCrypto.layer))
+              const registry = Layer.succeed(Registry.Registry)(registryService)
+
+              const autoEval = Evaluator.layerScripted((req) => {
+                const keys = Object.keys(req.questions)
+                if (keys.includes("complete")) {
+                  return {
+                    complete: { probability: 0.99 },
+                    overclaims: { probability: 0.01 },
+                    invented: { probability: 0.01 }
+                  }
+                }
+                return Object.fromEntries(
+                  Object.entries(req.questions).map(([id, q]) => [
+                    id,
+                    q.type === "boolean"
+                      ? { probability: 0.1 }
+                      : q.type === "score"
+                      ? { score: 0.2 }
+                      : {
+                        choice: id === "phase"
+                          ? "implement"
+                          : id === "size"
+                          ? "simple"
+                          : id === "clarity"
+                          ? "clear"
+                          : id === "variant"
+                          ? "sonnet"
+                          : Object.keys((q as { criteria: Record<string, string> }).criteria)[0]!
+                      }
+                  ])
+                )
+              })
+
+              const routerCatalog: SeatRouter.Service = {
+                candidates: Effect.succeed(["sonnet", "opus", "fable"]),
+                variants: [{ id: "sonnet", description: "fast", system: ["Be concise."] }]
+              }
+
+              const registration = AgentSession.layer({
+                quotaPolicy: Safety.quotaPolicy,
+                budget: Safety.budget,
+                flows: [noteSource],
+                limits: { memoryBytes: 64 * 1024 * 1024, steps: 5_000_000 },
+                maxFrames: 4,
+                asks: scenario === "ask-refuse" ? "refuse" : "park",
+                reasoningEffort: "medium",
+                judged: scenario === "judged-memory-instructions",
+                instructions: scenario === "judged-memory-instructions"
+                  ? () => Effect.succeed(["- Run tests.\n- Keep diffs small.\n"])
+                  : undefined,
+                system: ["Fuzz system prompt."]
+              }).pipe(
+                Layer.provideMerge(Action.layerImplementations),
+                Layer.provide(
+                  Layer.mergeAll(
+                    Agent.layer,
+                    SeatResolver.layer({
+                      resolve: (id) =>
+                        Effect.succeed(
+                          Seat.make({ id, modelId: "test-model", model, route, contextWindowTokens: 200_000 })
+                        ),
+                      routedAs: scenario === "role-seat-routed"
+                        ? (name) => name === "coding/plan" ? { phase: "plan" } : undefined
+                        : undefined
+                    }),
+                    scenario === "auto-seat-routed" || scenario === "role-seat-routed" ||
+                      scenario === "judged-memory-instructions"
+                      ? autoEval
+                      : ScriptedJudge.layer,
+                    scenario === "seatless-refuse" ? Layer.empty : SeatRouter.layer(routerCatalog)
+                  ).pipe(Layer.provide(Safety.layer))
+                )
+              )
+
+              let snap = 0
+              const jj = Jj.layerNoop({
+                snapshot: () => Effect.sync(() => ({ commitId: `s-${snap++}`, changeId: `c-${snap}` })),
+                restore: () => Effect.void,
+                diff: () => Effect.succeed("")
+              })
+
+              let resumes: ControlRuntime.Service | undefined
+              const bindControl = Layer.effectDiscard(
+                Effect.map(ControlRuntime.ControlRuntime, (svc) => {
+                  resumes = svc
+                })
+              )
+
+              const engine = NodeRuntime.layer(
+                {
+                  filename: join(root, "engine.db"),
+                  workspaceRoot: root,
+                  owner: { hostId: `fuzz-sess-${runCounter}` },
+                  isAlive: () => Effect.succeed(false),
+                  requestResume: (runId) =>
+                    Effect.suspend(() =>
+                      resumes === undefined ? Effect.void : Effect.ignore(resumes.requestResume(runId))
+                    )
+                },
+                StepBoundary.layer,
+                WorkspaceSandbox.layerFileSystem(),
+                registration
+              ).pipe(Layer.provide([AtomicFileSystem.layer, NodeCrypto.layer, jj]))
+
+              const fullLayer = ControlLive.layer.pipe(
+                Layer.provideMerge(engine),
+                Layer.provideMerge(
+                  bindControl.pipe(Layer.provideMerge(Layer.mergeAll(runtime, journal, notifications, registry)))
+                ),
+                Layer.provide(Action.layerImplementations)
+              )
+
+              const flowId = scenario === "seatless-refuse"
+                ? "agents/seatless"
+                : scenario === "auto-seat-routed"
+                ? "agents/auto"
+                : scenario === "role-seat-routed"
+                ? "agents/role"
+                : scenario === "effort-declared"
+                ? "agents/effort"
+                : "agents/notes"
+
+              return yield* Effect.gen(function*() {
+                const control = yield* Control.Control
+                const rt = yield* ControlRuntime.ControlRuntime
+                const card = yield* control.plan({ flowId, input: { topic: "fuzz" } })
+                yield* control.approve(card.approval)
+                const runRes = yield* Effect.result(
+                  control.run({
+                    _tag: "Plan",
+                    planId: card.planId,
+                    digest: card.digest,
+                    envelope: card.envelope,
+                    idempotencyKey: `key:${scenario}:${runCounter}`
+                  })
+                )
+
+                if (scenario === "seatless-refuse") {
+                  return Result.isFailure(runRes) || runRes.success._tag !== "Accepted"
+                }
+                if (
+                  Result.isFailure(runRes) || runRes.success._tag !== "Accepted" || runRes.success.runId === undefined
+                ) {
+                  return false
+                }
+                const runId = runRes.success.runId
+
+                if (scenario === "steer-ask-approve" || scenario === "ask-deny") {
+                  yield* control.steer({
+                    runId,
+                    message: { messageId: "m1", runId, body: "mention tests", principal, createdAt: 1 },
+                    idempotencyKey: `steer:${runCounter}`
+                  })
+                  yield* Deferred.succeed(gate, undefined)
+
+                  const requested = yield* control.watch({ runId }).pipe(
+                    Stream.filter((ev) => ev.kind === "control.approval.requested"),
+                    Stream.take(1),
+                    Stream.runCollect
+                  )
+                  const reqPayload = (requested[0]?.payload as { readonly payload?: unknown })?.payload
+                  yield* awaitStatus(rt, runId, "waiting-approval")
+                  const approval = Schema.decodeUnknownSync(ControlSchema.ApprovalPayload)(reqPayload)
+                  if (scenario === "steer-ask-approve") {
+                    yield* control.approve(approval)
+                    yield* awaitStatus(rt, runId, "completed")
+                  } else {
+                    yield* control.deny(approval)
+                    yield* awaitStatus(rt, runId, "completed")
+                  }
+                  return notes.length === 1
+                }
+
+                if (scenario === "cancel-in-flight") {
+                  yield* control.cancel({ runId, reason: "operator cancelled", idempotencyKey: `cancel:${runCounter}` })
+                  yield* Deferred.succeed(gate, undefined)
+                  yield* awaitStatus(rt, runId, "cancelled")
+                  return true
+                }
+                yield* Deferred.succeed(gate, undefined)
+                if (scenario === "model-fail") {
+                  yield* awaitStatus(rt, runId, "failed")
+                  return true
+                }
+                yield* awaitStatus(rt, runId, "completed")
+                return true
+              }).pipe(Effect.provide(fullLayer), Effect.scoped, Effect.orDie)
+            }),
+          { seed: seed + 20, executions: Math.min(executions, 12) }
+        )
+      )
+      assertPassed(report)
+    },
+    120_000
+  )
 
   it("AgentAction, Budget reservations/settlement/USD & QuotaPolicy fuzz invariants", async () => {
     const Review = Schema.Struct({ approved: Schema.Boolean, count: Schema.Int })
@@ -1172,300 +1176,83 @@ describe("@smthrs/agent session, action, memory, children & adapter fuzz invaria
     assertPassed(report)
   }, 120_000)
 
-  it("StandardFlows full tool invocations, PromoteFlows, Budget policies/ledger & MemoryMine.write/settle invariants", async () => {
-    const arb = Arbitrary.schema(
-      Schema.Struct({
-        onExceeded: Schema.Literals(["fail", "park", "skip-remaining"]),
-        dailyMax: Schema.Literals([50, 500_000]),
-        unreportedUsage: Schema.Boolean,
-        writeText: Schema.Literals(["alpha line\n", "beta content\n", "gamma data\n"])
-      })
-    )
-
-    const platform = Layer.mergeAll(AtomicFileSystem.layer, NodePath.layer)
-    let seq = 0
-
-    const report = await Effect.runPromise(
-      Fuzz.run(
-        arb,
-        ({ onExceeded, dailyMax, unreportedUsage, writeText }) =>
-          Effect.gen(function*() {
-            seq += 1
-            const root = makeScratch(`agent-tools-fuzz-${seq}-`)
-            writeFileSync(join(root, "doc.txt"), "old line\nsecond line\n")
-            const fs = yield* FileSystem.FileSystem
-            const pathSvc = yield* Path.Path
-            const confinedFs = yield* KernelFileSystem.confined(fs, root)
-            const ws = Workspace.make(root)
-
-            const evalLayer = Evaluator.layerScripted((req) =>
-              Object.fromEntries(
-                Object.entries(req.questions).map(([id, q]) => [
-                  id,
-                  q.type === "boolean"
-                    ? { probability: 0.92 }
-                    : q.type === "score"
-                    ? { score: 0.5 }
-                    : { choice: Object.keys((q as { criteria: Record<string, string> }).criteria)[0]! }
-                ])
-              )
-            )
-            const evalSvc = yield* Effect.provide(Evaluator.Evaluator, evalLayer)
-
-            const fsCtx = Context.make(FileSystem.FileSystem, confinedFs).pipe(
-              Context.add(Workspace.Workspace, ws),
-              Context.add(Path.Path, pathSvc),
-              Context.add(Search.Search, Search.makeNoop())
-            )
-            const shellCtx = Context.make(ChildProcessSpawner.ChildProcessSpawner, ChildProcessSpawner.makeNoop()).pipe(
-              Context.add(Path.Path, pathSvc)
-            )
-            const testCtx = shellCtx.pipe(
-              Context.add(TestRunner.TestRunner, TestRunner.makeNoop()),
-              Context.add(Evaluator.Evaluator, evalSvc)
-            )
-            const store = FlowStore.makeFileSystem(fs, pathSvc, root)
-            const hist = yield* CellHistory.make
-            yield* hist.record({ frame: 0, source: "ctx.done(1)", digest: "d1", output: "ok" } as any)
-            const promoteCtx = Context.make(FlowStore.FlowStore, store).pipe(
-              Context.add(CellHistory.CellHistory, hist)
-            )
-
-            const cat = yield* FlowBinding.catalog([
-              StandardFlows.filesystem(fsCtx as any),
-              StandardFlows.shell(shellCtx as any),
-              StandardFlows.tests(testCtx as any),
-              StandardFlows.jev(Context.make(Evaluator.Evaluator, evalSvc)),
-              StandardFlows.approval(StandardFlows.askerNoop()),
-              PromoteFlows.source(promoteCtx)
-            ])
-            const reg = FlowBinding.registry(Registry.makeNoop({}), cat)
-            const resolver = CellCalls.make({ registry: reg, catalog: cat })
-
-            const invoke = (name: string, input: typeof Schema.Json.Type) => {
-              const desc = cat.bindings.get(name)?.descriptor
-              if (desc === undefined) return Effect.succeed(undefined)
-              return resolver.run(
-                new Cell.Call({
-                  flowName: name,
-                  input,
-                  capabilities: desc.capabilities,
-                  effects: desc.effects,
-                  placement: desc.placement,
-                  identity: new Cell.CallIdentity({
-                    session: "s-tools",
-                    frame: 0,
-                    cell: "c",
-                    ordinal: 0,
-                    declaration: Cell.declarationDigest(desc),
-                    layers: []
-                  })
-                })
-              )
-            }
-
-            // Invoke filesystem, shell, test, jev, ask, promote flows
-            const wRes = yield* invoke("write", { path: "new.txt", content: writeText })
-            const eRes = yield* invoke("edit", { path: "doc.txt", old_string: "old line", new_string: "new line" })
-            const lsRes = yield* invoke("ls", { path: "." })
-            const gRes = yield* invoke("glob", { pattern: "*.txt" })
-            const grRes = yield* invoke("grep", { pattern: "new" })
-            const bRes = yield* invoke("bash", { command: "echo hi", mode: "unhermetic" })
-            const tRes = yield* invoke("test", { command: "pnpm test" })
-            const jRes = yield* invoke("jev", {
-              state: { text: "ok" },
-              questions: { ok: { type: "boolean", instructions: "Is it ok?" } }
-            })
-            const aRes = yield* invoke("ask", { question: "continue?" })
-            const pShow = yield* invoke("flows/show-script", {})
-            const pWrite = yield* invoke("flows/write-flow", {
-              id: "promoted-flow",
-              files: { ".smithers/flows/promoted-flow/flow.ts": "export default ({ name: \"promoted-flow\" })" }
-            })
-            if (wRes === undefined || lsRes === undefined || pShow === undefined || pWrite === undefined) return false
-            void eRes
-            void gRes
-            void grRes
-            void bRes
-            void tRes
-            void jRes
-            void aRes
-
-            // Budget with memoryLedger, daily cap, usd, tokens, latency, onExceeded variants
-            const ledger = Budget.memoryLedger()
-            const b = yield* Budget.make(
-              {
-                tokens: { max: 500, onExceeded },
-                usd: { max: 0.05, onExceeded },
-                latency: { maxMillis: 60_000, onExceeded },
-                daily: { max: dailyMax },
-                weights: { default: { input: 1, output: 2, cacheRead: 0.1, cacheWrite: 1.25 } }
-              },
-              { ledger }
-            )
-            const v1 = yield* Effect.scoped(b.reserve("k1"))
-            yield* b.record(
-              "k1",
-              unreportedUsage ? {} : { inputTokens: 300, outputTokens: 250, costUsd: 0.06 }
-            ).pipe(Effect.ignore)
-            const v2 = yield* Effect.result(Effect.scoped(b.reserve("k2")))
-            const vRead = yield* Effect.result(b.admitReading("r2"))
-            if (v1._tag === undefined) return false
-            void v2
-            void vRead
-
-            // MemoryMine.write & MemoryMine.settle over real TestMemory
-            const memLayer = TestMemory.layer
-            const mined = yield* Effect.gen(function*() {
-              const ms = yield* MemoryStore.MemoryStore
-              const wrote = yield* MemoryMine.write(ms, {
-                bank: "repo:fuzz",
-                runId: "run-1",
-                text: "Always keep WAL enabled for durability."
-              })
-              const events = yield* MemoryMine.settle({
-                engine: EngineLike.makeNoop(),
-                session: "sess-mine",
-                frame: 1,
-                task: "Check WAL durability",
-                candidates: [{ text: "Keep WAL enabled in production.", seq: 2 }],
-                memory: {
-                  bound: true,
-                  recall: () => Effect.succeed([]),
-                  remember: () => Effect.void
-                }
-              })
-              return wrote !== undefined && events.length >= 0
-            }).pipe(Effect.provide(Layer.mergeAll(memLayer, evalLayer)), Effect.scoped)
-
-            return mined
-          }).pipe(Effect.provide(platform), Effect.orDie),
-        { seed: seed + 26, executions: Math.min(executions, 12) }
+  it(
+    "StandardFlows full tool invocations, PromoteFlows, Budget policies/ledger & MemoryMine.write/settle invariants",
+    async () => {
+      const arb = Arbitrary.schema(
+        Schema.Struct({
+          onExceeded: Schema.Literals(["fail", "park", "skip-remaining"]),
+          dailyMax: Schema.Literals([50, 500_000]),
+          unreportedUsage: Schema.Boolean,
+          writeText: Schema.Literals(["alpha line\n", "beta content\n", "gamma data\n"])
+        })
       )
-    )
-    assertPassed(report)
-  }, 120_000)
 
-  it("Budget durable journal recovery/suspend/resume/envelope, StandardFlows.memory, StepTrace & PendingApproval invariants", async () => {
-    const arb = Arbitrary.schema(
-      Schema.Struct({
-        onExceeded: Schema.Literals(["fail", "park", "skip-remaining"]),
-        raiseDelta: Schema.Literals([0, 500, 2000]),
-        withSuspend: Schema.Boolean,
-        pendingState: Schema.Literals(["open", "approved", "denied"])
-      })
-    )
+      const platform = Layer.mergeAll(AtomicFileSystem.layer, NodePath.layer)
+      let seq = 0
 
-    let bSeq = 0
-    const report = await Effect.runPromise(
-      Fuzz.run(
-        arb,
-        ({ onExceeded, raiseDelta, withSuspend, pendingState }) =>
-          Effect.gen(function*() {
-            bSeq += 1
-            const journalLayer = TestJournal.layer()
-            const memLayer = Layer.mergeAll(
-              TestMemory.layer,
-              RecallKeyword.layer.pipe(Layer.provide(TestMemory.layer))
-            )
+      const report = await Effect.runPromise(
+        Fuzz.run(
+          arb,
+          ({ onExceeded, dailyMax, unreportedUsage, writeText }) =>
+            Effect.gen(function*() {
+              seq += 1
+              const root = makeScratch(`agent-tools-fuzz-${seq}-`)
+              writeFileSync(join(root, "doc.txt"), "old line\nsecond line\n")
+              const fs = yield* FileSystem.FileSystem
+              const pathSvc = yield* Path.Path
+              const confinedFs = yield* KernelFileSystem.confined(fs, root)
+              const ws = Workspace.make(root)
 
-            return yield* Effect.gen(function*() {
-              const journal = yield* Journal.Journal
-              const ledger = Budget.memoryLedger()
-
-              // 1. Budget.policyFromEnvelope + raise + raisedBy
-              const baseBudget = { tokens: 1_000, usd: 0.5, milliseconds: 30_000, onExceeded }
-              const envPolicy = Budget.policyFromEnvelope({ capabilities: [], flows: [], budget: baseBudget })
-              const raised = raiseDelta > 0
-                ? Budget.raise(
-                  baseBudget,
-                  new Budget.BudgetExceeded({
-                    scope: "tokens",
-                    onExceeded,
-                    used: 1_000,
-                    max: 1_000,
-                    next: 1_000 + raiseDelta,
-                    message: "budget exceeded"
-                  })
-                )
-                : baseBudget
-              const policy: Budget.Policy = {
-                tokens: { max: 400, onExceeded },
-                usd: { max: 0.05, onExceeded },
-                latency: { maxMillis: 60_000, onExceeded },
-                daily: { max: 100_000 }
-              }
-
-              // Instance 1: reserve, record, suspend, resume, exceed
-              const b1 = yield* Budget.make(policy, { ledger })
-              void envPolicy
-              const runId = `durable-b-${bSeq}`
-              const rt = yield* FlowRuntime.FlowRuntime
-              const BudgetFlow = Flow.make(`agent/fuzz/budget-flow-${bSeq}`, {
-                payload: {},
-                success: Schema.Boolean,
-                error: Schema.Never,
-                body: () => Node.succeed(true)
-              })
-              yield* rt.register(BudgetFlow, () =>
-                Effect.gen(function*() {
-                  yield* Effect.scoped(b1.reserve("s1"))
-                  yield* b1.record("s1", { inputTokens: 150, outputTokens: 100, costUsd: 0.02 }, "claude-sonnet-4-5")
-                  if (withSuspend) {
-                    yield* b1.suspend
-                    yield* b1.resume()
-                  }
-                  yield* Effect.scoped(b1.reserve("s2"))
-                  yield* b1.record("s2", { inputTokens: 200, outputTokens: 200, costUsd: 0.04 }, "claude-sonnet-4-5")
-                  const u1 = yield* b1.usage
-                  const over = yield* b1.check("s3")
-                  const b2 = yield* Budget.make(policy, { ledger })
-                  const u2 = yield* b2.usageOf(runId)
-                  const replayCheck = yield* b2.check("s1")
-                  const trace = yield* StepTrace.make(journal)
-                  const stepObj = {
-                    executionId: runId,
-                    stepId: "a".repeat(64),
-                    attempt: 1,
-                    action: "agent/test",
-                    ask: 0 as const,
-                    retry: 1,
-                    scope: "main"
-                  }
-                  yield* trace.emit(
-                    new AgentEvent.Resolved({
-                      eventType: AgentEvent.eventType.resolved,
-                      message: ModelRequest.Message.assistant("done", { stopReason: "stop" })
-                    }),
-                    stepObj
-                  ).pipe(Effect.ignore)
-                  void raised
-                  void over
-                  return u1.tokens > 0 && u2.tokens === u1.tokens && replayCheck._tag === "proceed"
-                }).pipe(Effect.orDie))
-              const flowOk = yield* rt.execute(BudgetFlow, { executionId: runId, payload: {} })
-              if (!flowOk) return false
-
-              // 2. StandardFlows.memory (remember + recall) over real TestMemory + RecallKeyword
-              const ms = yield* MemoryStore.MemoryStore
-              const recall = yield* Recall.Recall
               const evalLayer = Evaluator.layerScripted((req) =>
-                Object.fromEntries(Object.keys(req.questions).map((k) => [k, { probability: 0.9 }]))
+                Object.fromEntries(
+                  Object.entries(req.questions).map(([id, q]) => [
+                    id,
+                    q.type === "boolean"
+                      ? { probability: 0.92 }
+                      : q.type === "score"
+                      ? { score: 0.5 }
+                      : { choice: Object.keys((q as { criteria: Record<string, string> }).criteria)[0]! }
+                  ])
+                )
               )
               const evalSvc = yield* Effect.provide(Evaluator.Evaluator, evalLayer)
-              const memCtx = Context.make(MemoryStore.MemoryStore, ms).pipe(
-                Context.add(Recall.Recall, recall),
+
+              const fsCtx = Context.make(FileSystem.FileSystem, confinedFs).pipe(
+                Context.add(Workspace.Workspace, ws),
+                Context.add(Path.Path, pathSvc),
+                Context.add(Search.Search, Search.makeNoop())
+              )
+              const shellCtx = Context.make(ChildProcessSpawner.ChildProcessSpawner, ChildProcessSpawner.makeNoop())
+                .pipe(
+                  Context.add(Path.Path, pathSvc)
+                )
+              const testCtx = shellCtx.pipe(
+                Context.add(TestRunner.TestRunner, TestRunner.makeNoop()),
                 Context.add(Evaluator.Evaluator, evalSvc)
               )
-              const memSrc = StandardFlows.memory(memCtx as any, StandardFlows.hostWide)
-              const memCat = yield* FlowBinding.catalog([memSrc])
-              const memReg = FlowBinding.registry(Registry.makeNoop({}), memCat)
-              const memRes = CellCalls.make({ registry: memReg, catalog: memCat })
+              const store = FlowStore.makeFileSystem(fs, pathSvc, root)
+              const hist = yield* CellHistory.make
+              yield* hist.record({ frame: 0, source: "ctx.done(1)", digest: "d1", output: "ok" } as any)
+              const promoteCtx = Context.make(FlowStore.FlowStore, store).pipe(
+                Context.add(CellHistory.CellHistory, hist)
+              )
 
-              const callMem = (name: string, input: typeof Schema.Json.Type) => {
-                const desc = memCat.bindings.get(name)?.descriptor
+              const cat = yield* FlowBinding.catalog([
+                StandardFlows.filesystem(fsCtx as any),
+                StandardFlows.shell(shellCtx as any),
+                StandardFlows.tests(testCtx as any),
+                StandardFlows.jev(Context.make(Evaluator.Evaluator, evalSvc)),
+                StandardFlows.approval(StandardFlows.askerNoop()),
+                PromoteFlows.source(promoteCtx)
+              ])
+              const reg = FlowBinding.registry(Registry.makeNoop({}), cat)
+              const resolver = CellCalls.make({ registry: reg, catalog: cat })
+
+              const invoke = (name: string, input: typeof Schema.Json.Type) => {
+                const desc = cat.bindings.get(name)?.descriptor
                 if (desc === undefined) return Effect.succeed(undefined)
-                return memRes.run(
+                return resolver.run(
                   new Cell.Call({
                     flowName: name,
                     input,
@@ -1473,7 +1260,7 @@ describe("@smthrs/agent session, action, memory, children & adapter fuzz invaria
                     effects: desc.effects,
                     placement: desc.placement,
                     identity: new Cell.CallIdentity({
-                      session: "s-mem",
+                      session: "s-tools",
                       frame: 0,
                       cell: "c",
                       ordinal: 0,
@@ -1483,66 +1270,292 @@ describe("@smthrs/agent session, action, memory, children & adapter fuzz invaria
                   })
                 )
               }
-              const remOut = yield* callMem("remember", {
-                namespace: "repo/fuzz",
-                text: "Fuzz memory note about SQLite checkpoints.",
-                tags: ["sqlite"]
-              })
-              const recOut = yield* callMem("recall", {
-                namespace: "repo/fuzz",
-                query: "SQLite checkpoints"
-              })
-              void remOut
-              void recOut
 
-              // StepTrace already exercised inside BudgetFlow above
+              // Invoke filesystem, shell, test, jev, ask, promote flows
+              const wRes = yield* invoke("write", { path: "new.txt", content: writeText })
+              const eRes = yield* invoke("edit", { path: "doc.txt", old_string: "old line", new_string: "new line" })
+              const lsRes = yield* invoke("ls", { path: "." })
+              const gRes = yield* invoke("glob", { pattern: "*.txt" })
+              const grRes = yield* invoke("grep", { pattern: "new" })
+              const bRes = yield* invoke("bash", { command: "echo hi", mode: "unhermetic" })
+              const tRes = yield* invoke("test", { command: "pnpm test" })
+              const jRes = yield* invoke("jev", {
+                state: { text: "ok" },
+                questions: { ok: { type: "boolean", instructions: "Is it ok?" } }
+              })
+              const aRes = yield* invoke("ask", { question: "continue?" })
+              const pShow = yield* invoke("flows/show-script", {})
+              const pWrite = yield* invoke("flows/write-flow", {
+                id: "promoted-flow",
+                files: { ".smithers/flows/promoted-flow/flow.ts": "export default ({ name: \"promoted-flow\" })" }
+              })
+              if (wRes === undefined || lsRes === undefined || pShow === undefined || pWrite === undefined) return false
+              void eRes
+              void gRes
+              void grRes
+              void bRes
+              void tRes
+              void jRes
+              void aRes
 
-              // 4. PendingApproval.latestPendingApproval over real Journal entries
-              const paRun = JournalEvent.RunId.make(`r-pa-${bSeq}`)
-              const paSrc = JournalEvent.SourceId.make("s")
-              yield* journal.emitDurableUnfenced(
-                new JournalEvent.Input({
-                  runId: paRun,
-                  sourceId: paSrc,
-                  eventType: "control.approval.requested",
-                  payload: {
-                    runId: paRun,
-                    requestId: "req-1",
-                    question: "proceed?",
-                    options: ["yes", "no"],
-                    payload: { kind: "node", runId: paRun, requestId: "req-1", digest: "d" }
+              // Budget with memoryLedger, daily cap, usd, tokens, latency, onExceeded variants
+              const ledger = Budget.memoryLedger()
+              const b = yield* Budget.make(
+                {
+                  tokens: { max: 500, onExceeded },
+                  usd: { max: 0.05, onExceeded },
+                  latency: { maxMillis: 60_000, onExceeded },
+                  daily: { max: dailyMax },
+                  weights: { default: { input: 1, output: 2, cacheRead: 0.1, cacheWrite: 1.25 } }
+                },
+                { ledger }
+              )
+              const v1 = yield* Effect.scoped(b.reserve("k1"))
+              yield* b.record(
+                "k1",
+                unreportedUsage ? {} : { inputTokens: 300, outputTokens: 250, costUsd: 0.06 }
+              ).pipe(Effect.ignore)
+              const v2 = yield* Effect.result(Effect.scoped(b.reserve("k2")))
+              const vRead = yield* Effect.result(b.admitReading("r2"))
+              if (v1._tag === undefined) return false
+              void v2
+              void vRead
+
+              // MemoryMine.write & MemoryMine.settle over real TestMemory
+              const memLayer = TestMemory.layer
+              const mined = yield* Effect.gen(function*() {
+                const ms = yield* MemoryStore.MemoryStore
+                const wrote = yield* MemoryMine.write(ms, {
+                  bank: "repo:fuzz",
+                  runId: "run-1",
+                  text: "Always keep WAL enabled for durability."
+                })
+                const events = yield* MemoryMine.settle({
+                  engine: EngineLike.makeNoop(),
+                  session: "sess-mine",
+                  frame: 1,
+                  task: "Check WAL durability",
+                  candidates: [{ text: "Keep WAL enabled in production.", seq: 2 }],
+                  memory: {
+                    bound: true,
+                    recall: () => Effect.succeed([]),
+                    remember: () => Effect.void
                   }
                 })
+                return wrote !== undefined && events.length >= 0
+              }).pipe(Effect.provide(Layer.mergeAll(memLayer, evalLayer)), Effect.scoped)
+
+              return mined
+            }).pipe(Effect.provide(platform), Effect.orDie),
+          { seed: seed + 26, executions: Math.min(executions, 12) }
+        )
+      )
+      assertPassed(report)
+    },
+    120_000
+  )
+
+  it(
+    "Budget durable journal recovery/suspend/resume/envelope, StandardFlows.memory, StepTrace & PendingApproval invariants",
+    async () => {
+      const arb = Arbitrary.schema(
+        Schema.Struct({
+          onExceeded: Schema.Literals(["fail", "park", "skip-remaining"]),
+          raiseDelta: Schema.Literals([0, 500, 2000]),
+          withSuspend: Schema.Boolean,
+          pendingState: Schema.Literals(["open", "approved", "denied"])
+        })
+      )
+
+      let bSeq = 0
+      const report = await Effect.runPromise(
+        Fuzz.run(
+          arb,
+          ({ onExceeded, raiseDelta, withSuspend, pendingState }) =>
+            Effect.gen(function*() {
+              bSeq += 1
+              const journalLayer = TestJournal.layer()
+              const memLayer = Layer.mergeAll(
+                TestMemory.layer,
+                RecallKeyword.layer.pipe(Layer.provide(TestMemory.layer))
               )
-              if (pendingState !== "open") {
+
+              return yield* Effect.gen(function*() {
+                const journal = yield* Journal.Journal
+                const ledger = Budget.memoryLedger()
+
+                // 1. Budget.policyFromEnvelope + raise + raisedBy
+                const baseBudget = { tokens: 1_000, usd: 0.5, milliseconds: 30_000, onExceeded }
+                const envPolicy = Budget.policyFromEnvelope({ capabilities: [], flows: [], budget: baseBudget })
+                const raised = raiseDelta > 0
+                  ? Budget.raise(
+                    baseBudget,
+                    new Budget.BudgetExceeded({
+                      scope: "tokens",
+                      onExceeded,
+                      used: 1_000,
+                      max: 1_000,
+                      next: 1_000 + raiseDelta,
+                      message: "budget exceeded"
+                    })
+                  )
+                  : baseBudget
+                const policy: Budget.Policy = {
+                  tokens: { max: 400, onExceeded },
+                  usd: { max: 0.05, onExceeded },
+                  latency: { maxMillis: 60_000, onExceeded },
+                  daily: { max: 100_000 }
+                }
+
+                // Instance 1: reserve, record, suspend, resume, exceed
+                const b1 = yield* Budget.make(policy, { ledger })
+                void envPolicy
+                const runId = `durable-b-${bSeq}`
+                const rt = yield* FlowRuntime.FlowRuntime
+                const BudgetFlow = Flow.make(`agent/fuzz/budget-flow-${bSeq}`, {
+                  payload: {},
+                  success: Schema.Boolean,
+                  error: Schema.Never,
+                  body: () => Node.succeed(true)
+                })
+                yield* rt.register(BudgetFlow, () =>
+                  Effect.gen(function*() {
+                    yield* Effect.scoped(b1.reserve("s1"))
+                    yield* b1.record("s1", { inputTokens: 150, outputTokens: 100, costUsd: 0.02 }, "claude-sonnet-4-5")
+                    if (withSuspend) {
+                      yield* b1.suspend
+                      yield* b1.resume()
+                    }
+                    yield* Effect.scoped(b1.reserve("s2"))
+                    yield* b1.record("s2", { inputTokens: 200, outputTokens: 200, costUsd: 0.04 }, "claude-sonnet-4-5")
+                    const u1 = yield* b1.usage
+                    const over = yield* b1.check("s3")
+                    const b2 = yield* Budget.make(policy, { ledger })
+                    const u2 = yield* b2.usageOf(runId)
+                    const replayCheck = yield* b2.check("s1")
+                    const trace = yield* StepTrace.make(journal)
+                    const stepObj = {
+                      executionId: runId,
+                      stepId: "a".repeat(64),
+                      attempt: 1,
+                      action: "agent/test",
+                      ask: 0 as const,
+                      retry: 1,
+                      scope: "main"
+                    }
+                    yield* trace.emit(
+                      new AgentEvent.Resolved({
+                        eventType: AgentEvent.eventType.resolved,
+                        message: ModelRequest.Message.assistant("done", { stopReason: "stop" })
+                      }),
+                      stepObj
+                    ).pipe(Effect.ignore)
+                    void raised
+                    void over
+                    return u1.tokens > 0 && u2.tokens === u1.tokens && replayCheck._tag === "proceed"
+                  }).pipe(Effect.orDie))
+                const flowOk = yield* rt.execute(BudgetFlow, { executionId: runId, payload: {} })
+                if (!flowOk) return false
+
+                // 2. StandardFlows.memory (remember + recall) over real TestMemory + RecallKeyword
+                const ms = yield* MemoryStore.MemoryStore
+                const recall = yield* Recall.Recall
+                const evalLayer = Evaluator.layerScripted((req) =>
+                  Object.fromEntries(Object.keys(req.questions).map((k) => [k, { probability: 0.9 }]))
+                )
+                const evalSvc = yield* Effect.provide(Evaluator.Evaluator, evalLayer)
+                const memCtx = Context.make(MemoryStore.MemoryStore, ms).pipe(
+                  Context.add(Recall.Recall, recall),
+                  Context.add(Evaluator.Evaluator, evalSvc)
+                )
+                const memSrc = StandardFlows.memory(memCtx as any, StandardFlows.hostWide)
+                const memCat = yield* FlowBinding.catalog([memSrc])
+                const memReg = FlowBinding.registry(Registry.makeNoop({}), memCat)
+                const memRes = CellCalls.make({ registry: memReg, catalog: memCat })
+
+                const callMem = (name: string, input: typeof Schema.Json.Type) => {
+                  const desc = memCat.bindings.get(name)?.descriptor
+                  if (desc === undefined) return Effect.succeed(undefined)
+                  return memRes.run(
+                    new Cell.Call({
+                      flowName: name,
+                      input,
+                      capabilities: desc.capabilities,
+                      effects: desc.effects,
+                      placement: desc.placement,
+                      identity: new Cell.CallIdentity({
+                        session: "s-mem",
+                        frame: 0,
+                        cell: "c",
+                        ordinal: 0,
+                        declaration: Cell.declarationDigest(desc),
+                        layers: []
+                      })
+                    })
+                  )
+                }
+                const remOut = yield* callMem("remember", {
+                  namespace: "repo/fuzz",
+                  text: "Fuzz memory note about SQLite checkpoints.",
+                  tags: ["sqlite"]
+                })
+                const recOut = yield* callMem("recall", {
+                  namespace: "repo/fuzz",
+                  query: "SQLite checkpoints"
+                })
+                void remOut
+                void recOut
+
+                // StepTrace already exercised inside BudgetFlow above
+
+                // 4. PendingApproval.latestPendingApproval over real Journal entries
+                const paRun = JournalEvent.RunId.make(`r-pa-${bSeq}`)
+                const paSrc = JournalEvent.SourceId.make("s")
                 yield* journal.emitDurableUnfenced(
                   new JournalEvent.Input({
                     runId: paRun,
                     sourceId: paSrc,
-                    eventType: pendingState === "approved" ? "control.approval.approved" : "control.approval.denied",
+                    eventType: "control.approval.requested",
                     payload: {
                       runId: paRun,
-                      approvalTarget: { _tag: "Node", runId: paRun, requestId: "req-1" },
-                      decision: pendingState === "approved" ? "approve" : "deny",
-                      principal: { id: "op", kind: "test", stampedAt: 1 }
+                      requestId: "req-1",
+                      question: "proceed?",
+                      options: ["yes", "no"],
+                      payload: { kind: "node", runId: paRun, requestId: "req-1", digest: "d" }
                     }
                   })
                 )
-              }
-              const paPage = yield* journal.entries({ runId: paRun, limit: 100 })
-              const pending = PendingApproval.latestPendingApproval(paPage.entries)
-              void pending
+                if (pendingState !== "open") {
+                  yield* journal.emitDurableUnfenced(
+                    new JournalEvent.Input({
+                      runId: paRun,
+                      sourceId: paSrc,
+                      eventType: pendingState === "approved" ? "control.approval.approved" : "control.approval.denied",
+                      payload: {
+                        runId: paRun,
+                        approvalTarget: { _tag: "Node", runId: paRun, requestId: "req-1" },
+                        decision: pendingState === "approved" ? "approve" : "deny",
+                        principal: { id: "op", kind: "test", stampedAt: 1 }
+                      }
+                    })
+                  )
+                }
+                const paPage = yield* journal.entries({ runId: paRun, limit: 100 })
+                const pending = PendingApproval.latestPendingApproval(paPage.entries)
+                void pending
 
-              return true
-            }).pipe(
-              Effect.provide(Layer.mergeAll(journalLayer, memLayer, FlowEngine.layerMemory, NodeCrypto.layer)),
-              Effect.scoped,
-              Effect.orDie
-            )
-          }),
-        { seed: seed + 27, executions: Math.min(executions, 12) }
+                return true
+              }).pipe(
+                Effect.provide(Layer.mergeAll(journalLayer, memLayer, FlowEngine.layerMemory, NodeCrypto.layer)),
+                Effect.scoped,
+                Effect.orDie
+              )
+            }),
+          { seed: seed + 27, executions: Math.min(executions, 12) }
+        )
       )
-    )
-    assertPassed(report)
-  }, 120_000)
+      assertPassed(report)
+    },
+    120_000
+  )
 })

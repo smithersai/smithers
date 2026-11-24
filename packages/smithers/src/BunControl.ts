@@ -14,6 +14,33 @@ import { Effect, Layer } from "effect"
 import type { native } from "./internal/BunControl.ts"
 
 /**
+ * Builds deferred Bun control and registry layers backed by `load`.
+ * @private
+ * @since 1.0.0
+ */
+export const makeBunControl = (
+  load: () => Promise<{ readonly native: typeof native }>
+): {
+  readonly layerControl: typeof native.layerControl
+  readonly layerRegistry: typeof native.layerRegistry
+} => ({
+  layerControl: (...args) =>
+    Layer.unwrap(
+      Effect.promise(load).pipe(
+        Effect.map(({ native: loaded }) => loaded.layerControl(...args))
+      )
+    ),
+  layerRegistry: (...args) =>
+    Layer.unwrap(
+      Effect.promise(load).pipe(
+        Effect.map(({ native: loaded }) => loaded.layerRegistry(...args))
+      )
+    )
+})
+
+const defaultBunControl = makeBunControl(() => import("./internal/BunControl.ts"))
+
+/**
  * Provides the Control service over Bun adapters for one project root.
  *
  * Arguments match `NodeControl.layerControl`: pass trusted `modules` (an
@@ -23,12 +50,7 @@ import type { native } from "./internal/BunControl.ts"
  * @category layers
  * @since 1.0.0
  */
-export const layerControl: typeof native.layerControl = (...args) =>
-  Layer.unwrap(
-    Effect.promise(() => import("./internal/BunControl.ts")).pipe(
-      Effect.map(({ native }) => native.layerControl(...args))
-    )
-  )
+export const layerControl: typeof native.layerControl = defaultBunControl.layerControl
 
 /**
  * Provides the flow registry for `<root>/.smithers/flows` without importing
@@ -37,9 +59,4 @@ export const layerControl: typeof native.layerControl = (...args) =>
  * @category layers
  * @since 1.0.0
  */
-export const layerRegistry: typeof native.layerRegistry = (...args) =>
-  Layer.unwrap(
-    Effect.promise(() => import("./internal/BunControl.ts")).pipe(
-      Effect.map(({ native }) => native.layerRegistry(...args))
-    )
-  )
+export const layerRegistry: typeof native.layerRegistry = defaultBunControl.layerRegistry

@@ -5,14 +5,15 @@
  * the module refuses to load metadata that does not declare a string version
  * rather than printing `undefined` to an operator.
  */
-import { describe, expect, it, vi } from "vitest"
-
-vi.mock("@smthrs/cli/package.json", () => ({ default: { name: "@smthrs/cli" } }))
+import { describe, expect, it } from "vitest"
+import { packageVersion, readVersion } from "../src/Version.ts"
 
 describe("Version.packageVersion", () => {
-  it("refuses package metadata that declares no version string", async () => {
-    await expect(import("../src/Version.ts")).rejects.toThrow(
+  it("refuses package metadata that declares no version string", () => {
+    expect(() => readVersion({ name: "@smthrs/cli" } as { readonly version?: unknown })).toThrow(
       "@smthrs/cli package metadata does not declare a version"
     )
+    expect(typeof packageVersion).toBe("string")
+    expect(packageVersion.length).toBeGreaterThan(0)
   })
 })

@@ -15,6 +15,7 @@
 
 import { SpanFailure } from "@smthrs/flow"
 import { Cause, Effect, Exit, Metric, Stream } from "effect"
+import * as Presentation from "../../cli/Presentation.ts"
 import { clean } from "../../cli/Presentation.ts"
 import { Refused, UsageError } from "../../CliError.ts"
 import { APIError, type Client, esc, list, object, str, type Values } from "./Client.ts"
@@ -377,7 +378,7 @@ const watch = (c: Client, o: Values, ref: string) =>
  */
 export const history: Record<string, Handler> = {
   "history watch": async (c, a, o) => {
-    const result = await Effect.runPromiseExit(watch(c, o, target(a.issue)), { signal: c.runtime.signal })
+    const result = await Presentation.runBoundaryExit(watch(c, o, target(a.issue)), c.runtime.signal)
     if (Exit.isSuccess(result)) return result.value
     if (c.runtime.signal?.aborted) {
       throw new Refused({ fault: "user", code: "cancelled", message: "Watch cancelled" })

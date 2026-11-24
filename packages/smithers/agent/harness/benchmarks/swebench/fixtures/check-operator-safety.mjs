@@ -1,7 +1,7 @@
 /** Offline regressions for selection publication, disk destinations, scoring and dry-run ownership. */
 import assert from "node:assert/strict"
 import { spawn, spawnSync } from "node:child_process"
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import { test } from "node:test"
@@ -12,7 +12,7 @@ const script = (path, body) => writeFileSync(path, `#!/bin/bash\nset -eu\n${body
 const run = (path, args, env) => spawnSync(path, args, { encoding: "utf8", env: { ...process.env, ...env } })
 
 test("matrix grading refuses failed selection and publishes only complete current sets", () => {
-  const temporary = mkdtempSync(join(tmpdir(), "swebench-selection-"))
+  const temporary = realpathSync(mkdtempSync(join(tmpdir(), "swebench-selection-")))
   try {
     const rig = join(temporary, "rig")
     const artifacts = join(temporary, "artifacts")
@@ -70,7 +70,7 @@ test("matrix grading refuses failed selection and publishes only complete curren
 })
 
 test("selection publication restores the prior set on a failed rename", () => {
-  const temporary = mkdtempSync(join(tmpdir(), "swebench-publication-"))
+  const temporary = realpathSync(mkdtempSync(join(tmpdir(), "swebench-publication-")))
   try {
     const rig = join(temporary, "rig")
     mkdirSync(join(rig, "lib"), { recursive: true })
@@ -104,7 +104,7 @@ test("selection publication restores the prior set on a failed rename", () => {
 })
 
 test("disk admission measures workspace and archive destinations and the Docker minimum", () => {
-  const temporary = mkdtempSync(join(tmpdir(), "swebench-disk-"))
+  const temporary = realpathSync(mkdtempSync(join(tmpdir(), "swebench-disk-")))
   try {
     const bin = join(temporary, "bin")
     const artifacts = join(temporary, "artifacts")
@@ -180,7 +180,7 @@ printf 'fixture 99999999 1 %s 1%% /\\n' "$PROBE_FREE"
 })
 
 test("status and checkpoints disclose scored and raw denominators including zero scored", () => {
-  const temporary = mkdtempSync(join(tmpdir(), "swebench-scoring-"))
+  const temporary = realpathSync(mkdtempSync(join(tmpdir(), "swebench-scoring-")))
   try {
     const manifest = join(temporary, "manifest.jsonl")
     const excluded = "psf__requests-1766"
@@ -222,7 +222,7 @@ test("status and checkpoints disclose scored and raw denominators including zero
 })
 
 test("concurrent dry-run startup and cleanup own distinct files and image tags", async () => {
-  const temporary = mkdtempSync(join(tmpdir(), "swebench-dryrun-isolation-"))
+  const temporary = realpathSync(mkdtempSync(join(tmpdir(), "swebench-dryrun-isolation-")))
   try {
     const rig = join(temporary, "rig")
     const bin = join(temporary, "bin")

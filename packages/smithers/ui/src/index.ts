@@ -985,3 +985,18 @@ export { PageFocus } from "./page-focus";
 export { markdownDocumentBody } from "./primitives/markdownDocumentBody";
 
 export { highlight as highlightCode, type Token as CodeToken, type TokenKind as CodeTokenKind } from "./repository-home/highlight";
+
+export {
+  canonicalCommandName,
+  parseCommand,
+  parseSubmit,
+  REPO_TOKEN,
+  type Submit
+} from "./command-line";
+export { parseArgs } from "./flow-arguments";
+export * as FlowForm from "./flow-form";
+export {
+  NOTICE_SETTLE_MS,
+  shouldShowSettlement,
+  WORK_NOTICE_DELAY_MS
+} from "./notification-policy";

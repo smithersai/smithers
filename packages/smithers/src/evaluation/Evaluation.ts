@@ -148,35 +148,39 @@ export const load = async (root: string, selector: string, runtime: RuntimeConfi
   }
   const file = matches[0]?.file ?? await suiteFile(root, selector)
   runtime.signal?.throwIfAborted()
-  let imported: unknown
-  try {
-    imported = await Effect.runPromise(LoadSuite.load(file))
-  } catch {
-    // The module's own error text is the author's code, not a sentence for
-    // this command; running the file directly shows it.
-    throw new CliError.Refused({
-      fault: "user",
-      code: "eval_module_failed",
-      message: `Could not import ${file}; run it directly to see why`
-    })
-  }
-  runtime.signal?.throwIfAborted()
-  const exports = imported as Record<string, unknown>
-  const candidate = (exports.default ?? exports) as Partial<EvaluationModule>
-  if (candidate.suite === undefined || typeof candidate.executor?.run !== "function") {
-    throw new CliError.Refused({
-      fault: "user",
-      code: "eval_module_invalid",
-      message: `${file} must export { suite, executor }, where executor is a CaseExecutor.Service`
-    })
-  }
-  const declaration = candidate.suite
-  const resolvedSuite = await Effect.runPromise(
-    Effect.isEffect(declaration) ? declaration : Effect.promise(() => Promise.resolve(declaration)),
-    { signal: runtime.signal }
+  return Presentation.runBoundary(
+    Effect.gen(function*() {
+      const imported = yield* LoadSuite.load(file).pipe(
+        Effect.mapError(() =>
+          // The module's own error text is the author's code, not a sentence for
+          // this command; running the file directly shows it.
+          new CliError.Refused({
+            fault: "user",
+            code: "eval_module_failed",
+            message: `Could not import ${file}; run it directly to see why`
+          })
+        )
+      )
+      const exports = imported as Record<string, unknown>
+      const candidate = (exports.default ?? exports) as Partial<EvaluationModule>
+      if (candidate.suite === undefined || typeof candidate.executor?.run !== "function") {
+        return yield* Effect.fail(
+          new CliError.Refused({
+            fault: "user",
+            code: "eval_module_invalid",
+            message: `${file} must export { suite, executor }, where executor is a CaseExecutor.Service`
+          })
+        )
+      }
+      const declaration = candidate.suite
+      const resolvedSuite = yield* (
+        Effect.isEffect(declaration) ? declaration : Effect.promise(() => Promise.resolve(declaration))
+      )
+      const suite = yield* Suite.make(resolvedSuite)
+      return { file, suite, executor: candidate.executor }
+    }),
+    runtime.signal
   )
-  const suite = await Effect.runPromise(Suite.make(resolvedSuite), { signal: runtime.signal })
-  return { file, suite, executor: candidate.executor }
 }
 
 /** Non-empty identity shared by persisted evaluation records. */
@@ -389,7 +393,7 @@ export const writeJson = (
   source: string,
   overwrite = false,
   signal?: AbortSignal
-): Promise<void> => Effect.runPromise(publishJson(file, source, overwrite, signal))
+): Promise<void> => Presentation.runBoundary(publishJson(file, source, overwrite, signal))
 
 const scoreStore = (filename: string) =>
   SqlScoreStore.layer.pipe(
@@ -414,7 +418,7 @@ export const scores = async (root: string, runId: string, signal?: AbortSignal) 
 
   const filename = executionDatabasePath(root)
   if (!DatabaseLocation.exists(filename)) return []
-  return Effect.runPromise(
+  return Presentation.runBoundary(
     Effect.gen(function*() {
       const store = yield* ScoreStore.ScoreStore
       const observations: Array<ScoreStore.Observation> = []
@@ -424,7 +428,7 @@ export const scores = async (root: string, runId: string, signal?: AbortSignal) 
         if (page.length < ScoreStore.maxObservations) return observations
       }
     }).pipe(Effect.provide(scoreStore(filename))),
-    { signal }
+    signal
   )
 }
 
@@ -532,16 +536,15 @@ export const execute = async (
   const logging = Presentation.current()?.policy.progress === "silent" ? Logger.layer([]) : RedactedLogger.layer()
   const { root, ...runOptions } = options
   if (root === undefined) {
-    return artifactOf(
-      await Effect.runPromise(
-        Runner.run(suite, runOptions).pipe(
-          Effect.provideService(CaseExecutor.CaseExecutor, executor),
-          Effect.provide(Runner.layerInline),
-          Effect.provide(logging),
-          Effect.provideService(Logger.LogToStderr, true)
-        ),
-        { signal: runtime.signal }
-      )
+    return Presentation.runBoundary(
+      Runner.run(suite, runOptions).pipe(
+        Effect.map(artifactOf),
+        Effect.provideService(CaseExecutor.CaseExecutor, executor),
+        Effect.provide(Runner.layerInline),
+        Effect.provide(logging),
+        Effect.provideService(Logger.LogToStderr, true)
+      ),
+      runtime.signal
     )
   }
   const implementation = Evaluate.toLayer((payload) =>
@@ -586,19 +589,7 @@ export const execute = async (
       Layer.provide(batchScoring),
       Layer.provide(SqlScoreStore.layer)
     )
-  const hostRuntime = await Effect.runPromise(
-    EvaluationHost.runtime.pipe(Effect.provide(runtime.host ?? Layer.empty)),
-    { signal: runtime.signal }
-  )
   const registration = Interpreter.layerWithImplementations(EvaluationFlow, implementation)
-  const host = runtime.store === undefined ?
-    hostRuntime.layerHost({
-      filename: executionDatabasePath(root),
-      workspaceRoot: root,
-      owner: { hostId: "smithers-evaluation" },
-      signals: []
-    }, registration) :
-    registration.pipe(Layer.provideMerge(runtime.store))
   const inputs = {
     run: runOptions,
     suite: {
@@ -617,27 +608,38 @@ export const execute = async (
     }))
   }
   const executionId = Scoring.jobIdentity(["evaluation", suite.name, options.runId])
-  const serialized = await Effect.runPromise(
+  const serialized = await Presentation.runBoundary(
     Effect.gen(function*() {
-      const data = yield* Suite.encodeData(inputs)
-      // The engine's host driver resumes the persisted request if it exists;
-      // a fresh CLI timestamp or changed defaults never replace admitted inputs.
-      yield* EngineStore.drive(EvaluationFlow, { executionId, payload: { data } })
-      const runtime = yield* FlowRuntime.FlowRuntime
-      const result = yield* runtime.poll(EvaluationFlow, executionId)
-      if (Option.isNone(result) || result.value._tag !== "Complete") {
-        return yield* Effect.fail(
-          new EvalError({ code: "executor", message: "Evaluation has not settled; resume its run identity" })
-        )
-      }
-      return yield* result.value.exit
-    }).pipe(
-      Effect.provide(host),
-      Effect.provide(logging),
-      Effect.provideService(Logger.LogToStderr, true),
-      Effect.scoped
-    ),
-    { signal: runtime.signal }
+      const hostRuntime = yield* EvaluationHost.runtime.pipe(Effect.provide(runtime.host ?? Layer.empty))
+      const host = runtime.store === undefined ?
+        hostRuntime.layerHost({
+          filename: executionDatabasePath(root),
+          workspaceRoot: root,
+          owner: { hostId: "smithers-evaluation" },
+          signals: []
+        }, registration) :
+        registration.pipe(Layer.provideMerge(runtime.store))
+      return yield* Effect.gen(function*() {
+        const data = yield* Suite.encodeData(inputs)
+        // The engine's host driver resumes the persisted request if it exists;
+        // a fresh CLI timestamp or changed defaults never replace admitted inputs.
+        yield* EngineStore.drive(EvaluationFlow, { executionId, payload: { data } })
+        const flowRuntime = yield* FlowRuntime.FlowRuntime
+        const result = yield* flowRuntime.poll(EvaluationFlow, executionId)
+        if (Option.isNone(result) || result.value._tag !== "Complete") {
+          return yield* Effect.fail(
+            new EvalError({ code: "executor", message: "Evaluation has not settled; resume its run identity" })
+          )
+        }
+        return yield* result.value.exit
+      }).pipe(
+        Effect.provide(host),
+        Effect.provide(logging),
+        Effect.provideService(Logger.LogToStderr, true),
+        Effect.scoped
+      )
+    }),
+    runtime.signal
   )
   return RunArtifact.parse(JSON.parse(serialized))
 }
@@ -725,7 +727,7 @@ export const defaultBaselinePath = (root: string, suite: string): string => {
  * @since 1.0.0
  */
 export const baseline = async (run: RunArtifact): Promise<string> =>
-  Effect.runPromise(
+  Presentation.runBoundary(
     Baseline.fromRun(runOf(run)).pipe(Effect.map(Baseline.write))
   )
 
@@ -739,7 +741,7 @@ export const compare = async (
   source: string,
   options: Gate.Options = {}
 ) =>
-  Effect.runPromise(Effect.gen(function*() {
+  Presentation.runBoundary(Effect.gen(function*() {
     const committed = yield* Baseline.load(source)
     const report = yield* Regression.compare(committed, runOf(run))
     const verdict = yield* Gate.check(report, options)

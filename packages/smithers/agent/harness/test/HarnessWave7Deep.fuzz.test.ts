@@ -3,11 +3,13 @@ import * as FlowRuntime from "@smthrs/flow/FlowRuntime"
 import { Fuzz } from "@smthrs/fuzz"
 import * as TestJournal from "@smthrs/journal/test/TestJournal"
 import { ModelRequest } from "@smthrs/model"
+import * as Evaluator from "@smthrs/model/Evaluator"
 import { NotificationQueue } from "@smthrs/notifications"
 import type * as NotificationModel from "@smthrs/notifications/Notification"
 import * as Descriptor from "@smthrs/registry/Descriptor"
 import type * as Registry from "@smthrs/registry/Registry"
 import { Arbitrary, Context, Effect, Exit, Fiber, Layer, Option, Result, Schema, Stream } from "effect"
+import * as Deferred from "effect/Deferred"
 import { describe, expect, it } from "vitest"
 import {
   CallLedger,
@@ -31,11 +33,10 @@ import {
   TruncatedOutput
 } from "../src/index.ts"
 import * as paidUsage from "../src/internal/paidUsage.ts"
-import * as Evaluator from "@smthrs/model/Evaluator"
-import * as QuickJSSandbox from "../src/QuickJSSandbox.ts"
 import * as printChannel from "../src/internal/printChannel.ts"
 import * as SchemaSignature from "../src/internal/schemaSignature.ts"
 import * as unobservedCall from "../src/internal/unobservedCall.ts"
+import * as QuickJSSandbox from "../src/QuickJSSandbox.ts"
 import * as QuickJSWorkerd from "../src/QuickJSWorkerd.ts"
 import { descriptor, emits, prose, runEffect as runCellTurn, window as baseWindow } from "./fixtures/cellTurn.ts"
 
@@ -295,7 +296,9 @@ describe("@smthrs/harness Wave7 Deep Fuzz", () => {
       `const broken = (((`
     ]
     const arb = Arbitrary.schema(
-      Schema.Struct({ offset: Schema.Int.pipe(Schema.check(Schema.isBetween({ minimum: 0, maximum: snippets.length - 1 }))) })
+      Schema.Struct({
+        offset: Schema.Int.pipe(Schema.check(Schema.isBetween({ minimum: 0, maximum: snippets.length - 1 })))
+      })
     )
     const report = await Effect.runPromise(
       Fuzz.run(
@@ -416,12 +419,19 @@ describe("@smthrs/harness Wave7 Deep Fuzz", () => {
             } else if (kind === "thinking") {
               notes.push(mkNote({ id: "t1", _tag: "human-steer", payload: { kind: "Thinking", thinking: "high" } }))
             } else if (kind === "tools") {
-              notes.push(mkNote({ id: "tl1", _tag: "human-steer", payload: { kind: "Tools", toolNames: ["bash", "read"] } }))
+              notes.push(
+                mkNote({ id: "tl1", _tag: "human-steer", payload: { kind: "Tools", toolNames: ["bash", "read"] } })
+              )
             } else if (kind === "outside-valid") {
               notes.push(
                 mkNote({
                   id: "o1",
-                  payload: { kind: "outside_change", id: "b1", actor: { kind: "person", id: "will" }, files: ["b.ts", "a.ts"] }
+                  payload: {
+                    kind: "outside_change",
+                    id: "b1",
+                    actor: { kind: "person", id: "will" },
+                    files: ["b.ts", "a.ts"]
+                  }
                 }),
                 mkNote({
                   id: "o2",
@@ -432,7 +442,12 @@ describe("@smthrs/harness Wave7 Deep Fuzz", () => {
               notes.push(
                 mkNote({
                   id: "o1",
-                  payload: { kind: "outside_change", id: "b1", actor: { kind: "agent", id: "self-agent" }, files: ["a.ts"] }
+                  payload: {
+                    kind: "outside_change",
+                    id: "b1",
+                    actor: { kind: "agent", id: "self-agent" },
+                    files: ["a.ts"]
+                  }
                 })
               )
             } else if (kind === "outside-dup-same") {
@@ -539,27 +554,161 @@ describe("@smthrs/harness Wave7 Deep Fuzz", () => {
       "not-json",
       `${codexHeader}\n${JSON.stringify({ type: "response_item", payload: { type: "unknown_resp" } })}`,
       `${codexHeader}\n${JSON.stringify({ type: "response_item", payload: { type: "" } })}`,
-      `${codexHeader}\n${JSON.stringify({ type: "response_item", payload: { type: "custom_tool_call", call_id: "", name: "exec", input: "x" } })}`,
-      `${codexHeader}\n${JSON.stringify({ type: "response_item", payload: { type: "custom_tool_call", call_id: "c1", name: "apply_patch", input: "patch" } })}\n${JSON.stringify({ type: "response_item", payload: { type: "custom_tool_call_output", call_id: "c1", output: "apply_patch verification failed: Failed to find expected lines in src/a.ts:\nctx" } })}`,
-      `${codexHeader}\n${JSON.stringify({ type: "response_item", payload: { type: "agent_message", content: "bad" } })}`,
-      `${codexHeader}\n${JSON.stringify({ type: "response_item", payload: { type: "agent_message", content: [{ type: "encrypted_content", encrypted_content: "" }] } })}`,
-      `${codexHeader}\n${JSON.stringify({ type: "response_item", payload: { type: "agent_message", content: [{ type: "encrypted_content", encrypted_content: "cipher" }] } })}`,
-      `${codexHeader}\n${JSON.stringify({ type: "response_item", payload: { type: "agent_message", content: [{ type: "output_text", text: "hi" }] } })}`,
-      `${codexHeader}\n${JSON.stringify({ type: "response_item", payload: { type: "agent_message", content: [{ type: "output_text" }] } })}`,
-      `${codexHeader}\n${JSON.stringify({ type: "response_item", payload: { type: "agent_message", content: [{ type: "weird" }] } })}`,
-      `${codexHeader}\n${JSON.stringify({ type: "event_msg", payload: { type: "item_completed", started_at_ms: 10, completed_at_ms: 25, item: { type: "McpToolCall", id: "m1", server: "gh", tool: "get", arguments: { id: 1 }, status: "completed", result: { content: [{ type: "text", text: "ok" }] } } } })}`,
-      `${codexHeader}\n${JSON.stringify({ type: "event_msg", payload: { type: "item_completed", item: { type: "McpToolCall", id: "m2", server: "gh", tool: "err", status: "failed", error: { message: "boom" } } } })}`,
-      `${codexHeader}\n${JSON.stringify({ type: "event_msg", payload: { type: "item_completed", item: { type: "McpToolCall", id: "m3", server: "gh", tool: "run", status: "in_progress" } } })}`,
-      `${codexHeader}\n${JSON.stringify({ type: "event_msg", payload: { type: "item_completed", item: { type: "FunctionCallOutput", id: "f1", namespace: "ns", name: "fn", output: "val" } } })}`,
-      `${codexHeader}\n${JSON.stringify({ type: "event_msg", payload: { type: "item_completed", item: { type: "ImageView", id: "iv1", path: "/tmp/a.png" } } })}`,
-      `${codexHeader}\n${JSON.stringify({ type: "event_msg", payload: { type: "item_completed", item: { type: "Extension", id: "ex1", action: { pattern: "*.ts" } } } })}`,
-      `${codexHeader}\n${JSON.stringify({ type: "event_msg", payload: { type: "item_completed", item: { type: "UserMessage", content: "bad" } } })}`,
-      `${codexHeader}\n${JSON.stringify({ type: "event_msg", payload: { type: "item_completed", item: { type: "UserMessage", content: [{ type: "wrong" }] } } })}`,
-      `${codexHeader}\n${JSON.stringify({ type: "event_msg", payload: { type: "item_completed", item: { type: "UserMessage", content: [{ type: "text" }] } } })}`,
-      `${codexHeader}\n${JSON.stringify({ type: "event_msg", payload: { type: "thread_goal_updated", goal: { objective: "ship", status: "active" } } })}\n${JSON.stringify({ type: "event_msg", payload: { type: "thread_goal_updated", goal: { objective: "ship", status: "active" } } })}`,
-      `${codexHeader}\n${JSON.stringify({ type: "event_msg", payload: { type: "task_complete", error: { message: "quota" }, turn_id: "t1" } })}`,
+      `${codexHeader}\n${
+        JSON.stringify({
+          type: "response_item",
+          payload: { type: "custom_tool_call", call_id: "", name: "exec", input: "x" }
+        })
+      }`,
+      `${codexHeader}\n${
+        JSON.stringify({
+          type: "response_item",
+          payload: { type: "custom_tool_call", call_id: "c1", name: "apply_patch", input: "patch" }
+        })
+      }\n${
+        JSON.stringify({
+          type: "response_item",
+          payload: {
+            type: "custom_tool_call_output",
+            call_id: "c1",
+            output: "apply_patch verification failed: Failed to find expected lines in src/a.ts:\nctx"
+          }
+        })
+      }`,
+      `${codexHeader}\n${
+        JSON.stringify({ type: "response_item", payload: { type: "agent_message", content: "bad" } })
+      }`,
+      `${codexHeader}\n${
+        JSON.stringify({
+          type: "response_item",
+          payload: { type: "agent_message", content: [{ type: "encrypted_content", encrypted_content: "" }] }
+        })
+      }`,
+      `${codexHeader}\n${
+        JSON.stringify({
+          type: "response_item",
+          payload: { type: "agent_message", content: [{ type: "encrypted_content", encrypted_content: "cipher" }] }
+        })
+      }`,
+      `${codexHeader}\n${
+        JSON.stringify({
+          type: "response_item",
+          payload: { type: "agent_message", content: [{ type: "output_text", text: "hi" }] }
+        })
+      }`,
+      `${codexHeader}\n${
+        JSON.stringify({
+          type: "response_item",
+          payload: { type: "agent_message", content: [{ type: "output_text" }] }
+        })
+      }`,
+      `${codexHeader}\n${
+        JSON.stringify({ type: "response_item", payload: { type: "agent_message", content: [{ type: "weird" }] } })
+      }`,
+      `${codexHeader}\n${
+        JSON.stringify({
+          type: "event_msg",
+          payload: {
+            type: "item_completed",
+            started_at_ms: 10,
+            completed_at_ms: 25,
+            item: {
+              type: "McpToolCall",
+              id: "m1",
+              server: "gh",
+              tool: "get",
+              arguments: { id: 1 },
+              status: "completed",
+              result: { content: [{ type: "text", text: "ok" }] }
+            }
+          }
+        })
+      }`,
+      `${codexHeader}\n${
+        JSON.stringify({
+          type: "event_msg",
+          payload: {
+            type: "item_completed",
+            item: {
+              type: "McpToolCall",
+              id: "m2",
+              server: "gh",
+              tool: "err",
+              status: "failed",
+              error: { message: "boom" }
+            }
+          }
+        })
+      }`,
+      `${codexHeader}\n${
+        JSON.stringify({
+          type: "event_msg",
+          payload: {
+            type: "item_completed",
+            item: { type: "McpToolCall", id: "m3", server: "gh", tool: "run", status: "in_progress" }
+          }
+        })
+      }`,
+      `${codexHeader}\n${
+        JSON.stringify({
+          type: "event_msg",
+          payload: {
+            type: "item_completed",
+            item: { type: "FunctionCallOutput", id: "f1", namespace: "ns", name: "fn", output: "val" }
+          }
+        })
+      }`,
+      `${codexHeader}\n${
+        JSON.stringify({
+          type: "event_msg",
+          payload: { type: "item_completed", item: { type: "ImageView", id: "iv1", path: "/tmp/a.png" } }
+        })
+      }`,
+      `${codexHeader}\n${
+        JSON.stringify({
+          type: "event_msg",
+          payload: { type: "item_completed", item: { type: "Extension", id: "ex1", action: { pattern: "*.ts" } } }
+        })
+      }`,
+      `${codexHeader}\n${
+        JSON.stringify({
+          type: "event_msg",
+          payload: { type: "item_completed", item: { type: "UserMessage", content: "bad" } }
+        })
+      }`,
+      `${codexHeader}\n${
+        JSON.stringify({
+          type: "event_msg",
+          payload: { type: "item_completed", item: { type: "UserMessage", content: [{ type: "wrong" }] } }
+        })
+      }`,
+      `${codexHeader}\n${
+        JSON.stringify({
+          type: "event_msg",
+          payload: { type: "item_completed", item: { type: "UserMessage", content: [{ type: "text" }] } }
+        })
+      }`,
+      `${codexHeader}\n${
+        JSON.stringify({
+          type: "event_msg",
+          payload: { type: "thread_goal_updated", goal: { objective: "ship", status: "active" } }
+        })
+      }\n${
+        JSON.stringify({
+          type: "event_msg",
+          payload: { type: "thread_goal_updated", goal: { objective: "ship", status: "active" } }
+        })
+      }`,
+      `${codexHeader}\n${
+        JSON.stringify({
+          type: "event_msg",
+          payload: { type: "task_complete", error: { message: "quota" }, turn_id: "t1" }
+        })
+      }`,
       `${codexHeader}\n${JSON.stringify({ type: "event_msg", payload: { type: "task_complete", error: {} } })}`,
-      `${codexHeader}\n${JSON.stringify({ type: "event_msg", payload: { type: "turn_aborted", reason: "interrupted" } })}`,
+      `${codexHeader}\n${
+        JSON.stringify({ type: "event_msg", payload: { type: "turn_aborted", reason: "interrupted" } })
+      }`,
       `${codexHeader}\n${JSON.stringify({ type: "event_msg", payload: { type: "error" } })}`,
       `${codexHeader}\n${JSON.stringify({ type: "event_msg", payload: { type: "unknown_evt" } })}`,
       `${codexHeader}\n${JSON.stringify({ type: "unknown_row" })}`
@@ -595,7 +744,12 @@ describe("@smthrs/harness Wave7 Deep Fuzz", () => {
           type: "assistant",
           message: {
             content: [
-              { type: "tool_use", id: "t1", name: "NotebookEdit", input: { notebook_path: "a.ipynb", new_source: "x=1" } },
+              {
+                type: "tool_use",
+                id: "t1",
+                name: "NotebookEdit",
+                input: { notebook_path: "a.ipynb", new_source: "x=1" }
+              },
               {
                 type: "tool_use",
                 id: "t2",
@@ -670,12 +824,14 @@ describe("@smthrs/harness Wave7 Deep Fuzz", () => {
     expect(noop.capabilities.calls).toBe(false)
     await Effect.runPromise(Effect.serviceOption(Sandbox.Sandbox).pipe(Effect.provide(Sandbox.layerNoop())))
 
-    for (const badLimits of [
-      { calls: -1 },
-      { steps: 0 },
-      { timeMs: 0 },
-      { pauseTotalMsFor: [""] }
-    ] as Array<Sandbox.EvaluationLimits>) {
+    for (
+      const badLimits of [
+        { calls: -1 },
+        { steps: 0 },
+        { timeMs: 0 },
+        { pauseTotalMsFor: [""] }
+      ] as Array<Sandbox.EvaluationLimits>
+    ) {
       const ex = await Effect.runPromiseExit(Sandbox.evaluationLimits(Sandbox.defaultLimits, badLimits))
       expect(Exit.isFailure(ex)).toBe(true)
     }
@@ -748,7 +904,7 @@ describe("@smthrs/harness Wave7 Deep Fuzz", () => {
         abort: () => {},
         flush: () => {},
         finished: () => (++ticks > 1 ? new Cell.Settled({ transition: new Cell.Continue({}) }) : undefined),
-        handler: () => Effect.sleep("200 millis").pipe(Effect.as(new Cell.CallResult({ outcome: "success", value: 1 })))
+        handler: () => Effect.never
       })
     )
     expect(timeoutOutcome._tag).toBe("settled")
@@ -757,16 +913,17 @@ describe("@smthrs/harness Wave7 Deep Fuzz", () => {
     const pInt = mkPending(0)
     await Effect.runPromise(
       Effect.gen(function*() {
+        const entered = yield* Deferred.make<void>()
         const fiber = yield* Effect.forkChild(
           Sandbox.driveCell({
             pending: [pInt.call],
             abort: () => {},
             flush: () => {},
             finished: () => undefined,
-            handler: () => Effect.never
+            handler: () => Deferred.succeed(entered, void 0).pipe(Effect.andThen(Effect.never))
           })
         )
-        yield* Effect.sleep("20 millis")
+        yield* Deferred.await(entered)
         yield* Fiber.interrupt(fiber)
       })
     )
@@ -802,7 +959,10 @@ describe("@smthrs/harness Wave7 Deep Fuzz", () => {
             } else if (heavyKind === "too-large-to-weigh") {
               yield* realm.evaluate({
                 frame: 0,
-                cell: Cell.source(`var nodes = []; for (let i = 0; i < 6000; i++) nodes.push({ a: i, b: [i] });`, "javascript"),
+                cell: Cell.source(
+                  `var nodes = []; for (let i = 0; i < 6000; i++) nodes.push({ a: i, b: [i] });`,
+                  "javascript"
+                ),
                 call: () => Effect.succeed(new Cell.CallResult({ outcome: "success", value: "ok" }))
               })
               const f2 = yield* realm.evaluate({
@@ -899,13 +1059,18 @@ describe("@smthrs/harness Wave7 Deep Fuzz", () => {
                 cell: Cell.source(code, "javascript"),
                 ...(kind === "compile-fail-quickjs" ? { program: "function ( { broken" } : {}),
                 ...(kind === "checkpoint-mint"
-                  ? { mint: () => Effect.succeed(new Cell.CallResult({ outcome: "success", value: { checkpoint: "cp-1" } })) }
+                  ? {
+                    mint: () =>
+                      Effect.succeed(new Cell.CallResult({ outcome: "success", value: { checkpoint: "cp-1" } }))
+                  }
                   : {}),
                 ...(kind === "replay-frame"
                   ? {
                     replay: {
                       boundary: { terminal: "settled", dispatched: 0, settled: 0 },
-                      outcome: new Cell.Settled({ transition: new Cell.Complete({ output: "replayed", value: "replayed" }) })
+                      outcome: new Cell.Settled({
+                        transition: new Cell.Complete({ output: "replayed", value: "replayed" })
+                      })
                     }
                   }
                   : {}),
@@ -913,7 +1078,7 @@ describe("@smthrs/harness Wave7 Deep Fuzz", () => {
                   kind === "deep-json"
                     ? Effect.succeed(new Cell.CallResult({ outcome: "success", value: deep }))
                     : kind === "pause-total-ms"
-                    ? Effect.sleep("30 millis").pipe(Effect.as(new Cell.CallResult({ outcome: "success", value: "ok" })))
+                    ? Effect.yieldNow.pipe(Effect.as(new Cell.CallResult({ outcome: "success", value: "ok" })))
                     : Effect.succeed(new Cell.CallResult({ outcome: "success", value: "ok" }))
               })
               return frame.outcome !== undefined
@@ -945,7 +1110,9 @@ describe("@smthrs/harness Wave7 Deep Fuzz", () => {
     expect(Option.isNone(await Effect.runPromise(noopEngine.capture({} as any)))).toBe(true)
     expect(
       Exit.isFailure(
-        await Effect.runPromiseExit(Stream.runDrain(noopEngine.sealStep({ request: req, keyMaterial: {} as any, modelCallMs: 100 })))
+        await Effect.runPromiseExit(
+          Stream.runDrain(noopEngine.sealStep({ request: req, keyMaterial: {} as any, modelCallMs: 100 }))
+        )
       )
     ).toBe(true)
     expect(Exit.isFailure(await Effect.runPromiseExit(Stream.runDrain(noopEngine.splice({} as any))))).toBe(true)
@@ -954,34 +1121,38 @@ describe("@smthrs/harness Wave7 Deep Fuzz", () => {
     expect(Exit.isFailure(await Effect.runPromiseExit(noopEngine.suspend({} as any)))).toBe(true)
     await Effect.runPromise(Effect.service(EngineLike.EngineLike).pipe(Effect.provide(EngineLike.layerNoop())))
 
-    for (const [text, lang, expectReject] of [
-      ["return 1", "javascript", true],
-      ["const ctx = 1", "javascript", true],
-      ["const console = 1", "javascript", true],
-      ["enum Color { Red }", "typescript", true],
-      ["class Box { x = 1 }\nlet uninit;\nctx.done(new Box().x)", "javascript", false]
-    ] as const) {
+    for (
+      const [text, lang, expectReject] of [
+        ["return 1", "javascript", true],
+        ["const ctx = 1", "javascript", true],
+        ["const console = 1", "javascript", true],
+        ["enum Color { Red }", "typescript", true],
+        ["class Box { x = 1 }\nlet uninit;\nctx.done(new Box().x)", "javascript", false]
+      ] as const
+    ) {
       const v = CellValidation.validate(Cell.source(text, lang))
       if (expectReject) expect(v.rejected).toBeDefined()
       else expect(v.compiled).toBeDefined()
     }
 
-    for (const schema of [
-      { type: "object", properties: { a: { type: "string" } }, required: ["missing"] },
-      { type: "object", properties: {}, additionalProperties: false },
-      { type: "object", properties: {}, additionalProperties: { type: "number" } },
-      { anyOf: [{ type: "null" }] },
-      { anyOf: [{ type: "number" }, { type: "string", enum: ["Infinity", "-Infinity", "NaN"] }] },
-      { enum: ["a", "b"], type: "string" },
-      { enum: [1, 2], type: "integer" },
-      { enum: [null], type: "null" },
-      { enum: [true], type: "boolean" },
-      { enum: ["x"], type: "bogus" },
-      { type: "array" },
-      { type: "array", items: { anyOf: [{ type: "string" }, { type: "number" }], description: "item" } },
-      { type: "unknown-kind" },
-      {}
-    ] as Array<Schema.Json>) {
+    for (
+      const schema of [
+        { type: "object", properties: { a: { type: "string" } }, required: ["missing"] },
+        { type: "object", properties: {}, additionalProperties: false },
+        { type: "object", properties: {}, additionalProperties: { type: "number" } },
+        { anyOf: [{ type: "null" }] },
+        { anyOf: [{ type: "number" }, { type: "string", enum: ["Infinity", "-Infinity", "NaN"] }] },
+        { enum: ["a", "b"], type: "string" },
+        { enum: [1, 2], type: "integer" },
+        { enum: [null], type: "null" },
+        { enum: [true], type: "boolean" },
+        { enum: ["x"], type: "bogus" },
+        { type: "array" },
+        { type: "array", items: { anyOf: [{ type: "string" }, { type: "number" }], description: "item" } },
+        { type: "unknown-kind" },
+        {}
+      ] as Array<Schema.Json>
+    ) {
       void SchemaSignature.render({ dialect: "draft-2020-12", schema, definitions: {} })
     }
     void SchemaSignature.render({ dialect: "draft-2020-12", schema: {}, unknownKey: 1 } as any)
@@ -1032,7 +1203,10 @@ describe("@smthrs/harness Wave7 Deep Fuzz", () => {
     expect(renderedLedger).toContain("\\n")
     expect(FailedCall.inspects(`let ok; ({ ok } = await ctx.call("read", {}));`, "read")).toBe(true)
     expect(
-      FailedCall.inspects(`const rs = await Promise.all([ctx.call("read", {})]); for (const { error } of rs) { console.log(error) }`, "read")
+      FailedCall.inspects(
+        `const rs = await Promise.all([ctx.call("read", {})]); for (const { error } of rs) { console.log(error) }`,
+        "read"
+      )
     ).toBe(true)
     expect(FailedCall.inspects(`(await ctx.call("read", {})).error`, "read")).toBe(true)
     const pu = paidUsage.paidUsage([
@@ -1099,7 +1273,15 @@ describe("@smthrs/harness Wave7 Deep Fuzz", () => {
       return FlowBinding.provide(b, Context.make(TestService, { tag: "hi" }))
     }
 
-    const modes = ["ok", "fail-pub", "fail-throw", "fail-timeout", "fail-perm-denied", "bad-output", "non-json-output"] as const
+    const modes = [
+      "ok",
+      "fail-pub",
+      "fail-throw",
+      "fail-timeout",
+      "fail-perm-denied",
+      "bad-output",
+      "non-json-output"
+    ] as const
     const arb = Arbitrary.schema(
       Schema.Struct({
         modeIdx: Schema.Int.pipe(Schema.check(Schema.isBetween({ minimum: 0, maximum: modes.length - 1 }))),
@@ -1150,7 +1332,9 @@ describe("@smthrs/harness Wave7 Deep Fuzz", () => {
     const okBinding = makeBinding("ok")
     const catalogRes = FlowBinding.catalogResult([okBinding])
     expect(Result.isSuccess(catalogRes)).toBe(true)
-    const catalog = Result.isSuccess(catalogRes) ? catalogRes.success : ({ entries: [], bindings: new Map(), descriptors: [] } as any)
+    const catalog = Result.isSuccess(catalogRes)
+      ? catalogRes.success
+      : ({ entries: [], bindings: new Map(), descriptors: [] } as any)
     const resolver = CellCalls.make({ registry: fakeRegistry, catalog })
     const rHidden = await Effect.runPromise(resolver.run(mkCall("hidden", {}, Cell.declarationDigest(hiddenDesc))))
     expect(rHidden.outcome).toBe("failure")
@@ -1158,7 +1342,9 @@ describe("@smthrs/harness Wave7 Deep Fuzz", () => {
     expect(rChanged.outcome).toBe("failure")
     const rBindMismatch = await Effect.runPromise(resolver.run(mkCall("demo", {}, Cell.declarationDigest(otherDesc))))
     expect(rBindMismatch.outcome).toBe("failure")
-    const rMdNoPrompt = await Effect.runPromise(resolver.run(mkCall("md", { args: "hi" }, Cell.declarationDigest(mdDesc))))
+    const rMdNoPrompt = await Effect.runPromise(
+      resolver.run(mkCall("md", { args: "hi" }, Cell.declarationDigest(mdDesc)))
+    )
     expect(rMdNoPrompt.outcome).toBe("failure")
     const rUnimpl = await Effect.runPromise(resolver.run(mkCall("plain", {}, Cell.declarationDigest(plainDesc))))
     expect(rUnimpl.outcome).toBe("failure")
@@ -1248,7 +1434,9 @@ describe("@smthrs/harness Wave7 Deep Fuzz", () => {
             if (sc === "at-invalid") {
               const out = yield* runCellTurn({
                 state: baseState(),
-                script: [emits(`const r = await ctx.call("read", {}, { at: "not-a-checkpoint" }); ctx.done(r.error.code)`)],
+                script: [
+                  emits(`const r = await ctx.call("read", {}, { at: "not-a-checkpoint" }); ctx.done(r.error.code)`)
+                ],
                 flows: [descriptor("read")]
               })
               return out.failure === undefined
@@ -1256,7 +1444,11 @@ describe("@smthrs/harness Wave7 Deep Fuzz", () => {
             if (sc === "at-unknown") {
               const out = yield* runCellTurn({
                 state: baseState(),
-                script: [emits(`const r = await ctx.call("read", {}, { at: { checkpoint: "cp-missing" } }); ctx.done(r.error.code)`)],
+                script: [
+                  emits(
+                    `const r = await ctx.call("read", {}, { at: { checkpoint: "cp-missing" } }); ctx.done(r.error.code)`
+                  )
+                ],
                 flows: [descriptor("read")]
               })
               return out.failure === undefined
@@ -1346,7 +1538,13 @@ describe("@smthrs/harness Wave7 Deep Fuzz", () => {
                         duplicate: false
                       }
                     }
-                    return { inserts: [], instructions: [], seatChanges: [], remaining: Steering.empty(), duplicate: false }
+                    return {
+                      inserts: [],
+                      instructions: [],
+                      seatChanges: [],
+                      remaining: Steering.empty(),
+                      duplicate: false
+                    }
                   })
               })
             )

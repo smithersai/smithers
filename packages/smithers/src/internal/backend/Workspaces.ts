@@ -147,7 +147,7 @@ workspaces["workspace watch"] = async (c, a, o) => {
 }
 workspaces["workspace ssh"] = async (c, a, o) => {
   const id = await resolveID(c, a, o), ssh = await sshInfo(c, base(c, o) + `/${esc(id)}`, "")
-  const result = await remote(c, ssh, undefined, 0, undefined, true)
+  const result = await (c.runtime.sshRemote ?? remote)(c, ssh, undefined, 0, undefined, true)
   c.runtime.exit?.(result.code)
   return { connected: result.code === 0, workspace_id: id }
 }

@@ -221,10 +221,14 @@ describe("ModelStep keys", () => {
   it("derives the same key in a process that shares nothing with this one", async () => {
     const request = withTool("forward")
     const json = JSON.stringify(reversed(Schema.encodeSync(ModelRequest.ModelRequest)(request)))
-    const { stdout } = await promisify(execFile)(process.execPath, [fixture, "key", json], {
-      env: childEnv,
-      timeout: 120_000
-    })
+    const { stdout } = await promisify(execFile)(
+      process.execPath,
+      ["--import=vibelang/register", fixture, "key", json],
+      {
+        env: childEnv,
+        timeout: 120_000
+      }
+    )
     const printed = JSON.parse(stdout.split("\n").find((line) => line.startsWith("{\"status\":\"key\""))!)
     expect(printed.key).toBe(await keyOf(request))
   }, 180_000)
@@ -1078,7 +1082,10 @@ describe("ModelStep on the in-memory engine", () => {
 
 /** Starts a fixture host, resolving when it prints `marker`. */
 const startChild = (args: ReadonlyArray<string>, marker: string) => {
-  const child = spawn(process.execPath, [fixture, ...args], { env: childEnv, stdio: ["ignore", "pipe", "pipe"] })
+  const child = spawn(process.execPath, ["--import=vibelang/register", fixture, ...args], {
+    env: childEnv,
+    stdio: ["ignore", "pipe", "pipe"]
+  })
   let stdout = ""
   let stderr = ""
   child.stderr.on("data", (chunk) => {
@@ -1105,7 +1112,7 @@ const kill = async (child: ReturnType<typeof spawn>) => {
 const resume = async (place: { readonly schema: string; readonly root: string }, executionId: string) => {
   const { stdout } = await promisify(execFile)(
     process.execPath,
-    [fixture, "resume", place.schema, place.root, executionId],
+    ["--import=vibelang/register", fixture, "resume", place.schema, place.root, executionId],
     { env: childEnv, timeout: 120_000 }
   )
   return JSON.parse(stdout.split("\n").find((line) => line.startsWith("{\"status\":\"done\""))!)

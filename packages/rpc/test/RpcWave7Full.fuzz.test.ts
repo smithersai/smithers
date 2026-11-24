@@ -82,14 +82,13 @@ describe("@smthrs/rpc Wave 7 deep fuzz (Mythical, SubagentCard, StackView, UiIns
             expect(dur1 === undefined || typeof dur1 === "string").toBe(true)
             expect(dur2 === undefined || typeof dur2 === "string").toBe(true)
 
-            const placement =
-              placementKind === "none"
-                ? undefined
-                : placementKind === "local"
-                  ? { kind: "local", host: "macbook" }
-                  : placementKind === "ssh"
-                    ? { kind: "ssh", host: "nyc-02", machine: "nyc-02" }
-                    : { kind: "cloud", region: "iad", machine: "cf-1" }
+            const placement = placementKind === "none"
+              ? undefined
+              : placementKind === "local"
+              ? { kind: "local", host: "macbook" }
+              : placementKind === "ssh"
+              ? { kind: "ssh", host: "nyc-02", machine: "nyc-02" }
+              : { kind: "cloud", region: "iad", machine: "cf-1" }
             const mach = Mythical.mythicalMachine(placement as never)
             expect(mach === undefined || typeof mach === "string").toBe(true)
 
@@ -110,7 +109,9 @@ describe("@smthrs/rpc Wave 7 deep fuzz (Mythical, SubagentCard, StackView, UiIns
               skipReason: state === "skipped" ? "duplicate" : undefined,
               failure: state === "failed" ? { code: "test_failed", message: "boom" } : undefined,
               issue: { number: 7, title: "Ship fuzzing", url: "https://github.com/acme/app/issues/7" },
-              pr: state === "proposed" || state === "merged" ? { number: 8, url: "https://github.com/acme/app/pull/8", state: "open" } : undefined
+              pr: state === "proposed" || state === "merged"
+                ? { number: 8, url: "https://github.com/acme/app/pull/8", state: "open" }
+                : undefined
             } as unknown as Mythical.MythicalItem
 
             const stack = {
@@ -201,7 +202,8 @@ describe("@smthrs/rpc Wave 7 deep fuzz (Mythical, SubagentCard, StackView, UiIns
             expect(built).toBeDefined()
             const hdr = SubagentCard.header([status, "done"], now)
             expect(SubagentCard.headerLine(hdr).length).toBeGreaterThan(0)
-            expect(SubagentCard.earlierBatches([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], open).length).toBeGreaterThanOrEqual(0)
+            expect(SubagentCard.earlierBatches([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], open).length)
+              .toBeGreaterThanOrEqual(0)
             expect(SubagentCard.earlierLine(count)).toContain(String(count))
             expect(SubagentCard.finished("Fuzzer", status).line.length).toBeGreaterThan(0)
             expect(SubagentCard.toast({ title: "Fuzzer", status, startedAt: 0, endedAt: now }, now)).toBeDefined()

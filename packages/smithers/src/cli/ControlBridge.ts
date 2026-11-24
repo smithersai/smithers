@@ -78,6 +78,12 @@ export interface Runtime extends RuntimeConfig {
   readonly signal?: AbortSignal | undefined
   readonly environment?: Readonly<Record<string, string | undefined>> | undefined
   readonly exit?: ((code: number) => void) | undefined
+  /** Injected HTTP fetch for tests and embedded hosts; defaults to globalThis.fetch. */
+  readonly fetch?: typeof globalThis.fetch | undefined
+  /** Injected SSH remote runner for tests and embedded hosts; defaults to the live SSH runner. */
+  readonly sshRemote?:
+    | ((...args: Array<any>) => Promise<{ readonly code: number; readonly stdout: Buffer; readonly stderr: Buffer }>)
+    | undefined
 }
 
 /**

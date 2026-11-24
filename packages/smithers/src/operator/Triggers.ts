@@ -62,10 +62,15 @@ const execute = <A>(context: Presentation.Failing, body: () => Promise<A>) =>
  * @category execution
  * @since 1.0.0
  */
+const withTriggersEffect = <A, E>(options: LocalOptions, effect: Effect.Effect<A, E, TriggerStore.TriggerStore>) =>
+  effect.pipe(Effect.provide(SqlTriggerStore.layer.pipe(Layer.provide(databaseLayer(localRoot(options))))))
+
+/** Executes one operation against the shared durable trigger store.
+ * @category execution
+ * @since 1.0.0
+ */
 export const withTriggers = <A, E>(options: LocalOptions, effect: Effect.Effect<A, E, TriggerStore.TriggerStore>) =>
-  Effect.runPromise(
-    effect.pipe(Effect.provide(SqlTriggerStore.layer.pipe(Layer.provide(databaseLayer(localRoot(options))))))
-  )
+  Presentation.runBoundary(withTriggersEffect(options, effect))
 
 /**
  * How a scheduler host runs the build targets its triggers launch.
@@ -290,17 +295,24 @@ export const createTriggersCli = (
         "Run the durable scheduler until interrupted: registers S.Cron targets, runs their build targets, preserves Control approvals for flows",
       options: options.extend({ pollIntervalMs: z.number().int().positive().default(1000) }),
       run: (context) =>
-        execute(context, () => {
-          const root = localRoot(context.options)
-          return Effect.runPromise(
-            Layer.launch(
+        Presentation.guardEffect(
+          context,
+          Effect.suspend(() => {
+            const root = localRoot(context.options)
+            return Layer.launch(
               layerTriggerScheduler(root, context.options.pollIntervalMs, runtime.targets).pipe(
                 Layer.provide(NodeControl.layerControl({ root }))
               )
-            ),
-            { signal: runtime.signal }
-          )
-        })
+            )
+          }),
+          {
+            code: "operator_failed",
+            next: Presentation.runs({
+              otherwise: [{ command: "triggers list", description: "Inspect registered triggers" }]
+            }),
+            signal: runtime.signal
+          }
+        )
     })
   for (const [command, enabled] of [["enable", true], ["disable", false]] as const) {
     cli.command(command, {

@@ -13,13 +13,16 @@ import * as Failure from "../src/internal/Failure.ts"
 const dirs: Array<string> = []
 afterEach(async () => {
   vi.restoreAllMocks()
-  vi.unstubAllGlobals()
   for (const dir of dirs.splice(0)) await rm(dir, { recursive: true, force: true })
 })
-const fixture = async () => {
+const withFetch = (c: Client, fn: (...args: Array<any>) => Promise<Response>) => {
+  ;(c.runtime as { fetch?: typeof globalThis.fetch }).fetch = fn as typeof globalThis.fetch
+}
+const fixture = async (fetchFn?: typeof globalThis.fetch) => {
   const home = await mkdtemp(join(tmpdir(), "backend-refusal-"))
   dirs.push(home)
   const c = new Client({
+    ...(fetchFn === undefined ? {} : { fetch: fetchFn }),
     environment: {
       HOME: home,
       XDG_CONFIG_HOME: home,
@@ -50,8 +53,8 @@ describe("backend HTTP failures become refusals", () => {
     ["text/html", "{\"message\":\"edge refusal\",\"code\":\"forbidden\",\"class\":\"permission\"}"]
   ])("identifies an edge 403 with content type %s and body %s", async (contentType, body) => {
     const { c } = await fixture()
-    vi.stubGlobal(
-      "fetch",
+    withFetch(
+      c,
       vi.fn().mockResolvedValue(
         new Response(body, {
           status: 403,
@@ -73,8 +76,8 @@ describe("backend HTTP failures become refusals", () => {
   it("serializes only bounded response metadata without response cookies or the full body", async () => {
     const { c } = await fixture()
     const body = `${"x".repeat(512)}body beyond preview${"x".repeat(512)}`
-    vi.stubGlobal(
-      "fetch",
+    withFetch(
+      c,
       vi.fn().mockResolvedValue(
         new Response(body, {
           status: 403,
@@ -97,7 +100,7 @@ describe("backend HTTP failures become refusals", () => {
     "keeps a backend JSON 403 as forbidden: %j",
     async (body) => {
       const { c } = await fixture()
-      vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json(body, { status: 403 })))
+      withFetch(c, vi.fn().mockResolvedValue(Response.json(body, { status: 403 })))
       const error = await c.response("POST", "/api/issues").catch((error: unknown) => error)
       expect(c.failure(error)).toMatchObject({
         fault: "user",
@@ -110,8 +113,8 @@ describe("backend HTTP failures become refusals", () => {
 
   it.each(["", "<title>403</title>403 Forbidden"])("keeps a 403 with a request id as forbidden: %s", async (body) => {
     const { c } = await fixture()
-    vi.stubGlobal(
-      "fetch",
+    withFetch(
+      c,
       vi.fn().mockResolvedValue(
         new Response(body, {
           status: 403,
@@ -130,7 +133,7 @@ describe("backend HTTP failures become refusals", () => {
 
   it("identifies an empty 403 with neither content type nor request id", async () => {
     const { c } = await fixture()
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(null, { status: 403 })))
+    withFetch(c, vi.fn().mockResolvedValue(new Response(null, { status: 403 })))
     const error = await c.response("POST", "/api/issues").catch((error: unknown) => error)
     expect(c.failure(error)).toMatchObject({
       fault: "infra",
@@ -142,8 +145,8 @@ describe("backend HTTP failures become refusals", () => {
   it("redacts and bounds the terminal-safe edge diagnostic before displaying it", async () => {
     const { c } = await fixture()
     const body = `<title>403</title>session-secret\u001b]0;owned\u0007\n${"x".repeat(400)}`
-    vi.stubGlobal(
-      "fetch",
+    withFetch(
+      c,
       vi.fn().mockResolvedValue(
         new Response(body, {
           status: 403,
@@ -201,8 +204,8 @@ describe("backend HTTP failures become refusals", () => {
     ] as const
   )("keeps the status mapping for an HTML %i without a request id", async (status, code) => {
     const { c } = await fixture()
-    vi.stubGlobal(
-      "fetch",
+    withFetch(
+      c,
       vi.fn().mockResolvedValue(
         new Response("<title>Denied</title>", {
           status,
@@ -385,7 +388,7 @@ describe("agent ask context fields", () => {
     vi.spyOn(c, "repo").mockImplementation(() => {
       throw new UsageError({ message: "Expected OWNER/REPO or a clone URL" })
     })
-    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("fetch failed: ENOTFOUND smithers.sh")))
+    withFetch(c, vi.fn().mockRejectedValue(new TypeError("fetch failed: ENOTFOUND smithers.sh")))
     const value = object(await ask(c, { prompt: "anything" }, {}))
     expect(object(value.docs_status).warning).toBe("Docs refresh failed")
   })
@@ -396,7 +399,7 @@ describe("agent ask context fields", () => {
     vi.spyOn(c, "repo").mockImplementation(() => {
       throw new UsageError({ message: "Expected OWNER/REPO or a clone URL" })
     })
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("upstream trace", { status: 503 })))
+    withFetch(c, vi.fn().mockResolvedValue(new Response("upstream trace", { status: 503 })))
     const value = object(await ask(c, { prompt: "anything" }, {}))
     expect(object(value.docs_status).warning).toBe("Docs refresh failed: the docs server answered HTTP 503")
   })
@@ -414,7 +417,7 @@ describe("secret host binding refusals (#3212)", () => {
         message,
         errors: [{ resource: "Secret", field: "hosts", code: "invalid" }]
       }, { status: 422 }))
-      vi.stubGlobal("fetch", fetch)
+      withFetch(c, fetch)
       const error = await resources["secret bind"]!(c, { name: "DEPLOY_KEY" }, {
         repo: "owner/repo",
         host: ["api.example.com", host],

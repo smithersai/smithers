@@ -8,6 +8,8 @@
  * @since 1.0.0
  */
 
+import * as Presentation from "../../cli/Presentation.ts"
+
 import * as ProcessLedger from "@smthrs/kernel/ProcessLedger"
 import * as ProcessReaper from "@smthrs/platform-node/ProcessReaper"
 import * as Data from "effect/Data"
@@ -136,7 +138,7 @@ export const run = (
     }),
     Effect.provide(spawner)
   )
-  return Effect.runPromiseExit(program, { signal: options.signal }).then((exit) => settle(command, exit, "cancelled"))
+  return Presentation.runBoundaryExit(program, options.signal).then((exit) => settle(command, exit, "cancelled"))
 }
 
 /**
@@ -226,15 +228,15 @@ export const spawn = (
     ], { concurrency: "unbounded" })
     return Number(code)
   }).pipe(Effect.scoped, Effect.provide(spawner))
-  const fiber = Effect.runFork(program)
+  const fiber = Presentation.runBoundaryFork(program)
   // A pending read of an unended stdin holds the fiber, so release it first.
   const abort = () => {
     stdin?.destroy()
-    Effect.runFork(Fiber.interrupt(fiber))
+    Presentation.runBoundaryFork(Fiber.interrupt(fiber))
   }
   options.signal?.addEventListener("abort", abort, { once: true })
   if (options.signal?.aborted) abort()
-  const exited = Effect.runPromiseExit(Fiber.join(fiber)).then((exit) => {
+  const exited = Presentation.runBoundaryExit(Fiber.join(fiber)).then((exit) => {
     options.signal?.removeEventListener("abort", abort)
     stdout?.end()
     stderr?.end()

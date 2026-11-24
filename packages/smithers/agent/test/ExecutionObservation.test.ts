@@ -169,7 +169,8 @@ describe("engine execution observations across separate control and engine datab
           const runId = yield* launch(context)
           const state = Context.get(engine, DurableEngineState.DurableEngineState)
           yield* create(engine, "spawning-parent")
-          yield* create(engine, "previous-round")
+          yield* create(engine, "lineage")
+          yield* create(engine, "previous-round", { parentRunId: "lineage", lineageId: "lineage", roundOrdinal: 1 })
           yield* create(engine, runId, { parentRunId: "previous-round", lineageId: "lineage", roundOrdinal: 2 })
           yield* state.recordRunParent(runId, "spawning-parent")
           expect(yield* AgentSession.readExecution(runId).pipe(Effect.provide(engine))).toMatchObject({

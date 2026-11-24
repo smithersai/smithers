@@ -3,6 +3,8 @@
  * @since 0.1.0
  */
 
+import * as Presentation from "../../cli/Presentation.ts"
+
 import { Context, Effect } from "effect"
 import { createHash } from "node:crypto"
 import {
@@ -485,7 +487,7 @@ export class Session {
     try {
       let result: Result
       try {
-        const outcome = await Effect.runPromise(Effect.result(
+        const outcome = await Presentation.runBoundary(Effect.result(
           this.commands.run(command, args, options).pipe(
             Effect.catch((error) =>
               process.platform === "win32" && error instanceof NotFound

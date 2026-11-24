@@ -4,7 +4,20 @@ import * as NodePath from "@effect/platform-node/NodePath"
 import { Action, Flow, FlowRuntime } from "@smthrs/flow"
 import { Fuzz } from "@smthrs/fuzz"
 import { Node } from "@smthrs/plan"
-import { Arbitrary, Context, Effect, Exit, FileSystem, Layer, Logger, Option, Path, Result, Schema, Scope } from "effect"
+import {
+  Arbitrary,
+  Context,
+  Effect,
+  Exit,
+  FileSystem,
+  Layer,
+  Logger,
+  Option,
+  Path,
+  Result,
+  Schema,
+  Scope
+} from "effect"
 import * as fs from "node:fs/promises"
 import * as os from "node:os"
 import * as path from "node:path"
@@ -186,7 +199,9 @@ export default Flow.make("nodesc", {
 })`
     ]
     const arb = Arbitrary.schema(
-      Schema.Struct({ idx: Schema.Int.pipe(Schema.check(Schema.isBetween({ minimum: 0, maximum: sources.length - 1 }))) })
+      Schema.Struct({
+        idx: Schema.Int.pipe(Schema.check(Schema.isBetween({ minimum: 0, maximum: sources.length - 1 })))
+      })
     )
     const report = await Effect.runPromise(
       Fuzz.run(
@@ -243,7 +258,8 @@ export default Flow.make("nodesc", {
         },
         {
           file: "b.ts",
-          code: `import mod from "node:module"\nconst r = require\nconst p = require.resolve("x")\nconst o = { require: 1 }\nconst k = foo.require\nconst g = globalThis.require\nexport { mod, r, p, o, k, g }\n`
+          code:
+            `import mod from "node:module"\nconst r = require\nconst p = require.resolve("x")\nconst o = { require: 1 }\nconst k = foo.require\nconst g = globalThis.require\nexport { mod, r, p, o, k, g }\n`
         },
         {
           file: "c.ts",
@@ -263,7 +279,9 @@ export default Flow.make("nodesc", {
       }
 
       const arb = Arbitrary.schema(
-        Schema.Struct({ idx: Schema.Int.pipe(Schema.check(Schema.isBetween({ minimum: 0, maximum: cases.length - 1 }))) })
+        Schema.Struct({
+          idx: Schema.Int.pipe(Schema.check(Schema.isBetween({ minimum: 0, maximum: cases.length - 1 })))
+        })
       )
       const report = await Effect.runPromise(
         Fuzz.run(
@@ -309,7 +327,24 @@ export default Flow.make("nodesc", {
 
       const deepDir = path.join(
         flowsDir,
-        "a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l", "m", "n", "o", "p", "q", "r"
+        "a",
+        "b",
+        "c",
+        "d",
+        "e",
+        "f",
+        "g",
+        "h",
+        "i",
+        "j",
+        "k",
+        "l",
+        "m",
+        "n",
+        "o",
+        "p",
+        "q",
+        "r"
       )
       await fs.mkdir(deepDir, { recursive: true })
       await fs.writeFile(path.join(deepDir, "flow.mdx"), `---\ndescription: too deep\n---\nhi\n`)
@@ -388,7 +423,9 @@ export default Flow.make("nodesc", {
               const baseFs = yield* FileSystem.FileSystem
               const faultyFs = Layer.succeed(FileSystem.FileSystem)({
                 ...baseFs,
-                exists: (p) => (mode === "faulty-exists" ? Effect.fail(new Error("EIO exists") as any) : baseFs.exists(p)),
+                exists: (
+                  p
+                ) => (mode === "faulty-exists" ? Effect.fail(new Error("EIO exists") as any) : baseFs.exists(p)),
                 readDirectory: (p) =>
                   mode === "faulty-readdir" ? Effect.fail(new Error("EACCES readdir") as any) : baseFs.readDirectory(p),
                 stat: (p) =>
@@ -519,7 +556,11 @@ export default Flow.make("nodesc", {
           const d1 = new Descriptor.FlowDescriptor({
             name: "shared",
             description: "a1",
-            body: new Descriptor.BodyRefMarkdown({ path: "/p1/a.mdx", baseDirectory: "/p1", contentDigest: "0".repeat(64) }),
+            body: new Descriptor.BodyRefMarkdown({
+              path: "/p1/a.mdx",
+              baseDirectory: "/p1",
+              contentDigest: "0".repeat(64)
+            }),
             input: new Descriptor.SchemaRefInline({ document: {} }),
             output: new Descriptor.SchemaRefInline({ document: {} }),
             model: Option.none(),
@@ -653,7 +694,12 @@ export default Flow.make("misssvc", {
       await Effect.runPromise(
         Effect.gen(function*() {
           const disc = yield* Discovery.Discovery
-          const scanned = yield* disc.scan({ source: "project", root: flowsRoot, naming: "path", lockfileRoot: tmpRoot })
+          const scanned = yield* disc.scan({
+            source: "project",
+            root: flowsRoot,
+            naming: "path",
+            lockfileRoot: tmpRoot
+          })
           const layeredDesc = scanned.entries.find((e) => e.name === "layered")!
           const badDesc = scanned.entries.find((e) => e.name === "badlayer")!
           const missDesc = scanned.entries.find((e) => e.name === "misssvc")!

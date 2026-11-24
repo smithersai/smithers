@@ -6,8 +6,17 @@
 
 import metadata from "@smthrs/cli/package.json" with { type: "json" }
 
-if (typeof metadata.version !== "string") {
-  throw new TypeError("@smthrs/cli package metadata does not declare a version")
+/**
+ * Extracts and validates the version string from `@smthrs/cli` package metadata.
+ *
+ * @category configuration
+ * @since 1.0.0
+ */
+export const readVersion = (manifest: { readonly version?: unknown }): string => {
+  if (typeof manifest.version !== "string") {
+    throw new TypeError("@smthrs/cli package metadata does not declare a version")
+  }
+  return manifest.version
 }
 
 /**
@@ -24,4 +33,4 @@ if (typeof metadata.version !== "string") {
  * @category configuration
  * @since 0.1.0
  */
-export const packageVersion = metadata.version
+export const packageVersion = readVersion(metadata)

@@ -3,6 +3,8 @@
  * @since 0.1.0
  */
 
+import * as Presentation from "../../cli/Presentation.ts"
+
 import * as Effect from "effect/Effect"
 import { mkdir, mkdtemp, rename, rm, writeFile } from "node:fs/promises"
 import { dirname, join, resolve } from "node:path"
@@ -331,7 +333,7 @@ admin["admin user export"] = async (c, a) => {
   }
   // Each writer owns a private directory on the destination filesystem. Never
   // follow a pre-existing staging name, and publish only a complete archive.
-  await Effect.runPromise(Effect.acquireUseRelease(
+  await Presentation.runBoundary(Effect.acquireUseRelease(
     Effect.tryPromise({ try: () => mkdtemp(`${path}.partial-`), catch: (cause) => cause }),
     (directory) =>
       Effect.tryPromise({

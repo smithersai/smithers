@@ -15,9 +15,11 @@ const dirs: string[] = [], cwd = process.cwd()
 afterEach(async () => {
   process.chdir(cwd)
   vi.restoreAllMocks()
-  vi.unstubAllGlobals()
   for (const dir of dirs.splice(0)) await rm(dir, { recursive: true, force: true })
 })
+const withFetch = (c: Client, fn: (...args: Array<any>) => Promise<Response>) => {
+  ;(c.runtime as { fetch?: typeof globalThis.fetch }).fetch = fn as typeof globalThis.fetch
+}
 const fixture = async (env: Record<string, string> = {}) => {
   const home = await mkdtemp(join(tmpdir(), "one-cli-edge-"))
   dirs.push(home)
@@ -180,7 +182,7 @@ describe("offline docs and ancillary commands", () => {
     vi.spyOn(c, "exec").mockImplementation(() => {
       throw new Error("no jj")
     })
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(null, { status: 503 })))
+    withFetch(c, vi.fn().mockResolvedValue(new Response(null, { status: 503 })))
     const value = object(await ask(c, { prompt: "anything" }, {}))
     expect(value.docs_status).toMatchObject({ status: "unavailable", source: "none" })
     expect(object(value.repo_context).repoSource).toBe("unavailable")
@@ -197,7 +199,7 @@ describe("offline docs and ancillary commands", () => {
         headers: { "last-modified": "yesterday" }
       })
     ).mockResolvedValueOnce(new Response(null, { status: 304 }))
-    vi.stubGlobal("fetch", fetch)
+    withFetch(c, fetch)
     const value = object(await ask(c, { prompt: "unmatched" }, {}))
     expect(value.response).toBe("No Smithers docs sections matched the prompt")
     expect(object(value.repo_context).repoSource).toBe("detected")

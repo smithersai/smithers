@@ -12,11 +12,12 @@ import { resources } from "../src/internal/backend/Resources.ts"
 
 const dirs: Array<string> = []
 afterEach(async () => {
+  activeFetch = undefined
   vi.restoreAllMocks()
-  vi.unstubAllGlobals()
   for (const dir of dirs.splice(0)) await rm(dir, { recursive: true, force: true })
 })
 
+let activeFetch: typeof globalThis.fetch | undefined
 const client = async () => {
   const home = await mkdtemp(join(tmpdir(), "one-cli-issue-views-"))
   dirs.push(home)
@@ -28,6 +29,10 @@ const client = async () => {
       SMITHERS_TOKEN: "session-secret",
       SMITHERS_DISABLE_SYSTEM_KEYRING: "1"
     },
+    fetch: ((...args: Parameters<typeof globalThis.fetch>) => {
+      if (activeFetch === undefined) throw new Error("serve() was not configured for this test")
+      return activeFetch(...args)
+    }) as typeof globalThis.fetch,
     stderr: { write: () => {}, isTTY: false, columns: 80 }
   })
 }
@@ -35,7 +40,7 @@ const client = async () => {
 /** Serves `pages` in order and records every requested URL. */
 const serve = (pages: ReadonlyArray<{ readonly body: unknown; readonly next?: string; readonly status?: number }>) => {
   const urls: Array<string> = []
-  vi.stubGlobal("fetch", async (input: string) => {
+  activeFetch = (async (input: string) => {
     urls.push(input)
     const page = pages[urls.length - 1]
     if (page === undefined) throw new Error(`unexpected request ${input}`)
@@ -46,7 +51,7 @@ const serve = (pages: ReadonlyArray<{ readonly body: unknown; readonly next?: st
       headers.set("link", `<${url}>; rel="next"`)
     }
     return new Response(JSON.stringify(page.body), { status: page.status ?? 200, headers })
-  })
+  }) as typeof globalThis.fetch
   return urls
 }
 

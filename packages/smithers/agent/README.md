@@ -716,7 +716,7 @@ The root entry point exports these namespaces, and each is also importable from
 `CellPlugin`, `Checkpointed`, `ChildFlows`, `EngineChildren`, `EventSink`,
 `ExternalAgent`, `FlowEngineLike`, `FlowStore`, `InMemoryWorkspaceSandbox`,
 `Memory`, `MemoryCalibration`, `MemoryMine`, `MemorySnapshotRecorder`,
-`ModelStep`, `PromoteFlows`, `QuotaPolicy`, `RunawayGuard`, `ScriptedJudge`,
+`ModelPolicy`, `ModelStep`, `PromoteFlows`, `QuotaPolicy`, `RunawayGuard`, `ScriptedJudge`,
 `Seat`, `SeatResolver`, `SeatRouter`, `SmithersPlugin`, `StandardFlows`,
 `Transcript`, `WorkspaceObservation`, `WorkspaceSandbox`.
 

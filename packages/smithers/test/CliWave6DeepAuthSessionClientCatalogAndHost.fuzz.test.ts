@@ -533,7 +533,9 @@ process.exit(0)
 
         const sshRow = catalogCommands.find((r) => r.name === "ssh")
         if (sshRow) {
-          const hostKeys = [{ known_hosts_line: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl" }]
+          const hostKeys = [{
+            known_hosts_line: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl"
+          }]
           sshEndpoint = { host: "127.0.0.1", port: 2222, branch: "smithers/feat-1", host_keys: hostKeys }
           const sshOk: any = await dispatchCatalog(c, sshRow, { branch: "smithers/feat-1" })
           expect(sshOk.code).toBe(0)

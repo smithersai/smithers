@@ -14,17 +14,17 @@ import * as Bash from "../src/Bash.ts"
 import * as Container from "../src/Container.ts"
 import * as Edit from "../src/Edit.ts"
 import * as Grep from "../src/Grep.ts"
+import * as ApplyPatchText from "../src/internal/ApplyPatch.ts"
+import * as EnvelopePrecheck from "../src/internal/EnvelopePrecheck.ts"
+import * as Exec from "../src/internal/Exec.ts"
+import * as FileMutation from "../src/internal/FileMutation.ts"
+import * as GitWorktree from "../src/internal/GitWorktree.ts"
 import * as Read from "../src/Read.ts"
 import * as SearchContract from "../src/SearchContract.ts"
 import * as StdError from "../src/StdError.ts"
 import * as TestRun from "../src/TestRun.ts"
 import * as TestRunner from "../src/TestRunner.ts"
 import * as Write from "../src/Write.ts"
-import * as ApplyPatchText from "../src/internal/ApplyPatch.ts"
-import * as EnvelopePrecheck from "../src/internal/EnvelopePrecheck.ts"
-import * as Exec from "../src/internal/Exec.ts"
-import * as FileMutation from "../src/internal/FileMutation.ts"
-import * as GitWorktree from "../src/internal/GitWorktree.ts"
 
 const executions = Number(process.env.EFFECT_FUZZ_EXECUTIONS ?? (process.env.EFFECT_FUZZ ? "250" : "60"))
 const seed = Number(process.env.EFFECT_FUZZ_SEED ?? "20261124")
@@ -830,9 +830,7 @@ describe("StdWave7Deep fuzz", () => {
           Effect.gen(function*() {
             const word = safeSlug(raw)
             if (variant === 0) {
-              const spawner = makeFaultySpawner(() =>
-                Effect.succeed(createHandle([], [], Effect.succeed(ExitCode(0))))
-              )
+              const spawner = makeFaultySpawner(() => Effect.succeed(createHandle([], [], Effect.succeed(ExitCode(0)))))
               const err = yield* Effect.flip(
                 Bash.run({ mode: "unhermetic", command: `echo ${word}`, container: "c1" }).pipe(
                   Effect.provide(Layer.merge(spawner, Path.layer))
@@ -925,9 +923,7 @@ describe("StdWave7Deep fuzz", () => {
               const denied = Bash.outsideContainer("/box", "/etc/passwd")
               expect(denied.code).toBe("outside_container")
               const sealedHandler = Bash.sealed("/box", { cwd: "/work" })
-              const spawner = makeFaultySpawner(() =>
-                Effect.succeed(createHandle([], [], Effect.succeed(ExitCode(0))))
-              )
+              const spawner = makeFaultySpawner(() => Effect.succeed(createHandle([], [], Effect.succeed(ExitCode(0)))))
               const wrongContainer = yield* Effect.flip(
                 sealedHandler({ mode: "unhermetic", command: `echo ${word}`, container: "/other" }).pipe(
                   Effect.provide(Layer.merge(spawner, Path.layer))

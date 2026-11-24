@@ -22,14 +22,13 @@ const makeEvent = (
   kind: string,
   payload: Record<string, unknown>,
   occurredAt = 1_700_000_000_000 + sequence * 100
-): ControlSchema.ControlEvent =>
-  ({
-    sequence,
-    runId,
-    kind,
-    occurredAt,
-    payload: payload as ControlSchema.ControlEvent["payload"]
-  })
+): ControlSchema.ControlEvent => ({
+  sequence,
+  runId,
+  kind,
+  occurredAt,
+  payload: payload as ControlSchema.ControlEvent["payload"]
+})
 
 const die = () => Effect.die("unused")
 
@@ -222,7 +221,10 @@ describe("@smthrs/gateway Wave 7 deep fuzz (RunTrace scoped mergeModel, Diagnosi
 
             const mem = RunTrace.runMemoryOf(records)
             expect(mem === undefined || typeof mem === "object").toBe(true)
-            const mon = RunTrace.monitorFromJournal({ ...runMeta, status: terminalStatus }, records, undefined, { childBoundaries: true, includeJournal: true })
+            const mon = RunTrace.monitorFromJournal({ ...runMeta, status: terminalStatus }, records, undefined, {
+              childBoundaries: true,
+              includeJournal: true
+            })
             expect(mon).toBeDefined()
 
             expect(RunTrace.callSubject({ path: "a.ts" })).toBeDefined()
@@ -278,7 +280,12 @@ describe("@smthrs/gateway Wave 7 deep fuzz (RunTrace scoped mergeModel, Diagnosi
                 message: "rate limited"
               }),
               ...(includeForeign
-                ? [makeEvent(6, "foreign-child-run", "control.run.failed", { runId: "foreign-child-run", error: "child died" })]
+                ? [
+                  makeEvent(6, "foreign-child-run", "control.run.failed", {
+                    runId: "foreign-child-run",
+                    error: "child died"
+                  })
+                ]
                 : []),
               makeEvent(7, runId, "control.run.completed", {
                 runId,
@@ -300,7 +307,8 @@ describe("@smthrs/gateway Wave 7 deep fuzz (RunTrace scoped mergeModel, Diagnosi
             expect(Diagnosis.usd(costUsd).startsWith("$")).toBe(true)
             expect(Diagnosis.duration(combined).length).toBeGreaterThan(0)
             expect(Diagnosis.render({ runId, flowId: "build" }, combined).length).toBeGreaterThan(0)
-            const cr = Diagnosis.committedResult(events); expect(cr === undefined || typeof cr === "object").toBe(true)
+            const cr = Diagnosis.committedResult(events)
+            expect(cr === undefined || typeof cr === "object").toBe(true)
             expect(Diagnosis.emptyDigest().inputTokens).toBe(0)
             if (includeForeign) {
               expect(Diagnosis.foreignVerdict(events[5]!, runId)).toBe(true)
@@ -313,117 +321,148 @@ describe("@smthrs/gateway Wave 7 deep fuzz (RunTrace scoped mergeModel, Diagnosi
     assertPassed(report)
   })
 
-  it("Projections clips oversized events, preserves relevance memory verdicts, deduplicates workspace approvals across parent/child runs, and computes flow-durations", async () => {
-    const arb = Arbitrary.schema(
-      Schema.Struct({
-        oversizedKind: Schema.Literals(["text", "wideObject", "relevance"]),
-        cyclicParent: Schema.Boolean,
-        selectorKind: Schema.Literals(["workspace-approvals", "workspace-flow-durations", "workspace-runs", "run-summary"])
-      })
-    )
+  it(
+    "Projections clips oversized events, preserves relevance memory verdicts, deduplicates workspace approvals across parent/child runs, and computes flow-durations",
+    async () => {
+      const arb = Arbitrary.schema(
+        Schema.Struct({
+          oversizedKind: Schema.Literals(["text", "wideObject", "relevance"]),
+          cyclicParent: Schema.Boolean,
+          selectorKind: Schema.Literals([
+            "workspace-approvals",
+            "workspace-flow-durations",
+            "workspace-runs",
+            "run-summary"
+          ])
+        })
+      )
 
-    const report = await Effect.runPromise(
-      Fuzz.run(
-        arb,
-        ({ oversizedKind, cyclicParent, selectorKind }) =>
-          Effect.gen(function*() {
-            const parentRun: ControlSchema.RunSummary = {
-              runId: "run-parent",
-              flowId: "ship",
-              status: "waiting-approval",
-              createdAt: 1_700_000_000_000,
-              updatedAt: 1_700_000_001_000,
-              ...(cyclicParent ? { parentRunId: "run-child" } : {})
-            }
+      const report = await Effect.runPromise(
+        Fuzz.run(
+          arb,
+          ({ oversizedKind, cyclicParent, selectorKind }) =>
+            Effect.gen(function*() {
+              const parentRun: ControlSchema.RunSummary = {
+                runId: "run-parent",
+                flowId: "ship",
+                status: "waiting-approval",
+                createdAt: 1_700_000_000_000,
+                updatedAt: 1_700_000_001_000,
+                ...(cyclicParent ? { parentRunId: "run-child" } : {})
+              }
 
-            const childRun: ControlSchema.RunSummary = {
-              runId: "run-child",
-              parentRunId: "run-parent",
-              flowId: "sub-check",
-              status: "completed",
-              createdAt: 1_700_000_000_500,
-              updatedAt: 1_700_000_002_500
-            }
+              const childRun: ControlSchema.RunSummary = {
+                runId: "run-child",
+                parentRunId: "run-parent",
+                flowId: "sub-check",
+                status: "completed",
+                createdAt: 1_700_000_000_500,
+                updatedAt: 1_700_000_002_500
+              }
 
-            const hugePayload: Record<string, unknown> =
-              oversizedKind === "text"
+              const hugePayload: Record<string, unknown> = oversizedKind === "text"
                 ? { runId: "run-parent", note: "x".repeat(25_000) }
                 : oversizedKind === "wideObject"
-                  ? Object.fromEntries(Array.from({ length: 1_200 }, (_, i) => [`k_${i}`, `val_${i}_padding_text`]))
-                  : {
-                      runId: "run-parent",
-                      selected: [
-                        { kind: "memory", id: "m1", title: "Keep me" },
-                        ...Array.from({ length: 500 }, (_, i) => ({ kind: "flow", id: `f_${i}`, desc: "d".repeat(60) }))
-                      ],
-                      rejected: [{ kind: "memory", id: "m2", title: "Rejected mem" }]
-                    }
-
-            const approvalPayload = {
-              runId: "run-parent",
-              waitRunId: "run-child",
-              requestId: "req-shared-1",
-              question: "Approve deploy?",
-              payload: {
-                target: {
-                  _tag: "Node",
-                  runId: "run-child",
-                  requestId: "req-shared-1",
-                  digest: "d1",
-                  envelope: { capabilities: [], flows: [], budget: {} }
-                },
-                scope: "run",
-                idempotencyKey: "k1"
-              }
-            }
-
-            const parentEvents: ReadonlyArray<ControlSchema.ControlEvent> = [
-              makeEvent(1, "run-parent", "control.run.started", { runId: "run-parent", flowId: "ship" }, 1_700_000_000_000),
-              makeEvent(
-                2,
-                "run-parent",
-                oversizedKind === "relevance" ? "control.agent.relevance-settled" : "control.agent.note",
-                hugePayload,
-                1_700_000_000_200
-              ),
-              makeEvent(3, "run-parent", "control.approval.requested", approvalPayload, 1_700_000_000_400)
-            ]
-
-            const childEvents: ReadonlyArray<ControlSchema.ControlEvent> = [
-              makeEvent(1, "run-child", "control.run.started", { runId: "run-child", flowId: "sub-check" }, 1_700_000_000_500),
-              makeEvent(2, "run-child", "control.approval.requested", { ...approvalPayload, runId: "run-child" }, 1_700_000_000_600),
-              makeEvent(3, "run-child", "control.run.completed", { runId: "run-child", status: "completed" }, 1_700_000_002_500)
-            ]
-
-            const fakeControl = makeControl({
-              list: (req) => {
-                if (req._tag === "runs") {
-                  if (req.filters?.runId) {
-                    const found = [parentRun, childRun].filter((r) => r.runId === req.filters?.runId)
-                    return Effect.succeed({ _tag: "runs", items: found })
-                  }
-                  return Effect.succeed({ _tag: "runs", items: [parentRun, childRun] })
+                ? Object.fromEntries(Array.from({ length: 1_200 }, (_, i) => [`k_${i}`, `val_${i}_padding_text`]))
+                : {
+                  runId: "run-parent",
+                  selected: [
+                    { kind: "memory", id: "m1", title: "Keep me" },
+                    ...Array.from({ length: 500 }, (_, i) => ({ kind: "flow", id: `f_${i}`, desc: "d".repeat(60) }))
+                  ],
+                  rejected: [{ kind: "memory", id: "m2", title: "Rejected mem" }]
                 }
-                return Effect.succeed({ _tag: "runs", items: [] })
-              },
-              watch: (req) => {
-                const src = req.runId === "run-parent" ? parentEvents : req.runId === "run-child" ? childEvents : []
-                return Stream.fromIterable(src)
-              }
-            })
 
-            const proj = yield* Projections.make(fakeControl)
-            const selector =
-              selectorKind === "run-summary"
+              const approvalPayload = {
+                runId: "run-parent",
+                waitRunId: "run-child",
+                requestId: "req-shared-1",
+                question: "Approve deploy?",
+                payload: {
+                  target: {
+                    _tag: "Node",
+                    runId: "run-child",
+                    requestId: "req-shared-1",
+                    digest: "d1",
+                    envelope: { capabilities: [], flows: [], budget: {} }
+                  },
+                  scope: "run",
+                  idempotencyKey: "k1"
+                }
+              }
+
+              const parentEvents: ReadonlyArray<ControlSchema.ControlEvent> = [
+                makeEvent(
+                  1,
+                  "run-parent",
+                  "control.run.started",
+                  { runId: "run-parent", flowId: "ship" },
+                  1_700_000_000_000
+                ),
+                makeEvent(
+                  2,
+                  "run-parent",
+                  oversizedKind === "relevance" ? "control.agent.relevance-settled" : "control.agent.note",
+                  hugePayload,
+                  1_700_000_000_200
+                ),
+                makeEvent(3, "run-parent", "control.approval.requested", approvalPayload, 1_700_000_000_400)
+              ]
+
+              const childEvents: ReadonlyArray<ControlSchema.ControlEvent> = [
+                makeEvent(
+                  1,
+                  "run-child",
+                  "control.run.started",
+                  { runId: "run-child", flowId: "sub-check" },
+                  1_700_000_000_500
+                ),
+                makeEvent(
+                  2,
+                  "run-child",
+                  "control.approval.requested",
+                  { ...approvalPayload, runId: "run-child" },
+                  1_700_000_000_600
+                ),
+                makeEvent(
+                  3,
+                  "run-child",
+                  "control.run.completed",
+                  { runId: "run-child", status: "completed" },
+                  1_700_000_002_500
+                )
+              ]
+
+              const fakeControl = makeControl({
+                list: (req) => {
+                  if (req._tag === "runs") {
+                    if (req.filters?.runId) {
+                      const found = [parentRun, childRun].filter((r) => r.runId === req.filters?.runId)
+                      return Effect.succeed({ _tag: "runs", items: found })
+                    }
+                    return Effect.succeed({ _tag: "runs", items: [parentRun, childRun] })
+                  }
+                  return Effect.succeed({ _tag: "runs", items: [] })
+                },
+                watch: (req) => {
+                  const src = req.runId === "run-parent" ? parentEvents : req.runId === "run-child" ? childEvents : []
+                  return Stream.fromIterable(src)
+                }
+              })
+
+              const proj = yield* Projections.make(fakeControl)
+              const selector = selectorKind === "run-summary"
                 ? ({ _tag: "run-summary", runId: "run-parent" } as const)
                 : ({ _tag: selectorKind } as never)
-            const snap = yield* proj.snapshot(selector).pipe(Effect.exit)
-            expect(snap).toBeDefined()
-            return true
-          }),
-        { executions: Math.min(executions, 45), seed: seed + 2 }
+              const snap = yield* proj.snapshot(selector).pipe(Effect.exit)
+              expect(snap).toBeDefined()
+              return true
+            }),
+          { executions: Math.min(executions, 45), seed: seed + 2 }
+        )
       )
-    )
-    assertPassed(report)
-  }, 60_000)
+      assertPassed(report)
+    },
+    60_000
+  )
 })

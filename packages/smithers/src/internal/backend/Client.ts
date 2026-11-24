@@ -640,7 +640,7 @@ export class Client {
         throw cause
       }
     }
-    const response = await fetch(`${origin}${path}`, request).catch((error: unknown) => {
+    const response = await (this.runtime.fetch ?? fetch)(`${origin}${path}`, request).catch((error: unknown) => {
       if (requestSignal?.aborted) {
         throw withCause(new Refused({ fault: "user", code: "cancelled", message: "API request cancelled" }), error)
       }
