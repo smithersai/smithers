@@ -46,14 +46,14 @@
     "test:design-mock": "node --test .specs/design/mock/player.test.mjs .specs/design/mock/src/sites/reporting.test.mjs",
     "test:jsdoc": "node --test eslint.jsdoc.test.mjs",
     "lint:jsdoc": "eslint --config eslint.config.js \"packages/*/src/**/*.ts\" \"packages/*/*/src/**/*.ts\" \"packages/*/*/*/src/**/*.ts\" --max-warnings=0",
-    "fuzz": "node scripts/fuzz-repo.mjs",
-    "fuzz:v8": "node scripts/fuzz-repo.mjs --v8",
-    "fuzz:coverage": "node scripts/fuzz-repo.mjs --coverage",
-    "fuzz:rust": "node scripts/fuzz-repo.mjs --rust",
-    "fuzz:rust:libfuzzer": "node scripts/fuzz-repo.mjs --rust --libfuzzer-seconds=30",
-    "fuzz:zig": "node scripts/fuzz-repo.mjs --zig",
-    "fuzz:zig:campaign": "node scripts/fuzz-repo.mjs --zig --zig-runs=10000",
-    "fuzz:all": "node scripts/fuzz-repo.mjs --all"
+    "fuzz": "node packages/repo-targets/scripts/fuzz-repo.mjs",
+    "fuzz:v8": "node packages/repo-targets/scripts/fuzz-repo.mjs --v8",
+    "fuzz:coverage": "node packages/repo-targets/scripts/fuzz-repo.mjs --coverage",
+    "fuzz:rust": "node packages/repo-targets/scripts/fuzz-repo.mjs --rust",
+    "fuzz:rust:libfuzzer": "node packages/repo-targets/scripts/fuzz-repo.mjs --rust --libfuzzer-seconds=30",
+    "fuzz:zig": "node packages/repo-targets/scripts/fuzz-repo.mjs --zig",
+    "fuzz:zig:campaign": "node packages/repo-targets/scripts/fuzz-repo.mjs --zig --zig-runs=10000",
+    "fuzz:all": "node packages/repo-targets/scripts/fuzz-repo.mjs --all"
   },
   "engines": {
     "node": ">=26.4.0",

@@ -9,8 +9,10 @@
  *              match a tracked file. A deleted workflow file left in the
  *              actionlint list killed a CI job before it tested anything.
  *   forbidden  A tracked path with a `node_modules` segment (file or
- *              symlink), a bundler temp file `.smithers-<hex>-*.ts`, or any
- *              file the root .gitignore excludes.
+ *              symlink), a bundler temp file `.smithers-<hex>-*.ts`, a file
+ *              under the root `scripts/` directory (repository automation is
+ *              a `.smithers/flows/` flow or lives with its owning package,
+ *              #4094), or any file the root .gitignore excludes.
  *   scaffold   Lane scaffolding in tracked source: `smithers-mvp-`,
  *              `go-build-<word>`, `/private/tmp/claude-`, `scratchpad/lanes`.
  *              `.specs/`, docs (a `docs` path segment, `.md`/`.mdx`) and this
@@ -313,7 +315,7 @@ const fixturePackage = /(?:^|\/)(?:test|tests|__tests__)\/fixtures?\//
 
 const tempFile = /^\.smithers-[0-9a-f]{8,}-.*\.ts$/
 
-/** `forbidden` findings: node_modules paths, bundler temp files, tracked-but-gitignored files. */
+/** `forbidden` findings: node_modules paths, bundler temp files, root `scripts/` files, tracked-but-gitignored files. */
 export const forbiddenFindings = (files, rules) => {
   const found = []
   for (const file of files) {
@@ -331,6 +333,13 @@ export const forbiddenFindings = (files, rules) => {
         line: 0,
         rule: "forbidden",
         message: "tracked bundler temp file (.smithers-<hex>-*.ts); delete it"
+      })
+    } else if (parts.length > 1 && parts[0] === "scripts") {
+      found.push({
+        path: file,
+        line: 0,
+        rule: "forbidden",
+        message: "tracked file under the root scripts/ directory; move it into a .smithers/flows/ flow or its owning package"
       })
     } else if (isIgnored(rules, file)) {
       found.push({

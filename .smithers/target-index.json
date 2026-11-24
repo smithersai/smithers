@@ -69298,7 +69298,7 @@
       },
       {
         "kind": "file",
-        "path": "scripts/fuzz-repo.test.mjs"
+        "path": "packages/repo-targets/scripts/fuzz-repo.test.mjs"
       },
       {
         "kind": "file",
@@ -69314,7 +69314,7 @@
       },
       {
         "kind": "file",
-        "path": "scripts/fuzz-repo.mjs"
+        "path": "packages/repo-targets/scripts/fuzz-repo.mjs"
       },
       {
         "kind": "file",

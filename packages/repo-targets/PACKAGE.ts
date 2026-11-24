@@ -361,13 +361,13 @@ const bunCoverage = Smithers.NodeTest({
 const workspacePackages = Smithers.NodeTest({
   runner: Smithers.testRunner([
     Smithers.file("//packages/repo-targets/scripts/workspace-packages.test.mjs"),
-    Smithers.file("//scripts/fuzz-repo.test.mjs")
+    Smithers.file("//packages/repo-targets/scripts/fuzz-repo.test.mjs")
   ]),
   srcs: [
     Smithers.file("//packages/repo-targets/scripts/workspace-packages.mjs"),
     Smithers.file("//packages/repo-targets/scripts/workspace-packages.d.mts"),
     Smithers.file("//packages/repo-targets/scripts/workspace-root.mjs"),
-    Smithers.file("//scripts/fuzz-repo.mjs"),
+    Smithers.file("//packages/repo-targets/scripts/fuzz-repo.mjs"),
     // fuzz-repo.mjs writes the observer's syscall header from these two.
     Smithers.file("//packages/smithers/build/build-cli/scripts/build-observe.mjs"),
     Smithers.file("//packages/smithers/build/build-cli/src/internal/RecordedCalls.ts")

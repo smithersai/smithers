@@ -5,16 +5,16 @@ import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 import { test } from "node:test"
 import { fileURLToPath } from "node:url"
-import { callsHeader } from "../packages/smithers/build/build-cli/scripts/build-observe.mjs"
+import { callsHeader } from "../../smithers/build/build-cli/scripts/build-observe.mjs"
 import { ensureObserveCallsHeader, execAsync, outputLimit } from "./fuzz-repo.mjs"
 
 const fixture = (t) => {
   const root = mkdtempSync(join(tmpdir(), "fuzz-repo-contract-"))
   t.after(() => rmSync(root, { recursive: true, force: true }))
-  const tool = join(root, "scripts/fuzz-repo.mjs")
+  const tool = join(root, "packages/repo-targets/scripts/fuzz-repo.mjs")
   const copies = [
-    ["./fuzz-repo.mjs", "scripts/fuzz-repo.mjs"],
-    ["../packages/repo-targets/scripts/workspace-root.mjs", "packages/repo-targets/scripts/workspace-root.mjs"]
+    ["./fuzz-repo.mjs", "packages/repo-targets/scripts/fuzz-repo.mjs"],
+    ["./workspace-root.mjs", "packages/repo-targets/scripts/workspace-root.mjs"]
   ]
   for (const [from, to] of copies) {
     mkdirSync(dirname(join(root, to)), { recursive: true })

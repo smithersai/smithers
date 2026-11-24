@@ -3,7 +3,7 @@
  * Unified repository-wide fuzz runner & fuzz-only coverage reporter.
  *
  * Usage:
- *   node scripts/fuzz-repo.mjs [options]
+ *   node packages/repo-targets/scripts/fuzz-repo.mjs [options]
  *
  * Options:
  *   --executions <N>        Override EFFECT_FUZZ_EXECUTIONS
@@ -24,11 +24,9 @@
 import { spawn } from "node:child_process"
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { cpus, tmpdir } from "node:os"
-import { dirname, join, relative, resolve } from "node:path"
-import { fileURLToPath, pathToFileURL } from "node:url"
-import { isMain } from "../packages/repo-targets/scripts/workspace-root.mjs"
-
-const rootDir = resolve(dirname(fileURLToPath(import.meta.url)), "..")
+import { dirname, join, relative } from "node:path"
+import { pathToFileURL } from "node:url"
+import { isMain, repoRoot as rootDir } from "./workspace-root.mjs"
 
 const switches = new Set([
   "--v8",

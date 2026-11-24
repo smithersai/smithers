@@ -135,6 +135,21 @@ test("forbidden: node_modules files and symlinks, bundler temp files and gitigno
   ])
 })
 
+test("forbidden: files under the root scripts/ directory are named; nested scripts/ directories pass (#4094)", () => {
+  const files = [
+    "scripts/fuzz-repo.mjs",
+    "scripts/ci/cloud.sh",
+    "scripts",
+    "packages/repo-targets/scripts/fuzz-repo.mjs",
+    "apps/site/scripts/generate-llms.mjs",
+    ".github/scripts/ci/cloud.sh"
+  ]
+  assert.deepEqual(messages(forbiddenFindings(files, [])), [
+    "scripts/fuzz-repo.mjs: forbidden: tracked file under the root scripts/ directory; move it into a .smithers/flows/ flow or its owning package",
+    "scripts/ci/cloud.sh: forbidden: tracked file under the root scripts/ directory; move it into a .smithers/flows/ flow or its owning package"
+  ])
+})
+
 test("forbidden: a clean file list passes", () => {
   const rules = parseIgnore("node_modules/\ndist/\n")
   assert.deepEqual(forbiddenFindings(["src/a.ts", ".smithers/WORKSPACE.ts", ".smithers-notes.md"], rules), [])
