@@ -1277,8 +1277,14 @@ const sort = (
   const trees = treeOrder(jobs)
   const prerequisites = new Map(jobs.map((job) => [job.id, new Set(job.needs)]))
   // Each recipe starts with the tree left by its predecessor, including siblings of a grouping recipe.
+  // A job left out only because it failed on this machine does not block independent recipes in the same tree.
   for (const ids of trees.values()) {
-    for (let i = 1; i < ids.length; i++) prerequisites.get(ids[i]!)!.add(ids[i - 1]!)
+    for (let i = 1; i < ids.length; i++) {
+      const earlier = ids[i - 1]!
+      const earlierOwn = byId.get(earlier)!.unsupported
+      if (earlierOwn.length > 0 && earlierOwn.every((reason) => reason.feature === failsHere)) continue
+      prerequisites.get(ids[i]!)!.add(earlier)
+    }
   }
   const dependents = new Map<string, Array<Job>>()
   const pending = new Map<string, number>()

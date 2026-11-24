@@ -237,6 +237,24 @@ describe("Smithers build, as apply starts it", { timeout: 300_000 }, () => {
     const labels = args.filter((arg) => arg.startsWith("//"))
     expect(labels.some((label) => label.includes("ci.yml-good"))).toBe(true)
     expect(labels.some((label) => label.includes("ci.yml-bad"))).toBe(true)
+    const otherHost = process.platform === "win32" ? "linux" : "win32"
+    const baseFiles = await generated(root)
+    const crossHost = baseFiles.map((file) =>
+      file.path === ".smithers/WORKSPACE.smithers"
+        ? {
+          ...file,
+          content: file.content.replace(
+            "const step0 = S.Shell.Test({\n",
+            `const step0 = S.Shell.Test({\n  hosts: ["${otherHost}"],\n`
+          )
+        }
+        : file
+    )
+    expect(await asked(smthrs.command, root, crossHost)).toEqual([])
+    const filteredLabels = smthrs.args(2).filter((arg) => arg.startsWith("//"))
+    expect(filteredLabels.length).toBe(labels.length - 1)
+    const withoutWorkspace = baseFiles.filter((file) => file.path !== ".smithers/WORKSPACE.smithers")
+    expect(await asked(smthrs.command, root, withoutWorkspace)).toEqual([])
     expect(args).toEqual(expect.arrayContaining(["--plan", "--format", "json", "--workspace", "--cache-dir"]))
     const env = smthrs.env(1)
     expect(env).not.toContain("SMITHERS_CI_TEST_SECRET")

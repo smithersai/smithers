@@ -27,6 +27,7 @@
  * @since 0.1.0
  */
 
+import { thisMachine } from "../inventory/Tools.ts"
 import { errorLine } from "../contract/Command.vibe"
 import type { NotReplayed } from "../contract/Inventory.vibe"
 import { type Failure, type GeneratedFile, writtenFiles } from "../contract/Parts.vibe"
@@ -144,10 +145,30 @@ export const refusedTargets = (printed: string): string | undefined => {
   return message === undefined || machineFault.test(message) ? undefined : message
 }
 
-/** The labels of each job's targets, by job, in the order the target map names them. */
-const labelsByJob = (map: TargetMap): ReadonlyMap<string, ReadonlySet<string>> => {
+/** Labels of generated targets pinned to a host other than this machine, which `smthrs ci <label> --plan` refuses by OS. */
+const otherHostLabels = (files: ReadonlyArray<GeneratedFile>, host: string = thisMachine().host): ReadonlySet<string> => {
+  const declaration = files.find((file) => file.path === ".smithers/WORKSPACE.smithers")
+  if (declaration === undefined) return new Set()
+  const otherSteps = new Set<string>()
+  for (const match of declaration.content.matchAll(/^const (step\d+) = S\.Shell\.(?:Build|Test)\(\{([\s\S]*?)^\}\)/gm)) {
+    const pinned = /^  hosts: \["([a-z0-9]+)"\]/m.exec(match[2]!)
+    if (pinned !== null && pinned[1] !== host) otherSteps.add(match[1]!)
+  }
+  if (otherSteps.size === 0) return new Set()
+  const labels = new Set<string>()
+  for (const match of declaration.content.matchAll(/^    "([^"]+)": (step\d+)/gm)) {
+    if (otherSteps.has(match[2]!)) labels.add(`//:${match[1]!}`)
+  }
+  return labels
+}
+
+/** The labels of each job's targets runnable on this host, by job, in the order the target map names them. */
+const labelsByJob = (map: TargetMap, skip: ReadonlySet<string>): ReadonlyMap<string, ReadonlySet<string>> => {
   const jobs = new Map<string, Set<string>>()
-  for (const entry of map.targets) jobs.set(entry.job, (jobs.get(entry.job) ?? new Set<string>()).add(entry.label))
+  for (const entry of map.targets) {
+    if (skip.has(entry.label)) continue
+    jobs.set(entry.job, (jobs.get(entry.job) ?? new Set<string>()).add(entry.label))
+  }
   return jobs
 }
 
@@ -177,7 +198,7 @@ export effect function refusals(
   const map = Schema.decodeUnknownEffect(Schema.fromJsonString(TargetMap))(written.content) catch effect (cause) => {
     throw failed("invalid-document", `the target map the generator wrote is not one: ${cause.message}`)
   }
-  const jobs = labelsByJob(map)
+  const jobs = labelsByJob(map, otherHostLabels(files))
   if (jobs.size === 0) return []
   const fs = try FileSystem.FileSystem
   const path = try Path.Path

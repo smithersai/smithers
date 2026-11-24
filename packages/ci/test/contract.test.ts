@@ -1246,6 +1246,19 @@ describe("contract changes, sixth round: a job that cannot be reproduced is neve
     expect(Inventory.notReplayed(blocked).find((entry) => entry.job === "justfile:build")?.reasons).toEqual([
       { feature: "needs", detail: "justfile:build needs justfile:lint, which is not replayed" }
     ])
+    const failedHere = decode({
+      ...just,
+      jobs: just.jobs.map((entry) =>
+        entry.id === "justfile:lint"
+          ? { ...entry, unsupported: [{ feature: "fails-here", detail: "failed on this machine" }] }
+          : entry
+      )
+    })
+    expect(Inventory.ci(failedHere).jobs.map((entry) => entry.id)).toEqual([
+      "justfile:install",
+      "justfile:build",
+      "justfile:test"
+    ])
     // A job of another tree between them keeps its place, and a need on a job of another tree orders nothing.
     const script = {
       ...job("package.json:ci", [], ["npm test"]),

@@ -126,6 +126,8 @@ it.skipIf(!available)("exercises box provisioning, replay receipts, and both app
         "--setenv",
         "BASH_ENV",
         join(root, "setup"),
+        "--unsetenv",
+        "NODE_OPTIONS",
         "--setenv",
         "stage",
         stage,

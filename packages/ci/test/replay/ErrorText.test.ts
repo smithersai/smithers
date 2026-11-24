@@ -133,4 +133,11 @@ describe("errorText", () => {
     })
     expect(errorText(unreadable)).toBe("an error with no message")
   })
+
+  it("bounds very large diagnostic fields without regex blowup", () => {
+    expect(errorText({ message: "read failed", path: "x".repeat(400) })).toBe(
+      "read failed (path: " + "x".repeat(300) + "…)"
+    )
+    expect(errorText({ message: "E-extra preE E2 [E]", code: "E" })).toBe("E-extra preE E2 [E]")
+  })
 })

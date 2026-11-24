@@ -563,7 +563,7 @@ describe("confine", () => {
         [],
         [process.execPath, script]
       )
-      const ran = spawnSync(launcher, args, { encoding: "utf8" })
+      const ran = spawnSync(launcher, args, { encoding: "utf8", env: { ...process.env, NODE_OPTIONS: "" } })
       expect(ran.status, ran.stderr).toBe(0)
       expect(ran.stdout.trim()).toBe("17")
     }

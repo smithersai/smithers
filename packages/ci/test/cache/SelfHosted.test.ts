@@ -102,7 +102,9 @@ const evaluate = (text: string, settings: Settings): string => {
     "vars.SMITHERS_CACHE_URL": settings.variable,
     "secrets.SMITHERS_CACHE_TOKEN": settings.token,
     "secrets.SMITHERS_CACHE_READ_TOKEN": settings.readToken,
-    "github.event_name": settings.event ?? "push"
+    "github.event_name": settings.event ?? "push",
+    "github.ref_name": "main",
+    "github.event.repository.default_branch": "main"
   }
   const expression = /^\$\{\{ (.*) \}\}$/.exec(text)
   if (expression === null) return text
