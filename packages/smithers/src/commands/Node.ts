@@ -3,8 +3,8 @@
  * @since 1.0.0
  */
 
+import * as NodeHttpClient from "@effect/platform-node/NodeHttpClient"
 import { Effect, Layer } from "effect"
-import * as FetchHttpClient from "effect/http/FetchHttpClient"
 import { Cli, z } from "incur"
 import { hostname } from "node:os"
 import * as McpRemote from "../cli/McpRemote.ts"
@@ -69,7 +69,7 @@ export const createNodeCli = () =>
           collectAccounts: c.options.accounts,
           collectCfbox: c.options.cfbox,
           once: c.options.once
-        }).pipe(Effect.provide(Layer.merge(collectors, FetchHttpClient.layer)))
+        }).pipe(Effect.provide(Layer.merge(collectors, NodeHttpClient.layerNodeHttp)))
         await Effect.runPromise(program)
         return { ok: true, nodeId, origin, once: c.options.once }
       }
@@ -117,7 +117,7 @@ export const createNodeCli = () =>
         return await Effect.runPromise(
           McpClient.callTool({ origin, token }, "fleet_overview", {
             includeEnded: c.options.includeEnded
-          }).pipe(Effect.provide(FetchHttpClient.layer))
+          }).pipe(Effect.provide(NodeHttpClient.layerNodeHttp))
         )
       }
     })

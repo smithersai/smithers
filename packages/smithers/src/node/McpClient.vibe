@@ -56,10 +56,14 @@ export effect function callTool(
     HttpClientRequest.setHeader("content-type", "application/json"),
     HttpClientRequest.setHeader("accept", "application/json, text/event-stream"),
     HttpClientRequest.setHeader("authorization", `Bearer ${config.token}`),
+    HttpClientRequest.setHeader("user-agent", "smthrs-fleet/1.0"),
     HttpClientRequest.bodyJsonUnsafe(payload)
   )
   const res = client.execute(req) catch effect (err) => {
-    throw new McpCallError({ code: "http", message: `MCP transport error: ${String(err)}` })
+    const rec = err as { readonly reason?: { readonly cause?: unknown }; readonly cause?: unknown }
+    const inner = rec?.reason?.cause ?? rec?.cause
+    const detail = inner !== undefined && inner !== null ? ` [cause: ${String(inner)}]` : ""
+    throw new McpCallError({ code: "http", message: `MCP transport error: ${String(err)}${detail}` })
   }
   if (res.status === 401 || res.status === 403) {
     throw new McpCallError({ code: "unauthorized", message: `MCP auth refused (${res.status})` })
