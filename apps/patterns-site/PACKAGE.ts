@@ -22,6 +22,8 @@ const listFiles = (relDir: string): Array<string> => {
   const found: Array<string> = []
   for (const entry of readdirSync(abs, { withFileTypes: true })) {
     if (entry.name.startsWith(".")) continue
+    if (entry.isDirectory() && (entry.name === "node_modules" || entry.name === "dist")) continue
+    if (entry.isFile() && (entry.name.endsWith(".d.ts") || entry.name.endsWith(".d.vibe.ts"))) continue
     const child = `${dir}/${entry.name}`
     if (entry.isDirectory()) found.push(...listFiles(child))
     else if (entry.isFile()) found.push(child)

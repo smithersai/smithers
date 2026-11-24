@@ -1343,8 +1343,9 @@ const followed = (path: string, hostFacts: Host): ReadonlyArray<Link> | undefine
   const api = pathApi(path)
   const isLink = hostFacts.isSymbolicLink ?? isSymbolicLink
   const links: Array<Link> = []
-  let current = api.parse(path).root
-  const pending = path.slice(current.length).split(api.sep)
+  const normalized = api.normalize(path)
+  let current = api.parse(normalized).root
+  const pending = normalized.slice(current.length).split(api.sep)
   while (pending.length > 0) {
     const part = pending.shift()!
     if (part === "" || part === ".") continue
@@ -1360,9 +1361,10 @@ const followed = (path: string, hostFacts: Host): ReadonlyArray<Link> | undefine
     const target = (hostFacts.readlink ?? readlink)(next)
     if (target === undefined || links.length === 40) return undefined
     links.push({ path: next, target })
-    const targetRoot = api.parse(target).root
+    const normalizedTarget = api.normalize(target)
+    const targetRoot = api.parse(normalizedTarget).root
     if (targetRoot !== "") current = targetRoot
-    pending.unshift(...target.slice(targetRoot.length).split(api.sep))
+    pending.unshift(...normalizedTarget.slice(targetRoot.length).split(api.sep))
   }
   return links
 }
@@ -1438,7 +1440,7 @@ export const toolchain = (
   // adds the version it chose as it runs, so the path it names in full is often not there.
   const namedBy = (text: string): ReadonlyArray<string> => {
     if (home === undefined) return []
-    const byPath = new RegExp(`${home.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/([\\w.@%+=:,/-]+)`, "g")
+    const byPath = new RegExp(`${home.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}[\\\\/]([\\w.@%+=:,/-]+)`, "g")
     const found: Array<string> = []
     for (const match of [...text.matchAll(throughHome), ...text.matchAll(byPath)]) {
       let path = api.join(home, (match[1] ?? match[2]) as string)

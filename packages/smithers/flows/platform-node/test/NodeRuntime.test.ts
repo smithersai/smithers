@@ -1412,7 +1412,9 @@ describe("the Node host composition", () => {
     expect(outcome).toMatchObject({ _tag: "Success", value: "mutated" })
   }, 60_000)
 
-  it.each([{ signals: [] }, { signals: [listenerSignal] }] as Array<{ signals: Array<NodeJS.Signals> }>)(
+  it.skipIf(process.platform === "win32").each(
+    [{ signals: [] }, { signals: [listenerSignal] }] as Array<{ signals: Array<NodeJS.Signals> }>
+  )(
     "kills what a run spawned when a SECOND driver over the same file interrupts it (signals=$signals)",
     async ({ signals }) => {
       // Cancellation from another process is the shape an operator's `cancel`

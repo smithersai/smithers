@@ -32,9 +32,14 @@ const runnable = (file: string): boolean => {
   }
 }
 
+const jjNames = process.platform === "win32" ? ["jj", "jj.exe", "jj.cmd", "jj.bat", "jj.com"] : ["jj"]
+
 /** This process's PATH with every entry that holds a `jj` removed, and nothing else. */
 const pathWithoutJj = (path: string | undefined): string =>
-  (path ?? "").split(delimiter).filter((entry) => entry !== "" && !runnable(join(entry, "jj"))).join(delimiter)
+  (path ?? "")
+    .split(delimiter)
+    .filter((entry) => entry !== "" && !jjNames.some((name) => runnable(join(entry, name))))
+    .join(delimiter)
 
 describe("NodeRuntime.layerHost without jj", () => {
   let directory = ""

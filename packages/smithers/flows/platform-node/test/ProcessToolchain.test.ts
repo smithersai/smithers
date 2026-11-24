@@ -60,10 +60,12 @@ const secrets = (): ReadonlyArray<string> => [
   `${home}/plain/notes.txt`
 ]
 
+const p = (...parts: ReadonlyArray<string>): string => NodePath.join(...parts)
+
 beforeAll(() => {
   base = scratch()
-  home = `${base}/home`
-  workspace = `${base}/ws`
+  home = p(base, "home")
+  workspace = p(base, "ws")
   NodeFs.mkdirSync(workspace, { recursive: true })
   for (const secret of secrets()) write(secret, "private")
 
@@ -76,8 +78,8 @@ beforeAll(() => {
   // fnm: PATH names a per-shell link to the installation.
   nodeInstallation(`${home}/.local/share/fnm/node-versions/v22.1.0/installation`, "fnm")
   link(
-    `${home}/.local/share/fnm/node-versions/v22.1.0/installation`,
-    `${home}/.local/state/fnm_multishells/4242_1700000000000`
+    p(home, ".local/share/fnm/node-versions/v22.1.0/installation"),
+    p(home, ".local/state/fnm_multishells/4242_1700000000000")
   )
 
   // Volta: every tool is a link to one shim, which reads the default platform under VOLTA_HOME or HOME.
@@ -378,9 +380,9 @@ const layouts: ReadonlyArray<Layout> = [
 
 describe("the tools on PATH under a home directory", () => {
   it.each(layouts)("reads $name and its install root, and nothing else of the home", (layout) => {
-    const searchPath = layout.path.map((entry) => `${home}/${entry}`).join(":")
+    const searchPath = layout.path.map((entry) => p(home, entry)).join(NodePath.delimiter)
     const found = ProcessSandbox.toolchain(searchPath, workspace, facts(searchPath))
-    const absolute = (path: string) => (path.startsWith(".") ? path : `${base}/${path}`)
+    const absolute = (path: string) => (path.startsWith(".") ? path : p(base, path))
     expect([...found.reads].sort()).toEqual(layout.reads.map(absolute).sort())
     expect(found.links).toEqual((layout.links ?? []).map(([path, target]) => ({
       path: absolute(path),
@@ -391,9 +393,9 @@ describe("the tools on PATH under a home directory", () => {
     )
     expect(found.selections).toEqual((layout.selections ?? []).map(absolute))
     // No read is, holds, or sits inside anything private.
-    for (const secret of secrets()) {
+    for (const secret of secrets().map((entry) => NodePath.normalize(entry))) {
       for (const read of found.reads) {
-        expect(secret === read || secret.startsWith(`${read}/`), `${read} opens ${secret}`).toBe(false)
+        expect(secret === read || secret.startsWith(`${read}${NodePath.sep}`), `${read} opens ${secret}`).toBe(false)
       }
     }
   })
@@ -460,8 +462,8 @@ describe("what the toolchain never opens", () => {
   })
 
   it("brings nothing for a script that runs a file in another directory of the home", () => {
-    const far = found(`${home}/wrappers/bin`)
-    expect(far.reads).toEqual([`${home}/wrappers/bin`])
+    const far = found(p(home, "wrappers/bin"))
+    expect(far.reads).toEqual([p(home, "wrappers/bin")])
     expect(far.privateLinks).toEqual([])
   })
 
@@ -475,13 +477,13 @@ describe("what the toolchain never opens", () => {
   })
 
   it("takes no directory for one tool's on a script that names only its program directory, the directory itself, what is not there, or a path outside the home", () => {
-    const plain = found(`${home}/plain/bin`)
-    expect(plain.reads).toEqual([`${home}/plain/bin`])
+    const plain = found(p(home, "plain/bin"))
+    expect(plain.reads).toEqual([p(home, "plain/bin")])
     expect(plain.privateLinks).toEqual([])
   })
 
   it("reads no script on a host that cannot read or list one, and names no path of a home it does not know", () => {
-    const shims = `${home}/.vm/shims`
+    const shims = p(home, ".vm/shims")
     expect(found(shims, { scriptText: undefined }).reads).toEqual([shims])
     expect(found(shims, { entries: undefined }).reads).toEqual([shims])
     const homeless = found(shims, { home: undefined })
@@ -495,39 +497,39 @@ describe("what the toolchain never opens", () => {
   })
 
   it("opens the one file when the directory holding a linked program may not be opened, and nothing when the file may not", () => {
-    const odd = found(`${base}/opt/odd/bin`)
+    const odd = found(p(base, "opt/odd/bin"))
     // `loose` is a file in the home itself; `agent` is in a credential location; `inside` is in the workspace.
-    expect([...odd.reads].sort()).toEqual([`${home}/loose-tool`, `${base}/opt/impl`, `${base}/opt/odd/bin`])
+    expect([...odd.reads].sort()).toEqual([p(home, "loose-tool"), p(base, "opt/impl"), p(base, "opt/odd/bin")].sort())
     // A link that sits in the workspace or in a credential location is never placed.
     expect(odd.links).toEqual([])
   })
 
   it("follows a package manager's shim script to the package it runs", () => {
-    const pnpm = found(`${base}/opt/pnpm-home`)
+    const pnpm = found(p(base, "opt/pnpm-home"))
     // `stale` names a program that is gone, so it brings nothing.
-    expect(pnpm.reads).toEqual([`${base}/opt/pnpm-home`, `${base}/opt/store/pnpm`])
+    expect(pnpm.reads).toEqual([p(base, "opt/pnpm-home"), p(base, "opt/store/pnpm")])
   })
 
   it("places a version manager's home under the private one only when it is under the real one", () => {
-    const outside = found(`${base}/opt/asdf/shims`)
-    expect(outside.reads).toEqual([`${base}/opt/asdf`])
+    const outside = found(p(base, "opt/asdf/shims"))
+    expect(outside.reads).toEqual([p(base, "opt/asdf")])
     expect(outside.privateLinks).toEqual([])
     expect(outside.selections).toEqual([])
   })
 
   it("adds a version file and a rustup home only where they exist", () => {
-    const bare = `${base}/bare-home`
-    const asdf = found(`${bare}/.asdf/shims`, { home: bare })
-    expect(asdf.reads).toEqual([`${bare}/.asdf`])
-    expect(asdf.privateLinks).toEqual([{ path: "home/.asdf", target: `${bare}/.asdf` }])
+    const bare = p(base, "bare-home")
+    const asdf = found(p(bare, ".asdf/shims"), { home: bare })
+    expect(asdf.reads).toEqual([p(bare, ".asdf")])
+    expect(asdf.privateLinks).toEqual([{ path: "home/.asdf", target: p(bare, ".asdf") }])
     expect(asdf.selections).toEqual([])
-    const rustless = found(`${bare}/.cargo/bin`, { home: bare })
-    expect(rustless.reads).toEqual([`${bare}/.cargo/bin`])
+    const rustless = found(p(bare, ".cargo/bin"), { home: bare })
+    expect(rustless.reads).toEqual([p(bare, ".cargo/bin")])
     expect(rustless.privateLinks).toEqual([])
     // A rustup home with no settings chooses nothing yet.
-    const unset = found(`${bare}/with-rustup/bin`, { home: `${bare}/with-rustup/home` })
-    expect(unset.reads).toEqual([`${bare}/with-rustup/bin`, `${bare}/with-rustup/home/.rustup`])
-    expect(unset.privateLinks).toEqual([{ path: "home/.rustup", target: `${bare}/with-rustup/home/.rustup` }])
+    const unset = found(p(bare, "with-rustup/bin"), { home: p(bare, "with-rustup/home") })
+    expect(unset.reads).toEqual([p(bare, "with-rustup/bin"), p(bare, "with-rustup/home/.rustup")])
+    expect(unset.privateLinks).toEqual([{ path: "home/.rustup", target: p(bare, "with-rustup/home/.rustup") }])
     expect(unset.selections).toEqual([])
   })
 
@@ -594,14 +596,14 @@ describe("what the toolchain never opens", () => {
   })
 
   it("reads links with the real host when the host facts carry no probe", () => {
-    const searchPath = `${home}/.local/state/fnm_multishells/4242_1700000000000/bin`
+    const searchPath = p(home, ".local/state/fnm_multishells/4242_1700000000000/bin")
     const { isSymbolicLink: _, readlink: __, ...bare } = facts(searchPath)
     expect(ProcessSandbox.toolchain(searchPath, workspace, bare).links).toEqual([{
-      path: `${home}/.local/state/fnm_multishells/4242_1700000000000`,
-      target: `${home}/.local/share/fnm/node-versions/v22.1.0/installation`
+      path: p(home, ".local/state/fnm_multishells/4242_1700000000000"),
+      target: p(home, ".local/share/fnm/node-versions/v22.1.0/installation")
     }])
     // A path the probe calls a link and the host cannot read as one is left out.
-    const confused = { ...bare, isSymbolicLink: (path: string) => path === `${home}/.local` }
+    const confused = { ...bare, isSymbolicLink: (path: string) => path === p(home, ".local") }
     expect(ProcessSandbox.toolchain(searchPath, workspace, confused).links).toEqual([])
   })
 })
@@ -702,11 +704,13 @@ describe("the Windows drives WSL mounts", () => {
 
   it("hold no PATH entry the toolchain lists, named directly or through a link", () => {
     // WSL appends the Windows PATH; listing System32 over the drive mount took minutes per run.
-    const drive = `${base}/wsl/mnt/c`
-    program(`${drive}/Windows/System32/where.exe`, "echo windows")
-    link(`${drive}/Windows/System32`, `${base}/wsl/system32`)
-    const bin = `${home}/.bun/bin`
-    const searchPath = `${drive}/Windows/System32:${base}/wsl/system32:${bin}`
+    const drive = p(base, "wsl/mnt/c")
+    const system32 = p(drive, "Windows/System32")
+    const linked = p(base, "wsl/system32")
+    program(p(system32, "where.exe"), "echo windows")
+    link(system32, linked)
+    const bin = p(home, ".bun/bin")
+    const searchPath = [system32, linked, bin].join(NodePath.delimiter)
     const hostFacts = facts(searchPath)
     const listed: Array<string> = []
     const found = ProcessSandbox.toolchain(searchPath, workspace, {
@@ -720,6 +724,6 @@ describe("the Windows drives WSL mounts", () => {
     expect(found).toEqual(ProcessSandbox.toolchain(bin, workspace, facts(bin)))
     expect(listed.filter((directory) => directory.startsWith(drive))).toEqual([])
     // Without the fact, the same PATH lists the drive.
-    expect(ProcessSandbox.toolchain(searchPath, workspace, hostFacts).reads).toContain(`${drive}/Windows/System32`)
+    expect(ProcessSandbox.toolchain(searchPath, workspace, hostFacts).reads).toContain(system32)
   })
 })

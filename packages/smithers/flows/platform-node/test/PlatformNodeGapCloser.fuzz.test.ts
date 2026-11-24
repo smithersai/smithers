@@ -362,8 +362,10 @@ process.stdin.on("data", (chunk) => {
 
     // Exercise DestinationBrokerRoot.createBrokerDirectory (valid and invalid owner)
     const brokerParent = join(base, "broker-root")
-    const validBroker = await Effect.runPromise(createBrokerDirectory(brokerParent, process.getuid?.()))
-    expect(validBroker.startsWith(brokerParent)).toBe(true)
+    if (process.platform !== "win32") {
+      const validBroker = await Effect.runPromise(createBrokerDirectory(brokerParent, process.getuid?.()))
+      expect(validBroker.startsWith(brokerParent)).toBe(true)
+    }
     const badBroker = await Effect.runPromise(Effect.exit(createBrokerDirectory(brokerParent, -1)))
     expect(Exit.isFailure(badBroker)).toBe(true)
 

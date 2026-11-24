@@ -1960,15 +1960,24 @@ describe("mechanism selection", () => {
 
   it("never searches a relative PATH entry, which names a directory below the current one (#4999)", () => {
     const { base } = writeFixture()
+    let cleanup = base
     try {
-      const bin = NodePath.join(base, "bin")
+      let fixtureRoot = base
+      if (NodePath.isAbsolute(NodePath.relative(process.cwd(), base))) {
+        fixtureRoot = NodeFs.mkdtempSync(NodePath.join(process.cwd(), ".smthrs-rel-path-"))
+        cleanup = fixtureRoot
+      }
+      const bin = NodePath.join(fixtureRoot, "bin")
       NodeFs.mkdirSync(bin)
       NodeFs.writeFileSync(NodePath.join(bin, "bwrap"), "#!/bin/sh\n", { mode: 0o755 })
+      const relativeBin = NodePath.relative(process.cwd(), bin)
+      expect(NodePath.isAbsolute(relativeBin)).toBe(false)
       // The relative spelling reaches the same file from the test's current directory.
-      expect(ProcessSandbox.host({ PATH: NodePath.relative(process.cwd(), bin) }).executable("bwrap")).toBeUndefined()
+      expect(ProcessSandbox.host({ PATH: relativeBin }).executable("bwrap")).toBeUndefined()
       expect(ProcessSandbox.host({ PATH: bin }).executable("bwrap")).toBe(NodePath.join(bin, "bwrap"))
     } finally {
       NodeFs.rmSync(base, { recursive: true, force: true })
+      if (cleanup !== base) NodeFs.rmSync(cleanup, { recursive: true, force: true })
     }
   })
 
@@ -2827,14 +2836,12 @@ describe("a staged workspace", () => {
     expect(slashReads).toContain("C:/tools")
     const found = ProcessSandbox.plan(
       {
-        command: "mytool",
-        args: [],
-        env: { PATH: "C:\\tools;C:\\other" },
+        network: "none",
         reads: [],
         writes: []
       },
       { workspaceRoot: "C:\\work", cwd: "C:\\work", tmp: "C:\\tmp" },
-      { ...winHost, bwrap: "/usr/bin/bwrap" }
+      winHost
     )
     expect(found).toBeDefined()
   })

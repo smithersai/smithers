@@ -32,14 +32,28 @@ export const make = (
   execute: (request: HostRequest) => Effect.Effect<unknown, PlatformError.PlatformError>,
   failure: (path: string, cause: unknown) => PlatformError.PlatformError
 ): Service => {
+  const under = (prefix: string, candidate: string): string | undefined => {
+    const suffix = relative(prefix, candidate)
+    return suffix === "" || suffix === ".." || suffix.startsWith(`..${sep}`) || isAbsolute(suffix)
+      ? undefined
+      : suffix
+  }
   const pin = (base: string, target: string) =>
     Effect.tryPromise({
       try: async () => {
-        const suffix = relative(resolve(base), resolve(target))
-        if (suffix === "" || suffix === ".." || suffix.startsWith(`..${sep}`) || isAbsolute(suffix)) {
+        const resolvedTarget = resolve(target)
+        let suffix = under(resolve(base), resolvedTarget)
+        let root: string
+        try {
+          root = await realpath(base)
+        } catch (cause) {
+          if (suffix === undefined) throw new Error("private publication must be below its trusted root")
+          throw cause
+        }
+        if (suffix === undefined) suffix = under(root, resolvedTarget)
+        if (suffix === undefined) {
           throw new Error("private publication must be below its trusted root")
         }
-        const root = await realpath(base)
         const info = await stat(root, { bigint: true })
         return {
           boundaryRoot: root,

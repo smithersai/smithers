@@ -968,42 +968,46 @@ describe("Wave 10 Boost2: SandboxedFlow error paths, limits, ceiling mismatch & 
     60_000
   )
 
-  it("fuzzes PsSnapshot and ProcessReaper.posixSystemWith against synthetic ps executables", async () => {
-    const dir = fs.mkdtempSync(nodePath.join(os.tmpdir(), "w10-ps-"))
-    try {
-      const makePs = (name: string, body: string): string => {
-        const p = nodePath.join(dir, name)
-        fs.writeFileSync(p, `#!/bin/sh\n${body}\n`, { mode: 0o755 })
-        return p
+  it.skipIf(process.platform === "win32")(
+    "fuzzes PsSnapshot and ProcessReaper.posixSystemWith against synthetic ps executables",
+    async () => {
+      const dir = fs.mkdtempSync(nodePath.join(os.tmpdir(), "w10-ps-"))
+      try {
+        const makePs = (name: string, body: string): string => {
+          const p = nodePath.join(dir, name)
+          fs.writeFileSync(p, `#!/bin/sh\n${body}\n`, { mode: 0o755 })
+          return p
+        }
+        const psBadExit = makePs("ps-badexit", "exit 1")
+        const psEmpty = makePs("ps-empty", "exit 0")
+        const psBadDate = makePs("ps-baddate", `echo "${process.pid} ${process.pid} S not-a-date"`)
+        const psHugePid = makePs("ps-huge", `echo "99999999999999999999 1 S Mon Jan  1 00:00:00 2024"`)
+        const psValid = makePs(
+          "ps-valid",
+          `echo "${process.pid} 4242 S Mon Jan  1 00:00:00 2024"\necho "4243 4242 Z Mon Jan  1 00:00:00 2024"`
+        )
+
+        expect(PsSnapshot.psGroupSnapshot(psBadExit)(4242)).toBeUndefined()
+        expect(PsSnapshot.psGroupSnapshot(psEmpty)(4242)).toBeUndefined()
+        expect(PsSnapshot.psGroupSnapshot(psBadDate)(process.pid)).toBeUndefined()
+        expect(PsSnapshot.psGroupSnapshot(psHugePid)(1)).toBeUndefined()
+        const snap = PsSnapshot.psGroupSnapshot(psValid)(4242)
+        expect(snap?.ownGroup).toBe(4242)
+        expect(snap?.members.length).toBe(2)
+
+        const sysBad = ProcessReaper.posixSystemWith({ psExecutable: psBadExit })
+        expect(sysBad.startedAtMs(process.pid)._tag).toBe("unavailable")
+        expect(sysBad.startedAtMs(99999999)._tag).toBe("gone")
+        const sysBadDate = ProcessReaper.posixSystemWith({ psExecutable: psBadDate })
+        expect(sysBadDate.startedAtMs(process.pid)._tag).toBe("unavailable")
+        const sysMissing = ProcessReaper.posixSystemWith({ psExecutable: nodePath.join(dir, "nope") })
+        expect(sysMissing.startedAtMs(process.pid)._tag).toBe("unavailable")
+      } finally {
+        fs.rmSync(dir, { recursive: true, force: true })
       }
-      const psBadExit = makePs("ps-badexit", "exit 1")
-      const psEmpty = makePs("ps-empty", "exit 0")
-      const psBadDate = makePs("ps-baddate", `echo "${process.pid} ${process.pid} S not-a-date"`)
-      const psHugePid = makePs("ps-huge", `echo "99999999999999999999 1 S Mon Jan  1 00:00:00 2024"`)
-      const psValid = makePs(
-        "ps-valid",
-        `echo "${process.pid} 4242 S Mon Jan  1 00:00:00 2024"\necho "4243 4242 Z Mon Jan  1 00:00:00 2024"`
-      )
-
-      expect(PsSnapshot.psGroupSnapshot(psBadExit)(4242)).toBeUndefined()
-      expect(PsSnapshot.psGroupSnapshot(psEmpty)(4242)).toBeUndefined()
-      expect(PsSnapshot.psGroupSnapshot(psBadDate)(process.pid)).toBeUndefined()
-      expect(PsSnapshot.psGroupSnapshot(psHugePid)(1)).toBeUndefined()
-      const snap = PsSnapshot.psGroupSnapshot(psValid)(4242)
-      expect(snap?.ownGroup).toBe(4242)
-      expect(snap?.members.length).toBe(2)
-
-      const sysBad = ProcessReaper.posixSystemWith({ psExecutable: psBadExit })
-      expect(sysBad.startedAtMs(process.pid)._tag).toBe("unavailable")
-      expect(sysBad.startedAtMs(99999999)._tag).toBe("gone")
-      const sysBadDate = ProcessReaper.posixSystemWith({ psExecutable: psBadDate })
-      expect(sysBadDate.startedAtMs(process.pid)._tag).toBe("unavailable")
-      const sysMissing = ProcessReaper.posixSystemWith({ psExecutable: nodePath.join(dir, "nope") })
-      expect(sysMissing.startedAtMs(process.pid)._tag).toBe("unavailable")
-    } finally {
-      fs.rmSync(dir, { recursive: true, force: true })
-    }
-  }, 60_000)
+    },
+    60_000
+  )
 })
 
 describe("Wave 10 Boost2: ProcessSandbox docker/diagnose/broker, ProcessReaper windows/proc & PipedProcess", () => {
@@ -1135,7 +1139,8 @@ describe("Wave 10 Boost2: ProcessSandbox docker/diagnose/broker, ProcessReaper w
       expect(ProcessReaper.systemFor("win32")).toBeDefined()
       expect(ProcessReaper.systemFor("linux")).toBeDefined()
       expect(ProcessReaper.systemFor("darwin")).toBeDefined()
-      expect(ProcessReaper.groupSnapshotFor("win32")(123)).toBeDefined()
+      expect(typeof ProcessReaper.groupSnapshotFor("win32")).toBe("function")
+      if (process.platform !== "win32") expect(ProcessReaper.groupSnapshotFor("win32")(123)).toBeDefined()
       expect(typeof ProcessReaper.groupSnapshotFor("darwin")).toBe("function")
 
       // Real PipedProcess pipeline via NodeHost.layerContained
@@ -1147,8 +1152,8 @@ describe("Wave 10 Boost2: ProcessSandbox docker/diagnose/broker, ProcessReaper w
         Effect.scoped(
           Effect.gen(function*() {
             const spawner = yield* ChildProcessSpawner
-            const pipeline = ChildProcess.make("printf", ["hello-pipe\\n"]).pipe(
-              ChildProcess.pipeTo(ChildProcess.make("cat", []))
+            const pipeline = ChildProcess.make(process.execPath, ["-e", "process.stdout.write('hello-pipe\\n')"]).pipe(
+              ChildProcess.pipeTo(ChildProcess.make(process.execPath, ["-e", "process.stdin.pipe(process.stdout)"]))
             )
             const handle = yield* spawner.spawn(pipeline)
             const out = yield* Stream.mkString(Stream.decodeText(handle.stdout))

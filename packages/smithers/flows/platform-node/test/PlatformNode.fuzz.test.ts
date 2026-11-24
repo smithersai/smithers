@@ -186,99 +186,102 @@ describe("@smthrs/platform-node fuzz invariants", () => {
     assertPassed(report)
   })
 
-  it("DestinationProxy enforces Proxy-Authorization, host allowlists, and rejects SSRF/userinfo smuggling", async () => {
-    const token = "fuzz-broker-token-99"
-    const goodAuth = "Basic " + Buffer.from(`broker:${token}`).toString("base64")
-    const sockDir = nodeFs.mkdtempSync(join(tmpdir(), "dp-"))
-    const sockPath = join(sockDir, "p.sock")
+  it.skipIf(process.platform === "win32")(
+    "DestinationProxy enforces Proxy-Authorization, host allowlists, and rejects SSRF/userinfo smuggling",
+    async () => {
+      const token = "fuzz-broker-token-99"
+      const goodAuth = "Basic " + Buffer.from(`broker:${token}`).toString("base64")
+      const sockDir = nodeFs.mkdtempSync(join(tmpdir(), "dp-"))
+      const sockPath = join(sockDir, "p.sock")
 
-    const arb = Arbitrary.schema(
-      Schema.Struct({
-        caseKind: Schema.Literals([
-          "allowed",
-          "no_auth",
-          "wrong_auth",
-          "disallowed_host",
-          "ssrf_metadata",
-          "userinfo_smuggle",
-          "https_on_http_get",
-          "malformed_url"
-        ]),
-        suffix: Schema.String.pipe(Schema.check(Schema.isMaxLength(16)))
-      })
-    )
-
-    const report = await Effect.runPromise(
-      Effect.scoped(
-        Effect.gen(function*() {
-          yield* DestinationProxy.open(sockPath, [`127.0.0.1:${originPort}`], token)
-          return yield* Fuzz.run(
-            arb,
-            (input) =>
-              Effect.promise(async () => {
-                const safeSuffix = input.suffix.replace(/[^a-zA-Z0-9_-]/g, "x")
-                switch (input.caseKind) {
-                  case "allowed": {
-                    const res = await httpViaSocket(
-                      sockPath,
-                      `http://127.0.0.1:${originPort}/${safeSuffix}`,
-                      { "proxy-authorization": goodAuth }
-                    )
-                    return res.code === 200 && res.body === `ok:/${safeSuffix}`
-                  }
-                  case "no_auth": {
-                    const res = await httpViaSocket(sockPath, `http://127.0.0.1:${originPort}/`, {})
-                    return res.code === 407
-                  }
-                  case "wrong_auth": {
-                    const res = await httpViaSocket(sockPath, `http://127.0.0.1:${originPort}/`, {
-                      "proxy-authorization": "Basic " + Buffer.from(`broker:wrong-${safeSuffix}`).toString("base64")
-                    })
-                    return res.code === 407
-                  }
-                  case "disallowed_host": {
-                    const res = await httpViaSocket(sockPath, `http://evil.example/${safeSuffix}`, {
-                      "proxy-authorization": goodAuth
-                    })
-                    return res.code === 403
-                  }
-                  case "ssrf_metadata": {
-                    const res = await httpViaSocket(sockPath, "http://169.254.169.254/latest/meta-data/", {
-                      "proxy-authorization": goodAuth
-                    })
-                    return res.code === 403
-                  }
-                  case "userinfo_smuggle": {
-                    const res = await httpViaSocket(
-                      sockPath,
-                      `http://127.0.0.1:80@evil.example/${safeSuffix}`,
-                      { "proxy-authorization": goodAuth }
-                    )
-                    return res.code === 403
-                  }
-                  case "https_on_http_get": {
-                    const res = await httpViaSocket(
-                      sockPath,
-                      `https://127.0.0.1:${originPort}/${safeSuffix}`,
-                      { "proxy-authorization": goodAuth }
-                    )
-                    return res.code === 403
-                  }
-                  case "malformed_url": {
-                    const res = await httpViaSocket(sockPath, "/relative-not-absolute", {
-                      "proxy-authorization": goodAuth
-                    })
-                    return res.code === 400
-                  }
-                }
-              }),
-            { seed: seed + 1, executions: Math.min(executions, 60) }
-          )
+      const arb = Arbitrary.schema(
+        Schema.Struct({
+          caseKind: Schema.Literals([
+            "allowed",
+            "no_auth",
+            "wrong_auth",
+            "disallowed_host",
+            "ssrf_metadata",
+            "userinfo_smuggle",
+            "https_on_http_get",
+            "malformed_url"
+          ]),
+          suffix: Schema.String.pipe(Schema.check(Schema.isMaxLength(16)))
         })
       )
-    )
-    assertPassed(report)
-  })
+
+      const report = await Effect.runPromise(
+        Effect.scoped(
+          Effect.gen(function*() {
+            yield* DestinationProxy.open(sockPath, [`127.0.0.1:${originPort}`], token)
+            return yield* Fuzz.run(
+              arb,
+              (input) =>
+                Effect.promise(async () => {
+                  const safeSuffix = input.suffix.replace(/[^a-zA-Z0-9_-]/g, "x")
+                  switch (input.caseKind) {
+                    case "allowed": {
+                      const res = await httpViaSocket(
+                        sockPath,
+                        `http://127.0.0.1:${originPort}/${safeSuffix}`,
+                        { "proxy-authorization": goodAuth }
+                      )
+                      return res.code === 200 && res.body === `ok:/${safeSuffix}`
+                    }
+                    case "no_auth": {
+                      const res = await httpViaSocket(sockPath, `http://127.0.0.1:${originPort}/`, {})
+                      return res.code === 407
+                    }
+                    case "wrong_auth": {
+                      const res = await httpViaSocket(sockPath, `http://127.0.0.1:${originPort}/`, {
+                        "proxy-authorization": "Basic " + Buffer.from(`broker:wrong-${safeSuffix}`).toString("base64")
+                      })
+                      return res.code === 407
+                    }
+                    case "disallowed_host": {
+                      const res = await httpViaSocket(sockPath, `http://evil.example/${safeSuffix}`, {
+                        "proxy-authorization": goodAuth
+                      })
+                      return res.code === 403
+                    }
+                    case "ssrf_metadata": {
+                      const res = await httpViaSocket(sockPath, "http://169.254.169.254/latest/meta-data/", {
+                        "proxy-authorization": goodAuth
+                      })
+                      return res.code === 403
+                    }
+                    case "userinfo_smuggle": {
+                      const res = await httpViaSocket(
+                        sockPath,
+                        `http://127.0.0.1:80@evil.example/${safeSuffix}`,
+                        { "proxy-authorization": goodAuth }
+                      )
+                      return res.code === 403
+                    }
+                    case "https_on_http_get": {
+                      const res = await httpViaSocket(
+                        sockPath,
+                        `https://127.0.0.1:${originPort}/${safeSuffix}`,
+                        { "proxy-authorization": goodAuth }
+                      )
+                      return res.code === 403
+                    }
+                    case "malformed_url": {
+                      const res = await httpViaSocket(sockPath, "/relative-not-absolute", {
+                        "proxy-authorization": goodAuth
+                      })
+                      return res.code === 400
+                    }
+                  }
+                }),
+              { seed: seed + 1, executions: Math.min(executions, 60) }
+            )
+          })
+        )
+      )
+      assertPassed(report)
+    }
+  )
 
   it("HostLiveness never falsely declares other hosts, invalid pids, or EPERM processes dead and detects ESRCH cleanly", async () => {
     const arb = Arbitrary.schema(
@@ -480,8 +483,8 @@ describe("@smthrs/platform-node fuzz invariants", () => {
                 return yield* Effect.scoped(
                   Effect.gen(function*() {
                     const handle = yield* ScopedProcess.spawn({
-                      command: "sh",
-                      args: ["-c", `printf '%s' '${safeTag}'; exit ${input.exitCode}`]
+                      command: process.execPath,
+                      args: ["-e", `process.stdout.write(${JSON.stringify(safeTag)}); process.exit(${input.exitCode})`]
                     })
                     const chunks = yield* Stream.runCollect(handle.stdout)
                     const code = yield* handle.exitCode
@@ -513,11 +516,26 @@ describe("@smthrs/platform-node fuzz invariants", () => {
                 const pinned = yield* svc.directory(canonicalTempRoot, join(canonicalTempRoot, `priv-${safeTag}`))
                 yield* svc.write(canonicalTempRoot, join(pinned, "a.bin"), new Uint8Array([1, 2, 3]))
                 yield* svc.append(join(canonicalTempRoot, "log.txt"), safeTag)
+                const aliasBase = join(canonicalTempRoot, `alias-${safeTag}`)
+                if (!nodeFs.existsSync(aliasBase)) nodeFs.symlinkSync(canonicalTempRoot, aliasBase)
+                const aliasPinned = yield* svc.directory(aliasBase, join(aliasBase, `priv-${safeTag}`))
+                yield* svc.write(aliasBase, join(aliasPinned, "b.bin"), new Uint8Array([4, 5, 6]))
+                const missingBase = join(canonicalTempRoot, `missing-${safeTag}`)
                 const beforeEscape = seen.length
                 const escExit = yield* Effect.exit(
                   svc.directory(canonicalTempRoot, join(canonicalTempRoot, "..", "escape"))
                 )
-                return pinned.startsWith(canonicalTempRoot) && Exit.isFailure(escExit) && seen.length === beforeEscape
+                const missingEscExit = yield* Effect.exit(
+                  svc.directory(missingBase, join(canonicalTempRoot, "..", "escape"))
+                )
+                const missingChildExit = yield* Effect.exit(
+                  svc.directory(missingBase, join(missingBase, "child"))
+                )
+                return pinned.startsWith(canonicalTempRoot) &&
+                  Exit.isFailure(escExit) &&
+                  Exit.isFailure(missingEscExit) &&
+                  Exit.isFailure(missingChildExit) &&
+                  seen.length === beforeEscape
               }
 
               if (input.mode === "gc_collect") {
@@ -750,73 +768,76 @@ describe("@smthrs/platform-node fuzz invariants", () => {
     assertPassed(report)
   })
 
-  it("DestinationProxy CONNECT tunnel & EgressHttpClient proxy/resolveHost enforce allowlists", async () => {
-    const token = "tunnel-token-77"
-    const goodAuth = "Basic " + Buffer.from(`broker:${token}`).toString("base64")
-    const sockDir = nodeFs.mkdtempSync(join(tmpdir(), "dt-"))
-    const sockPath = join(sockDir, "t.sock")
+  it.skipIf(process.platform === "win32")(
+    "DestinationProxy CONNECT tunnel & EgressHttpClient proxy/resolveHost enforce allowlists",
+    async () => {
+      const token = "tunnel-token-77"
+      const goodAuth = "Basic " + Buffer.from(`broker:${token}`).toString("base64")
+      const sockDir = nodeFs.mkdtempSync(join(tmpdir(), "dt-"))
+      const sockPath = join(sockDir, "t.sock")
 
-    const arb = Arbitrary.schema(
-      Schema.Struct({
-        mode: Schema.Literals([
-          "connect_allowed",
-          "connect_denied",
-          "connect_noauth",
-          "egress_proxy_env",
-          "resolve_local"
-        ])
-      })
-    )
-
-    const report = await Effect.runPromise(
-      Effect.scoped(
-        Effect.gen(function*() {
-          yield* DestinationProxy.open(sockPath, [`127.0.0.1:${originPort}`], token)
-          return yield* Fuzz.run(
-            arb,
-            (input) =>
-              Effect.gen(function*() {
-                if (input.mode === "resolve_local") {
-                  const addrs = yield* EgressHttpClient.resolveHost("127.0.0.1")
-                  return addrs.includes("127.0.0.1")
-                }
-                if (input.mode === "egress_proxy_env") {
-                  const d = yield* EgressHttpClient.dispatcher({
-                    HTTP_PROXY: `http://127.0.0.1:${originPort}`,
-                    NO_PROXY: "localhost,127.0.0.1,.internal"
-                  })
-                  return d !== undefined
-                }
-                const responseHead = yield* Effect.promise(
-                  () =>
-                    new Promise<string>((resolve, reject) => {
-                      const c = Net.connect(sockPath)
-                      let out = ""
-                      const host = input.mode === "connect_denied" ? "evil.example:443" : `127.0.0.1:${originPort}`
-                      const authHdr = input.mode === "connect_noauth" ? "" : `Proxy-Authorization: ${goodAuth}\r\n`
-                      c.on("connect", () => {
-                        c.write(`CONNECT ${host} HTTP/1.1\r\nHost: ${host}\r\n${authHdr}\r\n`)
-                      })
-                      c.on("data", (d) => {
-                        out += String(d)
-                        if (out.includes("\r\n\r\n")) {
-                          c.destroy()
-                          resolve(out)
-                        }
-                      })
-                      c.on("close", () => resolve(out))
-                      c.on("error", reject)
-                    })
-                )
-                if (input.mode === "connect_allowed") return responseHead.startsWith("HTTP/1.1 200")
-                if (input.mode === "connect_noauth") return responseHead.startsWith("HTTP/1.1 407")
-                return responseHead.startsWith("HTTP/1.1 403")
-              }),
-            { seed: seed + 7, executions: Math.min(executions, 30) }
-          )
+      const arb = Arbitrary.schema(
+        Schema.Struct({
+          mode: Schema.Literals([
+            "connect_allowed",
+            "connect_denied",
+            "connect_noauth",
+            "egress_proxy_env",
+            "resolve_local"
+          ])
         })
       )
-    )
-    assertPassed(report)
-  })
+
+      const report = await Effect.runPromise(
+        Effect.scoped(
+          Effect.gen(function*() {
+            yield* DestinationProxy.open(sockPath, [`127.0.0.1:${originPort}`], token)
+            return yield* Fuzz.run(
+              arb,
+              (input) =>
+                Effect.gen(function*() {
+                  if (input.mode === "resolve_local") {
+                    const addrs = yield* EgressHttpClient.resolveHost("127.0.0.1")
+                    return addrs.includes("127.0.0.1")
+                  }
+                  if (input.mode === "egress_proxy_env") {
+                    const d = yield* EgressHttpClient.dispatcher({
+                      HTTP_PROXY: `http://127.0.0.1:${originPort}`,
+                      NO_PROXY: "localhost,127.0.0.1,.internal"
+                    })
+                    return d !== undefined
+                  }
+                  const responseHead = yield* Effect.promise(
+                    () =>
+                      new Promise<string>((resolve, reject) => {
+                        const c = Net.connect(sockPath)
+                        let out = ""
+                        const host = input.mode === "connect_denied" ? "evil.example:443" : `127.0.0.1:${originPort}`
+                        const authHdr = input.mode === "connect_noauth" ? "" : `Proxy-Authorization: ${goodAuth}\r\n`
+                        c.on("connect", () => {
+                          c.write(`CONNECT ${host} HTTP/1.1\r\nHost: ${host}\r\n${authHdr}\r\n`)
+                        })
+                        c.on("data", (d) => {
+                          out += String(d)
+                          if (out.includes("\r\n\r\n")) {
+                            c.destroy()
+                            resolve(out)
+                          }
+                        })
+                        c.on("close", () => resolve(out))
+                        c.on("error", reject)
+                      })
+                  )
+                  if (input.mode === "connect_allowed") return responseHead.startsWith("HTTP/1.1 200")
+                  if (input.mode === "connect_noauth") return responseHead.startsWith("HTTP/1.1 407")
+                  return responseHead.startsWith("HTTP/1.1 403")
+                }),
+              { seed: seed + 7, executions: Math.min(executions, 30) }
+            )
+          })
+        )
+      )
+      assertPassed(report)
+    }
+  )
 })
