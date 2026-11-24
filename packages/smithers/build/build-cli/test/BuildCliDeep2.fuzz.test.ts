@@ -13,9 +13,9 @@ import * as FoundryExec from "../src/FoundryExec.ts"
 import * as GitCommit from "../src/GitCommit.ts"
 import * as GitSubmoduleExec from "../src/GitSubmoduleExec.ts"
 import * as GoExec from "../src/GoExec.ts"
+import * as HostProbes from "../src/internal/HostProbes.ts"
 import * as MemoryBackend from "../src/MemoryBackend.ts"
 import * as NixExec from "../src/NixExec.ts"
-import * as HostProbes from "../src/internal/HostProbes.ts"
 import { writeExecutable } from "./helpers/Executable.ts"
 import * as OciArchive from "./helpers/OciArchive.ts"
 
@@ -48,50 +48,54 @@ const gitExec = (root: string, args: ReadonlyArray<string>): Promise<string> =>
 const Slug = Schema.String.check(Schema.isPattern(/^[a-z][a-z0-9]{1,6}$/))
 
 describe("@smthrs/build-cli deep fuzz suite 2: GoExec, DockerExec, NixExec, FoundryExec, GitCommit, GitSubmoduleExec & MemoryBackend", () => {
-  it("GoExec resolveGo/resolveNix/toolchainEnvironment/planRule across Go.Packages/Build/Test/Vet/Fmt/Bench/ModTidy fuzz invariants", async () => {
-    const gen = Arbitrary.schema(
-      Schema.Struct({
-        slug: Slug,
-        rule: Schema.Literals([
-          "Go.Packages",
-          "Go.Build",
-          "Go.Test",
-          "Go.Vet",
-          "Go.Fmt",
-          "Go.Lint",
-          "Go.Bench",
-          "Go.ModTidy"
-        ]),
-        offline: Schema.Boolean,
-        badGo: Schema.Boolean
-      })
-    )
-    const report = await Effect.runPromise(
-      Fuzz.run(
-        gen,
-        ({ slug, rule, offline, badGo }) =>
-          Effect.promise(async () => {
-            await withTempDir("smthrs-bc2-go-", async (root) => {
-              const binDir = NodePath.join(root, "bin")
-              const pkgDir = NodePath.join(root, "pkg", slug)
-              await Fs.mkdir(binDir, { recursive: true })
-              await Fs.mkdir(pkgDir, { recursive: true })
-              await Fs.writeFile(NodePath.join(root, "go.mod"), `module example.org/${slug}\n\ngo 1.24.0\n`)
-              await Fs.writeFile(NodePath.join(root, "go.sum"), "")
-              await Fs.writeFile(NodePath.join(root, ".golangci.yml"), "version: 2\n")
-              await Fs.writeFile(NodePath.join(pkgDir, "main.go"), `package ${slug}\nfunc F() int { return 1 }\n`)
-              await Fs.writeFile(NodePath.join(pkgDir, "main_test.go"), `package ${slug}\n`)
+  it(
+    "GoExec resolveGo/resolveNix/toolchainEnvironment/planRule across Go.Packages/Build/Test/Vet/Fmt/Bench/ModTidy fuzz invariants",
+    async () => {
+      const gen = Arbitrary.schema(
+        Schema.Struct({
+          slug: Slug,
+          rule: Schema.Literals([
+            "Go.Packages",
+            "Go.Build",
+            "Go.Test",
+            "Go.Vet",
+            "Go.Fmt",
+            "Go.Lint",
+            "Go.Bench",
+            "Go.ModTidy"
+          ]),
+          offline: Schema.Boolean,
+          badGo: Schema.Boolean
+        })
+      )
+      const report = await Effect.runPromise(
+        Fuzz.run(
+          gen,
+          ({ slug, rule, offline, badGo }) =>
+            Effect.promise(async () => {
+              await withTempDir("smthrs-bc2-go-", async (root) => {
+                const binDir = NodePath.join(root, "bin")
+                const pkgDir = NodePath.join(root, "pkg", slug)
+                await Fs.mkdir(binDir, { recursive: true })
+                await Fs.mkdir(pkgDir, { recursive: true })
+                await Fs.writeFile(NodePath.join(root, "go.mod"), `module example.org/${slug}\n\ngo 1.24.0\n`)
+                await Fs.writeFile(NodePath.join(root, "go.sum"), "")
+                await Fs.writeFile(NodePath.join(root, ".golangci.yml"), "version: 2\n")
+                await Fs.writeFile(NodePath.join(pkgDir, "main.go"), `package ${slug}\nfunc F() int { return 1 }\n`)
+                await Fs.writeFile(NodePath.join(pkgDir, "main_test.go"), `package ${slug}\n`)
 
-              const goBin = await writeExecutable(
-                NodePath.join(binDir, "go"),
-                `#!${process.execPath}
+                const goBin = await writeExecutable(
+                  NodePath.join(binDir, "go"),
+                  `#!${process.execPath}
 const args = process.argv.slice(2);
 if (args[0] === "version") {
   process.stdout.write(${JSON.stringify(badGo ? "not-go-version\n" : "go version go1.24.1 linux/amd64\n")});
   process.exit(${badGo ? 1 : 0});
 }
 if (args[0] === "env") {
-  process.stdout.write(JSON.stringify({ GOROOT: ${JSON.stringify(root)}, GOTOOLDIR: ${JSON.stringify(binDir)}, GOVERSION: "go1.24.1", GOOS: "linux", GOARCH: "amd64", CGO_ENABLED: "0" }));
+  process.stdout.write(JSON.stringify({ GOROOT: ${JSON.stringify(root)}, GOTOOLDIR: ${
+                    JSON.stringify(binDir)
+                  }, GOVERSION: "go1.24.1", GOOS: "linux", GOARCH: "amd64", CGO_ENABLED: "0" }));
   process.exit(0);
 }
 if (args[0] === "list") {
@@ -109,45 +113,44 @@ if (args[0] === "list") {
 }
 process.exit(0);
 `
-              )
+                )
 
-              await writeExecutable(
-                NodePath.join(binDir, "nix"),
-                `#!/bin/sh
+                await writeExecutable(
+                  NodePath.join(binDir, "nix"),
+                  `#!/bin/sh
 if [ "$1" = "path-info" ] || [ "$1" = "build" ]; then
   echo ${JSON.stringify(root)}
   exit 0
 fi
 exit 1
 `
-              )
+                )
 
-              const workspace = S.Workspace(`go-${slug}`, {
-                repository: "git+https://example.invalid/go.git",
-                cache: S.Cache({ directory: ".flows" })
-              })
-              const env = { PATH: `${binDir}${NodePath.delimiter}${process.env["PATH"] ?? ""}` }
-              const ctx: GoExec.Context = {
-                root,
-                packagePath: "",
-                environment: env,
-                workspace
-              }
+                const workspace = S.Workspace(`go-${slug}`, {
+                  repository: "git+https://example.invalid/go.git",
+                  cache: S.Cache({ directory: ".flows" })
+                })
+                const env = { PATH: `${binDir}${NodePath.delimiter}${process.env["PATH"] ?? ""}` }
+                const ctx: GoExec.Context = {
+                  root,
+                  packagePath: "",
+                  environment: env,
+                  workspace
+                }
 
-              const resolved = await GoExec.resolveGo(ctx)
-              expect(typeof resolved.ok).toBe("boolean")
-              if (!badGo) {
-                expect(resolved.ok).toBe(true)
-              }
+                const resolved = await GoExec.resolveGo(ctx)
+                expect(typeof resolved.ok).toBe("boolean")
+                if (!badGo) {
+                  expect(resolved.ok).toBe(true)
+                }
 
-              const nixRes = await GoExec.resolveNix("go", ctx)
-              expect(typeof nixRes.ok).toBe("boolean")
+                const nixRes = await GoExec.resolveNix("go", ctx)
+                expect(typeof nixRes.ok).toBe("boolean")
 
-              const tcEnv = GoExec.toolchainEnvironment(ctx)
-              expect(tcEnv).toBeDefined()
+                const tcEnv = GoExec.toolchainEnvironment(ctx)
+                expect(tcEnv).toBeDefined()
 
-              const attrs: Record<string, unknown> =
-                rule === "Go.Packages"
+                const attrs: Record<string, unknown> = rule === "Go.Packages"
                   ? { pkgs: ["./..."], offline }
                   : rule === "Go.Build"
                   ? { pkg: `./pkg/${slug}`, out: `bin/${slug}`, offline }
@@ -159,49 +162,53 @@ exit 1
                   ? { pkgs: ["./..."], config: Input.file(".golangci.yml"), offline }
                   : { pkgs: ["./..."], offline }
 
-              const planned = await GoExec.planRule(rule, attrs, ctx, goBin)
-              expect(planned).toBeDefined()
-              expect(Array.isArray(planned.outDirs)).toBe(true)
+                const planned = await GoExec.planRule(rule, attrs, ctx, goBin)
+                expect(planned).toBeDefined()
+                expect(Array.isArray(planned.outDirs)).toBe(true)
 
-              // Also cover offline + -mod=mod refusal branch
-              const refused = await GoExec.planRule(
-                "Go.Build",
-                { pkg: `./pkg/${slug}`, out: `bin/${slug}`, offline: true, env: { GOFLAGS: "-mod=mod" } },
-                ctx,
-                goBin
-              )
-              expect(refused.refusal).toContain("offline")
-            })
-            return true
-          }),
-        { executions: fsExecutions, seed: 20261201 }
+                // Also cover offline + -mod=mod refusal branch
+                const refused = await GoExec.planRule(
+                  "Go.Build",
+                  { pkg: `./pkg/${slug}`, out: `bin/${slug}`, offline: true, env: { GOFLAGS: "-mod=mod" } },
+                  ctx,
+                  goBin
+                )
+                expect(refused.refusal).toContain("offline")
+              })
+              return true
+            }),
+          { executions: fsExecutions, seed: 20261201 }
+        )
       )
-    )
-    assertPassed(report)
-  }, 120_000)
+      assertPassed(report)
+    },
+    120_000
+  )
 
-  it("DockerExec resolveDocker/OCI archive/writeLoadableArchive/plan/serviceSpec/pushTagRefusal fuzz invariants", async () => {
-    const gen = Arbitrary.schema(
-      Schema.Struct({
-        slug: Slug,
-        rule: Schema.Literals(["Docker.Build", "Docker.Bake", "Docker.Push"]),
-        dockerManifest: Schema.Boolean,
-        attestation: Schema.Boolean,
-        pax: Schema.Boolean,
-        multiPlatform: Schema.Boolean
-      })
-    )
-    const report = await Effect.runPromise(
-      Fuzz.run(
-        gen,
-        ({ slug, rule, dockerManifest, attestation, pax, multiPlatform }) =>
-          Effect.promise(async () => {
-            await withTempDir("smthrs-bc2-docker-", async (root) => {
-              const binDir = NodePath.join(root, "bin")
-              await Fs.mkdir(binDir, { recursive: true })
-              await writeExecutable(
-                NodePath.join(binDir, "docker"),
-                `#!/bin/sh
+  it(
+    "DockerExec resolveDocker/OCI archive/writeLoadableArchive/plan/serviceSpec/pushTagRefusal fuzz invariants",
+    async () => {
+      const gen = Arbitrary.schema(
+        Schema.Struct({
+          slug: Slug,
+          rule: Schema.Literals(["Docker.Build", "Docker.Bake", "Docker.Push"]),
+          dockerManifest: Schema.Boolean,
+          attestation: Schema.Boolean,
+          pax: Schema.Boolean,
+          multiPlatform: Schema.Boolean
+        })
+      )
+      const report = await Effect.runPromise(
+        Fuzz.run(
+          gen,
+          ({ slug, rule, dockerManifest, attestation, pax, multiPlatform }) =>
+            Effect.promise(async () => {
+              await withTempDir("smthrs-bc2-docker-", async (root) => {
+                const binDir = NodePath.join(root, "bin")
+                await Fs.mkdir(binDir, { recursive: true })
+                await writeExecutable(
+                  NodePath.join(binDir, "docker"),
+                  `#!/bin/sh
 case "$1" in
   --version) echo 'Docker version 27.1.0-stub, build stub' ;;
   info) echo '27.1.0-stub' ;;
@@ -209,245 +216,272 @@ case "$1" in
   *) exit 0 ;;
 esac
 `
-              )
-              const env = { PATH: `${binDir}${NodePath.delimiter}${process.env["PATH"] ?? ""}` }
-              const probes = HostProbes.none()
-
-              const tool = await DockerExec.resolveDocker(env, probes)
-              expect(tool.ok).toBe(true)
-
-              // Missing docker refusal
-              const missingTool = await DockerExec.resolveDocker({ PATH: NodePath.join(root, "empty") }, HostProbes.none())
-              expect(missingTool.ok).toBe(false)
-
-              // Pure helpers
-              expect(DockerExec.pushTagRefusal(`v1-${slug}`)).toBeUndefined()
-              for (const badTag of ["", "INVALID_UPPER:1", "has space:1", "http://bad/tag"]) {
-                expect(DockerExec.pushTagRefusal(badTag)).toBeTruthy()
-              }
-              expect(DockerExec.outputDir("Docker.Build", `apps/${slug}`, { dockerfile: Input.file("Dockerfile"), context: "." })).toBeTruthy()
-              expect(DockerExec.outputDir("Docker.Bake", `apps/${slug}`, { config: Input.file("docker-bake.hcl"), target: "app" })).toBeTruthy()
-              expect(DockerExec.imageArchive("dist/img")).toBe("dist/img/image.tar")
-              expect(DockerExec.loadedImageIds("Loaded image ID: sha256:abcdef0123456789\n")).toEqual([
-                "sha256:abcdef0123456789"
-              ])
-              expect(
-                DockerExec.pushedDigest("v1: digest: sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef size: 100")
-              ).toContain("sha256:")
-              expect(
-                DockerExec.manifestConfig(
-                  JSON.stringify({ config: { digest: "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef" } })
                 )
-              ).toContain("sha256:")
-              expect(DockerExec.manifestConfig("not-json")).toBeUndefined()
-              expect(DockerExec.containerName(`//apps/${slug}:serve`, ".", "inv-1")).toBeTruthy()
+                const env = { PATH: `${binDir}${NodePath.delimiter}${process.env["PATH"] ?? ""}` }
+                const probes = HostProbes.none()
 
-              // OCI Archive read + writeLoadableArchive + corrupt archive refusal
-              const platforms = multiPlatform ? ["linux/amd64", "linux/arm64"] : ["linux/arm64"]
-              const built = OciArchive.imageArchive({ platforms, dockerManifest, attestation, pax, seed: slug })
-              const tarPath = NodePath.join(root, "image.tar")
-              const loadablePath = NodePath.join(root, "loadable.tar")
-              await Fs.writeFile(tarPath, built.bytes)
-              const parsed = await DockerExec.readImageArchive(tarPath)
-              if ("error" in parsed) {
-                expect(typeof parsed.error).toBe("string")
-              } else {
-                await DockerExec.writeLoadableArchive(tarPath, loadablePath, parsed)
-                const stat = await Fs.stat(loadablePath)
-                expect(stat.size).toBeGreaterThan(0)
-              }
-              const badTar = NodePath.join(root, "bad.tar")
-              await Fs.writeFile(badTar, "not-a-valid-tar")
-              const badParsed = await DockerExec.readImageArchive(badTar)
-              expect("error" in badParsed).toBe(true)
+                const tool = await DockerExec.resolveDocker(env, probes)
+                expect(tool.ok).toBe(true)
 
-              // Plan Docker.Build / Docker.Bake / Docker.Push + prepareOutputs + serviceSpec
-              await DockerExec.prepareOutputs(root, [`out/${slug}`])
-              const planRes =
-                rule === "Docker.Build"
-                  ? await DockerExec.plan({
-                      rule: "Docker.Build",
-                      packagePath: "",
-                      attrs: {
-                        dockerfile: Input.file("Dockerfile"),
-                        context: ".",
-                        platforms: ["linux/arm64"],
-                        buildArgs: { FOO: "bar" }
-                      } as never,
-                      environment: env,
-                      probes
+                // Missing docker refusal
+                const missingTool = await DockerExec.resolveDocker(
+                  { PATH: NodePath.join(root, "empty") },
+                  HostProbes.none()
+                )
+                expect(missingTool.ok).toBe(false)
+
+                // Pure helpers
+                expect(DockerExec.pushTagRefusal(`v1-${slug}`)).toBeUndefined()
+                for (const badTag of ["", "INVALID_UPPER:1", "has space:1", "http://bad/tag"]) {
+                  expect(DockerExec.pushTagRefusal(badTag)).toBeTruthy()
+                }
+                expect(
+                  DockerExec.outputDir("Docker.Build", `apps/${slug}`, {
+                    dockerfile: Input.file("Dockerfile"),
+                    context: "."
+                  })
+                ).toBeTruthy()
+                expect(
+                  DockerExec.outputDir("Docker.Bake", `apps/${slug}`, {
+                    config: Input.file("docker-bake.hcl"),
+                    target: "app"
+                  })
+                ).toBeTruthy()
+                expect(DockerExec.imageArchive("dist/img")).toBe("dist/img/image.tar")
+                expect(DockerExec.loadedImageIds("Loaded image ID: sha256:abcdef0123456789\n")).toEqual([
+                  "sha256:abcdef0123456789"
+                ])
+                expect(
+                  DockerExec.pushedDigest(
+                    "v1: digest: sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef size: 100"
+                  )
+                ).toContain("sha256:")
+                expect(
+                  DockerExec.manifestConfig(
+                    JSON.stringify({
+                      config: { digest: "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef" }
                     })
+                  )
+                ).toContain("sha256:")
+                expect(DockerExec.manifestConfig("not-json")).toBeUndefined()
+                expect(DockerExec.containerName(`//apps/${slug}:serve`, ".", "inv-1")).toBeTruthy()
+
+                // OCI Archive read + writeLoadableArchive + corrupt archive refusal
+                const platforms = multiPlatform ? ["linux/amd64", "linux/arm64"] : ["linux/arm64"]
+                const built = OciArchive.imageArchive({ platforms, dockerManifest, attestation, pax, seed: slug })
+                const tarPath = NodePath.join(root, "image.tar")
+                const loadablePath = NodePath.join(root, "loadable.tar")
+                await Fs.writeFile(tarPath, built.bytes)
+                const parsed = await DockerExec.readImageArchive(tarPath)
+                if ("error" in parsed) {
+                  expect(typeof parsed.error).toBe("string")
+                } else {
+                  await DockerExec.writeLoadableArchive(tarPath, loadablePath, parsed)
+                  const stat = await Fs.stat(loadablePath)
+                  expect(stat.size).toBeGreaterThan(0)
+                }
+                const badTar = NodePath.join(root, "bad.tar")
+                await Fs.writeFile(badTar, "not-a-valid-tar")
+                const badParsed = await DockerExec.readImageArchive(badTar)
+                expect("error" in badParsed).toBe(true)
+
+                // Plan Docker.Build / Docker.Bake / Docker.Push + prepareOutputs + serviceSpec
+                await DockerExec.prepareOutputs(root, [`out/${slug}`])
+                const planRes = rule === "Docker.Build"
+                  ? await DockerExec.plan({
+                    rule: "Docker.Build",
+                    packagePath: "",
+                    attrs: {
+                      dockerfile: Input.file("Dockerfile"),
+                      context: ".",
+                      platforms: ["linux/arm64"],
+                      buildArgs: { FOO: "bar" }
+                    } as never,
+                    environment: env,
+                    probes
+                  })
                   : rule === "Docker.Bake"
                   ? await DockerExec.plan({
-                      rule: "Docker.Bake",
-                      packagePath: "",
-                      attrs: {
-                        config: Input.file("docker-bake.hcl"),
-                        target: "app" 
-                      } as never,
-                      environment: env,
-                      probes
-                    })
+                    rule: "Docker.Bake",
+                    packagePath: "",
+                    attrs: {
+                      config: Input.file("docker-bake.hcl"),
+                      target: "app"
+                    } as never,
+                    environment: env,
+                    probes
+                  })
                   : await DockerExec.plan({
-                      rule: "Docker.Push",
-                      packagePath: "",
-                      attrs: {
-                        image: S.Docker.Build({
-                          dockerfile: Input.file("Dockerfile"),
-                          context: "."
-                        }),
-                        tags: [`ghcr.io/org/${slug}:v1`]
-                      } as never,
-                      environment: env,
-                      probes
-                    })
-              expect(planRes).toBeDefined()
+                    rule: "Docker.Push",
+                    packagePath: "",
+                    attrs: {
+                      image: S.Docker.Build({
+                        dockerfile: Input.file("Dockerfile"),
+                        context: "."
+                      }),
+                      tags: [`ghcr.io/org/${slug}:v1`]
+                    } as never,
+                    environment: env,
+                    probes
+                  })
+                expect(planRes).toBeDefined()
 
-              // Empty tags push refusal
-              const emptyPush = await DockerExec.plan({
-                rule: "Docker.Push",
-                packagePath: "",
-                attrs: {
-                  image: S.Docker.Build({ dockerfile: Input.file("Dockerfile"), context: "." }),
-                  tags: []
-                } as never,
-                environment: env,
-                probes
-              })
-              expect(emptyPush.refusal).toBeTruthy()
+                // Empty tags push refusal
+                const emptyPush = await DockerExec.plan({
+                  rule: "Docker.Push",
+                  packagePath: "",
+                  attrs: {
+                    image: S.Docker.Build({ dockerfile: Input.file("Dockerfile"), context: "." }),
+                    tags: []
+                  } as never,
+                  environment: env,
+                  probes
+                })
+                expect(emptyPush.refusal).toBeTruthy()
 
-              // serviceSpec
-              const svc = await DockerExec.serviceSpec({
-                invocationId: `inv-${slug}`,
-                label: `//apps/${slug}:svc`,
-                cwd: ".",
-                attrs: {
-                  image: `ghcr.io/org/${slug}:v1`,
-                  ports: { "8080": 18080 },
-                  env: { MODE: "test" },
-                  volumes: { "./data": "/data" }
-                } as never,
-                environment: env,
-                probes
+                // serviceSpec
+                const svc = await DockerExec.serviceSpec({
+                  invocationId: `inv-${slug}`,
+                  label: `//apps/${slug}:svc`,
+                  cwd: ".",
+                  attrs: {
+                    image: `ghcr.io/org/${slug}:v1`,
+                    ports: { "8080": 18080 },
+                    env: { MODE: "test" },
+                    volumes: { "./data": "/data" }
+                  } as never,
+                  environment: env,
+                  probes
+                })
+                expect(svc).toBeDefined()
               })
-              expect(svc).toBeDefined()
-            })
-            return true
-          }),
-        { executions: fsExecutions, seed: 20261202 }
+              return true
+            }),
+          { executions: fsExecutions, seed: 20261202 }
+        )
       )
-    )
-    assertPassed(report)
-  }, 120_000)
+      assertPassed(report)
+    },
+    120_000
+  )
 
-  it("NixExec resolveEnvironment/memo/assertToolVersion/satisfies & FoundryExec resolveMiseBin/plan fuzz invariants", async () => {
-    const gen = Arbitrary.schema(
-      Schema.Struct({
-        slug: Slug,
-        foundryRule: Schema.Literals(["Foundry.Build", "Foundry.Test", "Foundry.Fmt"]),
-        foundryMode: Schema.Literals(["execute", "check", "write"]),
-        forgeCfg: Schema.Literals(["default", "custom", "text", "fail"])
-      })
-    )
-    const report = await Effect.runPromise(
-      Fuzz.run(
-        gen,
-        ({ slug, foundryRule, foundryMode, forgeCfg }) =>
-          Effect.promise(async () => {
-            await withTempDir("smthrs-bc2-nixf-", async (root) => {
-              // --- NixExec ---
-              const hash = "0123456789abcdfghijklmnpqrsvwxyz"
-              const closure = NodePath.join(root, "store", `${hash}-fake-env`)
-              const dep = NodePath.join(root, "store", `${hash.split("").reverse().join("")}-fake-dep`)
-              await Fs.mkdir(NodePath.join(closure, "bin"), { recursive: true })
-              await Fs.mkdir(dep, { recursive: true })
-              await writeExecutable(NodePath.join(closure, "bin", "node"), '#!/bin/sh\necho "v26.4.0"\n')
-              await writeExecutable(NodePath.join(closure, "bin", "pnpm"), '#!/bin/sh\necho "11.21.0"\n')
-              const fakeBin = NodePath.join(root, "fake-nix-bin")
-              await Fs.mkdir(fakeBin, { recursive: true })
-              await writeExecutable(
-                NodePath.join(fakeBin, "nix"),
-                `#!/bin/sh
+  it(
+    "NixExec resolveEnvironment/memo/assertToolVersion/satisfies & FoundryExec resolveMiseBin/plan fuzz invariants",
+    async () => {
+      const gen = Arbitrary.schema(
+        Schema.Struct({
+          slug: Slug,
+          foundryRule: Schema.Literals(["Foundry.Build", "Foundry.Test", "Foundry.Fmt"]),
+          foundryMode: Schema.Literals(["execute", "check", "write"]),
+          forgeCfg: Schema.Literals(["default", "custom", "text", "fail"])
+        })
+      )
+      const report = await Effect.runPromise(
+        Fuzz.run(
+          gen,
+          ({ slug, foundryRule, foundryMode, forgeCfg }) =>
+            Effect.promise(async () => {
+              await withTempDir("smthrs-bc2-nixf-", async (root) => {
+                // --- NixExec ---
+                const hash = "0123456789abcdfghijklmnpqrsvwxyz"
+                const closure = NodePath.join(root, "store", `${hash}-fake-env`)
+                const dep = NodePath.join(root, "store", `${hash.split("").reverse().join("")}-fake-dep`)
+                await Fs.mkdir(NodePath.join(closure, "bin"), { recursive: true })
+                await Fs.mkdir(dep, { recursive: true })
+                await writeExecutable(NodePath.join(closure, "bin", "node"), "#!/bin/sh\necho \"v26.4.0\"\n")
+                await writeExecutable(NodePath.join(closure, "bin", "pnpm"), "#!/bin/sh\necho \"11.21.0\"\n")
+                const fakeBin = NodePath.join(root, "fake-nix-bin")
+                await Fs.mkdir(fakeBin, { recursive: true })
+                await writeExecutable(
+                  NodePath.join(fakeBin, "nix"),
+                  `#!/bin/sh
 case "$1" in --version) echo "nix (Nix) 2.99.0"; exit 0;; esac
 sub=""
 for a in "$@"; do case "$a" in build|print-dev-env|path-info) sub="$a"; break;; esac; done
 case "$sub" in
   build) echo ${JSON.stringify(closure)};;
-  print-dev-env) printf '%s' '{"variables":{"PATH":{"type":"exported","value":${JSON.stringify(`${closure}/bin`)}},"SSL_CERT_FILE":{"type":"exported","value":"/etc/ssl/cert.pem"}}}';;
+  print-dev-env) printf '%s' '{"variables":{"PATH":{"type":"exported","value":${
+                    JSON.stringify(`${closure}/bin`)
+                  }},"SSL_CERT_FILE":{"type":"exported","value":"/etc/ssl/cert.pem"}}}';;
   path-info) printf '%s\\n%s\\n' ${JSON.stringify(dep)} ${JSON.stringify(closure)};;
   *) exit 2;;
 esac
 `
-              )
-              await Fs.writeFile(NodePath.join(root, "flake.nix"), "{ outputs = { self }: { }; }\n")
-              await Fs.writeFile(NodePath.join(root, "flake.lock"), '{"nodes":{},"root":"root","version":7}\n')
+                )
+                await Fs.writeFile(NodePath.join(root, "flake.nix"), "{ outputs = { self }: { }; }\n")
+                await Fs.writeFile(
+                  NodePath.join(root, "flake.lock"),
+                  "{\"nodes\":{},\"root\":\"root\",\"version\":7}\n"
+                )
 
-              const decl = Nix.Environment({ flake: Input.file("flake.nix"), lock: Input.file("flake.lock") })
-              expect(NixExec.hostSystem("linux", "x64")).toBe("x86_64-linux")
-              expect(NixExec.hostSystem("darwin", "arm64")).toBe("aarch64-darwin")
-              expect(NixExec.satisfies("26.4.0", ">=26.4.0")).toBe(true)
-              expect(NixExec.satisfies("20.0.0", ">=26.4.0")).toBe(false)
+                const decl = Nix.Environment({ flake: Input.file("flake.nix"), lock: Input.file("flake.lock") })
+                expect(NixExec.hostSystem("linux", "x64")).toBe("x86_64-linux")
+                expect(NixExec.hostSystem("darwin", "arm64")).toBe("aarch64-darwin")
+                expect(NixExec.satisfies("26.4.0", ">=26.4.0")).toBe(true)
+                expect(NixExec.satisfies("20.0.0", ">=26.4.0")).toBe(false)
 
-              const resolved = await NixExec.resolveEnvironment({
-                root,
-                declaration: decl,
-                cacheDirectory: ".flows",
-                environment: { PATH: fakeBin }
-              })
-              expect(NixExec.layer(resolved)).toContain("nix:")
-              expect(NixExec.toolEnvironment(resolved).path.length).toBeGreaterThan(0)
-              expect(NixExec.hostEnvironmentWith(resolved, { EXTRA: "1" })["EXTRA"]).toBe("1")
-
-              // Second resolution hits disk memo
-              const resolved2 = await NixExec.resolveEnvironment({
-                root,
-                declaration: decl,
-                cacheDirectory: ".flows",
-                environment: { PATH: fakeBin }
-              })
-              expect(resolved2.hash).toBe(resolved.hash)
-
-              // assertToolVersion: pass, mismatch, missing
-              const v = await NixExec.assertToolVersion(
-                resolved,
-                { name: "node", requirement: ">=26.4.0" },
-                { root }
-              )
-              expect(v).toContain("26.4.0")
-              let mismatchErr = false
-              try {
-                await NixExec.assertToolVersion(resolved, { name: "node", requirement: ">=99.0.0" }, { root })
-              } catch (e) {
-                mismatchErr = e instanceof NixExec.NixEnvironmentError
-              }
-              expect(mismatchErr).toBe(true)
-              let missingToolErr = false
-              try {
-                await NixExec.assertToolVersion(resolved, { name: "nonexistent-tool", requirement: ">=1.0.0" }, { root })
-              } catch (e) {
-                missingToolErr = e instanceof NixExec.NixEnvironmentError
-              }
-              expect(missingToolErr).toBe(true)
-
-              // Missing nix binary error
-              let absentErr = false
-              try {
-                await NixExec.resolveEnvironment({
+                const resolved = await NixExec.resolveEnvironment({
                   root,
                   declaration: decl,
-                  environment: { PATH: NodePath.join(root, "empty") }
+                  cacheDirectory: ".flows",
+                  environment: { PATH: fakeBin }
                 })
-              } catch (e) {
-                absentErr = e instanceof NixExec.NixEnvironmentError && e.code === "nix_absent"
-              }
-              expect(absentErr).toBe(true)
+                expect(NixExec.layer(resolved)).toContain("nix:")
+                expect(NixExec.toolEnvironment(resolved).path.length).toBeGreaterThan(0)
+                expect(NixExec.hostEnvironmentWith(resolved, { EXTRA: "1" })["EXTRA"]).toBe("1")
 
-              // --- FoundryExec ---
-              const fBin = NodePath.join(root, "foundry-bin")
-              await Fs.mkdir(fBin, { recursive: true })
-              await writeExecutable(
-                NodePath.join(fBin, "forge"),
-                `#!/bin/sh
+                // Second resolution hits disk memo
+                const resolved2 = await NixExec.resolveEnvironment({
+                  root,
+                  declaration: decl,
+                  cacheDirectory: ".flows",
+                  environment: { PATH: fakeBin }
+                })
+                expect(resolved2.hash).toBe(resolved.hash)
+
+                // assertToolVersion: pass, mismatch, missing
+                const v = await NixExec.assertToolVersion(
+                  resolved,
+                  { name: "node", requirement: ">=26.4.0" },
+                  { root }
+                )
+                expect(v).toContain("26.4.0")
+                let mismatchErr = false
+                try {
+                  await NixExec.assertToolVersion(resolved, { name: "node", requirement: ">=99.0.0" }, { root })
+                } catch (e) {
+                  mismatchErr = e instanceof NixExec.NixEnvironmentError
+                }
+                expect(mismatchErr).toBe(true)
+                let missingToolErr = false
+                try {
+                  await NixExec.assertToolVersion(resolved, { name: "nonexistent-tool", requirement: ">=1.0.0" }, {
+                    root
+                  })
+                } catch (e) {
+                  missingToolErr = e instanceof NixExec.NixEnvironmentError
+                }
+                expect(missingToolErr).toBe(true)
+
+                // Missing nix binary error
+                let absentErr = false
+                try {
+                  await NixExec.resolveEnvironment({
+                    root,
+                    declaration: decl,
+                    environment: { PATH: NodePath.join(root, "empty") }
+                  })
+                } catch (e) {
+                  absentErr = e instanceof NixExec.NixEnvironmentError && e.code === "nix_absent"
+                }
+                expect(absentErr).toBe(true)
+
+                // --- FoundryExec ---
+                const fBin = NodePath.join(root, "foundry-bin")
+                await Fs.mkdir(fBin, { recursive: true })
+                await writeExecutable(
+                  NodePath.join(fBin, "forge"),
+                  `#!/bin/sh
 if [ "$1" = "--version" ]; then printf 'forge Version: 1.2.3-fake\\nCommit SHA: abc\\n'; exit 0; fi
 if [ "$1" = "config" ]; then
   case ${JSON.stringify(forgeCfg)} in
@@ -460,34 +494,45 @@ if [ "$1" = "config" ]; then
 fi
 exit 0
 `
-              )
-              await Fs.writeFile(NodePath.join(root, "foundry.toml"), "[profile.default]\nsrc = 'src'\n")
-              const ws = S.Workspace(`foundry-${slug}`, {
-                repository: "git+https://example.invalid/foundry.git",
-                cache: S.Cache({ directory: ".flows" })
+                )
+                await Fs.writeFile(NodePath.join(root, "foundry.toml"), "[profile.default]\nsrc = 'src'\n")
+                const ws = S.Workspace(`foundry-${slug}`, {
+                  repository: "git+https://example.invalid/foundry.git",
+                  cache: S.Cache({ directory: ".flows" })
+                })
+                const fPlan = await FoundryExec.plan({
+                  root,
+                  packagePath: "",
+                  workspace: ws,
+                  rule: foundryRule,
+                  mode: foundryMode,
+                  environment: { PATH: fBin },
+                  attrs: {
+                    config: Input.file("foundry.toml"),
+                    srcs: [Input.glob("src/**/*.sol")]
+                  } as never
+                })
+                expect(fPlan).toBeDefined()
+                void (await FoundryExec.resolveMiseBin(
+                  root,
+                  S.Workspace("f", {
+                    repository: "git+https://example.invalid/f.git",
+                    cache: S.Cache({ directory: ".flows" })
+                  }),
+                  "forge",
+                  { PATH: fBin },
+                  HostProbes.none()
+                ))
               })
-              const fPlan = await FoundryExec.plan({
-                root,
-                packagePath: "",
-                workspace: ws,
-                rule: foundryRule,
-                mode: foundryMode,
-                environment: { PATH: fBin },
-                attrs: {
-                  config: Input.file("foundry.toml"),
-                  srcs: [Input.glob("src/**/*.sol")]
-                } as never
-              })
-              expect(fPlan).toBeDefined()
-              void (await FoundryExec.resolveMiseBin(root, S.Workspace("f", { repository: "git+https://example.invalid/f.git", cache: S.Cache({ directory: ".flows" }) }), "forge", { PATH: fBin }, HostProbes.none()))
-            })
-            return true
-          }),
-        { executions: fsExecutions, seed: 20261203 }
+              return true
+            }),
+          { executions: fsExecutions, seed: 20261203 }
+        )
       )
-    )
-    assertPassed(report)
-  }, 120_000)
+      assertPassed(report)
+    },
+    120_000
+  )
 
   it("GitCommit, GitSubmoduleExec & MemoryBackend fuzz invariants on real temp git repos", async () => {
     const gen = Arbitrary.schema(
@@ -612,7 +657,9 @@ exit 0
               expect(multiPlan.gitlinks.length).toBe(1)
 
               // --- MemoryBackend ---
-              expect(MemoryBackend.parseMemoryHelpCommands("Commands:\n  get   Get\n  set   Set\n  list  List\n  rm    Rm\n")).toEqual([
+              expect(
+                MemoryBackend.parseMemoryHelpCommands("Commands:\n  get   Get\n  set   Set\n  list  List\n  rm    Rm\n")
+              ).toEqual([
                 "get",
                 "set",
                 "list",

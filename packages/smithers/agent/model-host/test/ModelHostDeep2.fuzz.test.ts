@@ -1,7 +1,7 @@
-import * as HttpServerRequest from "effect/http/HttpServerRequest"
 import { Fuzz } from "@smthrs/fuzz"
 import { Model, type ModelEvent } from "@smthrs/model"
 import { Arbitrary, Effect, Logger, Result, Schema, Stream } from "effect"
+import * as HttpServerRequest from "effect/http/HttpServerRequest"
 import { describe, expect, it } from "vitest"
 import { environmentModelResolver } from "../src/EnvironmentResolver.ts"
 import {
@@ -79,9 +79,24 @@ describe("@smthrs/model-host Deep2 Fuzz (EnvironmentResolver, HostServer, HostTo
         arb,
         ({ mode }) =>
           Effect.gen(function*() {
-            const anthropicBinding = { protocol: "openai-chat", baseUrl: "https://fixture-a.test", modelId: "model-a", credential: "FIXA" }
-            const openaiBinding = { protocol: "openai-chat", baseUrl: "https://fixture-b.test", modelId: "model-b", credential: "FIXB" }
-            const fastBinding = { protocol: "openai-chat", baseUrl: "https://fast.proxy.test/v1/fast", modelId: "fast-1", credential: "SMITHERS_FAST_PROXY" }
+            const anthropicBinding = {
+              protocol: "openai-chat",
+              baseUrl: "https://fixture-a.test",
+              modelId: "model-a",
+              credential: "FIXA"
+            }
+            const openaiBinding = {
+              protocol: "openai-chat",
+              baseUrl: "https://fixture-b.test",
+              modelId: "model-b",
+              credential: "FIXB"
+            }
+            const fastBinding = {
+              protocol: "openai-chat",
+              baseUrl: "https://fast.proxy.test/v1/fast",
+              modelId: "fast-1",
+              credential: "SMITHERS_FAST_PROXY"
+            }
 
             const baseEnv: Record<string, string | undefined> = {
               SMITHERS_MODEL_KEY_FIXA: "key-a",
@@ -140,8 +155,19 @@ describe("@smthrs/model-host Deep2 Fuzz (EnvironmentResolver, HostServer, HostTo
               if (url.includes("/internal/chat/context")) {
                 if (mode === "sharedContext500") return new Response("fail", { status: 500 })
                 return new Response(
-                  JSON.stringify({ type: "input", version: 1, value: { prompt: "q", author: "ben", branch: "main", state: "ready", tokenBudget: 24000, wikiOnly: false } }) + "\n" +
-                  JSON.stringify({ type: "end", recent: 0, candidates: 0 }) + "\n",
+                  JSON.stringify({
+                    type: "input",
+                    version: 1,
+                    value: {
+                      prompt: "q",
+                      author: "ben",
+                      branch: "main",
+                      state: "ready",
+                      tokenBudget: 24000,
+                      wikiOnly: false
+                    }
+                  }) + "\n" +
+                    JSON.stringify({ type: "end", recent: 0, candidates: 0 }) + "\n",
                   { status: 200, headers: { "content-type": "application/x-ndjson" } }
                 )
               }
@@ -188,7 +214,11 @@ describe("@smthrs/model-host Deep2 Fuzz (EnvironmentResolver, HostServer, HostTo
       stream: () =>
         Stream.fromIterable<ModelEvent.ModelEvent>([
           { _tag: "TextDelta", text: "ok" } as any,
-          { _tag: "TurnFinish", stopReason: "end_turn", usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 } } as any
+          {
+            _tag: "TurnFinish",
+            stopReason: "end_turn",
+            usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 }
+          } as any
         ])
     } as any)
 
@@ -282,7 +312,9 @@ describe("@smthrs/model-host Deep2 Fuzz (EnvironmentResolver, HostServer, HostTo
             const grant: DurableChatGrant = c.hasApi ? baseGrant : grantWithoutApi
 
             const fakeFetch = (async () => {
-              if (c.status === 302) return new Response(null, { status: 302, headers: { location: "http://evil.test/" } })
+              if (c.status === 302) {
+                return new Response(null, { status: 302, headers: { location: "http://evil.test/" } })
+              }
               if (c.status === 204) return new Response(null, { status: 204 })
               if (c.badBody) return new Response("not-json", { status: c.status })
               return new Response(JSON.stringify({ ok: true }), {

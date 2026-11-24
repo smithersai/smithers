@@ -83,7 +83,13 @@ describe("@smthrs/rpc Deep2 Fuzz (AgentContext, Cards migrations, AgentTurnJourn
               worldState: {
                 documentCount: c.hasWorldDocs ? 1 : 0,
                 documents: c.hasWorldDocs
-                  ? [{ path: "docs/arch.md", title: "Architecture", confidence: 0.9, body: "System overview", bodyTruncated: true }]
+                  ? [{
+                    path: "docs/arch.md",
+                    title: "Architecture",
+                    confidence: 0.9,
+                    body: "System overview",
+                    bodyTruncated: true
+                  }]
                   : []
               },
               ...(c.hasOnboarding
@@ -223,7 +229,14 @@ describe("@smthrs/rpc Deep2 Fuzz (AgentContext, Cards migrations, AgentTurnJourn
                 ...baseCard,
                 kind: "agents",
                 payload: {
-                  agents: [{ id: firstRole.id, builtin: true, label: "stale", purpose: "old", harness: "old", model: "old" }]
+                  agents: [{
+                    id: firstRole.id,
+                    builtin: true,
+                    label: "stale",
+                    purpose: "old",
+                    harness: "old",
+                    model: "old"
+                  }]
                 }
               }
             } else if (c.cardMode === "agentsCustom") {
@@ -231,7 +244,14 @@ describe("@smthrs/rpc Deep2 Fuzz (AgentContext, Cards migrations, AgentTurnJourn
                 ...baseCard,
                 kind: "agents",
                 payload: {
-                  agents: [{ id: "custom-1", builtin: false, label: "My Agent", purpose: "helper", harness: "smithers", model: "claude" }]
+                  agents: [{
+                    id: "custom-1",
+                    builtin: false,
+                    label: "My Agent",
+                    purpose: "helper",
+                    harness: "smithers",
+                    model: "claude"
+                  }]
                 }
               }
             } else if (c.cardMode === "repoChoiceLegacy") {

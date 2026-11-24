@@ -47,7 +47,9 @@ const listenLoopback = (
     res.end("ok")
   }
 ) =>
-  new Promise<{ readonly url: string; readonly port: number; readonly seen: Array<string>; readonly close: () => Promise<void> }>(
+  new Promise<
+    { readonly url: string; readonly port: number; readonly seen: Array<string>; readonly close: () => Promise<void> }
+  >(
     (resolve, reject) => {
       const seen: Array<string> = []
       const server = createServer((req, res) => {
@@ -81,7 +83,7 @@ describe("@smthrs/platform-node ProcessConfinement, TestNodeRuntime, NativeRunti
         network: Schema.Literals(["none", "open"]),
         useShell: Schema.Boolean,
         withReadOnly: Schema.Boolean,
-        withExtraWrites: Schema.Boolean,
+        withExtraWrites: Schema.Boolean
       })
     )
 
@@ -225,8 +227,10 @@ describe("@smthrs/platform-node ProcessConfinement, TestNodeRuntime, NativeRunti
 
             // Open same SQLite via TestNodeRuntime.requirements
             const entries = yield* Effect.flatMap(Journal.Journal, (j) =>
-              j.entries({ runId: execId as JournalEvent.RunId, limit: 50 })
-            ).pipe(Effect.provide(Layer.merge(TestNodeRuntime.requirements(dbFile), silentLogger)), Effect.scoped)
+              j.entries({ runId: execId as JournalEvent.RunId, limit: 50 })).pipe(
+                Effect.provide(Layer.merge(TestNodeRuntime.requirements(dbFile), silentLogger)),
+                Effect.scoped
+              )
             expect(entries.entries.length).toBeGreaterThan(0)
 
             // 3. NodeRuntime / NativeRuntime storage + layer + signalExitCode
@@ -241,18 +245,25 @@ describe("@smthrs/platform-node ProcessConfinement, TestNodeRuntime, NativeRunti
               expect(built).toBeDefined()
 
               expect((): unknown =>
-                NodeRuntime.layerHost({ filename: nrDb, workspaceRoot: nrDir, owner: { hostId: "" } } as never, Layer.empty)
+                NodeRuntime.layerHost(
+                  { filename: nrDb, workspaceRoot: nrDir, owner: { hostId: "" } } as never,
+                  Layer.empty
+                )
               ).toThrow()
               const hostLayer = NodeRuntime.layerHost(
                 {
                   filename: nrDb,
                   workspaceRoot: nrDir,
                   owner: { hostId: `nr-${seq}` },
-                  isAlive: () => Effect.succeed(false)
+                  isAlive: () =>
+                    Effect.succeed(false)
                 },
                 Layer.empty
               )
-              const builtHost = yield* Layer.build(Layer.merge(hostLayer, silentLogger)).pipe(Effect.scoped, Effect.exit)
+              const builtHost = yield* Layer.build(Layer.merge(hostLayer, silentLogger)).pipe(
+                Effect.scoped,
+                Effect.exit
+              )
               expect(builtHost).toBeDefined()
             }
             return true
@@ -273,7 +284,15 @@ describe("@smthrs/platform-node ProcessConfinement, TestNodeRuntime, NativeRunti
     try {
       const arb = Arbitrary.schema(
         Schema.Struct({
-          mode: Schema.Literals(["direct", "proxied", "no-proxy", "bad-proxy", "provider-fetch", "rebuildable", "guarded"])
+          mode: Schema.Literals([
+            "direct",
+            "proxied",
+            "no-proxy",
+            "bad-proxy",
+            "provider-fetch",
+            "rebuildable",
+            "guarded"
+          ])
         })
       )
 
@@ -304,10 +323,11 @@ describe("@smthrs/platform-node ProcessConfinement, TestNodeRuntime, NativeRunti
                 return true
               }
               if (mode === "bad-proxy") {
-                const exit = yield* Effect.flatMap(HttpClient.HttpClient, (c) => c.get("http://example.invalid/x")).pipe(
-                  Effect.provide(EgressHttpClient.layer({ HTTP_PROXY: "http://user:secret-pass@:invalid" })),
-                  Effect.exit
-                )
+                const exit = yield* Effect.flatMap(HttpClient.HttpClient, (c) => c.get("http://example.invalid/x"))
+                  .pipe(
+                    Effect.provide(EgressHttpClient.layer({ HTTP_PROXY: "http://user:secret-pass@:invalid" })),
+                    Effect.exit
+                  )
                 expect(Exit.isFailure(exit)).toBe(true)
                 return true
               }
@@ -386,7 +406,11 @@ describe("@smthrs/platform-node ProcessConfinement, TestNodeRuntime, NativeRunti
           expect(Exit.isFailure(dirExit)).toBe(true)
 
           // NodeHost.layerContained
-          const containedCtx = yield* Layer.build(NodeHost.layerContained().pipe(Layer.provide(ProcessLedger.layerMemory({ hostId: "fuzz-nodehost", ownerPid: process.pid }))))
+          const containedCtx = yield* Layer.build(
+            NodeHost.layerContained().pipe(
+              Layer.provide(ProcessLedger.layerMemory({ hostId: "fuzz-nodehost", ownerPid: process.pid }))
+            )
+          )
           expect(containedCtx).toBeDefined()
 
           // PsSnapshot against real `ps` and missing executable

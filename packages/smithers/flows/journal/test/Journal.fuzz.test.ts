@@ -31,7 +31,6 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { DatabaseSync } from "node:sqlite"
 import { describe, expect, it } from "vitest"
-import * as Leases from "./fixtures/leases.ts"
 import {
   Consensus,
   EngineEvent,
@@ -54,6 +53,7 @@ import { TelemetryText } from "../src/internal/TelemetryText.ts"
 import * as JournalGeneration from "../src/JournalGeneration.ts"
 import * as Notifying from "../src/test/Notifying.ts"
 import * as TestJournal from "../src/test/TestJournal.ts"
+import * as Leases from "./fixtures/leases.ts"
 
 const isWellFormed = (s: string): boolean => {
   for (let i = 0; i < s.length; i++) {
@@ -2505,7 +2505,10 @@ describe("@smthrs/journal SqlJournal fuzz invariants", () => {
                 if (channel === "lossy") {
                   // #4555: lossy writes never compact; follow with a fenced owner write to trigger capture
                   yield* j.flush
-                  yield* j.emitDurable(mkInput("ac-run", "s1", "ev", { i: threshold }, { sourceSeq: threshold }), acOwner)
+                  yield* j.emitDurable(
+                    mkInput("ac-run", "s1", "ev", { i: threshold }, { sourceSeq: threshold }),
+                    acOwner
+                  )
                 }
                 yield* j.flush
               }).pipe(Effect.forkChild({ startImmediately: true }))

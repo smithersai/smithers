@@ -43,7 +43,14 @@ describe("@smthrs/engine-store CopiedRecord, CacheAgeHistory, ProvenanceSlot, Ca
   it("CopiedRecord.find/prove/accept enforces lineage proof, payload equality, fork marker & anti-spoof invariants", async () => {
     const arb = Arbitrary.schema(
       Schema.Struct({
-        scenario: Schema.Literals(["valid_copy", "payload_mismatch", "missing_fork_marker", "missing_parent", "wrong_event_type", "deep_chain"]),
+        scenario: Schema.Literals([
+          "valid_copy",
+          "payload_mismatch",
+          "missing_fork_marker",
+          "missing_parent",
+          "wrong_event_type",
+          "deep_chain"
+        ]),
         seq: Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 0 }))
       })
     )
@@ -78,19 +85,17 @@ describe("@smthrs/engine-store CopiedRecord, CacheAgeHistory, ProvenanceSlot, Ca
 
             const entriesByRun: Record<string, Array<JournalEvent.Entry>> = {
               grand: [makeEntry("grand")],
-              parent:
-                scenario === "deep_chain"
-                  ? [makeEntry("parent"), forkMarker("parent", "grand")]
-                  : [makeEntry("parent")],
-              child:
-                scenario === "missing_fork_marker"
-                  ? [makeEntry("child")]
-                  : [
-                      makeEntry("child", {
-                        eventType: scenario === "wrong_event_type" ? "other.event" : "test.boundary"
-                      }),
-                      forkMarker("child", "parent")
-                    ]
+              parent: scenario === "deep_chain"
+                ? [makeEntry("parent"), forkMarker("parent", "grand")]
+                : [makeEntry("parent")],
+              child: scenario === "missing_fork_marker"
+                ? [makeEntry("child")]
+                : [
+                  makeEntry("child", {
+                    eventType: scenario === "wrong_event_type" ? "other.event" : "test.boundary"
+                  }),
+                  forkMarker("child", "parent")
+                ]
             }
             const parents: Record<string, string | null> = {
               child: scenario === "missing_parent" ? null : "parent",
@@ -103,10 +108,9 @@ describe("@smthrs/engine-store CopiedRecord, CacheAgeHistory, ProvenanceSlot, Ca
               sourceId: JournalEvent.SourceId.make("producer"),
               sourceSeq: JournalEvent.SourceSeq.make(0),
               eventType: "test.boundary",
-              payload:
-                scenario === "payload_mismatch"
-                  ? { runId: "child", nested: [{ a: 999, b: 2 }] }
-                  : { nested: [{ a: 1, b: 2 }], runId: "child" },
+              payload: scenario === "payload_mismatch"
+                ? { runId: "child", nested: [{ a: 999, b: 2 }] }
+                : { nested: [{ a: 1, b: 2 }], runId: "child" },
               meta: { lineageId: FlowEngine.Lineage.root("child") }
             })
 
@@ -117,7 +121,14 @@ describe("@smthrs/engine-store CopiedRecord, CacheAgeHistory, ProvenanceSlot, Ca
               get: (rid) =>
                 rid in parents
                   ? Effect.succeed(makeRunRow(rid, parents[rid]!))
-                  : Effect.fail(new RunStore.RunStoreError({ code: "not_found_row", method: "get", message: `missing ${rid}`, cause: undefined }))
+                  : Effect.fail(
+                    new RunStore.RunStoreError({
+                      code: "not_found_row",
+                      method: "get",
+                      message: `missing ${rid}`,
+                      cause: undefined
+                    })
+                  )
             })
 
             const res = yield* CopiedRecord.accept({
@@ -144,7 +155,14 @@ describe("@smthrs/engine-store CopiedRecord, CacheAgeHistory, ProvenanceSlot, Ca
   it("CacheAgeHistory.copiedVerdict & ProvenanceSlot.accept uphold cache provenance conflict invariants", async () => {
     const arb = Arbitrary.schema(
       Schema.Struct({
-        action: Schema.Literals(["admitted", "expired", "mismatch_key", "mismatch_action", "mismatch_seq", "unrelated"]),
+        action: Schema.Literals([
+          "admitted",
+          "expired",
+          "mismatch_key",
+          "mismatch_action",
+          "mismatch_seq",
+          "unrelated"
+        ]),
         ageMs: Schema.Int.check(Schema.isBetween({ minimum: 500, maximum: 5000 })),
         ttlMs: Schema.Int.check(Schema.isBetween({ minimum: 1000, maximum: 3000 }))
       })
@@ -258,8 +276,15 @@ describe("@smthrs/engine-store CopiedRecord, CacheAgeHistory, ProvenanceSlot, Ca
                   rid === "child"
                     ? Effect.succeed(makeRunRow("child", "parent"))
                     : rid === "parent"
-                      ? Effect.succeed(makeRunRow("parent", null))
-                      : Effect.fail(new RunStore.RunStoreError({ code: "not_found_row", method: "get", message: `missing ${rid}`, cause: undefined }))
+                    ? Effect.succeed(makeRunRow("parent", null))
+                    : Effect.fail(
+                      new RunStore.RunStoreError({
+                        code: "not_found_row",
+                        method: "get",
+                        message: `missing ${rid}`,
+                        cause: undefined
+                      })
+                    )
               })
             }).pipe(Effect.result)
 
@@ -302,20 +327,19 @@ describe("@smthrs/engine-store CopiedRecord, CacheAgeHistory, ProvenanceSlot, Ca
         ({ caseKind }) =>
           Effect.sync(() => {
             const evidence: StepBoundary.BoundaryEvidence = {
-              declaredOutputs:
-                caseKind === "valid_manifest"
-                  ? { outputs: [{ path: "dist/out.js", digest }] }
-                  : caseKind === "outside_path"
-                    ? { outputs: [{ path: "src/secret.ts", digest }] }
-                    : caseKind === "traversal_path"
-                      ? { outputs: [{ path: "../etc/passwd", digest }] }
-                      : caseKind === "tree_outside"
-                        ? { outputs: [], trees: [{ path: "other/dir", identity: "id-1" }] }
-                        : caseKind === "valid_declared_paths"
-                          ? { paths: ["dist/out.js", { _tag: "Glob", include: ["dist/gen/**"] }] }
-                          : caseKind === "mismatched_declared_paths"
-                            ? { paths: ["dist/other.js"] }
-                            : { bogus: 123 }
+              declaredOutputs: caseKind === "valid_manifest"
+                ? { outputs: [{ path: "dist/out.js", digest }] }
+                : caseKind === "outside_path"
+                ? { outputs: [{ path: "src/secret.ts", digest }] }
+                : caseKind === "traversal_path"
+                ? { outputs: [{ path: "../etc/passwd", digest }] }
+                : caseKind === "tree_outside"
+                ? { outputs: [], trees: [{ path: "other/dir", identity: "id-1" }] }
+                : caseKind === "valid_declared_paths"
+                ? { paths: ["dist/out.js", { _tag: "Glob", include: ["dist/gen/**"] }] }
+                : caseKind === "mismatched_declared_paths"
+                ? { paths: ["dist/other.js"] }
+                : { bogus: 123 }
             } as unknown as StepBoundary.BoundaryEvidence
 
             const decision = CacheOutputPolicy.replay(caseKind === "undefined_desc" ? undefined : descriptor, evidence)
@@ -350,12 +374,26 @@ describe("@smthrs/engine-store CopiedRecord, CacheAgeHistory, ProvenanceSlot, Ca
             const baseDrafts: Array<Plan.NodeDraft> = [
               {
                 id: "a",
-                material: { version: KeyMaterial.version, kind: "sealed", body: "a", inputs: [], layers: [], capabilities: [] },
+                material: {
+                  version: KeyMaterial.version,
+                  kind: "sealed",
+                  body: "a",
+                  inputs: [],
+                  layers: [],
+                  capabilities: []
+                },
                 effects: { reads: [], writes: ["shared.txt"], boundaryMode: "hard" }
               },
               {
                 id: "b",
-                material: { version: KeyMaterial.version, kind: "sealed", body: "b", inputs: [], layers: [], capabilities: [] },
+                material: {
+                  version: KeyMaterial.version,
+                  kind: "sealed",
+                  body: "b",
+                  inputs: [],
+                  layers: [],
+                  capabilities: []
+                },
                 effects: { reads: [], writes: ["shared.txt"], boundaryMode: "hard" },
                 conflictStrategy: "lane",
                 runtimeStrategy: "stop-merge"
@@ -365,7 +403,14 @@ describe("@smthrs/engine-store CopiedRecord, CacheAgeHistory, ProvenanceSlot, Ca
               baseDrafts.push({
                 id: "b+merge",
                 kind: "merge",
-                material: { version: KeyMaterial.version, kind: "sealed", body: "m", inputs: [], layers: [], capabilities: [] },
+                material: {
+                  version: KeyMaterial.version,
+                  kind: "sealed",
+                  body: "m",
+                  inputs: [],
+                  layers: [],
+                  capabilities: []
+                },
                 effects: { reads: [], writes: [], boundaryMode: "hard" }
               })
             }

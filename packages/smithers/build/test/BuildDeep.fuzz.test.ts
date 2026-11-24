@@ -49,63 +49,64 @@ describe("@smthrs/build bun lockfile/bunfig parser, validate, boundedOutput & pl
         arb,
         ({ lockKind, bunfigKind, credential, envLine }) =>
           Effect.sync(() => {
-            const lockText =
-              lockKind === "valid_minimal"
-                ? JSON.stringify({ lockfileVersion: 1, workspaces: { "": { name: "app" } }, packages: {} })
-                : lockKind === "valid_with_comments_and_workspaces"
-                  ? `// top comment\n{\n  /* block */\n  "lockfileVersion": 1,\n  "workspaces": { "": { "name": "root", "dependencies": { "a": "1.0.0" } }, "pkgs/a": { "name": "a" }, },\n  "packages": { "a": ["a@1.0.0", "", {}, "sha512-abc"], },\n}\n`
-                  : lockKind === "invalid_json"
-                    ? "{ broken json"
-                    : lockKind === "wrong_version"
-                      ? JSON.stringify({ lockfileVersion: 99, workspaces: {}, packages: {} })
-                      : lockKind === "non_object"
-                        ? "[]"
-                        : lockKind === "bad_workspace_path"
-                          ? JSON.stringify({ lockfileVersion: 1, workspaces: { "../escape": { name: "bad" } }, packages: {} })
-                          : lockKind === "patched_dep"
-                            ? JSON.stringify({
-                                lockfileVersion: 1,
-                                workspaces: { "": { name: "app" } },
-                                patchedDependencies: { "foo@1.0.0": "patches/foo.patch" },
-                                packages: {}
-                              })
-                            : lockKind === "file_dep"
-                              ? JSON.stringify({
-                                  lockfileVersion: 1,
-                                  workspaces: { "": { name: "app" } },
-                                  packages: { local: ["local@file:../local", "", {}, ""] }
-                                })
-                              : lockKind === "git_dep"
-                                ? JSON.stringify({
-                                    lockfileVersion: 1,
-                                    workspaces: { "": { name: "app" } },
-                                    packages: { g: ["g@github:owner/repo#abc", "", {}, ""] }
-                                  })
-                                : JSON.stringify({
-                                    lockfileVersion: 1,
-                                    workspaces: { "": { name: "app" } },
-                                    catalog: { dep: "^1.0.0" },
-                                    packages: {}
-                                  })
+            const lockText = lockKind === "valid_minimal"
+              ? JSON.stringify({ lockfileVersion: 1, workspaces: { "": { name: "app" } }, packages: {} })
+              : lockKind === "valid_with_comments_and_workspaces"
+              ? `// top comment\n{\n  /* block */\n  "lockfileVersion": 1,\n  "workspaces": { "": { "name": "root", "dependencies": { "a": "1.0.0" } }, "pkgs/a": { "name": "a" }, },\n  "packages": { "a": ["a@1.0.0", "", {}, "sha512-abc"], },\n}\n`
+              : lockKind === "invalid_json"
+              ? "{ broken json"
+              : lockKind === "wrong_version"
+              ? JSON.stringify({ lockfileVersion: 99, workspaces: {}, packages: {} })
+              : lockKind === "non_object"
+              ? "[]"
+              : lockKind === "bad_workspace_path"
+              ? JSON.stringify({ lockfileVersion: 1, workspaces: { "../escape": { name: "bad" } }, packages: {} })
+              : lockKind === "patched_dep"
+              ? JSON.stringify({
+                lockfileVersion: 1,
+                workspaces: { "": { name: "app" } },
+                patchedDependencies: { "foo@1.0.0": "patches/foo.patch" },
+                packages: {}
+              })
+              : lockKind === "file_dep"
+              ? JSON.stringify({
+                lockfileVersion: 1,
+                workspaces: { "": { name: "app" } },
+                packages: { local: ["local@file:../local", "", {}, ""] }
+              })
+              : lockKind === "git_dep"
+              ? JSON.stringify({
+                lockfileVersion: 1,
+                workspaces: { "": { name: "app" } },
+                packages: { g: ["g@github:owner/repo#abc", "", {}, ""] }
+              })
+              : JSON.stringify({
+                lockfileVersion: 1,
+                workspaces: { "": { name: "app" } },
+                catalog: { dep: "^1.0.0" },
+                packages: {}
+              })
 
             const lockRes = BunInternal.readLockfile(lockText)
             const refused = BunInternal.isRefusal(lockRes)
-            if ((lockKind === "invalid_json" || lockKind === "wrong_version" || lockKind === "non_object" || lockKind === "bad_workspace_path") && !refused) {
+            if (
+              (lockKind === "invalid_json" || lockKind === "wrong_version" || lockKind === "non_object" ||
+                lockKind === "bad_workspace_path") && !refused
+            ) {
               return false
             }
 
-            const bunfigText =
-              bunfigKind === "empty"
-                ? ""
-                : bunfigKind === "registry_token"
-                  ? `[install.scopes]\n"@acme" = { token = "secret", url = "https://reg.acme" }\n`
-                  : bunfigKind === "cafile"
-                    ? `[install]\ncafile = "/etc/ssl/ca.pem"\n`
-                    : bunfigKind === "preload"
-                      ? `preload = ["./evil.ts"]\n`
-                      : bunfigKind === "safe_install"
-                        ? `[install]\nfrozenLockfile = true\n`
-                        : `[install.cache]\ndir = "/tmp/cache"\n`
+            const bunfigText = bunfigKind === "empty"
+              ? ""
+              : bunfigKind === "registry_token"
+              ? `[install.scopes]\n"@acme" = { token = "secret", url = "https://reg.acme" }\n`
+              : bunfigKind === "cafile"
+              ? `[install]\ncafile = "/etc/ssl/ca.pem"\n`
+              : bunfigKind === "preload"
+              ? `preload = ["./evil.ts"]\n`
+              : bunfigKind === "safe_install"
+              ? `[install]\nfrozenLockfile = true\n`
+              : `[install.cache]\ndir = "/tmp/cache"\n`
             const figRes = BunInternal.checkBunfig(bunfigText, credential)
             if (figRes !== undefined && !BunInternal.isRefusal(figRes)) return false
 

@@ -126,7 +126,9 @@ export const resolveMiseBin = async (
   if (toolPath === null) {
     return {
       ok: false,
-      refusal: `mise which ${JSON.stringify(name)} could not resolve the pinned tool; run mise install in the workspace root`,
+      refusal: `mise which ${
+        JSON.stringify(name)
+      } could not resolve the pinned tool; run mise install in the workspace root`,
       identity: { ...identity, path, probe, absent: true }
     }
   }

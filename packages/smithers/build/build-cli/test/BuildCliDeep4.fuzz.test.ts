@@ -103,34 +103,36 @@ const startRemoteCache = async (faultMode: "ok" | "flaky" = "ok") => {
 }
 
 describe("@smthrs/build-cli deep fuzz suite 4: PackageRunner, PackagePlanner, PackageTree, Cli, Remote CAS & Multi-Rule E2E", () => {
-  it("End-to-end multi-package workspace: build/test/shards/suite/alias/clean/materialize/stamp/fetch/owners/docs/cache/gc/git-hooks/affected/query/explain/remote-CAS", async () => {
-    const gen = Arbitrary.schema(
-      Schema.Struct({
-        slug: Slug,
-        flakyCache: Schema.Boolean
-      })
-    )
-    const report = await Effect.runPromise(
-      Fuzz.run(
-        gen,
-        ({ slug, flakyCache }) =>
-          Effect.promise(async () => {
-            const fetchPayload = `fetched-artifact-${slug}\n`
-            const fetchSha = createHash("sha256").update(fetchPayload).digest("hex")
-            const fetchSrv = NodeHttp.createServer((_req, res) => {
-              res.writeHead(200, { "content-type": "text/plain" }).end(fetchPayload)
-            })
-            fetchSrv.listen(0, "127.0.0.1")
-            await once(fetchSrv, "listening")
-            const fetchPort = (fetchSrv.address() as NodeNet.AddressInfo).port
-            const remoteCache = await startRemoteCache(flakyCache ? "flaky" : "ok")
+  it(
+    "End-to-end multi-package workspace: build/test/shards/suite/alias/clean/materialize/stamp/fetch/owners/docs/cache/gc/git-hooks/affected/query/explain/remote-CAS",
+    async () => {
+      const gen = Arbitrary.schema(
+        Schema.Struct({
+          slug: Slug,
+          flakyCache: Schema.Boolean
+        })
+      )
+      const report = await Effect.runPromise(
+        Fuzz.run(
+          gen,
+          ({ slug, flakyCache }) =>
+            Effect.promise(async () => {
+              const fetchPayload = `fetched-artifact-${slug}\n`
+              const fetchSha = createHash("sha256").update(fetchPayload).digest("hex")
+              const fetchSrv = NodeHttp.createServer((_req, res) => {
+                res.writeHead(200, { "content-type": "text/plain" }).end(fetchPayload)
+              })
+              fetchSrv.listen(0, "127.0.0.1")
+              await once(fetchSrv, "listening")
+              const fetchPort = (fetchSrv.address() as NodeNet.AddressInfo).port
+              const remoteCache = await startRemoteCache(flakyCache ? "flaky" : "ok")
 
-            try {
-              await withTempDir("smthrs-bc4-e2e-", async (root) => {
-                await write(
-                  root,
-                  "WORKSPACE.ts",
-                  `import { Smithers as S } from "@smthrs/targets"
+              try {
+                await withTempDir("smthrs-bc4-e2e-", async (root) => {
+                  await write(
+                    root,
+                    "WORKSPACE.ts",
+                    `import { Smithers as S } from "@smthrs/targets"
 const packageJson = S.file("//package.json")
 export const Workspace = S.Workspace("ws-${slug}", {
   repository: "git+https://example.invalid/ws-${slug}.git",
@@ -144,18 +146,18 @@ export const Workspace = S.Workspace("ws-${slug}", {
   owners: S.Owners.declare({ owners: ["core"] })
 })
 `
-                )
-                await write(root, "package.json", `{"name":"ws-${slug}","private":true}\n`)
-                await write(root, "yarn.lock", "# yarn lockfile v1\n")
-                await write(root, "docs/guide.md", `# Guide for ${slug}\n`)
-                await write(root, "docs/.stamp", "{}\n")
-                await write(root, `packages/${slug}/src/index.ts`, `export const name = "${slug}"\n`)
-                await write(root, `packages/${slug}/README.md`, `# ${slug}\n`)
+                  )
+                  await write(root, "package.json", `{"name":"ws-${slug}","private":true}\n`)
+                  await write(root, "yarn.lock", "# yarn lockfile v1\n")
+                  await write(root, "docs/guide.md", `# Guide for ${slug}\n`)
+                  await write(root, "docs/.stamp", "{}\n")
+                  await write(root, `packages/${slug}/src/index.ts`, `export const name = "${slug}"\n`)
+                  await write(root, `packages/${slug}/README.md`, `# ${slug}\n`)
 
-                await write(
-                  root,
-                  "PACKAGE.ts",
-                  `import { Smithers as S } from "@smthrs/targets"
+                  await write(
+                    root,
+                    "PACKAGE.ts",
+                    `import { Smithers as S } from "@smthrs/targets"
 export const Package = S.Package({
   targets: {
     hello: S.Shell.Run({ bin: S.Runtime.bin, args: ["-e", "console.log('hi-${slug}')"] }),
@@ -169,12 +171,12 @@ export const Package = S.Package({
   }
 })
 `
-                )
+                  )
 
-                await write(
-                  root,
-                  `packages/${slug}/PACKAGE.ts`,
-                  `import { Smithers as S } from "@smthrs/targets"
+                  await write(
+                    root,
+                    `packages/${slug}/PACKAGE.ts`,
+                    `import { Smithers as S } from "@smthrs/targets"
 const srcs = S.Filegroup({ srcs: [S.glob("src/**/*.ts")] })
 const build = S.Shell.Build({
   bin: S.Runtime.bin,
@@ -214,117 +216,134 @@ export const Package = S.Package({
   targets: { srcs, build, test, sharded, exclusiveTest, mat, allTests, buildAlias }
 })
 `
-                )
+                  )
 
-                // Init real git repo for affected/git-hooks
-                await gitExec(root, ["init", "--quiet", "--initial-branch=main"])
-                await gitExec(root, ["config", "user.name", "Fuzz"])
-                await gitExec(root, ["config", "user.email", "fuzz@example.invalid"])
-                await gitExec(root, ["config", "commit.gpgsign", "false"])
-                await gitExec(root, ["add", "-A"])
-                await gitExec(root, ["commit", "--quiet", "-m", "initial"])
+                  // Init real git repo for affected/git-hooks
+                  await gitExec(root, ["init", "--quiet", "--initial-branch=main"])
+                  await gitExec(root, ["config", "user.name", "Fuzz"])
+                  await gitExec(root, ["config", "user.email", "fuzz@example.invalid"])
+                  await gitExec(root, ["config", "commit.gpgsign", "false"])
+                  await gitExec(root, ["add", "-A"])
+                  await gitExec(root, ["commit", "--quiet", "-m", "initial"])
 
-                // 1. Discovery / introspection CLI commands
-                const q1 = await serve(root, ["query", "//..."])
-                expect(q1.exitCode, q1.output + "\n" + q1.logs).toBe(0)
-                expect(q1.output).toContain(`//packages/${slug}:build`)
-                expect((await serve(root, ["query", `deps(//packages/${slug}:test)`])).exitCode).toBe(0)
-                expect((await serve(root, ["query", `rdeps(//packages/${slug}:srcs)`])).exitCode).toBe(0)
-                expect((await serve(root, ["query", `owners(//packages/${slug}:build)`])).exitCode).toBe(0)
-                const t1 = await serve(root, ["targets", "//..."]); expect(t1.exitCode, t1.output + "\n" + t1.logs).toBe(0)
-                expect((await serve(root, ["index", "//..."])).exitCode).toBe(0)
-                expect((await serve(root, ["graph", "//..."])).exitCode).toBe(0)
-                expect((await serve(root, ["show", "target", `//packages/${slug}:build`])).exitCode).toBe(0)
-                expect((await serve(root, ["owners", `packages/${slug}/src/index.ts`])).exitCode).toBe(0)
-                expect((await serve(root, ["info"])).exitCode).toBe(0)
-                expect(typeof (await serve(root, ["doctor"])).exitCode).toBe("number")
+                  // 1. Discovery / introspection CLI commands
+                  const q1 = await serve(root, ["query", "//..."])
+                  expect(q1.exitCode, q1.output + "\n" + q1.logs).toBe(0)
+                  expect(q1.output).toContain(`//packages/${slug}:build`)
+                  expect((await serve(root, ["query", `deps(//packages/${slug}:test)`])).exitCode).toBe(0)
+                  expect((await serve(root, ["query", `rdeps(//packages/${slug}:srcs)`])).exitCode).toBe(0)
+                  expect((await serve(root, ["query", `owners(//packages/${slug}:build)`])).exitCode).toBe(0)
+                  const t1 = await serve(root, ["targets", "//..."])
+                  expect(t1.exitCode, t1.output + "\n" + t1.logs).toBe(0)
+                  expect((await serve(root, ["index", "//..."])).exitCode).toBe(0)
+                  expect((await serve(root, ["graph", "//..."])).exitCode).toBe(0)
+                  expect((await serve(root, ["show", "target", `//packages/${slug}:build`])).exitCode).toBe(0)
+                  expect((await serve(root, ["owners", `packages/${slug}/src/index.ts`])).exitCode).toBe(0)
+                  expect((await serve(root, ["info"])).exitCode).toBe(0)
+                  expect(typeof (await serve(root, ["doctor"])).exitCode).toBe("number")
 
-                // 2. Build with remote cache (cold -> upload to remote CAS)
-                const b1 = await serve(root, ["build", `//packages/${slug}:build`, `//packages/${slug}:buildAlias`, "//:fetched"], {
-                  cacheUrl: remoteCache.url,
-                  cacheToken: "tok-123"
+                  // 2. Build with remote cache (cold -> upload to remote CAS)
+                  const b1 = await serve(root, [
+                    "build",
+                    `//packages/${slug}:build`,
+                    `//packages/${slug}:buildAlias`,
+                    "//:fetched"
+                  ], {
+                    cacheUrl: remoteCache.url,
+                    cacheToken: "tok-123"
+                  })
+                  expect(b1.exitCode, b1.output + "\n" + b1.logs).toBe(0)
+                  if (!flakyCache) expect(remoteCache.ac.size).toBeGreaterThanOrEqual(1)
+
+                  // 3. Explain (warm local cache hit) + second build (local cache hit)
+                  expect((await serve(root, ["explain", `//packages/${slug}:build`])).exitCode).toBe(0)
+                  const b2 = await serve(root, ["build", `//packages/${slug}:build`])
+                  expect(b2.exitCode).toBe(0)
+
+                  // 4. Wipe local cache & dist, rebuild from remote CAS!
+                  await Fs.rm(NodePath.join(root, ".flows"), { recursive: true, force: true })
+                  await Fs.rm(NodePath.join(root, `packages/${slug}/dist`), { recursive: true, force: true })
+                  const b3 = await serve(root, ["build", `//packages/${slug}:build`], {
+                    cacheUrl: remoteCache.url,
+                    cacheToken: "tok-123"
+                  })
+                  expect(b3.exitCode).toBe(0)
+                  const restored = await Fs.readFile(NodePath.join(root, `packages/${slug}/dist/meta.txt`), "utf8")
+                  expect(restored).toBe(slug)
+
+                  // 5. No-cache, Materialize, Run, Sharded tests, Exclusive tests, CI with results-file
+                  expect((await serve(root, ["build", `//packages/${slug}:build`, "--no-cache"])).exitCode).toBe(0)
+                  expect((await serve(root, ["target", `//packages/${slug}:mat`])).exitCode).toBe(0)
+                  expect((await serve(root, ["run", "//:hello"])).exitCode).toBe(0)
+                  const sh0 = await serve(root, ["test", `//packages/${slug}:sharded`, "--shard", "0/2"])
+                  expect(sh0.exitCode, sh0.output + "\n" + sh0.logs).toBe(0)
+                  const sh1 = await serve(root, ["test", `//packages/${slug}:sharded`, "--shard", "1/2"])
+                  expect(sh1.exitCode, sh1.output + "\n" + sh1.logs).toBe(0)
+                  expect(
+                    (await serve(root, [
+                      "test",
+                      `//packages/${slug}:allTests`,
+                      `//packages/${slug}:exclusiveTest`,
+                      "--include-exclusive"
+                    ])).exitCode
+                  ).toBe(0)
+
+                  const resultsFile = NodePath.join(root, ".flows", "results.json")
+                  const ciRes = await serve(root, ["ci", `//packages/${slug}/...`, "--results-file", resultsFile])
+                  expect(ciRes.exitCode, ciRes.output + "\n" + ciRes.logs).toBe(0)
+
+                  // 6. Generated files (codeowners, ownerTree, targetIdx, genText), docs, clean, git-hooks
+                  void (await serve(root, ["target", "//:codeowners", "--write"]))
+                  void (await serve(root, ["target", "//:ownerTree", "--write"]))
+                  void (await serve(root, ["target", "//:targetIdx", "--write"]))
+                  void (await serve(root, ["target", "//:genText", "--write"]))
+                  void (await serve(root, ["lint", "//:genText"]))
+                  void (await serve(root, ["docs", "//..."]))
+                  void (await serve(root, ["git-hooks", "--write"]))
+                  void (await serve(root, ["git-hooks"]))
+                  expect((await serve(root, ["clean", "//:cleanOut"])).exitCode).toBe(0)
+
+                  // 7. Cache admin + gc + affected
+                  expect((await serve(root, ["cache", "status"])).exitCode).toBe(0)
+                  void (await serve(root, ["cache", "verify"]))
+                  void (await serve(root, ["cache", "prune"]))
+                  void (await serve(root, ["gc"]))
+                  await write(root, `packages/${slug}/src/index.ts`, `export const name = "${slug}-edited"\n`)
+                  void (await serve(root, ["affected", "--base", "HEAD", "--list"]))
                 })
-                expect(b1.exitCode, b1.output + "\n" + b1.logs).toBe(0)
-                if (!flakyCache) expect(remoteCache.ac.size).toBeGreaterThanOrEqual(1)
-
-                // 3. Explain (warm local cache hit) + second build (local cache hit)
-                expect((await serve(root, ["explain", `//packages/${slug}:build`])).exitCode).toBe(0)
-                const b2 = await serve(root, ["build", `//packages/${slug}:build`])
-                expect(b2.exitCode).toBe(0)
-
-                // 4. Wipe local cache & dist, rebuild from remote CAS!
-                await Fs.rm(NodePath.join(root, ".flows"), { recursive: true, force: true })
-                await Fs.rm(NodePath.join(root, `packages/${slug}/dist`), { recursive: true, force: true })
-                const b3 = await serve(root, ["build", `//packages/${slug}:build`], {
-                  cacheUrl: remoteCache.url,
-                  cacheToken: "tok-123"
-                })
-                expect(b3.exitCode).toBe(0)
-                const restored = await Fs.readFile(NodePath.join(root, `packages/${slug}/dist/meta.txt`), "utf8")
-                expect(restored).toBe(slug)
-
-                // 5. No-cache, Materialize, Run, Sharded tests, Exclusive tests, CI with results-file
-                expect((await serve(root, ["build", `//packages/${slug}:build`, "--no-cache"])).exitCode).toBe(0)
-                expect((await serve(root, ["target", `//packages/${slug}:mat`])).exitCode).toBe(0)
-                expect((await serve(root, ["run", "//:hello"])).exitCode).toBe(0)
-                const sh0 = await serve(root, ["test", `//packages/${slug}:sharded`, "--shard", "0/2"])
-                expect(sh0.exitCode, sh0.output + "\n" + sh0.logs).toBe(0)
-                const sh1 = await serve(root, ["test", `//packages/${slug}:sharded`, "--shard", "1/2"])
-                expect(sh1.exitCode, sh1.output + "\n" + sh1.logs).toBe(0)
-                expect((await serve(root, ["test", `//packages/${slug}:allTests`, `//packages/${slug}:exclusiveTest`, "--include-exclusive"])).exitCode).toBe(0)
-
-                const resultsFile = NodePath.join(root, ".flows", "results.json")
-                const ciRes = await serve(root, ["ci", `//packages/${slug}/...`, "--results-file", resultsFile])
-                expect(ciRes.exitCode, ciRes.output + "\n" + ciRes.logs).toBe(0)
-
-                // 6. Generated files (codeowners, ownerTree, targetIdx, genText), docs, clean, git-hooks
-                void (await serve(root, ["target", "//:codeowners", "--write"]))
-                void (await serve(root, ["target", "//:ownerTree", "--write"]))
-                void (await serve(root, ["target", "//:targetIdx", "--write"]))
-                void (await serve(root, ["target", "//:genText", "--write"]))
-                void (await serve(root, ["lint", "//:genText"]))
-                void (await serve(root, ["docs", "//..."]))
-                void (await serve(root, ["git-hooks", "--write"]))
-                void (await serve(root, ["git-hooks"]))
-                expect((await serve(root, ["clean", "//:cleanOut"])).exitCode).toBe(0)
-
-                // 7. Cache admin + gc + affected
-                expect((await serve(root, ["cache", "status"])).exitCode).toBe(0)
-                void (await serve(root, ["cache", "verify"]))
-                void (await serve(root, ["cache", "prune"]))
-                void (await serve(root, ["gc"]))
-                await write(root, `packages/${slug}/src/index.ts`, `export const name = "${slug}-edited"\n`)
-                void (await serve(root, ["affected", "--base", "HEAD", "--list"]))
-              })
-            } finally {
-              await fetchSrv.close()
-              await remoteCache.close()
-            }
-            return true
-          }),
-        { executions: cliExecutions, seed: 20261220 }
+              } finally {
+                await fetchSrv.close()
+                await remoteCache.close()
+              }
+              return true
+            }),
+          { executions: cliExecutions, seed: 20261220 }
+        )
       )
-    )
-    assertPassed(report)
-  }, 180_000)
+      assertPassed(report)
+    },
+    180_000
+  )
 
-  it("PackageRunner services (Shell.Serve), failing targets (--keep-going), dirty outputs, approval gating & diverse rule planning via CLI", async () => {
-    const gen = Arbitrary.schema(
-      Schema.Struct({
-        slug: Slug,
-        approved: Schema.Boolean
-      })
-    )
-    const report = await Effect.runPromise(
-      Fuzz.run(
-        gen,
-        ({ slug, approved }) =>
-          Effect.promise(async () => {
-            await withTempDir("smthrs-bc4-rules-", async (root) => {
-              await write(
-                root,
-                "WORKSPACE.ts",
-                `import { Smithers as S } from "@smthrs/targets"
+  it(
+    "PackageRunner services (Shell.Serve), failing targets (--keep-going), dirty outputs, approval gating & diverse rule planning via CLI",
+    async () => {
+      const gen = Arbitrary.schema(
+        Schema.Struct({
+          slug: Slug,
+          approved: Schema.Boolean
+        })
+      )
+      const report = await Effect.runPromise(
+        Fuzz.run(
+          gen,
+          ({ slug, approved }) =>
+            Effect.promise(async () => {
+              await withTempDir("smthrs-bc4-rules-", async (root) => {
+                await write(
+                  root,
+                  "WORKSPACE.ts",
+                  `import { Smithers as S } from "@smthrs/targets"
 const packageJson = S.file("//package.json")
 export const Workspace = S.Workspace("rules-${slug}", {
   repository: "git+https://example.invalid/rules-${slug}.git",
@@ -335,27 +354,39 @@ export const Workspace = S.Workspace("rules-${slug}", {
   host: S.Host({ bins: ["sh"] })
 })
 `
-              )
-              await write(root, "package.json", `{"name":"rules-${slug}","version":"0.1.0","private":true}\n`)
-              await write(root, "yarn.lock", "# yarn\n")
-              await write(root, "tsconfig.json", '{"compilerOptions":{"target":"ES2022","module":"NodeNext"}}\n')
-              await write(root, "PROMPT.md", "# Check\n")
-              await write(root, "src/index.ts", `export const v = "${slug}"\n`)
-              await write(root, "src/index.test.ts", `export const t = 1\n`)
-              await write(root, "Dockerfile", "FROM scratch\n")
-              await write(root, "docker-bake.hcl", 'target "app" {}\n')
-              await write(root, "Cargo.toml", '[workspace]\nmembers = ["crates/a"]\n')
-              await write(root, "crates/a/Cargo.toml", '[package]\nname = "a"\nversion = "0.1.0"\nedition = "2021"\n')
-              await write(root, "crates/a/src/lib.rs", "pub fn f() -> i32 { 1 }\n")
-              await write(root, "go.mod", `module example.org/${slug}\n\ngo 1.24.0\n`)
-              await write(root, "foundry.toml", "[profile.default]\n")
-              await write(root, "rsbuild.config.mjs", "export default {}\n")
-              await write(root, ".github/workflows/ci.yml", "name: ci\non: [push]\njobs:\n  c:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo ok\n")
+                )
+                await write(root, "package.json", `{"name":"rules-${slug}","version":"0.1.0","private":true}\n`)
+                await write(root, "yarn.lock", "# yarn\n")
+                await write(
+                  root,
+                  "tsconfig.json",
+                  "{\"compilerOptions\":{\"target\":\"ES2022\",\"module\":\"NodeNext\"}}\n"
+                )
+                await write(root, "PROMPT.md", "# Check\n")
+                await write(root, "src/index.ts", `export const v = "${slug}"\n`)
+                await write(root, "src/index.test.ts", `export const t = 1\n`)
+                await write(root, "Dockerfile", "FROM scratch\n")
+                await write(root, "docker-bake.hcl", "target \"app\" {}\n")
+                await write(root, "Cargo.toml", "[workspace]\nmembers = [\"crates/a\"]\n")
+                await write(
+                  root,
+                  "crates/a/Cargo.toml",
+                  "[package]\nname = \"a\"\nversion = \"0.1.0\"\nedition = \"2021\"\n"
+                )
+                await write(root, "crates/a/src/lib.rs", "pub fn f() -> i32 { 1 }\n")
+                await write(root, "go.mod", `module example.org/${slug}\n\ngo 1.24.0\n`)
+                await write(root, "foundry.toml", "[profile.default]\n")
+                await write(root, "rsbuild.config.mjs", "export default {}\n")
+                await write(
+                  root,
+                  ".github/workflows/ci.yml",
+                  "name: ci\non: [push]\njobs:\n  c:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo ok\n"
+                )
 
-              await write(
-                root,
-                "PACKAGE.ts",
-                `import { Smithers as S } from "@smthrs/targets"
+                await write(
+                  root,
+                  "PACKAGE.ts",
+                  `import { Smithers as S } from "@smthrs/targets"
 const srv = S.Shell.Serve({
   bin: S.Runtime.bin,
   args: [
@@ -425,38 +456,55 @@ export const Package = S.Package({
   }
 })
 `
-              )
+                )
 
-              // Plan & inspect EVERY diverse rule flavor through PackagePlanner + Cli
-              const t1 = await serve(root, ["targets", "//..."]); expect(t1.exitCode, t1.output + "\n" + t1.logs).toBe(0)
-              expect((await serve(root, ["index", "//..."])).exitCode).toBe(0)
-              expect((await serve(root, ["graph", "//..."])).exitCode).toBe(0)
-              for (const lbl of ["//:dockerBuild", "//:dockerBake", "//:cargoBuild", "//:cargoFmt", "//:goPkgs", "//:foundryBuild", "//:wf", "//:pack", "//:llmLint", "//:agentLint", "//:diffTarget"]) {
-                void (await serve(root, ["explain", lbl]))
-                void (await serve(root, ["show", "target", lbl]))
-              }
-
-              // Failing target + --keep-going runs passTarget too
-              const failRes = await serve(root, ["test", "//:failTarget", "//:passTarget"])
-              expect(failRes.exitCode).not.toBe(0)
-              expect((await serve(root, ["test", "//:passTarget"])).exitCode).toBe(0)
-
-              // Approval-gated target (denied vs approved)
-              const gateRes = await serve(root, ["run", "//:gated"], {
-                approvals: {
-                  granted: async () => approved
+                // Plan & inspect EVERY diverse rule flavor through PackagePlanner + Cli
+                const t1 = await serve(root, ["targets", "//..."])
+                expect(t1.exitCode, t1.output + "\n" + t1.logs).toBe(0)
+                expect((await serve(root, ["index", "//..."])).exitCode).toBe(0)
+                expect((await serve(root, ["graph", "//..."])).exitCode).toBe(0)
+                for (
+                  const lbl of [
+                    "//:dockerBuild",
+                    "//:dockerBake",
+                    "//:cargoBuild",
+                    "//:cargoFmt",
+                    "//:goPkgs",
+                    "//:foundryBuild",
+                    "//:wf",
+                    "//:pack",
+                    "//:llmLint",
+                    "//:agentLint",
+                    "//:diffTarget"
+                  ]
+                ) {
+                  void (await serve(root, ["explain", lbl]))
+                  void (await serve(root, ["show", "target", lbl]))
                 }
+
+                // Failing target + --keep-going runs passTarget too
+                const failRes = await serve(root, ["test", "//:failTarget", "//:passTarget"])
+                expect(failRes.exitCode).not.toBe(0)
+                expect((await serve(root, ["test", "//:passTarget"])).exitCode).toBe(0)
+
+                // Approval-gated target (denied vs approved)
+                const gateRes = await serve(root, ["run", "//:gated"], {
+                  approvals: {
+                    granted: async () => approved
+                  }
+                })
+                if (approved) expect(gateRes.exitCode).toBe(0)
+                else expect(gateRes.exitCode).not.toBe(0)
               })
-              if (approved) expect(gateRes.exitCode).toBe(0)
-              else expect(gateRes.exitCode).not.toBe(0)
-            })
-            return true
-          }),
-        { executions: cliExecutions, seed: 20261221 }
+              return true
+            }),
+          { executions: cliExecutions, seed: 20261221 }
+        )
       )
-    )
-    assertPassed(report)
-  }, 180_000)
+      assertPassed(report)
+    },
+    180_000
+  )
 
   it("Cli init, error handling, invalid workspace/package diagnostics & cycle detection fuzz invariants", async () => {
     const gen = Arbitrary.schema(
@@ -480,7 +528,11 @@ export const Package = S.Package({
                   "WORKSPACE.ts",
                   `import { Smithers as S } from "@smthrs/targets"\nexport const Workspace = S.Workspace("e-${slug}", { repository: "git+https://example.invalid/e.git", cache: S.Cache({ directory: ".flows" }) })\n`
                 )
-                await write(root, "PACKAGE.ts", `import { Smithers as S } from "@smthrs/targets"\nexport const Package = S.Package({ targets: {} })\n`)
+                await write(
+                  root,
+                  "PACKAGE.ts",
+                  `import { Smithers as S } from "@smthrs/targets"\nexport const Package = S.Package({ targets: {} })\n`
+                )
                 const r = await serve(root, ["build", `//:${slug}_missing`])
                 expect(r.exitCode).not.toBe(0)
               } else if (errCase === "bad-package") {
@@ -515,7 +567,11 @@ export const Package = S.Package({
                   "WORKSPACE.ts",
                   `import { Smithers as S } from "@smthrs/targets"\nexport const Workspace = S.Workspace("u-${slug}", { repository: "git+https://example.invalid/u.git", cache: S.Cache({ directory: ".flows" }) })\n`
                 )
-                await write(root, "PACKAGE.ts", `import { Smithers as S } from "@smthrs/targets"\nexport const Package = S.Package({ targets: {} })\n`)
+                await write(
+                  root,
+                  "PACKAGE.ts",
+                  `import { Smithers as S } from "@smthrs/targets"\nexport const Package = S.Package({ targets: {} })\n`
+                )
                 const r = await serve(root, ["--help"])
                 expect(typeof r.exitCode).toBe("number")
               }

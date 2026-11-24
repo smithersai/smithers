@@ -52,7 +52,7 @@ describe("@smthrs/ci replay deep fuzz invariants", () => {
         ]),
         errorOutput: Schema.Literals([
           "//:a FAIL exit code 1\nboom error line\n",
-          '{"code":"ci_failed","message":"target failed"}\n',
+          "{\"code\":\"ci_failed\",\"message\":\"target failed\"}\n",
           "plain failure\n",
           ""
         ]),
@@ -100,7 +100,13 @@ describe("@smthrs/ci replay deep fuzz invariants", () => {
             ]
             Summary.failedTwice(results)
             Summary.rightsTaken(["sudo", "apt"])
-            Summary.rightsOf(rep.units, [{ label: "//:a", status: "failed", key: "k1", durationMs: 10, rights: ["sudo"] }])
+            Summary.rightsOf(rep.units, [{
+              label: "//:a",
+              status: "failed",
+              key: "k1",
+              durationMs: 10,
+              rights: ["sudo"]
+            }])
             Summary.leftForRights([{ job: "ci.yml:a", programs: ["sudo"] }])
             Summary.noCommitBefore("abc1234")
             Summary.noCiBefore("abc1234")
@@ -169,7 +175,10 @@ describe("@smthrs/ci replay deep fuzz invariants", () => {
             const f4 = History.shallow(count, count + 5, 5)
 
             // Jail pure helpers
-            const sockets = Jail.daemonSockets(1000, { XDG_RUNTIME_DIR: "/run/user/1000", DOCKER_HOST: allowDocker ? "unix:///tmp/docker.sock" : undefined })
+            const sockets = Jail.daemonSockets(1000, {
+              XDG_RUNTIME_DIR: "/run/user/1000",
+              DOCKER_HOST: allowDocker ? "unix:///tmp/docker.sock" : undefined
+            })
             const probeEnv = hasEnv ? { PATH: process.env["PATH"], HOME: "/tmp" } : {}
             const probed = Jail.probeWith(probeEnv)
             const filter = Jail.keyringFilter()
@@ -220,7 +229,7 @@ describe("@smthrs/ci replay deep fuzz invariants", () => {
         arb,
         ({ fileCount, lowSpace }) =>
           Effect.scoped(
-            Effect.gen(function* () {
+            Effect.gen(function*() {
               const fs = yield* FileSystem.FileSystem
               const path = yield* Path.Path
               const work = yield* fs.makeTempDirectoryScoped({ prefix: "smithers-ci-confine-fuzz-" })
@@ -260,7 +269,9 @@ describe("@smthrs/ci replay deep fuzz invariants", () => {
                 space: () => Effect.succeed({ free: lowSpace ? 1024 : 50 * 1024 ** 3, total: 100 * 1024 ** 3 }),
                 held: () => Effect.succeed(1024)
               })
-              const dw = yield* Disk.diskWatch(work, work, () => Effect.void, "20 millis").pipe(Effect.provide(spaceLayer))
+              const dw = yield* Disk.diskWatch(work, work, () => Effect.void, "20 millis").pipe(
+                Effect.provide(spaceLayer)
+              )
               yield* Effect.exit(dw.admit(Effect.void))
               yield* dw.release
 
@@ -287,14 +298,14 @@ describe("@smthrs/ci replay deep fuzz invariants", () => {
               )
             })
           ).pipe(Effect.provide(
-                Layer.mergeAll(
-                  NodeServices.layer,
-                  Layer.succeed(Disk.DiskSpace, {
-                    space: () => Effect.succeed({ total: 200 * 1_000_000_000, free: 100 * 1_000_000_000 }),
-                    held: () => Effect.succeed(0),
-                  }),
-                ),
-              )),
+            Layer.mergeAll(
+              NodeServices.layer,
+              Layer.succeed(Disk.DiskSpace, {
+                space: () => Effect.succeed({ total: 200 * 1_000_000_000, free: 100 * 1_000_000_000 }),
+                held: () => Effect.succeed(0)
+              })
+            )
+          )),
         { seed, executions: Math.min(executions, 6) }
       )
     )
@@ -317,7 +328,7 @@ describe("@smthrs/ci replay deep fuzz invariants", () => {
         Fuzz.run(
           arb,
           ({ commits, includeFast, trial }) =>
-            Effect.gen(function* () {
+            Effect.gen(function*() {
               const res = yield* Replay.run(
                 {
                   root: repo.root,
@@ -330,10 +341,14 @@ describe("@smthrs/ci replay deep fuzz invariants", () => {
                 parts(repo.commits[0]!)
               )
               return res.commits.length === commits && res.repository === "test/replay"
-            }).pipe(Effect.provide(Layer.mergeAll(options, NodeServices.layer, Layer.succeed(Disk.DiskSpace, {
+            }).pipe(Effect.provide(Layer.mergeAll(
+              options,
+              NodeServices.layer,
+              Layer.succeed(Disk.DiskSpace, {
                 space: () => Effect.succeed({ total: 200 * 1_000_000_000, free: 100 * 1_000_000_000 }),
-                held: () => Effect.succeed(0),
-              })))),
+                held: () => Effect.succeed(0)
+              })
+            ))),
           { seed, executions: 1 }
         )
       )

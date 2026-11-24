@@ -29,7 +29,16 @@ describe("@smthrs/engine-store Deep3 Fuzz (NodeJournal, CachePublication, Sandbo
   it("NodeJournal.resultSummary, entry, hostRoot & secret-redaction-before-truncation invariants", async () => {
     const arb = Arbitrary.schema(
       Schema.Struct({
-        kind: Schema.Literals(["small", "secretLong", "utf8Clamp", "surrogateClamp", "oversized", "cycle", "bigint", "throwingToJson"]),
+        kind: Schema.Literals([
+          "small",
+          "secretLong",
+          "utf8Clamp",
+          "surrogateClamp",
+          "oversized",
+          "cycle",
+          "bigint",
+          "throwingToJson"
+        ]),
         recordTag: Schema.Literals(["PlanRecorded", "SubgraphAppended", "NodeScheduled", "NodeSettled"]),
         hasRoot: Schema.Boolean,
         hasRevision: Schema.Boolean
@@ -63,7 +72,11 @@ describe("@smthrs/engine-store Deep3 Fuzz (NodeJournal, CachePublication, Sandbo
             } else if (c.kind === "bigint") {
               val = 12345678901234567890n
             } else {
-              val = { toJSON: () => { throw new Error("boom") } }
+              val = {
+                toJSON: () => {
+                  throw new Error("boom")
+                }
+              }
             }
 
             const summary = NodeJournal.resultSummary(val)
@@ -199,7 +212,9 @@ describe("@smthrs/engine-store Deep3 Fuzz (NodeJournal, CachePublication, Sandbo
 
             const cacheSyncSvc: CacheSync.Service = {
               publishEntry: () =>
-                Effect.succeed(c.cacheSyncMode === "refuse" ? Option.some({ message: "entry refused" } as any) : Option.none())
+                Effect.succeed(
+                  c.cacheSyncMode === "refuse" ? Option.some({ message: "entry refused" } as any) : Option.none()
+                )
             } as any
 
             const pubArtEff = CachePublication.publishArtifacts(evidence)
@@ -255,8 +270,18 @@ describe("@smthrs/engine-store Deep3 Fuzz (NodeJournal, CachePublication, Sandbo
   it("SandboxedExecution.execute fuzzes clean settlement, rebases, conflict exhaustion, invalidations, and body failures", async () => {
     const arb = Arbitrary.schema(
       Schema.Struct({
-        outcome: Schema.Literals(["clean", "rebaseRecover", "rebaseExhaust", "invalidatedWrite", "invalidatedRead", "bodyFail"]),
-        maxRebases: Schema.Int.pipe(Schema.check(Schema.isGreaterThanOrEqualTo(0)), Schema.check(Schema.isLessThanOrEqualTo(2))),
+        outcome: Schema.Literals([
+          "clean",
+          "rebaseRecover",
+          "rebaseExhaust",
+          "invalidatedWrite",
+          "invalidatedRead",
+          "bodyFail"
+        ]),
+        maxRebases: Schema.Int.pipe(
+          Schema.check(Schema.isGreaterThanOrEqualTo(0)),
+          Schema.check(Schema.isLessThanOrEqualTo(2))
+        ),
         mode: Schema.Literals(["expected", "hard"])
       })
     )
@@ -293,16 +318,22 @@ describe("@smthrs/engine-store Deep3 Fuzz (NodeJournal, CachePublication, Sandbo
                       files: [{ path: "a.txt", beforeDigest: undefined, afterDigest: hex64("c") }],
                       effects: []
                     },
-                    violations: c.mode === "expected" ? [{ kind: "undeclared-write", resource: { id: "extra.txt" } }] : []
+                    violations: c.mode === "expected"
+                      ? [{ kind: "undeclared-write", resource: { id: "extra.txt" } }]
+                      : []
                   } as any)
                 }),
               materialize: () =>
                 Effect.suspend(() => {
                   if (c.outcome === "rebaseRecover" && calls === 1) {
-                    return Effect.fail(new WorkspaceSandbox.MaterializationConflict({ message: "race", paths: ["a.txt"] } as any))
+                    return Effect.fail(
+                      new WorkspaceSandbox.MaterializationConflict({ message: "race", paths: ["a.txt"] } as any)
+                    )
                   }
                   if (c.outcome === "rebaseExhaust") {
-                    return Effect.fail(new WorkspaceSandbox.MaterializationConflict({ message: "always-race", paths: ["a.txt"] } as any))
+                    return Effect.fail(
+                      new WorkspaceSandbox.MaterializationConflict({ message: "always-race", paths: ["a.txt"] } as any)
+                    )
                   }
                   return Effect.void
                 })
@@ -338,7 +369,10 @@ describe("@smthrs/engine-store Deep3 Fuzz (NodeJournal, CachePublication, Sandbo
     const arb = Arbitrary.schema(
       Schema.Struct({
         mode: Schema.Literals(["disabled", "accepted", "dropped", "failed", "slowTimeout"]),
-        logCount: Schema.Int.pipe(Schema.check(Schema.isGreaterThanOrEqualTo(0)), Schema.check(Schema.isLessThanOrEqualTo(4)))
+        logCount: Schema.Int.pipe(
+          Schema.check(Schema.isGreaterThanOrEqualTo(0)),
+          Schema.check(Schema.isLessThanOrEqualTo(4))
+        )
       })
     )
 

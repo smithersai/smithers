@@ -31,7 +31,13 @@ const assertPassed = (report: Parameters<typeof Fuzz.formatReport>[0]) => {
 }
 
 interface RecordedStmt {
-  readonly kind: "execute" | "executeRaw" | "executeValues" | "executeValuesUnprepared" | "executeUnprepared" | "executeStream"
+  readonly kind:
+    | "execute"
+    | "executeRaw"
+    | "executeValues"
+    | "executeValuesUnprepared"
+    | "executeUnprepared"
+    | "executeStream"
   readonly sql: string
   readonly params: ReadonlyArray<unknown>
 }
@@ -44,7 +50,10 @@ interface FakePgState {
   commitReturnsRollback: boolean
   failReserve: "none" | "connection" | "auth"
   reserveDelayMs: number
-  readonly registeredCodecs: Map<number, { encode: (v: unknown) => unknown; decode: (b: Uint8Array) => Result.Result<unknown, unknown> }>
+  readonly registeredCodecs: Map<
+    number,
+    { encode: (v: unknown) => unknown; decode: (b: Uint8Array) => Result.Result<unknown, unknown> }
+  >
 }
 
 const makeFakePgDriver = (state: FakePgState): PostgresDatabase.Driver => {
@@ -97,7 +106,11 @@ const makeFakePgDriver = (state: FakePgState): PostgresDatabase.Driver => {
           return Effect.succeed([{ table_name: "items", name: "chk_positive", definition: "CHECK (v > 0)" }])
         }
         if (sql.includes("FROM pg_constraint") && sql.includes("contype = 'f'")) {
-          return Effect.succeed([{ table_name: "items", name: "fk_parent", definition: "FOREIGN KEY (p) REFERENCES parents(id)" }])
+          return Effect.succeed([{
+            table_name: "items",
+            name: "fk_parent",
+            definition: "FOREIGN KEY (p) REFERENCES parents(id)"
+          }])
         }
         if (sql.includes("FROM pg_trigger")) {
           return Effect.succeed([{ table_name: "items" }])
@@ -443,7 +456,10 @@ describe("@smthrs/database Deep Fuzz (PostgresDatabase, PostgresSelection, NodeD
   it("PostgresDatabase transactions, partition locking, widening, savepoints, rollbacks, lock-timeout retries & TestDatabase PG helpers", async () => {
     const arb = Arbitrary.schema(
       Schema.Struct({
-        lockTimeouts: Schema.Int.pipe(Schema.check(Schema.isGreaterThanOrEqualTo(0)), Schema.check(Schema.isLessThanOrEqualTo(2))),
+        lockTimeouts: Schema.Int.pipe(
+          Schema.check(Schema.isGreaterThanOrEqualTo(0)),
+          Schema.check(Schema.isLessThanOrEqualTo(2))
+        ),
         outerPartition: Schema.Literals(["none", "p-alpha", "p-beta"]),
         innerAction: Schema.Literals([
           "widen",
@@ -670,7 +686,10 @@ describe("@smthrs/database Deep Fuzz (PostgresDatabase, PostgresSelection, NodeD
             expect(rows).toEqual([{ id: 1, val: 10 }])
             const writeRes = yield* Effect.result(sql`INSERT INTO items (id, val) VALUES (2, 20)`)
             expect(Result.isFailure(writeRes)).toBe(true)
-          }).pipe(Effect.provide(NodeDatabase.layer({ filename: dbPath, readOnly: true })), Effect.provide(silentLogger))
+          }).pipe(
+            Effect.provide(NodeDatabase.layer({ filename: dbPath, readOnly: true })),
+            Effect.provide(silentLogger)
+          )
         )
       )
 

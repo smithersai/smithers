@@ -45,7 +45,16 @@ describe("@smthrs/registry Authority, MarkdownFlow, NodeLoadGuard, ExecutionSnap
           "*"
         ]),
         grantMode: Schema.Literals(["wildcard", "subset", "empty"]),
-        declMode: Schema.Literals(["none", "unreadable", "valid_exclusive", "invalid_mode", "invalid_conflict", "invalid_tier", "under_classified", "unreadable_members"])
+        declMode: Schema.Literals([
+          "none",
+          "unreadable",
+          "valid_exclusive",
+          "invalid_mode",
+          "invalid_conflict",
+          "invalid_tier",
+          "under_classified",
+          "unreadable_members"
+        ])
       })
     )
 
@@ -74,22 +83,21 @@ describe("@smthrs/registry Authority, MarkdownFlow, NodeLoadGuard, ExecutionSnap
               if (grantMode !== "wildcard" && !grant.includes(c)) return false
             }
 
-            const declaration: Authority.DeclaredEffects | "unreadable" | undefined =
-              declMode === "none"
-                ? undefined
-                : declMode === "unreadable"
-                  ? "unreadable"
-                  : declMode === "valid_exclusive"
-                    ? { reads: ["src"], writes: ["out"], mode: "exclusive", onConflict: "queue", tier: "irreversible" }
-                    : declMode === "invalid_mode"
-                      ? { reads: ["src"], writes: ["out"], mode: "bogus", onConflict: "queue", tier: undefined }
-                      : declMode === "invalid_conflict"
-                        ? { reads: ["src"], writes: ["out"], mode: "exclusive", onConflict: "bogus", tier: undefined }
-                        : declMode === "invalid_tier"
-                          ? { reads: ["src"], writes: ["out"], mode: "exclusive", onConflict: "queue", tier: "bogus" }
-                          : declMode === "under_classified"
-                            ? { reads: ["src"], writes: ["out"], mode: "exclusive", onConflict: "queue", tier: "sealed" }
-                            : { reads: "unreadable", writes: "unreadable", mode: undefined, onConflict: undefined, tier: undefined }
+            const declaration: Authority.DeclaredEffects | "unreadable" | undefined = declMode === "none"
+              ? undefined
+              : declMode === "unreadable"
+              ? "unreadable"
+              : declMode === "valid_exclusive"
+              ? { reads: ["src"], writes: ["out"], mode: "exclusive", onConflict: "queue", tier: "irreversible" }
+              : declMode === "invalid_mode"
+              ? { reads: ["src"], writes: ["out"], mode: "bogus", onConflict: "queue", tier: undefined }
+              : declMode === "invalid_conflict"
+              ? { reads: ["src"], writes: ["out"], mode: "exclusive", onConflict: "bogus", tier: undefined }
+              : declMode === "invalid_tier"
+              ? { reads: ["src"], writes: ["out"], mode: "exclusive", onConflict: "queue", tier: "bogus" }
+              : declMode === "under_classified"
+              ? { reads: ["src"], writes: ["out"], mode: "exclusive", onConflict: "queue", tier: "sealed" }
+              : { reads: "unreadable", writes: "unreadable", mode: undefined, onConflict: undefined, tier: undefined }
 
             const projected = Authority.projectEffects({ capabilities: [capKind], declaration })
             const order = { sealed: 0, compensable: 1, irreversible: 2 } as const
@@ -106,7 +114,10 @@ describe("@smthrs/registry Authority, MarkdownFlow, NodeLoadGuard, ExecutionSnap
             if (declMode === "invalid_tier" && !projected.problems.some((p) => p._tag === "invalidTier")) {
               return false
             }
-            if (declMode === "under_classified" && tier !== "sealed" && !projected.problems.some((p) => p._tag === "underClassifiedTier")) {
+            if (
+              declMode === "under_classified" && tier !== "sealed" &&
+              !projected.problems.some((p) => p._tag === "underClassifiedTier")
+            ) {
               return false
             }
             return true
@@ -223,16 +234,15 @@ describe("@smthrs/registry Authority, MarkdownFlow, NodeLoadGuard, ExecutionSnap
                     const guard = yield* LoadGuard.LoadGuard
                     yield* guard.protect(rootDir)
                     yield* guard.permit(measuredFile)
-                    const fileToLoad =
-                      target === "measured"
-                        ? measuredFile
-                        : target === "unmeasured"
-                          ? unmeasuredFile
-                          : target === "node_modules"
-                            ? nmFile
-                            : target === "outside"
-                              ? outsideFile
-                              : "node:fs"
+                    const fileToLoad = target === "measured"
+                      ? measuredFile
+                      : target === "unmeasured"
+                      ? unmeasuredFile
+                      : target === "node_modules"
+                      ? nmFile
+                      : target === "outside"
+                      ? outsideFile
+                      : "node:fs"
                     const url = target === "builtin" ? "node:fs" : pathToFileURL(fileToLoad).href
                     let threwUnmeasured = false
                     try {
@@ -262,130 +272,138 @@ describe("@smthrs/registry Authority, MarkdownFlow, NodeLoadGuard, ExecutionSnap
     }
   })
 
-  it("ExecutionSnapshot.makeFileSystem & Executable (fromDescriptor, lower, delegateOf, catalog, fromRegistry) pin/restore snapshots and uphold fail-closed refusals", async () => {
-    const tmpBase = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "smthrs-reg-deep-")))
-    const codeFlowImpl = Flow.make("alpha", {
-      description: "Alpha code flow",
-      payload: { x: Schema.Number },
-      success: Schema.Number,
-      body: ({ x }) => Node.succeed(x + 1)
-    })
-    const delegateFlow = Flow.make("agent", {
-      description: "Test delegate agent",
-      payload: Executable.Invocation,
-      success: Schema.String,
-      body: () => Node.succeed("ok")
-    })
+  it(
+    "ExecutionSnapshot.makeFileSystem & Executable (fromDescriptor, lower, delegateOf, catalog, fromRegistry) pin/restore snapshots and uphold fail-closed refusals",
+    async () => {
+      const tmpBase = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "smthrs-reg-deep-")))
+      const codeFlowImpl = Flow.make("alpha", {
+        description: "Alpha code flow",
+        payload: { x: Schema.Number },
+        success: Schema.Number,
+        body: ({ x }) => Node.succeed(x + 1)
+      })
+      const delegateFlow = Flow.make("agent", {
+        description: "Test delegate agent",
+        payload: Executable.Invocation,
+        success: Schema.String,
+        body: () => Node.succeed("ok")
+      })
 
-    try {
-      const arb = Arbitrary.schema(
-        Schema.Struct({
-          flowKind: Schema.Literals(["markdown", "code"]),
-          withArtifactStore: Schema.Boolean,
-          hasDelegate: Schema.Boolean,
-          badModule: Schema.Boolean
-        })
-      )
-      const report = await Effect.runPromise(
-        Fuzz.run(
-          arb,
-          ({ flowKind, withArtifactStore, hasDelegate, badModule }) =>
-            Effect.scoped(
-              Effect.gen(function*() {
-                const repoDir = fs.mkdtempSync(path.join(tmpBase, "repo-"))
-                try {
-                  const flowsRoot = path.join(repoDir, ".smithers", "flows")
-                  const flowDir = path.join(flowsRoot, "alpha")
-                  fs.mkdirSync(flowDir, { recursive: true })
-                  if (flowKind === "markdown") {
-                    fs.writeFileSync(
-                      path.join(flowDir, "SKILL.md"),
-                      "---\nname: alpha\ndescription: Alpha md flow\ncapabilities:\n  - read\n---\nRun $ARGUMENTS\n"
-                    )
-                  } else {
-                    fs.writeFileSync(path.join(flowDir, "helper.ts"), `export const delta = 1\n`)
-                    fs.writeFileSync(
-                      path.join(flowDir, "flow.ts"),
-                      `import { Flow } from "@smthrs/flow"\nimport { Node } from "@smthrs/plan"\nimport { Schema } from "effect"\nimport { delta } from "./helper.ts"\nexport default Flow.make("alpha", { description: "Alpha code flow", capabilities: ["read"], effects: { reads: [], writes: [], mode: "concurrent", onConflict: "allow", tier: "sealed" }, payload: Schema.Struct({ x: Schema.Number }), success: Schema.Number, body: Node.capture({}, ({ x }) => Node.succeed(x + delta)) })\n`
-                    )
-                  }
-
-                  const discovery = yield* Discovery.Discovery
-                  const scanned = yield* discovery.scan({ source: "project", root: flowsRoot, naming: "path" })
-                  const desc = scanned.entries.find((e) => e.name === "alpha")
-                  if (desc === undefined) return false
-
-                  const lowered = Executable.lower(desc, Context.empty())
-                  if (typeof lowered !== "object" || lowered === null) return false
-
-                  const spec = Executable.fileSpecifier(path.join(flowDir, flowKind === "markdown" ? "SKILL.md" : "flow.ts"))
-                  if (!spec.startsWith("file://")) return false
-
-                  const options: Executable.Options = {
-                    delegates: hasDelegate ? [delegateFlow] : [],
-                    load: () =>
-                      badModule
-                        ? Effect.succeed({ default: "not-a-flow" })
-                        : Effect.succeed({ default: codeFlowImpl })
-                  }
-
-                  const execExit = yield* Effect.exit(Executable.fromDescriptor(desc, options))
-                  if (flowKind === "markdown" && !hasDelegate) {
-                    if (execExit._tag !== "Failure") return false
-                    return true
-                  }
-                  if (flowKind === "code" && badModule) {
-                    if (execExit._tag !== "Failure") return false
-                    return true
-                  }
-                  if (execExit._tag !== "Success") return false
-                  const exec = execExit.value
-
-                  const digest = Descriptor.executionDigest(exec.descriptor)
-                  if (digest === undefined) return false
-
-                  // Pin & restore with both plain filesystem and ArtifactStore CAS backing
-                  const store = withArtifactStore ? ArtifactStore.makeMemory() : undefined
-                  const snapSvc = yield* ExecutionSnapshot.makeFileSystem({
-                    root: path.join(repoDir, ".snap"),
-                    ...(store === undefined ? {} : { store })
-                  })
-                  yield* snapSvc.pin(exec)
-                  const roots = yield* snapSvc.roots([digest])
-                  if (!Array.isArray(roots)) return false
-                  const restored = yield* snapSvc.restore(digest)
-                  if (restored.descriptor.name !== "alpha") return false
-                  const fetchedDesc = yield* snapSvc.descriptor(digest)
-                  if (fetchedDesc.name !== "alpha") return false
-
-                  // Unknown digest must fail closed
-                  const missingExit = yield* Effect.exit(snapSvc.restore("0".repeat(64)))
-                  if (missingExit._tag !== "Failure") return false
-
-                  // Executable.catalog (eager + deferred) & Executable.fromRegistry parity
-                  const regLayer = Registry.layerProject({ root: repoDir }).pipe(
-                    Layer.provide(Discovery.layer.pipe(Layer.provideMerge(Platform)))
-                  )
-                  const cat = yield* Executable.catalog(options).pipe(Effect.provide(regLayer))
-                  if (cat.executables.length !== 1 || cat.refused.length !== 0) return false
-                  const deferredCat = yield* Executable.catalog({ ...options, initialFlows: [] }).pipe(Effect.provide(regLayer))
-                  if ((deferredCat.deferred ?? []).length !== 1) return false
-                  const fromReg = yield* Executable.fromRegistry("alpha", options).pipe(Effect.provide(regLayer))
-                  if (fromReg.descriptor.name !== "alpha") return false
-                  return true
-                } finally {
-                  fs.rmSync(repoDir, { recursive: true, force: true })
-                }
-              }).pipe(Effect.provide(Discovery.layer.pipe(Layer.provideMerge(Platform))))
-            ),
-          { seed: seed + 3, executions: Math.min(executions, 20) }
+      try {
+        const arb = Arbitrary.schema(
+          Schema.Struct({
+            flowKind: Schema.Literals(["markdown", "code"]),
+            withArtifactStore: Schema.Boolean,
+            hasDelegate: Schema.Boolean,
+            badModule: Schema.Boolean
+          })
         )
-      )
-      const failure = Fuzz.formatReport(report)
-      if (failure !== undefined) throw new Error(failure)
-      expect(report._tag).toBe("Passed")
-    } finally {
-      fs.rmSync(tmpBase, { recursive: true, force: true })
-    }
-  }, 60_000)
+        const report = await Effect.runPromise(
+          Fuzz.run(
+            arb,
+            ({ flowKind, withArtifactStore, hasDelegate, badModule }) =>
+              Effect.scoped(
+                Effect.gen(function*() {
+                  const repoDir = fs.mkdtempSync(path.join(tmpBase, "repo-"))
+                  try {
+                    const flowsRoot = path.join(repoDir, ".smithers", "flows")
+                    const flowDir = path.join(flowsRoot, "alpha")
+                    fs.mkdirSync(flowDir, { recursive: true })
+                    if (flowKind === "markdown") {
+                      fs.writeFileSync(
+                        path.join(flowDir, "SKILL.md"),
+                        "---\nname: alpha\ndescription: Alpha md flow\ncapabilities:\n  - read\n---\nRun $ARGUMENTS\n"
+                      )
+                    } else {
+                      fs.writeFileSync(path.join(flowDir, "helper.ts"), `export const delta = 1\n`)
+                      fs.writeFileSync(
+                        path.join(flowDir, "flow.ts"),
+                        `import { Flow } from "@smthrs/flow"\nimport { Node } from "@smthrs/plan"\nimport { Schema } from "effect"\nimport { delta } from "./helper.ts"\nexport default Flow.make("alpha", { description: "Alpha code flow", capabilities: ["read"], effects: { reads: [], writes: [], mode: "concurrent", onConflict: "allow", tier: "sealed" }, payload: Schema.Struct({ x: Schema.Number }), success: Schema.Number, body: Node.capture({}, ({ x }) => Node.succeed(x + delta)) })\n`
+                      )
+                    }
+
+                    const discovery = yield* Discovery.Discovery
+                    const scanned = yield* discovery.scan({ source: "project", root: flowsRoot, naming: "path" })
+                    const desc = scanned.entries.find((e) => e.name === "alpha")
+                    if (desc === undefined) return false
+
+                    const lowered = Executable.lower(desc, Context.empty())
+                    if (typeof lowered !== "object" || lowered === null) return false
+
+                    const spec = Executable.fileSpecifier(
+                      path.join(flowDir, flowKind === "markdown" ? "SKILL.md" : "flow.ts")
+                    )
+                    if (!spec.startsWith("file://")) return false
+
+                    const options: Executable.Options = {
+                      delegates: hasDelegate ? [delegateFlow] : [],
+                      load: () =>
+                        badModule
+                          ? Effect.succeed({ default: "not-a-flow" })
+                          : Effect.succeed({ default: codeFlowImpl })
+                    }
+
+                    const execExit = yield* Effect.exit(Executable.fromDescriptor(desc, options))
+                    if (flowKind === "markdown" && !hasDelegate) {
+                      if (execExit._tag !== "Failure") return false
+                      return true
+                    }
+                    if (flowKind === "code" && badModule) {
+                      if (execExit._tag !== "Failure") return false
+                      return true
+                    }
+                    if (execExit._tag !== "Success") return false
+                    const exec = execExit.value
+
+                    const digest = Descriptor.executionDigest(exec.descriptor)
+                    if (digest === undefined) return false
+
+                    // Pin & restore with both plain filesystem and ArtifactStore CAS backing
+                    const store = withArtifactStore ? ArtifactStore.makeMemory() : undefined
+                    const snapSvc = yield* ExecutionSnapshot.makeFileSystem({
+                      root: path.join(repoDir, ".snap"),
+                      ...(store === undefined ? {} : { store })
+                    })
+                    yield* snapSvc.pin(exec)
+                    const roots = yield* snapSvc.roots([digest])
+                    if (!Array.isArray(roots)) return false
+                    const restored = yield* snapSvc.restore(digest)
+                    if (restored.descriptor.name !== "alpha") return false
+                    const fetchedDesc = yield* snapSvc.descriptor(digest)
+                    if (fetchedDesc.name !== "alpha") return false
+
+                    // Unknown digest must fail closed
+                    const missingExit = yield* Effect.exit(snapSvc.restore("0".repeat(64)))
+                    if (missingExit._tag !== "Failure") return false
+
+                    // Executable.catalog (eager + deferred) & Executable.fromRegistry parity
+                    const regLayer = Registry.layerProject({ root: repoDir }).pipe(
+                      Layer.provide(Discovery.layer.pipe(Layer.provideMerge(Platform)))
+                    )
+                    const cat = yield* Executable.catalog(options).pipe(Effect.provide(regLayer))
+                    if (cat.executables.length !== 1 || cat.refused.length !== 0) return false
+                    const deferredCat = yield* Executable.catalog({ ...options, initialFlows: [] }).pipe(
+                      Effect.provide(regLayer)
+                    )
+                    if ((deferredCat.deferred ?? []).length !== 1) return false
+                    const fromReg = yield* Executable.fromRegistry("alpha", options).pipe(Effect.provide(regLayer))
+                    if (fromReg.descriptor.name !== "alpha") return false
+                    return true
+                  } finally {
+                    fs.rmSync(repoDir, { recursive: true, force: true })
+                  }
+                }).pipe(Effect.provide(Discovery.layer.pipe(Layer.provideMerge(Platform))))
+              ),
+            { seed: seed + 3, executions: Math.min(executions, 20) }
+          )
+        )
+        const failure = Fuzz.formatReport(report)
+        if (failure !== undefined) throw new Error(failure)
+        expect(report._tag).toBe("Passed")
+      } finally {
+        fs.rmSync(tmpBase, { recursive: true, force: true })
+      }
+    },
+    60_000
+  )
 })

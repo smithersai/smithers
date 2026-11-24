@@ -516,7 +516,15 @@ describe("@smthrs/gateway NativeGateway, BunGateway, NodeGateway, GatewayServer 
         useBearer: Schema.Boolean,
         approvalDecision: Schema.Literals(["approve", "deny"]),
         waitCase: Schema.Literals(["none", "wrong-request", "deny-wait", "missing-answer", "valid-answer"]),
-        bridgeEndpoint: Schema.Literals(["command-ok", "command-bad-json", "command-bad-schema", "command-unauth", "observe-bad", "monitor-bad", "monitor-ok"])
+        bridgeEndpoint: Schema.Literals([
+          "command-ok",
+          "command-bad-json",
+          "command-bad-schema",
+          "command-unauth",
+          "observe-bad",
+          "monitor-bad",
+          "monitor-ok"
+        ])
       })
     )
 
@@ -530,7 +538,7 @@ describe("@smthrs/gateway NativeGateway, BunGateway, NodeGateway, GatewayServer 
               sourceRunId: input.runId,
               at: input.at,
               sequence: 0,
-              branch: "main" 
+              branch: "main"
             } as never),
           verify: (input) =>
             Effect.succeed({
@@ -637,7 +645,8 @@ describe("@smthrs/gateway NativeGateway, BunGateway, NodeGateway, GatewayServer 
                   : "/runtime/v1/monitor"
                 const body = tc.bridgeEndpoint === "command-bad-json"
                   ? "{not-json"
-                  : tc.bridgeEndpoint === "command-bad-schema" || tc.bridgeEndpoint === "observe-bad" || tc.bridgeEndpoint === "monitor-bad"
+                  : tc.bridgeEndpoint === "command-bad-schema" || tc.bridgeEndpoint === "observe-bad" ||
+                      tc.bridgeEndpoint === "monitor-bad"
                   ? JSON.stringify({ protocol: "bad" })
                   : tc.bridgeEndpoint === "monitor-ok"
                   ? JSON.stringify({ protocol: RuntimeBridge.protocol, runId })
@@ -667,7 +676,9 @@ describe("@smthrs/gateway NativeGateway, BunGateway, NodeGateway, GatewayServer 
 
         // Also exercise anonymous loopback server (no credential, no RunHistory) to cover anonymous refusal & Unavailable
         const anonCtx = yield* Layer.build(
-          NodeGateway.layer(health, { host: "127.0.0.1", port: 0, heartbeatMillis: 30 }).pipe(Layer.provideMerge(stack()))
+          NodeGateway.layer(health, { host: "127.0.0.1", port: 0, heartbeatMillis: 30 }).pipe(
+            Layer.provideMerge(stack())
+          )
         )
         const anonHttp = yield* HttpServer.HttpServer.pipe(Effect.provide(anonCtx))
         const anonAddr = anonHttp.address
@@ -785,7 +796,14 @@ describe("@smthrs/gateway NativeGateway, BunGateway, NodeGateway, GatewayServer 
           branchId: "b-fuzz",
           capability: {
             signature: "sig",
-            claims: { kid: "host", branchId: "b-fuzz", capabilityId: "cap", access: "write", issuedAtMs: 0, expiresAtMs: 0 }
+            claims: {
+              kid: "host",
+              branchId: "b-fuzz",
+              capabilityId: "cap",
+              access: "write",
+              issuedAtMs: 0,
+              expiresAtMs: 0
+            }
           }
         }
 
@@ -795,8 +813,9 @@ describe("@smthrs/gateway NativeGateway, BunGateway, NodeGateway, GatewayServer 
             Effect.gen(function*() {
               let payload: unknown = scope
               if (tc.action === "Branch.CreateBranch") payload = { ttlMs: 60_000 }
-              else if (tc.action === "Branch.MintShare") payload = { capability: scope.capability, access: "read", ttlMs: 60_000 }
-              else if (tc.action === "Branch.Submit") {
+              else if (tc.action === "Branch.MintShare") {
+                payload = { capability: scope.capability, access: "read", ttlMs: 60_000 }
+              } else if (tc.action === "Branch.Submit") {
                 payload = {
                   capability: scope.capability,
                   submission: {
@@ -855,7 +874,12 @@ describe("@smthrs/gateway NativeGateway, BunGateway, NodeGateway, GatewayServer 
         )
         const failure = Fuzz.formatReport(report)
         if (failure !== undefined) throw new Error(failure)
-      }).pipe(Effect.provide(serverLayer), Effect.provide(TestClock.layer()), Effect.provide(silentLogger), Effect.scoped)
+      }).pipe(
+        Effect.provide(serverLayer),
+        Effect.provide(TestClock.layer()),
+        Effect.provide(silentLogger),
+        Effect.scoped
+      )
     )
   })
 

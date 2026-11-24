@@ -1,22 +1,22 @@
+import * as NodeServices from "@effect/platform-node/NodeServices"
 import { CapabilityPattern } from "@smthrs/capability/Capability"
 import { Rule } from "@smthrs/capability/Permission"
-import * as NodeServices from "@effect/platform-node/NodeServices"
 import { Fuzz } from "@smthrs/fuzz"
 import { Destination } from "@smthrs/kernel/HttpClient"
-import { createServer as createHttpServer, type Server as HttpServer } from "node:http"
-import { chmodSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs"
-import { tmpdir } from "node:os"
-import { join } from "node:path"
 import { Arbitrary, Effect, Exit, FileSystem, Layer, Logger, Schema } from "effect"
 import { HttpClient, HttpClientRequest } from "effect/http"
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs"
+import { createServer as createHttpServer, type Server as HttpServer } from "node:http"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
 import { afterAll, describe, expect, it } from "vitest"
 import * as AtomicFileSystem from "../src/AtomicFileSystem.ts"
 import * as EgressHttpClient from "../src/EgressHttpClient.ts"
+import { createBrokerDirectory, destinationBrokerRoot } from "../src/internal/DestinationBrokerRoot.ts"
+import { AgentFactory } from "../src/internal/EgressAgent.ts"
 import * as NodeLanguageServer from "../src/NodeLanguageServer.ts"
 import * as NodeRuntime from "../src/NodeRuntime.ts"
 import * as ProcessSandbox from "../src/ProcessSandbox.ts"
-import { createBrokerDirectory, destinationBrokerRoot } from "../src/internal/DestinationBrokerRoot.ts"
-import { AgentFactory } from "../src/internal/EgressAgent.ts"
 
 const baseExecutions = Number(process.env["FUZZ_EXECUTIONS"] ?? "100")
 const seed = Number(process.env["FUZZ_SEED"] ?? "20261128")
@@ -38,7 +38,9 @@ afterAll(() => {
   }
 })
 
-const startHttp = (handler: (url: string, headers: Record<string, string | string[] | undefined>) => { status: number; body: string }): Promise<{ server: HttpServer; port: number; origin: string }> =>
+const startHttp = (
+  handler: (url: string, headers: Record<string, string | string[] | undefined>) => { status: number; body: string }
+): Promise<{ server: HttpServer; port: number; origin: string }> =>
   new Promise((resolve, reject) => {
     const server = createHttpServer((req, res) => {
       const out = handler(req.url ?? "/", req.headers)
@@ -57,7 +59,10 @@ const startHttp = (handler: (url: string, headers: Record<string, string | strin
   })
 
 const closeHttp = (server: HttpServer): Promise<void> =>
-  new Promise((resolve) => { server.closeAllConnections?.(); server.close(() => resolve()) })
+  new Promise((resolve) => {
+    server.closeAllConnections?.()
+    server.close(() => resolve())
+  })
 
 describe("@smthrs/platform-node gap closer: NodeLanguageServer security/push/refresh, ProcessSandbox toolchain/wrapping, EgressHttpClient pinning/repair, NativeRuntime & AtomicFileSystem", () => {
   it("NodeLanguageServer workspaceProgram/launcher/interpreterCode refuses unsafe commands and arguments", async () => {
@@ -94,32 +99,31 @@ describe("@smthrs/platform-node gap closer: NodeLanguageServer security/push/ref
         Arbitrary.schema(Input),
         (tc) =>
           Effect.gen(function*() {
-            const config: NodeLanguageServer.Config =
-              tc.caseKind === "launcher-sh"
-                ? { command: "sh", args: ["-c", "true"], cwd: ws }
-                : tc.caseKind === "launcher-env"
-                ? { command: "env", args: ["node", outScript], cwd: ws }
-                : tc.caseKind === "launcher-npx"
-                ? { command: "npx", args: ["ts-ls"], cwd: ws }
-                : tc.caseKind === "node-eval-short"
-                ? { command: "node", args: ["-e", "1"], cwd: ws }
-                : tc.caseKind === "node-eval-long"
-                ? { command: "node", args: ["--eval=1"], cwd: ws }
-                : tc.caseKind === "node-dash"
-                ? { command: "node", args: ["-"], cwd: ws }
-                : tc.caseKind === "node-double-dash-missing"
-                ? { command: "node", args: ["--", join(outside, "missing.js")], cwd: ws }
-                : tc.caseKind === "node-flag-value-missing"
-                ? { command: "node", args: ["--loader", "ts-node", join(outside, "missing.js")], cwd: ws }
-                : tc.caseKind === "node-long-flag-no-eq"
-                ? { command: "node", args: ["--title", "foo", join(outside, "missing.js")], cwd: ws }
-                : tc.caseKind === "node-short-val-letter"
-                ? { command: "node", args: ["-r", "mod", join(outside, "missing.js")], cwd: ws }
-                : tc.caseKind === "ws-program"
-                ? { command: wsBin, args: [], cwd: ws }
-                : tc.caseKind === "ws-arg-direct"
-                ? { command: process.execPath, args: [wsScript], cwd: ws }
-                : { command: process.execPath, args: [`--config=${wsScript}`, outScript], cwd: ws }
+            const config: NodeLanguageServer.Config = tc.caseKind === "launcher-sh"
+              ? { command: "sh", args: ["-c", "true"], cwd: ws }
+              : tc.caseKind === "launcher-env"
+              ? { command: "env", args: ["node", outScript], cwd: ws }
+              : tc.caseKind === "launcher-npx"
+              ? { command: "npx", args: ["ts-ls"], cwd: ws }
+              : tc.caseKind === "node-eval-short"
+              ? { command: "node", args: ["-e", "1"], cwd: ws }
+              : tc.caseKind === "node-eval-long"
+              ? { command: "node", args: ["--eval=1"], cwd: ws }
+              : tc.caseKind === "node-dash"
+              ? { command: "node", args: ["-"], cwd: ws }
+              : tc.caseKind === "node-double-dash-missing"
+              ? { command: "node", args: ["--", join(outside, "missing.js")], cwd: ws }
+              : tc.caseKind === "node-flag-value-missing"
+              ? { command: "node", args: ["--loader", "ts-node", join(outside, "missing.js")], cwd: ws }
+              : tc.caseKind === "node-long-flag-no-eq"
+              ? { command: "node", args: ["--title", "foo", join(outside, "missing.js")], cwd: ws }
+              : tc.caseKind === "node-short-val-letter"
+              ? { command: "node", args: ["-r", "mod", join(outside, "missing.js")], cwd: ws }
+              : tc.caseKind === "ws-program"
+              ? { command: wsBin, args: [], cwd: ws }
+              : tc.caseKind === "ws-arg-direct"
+              ? { command: process.execPath, args: [wsScript], cwd: ws }
+              : { command: process.execPath, args: [`--config=${wsScript}`, outScript], cwd: ws }
 
             const exit = yield* Effect.scoped(NodeLanguageServer.make(config)).pipe(Effect.exit)
             expect(Exit.isFailure(exit)).toBe(true)
@@ -350,7 +354,8 @@ process.stdin.on("data", (chunk) => {
 
     // Exercise writeProtectionRefusal across platforms
     expect(ProcessSandbox.writeProtectionRefusal({ ...realHost, platform: "darwin" })).toContain("only on Linux")
-    expect(ProcessSandbox.writeProtectionRefusal({ ...realHost, platform: "linux", executable: () => undefined })).toContain("not on PATH")
+    expect(ProcessSandbox.writeProtectionRefusal({ ...realHost, platform: "linux", executable: () => undefined }))
+      .toContain("not on PATH")
     const linuxRefusal = ProcessSandbox.writeProtectionRefusal(realHost, 2_000)
     expect(linuxRefusal === undefined || typeof linuxRefusal === "string").toBe(true)
 
@@ -522,7 +527,10 @@ process.stdin.on("data", (chunk) => {
                     calls += 1
                     if (calls === 1) {
                       const err = Object.assign(new Error("synthetic"), { code: failCode })
-                      queueMicrotask(() => { if (typeof handler.onResponseError === "function") handler.onResponseError({}, err); else handler.onError?.(err) })
+                      queueMicrotask(() => {
+                        if (typeof handler.onResponseError === "function") handler.onResponseError({}, err)
+                        else handler.onError?.(err)
+                      })
                       return true
                     }
                     return originalDispatch(opts, handler)
@@ -586,10 +594,22 @@ process.stdin.on("data", (chunk) => {
           Effect.gen(function*() {
             expect(AtomicFileSystem.helperSpawns()).toBeGreaterThanOrEqual(0)
 
-            const baseHost = { filename: join(freshDir("nr"), "j.sqlite"), workspaceRoot: tmpdir(), owner: { hostId: "fuzz" } }
-            if (tc.caseKind === "bad-timeout-neg" || tc.caseKind === "bad-timeout-float" || tc.caseKind === "bad-timeout-huge") {
-              const timeoutMs = tc.caseKind === "bad-timeout-neg" ? -1 : tc.caseKind === "bad-timeout-float" ? 1.5 : 9_999_999_999
-              expect((): unknown => NodeRuntime.layerHost({ ...baseHost, shutdownTimeoutMs: timeoutMs }, Layer.empty)).toThrow()
+            const baseHost = {
+              filename: join(freshDir("nr"), "j.sqlite"),
+              workspaceRoot: tmpdir(),
+              owner: { hostId: "fuzz" }
+            }
+            if (
+              tc.caseKind === "bad-timeout-neg" || tc.caseKind === "bad-timeout-float" ||
+              tc.caseKind === "bad-timeout-huge"
+            ) {
+              const timeoutMs = tc.caseKind === "bad-timeout-neg"
+                ? -1
+                : tc.caseKind === "bad-timeout-float"
+                ? 1.5
+                : 9_999_999_999
+              expect((): unknown => NodeRuntime.layerHost({ ...baseHost, shutdownTimeoutMs: timeoutMs }, Layer.empty))
+                .toThrow()
             } else if (tc.caseKind === "rules-flat") {
               const l = NodeRuntime.layerHost({ ...baseHost, rules: [rule] }, Layer.empty)
               expect(l).toBeDefined()
@@ -597,9 +617,12 @@ process.stdin.on("data", (chunk) => {
               const l = NodeRuntime.layerHost({ ...baseHost, rules: [[rule]] }, Layer.empty)
               expect(l).toBeDefined()
             } else if (tc.caseKind === "rules-bad-member") {
-              expect((): unknown => NodeRuntime.layerHost({ ...baseHost, rules: [{} as unknown as Rule] }, Layer.empty)).toThrow()
+              expect((): unknown => NodeRuntime.layerHost({ ...baseHost, rules: [{} as unknown as Rule] }, Layer.empty))
+                .toThrow()
             } else if (tc.caseKind === "rules-not-array") {
-              expect((): unknown => NodeRuntime.layerHost({ ...baseHost, rules: "bad" as unknown as ReadonlyArray<Rule> }, Layer.empty)).toThrow()
+              expect((): unknown =>
+                NodeRuntime.layerHost({ ...baseHost, rules: "bad" as unknown as ReadonlyArray<Rule> }, Layer.empty)
+              ).toThrow()
             } else if (tc.caseKind === "containment-custom") {
               const l = NodeRuntime.layerHost({
                 ...baseHost,
@@ -620,14 +643,13 @@ process.stdin.on("data", (chunk) => {
               expect(l).toBeDefined()
             } else {
               const dir = freshDir("atomic-cfg")
-              const opts: AtomicFileSystem.Options =
-                tc.caseKind === "atomic-bad-limit"
-                  ? { limits: { content: 0 } }
-                  : tc.caseKind === "atomic-bad-batchsize"
-                  ? { limits: { batchSize: 10_000_000 } }
-                  : tc.caseKind === "atomic-bad-concurrency"
-                  ? { concurrency: 0 }
-                  : { timeoutMs: 0 }
+              const opts: AtomicFileSystem.Options = tc.caseKind === "atomic-bad-limit"
+                ? { limits: { content: 0 } }
+                : tc.caseKind === "atomic-bad-batchsize"
+                ? { limits: { batchSize: 10_000_000 } }
+                : tc.caseKind === "atomic-bad-concurrency"
+                ? { concurrency: 0 }
+                : { timeoutMs: 0 }
               const exit = yield* Effect.scoped(
                 Effect.gen(function*() {
                   const fs = yield* FileSystem.FileSystem

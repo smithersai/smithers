@@ -20,7 +20,10 @@ describe("@smthrs/build internal security & boundary fuzz invariants", () => {
     const arb = Arbitrary.schema(
       Schema.Struct({
         chunkSizes: Schema.Array(
-          Schema.Int.pipe(Schema.check(Schema.isGreaterThanOrEqualTo(0)), Schema.check(Schema.isLessThanOrEqualTo(25_000)))
+          Schema.Int.pipe(
+            Schema.check(Schema.isGreaterThanOrEqualTo(0)),
+            Schema.check(Schema.isLessThanOrEqualTo(25_000))
+          )
         ).pipe(Schema.check(Schema.isMaxLength(5))),
         badUtf8: Schema.Boolean
       })

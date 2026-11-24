@@ -72,7 +72,15 @@ describe("@smthrs/gateway deep EngineTrace, RunTrace, callEvents, RunDevTools & 
   it("EngineTrace decodes valid plan/subgraph/node/attempt/state/interrupted/run-decision envelopes & detects conflicts", async () => {
     const arb = Arbitrary.schema(
       Schema.Struct({
-        decisionStatus: Schema.Literals(["created", "running", "suspended", "completed", "failed", "cancelled", "interrupt-released"]),
+        decisionStatus: Schema.Literals([
+          "created",
+          "running",
+          "suspended",
+          "completed",
+          "failed",
+          "cancelled",
+          "interrupt-released"
+        ]),
         stateOutcome: Schema.Literals(["running", "suspended", "completed-success", "completed-fail"]),
         attemptState: Schema.Literals(["succeeded", "failed"]),
         nodeOutcome: Schema.Literals(["built", "failed", "deferred", "cancelled"]),
@@ -218,7 +226,9 @@ describe("@smthrs/gateway deep EngineTrace, RunTrace, callEvents, RunDevTools & 
                 ...(tc.decisionStatus === "completed"
                   ? { result: { _tag: "Complete", exit: { _tag: "Success", value: "all-done" } } }
                   : tc.decisionStatus === "failed"
-                  ? { result: { _tag: "Complete", exit: { _tag: "Failure", cause: [{ _tag: "Fail", error: "err-1" }] } } }
+                  ? {
+                    result: { _tag: "Complete", exit: { _tag: "Failure", cause: [{ _tag: "Fail", error: "err-1" }] } }
+                  }
                   : {})
               }
             }
@@ -519,7 +529,16 @@ describe("@smthrs/gateway deep EngineTrace, RunTrace, callEvents, RunDevTools & 
             expect(typeof RunTrace.durationWords(tc.ms)).toBe("string")
           }
           for (
-            const fn of ["fs/read", "fs/write", "fs/edit", "fs/apply_patch", "shell/exec", "test/run", "git/diff", "custom/tool"]
+            const fn of [
+              "fs/read",
+              "fs/write",
+              "fs/edit",
+              "fs/apply_patch",
+              "shell/exec",
+              "test/run",
+              "git/diff",
+              "custom/tool"
+            ]
           ) {
             expect(RunTrace.callSemantics(fn, { command: "pytest -q", path: "a.ts" })).toBeDefined()
           }
@@ -691,7 +710,12 @@ describe("@smthrs/gateway RunTrace stepTranscripts, resultOf, grouped step-facts
             retry: 0,
             scope: "worker-1"
           }
-          const mkStepFact = (seq: number, srcSeq: number, eventType: string, payload: Record<string, unknown>): RunTrace.JournalRecord => ({
+          const mkStepFact = (
+            seq: number,
+            srcSeq: number,
+            eventType: string,
+            payload: Record<string, unknown>
+          ): RunTrace.JournalRecord => ({
             sequence: seq,
             runId: "run-st",
             kind: "control.engine.event",
@@ -721,7 +745,11 @@ describe("@smthrs/gateway RunTrace stepTranscripts, resultOf, grouped step-facts
           })
 
           const callId = `cell-call-v1:${"3".repeat(64)}`
-          const mkCallFact = (seq: number, phase: "invoked" | "settled", extra: Record<string, unknown>): RunTrace.JournalRecord => ({
+          const mkCallFact = (
+            seq: number,
+            phase: "invoked" | "settled",
+            extra: Record<string, unknown>
+          ): RunTrace.JournalRecord => ({
             sequence: seq,
             runId: "run-st",
             kind: "control.engine.event",
@@ -739,7 +767,14 @@ describe("@smthrs/gateway RunTrace stepTranscripts, resultOf, grouped step-facts
                 version: 1,
                 phase,
                 callId,
-                identity: { runId: "run-st", frame: 1, cell: "cell", ordinal: 0, declaration: "decl", layers: ["base"] },
+                identity: {
+                  runId: "run-st",
+                  frame: 1,
+                  cell: "cell",
+                  ordinal: 0,
+                  declaration: "decl",
+                  layers: ["base"]
+                },
                 step: stepScope,
                 flowName: "write",
                 ...extra
@@ -752,8 +787,17 @@ describe("@smthrs/gateway RunTrace stepTranscripts, resultOf, grouped step-facts
             ["read", { path: "src/a.ts" }, { startLine: 1, endLine: 25 }],
             ["write", { path: "src/b.ts" }, { bytesWritten: 128 }],
             ["edit", { path: "src/c.ts" }, { replacements: 2 }],
-            ["apply_patch", { input: "*** Begin Patch\n*** Add File: x.ts\n*** Update File: y.ts\n*** End Patch" }, { added: ["x.ts"], modified: ["y.ts"], deleted: [] }],
-            ["test", { selection: ["unit"] }, { parsed: true, passed: 10, failed: tc.testFailed ? ["t1"] : [], exitCode: tc.testFailed ? 1 : 0 }],
+            ["apply_patch", { input: "*** Begin Patch\n*** Add File: x.ts\n*** Update File: y.ts\n*** End Patch" }, {
+              added: ["x.ts"],
+              modified: ["y.ts"],
+              deleted: []
+            }],
+            ["test", { selection: ["unit"] }, {
+              parsed: true,
+              passed: 10,
+              failed: tc.testFailed ? ["t1"] : [],
+              exitCode: tc.testFailed ? 1 : 0
+            }],
             ["bash", { command: tc.cmd }, { exitCode: 0 }],
             ["grep", { pattern: "foo" }, { matches: ["a:1", "b:2"] }],
             ["glob", { pattern: "*.ts" }, { paths: ["a.ts", "b.ts"] }],
@@ -769,16 +813,27 @@ describe("@smthrs/gateway RunTrace stepTranscripts, resultOf, grouped step-facts
               action: "agent",
               dispatchId: `dispatch:${stepId}`
             }),
-            mkStepFact(++seq, 0, "control.agent.model-requested", { prompt: "Fix the bug", input: { task: "Fix the bug" } }),
-            mkStepFact(++seq, 1, "control.agent.model-settled", { text: "Looking at files", usage: { inputTokens: 120, outputTokens: 45 }, durationMillis: 250 }),
+            mkStepFact(++seq, 0, "control.agent.model-requested", {
+              prompt: "Fix the bug",
+              input: { task: "Fix the bug" }
+            }),
+            mkStepFact(++seq, 1, "control.agent.model-settled", {
+              text: "Looking at files",
+              usage: { inputTokens: 120, outputTokens: 45 },
+              durationMillis: 250
+            }),
             mkStepFact(++seq, 2, "control.agent.cell-produced", { text: "console.log(1)" }),
             mkStepFact(++seq, 3, "control.agent.cell-printed", { text: "line 1" }),
             mkStepFact(++seq, 4, "control.agent.cell-printed", { text: "line 2" }),
             mkStepFact(++seq, 5, "control.agent.cell-settled", { outcome: tc.cellOutcome }),
             mkCallFact(++seq, "invoked", { input: { path: "src/out.ts", content: "hi" } }),
-            mkCallFact(++seq, "settled", tc.callOutcome === "failure"
-              ? { outcome: "failure", message: "disk full" }
-              : { outcome: "success", value: { bytesWritten: 2 } })
+            mkCallFact(
+              ++seq,
+              "settled",
+              tc.callOutcome === "failure"
+                ? { outcome: "failure", message: "disk full" }
+                : { outcome: "success", value: { bytesWritten: 2 } }
+            )
           ]
 
           for (const [idx, [flowName, input, value]] of toolPairs.entries()) {
@@ -800,12 +855,21 @@ describe("@smthrs/gateway RunTrace stepTranscripts, resultOf, grouped step-facts
               }
             )
           }
-          records.push({ sequence: ++seq, runId: "run-st", kind: "control.run.completed", occurredAt: 1000 + seq * 10, payload: null })
+          records.push({
+            sequence: ++seq,
+            runId: "run-st",
+            kind: "control.run.completed",
+            occurredAt: 1000 + seq * 10,
+            payload: null
+          })
 
           const run: RunTrace.TraceRun = { runId: "run-st", flowId: "coding/fix", status: "completed" }
           const trace = RunTrace.traceFromJournal(run, records)
           expect(trace.rows.length).toBeGreaterThan(5)
-          const mon = RunTrace.monitorFromJournal(run, records, undefined, { childBoundaries: true, includeJournal: true })
+          const mon = RunTrace.monitorFromJournal(run, records, undefined, {
+            childBoundaries: true,
+            includeJournal: true
+          })
           expect(mon).toBeDefined()
           return true
         }),
@@ -823,7 +887,11 @@ describe("@smthrs/gateway RunTrace stepTranscripts, resultOf, grouped step-facts
 
         const launchRun = (tag: string) =>
           Effect.gen(function*() {
-            const card = yield* control.plan({ flowId: "system/test", input: { tag }, idempotencyKey: `ws-plan-${tag}` })
+            const card = yield* control.plan({
+              flowId: "system/test",
+              input: { tag },
+              idempotencyKey: `ws-plan-${tag}`
+            })
             yield* control.approve({
               target: { _tag: "Plan", planId: card.planId, digest: card.digest, envelope: card.envelope },
               scope: card.approval.scope,
@@ -866,8 +934,19 @@ describe("@smthrs/gateway RunTrace stepTranscripts, resultOf, grouped step-facts
           Effect.forkChild
         )
         yield* Effect.sleep("30 millis")
-        yield* emit(r1, "control.agent.cell-call-started", { callId: "d1", flowName: "read", turn: 1, input: { path: "a.ts" } }).pipe(Effect.provide(ctx))
-        yield* emit(r1, "control.agent.cell-call-settled", { callId: "d1", flowName: "read", turn: 1, outcome: "success", value: { startLine: 1, endLine: 10 } }).pipe(Effect.provide(ctx))
+        yield* emit(r1, "control.agent.cell-call-started", {
+          callId: "d1",
+          flowName: "read",
+          turn: 1,
+          input: { path: "a.ts" }
+        }).pipe(Effect.provide(ctx))
+        yield* emit(r1, "control.agent.cell-call-settled", {
+          callId: "d1",
+          flowName: "read",
+          turn: 1,
+          outcome: "success",
+          value: { startLine: 1, endLine: 10 }
+        }).pipe(Effect.provide(ctx))
         yield* Fiber.join(fdFiber).pipe(Effect.timeout("1500 millis"), Effect.option)
       }).pipe(Effect.provide(silentLogger), Effect.scoped)
     )

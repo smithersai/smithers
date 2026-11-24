@@ -108,77 +108,73 @@ describe("@smthrs/ci inventory deep fuzz invariants", () => {
         arb,
         (c) =>
           Effect.sync(() => {
-            const onYaml =
-              c.triggerKind === "push"
-                ? "on: push"
-                : c.triggerKind === "array"
-                ? "on: [push, pull_request]"
-                : c.triggerKind === "filtered"
-                ? `on:\n  push:\n    branches: [${c.defaultBranch}]\n    paths-ignore: [docs/**]\n  pull_request:\n    types: [opened, synchronize]\n    paths: ['src/**']`
-                : c.triggerKind === "release-tag"
-                ? `on:\n  push:\n    tags: ['v*']\n  workflow_dispatch:`
-                : c.triggerKind === "merge-group"
-                ? "on:\n  merge_group:\n    types: [checks_requested]"
-                : c.triggerKind === "dispatch-inputs"
-                ? `on:\n  workflow_dispatch:\n    inputs:\n      env:\n        type: choice\n        default: staging\n        options: [staging, prod]`
-                : c.triggerKind === "pull-request-target"
-                ? "on:\n  pull_request_target:\n    branches: [main]"
-                : ""
+            const onYaml = c.triggerKind === "push"
+              ? "on: push"
+              : c.triggerKind === "array"
+              ? "on: [push, pull_request]"
+              : c.triggerKind === "filtered"
+              ? `on:\n  push:\n    branches: [${c.defaultBranch}]\n    paths-ignore: [docs/**]\n  pull_request:\n    types: [opened, synchronize]\n    paths: ['src/**']`
+              : c.triggerKind === "release-tag"
+              ? `on:\n  push:\n    tags: ['v*']\n  workflow_dispatch:`
+              : c.triggerKind === "merge-group"
+              ? "on:\n  merge_group:\n    types: [checks_requested]"
+              : c.triggerKind === "dispatch-inputs"
+              ? `on:\n  workflow_dispatch:\n    inputs:\n      env:\n        type: choice\n        default: staging\n        options: [staging, prod]`
+              : c.triggerKind === "pull-request-target"
+              ? "on:\n  pull_request_target:\n    branches: [main]"
+              : ""
 
-            const runsOnYaml =
-              c.runnerKind === "ubuntu-latest"
-                ? "ubuntu-latest"
-                : c.runnerKind === "macos-latest"
-                ? "macos-latest"
-                : c.runnerKind === "windows-latest"
-                ? "windows-latest"
-                : c.runnerKind === "self-hosted-array"
-                ? "[self-hosted, linux, x64]"
-                : c.runnerKind === "matrix-os"
-                ? "${{ matrix.os }}"
-                : "{ group: big-runners, labels: [ubuntu-latest] }"
+            const runsOnYaml = c.runnerKind === "ubuntu-latest"
+              ? "ubuntu-latest"
+              : c.runnerKind === "macos-latest"
+              ? "macos-latest"
+              : c.runnerKind === "windows-latest"
+              ? "windows-latest"
+              : c.runnerKind === "self-hosted-array"
+              ? "[self-hosted, linux, x64]"
+              : c.runnerKind === "matrix-os"
+              ? "${{ matrix.os }}"
+              : "{ group: big-runners, labels: [ubuntu-latest] }"
 
-            const setupStep =
-              c.setupKind === "checkout-basic"
-                ? `      - uses: actions/checkout@v4`
-                : c.setupKind === "checkout-submodules"
-                ? `      - uses: actions/checkout@v4\n        with:\n          submodules: recursive\n          fetch-depth: 0\n          lfs: true\n          path: sub`
-                : c.setupKind === "checkout-ref"
-                ? `      - uses: actions/checkout@v4\n        with:\n          repository: other/repo\n          ref: v1.0.0\n          token: \${{ secrets.${c.secretName} }}`
-                : c.setupKind === "setup-node"
-                ? `      - uses: actions/setup-node@v4\n        with:\n          node-version: "22"\n          cache: pnpm`
-                : c.setupKind === "setup-python"
-                ? `      - uses: actions/setup-python@v5\n        with:\n          python-version: "3.12"\n          cache: pip`
-                : c.setupKind === "setup-go"
-                ? `      - uses: actions/setup-go@v5\n        with:\n          go-version: "1.23"\n          cache: true`
-                : c.setupKind === "setup-bun"
-                ? `      - uses: oven-sh/setup-bun@v2\n        with:\n          bun-version: "1.3.0"`
-                : c.setupKind === "setup-zig"
-                ? `      - uses: mlugg/setup-zig@v2\n        with:\n          version: "0.14.0"`
-                : c.setupKind === "setup-java"
-                ? `      - uses: actions/setup-java@v4\n        with:\n          distribution: temurin\n          java-version: "21"\n          cache: gradle`
-                : c.setupKind === "rust-toolchain"
-                ? `      - uses: dtolnay/rust-toolchain@stable\n        with:\n          components: clippy, rustfmt`
-                : c.setupKind === "setup-ruby"
-                ? `      - uses: ruby/setup-ruby@v1\n        with:\n          ruby-version: "3.3"\n          bundler-cache: true`
-                : c.setupKind === "cache-v4"
-                ? `      - id: cache\n        uses: actions/cache@v4\n        with:\n          path: |\n            ~/.cache\n            node_modules\n          key: \${{ runner.os }}-deps-\${{ hashFiles('**/pnpm-lock.yaml') }}\n          restore-keys: |\n            \${{ runner.os }}-deps-`
-                : c.setupKind === "cache-restore"
-                ? `      - uses: actions/cache/restore@v4\n        with:\n          path: .cache\n          key: k-1`
-                : c.setupKind === "cache-save"
-                ? `      - uses: actions/cache/save@v4\n        with:\n          path: .cache\n          key: k-1`
-                : c.setupKind === "local-action"
-                ? `      - uses: ./.github/actions/prep\n        with:\n          mode: fast`
-                : c.setupKind === "unknown-action"
-                ? `      - uses: codecov/codecov-action@v4\n        with:\n          token: \${{ secrets.${c.secretName} }}`
-                : `      - uses: docker://alpine:3.19\n        with:\n          args: echo hi`
+            const setupStep = c.setupKind === "checkout-basic"
+              ? `      - uses: actions/checkout@v4`
+              : c.setupKind === "checkout-submodules"
+              ? `      - uses: actions/checkout@v4\n        with:\n          submodules: recursive\n          fetch-depth: 0\n          lfs: true\n          path: sub`
+              : c.setupKind === "checkout-ref"
+              ? `      - uses: actions/checkout@v4\n        with:\n          repository: other/repo\n          ref: v1.0.0\n          token: \${{ secrets.${c.secretName} }}`
+              : c.setupKind === "setup-node"
+              ? `      - uses: actions/setup-node@v4\n        with:\n          node-version: "22"\n          cache: pnpm`
+              : c.setupKind === "setup-python"
+              ? `      - uses: actions/setup-python@v5\n        with:\n          python-version: "3.12"\n          cache: pip`
+              : c.setupKind === "setup-go"
+              ? `      - uses: actions/setup-go@v5\n        with:\n          go-version: "1.23"\n          cache: true`
+              : c.setupKind === "setup-bun"
+              ? `      - uses: oven-sh/setup-bun@v2\n        with:\n          bun-version: "1.3.0"`
+              : c.setupKind === "setup-zig"
+              ? `      - uses: mlugg/setup-zig@v2\n        with:\n          version: "0.14.0"`
+              : c.setupKind === "setup-java"
+              ? `      - uses: actions/setup-java@v4\n        with:\n          distribution: temurin\n          java-version: "21"\n          cache: gradle`
+              : c.setupKind === "rust-toolchain"
+              ? `      - uses: dtolnay/rust-toolchain@stable\n        with:\n          components: clippy, rustfmt`
+              : c.setupKind === "setup-ruby"
+              ? `      - uses: ruby/setup-ruby@v1\n        with:\n          ruby-version: "3.3"\n          bundler-cache: true`
+              : c.setupKind === "cache-v4"
+              ? `      - id: cache\n        uses: actions/cache@v4\n        with:\n          path: |\n            ~/.cache\n            node_modules\n          key: \${{ runner.os }}-deps-\${{ hashFiles('**/pnpm-lock.yaml') }}\n          restore-keys: |\n            \${{ runner.os }}-deps-`
+              : c.setupKind === "cache-restore"
+              ? `      - uses: actions/cache/restore@v4\n        with:\n          path: .cache\n          key: k-1`
+              : c.setupKind === "cache-save"
+              ? `      - uses: actions/cache/save@v4\n        with:\n          path: .cache\n          key: k-1`
+              : c.setupKind === "local-action"
+              ? `      - uses: ./.github/actions/prep\n        with:\n          mode: fast`
+              : c.setupKind === "unknown-action"
+              ? `      - uses: codecov/codecov-action@v4\n        with:\n          token: \${{ secrets.${c.secretName} }}`
+              : `      - uses: docker://alpine:3.19\n        with:\n          args: echo hi`
 
-            const shellLine =
-              c.shellKind === "default"
-                ? ""
-                : c.shellKind === "custom"
-                ? "        shell: custom-sh {0}"
-                : `        shell: ${c.shellKind}`
+            const shellLine = c.shellKind === "default"
+              ? ""
+              : c.shellKind === "custom"
+              ? "        shell: custom-sh {0}"
+              : `        shell: ${c.shellKind}`
 
             const yaml = [
               "name: Fuzz CI",
@@ -202,27 +198,31 @@ describe("@smthrs/ci inventory deep fuzz invariants", () => {
               "  main:",
               "    needs: [prep]",
               `    runs-on: ${runsOnYaml}`,
-              c.hasJobIf ? "    if: github.event_name == 'push' && !contains(github.event.head_commit.message, '[skip ci]')" : "",
+              c.hasJobIf
+                ? "    if: github.event_name == 'push' && !contains(github.event.head_commit.message, '[skip ci]')"
+                : "",
               c.hasTimeout ? "    timeout-minutes: 15" : "",
               c.hasContinueOnError ? "    continue-on-error: true" : "",
               c.hasContainer ? "    container:\n      image: node:22-bookworm\n      env:\n        NODE_ENV: test" : "",
-              c.hasServices ? "    services:\n      postgres:\n        image: postgres:16\n        ports: ['5432:5432']" : "",
+              c.hasServices
+                ? "    services:\n      postgres:\n        image: postgres:16\n        ports: ['5432:5432']"
+                : "",
               c.hasMatrixIncludeExclude
                 ? [
-                    "    strategy:",
-                    "      fail-fast: false",
-                    "      max-parallel: 2",
-                    "      matrix:",
-                    "        os: [ubuntu-latest, macos-latest]",
-                    "        node: [20, 22]",
-                    "        include:",
-                    "          - os: ubuntu-latest",
-                    "            node: 22",
-                    "            extra: yes",
-                    "        exclude:",
-                    "          - os: macos-latest",
-                    "            node: 20"
-                  ].join("\n")
+                  "    strategy:",
+                  "      fail-fast: false",
+                  "      max-parallel: 2",
+                  "      matrix:",
+                  "        os: [ubuntu-latest, macos-latest]",
+                  "        node: [20, 22]",
+                  "        include:",
+                  "          - os: ubuntu-latest",
+                  "            node: 22",
+                  "            extra: yes",
+                  "        exclude:",
+                  "          - os: macos-latest",
+                  "            node: 20"
+                ].join("\n")
                 : c.runnerKind === "matrix-os"
                 ? "    strategy:\n      matrix:\n        os: [ubuntu-latest, macos-latest]"
                 : "",
@@ -309,9 +309,43 @@ describe("@smthrs/ci inventory deep fuzz invariants", () => {
           "dockerd &",
           "pnpm test && cargo test"
         ]),
-        manager: Schema.Literals(["apt", "apt-get", "brew", "pip", "pip3", "cargo", "npm", "pnpm", "bun", "go", "rustup", "apk", "dnf", "yum", "pacman", "uv", "unknown"]),
-        pkgName: Schema.Literals(["jq", "ripgrep", "git", "python3", "zig", "clippy", "wasm32-unknown-unknown", "libssl-dev", "pkg-config"]),
-        probeOutput: Schema.Literals(["", "ii  jq 1.7\n", "/usr/bin/jq\n", "clippy-x86_64-unknown-linux-gnu (installed)\n", "not found\n"]),
+        manager: Schema.Literals([
+          "apt",
+          "apt-get",
+          "brew",
+          "pip",
+          "pip3",
+          "cargo",
+          "npm",
+          "pnpm",
+          "bun",
+          "go",
+          "rustup",
+          "apk",
+          "dnf",
+          "yum",
+          "pacman",
+          "uv",
+          "unknown"
+        ]),
+        pkgName: Schema.Literals([
+          "jq",
+          "ripgrep",
+          "git",
+          "python3",
+          "zig",
+          "clippy",
+          "wasm32-unknown-unknown",
+          "libssl-dev",
+          "pkg-config"
+        ]),
+        probeOutput: Schema.Literals([
+          "",
+          "ii  jq 1.7\n",
+          "/usr/bin/jq\n",
+          "clippy-x86_64-unknown-linux-gnu (installed)\n",
+          "not found\n"
+        ]),
         listLen: Schema.Int.pipe(Schema.check(Schema.isBetween({ minimum: 0, maximum: 6 })))
       })
     )
@@ -482,43 +516,70 @@ describe("@smthrs/ci inventory deep fuzz invariants", () => {
                 if (name === "matrix") return Expression.variable("m", "matrix", false, true)
                 if (name === "steps") return Expression.variable("s", "steps", false, false)
                 if (name === "env") return Expression.variable("e", "env", false, false)
-                if (name === "github") return Contexts.github("pull_request", { repository: "a/b", defaultBranch: "main" }, { job: "build", workflow: "CI" })
+                if (name === "github") {
+                  return Contexts.github("pull_request", { repository: "a/b", defaultBranch: "main" }, {
+                    job: "build",
+                    workflow: "CI"
+                  })
+                }
                 if (name === "runner") return Contexts.runner("linux")
                 return undefined
               }
             }
-            const exprText =
-              c.exprKind === "literal-str" ? "'hello'"
-              : c.exprKind === "literal-num" ? "42"
-              : c.exprKind === "literal-bool" ? "true"
-              : c.exprKind === "literal-null" ? "null"
-              : c.exprKind === "matrix-var" ? "matrix.os"
-              : c.exprKind === "step-output" ? "steps.s1.outputs.out"
-              : c.exprKind === "env-var" ? "env.FOO"
-              : c.exprKind === "binary-eq" ? "matrix.os == 'ubuntu-latest'"
-              : c.exprKind === "binary-and" ? "matrix.os == 'ubuntu-latest' && env.FOO != ''"
-              : c.exprKind === "binary-or" ? "env.FOO || 'fallback'"
-              : c.exprKind === "binary-lt" ? "matrix.num < 10"
-              : c.exprKind === "unary-not" ? "!env.SKIP"
-              : c.exprKind === "call-contains" ? "contains(matrix.os, 'ubuntu')"
-              : c.exprKind === "call-startsWith" ? "startsWith(matrix.os, 'ubuntu')"
-              : c.exprKind === "call-endsWith" ? "endsWith(matrix.os, 'latest')"
-              : c.exprKind === "call-format" ? "format('{0}-{1}', matrix.os, env.FOO)"
-              : c.exprKind === "call-join" ? "join(matrix.tags, ',')"
-              : c.exprKind === "call-toJSON" ? "toJSON(matrix)"
-              : c.exprKind === "call-fromJSON" ? "fromJSON('{\"k\":1}').k"
-              : c.exprKind === "call-hashFiles" ? "hashFiles('package.json')"
-              : c.exprKind === "index-prop" ? "matrix['os']"
-              : c.exprKind === "status-success" ? "success()"
-              : c.exprKind === "status-failure" ? "failure()"
-              : c.exprKind === "status-always" ? "always()"
+            const exprText = c.exprKind === "literal-str" ?
+              "'hello'"
+              : c.exprKind === "literal-num" ?
+              "42"
+              : c.exprKind === "literal-bool" ?
+              "true"
+              : c.exprKind === "literal-null" ?
+              "null"
+              : c.exprKind === "matrix-var" ?
+              "matrix.os"
+              : c.exprKind === "step-output" ?
+              "steps.s1.outputs.out"
+              : c.exprKind === "env-var" ?
+              "env.FOO"
+              : c.exprKind === "binary-eq" ?
+              "matrix.os == 'ubuntu-latest'"
+              : c.exprKind === "binary-and" ?
+              "matrix.os == 'ubuntu-latest' && env.FOO != ''"
+              : c.exprKind === "binary-or" ?
+              "env.FOO || 'fallback'"
+              : c.exprKind === "binary-lt" ?
+              "matrix.num < 10"
+              : c.exprKind === "unary-not" ?
+              "!env.SKIP"
+              : c.exprKind === "call-contains" ?
+              "contains(matrix.os, 'ubuntu')"
+              : c.exprKind === "call-startsWith" ?
+              "startsWith(matrix.os, 'ubuntu')"
+              : c.exprKind === "call-endsWith" ?
+              "endsWith(matrix.os, 'latest')"
+              : c.exprKind === "call-format" ?
+              "format('{0}-{1}', matrix.os, env.FOO)"
+              : c.exprKind === "call-join" ?
+              "join(matrix.tags, ',')"
+              : c.exprKind === "call-toJSON" ?
+              "toJSON(matrix)"
+              : c.exprKind === "call-fromJSON" ?
+              "fromJSON('{\"k\":1}').k"
+              : c.exprKind === "call-hashFiles" ?
+              "hashFiles('package.json')"
+              : c.exprKind === "index-prop" ?
+              "matrix['os']"
+              : c.exprKind === "status-success" ?
+              "success()"
+              : c.exprKind === "status-failure" ?
+              "failure()"
+              : c.exprKind === "status-always" ?
+              "always()"
               : "cancelled()"
 
             const evaluated = Expression.evaluate(exprText, scope)
-            const residual: Expression.Residual =
-              evaluated.kind === "ok"
-                ? evaluated.residual
-                : { kind: "literal", value: "fallback" }
+            const residual: Expression.Residual = evaluated.kind === "ok"
+              ? evaluated.residual
+              : { kind: "literal", value: "fallback" }
 
             const isText = Runner.isTextResult(residual)
             const isSettled = Runner.settled(residual)
@@ -529,8 +590,14 @@ describe("@smthrs/ci inventory deep fuzz invariants", () => {
               matrixKeys: c.badMatrixKey ? ["bad key!"] : ["os", "num"],
               variants: [{ os: "ubuntu-latest", num: "5" }],
               typedVariants: [{ os: "ubuntu-latest", num: 5 }],
-              variables: Contexts.variables("pull_request", { repository: "a/b", defaultBranch: "main" }, { job: "build", workflow: "CI" }),
-              standIns: Contexts.standIns("pull_request", { repository: "a/b", defaultBranch: "main" }, { job: "build", workflow: "CI" }),
+              variables: Contexts.variables("pull_request", { repository: "a/b", defaultBranch: "main" }, {
+                job: "build",
+                workflow: "CI"
+              }),
+              standIns: Contexts.standIns("pull_request", { repository: "a/b", defaultBranch: "main" }, {
+                job: "build",
+                workflow: "CI"
+              }),
               event: Contexts.eventFile("pull_request", { repository: "a/b", defaultBranch: "main" }),
               eventName: "pull_request"
             }
@@ -562,7 +629,8 @@ describe("@smthrs/ci inventory deep fuzz invariants", () => {
 
             const written = Runner.write(jobFacts, stepFacts, "echo ${{ FILL }}")
             if (c.badMatrixKey) return "problem" in written
-            return typeof isText === "boolean" && (isSettled === undefined || typeof isSettled === "boolean") && quoted.startsWith("'") && ("text" in written || "problem" in written)
+            return typeof isText === "boolean" && (isSettled === undefined || typeof isSettled === "boolean") &&
+              quoted.startsWith("'") && ("text" in written || "problem" in written)
           }),
         { seed, executions }
       )
@@ -591,7 +659,19 @@ describe("@smthrs/ci inventory deep fuzz invariants", () => {
           "actions/cache@v4",
           "unknown/action@v1"
         ]),
-        cacheKind: Schema.Literals(["npm", "pnpm", "yarn", "pip", "pipenv", "poetry", "gradle", "maven", "bundler", "go", ""]),
+        cacheKind: Schema.Literals([
+          "npm",
+          "pnpm",
+          "yarn",
+          "pip",
+          "pipenv",
+          "poetry",
+          "gradle",
+          "maven",
+          "bundler",
+          "go",
+          ""
+        ]),
         makeVariant: Schema.Int.pipe(Schema.check(Schema.isBetween({ minimum: 0, maximum: 5 }))),
         justVariant: Schema.Int.pipe(Schema.check(Schema.isBetween({ minimum: 0, maximum: 5 })))
       })
@@ -628,7 +708,11 @@ describe("@smthrs/ci inventory deep fuzz invariants", () => {
             Contexts.admits({ branches: ["main", "release/*"] }, branch)
             Contexts.admits({ "branches-ignore": ["feat/*"] }, branch)
             Contexts.admits(null, branch)
-            Contexts.eventOf({ push: { branches: ["main"] }, pull_request: { branches: ["develop"] }, merge_group: null }, branch)
+            Contexts.eventOf({
+              push: { branches: ["main"] },
+              pull_request: { branches: ["develop"] },
+              merge_group: null
+            }, branch)
             Contexts.eventName(ev, facts)
             const ghCtx = Contexts.github(ev, facts, place)
             const runCtx = Contexts.runner(h)
@@ -640,29 +724,31 @@ describe("@smthrs/ci inventory deep fuzz invariants", () => {
             const scope: Expression.Scope = {
               context: (name) => name === "github" ? ghCtx : name === "runner" ? runCtx : undefined
             }
-            for (const expr of [
-              "github.repository",
-              "github.repository_owner",
-              "github.event_name",
-              "github.ref",
-              "github.ref_name",
-              "github.sha",
-              "github.workspace",
-              "github.actor",
-              "github.job",
-              "github.workflow",
-              "github.run_id",
-              "github.base_ref",
-              "github.head_ref",
-              "github.server_url",
-              "github.api_url",
-              "github.graphql_url",
-              "runner.os",
-              "runner.arch",
-              "runner.temp",
-              "runner.tool_cache",
-              "runner.name"
-            ]) {
+            for (
+              const expr of [
+                "github.repository",
+                "github.repository_owner",
+                "github.event_name",
+                "github.ref",
+                "github.ref_name",
+                "github.sha",
+                "github.workspace",
+                "github.actor",
+                "github.job",
+                "github.workflow",
+                "github.run_id",
+                "github.base_ref",
+                "github.head_ref",
+                "github.server_url",
+                "github.api_url",
+                "github.graphql_url",
+                "runner.os",
+                "runner.arch",
+                "runner.temp",
+                "runner.tool_cache",
+                "runner.name"
+              ]
+            ) {
               Expression.evaluate(expr, scope)
             }
 
@@ -683,9 +769,24 @@ describe("@smthrs/ci inventory deep fuzz invariants", () => {
             const sc = SetupCache.setupCache(uses, inputs)
             if (sc !== undefined) SetupCache.before(sc)
 
-            Actions.checkoutProblems({ repository: "other/repo", ref: "v1", submodules: "recursive", lfs: true, path: "sub", token: "tok", "fetch-depth": 0, clean: false }, "acme/widgets", (x) => x)
+            Actions.checkoutProblems(
+              {
+                repository: "other/repo",
+                ref: "v1",
+                submodules: "recursive",
+                lfs: true,
+                path: "sub",
+                token: "tok",
+                "fetch-depth": 0,
+                clean: false
+              },
+              "acme/widgets",
+              (x) => x
+            )
             Actions.checkoutProblems({}, "acme/widgets", (x) => x)
-            Actions.readAction("name: Composite\ninputs:\n  a:\n    default: '1'\nruns:\n  using: composite\n  steps:\n    - run: echo ${{ inputs.a }}\n      shell: bash\n")
+            Actions.readAction(
+              "name: Composite\ninputs:\n  a:\n    default: '1'\nruns:\n  using: composite\n  steps:\n    - run: echo ${{ inputs.a }}\n      shell: bash\n"
+            )
             Actions.readAction("name: JS\nruns:\n  using: node20\n  main: index.js\n")
             Actions.readAction(":::bad yaml[[[")
 
@@ -737,14 +838,14 @@ describe("@smthrs/ci inventory deep fuzz invariants", () => {
         arb,
         (c) =>
           Effect.scoped(
-            Effect.gen(function* () {
+            Effect.gen(function*() {
               const fs = yield* FileSystem.FileSystem
               const path = yield* Path.Path
               const spawner = yield* ChildProcessSpawner
               const root = yield* fs.makeTempDirectoryScoped()
 
               const write = (rel: string, content: string) =>
-                Effect.gen(function* () {
+                Effect.gen(function*() {
                   const full = path.join(root, rel)
                   yield* fs.makeDirectory(path.dirname(full), { recursive: true })
                   yield* fs.writeFileString(full, content)
@@ -794,7 +895,10 @@ describe("@smthrs/ci inventory deep fuzz invariants", () => {
               )
               if (c.includeWorkspaces) {
                 yield* write("packages/a/package.json", JSON.stringify({ name: "a", scripts: { test: "node -e 0" } }))
-                yield* write("packages/skip/package.json", JSON.stringify({ name: "skip", scripts: { test: "node -e 0" } }))
+                yield* write(
+                  "packages/skip/package.json",
+                  JSON.stringify({ name: "skip", scripts: { test: "node -e 0" } })
+                )
                 if (c.pkgManager === "pnpm") {
                   yield* write("pnpm-workspace.yaml", "packages:\n  - 'packages/*'\n  - '!packages/skip'\n")
                   yield* write("pnpm-lock.yaml", "lockfileVersion: '9.0'\n")
@@ -821,7 +925,17 @@ describe("@smthrs/ci inventory deep fuzz invariants", () => {
 
               yield* git(["init", "--quiet"])
               yield* git(["add", "--all"])
-              yield* git(["-c", "user.name=t", "-c", "user.email=t@example.test", "commit", "--quiet", "--allow-empty", "-m", "init"])
+              yield* git([
+                "-c",
+                "user.name=t",
+                "-c",
+                "user.email=t@example.test",
+                "commit",
+                "--quiet",
+                "--allow-empty",
+                "-m",
+                "init"
+              ])
               if (c.remoteStyle === "https") {
                 yield* git(["remote", "add", "origin", "https://user:secret@github.com/acme/widgets.git"])
               } else if (c.remoteStyle === "ssh") {

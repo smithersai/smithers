@@ -60,13 +60,17 @@ describe("@smthrs/rpc ConfiguredModel, UiInstruction, GatewayWorkspace, DocsPage
               nested: { a: 1 }
             })
             const obj = ConfiguredModel.modelStateOf(fields)
-            if (obj["prompt"] !== "hello" || obj["flag"] !== true || obj["count"] !== 42) throw new Error("obj: " + JSON.stringify(obj))
+            if (obj["prompt"] !== "hello" || obj["flag"] !== true || obj["count"] !== 42) {
+              throw new Error("obj: " + JSON.stringify(obj))
+            }
 
             // Secret scrubbing must NEVER leak a >=8 char secret
             const dirty = `Header Authorization: Bearer ${secret} failed for ${secret}`
             const cut = ConfiguredModel.cutModelCredential(dirty, secret)
             const scrubbed = ConfiguredModel.scrubModelSample(dirty, secret)
-            if (secret.length >= 8 && (cut.includes(secret) || scrubbed.includes(secret))) throw new Error("scrub: " + JSON.stringify({cut, scrubbed}))
+            if (secret.length >= 8 && (cut.includes(secret) || scrubbed.includes(secret))) {
+              throw new Error("scrub: " + JSON.stringify({ cut, scrubbed }))
+            }
 
             // Call sample scrubbing
             const sample = ConfiguredModel.modelCallSample(
@@ -78,20 +82,21 @@ describe("@smthrs/rpc ConfiguredModel, UiInstruction, GatewayWorkspace, DocsPage
             if (secret.length >= 8 && sample.includes(secret)) throw new Error("sample: " + sample)
 
             // Failure fault & refusal code mapping
-            const fakeFailure: ConfiguredModel.ModelTestFailure =
-              failureCode === "refused"
-                ? { code: "refused", status: 401 }
-                : failureCode === "invalid"
-                  ? { code: "invalid", field: "modelId" }
-                  : failureCode === "credential_missing" || failureCode === "credential_unknown"
-                    ? { code: failureCode, credential: "OPENAI" }
-                    : failureCode === "host_refused"
-                      ? { code: "host_refused", status: 403, refusal: "forbidden" } as never
-                      : { code: failureCode } as never
+            const fakeFailure: ConfiguredModel.ModelTestFailure = failureCode === "refused"
+              ? { code: "refused", status: 401 }
+              : failureCode === "invalid"
+              ? { code: "invalid", field: "modelId" }
+              : failureCode === "credential_missing" || failureCode === "credential_unknown"
+              ? { code: failureCode, credential: "OPENAI" }
+              : failureCode === "host_refused"
+              ? { code: "host_refused", status: 403, refusal: "forbidden" } as never
+              : { code: failureCode } as never
             const fault = ConfiguredModel.modelFailureFault(fakeFailure, host)
             const refusal = ConfiguredModel.modelFailureRefusalCode(fakeFailure)
             const failed = ConfiguredModel.failedModelTest(fakeFailure, 12, host)
-            if ((fault !== undefined && typeof fault !== "string") || typeof refusal !== "string" || failed.ok !== false) throw new Error("fault: " + JSON.stringify({fault, refusal, failed}))
+            if (
+              (fault !== undefined && typeof fault !== "string") || typeof refusal !== "string" || failed.ok !== false
+            ) throw new Error("fault: " + JSON.stringify({ fault, refusal, failed }))
 
             // Test state & fix helpers
             const st = ConfiguredModel.modelTestStateOf(undefined, running)

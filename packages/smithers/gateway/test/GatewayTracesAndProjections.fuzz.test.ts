@@ -180,22 +180,24 @@ describe("@smthrs/gateway Projections live follow, EngineTrace, RunTrace, callEv
             })
             combined = NativeResolution.combine(rBound, otherBind)
           } else if (tc.combineOrder === "double-result-conflict") {
-            const otherDec = NativeResolution.fromEvent(({
-              ...decisionEvent,
-              sequence: 5,
-              payload: {
-                ...(decisionEvent.payload as Record<string, unknown>),
+            const otherDec = NativeResolution.fromEvent(
+              ({
+                ...decisionEvent,
+                sequence: 5,
                 payload: {
-                  ...((decisionEvent.payload as Record<string, unknown>).payload as Record<string, unknown>),
-                  state: {
-                    version: 1,
-                    flowName: "agent/run",
-                    payload: { runId: tc.runId, planId: "plan-1" },
-                    result: { _tag: "Complete", exit: { _tag: "Success", value: "different-text" } }
+                  ...(decisionEvent.payload as Record<string, unknown>),
+                  payload: {
+                    ...((decisionEvent.payload as Record<string, unknown>).payload as Record<string, unknown>),
+                    state: {
+                      version: 1,
+                      flowName: "agent/run",
+                      payload: { runId: tc.runId, planId: "plan-1" },
+                      result: { _tag: "Complete", exit: { _tag: "Success", value: "different-text" } }
+                    }
                   }
                 }
-              }
-            }) as unknown as ControlSchema.ControlEvent)
+              }) as unknown as ControlSchema.ControlEvent
+            )
             combined = NativeResolution.combine(rDec, otherDec)
           } else if (tc.combineOrder === "none-left") {
             combined = NativeResolution.combine(undefined, rDec)
@@ -346,12 +348,22 @@ describe("@smthrs/gateway Projections live follow, EngineTrace, RunTrace, callEv
                 edges: [{ from: "n1", to: "n2" }]
               }
             }),
-            mkEnv("exec-root", 2, EngineEvent.nodeEventTypes.nodeScheduled, tc.badNodePayload
-              ? { malformed: true }
-              : { nodeId: "n1", kind: "Action", action: "fs/read", input: { path: "src/app.ts" } }),
-            mkEnv("exec-root", 3, EngineEvent.nodeEventTypes.nodeSettled, tc.badNodePayload
-              ? { malformed: true }
-              : { nodeId: "n1", status: "succeeded", output: { bytes: 42 } })
+            mkEnv(
+              "exec-root",
+              2,
+              EngineEvent.nodeEventTypes.nodeScheduled,
+              tc.badNodePayload
+                ? { malformed: true }
+                : { nodeId: "n1", kind: "Action", action: "fs/read", input: { path: "src/app.ts" } }
+            ),
+            mkEnv(
+              "exec-root",
+              3,
+              EngineEvent.nodeEventTypes.nodeSettled,
+              tc.badNodePayload
+                ? { malformed: true }
+                : { nodeId: "n1", status: "succeeded", output: { bytes: 42 } }
+            )
           ]
 
           if (tc.withSubgraph) {
@@ -520,7 +532,13 @@ describe("@smthrs/gateway Projections live follow, EngineTrace, RunTrace, callEv
               kind: "control.agent.cell-call-started",
               runId: "run-rt",
               occurredAt: 110,
-              payload: { runId: "run-rt", callId: "c1", flowName: "shell/exec", turn: 1, input: { command: tc.shellCmd } }
+              payload: {
+                runId: "run-rt",
+                callId: "c1",
+                flowName: "shell/exec",
+                turn: 1,
+                input: { command: tc.shellCmd }
+              }
             },
             {
               sequence: 3,
@@ -534,7 +552,13 @@ describe("@smthrs/gateway Projections live follow, EngineTrace, RunTrace, callEv
               kind: "control.agent.cell-call-started",
               runId: "run-rt",
               occurredAt: 130,
-              payload: { runId: "run-rt", callId: "c2", flowName: "fs/apply_patch", turn: 1, input: { input: patchText } }
+              payload: {
+                runId: "run-rt",
+                callId: "c2",
+                flowName: "fs/apply_patch",
+                turn: 1,
+                input: { input: patchText }
+              }
             },
             {
               sequence: 5,
@@ -555,7 +579,7 @@ describe("@smthrs/gateway Projections live follow, EngineTrace, RunTrace, callEv
           const run: RunTrace.TraceRun = {
             runId: "run-rt",
             flowId: "coding/fix",
-            status: tc.lifecycle,
+            status: tc.lifecycle
           }
           const mon = RunTrace.monitorFromJournal(run, records, tc.atSlice, {
             childBoundaries: true,
@@ -612,7 +636,11 @@ describe("@smthrs/gateway Projections live follow, EngineTrace, RunTrace, callEv
 
         const projections = yield* Projections.make(control, { heartbeatMillis: 40 })
 
-        const card = yield* control.plan({ flowId: "system/test", input: { ok: true }, idempotencyKey: "proj-seed-plan" })
+        const card = yield* control.plan({
+          flowId: "system/test",
+          input: { ok: true },
+          idempotencyKey: "proj-seed-plan"
+        })
         yield* control.approve({
           target: { _tag: "Plan", planId: card.planId, digest: card.digest, envelope: card.envelope },
           scope: card.approval.scope,
@@ -681,7 +709,9 @@ describe("@smthrs/gateway Projections live follow, EngineTrace, RunTrace, callEv
                     ? Deferred.succeed(ready, undefined).pipe(Effect.asVoid)
                     : Effect.void
                 ),
-                Stream.filter((frame) => frame._tag === "delta" || frame._tag === "heartbeat" || frame._tag === "snapshot-end"),
+                Stream.filter((frame) =>
+                  frame._tag === "delta" || frame._tag === "heartbeat" || frame._tag === "snapshot-end"
+                ),
                 Stream.take(useAfter ? 1 : 2),
                 Stream.runCollect,
                 Effect.forkChild

@@ -49,130 +49,134 @@ const containedHost = NodeHost.layerContained({ graceMs: 80 }).pipe(
 )
 
 describe("@smthrs/platform-node SandboxedFlow, AtomicFileSystem batch/protocol, ProcessReaper & ProcessSupervisor/PipedProcess fuzz", () => {
-  it("SandboxedFlow.execute runs real bundled guest flows, captures work, propagates typed errors & handles transport/runtime faults", async () => {
-    const arb = Arbitrary.schema(
-      Schema.Struct({
-        caseKind: Schema.Literals([
-          "sum",
-          "writer-capture",
-          "typed-fail",
-          "fault-spawn",
-          "fault-write",
-          "bad-runtime-exit",
-          "bad-runtime-json",
-          "missing-entry"
-        ]),
-        n: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 50 }))
-      })
-    )
-
-    const baseProvider = await Effect.runPromise(
-      Effect.gen(function*() {
-        const fs = yield* FileSystem.FileSystem
-        const spawner = yield* ChildProcessSpawner
-        return DirectorySandbox.make({ fs, spawner, root: freshDir("sb-root") })
-      }).pipe(Effect.provide(containedHost))
-    )
-
-    const report = await Effect.runPromise(
-      Fuzz.run(
-        arb,
-        (tc) =>
-          Effect.gen(function*() {
-            const session = `sfa-${++seq}`
-            if (tc.caseKind === "sum") {
-              const res = yield* SandboxedFlow.execute(Sum, { n: tc.n }, {
-                provider: baseProvider,
-                session,
-                entry: entryUrl
-              })
-              expect(res.output).toBe(tc.n + 11)
-              expect(res.work).toBeNull()
-              return true
-            }
-            if (tc.caseKind === "writer-capture") {
-              const repoProvider = repository(baseProvider)
-              const res = yield* SandboxedFlow.execute(
-                Writer,
-                { count: 2, bytes: 8, directory: "out" },
-                {
-                  provider: repoProvider,
-                  session,
-                  entry: realpathSync(new URL(entryUrl)),
-                  captureWork: true
-                }
-              )
-              expect(res.output).toBe(2)
-              const w = changed(res.work)
-              expect(patchedPaths(w.patch)).toEqual(["out/file-0.bin", "out/file-1.bin"])
-              return true
-            }
-            if (tc.caseKind === "typed-fail") {
-              const exit = yield* SandboxedFlow.execute(Failing, { reason: `err-${tc.n}`, chatter: 0 }, {
-                provider: baseProvider,
-                session,
-                entry: entryUrl
-              }).pipe(Effect.exit)
-              expect(Exit.isFailure(exit)).toBe(true)
-              return true
-            }
-            if (tc.caseKind === "fault-spawn" || tc.caseKind === "fault-write") {
-              const faultyProvider: Sandbox.Provider = {
-                acquire: (key) =>
-                  Effect.map(baseProvider.acquire(key), (s): Sandbox.Session => ({
-                    ...s,
-                    spawn: (cmd, opts) =>
-                      tc.caseKind === "fault-spawn"
-                        ? Effect.fail(new ProviderError({ code: "spawn_error", message: "spawn refused" }))
-                        : s.spawn(cmd, opts),
-                    writeFile: (p, c) =>
-                      tc.caseKind === "fault-write"
-                        ? Effect.fail(new ProviderError({ code: "unknown", message: "write refused" }))
-                        : s.writeFile(p, c)
-                  }))
-              }
-              const exit = yield* SandboxedFlow.execute(Sum, { n: 1 }, {
-                provider: faultyProvider,
-                session,
-                entry: entryUrl
-              }).pipe(Effect.exit)
-              expect(Exit.isFailure(exit)).toBe(true)
-              return true
-            }
-            if (tc.caseKind === "bad-runtime-exit" || tc.caseKind === "bad-runtime-json") {
-              const rtDir = freshDir("rt")
-              const rtPath = join(rtDir, "guest.sh")
-              writeFileSync(
-                rtPath,
-                tc.caseKind === "bad-runtime-exit"
-                  ? "#!/bin/sh\necho broken >&2\nexit 17\n"
-                  : "#!/bin/sh\necho not-json-envelope\nexit 0\n",
-                { mode: 0o755 }
-              )
-              const exit = yield* SandboxedFlow.execute(Sum, { n: 1 }, {
-                provider: baseProvider,
-                session,
-                entry: entryUrl,
-                runtime: rtPath
-              }).pipe(Effect.exit)
-              expect(Exit.isFailure(exit)).toBe(true)
-              return true
-            }
-            // missing-entry
-            const exit = yield* SandboxedFlow.execute(Sum, { n: 1 }, {
-              provider: baseProvider,
-              session,
-              entry: join(root, "does-not-exist-entry.ts")
-            }).pipe(Effect.exit)
-            expect(Exit.isFailure(exit)).toBe(true)
-            return true
-          }).pipe(Effect.provide(silentLogger)),
-        { seed, executions: Math.max(8, Math.min(ioExecutions, 10)) }
+  it(
+    "SandboxedFlow.execute runs real bundled guest flows, captures work, propagates typed errors & handles transport/runtime faults",
+    async () => {
+      const arb = Arbitrary.schema(
+        Schema.Struct({
+          caseKind: Schema.Literals([
+            "sum",
+            "writer-capture",
+            "typed-fail",
+            "fault-spawn",
+            "fault-write",
+            "bad-runtime-exit",
+            "bad-runtime-json",
+            "missing-entry"
+          ]),
+          n: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 50 }))
+        })
       )
-    )
-    const failure = Fuzz.formatReport(report)
-    if (failure !== undefined) throw new Error(failure)
-  }, 60_000)
+
+      const baseProvider = await Effect.runPromise(
+        Effect.gen(function*() {
+          const fs = yield* FileSystem.FileSystem
+          const spawner = yield* ChildProcessSpawner
+          return DirectorySandbox.make({ fs, spawner, root: freshDir("sb-root") })
+        }).pipe(Effect.provide(containedHost))
+      )
+
+      const report = await Effect.runPromise(
+        Fuzz.run(
+          arb,
+          (tc) =>
+            Effect.gen(function*() {
+              const session = `sfa-${++seq}`
+              if (tc.caseKind === "sum") {
+                const res = yield* SandboxedFlow.execute(Sum, { n: tc.n }, {
+                  provider: baseProvider,
+                  session,
+                  entry: entryUrl
+                })
+                expect(res.output).toBe(tc.n + 11)
+                expect(res.work).toBeNull()
+                return true
+              }
+              if (tc.caseKind === "writer-capture") {
+                const repoProvider = repository(baseProvider)
+                const res = yield* SandboxedFlow.execute(
+                  Writer,
+                  { count: 2, bytes: 8, directory: "out" },
+                  {
+                    provider: repoProvider,
+                    session,
+                    entry: realpathSync(new URL(entryUrl)),
+                    captureWork: true
+                  }
+                )
+                expect(res.output).toBe(2)
+                const w = changed(res.work)
+                expect(patchedPaths(w.patch)).toEqual(["out/file-0.bin", "out/file-1.bin"])
+                return true
+              }
+              if (tc.caseKind === "typed-fail") {
+                const exit = yield* SandboxedFlow.execute(Failing, { reason: `err-${tc.n}`, chatter: 0 }, {
+                  provider: baseProvider,
+                  session,
+                  entry: entryUrl
+                }).pipe(Effect.exit)
+                expect(Exit.isFailure(exit)).toBe(true)
+                return true
+              }
+              if (tc.caseKind === "fault-spawn" || tc.caseKind === "fault-write") {
+                const faultyProvider: Sandbox.Provider = {
+                  acquire: (key) =>
+                    Effect.map(baseProvider.acquire(key), (s): Sandbox.Session => ({
+                      ...s,
+                      spawn: (cmd, opts) =>
+                        tc.caseKind === "fault-spawn"
+                          ? Effect.fail(new ProviderError({ code: "spawn_error", message: "spawn refused" }))
+                          : s.spawn(cmd, opts),
+                      writeFile: (p, c) =>
+                        tc.caseKind === "fault-write"
+                          ? Effect.fail(new ProviderError({ code: "unknown", message: "write refused" }))
+                          : s.writeFile(p, c)
+                    }))
+                }
+                const exit = yield* SandboxedFlow.execute(Sum, { n: 1 }, {
+                  provider: faultyProvider,
+                  session,
+                  entry: entryUrl
+                }).pipe(Effect.exit)
+                expect(Exit.isFailure(exit)).toBe(true)
+                return true
+              }
+              if (tc.caseKind === "bad-runtime-exit" || tc.caseKind === "bad-runtime-json") {
+                const rtDir = freshDir("rt")
+                const rtPath = join(rtDir, "guest.sh")
+                writeFileSync(
+                  rtPath,
+                  tc.caseKind === "bad-runtime-exit"
+                    ? "#!/bin/sh\necho broken >&2\nexit 17\n"
+                    : "#!/bin/sh\necho not-json-envelope\nexit 0\n",
+                  { mode: 0o755 }
+                )
+                const exit = yield* SandboxedFlow.execute(Sum, { n: 1 }, {
+                  provider: baseProvider,
+                  session,
+                  entry: entryUrl,
+                  runtime: rtPath
+                }).pipe(Effect.exit)
+                expect(Exit.isFailure(exit)).toBe(true)
+                return true
+              }
+              // missing-entry
+              const exit = yield* SandboxedFlow.execute(Sum, { n: 1 }, {
+                provider: baseProvider,
+                session,
+                entry: join(root, "does-not-exist-entry.ts")
+              }).pipe(Effect.exit)
+              expect(Exit.isFailure(exit)).toBe(true)
+              return true
+            }).pipe(Effect.provide(silentLogger)),
+          { seed, executions: Math.max(8, Math.min(ioExecutions, 10)) }
+        )
+      )
+      const failure = Fuzz.formatReport(report)
+      if (failure !== undefined) throw new Error(failure)
+    },
+    60_000
+  )
 
   it("AtomicFileSystem batch contract, guarded mutations & AtomicFileSystemProtocol fuzz", async () => {
     // 1. Run shared kernel batch contract against real confined AtomicFileSystem helper
@@ -261,7 +265,14 @@ describe("@smthrs/platform-node SandboxedFlow, AtomicFileSystem batch/protocol, 
             }
 
             // AtomicProtocol encode & decode edge cases
-            const limits = { request: 4096, content: 4096, response: 4096, stderr: 4096, batchSize: 128, batchEntry: 4096 }
+            const limits = {
+              request: 4096,
+              content: 4096,
+              response: 4096,
+              stderr: 4096,
+              batchSize: 128,
+              batchEntry: 4096
+            }
             const bodyBuf = Buffer.from(JSON.stringify({ ok: true, value: tc.body }), "utf8")
             const encoded = AtomicProtocol.encode(bodyBuf, limits)
             expect(encoded.byteLength).toBeGreaterThan(bodyBuf.byteLength)

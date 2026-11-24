@@ -39,7 +39,14 @@ describe("@smthrs/platform-browser BrowserFileSystem & BrowserRuntime Prepare de
     try {
       const arb = Arbitrary.schema(
         Schema.Struct({
-          op: Schema.Literals(["write_read", "stream_rw", "mkdir_ls_rm", "stat_realpath", "copy_rename", "posix_error"]),
+          op: Schema.Literals([
+            "write_read",
+            "stream_rw",
+            "mkdir_ls_rm",
+            "stat_realpath",
+            "copy_rename",
+            "posix_error"
+          ]),
           errCode: Schema.Literals(["ENOENT", "EACCES", "EEXIST", "ENOTDIR", "EISDIR", "ENOTEMPTY", "EINVAL", "EPERM"]),
           idx: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 50 }))
         })
@@ -87,7 +94,9 @@ describe("@smthrs/platform-browser BrowserFileSystem & BrowserRuntime Prepare de
                 return cpRes._tag === "Failure" && (renRes._tag === "Success" || renRes._tag === "Failure")
               }
               // posix_error
-              const errFs = BrowserFileSystem.make(throwingFs(Object.assign(new Error(`${errCode}: boom`), { code: errCode })))
+              const errFs = BrowserFileSystem.make(
+                throwingFs(Object.assign(new Error(`${errCode}: boom`), { code: errCode }))
+              )
               const r1 = yield* errFs.readFileString("/any").pipe(Effect.result)
               const r2 = yield* errFs.writeFileString("/any", "x").pipe(Effect.result)
               const r3 = yield* errFs.stat("/any").pipe(Effect.result)
@@ -105,61 +114,65 @@ describe("@smthrs/platform-browser BrowserFileSystem & BrowserRuntime Prepare de
     }
   }, 45_000)
 
-  it("BrowserRuntime.run({ prepare }) executes preparation once per epoch and fences tabs on PrepareFailed", async () => {
-    const arb = Arbitrary.schema(
-      Schema.Struct({
-        epoch: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 5 })),
-        shouldFail: Schema.Boolean
-      })
-    )
-
-    const report = await Effect.runPromise(
-      Fuzz.run(
-        arb,
-        ({ epoch, shouldFail }) =>
-          Effect.gen(function*() {
-            const remove = MemoryOpfs.install()
-            try {
-              const name = Engines.name()
-              const ran: Array<number> = []
-              const prepare: BrowserRuntime.Prepare<typeof Prepared.Type> = {
-                epoch,
-                success: Prepared,
-                run: (database) =>
-                  Effect.gen(function*() {
-                    ran.push(epoch)
-                    if (shouldFail) return yield* Effect.fail("prep-boom")
-                    yield* database.execute("CREATE TABLE IF NOT EXISTS prepared (epoch INTEGER)")
-                    yield* database.execute("INSERT INTO prepared VALUES (?)", [epoch])
-                    return { rows: 1 }
-                  })
-              }
-              const running = BrowserRuntime.run({
-                name,
-                sqlite: MemorySqlite.build,
-                flows,
-                registerFlows: registration(Effect.succeed),
-                prepare,
-                telemetry: Telemetry.make().layer
-              })
-              yield* Effect.addFinalizer(() => Fiber.interrupt(running))
-
-              const tab = yield* Engines.sharedTab(name)
-              const tabRes = yield* tab.execute("SELECT epoch FROM prepared ORDER BY epoch").pipe(
-                Effect.timeout("1500 millis"),
-                Effect.result
-              )
-              if (shouldFail) return tabRes._tag === "Failure"
-              return tabRes._tag === "Success" && ran.includes(epoch)
-            } finally {
-              remove()
-            }
-          }).pipe(Effect.scoped),
-        { seed: seed + 1, executions: Math.min(executions, 8) }
+  it(
+    "BrowserRuntime.run({ prepare }) executes preparation once per epoch and fences tabs on PrepareFailed",
+    async () => {
+      const arb = Arbitrary.schema(
+        Schema.Struct({
+          epoch: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 5 })),
+          shouldFail: Schema.Boolean
+        })
       )
-    )
-    const failure = Fuzz.formatReport(report)
-    if (failure !== undefined) throw new Error(failure)
-    expect(report._tag).toBe("Passed")
-  }, 60_000)
+
+      const report = await Effect.runPromise(
+        Fuzz.run(
+          arb,
+          ({ epoch, shouldFail }) =>
+            Effect.gen(function*() {
+              const remove = MemoryOpfs.install()
+              try {
+                const name = Engines.name()
+                const ran: Array<number> = []
+                const prepare: BrowserRuntime.Prepare<typeof Prepared.Type> = {
+                  epoch,
+                  success: Prepared,
+                  run: (database) =>
+                    Effect.gen(function*() {
+                      ran.push(epoch)
+                      if (shouldFail) return yield* Effect.fail("prep-boom")
+                      yield* database.execute("CREATE TABLE IF NOT EXISTS prepared (epoch INTEGER)")
+                      yield* database.execute("INSERT INTO prepared VALUES (?)", [epoch])
+                      return { rows: 1 }
+                    })
+                }
+                const running = BrowserRuntime.run({
+                  name,
+                  sqlite: MemorySqlite.build,
+                  flows,
+                  registerFlows: registration(Effect.succeed),
+                  prepare,
+                  telemetry: Telemetry.make().layer
+                })
+                yield* Effect.addFinalizer(() => Fiber.interrupt(running))
+
+                const tab = yield* Engines.sharedTab(name)
+                const tabRes = yield* tab.execute("SELECT epoch FROM prepared ORDER BY epoch").pipe(
+                  Effect.timeout("1500 millis"),
+                  Effect.result
+                )
+                if (shouldFail) return tabRes._tag === "Failure"
+                return tabRes._tag === "Success" && ran.includes(epoch)
+              } finally {
+                remove()
+              }
+            }).pipe(Effect.scoped),
+          { seed: seed + 1, executions: Math.min(executions, 8) }
+        )
+      )
+      const failure = Fuzz.formatReport(report)
+      if (failure !== undefined) throw new Error(failure)
+      expect(report._tag).toBe("Passed")
+    },
+    60_000
+  )
 })

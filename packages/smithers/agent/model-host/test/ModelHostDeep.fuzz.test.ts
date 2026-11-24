@@ -38,9 +38,9 @@ const makeGrant = (withInstall: boolean): DurableChatGrant => ({
   source: { repository: "acme/app" },
   ...(withInstall
     ? {
-        installOrigin: "http://127.0.0.1:4567",
-        api: { author: "ben", token: "smithers_" + "a".repeat(40) }
-      }
+      installOrigin: "http://127.0.0.1:4567",
+      api: { author: "ben", token: "smithers_" + "a".repeat(40) }
+    }
     : {})
 })
 
@@ -160,180 +160,273 @@ const makeProducerFetch = (
 }
 
 describe("@smthrs/model-host HostTools & EnvironmentResolver deep fuzz invariants", () => {
-  it("runHostTurn dispatches all command namespaces, malformed arguments, unknown tools & API/source errors safely", async () => {
-    const arb = Arbitrary.schema(
-      Schema.Struct({
-        toolKind: Schema.Literals([
-          "list_all",
-          "list_ns",
-          "exec_file",
-          "exec_file_bin",
-          "exec_files",
-          "exec_stack",
-          "exec_todo",
-          "exec_todo_new",
-          "exec_todo_drop",
-          "exec_flow",
-          "exec_flow_edit",
-          "exec_flow_run",
-          "exec_search",
-          "exec_run_inspect",
-          "exec_merge",
-          "bad_json",
-          "array_args",
-          "unknown_action",
-          "unknown_tool"
-        ]),
-        withInstall: Schema.Boolean,
-        statusMode: Schema.Literals(["ok", "not_found", "forbidden", "too_large", "server_err"])
-      })
-    )
+  it(
+    "runHostTurn dispatches all command namespaces, malformed arguments, unknown tools & API/source errors safely",
+    async () => {
+      const arb = Arbitrary.schema(
+        Schema.Struct({
+          toolKind: Schema.Literals([
+            "list_all",
+            "list_ns",
+            "exec_file",
+            "exec_file_bin",
+            "exec_files",
+            "exec_stack",
+            "exec_todo",
+            "exec_todo_new",
+            "exec_todo_drop",
+            "exec_flow",
+            "exec_flow_edit",
+            "exec_flow_run",
+            "exec_search",
+            "exec_run_inspect",
+            "exec_merge",
+            "bad_json",
+            "array_args",
+            "unknown_action",
+            "unknown_tool"
+          ]),
+          withInstall: Schema.Boolean,
+          statusMode: Schema.Literals(["ok", "not_found", "forbidden", "too_large", "server_err"])
+        })
+      )
 
-    const report = await Effect.runPromise(
-      Fuzz.run(
-        arb,
-        ({ toolKind, withInstall, statusMode }) =>
-          Effect.gen(function*() {
-            const grant = makeGrant(withInstall)
-            const prod = makeProducerFetch(grant.cursor, statusMode)
+      const report = await Effect.runPromise(
+        Fuzz.run(
+          arb,
+          ({ toolKind, withInstall, statusMode }) =>
+            Effect.gen(function*() {
+              const grant = makeGrant(withInstall)
+              const prod = makeProducerFetch(grant.cursor, statusMode)
 
-            const call =
-              toolKind === "list_all"
+              const call = toolKind === "list_all"
                 ? { name: "commands", arguments: JSON.stringify({ action: "list" }) }
                 : toolKind === "list_ns"
-                  ? { name: "commands", arguments: JSON.stringify({ action: "list", namespace: "todo" }) }
-                  : toolKind === "exec_file"
-                    ? { name: "commands", arguments: JSON.stringify({ action: "execute", name: "file", arguments: "README.md" }) }
-                    : toolKind === "exec_file_bin"
-                      ? { name: "commands", arguments: JSON.stringify({ action: "execute", name: "file", arguments: "logo.bin" }) }
-                      : toolKind === "exec_files"
-                        ? { name: "commands", arguments: JSON.stringify({ action: "execute", name: "files", arguments: "" }) }
-                        : toolKind === "exec_stack"
-                          ? { name: "commands", arguments: JSON.stringify({ action: "execute", name: "stack" }) }
-                          : toolKind === "exec_todo"
-                            ? { name: "commands", arguments: JSON.stringify({ action: "execute", name: "todo", arguments: "T12" }) }
-                            : toolKind === "exec_todo_new"
-                              ? { name: "commands", arguments: JSON.stringify({ action: "execute", name: "todo.new", arguments: "Add tests" }) }
-                              : toolKind === "exec_todo_drop"
-                                ? { name: "commands", arguments: JSON.stringify({ action: "execute", name: "todo.drop", arguments: "T12" }) }
-                                : toolKind === "exec_flow"
-                                  ? { name: "commands", arguments: JSON.stringify({ action: "execute", name: "flow", arguments: "todo" }) }
-                                  : toolKind === "exec_flow_edit"
-                                    ? { name: "commands", arguments: JSON.stringify({ action: "execute", name: "flow.edit", arguments: "todo Run tests" }) }
-                                    : toolKind === "exec_flow_run"
-                                      ? { name: "commands", arguments: JSON.stringify({ action: "execute", name: "flow.run", arguments: JSON.stringify({ name: "todo" }) }) }
-                                      : toolKind === "exec_search"
-                                        ? { name: "commands", arguments: JSON.stringify({ action: "execute", name: "search", arguments: JSON.stringify({ query: "hello" }) }) }
-                                        : toolKind === "exec_run_inspect"
-                                          ? { name: "commands", arguments: JSON.stringify({ action: "execute", name: "run.inspect", arguments: JSON.stringify({ id: "run-7" }) }) }
-                                          : toolKind === "exec_merge"
-                                            ? { name: "commands", arguments: JSON.stringify({ action: "execute", name: "merge", arguments: "T12" }) }
-                                            : toolKind === "bad_json"
-                                              ? { name: "commands", arguments: "{not json" }
-                                              : toolKind === "array_args"
-                                                ? { name: "commands", arguments: "[]" }
-                                                : toolKind === "unknown_action"
-                                                  ? { name: "commands", arguments: JSON.stringify({ action: "run" }) }
-                                                  : { name: "shell", arguments: JSON.stringify({ command: "rm -rf /" }) }
+                ? { name: "commands", arguments: JSON.stringify({ action: "list", namespace: "todo" }) }
+                : toolKind === "exec_file"
+                ? {
+                  name: "commands",
+                  arguments: JSON.stringify({ action: "execute", name: "file", arguments: "README.md" })
+                }
+                : toolKind === "exec_file_bin"
+                ? {
+                  name: "commands",
+                  arguments: JSON.stringify({ action: "execute", name: "file", arguments: "logo.bin" })
+                }
+                : toolKind === "exec_files"
+                ? { name: "commands", arguments: JSON.stringify({ action: "execute", name: "files", arguments: "" }) }
+                : toolKind === "exec_stack"
+                ? { name: "commands", arguments: JSON.stringify({ action: "execute", name: "stack" }) }
+                : toolKind === "exec_todo"
+                ? { name: "commands", arguments: JSON.stringify({ action: "execute", name: "todo", arguments: "T12" }) }
+                : toolKind === "exec_todo_new"
+                ? {
+                  name: "commands",
+                  arguments: JSON.stringify({ action: "execute", name: "todo.new", arguments: "Add tests" })
+                }
+                : toolKind === "exec_todo_drop"
+                ? {
+                  name: "commands",
+                  arguments: JSON.stringify({ action: "execute", name: "todo.drop", arguments: "T12" })
+                }
+                : toolKind === "exec_flow"
+                ? {
+                  name: "commands",
+                  arguments: JSON.stringify({ action: "execute", name: "flow", arguments: "todo" })
+                }
+                : toolKind === "exec_flow_edit"
+                ? {
+                  name: "commands",
+                  arguments: JSON.stringify({ action: "execute", name: "flow.edit", arguments: "todo Run tests" })
+                }
+                : toolKind === "exec_flow_run"
+                ? {
+                  name: "commands",
+                  arguments: JSON.stringify({
+                    action: "execute",
+                    name: "flow.run",
+                    arguments: JSON.stringify({ name: "todo" })
+                  })
+                }
+                : toolKind === "exec_search"
+                ? {
+                  name: "commands",
+                  arguments: JSON.stringify({
+                    action: "execute",
+                    name: "search",
+                    arguments: JSON.stringify({ query: "hello" })
+                  })
+                }
+                : toolKind === "exec_run_inspect"
+                ? {
+                  name: "commands",
+                  arguments: JSON.stringify({
+                    action: "execute",
+                    name: "run.inspect",
+                    arguments: JSON.stringify({ id: "run-7" })
+                  })
+                }
+                : toolKind === "exec_merge"
+                ? {
+                  name: "commands",
+                  arguments: JSON.stringify({ action: "execute", name: "merge", arguments: "T12" })
+                }
+                : toolKind === "bad_json"
+                ? { name: "commands", arguments: "{not json" }
+                : toolKind === "array_args"
+                ? { name: "commands", arguments: "[]" }
+                : toolKind === "unknown_action"
+                ? { name: "commands", arguments: JSON.stringify({ action: "run" }) }
+                : { name: "shell", arguments: JSON.stringify({ command: "rm -rf /" }) }
 
-            const res = yield* runDurableChatTurn(
-              makeModel([call]),
-              grant,
-              { modelId: "fixture", credential: "fixture" },
-              undefined,
-              prod.fetchImpl
-            ).pipe(Effect.result)
+              const res = yield* runDurableChatTurn(
+                makeModel([call]),
+                grant,
+                { modelId: "fixture", credential: "fixture" },
+                undefined,
+                prod.fetchImpl
+              ).pipe(Effect.result)
 
-            return res._tag === "Success" && prod.frames.length > 0
-          }),
-        { seed, executions: Math.min(executions, 45) }
+              return res._tag === "Success" && prod.frames.length > 0
+            }),
+          { seed, executions: Math.min(executions, 45) }
+        )
       )
-    )
-    const failure = Fuzz.formatReport(report)
-    if (failure !== undefined) throw new Error(failure)
-    expect(report._tag).toBe("Passed")
-  }, 45_000)
+      const failure = Fuzz.formatReport(report)
+      if (failure !== undefined) throw new Error(failure)
+      expect(report._tag).toBe("Passed")
+    },
+    45_000
+  )
 
-  it("sourceReader, sourceLister, apiCaller & environmentModelResolver enforce strict HTTP/NDJSON validation", async () => {
-    const binding = {
-      protocol: "openai-chat",
-      baseUrl: "https://fixture.test",
-      modelId: "fixture",
-      credential: "FIXTURE"
-    } as const
-    const env = { SMITHERS_MODEL_KEY_FIXTURE: "fixture-key", SMITHERS_MODEL_KEY_FIXTURE_ORIGIN: "https://fixture.test" }
+  it(
+    "sourceReader, sourceLister, apiCaller & environmentModelResolver enforce strict HTTP/NDJSON validation",
+    async () => {
+      const binding = {
+        protocol: "openai-chat",
+        baseUrl: "https://fixture.test",
+        modelId: "fixture",
+        credential: "FIXTURE"
+      } as const
+      const env = {
+        SMITHERS_MODEL_KEY_FIXTURE: "fixture-key",
+        SMITHERS_MODEL_KEY_FIXTURE_ORIGIN: "https://fixture.test"
+      }
 
-    const arb = Arbitrary.schema(
-      Schema.Struct({
-        ctxCase: Schema.Literals(["valid_ndjson", "status_503", "redirect_307", "bad_json", "oversized_header", "non_shared"]),
-        apiCase: Schema.Literals(["ok_200", "err_404", "err_500", "redirect_302"])
-      })
-    )
-
-    const report = await Effect.runPromise(
-      Fuzz.run(
-        arb,
-        ({ ctxCase, apiCase }) =>
-          Effect.gen(function*() {
-            const baseGrant = makeGrant(true)
-            const sharedGrant: DurableChatGrant = {
-              ...baseGrant,
-              request: { ...baseGrant.request, sharedConversation: ctxCase !== "non_shared" }
-            }
-
-            const ctxFetch: NativeAgent.FetchLike = async () => {
-              if (ctxCase === "status_503") return new Response("down", { status: 503 })
-              if (ctxCase === "redirect_307") return new Response(null, { status: 307, headers: { location: "https://evil.test" } })
-              if (ctxCase === "bad_json") return new Response("not json")
-              if (ctxCase === "oversized_header") return new Response("{}", { headers: { "content-length": "3000000" } })
-              const records = [
-                { type: "input", version: 1, value: { prompt: "hi", author: "ben", branch: "main", state: "ready", tokenBudget: 8000, wikiOnly: false } },
-                { type: "recent", value: { title: "Prev", text: "ok" } },
-                { type: "candidate", value: { item: { kind: "file", label: "a.ts", ref: "src/a.ts", revision: "abc" }, text: "export const a = 1" } },
-                { type: "end", recent: 1, candidates: 1 }
-              ]
-              return new Response(records.map((r) => JSON.stringify(r) + "\n").join(""), {
-                headers: { "content-type": "application/x-ndjson" }
-              })
-            }
-
-            const resolved = yield* environmentModelResolver({ binding, env, fetchImpl: ctxFetch as unknown as typeof fetch })(sharedGrant).pipe(
-              Effect.result
-            )
-            if (ctxCase === "valid_ndjson" || ctxCase === "non_shared") {
-              if (resolved._tag !== "Success") return false
-            } else {
-              if (resolved._tag !== "Failure") return false
-            }
-
-            // Exercise sourceReader, sourceLister, apiCaller directly
-            const apiFetch: NativeAgent.FetchLike = async () => {
-              if (apiCase === "err_404") return Response.json({ status: "error", code: "not_found" }, { status: 404 })
-              if (apiCase === "err_500") return new Response("boom", { status: 500 })
-              if (apiCase === "redirect_302") return new Response(null, { status: 302, headers: { location: "https://evil.test" } })
-              return Response.json({
-                repository: "acme/app",
-                path: "README.md",
-                commit: COMMIT,
-                content: "hi",
-                binary: false,
-                entries: [{ name: "a.ts", kind: "file" }],
-                truncated: false
-              })
-            }
-            const reader = sourceReader(baseGrant.producerBaseUrl, baseGrant, apiFetch)
-            const lister = sourceLister(baseGrant.producerBaseUrl, baseGrant, apiFetch)
-            const caller = apiCaller(baseGrant.producerBaseUrl, baseGrant, apiFetch)
-            const rAns = yield* reader("README.md")
-            const lAns = yield* lister("")
-            const aAns = yield* caller("/api/todos", { method: "GET" })
-            return rAns !== undefined && lAns !== undefined && aAns !== undefined
-          }),
-        { seed: seed + 1, executions: Math.min(executions, 40) }
+      const arb = Arbitrary.schema(
+        Schema.Struct({
+          ctxCase: Schema.Literals([
+            "valid_ndjson",
+            "status_503",
+            "redirect_307",
+            "bad_json",
+            "oversized_header",
+            "non_shared"
+          ]),
+          apiCase: Schema.Literals(["ok_200", "err_404", "err_500", "redirect_302"])
+        })
       )
-    )
-    const failure = Fuzz.formatReport(report)
-    if (failure !== undefined) throw new Error(failure)
-    expect(report._tag).toBe("Passed")
-  }, 45_000)
+
+      const report = await Effect.runPromise(
+        Fuzz.run(
+          arb,
+          ({ ctxCase, apiCase }) =>
+            Effect.gen(function*() {
+              const baseGrant = makeGrant(true)
+              const sharedGrant: DurableChatGrant = {
+                ...baseGrant,
+                request: { ...baseGrant.request, sharedConversation: ctxCase !== "non_shared" }
+              }
+
+              const ctxFetch: NativeAgent.FetchLike = async () => {
+                if (ctxCase === "status_503") return new Response("down", { status: 503 })
+                if (ctxCase === "redirect_307") {
+                  return new Response(null, { status: 307, headers: { location: "https://evil.test" } })
+                }
+                if (ctxCase === "bad_json") {
+                  return new Response("not json")
+                }
+                if (ctxCase === "oversized_header") {
+                  return new Response("{}", {
+                    headers: { "content-length": "3000000" }
+                  })
+                }
+                const records = [
+                  {
+                    type: "input",
+                    version: 1,
+                    value: {
+                      prompt: "hi",
+                      author: "ben",
+                      branch: "main",
+                      state: "ready",
+                      tokenBudget: 8000,
+                      wikiOnly: false
+                    }
+                  },
+                  { type: "recent", value: { title: "Prev", text: "ok" } },
+                  {
+                    type: "candidate",
+                    value: {
+                      item: { kind: "file", label: "a.ts", ref: "src/a.ts", revision: "abc" },
+                      text: "export const a = 1"
+                    }
+                  },
+                  { type: "end", recent: 1, candidates: 1 }
+                ]
+                return new Response(records.map((r) => JSON.stringify(r) + "\n").join(""), {
+                  headers: { "content-type": "application/x-ndjson" }
+                })
+              }
+
+              const resolved = yield* environmentModelResolver({
+                binding,
+                env,
+                fetchImpl: ctxFetch as unknown as typeof fetch
+              })(sharedGrant).pipe(
+                Effect.result
+              )
+              if (ctxCase === "valid_ndjson" || ctxCase === "non_shared") {
+                if (resolved._tag !== "Success") return false
+              } else {
+                if (resolved._tag !== "Failure") return false
+              }
+
+              // Exercise sourceReader, sourceLister, apiCaller directly
+              const apiFetch: NativeAgent.FetchLike = async () => {
+                if (apiCase === "err_404") return Response.json({ status: "error", code: "not_found" }, { status: 404 })
+                if (apiCase === "err_500") return new Response("boom", { status: 500 })
+                if (apiCase === "redirect_302") {
+                  return new Response(null, {
+                    status: 302,
+                    headers: { location: "https://evil.test" }
+                  })
+                }
+                return Response.json({
+                  repository: "acme/app",
+                  path: "README.md",
+                  commit: COMMIT,
+                  content: "hi",
+                  binary: false,
+                  entries: [{ name: "a.ts", kind: "file" }],
+                  truncated: false
+                })
+              }
+              const reader = sourceReader(baseGrant.producerBaseUrl, baseGrant, apiFetch)
+              const lister = sourceLister(baseGrant.producerBaseUrl, baseGrant, apiFetch)
+              const caller = apiCaller(baseGrant.producerBaseUrl, baseGrant, apiFetch)
+              const rAns = yield* reader("README.md")
+              const lAns = yield* lister("")
+              const aAns = yield* caller("/api/todos", { method: "GET" })
+              return rAns !== undefined && lAns !== undefined && aAns !== undefined
+            }),
+          { seed: seed + 1, executions: Math.min(executions, 40) }
+        )
+      )
+      const failure = Fuzz.formatReport(report)
+      if (failure !== undefined) throw new Error(failure)
+      expect(report._tag).toBe("Passed")
+    },
+    45_000
+  )
 })

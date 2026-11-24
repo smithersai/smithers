@@ -101,7 +101,7 @@ describe("@smthrs/engine-store RetentionOps & ArtifactGc mark/sweep deep fuzz", 
               Layer.provideMerge(
                 Layer.succeed(ArtifactStore.ArtifactStore)(
                   ArtifactStore.makeFileSystem(mem.fs, hostPath, {
-                                        durability: "best-effort",
+                    durability: "best-effort",
                     coordination: "process"
                   })
                 )
@@ -109,7 +109,7 @@ describe("@smthrs/engine-store RetentionOps & ArtifactGc mark/sweep deep fuzz", 
               Layer.provideMerge(
                 Layer.succeed(ArtifactSweep.ArtifactSweep)(
                   ArtifactSweep.makeFileSystem(mem.fs, {
-                                        coordination: "process"
+                    coordination: "process"
                   })
                 )
               ),

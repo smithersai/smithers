@@ -1,5 +1,5 @@
-import * as ChildProcessSpawner from "@smthrs/kernel/ChildProcessSpawner"
 import { Fuzz } from "@smthrs/fuzz"
+import * as ChildProcessSpawner from "@smthrs/kernel/ChildProcessSpawner"
 import { LanguageServer, Lsp } from "@smthrs/std"
 import { Arbitrary, Cause, Deferred, Effect, Exit, Layer, Logger, Option, Queue, Schema, Sink, Stream } from "effect"
 import * as ByteSize from "effect/ByteSize"
@@ -198,7 +198,9 @@ describe("@smthrs/platform-node NodeLanguageServer fuzz", () => {
                               documentSymbolProvider: true,
                               workspaceSymbolProvider: true,
                               textDocumentSync: { openClose: true, change: 1, save: true },
-                              ...(pullDiag ? { diagnosticProvider: { interFileDependencies: false, workspaceDiagnostics: false } } : {})
+                              ...(pullDiag
+                                ? { diagnosticProvider: { interFileDependencies: false, workspaceDiagnostics: false } }
+                                : {})
                             }
                           }
                         })
@@ -207,15 +209,30 @@ describe("@smthrs/platform-node NodeLanguageServer fuzz", () => {
                         // Exercise server->client request handling (workspace/configuration, client/registerCapability, unknown)
                         yield* Queue.offer(
                           output,
-                          encodeFrame({ jsonrpc: "2.0", id: "srv-1", method: "workspace/configuration", params: { items: [{}] } })
+                          encodeFrame({
+                            jsonrpc: "2.0",
+                            id: "srv-1",
+                            method: "workspace/configuration",
+                            params: { items: [{}] }
+                          })
                         )
                         yield* Queue.offer(
                           output,
-                          encodeFrame({ jsonrpc: "2.0", id: "srv-2", method: "client/registerCapability", params: { registrations: [] } })
+                          encodeFrame({
+                            jsonrpc: "2.0",
+                            id: "srv-2",
+                            method: "client/registerCapability",
+                            params: { registrations: [] }
+                          })
                         )
                         yield* Queue.offer(
                           output,
-                          encodeFrame({ jsonrpc: "2.0", id: "srv-3", method: "window/workDoneProgress/create", params: { token: "t1" } })
+                          encodeFrame({
+                            jsonrpc: "2.0",
+                            id: "srv-3",
+                            method: "window/workDoneProgress/create",
+                            params: { token: "t1" }
+                          })
                         )
                         yield* Queue.offer(
                           output,
@@ -260,53 +277,80 @@ describe("@smthrs/platform-node NodeLanguageServer fuzz", () => {
                     if (typeof msg.id !== "number") return
 
                     if (method === "textDocument/hover") {
-                      yield* Queue.offer(output, encodeFrame({ jsonrpc: "2.0", id: msg.id, result: { contents: "hover-ok" } }))
+                      yield* Queue.offer(
+                        output,
+                        encodeFrame({ jsonrpc: "2.0", id: msg.id, result: { contents: "hover-ok" } })
+                      )
                     } else if (method === "textDocument/definition") {
-                      yield* Queue.offer(output, encodeFrame({
-                        jsonrpc: "2.0",
-                        id: msg.id,
-                        result: [{ uri: `file://${filePath}`, range: { start: { line: 0, character: 0 }, end: { line: 0, character: 4 } } }]
-                      }))
-                    } else if (method === "textDocument/references") {
-                      yield* Queue.offer(output, encodeFrame({
-                        jsonrpc: "2.0",
-                        id: msg.id,
-                        result: [{ uri: `file://${filePath}`, range: { start: { line: 0, character: 0 }, end: { line: 0, character: 4 } } }]
-                      }))
-                    } else if (method === "textDocument/documentSymbol") {
-                      yield* Queue.offer(output, encodeFrame({
-                        jsonrpc: "2.0",
-                        id: msg.id,
-                        result: [{
-                          name: `x${idx}`,
-                          kind: 13,
-                          range: { start: { line: 0, character: 0 }, end: { line: 0, character: 10 } },
-                          selectionRange: { start: { line: 0, character: 0 }, end: { line: 0, character: 10 } }
-                        }]
-                      }))
-                    } else if (method === "workspace/symbol") {
-                      yield* Queue.offer(output, encodeFrame({
-                        jsonrpc: "2.0",
-                        id: msg.id,
-                        result: [{
-                          name: `x${idx}`,
-                          kind: 13,
-                          location: { uri: `file://${filePath}`, range: { start: { line: 0, character: 0 }, end: { line: 0, character: 10 } } }
-                        }]
-                      }))
-                    } else if (method === "textDocument/diagnostic") {
-                      yield* Queue.offer(output, encodeFrame({
-                        jsonrpc: "2.0",
-                        id: msg.id,
-                        result: {
-                          kind: "full",
-                          items: [{
-                            range: { start: { line: 0, character: 0 }, end: { line: 0, character: 3 } },
-                            severity: 2,
-                            message: "pull diag"
+                      yield* Queue.offer(
+                        output,
+                        encodeFrame({
+                          jsonrpc: "2.0",
+                          id: msg.id,
+                          result: [{
+                            uri: `file://${filePath}`,
+                            range: { start: { line: 0, character: 0 }, end: { line: 0, character: 4 } }
                           }]
-                        }
-                      }))
+                        })
+                      )
+                    } else if (method === "textDocument/references") {
+                      yield* Queue.offer(
+                        output,
+                        encodeFrame({
+                          jsonrpc: "2.0",
+                          id: msg.id,
+                          result: [{
+                            uri: `file://${filePath}`,
+                            range: { start: { line: 0, character: 0 }, end: { line: 0, character: 4 } }
+                          }]
+                        })
+                      )
+                    } else if (method === "textDocument/documentSymbol") {
+                      yield* Queue.offer(
+                        output,
+                        encodeFrame({
+                          jsonrpc: "2.0",
+                          id: msg.id,
+                          result: [{
+                            name: `x${idx}`,
+                            kind: 13,
+                            range: { start: { line: 0, character: 0 }, end: { line: 0, character: 10 } },
+                            selectionRange: { start: { line: 0, character: 0 }, end: { line: 0, character: 10 } }
+                          }]
+                        })
+                      )
+                    } else if (method === "workspace/symbol") {
+                      yield* Queue.offer(
+                        output,
+                        encodeFrame({
+                          jsonrpc: "2.0",
+                          id: msg.id,
+                          result: [{
+                            name: `x${idx}`,
+                            kind: 13,
+                            location: {
+                              uri: `file://${filePath}`,
+                              range: { start: { line: 0, character: 0 }, end: { line: 0, character: 10 } }
+                            }
+                          }]
+                        })
+                      )
+                    } else if (method === "textDocument/diagnostic") {
+                      yield* Queue.offer(
+                        output,
+                        encodeFrame({
+                          jsonrpc: "2.0",
+                          id: msg.id,
+                          result: {
+                            kind: "full",
+                            items: [{
+                              range: { start: { line: 0, character: 0 }, end: { line: 0, character: 3 } },
+                              severity: 2,
+                              message: "pull diag"
+                            }]
+                          }
+                        })
+                      )
                     } else {
                       yield* Queue.offer(output, encodeFrame({ jsonrpc: "2.0", id: msg.id, result: null }))
                     }
@@ -332,8 +376,12 @@ describe("@smthrs/platform-node NodeLanguageServer fuzz", () => {
               }
 
               const serverLayer = tc.lazy
-                ? NodeLanguageServer.layerLazy(cfg).pipe(Layer.provide(Layer.succeed(ChildProcessSpawner.ChildProcessSpawner, spawner)))
-                : NodeLanguageServer.layer(cfg).pipe(Layer.provide(Layer.succeed(ChildProcessSpawner.ChildProcessSpawner, spawner)))
+                ? NodeLanguageServer.layerLazy(cfg).pipe(
+                  Layer.provide(Layer.succeed(ChildProcessSpawner.ChildProcessSpawner, spawner))
+                )
+                : NodeLanguageServer.layer(cfg).pipe(
+                  Layer.provide(Layer.succeed(ChildProcessSpawner.ChildProcessSpawner, spawner))
+                )
 
               const envLayer = Layer.mergeAll(serverLayer, fsLayer)
 
@@ -351,7 +399,13 @@ describe("@smthrs/platform-node NodeLanguageServer fuzz", () => {
                   return Lsp.run({ operation: "documentSymbols", path: filePath, line: 1, character: 1 })
                 }
                 if (tc.operation === "workspaceSymbols") {
-                  return Lsp.run({ operation: "workspaceSymbols", path: filePath, query: `x${idx}`, line: 1, character: 1 })
+                  return Lsp.run({
+                    operation: "workspaceSymbols",
+                    path: filePath,
+                    query: `x${idx}`,
+                    line: 1,
+                    character: 1
+                  })
                 }
                 return Lsp.run({ operation: "diagnostics", path: filePath })
               }
@@ -414,7 +468,10 @@ describe("@smthrs/platform-node NodeLanguageServer fuzz", () => {
                         yield* Queue.end(output)
                         return
                       }
-                      yield* Queue.offer(output, encodeFrame({ jsonrpc: "2.0", id: msg.id, result: { capabilities: {} } }))
+                      yield* Queue.offer(
+                        output,
+                        encodeFrame({ jsonrpc: "2.0", id: msg.id, result: { capabilities: {} } })
+                      )
                       return
                     }
                     if (msg.method === "shutdown") {

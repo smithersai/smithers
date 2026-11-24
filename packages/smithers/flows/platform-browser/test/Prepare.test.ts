@@ -321,8 +321,11 @@ describe("BrowserRuntime.run with prepare", () => {
       // Leader 1 (epoch 3) fails attempt 1 transiently (arming a 200ms retry clock), then is interrupted mid-backoff.
       const first = worker(
         name,
-        preparation(3, epoch3Ran, () =>
-          Deferred.succeed(failedOnce, undefined).pipe(Effect.andThen(Effect.fail("transient-io"))))
+        preparation(
+          3,
+          epoch3Ran,
+          () => Deferred.succeed(failedOnce, undefined).pipe(Effect.andThen(Effect.fail("transient-io")))
+        )
       )
       yield* Deferred.await(failedOnce)
       yield* Effect.sleep("30 millis")

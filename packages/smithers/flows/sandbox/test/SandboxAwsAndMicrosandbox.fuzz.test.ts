@@ -116,10 +116,24 @@ describe("@smthrs/sandbox AwsSandbox & MicrosandboxSandbox (make, process, snaps
                   const arn = input.tasks[0]!
                   const container = tc.mode === "image-limits" ? "sandbox" : "main"
                   if (tc.describePath === "stopped") {
-                    return { tasks: [{ taskArn: arn, lastStatus: "STOPPED", desiredStatus: "STOPPED", enableExecuteCommand: true }] }
+                    return {
+                      tasks: [{
+                        taskArn: arn,
+                        lastStatus: "STOPPED",
+                        desiredStatus: "STOPPED",
+                        enableExecuteCommand: true
+                      }]
+                    }
                   }
                   if (tc.describePath === "pending-then-ready" && describeCount === 1) {
-                    return { tasks: [{ taskArn: arn, lastStatus: "PENDING", desiredStatus: "RUNNING", enableExecuteCommand: false }] }
+                    return {
+                      tasks: [{
+                        taskArn: arn,
+                        lastStatus: "PENDING",
+                        desiredStatus: "RUNNING",
+                        enableExecuteCommand: false
+                      }]
+                    }
                   }
                   if (tc.describePath === "no-agents-then-ready" && describeCount === 1) {
                     return {
@@ -224,8 +238,7 @@ describe("@smthrs/sandbox AwsSandbox & MicrosandboxSandbox (make, process, snaps
                 })
 
               const acqExit = yield* provider.acquire(`aws-${seq}`).pipe(Effect.exit)
-              const expectAcqFail =
-                tc.fault === "run-fault" ||
+              const expectAcqFail = tc.fault === "run-fault" ||
                 tc.fault === "run-no-task" ||
                 tc.fault === "describe-fault" ||
                 (tc.fault === "register-fault" && tc.mode === "image-limits") ||
@@ -286,7 +299,15 @@ describe("@smthrs/sandbox AwsSandbox & MicrosandboxSandbox (make, process, snaps
     )
 
     const makeFakeMsb = (baseDir: string, defaultBackend: "local" | "cloud", loseOnEcho: boolean) => {
-      type ExecEvent = NonNullable<Awaited<ReturnType<Awaited<ReturnType<Awaited<ReturnType<ReturnType<MsbSdk["Sandbox"]["builder"]>["create"]>>["execStreamWith"]>>["recv"]>>>
+      type ExecEvent = NonNullable<
+        Awaited<
+          ReturnType<
+            Awaited<
+              ReturnType<Awaited<ReturnType<ReturnType<MsbSdk["Sandbox"]["builder"]>["create"]>>["execStreamWith"]>
+            >["recv"]
+          >
+        >
+      >
       interface MachineState {
         name: string
         dir: string
@@ -309,7 +330,9 @@ describe("@smthrs/sandbox AwsSandbox & MicrosandboxSandbox (make, process, snaps
           read: async (path: string) => {
             const full = resolveIn(m, path)
             if (!existsSync(full)) {
-              throw Object.assign(new Error("sandbox fs error: open: No such file or directory (os error 2)"), { code: "sandboxFsOps" })
+              throw Object.assign(new Error("sandbox fs error: open: No such file or directory (os error 2)"), {
+                code: "sandboxFsOps"
+              })
             }
             return new Uint8Array(readFileSync(full))
           },
@@ -386,7 +409,7 @@ describe("@smthrs/sandbox AwsSandbox & MicrosandboxSandbox (make, process, snaps
             child.kill("SIGKILL")
             push(null)
           } else {
-            child.stdin.on("error", () => {});
+            child.stdin.on("error", () => {})
             if (cmdStdin !== undefined) child.stdin.end(cmdStdin)
             else child.stdin.end()
             child.stdout.on("data", (chunk: Buffer) => {
@@ -468,28 +491,60 @@ describe("@smthrs/sandbox AwsSandbox & MicrosandboxSandbox (make, process, snaps
           builder: (name: string) => {
             let labels: Record<string, string> = {}
             const b: any = {
-              image() { return b },
-              fromSnapshot() { return b },
-              rootDisk() { return b },
-              network(fn: (nb: any) => any) {
-                fn({ policy() { return this } })
+              image() {
                 return b
               },
-              cpus() { return b },
-              maxCpus() { return b },
-              memory() { return b },
-              maxMemory() { return b },
-              security() { return b },
-              pullPolicy() { return b },
+              fromSnapshot() {
+                return b
+              },
+              rootDisk() {
+                return b
+              },
+              network(fn: (nb: any) => any) {
+                fn({
+                  policy() {
+                    return this
+                  }
+                })
+                return b
+              },
+              cpus() {
+                return b
+              },
+              maxCpus() {
+                return b
+              },
+              memory() {
+                return b
+              },
+              maxMemory() {
+                return b
+              },
+              security() {
+                return b
+              },
+              pullPolicy() {
+                return b
+              },
               labels(l: Record<string, string>) {
                 labels = { ...labels, ...l }
                 return b
               },
-              maxDuration() { return b },
-              idleTimeout() { return b },
-              ephemeral() { return b },
-              detached() { return b },
-              disableNetwork() { return b },
+              maxDuration() {
+                return b
+              },
+              idleTimeout() {
+                return b
+              },
+              ephemeral() {
+                return b
+              },
+              detached() {
+                return b
+              },
+              disableNetwork() {
+                return b
+              },
               create: async () => {
                 const dir = join(baseDir, name)
                 mkdirSync(dir, { recursive: true })
@@ -576,7 +631,9 @@ describe("@smthrs/sandbox AwsSandbox & MicrosandboxSandbox (make, process, snaps
               const fPath = `${session.workdir}/m.txt`
               yield* session.writeFile(fPath, encoder.encode("msb-content"))
               expect(decoder.decode(yield* session.readFile(fPath))).toBe("msb-content")
-              expect(Exit.isFailure(yield* session.readFile(`${session.workdir}/missing.txt`).pipe(Effect.exit))).toBe(true)
+              expect(Exit.isFailure(yield* session.readFile(`${session.workdir}/missing.txt`).pipe(Effect.exit))).toBe(
+                true
+              )
 
               // Spawn command
               const cmd = tc.loseStream

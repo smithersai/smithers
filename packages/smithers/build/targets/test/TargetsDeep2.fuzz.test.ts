@@ -80,7 +80,11 @@ describe("@smthrs/targets deep fuzz suite 2: Compose, ExecStage, SecretProxyTunn
               // 1. Compose.Generate forms & refusals
               if (genKind === "bin") {
                 const calls = plannedCalls(
-                  Compose.Generate({ bin: Reference.NodeModule.Bin("fmt", "fmt"), args: ["--check"], changes: ["a.txt"] })
+                  Compose.Generate({
+                    bin: Reference.NodeModule.Bin("fmt", "fmt"),
+                    args: ["--check"],
+                    changes: ["a.txt"]
+                  })
                 )
                 if (calls[0]?.action !== "smithers-build/exec") throw new Error("bin exec")
               } else if (genKind === "command") {
@@ -197,7 +201,9 @@ describe("@smthrs/targets deep fuzz suite 2: Compose, ExecStage, SecretProxyTunn
 
               if (mode === "success-no-drift") {
                 const exit = yield* runCheck(
-                  `const fs = require("node:fs"); fs.writeFileSync("out/sub/orig.txt", ${JSON.stringify("orig-" + content)});`,
+                  `const fs = require("node:fs"); fs.writeFileSync("out/sub/orig.txt", ${
+                    JSON.stringify("orig-" + content)
+                  });`,
                   ["out/sub/orig.txt"]
                 )
                 if (Exit.isFailure(exit)) throw new Error(`expected success: ${String(exit.cause)}`)
@@ -205,7 +211,9 @@ describe("@smthrs/targets deep fuzz suite 2: Compose, ExecStage, SecretProxyTunn
                 if (after !== `orig-${content}`) throw new Error(`file changed unexpectedly: ${after}`)
               } else if (mode === "fail-drift-modify") {
                 const exit = yield* runCheck(
-                  `const fs = require("node:fs"); fs.writeFileSync("out/sub/orig.txt", ${JSON.stringify("new-" + content)});`,
+                  `const fs = require("node:fs"); fs.writeFileSync("out/sub/orig.txt", ${
+                    JSON.stringify("new-" + content)
+                  });`,
                   ["out/sub/orig.txt"]
                 )
                 if (!Exit.isFailure(exit)) throw new Error("expected DriftError")
@@ -213,11 +221,15 @@ describe("@smthrs/targets deep fuzz suite 2: Compose, ExecStage, SecretProxyTunn
                 if (after !== `orig-${content}`) throw new Error(`checkGenerator did not restore after drift: ${after}`)
               } else if (mode === "fail-drift-create-nested") {
                 const exit = yield* runCheck(
-                  `const fs = require("node:fs"); fs.mkdirSync("gen/a", { recursive: true }); fs.writeFileSync("gen/a/x.txt", ${JSON.stringify(content)});`,
+                  `const fs = require("node:fs"); fs.mkdirSync("gen/a", { recursive: true }); fs.writeFileSync("gen/a/x.txt", ${
+                    JSON.stringify(content)
+                  });`,
                   ["gen"]
                 )
                 if (!Exit.isFailure(exit)) throw new Error("expected DriftError on newly created file")
-                if (NodeFs.existsSync(NodePath.join(ws, "gen"))) throw new Error("checkGenerator should clean created gen dir")
+                if (NodeFs.existsSync(NodePath.join(ws, "gen"))) {
+                  throw new Error("checkGenerator should clean created gen dir")
+                }
               } else if (mode === "fail-restore-file") {
                 const exit = yield* runCheck(
                   `const fs = require("node:fs"); fs.writeFileSync("out/sub/orig.txt", "mutated"); process.exit(1);`,
@@ -236,11 +248,15 @@ describe("@smthrs/targets deep fuzz suite 2: Compose, ExecStage, SecretProxyTunn
                 if (restored !== `orig-${content}`) throw new Error("dir not restored from file")
               } else if (mode === "fail-replace-dir-with-symlink") {
                 const exit = yield* runCheck(
-                  `const fs = require("node:fs"); fs.rmSync("out", { recursive: true }); fs.symlinkSync(${JSON.stringify(outside)}, "out"); process.exit(1);`,
+                  `const fs = require("node:fs"); fs.rmSync("out", { recursive: true }); fs.symlinkSync(${
+                    JSON.stringify(outside)
+                  }, "out"); process.exit(1);`,
                   ["out", "out/sub/orig.txt"]
                 )
                 if (!Exit.isFailure(exit)) throw new Error("expected failure")
-                const sentinel = yield* Effect.promise(() => Fs.readFile(NodePath.join(outside, "sentinel.txt"), "utf8"))
+                const sentinel = yield* Effect.promise(() =>
+                  Fs.readFile(NodePath.join(outside, "sentinel.txt"), "utf8")
+                )
                 if (sentinel !== "safe") throw new Error("outside modified!")
               } else if (mode === "fail-delete-file") {
                 const exit = yield* runCheck(
@@ -263,16 +279,27 @@ describe("@smthrs/targets deep fuzz suite 2: Compose, ExecStage, SecretProxyTunn
               } else if (mode === "io-mkdtemp-fail") {
                 const failingIo: typeof Fs = {
                   ...Fs,
-                  mkdtemp: (() => Promise.reject(Object.assign(new Error("ENOSPC"), { code: "ENOSPC" }))) as typeof Fs.mkdtemp
+                  mkdtemp: (() =>
+                    Promise.reject(Object.assign(new Error("ENOSPC"), { code: "ENOSPC" }))) as typeof Fs.mkdtemp
                 }
-                const exit = yield* runCheck("require('node:fs').writeFileSync('out/sub/orig.txt', 'drifted'); process.exit(1);", ["out"], {}, failingIo)
+                const exit = yield* runCheck(
+                  "require('node:fs').writeFileSync('out/sub/orig.txt', 'drifted'); process.exit(1);",
+                  ["out"],
+                  {},
+                  failingIo
+                )
                 if (!Exit.isFailure(exit)) throw new Error("expected mkdtemp failure")
               } else {
                 const failingIo: typeof Fs = {
                   ...Fs,
                   rename: () => Promise.reject(Object.assign(new Error("EACCES"), { code: "EACCES" }))
                 }
-                const exit = yield* runCheck("require('node:fs').writeFileSync('out/sub/orig.txt', 'drifted'); process.exit(1);", ["out"], {}, failingIo)
+                const exit = yield* runCheck(
+                  "require('node:fs').writeFileSync('out/sub/orig.txt', 'drifted'); process.exit(1);",
+                  ["out"],
+                  {},
+                  failingIo
+                )
                 if (!Exit.isFailure(exit)) throw new Error("expected rename failure")
               }
               return true
@@ -286,369 +313,392 @@ describe("@smthrs/targets deep fuzz suite 2: Compose, ExecStage, SecretProxyTunn
     }
   }, 120_000)
 
-  it("ExecStage prepare/release/fallback-copy, SecretProxyTunnel & live SecretProxy HTTP/CONNECT fuzz invariants", async () => {
-    const tmpRoot = await Fs.realpath(await Fs.mkdtemp(NodePath.join(Os.tmpdir(), "smthrs-targets-stage-")))
-    const upstream = NodeHttp.createServer((req, res) => {
-      const auth = req.headers["authorization"] ?? ""
-      res.writeHead(200, { "content-type": "application/json" })
-      res.end(JSON.stringify({ url: req.url, auth, method: req.method }))
-    })
-    await new Promise<void>((resolve) => upstream.listen(0, "127.0.0.1", () => resolve()))
-    const upAddr = upstream.address() as NodeNet.AddressInfo
-
-    const echoServer = NodeNet.createServer((socket) => {
-      socket.on("data", (chunk) => {
-        socket.write(Buffer.concat([Buffer.from("ECHO:"), typeof chunk === "string" ? Buffer.from(chunk) : chunk]))
+  it(
+    "ExecStage prepare/release/fallback-copy, SecretProxyTunnel & live SecretProxy HTTP/CONNECT fuzz invariants",
+    async () => {
+      const tmpRoot = await Fs.realpath(await Fs.mkdtemp(NodePath.join(Os.tmpdir(), "smthrs-targets-stage-")))
+      const upstream = NodeHttp.createServer((req, res) => {
+        const auth = req.headers["authorization"] ?? ""
+        res.writeHead(200, { "content-type": "application/json" })
+        res.end(JSON.stringify({ url: req.url, auth, method: req.method }))
       })
-    })
-    await new Promise<void>((resolve) => echoServer.listen(0, "127.0.0.1", () => resolve()))
-    const echoAddr = echoServer.address() as NodeNet.AddressInfo
+      await new Promise<void>((resolve) => upstream.listen(0, "127.0.0.1", () => resolve()))
+      const upAddr = upstream.address() as NodeNet.AddressInfo
 
-    try {
-      const ws = NodePath.join(tmpRoot, "ws")
-      await Fs.mkdir(NodePath.join(ws, "src/deep"), { recursive: true })
-      await Fs.mkdir(NodePath.join(ws, "node_modules/dep"), { recursive: true })
-      await Fs.mkdir(NodePath.join(ws, "dist"), { recursive: true })
-      await Fs.mkdir(NodePath.join(ws, "restored"), { recursive: true })
-      await Fs.writeFile(NodePath.join(ws, "src/a.ts"), "export const a = 1\n", "utf8")
-      await Fs.writeFile(NodePath.join(ws, "src/deep/b.ts"), "export const b = 2\n", "utf8")
-      await Fs.chmod(NodePath.join(ws, "src/deep/b.ts"), 0o755)
-      await Fs.writeFile(NodePath.join(ws, "src/.env"), "SECRET=top\n", "utf8")
-      await Fs.writeFile(NodePath.join(ws, "node_modules/dep/index.js"), "module.exports = 1\n", "utf8")
-      await Fs.writeFile(NodePath.join(ws, "dist/kept.d.ts"), "export {}\n", "utf8")
-      await Fs.writeFile(NodePath.join(ws, "dist/old.js"), "old\n", "utf8")
-      const at = (p: string) => NodePath.join(ws, p)
+      const echoServer = NodeNet.createServer((socket) => {
+        socket.on("data", (chunk) => {
+          socket.write(Buffer.concat([Buffer.from("ECHO:"), typeof chunk === "string" ? Buffer.from(chunk) : chunk]))
+        })
+      })
+      await new Promise<void>((resolve) => echoServer.listen(0, "127.0.0.1", () => resolve()))
+      const echoAddr = echoServer.address() as NodeNet.AddressInfo
 
+      try {
+        const ws = NodePath.join(tmpRoot, "ws")
+        await Fs.mkdir(NodePath.join(ws, "src/deep"), { recursive: true })
+        await Fs.mkdir(NodePath.join(ws, "node_modules/dep"), { recursive: true })
+        await Fs.mkdir(NodePath.join(ws, "dist"), { recursive: true })
+        await Fs.mkdir(NodePath.join(ws, "restored"), { recursive: true })
+        await Fs.writeFile(NodePath.join(ws, "src/a.ts"), "export const a = 1\n", "utf8")
+        await Fs.writeFile(NodePath.join(ws, "src/deep/b.ts"), "export const b = 2\n", "utf8")
+        await Fs.chmod(NodePath.join(ws, "src/deep/b.ts"), 0o755)
+        await Fs.writeFile(NodePath.join(ws, "src/.env"), "SECRET=top\n", "utf8")
+        await Fs.writeFile(NodePath.join(ws, "node_modules/dep/index.js"), "module.exports = 1\n", "utf8")
+        await Fs.writeFile(NodePath.join(ws, "dist/kept.d.ts"), "export {}\n", "utf8")
+        await Fs.writeFile(NodePath.join(ws, "dist/old.js"), "old\n", "utf8")
+        const at = (p: string) => NodePath.join(ws, p)
+
+        const arb = Arbitrary.schema(
+          Schema.Struct({
+            scratch: Schema.Boolean,
+            linkFails: Schema.Boolean,
+            tunnelCase: Schema.Literals(["ok", "with-head", "sync-throw", "upstream-err", "timeout", "teardown"]),
+            secretName: Schema.Literals(["API_TOKEN", "MISSING_TOKEN", "BAD_NEWLINE"]),
+            reqPath: Schema.Literals(["/v1/ok", "/v1/data"])
+          })
+        )
+
+        const report = await Effect.runPromise(
+          Fuzz.run(
+            arb,
+            ({ scratch, linkFails, tunnelCase, secretName, reqPath }) =>
+              Effect.gen(function*() {
+                // 1. ExecStage.prepare + release
+                if (process.platform !== "win32") {
+                  const plan: ProcessSandbox.Plan = {
+                    mechanism: { _tag: "bubblewrap", executable: "/usr/bin/bwrap" },
+                    network: "none",
+                    workspaceRoot: ws,
+                    cwd: at("src"),
+                    reads: [
+                      ws,
+                      "/usr/share",
+                      at("src/a.ts"),
+                      at("src/deep/b.ts"),
+                      at("src/.env"),
+                      at("node_modules"),
+                      at("dist/kept.d.ts")
+                    ],
+                    links: [
+                      { path: at("src/link.ts"), target: "a.ts" },
+                      { path: at("node_modules/.bin/tool"), target: "../dep/index.js" }
+                    ],
+                    readDenies: [],
+                    writes: [at("dist"), at("out/new"), "/elsewhere"],
+                    readOnly: [],
+                    externalReads: [],
+                    hidden: { prefixes: [".env"], paths: [at("src/.env")], restored: [at("restored")] },
+                    ...(scratch ? { scratch: true } : {}),
+                    tmp: NodePath.join(tmpRoot, "run"),
+                    uid: process.getuid?.(),
+                    gid: process.getgid?.()
+                  }
+                  const io = linkFails
+                    ? {
+                      ...ExecStage.liveIo,
+                      link: () => {
+                        throw Object.assign(new Error("EXDEV"), { code: "EXDEV" })
+                      }
+                    }
+                    : ExecStage.liveIo
+                  const prepared = ExecStage.prepare(plan, io)
+                  try {
+                    if (prepared.stage.writable !== scratch) throw new Error("writable mismatch")
+                    if (!NodeFs.existsSync(prepared.stage.directory)) throw new Error("stage missing")
+                    const stagedA = NodePath.join(prepared.stage.directory, "src/a.ts")
+                    const stA = NodeFs.statSync(stagedA)
+                    const origA = NodeFs.statSync(at("src/a.ts"))
+                    if (!scratch && !linkFails && stA.ino !== origA.ino) throw new Error("expected hardlink")
+                    if ((scratch || linkFails) && stA.ino === origA.ino) throw new Error("expected copy")
+                  } finally {
+                    prepared.release()
+                  }
+                  if (NodeFs.existsSync(prepared.stage.directory)) throw new Error("stage not released")
+                }
+
+                // 2. SecretProxyTunnel.connectTunnel
+                yield* Effect.promise(async () => {
+                  const tunnels = new Set<() => void>()
+                  const srv = NodeNet.createServer((clientSock) => {
+                    if (tunnelCase === "ok" || tunnelCase === "with-head") {
+                      const head = tunnelCase === "with-head" ? Buffer.from("HEAD") : Buffer.alloc(0)
+                      SecretProxyTunnel.connectTunnel(
+                        clientSock,
+                        { host: "127.0.0.1", port: echoAddr.port },
+                        head,
+                        tunnels,
+                        5_000,
+                        { connect: NodeNet.connect, setTimeout, clearTimeout }
+                      )
+                    } else if (tunnelCase === "sync-throw") {
+                      SecretProxyTunnel.connectTunnel(
+                        clientSock,
+                        { host: "127.0.0.1", port: 1 },
+                        Buffer.alloc(0),
+                        tunnels,
+                        5_000,
+                        {
+                          connect: () => {
+                            throw new Error("boom")
+                          },
+                          setTimeout,
+                          clearTimeout
+                        }
+                      )
+                    } else if (tunnelCase === "upstream-err") {
+                      SecretProxyTunnel.connectTunnel(
+                        clientSock,
+                        { host: "127.0.0.1", port: 1 },
+                        Buffer.alloc(0),
+                        tunnels,
+                        5_000,
+                        { connect: NodeNet.connect, setTimeout, clearTimeout }
+                      )
+                    } else if (tunnelCase === "timeout") {
+                      const blackhole = new NodeNet.Socket()
+                      SecretProxyTunnel.connectTunnel(
+                        clientSock,
+                        { host: "127.0.0.1", port: echoAddr.port },
+                        Buffer.alloc(0),
+                        tunnels,
+                        15,
+                        {
+                          connect: () => blackhole,
+                          setTimeout,
+                          clearTimeout
+                        }
+                      )
+                    } else {
+                      const pending = new NodeNet.Socket()
+                      SecretProxyTunnel.connectTunnel(
+                        clientSock,
+                        { host: "127.0.0.1", port: echoAddr.port },
+                        Buffer.alloc(0),
+                        tunnels,
+                        5_000,
+                        { connect: () => pending, setTimeout, clearTimeout }
+                      )
+                      for (const fn of [...tunnels]) fn()
+                      clientSock.end("HTTP/1.1 502 Bad Gateway\r\n\r\n")
+                    }
+                  })
+                  await new Promise<void>((resolve) => srv.listen(0, "127.0.0.1", () => resolve()))
+                  const srvPort = (srv.address() as NodeNet.AddressInfo).port
+                  try {
+                    const data = await new Promise<string>((resolve) => {
+                      const sock = NodeNet.connect({ host: "127.0.0.1", port: srvPort }, () => {
+                        if (tunnelCase === "ok") sock.write("PING")
+                      })
+                      let acc = ""
+                      sock.on("data", (c) => {
+                        acc += c.toString("utf8")
+                        if (
+                          (tunnelCase === "ok" && acc.includes("ECHO:PING")) ||
+                          (tunnelCase === "with-head" && acc.includes("ECHO:HEAD")) ||
+                          acc.includes("502 Bad Gateway")
+                        ) {
+                          sock.destroy()
+                        }
+                      })
+                      sock.on("close", () => resolve(acc))
+                      sock.on("error", () => resolve(acc))
+                    })
+                    if (
+                      (tunnelCase === "ok" || tunnelCase === "with-head") &&
+                      !data.includes("200 Connection Established")
+                    ) {
+                      throw new Error(`expected 200 tunnel, got: ${data}`)
+                    }
+                    if (
+                      (tunnelCase === "sync-throw" || tunnelCase === "upstream-err" || tunnelCase === "timeout") &&
+                      !data.includes("502")
+                    ) {
+                      throw new Error(`expected 502, got: ${data}`)
+                    }
+                  } finally {
+                    await new Promise<void>((resolve) => srv.close(() => resolve()))
+                  }
+                })
+
+                // 3. SecretProxy.makeVault + startProxy with real upstream HTTP request & redaction
+                yield* Effect.promise(async () => {
+                  const vault = SecretProxy.makeVault({
+                    read: (name) =>
+                      name === "API_TOKEN"
+                        ? "super-secret-token-value"
+                        : name === "BAD_NEWLINE"
+                        ? "bad\r\nvalue"
+                        : undefined
+                  })
+                  const origin = `http://127.0.0.1:${upAddr.port}`
+                  const sec = Secret.Secret(secretName)
+                  const cred = Secret.HttpSecret(sec, [origin])
+                  const placeholder = vault.mint(cred)
+                  const proxy = await SecretProxy.startProxy(vault)
+                  try {
+                    const proxyPort = Number(new URL(proxy.endpoint).port)
+                    const boundOrigin = await proxy.originFor(origin)
+                    const boundPort = Number(new URL(boundOrigin).port)
+                    void proxy.urlFor(sec)
+                    const resp = await new Promise<{ status: number; body: string }>((resolve, reject) => {
+                      const req = NodeHttp.request(
+                        {
+                          host: "127.0.0.1",
+                          port: secretName === "API_TOKEN" ? boundPort : proxyPort,
+                          method: "GET",
+                          path: secretName === "API_TOKEN" ? reqPath : `${origin}${reqPath}`,
+                          headers: {
+                            Host: `127.0.0.1:${upAddr.port}`,
+                            Authorization: `Bearer ${placeholder}`
+                          }
+                        },
+                        (res) => {
+                          let body = ""
+                          res.on("data", (d) => (body += d.toString("utf8")))
+                          res.on("end", () => resolve({ status: res.statusCode ?? 0, body }))
+                        }
+                      )
+                      req.on("error", reject)
+                      req.end()
+                    })
+                    if (secretName === "API_TOKEN") {
+                      if (resp.status !== 200) throw new Error(`expected 200, got ${resp.status}: ${resp.body}`)
+                      // Response must NEVER leak the raw secret back (vault redacts it to placeholder!)
+                      if (resp.body.includes("super-secret-token-value")) {
+                        throw new Error("raw secret leaked in response!")
+                      }
+                      if (!resp.body.includes(placeholder)) {
+                        throw new Error(`expected redacted placeholder in response: ${resp.body}`)
+                      }
+                    } else {
+                      if (resp.status === 200) throw new Error(`expected non-200 for ${secretName}`)
+                    }
+                  } finally {
+                    await proxy.close()
+                  }
+                })
+
+                return true
+              }),
+            { executions: fsExecutions, seed: seed + 1 }
+          )
+        )
+        assertPassed(report)
+      } finally {
+        await new Promise<void>((resolve) => upstream.close(() => resolve()))
+        await new Promise<void>((resolve) => echoServer.close(() => resolve()))
+        await Fs.rm(tmpRoot, { recursive: true, force: true })
+      }
+    },
+    120_000
+  )
+
+  it(
+    "PackageDefaults, Config, DepsLint & Install validation, matching, synthesis & planning fuzz invariants",
+    async () => {
       const arb = Arbitrary.schema(
         Schema.Struct({
-          scratch: Schema.Boolean,
-          linkFails: Schema.Boolean,
-          tunnelCase: Schema.Literals(["ok", "with-head", "sync-throw", "upstream-err", "timeout", "teardown"]),
-          secretName: Schema.Literals(["API_TOKEN", "MISSING_TOKEN", "BAD_NEWLINE"]),
-          reqPath: Schema.Literals(["/v1/ok", "/v1/data"])
+          pkgName: Schema.String.check(Schema.isPattern(/^[a-z][a-z0-9-]{1,12}$/)),
+          cacheDir: Schema.Literals([
+            ".flows",
+            "  .cache/build  ",
+            "./sub/dir/",
+            "../outside",
+            "/abs/path",
+            "",
+            "   ",
+            ".",
+            "a\u0000b",
+            "a".repeat(260)
+          ]),
+          sandbox: Schema.Literals(["none", "default", "loopback", "true", "false", "bad"]),
+          gitignored: Schema.Boolean,
+          isBun: Schema.Boolean,
+          useManifest: Schema.Boolean,
+          excludeMatch: Schema.Boolean
         })
       )
 
       const report = await Effect.runPromise(
         Fuzz.run(
           arb,
-          ({ scratch, linkFails, tunnelCase, secretName, reqPath }) =>
-            Effect.gen(function*() {
-              // 1. ExecStage.prepare + release
-              if (process.platform !== "win32") {
-                const plan: ProcessSandbox.Plan = {
-                  mechanism: { _tag: "bubblewrap", executable: "/usr/bin/bwrap" },
-                  network: "none",
-                  workspaceRoot: ws,
-                  cwd: at("src"),
-                  reads: [ws, "/usr/share", at("src/a.ts"), at("src/deep/b.ts"), at("src/.env"), at("node_modules"), at("dist/kept.d.ts")],
-                  links: [
-                    { path: at("src/link.ts"), target: "a.ts" },
-                    { path: at("node_modules/.bin/tool"), target: "../dep/index.js" }
-                  ],
-                  readDenies: [],
-                  writes: [at("dist"), at("out/new"), "/elsewhere"],
-                  readOnly: [],
-                  externalReads: [],
-                  hidden: { prefixes: [".env"], paths: [at("src/.env")], restored: [at("restored")] },
-                  ...(scratch ? { scratch: true } : {}),
-                  tmp: NodePath.join(tmpRoot, "run"),
-                  uid: process.getuid?.(),
-                  gid: process.getgid?.()
-                }
-                const io = linkFails
-                  ? {
-                    ...ExecStage.liveIo,
-                    link: () => {
-                      throw Object.assign(new Error("EXDEV"), { code: "EXDEV" })
-                    }
-                  }
-                  : ExecStage.liveIo
-                const prepared = ExecStage.prepare(plan, io)
-                try {
-                  if (prepared.stage.writable !== scratch) throw new Error("writable mismatch")
-                  if (!NodeFs.existsSync(prepared.stage.directory)) throw new Error("stage missing")
-                  const stagedA = NodePath.join(prepared.stage.directory, "src/a.ts")
-                  const stA = NodeFs.statSync(stagedA)
-                  const origA = NodeFs.statSync(at("src/a.ts"))
-                  if (!scratch && !linkFails && stA.ino !== origA.ino) throw new Error("expected hardlink")
-                  if ((scratch || linkFails) && stA.ino === origA.ino) throw new Error("expected copy")
-                } finally {
-                  prepared.release()
-                }
-                if (NodeFs.existsSync(prepared.stage.directory)) throw new Error("stage not released")
+          ({ pkgName, cacheDir, sandbox, gitignored, isBun, useManifest, excludeMatch }) =>
+            Effect.sync(() => {
+              // 1. PackageDefaults
+              const dir = excludeMatch ? "packages/vendor" : `packages/${pkgName}`
+              const decl = PackageDefaults.PackageDefaults({
+                directories: Input.glob("packages/*", { exclude: ["packages/vendor"] }),
+                marker: "package.json",
+                unless: "PACKAGE.ts",
+                attrs: { extra: "yes" },
+                macro: ((attrs: { readonly cwd: string; readonly extra?: string }) => ({
+                  b_test: Shell.Test({ shell: "true" }),
+                  a_manifest: PackageJson.PackageJson({
+                    name: `@demo/${pkgName}`,
+                    version: "0.0.1",
+                    description: "demo",
+                    license: "MIT"
+                  }),
+                  ignored: 123
+                })) as PackageDefaults.Macro
+              })
+              if (!PackageDefaults.isPackageDefaults(decl)) throw new Error("isPackageDefaults true")
+              if (PackageDefaults.isPackageDefaults(null)) throw new Error("isPackageDefaults null")
+              if (PackageDefaults.isPackageDefaults({})) throw new Error("isPackageDefaults empty")
+              if (PackageDefaults.isPackageDefaults(new Proxy(decl, {}))) throw new Error("proxy rejected")
+              if (PackageDefaults.matches(decl, "", dir) !== !excludeMatch) throw new Error("matches")
+              if (PackageDefaults.matches(decl, "", "packages/.smthrs-scaffold-123.tmp")) {
+                throw new Error("scaffold tmp must not match")
+              }
+              const exp = PackageDefaults.expand(decl, `packages/${pkgName}`)
+              if (exp.targets.length !== 1 || exp.declarations.length !== 1) throw new Error("expand counts")
+              const synth = PackageDefaults.synthesize(decl, `packages/${pkgName}`)
+              if (synth.length !== 1 || synth[0]?.[0] !== "b_test") throw new Error("synthesize")
+
+              // Error cases in PackageDefaults.expand
+              const emptyDecl = PackageDefaults.make({
+                directories: "packages/*",
+                macro: (() => ({})) as PackageDefaults.Macro
+              })
+              let threwEmpty = false
+              try {
+                PackageDefaults.expand(emptyDecl, "packages/a")
+              } catch {
+                threwEmpty = true
+              }
+              if (!threwEmpty) throw new Error("expected empty expand throw")
+              const badDecl = PackageDefaults.make({
+                directories: "packages/*",
+                macro: (() => null as never) as PackageDefaults.Macro
+              })
+              let threwBad = false
+              try {
+                PackageDefaults.expand(badDecl, "packages/a")
+              } catch (e) {
+                if (e instanceof TypeError) threwBad = true
+              }
+              if (!threwBad) throw new Error("expected bad expand TypeError")
+
+              // 2. Config.Workspace & cache dir normalization
+              const validDeclared = cacheDir === ".flows" || cacheDir === "  .cache/build  " ||
+                cacheDir === "./sub/dir/"
+              const validNormalized = validDeclared || cacheDir === "../outside"
+              try {
+                const norm = Config.normalizeDeclaredCacheDirectory(cacheDir)
+                if (!validDeclared) throw new Error(`should reject declared ${cacheDir}`)
+                if (Config.isOutsideCacheDirectory(norm)) throw new Error("declared cannot be outside")
+              } catch (e) {
+                if (validDeclared) throw e
+              }
+              try {
+                const norm = Config.normalizeCacheDirectory(cacheDir)
+                if (!validNormalized) throw new Error(`should reject normalized ${cacheDir}`)
+                if (cacheDir === "../outside" && !Config.isOutsideCacheDirectory(norm)) throw new Error("outside flag")
+              } catch (e) {
+                if (validNormalized) throw e
               }
 
-              // 2. SecretProxyTunnel.connectTunnel
-              yield* Effect.promise(async () => {
-                const tunnels = new Set<() => void>()
-                const srv = NodeNet.createServer((clientSock) => {
-                  if (tunnelCase === "ok" || tunnelCase === "with-head") {
-                    const head = tunnelCase === "with-head" ? Buffer.from("HEAD") : Buffer.alloc(0)
-                    SecretProxyTunnel.connectTunnel(
-                      clientSock,
-                      { host: "127.0.0.1", port: echoAddr.port },
-                      head,
-                      tunnels,
-                      5_000,
-                      { connect: NodeNet.connect, setTimeout, clearTimeout }
-                    )
-                  } else if (tunnelCase === "sync-throw") {
-                    SecretProxyTunnel.connectTunnel(
-                      clientSock,
-                      { host: "127.0.0.1", port: 1 },
-                      Buffer.alloc(0),
-                      tunnels,
-                      5_000,
-                      {
-                        connect: () => {
-                          throw new Error("boom")
-                        },
-                        setTimeout,
-                        clearTimeout
-                      }
-                    )
-                  } else if (tunnelCase === "upstream-err") {
-                    SecretProxyTunnel.connectTunnel(
-                      clientSock,
-                      { host: "127.0.0.1", port: 1 },
-                      Buffer.alloc(0),
-                      tunnels,
-                      5_000,
-                      { connect: NodeNet.connect, setTimeout, clearTimeout }
-                    )
-                  } else if (tunnelCase === "timeout") {
-                    const blackhole = new NodeNet.Socket()
-                    SecretProxyTunnel.connectTunnel(
-                      clientSock,
-                      { host: "127.0.0.1", port: echoAddr.port },
-                      Buffer.alloc(0),
-                      tunnels,
-                      15,
-                      {
-                        connect: () => blackhole,
-                        setTimeout,
-                        clearTimeout
-                      }
-                    )
-                  } else {
-                    const pending = new NodeNet.Socket()
-                    SecretProxyTunnel.connectTunnel(
-                      clientSock,
-                      { host: "127.0.0.1", port: echoAddr.port },
-                      Buffer.alloc(0),
-                      tunnels,
-                      5_000,
-                      { connect: () => pending, setTimeout, clearTimeout }
-                    )
-                    for (const fn of [...tunnels]) fn()
-                    clientSock.end("HTTP/1.1 502 Bad Gateway\r\n\r\n")
-                  }
-                })
-                await new Promise<void>((resolve) => srv.listen(0, "127.0.0.1", () => resolve()))
-                const srvPort = (srv.address() as NodeNet.AddressInfo).port
-                try {
-                  const data = await new Promise<string>((resolve) => {
-                    const sock = NodeNet.connect({ host: "127.0.0.1", port: srvPort }, () => {
-                      if (tunnelCase === "ok") sock.write("PING")
-                    })
-                    let acc = ""
-                    sock.on("data", (c) => {
-                      acc += c.toString("utf8")
-                      if (
-                        (tunnelCase === "ok" && acc.includes("ECHO:PING")) ||
-                        (tunnelCase === "with-head" && acc.includes("ECHO:HEAD")) ||
-                        acc.includes("502 Bad Gateway")
-                      ) {
-                        sock.destroy()
-                      }
-                    })
-                    sock.on("close", () => resolve(acc))
-                    sock.on("error", () => resolve(acc))
-                  })
-                  if ((tunnelCase === "ok" || tunnelCase === "with-head") && !data.includes("200 Connection Established")) {
-                    throw new Error(`expected 200 tunnel, got: ${data}`)
-                  }
-                  if (
-                    (tunnelCase === "sync-throw" || tunnelCase === "upstream-err" || tunnelCase === "timeout") &&
-                    !data.includes("502")
-                  ) {
-                    throw new Error(`expected 502, got: ${data}`)
-                  }
-                } finally {
-                  await new Promise<void>((resolve) => srv.close(() => resolve()))
-                }
-              })
-
-              // 3. SecretProxy.makeVault + startProxy with real upstream HTTP request & redaction
-              yield* Effect.promise(async () => {
-                const vault = SecretProxy.makeVault({
-                  read: (name) =>
-                    name === "API_TOKEN"
-                      ? "super-secret-token-value"
-                      : name === "BAD_NEWLINE"
-                      ? "bad\r\nvalue"
-                      : undefined
-                })
-                const origin = `http://127.0.0.1:${upAddr.port}`
-                const sec = Secret.Secret(secretName)
-                const cred = Secret.HttpSecret(sec, [origin])
-                const placeholder = vault.mint(cred)
-                const proxy = await SecretProxy.startProxy(vault)
-                try {
-                  const proxyPort = Number(new URL(proxy.endpoint).port)
-                  const boundOrigin = await proxy.originFor(origin)
-                  const boundPort = Number(new URL(boundOrigin).port)
-                  void proxy.urlFor(sec)
-                  const resp = await new Promise<{ status: number; body: string }>((resolve, reject) => {
-                    const req = NodeHttp.request(
-                      {
-                        host: "127.0.0.1",
-                        port: secretName === "API_TOKEN" ? boundPort : proxyPort,
-                        method: "GET",
-                        path: secretName === "API_TOKEN" ? reqPath : `${origin}${reqPath}`,
-                        headers: {
-                          Host: `127.0.0.1:${upAddr.port}`,
-                          Authorization: `Bearer ${placeholder}`
-                        }
-                      },
-                      (res) => {
-                        let body = ""
-                        res.on("data", (d) => (body += d.toString("utf8")))
-                        res.on("end", () => resolve({ status: res.statusCode ?? 0, body }))
-                      }
-                    )
-                    req.on("error", reject)
-                    req.end()
-                  })
-                  if (secretName === "API_TOKEN") {
-                    if (resp.status !== 200) throw new Error(`expected 200, got ${resp.status}: ${resp.body}`)
-                    // Response must NEVER leak the raw secret back (vault redacts it to placeholder!)
-                    if (resp.body.includes("super-secret-token-value")) {
-                      throw new Error("raw secret leaked in response!")
-                    }
-                    if (!resp.body.includes(placeholder)) {
-                      throw new Error(`expected redacted placeholder in response: ${resp.body}`)
-                    }
-                  } else {
-                    if (resp.status === 200) throw new Error(`expected non-200 for ${secretName}`)
-                  }
-                } finally {
-                  await proxy.close()
-                }
-              })
-
-              return true
-            }),
-          { executions: fsExecutions, seed: seed + 1 }
-        )
-      )
-      assertPassed(report)
-    } finally {
-      await new Promise<void>((resolve) => upstream.close(() => resolve()))
-      await new Promise<void>((resolve) => echoServer.close(() => resolve()))
-      await Fs.rm(tmpRoot, { recursive: true, force: true })
-    }
-  }, 120_000)
-
-  it("PackageDefaults, Config, DepsLint & Install validation, matching, synthesis & planning fuzz invariants", async () => {
-    const arb = Arbitrary.schema(
-      Schema.Struct({
-        pkgName: Schema.String.check(Schema.isPattern(/^[a-z][a-z0-9-]{1,12}$/)),
-        cacheDir: Schema.Literals([
-          ".flows",
-          "  .cache/build  ",
-          "./sub/dir/",
-          "../outside",
-          "/abs/path",
-          "",
-          "   ",
-          ".",
-          "a\u0000b",
-          "a".repeat(260)
-        ]),
-        sandbox: Schema.Literals(["none", "default", "loopback", "true", "false", "bad"]),
-        gitignored: Schema.Boolean,
-        isBun: Schema.Boolean,
-        useManifest: Schema.Boolean,
-        excludeMatch: Schema.Boolean
-      })
-    )
-
-    const report = await Effect.runPromise(
-      Fuzz.run(
-        arb,
-        ({ pkgName, cacheDir, sandbox, gitignored, isBun, useManifest, excludeMatch }) =>
-          Effect.sync(() => {
-            // 1. PackageDefaults
-            const dir = excludeMatch ? "packages/vendor" : `packages/${pkgName}`
-            const decl = PackageDefaults.PackageDefaults({
-              directories: Input.glob("packages/*", { exclude: ["packages/vendor"] }),
-              marker: "package.json",
-              unless: "PACKAGE.ts",
-              attrs: { extra: "yes" },
-              macro: ((attrs: { readonly cwd: string; readonly extra?: string }) => ({
-                b_test: Shell.Test({ shell: "true" }),
-                a_manifest: PackageJson.PackageJson({
-                  name: `@demo/${pkgName}`,
-                  version: "0.0.1",
-                  description: "demo",
-                  license: "MIT"
-                }),
-                ignored: 123
-              })) as PackageDefaults.Macro
-            })
-            if (!PackageDefaults.isPackageDefaults(decl)) throw new Error("isPackageDefaults true")
-            if (PackageDefaults.isPackageDefaults(null)) throw new Error("isPackageDefaults null")
-            if (PackageDefaults.isPackageDefaults({})) throw new Error("isPackageDefaults empty")
-            if (PackageDefaults.isPackageDefaults(new Proxy(decl, {}))) throw new Error("proxy rejected")
-            if (PackageDefaults.matches(decl, "", dir) !== !excludeMatch) throw new Error("matches")
-            if (PackageDefaults.matches(decl, "", "packages/.smthrs-scaffold-123.tmp")) {
-              throw new Error("scaffold tmp must not match")
-            }
-            const exp = PackageDefaults.expand(decl, `packages/${pkgName}`)
-            if (exp.targets.length !== 1 || exp.declarations.length !== 1) throw new Error("expand counts")
-            const synth = PackageDefaults.synthesize(decl, `packages/${pkgName}`)
-            if (synth.length !== 1 || synth[0]?.[0] !== "b_test") throw new Error("synthesize")
-
-            // Error cases in PackageDefaults.expand
-            const emptyDecl = PackageDefaults.make({ directories: "packages/*", macro: (() => ({})) as PackageDefaults.Macro })
-            let threwEmpty = false
-            try {
-              PackageDefaults.expand(emptyDecl, "packages/a")
-            } catch {
-              threwEmpty = true
-            }
-            if (!threwEmpty) throw new Error("expected empty expand throw")
-            const badDecl = PackageDefaults.make({ directories: "packages/*", macro: (() => null as never) as PackageDefaults.Macro })
-            let threwBad = false
-            try {
-              PackageDefaults.expand(badDecl, "packages/a")
-            } catch (e) {
-              if (e instanceof TypeError) threwBad = true
-            }
-            if (!threwBad) throw new Error("expected bad expand TypeError")
-
-            // 2. Config.Workspace & cache dir normalization
-            const validDeclared = cacheDir === ".flows" || cacheDir === "  .cache/build  " || cacheDir === "./sub/dir/"
-            const validNormalized = validDeclared || cacheDir === "../outside"
-            try {
-              const norm = Config.normalizeDeclaredCacheDirectory(cacheDir)
-              if (!validDeclared) throw new Error(`should reject declared ${cacheDir}`)
-              if (Config.isOutsideCacheDirectory(norm)) throw new Error("declared cannot be outside")
-            } catch (e) {
-              if (validDeclared) throw e
-            }
-            try {
-              const norm = Config.normalizeCacheDirectory(cacheDir)
-              if (!validNormalized) throw new Error(`should reject normalized ${cacheDir}`)
-              if (cacheDir === "../outside" && !Config.isOutsideCacheDirectory(norm)) throw new Error("outside flag")
-            } catch (e) {
-              if (validNormalized) throw e
-            }
-
-            const sbVal =
-              sandbox === "none"
+              const sbVal = sandbox === "none"
                 ? "none"
                 : sandbox === "default"
                 ? {}
@@ -660,79 +710,85 @@ describe("@smthrs/targets deep fuzz suite 2: Compose, ExecStage, SecretProxyTunn
                 ? { network: false }
                 : ({ network: "invalid", extra: 1 } as never)
 
-            if (Config.isSandboxPolicy(sbVal) !== (sandbox !== "bad")) throw new Error("isSandboxPolicy")
-            if (validDeclared && sandbox !== "bad") {
-              const sandboxes = WorkspaceDeclaration.Sandboxes({ default: WorkspaceDeclaration.Sandbox.Bubblewrap() })
-              const ws = Config.Workspace({ cacheDirectory: cacheDir, gitignored, sandbox: sbVal, sandboxes })
-              if (!Config.isWorkspace(ws)) throw new Error("isWorkspace")
-              if (Config.isWorkspace(new Proxy(ws, {}))) throw new Error("proxy ws")
-            } else if (sandbox === "bad") {
-              let threw = false
-              try {
-                Config.Workspace({ sandbox: sbVal })
-              } catch (e) {
-                if (e instanceof TypeError) threw = true
+              if (Config.isSandboxPolicy(sbVal) !== (sandbox !== "bad")) throw new Error("isSandboxPolicy")
+              if (validDeclared && sandbox !== "bad") {
+                const sandboxes = WorkspaceDeclaration.Sandboxes({ default: WorkspaceDeclaration.Sandbox.Bubblewrap() })
+                const ws = Config.Workspace({ cacheDirectory: cacheDir, gitignored, sandbox: sbVal, sandboxes })
+                if (!Config.isWorkspace(ws)) throw new Error("isWorkspace")
+                if (Config.isWorkspace(new Proxy(ws, {}))) throw new Error("proxy ws")
+              } else if (sandbox === "bad") {
+                let threw = false
+                try {
+                  Config.Workspace({ sandbox: sbVal })
+                } catch (e) {
+                  if (e instanceof TypeError) threw = true
+                }
+                if (!threw) throw new Error("expected bad sandbox TypeError")
               }
-              if (!threw) throw new Error("expected bad sandbox TypeError")
-            }
 
-            // Unknown option, symbol prop, non-plain, getter rejections
-            for (const badOpts of [
-              null,
-              new Proxy({}, {}),
-              { unknown: 1 },
-              { [Symbol("s")]: 1 },
-              Object.defineProperty({}, "gitignored", { get: () => true, enumerable: true }),
-              { cacheDirectory: 123 },
-              { gitignored: "yes" },
-              { sandboxes: {} }
-            ]) {
-              let threw = false
-              try {
-                Config.Workspace(badOpts as never)
-              } catch (e) {
-                if (e instanceof TypeError) threw = true
+              // Unknown option, symbol prop, non-plain, getter rejections
+              for (
+                const badOpts of [
+                  null,
+                  new Proxy({}, {}),
+                  { unknown: 1 },
+                  { [Symbol("s")]: 1 },
+                  Object.defineProperty({}, "gitignored", { get: () => true, enumerable: true }),
+                  { cacheDirectory: 123 },
+                  { gitignored: "yes" },
+                  { sandboxes: {} }
+                ]
+              ) {
+                let threw = false
+                try {
+                  Config.Workspace(badOpts as never)
+                } catch (e) {
+                  if (e instanceof TypeError) threw = true
+                }
+                if (!threw) throw new Error("expected Config.Workspace TypeError")
               }
-              if (!threw) throw new Error("expected Config.Workspace TypeError")
-            }
 
-            // 3. DepsLint & Install planning
-            const depsCalls = plannedCalls(
-              DepsLint.DepsLint({
-                packageManager,
-                runtime,
-                packageJson: Input.file(`packages/${pkgName}/package.json`),
-                sources: [Input.glob(`packages/${pkgName}/src/**`)],
-                deps: [],
-                cwd: `packages/${pkgName}`,
-                tool: "knip",
-                ignoreDependencies: ["opt-dep"],
-                ignoreBinaries: ["opt-bin"]
+              // 3. DepsLint & Install planning
+              const depsCalls = plannedCalls(
+                DepsLint.DepsLint({
+                  packageManager,
+                  runtime,
+                  packageJson: Input.file(`packages/${pkgName}/package.json`),
+                  sources: [Input.glob(`packages/${pkgName}/src/**`)],
+                  deps: [],
+                  cwd: `packages/${pkgName}`,
+                  tool: "knip",
+                  ignoreDependencies: ["opt-dep"],
+                  ignoreBinaries: ["opt-bin"]
+                })
+              )
+              if (depsCalls.length !== 2) throw new Error("DepsLint calls")
+
+              const pm = isBun
+                ? PackageManager.BunPackages({ runtime: Runtime.Bun({ version: ">=1.4.0" }) })
+                : packageManager
+              const inst = Install.Install({
+                packageManager: pm,
+                ...(useManifest ? { workspaceManifest: Input.pnpmWorkspace("pnpm-workspace.yaml") } : {})
               })
-            )
-            if (depsCalls.length !== 2) throw new Error("DepsLint calls")
+              const instInputs = Install.inputsFor(Target.metadata(inst).attrs as Install.Attrs)
+              if (instInputs.length < 3) throw new Error("Install inputs")
+              const instCalls = plannedCalls(inst)
+              if (instCalls.length !== 1) throw new Error("Install calls")
+              const inferredBun = Install.inputsFor(
+                Install.Attrs.make({ lockfilePath: "bun.lock" })
+              )
+              if (!inferredBun.some((i) => i._tag === "Glob")) throw new Error("bun patch glob")
 
-            const pm = isBun ? PackageManager.BunPackages({ runtime: Runtime.Bun({ version: ">=1.4.0" }) }) : packageManager
-            const inst = Install.Install({
-              packageManager: pm,
-              ...(useManifest ? { workspaceManifest: Input.pnpmWorkspace("pnpm-workspace.yaml") } : {})
-            })
-            const instInputs = Install.inputsFor(Target.metadata(inst).attrs as Install.Attrs)
-            if (instInputs.length < 3) throw new Error("Install inputs")
-            const instCalls = plannedCalls(inst)
-            if (instCalls.length !== 1) throw new Error("Install calls")
-            const inferredBun = Install.inputsFor(
-              Install.Attrs.make({ lockfilePath: "bun.lock" })
-            )
-            if (!inferredBun.some((i) => i._tag === "Glob")) throw new Error("bun patch glob")
-
-            return true
-          }),
-        { executions, seed: seed + 2 }
+              return true
+            }),
+          { executions, seed: seed + 2 }
+        )
       )
-    )
-    assertPassed(report)
-  }, 60_000)
+      assertPassed(report)
+    },
+    60_000
+  )
 
   it("JobKeeper OS inspection helpers & live namespace keeper/client step fuzz invariants", async () => {
     const tmpRoot = await Fs.realpath(await Fs.mkdtemp(NodePath.join(Os.tmpdir(), "smthrs-targets-jk-")))

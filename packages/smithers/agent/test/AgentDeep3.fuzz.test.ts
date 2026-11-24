@@ -55,7 +55,14 @@ const makeCall = (flowName: string, input: Schema.Json = {}, ordinal = 0): Cell.
     capabilities: [],
     effects: { reads: [], writes: [], mode: "expected", onConflict: "serialize", tier: "irreversible" },
     placement: Option.none(),
-    identity: new Cell.CallIdentity({ session: "sess-1", frame: 0, cell: "cell-0", ordinal, declaration: "decl-0", layers: [] })
+    identity: new Cell.CallIdentity({
+      session: "sess-1",
+      frame: 0,
+      cell: "cell-0",
+      ordinal,
+      declaration: "decl-0",
+      layers: []
+    })
   })
 
 describe("@smthrs/agent Deep3 Fuzz (PromptChild, PromoteFlows, MemoryMine, StandardFlows, AgentTerminal)", () => {
@@ -126,7 +133,9 @@ describe("@smthrs/agent Deep3 Fuzz (PromptChild, PromoteFlows, MemoryMine, Stand
                     if (opts.authorize !== undefined) {
                       const authRes = yield* Effect.result(opts.authorize(makeCall("nested/flow")))
                       if (Result.isSuccess(authRes)) {
-                        return yield* Effect.fail(new HarnessError({ code: "engine_failed", message: "expected refusal" }))
+                        return yield* Effect.fail(
+                          new HarnessError({ code: "engine_failed", message: "expected refusal" })
+                        )
                       }
                       return yield* Effect.fail(authRes.failure)
                     }
@@ -336,7 +345,9 @@ describe("@smthrs/agent Deep3 Fuzz (PromptChild, PromoteFlows, MemoryMine, Stand
               MemoryMine.add(tr, {
                 seq: 1,
                 eventType: AgentEvent.eventType.transitionApplied,
-                payload: { transition: { _tag: "complete", output: "Always use jj instead of git. Never edit main directly!" } }
+                payload: {
+                  transition: { _tag: "complete", output: "Always use jj instead of git. Never edit main directly!" }
+                }
               })
               MemoryMine.add(tr, {
                 seq: 2,
@@ -347,14 +358,21 @@ describe("@smthrs/agent Deep3 Fuzz (PromptChild, PromoteFlows, MemoryMine, Stand
                 {
                   seq: 1,
                   eventType: AgentEvent.eventType.transitionApplied,
-                  payload: { transition: { _tag: "complete", output: "Always use jj instead of git. Check coverage before landing." } }
+                  payload: {
+                    transition: {
+                      _tag: "complete",
+                      output: "Always use jj instead of git. Check coverage before landing."
+                    }
+                  }
                 }
               ])
               const id1 = MemoryMine.noteId("flow-alpha", "  Always   Use JJ  ")
               const id2 = MemoryMine.noteId("flow-alpha", "always use jj")
               if (id1 !== id2) return false
 
-              const dbLayer = Layer.provideMerge(MemoryMigrations.layer, TestDatabase.layer).pipe(Layer.provideMerge(NodeCrypto.layer))
+              const dbLayer = Layer.provideMerge(MemoryMigrations.layer, TestDatabase.layer).pipe(
+                Layer.provideMerge(NodeCrypto.layer)
+              )
               const storeCtx = yield* Layer.build(MemoryStore.layer.pipe(Layer.provide(dbLayer)))
               const store = Context.get(storeCtx, MemoryStore.MemoryStore)
               const n1 = yield* MemoryMine.write(store, {
@@ -373,18 +391,22 @@ describe("@smthrs/agent Deep3 Fuzz (PromptChild, PromoteFlows, MemoryMine, Stand
 
               const evalLayer = c.evalMode === "unavailable"
                 ? Evaluator.layerUnavailable()
-                : Evaluator.layerScripted(((req: Evaluator.Request) => {
-                  const scores: Record<string, Record<string, number>> = {}
-                  for (const [qName, q] of Object.entries(req.questions)) {
-                    const m: Record<string, number> = {}
-                    const crits = Array.isArray(q.criteria) ? (q.criteria as ReadonlyArray<string>) : Object.keys(q.criteria as Record<string, unknown>)
-                    for (let i = 0; i < crits.length; i++) {
-                      m[crits[i]!] = i === 0 ? c.acceptProb : 1 - c.acceptProb
+                : Evaluator.layerScripted(
+                  ((req: Evaluator.Request) => {
+                    const scores: Record<string, Record<string, number>> = {}
+                    for (const [qName, q] of Object.entries(req.questions)) {
+                      const m: Record<string, number> = {}
+                      const crits = Array.isArray(q.criteria)
+                        ? (q.criteria as ReadonlyArray<string>)
+                        : Object.keys(q.criteria as Record<string, unknown>)
+                      for (let i = 0; i < crits.length; i++) {
+                        m[crits[i]!] = i === 0 ? c.acceptProb : 1 - c.acceptProb
+                      }
+                      scores[qName] = m
                     }
-                    scores[qName] = m
-                  }
-                  return scores as any
-                }) as any)
+                    return scores as any
+                  }) as any
+                )
 
               const recordedMap = new Map<string, unknown>()
               const engine: EngineLike.EngineLike = {

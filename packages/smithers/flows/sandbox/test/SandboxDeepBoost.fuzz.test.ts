@@ -15,15 +15,7 @@ import { CiJob, RemoteChildProcessSpawner, Sandbox, SandboxMerge } from "../src/
 import * as LinuxBatch from "../src/internal/linuxBatch.ts"
 import { commandProvider } from "../src/Sandbox/commandProvider.ts"
 import { platform, rawPlatform } from "./helpers/containedPlatform.ts"
-import {
-  advanceMain,
-  cleanup,
-  directory,
-  gitClone,
-  hostRepository,
-  scratch,
-  seeded
-} from "./helpers/sandboxRepos.ts"
+import { advanceMain, cleanup, directory, gitClone, hostRepository, scratch, seeded } from "./helpers/sandboxRepos.ts"
 
 const baseExecutions = Number(process.env.EFFECT_FUZZ_EXECUTIONS ?? (process.env.EFFECT_FUZZ ? "250" : "60"))
 const fastExecutions = Math.max(12, Math.min(baseExecutions, 30))
@@ -262,9 +254,7 @@ describe("@smthrs/sandbox LinuxBatch, CiJob.Graph, SandboxMerge.resolveWith & Re
         )
         advanceMain(repoPath, { "README.md": "main-change\n" })
         // First test resolver returning still-conflicted change -> rejected
-        const badStrategy = SandboxMerge.resolveWith((conflicted) =>
-          Effect.succeed({ change: conflicted.change })
-        )
+        const badStrategy = SandboxMerge.resolveWith((conflicted) => Effect.succeed({ change: conflicted.change }))
         const rejExit = yield* SandboxMerge.apply(work, {
           repository: repoPath,
           onto: "main",

@@ -21,7 +21,12 @@ const assertPassed = (report: Parameters<typeof Fuzz.formatReport>[0]) => {
   expect(report._tag).toBe("Passed")
 }
 
-const makeJsonResponse = (req: Parameters<Parameters<typeof HttpClient.make>[0]>[0], status: number, body: unknown, headers: Record<string, string> = {}) =>
+const makeJsonResponse = (
+  req: Parameters<Parameters<typeof HttpClient.make>[0]>[0],
+  status: number,
+  body: unknown,
+  headers: Record<string, string> = {}
+) =>
   HttpClientResponse.fromWeb(
     req,
     new Response(typeof body === "string" ? body : JSON.stringify(body), {
@@ -76,11 +81,17 @@ describe("@smthrs/integrations Deep3 Fuzz (Telegram.Source, GitHub Pulls, Commit
                 )
               }
               if (c.responseMode === "timeout") {
-                return Effect.sleep(Duration.millis(80)).pipe(Effect.as(makeJsonResponse(req, 200, { ok: true, result: [] })))
+                return Effect.sleep(Duration.millis(80)).pipe(
+                  Effect.as(makeJsonResponse(req, 200, { ok: true, result: [] }))
+                )
               }
               if (c.responseMode === "rateLimit429") {
                 return Effect.succeed(
-                  makeJsonResponse(req, 429, { ok: false, description: "Too Many Requests", parameters: { retry_after: 3 } })
+                  makeJsonResponse(req, 429, {
+                    ok: false,
+                    description: "Too Many Requests",
+                    parameters: { retry_after: 3 }
+                  })
                 )
               }
               if (c.responseMode === "server500") {
@@ -131,7 +142,9 @@ describe("@smthrs/integrations Deep3 Fuzz (Telegram.Source, GitHub Pulls, Commit
               sourceId: c.configMode === "badSourceId" ? " bad " : "tg-fuzz",
               allowedChatIds: c.configMode === "emptyChats" ? [] : [42],
               pollTimeoutSeconds: c.configMode === "badPollTimeout" ? -1 : 0,
-              apiBaseUrl: c.configMode === "badOrigin" ? "ftp://user:pass@bad.example/path" : "https://api.telegram.test",
+              apiBaseUrl: c.configMode === "badOrigin"
+                ? "ftp://user:pass@bad.example/path"
+                : "https://api.telegram.test",
               botToken: c.configMode === "missingToken" ? undefined : Redacted.make(validToken),
               requestTimeout: c.configMode === "badReqTimeout"
                 ? Duration.millis(0)
@@ -240,7 +253,11 @@ describe("@smthrs/integrations Deep3 Fuzz (Telegram.Source, GitHub Pulls, Commit
               if (p.endsWith("/pulls/12/commits")) {
                 return Effect.succeed(
                   makeJsonResponse(req, 200, [
-                    { sha: sha2, commit: { message: "feat: fuzz", author: { name: "Will", date: "2026-01-01T00:00:00Z" } }, author: { login: "smithers", id: 1 } }
+                    {
+                      sha: sha2,
+                      commit: { message: "feat: fuzz", author: { name: "Will", date: "2026-01-01T00:00:00Z" } },
+                      author: { login: "smithers", id: 1 }
+                    }
                   ])
                 )
               }
@@ -250,7 +267,14 @@ describe("@smthrs/integrations Deep3 Fuzz (Telegram.Source, GitHub Pulls, Commit
                     req,
                     200,
                     reviewCreated
-                      ? [{ id: 55, node_id: "REV_55", state: c.reviewEvent, body: `LGTM\n\nSmithers-Write: ${writeKey}`, user: { login: "smithers", id: 1 }, commit_id: sha2 }]
+                      ? [{
+                        id: 55,
+                        node_id: "REV_55",
+                        state: c.reviewEvent,
+                        body: `LGTM\n\nSmithers-Write: ${writeKey}`,
+                        user: { login: "smithers", id: 1 },
+                        commit_id: sha2
+                      }]
                       : []
                   )
                 )
@@ -307,7 +331,11 @@ describe("@smthrs/integrations Deep3 Fuzz (Telegram.Source, GitHub Pulls, Commit
                     behind_by: 0,
                     total_commits: 1,
                     merge_base_commit: { sha: sha1 },
-                    commits: [{ sha: sha2, commit: { message: "feat", author: { name: "Will", date: "2026-01-01T00:00:00Z" } }, author: { login: "smithers", id: 1 } }],
+                    commits: [{
+                      sha: sha2,
+                      commit: { message: "feat", author: { name: "Will", date: "2026-01-01T00:00:00Z" } },
+                      author: { login: "smithers", id: 1 }
+                    }],
                     files: [{ filename: "a.ts", status: "added", additions: 5, deletions: 0, changes: 5 }]
                   })
                 )
@@ -322,34 +350,60 @@ describe("@smthrs/integrations Deep3 Fuzz (Telegram.Source, GitHub Pulls, Commit
                 )
               }
               if (p.includes("/git/refs/heads/")) {
-                return Effect.succeed(makeJsonResponse(req, 200, { ref: "refs/heads/feat/fuzz", object: { sha: sha2, type: "commit" } }))
+                return Effect.succeed(
+                  makeJsonResponse(req, 200, { ref: "refs/heads/feat/fuzz", object: { sha: sha2, type: "commit" } })
+                )
               }
               if (p.endsWith("/git/refs") && m === "POST") {
-                return Effect.succeed(makeJsonResponse(req, 201, { ref: "refs/heads/feat/fuzz", object: { sha: sha1, type: "commit" } }))
+                return Effect.succeed(
+                  makeJsonResponse(req, 201, { ref: "refs/heads/feat/fuzz", object: { sha: sha1, type: "commit" } })
+                )
               }
               if (p.endsWith("/git/blobs") && m === "POST") {
                 return Effect.succeed(makeJsonResponse(req, 201, { sha: sha1, url: req.url }))
               }
               if (p.includes("/git/blobs/") && m === "GET") {
-                return Effect.succeed(makeJsonResponse(req, 200, { sha: sha1, content: Buffer.from("hi").toString("base64"), encoding: "base64", size: 2 }))
+                return Effect.succeed(
+                  makeJsonResponse(req, 200, {
+                    sha: sha1,
+                    content: Buffer.from("hi").toString("base64"),
+                    encoding: "base64",
+                    size: 2
+                  })
+                )
               }
               if (p.endsWith("/git/trees") && m === "POST") {
                 return Effect.succeed(makeJsonResponse(req, 201, { sha: sha1, tree: [] }))
               }
               if (p.includes("/git/trees/") && m === "GET") {
-                return Effect.succeed(makeJsonResponse(req, 200, { sha: sha1, truncated: false, tree: [{ path: "a.ts", mode: "100644", type: "blob", sha: sha1 }] }))
+                return Effect.succeed(
+                  makeJsonResponse(req, 200, {
+                    sha: sha1,
+                    truncated: false,
+                    tree: [{ path: "a.ts", mode: "100644", type: "blob", sha: sha1 }]
+                  })
+                )
               }
               if (p.endsWith("/git/commits") && m === "POST") {
-                return Effect.succeed(makeJsonResponse(req, 201, { sha: sha2, message: "c", tree: { sha: sha1 }, parents: [{ sha: sha1 }] }))
+                return Effect.succeed(
+                  makeJsonResponse(req, 201, { sha: sha2, message: "c", tree: { sha: sha1 }, parents: [{ sha: sha1 }] })
+                )
               }
               if (p.includes("/git/commits/") && m === "GET") {
-                return Effect.succeed(makeJsonResponse(req, 200, { sha: sha2, message: `msg\n\nSmithers-Write: ${writeKey}`, tree: { sha: sha1 }, parents: [{ sha: sha1 }] }))
+                return Effect.succeed(
+                  makeJsonResponse(req, 200, {
+                    sha: sha2,
+                    message: `msg\n\nSmithers-Write: ${writeKey}`,
+                    tree: { sha: sha1 },
+                    parents: [{ sha: sha1 }]
+                  })
+                )
               }
               return Effect.succeed(makeJsonResponse(req, 200, {}))
             })
 
             const ghLayer = GitHubClient.layer({
-              token: "ghp_fuzztoken1234567890",
+              token: "ghp_fuzztoken1234567890"
             }).pipe(Layer.provide(Layer.succeed(HttpClient.HttpClient, fakeHttp)))
 
             return yield* Effect.gen(function*() {
@@ -363,12 +417,21 @@ describe("@smthrs/integrations Deep3 Fuzz (Telegram.Source, GitHub Pulls, Commit
               if (c.prAlreadyExists && listed.items.length !== 1) return false
               const found = yield* Pulls.findPullByHead(owner, repo, { head: "acme:feat/fuzz" })
               if (c.prAlreadyExists && found === undefined) return false
-              const created = yield* Pulls.createPull(owner, repo, { title: "T", head: "feat/fuzz", base: "main", body: "B" })
+              const created = yield* Pulls.createPull(owner, repo, {
+                title: "T",
+                head: "feat/fuzz",
+                base: "main",
+                body: "B"
+              })
               if (created.number !== 12) return false
               yield* Pulls.setBase(owner, repo, 12, "main")
               yield* Pulls.closePull(owner, repo, 12)
               yield* Pulls.markReady(owner, repo, "PR_12")
-              yield* Pulls.updateBranch(owner, repo, { pullNodeId: "PR_12", expectedHeadOid: sha2, method: c.updateMethod })
+              yield* Pulls.updateBranch(owner, repo, {
+                pullNodeId: "PR_12",
+                expectedHeadOid: sha2,
+                method: c.updateMethod
+              })
               const merged = yield* Pulls.mergePull(owner, repo, 12, { method: c.mergeMethod, sha: sha2 })
               if (!merged.merged) return false
               const commits = yield* Pulls.listCommits(owner, repo, 12)
@@ -386,8 +449,12 @@ describe("@smthrs/integrations Deep3 Fuzz (Telegram.Source, GitHub Pulls, Commit
               const miRes = yield* Effect.result(
                 Commits.mergeInto(owner, repo, { base: "main", head: "feat/fuzz", commitMessage: "merge" })
               )
-              if (c.mergeIntoStatus === 204 && (Result.isFailure(miRes) || miRes.success.kind !== "upToDate")) return false
-              if (c.mergeIntoStatus === 201 && (Result.isFailure(miRes) || miRes.success.kind !== "merged")) return false
+              if (
+                c.mergeIntoStatus === 204 && (Result.isFailure(miRes) || miRes.success.kind !== "upToDate")
+              ) return false
+              if (c.mergeIntoStatus === 201 && (Result.isFailure(miRes) || miRes.success.kind !== "merged")) {
+                return false
+              }
               if (c.mergeIntoStatus === 409 && Result.isSuccess(miRes)) return false
 
               // GitDatabase operations

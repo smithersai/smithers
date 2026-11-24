@@ -1,8 +1,22 @@
+import { Fuzz } from "@smthrs/fuzz"
 import * as ChildProcessSpawner from "@smthrs/kernel/ChildProcessSpawner"
 import * as ProcessLedger from "@smthrs/kernel/ProcessLedger"
-import { Fuzz } from "@smthrs/fuzz"
 import { LanguageServer, Lsp } from "@smthrs/std"
-import { Arbitrary, Cause, Deferred, Effect, Exit, Layer, Logger, Option, PlatformError, Queue, Schema, Sink, Stream } from "effect"
+import {
+  Arbitrary,
+  Cause,
+  Deferred,
+  Effect,
+  Exit,
+  Layer,
+  Logger,
+  Option,
+  PlatformError,
+  Queue,
+  Schema,
+  Sink,
+  Stream
+} from "effect"
 import * as ByteSize from "effect/ByteSize"
 import * as FileSystem from "effect/FileSystem"
 import * as ChildProcess from "effect/process/ChildProcess"
@@ -191,14 +205,38 @@ describe("@smthrs/platform-node deep boost: sqliteObjectStorage, SandboxedFlowGu
             }
 
             const reqObj = tc.caseKind === "sum-ok"
-              ? { attempt: "1", flow: childEntry.Sum._tag, executionId: `g-${seq}`, capabilityCeiling: [], payload: { n: tc.n } }
+              ? {
+                attempt: "1",
+                flow: childEntry.Sum._tag,
+                executionId: `g-${seq}`,
+                capabilityCeiling: [],
+                payload: { n: tc.n }
+              }
               : tc.caseKind === "failing-flow"
-              ? { attempt: "1", flow: childEntry.Failing._tag, executionId: `g-${seq}`, capabilityCeiling: [], payload: { reason: "boom", chatter: 0 } }
+              ? {
+                attempt: "1",
+                flow: childEntry.Failing._tag,
+                executionId: `g-${seq}`,
+                capabilityCeiling: [],
+                payload: { reason: "boom", chatter: 0 }
+              }
               : tc.caseKind === "missing-flow"
               ? { attempt: "1", flow: "does/NotExist", executionId: `g-${seq}`, capabilityCeiling: [], payload: {} }
               : tc.caseKind === "bad-payload"
-              ? { attempt: "1", flow: childEntry.Sum._tag, executionId: `g-${seq}`, capabilityCeiling: [], payload: { n: "not-a-number" } }
-              : { attempt: "1", flow: childEntry.Sum._tag, executionId: `g-${seq}`, capabilityCeiling: [[]], payload: { n: tc.n } }
+              ? {
+                attempt: "1",
+                flow: childEntry.Sum._tag,
+                executionId: `g-${seq}`,
+                capabilityCeiling: [],
+                payload: { n: "not-a-number" }
+              }
+              : {
+                attempt: "1",
+                flow: childEntry.Sum._tag,
+                executionId: `g-${seq}`,
+                capabilityCeiling: [[]],
+                payload: { n: tc.n }
+              }
 
             writeFileSync(reqPath, JSON.stringify(reqObj), "utf8")
             await Guest.run(childEntry, {
@@ -388,9 +426,15 @@ describe("@smthrs/platform-node deep boost: sqliteObjectStorage, SandboxedFlowGu
             expect(ProcessReaper.windowsSystemWith()).toBeDefined()
 
             // ProcessSupervisor & PipedProcess pure helpers
-            expect((yield* ProcessSupervisor.bootstrapArguments({ bun: false, main: "/a.js", sea: false })).length).toBe(0)
-            expect((yield* ProcessSupervisor.bootstrapArguments({ bun: true, main: "/a.js", sea: false })).length).toBeGreaterThan(0)
-            expect(Exit.isFailure(yield* ProcessSupervisor.bootstrapArguments({ bun: false, main: "/a.js", sea: true }).pipe(Effect.exit))).toBe(true)
+            expect((yield* ProcessSupervisor.bootstrapArguments({ bun: false, main: "/a.js", sea: false })).length)
+              .toBe(0)
+            expect((yield* ProcessSupervisor.bootstrapArguments({ bun: true, main: "/a.js", sea: false })).length)
+              .toBeGreaterThan(0)
+            expect(
+              Exit.isFailure(
+                yield* ProcessSupervisor.bootstrapArguments({ bun: false, main: "/a.js", sea: true }).pipe(Effect.exit)
+              )
+            ).toBe(true)
             expect(yield* ProcessSupervisor.runtimeDescription({ bun: false, main: "/a.js" })).toBeDefined()
             expect(ProcessSupervisor.failure("spawn", "echo", new Error("boom"))).toBeDefined()
             expect(PipedProcess.failure("spawn", new Error("boom"))).toBeDefined()
@@ -404,7 +448,9 @@ describe("@smthrs/platform-node deep boost: sqliteObjectStorage, SandboxedFlowGu
             const host: ProcessSandbox.Host = {
               ...ProcessSandbox.host(),
               platform: tc.platform,
-              executable: (name) => (name === "docker" || name === "bwrap" || name === "/usr/bin/sandbox-exec" ? name : undefined)
+              executable: (
+                name
+              ) => (name === "docker" || name === "bwrap" || name === "/usr/bin/sandbox-exec" ? name : undefined)
             }
             const dockerHost: ProcessSandbox.Host = {
               ...host,
@@ -412,7 +458,13 @@ describe("@smthrs/platform-node deep boost: sqliteObjectStorage, SandboxedFlowGu
               executable: (name: string) => (name === "docker" ? "/usr/bin/docker" : undefined)
             }
             const planned = ProcessSandbox.plan(
-              { reads: ["."], writes: ["out"], readOnly: ["out/locked"], network: "none", mechanism: { _tag: "docker", image: "alpine:3" } },
+              {
+                reads: ["."],
+                writes: ["out"],
+                readOnly: ["out/locked"],
+                network: "none",
+                mechanism: { _tag: "docker", image: "alpine:3" }
+              },
               { workspaceRoot: ws, cwd: ws, tmp: ws },
               dockerHost
             )
@@ -465,19 +517,24 @@ describe("@smthrs/platform-node deep boost: sqliteObjectStorage, SandboxedFlowGu
                   pending = decoder.decode(rest.slice(len))
                   const method = typeof msg.method === "string" ? msg.method : undefined
                   if (method === "initialize") {
-                    yield* Queue.offer(output, encodeLspFrame({
-                      jsonrpc: "2.0",
-                      id: msg.id,
-                      result: {
-                        capabilities: {
-                          implementationProvider: true,
-                          callHierarchyProvider: true,
-                          diagnosticProvider: { interFileDependencies: false, workspaceDiagnostics: false }
+                    yield* Queue.offer(
+                      output,
+                      encodeLspFrame({
+                        jsonrpc: "2.0",
+                        id: msg.id,
+                        result: {
+                          capabilities: {
+                            implementationProvider: true,
+                            callHierarchyProvider: true,
+                            diagnosticProvider: { interFileDependencies: false, workspaceDiagnostics: false }
+                          }
                         }
-                      }
-                    })).pipe(Effect.ignore)
+                      })
+                    ).pipe(Effect.ignore)
                   } else if (method === "shutdown") {
-                    yield* Queue.offer(output, encodeLspFrame({ jsonrpc: "2.0", id: msg.id, result: null })).pipe(Effect.ignore)
+                    yield* Queue.offer(output, encodeLspFrame({ jsonrpc: "2.0", id: msg.id, result: null })).pipe(
+                      Effect.ignore
+                    )
                   } else if (method === "exit") {
                     yield* Deferred.succeed(exitGate, ExitCode(0))
                   } else if (typeof msg.id === "number") {
@@ -498,7 +555,9 @@ describe("@smthrs/platform-node deep boost: sqliteObjectStorage, SandboxedFlowGu
                         selectionRange: { start: { line: 0, character: 0 }, end: { line: 0, character: 1 } }
                       }]
                       : []
-                    yield* Queue.offer(output, encodeLspFrame({ jsonrpc: "2.0", id: msg.id, result })).pipe(Effect.ignore)
+                    yield* Queue.offer(output, encodeLspFrame({ jsonrpc: "2.0", id: msg.id, result })).pipe(
+                      Effect.ignore
+                    )
                   }
                 }
               })
@@ -546,7 +605,9 @@ describe("@smthrs/platform-node deep boost: sqliteObjectStorage, SandboxedFlowGu
           expect(out).toBeDefined()
           const diag = yield* Lsp.run({ operation: "diagnostics", path: filePath })
           expect(diag).toBeDefined()
-          const crashed = yield* Lsp.run({ operation: "references", path: filePath, line: 1, character: 1 }).pipe(Effect.exit)
+          const crashed = yield* Lsp.run({ operation: "references", path: filePath, line: 1, character: 1 }).pipe(
+            Effect.exit
+          )
           expect(Exit.isFailure(crashed)).toBe(true)
           expect(spawnCount).toBeGreaterThanOrEqual(1)
 

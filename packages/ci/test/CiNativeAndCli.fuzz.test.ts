@@ -15,10 +15,10 @@ import type { Failure, ReplayParts } from "../src/contract/Parts.vibe"
 import type { TargetResult } from "../src/contract/RunRecord.vibe"
 import { read as readInventory } from "../src/inventory/index.vibe"
 import * as NativeReplay from "../src/native/Replay.vibe"
-import * as Disk from "../src/replay/Disk.vibe"
-import * as DiskSpace from "../src/replay/DiskSpace.ts"
 import * as NativeResults from "../src/native/Results.vibe"
 import * as NativeTargets from "../src/native/Targets.vibe"
+import * as Disk from "../src/replay/Disk.vibe"
+import * as DiskSpace from "../src/replay/DiskSpace.ts"
 import { Options, Progress } from "../src/replay/Replay.vibe"
 import { inProcess } from "./cli/inProcess.vibe"
 import { parts as cliParts } from "./cli/parts.vibe"
@@ -73,16 +73,15 @@ describe("@smthrs/ci native targets, results, replay, CLI & Restart fuzz invaria
         arb,
         ({ pattern, asked, scriptKind, hasRequested }) =>
           Effect.sync(() => {
-            const script =
-              scriptKind === "ci"
-                ? `node_modules/.bin/smthrs ci '${pattern}' --ui plain`
-                : scriptKind === "test"
-                ? `smthrs test ${pattern}`
-                : scriptKind === "build"
-                ? `pnpm exec smthrs build ${pattern}`
-                : scriptKind === "multi"
-                ? `smthrs ci ${pattern} && smthrs test //packages/ci:test`
-                : "pnpm test"
+            const script = scriptKind === "ci"
+              ? `node_modules/.bin/smthrs ci '${pattern}' --ui plain`
+              : scriptKind === "test"
+              ? `smthrs test ${pattern}`
+              : scriptKind === "build"
+              ? `pnpm exec smthrs build ${pattern}`
+              : scriptKind === "multi"
+              ? `smthrs ci ${pattern} && smthrs test //packages/ci:test`
+              : "pnpm test"
 
             const pats = NativeTargets.patternsIn(script)
             const inv: Inventory = ciOf({
@@ -115,7 +114,7 @@ describe("@smthrs/ci native targets, results, replay, CLI & Restart fuzz invaria
       Schema.Struct({
         output: Schema.Literals([
           "//:a FAIL exit code 1\nassert failed\n//:b PASS\n",
-          '{"code":"ci_failed","message":"build broken"}\n',
+          "{\"code\":\"ci_failed\",\"message\":\"build broken\"}\n",
           "(node:1) ExperimentalWarning: x\nreal error\n",
           ""
         ]),
@@ -240,7 +239,8 @@ describe("@smthrs/ci native targets, results, replay, CLI & Restart fuzz invaria
     try {
       cliGit(repo, "init", "--quiet", "--initial-branch=main")
       cliCommit(repo, "init", {
-        ".github/workflows/ci.yml": "name: CI\non: [push]\njobs:\n  test:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo ok\n",
+        ".github/workflows/ci.yml":
+          "name: CI\non: [push]\njobs:\n  test:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo ok\n",
         "Justfile": "test:\n  echo ok\n"
       })
       writeFileSync(join(outDir, "placeholder"), "")
@@ -276,23 +276,53 @@ describe("@smthrs/ci native targets, results, replay, CLI & Restart fuzz invaria
               const s = Cli.shown("hello\nworld")
               const inside = Cli.insideOf(posix, "sub/file.ts")
               const outside = Cli.insideOf(posix, "../outside")
-              if (typeof code !== "number" || line.length === 0 || s.length === 0 || inside === undefined || outside !== undefined) {
+              if (
+                typeof code !== "number" || line.length === 0 || s.length === 0 || inside === undefined ||
+                outside !== undefined
+              ) {
                 return false
               }
 
               const env = { HOME: fakeHome, PATH: process.env["PATH"] }
-              const args: ReadonlyArray<string> =
-                cmd === "help" ? ["--help"]
-                : cmd === "version" ? ["--version"]
-                : cmd === "inventory" ? ["inventory"]
-                : cmd === "inventory-json" ? ["inventory", "--json"]
-                : cmd === "apply" ? ["apply", "--no-apply-check"]
-                : cmd === "apply-check" ? ["apply", "--check", "--no-apply-check"]
-                : cmd === "replay-default" ? ["replay", "--commits", "1"]
-                : cmd === "replay-fast-json" ? ["replay", "--commits", "1", "--mode", "fast", "--json", "--out", join(outDir, "r.html")]
-                : cmd === "replay-flags" ? ["replay", "--commits", "2", "--jobs", "2", "--job", "justfile:test", "--targets", "//...", "--no-trial", "--cold", "--reruns", "1", "--stall-minutes", "5", "--allow-docker"]
-                : cmd === "unknown-cmd" ? ["nope"]
-                : cmd === "bad-flag" ? ["inventory", "--unknown-flag"]
+              const args: ReadonlyArray<string> = cmd === "help" ?
+                ["--help"]
+                : cmd === "version" ?
+                ["--version"]
+                : cmd === "inventory" ?
+                ["inventory"]
+                : cmd === "inventory-json" ?
+                ["inventory", "--json"]
+                : cmd === "apply" ?
+                ["apply", "--no-apply-check"]
+                : cmd === "apply-check" ?
+                ["apply", "--check", "--no-apply-check"]
+                : cmd === "replay-default" ?
+                ["replay", "--commits", "1"]
+                : cmd === "replay-fast-json" ?
+                ["replay", "--commits", "1", "--mode", "fast", "--json", "--out", join(outDir, "r.html")]
+                : cmd === "replay-flags" ?
+                [
+                  "replay",
+                  "--commits",
+                  "2",
+                  "--jobs",
+                  "2",
+                  "--job",
+                  "justfile:test",
+                  "--targets",
+                  "//...",
+                  "--no-trial",
+                  "--cold",
+                  "--reruns",
+                  "1",
+                  "--stall-minutes",
+                  "5",
+                  "--allow-docker"
+                ]
+                : cmd === "unknown-cmd" ?
+                ["nope"]
+                : cmd === "bad-flag" ?
+                ["inventory", "--unknown-flag"]
                 : ["replay", "--commits", "0"]
 
               const sink = recorder()
@@ -300,14 +330,14 @@ describe("@smthrs/ci native targets, results, replay, CLI & Restart fuzz invaria
 
               const root = await Effect.runPromise(
                 Main.rootOf(repo).pipe(Effect.provide(
-                Layer.mergeAll(
-                  NodeServices.layer,
-                  Layer.succeed(Disk.DiskSpace, {
-                    space: () => Effect.succeed({ total: 200 * DiskSpace.gigabyte, free: 100 * DiskSpace.gigabyte }),
-                    held: () => Effect.succeed(0),
-                  }),
-                ),
-              ))
+                  Layer.mergeAll(
+                    NodeServices.layer,
+                    Layer.succeed(Disk.DiskSpace, {
+                      space: () => Effect.succeed({ total: 200 * DiskSpace.gigabyte, free: 100 * DiskSpace.gigabyte }),
+                      held: () => Effect.succeed(0)
+                    })
+                  )
+                ))
               )
               return typeof exitCode === "number" && root.length > 0
             }),
@@ -324,59 +354,63 @@ describe("@smthrs/ci native targets, results, replay, CLI & Restart fuzz invaria
     }
   }, 120_000)
 
-  it("NativeReplay.run replays a real repository with its own Smithers workspace targets across normal & fast modes", async () => {
-    const repo = makeOwn()
-    try {
-      const said: Array<string> = []
-      const host = Layer.mergeAll(
-        Layer.succeed(Options, { smthrs: [smthrs], reruns: 1, prepare: () => Effect.void, confine: unconfined }),
-        Layer.succeed(Progress, { say: (line) => Effect.sync(() => void said.push(line)) }),
-        Layer.succeed(Disk.DiskSpace, {
-                space: () => Effect.succeed({ total: 200 * DiskSpace.gigabyte, free: 100 * DiskSpace.gigabyte }),
-                held: () => Effect.succeed(0),
-              }),
-        NodeServices.layer
-      )
-      const nativeParts: ReplayParts<NativeReplay.Host> = {
-        read: readInventory,
-        files: () => Effect.fail({ code: "invalid-document", message: "nothing generated", part: "generate" }),
-        rows: nativeRows,
-        score: scoreKeeping("//:c", repo.commits[0]!)
-      }
-      const neverGeneric: import("../src/contract/Parts.vibe").RunReplay<NativeReplay.Host> = () =>
-        Effect.fail<Failure>({ code: "invalid-document", message: "generic called", part: "replay" })
-
-      const arb = Arbitrary.schema(
-        Schema.Struct({
-          commits: Schema.Literals([2]),
-          includeFast: Schema.Literals([true])
-        })
-      )
-
-      const report = await Effect.runPromise(
-        Fuzz.run(
-          arb,
-          ({ commits, includeFast }) =>
-            NativeReplay.run(neverGeneric)(
-              {
-                root: repo.root,
-                commits,
-                modes: includeFast ? ["normal", "fast"] : ["normal"],
-                settings: { scoreCutoff: 0.5, countCutoff: 0 }
-              },
-              nativeParts
-            ).pipe(
-              Effect.map((res) => res.commits.length === commits),
-              Effect.provide(host)
-            ),
-          { seed, executions: 1 }
+  it(
+    "NativeReplay.run replays a real repository with its own Smithers workspace targets across normal & fast modes",
+    async () => {
+      const repo = makeOwn()
+      try {
+        const said: Array<string> = []
+        const host = Layer.mergeAll(
+          Layer.succeed(Options, { smthrs: [smthrs], reruns: 1, prepare: () => Effect.void, confine: unconfined }),
+          Layer.succeed(Progress, { say: (line) => Effect.sync(() => void said.push(line)) }),
+          Layer.succeed(Disk.DiskSpace, {
+            space: () => Effect.succeed({ total: 200 * DiskSpace.gigabyte, free: 100 * DiskSpace.gigabyte }),
+            held: () => Effect.succeed(0)
+          }),
+          NodeServices.layer
         )
-      )
-      const failure = Fuzz.formatReport(report)
-      if (failure !== undefined) throw new Error(failure)
-      expect(report._tag).toBe("Passed")
-    } finally {
-      rmSync(repo.root, { recursive: true, force: true })
-    }
-  }, 180_000)
+        const nativeParts: ReplayParts<NativeReplay.Host> = {
+          read: readInventory,
+          files: () => Effect.fail({ code: "invalid-document", message: "nothing generated", part: "generate" }),
+          rows: nativeRows,
+          score: scoreKeeping("//:c", repo.commits[0]!)
+        }
+        const neverGeneric: import("../src/contract/Parts.vibe").RunReplay<NativeReplay.Host> = () =>
+          Effect.fail<Failure>({ code: "invalid-document", message: "generic called", part: "replay" })
+
+        const arb = Arbitrary.schema(
+          Schema.Struct({
+            commits: Schema.Literals([2]),
+            includeFast: Schema.Literals([true])
+          })
+        )
+
+        const report = await Effect.runPromise(
+          Fuzz.run(
+            arb,
+            ({ commits, includeFast }) =>
+              NativeReplay.run(neverGeneric)(
+                {
+                  root: repo.root,
+                  commits,
+                  modes: includeFast ? ["normal", "fast"] : ["normal"],
+                  settings: { scoreCutoff: 0.5, countCutoff: 0 }
+                },
+                nativeParts
+              ).pipe(
+                Effect.map((res) => res.commits.length === commits),
+                Effect.provide(host)
+              ),
+            { seed, executions: 1 }
+          )
+        )
+        const failure = Fuzz.formatReport(report)
+        if (failure !== undefined) throw new Error(failure)
+        expect(report._tag).toBe("Passed")
+      } finally {
+        rmSync(repo.root, { recursive: true, force: true })
+      }
+    },
+    180_000
+  )
 })

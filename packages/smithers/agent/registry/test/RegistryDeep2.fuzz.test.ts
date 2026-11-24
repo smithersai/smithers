@@ -1,4 +1,3 @@
-import * as Descriptor from "../src/Descriptor.ts"
 import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
 import * as NodePath from "@effect/platform-node/NodePath"
 import { Fuzz } from "@smthrs/fuzz"
@@ -9,6 +8,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { describe, expect, it } from "vitest"
+import * as Descriptor from "../src/Descriptor.ts"
 import * as Discovery from "../src/Discovery.ts"
 import * as Frontmatter from "../src/internal/Frontmatter.ts"
 import * as Names from "../src/internal/Names.ts"
@@ -132,8 +132,7 @@ describe("@smthrs/registry Deep2 Fuzz (MarkdownFlow, Pack, Frontmatter, Names, R
               dirBasename: "md-fuzz",
               provenance: new Descriptor.Provenance({ source: "project", root: "/repo" })
             })
-            const hasBadInput =
-              c.budgetMode === "badTokens" || c.budgetMode === "notObject" ||
+            const hasBadInput = c.budgetMode === "badTokens" || c.budgetMode === "notObject" ||
               c.deadlineMode === "invalid" || c.licenseMode === "bad" ||
               c.compatMode === "tooLong" || c.compatMode === "badType" ||
               c.metaMode === "badVal" || c.metaMode === "array" ||
@@ -158,122 +157,133 @@ describe("@smthrs/registry Deep2 Fuzz (MarkdownFlow, Pack, Frontmatter, Names, R
     const realPackBase = mkdtempSync(join(tmpdir(), "reg-pack-src-"))
     mkdirSync(join(realPackBase, "flows"), { recursive: true })
     try {
-    const arb = Arbitrary.schema(
-      Schema.Struct({
-        range: Schema.Literals(["*", ">=1.0.0", "^1.0.0", "~1.0.0", ">=1.0.0 <2.0.0", "1.0.0", ">=2.0.0", "invalid-range"]),
-        runtime: Schema.Literals(["1.0.0", "1.2.3", "1.0.0-rc.18", "2.0.0", "0.9.0", "bad"]),
-        packOrigin: Schema.Literals(["local", "installed"])
-      })
-    )
+      const arb = Arbitrary.schema(
+        Schema.Struct({
+          range: Schema.Literals([
+            "*",
+            ">=1.0.0",
+            "^1.0.0",
+            "~1.0.0",
+            ">=1.0.0 <2.0.0",
+            "1.0.0",
+            ">=2.0.0",
+            "invalid-range"
+          ]),
+          runtime: Schema.Literals(["1.0.0", "1.2.3", "1.0.0-rc.18", "2.0.0", "0.9.0", "bad"]),
+          packOrigin: Schema.Literals(["local", "installed"])
+        })
+      )
 
-    const report = await Effect.runPromise(
-      Fuzz.run(
-        arb,
-        (c) =>
+      const report = await Effect.runPromise(
+        Fuzz.run(
+          arb,
+          (c) =>
+            Effect.gen(function*() {
+              const ok = Pack.compatible(c.range, c.runtime)
+              if (c.range === "*" && c.runtime !== "bad" && !ok) return false
+              if (c.range === "invalid-range" && ok) return false
+              if (c.range === ">=2.0.0" && c.runtime === "1.0.0" && ok) return false
+              if (c.range === ">=2.0.0" && c.runtime === "2.0.0" && !ok) return false
+
+              const manifest = new Pack.Manifest({
+                name: "fuzz-pack",
+                version: "1.0.0",
+                flows: ["flows" as any],
+                requires: { smithers: c.range }
+              })
+              const d1 = Pack.digest(manifest, [{ path: "a.md", contents: "hi" }])
+              const d2 = Pack.digest(manifest, [{ path: "a.md", contents: "hi" }])
+              if (d1 !== d2) return false
+
+              const installed: Pack.Installed = {
+                manifest,
+                origin: c.packOrigin,
+                dir: realPackBase
+              }
+              const compatRes = yield* Effect.result(
+                Pack.checkCompatible(installed, { join: (...xs: Array<string>) => xs.join("/") } as any, c.runtime)
+              )
+              if (ok && Result.isFailure(compatRes)) return false
+              if (!ok && Result.isSuccess(compatRes)) return false
+
+              const pathSvc = yield* Path.Path
+              const srcs = yield* Pack.sources(installed, pathSvc)
+              if (srcs.length === 0) return false
+              return true
+            }).pipe(Effect.provide(NodeFileSystem.layer), Effect.provide(NodePath.layer)),
+          { seed: seed + 1, executions }
+        )
+      )
+      assertPassed(report)
+
+      const tmpBase = mkdtempSync(join(tmpdir(), "reg-pack-fuzz-"))
+      try {
+        const packDir = join(tmpBase, "my-pack")
+        const flowDir = join(packDir, "flows", "hello")
+        mkdirSync(flowDir, { recursive: true })
+        writeFileSync(
+          join(packDir, "pack.json"),
+          JSON.stringify({
+            name: "my-pack",
+            version: "1.0.0",
+            flows: ["flows"],
+            requires: { smithers: ">=1.0.0" }
+          }),
+          "utf8"
+        )
+        writeFileSync(
+          join(flowDir, "flow.mdx"),
+          "---\nname: hello\ndescription: say hello\n---\nHello $ARGUMENTS!\n",
+          "utf8"
+        )
+
+        const fsLayer = Layer.mergeAll(NodeFileSystem.layer, NodePath.layer)
+        await Effect.runPromise(
           Effect.gen(function*() {
-            const ok = Pack.compatible(c.range, c.runtime)
-            if (c.range === "*" && c.runtime !== "bad" && !ok) return false
-            if (c.range === "invalid-range" && ok) return false
-            if (c.range === ">=2.0.0" && c.runtime === "1.0.0" && ok) return false
-            if (c.range === ">=2.0.0" && c.runtime === "2.0.0" && !ok) return false
-
-            const manifest = new Pack.Manifest({
-              name: "fuzz-pack",
-              version: "1.0.0",
-              flows: ["flows" as any],
-              requires: { smithers: c.range }
-            })
-            const d1 = Pack.digest(manifest, [{ path: "a.md", contents: "hi" }])
-            const d2 = Pack.digest(manifest, [{ path: "a.md", contents: "hi" }])
-            if (d1 !== d2) return false
+            const fs = yield* FileSystem.FileSystem
+            const path = yield* Path.Path
+            const readPack = yield* Pack.read(fs, path, packDir)
+            expect(readPack.manifest.name).toBe("my-pack")
 
             const installed: Pack.Installed = {
-              manifest,
-              origin: c.packOrigin,
-              dir: realPackBase
+              manifest: readPack.manifest,
+              dir: readPack.dir,
+              origin: "local",
+              warnings: readPack.warnings
             }
-            const compatRes = yield* Effect.result(Pack.checkCompatible(installed, { join: (...xs: Array<string>) => xs.join("/") } as any, c.runtime))
-            if (ok && Result.isFailure(compatRes)) return false
-            if (!ok && Result.isSuccess(compatRes)) return false
-
-            const pathSvc = yield* Path.Path
-            const srcs = yield* Pack.sources(installed, pathSvc)
-            if (srcs.length === 0) return false
-            return true
-          }).pipe(Effect.provide(NodeFileSystem.layer), Effect.provide(NodePath.layer)),
-        { seed: seed + 1, executions }
-      )
-    )
-    assertPassed(report)
-
-    const tmpBase = mkdtempSync(join(tmpdir(), "reg-pack-fuzz-"))
-    try {
-      const packDir = join(tmpBase, "my-pack")
-      const flowDir = join(packDir, "flows", "hello")
-      mkdirSync(flowDir, { recursive: true })
-      writeFileSync(
-        join(packDir, "pack.json"),
-        JSON.stringify({
-          name: "my-pack",
-          version: "1.0.0",
-          flows: ["flows"],
-          requires: { smithers: ">=1.0.0" }
-        }),
-        "utf8"
-      )
-      writeFileSync(
-        join(flowDir, "flow.mdx"),
-        "---\nname: hello\ndescription: say hello\n---\nHello $ARGUMENTS!\n",
-        "utf8"
-      )
-
-      const fsLayer = Layer.mergeAll(NodeFileSystem.layer, NodePath.layer)
-      await Effect.runPromise(
-        Effect.gen(function*() {
-          const fs = yield* FileSystem.FileSystem
-          const path = yield* Path.Path
-          const readPack = yield* Pack.read(fs, path, packDir)
-          expect(readPack.manifest.name).toBe("my-pack")
-
-          const installed: Pack.Installed = {
-            manifest: readPack.manifest,
-            dir: readPack.dir,
-            origin: "local",
-            warnings: readPack.warnings
-          }
-          const reg = yield* Registry.Registry.pipe(
-            Effect.provide(
-              Registry.layerFromPacks([installed], { runtimeVersion: "1.0.0" }).pipe(
-                Layer.provide(Discovery.layer)
+            const reg = yield* Registry.Registry.pipe(
+              Effect.provide(
+                Registry.layerFromPacks([installed], { runtimeVersion: "1.0.0" }).pipe(
+                  Layer.provide(Discovery.layer)
+                )
               )
             )
-          )
-          const list = yield* reg.list()
-          expect(list.length).toBeGreaterThanOrEqual(1)
+            const list = yield* reg.list()
+            expect(list.length).toBeGreaterThanOrEqual(1)
 
-          const descReg = yield* Registry.Registry.pipe(
-            Effect.provide(Registry.layerFromDescriptors(list))
-          )
-          expect((yield* descReg.visible()).length).toBe(list.length)
-          const opt = yield* descReg.getOption(list[0]!.name)
-          expect(Option.isSome(opt)).toBe(true)
+            const descReg = yield* Registry.Registry.pipe(
+              Effect.provide(Registry.layerFromDescriptors(list))
+            )
+            expect((yield* descReg.visible()).length).toBe(list.length)
+            const opt = yield* descReg.getOption(list[0]!.name)
+            expect(Option.isSome(opt)).toBe(true)
 
-          const noop = Registry.makeNoop()
-          expect(yield* noop.list()).toEqual([])
-          expect(yield* noop.visible()).toEqual([])
-          expect(Option.isNone(yield* noop.getOption("missing"))).toBe(true)
-          const nf = yield* Effect.result(noop.get("missing"))
-          expect(Result.isFailure(nf)).toBe(true)
-          yield* noop.refresh()
-        }).pipe(Effect.provide(fsLayer), Effect.provide(silentLogger))
-      )
+            const noop = Registry.makeNoop()
+            expect(yield* noop.list()).toEqual([])
+            expect(yield* noop.visible()).toEqual([])
+            expect(Option.isNone(yield* noop.getOption("missing"))).toBe(true)
+            const nf = yield* Effect.result(noop.get("missing"))
+            expect(Result.isFailure(nf)).toBe(true)
+            yield* noop.refresh()
+          }).pipe(Effect.provide(fsLayer), Effect.provide(silentLogger))
+        )
 
-      expect(Frontmatter.parse({ text: "---\na: 1\n---\nbody", path: "/f.md" }).fields).toBeDefined()
-      expect(Names).toBeDefined()
-      expect(new RegistryError.RegistryError({ code: "not_found", message: "m" }).message).toBe("m")
-    } finally {
-      rmSync(tmpBase, { recursive: true, force: true })
-    }
+        expect(Frontmatter.parse({ text: "---\na: 1\n---\nbody", path: "/f.md" }).fields).toBeDefined()
+        expect(Names).toBeDefined()
+        expect(new RegistryError.RegistryError({ code: "not_found", message: "m" }).message).toBe("m")
+      } finally {
+        rmSync(tmpBase, { recursive: true, force: true })
+      }
     } finally {
       rmSync(realPackBase, { recursive: true, force: true })
     }

@@ -60,7 +60,13 @@ describe("@smthrs/agent ScriptedJudge, Checkpointed, RunawayGuard, ChildFlows, S
   it("ScriptedJudge answers CompletionClaim & built-in classifiers consistently across evidence variants", async () => {
     const arb = Arbitrary.schema(
       Schema.Struct({
-        judgeKind: Schema.Literals(["completion_ok", "completion_unverified", "completion_last_check", "answer_keys", "unknown"]),
+        judgeKind: Schema.Literals([
+          "completion_ok",
+          "completion_unverified",
+          "completion_last_check",
+          "answer_keys",
+          "unknown"
+        ]),
         useAll: Schema.Boolean,
         claimIdx: Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 20 }))
       })
@@ -73,10 +79,9 @@ describe("@smthrs/agent ScriptedJudge, Checkpointed, RunawayGuard, ChildFlows, S
           Effect.gen(function*() {
             const layer = useAll ? ScriptedJudge.layerAll : ScriptedJudge.layer
             if (judgeKind === "completion_ok" || judgeKind === "completion_unverified") {
-              const claim =
-                judgeKind === "completion_ok"
-                  ? `Fixed math.js (${claimIdx}). Ran \`node check.mjs\`; it passed and printed ok.`
-                  : `Ran \`node nonexistent_${claimIdx}.mjs\`; it passed.`
+              const claim = judgeKind === "completion_ok"
+                ? `Fixed math.js (${claimIdx}). Ran \`node check.mjs\`; it passed and printed ok.`
+                : `Ran \`node nonexistent_${claimIdx}.mjs\`; it passed.`
               const evidence: CompletionClaim.Evidence = {
                 task: "Fix math.js and verify node check.mjs passes.",
                 claim,
@@ -166,17 +171,16 @@ describe("@smthrs/agent ScriptedJudge, Checkpointed, RunawayGuard, ChildFlows, S
             })
 
             const wrapped = Checkpointed.checkpointed(cpStore, runner)
-            const input: Schema.Json =
-              flowName === "bash"
-                ? {
-                    command: pathKind === "escape" ? "cat /repo/secret.txt" : "echo ok",
-                    cwd: pathKind === "absolute" ? "/etc" : "sub",
-                    ...(containerized ? { container: "box-1" } : {})
-                  }
-                : {
-                    path: pathKind === "absolute" ? "/etc/passwd" : pathKind === "escape" ? "../secret" : "src/a.ts",
-                    pattern: "foo"
-                  }
+            const input: Schema.Json = flowName === "bash"
+              ? {
+                command: pathKind === "escape" ? "cat /repo/secret.txt" : "echo ok",
+                cwd: pathKind === "absolute" ? "/etc" : "sub",
+                ...(containerized ? { container: "box-1" } : {})
+              }
+              : {
+                path: pathKind === "absolute" ? "/etc/passwd" : pathKind === "escape" ? "../secret" : "src/a.ts",
+                pattern: "foo"
+              }
 
             const c = makeCall(flowName, input, at === "none" ? undefined : at)
             const res = yield* wrapped.run(c)
@@ -274,8 +278,7 @@ describe("@smthrs/agent ScriptedJudge, Checkpointed, RunawayGuard, ChildFlows, S
                 ...engine,
                 register: (registered, execute) =>
                   engine.register(registered, (payload, executionId) =>
-                    Effect.provideService(execute(payload, executionId), Budget.Parking, parkingSvc)
-                  )
+                    Effect.provideService(execute(payload, executionId), Budget.Parking, parkingSvc))
               })
               const guardedRuntime = yield* FlowRuntime.FlowRuntime.pipe(
                 Effect.provide(
@@ -285,9 +288,9 @@ describe("@smthrs/agent ScriptedJudge, Checkpointed, RunawayGuard, ChildFlows, S
                 )
               )
               yield* guardedRuntime.register(guarded, ({ slow }) =>
-                slow ? Effect.sleep("200 millis").pipe(Effect.as("too-slow")) : Effect.succeed("fast-ok")
-              )
-              yield* guardedRuntime.register(unguarded, () => Effect.succeed("ok-unguarded"))
+                slow ? Effect.sleep("200 millis").pipe(Effect.as("too-slow")) : Effect.succeed("fast-ok"))
+              yield* guardedRuntime.register(unguarded, () =>
+                Effect.succeed("ok-unguarded"))
               if (mode === "unguarded") {
                 return yield* unguarded.execute({}, { executionId: `unguarded-${limitMs}` }).pipe(
                   Effect.provideService(FlowRuntime.FlowRuntime, guardedRuntime)
@@ -302,8 +305,12 @@ describe("@smthrs/agent ScriptedJudge, Checkpointed, RunawayGuard, ChildFlows, S
               )
             }).pipe(Effect.provide(baseLayer), Effect.scoped, Effect.result)
 
-            if (mode === "unguarded") return res._tag === "Success" && res.success === "ok-unguarded"
-            if (mode === "proceed") return res._tag === "Success" && res.success === "fast-ok"
+            if (mode === "unguarded") {
+              return res._tag === "Success" && res.success === "ok-unguarded"
+            }
+            if (mode === "proceed") {
+              return res._tag === "Success" && res.success === "fast-ok"
+            }
             return res._tag === "Failure"
           }),
         { seed: seed + 2, executions: Math.min(executions, 20) }
@@ -336,46 +343,64 @@ describe("@smthrs/agent ScriptedJudge, Checkpointed, RunawayGuard, ChildFlows, S
           ({ childOp, askDecision, topic, flowSlug }) =>
             Effect.gen(function*() {
               // 1. ChildFlows
-              const childrenImpl =
-                childOp === "noop"
-                  ? ChildFlows.makeNoop()
-                  : ChildFlows.makeNoop({
-                      spawn: () => Effect.succeed({ child: "child-1" }),
-                      send: () => Effect.succeed({ delivered: true }),
-                      await: () => Effect.succeed({ child: "child-1", output: "done" })
-                    })
+              const childrenImpl = childOp === "noop"
+                ? ChildFlows.makeNoop()
+                : ChildFlows.makeNoop({
+                  spawn: () => Effect.succeed({ child: "child-1" }),
+                  send: () => Effect.succeed({ delivered: true }),
+                  await: () => Effect.succeed({ child: "child-1", output: "done" })
+                })
               const childBindings = yield* ChildFlows.source(childrenImpl).bindings()
               const byName = new Map(childBindings.map((b) => [b.descriptor.name, b]))
-              const spawnRes = yield* byName.get(ChildFlows.spawnFlow.name)!.run(makeCall(ChildFlows.spawnFlow.name, { flow: "helper", input: { prompt: "hi" } }))
-              const sendRes = yield* byName.get(ChildFlows.sendFlow.name)!.run(makeCall(ChildFlows.sendFlow.name, { child: "child-1", message: "go" }))
-              const awaitRes = yield* byName.get(ChildFlows.awaitFlow.name)!.run(makeCall(ChildFlows.awaitFlow.name, { child: "child-1" }))
+              const spawnRes = yield* byName.get(ChildFlows.spawnFlow.name)!.run(
+                makeCall(ChildFlows.spawnFlow.name, { flow: "helper", input: { prompt: "hi" } })
+              )
+              const sendRes = yield* byName.get(ChildFlows.sendFlow.name)!.run(
+                makeCall(ChildFlows.sendFlow.name, { child: "child-1", message: "go" })
+              )
+              const awaitRes = yield* byName.get(ChildFlows.awaitFlow.name)!.run(
+                makeCall(ChildFlows.awaitFlow.name, { child: "child-1" })
+              )
               if (childOp === "noop") {
-                if (spawnRes.outcome !== "failure" || sendRes.outcome !== "failure" || awaitRes.outcome !== "failure") return false
+                if (
+                  spawnRes.outcome !== "failure" || sendRes.outcome !== "failure" || awaitRes.outcome !== "failure"
+                ) return false
               } else {
-                if (spawnRes.outcome !== "success" || sendRes.outcome !== "success" || awaitRes.outcome !== "success") throw new Error("child: " + JSON.stringify({spawnRes, sendRes, awaitRes}))
+                if (
+                  spawnRes.outcome !== "success" || sendRes.outcome !== "success" || awaitRes.outcome !== "success"
+                ) throw new Error("child: " + JSON.stringify({ spawnRes, sendRes, awaitRes }))
               }
 
               // 2. StandardFlows.approval
-              const asker: StandardFlows.Asker =
-                askDecision === "unavailable"
-                  ? StandardFlows.askerNoop()
-                  : {
-                      ask: () =>
-                        Effect.succeed({
-                          approved: askDecision === "approve",
-                          answer: "fuzz answer"
-                        })
-                    }
+              const asker: StandardFlows.Asker = askDecision === "unavailable"
+                ? StandardFlows.askerNoop()
+                : {
+                  ask: () =>
+                    Effect.succeed({
+                      approved: askDecision === "approve",
+                      answer: "fuzz answer"
+                    })
+                }
               const [askBinding] = yield* StandardFlows.approval(asker).bindings()
               const askRes = yield* askBinding!.run(makeCall("ask", { question: "Continue?" }))
-              if (askDecision === "unavailable" && askRes.outcome !== "failure") throw new Error("ask unavail: " + JSON.stringify(askRes))
-              if (askDecision !== "unavailable" && askRes.outcome !== "success") throw new Error("ask ok: " + JSON.stringify(askRes))
+              if (askDecision === "unavailable" && askRes.outcome !== "failure") {
+                throw new Error("ask unavail: " + JSON.stringify(askRes))
+              }
+              if (askDecision !== "unavailable" && askRes.outcome !== "success") {
+                throw new Error("ask ok: " + JSON.stringify(askRes))
+              }
 
               // 3. StandardFlows.jev with unavailable evaluator (graceful failure)
-              const evalCtx = yield* Effect.context<Evaluator.Evaluator>().pipe(Effect.provide(Evaluator.layerUnavailable()))
+              const evalCtx = yield* Effect.context<Evaluator.Evaluator>().pipe(
+                Effect.provide(Evaluator.layerUnavailable())
+              )
               const [jevBinding] = yield* StandardFlows.jev(evalCtx).bindings()
               const jevRes = yield* jevBinding!.run(
-                makeCall("jev", { question: "Is this valid?", criteria: { yes: "valid", no: "invalid" }, subject: "ok" })
+                makeCall("jev", {
+                  question: "Is this valid?",
+                  criteria: { yes: "valid", no: "invalid" },
+                  subject: "ok"
+                })
               )
               if (jevRes.outcome !== "failure" && jevRes.outcome !== "success") return false
 
@@ -405,7 +430,9 @@ describe("@smthrs/agent ScriptedJudge, Checkpointed, RunawayGuard, ChildFlows, S
               // 5. SmithersPlugin guide & flows
               const plugin = SmithersPlugin.make()
               if (plugin.name !== SmithersPlugin.name) return false
-              const guideRes = yield* SmithersPlugin.guide.run(makeCall(SmithersPlugin.guide.descriptor.name, { topic }))
+              const guideRes = yield* SmithersPlugin.guide.run(
+                makeCall(SmithersPlugin.guide.descriptor.name, { topic })
+              )
               if (guideRes.outcome !== "success") throw new Error("guide: " + JSON.stringify(guideRes))
 
               // 6. PromoteFlows
@@ -420,12 +447,21 @@ describe("@smthrs/agent ScriptedJudge, Checkpointed, RunawayGuard, ChildFlows, S
               )
               const promoteBindings = yield* PromoteFlows.source(promoteServices).bindings()
               const promoteMap = new Map(promoteBindings.map((b) => [b.descriptor.name, b]))
-              const showRes = yield* promoteMap.get(PromoteFlows.showScriptFlow.name)!.run(makeCall(PromoteFlows.showScriptFlow.name, {}))
+              const showRes = yield* promoteMap.get(PromoteFlows.showScriptFlow.name)!.run(
+                makeCall(PromoteFlows.showScriptFlow.name, {})
+              )
               if (showRes.outcome !== "success" && showRes.outcome !== "failure") return false
               const writeRes = yield* promoteMap
                 .get(PromoteFlows.writeFlowFlow.name)!
-                .run(makeCall(PromoteFlows.writeFlowFlow.name, { id: flowSlug, files: [{ path: "flow.ts", content: PromoteFlows.flowTemplate }] }))
-              if ((flowSlug === "" || flowSlug.includes("/")) && writeRes.outcome !== "failure") throw new Error("write: " + JSON.stringify(writeRes))
+                .run(
+                  makeCall(PromoteFlows.writeFlowFlow.name, {
+                    id: flowSlug,
+                    files: [{ path: "flow.ts", content: PromoteFlows.flowTemplate }]
+                  })
+                )
+              if ((flowSlug === "" || flowSlug.includes("/")) && writeRes.outcome !== "failure") {
+                throw new Error("write: " + JSON.stringify(writeRes))
+              }
 
               // 7. PromptChild.withoutSelf & EventSink
               const emptyReg = yield* Registry.Registry.pipe(

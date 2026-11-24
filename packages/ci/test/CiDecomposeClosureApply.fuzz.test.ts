@@ -68,50 +68,49 @@ describe("@smthrs/ci decompose, zig closure, apply/planned, generate & select/ev
         arb,
         ({ manager, mode, script, pkg, cwd }) =>
           Effect.sync(() => {
-            const words: Array<string> =
-              manager === "turbo"
-                ? mode === "filter-single"
-                  ? ["turbo", "run", script, "--filter", pkg]
-                  : mode === "filter-multi"
-                  ? ["turbo", script, `--filter=${pkg}`, "--concurrency=4", "--no-daemon"]
-                  : mode === "with-flags"
-                  ? ["turbo", "run", script, "--continue", "--dry=json", "--", "--watch=false"]
-                  : ["turbo", "run", script]
-                : manager === "pnpm"
-                ? mode === "recursive"
-                  ? ["pnpm", "-r", "run", script]
-                  : mode === "filter-single"
-                  ? ["pnpm", "--filter", pkg, "run", script]
-                  : mode === "filter-multi"
-                  ? ["pnpm", "-F", pkg, "--stream", "--parallel", script]
-                  : mode === "exec-cmd"
-                  ? ["pnpm", "-r", "exec", "tsc", "--noEmit"]
-                  : mode === "direct-script"
-                  ? ["pnpm", script]
-                  : ["pnpm", "--dir", "packages/web", "run", script]
-                : manager === "bun"
-                ? mode === "filter-single"
-                  ? ["bun", "--filter", pkg, "run", script]
-                  : mode === "filter-multi"
-                  ? ["bun", "run", "--filter", "*", script]
-                  : mode === "exec-cmd"
-                  ? ["bunx", "turbo", "run", script]
-                  : ["bun", "run", script]
-                : manager === "npm"
-                ? mode === "workspaces-all"
-                  ? ["npm", "run", script, "--workspaces", "--if-present"]
-                  : mode === "workspace-flag"
-                  ? ["npm", "run", script, "-w", pkg]
-                  : mode === "filter-multi"
-                  ? ["npm", "test", `--workspace=${pkg}`]
-                  : ["npm", "run", script]
-                : mode === "workspaces-all"
-                ? ["yarn", "workspaces", "run", script]
-                : mode === "workspace-flag"
-                ? ["yarn", "workspace", pkg, "run", script]
+            const words: Array<string> = manager === "turbo"
+              ? mode === "filter-single"
+                ? ["turbo", "run", script, "--filter", pkg]
                 : mode === "filter-multi"
-                ? ["yarn", "workspaces", "foreach", "-A", "run", script]
-                : ["yarn", script]
+                ? ["turbo", script, `--filter=${pkg}`, "--concurrency=4", "--no-daemon"]
+                : mode === "with-flags"
+                ? ["turbo", "run", script, "--continue", "--dry=json", "--", "--watch=false"]
+                : ["turbo", "run", script]
+              : manager === "pnpm"
+              ? mode === "recursive"
+                ? ["pnpm", "-r", "run", script]
+                : mode === "filter-single"
+                ? ["pnpm", "--filter", pkg, "run", script]
+                : mode === "filter-multi"
+                ? ["pnpm", "-F", pkg, "--stream", "--parallel", script]
+                : mode === "exec-cmd"
+                ? ["pnpm", "-r", "exec", "tsc", "--noEmit"]
+                : mode === "direct-script"
+                ? ["pnpm", script]
+                : ["pnpm", "--dir", "packages/web", "run", script]
+              : manager === "bun"
+              ? mode === "filter-single"
+                ? ["bun", "--filter", pkg, "run", script]
+                : mode === "filter-multi"
+                ? ["bun", "run", "--filter", "*", script]
+                : mode === "exec-cmd"
+                ? ["bunx", "turbo", "run", script]
+                : ["bun", "run", script]
+              : manager === "npm"
+              ? mode === "workspaces-all"
+                ? ["npm", "run", script, "--workspaces", "--if-present"]
+                : mode === "workspace-flag"
+                ? ["npm", "run", script, "-w", pkg]
+                : mode === "filter-multi"
+                ? ["npm", "test", `--workspace=${pkg}`]
+                : ["npm", "run", script]
+              : mode === "workspaces-all"
+              ? ["yarn", "workspaces", "run", script]
+              : mode === "workspace-flag"
+              ? ["yarn", "workspace", pkg, "run", script]
+              : mode === "filter-multi"
+              ? ["yarn", "workspaces", "foreach", "-A", "run", script]
+              : ["yarn", script]
 
             const known: Runners.Known = {
               wrappers: ["turbo"],
@@ -155,12 +154,11 @@ describe("@smthrs/ci decompose, zig closure, apply/planned, generate & select/ev
               const deps: Array<number> = []
               if (i > 0) deps.push(i - 1)
               if (hasCycle && i === 0 && stepCount > 1) deps.push(stepCount - 1)
-              const kind =
-                i === stepCount - 1 && hasRunStep
-                  ? ".run"
-                  : i === 1 && hasWriteFile
-                  ? ".write_file"
-                  : ".top_level"
+              const kind = i === stepCount - 1 && hasRunStep
+                ? ".run"
+                : i === 1 && hasWriteFile
+                ? ".write_file"
+                : ".top_level"
               entries.push(
                 `.{ .name = "step-${i}", .id = ${kind}, .dependencies = .{ ${deps.join(", ")} } }`
               )
@@ -207,7 +205,7 @@ describe("@smthrs/ci decompose, zig closure, apply/planned, generate & select/ev
 
     const report = await Effect.runPromise(
       Effect.scoped(
-        Effect.gen(function* () {
+        Effect.gen(function*() {
           const fs = yield* FileSystem.FileSystem
           const path = yield* Path.Path
           const root = yield* fs.makeTempDirectoryScoped({ prefix: "smithers-ci-zig-fuzz-" })
@@ -224,7 +222,7 @@ describe("@smthrs/ci decompose, zig closure, apply/planned, generate & select/ev
           return yield* Fuzz.run(
             arb,
             ({ stepPair, fileKind }) =>
-              Effect.gen(function* () {
+              Effect.gen(function*() {
                 if (stepPair === "alpha-beta") {
                   const res = yield* ZigClosure.ofSteps(project, ["test-alpha", "test-beta"])
                   return res.length === 2
@@ -238,12 +236,11 @@ describe("@smthrs/ci decompose, zig closure, apply/planned, generate & select/ev
                   const res = yield* ZigClosure.ofSteps(project, ["test-broken", "run"])
                   return res.length === 2
                 }
-                const targetFile =
-                  fileKind === "alpha"
-                    ? "src/alpha.zig"
-                    : fileKind === "beta"
-                    ? "src/beta.zig"
-                    : "src/shared.zig"
+                const targetFile = fileKind === "alpha"
+                  ? "src/alpha.zig"
+                  : fileKind === "beta"
+                  ? "src/beta.zig"
+                  : "src/shared.zig"
                 const byFile = yield* ZigClosure.ofFiles(project, [targetFile])
                 const missing = yield* Effect.flip(ZigClosure.ofSteps(project, ["does-not-exist"]))
                 return byFile[0]?.strategy === "zig" && missing !== undefined
@@ -275,14 +272,14 @@ describe("@smthrs/ci decompose, zig closure, apply/planned, generate & select/ev
         arb,
         ({ pkgManager, commandKind, hasMultiToolchains, hasUnsupported }) =>
           Effect.scoped(
-            Effect.gen(function* () {
+            Effect.gen(function*() {
               const fs = yield* FileSystem.FileSystem
               const path = yield* Path.Path
               const spawner = yield* ChildProcessSpawner
               const root = yield* fs.makeTempDirectoryScoped({ prefix: "smithers-ci-split-fuzz-" })
 
               const write = (rel: string, text: string) =>
-                Effect.gen(function* () {
+                Effect.gen(function*() {
                   const full = path.join(root, rel)
                   yield* fs.makeDirectory(path.dirname(full), { recursive: true })
                   yield* fs.writeFileString(full, text)
@@ -307,35 +304,57 @@ describe("@smthrs/ci decompose, zig closure, apply/planned, generate & select/ev
               } else {
                 yield* write("package-lock.json", "{}")
               }
-              yield* write("turbo.json", JSON.stringify({ tasks: { build: { dependsOn: ["^build"] }, test: { dependsOn: ["build"] } } }))
-              yield* write("packages/ui/package.json", JSON.stringify({ name: "ui", scripts: { test: "node -e 0", build: "node -e 0" } }))
-              yield* write("packages/web/package.json", JSON.stringify({ name: "web", scripts: { test: "node -e 0", build: "node -e 0" }, dependencies: { ui: "workspace:*" } }))
+              yield* write(
+                "turbo.json",
+                JSON.stringify({ tasks: { build: { dependsOn: ["^build"] }, test: { dependsOn: ["build"] } } })
+              )
+              yield* write(
+                "packages/ui/package.json",
+                JSON.stringify({ name: "ui", scripts: { test: "node -e 0", build: "node -e 0" } })
+              )
+              yield* write(
+                "packages/web/package.json",
+                JSON.stringify({
+                  name: "web",
+                  scripts: { test: "node -e 0", build: "node -e 0" },
+                  dependencies: { ui: "workspace:*" }
+                })
+              )
               yield* write("packages/web/index.js", "export const x = 1\n")
 
               const git = (args: ReadonlyArray<string>) =>
                 spawner.exitCode(ChildProcess.make("git", ["-C", root, ...args]))
               yield* git(["init", "--quiet"])
               yield* git(["add", "--all"])
-              yield* git(["-c", "user.name=t", "-c", "user.email=t@example.test", "commit", "--quiet", "--allow-empty", "-m", "init"])
+              yield* git([
+                "-c",
+                "user.name=t",
+                "-c",
+                "user.email=t@example.test",
+                "commit",
+                "--quiet",
+                "--allow-empty",
+                "-m",
+                "init"
+              ])
 
-              const cmd =
-                commandKind === "recursive"
-                  ? pkgManager === "pnpm"
-                    ? "pnpm -r run test"
-                    : pkgManager === "bun"
-                    ? "bun --filter '*' test"
-                    : pkgManager === "npm"
-                    ? "npm run test --workspaces"
-                    : "yarn workspaces run test"
-                  : commandKind === "turbo"
-                  ? "turbo run build"
-                  : commandKind === "zig"
-                  ? "zig build test-a test-b"
-                  : commandKind === "filter"
-                  ? pkgManager === "pnpm"
-                    ? "pnpm --filter web run test"
-                    : "npm run test -w web"
-                  : "node -e 0"
+              const cmd = commandKind === "recursive"
+                ? pkgManager === "pnpm"
+                  ? "pnpm -r run test"
+                  : pkgManager === "bun"
+                  ? "bun --filter '*' test"
+                  : pkgManager === "npm"
+                  ? "npm run test --workspaces"
+                  : "yarn workspaces run test"
+                : commandKind === "turbo"
+                ? "turbo run build"
+                : commandKind === "zig"
+                ? "zig build test-a test-b"
+                : commandKind === "filter"
+                ? pkgManager === "pnpm"
+                  ? "pnpm --filter web run test"
+                  : "npm run test -w web"
+                : "node -e 0"
 
               const jobs: Array<Job> = [
                 {
@@ -398,7 +417,7 @@ describe("@smthrs/ci decompose, zig closure, apply/planned, generate & select/ev
     const arb = Arbitrary.schema(
       Schema.Struct({
         printed: Schema.Literals([
-          '{"code":"ci_failed","message":"link_input_refused: refused [docs/x]"}',
+          "{\"code\":\"ci_failed\",\"message\":\"link_input_refused: refused [docs/x]\"}",
           "\u001b[31mError: bad target\u001b[0m\n",
           "(node:1234) ExperimentalWarning: foo\nreal error line\n",
           "   \n\n",
@@ -413,7 +432,7 @@ describe("@smthrs/ci decompose, zig closure, apply/planned, generate & select/ev
         arb,
         ({ printed, refuseMode }) =>
           Effect.scoped(
-            Effect.gen(function* () {
+            Effect.gen(function*() {
               const ref = Planned.refusalOf(printed)
               if (typeof ref !== "string" || ref.length === 0) return false
 
@@ -429,12 +448,11 @@ describe("@smthrs/ci decompose, zig closure, apply/planned, generate & select/ev
               yield* git(["-c", "user.name=t", "-c", "user.email=t@example.test", "commit", "--quiet", "-m", "init"])
 
               const fakeBin = path.join(root, "fake-smthrs.sh")
-              const body =
-                refuseMode === "ok"
-                  ? "#!/bin/sh\necho '{\"targets\":[]}'\nexit 0\n"
-                  : refuseMode === "refuse-one"
-                  ? "#!/bin/sh\ncase \" $* \" in *\"//:a\"*) echo '{\"code\":\"ci_failed\",\"message\":\"refused a\"}'; exit 1;; esac\ncase \" $* \" in *\" //... \"*) echo '{\"code\":\"ci_failed\",\"message\":\"refused all\"}'; exit 1;; esac\necho '{\"targets\":[]}'\nexit 0\n"
-                  : "#!/bin/sh\necho '{\"code\":\"ci_failed\",\"message\":\"all refused\"}'\nexit 1\n"
+              const body = refuseMode === "ok"
+                ? "#!/bin/sh\necho '{\"targets\":[]}'\nexit 0\n"
+                : refuseMode === "refuse-one"
+                ? "#!/bin/sh\ncase \" $* \" in *\"//:a\"*) echo '{\"code\":\"ci_failed\",\"message\":\"refused a\"}'; exit 1;; esac\ncase \" $* \" in *\" //... \"*) echo '{\"code\":\"ci_failed\",\"message\":\"refused all\"}'; exit 1;; esac\necho '{\"targets\":[]}'\nexit 0\n"
+                : "#!/bin/sh\necho '{\"code\":\"ci_failed\",\"message\":\"all refused\"}'\nexit 1\n"
               yield* fs.writeFileString(fakeBin, body)
               yield* fs.chmod(fakeBin, 0o755)
 
@@ -502,12 +520,16 @@ describe("@smthrs/ci decompose, zig closure, apply/planned, generate & select/ev
       Fuzz.run(
         arb,
         ({ rateA, rateB, failA, failB, badChanges }) =>
-          Effect.gen(function* () {
+          Effect.gen(function*() {
             const services = yield* Effect.context<SelectHost>()
             const obs = [
               seen(now - 20 * day, "c1", "//a:test", true),
-              seen(now - 2 * day, "c2", "//a:test", failA, { failureRates: { d7: rateA, d14: rateA, d28: rateA, d56: rateA } }),
-              seen(now - 2 * day, "c2", "//b:test", failB, { failureRates: { d7: rateB, d14: rateB, d28: rateB, d56: rateB } }),
+              seen(now - 2 * day, "c2", "//a:test", failA, {
+                failureRates: { d7: rateA, d14: rateA, d28: rateA, d56: rateA }
+              }),
+              seen(now - 2 * day, "c2", "//b:test", failB, {
+                failureRates: { d7: rateB, d14: rateB, d28: rateB, d56: rateB }
+              }),
               seen(now, "c3", "//a:test", false, { failureRates: { d7: rateA, d14: rateA, d28: rateA, d56: rateA } })
             ]
             const opts = { name: "fuzz-eval", runId: "run-fuzz", at: "2026-11-14T00:00:00.000Z" }

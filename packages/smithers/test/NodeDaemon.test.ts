@@ -13,7 +13,10 @@ describe("NodeDaemon BYOA MCP sync", () => {
           const rawBody = request.body._tag === "Uint8Array"
             ? new TextDecoder().decode(request.body.body)
             : "{}"
-          const parsed = JSON.parse(rawBody) as { id: string; params: { name: string; arguments: Record<string, unknown> } }
+          const parsed = JSON.parse(rawBody) as {
+            id: string
+            params: { name: string; arguments: Record<string, unknown> }
+          }
           calls.push(parsed.params)
           return HttpClientResponse.fromWeb(
             request,
@@ -21,7 +24,7 @@ describe("NodeDaemon BYOA MCP sync", () => {
               JSON.stringify({
                 jsonrpc: "2.0",
                 id: parsed.id,
-                result: { content: [{ type: "text", text: JSON.stringify({ ok: true }) }] },
+                result: { content: [{ type: "text", text: JSON.stringify({ ok: true }) }] }
               }),
               { status: 200, headers: { "content-type": "application/json" } }
             )
@@ -46,7 +49,7 @@ describe("NodeDaemon BYOA MCP sync", () => {
           diskTotalGb: 926,
           activeSessions: 0,
           runnerCapacity: 4,
-          version: "1.0.0",
+          version: "1.0.0"
         }),
       collectSessions: () =>
         Effect.succeed([
@@ -65,8 +68,8 @@ describe("NodeDaemon BYOA MCP sync", () => {
             tokensUsed: null,
             startedAt: null,
             lastActivityAt: "2026-11-23T23:30:00Z",
-            endedAt: null,
-          },
+            endedAt: null
+          }
         ]),
       collectAccounts: () =>
         Effect.succeed([
@@ -86,8 +89,8 @@ describe("NodeDaemon BYOA MCP sync", () => {
             pools: ["agy-gemini"],
             coolReason: null,
             coolUntil: null,
-            checkedAt: "2026-11-23T23:30:00Z",
-          },
+            checkedAt: "2026-11-23T23:30:00Z"
+          }
         ]),
       collectCfbox: () =>
         Effect.succeed({
@@ -106,7 +109,7 @@ describe("NodeDaemon BYOA MCP sync", () => {
             diskTotalGb: null,
             activeSessions: 1,
             runnerCapacity: 64,
-            version: "cfbox",
+            version: "cfbox"
           },
           sessions: [
             {
@@ -124,10 +127,10 @@ describe("NodeDaemon BYOA MCP sync", () => {
               tokensUsed: null,
               startedAt: null,
               lastActivityAt: "2026-11-23T23:30:00Z",
-              endedAt: null,
-            },
-          ],
-        }),
+              endedAt: null
+            }
+          ]
+        })
     })
     const mcp = { origin: "https://smithers.sh", token: "sma_" + "a".repeat(64) }
     await Effect.runPromise(
@@ -137,7 +140,7 @@ describe("NodeDaemon BYOA MCP sync", () => {
         accountIntervalMs: 1000,
         collectAccounts: true,
         collectCfbox: true,
-        once: true,
+        once: true
       }).pipe(Effect.provide(Layer.merge(httpLayer, collectors)))
     )
     expect(calls.map((c) => c.name)).toEqual([
@@ -145,7 +148,7 @@ describe("NodeDaemon BYOA MCP sync", () => {
       "fleet_sessions_report",
       "fleet_accounts_report",
       "fleet_heartbeat",
-      "fleet_sessions_report",
+      "fleet_sessions_report"
     ])
   })
 })

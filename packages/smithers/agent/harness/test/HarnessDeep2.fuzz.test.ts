@@ -139,7 +139,8 @@ describe("@smthrs/harness Deep2 Fuzz (FailedCall, DoneText, demandText, Notifica
               }
             }
             const txt = Notifications.text(notif)
-            return typeof txt === "string" && txt.includes("[notification n-1") && typeof Notifications.precedence === "string"
+            return typeof txt === "string" && txt.includes("[notification n-1") &&
+              typeof Notifications.precedence === "string"
           }),
         { seed: seed + 1, executions }
       )

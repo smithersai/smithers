@@ -1,6 +1,6 @@
-import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
 import * as NodeChildProcessSpawner from "@effect/platform-node-shared/NodeChildProcessSpawner"
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
+import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
 import * as NodePath from "@effect/platform-node/NodePath"
 import { FlowRuntime } from "@smthrs/flow"
 import { Fuzz } from "@smthrs/fuzz"
@@ -30,7 +30,14 @@ const makeCall = (flowName: string, input: Schema.Json = {}): Cell.Call =>
     capabilities: [],
     effects: { reads: [], writes: [], mode: "expected", onConflict: "serialize", tier: "irreversible" },
     placement: Option.none(),
-    identity: new Cell.CallIdentity({ session: "sf-sess", frame: 0, cell: "c0", ordinal: 0, declaration: "d0", layers: [] })
+    identity: new Cell.CallIdentity({
+      session: "sf-sess",
+      frame: 0,
+      cell: "c0",
+      ordinal: 0,
+      declaration: "d0",
+      layers: []
+    })
   })
 
 describe("@smthrs/agent StandardFlows Deep Fuzz (jev, clock, approval, shell)", () => {
@@ -49,28 +56,41 @@ describe("@smthrs/agent StandardFlows Deep Fuzz (jev, clock, approval, shell)", 
           Effect.gen(function*() {
             const evalLayer = c.mode === "unavailable"
               ? Evaluator.layerUnavailable()
-              : Evaluator.layerScripted(((req: Evaluator.Request) => {
-                const out: Record<string, unknown> = {}
-                for (const [qName, q] of Object.entries(req.questions)) {
-                  const crits = Array.isArray(q.criteria) ? (q.criteria as ReadonlyArray<string>) : Object.keys(q.criteria as Record<string, unknown>)
-                  out[qName] = { choice: crits[0]!, confidence: 0.9 }
-                }
-                return out as any
-              }) as any)
+              : Evaluator.layerScripted(
+                ((req: Evaluator.Request) => {
+                  const out: Record<string, unknown> = {}
+                  for (const [qName, q] of Object.entries(req.questions)) {
+                    const crits = Array.isArray(q.criteria)
+                      ? (q.criteria as ReadonlyArray<string>)
+                      : Object.keys(q.criteria as Record<string, unknown>)
+                    out[qName] = { choice: crits[0]!, confidence: 0.9 }
+                  }
+                  return out as any
+                }) as any
+              )
 
             const evaluator = yield* Evaluator.Evaluator.pipe(Effect.provide(evalLayer))
-            const src = StandardFlows.jev(Context.make(Evaluator.Evaluator, evaluator), { maxStateBytes: c.maxStateBytes })
+            const src = StandardFlows.jev(Context.make(Evaluator.Evaluator, evaluator), {
+              maxStateBytes: c.maxStateBytes
+            })
             const cat = yield* FlowBinding.catalog([src])
             const binding = cat.bindings.get("jev")!
 
             const input: Schema.Json = c.mode === "emptyQuestions"
               ? { state: { a: 1 }, questions: {} }
               : c.mode === "oversizedState"
-              ? { state: { big: "x".repeat(c.maxStateBytes + 200) }, questions: { q1: { type: "choice", instructions: "pick one", criteria: { yes: "y", no: "n" } } } }
-              : { state: { msg: "ok" }, questions: { q1: { type: "choice", instructions: "pick one", criteria: { yes: "y", no: "n" } } } }
+              ? {
+                state: { big: "x".repeat(c.maxStateBytes + 200) },
+                questions: { q1: { type: "choice", instructions: "pick one", criteria: { yes: "y", no: "n" } } }
+              }
+              : {
+                state: { msg: "ok" },
+                questions: { q1: { type: "choice", instructions: "pick one", criteria: { yes: "y", no: "n" } } }
+              }
 
             const res = yield* binding.run(makeCall("jev", input))
-            if (c.mode === "ok" && res.outcome !== "success") throw new Error("jev_ok: " + JSON.stringify(res)); if (c.mode === "ok") return true
+            if (c.mode === "ok" && res.outcome !== "success") throw new Error("jev_ok: " + JSON.stringify(res))
+            if (c.mode === "ok") return true
             return res.outcome === "failure"
           }).pipe(Effect.provide(silentLogger)),
         { seed, executions }

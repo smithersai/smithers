@@ -26,9 +26,9 @@ import { afterAll, describe, expect, it } from "vitest"
 import * as ContainerSandbox from "../src/ContainerSandbox/index.ts"
 import * as DaytonaSandbox from "../src/DaytonaSandbox/index.ts"
 import type { Sdk as DaytonaSdk } from "../src/DaytonaSandbox/Sdk.ts"
-import * as KubernetesSandbox from "../src/KubernetesSandbox/index.ts"
 import { Sandbox } from "../src/index.ts"
 import { machineName } from "../src/internal/machineName.ts"
+import * as KubernetesSandbox from "../src/KubernetesSandbox/index.ts"
 import * as VercelSandbox from "../src/VercelSandbox/index.ts"
 import type { Sdk as VercelSdk } from "../src/VercelSandbox/Sdk.ts"
 
@@ -209,11 +209,18 @@ describe("@smthrs/sandbox VercelSandbox, DaytonaSandbox, ContainerSandbox & Kube
               const sessionKey = `vc-${seq}`
               if (tc.resumeExisting) {
                 const mname = machineName("smthrs-", sessionKey)
-                machines.set(mname, { name: mname, vcpus: tc.fault === "vcpu-mismatch" ? 8 : 2, expiresAt: Date.now() + 30_000 })
+                machines.set(mname, {
+                  name: mname,
+                  vcpus: tc.fault === "vcpu-mismatch" ? 8 : 2,
+                  expiresAt: Date.now() + 30_000
+                })
               }
 
               const acqExit = yield* provider.acquire(sessionKey).pipe(Effect.exit)
-              if (tc.fault === "acquire" || tc.fault === "update" || tc.fault === "run" || (tc.fault === "vcpu-mismatch" && tc.withLimits)) {
+              if (
+                tc.fault === "acquire" || tc.fault === "update" || tc.fault === "run" ||
+                (tc.fault === "vcpu-mismatch" && tc.withLimits)
+              ) {
                 expect(Exit.isFailure(acqExit)).toBe(true)
                 return true
               }
@@ -362,7 +369,10 @@ describe("@smthrs/sandbox VercelSandbox, DaytonaSandbox, ContainerSandbox & Kube
               }
 
               const acqExit = yield* provider.acquire(sessionKey).pipe(Effect.exit)
-              if (tc.fault === "get" || (tc.fault === "create" && !tc.preexisting) || (tc.fault === "network" && tc.preexisting)) {
+              if (
+                tc.fault === "get" || (tc.fault === "create" && !tc.preexisting) ||
+                (tc.fault === "network" && tc.preexisting)
+              ) {
                 expect(Exit.isFailure(acqExit)).toBe(true)
                 return true
               }
@@ -420,7 +430,7 @@ describe("@smthrs/sandbox VercelSandbox, DaytonaSandbox, ContainerSandbox & Kube
         exec: ({ file, args, cwd }) =>
           Effect.succeed({
             file: "/bin/sh",
-            args: ["-c", 'cd "$1" && shift && exec "$@"', "_", cwd ?? existDir, file, ...args]
+            args: ["-c", "cd \"$1\" && shift && exec \"$@\"", "_", cwd ?? existDir, file, ...args]
           })
       }
     })
@@ -672,10 +682,14 @@ describe("@smthrs/sandbox VercelSandbox, DaytonaSandbox, ContainerSandbox & Kube
                         spec: { containers: [{ name, image: "other:1" }] },
                         status: { phase: "Running" }
                       })
-                      return canned({ exitCode: 1, stderr: `Error from server (AlreadyExists): pods "${name}" already exists` })
+                      return canned({
+                        exitCode: 1,
+                        stderr: `Error from server (AlreadyExists): pods "${name}" already exists`
+                      })
                     }
                     pods.set(name, {
-                      ...(manifest ?? { metadata: { name, labels: {} }, spec: { containers: [{ name, image: "alpine:3" }] } }),
+                      ...(manifest ??
+                        { metadata: { name, labels: {} }, spec: { containers: [{ name, image: "alpine:3" }] } }),
                       status: { phase: "Running" }
                     })
                     return canned({ stdout: `pod/${name} created\n` })

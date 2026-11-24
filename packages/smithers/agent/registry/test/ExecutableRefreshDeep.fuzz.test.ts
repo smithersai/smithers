@@ -78,101 +78,105 @@ Delegate prompt body for ${delegate}.
 `
 
 describe("@smthrs/registry Executable.layer, Refresh, ModuleClosure & Markdown hot-reload deep fuzz", () => {
-  it("Executable.layer & Refresh handle add, edit, markdown delegate swap, broken closure & removal atomically", async () => {
-    const arb = Arbitrary.schema(
-      Schema.Struct({
-        mutation: Schema.Literals([
-          "add_ts_chained",
-          "edit_early_single",
-          "add_markdown_delegate",
-          "swap_markdown_delegate",
-          "add_half_written",
-          "remove_early",
-          "refresh_missing"
-        ]),
-        idx: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 50 }))
-      })
-    )
+  it(
+    "Executable.layer & Refresh handle add, edit, markdown delegate swap, broken closure & removal atomically",
+    async () => {
+      const arb = Arbitrary.schema(
+        Schema.Struct({
+          mutation: Schema.Literals([
+            "add_ts_chained",
+            "edit_early_single",
+            "add_markdown_delegate",
+            "swap_markdown_delegate",
+            "add_half_written",
+            "remove_early",
+            "refresh_missing"
+          ]),
+          idx: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 50 }))
+        })
+      )
 
-    const report = await Effect.runPromise(
-      Fuzz.run(
-        arb,
-        ({ mutation, idx }) =>
-          Effect.gen(function*() {
-            const fs = yield* FileSystem.FileSystem
-            const root = yield* fs.makeTempDirectoryScoped({ directory: modulesRoot, prefix: `.fuzz-ref-${idx}-` })
-            yield* fs.makeDirectory(`${root}/.smithers/flows/early`, { recursive: true })
-            yield* fs.writeFileString(`${root}/.smithers/flows/early/flow.ts`, declaration("early", chained))
-            const registered: Array<string> = []
+      const report = await Effect.runPromise(
+        Fuzz.run(
+          arb,
+          ({ mutation, idx }) =>
+            Effect.gen(function*() {
+              const fs = yield* FileSystem.FileSystem
+              const root = yield* fs.makeTempDirectoryScoped({ directory: modulesRoot, prefix: `.fuzz-ref-${idx}-` })
+              yield* fs.makeDirectory(`${root}/.smithers/flows/early`, { recursive: true })
+              yield* fs.writeFileString(`${root}/.smithers/flows/early/flow.ts`, declaration("early", chained))
+              const registered: Array<string> = []
 
-            return yield* Effect.gen(function*() {
-              const catalog = yield* Executable.Catalog
-              const refresh = yield* Executable.Refresh
-              if (catalog.executables.length !== 1) return false
+              return yield* Effect.gen(function*() {
+                const catalog = yield* Executable.Catalog
+                const refresh = yield* Executable.Refresh
+                if (catalog.executables.length !== 1) return false
 
-              if (mutation === "add_ts_chained") {
-                yield* fs.makeDirectory(`${root}/.smithers/flows/late`, { recursive: true })
-                yield* fs.writeFileString(`${root}/.smithers/flows/late/flow.ts`, declaration("late", chained))
-                const out = yield* refresh.flow("late")
-                if (out._tag !== "Registered") return false
-                const late = catalog.executables.find((e) => e.descriptor.name === "late")
-                if (!late) return false
-                const drafts = Graph.drafts(Graph.build(late.flow, { input: {} }))
-                return drafts.length > 0 && catalog.executables.some((e) => e.descriptor.name === "late")
-              }
-              if (mutation === "edit_early_single") {
-                yield* fs.writeFileString(`${root}/.smithers/flows/early/flow.ts`, declaration("early", single))
-                const out = yield* refresh.flow("early")
-                if (out._tag !== "Registered") return false
-                return catalog.executables.length === 1
-              }
-              if (mutation === "add_markdown_delegate" || mutation === "swap_markdown_delegate") {
-                yield* fs.makeDirectory(`${root}/.smithers/flows/md-flow`, { recursive: true })
-                yield* fs.writeFileString(`${root}/.smithers/flows/md-flow/SKILL.md`, markdown("refresh/Delegate"))
-                const o1 = yield* refresh.flow("md-flow")
-                if (o1._tag !== "Registered") return false
-                if (mutation === "swap_markdown_delegate") {
-                  yield* fs.writeFileString(`${root}/.smithers/flows/md-flow/SKILL.md`, markdown("refresh/Other"))
-                  const o2 = yield* refresh.flow("md-flow")
-                  if (o2._tag !== "Registered") return false
+                if (mutation === "add_ts_chained") {
+                  yield* fs.makeDirectory(`${root}/.smithers/flows/late`, { recursive: true })
+                  yield* fs.writeFileString(`${root}/.smithers/flows/late/flow.ts`, declaration("late", chained))
+                  const out = yield* refresh.flow("late")
+                  if (out._tag !== "Registered") return false
+                  const late = catalog.executables.find((e) => e.descriptor.name === "late")
+                  if (!late) return false
+                  const drafts = Graph.drafts(Graph.build(late.flow, { input: {} }))
+                  return drafts.length > 0 && catalog.executables.some((e) => e.descriptor.name === "late")
                 }
-                return catalog.executables.some((e) => e.descriptor.name === "md-flow")
-              }
-              if (mutation === "add_half_written") {
-                yield* fs.makeDirectory(`${root}/.smithers/flows/broken`, { recursive: true })
-                yield* fs.writeFileString(`${root}/.smithers/flows/broken/flow.ts`, halfWritten("broken"))
-                const out = yield* Effect.result(refresh.flow("broken"))
-                // Broken closure must not corrupt existing catalog entry
-                return (
-                  (out._tag === "Failure" || out.success._tag !== "Registered") &&
-                  catalog.executables.some((e) => e.descriptor.name === "early")
-                )
-              }
-              if (mutation === "remove_early") {
-                yield* fs.remove(`${root}/.smithers/flows/early`, { recursive: true })
-                const out = yield* Effect.result(refresh.flow("early"))
+                if (mutation === "edit_early_single") {
+                  yield* fs.writeFileString(`${root}/.smithers/flows/early/flow.ts`, declaration("early", single))
+                  const out = yield* refresh.flow("early")
+                  if (out._tag !== "Registered") return false
+                  return catalog.executables.length === 1
+                }
+                if (mutation === "add_markdown_delegate" || mutation === "swap_markdown_delegate") {
+                  yield* fs.makeDirectory(`${root}/.smithers/flows/md-flow`, { recursive: true })
+                  yield* fs.writeFileString(`${root}/.smithers/flows/md-flow/SKILL.md`, markdown("refresh/Delegate"))
+                  const o1 = yield* refresh.flow("md-flow")
+                  if (o1._tag !== "Registered") return false
+                  if (mutation === "swap_markdown_delegate") {
+                    yield* fs.writeFileString(`${root}/.smithers/flows/md-flow/SKILL.md`, markdown("refresh/Other"))
+                    const o2 = yield* refresh.flow("md-flow")
+                    if (o2._tag !== "Registered") return false
+                  }
+                  return catalog.executables.some((e) => e.descriptor.name === "md-flow")
+                }
+                if (mutation === "add_half_written") {
+                  yield* fs.makeDirectory(`${root}/.smithers/flows/broken`, { recursive: true })
+                  yield* fs.writeFileString(`${root}/.smithers/flows/broken/flow.ts`, halfWritten("broken"))
+                  const out = yield* Effect.result(refresh.flow("broken"))
+                  // Broken closure must not corrupt existing catalog entry
+                  return (
+                    (out._tag === "Failure" || out.success._tag !== "Registered") &&
+                    catalog.executables.some((e) => e.descriptor.name === "early")
+                  )
+                }
+                if (mutation === "remove_early") {
+                  yield* fs.remove(`${root}/.smithers/flows/early`, { recursive: true })
+                  const out = yield* Effect.result(refresh.flow("early"))
+                  return out._tag === "Success" || out._tag === "Failure"
+                }
+                // refresh_missing
+                const out = yield* Effect.result(refresh.flow(`does-not-exist-${idx}`))
                 return out._tag === "Success" || out._tag === "Failure"
-              }
-              // refresh_missing
-              const out = yield* Effect.result(refresh.flow(`does-not-exist-${idx}`))
-              return out._tag === "Success" || out._tag === "Failure"
-            }).pipe(
-              Effect.provide(
-                Executable.layer({ delegates: [Delegate, Other] }).pipe(
-                  Layer.provideMerge(
-                    Layer.mergeAll(recordingRuntime(registered), Action.layerImplementations, NodeCrypto.layer)
-                  ),
-                  Layer.provideMerge(Registry.layerProject({ root })),
-                  Layer.orDie
+              }).pipe(
+                Effect.provide(
+                  Executable.layer({ delegates: [Delegate, Other] }).pipe(
+                    Layer.provideMerge(
+                      Layer.mergeAll(recordingRuntime(registered), Action.layerImplementations, NodeCrypto.layer)
+                    ),
+                    Layer.provideMerge(Registry.layerProject({ root })),
+                    Layer.orDie
+                  )
                 )
               )
-            )
-          }).pipe(Effect.scoped, Effect.provide(platform)),
-        { seed, executions: Math.min(executions, 14) }
+            }).pipe(Effect.scoped, Effect.provide(platform)),
+          { seed, executions: Math.min(executions, 14) }
+        )
       )
-    )
-    const failure = Fuzz.formatReport(report)
-    if (failure !== undefined) throw new Error(failure)
-    expect(report._tag).toBe("Passed")
-  }, 60_000)
+      const failure = Fuzz.formatReport(report)
+      if (failure !== undefined) throw new Error(failure)
+      expect(report._tag).toBe("Passed")
+    },
+    60_000
+  )
 })

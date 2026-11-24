@@ -1,8 +1,8 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import { FlowEngine } from "@smthrs/engine"
 import { Action, Interpreter } from "@smthrs/flow"
-import { layerRepositoryMutation } from "@smthrs/jj/node/NodeJj"
 import { Fuzz } from "@smthrs/fuzz"
+import { layerRepositoryMutation } from "@smthrs/jj/node/NodeJj"
 import { Arbitrary, Effect, Exit, Fiber, FileSystem, Layer, Logger, Schema, Stream } from "effect"
 import * as HttpClient from "effect/http/HttpClient"
 import * as HttpClientRequest from "effect/http/HttpClientRequest"
@@ -30,17 +30,9 @@ import {
 import { ProviderError } from "../src/RemoteChildProcessSpawner/ProviderError.ts"
 import { commandProvider } from "../src/Sandbox/commandProvider.ts"
 import { uniquePosixCommands } from "../src/SandboxConformance/posixCommands.ts"
-import { makeWorkSeed } from "./helpers/workSeed.ts"
 import { platform, rawPlatform } from "./helpers/containedPlatform.ts"
-import {
-  advanceMain,
-  cleanup,
-  directory,
-  gitClone,
-  hostRepository,
-  scratch,
-  seeded
-} from "./helpers/sandboxRepos.ts"
+import { advanceMain, cleanup, directory, gitClone, hostRepository, scratch, seeded } from "./helpers/sandboxRepos.ts"
+import { makeWorkSeed } from "./helpers/workSeed.ts"
 
 const baseExecutions = Number(process.env.EFFECT_FUZZ_EXECUTIONS ?? (process.env.EFFECT_FUZZ ? "250" : "80"))
 const fastExecutions = Math.max(12, Math.min(baseExecutions, 40))
@@ -72,136 +64,146 @@ const freshDir = (name: string) => {
 }
 
 describe("@smthrs/sandbox core FileSystem, linuxBatch, job, Work, SandboxMerge, HttpSandbox, CiJob & Conformance fuzz", () => {
-  it("Sandbox.fileSystem + linuxFileSystem + linuxBatch exercise full FileSystem API over CommandSandbox and DirectorySandbox + error mapping", async () => {
-    const arb = Arbitrary.schema(
-      Schema.Struct({
-        backend: Schema.Literals(["command", "directory"]),
-        subdir: Schema.Literals(["sub", "nested/deep", "a/b/c"]),
-        fileName: Schema.Literals(["hello.txt", "data.bin", "file with spaces.txt"]),
-        content: Schema.Literals(["hello world", "line1\nline2\n", "abc 123 !@#", "x".repeat(64)]),
-        truncateTo: Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 8 }))
-      })
-    )
-
-    const report = await Effect.runPromise(
-      Fuzz.run(
-        arb,
-        (tc) =>
-          Effect.scoped(
-            Effect.gen(function*() {
-              const baseDir = freshDir(`fs-${tc.backend}`)
-              const provider = tc.backend === "directory"
-                ? DirectorySandbox.make({ ...services, root: baseDir })
-                : CommandSandbox.make({
-                  spawner: services.spawner,
-                  prefix: [],
-                  workdir: baseDir
-                })
-              const session = yield* provider.acquire(`s-${dirCounter}`)
-              const fs = Sandbox.fileSystem(session)
-
-              const dirPath = tc.subdir
-              const filePath = `${dirPath}/${tc.fileName}`
-              const copyPath = `${dirPath}/copy.txt`
-              const renamePath = `${dirPath}/renamed.txt`
-              const linkPath = `${dirPath}/sym.txt`
-              const hardPath = `${dirPath}/hard.txt`
-
-              yield* fs.makeDirectory(dirPath, { recursive: true })
-              expect(yield* fs.exists(dirPath)).toBe(true)
-              expect(yield* fs.exists(`${dirPath}/does-not-exist`)).toBe(false)
-
-              yield* fs.writeFileString(filePath, tc.content)
-              expect(yield* fs.readFileString(filePath)).toBe(tc.content)
-              const bytes = yield* fs.readFile(filePath)
-              expect(bytes.byteLength).toBe(new TextEncoder().encode(tc.content).byteLength)
-
-              const st = yield* fs.stat(filePath)
-              expect(st.type).toBe("File")
-              expect(Number(st.size)).toBe(bytes.byteLength)
-
-              const accExit = yield* fs.access(filePath).pipe(Effect.exit)
-              const chmExit = yield* fs.chmod(filePath, 0o644).pipe(Effect.exit)
-              const utmExit = yield* fs.utimes(filePath, new Date(1_700_000_000_000), new Date(1_700_000_000_000)).pipe(Effect.exit)
-              expect(accExit).toBeDefined()
-              expect(chmExit).toBeDefined()
-              expect(utmExit).toBeDefined()
-
-              const cpExit = yield* fs.copyFile(filePath, copyPath).pipe(Effect.exit)
-              if (Exit.isSuccess(cpExit)) {
-                expect(yield* fs.readFileString(copyPath)).toBe(tc.content)
-              } else {
-                yield* fs.writeFileString(copyPath, tc.content)
-              }
-
-              yield* fs.rename(copyPath, renamePath)
-              expect(yield* fs.exists(copyPath)).toBe(false)
-              expect(yield* fs.exists(renamePath)).toBe(true)
-
-              const symExit = yield* fs.symlink(tc.fileName, linkPath).pipe(Effect.exit)
-              if (Exit.isSuccess(symExit)) {
-                expect(yield* fs.readLink(linkPath)).toBe(tc.fileName)
-                expect(yield* fs.realPath(linkPath)).toContain(tc.fileName)
-              }
-
-              const linkExit = yield* fs.link(filePath, hardPath).pipe(Effect.exit)
-              expect(linkExit).toBeDefined()
-
-              const entries = yield* fs.readDirectory(dirPath)
-              expect(entries).toContain(tc.fileName)
-
-              const streamExit = yield* Stream.mkString(Stream.decodeText(fs.stream(filePath))).pipe(Effect.exit)
-              if (Exit.isSuccess(streamExit)) {
-                expect(streamExit.value).toBe(tc.content)
-              }
-              const sinkExit = yield* Stream.make(new TextEncoder().encode("sink-data")).pipe(Stream.run(fs.sink(`${dirPath}/sunk.txt`)), Effect.exit)
-              if (Exit.isFailure(sinkExit)) {
-                yield* fs.writeFileString(`${dirPath}/sunk.txt`, "sink-data")
-              }
-
-              const truncExit = yield* fs.truncate(`${dirPath}/sunk.txt`, tc.truncateTo).pipe(Effect.exit)
-              if (Exit.isSuccess(truncExit)) {
-                const truncSt = yield* fs.stat(`${dirPath}/sunk.txt`)
-                expect(Number(truncSt.size)).toBe(tc.truncateTo)
-              }
-
-              const tmpDirExit = yield* fs.makeTempDirectoryScoped({ prefix: "sb-t-" }).pipe(Effect.exit)
-              expect(tmpDirExit).toBeDefined()
-              const tmpFileExit = yield* fs.makeTempFileScoped({ prefix: "sb-f-" }).pipe(Effect.exit)
-              expect(tmpFileExit).toBeDefined()
-
-              yield* fs.remove(renamePath)
-              expect(yield* fs.exists(renamePath)).toBe(false)
-              yield* fs.remove(dirPath, { recursive: true, force: true })
-              expect(yield* fs.exists(dirPath)).toBe(false)
-
-              expect(Exit.isFailure(yield* fs.stat("no-such-file-xyz").pipe(Effect.exit))).toBe(true)
-              expect(Exit.isFailure(yield* fs.readFileString("no-such-file-xyz").pipe(Effect.exit))).toBe(true)
-              expect(Exit.isFailure(yield* fs.readFileString("../../../etc/passwd").pipe(Effect.exit))).toBe(true)
-
-              return true
-            })
-          ).pipe(Effect.provide(silentLogger)),
-        { seed, executions: ioExecutions }
+  it(
+    "Sandbox.fileSystem + linuxFileSystem + linuxBatch exercise full FileSystem API over CommandSandbox and DirectorySandbox + error mapping",
+    async () => {
+      const arb = Arbitrary.schema(
+        Schema.Struct({
+          backend: Schema.Literals(["command", "directory"]),
+          subdir: Schema.Literals(["sub", "nested/deep", "a/b/c"]),
+          fileName: Schema.Literals(["hello.txt", "data.bin", "file with spaces.txt"]),
+          content: Schema.Literals(["hello world", "line1\nline2\n", "abc 123 !@#", "x".repeat(64)]),
+          truncateTo: Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 8 }))
+        })
       )
-    )
-    const failure = Fuzz.formatReport(report)
-    if (failure !== undefined) throw new Error(failure)
 
-    for (const code of ["unavailable", "aborted", "not_found", "spawn_error", "timeout", "unknown"] as const) {
-      const faultyFs = Sandbox.fileSystem({
-        id: "faulty",
-        remoteId: "remote-faulty",
-        workdir: "/workspace",
-        spawn: () => Effect.fail(new ProviderError({ code, message: `fault:${code}` })),
-        readFile: () => Effect.fail(new ProviderError({ code, message: `fault:${code}` })),
-        writeFile: () => Effect.fail(new ProviderError({ code, message: `fault:${code}` }))
-      })
-      expect(Exit.isFailure(await Effect.runPromise(faultyFs.readFile("a.txt").pipe(Effect.exit)))).toBe(true)
-      expect(Exit.isFailure(await Effect.runPromise(faultyFs.writeFile("a.txt", new Uint8Array([1])).pipe(Effect.exit)))).toBe(true)
-      expect(Exit.isFailure(await Effect.runPromise(faultyFs.stat("a.txt").pipe(Effect.exit)))).toBe(true)
-    }
-  }, 120_000)
+      const report = await Effect.runPromise(
+        Fuzz.run(
+          arb,
+          (tc) =>
+            Effect.scoped(
+              Effect.gen(function*() {
+                const baseDir = freshDir(`fs-${tc.backend}`)
+                const provider = tc.backend === "directory"
+                  ? DirectorySandbox.make({ ...services, root: baseDir })
+                  : CommandSandbox.make({
+                    spawner: services.spawner,
+                    prefix: [],
+                    workdir: baseDir
+                  })
+                const session = yield* provider.acquire(`s-${dirCounter}`)
+                const fs = Sandbox.fileSystem(session)
+
+                const dirPath = tc.subdir
+                const filePath = `${dirPath}/${tc.fileName}`
+                const copyPath = `${dirPath}/copy.txt`
+                const renamePath = `${dirPath}/renamed.txt`
+                const linkPath = `${dirPath}/sym.txt`
+                const hardPath = `${dirPath}/hard.txt`
+
+                yield* fs.makeDirectory(dirPath, { recursive: true })
+                expect(yield* fs.exists(dirPath)).toBe(true)
+                expect(yield* fs.exists(`${dirPath}/does-not-exist`)).toBe(false)
+
+                yield* fs.writeFileString(filePath, tc.content)
+                expect(yield* fs.readFileString(filePath)).toBe(tc.content)
+                const bytes = yield* fs.readFile(filePath)
+                expect(bytes.byteLength).toBe(new TextEncoder().encode(tc.content).byteLength)
+
+                const st = yield* fs.stat(filePath)
+                expect(st.type).toBe("File")
+                expect(Number(st.size)).toBe(bytes.byteLength)
+
+                const accExit = yield* fs.access(filePath).pipe(Effect.exit)
+                const chmExit = yield* fs.chmod(filePath, 0o644).pipe(Effect.exit)
+                const utmExit = yield* fs.utimes(filePath, new Date(1_700_000_000_000), new Date(1_700_000_000_000))
+                  .pipe(Effect.exit)
+                expect(accExit).toBeDefined()
+                expect(chmExit).toBeDefined()
+                expect(utmExit).toBeDefined()
+
+                const cpExit = yield* fs.copyFile(filePath, copyPath).pipe(Effect.exit)
+                if (Exit.isSuccess(cpExit)) {
+                  expect(yield* fs.readFileString(copyPath)).toBe(tc.content)
+                } else {
+                  yield* fs.writeFileString(copyPath, tc.content)
+                }
+
+                yield* fs.rename(copyPath, renamePath)
+                expect(yield* fs.exists(copyPath)).toBe(false)
+                expect(yield* fs.exists(renamePath)).toBe(true)
+
+                const symExit = yield* fs.symlink(tc.fileName, linkPath).pipe(Effect.exit)
+                if (Exit.isSuccess(symExit)) {
+                  expect(yield* fs.readLink(linkPath)).toBe(tc.fileName)
+                  expect(yield* fs.realPath(linkPath)).toContain(tc.fileName)
+                }
+
+                const linkExit = yield* fs.link(filePath, hardPath).pipe(Effect.exit)
+                expect(linkExit).toBeDefined()
+
+                const entries = yield* fs.readDirectory(dirPath)
+                expect(entries).toContain(tc.fileName)
+
+                const streamExit = yield* Stream.mkString(Stream.decodeText(fs.stream(filePath))).pipe(Effect.exit)
+                if (Exit.isSuccess(streamExit)) {
+                  expect(streamExit.value).toBe(tc.content)
+                }
+                const sinkExit = yield* Stream.make(new TextEncoder().encode("sink-data")).pipe(
+                  Stream.run(fs.sink(`${dirPath}/sunk.txt`)),
+                  Effect.exit
+                )
+                if (Exit.isFailure(sinkExit)) {
+                  yield* fs.writeFileString(`${dirPath}/sunk.txt`, "sink-data")
+                }
+
+                const truncExit = yield* fs.truncate(`${dirPath}/sunk.txt`, tc.truncateTo).pipe(Effect.exit)
+                if (Exit.isSuccess(truncExit)) {
+                  const truncSt = yield* fs.stat(`${dirPath}/sunk.txt`)
+                  expect(Number(truncSt.size)).toBe(tc.truncateTo)
+                }
+
+                const tmpDirExit = yield* fs.makeTempDirectoryScoped({ prefix: "sb-t-" }).pipe(Effect.exit)
+                expect(tmpDirExit).toBeDefined()
+                const tmpFileExit = yield* fs.makeTempFileScoped({ prefix: "sb-f-" }).pipe(Effect.exit)
+                expect(tmpFileExit).toBeDefined()
+
+                yield* fs.remove(renamePath)
+                expect(yield* fs.exists(renamePath)).toBe(false)
+                yield* fs.remove(dirPath, { recursive: true, force: true })
+                expect(yield* fs.exists(dirPath)).toBe(false)
+
+                expect(Exit.isFailure(yield* fs.stat("no-such-file-xyz").pipe(Effect.exit))).toBe(true)
+                expect(Exit.isFailure(yield* fs.readFileString("no-such-file-xyz").pipe(Effect.exit))).toBe(true)
+                expect(Exit.isFailure(yield* fs.readFileString("../../../etc/passwd").pipe(Effect.exit))).toBe(true)
+
+                return true
+              })
+            ).pipe(Effect.provide(silentLogger)),
+          { seed, executions: ioExecutions }
+        )
+      )
+      const failure = Fuzz.formatReport(report)
+      if (failure !== undefined) throw new Error(failure)
+
+      for (const code of ["unavailable", "aborted", "not_found", "spawn_error", "timeout", "unknown"] as const) {
+        const faultyFs = Sandbox.fileSystem({
+          id: "faulty",
+          remoteId: "remote-faulty",
+          workdir: "/workspace",
+          spawn: () => Effect.fail(new ProviderError({ code, message: `fault:${code}` })),
+          readFile: () => Effect.fail(new ProviderError({ code, message: `fault:${code}` })),
+          writeFile: () => Effect.fail(new ProviderError({ code, message: `fault:${code}` }))
+        })
+        expect(Exit.isFailure(await Effect.runPromise(faultyFs.readFile("a.txt").pipe(Effect.exit)))).toBe(true)
+        expect(
+          Exit.isFailure(await Effect.runPromise(faultyFs.writeFile("a.txt", new Uint8Array([1])).pipe(Effect.exit)))
+        ).toBe(true)
+        expect(Exit.isFailure(await Effect.runPromise(faultyFs.stat("a.txt").pipe(Effect.exit)))).toBe(true)
+      }
+    },
+    120_000
+  )
 
   it("Sandbox.job runs full retained job lifecycle (start, idempotent start, status, collect, receipt persistence & destroy)", async () => {
     const arb = Arbitrary.schema(
@@ -238,8 +240,7 @@ describe("@smthrs/sandbox core FileSystem, linuxBatch, job, Work, SandboxMerge, 
                       ),
                       (child) => Effect.as(child.exitCode, s)
                     )
-                  )
-                )
+                  ))
             }
             const spec = Sandbox.job<{ readonly tag: string }>(provider, {
               command: (p, key) =>
@@ -411,7 +412,13 @@ describe("@smthrs/sandbox core FileSystem, linuxBatch, job, Work, SandboxMerge, 
               const client = HttpClient.make((request) =>
                 Effect.gen(function*() {
                   if (tc.fault === "status-400") {
-                    return HttpClientResponse.fromWeb(request, new Response(JSON.stringify({ code: "unknown", message: "bad" }), { status: 400, headers: { "content-type": "application/json" } }))
+                    return HttpClientResponse.fromWeb(
+                      request,
+                      new Response(JSON.stringify({ code: "unknown", message: "bad" }), {
+                        status: 400,
+                        headers: { "content-type": "application/json" }
+                      })
+                    )
                   }
                   const web = yield* Effect.orDie(HttpClientRequest.toWeb(request))
                   const res = yield* handler(web)
@@ -644,7 +651,6 @@ describe("@smthrs/sandbox core FileSystem, linuxBatch, job, Work, SandboxMerge, 
     await Effect.runPromise(
       Effect.scoped(
         Effect.gen(function*() {
-
           const session = yield* healthy.acquire("sc-1")
           const callsDir = join(freshDir("sc-calls"), "calls")
           mkdirSync(callsDir, { recursive: true })
