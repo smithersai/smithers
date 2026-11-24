@@ -79,8 +79,7 @@ const tsconfig = Smithers.Tsconfig({
     Smithers.glob("packages/*/*/*/PACKAGE.ts"),
   ],
   exclude: [
-    Smithers.glob("**/dist/**"),
-    Smithers.glob("packages/coding-agent/examples/extensions/gondolin/**")
+    Smithers.glob("**/dist/**")
   ]
 })
 
@@ -456,7 +455,9 @@ const ci = Smithers.GithubCiGen({
             ".github/workflows/distribution.yml",
             ".github/workflows/reliability.yml",
             ".github/workflows/native-windows.yml",
-            ".github/workflows/drift.yml"
+            ".github/workflows/drift.yml",
+            ".github/workflows/recorder.yml",
+            ".github/workflows/windows-confinement.yml"
           ]
         })
       }),
@@ -660,7 +661,6 @@ const ci = Smithers.GithubCiGen({
           artifact: "apps-e2e-artifacts",
           sources: [
             { from: "/tmp/smithers-*.png" },
-            { from: "apps/reports", as: "reports" },
             { from: "apps/tui/test-results", as: "tui" }
           ]
         })

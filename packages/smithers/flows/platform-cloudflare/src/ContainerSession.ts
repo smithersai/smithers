@@ -27,6 +27,7 @@
 import { RetryPolicy } from "@smthrs/flow"
 import { RemoteChildProcessSpawner, type Sandbox } from "@smthrs/sandbox"
 import * as Effect from "effect/Effect"
+import * as Fiber from "effect/Fiber"
 import type * as Scope from "effect/Scope"
 import type * as Sink from "effect/Sink"
 import * as Stream from "effect/Stream"
@@ -151,17 +152,22 @@ export const make = <E, R>(container: Container<E, R>, options: Options): Effect
         if (stdout === undefined || stderr === undefined || (stdin !== undefined && process.stdin === undefined)) {
           return yield* Effect.fail(unavailable("exec")("a stream the command needs is missing"))
         }
-        if (stdin !== undefined) {
-          // Fed beside the reads, so a command that writes before it has read all its input can't stall.
-          yield* Stream.run(Stream.make(stdin), process.stdin!).pipe(Effect.ignore, Effect.forkScoped)
-        }
+        const feed = stdin === undefined ? undefined : yield* Stream.run(Stream.make(stdin), process.stdin!).pipe(
+          Effect.tapError(logged("stdin")),
+          Effect.mapError(unavailable("stdin")),
+          Effect.forkScoped
+        )
+        const exitCode = process.exitCode.pipe(Effect.tapError(logged("exit")), Effect.mapError(unavailable("exit")))
         return {
           stdout: stdout.pipe(Stream.tapError(logged("stdout")), Stream.mapError(unavailable("stdout")))
             .pipe(Stream.provideContext(context)),
           stderr: stderr.pipe(Stream.tapError(logged("stderr")), Stream.mapError(unavailable("stderr")))
             .pipe(Stream.provideContext(context)),
-          exitCode: process.exitCode.pipe(Effect.tapError(logged("exit")), Effect.mapError(unavailable("exit")))
-            .pipe(Effect.provideContext(context))
+          exitCode: (feed === undefined
+            ? exitCode
+            : Effect.all([Fiber.join(feed), exitCode], { concurrency: "unbounded" }).pipe(
+              Effect.map(([, code]) => code)
+            )).pipe(Effect.provideContext(context))
         }
       }).pipe(Effect.provideContext(context))
 

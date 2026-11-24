@@ -1,7 +1,7 @@
 import { describe, expect, it } from "@effect/vitest"
 import * as DurableWriter from "@smthrs/database/DurableWriter"
 import * as TestDatabase from "@smthrs/database/test/TestDatabase"
-import { Cause, Clock, Deferred, Duration, Effect, Exit, Fiber, Layer } from "effect"
+import { Cause, Clock, Deferred, Duration, Effect, Exit, Fiber, Layer, Logger } from "effect"
 import * as SqlClient from "effect/sql/SqlClient"
 import type * as Statement from "effect/sql/Statement"
 import { TestClock } from "effect/testing"
@@ -357,3 +357,64 @@ it.effect("waits for a held SQLite resource without requesting write access", ()
   }).pipe(Effect.provide(SqlConsensus.layer.pipe(
     Layer.provideMerge(Layer.provideMerge(Migrations.layer, TestDatabase.sqliteLayer))
   ))))
+
+it.effect("keeps the work's result when the release fails, and logs it", () =>
+  Effect.gen(function*() {
+    const local = yield* Consensus.makeLocal
+    const messages: Array<unknown> = []
+    const strategy: Omit<Consensus.Service, "withPermit"> = { ...local, release: () => Effect.fail(storageFailure) }
+    const permit = <A, E>(work: Effect.Effect<A, E>) =>
+      Consensus.resourcePermit(strategy, () => Effect.succeed(undefined), "resource", owner, alive, work).pipe(
+        Effect.provide(Logger.layer([Logger.make((options) => {
+          messages.push(options.message)
+        })]))
+      )
+    // The guarded work succeeded: a storage blip on release is not a defect.
+    expect(yield* Effect.exit(permit(Effect.succeed(1)))).toStrictEqual(Exit.succeed(1))
+    expect(messages).toHaveLength(1)
+    expect(JSON.stringify(messages[0])).toContain("resource permit release failed")
+  }))
+
+it.effect("keeps the work's typed failure when the release fails too", () =>
+  Effect.gen(function*() {
+    const local = yield* Consensus.makeLocal
+    const strategy: Omit<Consensus.Service, "withPermit"> = { ...local, release: () => Effect.die("storage gone") }
+    const exit = yield* Effect.exit(
+      Consensus.resourcePermit(
+        strategy,
+        () => Effect.succeed(undefined),
+        "other-resource",
+        owner,
+        alive,
+        Effect.fail("failed" as const)
+      )
+    )
+    expect(exit).toStrictEqual(Exit.fail("failed"))
+  }))
+
+it.effect("backs the contended permit poll off to one read per heartbeat interval", () =>
+  Effect.gen(function*() {
+    const local = yield* Consensus.makeLocal
+    const now = yield* Clock.currentTimeMillis
+    const grant = yield* local.claim("contended", owner, now)
+    if (grant._tag !== "Claimed") throw new Error("expected grant")
+    yield* local.activate("contended", owner, grant.grantedAtMs, now)
+    let reads = 0
+    const waiter = yield* Consensus.resourcePermit(
+      local,
+      () =>
+        Effect.sync(() => {
+          reads++
+          return { owner: { id: owner, grantedAtMs: grant.grantedAtMs, heartbeatAtMs: now }, claim: undefined }
+        }),
+      "contended",
+      other,
+      alive,
+      Effect.succeed("entered")
+    ).pipe(Effect.forkChild)
+    yield* TestClock.adjust("10 seconds")
+    // 0, 50, 150, 350, 750 and 1550 ms, then once a second: 2550 to 9550 ms.
+    expect(reads).toBe(14)
+    expect(waiter.pollUnsafe()).toBeUndefined()
+    yield* Fiber.interrupt(waiter)
+  }))

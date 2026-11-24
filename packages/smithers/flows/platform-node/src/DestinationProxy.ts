@@ -6,6 +6,7 @@
 
 import { Effect } from "effect"
 import { randomBytes, timingSafeEqual } from "node:crypto"
+import Dns from "node:dns/promises"
 import * as Fs from "node:fs/promises"
 import * as Http from "node:http"
 import * as Net from "node:net"
@@ -13,8 +14,78 @@ import * as Path from "node:path"
 import { BrokerError, createBrokerDirectory, destinationBrokerRoot } from "./internal/DestinationBrokerRoot.ts"
 export { BrokerError } from "./internal/DestinationBrokerRoot.ts"
 
+// Only exact IP-literal declarations grant access to a non-public address.
+const nonPublic = new Net.BlockList()
+for (
+  const [network, bits] of [
+    ["0.0.0.0", 8],
+    ["10.0.0.0", 8],
+    ["100.64.0.0", 10],
+    ["127.0.0.0", 8],
+    ["169.254.0.0", 16],
+    ["172.16.0.0", 12],
+    ["192.0.0.0", 24],
+    ["192.0.2.0", 24],
+    ["192.88.99.0", 24],
+    ["192.168.0.0", 16],
+    ["198.18.0.0", 15],
+    ["198.51.100.0", 24],
+    ["203.0.113.0", 24],
+    ["224.0.0.0", 3]
+  ] as const
+) nonPublic.addSubnet(network, bits, "ipv4")
+const globalV6 = new Net.BlockList()
+globalV6.addSubnet("2000::", 3, "ipv6")
+// Exclude special-purpose allocations, documentation and transition tunnels.
+for (const [network, bits] of [["2001::", 23], ["2001:db8::", 32], ["2002::", 16], ["3fff::", 20]] as const) {
+  nonPublic.addSubnet(network, bits, "ipv6")
+}
+
+const publicAddress = (address: string) =>
+  Net.isIPv4(address)
+    ? !nonPublic.check(address, "ipv4")
+    : Net.isIPv6(address) && !address.includes("%") && globalV6.check(address, "ipv6") &&
+      !nonPublic.check(address, "ipv6")
+
+const destination = async (
+  url: URL,
+  allowed: ReadonlySet<string>
+): Promise<Net.TcpNetConnectOpts | undefined> => {
+  const defaultPort = url.protocol === "https:" ? "443" : "80"
+  const port = url.port || defaultPort
+  if (
+    url.username || url.password ||
+    !(allowed.has(url.hostname + ":" + port) || (port === defaultPort && allowed.has(url.hostname)))
+  ) return undefined
+  const host = url.hostname.replace(/^\[|\]$/g, "")
+  if (Net.isIP(host)) return { host, port: Number(port) }
+  // Dial this exact answer. A second lookup could return a different address.
+  const answers = await Dns.lookup(host, { all: true })
+  if (answers.length === 0 || !answers.every(({ address }) => publicAddress(address))) return undefined
+  return { host: answers[0]!.address, port: Number(port) }
+}
+
+const hopByHop = [
+  "connection",
+  "keep-alive",
+  "proxy-authenticate",
+  "proxy-authorization",
+  "proxy-connection",
+  "te",
+  "trailer",
+  "transfer-encoding",
+  "upgrade"
+]
+
+const forwardedHeaders = (headers: Http.IncomingHttpHeaders): Http.OutgoingHttpHeaders => {
+  const kept = { ...headers }
+  for (const name of [...hopByHop, ...(headers.connection ?? "").toLowerCase().split(",")]) delete kept[name.trim()]
+  return kept
+}
+
 /** Starts a broker; redirects require a fresh request and a fresh host check.
- * No suffix matching, ambient proxies, or direct-network fallback is used.
+ * A bare host grants port 80 for HTTP and 443 for CONNECT. A host:port grants
+ * that port. A private endpoint requires an explicit IP-literal destination.
  * @category constructors
  * @since 1.0.0
  */
@@ -22,7 +93,7 @@ export const open = (socket: string, destinations: ReadonlyArray<string>, token:
   Effect.acquireRelease(
     Effect.tryPromise({
       try: async () => {
-        const allowed = new Set(destinations)
+        const allowed = new Set(destinations.map((destination) => destination.toLowerCase()))
         const expected = Buffer.from("Basic " + Buffer.from("broker:" + token).toString("base64"))
         const authenticated = (request: Http.IncomingMessage) => {
           const header = request.headers["proxy-authorization"]
@@ -37,10 +108,7 @@ export const open = (socket: string, destinations: ReadonlyArray<string>, token:
           connection.once("close", () => connections.delete(connection))
           return connection
         }
-        const permitted = (url: URL) =>
-          (url.protocol === "http:" || url.protocol === "https:") &&
-          url.username === "" && url.password === "" && allowed.has(url.hostname)
-        const server = Http.createServer((request, response) => {
+        const server = Http.createServer(async (request, response) => {
           if (!authenticated(request)) {
             response.writeHead(407).end("proxy authentication required")
             return
@@ -52,19 +120,28 @@ export const open = (socket: string, destinations: ReadonlyArray<string>, token:
             response.writeHead(400).end()
             return
           }
-          if (!permitted(url) || url.protocol !== "http:") {
+          let endpoint: Net.TcpNetConnectOpts | undefined
+          try {
+            if (url.protocol === "http:") endpoint = await destination(url, allowed)
+          } catch {
+            response.writeHead(502).end()
+            return
+          }
+          if (request.socket.destroyed) return
+          if (endpoint === undefined) {
             response.writeHead(403).end("destination is not declared")
             return
           }
           // Hop-by-hop headers and a user-supplied Host never cross the boundary.
-          const headers: Http.OutgoingHttpHeaders = { ...request.headers, host: url.host }
-          delete headers["proxy-authorization"]
-          delete headers["proxy-connection"]
-          delete headers["connection"]
-          const upstream = Http.request(url, { method: request.method, headers, agent: false }, (incoming) => {
-            response.writeHead(incoming.statusCode!, incoming.headers)
-            incoming.pipe(response)
-          })
+          const headers = { ...forwardedHeaders(request.headers), host: url.host }
+          const upstream = Http.request(
+            url,
+            { hostname: endpoint.host, port: endpoint.port, method: request.method, headers, agent: false },
+            (incoming) => {
+              response.writeHead(incoming.statusCode!, forwardedHeaders(incoming.headers))
+              incoming.pipe(response)
+            }
+          )
           upstream.on("socket", track)
           upstream.on("error", () => response.destroy())
           // A client that goes away closes its response, which ends the upstream.
@@ -72,7 +149,7 @@ export const open = (socket: string, destinations: ReadonlyArray<string>, token:
           request.pipe(upstream)
         })
         server.on("connection", track)
-        server.on("connect", (request, client, head) => {
+        server.on("connect", async (request, client, head) => {
           const downstream = track(client as Net.Socket)
           if (!authenticated(request)) {
             downstream.end("HTTP/1.1 407 Proxy Authentication Required\r\nConnection: close\r\n\r\n")
@@ -85,11 +162,23 @@ export const open = (socket: string, destinations: ReadonlyArray<string>, token:
             downstream.end("HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\n")
             return
           }
-          if (!permitted(url) || url.pathname !== "/" || url.search !== "" || url.hash !== "") {
+          let endpoint: Net.TcpNetConnectOpts | undefined
+          try {
+            if (url.pathname === "/" && url.search === "" && url.hash === "") {
+              endpoint = await destination(url, allowed)
+            }
+          } catch {
+            downstream.end("HTTP/1.1 502 Bad Gateway\r\nConnection: close\r\n\r\n")
+            return
+          }
+          if (downstream.destroyed) {
+            return
+          }
+          if (endpoint === undefined) {
             downstream.end("HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n")
             return
           }
-          const upstream = track(Net.connect({ host: url.hostname, port: Number(url.port || 443) }))
+          const upstream = track(Net.connect(endpoint))
           downstream.once("close", () => upstream.destroy())
           upstream.once("close", () => downstream.destroy())
           upstream.once("connect", () => {
@@ -145,14 +234,16 @@ server.listen(0, "127.0.0.1", () => {
   const env = { ...process.env, HTTP_PROXY: endpoint, HTTPS_PROXY: endpoint,
     http_proxy: endpoint, https_proxy: endpoint, NO_PROXY: "", no_proxy: "" }
   const child = cp.spawn(executable, args, { env, stdio: "inherit" })
-  const finish = code => {
+  const finish = (code, signal) => {
     for (const peer of peers) peer.destroy()
-    server.close(() => process.exit(code))
+    server.close(() => {
+      if (signal && signal !== "SIGUSR1" && signal !== "SIGPIPE") process.kill(process.pid, signal)
+      process.exit(code)
+    })
   }
   child.on("error", error => { console.error(error.message); finish(1) })
   child.on("exit", (code, signal) => {
-    if (signal) { process.kill(process.pid, signal); return }
-    finish(code === null ? 1 : code)
+    finish(signal ? 128 + require("node:os").constants.signals[signal] : (code ?? 1), signal)
   })
 })
 `

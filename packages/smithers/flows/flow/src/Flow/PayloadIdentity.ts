@@ -12,11 +12,15 @@
  */
 
 import { sortCollections } from "@smthrs/canonical"
+import { Planned } from "@smthrs/plan"
 import * as Effect from "effect/Effect"
 import * as Redacted from "effect/Redacted"
 import * as Schema from "effect/Schema"
 
 const hasRedacted = (value: unknown, seen: Set<object>): boolean => {
+  // A planned value is a reference to a later result, never a secret. Probing
+  // it with `Redacted.isRedacted` runs an `in` check its proxy refuses.
+  if (Planned.isPlanned(value)) return false
   if (Redacted.isRedacted(value)) return true
   if (typeof value !== "object" || value === null || seen.has(value)) return false
   seen.add(value)

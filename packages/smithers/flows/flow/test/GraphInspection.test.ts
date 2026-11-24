@@ -75,6 +75,20 @@ describe("guest declaration inspection", () => {
         message: "broken body"
       }])
     }
+    // A message accessor is never run: the diagnostic reports no message instead of the accessor's throw.
+    const hostile = new Error("unused")
+    Object.defineProperty(hostile, "message", {
+      get() {
+        throw new Error("accessor ran")
+      }
+    })
+    const accessor = Flow.make("broken-accessor", {
+      payload: {},
+      body: () => {
+        throw hostile
+      }
+    })
+    expect(Graph.inspect(accessor).diagnostics).toEqual([{ code: "declaration_inspection_failed", message: "" }])
   })
 
   it("names a fatal graph refusal by its own code rather than as missing input", () => {

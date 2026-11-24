@@ -77,7 +77,7 @@ jobs:
           sparse-checkout: .smithers/flows/release
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
-          node-version: 26.4.0
+          node-version: 26.5.0
           registry-url: https://registry.npmjs.org
       # setup-node's .npmrc sends NODE_AUTH_TOKEN with every request, and the
       # registry refuses even a public read made with its placeholder token, so

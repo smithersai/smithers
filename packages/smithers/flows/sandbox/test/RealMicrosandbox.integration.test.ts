@@ -255,7 +255,8 @@ describe.skipIf(!available)("MicrosandboxSandbox against a real microVM", () => 
     "passes the sandbox conformance suite, kill, interrupt, and ephemeral release included",
     () =>
       Effect.gen(function*() {
-        const violations = yield* SandboxConformance.check(machine(), {
+        // The survivor probe uses pgrep, which the default Bun image omits.
+        const violations = yield* SandboxConformance.check(machine({ image: "node:26-bookworm" }), {
           session,
           // Real VM provisioning keeps its previous allowance; ordinary checks default to 10 seconds.
           checkTimeout: "240 seconds",
@@ -725,7 +726,8 @@ describe.skipIf(!available)("MicrosandboxSandbox against a real microVM", () => 
             live.spawn(once, {}),
             (running) => running.exitCode
           )))
-          expect(Reflect.get(Object(failure.cause), "code")).toBe("runtime")
+          expect(failure.code).toBe("spawn_error")
+          expect(failure.cause).toBeUndefined()
           expect(yield* said(live, once)).toBe("1\n")
         }))
       }),

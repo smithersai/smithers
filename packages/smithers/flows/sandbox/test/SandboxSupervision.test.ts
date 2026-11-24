@@ -335,7 +335,7 @@ describe("SandboxSupervision", () => {
       }).pipe(Effect.provide(SandboxSupervision.layer(provider, { interval })))
 
       expect(reason(outcome.refused)).toBe("NotFound")
-      expect(outcome.refused.message).toContain("session is gone")
+      expect(outcome.refused.message).toContain("remote open failed (unavailable)")
       expect(outcome.served).toBe("hello")
       // The second command opened a second time rather than replaying the
       // first failure, and the failed attempt left nothing behind.

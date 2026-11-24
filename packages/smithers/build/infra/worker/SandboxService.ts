@@ -18,7 +18,10 @@ import { sandboxInstanceTypes } from "./sandbox-instances.ts"
  * @since 0.1.0
  */
 export type SandboxWorkerEnv<Binding> =
-  & { readonly SANDBOX_TOKEN?: string | undefined }
+  & {
+    readonly SANDBOX_TOKEN?: string | undefined
+    readonly SANDBOX_REQUEST_METRICS?: Pick<AnalyticsEngineDataset, "writeDataPoint">
+  }
   & { readonly [Name in (typeof sandboxInstanceTypes)[number]["binding"]]: Binding }
 
 /**
@@ -54,20 +57,44 @@ const unavailable = (message: string): Response =>
  * @since 0.1.0
  */
 export const makeSandboxService = <Binding>(options: SandboxServiceOptions<Binding>) => ({
-  fetch: (request: Request, env: SandboxWorkerEnv<Binding>): Promise<Response> => {
-    const token = env.SANDBOX_TOKEN ?? ""
-    if (token === "") return Promise.resolve(unavailable("the sandbox service has no SANDBOX_TOKEN"))
-    const instances = sandboxInstanceTypes.map(({ binding, cpus, memoryMib, name }) => ({
-      name,
-      cpus,
-      memoryMib,
-      binding: env[binding]
-    }))
-    const handler = HttpSandbox.serve({
-      provider: (limits) =>
-        CloudflareSandbox.make({ sdk: options.sdk, retained: true, instances, limits, workdir: options.workdir }),
-      token
-    })
-    return Effect.runPromise(handler(request))
+  async fetch(request: Request, env: SandboxWorkerEnv<Binding>): Promise<Response> {
+    const started = Date.now()
+    const path = new URL(request.url).pathname
+    const match = /^\/v1\/sessions(?:\/[^/]+(?:\/(commands|files))?)?$/.exec(path)
+    const route = match === null ? "other" : match[1] ?? "sessions"
+    const method = ["GET", "POST", "DELETE", "PUT"].includes(request.method) ? request.method : "other"
+    let response: Response
+    try {
+      response = await Effect.runPromise(
+        Effect.suspend(() => {
+          const token = env.SANDBOX_TOKEN ?? ""
+          if (token === "") return Effect.succeed(unavailable("the sandbox service has no SANDBOX_TOKEN"))
+          const instances = sandboxInstanceTypes.map(({ binding, cpus, memoryMib, name }) => ({
+            name,
+            cpus,
+            memoryMib,
+            binding: env[binding]
+          }))
+          const handler = HttpSandbox.serve({
+            provider: (limits) =>
+              CloudflareSandbox.make({ sdk: options.sdk, retained: true, instances, limits, workdir: options.workdir }),
+            token
+          })
+          return handler(request)
+        }).pipe(Effect.withSpan("sandbox.request", { attributes: { route, method } }))
+      )
+    } catch {
+      response = unavailable("the sandbox service could not handle the request")
+    }
+    try {
+      env.SANDBOX_REQUEST_METRICS?.writeDataPoint({
+        indexes: [route],
+        blobs: [route, method, String(response.status)],
+        doubles: [Date.now() - started]
+      })
+    } catch {
+      // Metrics delivery must preserve the outcome of the sandbox operation.
+    }
+    return response
   }
 })

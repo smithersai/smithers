@@ -399,12 +399,12 @@ export const make = (options: Options): Effect.Effect<Service, never, TabChannel
       body: Body
     ): Effect.Effect<Protocol.Message & { readonly _tag: "Replied" }, RequestRefused | EngineUnavailable> =>
       Effect.gen(function*() {
+        const failure = failed
+        if (Deferred.isDoneUnsafe(failure)) return yield* Effect.fail(yield* Deferred.await(failure))
         const id = next++
         const message = { ...body, client, id } as Protocol.Request
-        const reply = yield* Deferred.make<Reply, EngineUnavailable>()
+        const reply = Deferred.makeUnsafe<Reply, EngineUnavailable>()
         pending.set(id, { message, reply })
-        // Registered first, so a failure from now on reaches it either way.
-        if (yield* Deferred.isDone(failed)) yield* Deferred.fail(reply, yield* Deferred.await(failed))
         const answer = yield* port.post(Protocol.encode(message)).pipe(
           Effect.andThen(Deferred.await(reply)),
           Effect.ensuring(Effect.sync(() => pending.delete(id)))

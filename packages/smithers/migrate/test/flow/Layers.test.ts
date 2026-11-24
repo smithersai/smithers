@@ -11,7 +11,7 @@
  */
 import * as NodeServices from "@effect/platform-node/NodeServices"
 import { describe, expect, expectTypeOf, it } from "@effect/vitest"
-import { Capability, GrantStore, Workspace } from "@smthrs/kernel"
+import { Capability, CapabilitySet, GrantStore, Workspace } from "@smthrs/kernel"
 import * as KernelFileSystem from "@smthrs/kernel/FileSystem"
 import * as KernelProcessConfinement from "@smthrs/kernel/ProcessConfinement"
 import * as Command from "@smthrs/migrate/flow/Command"
@@ -21,6 +21,7 @@ import * as Transform from "@smthrs/migrate/flow/Transform"
 import * as Verify from "@smthrs/migrate/flow/Verify"
 import * as Scan from "@smthrs/migrate/Scan"
 import * as Units from "@smthrs/migrate/Units"
+import * as Evaluator from "@smthrs/model/Evaluator"
 import * as AtomicFileSystem from "@smthrs/platform-node/AtomicFileSystem"
 import * as ProcessSandbox from "@smthrs/platform-node/ProcessSandbox"
 import * as Effect from "effect/Effect"
@@ -66,6 +67,49 @@ const permitted = (action: Capability.Action, resource: string): Effect.Effect<b
       Effect.catch(() => Effect.succeed(false))
     )
   }).pipe(Effect.provide(store))
+
+it.effect("protects report and run-state paths with native Windows separators", () => {
+  const winRoot = "C:\\project" as Layers.MigrationRoot
+  const layer = GrantStore.layer({
+    attended: false,
+    rules: Layers.rules({ root: winRoot, runStatePaths: ["D:\\runtime\\state.db", ".smithers\\runs"], commands })
+  }).pipe(Layer.provide(Workspace.layer(winRoot)), Layer.orDie)
+  return Effect.gen(function*() {
+    const grants = yield* GrantStore.GrantStore
+    for (
+      const file of [
+        "C:\\project\\.git\\hooks\\pre-commit",
+        "C:\\project\\.smithers\\runs\\logs.db",
+        "C:\\project\\.smithers-migrate\\pending-unit.json",
+        "C:\\project\\nested\\.ENV",
+        "D:\\runtime\\state.db"
+      ]
+    ) {
+      const exit = yield* Effect.result(grants.check(Capability.make("fs:read", file)))
+      expect(exit._tag).toBe("Failure")
+    }
+    yield* grants.check(Capability.make("fs:read", "C:\\project\\src\\flow.ts"))
+  }).pipe(Effect.provide(layer))
+})
+
+it.effect("honors the run's network ceiling for completion evaluation", () =>
+  Effect.gen(function*() {
+    const directory = copyFixture("jsx-single")
+    const judge = yield* Evaluator.Evaluator.pipe(Effect.provide(Layers.layerNode({
+      root: directory,
+      commands,
+      runStatePaths,
+      verifyUnconfined: true,
+      seat: "openai:fixture",
+      environment: { OPENAI_API_KEY: "fixture-key" }
+    })))
+    const failure = yield* judge.evaluate({ state: {}, questions: {} }).pipe(
+      CapabilitySet.attenuate([]),
+      Effect.flip
+    )
+    expect(failure.code).toBe("unconfigured")
+    expect(failure.message).toMatch(/permission|capability|denied|refus/i)
+  }))
 
 describe("Layers composition contracts", () => {
   it("keeps composition checks out of the public API", () => {

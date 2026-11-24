@@ -740,7 +740,7 @@ it("explain mode selects what plain mode selects, and its sources and edges rebu
   expect(Object.values(tally).every((count) => count > 20), JSON.stringify(tally)).toBe(true)
 })
 
-it("expands Suite targets to only their affected members and never marks Suites uncacheable", () => {
+it("keeps affected Suites as roots and attributes changes through their members", () => {
   const graph = fixture()
   const { add } = graph
   const a = add("pkg-a", "bench", S.Shell.Test({ shell: "true", data: [S.file("a.ts")] }))
@@ -750,14 +750,31 @@ it("expands Suite targets to only their affected members and never marks Suites 
   const index = graph.index
 
   expect(Affected.select(index, ["//..."], ["pkg-a/a.ts"]).targets.map((t) => t.label)).toEqual([
+    "//:bench_all",
     "//pkg-a:bench"
   ])
   expect(Affected.select(index, ["//:bench_all"], ["pkg-b/b.ts"]).targets.map((t) => t.label)).toEqual([
-    "//pkg-b:bench"
+    "//:bench_all"
   ])
   expect(Affected.select(index, ["//:bench_all"], ["pkg-b/b.ts"], { explain: true }).targets.map((t) => t.label))
     .toEqual([
-      "//pkg-b:bench"
+      "//:bench_all"
     ])
   expect(Affected.select(index, ["//:bench_all"], ["docs/index.md"]).targets).toEqual([])
+})
+
+it("selects rules with a disabled cache policy and their dependents for unrelated owned changes", () => {
+  const graph = fixture()
+  const lint = graph.add("go", "lint", S.Go.Lint({ config: S.file("config.yml"), version: "v2.8.0", pkgs: ["./..."] }))
+  graph.add("ci", "gate", target([], [lint]))
+  graph.add("docs", "source", target([Input.file("index.md")]))
+  const selection = Affected.select(graph.index, ["//ci:gate"], ["docs/index.md"], { explain: true })
+  expect(selection.conservative).toBe(false)
+  expect(causes(selection, "//ci:gate")).toContainEqual({
+    file: "docs/index.md",
+    kind: "uncacheable",
+    label: "//go:lint",
+    rule: "Go.Lint",
+    dependencyPath: ["//ci:gate", "//go:lint"]
+  })
 })

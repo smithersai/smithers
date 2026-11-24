@@ -58,14 +58,16 @@ const journalFailed = (message: string, cause: unknown): GrantStoreError =>
     cause
   })
 
-const knownEventTypes: ReadonlySet<string> = new Set([
+const grantEventTypes = [
   "flows.kernel.grant.once.v1",
   "flows.kernel.grant.run.v1",
   "flows.kernel.grant.run.v2",
   "flows.kernel.grant.remembered.v1",
   "flows.kernel.grant.denied.v1",
   "flows.kernel.grant.envelope.v1"
-])
+] as const
+
+const knownEventTypes: ReadonlySet<string> = new Set(grantEventTypes)
 
 const invalidReplay = (message: string): GrantStoreError => new GrantStoreError({ code: "invalid_resolution", message })
 
@@ -177,6 +179,7 @@ const replayRememberedRules = (
       const page = yield* journal.entries({
         runId: policyRunId as JournalEvent.RunId,
         ...(after === undefined ? {} : { after }),
+        eventTypes: grantEventTypes,
         limit: 256
       })
       const last = page.entries.at(-1)
@@ -255,6 +258,7 @@ const replayRunRules = (
       const page = yield* journal.entries({
         runId: runId as JournalEvent.RunId,
         ...(after === undefined ? {} : { after }),
+        eventTypes: grantEventTypes,
         limit: 256
       })
       const last = page.entries.at(-1)

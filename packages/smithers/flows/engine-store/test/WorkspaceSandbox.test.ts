@@ -707,6 +707,52 @@ describe("WorkspaceSandbox transaction filesystem", () => {
       ])
     })))
 
+  // R1-NEON-D1-020: `makeDirectory` accepted any path, and `remove` ignored
+  // `recursive`, leaving a removed directory's files in the transaction.
+  it.effect("refuses a directory outside the workspace and removes a directory recursively", () =>
+    Effect.gen(function*() {
+      const program = Effect.gen(function*() {
+        const test = yield* WorkspaceSandbox.makeMemory({
+          "dir/a.txt": "a",
+          "dir/nested/b.txt": "b",
+          "dir-sibling.txt": "kept",
+          "flat/c.txt": "c"
+        })
+        const accepted = yield* test.service.execute({
+          descriptor: descriptor({
+            readSet: [read("dir/a.txt", "a"), read("dir/nested/b.txt", "b"), read("flat/c.txt", "c")],
+            writeSet: [{ _tag: "Glob", include: ["dir/**", "flat/**", "made/**"] }, "dir", "flat"]
+          }),
+          workflow: Effect.gen(function*() {
+            const fs = yield* FileSystem.FileSystem
+            const outside = yield* Effect.flip(fs.makeDirectory("../outside"))
+            const absolute = yield* Effect.flip(fs.makeDirectory("/etc", { recursive: true }))
+            yield* fs.makeDirectory("made/inner", { recursive: true })
+            yield* fs.makeDirectory(".")
+            yield* fs.remove("flat")
+            const flatSurvives = yield* fs.exists("flat/c.txt")
+            yield* fs.remove("dir", { recursive: true })
+            const dirGone = !(yield* fs.exists("dir"))
+            return { absolute, dirGone, flatSurvives, outside }
+          })
+        })
+        if (accepted._tag !== "Accepted") throw new Error(`expected accepted execution: ${JSON.stringify(accepted)}`)
+        yield* test.service.materialize(accepted)
+        return { accepted, files: yield* test.files }
+      })
+
+      const { accepted, files } = yield* withCrypto(program)
+      const observed = accepted.result.output
+      expect(observed.outside).toMatchObject({ _tag: "PlatformError", reason: { _tag: "BadArgument" } })
+      expect(observed.absolute).toMatchObject({ _tag: "PlatformError", reason: { _tag: "BadArgument" } })
+      expect(observed.flatSurvives).toBe(true)
+      expect(observed.dirGone).toBe(true)
+      expect(text(files, "dir/a.txt")).toBeUndefined()
+      expect(text(files, "dir/nested/b.txt")).toBeUndefined()
+      expect(text(files, "dir-sibling.txt")).toBe("kept")
+      expect(text(files, "flat/c.txt")).toBe("c")
+    }))
+
   it.effect("serves an ordinary FileSystem body over the transaction", () =>
     Effect.gen(function*() {
       const program = Effect.gen(function*() {

@@ -226,7 +226,7 @@ it.effect("keeps command output in the sealed step result rather than diagnostic
 
 it.effect("verbose commands cannot clip their own or later step records", () => {
   const box = machine({
-    output: { stdout: "\u0000".repeat(64 * 1024), stderr: "é".repeat(64 * 1024), truncated: false }
+    output: { stdout: "\u0000".repeat(64 * 1024), stderr: "x".repeat(4090) + "🌍" + "y".repeat(4089), truncated: false }
   })
   const runs = Array.from({ length: 32 }, (_, i) => ({ name: `${i}`.padEnd(64, "a"), run: "verbose" }))
   return Effect.gen(function*() {
@@ -237,7 +237,7 @@ it.effect("verbose commands cannot clip their own or later step records", () => 
     expect(result.steps.slice(0, -1).every((step) => step.output === undefined)).toBe(true)
     const output = result.steps.at(-1)!.output!
     expect(output.stdout.length).toBeGreaterThan(0)
-    expect(output.stderr.length).toBeGreaterThan(0)
+    expect(output.stderr).toBe("x".repeat(4090) + "🌍")
     expect(output.truncated).toBe(true)
   }).pipe(Effect.provide(host(box.layer)))
 })

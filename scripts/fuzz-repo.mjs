@@ -22,41 +22,57 @@
  */
 
 import { spawn } from "node:child_process"
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs"
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { cpus, tmpdir } from "node:os"
 import { dirname, join, relative, resolve } from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
+import { isMain } from "../packages/repo-targets/scripts/workspace-root.mjs"
 
 const rootDir = resolve(dirname(fileURLToPath(import.meta.url)), "..")
 
-const args = process.argv.slice(2)
-const flagValue = (name) => {
-  for (let i = 0; i < args.length; i++) {
-    if (args[i] === name && args[i + 1] !== undefined) return args[i + 1]
-    if (args[i].startsWith(`${name}=`)) return args[i].slice(name.length + 1)
-  }
-  return undefined
-}
-const hasFlag = (name) => args.includes(name)
+const switches = new Set([
+  "--v8",
+  "--coverage",
+  "--per-file",
+  "--include-vibelang",
+  "--rust",
+  "--zig",
+  "--all",
+  "--list"
+])
+const numericMinimums = new Map([
+  ["--executions", 1],
+  ["--duration", 1],
+  ["--seed", -Number.MAX_SAFE_INTEGER],
+  ["--concurrency", 1],
+  ["--zig-runs", 0],
+  ["--libfuzzer-seconds", 0]
+])
 
-const executions = flagValue("--executions")
-const duration = flagValue("--duration")
-const seed = flagValue("--seed")
-const filter = flagValue("--filter")
-const v8Guided = hasFlag("--v8")
-const measureCoverage = hasFlag("--coverage") || hasFlag("--per-file")
-const perFile = hasFlag("--per-file")
-const includeVibelang = hasFlag("--include-vibelang") || (filter !== undefined && filter.includes("vibelang"))
-const zigRuns = Number(flagValue("--zig-runs") ?? "0")
-const runRust = hasFlag("--rust") || hasFlag("--all") || flagValue("--libfuzzer-seconds") !== undefined
-const runZig = hasFlag("--zig") || hasFlag("--all") || zigRuns > 0
-const nativeOnly = (hasFlag("--rust") || hasFlag("--zig")) && !hasFlag("--all") && !measureCoverage && filter === undefined
-const libfuzzerSeconds = Number(flagValue("--libfuzzer-seconds") ?? "0")
-const listOnly = hasFlag("--list")
-const concurrency = Math.max(
-  1,
-  Number(flagValue("--concurrency") ?? String(Math.min(8, Math.max(2, Math.floor(cpus().length / 2)))))
-)
+const optionsOf = (args) => {
+  const values = new Map()
+  for (let i = 0; i < args.length; i++) {
+    const entry = args[i]
+    const equals = entry.indexOf("=")
+    const flag = equals === -1 ? entry : entry.slice(0, equals)
+    if (values.has(flag)) throw new Error(`Duplicate option: ${flag}`)
+    if (switches.has(flag) && equals === -1) {
+      values.set(flag, true)
+      continue
+    }
+    if (!numericMinimums.has(flag) && flag !== "--filter") throw new Error(`Unknown option: ${entry}`)
+    const value = equals === -1 ? args[++i] : entry.slice(equals + 1)
+    if (!value || value.startsWith("--")) throw new Error(`${flag} requires a value`)
+    if (numericMinimums.has(flag)) {
+      const number = Number(value)
+      if (!/^-?\d+$/.test(value) || !Number.isSafeInteger(number) || number < numericMinimums.get(flag)) {
+        throw new Error(`${flag} requires a safe integer >= ${numericMinimums.get(flag)}`)
+      }
+    }
+    values.set(flag, value)
+  }
+  return values
+}
 
 const SKIP_DIRS = new Set(["node_modules", "dist", "build", "target", ".git", ".jj", "corpus", ".turbo", "coverage"])
 const FUZZ_FILE_RE = /\.fuzz\.test\.(?:ts|vibe)$/
@@ -69,7 +85,9 @@ function findFuzzFiles(dir, out = []) {
     return out
   }
   for (const entry of entries) {
-    if (SKIP_DIRS.has(entry.name) && !(entry.name === "build" && existsSync(join(dir, entry.name, "package.json")))) continue
+    if (SKIP_DIRS.has(entry.name) && !(entry.name === "build" && existsSync(join(dir, entry.name, "package.json")))) {
+      continue
+    }
     const full = join(dir, entry.name)
     if (entry.isDirectory()) {
       findFuzzFiles(full, out)
@@ -93,7 +111,7 @@ function findPackageRoot(filePath) {
   return rootDir
 }
 
-function discoverSuites() {
+function discoverSuites(filter, includeVibelang) {
   const files = [
     ...findFuzzFiles(join(rootDir, "packages")),
     ...findFuzzFiles(join(rootDir, "apps"))
@@ -125,22 +143,79 @@ function discoverSuites() {
     }))
 }
 
-function execAsync(cmd, cmdArgs, cwd, env) {
+export const outputLimit = 32 * 1024
+
+/** Keep each diagnostic stream bounded and collect native summaries while it is live. */
+export function execAsync(cmd, cmdArgs, cwd, env, timeoutMs = 30 * 60_000) {
   return new Promise((resolvePromise) => {
     const started = Date.now()
-    const child = spawn(cmd, cmdArgs, { cwd, env, stdio: ["ignore", "pipe", "pipe"] })
-    let stdout = ""
-    let stderr = ""
-    child.stdout.on("data", (d) => (stdout += d.toString()))
-    child.stderr.on("data", (d) => (stderr += d.toString()))
-    child.on("close", (code) => {
-      resolvePromise({ code: code ?? 1, stdout, stderr, ms: Date.now() - started })
+    const group = process.platform !== "win32"
+    const child = spawn(cmd, cmdArgs, { cwd, env, detached: group, stdio: ["ignore", "pipe", "pipe"] })
+    let timedOut = false
+    const stop = (signal) => {
+      if (child.pid === undefined) return
+      try {
+        if (group) process.kill(-child.pid, signal)
+        else child.kill(signal)
+      } catch (error) {
+        if (error.code !== "ESRCH") throw error
+      }
+    }
+    let escalation
+    const deadline = setTimeout(() => {
+      timedOut = true
+      stop("SIGTERM")
+      escalation = setTimeout(() => stop("SIGKILL"), 2_000)
+    }, timeoutMs)
+    const summaries = {}
+    const capture = (stream) => {
+      let tail = Buffer.alloc(0)
+      let line = ""
+      const record = () => {
+        if (line.includes("Done ") && line.includes(" runs in ")) summaries.libfuzzer ??= line
+        if (line.startsWith("Runs:")) summaries.zig ??= line
+      }
+      const append = (chunk) => {
+        tail = Buffer.concat([tail, chunk].map((part) => part.subarray(-outputLimit))).subarray(-outputLimit)
+        const parts = chunk.toString().split("\n")
+        for (const [index, part] of parts.entries()) {
+          line = (line + part).slice(-1024)
+          if (index < parts.length - 1) {
+            record()
+            line = ""
+          }
+        }
+      }
+      stream.on("data", append)
+      return () => {
+        record()
+        return tail.toString()
+      }
+    }
+    const stdout = capture(child.stdout)
+    const stderr = capture(child.stderr)
+    let failure = ""
+    child.on("error", (error) => {
+      failure = error.message
     })
-    child.on("error", (err) => {
-      resolvePromise({ code: 1, stdout, stderr: `${stderr}\n${err.message}`, ms: Date.now() - started })
+    child.on("close", (code) => {
+      clearTimeout(deadline)
+      clearTimeout(escalation)
+      const diagnostic = timedOut ? `Timed out after ${timeoutMs}ms` : failure
+      resolvePromise({
+        code: timedOut ? 1 : code ?? 1,
+        stdout: stdout(),
+        stderr: stderr(),
+        diagnostic,
+        summaries,
+        ms: Date.now() - started
+      })
     })
   })
 }
+
+const diagnostics = (result, lines) =>
+  [result.stdout, result.stderr, result.diagnostic].join("\n").trim().split("\n").slice(-lines).join("\n")
 
 async function runPool(items, limit, worker) {
   const results = new Array(items.length)
@@ -151,28 +226,36 @@ async function runPool(items, limit, worker) {
       results[idx] = await worker(items[idx], idx)
     }
   })
-  await Promise.all(workers)
+  const exits = await Promise.allSettled(workers)
+  const failed = exits.find((exit) => exit.status === "rejected")
+  if (failed) throw failed.reason
   return results
 }
 
+const metrics = ["statements", "branches", "functions", "lines"]
+const validMetric = (metric) =>
+  metric !== undefined && metric !== null
+  && Number.isSafeInteger(metric.total) && metric.total >= 0
+  && Number.isSafeInteger(metric.covered) && metric.covered >= 0 && metric.covered <= metric.total
+
 function readCoverageSummary(covDir) {
-  const summaryPath = join(covDir, "coverage-summary.json")
-  if (!existsSync(summaryPath)) return undefined
   try {
-    const parsed = JSON.parse(readFileSync(summaryPath, "utf8"))
-    const files = Object.entries(parsed)
-      .filter(([k]) => k !== "total")
-      .map(([file, metrics]) => ({ file, lines: metrics.lines?.pct ?? 0, branches: metrics.branches?.pct ?? 0, totalLines: metrics.lines?.total ?? 0 }))
-      .sort((a, b) => a.lines - b.lines)
-    return { total: parsed.total, files }
+    const { total, ...files } = JSON.parse(readFileSync(join(covDir, "coverage-summary.json"), "utf8"))
+    if (!metrics.every((key) => validMetric(total?.[key])) || total.lines.total === 0) return undefined
+    const rows = Object.entries(files).map(([file, data]) => {
+      if (!validMetric(data?.lines) || !validMetric(data?.branches)) throw new Error("Invalid file coverage")
+      return { file, lines: data.lines, branches: data.branches }
+    }).sort((a, b) => (a.lines.covered / a.lines.total || 0) - (b.lines.covered / b.lines.total || 0))
+    return { total, rows }
   } catch {
     return undefined
   }
 }
 
-const fmtPct = (v) => (typeof v === "number" ? v.toFixed(1) : "n/a")
+const coveragePct = ({ total, covered }) => total === 0 ? "n/a" : `${((covered / total) * 100).toFixed(1)}%`
+const coverageCell = (metric) => `${coveragePct(metric)} (${metric.covered}/${metric.total})`
 
-async function runTsSuites(suites) {
+async function runTsSuites(suites, { measureCoverage, perFile, executions, duration, seed, v8Guided, concurrency }) {
   const tmpBase = measureCoverage ? mkdtempSync(join(tmpdir(), "smithers-fuzz-cov-")) : undefined
   const baseEnv = {
     ...process.env,
@@ -195,126 +278,133 @@ async function runTsSuites(suites) {
   const results = await runPool(suites, concurrency, async (suite) => {
     const pkgJson = JSON.parse(readFileSync(join(suite.dir, "package.json"), "utf8"))
     const hasVitest = Boolean(pkgJson.devDependencies?.vitest || pkgJson.dependencies?.vitest)
-    const usesBunTest = suite.pkg === "apps/tui" || (!hasVitest && String(pkgJson.scripts?.test ?? "").startsWith("bun test"))
+    const usesBunTest = suite.pkg === "apps/tui" ||
+      (!hasVitest && String(pkgJson.scripts?.test ?? "").startsWith("bun test"))
     const isMvp = suite.pkg === "apps/mvp"
     const isCrossFuzz = suite.pkg === "fuzz"
     const covDir = tmpBase ? join(tmpBase, suite.pkg.replace(/[\\/]/g, "__")) : undefined
     if (covDir) mkdirSync(covDir, { recursive: true })
 
-    let cmd = "pnpm"
-    let cmdArgs
-    if (usesBunTest) {
-      cmd = "bun"
-      const bunfigPath = join(suite.dir, "bunfig.toml")
-      if (existsSync(bunfigPath)) {
-        const raw = readFileSync(bunfigPath, "utf8")
-        const stripped = raw.replace(/^\s*coverage[A-Za-z]*\s*=.*$/gm, "").trimEnd() + "\ncoverage = false\n"
-        const tmpBunfigDir = covDir ?? mkdtempSync(join(tmpdir(), "smithers-bunfig-"))
-        const tmpBunfig = join(tmpBunfigDir, "bunfig.fuzz.toml")
-        writeFileSync(tmpBunfig, stripped)
-        cmdArgs = [`--config=${tmpBunfig}`, "test", ...suite.files]
+    let tmpBunfigDir
+    try {
+      let cmd = "pnpm"
+      let cmdArgs
+      if (usesBunTest) {
+        cmd = "bun"
+        const bunfigPath = join(suite.dir, "bunfig.toml")
+        if (existsSync(bunfigPath)) {
+          const raw = readFileSync(bunfigPath, "utf8")
+          const stripped = raw.replace(/^\s*coverage[A-Za-z]*\s*=.*$/gm, "").trimEnd() + "\ncoverage = false\n"
+          tmpBunfigDir = covDir === undefined ? mkdtempSync(join(tmpdir(), "smithers-bunfig-")) : undefined
+          const tmpBunfig = join(covDir ?? tmpBunfigDir, "bunfig.fuzz.toml")
+          writeFileSync(tmpBunfig, stripped)
+          cmdArgs = [`--config=${tmpBunfig}`, "test", ...suite.files]
+        } else {
+          cmdArgs = ["test", ...suite.files]
+        }
+      } else if (measureCoverage) {
+        cmdArgs = [
+          "exec",
+          "vitest",
+          "run",
+          ...(isMvp || isCrossFuzz ? ["--config", "vitest.fuzz.config.ts"] : []),
+          ...suite.files,
+          "--coverage.enabled=true",
+          "--coverage.provider=v8",
+          "--coverage.reporter=json-summary",
+          `--coverage.reportsDirectory=${covDir}`,
+          "--coverage.thresholds.lines=0",
+          "--coverage.thresholds.branches=0",
+          "--coverage.thresholds.functions=0",
+          "--coverage.thresholds.statements=0"
+        ]
       } else {
-        cmdArgs = ["test", ...suite.files]
+        cmdArgs = [
+          "exec",
+          "vitest",
+          "run",
+          ...(isMvp || isCrossFuzz ? ["--config", "vitest.fuzz.config.ts"] : []),
+          ...suite.files,
+          "--coverage=false"
+        ]
       }
-    } else if (measureCoverage) {
-      cmdArgs = [
-        "exec",
-        "vitest",
-        "run",
-        ...(isMvp || isCrossFuzz ? ["--config", "vitest.fuzz.config.ts"] : []),
-        ...suite.files,
-        "--coverage.enabled=true",
-        "--coverage.provider=v8",
-        "--coverage.reporter=json-summary",
-        `--coverage.reportsDirectory=${covDir}`,
-        "--coverage.thresholds.lines=0",
-        "--coverage.thresholds.branches=0",
-        "--coverage.thresholds.functions=0",
-        "--coverage.thresholds.statements=0"
-      ]
-    } else {
-      cmdArgs = [
-        "exec",
-        "vitest",
-        "run",
-        ...(isMvp || isCrossFuzz ? ["--config", "vitest.fuzz.config.ts"] : []),
-        ...suite.files,
-        "--coverage=false"
-      ]
-    }
 
-    const res = await execAsync(cmd, cmdArgs, suite.dir, baseEnv)
-    const cov = covDir ? readCoverageSummary(covDir) : undefined
-    const status = res.code === 0 ? "PASS" : "FAIL"
-    const covText = cov?.total
-      ? ` | stmts=${(typeof cov.total.statements.pct === "number" ? fmtPct(cov.total.statements.pct) : "0.0")}% branch=${(typeof cov.total.branches.pct === "number" ? fmtPct(cov.total.branches.pct) : "0.0")}% funcs=${(typeof cov.total.functions.pct === "number" ? fmtPct(cov.total.functions.pct) : "0.0")}% lines=${(typeof cov.total.lines.pct === "number" ? fmtPct(cov.total.lines.pct) : "0.0")}%`
-      : ""
-    console.log(`  [${status}] ${suite.pkg} (${suite.files.length} file${suite.files.length === 1 ? "" : "s"}, ${res.ms}ms)${covText}`)
-    if (res.code !== 0) {
-      const tail = (res.stdout + "\n" + res.stderr).trim().split("\n").slice(-35).join("\n")
-      console.error(`--- failure output for ${suite.pkg} ---\n${tail}\n---`)
+      const res = await execAsync(cmd, cmdArgs, suite.dir, baseEnv)
+      const cov = covDir && !usesBunTest ? readCoverageSummary(covDir) : undefined
+      const missing = measureCoverage && cov === undefined
+      const ok = res.code === 0 && !missing
+      const covText = missing
+        ? " | missing coverage evidence"
+        : cov
+        ? " | " + metrics.map((key) => `${key}=${coveragePct(cov.total[key])}`).join(" ")
+        : ""
+      console.log(`  [${ok ? "PASS" : "FAIL"}] ${suite.pkg} (${suite.files.length} file(s), ${res.ms}ms)${covText}`)
+      if (res.code !== 0) console.error(`--- failure output for ${suite.pkg} ---\n${diagnostics(res, 35)}\n---`)
+      return { suite, ok, cov }
+    } finally {
+      if (tmpBunfigDir) rmSync(tmpBunfigDir, { recursive: true, force: true })
     }
-    return { suite, res, cov }
+  }).finally(() => {
+    if (tmpBase) rmSync(tmpBase, { recursive: true, force: true })
   })
 
-  if (tmpBase) {
-    try {
-      rmSync(tmpBase, { recursive: true, force: true })
-    } catch {
-      // ignore cleanup error
-    }
+  const completed = results.filter(Boolean)
+  if (completed.length !== suites.length) {
+    throw new Error(`Only ${completed.length}/${suites.length} fuzz packages completed`)
   }
-
   if (measureCoverage) {
-    console.log("\n=== Fuzz-Only V8 Coverage Summary (NO non-fuzz tests executed) ===")
+    const measured = completed.filter((result) => result.cov)
+    console.log(`\n=== Fuzz-Only V8 Coverage Summary (${measured.length}/${completed.length} packages measured) ===`)
     console.log("Package | Stmts | Branch | Funcs | Lines")
     console.log("--- | --- | --- | --- | ---")
-    let totStmts = 0, covStmts = 0
-    let totBranches = 0, covBranches = 0
-    let totFuncs = 0, covFuncs = 0
-    let totLines = 0, covLines = 0
-    for (const r of results) {
-      if (!r.cov?.total) continue
-      const t = r.cov.total
-      totStmts += t.statements.total; covStmts += t.statements.covered
-      totBranches += t.branches.total; covBranches += t.branches.covered
-      totFuncs += t.functions.total; covFuncs += t.functions.covered
-      totLines += t.lines.total; covLines += t.lines.covered
+    for (const { suite, cov } of completed) {
       console.log(
-        `${r.suite.pkg} | ${fmtPct(t.statements.pct)}% (${t.statements.covered}/${t.statements.total}) | ` +
-          `${fmtPct(t.branches.pct)}% (${t.branches.covered}/${t.branches.total}) | ` +
-          `${fmtPct(t.functions.pct)}% (${t.functions.covered}/${t.functions.total}) | ` +
-          `${fmtPct(t.lines.pct)}% (${t.lines.covered}/${t.lines.total})`
+        `${suite.pkg} | ${
+          cov
+            ? metrics.map((key) => coverageCell(cov.total[key])).join(" | ")
+            : "missing coverage evidence"
+        }`
       )
-      if (perFile && r.cov.files.length > 0) {
-        const worst = r.cov.files.filter((f) => f.totalLines > 0 && f.lines < 80).slice(0, 5)
-        for (const f of worst) {
-          console.log(`    ↳ ${relative(r.suite.dir, f.file)}: ${f.lines.toFixed(1)}% lines (${f.totalLines}L), ${f.branches.toFixed(1)}% branch`)
+      if (perFile && cov) {
+        for (
+          const { file, lines, branches } of cov.rows.filter((f) =>
+            f.lines.total > 0 && f.lines.covered < f.lines.total * 0.8
+          ).slice(0, 5)
+        ) {
+          console.log(
+            `    ↳ ${relative(suite.dir, file)}: ${coverageCell(lines)} lines, ${coverageCell(branches)} branches`
+          )
         }
       }
     }
-    const pct = (c, t) => (t === 0 ? "100.0%" : `${((c / t) * 100).toFixed(1)}%`)
-    console.log(
-      `TOTAL | ${pct(covStmts, totStmts)} (${covStmts}/${totStmts}) | ` +
-        `${pct(covBranches, totBranches)} (${covBranches}/${totBranches}) | ` +
-        `${pct(covFuncs, totFuncs)} (${covFuncs}/${totFuncs}) | ` +
-        `${pct(covLines, totLines)} (${covLines}/${totLines})`
-    )
+    if (measured.length > 0) {
+      const totals = metrics.map((key) =>
+        measured.reduce(({ total, covered }, { cov }) => ({
+          total: total + cov.total[key].total,
+          covered: covered + cov.total[key].covered
+        }), { total: 0, covered: 0 })
+      )
+      console.log(
+        `${measured.length === completed.length ? "TOTAL" : "MEASURED TOTAL"} | ${totals.map(coverageCell).join(" | ")}`
+      )
+    }
   }
-
-  const failed = results.filter((r) => r.res.code !== 0)
-  console.log(`\nTS/Effect fuzz summary: ${results.length - failed.length}/${results.length} packages passed.`)
-  return failed.length === 0
+  const passed = completed.filter((result) => result.ok).length
+  console.log(`\nTS/Effect fuzz summary: ${passed}/${completed.length} packages passed.`)
+  return passed === completed.length
 }
 
-async function runRustFuzz() {
+async function runRustFuzz(libfuzzerSeconds) {
   console.log("\n=== Rust Deterministic Fuzz Suites ===")
   const detSuites = [
     { name: "flows-jj::fuzz_state_machine", args: ["test", "-p", "flows-jj", "--test", "fuzz_state_machine"] },
     { name: "flows-jj::fuzz_abi_and_ops", args: ["test", "-p", "flows-jj", "--test", "fuzz_abi_and_ops"] },
     { name: "smithers-ffi::fuzz_ffi_and_crdt", args: ["test", "-p", "smithers-ffi", "--test", "fuzz_ffi_and_crdt"] },
     { name: "smithers-ffi::fuzz_targets", args: ["test", "-p", "smithers-ffi", "--test", "fuzz_targets"] },
-    { name: "smithers-ffi::atomic_glob", args: ["test", "-p", "smithers-ffi", "--bin", "smithers-jj-export", "fuzz_atomic_glob"] }
+    {
+      name: "smithers-ffi::atomic_glob",
+      args: ["test", "-p", "smithers-ffi", "--bin", "smithers-jj-export", "fuzz_atomic_glob"]
+    }
   ]
   let allOk = true
   for (const s of detSuites) {
@@ -322,7 +412,7 @@ async function runRustFuzz() {
     console.log(`  [${res.code === 0 ? "PASS" : "FAIL"}] ${s.name} (${res.ms}ms)`)
     if (res.code !== 0) {
       allOk = false
-      console.error((res.stdout + "\n" + res.stderr).trim().split("\n").slice(-30).join("\n"))
+      console.error(diagnostics(res, 30))
     }
   }
 
@@ -344,12 +434,15 @@ async function runRustFuzz() {
         t.dir,
         process.env
       )
-      const combined = res.stdout + "\n" + res.stderr
-      const doneLine = combined.split("\n").find((l) => l.includes("Done ") && l.includes(" runs in "))
-      console.log(`  [${res.code === 0 ? "PASS" : "FAIL"}] ${relative(rootDir, t.dir)}::${t.target} (${res.ms}ms)${doneLine ? ` — ${doneLine.trim()}` : ""}`)
+      const doneLine = res.summaries.libfuzzer
+      console.log(
+        `  [${res.code === 0 ? "PASS" : "FAIL"}] ${relative(rootDir, t.dir)}::${t.target} (${res.ms}ms)${
+          doneLine ? ` — ${doneLine.trim()}` : ""
+        }`
+      )
       if (res.code !== 0) {
         allOk = false
-        console.error(combined.trim().split("\n").slice(-35).join("\n"))
+        console.error(diagnostics(res, 35))
       }
     }
   }
@@ -360,13 +453,14 @@ async function ensureObserveCallsHeader(observeFuzzDir) {
   const genDir = join(observeFuzzDir, ".gen")
   const headerPath = join(genDir, "calls.h")
   if (existsSync(headerPath)) return
-  const buildObserveUrl = pathToFileURL(join(rootDir, "packages/smithers/build/build-cli/scripts/build-observe.mjs")).href
+  const buildObserveUrl =
+    pathToFileURL(join(rootDir, "packages/smithers/build/build-cli/scripts/build-observe.mjs")).href
   const { callsHeader } = await import(buildObserveUrl)
   mkdirSync(genDir, { recursive: true })
   writeFileSync(headerPath, callsHeader(), "utf8")
 }
 
-async function runZigFuzz() {
+async function runZigFuzz(zigRuns) {
   const observeFuzzDir = join(rootDir, "packages/smithers/build/build-cli/native/fuzz")
   const ffiFuzzDir = join(rootDir, "packages/smithers-ffi/fuzz")
   const useFuzzMode = zigRuns > 0 && process.platform === "linux"
@@ -381,7 +475,7 @@ async function runZigFuzz() {
   const buildLib = await execAsync("cargo", ["build", "-p", "smithers-ffi", "--lib"], rootDir, process.env)
   if (buildLib.code !== 0) {
     console.error("  [FAIL] cargo build -p smithers-ffi --lib")
-    console.error((buildLib.stdout + "\n" + buildLib.stderr).trim().split("\n").slice(-25).join("\n"))
+    console.error(diagnostics(buildLib, 25))
     return false
   }
 
@@ -393,41 +487,69 @@ async function runZigFuzz() {
   let allOk = true
   for (const t of targets) {
     const res = await execAsync("zig", zigArgs, t.dir, process.env)
-    const combined = res.stdout + "\n" + res.stderr
-    const runsLine = combined.split("\n").find((l) => l.startsWith("Runs:"))
-    console.log(`  [${res.code === 0 ? "PASS" : "FAIL"}] ${t.name} (${res.ms}ms)${runsLine ? ` — ${runsLine.trim()}` : ""}`)
+    const runsLine = res.summaries.zig
+    console.log(
+      `  [${res.code === 0 ? "PASS" : "FAIL"}] ${t.name} (${res.ms}ms)${runsLine ? ` — ${runsLine.trim()}` : ""}`
+    )
     if (res.code !== 0) {
       allOk = false
-      console.error(combined.trim().split("\n").slice(-30).join("\n"))
+      console.error(diagnostics(res, 30))
     }
   }
   return allOk
 }
 
-async function main() {
-  const suites = discoverSuites()
+async function main(args) {
+  const options = optionsOf(args)
+  const filter = options.get("--filter")
+  const perFile = options.has("--per-file")
+  const measureCoverage = perFile || options.has("--coverage")
+  const concurrency = Number(options.get("--concurrency") ?? Math.min(8, Math.max(2, Math.floor(cpus().length / 2))))
+  const libfuzzerSeconds = Number(options.get("--libfuzzer-seconds") ?? 0)
+  const zigRuns = Number(options.get("--zig-runs") ?? 0)
+  const runRust = options.has("--rust") || options.has("--all") || options.has("--libfuzzer-seconds")
+  const runZig = options.has("--zig") || options.has("--all") || zigRuns > 0
+  const nativeOnly = (options.has("--rust") || options.has("--zig")) && !options.has("--all") && !measureCoverage &&
+    filter === undefined
+  const listOnly = options.has("--list")
+  const suites = nativeOnly && !listOnly
+    ? []
+    : discoverSuites(filter, options.has("--include-vibelang") || filter?.includes("vibelang"))
+  if ((!nativeOnly || listOnly) && suites.length === 0) {
+    throw new Error(`No fuzz packages selected${filter === undefined ? "" : ` by --filter ${JSON.stringify(filter)}`}`)
+  }
   if (listOnly) {
-    for (const s of suites) {
-      console.log(`${s.pkg}: ${s.files.join(", ")}`)
-    }
-    console.log(`Total: ${suites.length} package(s), ${suites.reduce((a, s) => a + s.files.length, 0)} fuzz test file(s).`)
-    return
+    for (const suite of suites) console.log(`${suite.pkg}: ${suite.files.join(", ")}`)
+    console.log(
+      `Total: ${suites.length} package(s), ${
+        suites.reduce((sum, suite) => sum + suite.files.length, 0)
+      } fuzz test file(s).`
+    )
+    return true
   }
 
   let ok = true
   if (!nativeOnly) {
-    ok = (await runTsSuites(suites)) && ok
+    ok = await runTsSuites(suites, {
+      measureCoverage,
+      perFile,
+      concurrency,
+      executions: options.get("--executions"),
+      duration: options.get("--duration"),
+      seed: options.get("--seed"),
+      v8Guided: options.has("--v8")
+    }) && ok
   }
-  if (runRust) {
-    ok = (await runRustFuzz()) && ok
-  }
-  if (runZig) {
-    ok = (await runZigFuzz()) && ok
-  }
-  process.exit(ok ? 0 : 1)
+  if (runRust) ok = await runRustFuzz(libfuzzerSeconds) && ok
+  if (runZig) ok = await runZigFuzz(zigRuns) && ok
+  return ok
 }
 
-main().catch((err) => {
-  console.error(err)
-  process.exit(1)
-})
+if (isMain(import.meta)) {
+  try {
+    process.exitCode = await main(process.argv.slice(2)) ? 0 : 1
+  } catch (error) {
+    console.error(error.message)
+    process.exitCode = 1
+  }
+}

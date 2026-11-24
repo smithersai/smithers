@@ -185,6 +185,16 @@ interface TarEntry {
 }
 
 const block = 512
+const metadataByteLimit = 4 * 1024 * 1024
+
+const readFully = async (handle: Fs.FileHandle, body: Buffer, offset: number): Promise<void> => {
+  let filled = 0
+  while (filled < body.length) {
+    const { bytesRead } = await handle.read(body, filled, body.length - filled, offset + filled)
+    if (bytesRead === 0) throw new ImageArchiveError({ message: "the image archive ended during a read" })
+    filled += bytesRead
+  }
+}
 
 const tarString = (bytes: Buffer, start: number, length: number): string =>
   bytes.subarray(start, start + length).toString("utf8").replace(/\0[\s\S]*$/, "")
@@ -207,15 +217,14 @@ const tarIndex = async (
   let offset = 0
   let pax = ""
   while (offset + block <= length) {
-    await handle.read(header, 0, block, offset)
+    await readFully(handle, header, offset)
     if (header.every((byte) => byte === 0)) return { files, end: offset }
     const size = Number(paxRecord(pax, "size") ?? Number.parseInt(tarString(header, 124, 12).trim(), 8))
     const data = offset + block
-    if (!Number.isSafeInteger(size) || data + size > length) break
+    if (!Number.isSafeInteger(size) || size < 0 || size > length - data) break
     const type = tarString(header, 156, 1)
     if (type === "x") {
-      const body = Buffer.alloc(size)
-      await handle.read(body, 0, size, data)
+      const body = await readEntry(handle, { offset: data, size })
       pax = body.toString("utf8")
     } else {
       const prefix = tarString(header, 345, 155)
@@ -229,8 +238,9 @@ const tarIndex = async (
 }
 
 const readEntry = async (handle: Fs.FileHandle, entry: TarEntry): Promise<Buffer> => {
+  if (entry.size > metadataByteLimit) throw new ImageArchiveError({ message: "image archive metadata exceeds 4 MiB" })
   const body = Buffer.alloc(entry.size)
-  await handle.read(body, 0, entry.size, entry.offset)
+  await readFully(handle, body, entry.offset)
   return body
 }
 
@@ -271,13 +281,21 @@ export const readImageArchive = async (path: string): Promise<ArchiveImage | { r
   const handle = await Fs.open(path, "r")
   try {
     const { files, end } = await tarIndex(handle)
-    const json = async (name: string): Promise<unknown> => {
+    const json = async (name: string, expectedDigest?: string): Promise<unknown> => {
       const entry = files.get(name)
       if (entry === undefined) throw new ImageArchiveError({ message: `the image archive has no ${name}` })
-      return JSON.parse((await readEntry(handle, entry)).toString("utf8"))
+      const bytes = await readEntry(handle, entry)
+      if (
+        expectedDigest !== undefined && `sha256:${createHash("sha256").update(bytes).digest("hex")}` !== expectedDigest
+      ) {
+        throw new ImageArchiveError({ message: `the image archive blob does not match ${expectedDigest}` })
+      }
+      return JSON.parse(bytes.toString("utf8"))
     }
     const blob = (digest: string) => `blobs/sha256/${digest.slice("sha256:".length)}`
     const images: Array<string> = []
+    const visiting = new Set<string>()
+    const visited = new Set<string>()
     const visit = async (list: ReadonlyArray<Descriptor>): Promise<void> => {
       for (const descriptor of list) {
         const digest = descriptor.digest
@@ -285,9 +303,19 @@ export const readImageArchive = async (path: string): Promise<ArchiveImage | { r
           throw new ImageArchiveError({ message: "the image archive has a malformed digest" })
         }
         const mediaType = String(descriptor.mediaType)
-        // Content addressing rules out cycles: an index cannot name its own digest.
-        if (indexTypes.has(mediaType)) await visit(descriptors(await json(blob(digest))))
-        else if (manifestTypes.has(mediaType) && descriptor.annotations?.[referenceType] === undefined) {
+        if (indexTypes.has(mediaType)) {
+          if (visiting.has(digest)) {
+            throw new ImageArchiveError({ message: "the image archive contains a cyclic index" })
+          }
+          if (visited.has(digest)) continue
+          if (visiting.size >= 64) {
+            throw new ImageArchiveError({ message: "the image archive index nesting exceeds 64" })
+          }
+          visiting.add(digest)
+          await visit(descriptors(await json(blob(digest), digest)))
+          visiting.delete(digest)
+          visited.add(digest)
+        } else if (manifestTypes.has(mediaType) && descriptor.annotations?.[referenceType] === undefined) {
           if (!images.includes(digest)) images.push(digest)
         }
       }
@@ -300,7 +328,7 @@ export const readImageArchive = async (path: string): Promise<ArchiveImage | { r
           : `Docker.Push publishes one platform image, but the build archive holds ${images.length}`
       }
     }
-    const manifest = await json(blob(images[0]!)) as {
+    const manifest = await json(blob(images[0]!), images[0]) as {
       readonly config?: { readonly digest?: unknown }
       readonly layers?: ReadonlyArray<{ readonly digest?: unknown }>
     }

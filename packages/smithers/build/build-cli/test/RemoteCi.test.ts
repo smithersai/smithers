@@ -83,7 +83,7 @@ describe("merge", () => {
       jobs: 4,
       durationMs: 50,
       counts: { hit: 1, ran: 1, failed: 0, skipped: 0, cancelled: 1 },
-      ok: true,
+      ok: false,
       results: [
         { ...row("//:shared", "hit", 3), target: "Shell.Test" },
         { ...row("//:a", "ran", 1), target: "Shell.Test" },

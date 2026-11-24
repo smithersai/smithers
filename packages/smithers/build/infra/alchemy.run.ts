@@ -49,7 +49,14 @@ const cacheWorker = Cloudflare.Worker(
 // which never does, declares none of them.
 const sandboxWorker = Cloudflare.Worker(
   sandboxWorkerId,
-  sandboxWorkerOptions({ container: (id, props) => Cloudflare.Container(id, props) })
+  Stack.useSync((stack) =>
+    sandboxWorkerOptions({
+      container: (id, props) => Cloudflare.Container(id, props),
+      metrics: Cloudflare.AnalyticsEngine.Dataset("SandboxRequestMetrics", {
+        dataset: `smithers_sandbox_requests_${stack.stage.replace(/[^A-Za-z0-9_]/g, "_")}`
+      })
+    })
+  )
 )
 
 /**

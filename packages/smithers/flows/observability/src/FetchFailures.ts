@@ -19,8 +19,11 @@
  * @since 1.0.0-rc.17
  */
 
+import * as Context from "effect/Context"
 import * as Effect from "effect/Effect"
+import * as Fiber from "effect/Fiber"
 import * as FetchHttpClient from "effect/http/FetchHttpClient"
+import * as HttpClient from "effect/http/HttpClient"
 import * as Layer from "effect/Layer"
 import * as Metric from "effect/Metric"
 
@@ -40,7 +43,7 @@ export interface Options {
   readonly route: (url: URL) => string | undefined
   /**
    * How many requests' failures it remembers to tell a retry from a first
-   * failure; past it the oldest is forgotten. Defaults to 256.
+   * failure; past it the oldest is forgotten. Defaults to 256. Invalid sizes retain one.
    */
   readonly remember?: number | undefined
 }
@@ -105,16 +108,72 @@ const urlOf = (input: RequestInfo | URL): URL =>
 const signalOf = (input: RequestInfo | URL, init: RequestInit | undefined): AbortSignal | null | undefined =>
   init?.signal ?? (typeof input === "object" && "signal" in input ? input.signal : undefined)
 
+type RecordResult = (record: Effect.Effect<void>) => void | Promise<void>
+
+const instrument = (options: Options) => {
+  const limit = options.remember ?? 256
+  const remember = Number.isSafeInteger(limit) && limit >= 1 ? limit : 1
+  const streaks = new Map<string, Streak>()
+
+  const outcome = (key: string, route: string, method: string, status: number, failure?: StatusClass) =>
+    Effect.gen(function*() {
+      const before = streaks.get(key)
+      streaks.delete(key)
+      if (failure === undefined) {
+        if (before !== undefined) {
+          yield* Effect.logInfo("http.request.recovered").pipe(
+            Effect.annotateLogs({ route, method, failures: before.failures })
+          )
+        }
+        return
+      }
+      const attempts = (before?.failures ?? 0) + 1
+      streaks.set(key, { status, failures: attempts })
+      if (streaks.size > remember) streaks.delete(streaks.keys().next().value!)
+      const retried = before !== undefined
+      yield* Metric.update(
+        Metric.withAttributes(failures, { route, method, statusClass: failure, retried: String(retried) }),
+        1
+      )
+      if (before?.status === status) return
+      yield* (failure === "5xx" ? Effect.logError : Effect.logWarning)("http.request.failed").pipe(
+        Effect.annotateLogs({ route, method, status, statusClass: failure, retried, failures: attempts })
+      )
+    }).pipe(Effect.ignoreCause)
+
+  return (send: typeof globalThis.fetch, recorder: () => RecordResult): typeof globalThis.fetch => {
+    const observed = async (input: RequestInfo | URL, init?: RequestInit) => {
+      let url: URL
+      let route: string | undefined
+      let method: string
+      try {
+        url = urlOf(input)
+        route = options.route(url)
+        method = methodOf(input, init)
+      } catch {
+        return send(input, init)
+      }
+      if (route === undefined) return send(input, init)
+      const record = recorder()
+      const key = `${method} ${url.href}`
+      let response: Response
+      try {
+        response = await send(input, init)
+      } catch (error) {
+        if (signalOf(input, init)?.aborted !== true) await record(outcome(key, route, method, 0, "network"))
+        throw error
+      }
+      await record(outcome(key, route, method, response.status, statusClass(response)))
+      return response
+    }
+    return Object.assign(observed, send)
+  }
+}
+
 /**
- * Replaces the `fetch` in `FetchHttpClient.Fetch` with one that records the
- * failures of the requests `route` names, through the services the layer is
- * built with: its loggers and its metrics. A request its caller aborted is
- * not a failure. Recording never changes what the caller gets: when a logger
- * or metric sink fails, the response, or the request's own rejection, is
- * returned as it was.
- *
- * Provide it above the exporter's layer, so the exporter keeps the `fetch`
- * below and its own requests are never recorded through themselves.
+ * Installs the observed fetch for raw consumers. Calls from an Effect inherit the
+ * requesting fiber's context; calls from a host callback inherit the layer's
+ * context. Recording settles before the original HTTP result is delivered.
  *
  * @category layers
  * @since 1.0.0-rc.17
@@ -124,61 +183,35 @@ export const layer = (options: Options): Layer.Layer<never> =>
     FetchHttpClient.Fetch,
     Effect.gen(function*() {
       const send = yield* FetchHttpClient.Fetch
-      // Recording never alters what the caller sees: a logger or metric sink that fails is left to its Exit.
-      const run = Effect.runSyncExitWith(yield* Effect.context<never>())
-      const remember = Math.max(1, Math.floor(options.remember ?? 256))
-      // A request by its method and full URL, whose last answer was a failure. In memory only.
-      const streaks = new Map<string, Streak>()
-
-      const failed = (key: string, route: string, method: string, status: number, statusClass: StatusClass) => {
-        const before = streaks.get(key)
-        streaks.delete(key)
-        streaks.set(key, { status, failures: (before?.failures ?? 0) + 1 })
-        if (streaks.size > remember) streaks.delete(streaks.keys().next().value!)
-        const retried = before !== undefined
-        run(Effect.gen(function*() {
-          yield* Metric.update(
-            Metric.withAttributes(failures, { route, method, statusClass, retried: String(retried) }),
-            1
-          )
-          if (before !== undefined && before.status === status) return
-          // A 5xx is the server's failure; a 4xx is the request's, and no answer is most often a device offline.
-          yield* (statusClass === "5xx" ? Effect.logError : Effect.logWarning)("http.request.failed").pipe(
-            Effect.annotateLogs({ route, method, status, statusClass, retried, failures: (before?.failures ?? 0) + 1 })
-          )
-        }))
-      }
-
-      const succeeded = (key: string, route: string, method: string) => {
-        const before = streaks.get(key)
-        if (before === undefined) return
-        streaks.delete(key)
-        run(
-          Effect.logInfo("http.request.recovered").pipe(
-            Effect.annotateLogs({ route, method, failures: before.failures })
-          )
-        )
-      }
-
-      const observed = ((input: RequestInfo | URL, init?: RequestInit) => {
-        const url = urlOf(input)
-        const route = options.route(url)
-        if (route === undefined) return send(input, init)
-        const method = methodOf(input, init)
-        const key = `${method} ${url.href}`
-        return send(input, init).then(
-          (response) => {
-            const failure = statusClass(response)
-            if (failure === undefined) succeeded(key, route, method)
-            else failed(key, route, method, response.status, failure)
-            return response
-          },
-          (error: unknown) => {
-            if (signalOf(input, init)?.aborted !== true) failed(key, route, method, 0, "network")
-            throw error
-          }
-        )
-      }) as typeof globalThis.fetch
-      return Object.assign(observed, send)
+      const context = yield* Effect.context<never>()
+      return instrument(options)(send, () => {
+        const caller = Fiber.getCurrent()
+        return Effect.runPromiseWith(caller ? Context.merge(context, caller.context) : context)
+      })
     })
   )
+
+/**
+ * A fetch-backed HttpClient that records failures and recoveries in the fiber
+ * executing each request. It uses the fetch and request options supplied by the host.
+ *
+ * @category layers
+ * @since 1.0.0-rc.18
+ */
+export const layerHttpClient = (options: Options): Layer.Layer<HttpClient.HttpClient> =>
+  HttpClient.layerMergedContext(Effect.gen(function*() {
+    const client = yield* HttpClient.HttpClient
+    const observe = instrument(options)
+    return HttpClient.transformResponse(client, (execute) =>
+      Effect.gen(function*() {
+        const send = yield* FetchHttpClient.Fetch
+        let observation = Effect.void
+        const observed = observe(send, () => (record) => {
+          observation = record
+        })
+        return yield* execute.pipe(
+          Effect.provideService(FetchHttpClient.Fetch, observed),
+          Effect.ensuring(Effect.suspend(() => observation))
+        )
+      }))
+  })).pipe(Layer.provide(FetchHttpClient.layer))

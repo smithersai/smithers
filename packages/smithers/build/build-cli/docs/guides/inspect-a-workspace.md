@@ -80,9 +80,8 @@ lookups or rebuild forecasts.
 `--plan` skips target bodies, but evaluates trusted declarations and reads the
 workspace. It may spawn bounded tool probes for version and identity lookups,
 and may resolve or build declared environments such as Nix. For a declared
-Nix environment, this includes `nix --version`, `nix build`, and
-`nix print-dev-env`; a memoized resolution still runs the version probe and
-`nix build`, whose store path keys the memo.
+Nix environment, this includes `nix --version`, `nix build`,
+`nix print-dev-env`, and `nix path-info --recursive`.
 
 Planning can write resolution memos under the configured cache directory.
 Declarations and spawned tools run on the host and can write outside that

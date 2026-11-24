@@ -34,6 +34,9 @@ capabilities the permission kernel grants. `create-flow` is the entry the app's
 `/flow.create` door launches; `packages/rpc/src/FlowAuthoring.ts` names it and
 its stages.
 
+Issue and pull request triage, reproduction, and proof-of-concept flows use the
+host file tools. Their mentions of test commands are handoffs for a maintainer.
+
 Capability literals are load-bearing. `proc:spawn:*` grants a command;
 a resource with a leading space before `*` grants only a command that
 starts with a space, and the kernel refuses everything a real body asks for. `pack.test.mjs`

@@ -7,7 +7,7 @@ import { opaqueHandlerBody } from "./fixtures/OpaqueHandlerBody.ts"
  * the sweeping process — a released run whose flow had not (yet, or ever)
  * been registered was swept every heartbeat and silently dropped, with no
  * log, metric, or health signal distinguishing this from a healthy sweep.
- * The driver must emit a structured warning (once per run) and leave the row
+ * The driver must emit a structured warning (once per flow) and leave the row
  * parked so a later registration still reclaims it.
  */
 import { describe, expect, it } from "@effect/vitest"
@@ -89,7 +89,7 @@ const releaseMidAction = (executionId: string) =>
   })
 
 describe("unregistered-flow reclaim is loud, not silent (issue #62)", () => {
-  it.effect("warns once per run while the flow is unregistered and reclaims after registration", () =>
+  it.effect("warns once per flow while it is unregistered and reclaims after registration", () =>
     Effect.gen(function*() {
       const logs: Array<{ readonly message: unknown; readonly logLevel: string }> = []
       const capture = Logger.make((options) => {
@@ -101,6 +101,9 @@ describe("unregistered-flow reclaim is loud, not silent (issue #62)", () => {
           const store = yield* RunStore.RunStore
           const state = yield* DurableEngineState.DurableEngineState
           yield* releaseMidAction("unregistered-release")
+          // A second run of the same flow shares the one warning (R1-Fable-D1-025):
+          // the set of warned names is bounded by flows, not by runs ever woken.
+          yield* releaseMidAction("unregistered-release-2")
 
           // A fresh worker over the same store that has NOT registered the flow:
           // its sweep re-drives the released row every heartbeat.
@@ -133,7 +136,7 @@ describe("unregistered-flow reclaim is loud, not silent (issue #62)", () => {
 
       // The silent no-op is now a structured warning…
       expect(result.warningsWhileUnregistered.length).toBeGreaterThanOrEqual(1)
-      // …logged once per run, not once per heartbeat tick…
+      // …logged once per flow, not once per heartbeat tick or per run…
       expect(result.warningsWhileUnregistered.length).toBe(1)
       expect(result.warningsWhileUnregistered[0]?.logLevel).toBe("Warn")
       expect(String(result.warningsWhileUnregistered[0]?.message)).toContain("unregistered-release")

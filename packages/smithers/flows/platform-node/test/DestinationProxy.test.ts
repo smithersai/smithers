@@ -1,12 +1,14 @@
 import { it as effectIt } from "@effect/vitest"
 import { Effect, Schema } from "effect"
 import * as ChildProcess from "node:child_process"
+import type { LookupAddress } from "node:dns"
+import Dns from "node:dns/promises"
 import * as Fs from "node:fs/promises"
 import * as Http from "node:http"
 import * as Net from "node:net"
 import * as Os from "node:os"
 import * as Path from "node:path"
-import { afterAll, describe, expect, it } from "vitest"
+import { afterAll, describe, expect, it, vi } from "vitest"
 import * as DestinationProxy from "../src/DestinationProxy.ts"
 import { createBrokerDirectory } from "../src/internal/DestinationBrokerRoot.ts"
 
@@ -22,17 +24,22 @@ const socketPath = async () => {
   return Path.join(root, "p.sock")
 }
 const request = (socketPath: string, path: string, headers = {}, authentication: string | null = authorization) =>
-  new Promise<{ code: number; body: string }>((resolve, reject) => {
+  new Promise<{ code: number; body: string; headers: Http.IncomingHttpHeaders }>((resolve, reject) => {
     Http.get({
       socketPath,
       path,
-      headers: { ...(authentication === null ? {} : { "proxy-authorization": authentication }), ...headers }
+      setDefaultHeaders: false,
+      headers: {
+        host: "broker.test",
+        ...(authentication === null ? {} : { "proxy-authorization": authentication }),
+        ...headers
+      }
     }, (response) => {
       let body = ""
       response.on("data", (data) => {
         body += data
       })
-      response.on("end", () => resolve({ code: response.statusCode!, body }))
+      response.on("end", () => resolve({ code: response.statusCode!, body, headers: response.headers }))
     }).on("error", reject)
   })
 const tunnel = (socket: string, authority: string, body = "", authentication: string | null = authorization) =>
@@ -63,27 +70,43 @@ const tunnel = (socket: string, authority: string, body = "", authentication: st
     )
   })
 
+// The broker asks the system resolver for every answer. Only fault and cancellation tests override it.
+const dns: { lookup(host: string, options: { all: true }): Promise<Array<LookupAddress>> } = Dns
+
 describe.runIf(process.platform !== "win32")("destination broker", () => {
   it("forwards HTTP to an exact declared host and replaces the Host header", async () => {
     const socket = await socketPath()
     const origins: Array<string | undefined> = []
-    const proxyHeaders: Array<string | undefined> = []
+    const upstreamHeaders: Array<Http.IncomingHttpHeaders> = []
     const upstream = Http.createServer((req, res) => {
       origins.push(req.headers.host)
-      proxyHeaders.push(req.headers["proxy-authorization"])
+      upstreamHeaders.push(req.headers)
+      res.setHeader("connection", "x-response-hop")
+      res.setHeader("x-response-hop", "local")
       res.end("real upstream")
     })
     await new Promise<void>((resolve) => upstream.listen(0, "127.0.0.1", resolve))
     const port = (upstream.address() as Net.AddressInfo).port
     try {
       await Effect.runPromise(Effect.scoped(Effect.gen(function*() {
-        yield* DestinationProxy.open(socket, ["127.0.0.1"], testToken)
+        yield* DestinationProxy.open(socket, [`127.0.0.1:${port}`], testToken)
         const result = yield* Effect.promise(() =>
-          request(socket, `http://127.0.0.1:${port}/module`, { host: "evil.test" })
+          request(socket, `http://127.0.0.1:${port}/module`, {
+            host: "evil.test",
+            connection: "X-Hop, X-Second",
+            "x-hop": "local",
+            "x-second": "local",
+            te: "trailers",
+            "x-end": "kept"
+          })
         )
-        expect(result).toEqual({ code: 200, body: "real upstream" })
+        expect(result).toMatchObject({ code: 200, body: "real upstream" })
+        expect(result.headers).not.toHaveProperty("x-response-hop")
         expect(origins).toEqual([`127.0.0.1:${port}`])
-        expect(proxyHeaders).toEqual([undefined])
+        for (const header of ["proxy-authorization", "x-hop", "x-second", "te"]) {
+          expect(upstreamHeaders[0]).not.toHaveProperty(header)
+        }
+        expect(upstreamHeaders[0]?.["x-end"]).toBe("kept")
         for (
           const url of [
             `http://localhost:${port}/`,
@@ -100,6 +123,11 @@ describe.runIf(process.platform !== "win32")("destination broker", () => {
         }
         expect((yield* Effect.promise(() => request(socket, "/relative"))).code).toBe(400)
         expect(origins).toHaveLength(1)
+        const plain = yield* Effect.promise(() =>
+          request(socket, `http://127.0.0.1:${port}/plain`, { "x-end": "ordinary" })
+        )
+        expect(plain.code).toBe(200)
+        expect(upstreamHeaders[1]?.["x-end"]).toBe("ordinary")
       })))
       expect(await Fs.stat(socket).catch(() => undefined)).toBeUndefined()
     } finally {
@@ -118,7 +146,7 @@ describe.runIf(process.platform !== "win32")("destination broker", () => {
     const port = (upstream.address() as Net.AddressInfo).port
     try {
       await Effect.runPromise(Effect.scoped(Effect.gen(function*() {
-        yield* DestinationProxy.open(socket, ["127.0.0.1"], testToken)
+        yield* DestinationProxy.open(socket, [`127.0.0.1:${port}`], testToken)
         expect(yield* Effect.promise(() => tunnel(socket, `127.0.0.1:${port}`, "hello")))
           .toContain("echo:hello")
         for (
@@ -159,6 +187,124 @@ describe.runIf(process.platform !== "win32")("destination broker", () => {
     }
   })
 
+  it("requires an explicit port and a literal grant for a loopback listener", async () => {
+    const socket = await socketPath()
+    let connections = 0
+    const upstream = Net.createServer((peer) => {
+      connections++
+      peer.end()
+    })
+    await new Promise<void>((resolve) => upstream.listen(0, "127.0.0.1", resolve))
+    const port = (upstream.address() as Net.AddressInfo).port
+    try {
+      await Effect.runPromise(Effect.scoped(Effect.gen(function*() {
+        yield* DestinationProxy.open(socket, ["127.0.0.1", `localhost:${port}`], testToken)
+        for (const authority of [`127.0.0.1:${port}`, `localhost:${port}`]) {
+          expect(yield* Effect.promise(() => tunnel(socket, authority))).toContain("403 Forbidden")
+          expect((yield* Effect.promise(() => request(socket, `http://${authority}/`))).code).toBe(403)
+        }
+      })))
+      expect(connections).toBe(0)
+    } finally {
+      await new Promise<void>((resolve) => upstream.close(() => resolve()))
+    }
+  })
+
+  it("refuses the whole DNS answer for reserved, mixed or empty address sets", async () => {
+    const socket = await socketPath()
+    const lookup = vi.spyOn(dns, "lookup")
+    try {
+      await Effect.runPromise(Effect.scoped(Effect.gen(function*() {
+        yield* DestinationProxy.open(socket, ["resolver.test"], testToken)
+        for (
+          const addresses of [
+            [],
+            ["0.0.0.0"],
+            ["10.0.0.1"],
+            ["100.64.0.1"],
+            ["169.254.0.1"],
+            ["172.16.0.1"],
+            ["192.168.0.1"],
+            ["198.18.0.1"],
+            ["224.0.0.1"],
+            ["::1"],
+            ["fc00::1"],
+            ["fe80::1%lo0"],
+            ["::ffff:127.0.0.1"],
+            ["2001:db8::1"],
+            ["2002::1"],
+            ["invalid address"],
+            ["1.1.1.1", "127.0.0.1"],
+            ["2606:4700:4700::1111", "::1"]
+          ]
+        ) {
+          lookup.mockResolvedValue(addresses.map((address) => ({ address, family: Net.isIP(address) })))
+          expect((yield* Effect.promise(() => request(socket, "http://resolver.test/"))).code, String(addresses)).toBe(
+            403
+          )
+          expect(yield* Effect.promise(() => tunnel(socket, "resolver.test:443")), String(addresses)).toContain(
+            "403 Forbidden"
+          )
+        }
+        lookup.mockRejectedValue(new Error("system resolution failed"))
+        expect((yield* Effect.promise(() => request(socket, "http://resolver.test/"))).code).toBe(502)
+        expect(yield* Effect.promise(() => tunnel(socket, "resolver.test:443"))).toContain("502 Bad Gateway")
+        for (const [host, options] of lookup.mock.calls) {
+          expect(host).toBe("resolver.test")
+          expect(options).toEqual({ all: true })
+        }
+        lookup.mockClear()
+        expect((yield* Effect.promise(() => request(socket, "http://resolver.test:443/"))).code).toBe(403)
+        expect(yield* Effect.promise(() => tunnel(socket, "resolver.test:80"))).toContain("403 Forbidden")
+        expect(lookup).not.toHaveBeenCalled()
+      })))
+    } finally {
+      lookup.mockRestore()
+    }
+  })
+
+  it.each(["GET http://resolver.test/", "CONNECT resolver.test:443"])(
+    "closes the broker while the system resolver is still answering %s",
+    async (target) => {
+      const socket = await socketPath()
+      const entered = Promise.withResolvers<void>()
+      const answer = Promise.withResolvers<Array<LookupAddress>>()
+      const peerClosed = Promise.withResolvers<void>()
+      const lookup = vi.spyOn(dns, "lookup").mockImplementation(() => {
+        entered.resolve()
+        return answer.promise
+      })
+      try {
+        await Effect.runPromise(Effect.scoped(Effect.gen(function*() {
+          yield* DestinationProxy.open(socket, ["resolver.test"], testToken)
+          const peer = Net.connect(socket)
+          peer.on(
+            "connect",
+            () =>
+              peer.write(`${target} HTTP/1.1\r\nHost: resolver.test\r\nProxy-Authorization: ${authorization}\r\n\r\n`)
+          )
+          peer.once("error", peerClosed.reject)
+          peer.once("close", () => peerClosed.resolve())
+          yield* Effect.promise(() => entered.promise)
+        })))
+        await peerClosed.promise
+        // A delayed public answer cannot start an upstream after the owning scope closes.
+        const dial = vi.spyOn(Net.Socket.prototype, "connect").mockReturnThis()
+        try {
+          answer.resolve([{ address: "1.1.1.1", family: 4 }, { address: "2606:4700:4700::1111", family: 6 }])
+          await new Promise<void>((resolve) => setImmediate(resolve))
+          expect(lookup).toHaveBeenCalledTimes(1)
+          expect(dial).not.toHaveBeenCalled()
+        } finally {
+          dial.mockRestore()
+        }
+      } finally {
+        answer.resolve([])
+        lookup.mockRestore()
+      }
+    }
+  )
+
   it("closes live tunnels when the scope ends and reports a bind failure", async () => {
     const socket = await socketPath()
     const upstream = Net.createServer()
@@ -168,7 +314,7 @@ describe.runIf(process.platform !== "win32")("destination broker", () => {
       upstream.once("connection", (peer) => peer.on("close", () => resolve()))
     )
     await Effect.runPromise(Effect.scoped(Effect.gen(function*() {
-      yield* DestinationProxy.open(socket, ["127.0.0.1"], testToken)
+      yield* DestinationProxy.open(socket, [`127.0.0.1:${port}`], testToken)
       const client = Net.connect(socket)
       yield* Effect.promise(() =>
         new Promise<void>((resolve) => {
@@ -215,11 +361,11 @@ describe.runIf(process.platform !== "win32")("broker failure boundaries", () => 
     const port = (portServer.address() as Net.AddressInfo).port
     await new Promise<void>((resolve) => portServer.close(() => resolve()))
     await Effect.runPromise(Effect.scoped(Effect.gen(function*() {
-      yield* DestinationProxy.open(socket, ["127.0.0.1"], testToken)
+      yield* DestinationProxy.open(socket, [`127.0.0.1:${port}`], testToken)
       const outcome = yield* Effect.promise(() => request(socket, "http://127.0.0.1:" + port).catch(() => "refused"))
       expect(outcome).toBe("refused")
       expect(yield* Effect.promise(() => tunnel(socket, "127.0.0.1:" + port))).toBe("")
-      expect(yield* Effect.promise(() => tunnel(socket, "127.0.0.1"))).toBe("")
+      expect(yield* Effect.promise(() => tunnel(socket, "127.0.0.1"))).toContain("403 Forbidden")
     })))
   })
 
@@ -231,7 +377,7 @@ describe.runIf(process.platform !== "win32")("broker failure boundaries", () => 
         ChildProcess.execFile(
           file,
           args,
-          { env: { ...process.env, SMTHRS_DESTINATION_TOKEN: testToken } },
+          { env: { ...process.env, SMTHRS_DESTINATION_TOKEN: testToken }, timeout: 5_000 },
           (error, stdout) =>
             resolve({
               code: error === null ? 0 : typeof error.code === "number" ? error.code : null,
@@ -251,6 +397,12 @@ describe.runIf(process.platform !== "win32")("broker failure boundaries", () => 
         )
       ).toEqual({ code: 7, out: "relay\n" })
       expect((yield* Effect.promise(() => execute(["/nonexistent/destination-test"]))).code).toBe(1)
+      for (const [shellName, signal] of [["PIPE", "SIGPIPE"], ["USR1", "SIGUSR1"]] as const) {
+        expect(
+          (yield* Effect.promise(() => execute(["/bin/sh", "-c", `trap - ${shellName}; kill -s ${shellName} $$`]))).code
+        )
+          .toBe(128 + Os.constants.signals[signal])
+      }
     })))
   })
 })
@@ -274,18 +426,20 @@ describe.runIf(process.platform === "linux")("isolated destination brokers", () 
     })))
     expect(await Fs.stat(Path.dirname(socket)).catch(() => undefined)).toBeUndefined()
   })
-
-  it("refuses a workspace covering the private broker location", async () => {
-    const result = await Effect.runPromise(Effect.scoped(
-      DestinationProxy.isolated([], Path.parse(Os.tmpdir()).root).pipe(Effect.result)
-    ))
-    expect(result._tag).toBe("Failure")
-    if (result._tag === "Failure") expect(result.failure.message).toContain("outside the workspace")
-  })
 })
 
 // A broker's directory needs an owner's uid, which Windows does not give.
 describe.skipIf(process.platform === "win32")("a destination broker under a root of its caller's", () => {
+  it("refuses a workspace covering the private broker location", async () => {
+    const root = await Fs.realpath(await Fs.mkdtemp(Path.join(Os.tmpdir(), "eb-")))
+    roots.push(root)
+    const result = await Effect.runPromise(Effect.scoped(
+      DestinationProxy.isolated([], root, root).pipe(Effect.result)
+    ))
+    expect(result._tag).toBe("Failure")
+    if (result._tag === "Failure") expect(result.failure.message).toContain("outside the workspace")
+  })
+
   it("is made in a private directory under that root and removed at scope exit", async () => {
     const root = await Fs.realpath(await Fs.mkdtemp(Path.join(Os.tmpdir(), "eb-")))
     roots.push(root)

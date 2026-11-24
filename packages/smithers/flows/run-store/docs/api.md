@@ -609,7 +609,12 @@ on any key, or a missing or inherited id field is refused with
 #### listRun
 
 ```ts
-const listRun?: (runId: string) => Effect<ReadonlyArray<Attempt>, AttemptStoreError>
+const listRun?: (runId: string, page?: ListRunPage) => Effect<ReadonlyArray<Attempt>, AttemptStoreError>
+
+interface ListRunPage {
+  readonly limit: number
+  readonly after?: { readonly stepKeyDigest: string; readonly attempt: number }
+}
 ```
 
 Every attempt row of one run, ordered by step key digest and attempt, in one
@@ -617,6 +622,13 @@ read. Each row is what `get` answers for it. A resumed run's replay reads its
 recorded attempts here once instead of one `get` per step. It is optional:
 `AttemptStore.layer` implements it, `makeNoop` omits it, and a caller of a store
 without it reads each attempt with `get`.
+
+With a `page` it answers at most `page.limit` rows after the row `page.after`
+names, so a long run is read in bounded pieces: pass the last row of one page
+as the next page's `after` until a page is shorter than its limit. `limit` must
+be between 1 and `maximumListRunPage`; any other page fails `invalid_attempt`.
+Without a page it answers every row, reading `maximumListRunPage` rows per
+query.
 
 #### heartbeat
 
@@ -759,14 +771,20 @@ class AttemptStoreError extends Schema.TaggedError<AttemptStoreError>()(
 
 ### AttemptStore constants
 
-| Constant                 | Value   | Bounds                                                   |
-| ------------------------ | ------- | -------------------------------------------------------- |
-| `maximumCheckpointBytes` | 16 MiB  | The ceiling `Options.maxCheckpointBytes` may not exceed. |
-| `maximumJsonDepth`       | 128     | Every attempt value.                                     |
-| `maximumJsonNodes`       | 100,000 | Every attempt value.                                     |
+| Constant                 | Value   | Bounds                                                     |
+| ------------------------ | ------- | ---------------------------------------------------------- |
+| `maximumCheckpointBytes` | 16 MiB  | The ceiling `Options.maxCheckpointBytes` may not exceed.   |
+| `maximumValueBytes`      | 32 MiB  | Each encoded `meta`, `error` and `outcome` a write stores. |
+| `maximumListRunPage`     | 256     | Rows per `listRun` query, and the largest page `limit`.    |
+| `maximumJsonDepth`       | 128     | Every attempt value.                                       |
+| `maximumJsonNodes`       | 100,000 | Every attempt value.                                       |
 
-Metadata, errors, and outcomes have no byte ceiling. Only the checkpoint does,
-because a step that cannot checkpoint still runs.
+Metadata, errors, and outcomes have no configurable byte ceiling. Each takes
+the fixed `maximumValueBytes` ceiling at `put`, `finish` and `patch`: a larger
+value could not be read back into a constrained host, so it is refused with
+`invalid_attempt` and nothing is stored. Rows already stored are read whatever
+their size. Only the checkpoint takes a policy, because a step that cannot
+checkpoint still runs.
 
 ### AttemptStore constructors and layers
 

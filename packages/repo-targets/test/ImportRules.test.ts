@@ -1,9 +1,9 @@
+import { Smithers } from "@smthrs/targets"
 import { spawnSync } from "node:child_process"
 import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
-import { Smithers } from "@smthrs/targets"
 import { afterEach, describe, expect, it } from "vitest"
 import { ImportRules } from "../src/ImportRules.ts"
 import type { ImportRule } from "../src/ImportRulesCheck.ts"
@@ -43,7 +43,14 @@ describe("validateRules", () => {
     const rules: ReadonlyArray<ImportRule> = [
       valid,
       { ...valid, normalizeRelative: true },
-      { kind: "forbidNames", files: ["src/**/*.tsx"], modules: ["react"], names: ["useState"], allowTypeOnly: true, because },
+      {
+        kind: "forbidNames",
+        files: ["src/**/*.tsx"],
+        modules: ["react"],
+        names: ["useState"],
+        allowTypeOnly: true,
+        because
+      },
       { kind: "rootImportsOnly", packages: ["@smthrs/*"], because },
       { kind: "forbidCalls", callees: ["Model.stream", "*.route", "*.#send", "*.$"], because },
       { kind: "forbidHostModules", because }
@@ -57,30 +64,105 @@ describe("validateRules", () => {
     ["a null rule", [null], "ImportRules rule 0: must be an object"],
     ["an array rule", [[]], "ImportRules rule 0: must be an object"],
     ["a string rule", ["forbid"], "ImportRules rule 0: must be an object"],
-    ["an unknown kind", [{ kind: "ban", because }], "ImportRules rule 0: `kind` must be one of forbid, forbidNames, rootImportsOnly, forbidCalls, forbidHostModules"],
-    ["a misspelled key", [valid, { kind: "forbid", module: ["effect"], because }], "ImportRules rule 1: forbid does not take `module`"],
-    ["a type option on calls", [{ kind: "forbidCalls", callees: ["f"], allowTypeOnly: true, because }], "ImportRules rule 0: forbidCalls does not take `allowTypeOnly`"],
-    ["no reason", [{ kind: "forbid", modules: ["effect"] }], "ImportRules rule 0: `because` must say why, naming the AGENTS.md rule that governs it"],
-    ["a blank reason", [{ ...valid, because: "  " }], "ImportRules rule 0: `because` must say why, naming the AGENTS.md rule that governs it"],
-    ["files that are not a list", [{ ...valid, files: "src/**" }], "ImportRules rule 0: `files` must be a non-empty array of strings"],
-    ["an empty files list", [{ ...valid, files: [] }], "ImportRules rule 0: `files` must be a non-empty array of strings"],
-    ["a blank files glob", [{ ...valid, files: ["src/**", ""] }], "ImportRules rule 0: `files` must hold only non-empty strings"],
-    ["an absolute files glob", [{ ...valid, files: ["/src/**"] }], "ImportRules rule 0: files glob \"/src/**\" must be package-relative"],
-    ["a files glob leaving the package", [{ ...valid, files: ["../other/**"] }], "ImportRules rule 0: files glob \"../other/**\" must be package-relative"],
+    [
+      "an unknown kind",
+      [{ kind: "ban", because }],
+      "ImportRules rule 0: `kind` must be one of forbid, forbidNames, rootImportsOnly, forbidCalls, forbidHostModules"
+    ],
+    [
+      "a misspelled key",
+      [valid, { kind: "forbid", module: ["effect"], because }],
+      "ImportRules rule 1: forbid does not take `module`"
+    ],
+    [
+      "a type option on calls",
+      [{ kind: "forbidCalls", callees: ["f"], allowTypeOnly: true, because }],
+      "ImportRules rule 0: forbidCalls does not take `allowTypeOnly`"
+    ],
+    [
+      "no reason",
+      [{ kind: "forbid", modules: ["effect"] }],
+      "ImportRules rule 0: `because` must say why, naming the AGENTS.md rule that governs it"
+    ],
+    [
+      "a blank reason",
+      [{ ...valid, because: "  " }],
+      "ImportRules rule 0: `because` must say why, naming the AGENTS.md rule that governs it"
+    ],
+    [
+      "files that are not a list",
+      [{ ...valid, files: "src/**" }],
+      "ImportRules rule 0: `files` must be a non-empty array of strings"
+    ],
+    [
+      "an empty files list",
+      [{ ...valid, files: [] }],
+      "ImportRules rule 0: `files` must be a non-empty array of strings"
+    ],
+    [
+      "a blank files glob",
+      [{ ...valid, files: ["src/**", ""] }],
+      "ImportRules rule 0: `files` must hold only non-empty strings"
+    ],
+    [
+      "an absolute files glob",
+      [{ ...valid, files: ["/src/**"] }],
+      "ImportRules rule 0: files glob \"/src/**\" must be package-relative"
+    ],
+    [
+      "a files glob leaving the package",
+      [{ ...valid, files: ["../other/**"] }],
+      "ImportRules rule 0: files glob \"../other/**\" must be package-relative"
+    ],
     ["no modules", [{ kind: "forbid", because }], "ImportRules rule 0: `modules` must be a non-empty array of strings"],
-    ["a non-string name", [{ kind: "forbidNames", modules: ["react"], names: [1], because }], "ImportRules rule 0: `names` must hold only non-empty strings"],
-    ["no packages", [{ kind: "rootImportsOnly", packages: [], because }], "ImportRules rule 0: `packages` must be a non-empty array of strings"],
-    ["an allow list on rootImportsOnly", [{ kind: "rootImportsOnly", packages: ["@smthrs/*"], allow: ["@smthrs/cli/*"], because }], "ImportRules rule 0: rootImportsOnly does not take `allow`"],
-    ["an allow list on forbid", [{ kind: "forbid", modules: ["effect"], allow: ["effect/Schema"], because }], "ImportRules rule 0: forbid does not take `allow`"],
-    ["no callees", [{ kind: "forbidCalls", because }], "ImportRules rule 0: `callees` must be a non-empty array of strings"],
-    ...["*", "*.", "*route", "page.*", "*.page.route", "*.route()", "**.route"].map((entry): [string, unknown, string] => [
+    [
+      "a non-string name",
+      [{ kind: "forbidNames", modules: ["react"], names: [1], because }],
+      "ImportRules rule 0: `names` must hold only non-empty strings"
+    ],
+    [
+      "no packages",
+      [{ kind: "rootImportsOnly", packages: [], because }],
+      "ImportRules rule 0: `packages` must be a non-empty array of strings"
+    ],
+    ["an allow list on rootImportsOnly", [{
+      kind: "rootImportsOnly",
+      packages: ["@smthrs/*"],
+      allow: ["@smthrs/cli/*"],
+      because
+    }], "ImportRules rule 0: rootImportsOnly does not take `allow`"],
+    [
+      "an allow list on forbid",
+      [{ kind: "forbid", modules: ["effect"], allow: ["effect/Schema"], because }],
+      "ImportRules rule 0: forbid does not take `allow`"
+    ],
+    [
+      "no callees",
+      [{ kind: "forbidCalls", because }],
+      "ImportRules rule 0: `callees` must be a non-empty array of strings"
+    ],
+    ...["*", "*.", "*route", "page.*", "*.page.route", "*.route()", "**.route"].map((
+      entry
+    ): [string, unknown, string] => [
       `the callee pattern ${entry}`,
       [{ kind: "forbidCalls", callees: ["page.route", entry], because }],
       `ImportRules rule 0: \`callees\` entry "${entry}" must be a callee or \`*.<member>\``
     ]),
-    ["a non-boolean reference option", [{ kind: "forbidCalls", callees: ["*.run"], includeReferences: "yes", because }], "ImportRules rule 0: `includeReferences` must be a boolean"],
-    ["a non-boolean normalization option", [{ ...valid, normalizeRelative: "yes" }], "ImportRules rule 0: `normalizeRelative` must be a boolean"],
-    ["a non-boolean type option", [{ ...valid, allowTypeOnly: "yes" }], "ImportRules rule 0: `allowTypeOnly` must be a boolean"]
+    [
+      "a non-boolean reference option",
+      [{ kind: "forbidCalls", callees: ["*.run"], includeReferences: "yes", because }],
+      "ImportRules rule 0: `includeReferences` must be a boolean"
+    ],
+    [
+      "a non-boolean normalization option",
+      [{ ...valid, normalizeRelative: "yes" }],
+      "ImportRules rule 0: `normalizeRelative` must be a boolean"
+    ],
+    [
+      "a non-boolean type option",
+      [{ ...valid, allowTypeOnly: "yes" }],
+      "ImportRules rule 0: `allowTypeOnly` must be a boolean"
+    ]
   ])("refuses %s", (_case, rules, message) => {
     expect(() => validateRules(rules)).toThrow(new TypeError(message))
   })
@@ -93,12 +175,14 @@ describe("normalized relative module rules", () => {
       modules: ["!(@smthrs|@tanstack|react|effect|.|..)/**"],
       because
     }
-    const sources = { "plugins/example/src/view.ts": 'import "./local"; import "../shared"; import "@smthrs/ui"; import "effect/Schema"' }
+    const sources = {
+      "plugins/example/src/view.ts":
+        "import \"./local\"; import \"../shared\"; import \"@smthrs/ui\"; import \"effect/Schema\""
+    }
     expect(violations([rule], sources)).toEqual([])
     expect(violations([{ ...rule, normalizeRelative: false }], sources)).toEqual([])
     expect(violations([{ ...rule, normalizeRelative: true }], sources)).toHaveLength(2)
   })
-
 
   it.each([
     ["src/bridge.ts", "../../../../apps/mvp/state"],
@@ -110,15 +194,20 @@ describe("normalized relative module rules", () => {
     const source = { [path]: `export { state as renamed } from "${specifier}"` }
     expect(violations([{ kind: "forbid", modules: ["**/apps/**"], normalizeRelative: true, because }], source))
       .toEqual([`${path}:1 re-exports "${specifier}" (forbid) #0`])
-    expect(violations([{ kind: "forbidNames", modules: ["**/apps/**"], names: ["state"], normalizeRelative: true, because }], source))
+    expect(
+      violations(
+        [{ kind: "forbidNames", modules: ["**/apps/**"], names: ["state"], normalizeRelative: true, because }],
+        source
+      )
+    )
       .toEqual([`${path}:1 re-exports state from "${specifier}" (forbidNames) #0`])
   })
 
   it("keeps literal relative patterns and permits unrelated relative references", () => {
     const rule: ImportRule = { kind: "forbid", modules: ["../private"], because }
-    expect(violations([rule], { "src/View.ts": 'import "../private"' })).toHaveLength(1)
+    expect(violations([rule], { "src/View.ts": "import \"../private\"" })).toHaveLength(1)
     expect(violations([{ ...rule, modules: ["**/apps/**"] }], {
-      "src/View.ts": 'import "./props"; import "../shared/props"; import "apps-like"'
+      "src/View.ts": "import \"./props\"; import \"../shared/props\"; import \"apps-like\""
     })).toEqual([])
   })
 })
@@ -129,46 +218,46 @@ describe("check: forbid", () => {
   it("fails every import form of a forbidden module in the files it covers, and nothing else", () => {
     expect(violations([rule], {
       "src/View.tsx": [
-        'import { Effect } from "effect"',
-        'import type { Schema } from "effect/Schema"',
-        'export { Stream } from "effect/Stream"',
-        'const lazy = await import("effect/unstable/http")',
-        'const old = require("effect")',
-        'type Exit = import("effect").Exit',
-        'import { useState } from "react"',
-        'import { pipe } from "effect-ish"'
+        "import { Effect } from \"effect\"",
+        "import type { Schema } from \"effect/Schema\"",
+        "export { Stream } from \"effect/Stream\"",
+        "const lazy = await import(\"effect/unstable/http\")",
+        "const old = require(\"effect\")",
+        "type Exit = import(\"effect\").Exit",
+        "import { useState } from \"react\"",
+        "import { pipe } from \"effect-ish\""
       ].join("\n"),
-      "src/machine.ts": 'import { Effect } from "effect"'
+      "src/machine.ts": "import { Effect } from \"effect\""
     })).toEqual([
-      'src/View.tsx:1 imports "effect" (forbid) #0',
-      'src/View.tsx:2 imports "effect/Schema" (forbid) #0',
-      'src/View.tsx:3 re-exports "effect/Stream" (forbid) #0',
-      'src/View.tsx:4 imports "effect/unstable/http" (forbid) #0',
-      'src/View.tsx:5 imports "effect" (forbid) #0',
-      'src/View.tsx:6 imports "effect" (forbid) #0'
+      "src/View.tsx:1 imports \"effect\" (forbid) #0",
+      "src/View.tsx:2 imports \"effect/Schema\" (forbid) #0",
+      "src/View.tsx:3 re-exports \"effect/Stream\" (forbid) #0",
+      "src/View.tsx:4 imports \"effect/unstable/http\" (forbid) #0",
+      "src/View.tsx:5 imports \"effect\" (forbid) #0",
+      "src/View.tsx:6 imports \"effect\" (forbid) #0"
     ])
   })
 
   it("lets type-only references through only when the rule allows them", () => {
     const source = {
       "src/View.tsx": [
-        'import type { Schema } from "effect"',
-        'export type { Exit } from "effect"',
-        'type Layer = import("effect").Layer',
-        'import { type Option } from "effect"'
+        "import type { Schema } from \"effect\"",
+        "export type { Exit } from \"effect\"",
+        "type Layer = import(\"effect\").Layer",
+        "import { type Option } from \"effect\""
       ].join("\n")
     }
     expect(violations([{ ...rule, allowTypeOnly: true }], source)).toEqual([
-      'src/View.tsx:4 imports "effect" (forbid) #0'
+      "src/View.tsx:4 imports \"effect\" (forbid) #0"
     ])
     expect(violations([rule], source)).toHaveLength(4)
   })
 
   it("reads every source when the rule names no files", () => {
     expect(violations([{ kind: "forbid", modules: ["ai"], because }], {
-      "worker/Answer.ts": 'import { generateText } from "ai"',
-      "e2e/chat.spec.ts": 'import { test } from "@playwright/test"'
-    })).toEqual(['worker/Answer.ts:1 imports "ai" (forbid) #0'])
+      "worker/Answer.ts": "import { generateText } from \"ai\"",
+      "e2e/chat.spec.ts": "import { test } from \"@playwright/test\""
+    })).toEqual(["worker/Answer.ts:1 imports \"ai\" (forbid) #0"])
   })
 })
 
@@ -184,74 +273,79 @@ describe("check: forbidNames", () => {
   it("fails a named import, an alias, a re-export, a default import and a member read through a binding", () => {
     expect(violations([rule], {
       "src/Composer.tsx": [
-        'import React, { useState, useEffect as onMount, useMemo } from "react"',
-        'export { useState as useLocal } from "react"',
-        'import * as R from "react"',
+        "import React, { useState, useEffect as onMount, useMemo } from \"react\"",
+        "export { useState as useLocal } from \"react\"",
+        "import * as R from \"react\"",
         "const [draft] = R.useState(\"\")",
         "R.useEffect(() => {})",
         "R.useMemo(() => 1)",
-        'import { useState as other } from "preact/hooks"'
+        "import { useState as other } from \"preact/hooks\""
       ].join("\n"),
-      "src/state.ts": 'import { useState } from "react"'
+      "src/state.ts": "import { useState } from \"react\""
     })).toEqual([
-      'src/Composer.tsx:1 imports default from "react" (forbidNames) #0',
-      'src/Composer.tsx:1 imports useState from "react" (forbidNames) #0',
-      'src/Composer.tsx:1 imports useEffect from "react" (forbidNames) #0',
-      'src/Composer.tsx:2 re-exports useState from "react" (forbidNames) #0',
-      'src/Composer.tsx:4 uses R.useState from "react" (forbidNames) #0',
-      'src/Composer.tsx:5 uses R.useEffect from "react" (forbidNames) #0'
+      "src/Composer.tsx:1 imports default from \"react\" (forbidNames) #0",
+      "src/Composer.tsx:1 imports useState from \"react\" (forbidNames) #0",
+      "src/Composer.tsx:1 imports useEffect from \"react\" (forbidNames) #0",
+      "src/Composer.tsx:2 re-exports useState from \"react\" (forbidNames) #0",
+      "src/Composer.tsx:4 uses R.useState from \"react\" (forbidNames) #0",
+      "src/Composer.tsx:5 uses R.useEffect from \"react\" (forbidNames) #0"
     ])
   })
 
   it("fails a name taken by string key or destructuring, and any use that takes the module without naming what", () => {
     expect(violations([rule], {
       "src/Hooks.tsx": [
-        'import React from "react"',
-        'const [draft] = React["useState"]("")',
+        "import React from \"react\"",
+        "const [draft] = React[\"useState\"](\"\")",
         "const { useEffect, useMemo } = React",
         "const { useState: local } = await import(\"react\")",
         "register(React)",
-        'export * from "react"',
+        "export * from \"react\"",
         "const hooks = React[name]",
         "React.useMemo(() => 1)"
       ].join("\n")
     })).toEqual([
-      'src/Hooks.tsx:1 imports default from "react" (forbidNames) #0',
-      'src/Hooks.tsx:2 uses React.useState from "react" (forbidNames) #0',
-      'src/Hooks.tsx:3 uses React.useEffect from "react" (forbidNames) #0',
-      'src/Hooks.tsx:4 imports every name of "react" (forbidNames) #0',
-      'src/Hooks.tsx:5 uses React from "react" without naming what it takes (forbidNames) #0',
-      'src/Hooks.tsx:6 re-exports every name of "react" (forbidNames) #0',
-      'src/Hooks.tsx:7 uses React from "react" without naming what it takes (forbidNames) #0'
+      "src/Hooks.tsx:1 imports default from \"react\" (forbidNames) #0",
+      "src/Hooks.tsx:2 uses React.useState from \"react\" (forbidNames) #0",
+      "src/Hooks.tsx:3 uses React.useEffect from \"react\" (forbidNames) #0",
+      "src/Hooks.tsx:4 imports every name of \"react\" (forbidNames) #0",
+      "src/Hooks.tsx:5 uses React from \"react\" without naming what it takes (forbidNames) #0",
+      "src/Hooks.tsx:6 re-exports every name of \"react\" (forbidNames) #0",
+      "src/Hooks.tsx:7 uses React from \"react\" without naming what it takes (forbidNames) #0"
     ])
-    expect(violations([{ ...rule, allowTypeOnly: true }], { "src/Types.tsx": 'export type * from "react"' })).toEqual([])
+    expect(violations([{ ...rule, allowTypeOnly: true }], { "src/Types.tsx": "export type * from \"react\"" })).toEqual(
+      []
+    )
   })
 
-  it.each(["ts", "vibe"])("refuses dynamic default values and aliases in .%s when only a member name is banned", (extension) => {
-    const rule: ImportRule = { kind: "forbidNames", modules: ["react"], names: ["useState"], because }
-    const path = `src/Hooks.${extension}`
-    expect(violations([rule], {
-      [path]: [
-        'const a = (await import("react")).default.useState(0)',
-        'const { default: R } = await import("react")',
-        'const b = require("react").default.useState(0)',
-        'const { default: S } = require("react")'
-      ].join("\n")
-    })).toEqual([1, 2, 3, 4].map((line) => `${path}:${line} imports every name of "react" (forbidNames) #0`))
-  })
+  it.each(["ts", "vibe"])(
+    "refuses dynamic default values and aliases in .%s when only a member name is banned",
+    (extension) => {
+      const rule: ImportRule = { kind: "forbidNames", modules: ["react"], names: ["useState"], because }
+      const path = `src/Hooks.${extension}`
+      expect(violations([rule], {
+        [path]: [
+          "const a = (await import(\"react\")).default.useState(0)",
+          "const { default: R } = await import(\"react\")",
+          "const b = require(\"react\").default.useState(0)",
+          "const { default: S } = require(\"react\")"
+        ].join("\n")
+      })).toEqual([1, 2, 3, 4].map((line) => `${path}:${line} imports every name of "react" (forbidNames) #0`))
+    }
+  )
 
   it("allows a local namespace export only when its type-only form is allowed", () => {
     const rule: ImportRule = { kind: "forbidNames", modules: ["react"], names: ["FC"], because }
     const source = {
       "src/Types.ts": [
-        'import * as W from "react"',
+        "import * as W from \"react\"",
         "export type { W }",
         "export { type W as Types }",
         "export { W as Values }"
       ].join("\n")
     }
     expect(violations([{ ...rule, allowTypeOnly: true }], source)).toEqual([
-      'src/Types.ts:4 uses W from "react" without naming what it takes (forbidNames) #0'
+      "src/Types.ts:4 uses W from \"react\" without naming what it takes (forbidNames) #0"
     ])
     expect(violations([rule], source)).toHaveLength(3)
   })
@@ -260,19 +354,19 @@ describe("check: forbidNames", () => {
     const typeRule: ImportRule = { kind: "forbidNames", modules: ["react"], names: ["FC"], because }
     const source = {
       "src/View.tsx": [
-        'import { type FC } from "react"',
-        'import * as React from "react"',
+        "import { type FC } from \"react\"",
+        "import * as React from \"react\"",
         "const View: React.FC = () => null",
-        'import { FC as Component } from "react"'
+        "import { FC as Component } from \"react\""
       ].join("\n")
     }
     expect(violations([{ ...typeRule, allowTypeOnly: true }], source)).toEqual([
-      'src/View.tsx:4 imports FC from "react" (forbidNames) #0'
+      "src/View.tsx:4 imports FC from \"react\" (forbidNames) #0"
     ])
     expect(violations([typeRule], source)).toEqual([
-      'src/View.tsx:1 imports FC from "react" (forbidNames) #0',
-      'src/View.tsx:3 uses React.FC from "react" (forbidNames) #0',
-      'src/View.tsx:4 imports FC from "react" (forbidNames) #0'
+      "src/View.tsx:1 imports FC from \"react\" (forbidNames) #0",
+      "src/View.tsx:3 uses React.FC from \"react\" (forbidNames) #0",
+      "src/View.tsx:4 imports FC from \"react\" (forbidNames) #0"
     ])
   })
 })
@@ -283,26 +377,26 @@ describe("check: rootImportsOnly", () => {
   it("fails a deep import of a matching package and passes its root and everything else", () => {
     expect(violations([rule], {
       "worker/Answer.ts": [
-        'import { Model } from "@smthrs/model"',
-        'import * as ModelError from "@smthrs/model/ModelError"',
-        'import { Schema } from "effect/Schema"',
-        'import { Effect } from "effect"',
-        'import { Pool } from "@effect/sql-pg/PgClient"',
-        'import { readFileSync } from "node:fs"',
-        'import { local } from "./local.ts"',
-        'import { internal } from "#internal"',
-        'import { home } from "~/home"',
-        'export type { Route } from "@smthrs/rpc/ConfiguredModel"'
+        "import { Model } from \"@smthrs/model\"",
+        "import * as ModelError from \"@smthrs/model/ModelError\"",
+        "import { Schema } from \"effect/Schema\"",
+        "import { Effect } from \"effect\"",
+        "import { Pool } from \"@effect/sql-pg/PgClient\"",
+        "import { readFileSync } from \"node:fs\"",
+        "import { local } from \"./local.ts\"",
+        "import { internal } from \"#internal\"",
+        "import { home } from \"~/home\"",
+        "export type { Route } from \"@smthrs/rpc/ConfiguredModel\""
       ].join("\n")
     })).toEqual([
-      'worker/Answer.ts:2 imports "@smthrs/model/ModelError", not the root "@smthrs/model" (rootImportsOnly) #0',
-      'worker/Answer.ts:3 imports "effect/Schema", not the root "effect" (rootImportsOnly) #0',
-      'worker/Answer.ts:10 re-exports "@smthrs/rpc/ConfiguredModel", not the root "@smthrs/rpc" (rootImportsOnly) #0'
+      "worker/Answer.ts:2 imports \"@smthrs/model/ModelError\", not the root \"@smthrs/model\" (rootImportsOnly) #0",
+      "worker/Answer.ts:3 imports \"effect/Schema\", not the root \"effect\" (rootImportsOnly) #0",
+      "worker/Answer.ts:10 re-exports \"@smthrs/rpc/ConfiguredModel\", not the root \"@smthrs/rpc\" (rootImportsOnly) #0"
     ])
   })
 
   it("lets a type-only deep import through only when the rule allows it", () => {
-    const source = { "src/a.ts": 'import type { Model } from "@smthrs/model/Model"' }
+    const source = { "src/a.ts": "import type { Model } from \"@smthrs/model/Model\"" }
     expect(violations([{ ...rule, allowTypeOnly: true }], source)).toEqual([])
     expect(violations([rule], source)).toHaveLength(1)
   })
@@ -318,27 +412,32 @@ describe.each(["tsx", "vibe"])("import escape forms in .%s", (extension) => {
   ])("$kind rejects dynamic imports with options", (rule) => {
     const specifier = rule.kind === "forbidHostModules" ? "node:fs" : "effect/Schema"
     expect(violations([rule], { [path]: `const loaded = import("${specifier}", {})` })).toEqual([
-      `${path}:1 imports "${specifier}"${rule.kind === "rootImportsOnly" ? ', not the root "effect"' : ""} (${rule.kind}) #0`
+      `${path}:1 imports "${specifier}"${
+        rule.kind === "rootImportsOnly" ? ", not the root \"effect\"" : ""
+      } (${rule.kind}) #0`
     ])
     if (rule.kind === "forbid") {
-      expect(violations([rule], { [path]: 'const loaded = import("effect", {})' })).toEqual([
+      expect(violations([rule], { [path]: "const loaded = import(\"effect\", {})" })).toEqual([
         `${path}:1 imports "effect" (forbid) #0`
       ])
     }
     if (rule.kind === "rootImportsOnly") {
-      expect(violations([rule], { [path]: 'const loaded = import("effect", {})' })).toEqual([])
+      expect(violations([rule], { [path]: "const loaded = import(\"effect\", {})" })).toEqual([])
     }
-    expect(violations([rule], { [path]: 'const loaded = import("allowed", {})' })).toEqual([])
+    expect(violations([rule], { [path]: "const loaded = import(\"allowed\", {})" })).toEqual([])
   })
 
-  it.each([
-    ['import * as React from "react"; const { useState, useEffect } = React', [
-      'uses React.useState from "react"', 'uses React.useEffect from "react"'
-    ]],
-    ['import * as React from "react"; React["useState"](0)', ['uses React.useState from "react"']],
-    ['const { useState } = await import("react")', ['imports every name of "react"']],
-    ['require("react").useState', ['imports every name of "react"']]
-  ] as const)("forbidNames rejects %s", (text, usages) => {
+  it.each(
+    [
+      ["import * as React from \"react\"; const { useState, useEffect } = React", [
+        "uses React.useState from \"react\"",
+        "uses React.useEffect from \"react\""
+      ]],
+      ["import * as React from \"react\"; React[\"useState\"](0)", ["uses React.useState from \"react\""]],
+      ["const { useState } = await import(\"react\")", ["imports every name of \"react\""]],
+      ["require(\"react\").useState", ["imports every name of \"react\""]]
+    ] as const
+  )("forbidNames rejects %s", (text, usages) => {
     const rule: ImportRule = {
       kind: "forbidNames",
       files: ["src/**/*.tsx", "src/**/*.vibe"],
@@ -350,7 +449,7 @@ describe.each(["tsx", "vibe"])("import escape forms in .%s", (extension) => {
       usages.map((usage) => `${path}:1 ${usage} (forbidNames) #0`)
     )
     expect(violations([rule], {
-      [path]: 'import * as React from "react"; const { useMemo } = React; React["useMemo"](() => 0)'
+      [path]: "import * as React from \"react\"; const { useMemo } = React; React[\"useMemo\"](() => 0)"
     })).toEqual([])
   })
 })
@@ -369,16 +468,18 @@ describe("check: forbidCalls", () => {
 
   it.each(["ts", "vibe"])("checks function references only when requested in .%s", (extension) => {
     const path = `src/Functions.${extension}`
-    const source = { [path]: [
-      'import { run as alias, type Run } from "runtime"',
-      'import type { run as typeRun } from "types"',
-      'const { run: renamed } = service',
-      'const refs = [service.run, service["run"], service[key]]',
-      'const { run: first, ...rest } = service',
-      'const { [key]: unknown, run: second } = service',
-      'const read = Model.stream',
-      'Model.stream(); Model.stream()'
-    ].join("\n") }
+    const source = {
+      [path]: [
+        "import { run as alias, type Run } from \"runtime\"",
+        "import type { run as typeRun } from \"types\"",
+        "const { run: renamed } = service",
+        "const refs = [service.run, service[\"run\"], service[key]]",
+        "const { run: first, ...rest } = service",
+        "const { [key]: unknown, run: second } = service",
+        "const read = Model.stream",
+        "Model.stream(); Model.stream()"
+      ].join("\n")
+    }
     const rule: ImportRule = { kind: "forbidCalls", callees: ["*.run", "Model.stream"], because }
     expect(violations([rule], source)).toEqual([
       `${path}:8 calls Model.stream (forbidCalls) #0`,
@@ -400,18 +501,18 @@ describe("check: forbidCalls", () => {
 
   const interception = [
     "async function intercept() {",
-    'await page.route("**/api", handler)',
-    'await tab.page.route("**/api", handler)',
-    'await device.context.route("**/api", handler)',
-    'await page.context().route("**/api", handler)',
-    'await page?.route("**/api", handler)',
-    'await page.route?.("**/api", handler)',
-    'await page["route"]("**/api", handler)',
+    "await page.route(\"**/api\", handler)",
+    "await tab.page.route(\"**/api\", handler)",
+    "await device.context.route(\"**/api\", handler)",
+    "await page.context().route(\"**/api\", handler)",
+    "await page?.route(\"**/api\", handler)",
+    "await page.route?.(\"**/api\", handler)",
+    "await page[\"route\"](\"**/api\", handler)",
     "await (await browser.newContext()).routeFromHAR(har)",
     "router.routes()",
     "reroute()",
     "route()",
-    'page["re.route"]()',
+    "page[\"re.route\"]()",
     "}"
   ].join("\n")
 
@@ -450,33 +551,37 @@ describe("check: ordering", () => {
       { kind: "forbid", modules: ["effect"], because }
     ]
     expect(violations(rules, {
-      "src/c.ts": 'import { Effect } from "effect"; Effect.runPromise(main)',
-      "src/a.ts": 'Effect.runPromise(main)\nimport { Effect } from "effect"',
-      "src/b.ts": 'import { Effect } from "effect"'
+      "src/c.ts": "import { Effect } from \"effect\"; Effect.runPromise(main)",
+      "src/a.ts": "Effect.runPromise(main)\nimport { Effect } from \"effect\"",
+      "src/b.ts": "import { Effect } from \"effect\""
     })).toEqual([
       "src/a.ts:1 calls Effect.runPromise (forbidCalls) #0",
-      'src/a.ts:2 imports "effect" (forbid) #1',
-      'src/b.ts:1 imports "effect" (forbid) #1',
+      "src/a.ts:2 imports \"effect\" (forbid) #1",
+      "src/b.ts:1 imports \"effect\" (forbid) #1",
       "src/c.ts:1 calls Effect.runPromise (forbidCalls) #0",
-      'src/c.ts:1 imports "effect" (forbid) #1'
+      "src/c.ts:1 imports \"effect\" (forbid) #1"
     ])
   })
 })
 
 describe("check: source coverage", () => {
   it("refuses a stale .ts scope after its only source migrates to .vibe", () => {
-    expect(() => check([
-      { kind: "forbid", files: ["src/Answer.ts", "src/other/**/*.ts"], modules: ["ai"], because }
-    ], [{ path: "src/Answer.vibe", text: "export const answer = 42" }])).toThrow(
+    expect(() =>
+      check([
+        { kind: "forbid", files: ["src/Answer.ts", "src/other/**/*.ts"], modules: ["ai"], because }
+      ], [{ path: "src/Answer.vibe", text: "export const answer = 42" }])
+    ).toThrow(
       `ImportRules rule 0 (forbid) matches no source files; files: ["src/Answer.ts","src/other/**/*.ts"]. ${because}`
     )
   })
 
   it("names every empty rule, including a default scope in an empty package", () => {
-    expect(() => check([
-      { kind: "forbid", modules: ["ai"], because },
-      { kind: "forbidCalls", files: ["test/**"], callees: ["setTimeout"], because }
-    ], [])).toThrow([
+    expect(() =>
+      check([
+        { kind: "forbid", modules: ["ai"], because },
+        { kind: "forbidCalls", files: ["test/**"], callees: ["setTimeout"], because }
+      ], [])
+    ).toThrow([
       `ImportRules rule 0 (forbid) matches no source files; files: ["**/*"]. ${because}`,
       `ImportRules rule 1 (forbidCalls) matches no source files; files: ["test/**"]. ${because}`
     ].join("\n"))
@@ -492,14 +597,22 @@ describe("check: source coverage", () => {
 describe("listSources", () => {
   it("ignores generated VibeLang declarations while checking authored sources and ambient declarations", () => {
     const directory = scratchPackage({
-      "src/Answer.vibe": 'import "forbidden"',
-      "src/Answer.d.vibe.ts": 'import "compiler-only"',
-      "src/ambient.d.ts": 'import "forbidden"',
+      "src/Answer.vibe": "import \"forbidden\"",
+      "src/View.vibex": "import \"forbidden\"",
+      "src/View.d.vibex.ts": "import \"compiler-only\"",
+      "src/View.vibe.text.d.ts": "import \"compiler-only\"",
+      "src/Answer.d.vibe.ts": "import \"compiler-only\"",
+      "src/ambient.d.ts": "import \"forbidden\""
     })
-    expect(listSources(directory)).toEqual(["src/Answer.vibe", "src/ambient.d.ts"])
-    const outcome = run({ packageDirectory: "fixture", directory, rules: [{ kind: "forbid", modules: ["forbidden", "compiler-only"], because }] })
+    expect(listSources(directory)).toEqual(["src/Answer.vibe", "src/View.vibex", "src/ambient.d.ts"])
+    const outcome = run({
+      packageDirectory: "fixture",
+      directory,
+      rules: [{ kind: "forbid", modules: ["forbidden", "compiler-only"], because }]
+    })
     expect(outcome.exitCode).toBe(1)
     expect(outcome.output).toContain("src/Answer.vibe")
+    expect(outcome.output).toContain("src/View.vibex")
     expect(outcome.output).toContain("src/ambient.d.ts")
     expect(outcome.output).not.toContain("compiler-only")
   })
@@ -553,7 +666,7 @@ describe("run", () => {
 
   it("reports each violation with the package path, line, kind and reason, and exits 1", () => {
     const directory = scratchPackage({
-      "src/View.tsx": 'import { Effect } from "effect"',
+      "src/View.tsx": "import { Effect } from \"effect\"",
       "worker/Answer.ts": "\n\nconst events = Model.stream(request)"
     })
     expect(run({ packageDirectory: "apps/mvp", directory, rules })).toEqual({
@@ -570,8 +683,8 @@ describe("run", () => {
   it("checks VibeLang sources like TypeScript ones", () => {
     const directory = scratchPackage({
       "src/Answer.vibe": [
-        'import * as Model from "@smthrs/model/Model"',
-        'import { NodeHost } from "@smthrs/platform-node"',
+        "import * as Model from \"@smthrs/model/Model\"",
+        "import { NodeHost } from \"@smthrs/platform-node\"",
         "",
         "error Refused { reason: string }",
         "",
@@ -600,13 +713,13 @@ describe("run", () => {
   })
 
   it("names one violation, rule and file in the singular", () => {
-    const directory = scratchPackage({ "src/View.tsx": 'import { Effect } from "effect"' })
+    const directory = scratchPackage({ "src/View.tsx": "import { Effect } from \"effect\"" })
     expect(run({ packageDirectory: "apps/mvp", directory, rules: rules.slice(0, 1) }).output.split("\n")[0])
       .toBe("ImportRules failed in apps/mvp: 1 violation of 1 rule over 1 source file.")
   })
 
   it("passes and exits 0 when nothing breaks a rule", () => {
-    const directory = scratchPackage({ "src/View.tsx": 'import { Button } from "@smthrs/ui"', "src/a.ts": "" })
+    const directory = scratchPackage({ "src/View.tsx": "import { Button } from \"@smthrs/ui\"", "src/a.ts": "" })
     expect(run({ packageDirectory: "apps/mvp", directory, rules })).toEqual({
       exitCode: 0,
       output: "ImportRules passed in apps/mvp: 2 rules over 2 source files."
@@ -623,7 +736,7 @@ describe("run", () => {
       line: 7,
       rule: 2,
       kind: "forbidNames",
-      usage: 'imports useState from "react"',
+      usage: "imports useState from \"react\"",
       because: "UI state is a local-only collection. See apps/mvp/AGENTS.md, \"State (flux)\"."
     })).toBe(
       "- apps/mvp/src/View.tsx:7 imports useState from \"react\" (forbidNames). " +
@@ -638,7 +751,7 @@ describe("the import-rules program", () => {
     spawnSync(process.execPath, [runner, ...args], { cwd: directory, encoding: "utf8", timeout: 60_000 })
 
   it("prints violations to stderr and exits 1, and prints the pass line and exits 0", () => {
-    const directory = scratchPackage({ "src/a.ts": 'import { Effect } from "effect"' })
+    const directory = scratchPackage({ "src/a.ts": "import { Effect } from \"effect\"" })
     const failed = program(directory, ["apps/x", rules])
     expect(failed.status).toBe(1)
     expect(failed.stderr).toContain(`- apps/x/src/a.ts:1 imports "effect" (forbid). ${because}`)
@@ -662,9 +775,12 @@ describe("the import-rules program", () => {
 
   it("fails loudly when a rule's file patterns cover nothing", () => {
     const directory = scratchPackage({ "src/Answer.vibe": "export const answer = 42" })
-    const empty = program(directory, ["apps/x", JSON.stringify([
-      { kind: "forbid", files: ["src/Answer.ts"], modules: ["ai"], because }
-    ])])
+    const empty = program(directory, [
+      "apps/x",
+      JSON.stringify([
+        { kind: "forbid", files: ["src/Answer.ts"], modules: ["ai"], because }
+      ])
+    ])
     expect(empty.status).toBe(2)
     expect(empty.stderr).toContain(
       `ImportRules rule 0 (forbid) matches no source files; files: ["src/Answer.ts"]. ${because}`
@@ -691,7 +807,7 @@ describe("ImportRules", () => {
     expect(attrs.runner.entry.path).toBe("//packages/repo-targets/scripts/import-rules.mjs")
     expect(attrs.runner.args).toEqual(["apps/mvp", JSON.stringify(rules)])
     expect(attrs.srcs).toEqual([
-      { _tag: "Glob", pattern: "//apps/mvp/**/*{.ts,.tsx,.mts,.cts,.js,.jsx,.mjs,.cjs,.vibe}", exclude: [] },
+      { _tag: "Glob", pattern: "//apps/mvp/**/*{.ts,.tsx,.mts,.cts,.js,.jsx,.mjs,.cjs,.vibe,.vibex}", exclude: [] },
       { _tag: "File", path: "//packages/repo-targets/scripts/import-rules.mjs" },
       { _tag: "File", path: "//packages/repo-targets/src/ImportRulesCheck.ts" },
       { _tag: "File", path: "//packages/repo-targets/src/ImportAnalysis.ts" }
@@ -700,7 +816,8 @@ describe("ImportRules", () => {
 
   it("keys on every source of the package", async () => {
     const target = ImportRules({ cwd: "packages/repo-targets", rules })
-    const [sources] = (Smithers.Target.metadata(target).attrs as { readonly srcs: ReadonlyArray<Smithers.Input.Glob> }).srcs
+    const [sources] =
+      (Smithers.Target.metadata(target).attrs as { readonly srcs: ReadonlyArray<Smithers.Input.Glob> }).srcs
     const keyed = await Smithers.Input.expandGlob(workspaceRoot, "", sources!, { packageScoped: false })
     expect(keyed).toContain("packages/repo-targets/src/ImportRules.ts")
     expect(keyed).toContain("packages/repo-targets/scripts/import-rules.mjs")

@@ -170,6 +170,43 @@ const placeholder = (reference: Reference): unknown => {
  */
 export const make = <T>(node: string): Planned<T> => placeholder({ node, path: [] }) as Planned<T>
 
+/**
+ * Rebuilds the strict placeholder a reference names, without reading any
+ * property through the placeholder's trap. Splicing a recorded reference back
+ * into a body uses this, because a path segment such as `then` or `toString`
+ * cannot be reached by property access.
+ *
+ * @since 1.0.0
+ * @category constructors
+ */
+export const fromReference = <T>(reference: Reference): Planned<T> =>
+  placeholder({ node: reference.node, path: [...reference.path] }) as Planned<T>
+
+/**
+ * Reads one field of a planned value as a planned value, for any string key.
+ *
+ * Property access is the ordinary way to reach a field, but a planned value
+ * answers `then` with `undefined` and refuses `toString`, `valueOf` and
+ * `toJSON`, so a key that comes from data (an item id, a member name) must be
+ * read with this instead. It throws a `GraphBuildError` coded
+ * `planned_value_computed` when `value` is not a planned value.
+ *
+ * @since 1.0.0
+ * @category accessors
+ */
+export const field = (value: unknown, key: string): Planned<unknown> => {
+  const source = reference(value)
+  if (source === undefined) {
+    throw new GraphBuildError({
+      code: "planned_value_computed",
+      node: "",
+      path: [key],
+      message: `Planned.field read ${JSON.stringify(key)} from a value that is not a planned value.`
+    })
+  }
+  return placeholder({ node: source.node, path: [...source.path, key] }) as Planned<unknown>
+}
+
 /** @private */
 const carrier = (value: unknown): value is { readonly [TypeId]?: Reference } =>
   (typeof value === "object" && value !== null) || typeof value === "function"

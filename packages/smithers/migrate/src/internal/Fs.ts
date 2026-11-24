@@ -162,6 +162,8 @@ export const walkReport = (
     const isIgnored = (key: string): boolean =>
       ignored.has(key) || (packPrefix !== undefined && ignored.has(`${packPrefix}${key}`))
 
+    const generatedNames = new Set(["build", "coverage", "dist", "out", "target", "vendor"])
+    const sourcePath = (key: string) => /^(?:src|scripts|(?:\.smithers\/)?(?:flows|workflows))(?:\/|$)/.test(key)
     const visit = (directory: string, depth: number): Effect.Effect<void> =>
       Effect.gen(function*() {
         const key = relative(root, path, directory)
@@ -183,7 +185,7 @@ export const walkReport = (
           return
         }
         for (const name of listed.success.slice().sort()) {
-          if (ignoredDirectories.includes(name)) continue
+          if (ignoredDirectories.includes(name) && !(generatedNames.has(name) && sourcePath(key))) continue
           const absolute = path.join(directory, name)
           const child = relative(root, path, absolute)
           if (isIgnored(child)) continue

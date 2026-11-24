@@ -572,7 +572,7 @@ describe("@smthrs/platform-node ProcessSandbox, DestinationProxy, ProcessReaper 
       await Effect.runPromise(
         Effect.scoped(
           Effect.gen(function*() {
-            yield* DestinationProxy.open(socketPath, ["127.0.0.1"], token)
+            yield* DestinationProxy.open(socketPath, [`127.0.0.1:${port}`], token)
             const report = yield* Fuzz.run(
               arb,
               ({ kind }) =>

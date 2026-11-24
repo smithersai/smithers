@@ -31,14 +31,18 @@ afterAll(() => rmSync(root, { recursive: true, force: true }))
 const spawner = Effect.runSync(
   Effect.gen(function*() {
     return yield* ChildProcessSpawner
-  }).pipe(Effect.provide(Layer.provideMerge(NodeChildProcessSpawner.layer, Layer.merge(NodeFileSystem.layer, Path.layer))))
+  }).pipe(
+    Effect.provide(Layer.provideMerge(NodeChildProcessSpawner.layer, Layer.merge(NodeFileSystem.layer, Path.layer)))
+  )
 )
 
 const runSh = (command: string, cwd: string | undefined, env: Record<string, string | undefined> | undefined) =>
   Effect.runPromise(
     Effect.scoped(
       Effect.gen(function*() {
-        const child = yield* spawner.spawn(ChildProcess.make("sh", ["-c", command], { cwd, env: env ?? {}, extendEnv: true }))
+        const child = yield* spawner.spawn(
+          ChildProcess.make("sh", ["-c", command], { cwd, env: env ?? {}, extendEnv: true })
+        )
         const [stdout, stderr, exitCode] = yield* Effect.all([
           Stream.mkString(Stream.decodeText(child.stdout)),
           Stream.mkString(Stream.decodeText(child.stderr)),
@@ -172,7 +176,9 @@ describe("sandbox service", () => {
   it("serves the smallest declared instance type that holds the session's limits", async () => {
     const { env, large, small } = bindings()
     const remoteId = await Effect.runPromise(
-      Effect.scoped(Effect.map(providerOf(env, { limits: { cpus: 2, memoryMib: 4096 } }).acquire("small"), (s) => s.remoteId))
+      Effect.scoped(
+        Effect.map(providerOf(env, { limits: { cpus: 2, memoryMib: 4096 } }).acquire("small"), (s) => s.remoteId)
+      )
     )
     const refused = await Effect.runPromise(
       Effect.flip(Effect.scoped(providerOf(env, { limits: { cpus: 8 } }).acquire("too-large")))
@@ -196,6 +202,52 @@ describe("sandbox service", () => {
     expect(bare.status).toBe(401)
     expect(large.resolutions).toEqual([])
     expect(small.resolutions).toEqual([])
+  })
+
+  it("counts each request including authentication failures and binding defects", async () => {
+    const rows: Array<AnalyticsEngineDataPoint> = []
+    const env = {
+      ...bindings().env,
+      SANDBOX_REQUEST_METRICS: {
+        writeDataPoint(point?: AnalyticsEngineDataPoint) {
+          if (point) rows.push(point)
+        }
+      }
+    }
+    const request = (authorized: boolean) =>
+      new Request("https://sandbox.test/v1/sessions", {
+        method: "POST",
+        headers: authorized ? { authorization: `Bearer ${token}` } : {},
+        body: JSON.stringify({ key: "metrics-session" })
+      })
+    expect((await worker.fetch(request(false), env)).status).toBe(401)
+    expect((await worker.fetch(request(true), env)).status).toBe(200)
+    expect(
+      (await worker.fetch(request(true), {
+        ...env,
+        get SANDBOX_STANDARD_4(): FakeBinding {
+          throw new Error("binding unavailable")
+        }
+      })).status
+    ).toBe(503)
+    expect(rows.map((row) => row.blobs)).toEqual(["401", "200", "503"].map((status) => ["sessions", "POST", status]))
+    expect(rows.every((row) => Number(row.doubles?.[0]) >= 0)).toBe(true)
+  })
+
+  it("keeps unrecognized input out of metrics and tolerates a lost datapoint", async () => {
+    const request = new Request("https://sandbox.test/private-session?key=hidden", { method: "PATCH" })
+    const rows: Array<AnalyticsEngineDataPoint | undefined> = []
+    const response = await worker.fetch(request, {
+      ...bindings().env,
+      SANDBOX_REQUEST_METRICS: {
+        writeDataPoint(point) {
+          rows.push(point)
+          throw new Error("metrics unavailable")
+        }
+      }
+    })
+    expect(response.status).toBe(401)
+    expect(rows).toEqual([{ indexes: ["other"], blobs: ["other", "other", "401"], doubles: [expect.any(Number)] }])
   })
 
   it("answers 503 to every request when the Worker was deployed without its token", async () => {

@@ -229,16 +229,21 @@ const joined = <R>(
       ? Quarantine.all(members, { policy: "quarantine" })
       : Quarantine.all(members, { policy: "halt" })
   }
-  // Each batch gates the next, and the rows a batch produced are carried on
-  // as planned field references: a batch's result does not exist while the
-  // graph builds, so the suite assembles the record the verdict reads rather
-  // than merging two symbols.
+  // Each batch gates the next. A batch's result does not exist while the graph
+  // builds, and reading a row off it by id is not always a reference: a
+  // planned value answers `then` with `undefined` and refuses `toString`,
+  // `valueOf` and `toJSON`. So each batch's record is carried whole and the
+  // record the verdict reads is merged from the real values at run time.
   const visit = (
     offset: number,
-    carried: Readonly<Record<string, Planned.Planned<unknown>>>
+    carried: ReadonlyArray<Planned.Planned<unknown>>
   ): Node.Node<unknown, unknown, R> => {
     if (offset >= entries.length) {
-      return Node.map(Node.succeed(carried), Node.capture(captures, decide))
+      return Node.map(
+        // Planned references resolve to the real values at run time.
+        Node.succeed(carried),
+        Node.capture(captures, (records: ReadonlyArray<unknown>) => decide(Compose.mergeRecords(records)))
+      )
     }
     const batched = keys.slice(offset, offset + concurrency)
     return Node.bindPlanned(
@@ -246,16 +251,11 @@ const joined = <R>(
       Node.capture({ offset, batched }, (reference) =>
         Node.andThen(
           Node.succeed(reference),
-          visit(offset + concurrency, {
-            ...carried,
-            ...Object.fromEntries(
-              batched.map((key) => [key, (reference as Readonly<Record<string, Planned.Planned<unknown>>>)[key]!])
-            )
-          })
+          visit(offset + concurrency, [...carried, reference])
         ))
     )
   }
-  return visit(0, {})
+  return visit(0, [])
 }
 
 /**
@@ -307,7 +307,9 @@ export const make = <R = never>(options: MakeOptions<R>): CheckSuiteFlow<R> => {
   }
   const { name, description } = Compose.label(
     "checkSuite",
-    { checks: ids, strategy, concurrency },
+    // `continueOnFail` changes the join, so a tolerant suite is another flow.
+    // It is left out when false, which keeps a fail-fast suite's tag.
+    { checks: ids, strategy, concurrency, continueOnFail: continueOnFail || undefined },
     options,
     declared.map(([, check]) => check)
   )
@@ -474,9 +476,14 @@ export const makeDiscovered = <R = never>(options: DiscoveredMakeOptions<R>): Di
     })
   }
   const captures = { strategy, concurrency, continueOnFail, onEmpty }
-  const { name, description } = Compose.label("checkSuiteDiscovered", { strategy, concurrency, onEmpty }, options, [
-    check
-  ])
+  const { name, description } = Compose.label(
+    "checkSuiteDiscovered",
+    { strategy, concurrency, onEmpty, continueOnFail: continueOnFail || undefined },
+    options,
+    [
+      check
+    ]
+  )
   const report = reported(Failure.wire([check]))
   const body = (payload: { readonly checks: unknown; readonly input: unknown }): Node.Node<unknown, unknown, R> => {
     const ids = discoveredIds(payload.checks)

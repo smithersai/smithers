@@ -8,7 +8,7 @@
 
 import * as Flow from "@smthrs/flow/Flow"
 import * as Node from "@smthrs/plan/Node"
-import type * as Planned from "@smthrs/plan/Planned"
+import * as Planned from "@smthrs/plan/Planned"
 import type * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
 import { PatternError } from "../PatternError.ts"
@@ -293,7 +293,9 @@ export const make = <R = never>(options: MakeOptions<R>): KanbanFlow<R> => {
           { column: declared.name, item: item.id },
           (rejected: ReadonlyArray<string>) => !rejected.includes(item.id)
         ),
-        then: () => call(item, (carried.previous as Readonly<Record<string, unknown>>)[item.id]),
+        // A field read, not property access: an item id such as `then` or
+        // `toString` names a card, not an operation on the planned value.
+        then: () => call(item, Planned.field(carried.previous, item.id)),
         else: () => Node.succeed(null)
       })
     const batchAt = (offset: number): Node.Node<unknown, unknown, R> => {
@@ -302,32 +304,40 @@ export const make = <R = never>(options: MakeOptions<R>): KanbanFlow<R> => {
       ) as Record<string, Node.Any>
       return Quarantine.all(members, { policy: "quarantine" })
     }
+    // A batch's record is carried whole and the column's record is merged
+    // from the real values at run time: reading a card off a planned record by
+    // id is not a reference when the id is `then`, `toString`, `valueOf` or
+    // `toJSON`.
     const visit = (
       offset: number,
-      gathered: Readonly<Record<string, Planned.Planned<unknown>>>
+      gathered: ReadonlyArray<Planned.Planned<unknown>>
     ): Node.Node<unknown, unknown, R> => {
-      if (offset >= items.length) return Node.succeed(gathered)
+      if (offset >= items.length) {
+        return Node.map(Node.succeed(gathered), Node.capture({ column: declared.name }, Compose.mergeRecords))
+      }
       const batched = ids.slice(offset, offset + concurrency)
       return Node.bindPlanned(
         batchAt(offset),
         Node.capture({ column: declared.name, offset, batched }, (reference) =>
           Node.andThen(
             Node.succeed(reference),
-            visit(offset + concurrency, {
-              ...gathered,
-              ...Object.fromEntries(
-                batched.map((id) => [id, (reference as Readonly<Record<string, Planned.Planned<unknown>>>)[id]!])
-              )
-            })
+            visit(offset + concurrency, [...gathered, reference])
           ))
       )
     }
-    return visit(0, {})
+    return visit(0, [])
   }
-  const { name, description } = Compose.label("kanban", { columns: names, items: ids.length, concurrency }, options, [
-    ...columns.map((column) => column.flow),
-    onComplete
-  ])
+  const { name, description } = Compose.label(
+    "kanban",
+    // The item ids, not their count: two boards with as many different cards
+    // are two flows, not one tag whose last registration runs for both.
+    { columns: names, items: ids, concurrency },
+    options,
+    [
+      ...columns.map((column) => column.flow),
+      onComplete
+    ]
+  )
   const body = (): Node.Node<unknown, unknown, R> => {
     const walk = (
       index: number,

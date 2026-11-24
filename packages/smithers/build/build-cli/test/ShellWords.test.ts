@@ -44,9 +44,10 @@ describe("the programs a shell command names", () => {
     expect(ShellWords.commands("/bin/sh -ec \"cd a && pnpm test\"")).toEqual(["/bin/sh", "cd", "pnpm"])
     expect(ShellWords.commands("bash -euo pipefail -c 'zig build'")).toEqual(["bash", "zig"])
     expect(ShellWords.commands("bash -e -o pipefail -c \"make \\\"all\\\"\"")).toEqual(["bash", "make"])
+    expect(ShellWords.commandText(["C:\\tools\\bash.exe", "--norc", "-c", "npm test"])).toBe("npm test")
     expect(ShellWords.commands("bash -c")).toEqual(["bash"])
     expect(ShellWords.commands("bash -e script.sh -c 'npm test'")).toEqual(["bash"])
-    expect(ShellWords.commands("bash --norc -c 'npm test'")).toEqual(["bash"])
+    expect(ShellWords.commands("bash --noprofile --norc -eo pipefail -c 'npm test'")).toEqual(["bash", "npm"])
     expect(ShellWords.commands("bash")).toEqual(["bash"])
   })
 

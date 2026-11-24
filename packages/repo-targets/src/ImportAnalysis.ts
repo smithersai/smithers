@@ -158,9 +158,9 @@ export interface Analysis {
  * The parser's script kind for a TypeScript or JavaScript file name.
  */
 const scriptKind = (file: string): ts.ScriptKind => {
-  if (file.endsWith(".tsx")) return ts.ScriptKind.TSX
+  if (file.endsWith(".tsx") || file.endsWith(".vibex")) return ts.ScriptKind.TSX
   if (file.endsWith(".jsx")) return ts.ScriptKind.JSX
-  if (/\.[mc]?ts$/.test(file)) return ts.ScriptKind.TS
+  if (/\.(?:[mc]?ts|vibe)$/.test(file)) return ts.ScriptKind.TS
   return ts.ScriptKind.JS
 }
 
@@ -188,10 +188,10 @@ const isCreateRequire = (callee: string | undefined): boolean =>
 /** An expression with its parentheses and type and non-null assertions removed. */
 const unwrap = (expression: ts.Expression): ts.Expression =>
   ts.isParenthesizedExpression(expression) ||
-  ts.isNonNullExpression(expression) ||
-  ts.isAsExpression(expression) ||
-  ts.isSatisfiesExpression(expression) ||
-  ts.isTypeAssertionExpression(expression)
+    ts.isNonNullExpression(expression) ||
+    ts.isAsExpression(expression) ||
+    ts.isSatisfiesExpression(expression) ||
+    ts.isTypeAssertionExpression(expression)
     ? unwrap(expression.expression)
     : expression
 
@@ -258,7 +258,9 @@ const analyzeTypeScript = (file: string, text: string, includeReferences: boolea
   /** Variables `createRequire(...)` initializes, which load like `require`. */
   const loaders = new Set<string>()
   /** Calls through a name with a string first argument, kept until every loader variable is known. */
-  const pending: Array<{ readonly node: ts.CallExpression | ts.NewExpression; readonly callee: string; readonly specifier: string }> = []
+  const pending: Array<
+    { readonly node: ts.CallExpression | ts.NewExpression; readonly callee: string; readonly specifier: string }
+  > = []
 
   const add = (
     node: ts.Node,
@@ -289,7 +291,9 @@ const analyzeTypeScript = (file: string, text: string, includeReferences: boolea
     }
     if (includeReferences) {
       for (const name of names) {
-        if (!name.typeOnly) calls.push({ callee: `${node.moduleSpecifier.text}.${name.name}`, line: name.line, reference: true })
+        if (!name.typeOnly) {
+          calls.push({ callee: `${node.moduleSpecifier.text}.${name.name}`, line: name.line, reference: true })
+        }
       }
     }
     const reference = add(node, node.moduleSpecifier.text, "import", typeOnly, names)
@@ -309,7 +313,9 @@ const analyzeTypeScript = (file: string, text: string, includeReferences: boolea
     bindings.set(node.name.text, reference)
   }
 
-  const isModuleImport = (node: ts.Node): node is ts.ImportDeclaration & { readonly moduleSpecifier: ts.StringLiteral } =>
+  const isModuleImport = (
+    node: ts.Node
+  ): node is ts.ImportDeclaration & { readonly moduleSpecifier: ts.StringLiteral } =>
     ts.isImportDeclaration(node) && ts.isStringLiteral(node.moduleSpecifier)
 
   const isRequireImport = (
@@ -370,15 +376,19 @@ const analyzeTypeScript = (file: string, text: string, includeReferences: boolea
   /** The node an expression's value leaves through, past parentheses and type and non-null assertions. */
   const outermost = (node: ts.Node): ts.Node =>
     ts.isParenthesizedExpression(node.parent) ||
-    ts.isNonNullExpression(node.parent) ||
-    ts.isAsExpression(node.parent) ||
-    ts.isSatisfiesExpression(node.parent) ||
-    ts.isTypeAssertionExpression(node.parent)
+      ts.isNonNullExpression(node.parent) ||
+      ts.isAsExpression(node.parent) ||
+      ts.isSatisfiesExpression(node.parent) ||
+      ts.isTypeAssertionExpression(node.parent)
       ? outermost(node.parent)
       : node
 
   /** A dynamic load can expose any export, including through a default value or a later alias. */
-  const load = (node: ts.CallExpression | ts.NewExpression, specifier: string, form: "dynamic-import" | "require"): void => {
+  const load = (
+    node: ts.CallExpression | ts.NewExpression,
+    specifier: string,
+    form: "dynamic-import" | "require"
+  ): void => {
     const reference = add(node, specifier, form, false)
     reference.unnamed.push({ typeOnly: false, line: reference.line })
   }
@@ -403,7 +413,8 @@ const analyzeTypeScript = (file: string, text: string, includeReferences: boolea
   const use = (node: ts.Identifier, reference: Entry["reference"]): void => {
     if (!isReference(node)) return
     const binding = node.text
-    const typeOnly = ts.isExportSpecifier(node.parent) && (node.parent.isTypeOnly || node.parent.parent.parent.isTypeOnly)
+    const typeOnly = ts.isExportSpecifier(node.parent) &&
+      (node.parent.isTypeOnly || node.parent.parent.parent.isTypeOnly)
     if (ts.isQualifiedName(node.parent)) {
       reference.members.push({ name: node.parent.right.text, binding, typeOnly: true, line: lineOf(node.parent) })
       return
@@ -420,7 +431,9 @@ const analyzeTypeScript = (file: string, text: string, includeReferences: boolea
         const called = ts.isCallExpression(value.parent) && value.parent.expression === value
         const callee = calleeText(node)
         if (!called && callee !== undefined) calls.push({ callee, line: lineOf(node), reference: true })
-      } else if (ts.isVariableDeclaration(node) && node.initializer !== undefined && ts.isObjectBindingPattern(node.name)) {
+      } else if (
+        ts.isVariableDeclaration(node) && node.initializer !== undefined && ts.isObjectBindingPattern(node.name)
+      ) {
         for (const name of patternNames(node.name, true)!) {
           calls.push({ callee: `${receiverText(node.initializer)}.${name.name}`, line: name.line, reference: true })
         }
@@ -432,7 +445,9 @@ const analyzeTypeScript = (file: string, text: string, includeReferences: boolea
       addImport(node)
     } else if (isRequireImport(node)) {
       addImportEquals(node)
-    } else if (ts.isExportDeclaration(node) && node.moduleSpecifier !== undefined && ts.isStringLiteral(node.moduleSpecifier)) {
+    } else if (
+      ts.isExportDeclaration(node) && node.moduleSpecifier !== undefined && ts.isStringLiteral(node.moduleSpecifier)
+    ) {
       const names: Array<ReferencedName> = []
       if (node.exportClause !== undefined && ts.isNamedExports(node.exportClause)) {
         for (const element of node.exportClause.elements) {
@@ -469,8 +484,9 @@ const analyzeTypeScript = (file: string, text: string, includeReferences: boolea
         const inner = unwrap(node.expression)
         if (literal !== undefined) {
           if (callee !== undefined && isLoader(callee)) load(node, literal, "require")
-          else if (ts.isCallExpression(inner) && isCreateRequire(calleeText(inner.expression))) load(node, literal, "require")
-          else if (ts.isIdentifier(inner)) pending.push({ node, callee: inner.text, specifier: literal })
+          else if (ts.isCallExpression(inner) && isCreateRequire(calleeText(inner.expression))) {
+            load(node, literal, "require")
+          } else if (ts.isIdentifier(inner)) pending.push({ node, callee: inner.text, specifier: literal })
         }
         if (callee !== undefined && ts.isCallExpression(node)) calls.push({ callee, line: lineOf(node) })
       }
@@ -510,13 +526,16 @@ interface EsNode {
 }
 
 const isEsNode = (value: unknown): value is EsNode =>
-  typeof value === "object" && value !== null && typeof (value as EsNode).type === "string" && Array.isArray((value as EsNode).range)
+  typeof value === "object" && value !== null && typeof (value as EsNode).type === "string" &&
+  Array.isArray((value as EsNode).range)
 
 /** A node's children with the keys that hold them, in source order, so a walk reads calls outermost first as the TypeScript walk does. */
 const esChildren = (node: EsNode): ReadonlyArray<readonly [string, EsNode]> =>
   Object.entries(node)
     .filter(([key]) => key !== "parent")
-    .flatMap(([key, value]) => (Array.isArray(value) ? value : [value]).map((child): readonly [string, unknown] => [key, child]))
+    .flatMap(([key, value]) =>
+      (Array.isArray(value) ? value : [value]).map((child): readonly [string, unknown] => [key, child])
+    )
     .filter((entry): entry is readonly [string, EsNode] => isEsNode(entry[1]))
     .sort(([, a], [, b]) => a.range[0] - b.range[0] || b.range[1] - a.range[1])
 
@@ -528,7 +547,9 @@ const esString = (node: EsNode | null | undefined): string | undefined => {
 }
 
 const esUnwrap = (node: EsNode): EsNode =>
-  ["ChainExpression", "TSNonNullExpression", "TSAsExpression", "TSSatisfiesExpression", "TSTypeAssertion"].includes(node.type)
+  ["ChainExpression", "TSNonNullExpression", "TSAsExpression", "TSSatisfiesExpression", "TSTypeAssertion"].includes(
+      node.type
+    )
     ? esUnwrap(node.expression)
     : node
 
@@ -550,7 +571,9 @@ const esCallee = (node: EsNode): string | undefined => {
   if (callee.type === "Super") return "super"
   if (callee.type !== "MemberExpression") return undefined
   if (!callee.computed) {
-    return `${esReceiver(callee.object)}.${callee.property.type === "PrivateIdentifier" ? "#" : ""}${callee.property.name}`
+    return `${esReceiver(callee.object)}.${
+      callee.property.type === "PrivateIdentifier" ? "#" : ""
+    }${callee.property.name}`
   }
   const key = esString(callee.property)
   if (key === undefined) return undefined
@@ -587,7 +610,9 @@ const analyzeVibe = (file: string, text: string, includeReferences: boolean): An
     const typeOnly = node.importKind === "type"
     const names: Array<ReferencedName> = []
     for (const specifier of node.specifiers) {
-      if (specifier.type === "ImportDefaultSpecifier") names.push({ name: "default", typeOnly, line: lineOf(specifier) })
+      if (specifier.type === "ImportDefaultSpecifier") {
+        names.push({ name: "default", typeOnly, line: lineOf(specifier) })
+      }
       if (specifier.type === "ImportSpecifier") {
         names.push({
           name: specifier.imported.name ?? specifier.imported.value,
@@ -598,7 +623,9 @@ const analyzeVibe = (file: string, text: string, includeReferences: boolean): An
     }
     if (includeReferences) {
       for (const name of names) {
-        if (!name.typeOnly) calls.push({ callee: `${node.source.value}.${name.name}`, line: name.line, reference: true })
+        if (!name.typeOnly) {
+          calls.push({ callee: `${node.source.value}.${name.name}`, line: name.line, reference: true })
+        }
       }
     }
     const reference = add(node, node.source.value, "import", typeOnly, names)
@@ -653,7 +680,9 @@ const analyzeVibe = (file: string, text: string, includeReferences: boolean): An
       const name = parent.node.computed ? esString(parent.node.property) : parent.node.property.name
       return name === undefined ? undefined : [{ name, typeOnly: false, line: lineOf(parent.node) }]
     }
-    if (parent?.node.type === "VariableDeclarator" && parent.key === "init" && parent.node.id.type === "ObjectPattern") {
+    if (
+      parent?.node.type === "VariableDeclarator" && parent.key === "init" && parent.node.id.type === "ObjectPattern"
+    ) {
       return patternNames(parent.node.id)
     }
     return undefined
@@ -662,7 +691,8 @@ const analyzeVibe = (file: string, text: string, includeReferences: boolean): An
   const outermost = (node: EsNode): EsNode => {
     const parent = parents.get(node)?.node
     return parent !== undefined &&
-        ["ChainExpression", "TSNonNullExpression", "TSAsExpression", "TSSatisfiesExpression", "TSTypeAssertion"].includes(parent.type)
+        ["ChainExpression", "TSNonNullExpression", "TSAsExpression", "TSSatisfiesExpression", "TSTypeAssertion"]
+          .includes(parent.type)
       ? outermost(parent)
       : node
   }
@@ -695,7 +725,9 @@ const analyzeVibe = (file: string, text: string, includeReferences: boolean): An
       case "AssignmentPattern":
         return key === "right"
     }
-    return !["id", "params", "label", "key", "name", "local", "imported", "exported", "meta", "property"].includes(key) ||
+    return !["id", "params", "label", "key", "name", "local", "imported", "exported", "meta", "property"].includes(
+      key
+    ) ||
       (key === "key" && parent.computed === true)
   }
 
@@ -733,7 +765,9 @@ const analyzeVibe = (file: string, text: string, includeReferences: boolean): An
       addImport(node)
     } else if (isRequireImport(node)) {
       addImportEquals(node)
-    } else if (node.type === "ExportNamedDeclaration" && node.source?.type === "Literal" && typeof node.source.value === "string") {
+    } else if (
+      node.type === "ExportNamedDeclaration" && node.source?.type === "Literal" && typeof node.source.value === "string"
+    ) {
       const typeOnly = node.exportKind === "type"
       const names = node.specifiers.map((specifier: EsNode) => ({
         name: specifier.local.name ?? specifier.local.value,
@@ -741,13 +775,21 @@ const analyzeVibe = (file: string, text: string, includeReferences: boolean): An
         line: lineOf(specifier)
       }))
       add(node, node.source.value, "export", typeOnly, names)
-    } else if (node.type === "ExportAllDeclaration" && node.source?.type === "Literal" && typeof node.source.value === "string") {
+    } else if (
+      node.type === "ExportAllDeclaration" && node.source?.type === "Literal" && typeof node.source.value === "string"
+    ) {
       const typeOnly = node.exportKind === "type"
       add(node, node.source.value, "export", typeOnly).unnamed.push({ typeOnly, line: lineOf(node) })
     } else if (node.type === "TSImportType") {
       let qualifier = node.qualifier
       while (qualifier?.type === "TSQualifiedName") qualifier = qualifier.left
-      add(node, node.source.value, "import-type", true, qualifier ? [{ name: qualifier.name, typeOnly: true, line: lineOf(node) }] : [])
+      add(
+        node,
+        node.source.value,
+        "import-type",
+        true,
+        qualifier ? [{ name: qualifier.name, typeOnly: true, line: lineOf(node) }] : []
+      )
     } else if (node.type === "ImportExpression") {
       const specifier = esString(node.source)
       if (specifier !== undefined) load(node, specifier, "dynamic-import")

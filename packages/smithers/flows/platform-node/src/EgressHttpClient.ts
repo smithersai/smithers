@@ -34,13 +34,16 @@ import type * as Undici from "@effect/platform-node/Undici"
 import { GrantStore } from "@smthrs/kernel/GrantStore"
 import * as KernelHttpClient from "@smthrs/kernel/HttpClient"
 import { Destination, ResolveHost, withDestinationPinning } from "@smthrs/kernel/HttpClient"
+import * as Context from "effect/Context"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
+import * as Fiber from "effect/Fiber"
 import { HttpClient } from "effect/http/HttpClient"
 import * as EffectHttpClient from "effect/http/HttpClient"
 import * as HttpClientError from "effect/http/HttpClientError"
 import * as HttpClientRequest from "effect/http/HttpClientRequest"
 import * as Layer from "effect/Layer"
+import * as Result from "effect/Result"
 import * as Schema from "effect/Schema"
 import * as Scope from "effect/Scope"
 import * as Semaphore from "effect/Semaphore"
@@ -228,9 +231,9 @@ export const dispatcher = (
  * provider route retries), and the pool dials a fresh one: 7 such failures in
  * 188 calls over the same 200 seconds, none of them lasting.
  *
- * Socket failures retry once on the same pool. Session-fatal failures replace
- * the pool, drain its active bodies, and release its scope. Host shutdown also
- * aborts bodies still draining in a retired pool.
+ * Each call sends once. After a fatal TLS failure, later calls use a fresh
+ * pool while active responses on the retired pool drain. Host shutdown aborts
+ * bodies still draining. The caller owns any retry.
  *
  * The pool lives in the caller's scope and is destroyed with it. `connect`
  * carries TLS options, such as a private provider's `ca`.
@@ -260,7 +263,10 @@ export const providerFetch = (
     const context = yield* Effect.context<Scope.Scope>()
     const acquire = Effect.uninterruptible(Effect.gen(function*() {
       const owned = yield* Scope.fork(scope)
-      const pool = yield* dispatcher(environment, { allowH2: false, ...options }).pipe(Scope.provide(owned))
+      const pool = yield* dispatcher(environment, { allowH2: false, ...options }).pipe(
+        Scope.provide(owned),
+        Effect.onError((cause) => Scope.close(owned, Exit.failCause(cause)))
+      )
       // Agent.close detaches active clients before their bodies drain. Keep an
       // abort signal owned by the child scope so host shutdown still ends them.
       const abort = new AbortController()
@@ -275,9 +281,24 @@ export const providerFetch = (
     }))
     let pool = yield* acquire
     const undici = yield* loadUndici
-    let replacement: Promise<Effect.Success<typeof acquire>> | undefined
+    const run = Effect.runPromiseWith(context)
+    const replacement = yield* Semaphore.make(1)
+    const retire = (used: typeof pool) =>
+      replacement.withPermit(Effect.gen(function*() {
+        if (pool !== used) return
+        pool = yield* acquire
+        yield* Effect.tryPromise(() => used.dispatcher.close()).pipe(
+          Effect.tap(() =>
+            Effect.sync(() => {
+              used.drained = true
+            })
+          ),
+          Effect.ignoreCause,
+          Effect.ensuring(Scope.close(used.scope, Exit.void)),
+          Effect.forkIn(scope)
+        )
+      }))
     return (async (input: Parameters<typeof globalThis.fetch>[0], init?: RequestInit) => {
-      const used = pool
       // Node's built-in Request and the package's Request have different brands.
       const target = input instanceof Request ? input.url : input
       const request = input instanceof Request
@@ -290,63 +311,33 @@ export const providerFetch = (
           ...init
         }
         : init
-      const send = (active: typeof pool) =>
-        undici.fetch(target, {
-          ...request,
-          signal: request?.signal == null ? active.signal : AbortSignal.any([request.signal, active.signal]),
-          dispatcher: active.dispatcher
-        } as never)
-      try {
-        // Names the transport each request took, by origin only (a query can
-        // carry a key), so a request meant for an injected fetch shows here.
-        Effect.runSyncWith(context)(
+      const caller = Fiber.getCurrent()
+      const logContext = caller ? Context.merge(context, caller.context) : context
+      const result = await run(Effect.gen(function*() {
+        // Diagnostics share the caller's context and can never prevent dispatch.
+        yield* Effect.suspend(() =>
           Effect.logDebug("platform-node.provider-fetch").pipe(
             Effect.annotateLogs({ origin: new URL(String(target)).origin, protocol: "http/1.1" })
           )
-        )
-        return await send(used)
-      } catch (error) {
-        // Only connection/session failures before fetch returns headers qualify.
-        // Streams cannot be replayed; aborts, status errors and body failures
-        // belong to the durable step, never this connection repair.
-        const code = (error as { cause?: { code?: string } } | null)?.cause?.code
-        const signal = init?.signal ?? (input instanceof Request ? input.signal : undefined)
-        const body = init?.body
-        if (
-          signal?.aborted || input instanceof Request ||
-          body instanceof ReadableStream ||
-          ![
-            "ERR_HTTP2_INVALID_SESSION",
-            "ERR_HTTP2_GOAWAY_SESSION",
-            "UND_ERR_SOCKET",
-            "ERR_SSL_DECRYPTION_FAILED_OR_BAD_RECORD_MAC",
-            "ERR_SSL_BAD_RECORD_MAC_ALERT"
-          ].includes(code ?? "")
-        ) throw error
-        if (code !== "UND_ERR_SOCKET" && pool === used) {
-          replacement ??= Effect.runPromiseWith(context)(acquire).then((fresh) => {
-            pool = fresh
-            // Drain in-flight bodies, then release the child scope and its
-            // parent finalizer. Ordinary socket failures never retire a pool.
-            Effect.runFork(
-              Effect.promise(() => used.dispatcher.close()).pipe(
-                Effect.tap(() =>
-                  Effect.sync(() => {
-                    // A drained network can still have an unread buffered Response.
-                    used.drained = true
-                  })
-                ),
-                Effect.ensuring(Scope.close(used.scope, Exit.void))
-              )
-            )
-            return fresh
-          }).finally(() => {
-            replacement = undefined
-          })
-          await replacement
+        ).pipe(Effect.provideContext(logContext), Effect.ignoreCause)
+        const used = pool
+        const result = yield* Effect.result(Effect.tryPromise(() =>
+          undici.fetch(target, {
+            ...request,
+            signal: request?.signal == null ? used.signal : AbortSignal.any([request.signal, used.signal]),
+            dispatcher: used.dispatcher
+          } as never)
+        ))
+        if (Result.isFailure(result)) {
+          const code = (result.failure.cause as { cause?: { code?: string } } | null)?.cause?.code
+          if (code === "ERR_SSL_DECRYPTION_FAILED_OR_BAD_RECORD_MAC" || code === "ERR_SSL_BAD_RECORD_MAC_ALERT") {
+            yield* retire(used).pipe(Effect.ignoreCause)
+          }
         }
-        return await send(pool)
-      }
+        return result
+      }))
+      if (Result.isFailure(result)) throw result.failure.cause
+      return result.success
     }) as unknown as typeof globalThis.fetch
   })
 

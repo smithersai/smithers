@@ -27,12 +27,17 @@ export const proxy = output("node", [proxyTool, "--ensure"]).pipe(
 export const api = (path: string, flags: ReadonlyArray<string> = []) =>
   Effect.flatMap(proxy, (base) => output("gh", ["api", ...flags, `${base}/${path}`]))
 
+/** GitHub associations authorized to direct the repository's sweep. */
+export const trustedAssociation = (association: unknown): boolean =>
+  association === "OWNER" || association === "MEMBER" || association === "COLLABORATOR"
+
 // One page of `GET /repos/{owner}/{repo}/issues`; pull requests carry `pull_request`.
 const IssuePages = Schema.fromJsonString(Schema.Array(Schema.Array(Schema.Struct({
   number: Schema.Number,
   title: Schema.String,
   labels: Schema.Array(Schema.Struct({ name: Schema.String })),
   updated_at: Schema.String,
+  author_association: Schema.optionalKey(Schema.String),
   pull_request: Schema.optional(Schema.Unknown)
 }))))
 
@@ -45,7 +50,8 @@ export const openIssues = (repo: string) =>
         number: issue.number,
         title: issue.title,
         labels: issue.labels.map((label) => label.name),
-        updatedAt: issue.updated_at
+        updatedAt: issue.updated_at,
+        eligible: trustedAssociation(issue.author_association)
       }))
     )
   )
@@ -53,9 +59,11 @@ export const openIssues = (repo: string) =>
 const Issue = Schema.fromJsonString(Schema.Struct({
   title: Schema.String,
   body: Schema.NullOr(Schema.String),
+  author_association: Schema.optionalKey(Schema.String),
   state: Schema.String
 }))
 const CommentPages = Schema.fromJsonString(Schema.Array(Schema.Array(Schema.Struct({
+  author_association: Schema.optionalKey(Schema.String),
   user: Schema.NullOr(Schema.Struct({ login: Schema.String })),
   body: Schema.String
 }))))
@@ -72,5 +80,7 @@ export const issue = (repo: string, number: number) =>
     title: found.title,
     body: found.body ?? "",
     state: found.state,
-    comments: pages.flat().map((comment) => ({ author: { login: comment.user?.login ?? "ghost" }, body: comment.body }))
+    authorAssociation: found.author_association,
+    comments: pages.flat().filter((comment) => trustedAssociation(comment.author_association))
+      .map((comment) => ({ author: { login: comment.user?.login ?? "ghost" }, body: comment.body }))
   })))

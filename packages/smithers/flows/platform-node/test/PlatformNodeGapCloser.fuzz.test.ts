@@ -462,7 +462,7 @@ process.stdin.on("data", (chunk) => {
     if (failure !== undefined) throw new Error(failure)
   })
 
-  it("EgressHttpClient fuzzes pinned destination requests (valid, invalid origin/IP/proxy) and providerFetch transient HTTP/2 & socket repair", async () => {
+  it("EgressHttpClient fuzzes pinned destination requests (valid, invalid origin/IP/proxy) and providerFetch connection failures without request replay", async () => {
     const srv = await startHttp((url) => ({ status: 200, body: `ok:${url}` }))
     try {
       const Input = Schema.Struct({
@@ -472,8 +472,8 @@ process.stdin.on("data", (chunk) => {
           "pinned-empty-addrs",
           "pinned-bad-ip",
           "pinned-bad-proxy",
-          "fetch-h2-retry",
-          "fetch-socket-retry",
+          "fetch-tls-failure",
+          "fetch-socket-failure",
           "fetch-non-retryable"
         ])
       })
@@ -514,9 +514,9 @@ process.stdin.on("data", (chunk) => {
               } else {
                 // Inject AgentFactory whose first fetch fails with a transient error code, then delegates to real undici
                 let calls = 0
-                const failCode = tc.caseKind === "fetch-h2-retry"
-                  ? "ERR_HTTP2_INVALID_SESSION"
-                  : tc.caseKind === "fetch-socket-retry"
+                const failCode = tc.caseKind === "fetch-tls-failure"
+                  ? "ERR_SSL_BAD_RECORD_MAC_ALERT"
+                  : tc.caseKind === "fetch-socket-failure"
                   ? "UND_ERR_SOCKET"
                   : "ECONNREFUSED"
 
@@ -546,11 +546,8 @@ process.stdin.on("data", (chunk) => {
                   }).pipe(Effect.provide(customFactory))
                 ).pipe(Effect.exit)
 
-                if (tc.caseKind === "fetch-non-retryable") {
-                  expect(Exit.isFailure(textOrErr)).toBe(true)
-                } else {
-                  expect(Exit.isSuccess(textOrErr)).toBe(true)
-                }
+                expect(Exit.isFailure(textOrErr)).toBe(true)
+                expect(calls).toBe(1)
               }
               return true
             }).pipe(Effect.provide(silentLogger)),

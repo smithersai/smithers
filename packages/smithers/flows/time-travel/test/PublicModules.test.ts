@@ -5,8 +5,10 @@ import type * as JournalEvent from "@smthrs/journal/JournalEvent"
 import * as RunStore from "@smthrs/run-store/RunStore"
 import * as CacheStore from "@smthrs/step-cache/CacheStore"
 import * as Effect from "effect/Effect"
+import * as Exit from "effect/Exit"
 import * as Layer from "effect/Layer"
 import * as Schema from "effect/Schema"
+import * as Scope from "effect/Scope"
 import * as Frame from "../src/Frame.ts"
 import * as TimeTravel from "../src/index.ts"
 import * as EffectHandlerRegistry from "../src/internal/EffectHandlerRegistry.ts"
@@ -190,6 +192,39 @@ describe("Fork.fork", () => {
       )
       expect(result.edge).toMatchObject({ parentRunId: "parent", parentSeq: 0, kind: "fork" })
       expect(calls).toEqual(["add"])
+    }))
+
+  it.effect("tracks a bounded set of lanes on one scope and forgets them newest first at its close", () =>
+    Effect.gen(function*() {
+      const forks = Fork.maxTrackedLanes + 44
+      const added: Array<string> = []
+      const forgotten: Array<string> = []
+      const store = MemoryTimeTravelStore.make({
+        records: [{ runId: "parent", seq: 0, eventId: "e0", lineageId: "parent/root", payload: {} }]
+      })
+      const scope = yield* Scope.make()
+      const fork = Fork.fork({ parentRunId: "parent", frame, workspaceRoot: "/tmp/lanes" }).pipe(
+        Effect.provide(Layer.succeed(RunStore.RunStore, RunStore.makeNoop({ get: () => Effect.succeed(row()) }))),
+        Effect.provide(Layer.succeed(TimeTravelStore, store)),
+        Effect.provide(Layer.succeed(
+          Jj.Jj,
+          Jj.makeNoop({
+            workspaceAdd: (name) => Effect.sync(() => void added.push(name)),
+            workspaceForget: (name) => Effect.sync(() => void forgotten.push(name))
+          })
+        )),
+        Effect.provide(forkDeps),
+        Effect.provideService(Scope.Scope, scope)
+      )
+      for (let index = 0; index < forks; index++) yield* fork
+      expect(new Set(added).size).toBe(forks)
+      // Past the bound the oldest lanes were forgotten as newer forks landed.
+      expect(forgotten).toEqual(added.slice(0, 44))
+
+      forgotten.length = 0
+      yield* Scope.close(scope, Exit.void)
+      // The close does bounded work, however many forks the scope ever made.
+      expect(forgotten).toEqual(added.slice(44).reverse())
     }))
 
   it.effect("fails a repeated suffix page instead of spinning", () =>

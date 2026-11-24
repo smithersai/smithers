@@ -14,7 +14,7 @@ import { environmentCommand } from "../internal/environmentCommand.ts"
 import { checkEnvironmentNames } from "../internal/environmentNames.ts"
 import { finalizeWithin } from "../internal/finalizeWithin.ts"
 import { parentOf } from "../internal/guestPath.ts"
-import { providerFailure } from "../internal/localProcess.ts"
+import { commandFailure, providerFailure } from "../internal/localProcess.ts"
 import { machineName } from "../internal/machineName.ts"
 import { rootedAt } from "../internal/rootedPath.ts"
 import { stdinRedirect } from "../internal/stdinRedirect.ts"
@@ -235,11 +235,10 @@ export const make = (options: DaytonaSandboxOptions): Provider => {
           cwd?: string,
           env?: Record<string, string>
         ): Effect.Effect<ExecuteResponse, ProviderError> =>
-          attempt(
-            () => held.sandbox.process.executeCommand(command, cwd, env),
-            "spawn_error",
-            `could not execute ${command}`
-          )
+          Effect.tryPromise({
+            try: () => held.sandbox.process.executeCommand(command, cwd, env),
+            catch: commandFailure("spawn_error", "daytona-sandbox: command execution failed")
+          })
         const prepare = yield* execute(`mkdir -p ${CommandLine.quote(workdir)}`)
         yield* checked(prepare, "unavailable", `daytona-sandbox: could not prepare ${workdir}`)
 

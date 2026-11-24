@@ -60,31 +60,44 @@ store API, `waitingRuns` and the waiting-row partial index match real
 suspensions.
 
 `WaitingRunsFilter` narrows a sweep to actionable rows by `reason`,
-`dueBeforeMs`, and a `cancelRequested` predicate over the run row, so a sweeper
-fetches only what it can act on instead of scanning every parked run.
+`dueBeforeMs`, a `cancelRequested` predicate over the run row, and a
+`hasChildren` predicate over the parent edges, so a sweeper fetches only what it
+can act on instead of scanning every parked run. With `page`, the read is one
+bounded keyset page in run-id order: `{ limit, afterRunId? }`.
 
-## Three sweeps, on the heartbeat cadence
+Every heartbeat sweep reads at most 64 rows and keeps its place between ticks.
+A sweep that reaches the end of its set starts over on the next tick, so a row
+the worker cannot act on, such as a run of a flow it has not registered, never
+holds the front of the next read.
 
-The driver re-drives three durable shapes periodically, and each one re-enters
+## Sweeps, on the heartbeat cadence
+
+The driver re-drives these durable shapes periodically, and each one re-enters
 the ordinary claim, steal, and activate path:
 
 1. Parked runs whose cancellation was durably requested.
 2. Runs parked with reason `released`, left by a shutdown that interrupted them.
 3. Stale `running` rows left by a hard-killed owner.
-   `staleRunningRuns(staleBeforeMs, limit?)` lists runs whose heartbeat froze
+   `staleRunningRuns(staleBeforeMs, limit?, after?)` lists runs whose heartbeat froze
    before the horizon, with that heartbeat, oldest first, so a capped sweep drains a mass
    owner death across ticks rather than waking every stale run in every driver
-   on every tick.
+   on every tick. `after` continues strictly past one row in that order.
+
+A fourth sweep revisits due timer waits. One with an unconsumed completion is
+scheduled. One with none has a clock nobody fired: the timer lives in the memory
+of the process that scheduled it, or of one that registered the flow afterwards.
+The sweep fires the due clocks of that run itself, so a sleep parked by a worker
+that died still wakes on a worker that registered the flow earlier.
 
 A settling run records each parked parent's wake after its terminal transition
 commits. An interrupt that lands between the two, even one that ends the
 transition after its SQL `COMMIT`, still records the wakes before the drive ends.
 A process that dies between them leaves the parent parked with nothing due, so
-after the sweeps of its first tick the driver repairs that: for every parked run,
-it records the wake each settled child still owes it and wakes the run. Later
-ticks retry only the runs whose repair failed, because unlike the sweeps above, a
-pass reads every parked run. A process that dies after a surviving driver's pass
-therefore leaves its parents parked until a driver next starts on the store. A
+the last sweep of every tick repairs that: it pages through the parked runs that
+have children, records the wake each settled child still owes its parent, and
+wakes the parent. A worker that keeps running therefore repairs a gap another
+process opens by dying at any later time, with no restart. A recorded wake is
+never recorded again, so a pass over repaired parents only reads. A
 parent that attached to a child that had already settled is woken once for
 nothing; its round replays and parks again. A hosted store runs no sweep;
 `EngineStore.drive` announces a run it settled again instead.

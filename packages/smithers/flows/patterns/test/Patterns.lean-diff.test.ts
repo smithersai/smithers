@@ -14,8 +14,10 @@
  * The oracle is one process for the whole file. It reads one JSON request per line and writes one JSON response per
  * line. A name crosses as its UTF-16 code units, so a lone surrogate arrives as it left.
  *
- * A machine with neither the built oracle nor `lake` skips the file; a machine with `lake` builds the oracle first,
- * and builds it again when a source of the specification is newer than it.
+ * A machine with `lake` builds the oracle first, and builds it again when a source of the specification is newer than
+ * it. A machine without `lake` runs a built oracle only when it is at least as new as every source of the
+ * specification; a missing or older oracle skips the file under a named reason, never a pass against another
+ * specification.
  */
 import { Flow, Graph } from "@smthrs/flow"
 import { Fuzz } from "@smthrs/fuzz"
@@ -39,22 +41,37 @@ const lake = [...(process.env["PATH"] ?? "").split(delimiter).filter((directory)
   .find((path) => existsSync(path))
 /** The specification's sources are here and `lake` can build them. A confined run may be shown neither. */
 const buildable = lake !== undefined && existsSync(join(specDir, "lakefile.toml"))
-const oracleReady = existsSync(binary) || buildable
-const differential = it.skipIf(!oracleReady)
 
-/** True when a source of the specification is newer than the built oracle, or there is no built oracle. */
+/** The specification's sources, relative to its directory, or `undefined` when this run cannot see them all. */
+const specSources = (): ReadonlyArray<string> | undefined => {
+  const listed = ["Main.lean", "PatternsSpec.lean", "lakefile.toml", "lean-toolchain"]
+  if (!existsSync(join(specDir, "PatternsSpec"))) return undefined
+  const sources = [...listed, ...readdirSync(join(specDir, "PatternsSpec")).map((name) => join("PatternsSpec", name))]
+  return sources.every((source) => existsSync(join(specDir, source))) ? sources : undefined
+}
+
+/**
+ * True when a source of the specification is newer than the built oracle, there is no built oracle, or the sources
+ * cannot all be seen, so the oracle's freshness cannot be shown.
+ */
 const stale = (): boolean => {
-  if (!existsSync(binary)) return true
+  const sources = specSources()
+  if (!existsSync(binary) || sources === undefined) return true
   const built = statSync(binary).mtimeMs
-  const sources = [
-    "Main.lean",
-    "PatternsSpec.lean",
-    "lakefile.toml",
-    "lean-toolchain",
-    ...readdirSync(join(specDir, "PatternsSpec")).map((name) => join("PatternsSpec", name))
-  ]
   return sources.some((source) => statSync(join(specDir, source)).mtimeMs > built)
 }
+
+/** Why the differential cannot run here, or `undefined` when it can. */
+const unavailable: string | undefined = buildable
+  ? undefined
+  : !existsSync(binary)
+  ? "no built oracle and no `lake` to build one"
+  : stale()
+  ? "the built oracle is older than its specification (or the specification is not visible) and no `lake` can rebuild it"
+  : undefined
+const oracleReady = unavailable === undefined
+const differential = it.skipIf(!oracleReady)
+if (unavailable !== undefined) it.skip(`Lean differential evidence unavailable: ${unavailable}`, () => {})
 
 interface Oracle {
   readonly ask: (op: string, request: Readonly<Record<string, unknown>>) => Promise<unknown>

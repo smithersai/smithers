@@ -338,7 +338,10 @@ const submit = Effect.fnUntraced(function*(follower: Follower, first: Dispatch) 
         // compound cause cannot safely identify a diagnostic's payload.
         const log = defect === undefined || cause.reasons.length !== 1
           ? Effect.logError("A discarded flow failed")
-          : Effect.logError("A discarded flow failed", renderDiagnostic(defect.defect))
+          : Effect.flatMap(
+            renderDiagnostic(defect.defect),
+            (diagnostic) => Effect.logError("A discarded flow failed", diagnostic)
+          )
         return log.pipe(Effect.annotateLogs({
           failureKind: Cause.hasInterruptsOnly(cause) ? "interruption" : defect === undefined ? "failure" : "defect",
           reasonCount: cause.reasons.length

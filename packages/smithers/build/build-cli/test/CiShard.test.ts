@@ -23,7 +23,7 @@ afterAll(async () => {
  * Among two shards, shard 0 owns `shared`, `a` and `c`, and shard 1 owns `b`
  * and `d`.
  */
-const fixture = async (): Promise<string> => {
+const fixture = async (initializeRepository = true): Promise<string> => {
   const root = await Fs.realpath(await Fs.mkdtemp(NodePath.join(Os.tmpdir(), "smthrs-shard-")))
   temporaryDirectories.push(root)
   await write(
@@ -55,6 +55,7 @@ export const Package = S.Package({ targets: { shared, a, b, c, d } })
   await write(root, "package.json", `${JSON.stringify({ name: "fixture", private: true }, undefined, 2)}\n`)
   await write(root, "yarn.lock", "# yarn lockfile v1\n")
   await write(root, "README.md", "shared\n")
+  if (!initializeRepository) return root
   const git = (...args: ReadonlyArray<string>) =>
     NodeChildProcess.execFileSync("git", ["-C", root, ...args], { encoding: "utf8" })
   git("init", "-q")
@@ -223,6 +224,46 @@ describe("--shard", () => {
     expect(parts[1]!.roots).toContain("//:b")
     expect(parts[1]!.roots).not.toContain("//:shared")
     expect(parts[1]!.targets.map((target) => target.label)).toContain("//:shared")
+  }, 120_000)
+
+  it("executes a named affected Suite and records its member", async () => {
+    const root = await fixture(false)
+    await write(
+      root,
+      "PACKAGE.ts",
+      `import { Smithers as S } from "@smthrs/targets"
+const member = S.Shell.Test({ shell: "echo member", data: [S.file("README.md")] })
+export const Package = S.Package({ targets: { member, suite: S.Suite({ tests: [member] }) } })
+`
+    )
+    const served = await serve(root, ["affected", "test", "//:suite", "--files", "README.md", "--format", "json"])
+    expect(served.exitCode, served.stderr + served.stdout).toBe(0)
+    expect(statuses(JSON.parse(served.stdout) as Record)).toEqual(["//:member ran", "//:suite ran"])
+  }, 120_000)
+
+  it("records every affected gate owned by each executing shard", async () => {
+    const root = await fixture(false)
+    const run = async (flags: ReadonlyArray<string>) => {
+      const served = await serve(root, [
+        "affected",
+        "test",
+        "//...",
+        "--files",
+        "README.md",
+        ...flags,
+        "--format",
+        "json"
+      ])
+      expect(served.exitCode, served.stderr + served.stdout).toBe(0)
+      return (JSON.parse(served.stdout) as Record).results.map((row) => row.label).sort()
+    }
+    const whole = await run([])
+    const first = await run(["--shard", "0/2"])
+    const second = await run(["--shard", "1/2"])
+    expect(first).toContain("//:a")
+    expect(first).not.toContain("//:b")
+    expect(second).toContain("//:b")
+    expect([...new Set([...first, ...second])].sort()).toEqual(whole)
   }, 120_000)
 
   it("refuses affected --shard before reading the change", async () => {

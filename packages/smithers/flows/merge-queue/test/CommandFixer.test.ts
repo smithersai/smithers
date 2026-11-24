@@ -6,10 +6,10 @@ import * as Exit from "effect/Exit"
 import * as Layer from "effect/Layer"
 import * as ManagedRuntime from "effect/ManagedRuntime"
 import { execFileSync } from "node:child_process"
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
+import { existsSync, linkSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { afterAll, describe, expect, it } from "vitest"
+import { afterAll, describe, expect, it, vi } from "vitest"
 import type { Config, FixBrief } from "../src/index.ts"
 import { CommandCi, CommandFixer, Driver, empty, FileEndings, FileInbox, Fixer, JjRepository } from "../src/index.ts"
 
@@ -69,6 +69,10 @@ const setup = async (script: string, directory?: string) => {
   const repository = await base.runPromise(
     JjRepository.make({ path, bookmark: "main", ledger: join(path, ".jj", "queue-ledger.json"), poll: "5 millis" })
   )
+  return { path, jj, change, briefs, repository, base, ...fixService(path, briefs, repository, script) }
+}
+
+const fixService = (path: string, briefs: string, repository: JjRepository.Repository, script: string) => {
   const layer = Layer.provideMerge(
     CommandFixer.layer({
       repository,
@@ -84,7 +88,7 @@ const setup = async (script: string, directory?: string) => {
     runtime.runPromise(Effect.flatMap(Fixer, use))
   const fixerExit = <A>(use: (fixer: Fixer["Service"]) => Effect.Effect<A, any>) =>
     runtime.runPromiseExit(Effect.flatMap(Fixer, use))
-  return { path, jj, change, briefs, repository, base, fixer, fixerExit }
+  return { fixer, fixerExit }
 }
 
 const brief = (id: number, failures: ReadonlyArray<number> = [1]): FixBrief => ({
@@ -96,6 +100,85 @@ const brief = (id: number, failures: ReadonlyArray<number> = [1]): FixBrief => (
 })
 
 const answerWith = (json: string): string => `printf '%s' '${json}' > "$2"`
+
+it("drains a verbose fixer, replaces briefs atomically, and rejects corrupt saved revisions", async () => {
+  const path = mkdtempSync(join(root, "fix-"))
+  const base = ManagedRuntime.make(host)
+  runtimes.push(base)
+  const repository = await base.runPromise(
+    JjRepository.make({ path, bookmark: "main", ledger: join(path, "ledger"), poll: 5 })
+  )
+  const noise = "dd if=/dev/zero bs=65536 count=32 2>/dev/null"
+  const world = fixService(
+    path,
+    path,
+    repository,
+    noise + "; (" + noise + ") >&2; " + answerWith("{\"_tag\":\"fixed\",\"commit\":\"abc\"}")
+  )
+  await world.fixer((fixer) => fixer.wait([]))
+  await world.fixer((fixer) => fixer.reconcile([brief(4)]))
+  await world.fixer((fixer) => fixer.wait([{ id: 4, attempt: 1 }]))
+  const file = join(path, "4-1.brief.json")
+  linkSync(file, file + ".previous")
+  await world.fixer((fixer) => fixer.reconcile([brief(4, [1, 2])]))
+  expect(JSON.parse(readFileSync(file + ".previous", "utf8"))).toEqual(brief(4))
+  expect(JSON.parse(readFileSync(file, "utf8"))).toEqual(brief(4, [1, 2]))
+  for (const corrupt of ["{", "{\"rev\":\"wrong\"}"]) {
+    writeFileSync(file, corrupt)
+    const error = await world.fixer((fixer) => Effect.flip(fixer.answer(4, 1)))
+    expect(error).toMatchObject({ _tag: "@smthrs/merge-queue/Unavailable", service: "fixer" })
+  }
+})
+
+it("forgets registered answers after an attempt leaves the queue", async () => {
+  const path = mkdtempSync(join(root, "registration-"))
+  const base = ManagedRuntime.make(host)
+  runtimes.push(base)
+  const ledger = join(path, "ledger")
+  writeFileSync(
+    ledger,
+    JSON.stringify({
+      genesis: "abc",
+      settled: 0,
+      sources: [],
+      candidates: [],
+      pinned: [],
+      refused: [],
+      interior: [],
+      foreign: JjRepository.firstForeign
+    })
+  )
+  const repository = await base.runPromise(JjRepository.make({ path, bookmark: "main", ledger, poll: 5 }))
+  const world = fixService(path, path, repository, answerWith("{\"_tag\":\"fixed\",\"commit\":\"abc\"}"))
+  await world.fixer((fixer) => fixer.reconcile([brief(4)]))
+  await world.fixer((fixer) => fixer.wait([{ id: 4, attempt: 1 }]))
+  expect(await world.fixer((fixer) => fixer.answer(4, 1))).toEqual({ _tag: "fixed" })
+  writeFileSync(join(path, "4-1.brief.json"), "{")
+  expect(await world.fixer((fixer) => fixer.answer(4, 1))).toEqual({ _tag: "fixed" })
+  await world.fixer((fixer) => fixer.reconcile([]))
+  expect(await world.fixer((fixer) => Effect.flip(fixer.answer(4, 1)))).toMatchObject({ service: "fixer" })
+})
+
+it("concurrent reconciles start one replacement for a cancelled fixer", async () => {
+  const path = mkdtempSync(join(root, "respawn-"))
+  const base = ManagedRuntime.make(host)
+  runtimes.push(base)
+  const repository = await base.runPromise(
+    JjRepository.make({ path, bookmark: "main", ledger: join(path, "ledger"), poll: 5 })
+  )
+  const world = fixService(path, path, repository, "echo alive >> \"$1.runs\"; exec sleep 60")
+  const runs = () => readFileSync(join(path, "4-1.brief.json.runs"), "utf8").trim().split("\n").length
+  await world.fixer((fixer) => fixer.reconcile([brief(4)]))
+  await vi.waitFor(() => expect(runs()).toBe(1))
+  await world.fixer((fixer) =>
+    Effect.all([fixer.reconcile([]), fixer.reconcile([brief(4)]), fixer.reconcile([brief(4)])], {
+      concurrency: "unbounded"
+    })
+  )
+  await vi.waitFor(() => expect(runs()).toBe(2))
+  await world.fixer((fixer) => fixer.reconcile([]))
+  expect(runs()).toBe(2)
+})
 
 // Real jj and real processes: a budget for a loaded host, still finite so a hang fails.
 describe.skipIf(!jjInstalled)("fix agents as commands", { timeout: 120_000 }, () => {

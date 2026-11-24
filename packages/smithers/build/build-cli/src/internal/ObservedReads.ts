@@ -86,7 +86,7 @@
  */
 
 import { spawnSync } from "node:child_process"
-import { createHash } from "node:crypto"
+import { createHash, randomUUID } from "node:crypto"
 import * as NodeFs from "node:fs"
 import { findPackageJSON } from "node:module"
 import * as NodeOs from "node:os"
@@ -4606,7 +4606,7 @@ export const observe = (
       const measured = options.found?.get(raw)
       if (measured !== undefined && measured !== "d") continue
       let parent = NodePath.posix.dirname(raw)
-      for (; parent !== "/" && !touched.has(parent); parent = NodePath.posix.dirname(parent)) {}
+      while (parent !== "/" && !touched.has(parent)) parent = NodePath.posix.dirname(parent)
       if (parent === "/") emptyBefore.add(raw)
     }
   }
@@ -5457,11 +5457,12 @@ export const saveDigests = (
   for (const [path, [fingerprint, state]] of memory) if (kept(path)) digests.push([path, fingerprint, state])
   // A build that measured nothing to keep leaves no file where there was none.
   if (digests.length === 0 && !NodeFs.existsSync(file)) return
-  const written = `${file}.${process.pid}`
+  const written = `${file}.${randomUUID()}.tmp`
   NodeFs.mkdirSync(NodePath.dirname(file), { recursive: true })
   NodeFs.writeFileSync(
     written,
-    JSON.stringify({ format: digestsFormat, digests: digests.slice(Math.max(0, digests.length - maximum)) })
+    JSON.stringify({ format: digestsFormat, digests: digests.slice(Math.max(0, digests.length - maximum)) }),
+    { flag: "wx", mode: 0o600 }
   )
   NodeFs.renameSync(written, file)
 }

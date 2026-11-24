@@ -572,7 +572,7 @@ export const Package = S.Package({ targets: { ci, github } })
       env: { ...process.env, PATH: NodePath.dirname(shell!) },
       encoding: "utf8"
     })
-    expect(invoked.status, invoked.stderr).toBe(0)
+    expect(invoked.status, invoked.stderr).toBe(1)
     expect(invoked.stderr).toContain("smthrs: CLI not found on PATH")
 
     const clean = await serve(root, ["gitHooks"])

@@ -15,9 +15,9 @@ import type { Scope } from "effect/Scope"
 import * as Stream from "effect/Stream"
 import { credentialFiles } from "../internal/credentialFiles.ts"
 import { checkEnvironmentNames } from "../internal/environmentNames.ts"
-import { providerFailure, remoteProcessOf } from "../internal/localProcess.ts"
+import { commandFailure, providerFailure, remoteProcessOf } from "../internal/localProcess.ts"
 import { rootedAt } from "../internal/rootedPath.ts"
-import { sessionSlug } from "../internal/sessionSlug.ts"
+import { legacySessionSlug, sessionSlug } from "../internal/sessionSlug.ts"
 import type { RemoteProcess } from "../RemoteChildProcessSpawner/Provider.ts"
 import { ProviderError } from "../RemoteChildProcessSpawner/ProviderError.ts"
 import { type NetworkPolicy, refuseNetworkPolicy } from "../Sandbox/NetworkPolicy.ts"
@@ -106,7 +106,14 @@ export const make = (options: DirectorySandboxOptions): Provider => {
     "commands run as host processes under no provider-owned ceiling"
   )
   // `seed` is the workdir a fork copies; a fresh session starts empty.
-  const open = (sessionKey: string, seed?: string, attachOnly = false): Effect.Effect<Session, ProviderError, Scope> =>
+  const root = options.root.replace(/\/+$/, "")
+  const matches = (session: Pick<Session, "id" | "remoteId">) =>
+    [sessionSlug, legacySessionSlug].some((slug) => session.remoteId === `${root}/${slug(session.id)}`)
+  const open = (
+    sessionKey: string,
+    seed?: string,
+    attachedDirectory?: string
+  ): Effect.Effect<Session, ProviderError, Scope> =>
     Effect.gen(function*() {
       if (!ContainedSpawner.isContained(options.spawner)) {
         return yield* Effect.fail(
@@ -116,7 +123,8 @@ export const make = (options: DirectorySandboxOptions): Provider => {
           })
         )
       }
-      const workdir = `${options.root.replace(/\/+$/, "")}/${sessionSlug(sessionKey)}`
+      const workdir = attachedDirectory ?? `${root}/${sessionSlug(sessionKey)}`
+      const attachOnly = attachedDirectory !== undefined
       if (
         attachOnly &&
         !(yield* options.fs.exists(workdir).pipe(
@@ -174,9 +182,9 @@ export const make = (options: DirectorySandboxOptions): Provider => {
             ...spawnOptions.stdin === undefined ? {} : { stdin: Stream.make(spawnOptions.stdin) }
           }
           const handle = yield* options.spawner.spawn(ChildProcess.make(command, settings)).pipe(
-            Effect.mapError(failure("spawn_error", `\`${command}\` could not start`))
+            Effect.mapError(commandFailure("spawn_error", "command could not start"))
           )
-          const process = remoteProcessOf(handle, command)
+          const process = remoteProcessOf(handle)
           // A target's exit is not proof that its children ended. Delegate
           // every scope close, including an already observed exit, to the
           // lifecycle's identity-aware, idempotent cleanup. A failed cleanup
@@ -241,13 +249,13 @@ export const make = (options: DirectorySandboxOptions): Provider => {
       {
         retained: true as const,
         attach: (session: Pick<Session, "id" | "remoteId">) =>
-          session.remoteId === `${options.root.replace(/\/+$/, "")}/${sessionSlug(session.id)}`
-            ? open(session.id, undefined, true)
+          matches(session)
+            ? open(session.id, undefined, session.remoteId)
             : Effect.fail(
               new ProviderError({ code: "spawn_error", message: "scratch workspace identity differs from key" })
             ),
         destroy: (session: Pick<Session, "id" | "remoteId">) =>
-          session.remoteId === `${options.root.replace(/\/+$/, "")}/${sessionSlug(session.id)}`
+          matches(session)
             ? options.fs.remove(session.remoteId, { recursive: true, force: true }).pipe(
               Effect.mapError(failure("unavailable", "scratch workspace could not be removed"))
             )

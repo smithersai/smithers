@@ -609,6 +609,37 @@ const cacheToken = "${{ github.event_name == 'pull_request' && secrets.SMITHERS_
   "secrets.SMITHERS_CACHE_TOKEN || '' }}"
 
 /**
+ * Where a run publishes in the shared cache: the trusted keys for the repository's default branch, and a keyspace of
+ * its own for a pull request and for any other branch. Smithers build publishes under `<namespace>/<key>` and reads
+ * the bare key (`packages/smithers/build/infra/CACHE-TRUST.md`), so a run of code nobody has reviewed keeps every hit
+ * and stores nothing the default branch reads, whichever token its repository gives it. A namespace holds no `/`, so
+ * a branch is named by its run and not by its name.
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const cacheNamespace = "${{ github.event_name == 'pull_request' && " +
+  "format('pr-{0}', github.event.pull_request.number) || " +
+  "github.ref_name != github.event.repository.default_branch && format('run-{0}', github.run_id) || '' }}"
+
+/**
+ * The checkout a generated workflow starts with, at the commit of its release v4.4.0: a tag can be moved to other
+ * code, a commit cannot. A repository whose own jobs pin the action elsewhere keeps its pin ({@link actionRefs}).
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const checkoutAction = "actions/checkout@11d5960a326750d5838078e36cf38b85af677262"
+
+/**
+ * The action that keeps a runner's own cache, at the commit of its release v4.3.0.
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const cacheAction = "actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830"
+
+/**
  * What a run prints when its repository names no shared cache.
  *
  * @category constants
@@ -740,7 +771,11 @@ const renderWorkflow = (
             Yaml.entry(
               "steps",
               steps([
-                step([Yaml.entry("uses", "actions/checkout@v4")]),
+                // The job's token is not left in the checkout's `.git/config`, where every later step could read it.
+                step([
+                  Yaml.entry("uses", pinned(checkoutAction, refs)),
+                  Yaml.entry("with", Yaml.mapping([Yaml.entry("persist-credentials", false)]))
+                ]),
                 // smithers-ci runs on this Node. A repository that sets up its own Node gets its version in the next
                 // steps.
                 step([
@@ -754,7 +789,7 @@ const renderWorkflow = (
                 ...(confined ? sandboxSetup : machines.size > 0 ? ownTmpSetup : tokenSetup(cache)),
                 step(
                   [
-                    Yaml.entry("uses", "actions/cache@v4"),
+                    Yaml.entry("uses", pinned(cacheAction, refs)),
                     Yaml.entry(
                       "with",
                       Yaml.mapping([
@@ -796,7 +831,8 @@ const renderWorkflow = (
                         // The machines of the jobs whose steps send results out are left for those steps.
                         ...(results.length > 0 ? [Yaml.entry(keepVariable, keepValue(results))] : []),
                         Yaml.entry("SMITHERS_CACHE_URL", cacheUrl(cache)),
-                        Yaml.entry("SMITHERS_CACHE_TOKEN", cacheToken)
+                        Yaml.entry("SMITHERS_CACHE_TOKEN", cacheToken),
+                        Yaml.entry("SMITHERS_CACHE_NAMESPACE", cacheNamespace)
                       ])
                     )
                   ],

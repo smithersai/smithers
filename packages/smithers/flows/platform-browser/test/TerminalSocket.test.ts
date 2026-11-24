@@ -96,6 +96,22 @@ const text = (received: Array<Uint8Array>) => new TextDecoder().decode(Buffer.co
 
 const quiet = { onOutput: () => {} }
 
+const openSocket = (onOutput: (data: Uint8Array) => void) =>
+  Effect.gen(function*() {
+    const { peers, url } = yield* serve
+    const client = yield* Deferred.make<WebSocket>()
+    const connection = yield* TerminalSocket.connect(url, { onOutput }).pipe(
+      Effect.provideService(Socket.WebSocketConstructor, (url) => {
+        const socket = new WebSocket(url)
+        Deferred.doneUnsafe(client, Effect.succeed(socket))
+        return socket
+      })
+    )
+    yield* control((yield* Queue.take(peers)).peer, { type: "ready", access: "read" })
+    yield* reach(connection, "Open")
+    return { connection, socket: yield* Deferred.await(client) }
+  })
+
 describe("TerminalSocket", () => {
   it.effect("carries bytes both ways, and the latest size, once open with write access", () =>
     Effect.gen(function*() {
@@ -412,6 +428,47 @@ describe("TerminalSocket", () => {
         ])
       }
     }).pipe(Effect.scoped))
+
+  it.live.each([
+    { data: {}, code: TerminalProtocol.CloseCode.unsupported },
+    { data: "x".repeat(TerminalProtocol.maxFrameBytes + 1), code: TerminalProtocol.CloseCode.tooBig },
+    { data: "😀".repeat(TerminalProtocol.maxFrameBytes / 3), code: TerminalProtocol.CloseCode.tooBig }
+  ])("closes on an invalid inbound frame with code $code", ({ data, code }) =>
+    Effect.gen(function*() {
+      const { connection, socket } = yield* openSocket(quiet.onOutput)
+      socket.dispatchEvent(new MessageEvent("message", { data }))
+      expect((yield* statuses(connection, (state) => state._tag === "Closed")).at(-1)).toEqual({ _tag: "Closed", code })
+    }).pipe(Effect.scoped))
+
+  it.live.each([
+    { count: 65, bytes: 1 },
+    { count: 17, bytes: TerminalProtocol.maxFrameBytes },
+    { count: 1, bytes: TerminalProtocol.maxFrameBytes + 1 }
+  ])(
+    "closes on inbound overflow while decoding stalls ($count frames of $bytes bytes)",
+    ({ count, bytes }) =>
+      Effect.gen(function*() {
+        const decoding = yield* Deferred.make<void>()
+        const effects: Uint8Array[] = []
+        const { connection, socket } = yield* openSocket((chunk) => effects.push(chunk))
+        const stalled = new class extends Blob {
+          override arrayBuffer(): Promise<ArrayBuffer> {
+            Deferred.doneUnsafe(decoding, Effect.void)
+            return new Promise(() => {})
+          }
+        }()
+        socket.dispatchEvent(new MessageEvent("message", { data: stalled }))
+        yield* Deferred.await(decoding)
+        for (let index = 0; index < count; index++) {
+          socket.dispatchEvent(new MessageEvent("message", { data: new Uint8Array(bytes) }))
+        }
+        expect((yield* statuses(connection, (state) => state._tag === "Closed")).at(-1)).toEqual({
+          _tag: "Closed",
+          code: TerminalProtocol.CloseCode.tooBig
+        })
+        expect(effects).toEqual([])
+      }).pipe(Effect.scoped)
+  )
 
   it.effect("closing the scope closes the socket, stops redialing and ends the status", () =>
     Effect.gen(function*() {

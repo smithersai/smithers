@@ -108,6 +108,13 @@ export interface Service {
    * many flows it names: what one recovery for many registrations does.
    */
   readonly sweepFlows: (flowNames: ReadonlySet<string>, executionId?: string) => Effect.Effect<void>
+  /**
+   * Fires the pending clocks of one execution that are already due, and
+   * nothing else: a clock still in the future keeps the timer of whichever
+   * process armed it. What the heartbeat sweep calls for a due timer wait
+   * that no live process holds a timer for.
+   */
+  readonly fireDue: (flowName: string, executionId: string) => Effect.Effect<void>
 }
 
 const clockKey = (row: DurableEngineState.ClockAddress): string =>
@@ -450,6 +457,17 @@ export const make = (
       })
     )
 
+    const fireDue: Service["fireDue"] = Effect.fn("DeferredPersistence.fireDue")((flowName, executionId) =>
+      Effect.gen(function*() {
+        const nowMs = yield* Clock.currentTimeMillis.pipe(Effect.map(Math.floor))
+        const pending = yield* state.pendingClocks({ flowName, executionId })
+        // `armClock` is keyed and idempotent: a timer this process already
+        // holds for the row is left alone, and a fire another driver wins is
+        // a no-op compare-and-set here.
+        yield* Effect.forEach(pending.filter((row) => row.dueAtMs <= nowMs), armClock, { discard: true })
+      })
+    )
+
     const sweepFlows: Service["sweepFlows"] = Effect.fn("DeferredPersistence.sweepFlows")((flowNames, executionId) =>
       Effect.gen(function*() {
         const rows = yield* state.pendingClocks(executionId === undefined ? {} : { executionId })
@@ -501,6 +519,7 @@ export const make = (
       ),
       scheduleClock,
       sweepDue,
-      sweepFlows
+      sweepFlows,
+      fireDue
     }
   })

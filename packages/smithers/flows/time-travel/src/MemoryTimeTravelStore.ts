@@ -643,12 +643,22 @@ export const make = (options: Options = {}): TimeTravelStore.Service & {
           const runId = childRunId ?? mintForkId(parentRunId, frame)
           // A child id names a NEW run, exactly as the SQL store refuses one
           // that already has a row or a journal.
-          if (
-            records.some((record) => record.runId === runId) ||
-            edges.some((edge) => edge.parentRunId === runId || edge.childRunId === runId) ||
-            liveRuns.has(runId) || runStatuses.has(runId) || runOwners.has(runId)
-          ) {
+          const taken = (id: string): boolean =>
+            records.some((record) => record.runId === id) ||
+            edges.some((edge) => edge.parentRunId === id || edge.childRunId === id) ||
+            liveRuns.has(id) || runStatuses.has(id) || runOwners.has(id)
+          if (taken(runId)) {
             throw error("invalid", TimeTravelStore.forkChildTakenMessage(runId))
+          }
+          // So does every destination a carried child is copied to. Each must
+          // be free, distinct from the fork's root and from the other
+          // destinations, checked before the first record is copied.
+          const destinations = new Set([runId])
+          for (const child of rebinding?.children ?? []) {
+            if (destinations.has(child.to) || taken(child.to)) {
+              throw error("invalid", TimeTravelStore.forkChildTakenMessage(child.to))
+            }
+            destinations.add(child.to)
           }
           // The committed edge takes over the ordinal the reservation held.
           forkIntents = forkIntents.filter((intent) => intent.childRunId !== runId)

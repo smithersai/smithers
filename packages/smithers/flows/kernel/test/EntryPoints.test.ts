@@ -52,7 +52,7 @@ describe("documented entry points", () => {
   it.each([
     // Pinned with the Effect it is built against, so a bump moves them together.
     ["@effect/platform-node", manifest.devDependencies.effect],
-    ["@smthrs/database", manifest.version]
+    ["@smthrs/database", expect.stringMatching(/^workspace:/)]
   ])("declares integration-only %s as a development dependency", async (dependency, version) => {
     const files = await readdir(new URL("../test/", import.meta.url))
     const sources = await Promise.all(

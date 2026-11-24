@@ -138,7 +138,8 @@ parent object                 child object
          drive ─ reads the child's result, settles
 ```
 
-The backoff is one second, doubling, at most five seconds, and never gives up.
+Transient failures retry after one second, doubling to a maximum of five seconds.
+Unknown flows and invalid intents or admission payloads enter settlement retention.
 An alarm that dies in the middle of a drive leaves its attempt counted and its
 successor armed, so the next incarnation of the object takes the run over one
 backoff later. It takes it at once even though the dead incarnation's lease is

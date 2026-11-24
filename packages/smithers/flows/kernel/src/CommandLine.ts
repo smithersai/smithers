@@ -67,8 +67,9 @@ export const render = (command: ChildProcess.Command): string =>
   renderWith(command, (value) => Redacted.isRedacted(value) ? "<redacted>" : value)
 
 /**
- * Renders arguments at the interpreter host boundary, revealing protected
- * values only for execution. Diagnostics and grants use {@link render}.
+ * Renders arguments for a trusted local interpreter, revealing protected
+ * values only for execution. A remote guest must refuse protected arguments
+ * and environment values before using {@link render}.
  *
  * @category rendering
  * @since 1.0.0

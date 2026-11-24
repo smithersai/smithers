@@ -7,5 +7,5 @@ fi
 if command -v smithers-build >/dev/null 2>&1; then
   exec smithers-build '//:preCommit'
 fi
-echo "smthrs: CLI not found on PATH; skipping the pre-commit hook (fail-open)" >&2
-exit 0
+echo "smthrs: CLI not found on PATH; pre-commit hook could not run" >&2
+exit 1

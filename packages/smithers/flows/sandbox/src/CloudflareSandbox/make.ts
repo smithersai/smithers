@@ -13,8 +13,9 @@ import { environmentCommand } from "../internal/environmentCommand.ts"
 import { checkEnvironmentNames } from "../internal/environmentNames.ts"
 import { finalizeWithin } from "../internal/finalizeWithin.ts"
 import { parentOf } from "../internal/guestPath.ts"
+import { commandFailure } from "../internal/localProcess.ts"
 import { rootedAt } from "../internal/rootedPath.ts"
-import { sessionSlug } from "../internal/sessionSlug.ts"
+import { legacySessionSlug, sessionSlug } from "../internal/sessionSlug.ts"
 import { stdinRedirect } from "../internal/stdinRedirect.ts"
 import { warnTeardown } from "../internal/teardownWarning.ts"
 import type { RemoteProcess } from "../RemoteChildProcessSpawner/Provider.ts"
@@ -138,6 +139,9 @@ const encoder = new TextEncoder()
 const failed = (code: ProviderError["code"], message: string, cause: unknown): ProviderError =>
   new ProviderError({ code, message: `cloudflare sandbox: ${message}`, cause })
 
+const attemptCommand = <A>(run: () => Promise<A>, message: string) =>
+  Effect.tryPromise({ try: run, catch: commandFailure("spawn_error", message) })
+
 const attempt = attemptIn("cloudflare sandbox")
 
 const errorCodeOf = (cause: unknown): unknown =>
@@ -215,7 +219,8 @@ export const make = <Binding>(options: CloudflareSandboxOptions<Binding>): Provi
   // A retained identity names this provider's instance type and key; any
   // other would resolve, and so boot, an unrelated Durable Object.
   const identified = (session: Pick<Session, "id" | "remoteId">): Effect.Effect<string, ProviderError> =>
-    session.remoteId === remoteIdOf(session.id)
+    (session.remoteId === remoteIdOf(session.id) ||
+        session.remoteId === `${placement.prefix}${legacySessionSlug(session.id)}`)
       ? Effect.succeed(session.remoteId)
       : Effect.fail(
         failed("spawn_error", `${session.remoteId} is not this provider's sandbox for ${session.id}`, undefined)
@@ -270,7 +275,7 @@ export const make = <Binding>(options: CloudflareSandboxOptions<Binding>): Provi
           }
           return options.execution === "process"
             ? Effect.flatMap(
-              attempt(
+              attemptCommand(
                 async () => {
                   const started = await sandbox.startProcess(guest.command, commandOptions)
                   const exit = await started.waitForExit()
@@ -280,21 +285,19 @@ export const make = <Binding>(options: CloudflareSandboxOptions<Binding>): Provi
                     exitCode: exit.exitCode ?? started.exitCode
                   }
                 },
-                "spawn_error",
-                `process failed for ${command}`
+                "cloudflare sandbox: process failed"
               ),
               (result) =>
                 result.exitCode === undefined
                   ? Effect.fail(
-                    failed("spawn_error", `the sandbox reported no exit status for \`${command}\``, result)
+                    failed("spawn_error", "the sandbox reported no exit status", undefined)
                   )
                   : Effect.succeed(processOf(result.stdout, result.stderr, result.exitCode))
             )
             : Effect.map(
-              attempt(
+              attemptCommand(
                 () => sandbox.exec(guest.command, commandOptions),
-                "spawn_error",
-                `exec failed for ${command}`
+                "cloudflare sandbox: exec failed"
               ),
               (result) => processOf(result.stdout, result.stderr, result.exitCode)
             )

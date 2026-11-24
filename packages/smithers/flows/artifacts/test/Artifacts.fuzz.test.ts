@@ -3005,9 +3005,12 @@ describe("@smthrs/artifacts comprehensive fuzz suite", () => {
       (input) =>
         Effect.gen(function*() {
           if (input.scenario === "memory-lru-and-bounds") {
-            const maxEntry = Math.min(24, input.maxTotalBytes)
+            // The memory cache charges each entry its body, URL, headers and a fixed
+            // overhead, so the budget is sized in entries, not bare body bytes.
+            const budget = input.maxTotalBytes * 128
+            const maxEntry = Math.min(24 * 128, budget)
             const layer = ImmutableCache.layerMemory({
-              maxTotalBytes: input.maxTotalBytes,
+              maxTotalBytes: budget,
               maxEntryBytes: maxEntry
             })
             return yield* Effect.gen(function*() {
@@ -3032,10 +3035,10 @@ describe("@smthrs/artifacts comprehensive fuzz suite", () => {
               }
 
               // Store & isolate caller buffer mutation
-              const half = Math.max(4, Math.floor(input.maxTotalBytes / 2))
-              const b1 = new Uint8Array(Math.min(half, maxEntry)).fill(1)
-              const b2 = new Uint8Array(Math.min(half, maxEntry)).fill(2)
-              const b3 = new Uint8Array(Math.min(half, maxEntry)).fill(3)
+              const quarter = Math.min(Math.floor(budget / 4), maxEntry)
+              const b1 = new Uint8Array(quarter).fill(1)
+              const b2 = new Uint8Array(quarter).fill(2)
+              const b3 = new Uint8Array(quarter).fill(3)
               const b1Copy = b1.slice()
               if ((yield* cache.put(k1, { bytes: b1Copy, metadata: { tag: "1" } })) !== "stored") return false
               b1Copy[0] = 99
@@ -3048,11 +3051,19 @@ describe("@smthrs/artifacts comprehensive fuzz suite", () => {
               if (Option.isNone(got1) || !bytesEqual(got1.value.bytes, b1) || got1.value.metadata.tag !== "1") {
                 return false
               }
-              // Insert k3: if b1+b2+b3 > maxTotalBytes, k2 should evict before k1
+              // Insert k3: when the three no longer fit, k2 is evicted and k1 is kept.
               if ((yield* cache.put(k3, { bytes: b3, metadata: { tag: "3" } })) !== "stored") return false
-              if (b1.byteLength + b2.byteLength + b3.byteLength > input.maxTotalBytes) {
-                if (Option.isSome(yield* cache.get(k2))) return false
-              }
+              // Each entry's URL and fixed overhead alone exceed 172 bytes; its whole
+              // overhead (URL, three headers, the fixed charge) stays under 600.
+              const bodies = b1.byteLength + b2.byteLength + b3.byteLength
+              const held2 = Option.isSome(yield* cache.get(k2))
+              if (bodies + 3 * (ImmutableCache.memoryEntryOverheadBytes + 108) > budget && held2) return false
+              if (bodies + 3 * 600 <= budget && !held2) return false
+              if (Option.isNone(yield* cache.get(k1)) || Option.isNone(yield* cache.get(k3))) return false
+              // Empty entries are charged too: no budget holds none of them.
+              const free = ImmutableCache.makeMemoryWebCache(0)
+              yield* Effect.promise(() => free.put("https://x.invalid/0", new Response(null)))
+              if ((yield* Effect.promise(() => free.match("https://x.invalid/0"))) !== undefined) return false
               // Direct makeMemoryWebCache oversized put silently drops
               const direct = ImmutableCache.makeMemoryWebCache(4)
               yield* Effect.promise(() => direct.put("https://x.invalid/1", new Response(new Uint8Array(10))))

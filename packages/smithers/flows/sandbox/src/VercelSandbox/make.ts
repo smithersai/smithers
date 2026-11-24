@@ -14,6 +14,7 @@ import { environmentCommand } from "../internal/environmentCommand.ts"
 import { checkEnvironmentNames } from "../internal/environmentNames.ts"
 import { finalizeWithin } from "../internal/finalizeWithin.ts"
 import { parentOf } from "../internal/guestPath.ts"
+import { commandFailure } from "../internal/localProcess.ts"
 import { machineName } from "../internal/machineName.ts"
 import { rootedAt } from "../internal/rootedPath.ts"
 import { stdinRedirect } from "../internal/stdinRedirect.ts"
@@ -79,7 +80,8 @@ const output = (
   description: string
 ): Stream.Stream<Uint8Array, ProviderError> =>
   Stream.fromEffect(
-    Effect.map(attempt(read, "unknown", description), (text) => new TextEncoder().encode(text))
+    Effect.map(Effect.tryPromise({ try: read, catch: commandFailure("unknown", description) }), (text) =>
+      new TextEncoder().encode(text))
   )
 
 const decodeFile = async (
@@ -143,7 +145,7 @@ const resolveCredentials = (
 /**
  * Builds a provider backed by named, persistent Vercel sandboxes.
  *
- * A session key becomes a sandbox name carrying a 64-bit digest of the key, and
+ * A session key becomes a sandbox name carrying a 128-bit SHA-256 prefix of the key, and
  * `Sandbox.getOrCreate` resumes that machine when it already exists. Closing
  * the acquisition scope stops the current session; a stop that fails is
  * logged at Warn rather than swallowed, because teardown runs for its side
@@ -291,7 +293,10 @@ export const make = (options: VercelSandboxOptions): Provider => {
         yield* checked(prepare, "unavailable", `vercel-sandbox: could not prepare ${workdir}`)
 
         const run = (params: Parameters<VendorSandbox["runCommand"]>[0]) =>
-          attempt(() => sandbox.runCommand(params), "spawn_error", `could not run ${params.cmd}`)
+          Effect.tryPromise({
+            try: () => sandbox.runCommand(params),
+            catch: commandFailure("spawn_error", "vercel-sandbox: command execution failed")
+          })
         const writeFile: Session["writeFile"] = (path, content) =>
           Effect.gen(function*() {
             const parent = parentOf(path)

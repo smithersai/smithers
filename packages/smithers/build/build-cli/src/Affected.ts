@@ -56,7 +56,15 @@ export const changedPaths = async (root: string, options: {
   if (!Fs.existsSync(Path.join(root, ".git")) && Fs.existsSync(Path.join(root, ".jj"))) {
     const jjBase = options.base === "HEAD" ? "@-" : options.base
     const jjHead = options.head ?? "@"
-    const args = ["--no-pager", "--color=never", "diff", "--name-only", `--from=${jjBase}`, `--to=${jjHead}`]
+    const args = [
+      "--no-pager",
+      "--color=never",
+      "diff",
+      "--template",
+      "if(status == \"renamed\", json(source.path()) ++ \"\\0\") ++ json(path) ++ \"\\0\"",
+      `--from=${jjBase}`,
+      `--to=${jjHead}`
+    ]
     let stdout = ""
     let stderr = ""
     let code: number
@@ -91,7 +99,8 @@ export const changedPaths = async (root: string, options: {
         stderr
       })
     }
-    const jjPaths = stdout.split(/\r?\n/).map((line) => line.trim()).filter(Boolean)
+    // JSON protects control characters from display escaping and a leading BOM from UTF-8 decoding.
+    const jjPaths = stdout.split("\0").filter(Boolean).map((record) => JSON.parse(record) as string)
     return [...new Set(jjPaths)].sort()
   }
   const git = async (args: ReadonlyArray<string>): Promise<string> => {
@@ -337,9 +346,7 @@ export function select(
     }))
   ].sort()
   const rows = index.targets()
-  type IndexRow = (typeof rows)[number]
-  const rowByTarget = new Map(rows.map((row) => [row.target, row]))
-  const initialSelected = [
+  const selected = [
     ...new Map(patterns.flatMap((pattern) => index.resolve(pattern)).map((row) => [row.label, row])).values()
   ]
   const reasons = new Map<string, Set<string>>()
@@ -513,27 +520,6 @@ export function select(
     entries.set(target, value)
     return value
   }
-  // Expand Suite targets into their concrete exported member targets using cached `entry()`
-  // metadata so `affected` selects only affected members rather than running the whole suite.
-  const selected = (() => {
-    const out = new Map<string, IndexRow>()
-    const visitedSuites = new Set<Target.AnyTarget>()
-    const visit = (row: IndexRow) => {
-      const metadata = entry(row.target).metadata
-      if (metadata.target === "Suite" && metadata.dependencies.length > 0) {
-        const memberRows = metadata.dependencies.map((dep) => rowByTarget.get(dep))
-        if (memberRows.every((member): member is IndexRow => member !== undefined)) {
-          if (visitedSuites.has(row.target)) return
-          visitedSuites.add(row.target)
-          for (const memberRow of memberRows) visit(memberRow)
-          return
-        }
-      }
-      out.set(row.label, row)
-    }
-    for (const row of initialSelected) visit(row)
-    return [...out.values()]
-  })()
   const implementationRoots = options.toolSources === false ?
     [] :
     productionSourceRoots().map((source) => Path.relative(index.root, source.directory).replaceAll("\\", "/"))
@@ -658,8 +644,10 @@ export function select(
       const isCompositionRule = metadata.target === "Suite" || metadata.target === "Alias"
       // An uncacheable target makes no promise that its inputs are complete: it may import
       // undeclared packages or read files it never declared. Only running it is sound.
-      const uncacheable = !isCompositionRule && RulePolicy.of(metadata.target).cache === undefined &&
-        (!metadata.cacheable || views.some((view) => !view.cacheable))
+      const policyCache = RulePolicy.of(metadata.target).cache
+      const uncacheable = !isCompositionRule &&
+        (policyCache === false ||
+          policyCache === undefined && (!metadata.cacheable || views.some((view) => !view.cacheable)))
       const everyChange = indirect.length > 0 || indirectDirectories.length > 0 || value.ambient ||
         viewInputs.some(ambientInput) || uncacheable
       const inputs = viewInputs

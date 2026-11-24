@@ -426,7 +426,7 @@ describe("CloudflareSandbox", () => {
           expect(result).toEqual({ stdout: "sized", stderr: "", code: 0 })
           return session.remoteId
         }))
-      expect(remoteId).toMatch(/^standard-4-session-key-[0-9a-f]{16}$/)
+      expect(remoteId).toMatch(/^standard-4-session-key-[0-9a-f]{32}$/)
       const selected = bindings.get("standard-4")!
       expect(selected.resolutions.map(({ id }) => id)).toEqual([remoteId])
       expect(selected.instances[0]!.destroyed).toBe(true)
@@ -462,7 +462,7 @@ describe("CloudflareSandbox", () => {
             })
         )
         expect(identity.remoteId).toMatch(
-          declared === "binding" ? /^session-key-[0-9a-f]{16}$/ : /^standard-1-session-key-[0-9a-f]{16}$/
+          declared === "binding" ? /^session-key-[0-9a-f]{32}$/ : /^standard-1-session-key-[0-9a-f]{32}$/
         )
         const machine = workerBinding.instances[0]!
         expect(machine.destroyed).toBe(false)
@@ -768,10 +768,12 @@ describe("CloudflareSandbox", () => {
         execution: "process"
       })
       const missing = yield* Effect.flip(acquired(noneProvider, (session) =>
-        Effect.scoped(Effect.flatMap(session.spawn("printf 'lost'", {}), (process) =>
+        Effect.scoped(Effect.flatMap(session.spawn("printf private-cloudflare-marker", {}), (process) =>
           process.exitCode))))
       expect(missing).toMatchObject({ code: "spawn_error" })
       expect(missing.message).toContain("no exit status")
+      expect(JSON.stringify(missing)).not.toContain("private-cloudflare-marker")
+      expect(missing.cause).toBeUndefined()
       expect(noneBinding.resolutions[0]?.options).toEqual({ enableDefaultSession: false })
     }))
 
@@ -806,7 +808,7 @@ describe("CloudflareSandbox", () => {
         Effect.flatMap(provider.acquire("key"), (session) =>
           Effect.sync(() => {
             workerBinding.instances.at(-1)!.failDestroy = new Error("destroy failed")
-            expect(session.remoteId).toMatch(/^[A-Za-z0-9._-]+-[0-9a-f]{16}$/)
+            expect(session.remoteId).toMatch(/^[A-Za-z0-9._-]+-[0-9a-f]{32}$/)
           }))
       )
     }))

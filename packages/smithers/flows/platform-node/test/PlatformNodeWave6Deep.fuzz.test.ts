@@ -73,10 +73,10 @@ describe("@smthrs/platform-node Wave 6 deep fuzz (ProcessReaper, ProcSnapshot, R
                 startKind === "exact"
                   ? { _tag: "started", startedAtMs }
                   : startKind === "driftOk"
-                    ? { _tag: "started", startedAtMs: startedAtMs + 500 }
-                    : startKind === "driftBad"
-                      ? { _tag: "started", startedAtMs: startedAtMs + 90_000 }
-                      : { _tag: startKind },
+                  ? { _tag: "started", startedAtMs: startedAtMs + 500 }
+                  : startKind === "driftBad"
+                  ? { _tag: "started", startedAtMs: startedAtMs + 90_000 }
+                  : { _tag: startKind },
               ownGroup: () => 9999,
               bootedAtMs: () => (beforeBoot ? startedAtMs + 60_000 : startedAtMs - 60_000),
               refuseTarget: (rec) => (rec.pgid === 9999 ? "own-group" : undefined),
@@ -159,71 +159,74 @@ describe("@smthrs/platform-node Wave 6 deep fuzz (ProcessReaper, ProcSnapshot, R
     assertPassed(report)
   })
 
-  it("RegularFile.open rejects symlinks, directories, and missing files while ScopedProcess.spawn/status cleanly tracks lifecycle", async () => {
-    const arb = Arbitrary.schema(
-      Schema.Struct({
-        fileKind: Schema.Literals(["regular", "symlink", "dir", "missing"]),
-        plat: Schema.Literals(["linux", "win32"]),
-        exitCode: Schema.Literals([0, 2, 7])
-      })
-    )
+  it(
+    "RegularFile.open rejects symlinks, directories, and missing files while ScopedProcess.spawn/status cleanly tracks lifecycle",
+    async () => {
+      const arb = Arbitrary.schema(
+        Schema.Struct({
+          fileKind: Schema.Literals(["regular", "symlink", "dir", "missing"]),
+          plat: Schema.Literals(["linux", "win32"]),
+          exitCode: Schema.Literals([0, 2, 7])
+        })
+      )
 
-    const report = await Effect.runPromise(
-      Fuzz.run(
-        arb,
-        ({ fileKind, plat, exitCode }) =>
-          Effect.gen(function*() {
-            const dir = fs.mkdtempSync(path.join(os.tmpdir(), "regfile-w6-"))
-            try {
-              const realFile = path.join(dir, "real.txt")
-              fs.writeFileSync(realFile, "hello")
-              const target =
-                fileKind === "regular"
+      const report = await Effect.runPromise(
+        Fuzz.run(
+          arb,
+          ({ fileKind, plat, exitCode }) =>
+            Effect.gen(function*() {
+              const dir = fs.mkdtempSync(path.join(os.tmpdir(), "regfile-w6-"))
+              try {
+                const realFile = path.join(dir, "real.txt")
+                fs.writeFileSync(realFile, "hello")
+                const target = fileKind === "regular"
                   ? realFile
                   : fileKind === "symlink"
-                    ? (() => {
-                        const l = path.join(dir, "link.txt")
-                        fs.symlinkSync(realFile, l)
-                        return l
-                      })()
-                    : fileKind === "dir"
-                      ? dir
-                      : path.join(dir, "missing.txt")
+                  ? (() => {
+                    const l = path.join(dir, "link.txt")
+                    fs.symlinkSync(realFile, l)
+                    return l
+                  })()
+                  : fileKind === "dir"
+                  ? dir
+                  : path.join(dir, "missing.txt")
 
-              const opened = yield* Effect.scoped(RegularFile.open(plat, target)).pipe(
-                Effect.provide(NodePlatform),
-                Effect.exit
-              )
-              if (fileKind === "regular") {
-                expect(Exit.isSuccess(opened)).toBe(true)
-              } else if (fileKind === "dir" || fileKind === "missing") {
-                expect(Exit.isFailure(opened)).toBe(true)
-              } else {
-                expect(Exit.isSuccess(opened) || Exit.isFailure(opened)).toBe(true)
+                const opened = yield* Effect.scoped(RegularFile.open(plat, target)).pipe(
+                  Effect.provide(NodePlatform),
+                  Effect.exit
+                )
+                if (fileKind === "regular") {
+                  expect(Exit.isSuccess(opened)).toBe(true)
+                } else if (fileKind === "dir" || fileKind === "missing") {
+                  expect(Exit.isFailure(opened)).toBe(true)
+                } else {
+                  expect(Exit.isSuccess(opened) || Exit.isFailure(opened)).toBe(true)
+                }
+              } finally {
+                fs.rmSync(dir, { recursive: true, force: true })
               }
-            } finally {
-              fs.rmSync(dir, { recursive: true, force: true })
-            }
 
-            const statusResult = yield* Effect.scoped(
-              Effect.gen(function*() {
-                const handle = yield* ScopedProcess.spawn({
-                  command: "sh",
-                  args: ["-c", `exit ${exitCode}`],
-                  env: { PATH: process.env.PATH ?? "/usr/bin:/bin" }
+              const statusResult = yield* Effect.scoped(
+                Effect.gen(function*() {
+                  const handle = yield* ScopedProcess.spawn({
+                    command: "sh",
+                    args: ["-c", `exit ${exitCode}`],
+                    env: { PATH: process.env.PATH ?? "/usr/bin:/bin" }
+                  })
+                  const code = yield* handle.exitCode
+                  const st = yield* ScopedProcess.status(handle)
+                  return { code, st }
                 })
-                const code = yield* handle.exitCode
-                const st = yield* ScopedProcess.status(handle)
-                return { code, st }
-              })
-            ).pipe(Effect.provide(NodePlatform))
-            expect(statusResult.code).toBe(exitCode)
-            expect(statusResult.st).toBeDefined()
-            return true
-          }),
-        { executions: Math.min(executions, 30), seed: seed + 2 }
+              ).pipe(Effect.provide(NodePlatform))
+              expect(statusResult.code).toBe(exitCode)
+              expect(statusResult.st).toBeDefined()
+              return true
+            }),
+          { executions: Math.min(executions, 30), seed: seed + 2 }
+        )
       )
-    )
-    assertPassed(report)
-  }, 60_000)
+      assertPassed(report)
+    },
+    60_000
+  )
 })

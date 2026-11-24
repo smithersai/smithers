@@ -96,7 +96,28 @@ interface ExecutionState {
    * not among them.
    */
   readonly awaited: Set<string>
+  /** The deferred results and clock timers recorded for this execution, by {@link deferredId}. */
+  readonly deferreds: Set<string>
+  /**
+   * The action keys this execution dispatched, each with its dispatches by
+   * attempt. Invocation keys are run-local, so no other execution reads them.
+   */
+  readonly actionKeys: Map<string, Set<string>>
 }
+
+/**
+ * How many settled top-level lineages an in-memory engine keeps answering
+ * for: a repeated `execute` joins one and a `poll` reads one. Past it the
+ * engine forgets the lineage settled longest ago, with every child it owned,
+ * so a long-lived layer holds live work plus this many results, not every
+ * payload and action result it ever produced. A forgotten execution id is
+ * unknown again: `poll` fails `FlowExecutionNotFound` and `execute` runs it
+ * anew.
+ *
+ * @category constants
+ * @since 1.0.0
+ */
+export const settledLineageRetention = 1024
 
 /** One action dispatch by key and attempt, and its settlement once it has one. */
 interface ActionState {
@@ -161,6 +182,16 @@ interface Memory {
    */
   readonly latestAttempts: Map<string, number>
   readonly deferredResults: Map<string, Exit.Exit<any, any>>
+  /**
+   * Deferred results and clocks addressed to an execution id not admitted
+   * yet, oldest id first. `install` hands them to the execution.
+   */
+  readonly earlyDeferreds: Map<string, Set<string>>
+  /**
+   * Top-level lineages that settled, oldest first: the ones
+   * {@link settledLineageRetention} bounds.
+   */
+  readonly settledLineages: Set<Round.RootExecutionId>
   readonly clocks: FiberMap.FiberMap<string>
   /**
    * Executions a resume found with a live round, since that round was driven.
@@ -191,6 +222,8 @@ const makeMemory = (
   actions: new Map(),
   latestAttempts: new Map(),
   deferredResults: new Map(),
+  earlyDeferreds: new Map(),
+  settledLineages: new Set(),
   clocks,
   missedWakes: new Set()
 })
@@ -294,6 +327,10 @@ const linkParent = (memory: Memory, child: string, parent: string): FlowRuntime.
   if (path !== undefined) {
     return new FlowRuntime.FlowCycleDetected({ code: "flow_cycle_detected", path: [...path].reverse() })
   }
+  // An owner this engine does not hold owns nothing here. A follower of a
+  // forgotten lineage can still ask on its behalf, and an edge to it would
+  // keep the child from ever being counted as settled.
+  if (!memory.executions.has(parent)) return undefined
   addEdge(memory.parents, child, parent)
   addEdge(memory.children, parent, child)
   return undefined
@@ -506,6 +543,87 @@ const redriveParent = (memory: Memory, state: ExecutionState, result: Result) =>
   )
 }
 
+/** Whether a round has an answer no drive will replace: anything but a live or parked round. */
+const settledForGood = (state: ExecutionState): boolean => {
+  const exit = state.fiber?.pollUnsafe()
+  return exit !== undefined && !(Exit.isSuccess(exit) && exit.value._tag === "Suspended")
+}
+
+/** Drops one settled execution's own records and answers the children it owned. */
+const forgetExecution = (memory: Memory, executionId: string, state: ExecutionState) =>
+  Effect.gen(function*() {
+    wake(memory, executionId)
+    memory.executions.delete(executionId)
+    memory.missedWakes.delete(executionId)
+    for (const id of state.deferreds) {
+      memory.deferredResults.delete(id)
+      yield* FiberMap.remove(memory.clocks, id)
+    }
+    for (const [key, actionIds] of state.actionKeys) {
+      memory.latestAttempts.delete(key)
+      for (const actionId of actionIds) memory.actions.delete(actionId)
+    }
+    // Only an execution with no owner left is forgotten, so it has no parent edge to drop.
+    const owned = [...(memory.children.get(executionId) ?? [])]
+    memory.children.delete(executionId)
+    for (const child of owned) {
+      const parents = memory.parents.get(child)!
+      parents.delete(executionId)
+      if (parents.size === 0) memory.parents.delete(child)
+    }
+    return owned
+  })
+
+/**
+ * Forgets the lineage `root` names and every lineage only it owned. A lineage
+ * with a live or parked round, or with an owner left, is kept: it settles on
+ * its own time and is counted then.
+ */
+const forgetLineage = Effect.fnUntraced(function*(memory: Memory, root: Round.RootExecutionId) {
+  const pending = [root]
+  while (pending.length > 0) {
+    const lineage = pending.pop()!
+    // Two owners forgotten in one pass each name the lineage they shared.
+    const members = [...(memory.rounds.get(lineage) ?? [])]
+    const states = members.map((id) => memory.executions.get(id)!)
+    if (members.length === 0) continue
+    if (members.some((id) => memory.parents.has(id)) || !states.every(settledForGood)) continue
+    memory.rounds.delete(lineage)
+    memory.cancelledLineages.delete(lineage)
+    memory.settledLineages.delete(lineage)
+    for (const [index, id] of members.entries()) {
+      for (const child of yield* forgetExecution(memory, id, states[index]!)) {
+        pending.push(memory.executions.get(child)!.rootExecutionId)
+      }
+    }
+  }
+})
+
+/**
+ * Counts a lineage nothing owns once its last round has an answer, and
+ * forgets the ones settled longest ago past {@link settledLineageRetention}.
+ * A child's lineage is not counted: it goes with the last parent that owns it.
+ */
+const retireSettled = (memory: Memory, state: ExecutionState, exit: Exit.Exit<Result>) =>
+  Effect.suspend(() => {
+    if (Exit.isSuccess(exit) && exit.value._tag !== "Complete") return Effect.void
+    const root = state.rootExecutionId
+    if ([...memory.rounds.get(root)!].some((id) => memory.parents.has(id))) return Effect.void
+    // Settling again, as a late round of a counted lineage does, makes it the newest.
+    memory.settledLineages.delete(root)
+    memory.settledLineages.add(root)
+    const expired: Array<Round.RootExecutionId> = []
+    for (const oldest of memory.settledLineages) {
+      if (memory.settledLineages.size - expired.length <= settledLineageRetention) break
+      expired.push(oldest)
+    }
+    return Effect.forEach(expired, (lineage) => {
+      // Dropped from the count first: a lineage kept for a live round is counted again when that round settles.
+      memory.settledLineages.delete(lineage)
+      return forgetLineage(memory, lineage)
+    }, { discard: true })
+  })
+
 /**
  * Runs `entry`'s handler as one round's body, listed among the bodies the
  * registration's close stops. A registration that already began closing
@@ -559,6 +677,7 @@ const drive = (memory: Memory, state: ExecutionState, entry: Registration | unde
         if (entry?.open === false && Exit.isSuccess(exit) && exit.value._tag === "Suspended") {
           yield* handOver(memory, state.instance.executionId)
         }
+        yield* retireSettled(memory, state, exit)
       })
     ),
     Effect.forkIn(memory.scope)
@@ -714,6 +833,9 @@ const publish = (memory: Memory, executionId: string, state: ExecutionState, par
       if (error !== undefined) return Effect.fail(error)
     }
     memory.executions.set(executionId, state)
+    // Completions and clocks that arrived before this admission are its own from here on.
+    for (const id of memory.earlyDeferreds.get(executionId) ?? []) state.deferreds.add(id)
+    memory.earlyDeferreds.delete(executionId)
     const members = memory.rounds.get(state.rootExecutionId) ?? new Set<string>()
     members.add(executionId)
     memory.rounds.set(state.rootExecutionId, members)
@@ -746,7 +868,9 @@ const install = Effect.fnUntraced(function*(
     rootExecutionId,
     fiber: undefined,
     bodyFiber: undefined,
-    awaited: new Set()
+    awaited: new Set(),
+    deferreds: new Set(),
+    actionKeys: new Map()
   }
   // All asynchronous payload rebuilding now belongs to the driver, inside
   // `Flow.intoResult`.
@@ -958,6 +1082,16 @@ const runAction = (
   )
 }
 
+/** Lists the dispatch `actionId` of `key` under the execution that made it, to be forgotten with it. */
+const useActionKey = (memory: Memory, executionId: string, key: string, actionId: string): void => {
+  const state = memory.executions.get(executionId)
+  // A dispatch outside any execution this engine admitted has no lineage to be forgotten with.
+  if (state === undefined) return
+  const actionIds = state.actionKeys.get(key) ?? new Set<string>()
+  actionIds.add(actionId)
+  state.actionKeys.set(key, actionIds)
+}
+
 // Untraced because action execution is a retry-loop hot path.
 const actionExecute = Effect.fnUntraced(function*(
   memory: Memory,
@@ -970,6 +1104,7 @@ const actionExecute = Effect.fnUntraced(function*(
   return yield* Effect.uninterruptibleMask((restore) =>
     Effect.suspend(() => {
       const actionId = JSON.stringify([options.key, options.attempt])
+      useActionKey(memory, instance.executionId, options.key, actionId)
       const prior = priorSettlement(memory, actionId, restore, () =>
         actionExecute(memory, options).pipe(Effect.provideService(FlowRuntime.FlowInstance, instance)))
       if (prior !== undefined) {
@@ -1044,6 +1179,32 @@ const deferredConflict = (execution: ExecutionState, options: DeferredDone) => {
   })
 }
 
+/**
+ * Lists a deferred result or clock under the execution it is addressed to.
+ * A completion may land before its run is admitted, so an id with no
+ * execution yet is listed apart until `install` adopts it. That list holds at
+ * most {@link settledLineageRetention} execution ids: past it the one waiting
+ * longest loses its results and timers, as if they had never been sent.
+ */
+const trackDeferred = (memory: Memory, executionId: string, id: string) =>
+  Effect.suspend(() => {
+    const state = memory.executions.get(executionId)
+    if (state !== undefined) {
+      state.deferreds.add(id)
+      return Effect.void
+    }
+    const early = memory.earlyDeferreds.get(executionId) ?? new Set<string>()
+    early.add(id)
+    memory.earlyDeferreds.set(executionId, early)
+    if (memory.earlyDeferreds.size <= settledLineageRetention) return Effect.void
+    const [oldest, dropped] = memory.earlyDeferreds.entries().next().value!
+    memory.earlyDeferreds.delete(oldest)
+    return Effect.forEach(dropped, (expired) => {
+      memory.deferredResults.delete(expired)
+      return FiberMap.remove(memory.clocks, expired)
+    }, { discard: true })
+  })
+
 const deferredDone = (memory: Memory, options: DeferredDone) =>
   Effect.suspend(() => {
     const execution = memory.executions.get(options.executionId)
@@ -1053,7 +1214,7 @@ const deferredDone = (memory: Memory, options: DeferredDone) =>
     const id = deferredId(options.flowName, options.executionId, options.deferredName)
     if (memory.deferredResults.has(id)) return Effect.void
     memory.deferredResults.set(id, options.exit)
-    return resume(memory, options.executionId)
+    return Effect.andThen(trackDeferred(memory, options.executionId, id), resume(memory, options.executionId))
   })
 
 /**
@@ -1063,7 +1224,10 @@ const deferredDone = (memory: Memory, options: DeferredDone) =>
  * cancelled round names a wait that no longer exists. The durable store
  * answers the same way because its waiting row is written when a round parks.
  */
-const parkedOn = (execution: ExecutionState | undefined, options: DeferredDoneIfWaiting): boolean => {
+const parkedOn = (
+  execution: ExecutionState | undefined,
+  options: DeferredDoneIfWaiting
+): execution is ExecutionState => {
   if (execution === undefined || execution.instance.flow._tag !== options.flowName) return false
   if (!settledSuspended(execution)) return false
   const waiting = execution.instance.waiting
@@ -1075,15 +1239,30 @@ const deferredDoneIfWaiting = (
   options: DeferredDoneIfWaiting
 ): Effect.Effect<FlowRuntime.DeferredDoneIfWaitingOutcome> =>
   Effect.suspend(() => {
-    if (!parkedOn(memory.executions.get(options.executionId), options)) return Effect.succeed("NotWaiting" as const)
+    const execution = memory.executions.get(options.executionId)
+    if (!parkedOn(execution, options)) return Effect.succeed("NotWaiting" as const)
     const id = deferredId(options.flowName, options.executionId, options.deferredName)
     const outcome = memory.deferredResults.has(id) ? "Existing" as const : "Completed" as const
-    if (outcome === "Completed") memory.deferredResults.set(id, options.exit)
+    if (outcome === "Completed") {
+      memory.deferredResults.set(id, options.exit)
+      execution.deferreds.add(id)
+    }
     return resume(memory, options.executionId).pipe(Effect.as(outcome))
   })
 
 /** Completes a clock's deferred once its duration elapses, with one timer per clock. */
 const scheduleClock = (memory: Memory, flow: Flow.Any, options: Parameters<Encoded["scheduleClock"]>[1]) =>
+  // Listed with the execution, so forgetting it also stops a timer that has not fired.
+  Effect.andThen(
+    trackDeferred(
+      memory,
+      options.executionId,
+      deferredId(flow._tag, options.executionId, options.clock.deferred.name)
+    ),
+    armClock(memory, flow, options)
+  )
+
+const armClock = (memory: Memory, flow: Flow.Any, options: Parameters<Encoded["scheduleClock"]>[1]) =>
   memory.engine().deferredDone(options.clock.deferred, {
     flowName: flow._tag,
     executionId: options.executionId,
@@ -1130,6 +1309,11 @@ const adapter = (memory: Memory): Encoded => ({
  *
  * This layer keeps state only in memory and is not suitable for production
  * flows that require durability.
+ *
+ * It answers for the 1,024 top-level runs settled most recently and forgets
+ * older ones with their children, action results, deferred results, and
+ * clocks: a forgotten execution id is unknown to `poll` and runs anew on
+ * `execute`. Live and parked runs are never forgotten.
  *
  * The capability ceiling current where the layer is built is the engine's
  * host ceiling: every execution it admits records it, and every join, poll,

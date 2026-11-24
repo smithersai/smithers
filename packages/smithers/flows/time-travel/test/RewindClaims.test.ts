@@ -242,6 +242,49 @@ describe("Rewind run claim arbitration", () => {
       expect(failure).toMatchObject({ code: "busy", message: "run run lost the rewind activation" })
     }))
 
+  it.effect("leaves no claim behind when the activation fails, so the next rewind is not busy", () =>
+    Effect.gen(function*() {
+      const store = MemoryTimeTravelStore.make({
+        records: [baseline(), { ...baseline(), seq: 1, eventId: "event-1" }],
+        runOwners: new Map([["run", owner]])
+      })
+      const real = makeRuns([row("run")])
+      let failures = 1
+      const runs: typeof real = {
+        ...real,
+        activate: (...args) =>
+          failures-- > 0 ? Effect.fail(runError("activate", "persistence_failed")) : real.activate(...args)
+      }
+      const failure = yield* rewind(runs, {}, store)
+      expect(failure).toMatchObject({ code: "unknown", message: "activate rewind claim failed" })
+      expect(real.state("run")).toMatchObject({ status: "suspended", claim: null, claimedAtMs: null, owner: null })
+
+      // The dead claim used to answer every later rewind `busy`.
+      yield* provide(Rewind.rewind({ runId: "run", frame, owner, auditId: "audit-2" }), store, runs)
+      expect(store.state().records.filter((record) => record.runId === "run").map((record) => record.seq)).toEqual([0])
+    }))
+
+  it.effect("leaves no child claim behind when the child activation fails", () =>
+    Effect.gen(function*() {
+      const store = MemoryTimeTravelStore.make({
+        records: [baseline()],
+        edges: [edge],
+        runOwners: new Map([["run", owner]])
+      })
+      const real = makeRuns([row("run"), row("child")])
+      const runs: typeof real = {
+        ...real,
+        activate: (runId, ...rest) =>
+          runId === "child"
+            ? Effect.fail(runError("activate", "persistence_failed"))
+            : real.activate(runId, ...rest)
+      }
+      const failure = yield* rewind(runs, { detachedChildPolicy: "cancel" }, store)
+      expect(failure).toMatchObject({ code: "unknown", message: "activate child child failed" })
+      expect(real.state("child")).toMatchObject({ status: "suspended", claim: null, claimedAtMs: null, owner: null })
+      expect(real.state("run")).toMatchObject({ claim: null, owner: null })
+    }))
+
   it.effect("records a rate-limited rewind on its audit and refuses before any archive", () =>
     Effect.gen(function*() {
       const store = MemoryTimeTravelStore.make({ records: [baseline()] })

@@ -1,10 +1,17 @@
 import assert from "node:assert/strict"
-import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { dirname, join, relative, resolve } from "node:path"
 import test from "node:test"
 
-import { findPins, guardedGroups, guardedPackages, notesPath, suppliedEnv, undocumentedPins } from "./check-test-pins.mjs"
 import { repoRoot } from "../scripts/workspace-packages.mjs"
+import {
+  findPins,
+  guardedGroups,
+  guardedPackages,
+  notesPath,
+  suppliedEnv,
+  undocumentedPins
+} from "./check-test-pins.mjs"
 
 test("finds every outright pin form, whatever the runner prefix", () => {
   const source = [
@@ -180,10 +187,10 @@ test("follows opt-in aliases transitively, including cycles and shared capabilit
   assert.deepEqual(findPins(cyclic, new Set(["LIVE"])), [])
 
   const dollarAlias = [
-    'const $guard =',
-    '  process.env["LIVE"] === "1"',
-    'const $ready = $guard && process.platform === "linux"',
-    'it.runIf($ready)("dollar alias", () => {})'
+    "const $guard =",
+    "  process.env[\"LIVE\"] === \"1\"",
+    "const $ready = $guard && process.platform === \"linux\"",
+    "it.runIf($ready)(\"dollar alias\", () => {})"
   ].join("\n")
   assert.deepEqual(findPins(dollarAlias).map((pin) => pin.title), ["dollar alias"])
   assert.deepEqual(findPins(dollarAlias, new Set(["LIVE"])), [])
@@ -289,7 +296,11 @@ const withPinnedPackage = (
     writeFileSync(testFile, text)
     // The register names a package by its path under `packages/`, which is the
     // half of the pair `undocumentedPins` builds from the directory it walks.
-    run({ packageDirectory, packageName: relative(join(repoRoot, "packages"), packageDirectory), testFile })
+    run({
+      packageDirectory,
+      packageName: relative(join(repoRoot, "packages"), packageDirectory).replaceAll("\\", "/"),
+      testFile
+    })
   } finally {
     rmSync(fixtureRoot, { recursive: true, force: true })
   }
@@ -327,11 +338,11 @@ test("a pin counts as documented only when Surviving pins pairs its package and 
 test("a pin in a VibeLang test file is found like one in a TypeScript test file", () => {
   const title = "refuses a ledger row the journal never wrote"
   const text = [
-    'import { assert, it } from "@effect/vitest"',
-    'import { readRow } from "../src/Ledger.vibe"',
+    "import { assert, it } from \"@effect/vitest\"",
+    "import { readRow } from \"../src/Ledger.vibe\"",
     "",
     `it.effect.skip(${JSON.stringify(title)}) {`,
-    '  assert.isUndefined(readRow("missing") catch undefined)',
+    "  assert.isUndefined(readRow(\"missing\") catch undefined)",
     "}",
     ""
   ].join("\n")
@@ -363,7 +374,10 @@ test("a resolved title does not authorize re-pinning a test", () => {
   const title = "bounds wall time for adversarial repeated-star patterns against long non-matching resources"
   try {
     mkdirSync(join(packageDirectory, "test"), { recursive: true })
-    writeFileSync(join(packageDirectory, "test", "Capability.test.mjs"), `it.fails(${JSON.stringify(title)}, () => {})\n`)
+    writeFileSync(
+      join(packageDirectory, "test", "Capability.test.mjs"),
+      `it.fails(${JSON.stringify(title)}, () => {})\n`
+    )
 
     const unexplained = undocumentedPins(readFileSync(notesPath, "utf8"), [packageDirectory])
     assert.equal(unexplained.length, 1)

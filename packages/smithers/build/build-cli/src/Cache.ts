@@ -1404,10 +1404,14 @@ class RemoteStore {
         // back retries too, and a backoff wait holds no permit.
         const answer = await this.transfers(run, priority)
         outcome = answer.status
-        const seconds = answer.retryAfter === undefined || answer.retryAfter === null
-          ? Number.NaN
-          : Number(answer.retryAfter)
-        if (Number.isFinite(seconds) && seconds > 0) retryAfterMs = seconds * 1000
+        const header = answer.retryAfter?.trim()
+        if (header) {
+          if (/^\d+$/.test(header)) retryAfterMs = Number(header) * 1000
+          else {
+            const deadline = Date.parse(header)
+            if (Number.isFinite(deadline)) retryAfterMs = Math.max(0, deadline - Date.now())
+          }
+        }
       } catch (cause) {
         if (!(retryTimeout && cause instanceof RemoteTimeout)) throw cause
         outcome = "timeout"
@@ -1421,7 +1425,7 @@ class RemoteStore {
       const policy = outcome === "timeout" ? remoteTransferRetry.slow : remoteTransferRetry.busy
       const next = RetryPolicy.nextDelay(policy, attempt, { random: Math.random(), elapsedMs: waited })
       if (Option.isNone(next) || retryAfterMs > remoteTransferRetryBudgetMs - waited) return outcome
-      const delay = next.value
+      const delay = Math.max(next.value, retryAfterMs)
       waited += delay
       await new Promise((resolve) => setTimeout(resolve, delay))
     }

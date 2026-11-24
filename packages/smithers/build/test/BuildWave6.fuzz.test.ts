@@ -26,7 +26,9 @@ const enc = new TextEncoder()
 const sha = (ch: string) => ch.repeat(64)
 
 const makeSpawner = (
-  handler: (cmd: Parameters<Parameters<typeof ChildProcessSpawner.make>[0]>[0]) => Effect.Effect<{ stdout: Uint8Array; exitCode: number; delayMs?: number }, unknown>
+  handler: (
+    cmd: Parameters<Parameters<typeof ChildProcessSpawner.make>[0]>[0]
+  ) => Effect.Effect<{ stdout: Uint8Array; exitCode: number; delayMs?: number }, unknown>
 ): Layer.Layer<ChildProcessSpawner.ChildProcessSpawner> =>
   Layer.succeed(
     ChildProcessSpawner.ChildProcessSpawner,
@@ -60,9 +62,36 @@ describe("@smthrs/build Wave-6 deep security, lifecycle & edge-case fuzz invaria
   it("Runtime prerelease ordering, option validation, layerNode/layerBun & probe timeouts", async () => {
     const arb = Arbitrary.schema(
       Schema.Struct({
-        preA: Schema.Literals(["alpha.1", "alpha.2", "alpha.10", "alpha.beta", "alpha", "99999999999999999999999", "100000000000000000000000", "0.1", "beta.1.2"]),
-        preB: Schema.Literals(["alpha.1", "alpha.2", "alpha.10", "alpha.beta", "alpha", "99999999999999999999999", "100000000000000000000000", "0.1", "beta.1"]),
-        badOpt: Schema.Literals(["req_empty", "exec_empty", "timeout_zero", "timeout_huge", "version_empty", "unsupported_req"]),
+        preA: Schema.Literals([
+          "alpha.1",
+          "alpha.2",
+          "alpha.10",
+          "alpha.beta",
+          "alpha",
+          "99999999999999999999999",
+          "100000000000000000000000",
+          "0.1",
+          "beta.1.2"
+        ]),
+        preB: Schema.Literals([
+          "alpha.1",
+          "alpha.2",
+          "alpha.10",
+          "alpha.beta",
+          "alpha",
+          "99999999999999999999999",
+          "100000000000000000000000",
+          "0.1",
+          "beta.1"
+        ]),
+        badOpt: Schema.Literals([
+          "req_empty",
+          "exec_empty",
+          "timeout_zero",
+          "timeout_huge",
+          "version_empty",
+          "unsupported_req"
+        ]),
         rtName: Schema.Literals(["node", "bun"]),
         timeoutCase: Schema.Boolean
       })
@@ -100,7 +129,12 @@ describe("@smthrs/build Wave-6 deep security, lifecycle & edge-case fuzz invaria
                 } else if (badOpt === "timeout_zero") {
                   Runtime.makeNoop(rtName, { requirement: "24.0.0", probeTimeoutMs: 0, version: "24.0.0", platform })
                 } else if (badOpt === "timeout_huge") {
-                  Runtime.makeNoop(rtName, { requirement: "24.0.0", probeTimeoutMs: 999_999, version: "24.0.0", platform })
+                  Runtime.makeNoop(rtName, {
+                    requirement: "24.0.0",
+                    probeTimeoutMs: 999_999,
+                    version: "24.0.0",
+                    platform
+                  })
                 } else {
                   Runtime.makeNoop(rtName, { requirement: "24.0.0", version: "", platform })
                 }
@@ -216,7 +250,11 @@ describe("@smthrs/build Wave-6 deep security, lifecycle & edge-case fuzz invaria
               let threw = false
               try {
                 if (validateCase === "proxy_throw") {
-                  const hostile = new Proxy({}, { getPrototypeOf() { throw new Error("boom") } })
+                  const hostile = new Proxy({}, {
+                    getPrototypeOf() {
+                      throw new Error("boom")
+                    }
+                  })
                   Validate.plainRecord(hostile, "x")
                 } else if (validateCase === "non_plain_null") {
                   Validate.plainRecord(null, "x")
@@ -250,19 +288,38 @@ describe("@smthrs/build Wave-6 deep security, lifecycle & edge-case fuzz invaria
             let lockText: string
             let expectLockOk = false
             if (bunLockCase === "bad_tables") {
-              lockText = JSON.stringify({ lockfileVersion: 1, workspaces: { "": {} }, patchedDependencies: "nope", packages: {} })
+              lockText = JSON.stringify({
+                lockfileVersion: 1,
+                workspaces: { "": {} },
+                patchedDependencies: "nope",
+                packages: {}
+              })
             } else if (bunLockCase === "too_many_workspaces") {
               const ws: Record<string, object> = { "": {} }
               for (let i = 0; i < 4100; i++) ws[`p/m${i}`] = {}
               lockText = JSON.stringify({ lockfileVersion: 1, workspaces: ws, packages: {} })
             } else if (bunLockCase === "bad_patch_path") {
-              lockText = JSON.stringify({ lockfileVersion: 1, workspaces: { "": {} }, patchedDependencies: { a: "../evil.patch" }, packages: {} })
+              lockText = JSON.stringify({
+                lockfileVersion: 1,
+                workspaces: { "": {} },
+                patchedDependencies: { a: "../evil.patch" },
+                packages: {}
+              })
             } else if (bunLockCase === "patch_bad_suffix") {
-              lockText = JSON.stringify({ lockfileVersion: 1, workspaces: { "": {} }, patchedDependencies: { a: "patches/a.txt" }, packages: {} })
+              lockText = JSON.stringify({
+                lockfileVersion: 1,
+                workspaces: { "": {} },
+                patchedDependencies: { a: "patches/a.txt" },
+                packages: {}
+              })
             } else if (bunLockCase === "missing_pkg_id") {
               lockText = JSON.stringify({ lockfileVersion: 1, workspaces: { "": {} }, packages: { a: [123] } })
             } else if (bunLockCase === "workspace_outside") {
-              lockText = JSON.stringify({ lockfileVersion: 1, workspaces: { "": {} }, packages: { a: ["a@workspace:pkgs/missing"] } })
+              lockText = JSON.stringify({
+                lockfileVersion: 1,
+                workspaces: { "": {} },
+                packages: { a: ["a@workspace:pkgs/missing"] }
+              })
             } else {
               expectLockOk = true
               lockText = JSON.stringify({
@@ -273,14 +330,18 @@ describe("@smthrs/build Wave-6 deep security, lifecycle & edge-case fuzz invaria
               })
             }
             const lockRes = BunInternal.readLockfile(lockText)
-            const lockOk = !("_tag" in lockRes && lockRes._tag === "Refusal"); if (expectLockOk !== lockOk) return false
+            const lockOk = !("_tag" in lockRes && lockRes._tag === "Refusal")
+            if (expectLockOk !== lockOk) return false
 
             const bunfigSamples: Record<typeof bunfigCase, { toml: string; mustRefuse: boolean }> = {
               invalid_toml: { toml: "[install\nbroken = =", mustRefuse: true },
               non_table_install: { toml: "install = 42\n", mustRefuse: true },
               dollar_value: { toml: "[install]\nregistry = \"https://$HOST/npm\"\n", mustRefuse: true },
               dollar_key: { toml: "[install.scopes]\n\"$BAD\" = \"https://r.example\"\n", mustRefuse: true },
-              token_key: { toml: "[install.registry]\nurl = \"https://r.example\"\ntoken = \"abc\"\n", mustRefuse: true },
+              token_key: {
+                toml: "[install.registry]\nurl = \"https://r.example\"\ntoken = \"abc\"\n",
+                mustRefuse: true
+              },
               url_cred: { toml: "[install]\nregistry = \"https://user:pass@r.example\"\n", mustRefuse: true },
               dryRun_true: { toml: "[install]\ndryRun = true\n", mustRefuse: true },
               offline_true: { toml: "[install]\noffline = true\n", mustRefuse: true },
@@ -291,13 +352,20 @@ describe("@smthrs/build Wave-6 deep security, lifecycle & edge-case fuzz invaria
               lockfile_unknown: { toml: "[install.lockfile]\nfoo = true\n", mustRefuse: true },
               security_scanner: { toml: "[install.security]\nscanner = \"x\"\n", mustRefuse: true },
               cafile_with_cred: { toml: "[install]\ncafile = \"ca.pem\"\n", mustRefuse: cred },
-              registry_http_with_cred: { toml: "[install]\nregistry = \"http://registry.example\"\n", mustRefuse: cred },
+              registry_http_with_cred: {
+                toml: "[install]\nregistry = \"http://registry.example\"\n",
+                mustRefuse: cred
+              },
               registry_bad_type: { toml: "[install]\nregistry = 123\n", mustRefuse: true },
               scopes_non_table: { toml: "[install]\nscopes = \"bad\"\n", mustRefuse: true },
-              scopes_http_with_cred: { toml: "[install.scopes]\n\"@org\" = { url = \"http://r.example\" }\n", mustRefuse: cred },
+              scopes_http_with_cred: {
+                toml: "[install.scopes]\n\"@org\" = { url = \"http://r.example\" }\n",
+                mustRefuse: cred
+              },
               unknown_install_key: { toml: "[install]\nunknownSetting = true\n", mustRefuse: true },
               valid_full: {
-                toml: "[install]\ndryRun = false\noffline = false\nregistry = \"https://registry.npmjs.org\"\n[install.cache]\ndisable = false\n[install.lockfile]\nsave = true\n[install.scopes]\n\"@acme\" = { url = \"https://registry.npmjs.org\" }\n",
+                toml:
+                  "[install]\ndryRun = false\noffline = false\nregistry = \"https://registry.npmjs.org\"\n[install.cache]\ndisable = false\n[install.lockfile]\nsave = true\n[install.scopes]\n\"@acme\" = { url = \"https://registry.npmjs.org\" }\n",
                 mustRefuse: false
               }
             }
@@ -390,7 +458,10 @@ describe("@smthrs/build Wave-6 deep security, lifecycle & edge-case fuzz invaria
                 fetch: Effect.void,
                 link: Effect.promise(async () => {
                   if (scenario === "package_json_drift_during_link") {
-                    await Fs.writeFile(Path.join(dir, "package.json"), JSON.stringify({ name: "app", version: "2.0.0" }))
+                    await Fs.writeFile(
+                      Path.join(dir, "package.json"),
+                      JSON.stringify({ name: "app", version: "2.0.0" })
+                    )
                   } else if (scenario === "package_json_removed_during_link") {
                     await Fs.rm(Path.join(dir, "package.json"), { force: true })
                   }
@@ -412,7 +483,8 @@ describe("@smthrs/build Wave-6 deep security, lifecycle & edge-case fuzz invaria
                   FileSystem.FileSystem,
                   Effect.map(FileSystem.FileSystem, (real) => ({
                     ...real,
-                    exists: () => Effect.fail({ _tag: "SystemError", reason: "PermissionDenied", message: "denied" } as never)
+                    exists: () =>
+                      Effect.fail({ _tag: "SystemError", reason: "PermissionDenied", message: "denied" } as never)
                   }))
                 ).pipe(Layer.provide(NodeFileSystem.layer))
                 const res = yield* Install.executeMeasure().pipe(
@@ -428,10 +500,14 @@ describe("@smthrs/build Wave-6 deep security, lifecycle & edge-case fuzz invaria
                   )),
                   Effect.result
                 )
-                return Result.isFailure(res) && (res.failure.code === "manifest_unreadable" || res.failure.code === "lockfile_unreadable")
+                return Result.isFailure(res) &&
+                  (res.failure.code === "manifest_unreadable" || res.failure.code === "lockfile_unreadable")
               }
 
-              if (scenario === "bad_manager_name" || scenario === "bad_contract_store" || scenario === "runtime_verify_fail") {
+              if (
+                scenario === "bad_manager_name" || scenario === "bad_contract_store" ||
+                scenario === "runtime_verify_fail"
+              ) {
                 const measured = yield* Install.executeMeasure().pipe(
                   Effect.provide(Layer.mergeAll(
                     NodeFileSystem.layer,
@@ -490,7 +566,8 @@ describe("@smthrs/build Wave-6 deep security, lifecycle & edge-case fuzz invaria
                 Effect.result
               )
               if (scenario === "happy_link") {
-                return Result.isSuccess(linked) && linked.success.linked === true && linked.success.store === store.digest
+                return Result.isSuccess(linked) && linked.success.linked === true &&
+                  linked.success.store === store.digest
               }
               return Result.isFailure(linked) && linked.failure.code === "input_drift"
             }),
@@ -571,7 +648,11 @@ describe("@smthrs/build Wave-6 deep security, lifecycle & edge-case fuzz invaria
                   managerEvidence: sha("b") as never
                 }).pipe(Effect.provide(NodeCrypto.layer), Effect.exit)
                 if (exit._tag !== "Failure") return false
-              } else if (validationCase === "manifest_bad_manager" || validationCase === "manifest_bad_version" || validationCase === "manifest_bad_lock_digest" || validationCase === "manifest_bad_npmrc_digest" || validationCase === "manifest_bad_opt_digest" || validationCase === "manifest_bad_patch_entry") {
+              } else if (
+                validationCase === "manifest_bad_manager" || validationCase === "manifest_bad_version" ||
+                validationCase === "manifest_bad_lock_digest" || validationCase === "manifest_bad_npmrc_digest" ||
+                validationCase === "manifest_bad_opt_digest" || validationCase === "manifest_bad_patch_entry"
+              ) {
                 const exit = yield* PackageManager.storeManifest({
                   manager: (validationCase === "manifest_bad_manager" ? "yarn" : "pnpm") as PackageManager.Name,
                   managerVersion: validationCase === "manifest_bad_version" ? "10.0.0\nbad" : "10.0.0",
@@ -588,17 +669,37 @@ describe("@smthrs/build Wave-6 deep security, lifecycle & edge-case fuzz invaria
                 let threw = false
                 try {
                   if (validationCase === "bad_manager_noop") {
-                    PackageManager.makeNoop("yarn" as PackageManager.Name, { projectRoot: dir, requirement: "10.0.0" }, platform)
+                    PackageManager.makeNoop(
+                      "yarn" as PackageManager.Name,
+                      { projectRoot: dir, requirement: "10.0.0" },
+                      platform
+                    )
                   } else if (validationCase === "bad_timeout") {
                     PackageManager.makeNoop("pnpm", { projectRoot: dir, requirement: "10.0.0", timeoutMs: 0 }, platform)
                   } else if (validationCase === "bad_cred_hosts_not_array") {
-                    PackageManager.makeNoop("pnpm", { projectRoot: dir, requirement: "10.0.0", credentialHosts: "bad" as never }, platform)
+                    PackageManager.makeNoop("pnpm", {
+                      projectRoot: dir,
+                      requirement: "10.0.0",
+                      credentialHosts: "bad" as never
+                    }, platform)
                   } else if (validationCase === "bad_cred_host_entry") {
-                    PackageManager.makeNoop("pnpm", { projectRoot: dir, requirement: "10.0.0", credentialHosts: ["not a host!"] }, platform)
+                    PackageManager.makeNoop("pnpm", {
+                      projectRoot: dir,
+                      requirement: "10.0.0",
+                      credentialHosts: ["not a host!"]
+                    }, platform)
                   } else if (validationCase === "bad_store_relative") {
-                    PackageManager.makeNoop("pnpm", { projectRoot: dir, requirement: "10.0.0", storeDirectory: "relative/store" }, platform)
+                    PackageManager.makeNoop("pnpm", {
+                      projectRoot: dir,
+                      requirement: "10.0.0",
+                      storeDirectory: "relative/store"
+                    }, platform)
                   } else if (validationCase === "bad_store_inside_root") {
-                    PackageManager.makeNoop("pnpm", { projectRoot: dir, requirement: "10.0.0", storeDirectory: `${dir}/inside` }, platform)
+                    PackageManager.makeNoop("pnpm", {
+                      projectRoot: dir,
+                      requirement: "10.0.0",
+                      storeDirectory: `${dir}/inside`
+                    }, platform)
                   }
                 } catch (e) {
                   threw = e instanceof TypeError
@@ -614,10 +715,17 @@ describe("@smthrs/build Wave-6 deep security, lifecycle & edge-case fuzz invaria
 
               let expectUnsafe = true
               const credHosts: ReadonlyArray<string> = ["registry.npmjs.org"]
-              let envMap: Record<string, string> = { MY_TOKEN: "secret", NODE_OPTIONS: "--evil", PATH: ".:/usr/bin::relative/bin" }
+              let envMap: Record<string, string> = {
+                MY_TOKEN: "secret",
+                NODE_OPTIONS: "--evil",
+                PATH: ".:/usr/bin::relative/bin"
+              }
               if (npmrcCase === "quoted_json_escape") {
                 yield* Effect.promise(() =>
-                  Fs.writeFile(Path.join(pnpmDir, ".npmrc"), '//registry.npmjs.org/:_authToken="\\u0024{MY_TOKEN}"\ntag=\'true\'\nbad=\'\\x\'\n')
+                  Fs.writeFile(
+                    Path.join(pnpmDir, ".npmrc"),
+                    "//registry.npmjs.org/:_authToken=\"\\u0024{MY_TOKEN}\"\ntag='true'\nbad='\\x'\n"
+                  )
                 )
                 expectUnsafe = false
               } else if (npmrcCase === "unquoted_escapes_and_comment") {
@@ -635,7 +743,10 @@ describe("@smthrs/build Wave-6 deep security, lifecycle & edge-case fuzz invaria
                 )
               } else if (npmrcCase === "cred_http_registry") {
                 yield* Effect.promise(() =>
-                  Fs.writeFile(Path.join(pnpmDir, ".npmrc"), "//registry.npmjs.org/:_authToken=${MY_TOKEN}\nregistry=http://registry.npmjs.org\n")
+                  Fs.writeFile(
+                    Path.join(pnpmDir, ".npmrc"),
+                    "//registry.npmjs.org/:_authToken=${MY_TOKEN}\nregistry=http://registry.npmjs.org\n"
+                  )
                 )
               } else if (npmrcCase === "cred_workspace_bad_yaml") {
                 yield* Effect.promise(async () => {
@@ -691,19 +802,29 @@ describe("@smthrs/build Wave-6 deep security, lifecycle & edge-case fuzz invaria
                 yield* Effect.promise(async () => {
                   await Fs.mkdir(Path.join(binDir, "dist"), { recursive: true })
                   await Fs.writeFile(Path.join(binDir, "dist", "pnpm.mjs"), "export {}\n")
-                  await Fs.writeFile(Path.join(binDir, "pnpm.cmd"), '@echo off\r\n"%~dp0\\dist\\pnpm.mjs" %*\r\n')
+                  await Fs.writeFile(Path.join(binDir, "pnpm.cmd"), "@echo off\r\n\"%~dp0\\dist\\pnpm.mjs\" %*\r\n")
                 })
               } else if (winShimCase === "multi_entry") {
                 yield* Effect.promise(() =>
-                  Fs.writeFile(Path.join(binDir, "pnpm.cmd"), '"%~dp0\\a\\pnpm.cjs" %*\r\n"%~dp0\\b\\pnpm.mjs" %*\r\n')
+                  Fs.writeFile(
+                    Path.join(binDir, "pnpm.cmd"),
+                    "\"%~dp0\\a\\pnpm.cjs\" %*\r\n\"%~dp0\\b\\pnpm.mjs\" %*\r\n"
+                  )
                 )
               } else if (winShimCase === "dir_shim") {
                 yield* Effect.promise(() => Fs.mkdir(Path.join(binDir, "pnpm.cmd"), { recursive: true }))
               } else if (winShimCase === "missing_entry") {
-                yield* Effect.promise(() => Fs.writeFile(Path.join(binDir, "pnpm.cmd"), '"%~dp0\\missing\\pnpm.cjs" %*\r\n'))
+                yield* Effect.promise(() =>
+                  Fs.writeFile(Path.join(binDir, "pnpm.cmd"), "\"%~dp0\\missing\\pnpm.cjs\" %*\r\n")
+                )
               }
               const winPlatform = { os: "win32", arch: "x64", libc: null } as const
-              const winRt = Runtime.makeNoop("node", { requirement: ">=20.0.0", version: "24.0.0", platform: winPlatform, executable: "C:\\node.exe" })
+              const winRt = Runtime.makeNoop("node", {
+                requirement: ">=20.0.0",
+                version: "24.0.0",
+                platform: winPlatform,
+                executable: "C:\\node.exe"
+              })
               const winPnpm = yield* PackageManager.makePnpm({
                 projectRoot: winDir,
                 requirement: ">=10.0.0",
@@ -726,7 +847,9 @@ describe("@smthrs/build Wave-6 deep security, lifecycle & edge-case fuzz invaria
 
               const bunDir = yield* Effect.promise(() => Fs.mkdtemp(Path.join(tmpBase, "bun-")))
               const extStore = yield* Effect.promise(() => Fs.mkdtemp(Path.join(tmpBase, "bun-store-")))
-              yield* Effect.promise(() => Fs.writeFile(Path.join(bunDir, "package.json"), JSON.stringify({ name: "b" })))
+              yield* Effect.promise(() =>
+                Fs.writeFile(Path.join(bunDir, "package.json"), JSON.stringify({ name: "b" }))
+              )
               const validBunLock = JSON.stringify({
                 lockfileVersion: 1,
                 workspaces: { "": { name: "b" } },
@@ -757,7 +880,10 @@ describe("@smthrs/build Wave-6 deep security, lifecycle & edge-case fuzz invaria
                 if (bunCase === "missing_lock_with_lockb") {
                   yield* Effect.promise(() => Fs.writeFile(Path.join(bunDir, "bun.lockb"), "bin"))
                 }
-                const res = yield* PackageManager.bunPatchDigests(bunDir).pipe(Effect.provide(bunBaseLayer), Effect.result)
+                const res = yield* PackageManager.bunPatchDigests(bunDir).pipe(
+                  Effect.provide(bunBaseLayer),
+                  Effect.result
+                )
                 if (Result.isSuccess(res) || res.failure.code !== "lockfile_unreadable") return false
               } else if (bunCase === "custom_store_and_cache_hit_and_invalidation") {
                 yield* Effect.promise(async () => {
@@ -776,7 +902,17 @@ describe("@smthrs/build Wave-6 deep security, lifecycle & edge-case fuzz invaria
                   projectRoot: bunDir,
                   requirement: ">=1.0.0",
                   storeDirectory: extStore
-                }).pipe(Effect.provide(Layer.mergeAll(NodeFileSystem.layer, NodeCrypto.layer, countingSpawner, Logger.layer([]), Layer.succeed(Runtime.Runtime, bunRt))))
+                }).pipe(
+                  Effect.provide(
+                    Layer.mergeAll(
+                      NodeFileSystem.layer,
+                      NodeCrypto.layer,
+                      countingSpawner,
+                      Logger.layer([]),
+                      Layer.succeed(Runtime.Runtime, bunRt)
+                    )
+                  )
+                )
                 yield* bunSvc.fetch
                 const firstCalls = fetchCalls
                 yield* bunSvc.fetch
@@ -881,145 +1017,156 @@ describe("@smthrs/build Wave-6 deep security, lifecycle & edge-case fuzz invaria
     }
   }, 60_000)
 
-  it("PackageManager.boundedBytes detects RegularFileOpen, symlink escape, TOCTOU identity/size/canonical drift & bad UTF-8", async () => {
-    const tmpBase = await Fs.mkdtemp(Path.join(Os.tmpdir(), "smthrs-build-w6-io-"))
-    try {
-      const arb = Arbitrary.schema(
-        Schema.Struct({
-          fault: Schema.Literals([
-            "regular_file_open_ok",
-            "symlink_escape",
-            "is_directory",
-            "stat_identity_drift",
-            "read_bad_length",
-            "read_short",
-            "after_stat_drift",
-            "canonical_drift",
-            "bad_utf8_npmrc"
-          ])
-        })
-      )
-
-      const report = await Effect.runPromise(
-        Fuzz.run(
-          arb,
-          ({ fault }) =>
-            Effect.gen(function*() {
-              const dir = yield* Effect.promise(() => Fs.mkdtemp(Path.join(tmpBase, "io-")))
-              const target = Path.join(dir, "package.json")
-              yield* Effect.promise(() => Fs.writeFile(target, "{\"name\":\"x\"}"))
-
-              if (fault === "regular_file_open_ok") {
-                const regLayer = Layer.effect(
-                  PackageManager.RegularFileOpen,
-                  Effect.map(FileSystem.FileSystem, (real) => ({
-                    open: (p: string) => real.open(p, { flag: "r" })
-                  }))
-                ).pipe(Layer.provide(NodeFileSystem.layer))
-                const digest = yield* PackageManager.packageJsonDigest(dir).pipe(
-                  Effect.provide(Layer.mergeAll(NodeFileSystem.layer, NodeCrypto.layer, regLayer, Logger.layer([])))
-                )
-                return digest.length === 64
-              }
-
-              if (fault === "symlink_escape") {
-                const ext = Path.join(tmpBase, "outside-pkg.json")
-                yield* Effect.promise(async () => {
-                  await Fs.writeFile(ext, "{}")
-                  await Fs.rm(target)
-                  await Fs.symlink(ext, target)
-                })
-                const res = yield* PackageManager.packageJsonDigest(dir).pipe(
-                  Effect.provide(Layer.mergeAll(NodeFileSystem.layer, NodeCrypto.layer, Logger.layer([]))),
-                  Effect.result
-                )
-                return Result.isFailure(res) && res.failure.code === "manifest_unreadable"
-              }
-
-              if (fault === "is_directory") {
-                yield* Effect.promise(async () => {
-                  await Fs.rm(target)
-                  await Fs.mkdir(target)
-                })
-                const res = yield* PackageManager.packageJsonDigest(dir).pipe(
-                  Effect.provide(Layer.mergeAll(NodeFileSystem.layer, NodeCrypto.layer, Logger.layer([]))),
-                  Effect.result
-                )
-                return Result.isFailure(res) && res.failure.code === "manifest_unreadable"
-              }
-
-              if (fault === "bad_utf8_npmrc") {
-                yield* Effect.promise(async () => {
-                  await Fs.writeFile(Path.join(dir, ".npmrc"), new Uint8Array([0xff, 0xfe, 0x80]))
-                  await Fs.writeFile(Path.join(dir, "pnpm-lock.yaml"), "lockfileVersion: '9.0'\n")
-                })
-                const platform = { os: "linux", arch: "x64", libc: "glibc" } as const
-                const rt = Runtime.makeNoop("node", { requirement: ">=20.0.0", version: "24.0.0", platform })
-                const sp = makeSpawner(() => Effect.succeed({ stdout: enc.encode("10.0.0\n"), exitCode: 0 }))
-                const pm = yield* PackageManager.makePnpm({ projectRoot: dir, requirement: ">=10.0.0" }).pipe(
-                  Effect.provide(Layer.mergeAll(NodeFileSystem.layer, NodeCrypto.layer, sp, Logger.layer([]), Layer.succeed(Runtime.Runtime, rt)))
-                )
-                const res = yield* pm.fetch.pipe(Effect.result)
-                return Result.isFailure(res) && res.failure.code === "manifest_unreadable"
-              }
-
-              let realPathCalls = 0
-              const faultyFs = Layer.effect(
-                FileSystem.FileSystem,
-                Effect.gen(function*() {
-                  const real = yield* FileSystem.FileSystem
-                  return FileSystem.makeNoop({
-                    ...real,
-                    realPath: (p: string) =>
-                      Effect.gen(function*() {
-                        const resolved = yield* real.realPath(p)
-                        realPathCalls += 1
-                        if (fault === "canonical_drift" && realPathCalls === 3) {
-                          return `${resolved}-moved`
-                        }
-                        return resolved
-                      }),
-                    open: (p: string, opts?: Parameters<typeof real.open>[1]) =>
-                      Effect.map(real.open(p, opts), (file) => {
-                        let statCalls = 0
-                        return {
-                          ...file,
-                          stat: Effect.map(file.stat, (info) => {
-                            statCalls += 1
-                            if (fault === "stat_identity_drift" && statCalls === 1) {
-                              return { ...info, ino: 999_999_999 as unknown as typeof info.ino }
-                            }
-                            if (fault === "after_stat_drift" && statCalls === 2) {
-                              return { ...info, ino: 888_888_888 as unknown as typeof info.ino }
-                            }
-                            return info
-                          }),
-                          read: (buf: Uint8Array) =>
-                            Effect.map(file.read(buf), (n) =>
-                              fault === "read_bad_length"
-                                ? ((buf.byteLength + 10) as typeof n)
-                                : fault === "read_short"
-                                  ? (0 as typeof n)
-                                  : n
-                            )
-                        }
-                      })
-                  })
-                })
-              ).pipe(Layer.provide(NodeFileSystem.layer))
-
-              const res = yield* PackageManager.packageJsonDigest(dir).pipe(
-                Effect.provide(Layer.mergeAll(faultyFs, NodeCrypto.layer, Logger.layer([]))),
-                Effect.result
-              )
-              return Result.isFailure(res) && res.failure.code === "manifest_unreadable"
-            }),
-          { seed: seed + 4, executions: Math.min(executions, 30) }
+  it(
+    "PackageManager.boundedBytes detects RegularFileOpen, symlink escape, TOCTOU identity/size/canonical drift & bad UTF-8",
+    async () => {
+      const tmpBase = await Fs.mkdtemp(Path.join(Os.tmpdir(), "smthrs-build-w6-io-"))
+      try {
+        const arb = Arbitrary.schema(
+          Schema.Struct({
+            fault: Schema.Literals([
+              "regular_file_open_ok",
+              "symlink_escape",
+              "is_directory",
+              "stat_identity_drift",
+              "read_bad_length",
+              "read_short",
+              "after_stat_drift",
+              "canonical_drift",
+              "bad_utf8_npmrc"
+            ])
+          })
         )
-      )
-      assertPassed(report)
-    } finally {
-      await Fs.rm(tmpBase, { recursive: true, force: true })
-    }
-  }, 60_000)
+
+        const report = await Effect.runPromise(
+          Fuzz.run(
+            arb,
+            ({ fault }) =>
+              Effect.gen(function*() {
+                const dir = yield* Effect.promise(() => Fs.mkdtemp(Path.join(tmpBase, "io-")))
+                const target = Path.join(dir, "package.json")
+                yield* Effect.promise(() => Fs.writeFile(target, "{\"name\":\"x\"}"))
+
+                if (fault === "regular_file_open_ok") {
+                  const regLayer = Layer.effect(
+                    PackageManager.RegularFileOpen,
+                    Effect.map(FileSystem.FileSystem, (real) => ({
+                      open: (p: string) => real.open(p, { flag: "r" })
+                    }))
+                  ).pipe(Layer.provide(NodeFileSystem.layer))
+                  const digest = yield* PackageManager.packageJsonDigest(dir).pipe(
+                    Effect.provide(Layer.mergeAll(NodeFileSystem.layer, NodeCrypto.layer, regLayer, Logger.layer([])))
+                  )
+                  return digest.length === 64
+                }
+
+                if (fault === "symlink_escape") {
+                  const ext = Path.join(tmpBase, "outside-pkg.json")
+                  yield* Effect.promise(async () => {
+                    await Fs.writeFile(ext, "{}")
+                    await Fs.rm(target)
+                    await Fs.symlink(ext, target)
+                  })
+                  const res = yield* PackageManager.packageJsonDigest(dir).pipe(
+                    Effect.provide(Layer.mergeAll(NodeFileSystem.layer, NodeCrypto.layer, Logger.layer([]))),
+                    Effect.result
+                  )
+                  return Result.isFailure(res) && res.failure.code === "manifest_unreadable"
+                }
+
+                if (fault === "is_directory") {
+                  yield* Effect.promise(async () => {
+                    await Fs.rm(target)
+                    await Fs.mkdir(target)
+                  })
+                  const res = yield* PackageManager.packageJsonDigest(dir).pipe(
+                    Effect.provide(Layer.mergeAll(NodeFileSystem.layer, NodeCrypto.layer, Logger.layer([]))),
+                    Effect.result
+                  )
+                  return Result.isFailure(res) && res.failure.code === "manifest_unreadable"
+                }
+
+                if (fault === "bad_utf8_npmrc") {
+                  yield* Effect.promise(async () => {
+                    await Fs.writeFile(Path.join(dir, ".npmrc"), new Uint8Array([0xff, 0xfe, 0x80]))
+                    await Fs.writeFile(Path.join(dir, "pnpm-lock.yaml"), "lockfileVersion: '9.0'\n")
+                  })
+                  const platform = { os: "linux", arch: "x64", libc: "glibc" } as const
+                  const rt = Runtime.makeNoop("node", { requirement: ">=20.0.0", version: "24.0.0", platform })
+                  const sp = makeSpawner(() => Effect.succeed({ stdout: enc.encode("10.0.0\n"), exitCode: 0 }))
+                  const pm = yield* PackageManager.makePnpm({ projectRoot: dir, requirement: ">=10.0.0" }).pipe(
+                    Effect.provide(
+                      Layer.mergeAll(
+                        NodeFileSystem.layer,
+                        NodeCrypto.layer,
+                        sp,
+                        Logger.layer([]),
+                        Layer.succeed(Runtime.Runtime, rt)
+                      )
+                    )
+                  )
+                  const res = yield* pm.fetch.pipe(Effect.result)
+                  return Result.isFailure(res) && res.failure.code === "manifest_unreadable"
+                }
+
+                let realPathCalls = 0
+                const faultyFs = Layer.effect(
+                  FileSystem.FileSystem,
+                  Effect.gen(function*() {
+                    const real = yield* FileSystem.FileSystem
+                    return FileSystem.makeNoop({
+                      ...real,
+                      realPath: (p: string) =>
+                        Effect.gen(function*() {
+                          const resolved = yield* real.realPath(p)
+                          realPathCalls += 1
+                          if (fault === "canonical_drift" && realPathCalls === 3) {
+                            return `${resolved}-moved`
+                          }
+                          return resolved
+                        }),
+                      open: (p: string, opts?: Parameters<typeof real.open>[1]) =>
+                        Effect.map(real.open(p, opts), (file) => {
+                          let statCalls = 0
+                          return {
+                            ...file,
+                            stat: Effect.map(file.stat, (info) => {
+                              statCalls += 1
+                              if (fault === "stat_identity_drift" && statCalls === 1) {
+                                return { ...info, ino: 999_999_999 as unknown as typeof info.ino }
+                              }
+                              if (fault === "after_stat_drift" && statCalls === 2) {
+                                return { ...info, ino: 888_888_888 as unknown as typeof info.ino }
+                              }
+                              return info
+                            }),
+                            read: (buf: Uint8Array) =>
+                              Effect.map(file.read(buf), (n) =>
+                                fault === "read_bad_length"
+                                  ? ((buf.byteLength + 10) as typeof n)
+                                  : fault === "read_short"
+                                  ? (0 as typeof n)
+                                  : n)
+                          }
+                        })
+                    })
+                  })
+                ).pipe(Layer.provide(NodeFileSystem.layer))
+
+                const res = yield* PackageManager.packageJsonDigest(dir).pipe(
+                  Effect.provide(Layer.mergeAll(faultyFs, NodeCrypto.layer, Logger.layer([]))),
+                  Effect.result
+                )
+                return Result.isFailure(res) && res.failure.code === "manifest_unreadable"
+              }),
+            { seed: seed + 4, executions: Math.min(executions, 30) }
+          )
+        )
+        assertPassed(report)
+      } finally {
+        await Fs.rm(tmpBase, { recursive: true, force: true })
+      }
+    },
+    60_000
+  )
 })

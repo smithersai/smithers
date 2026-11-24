@@ -21,8 +21,10 @@ import {
   copyCommonJsDeclarations,
   copyInputDeclarations,
   emptyDirectory,
+  hasVibeSources,
   packageCompiler,
   portableEffectDeclarations,
+  rewriteCommonJsCalls,
   vibeSourcePackages
 } from "../scripts/build-library.mjs"
 
@@ -439,22 +441,41 @@ const bwrap = process.platform === "linux"
   ? (process.env["PATH"] ?? "").split(":").map((directory) => join(directory, "bwrap")).find((path) => existsSync(path))
   : undefined
 
-it.skipIf(bwrap === undefined)("empties an output directory something is mounted on, as a confined build has it", () => {
-  const root = scratch()
-  const dist = join(root, "dist")
-  for (const file of ["esm/a.js", "esm/deep/b.js", "cjs/c.js", "stray/d.txt", "top.txt"]) write(join(dist, file), "x")
-  const script = join(import.meta.dirname, "../scripts/build-library.mjs")
-  const esm = join(dist, "esm")
-  const run = spawnSync(bwrap!, [
-    "--ro-bind", "/", "/", "--dev", "/dev", "--bind", root, root, "--bind", esm, esm, "--die-with-parent", "--",
-    process.execPath, "--input-type=module", "-e",
-    `import { emptyDirectory } from ${JSON.stringify(pathToFileURL(script).href)}; emptyDirectory(${JSON.stringify(dist)})`
-  ], { encoding: "utf8" })
-  expect(run.stderr).toBe("")
-  expect(run.status).toBe(0)
-  expect(readdirSync(dist)).toEqual(["esm"])
-  expect(readdirSync(esm)).toEqual([])
-})
+it.skipIf(bwrap === undefined)(
+  "empties an output directory something is mounted on, as a confined build has it",
+  () => {
+    const root = scratch()
+    const dist = join(root, "dist")
+    for (const file of ["esm/a.js", "esm/deep/b.js", "cjs/c.js", "stray/d.txt", "top.txt"]) write(join(dist, file), "x")
+    const script = join(import.meta.dirname, "../scripts/build-library.mjs")
+    const esm = join(dist, "esm")
+    const run = spawnSync(bwrap!, [
+      "--ro-bind",
+      "/",
+      "/",
+      "--dev",
+      "/dev",
+      "--bind",
+      root,
+      root,
+      "--bind",
+      esm,
+      esm,
+      "--die-with-parent",
+      "--",
+      process.execPath,
+      "--input-type=module",
+      "-e",
+      `import { emptyDirectory } from ${JSON.stringify(pathToFileURL(script).href)}; emptyDirectory(${
+        JSON.stringify(dist)
+      })`
+    ], { encoding: "utf8" })
+    expect(run.stderr).toBe("")
+    expect(run.status).toBe(0)
+    expect(readdirSync(dist)).toEqual(["esm"])
+    expect(readdirSync(esm)).toEqual([])
+  }
+)
 
 it("removes an output directory nothing is mounted on, and is no failure when there is none", () => {
   const root = scratch()
@@ -473,4 +494,25 @@ it.skipIf(process.platform === "win32" || process.getuid?.() === 0)("raises any 
   } finally {
     chmodSync(join(root, "dist/locked"), 0o755)
   }
+})
+
+it("rewrites only actual local CommonJS calls and preserves literal and comment text", async () => {
+  const root = scratch()
+  writeFileSync(join(root, "module.js"), "exports.answer = 42\n")
+  writeFileSync(join(root, "component.vibex"), "export const fixture = 1")
+  expect(hasVibeSources(root)).toBe(true)
+  const input = [
+    "exports.text = `import(\"./module.ts\"); require(\"./module.ts\");`",
+    "// import(\"./module.ts\"); require(\"./module.ts\");",
+    "exports.maybe = (notrequire) => notrequire(\"./module.ts\")",
+    "exports.load = () => import(/* keep this comment */ \"./module.mts\")",
+    "exports.require = () => require(\"./module.vibex\")"
+  ].join("\n")
+  const output = rewriteCommonJsCalls(input)
+  expect(output.split("\n").slice(0, 3)).toEqual(input.split("\n").slice(0, 3))
+  expect(output).toContain("require(/* keep this comment */ \"./module.js\")")
+  writeFileSync(join(root, "entry.cjs"), output)
+  const built = createRequire(import.meta.url)(join(root, "entry.cjs"))
+  await expect(built.load()).resolves.toEqual({ answer: 42 })
+  expect(built.require()).toEqual({ answer: 42 })
 })

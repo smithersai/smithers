@@ -987,7 +987,7 @@ describe("SandboxTools checkpoint and restore", () => {
         yield* onMachine((session) =>
           Effect.gen(function*() {
             expect(yield* Effect.flip(SandboxTools.checkpoint(session))).toMatchObject({ reason: "not_a_repository" })
-            expect(yield* Effect.flip(SandboxTools.restore(session, { head: "x", patch: new Uint8Array() })))
+            expect(yield* Effect.flip(SandboxTools.restore(session, { head: "a".repeat(40), patch: new Uint8Array() })))
               .toMatchObject({
                 reason: "not_a_repository"
               })
@@ -1209,17 +1209,99 @@ describe("SandboxTools rebase", () => {
           truncated: false
         })
       ).toEqual(["a", "b c"])
-      const call = SandboxTools.rebaseCall({ branch: "it's", onto: "abc", expect: "t1", timeoutSeconds: 30 })
+      const onto = "a".repeat(40)
+      const tree = "b".repeat(64)
+      const call = SandboxTools.rebaseCall({ branch: "it's", onto, expect: tree, timeoutSeconds: 30 })
       expect(call).toMatchObject({ tool: "run", timeoutSeconds: 30 })
-      expect(call.command.endsWith(`'.' 'it'\\''s' 'abc' 't1'`)).toBe(true)
-      expect(SandboxTools.rebaseCall({ branch: "b", onto: "abc" })).toMatchObject({
+      expect(call.command.endsWith(`'.' 'it'\\''s' '${onto}' '${tree}'`)).toBe(true)
+      expect(SandboxTools.rebaseCall({ branch: "feature/test", onto })).toMatchObject({
         timeoutSeconds: SandboxTools.limits.maxTimeoutSeconds
       })
-      expect(SandboxTools.rebaseCall({ branch: "b", onto: "abc" }).command.endsWith(`'abc' ''`)).toBe(true)
+      for (
+        const options of [{ branch: "-draft", onto }, { branch: "main", onto: "HEAD" }, {
+          branch: "main",
+          onto,
+          expect: "short"
+        }, { branch: "refs/heads/a:b", onto }]
+      ) {
+        expect(() => SandboxTools.rebaseCall(options)).toThrow(TypeError)
+      }
     }))
 })
 
 describe("SandboxTools on a failing session", () => {
+  it.effect("rejects invalid script records and revision arguments at the tool boundary", () =>
+    onMachine((session) =>
+      Effect.gen(function*() {
+        const unexpected = { ...session, spawn: () => Effect.die("unexpected dispatch") }
+        expect(yield* Effect.flip(SandboxTools.restore(unexpected, { head: "short", patch: new Uint8Array() })))
+          .toMatchObject({ reason: "not_found" })
+        expect(yield* failure(exec(unexpected, { tool: "status", base: "-base" }))).toMatchObject({
+          reason: "not_found"
+        })
+
+        const output = (record: string): Sandbox.Session => ({
+          ...session,
+          spawn: () =>
+            Effect.succeed({
+              stdout: Stream.make(new TextEncoder().encode(record)),
+              stderr: Stream.empty,
+              exitCode: Effect.succeed(0)
+            })
+        })
+        for (const frame of ["0 0 0 0", "0 9 0 0\n", "x 0 0 0\n", "0 0 2 0\nx"]) {
+          expect(yield* failure(exec(output(frame), { tool: "run", command: "true" }))).toBeInstanceOf(
+            SandboxTools.ToolUnavailable
+          )
+        }
+        for (
+          const frame of [
+            "file 1 x",
+            "other-kind 0 sample\0",
+            "file -1 x\0",
+            "file 0 a\0".repeat(SandboxTools.limits.listEntries + 1)
+          ]
+        ) {
+          expect(yield* failure(exec(output(frame), { tool: "list" }))).toBeInstanceOf(SandboxTools.ToolUnavailable)
+        }
+        for (const frame of ["truncated", "1 2\n", "-1\n", "0".repeat(128) + "\n"]) {
+          expect(yield* failure(exec(output(frame), { tool: "read", path: "a" }))).toBeInstanceOf(
+            SandboxTools.ToolUnavailable
+          )
+        }
+        for (const frame of ["missing", "other 0 0\n", `${"a".repeat(40)} 3 0\nx`]) {
+          expect(yield* Effect.flip(SandboxTools.checkpoint(output(frame)))).toBeInstanceOf(
+            SandboxTools.ToolUnavailable
+          )
+        }
+      }), { git: false }))
+
+  it.effect(
+    "drops an incomplete UTF-8 suffix only where a stream or file is truncated",
+    () =>
+      onMachine((session) =>
+        Effect.gen(function*() {
+          const prefix = "x".repeat(SandboxTools.limits.outputBytes - 1)
+          writeFileSync(join(session.workdir, "out"), prefix + "🌏")
+          const ran = yield* SandboxTools.execute(session, { tool: "run", command: "cat out; cat out >&2" }, {
+            callId: "utf8",
+            callsDirectory: calls
+          })
+          expect(ran.stdout).toBe(prefix)
+          expect(ran.stderr).toBe(prefix)
+          expect(ran.stdoutBytes).toBe(prefix.length + 4)
+          const filePrefix = "a".repeat(SandboxTools.limits.fileBytes - 2)
+          writeFileSync(join(session.workdir, "out"), filePrefix + "🌏")
+          const read = yield* SandboxTools.execute(session, { tool: "read", path: "out" }, {
+            callId: "read-utf8",
+            callsDirectory: calls
+          })
+          expect(read.content).toBe(filePrefix)
+          expect(read.bytes).toBe(filePrefix.length + 4)
+        }), { git: false }),
+    slow
+  )
+
   it.effect("fails ToolUnavailable with the provider's code", () =>
     onMachine((session) =>
       Effect.gen(function*() {
@@ -1249,8 +1331,7 @@ describe("SandboxTools on a failing session", () => {
               exitCode: Effect.succeed(0)
             })
         }
-        const cut = yield* exec(flooding, { tool: "diff" }) as Effect.Effect<typeof SandboxTools.DiffResult.Type>
-        expect(cut.diff.length).toBe(SandboxTools.limits.diffBytes + 64 - 2)
+        expect(yield* failure(exec(flooding, { tool: "diff" }))).toBeInstanceOf(SandboxTools.ToolUnavailable)
       }), { git: false }), slow)
 
   it.effect("names paths relative to a workdir at the root", () =>

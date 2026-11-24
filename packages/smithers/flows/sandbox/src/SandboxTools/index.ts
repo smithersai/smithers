@@ -74,6 +74,8 @@ export const limits = {
   maxObserveWaitSeconds: 60
 } as const
 
+const objectId = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/
+const ObjectId = Schema.String.check(Schema.isPattern(objectId))
 const GuestPath = Schema.String.check(Schema.isMaxLength(limits.pathLength))
 
 /**
@@ -136,7 +138,7 @@ export const List = Schema.Struct({ tool: Schema.Literal("list"), path: Schema.o
 export const Status = Schema.Struct({
   tool: Schema.Literal("status"),
   /** Compare the complete working tree with this immutable base, including local commits. */
-  base: Schema.optional(Schema.String.check(Schema.isPattern(/^[0-9a-f]{40}$/)))
+  base: Schema.optional(ObjectId)
 })
 
 /**
@@ -468,7 +470,8 @@ const script = (body: string, args: ReadonlyArray<string>): string =>
   [`sh -c ${quote(body)} sandbox-tool`, ...args.map(quote)].join(" ")
 
 const decoder = new TextDecoder()
-const text = (bytes: Uint8Array): string => decoder.decode(bytes)
+const text = (bytes: Uint8Array, truncated = false): string =>
+  truncated ? new TextDecoder().decode(bytes, { stream: true }) : decoder.decode(bytes)
 
 /** The bytes a stream sent, keeping at most `max`. */
 const kept = (stream: Stream.Stream<Uint8Array, ProviderError>, max: number) =>
@@ -507,11 +510,28 @@ const gather = (session: Session, command: string, max: number, stdin?: Uint8Arr
     return { stdout, code }
   })).pipe(Effect.mapError(unavailable))
 
-/** The first line of `bytes`, split on spaces, and what follows it. A script that exits 0 always prints that line. */
-const headed = (bytes: Uint8Array): { readonly header: Array<string>; readonly body: Uint8Array } => {
+const invalidAnswer = () => new ToolUnavailable({ code: "unknown" })
+
+/** Script headers use unsigned decimal fields separated by a single ASCII space. */
+const unsigned = (word: string | undefined): number =>
+  word !== undefined && /^[0-9]+$/.test(word) ? Number(word) : Number.NaN
+
+const headed = (bytes: Uint8Array, fields: number) => {
   const end = bytes.indexOf(10)
-  return { header: text(bytes.subarray(0, end)).split(" "), body: bytes.subarray(end + 1) }
+  if (end < 0 || end > 127) return Effect.fail(invalidAnswer())
+  const header = text(bytes.subarray(0, end)).split(" ")
+  return header.length === fields
+    ? Effect.succeed({ header, body: bytes.subarray(end + 1) })
+    : Effect.fail(invalidAnswer())
 }
+
+const sizedBody = (stdout: Uint8Array, max: number) =>
+  Effect.gen(function*() {
+    const { header, body } = yield* headed(stdout, 1)
+    const bytes = unsigned(header[0])
+    if (!Number.isSafeInteger(bytes) || Math.min(bytes, max) !== body.length) return yield* Effect.fail(invalidAnswer())
+    return { body, bytes, truncated: bytes > max }
+  })
 
 /** Exit codes the scripts answer for a refusal. */
 const refusals: Readonly<Record<number, ToolRefused["reason"]>> = {
@@ -637,22 +657,28 @@ const fenceOf = (callsDirectory: string, id: string, previous = false): string |
 }
 
 /** A command's result from an `ANSWER`'s output: its exit code, whether it timed out, and its kept streams. */
-const answered = (stdout: Uint8Array): typeof RunResult.Type => {
-  const max = limits.outputBytes
-  const { body, header } = headed(stdout)
-  const [exitCode, timed, outBytes, errBytes] = header.map(Number) as [number, number, number, number]
-  const outKept = Math.min(outBytes, max)
-  return {
-    tool: "run",
-    exitCode,
-    timedOut: timed === 1,
-    stdout: text(body.subarray(0, outKept)),
-    stderr: text(body.subarray(outKept, outKept + Math.min(errBytes, max))),
-    stdoutBytes: outBytes,
-    stderrBytes: errBytes,
-    truncated: outBytes > max || errBytes > max
-  }
-}
+const answered = (stdout: Uint8Array) =>
+  Effect.gen(function*() {
+    const max = limits.outputBytes
+    const { body, header } = yield* headed(stdout, 4)
+    const [code, timed, out, err] = header
+    const stdoutBytes = unsigned(out)
+    const stderrBytes = unsigned(err)
+    const outKept = Math.min(stdoutBytes, max)
+    if ((timed !== "0" && timed !== "1") || body.length !== outKept + Math.min(stderrBytes, max)) {
+      return yield* Effect.fail(invalidAnswer())
+    }
+    return yield* Schema.decodeUnknownEffect(RunResult)({
+      tool: "run",
+      exitCode: unsigned(code),
+      timedOut: timed === "1",
+      stdout: text(body.subarray(0, outKept), stdoutBytes > max),
+      stderr: text(body.subarray(outKept), stderrBytes > max),
+      stdoutBytes,
+      stderrBytes,
+      truncated: stdoutBytes > max || stderrBytes > max
+    }).pipe(Effect.mapError(invalidAnswer))
+  })
 
 /**
  * Runs a command at most once under its call's fence. A cwd that isn't a
@@ -684,7 +710,7 @@ const run = (session: Session, call: typeof Run.Type, options: ExecuteOptions) =
       2 * max + 128
     )
     if (code !== 0) return yield* Effect.fail(failedWith(code))
-    return answered(stdout)
+    return yield* answered(stdout)
   })
 
 const READ = `p=$1; max=$2
@@ -700,15 +726,14 @@ const read = (session: Session, call: typeof Read.Type) =>
     const max = limits.fileBytes
     const { code, stdout } = yield* gather(session, script(READ, [path, String(max)]), max + 64)
     if (code !== 0) return yield* Effect.fail(failedWith(code))
-    const { body, header } = headed(stdout)
-    const bytes = Number(header[0])
-    return {
+    const { body, bytes, truncated } = yield* sizedBody(stdout, max)
+    return yield* Schema.decodeUnknownEffect(ReadResult)({
       tool: "read",
       path: relative(session.workdir, path),
-      content: call.encoding === "base64" ? encodeBase64(body) : text(body),
+      content: call.encoding === "base64" ? encodeBase64(body) : text(body, truncated),
       bytes,
-      truncated: bytes > max
-    } satisfies typeof ReadResult.Type
+      truncated
+    }).pipe(Effect.mapError(invalidAnswer))
   })
 
 const WRITE = `p=$1
@@ -759,13 +784,21 @@ const list = (session: Session, call: typeof List.Type) =>
       (limits.listEntries + 1) * (limits.pathLength + 32)
     )
     if (code !== 0) return yield* Effect.fail(failedWith(code))
-    const records = text(stdout).split("\0").filter((record) => record !== "")
+    const records = text(stdout).split("\0")
+    if (records.pop() !== "") return yield* Effect.fail(invalidAnswer())
     const truncated = records.at(-1) === "more"
-    const entries = (truncated ? records.slice(0, -1) : records).map((record): Entry => {
-      const [kind, bytes] = record.split(" ", 2) as [Entry["kind"], string]
-      return { name: record.slice(kind.length + bytes.length + 2), kind, bytes: Number(bytes) }
+    if (truncated) records.pop()
+    if (records.length > limits.listEntries) return yield* Effect.fail(invalidAnswer())
+    const entries = records.map((record) => {
+      const match = /^(\S+) ([0-9]+) (.+)$/s.exec(record)
+      return match && { kind: match[1], bytes: unsigned(match[2]), name: match[3] }
     })
-    return { tool: "list", path: relative(session.workdir, path), entries, truncated } satisfies typeof ListResult.Type
+    return yield* Schema.decodeUnknownEffect(ListResult)({
+      tool: "list",
+      path: relative(session.workdir, path),
+      entries,
+      truncated
+    }).pipe(Effect.mapError(invalidAnswer))
   })
 
 const STATUS = `cd -- "$1" 2>/dev/null && git rev-parse --is-inside-work-tree >/dev/null 2>&1 || exit 69
@@ -789,6 +822,7 @@ git diff --name-status -z --no-renames --no-ext-diff "$2" "$tree" --`
 
 const status = (session: Session, call: typeof Status.Type) =>
   Effect.gen(function*() {
+    if (call.base !== undefined && !objectId.test(call.base)) return yield* refused("not_found")
     const { code, stdout } = yield* gather(
       session,
       script(call.base === undefined ? STATUS : BASE_STATUS, [
@@ -852,9 +886,8 @@ const diff = (session: Session, call: typeof Diff.Type) =>
       max + 64
     )
     if (code !== 0) return yield* Effect.fail(failedWith(code))
-    const { body, header } = headed(stdout)
-    const bytes = Number(header[0])
-    return { tool: "diff", diff: text(body), bytes, truncated: bytes > max } satisfies typeof DiffResult.Type
+    const { body, bytes, truncated } = yield* sizedBody(stdout, max)
+    return { tool: "diff", diff: text(body, truncated), bytes, truncated } satisfies typeof DiffResult.Type
   })
 
 /**
@@ -1185,7 +1218,7 @@ export const collect = (
         2 * max + 128
       )
       if (code !== 0) return yield* Effect.fail(failedWith(code))
-      return answered(stdout)
+      return yield* answered(stdout)
     })
   )
 
@@ -1226,6 +1259,12 @@ export interface Checkpoint {
   readonly patch: Uint8Array
   readonly bundle?: Uint8Array | undefined
 }
+
+const decodeCheckpointHeader = Schema.decodeUnknownEffect(Schema.Struct({
+  head: ObjectId,
+  patchBytes: Schema.Natural,
+  bundleBytes: Schema.Natural
+}))
 
 // Each step that can fail exits with its own code (120 to 124), so a failure names its step (`ToolUnavailable.exitCode`).
 // The index the changes are staged in starts as a copy of the checkout's own, whose stat data lets `git add` hash only
@@ -1269,10 +1308,15 @@ export const checkpoint = (
       max + 128
     )
     if (code !== 0) return yield* Effect.fail(failedWith(code) as ToolRefused | ToolUnavailable)
-    const { body, header } = headed(stdout)
-    const patchBytes = Number(header[1])
-    if (patchBytes + Number(header[2]) > max) return yield* Effect.fail(new ToolRefused({ reason: "too_large" }))
-    return { head: header[0]!, patch: body.slice(0, patchBytes), bundle: body.slice(patchBytes) }
+    const { body, header } = yield* headed(stdout, 3)
+    const { head, patchBytes, bundleBytes } = yield* decodeCheckpointHeader({
+      head: header[0],
+      patchBytes: unsigned(header[1]),
+      bundleBytes: unsigned(header[2])
+    }).pipe(Effect.mapError(invalidAnswer))
+    if (patchBytes + bundleBytes > max) return yield* refused("too_large")
+    if (patchBytes + bundleBytes !== body.length) return yield* Effect.fail(invalidAnswer())
+    return { head, patch: body.slice(0, patchBytes), bundle: body.slice(patchBytes) }
   }).pipe(Effect.withSpan("sandbox.checkpoint"))
 
 const RESTORE = `cd -- "$1" 2>/dev/null && git rev-parse --verify -q HEAD >/dev/null 2>&1 || exit 69
@@ -1286,7 +1330,7 @@ has() { git cat-file -e "$1^{commit}" 2>/dev/null; }
 # Fetches commit $1 from origin by its id. An origin that can't be reached exits 76, so the restore is tried again; one
 # that answered without the commit leaves it missing.
 fetch() {
-  out=$(git fetch -q --depth=1 origin "$1" 2>&1) && return 0
+  out=$(git fetch -q --depth=1 -- origin "$1" 2>&1) && return 0
   case "$out" in *"unable to access"*|*"returned error: 5"*|*"RPC failed"*|*"early EOF"*|*"Could not resolve"*|*"timed out"*) exit 76 ;; esac
   return 1
 }
@@ -1319,6 +1363,7 @@ git apply --binary --whitespace=nowarn "$dir/patch" || exit 125`
  */
 export const restore = (session: Session, saved: Checkpoint): Effect.Effect<void, ToolRefused | ToolUnavailable> =>
   Effect.gen(function*() {
+    if (!objectId.test(saved.head)) return yield* refused("not_found")
     const bundle = saved.bundle ?? new Uint8Array()
     const input = new Uint8Array(saved.patch.byteLength + bundle.byteLength)
     input.set(saved.patch)
@@ -1395,7 +1440,7 @@ has() { git cat-file -e "$1^{commit}" 2>/dev/null; }
 commit() { git -c user.name=Smithers -c user.email=smithers@localhost commit-tree "$@" </dev/null; }
 count() { tr -cd '\\000' <"$1" | wc -c | tr -d ' '; }
 if ! has "$3"; then
-  if ! out=$(git fetch -q origin "$2" 2>&1); then
+  if ! out=$(git fetch -q -- origin "$2" 2>&1); then
     case "$out" in *"unable to access"*|*"returned error: 5"*|*"RPC failed"*|*"early EOF"*|*"Could not resolve"*|*"timed out"*) exit 76 ;; esac
   fi
   has "$3" || exit 44
@@ -1428,6 +1473,13 @@ r=$(commit "$result" -p "$3" -m rebase) || exit 125
 git add -A && git reset -q --hard "$r" && git reset -q "$3" || exit 125
 printf 'applied %s %s %s\\n' "$tree" "$result" "$n"`
 
+// The branch is a single fetch source. Git refspec operators and option-like branches are excluded.
+const validBranch = (name: string): boolean =>
+  name !== "@" && name !== "HEAD" && !name.startsWith("-") && !name.startsWith("+") && !name.endsWith(".") &&
+  !name.includes("..") && !name.includes("@{") &&
+  !Array.from(name).some((c) => c.charCodeAt(0) <= 32 || c.charCodeAt(0) === 127 || "~^:?*[\\".includes(c)) &&
+  name.split("/").every((part) => part !== "" && !part.startsWith(".") && !part.endsWith(".lock"))
+
 /**
  * The `run` call that moves the working copy onto commit `options.onto` of
  * `options.branch`, fetched from `origin` when the working copy lacks it:
@@ -1446,11 +1498,17 @@ printf 'applied %s %s %s\\n' "$tree" "$result" "$n"`
  * @category operations
  * @since 1.0.0-rc.17
  */
-export const rebaseCall = (options: RebaseOptions): typeof Run.Type => ({
-  tool: "run",
-  command: script(REBASE, [".", options.branch, options.onto, options.expect ?? ""]),
-  timeoutSeconds: options.timeoutSeconds ?? limits.maxTimeoutSeconds
-})
+export const rebaseCall = (options: RebaseOptions): typeof Run.Type => {
+  const { branch, expect, onto } = options
+  if (!validBranch(branch) || !objectId.test(onto) || (expect !== undefined && !objectId.test(expect))) {
+    throw new TypeError("Rebasing requires a branch name and full object IDs")
+  }
+  return {
+    tool: "run",
+    command: script(REBASE, [".", branch, onto, expect ?? ""]),
+    timeoutSeconds: options.timeoutSeconds ?? limits.maxTimeoutSeconds
+  }
+}
 
 /**
  * How a {@link rebaseCall} ended, from its `run` result: a refusal for a

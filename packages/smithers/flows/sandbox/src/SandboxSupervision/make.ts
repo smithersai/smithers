@@ -4,7 +4,6 @@
  * @since 0.1.0
  */
 
-import * as CommandLine from "@smthrs/kernel/CommandLine"
 import * as Deferred from "effect/Deferred"
 import * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
@@ -215,7 +214,7 @@ export const make = (
         // arriving between selection and spawn reaches the spawn through this
         // race, before the handle guard exists. Everything after that is the
         // guard's job.
-        const open = yield* Effect.mapError(session, platformFailure("open", CommandLine.render(command)))
+        const open = yield* Effect.mapError(session, platformFailure("open"))
         const handle = yield* Effect.raceFirst(open.spawner.spawn(command), Deferred.await(open.failed))
         yield* Effect.yieldNow
         return yield* guarded(handle, open.failed)

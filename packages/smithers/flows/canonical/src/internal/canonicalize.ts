@@ -5,12 +5,14 @@
  * WeakSet, ArrayBuffer, typed arrays, RegExp, Error, and other non-plain
  * instances are rejected: their `{}` or index-keyed `JSON.stringify` forms
  * can collide with empty collections or ordinary objects in a digest library.
+ * Built-ins are identified by their internal slots, not their prototype, so a
+ * buffer or wrapper whose prototype was replaced is still recognized.
  *
  * @since 0.1.0
  */
 
 import { describe } from "./describe.ts"
-import { rethrowUnlessMissingSlot } from "./slotFailure.ts"
+import { type NativeBrand, nativeBrand } from "./nativeBrand.ts"
 
 /**
  * Maximum supported nesting below the root value.
@@ -66,41 +68,16 @@ const loneSurrogate = (path: string, position: "key" | "value"): CanonicalError 
 const constructorName = (name: unknown, fallback: string): string =>
   typeof name === "string" && name !== "" ? name.slice(0, 1024) : fallback
 
-// These intrinsic operations require internal slots. A caller may replace a
-// built-in's prototype or toStringTag without removing its collection data.
-const slotReaders = [
-  ["Map", Map.prototype.has],
-  ["Set", Set.prototype.has]
-] as const
-
-// Internal collection slots cannot be added to an existing object. Remember
-// negative probes weakly so repeated digests do not pay for them again.
-const nonCollections = new WeakSet<object>()
-
-const builtInName = (value: object): string | undefined => {
-  if (value instanceof Map) return "Map"
-  if (value instanceof Set) return "Set"
-  if (value instanceof WeakMap) return "WeakMap"
-  if (value instanceof WeakSet) return "WeakSet"
-  if (value instanceof ArrayBuffer) return "ArrayBuffer"
-  if (ArrayBuffer.isView(value)) return constructorName(value.constructor?.name, "typed array")
-  if (value instanceof RegExp) return "RegExp"
+// Internal slots identify a built-in even after a caller replaces its
+// prototype or toStringTag. The prototype fallback below names other classes.
+const builtInName = (value: object, brand: NativeBrand | undefined): string | undefined => {
+  if (brand === undefined) return undefined
+  if (brand === "ArrayBufferView") return constructorName(value.constructor?.name, "typed array")
   // An Error subclass reports its concrete constructor so the message names
   // the actual leaked value ("TypeError at $.x"), falling back to "Error" for
   // a subclass whose constructor name was erased.
-  if (value instanceof Error) return constructorName(value.constructor?.name, "Error")
-  if (!nonCollections.has(value)) {
-    for (const [name, read] of slotReaders) {
-      try {
-        Reflect.apply(read, value, [value])
-        return name
-      } catch (cause) {
-        rethrowUnlessMissingSlot(cause)
-      }
-    }
-    nonCollections.add(value)
-  }
-  return undefined
+  if (brand === "Error") return constructorName(value.constructor?.name, "Error")
+  return brand
 }
 
 type Slot = { value?: string }
@@ -309,17 +286,16 @@ export const canonicalize = (
       continue
     }
 
+    let brand: NativeBrand | undefined
     try {
-      if (value instanceof Number) value = Number.prototype.valueOf.call(value)
-      else if (value instanceof String) value = String.prototype.valueOf.call(value)
-      else if (value instanceof Boolean) value = Boolean.prototype.valueOf.call(value)
-      else if (Object.prototype.toString.call(value) === "[object BigInt]") {
-        throw new CanonicalError("canonical_bigint", "boxed BigInt", path)
-      }
+      brand = nativeBrand(object)
     } catch (cause) {
-      if (cause instanceof CanonicalError) throw cause
       throw caused("canonical_getter_threw", cause, path)
     }
+    if (brand === "BigInt") throw new CanonicalError("canonical_bigint", "boxed BigInt", path)
+    if (brand === "Number") value = Number.prototype.valueOf.call(object)
+    else if (brand === "String") value = String.prototype.valueOf.call(object)
+    else if (brand === "Boolean") value = Boolean.prototype.valueOf.call(object)
     if (value !== object) {
       tasks.push({ kind: "value", value, key, path, depth, slot })
       continue
@@ -327,7 +303,7 @@ export const canonicalize = (
 
     let unsupported: string | undefined
     try {
-      unsupported = builtInName(object)
+      unsupported = builtInName(object, brand)
       const prototype = Object.getPrototypeOf(object) as { readonly constructor?: { readonly name?: unknown } } | null
       if (unsupported === undefined && prototype !== null && prototype !== Object.prototype) {
         unsupported = constructorName(prototype.constructor?.name, "non-plain object")

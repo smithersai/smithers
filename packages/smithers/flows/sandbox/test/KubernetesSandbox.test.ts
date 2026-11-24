@@ -1235,8 +1235,8 @@ describe("KubernetesSandbox", () => {
       const other = yield* Effect.scoped(provider.acquire(otherKey))
       expect(other.remoteId).not.toBe(session.remoteId)
       for (const [id, sessionKey] of [[session.remoteId, key], [other.remoteId, otherKey]] as const) {
-        const digest = sessionSlug(sessionKey).slice(-16).toLowerCase()
-        expect(digest).toMatch(/^[a-f0-9]{16}$/)
+        const digest = sessionSlug(sessionKey).slice(-32).toLowerCase()
+        expect(digest).toMatch(/^[a-f0-9]{32}$/)
         expect(id.endsWith(`-${digest}`)).toBe(true)
       }
       expect(session.remoteId).toMatch(/^[a-z0-9-]+$/)

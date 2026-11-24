@@ -9,10 +9,8 @@
  * byte-compares, `install` publishes atomically, and nothing else writes
  * these files.
  *
- * A hook script falls back to the legacy `smithers-build` binary, then fails open
- * when neither binary is present on PATH: it
- * prints a warning and exits 0, because a missing build CLI must never block
- * a commit. The scripts are deterministic bytes, pinned by goldens.
+ * Hook scripts fall back to the legacy smithers-build binary. Blocking hooks
+ * fail when neither CLI is available.
  *
  * @since 0.1.0
  */
@@ -21,7 +19,6 @@ import * as Target from "@smthrs/targets/Target"
 import type * as WorkspaceDeclaration from "@smthrs/targets/WorkspaceDeclaration"
 import * as Data from "effect/Data"
 import * as NodeChildProcess from "node:child_process"
-import * as NodeCrypto from "node:crypto"
 import * as Fs from "node:fs/promises"
 import * as NodePath from "node:path"
 
@@ -149,6 +146,7 @@ const renderScript = (hookFile: string, label: string): string => {
   if (!labelPattern.test(label)) {
     throw new GitHooksError("invalid_label", `${JSON.stringify(label)} is not a renderable target label`)
   }
+  const blocking = hookFile === "pre-commit" || hookFile === "pre-push"
   return [
     "#!/bin/sh",
     generatedHeader,
@@ -159,8 +157,8 @@ const renderScript = (hookFile: string, label: string): string => {
     "if command -v smithers-build >/dev/null 2>&1; then",
     `  exec smithers-build '${label}'`,
     "fi",
-    `echo "smthrs: CLI not found on PATH; skipping the ${hookFile} hook (fail-open)" >&2`,
-    "exit 0",
+    `echo "smthrs: CLI not found on PATH; ${hookFile} hook could not run" >&2`,
+    blocking ? "exit 1" : "exit 0",
     ""
   ].join("\n")
 }
@@ -214,7 +212,8 @@ const revParse = (root: string, args: ReadonlyArray<string>): Promise<string> =>
 /** Whether `path` is `directory` or lies beneath it. */
 const within = (directory: string, path: string): boolean => {
   const relative = NodePath.relative(directory, path)
-  return relative === "" || (!relative.startsWith("..") && !NodePath.isAbsolute(relative))
+  return relative === "" ||
+    (relative !== ".." && !relative.startsWith(`..${NodePath.sep}`) && !NodePath.isAbsolute(relative))
 }
 
 /** Canonicalizes existing parents without treating a dangling symlink as a missing directory. */
@@ -277,6 +276,30 @@ const resolveHooksDirectory = async (root: string): Promise<string> => {
   }
 }
 
+/** Read the opened regular file only. A missing hook is the sole recoverable read error. */
+const readHook = async (path: string): Promise<{ bytes: Buffer; mode: number } | undefined> => {
+  try {
+    const prior = await Fs.lstat(path)
+    if (!prior.isFile()) throw new Error(`expected a regular hook at ${path}`)
+    const handle = await Fs.open(
+      path,
+      Fs.constants.O_RDONLY | (Fs.constants.O_NOFOLLOW ?? 0) | (Fs.constants.O_NONBLOCK ?? 0)
+    )
+    try {
+      const opened = await handle.stat()
+      if (!opened.isFile() || opened.dev !== prior.dev || opened.ino !== prior.ino) {
+        throw new Error(`hook changed at ${path}`)
+      }
+      return { bytes: await handle.readFile(), mode: opened.mode & 0o777 }
+    } finally {
+      await handle.close()
+    }
+  } catch (cause) {
+    if (cause instanceof Error && "code" in cause && cause.code === "ENOENT") return undefined
+    throw cause
+  }
+}
+
 /** Finds generated scripts for supported hook events whose bindings were removed. */
 const unboundGeneratedHooks = async (
   hooksDirectory: string,
@@ -286,8 +309,8 @@ const unboundGeneratedHooks = async (
   for (const name of hookNames) {
     const file = hookFiles[name]
     if (rendered.some((hook) => hook.file === file)) continue
-    const existing = await Fs.readFile(NodePath.join(hooksDirectory, file), "utf8").catch(() => undefined)
-    if (existing?.split("\n")[1] === generatedHeader) files.push(file)
+    const existing = await readHook(NodePath.join(hooksDirectory, file)).catch(() => undefined)
+    if (existing?.bytes.toString("utf8").split("\n")[1] === generatedHeader) files.push(file)
   }
   return files
 }
@@ -308,8 +331,8 @@ export const check = async (
   for (const hook of rendered) {
     let status: CheckEntry["status"]
     try {
-      const existing = await Fs.readFile(NodePath.join(hooksDirectory, hook.file), "utf8")
-      status = existing === hook.content ? "clean" : "stale"
+      const existing = await readHook(NodePath.join(hooksDirectory, hook.file))
+      status = existing === undefined ? "missing" : existing.bytes.toString("utf8") === hook.content ? "clean" : "stale"
     } catch {
       status = "missing"
     }
@@ -324,10 +347,10 @@ export const check = async (
 /**
  * Installs the rendered hook scripts into Git's active hooks directory.
  *
- * Each script lands executable via a same-directory temporary name and
+ * Each script lands executable via a private temporary directory and
  * rename. A root that is not a git repository, or whose hooks directory lies
  * outside the repository, is a typed refusal. An existing hook this module
- * did not generate is copied privately and atomically renamed to `<hook>.bak`
+ * did not generate is copied privately and linked to the first free backup name
  * before it is replaced, without following an existing backup link.
  * Generated scripts for removed bindings are deleted; handwritten unbound
  * hooks, unsupported hook names, and backups are left in place.
@@ -343,24 +366,32 @@ export const install = async (
   const wrote: Array<string> = []
   for (const hook of rendered) {
     const absolute = NodePath.join(hooksDirectory, hook.file)
-    const temporary = `${absolute}.tmp-${process.pid}-${NodeCrypto.randomBytes(4).toString("hex")}`
     try {
       await Fs.mkdir(hooksDirectory, { recursive: true })
-      const existing = await Fs.readFile(absolute, "utf8").catch(() => undefined)
-      if (existing !== undefined && existing.split("\n")[1] !== generatedHeader) {
-        const backupDirectory = await Fs.mkdtemp(`${absolute}.backup-`)
-        try {
-          const backup = NodePath.join(backupDirectory, "hook")
-          await Fs.copyFile(absolute, backup, Fs.constants.COPYFILE_EXCL)
-          await Fs.rename(backup, `${absolute}.bak`)
-        } finally {
-          await Fs.rm(backupDirectory, { recursive: true, force: true })
+      const existing = await readHook(absolute)
+      const staging = await Fs.mkdtemp(NodePath.join(hooksDirectory, ".smthrs-hook-"))
+      try {
+        if (existing !== undefined && existing.bytes.toString("utf8").split("\n")[1] !== generatedHeader) {
+          const backup = NodePath.join(staging, "backup")
+          await Fs.writeFile(backup, existing.bytes, { flag: "wx", mode: existing.mode })
+          for (let number = 0;; number++) {
+            const destination = number === 0 ? `${absolute}.bak` : `${absolute}.bak.${number}`
+            try {
+              await Fs.link(backup, destination)
+              break
+            } catch (cause) {
+              if (!(cause instanceof Error && "code" in cause && cause.code === "EEXIST")) throw cause
+              if ((await Fs.lstat(destination)).isDirectory()) throw cause
+            }
+          }
         }
+        const temporary = NodePath.join(staging, "hook")
+        await Fs.writeFile(temporary, hook.content, { flag: "wx", encoding: "utf8", mode: 0o755 })
+        await Fs.rename(temporary, absolute)
+      } finally {
+        await Fs.rm(staging, { recursive: true, force: true })
       }
-      await Fs.writeFile(temporary, hook.content, { encoding: "utf8", mode: 0o755 })
-      await Fs.rename(temporary, absolute)
     } catch (cause) {
-      await Fs.rm(temporary, { force: true }).catch(() => undefined)
       throw new GitHooksError(
         "write_failed",
         `${hook.file} could not be installed: ${(cause as Error).message}`

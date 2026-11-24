@@ -34,6 +34,7 @@ import * as NestedFlows from "../fixtures/NestedFlows.ts"
 
 /** The slice of Durable Object storage this Worker uses. */
 interface RawStorage {
+  transaction<A>(body: (transaction: RawTransaction) => Promise<A>): Promise<A>
   get(key: string): Promise<unknown>
   put(key: string, value: unknown): Promise<void>
   delete(key: string): Promise<boolean>
@@ -43,6 +44,8 @@ interface RawStorage {
   deleteAlarm(): Promise<void>
   sync(): Promise<void>
 }
+
+type RawTransaction = Pick<RawStorage, "get" | "put" | "delete" | "setAlarm" | "deleteAlarm">
 
 /** The slice of `DurableObjectState` this Worker uses. */
 interface State {
@@ -67,12 +70,18 @@ interface Namespace {
 }
 
 /** `ExecutionObject.Storage` over the raw Promise API. */
-const storageOf = (raw: RawStorage): ExecutionObject.Storage => ({
+const storageOps = (raw: RawTransaction): ExecutionObject.Storage => ({
   get: <A>(key: string) => Effect.promise(() => raw.get(key) as Promise<A | undefined>),
   put: (key, value) => Effect.promise(() => raw.put(key, value)),
   delete: (key) => Effect.promise(() => raw.delete(key)),
   setAlarm: (scheduledTime) => Effect.promise(() => raw.setAlarm(scheduledTime)),
   deleteAlarm: () => Effect.promise(() => raw.deleteAlarm())
+})
+
+const storageOf = (raw: RawStorage): ExecutionObject.Storage => ({
+  ...storageOps(raw),
+  transaction: (body) =>
+    Effect.promise((signal) => raw.transaction((txn) => Effect.runPromise(body(storageOps(txn)), { signal })))
 })
 
 const list = async (raw: RawStorage, key: string): Promise<ReadonlyArray<unknown>> =>
@@ -275,6 +284,27 @@ export class Probe {
   }
 
   async fetch(request: Request): Promise<Response> {
+    if (new URL(request.url).pathname === "/failed-start") {
+      const storage = storageOf(this.state.storage)
+      const intent = await request.json() as ExecutionObject.Intent
+      // Lose the handler after both writes, inside the real SQLite transaction.
+      const fault: ExecutionObject.Storage = {
+        ...storage,
+        transaction: (body) =>
+          storage.transaction!((transaction) =>
+            body({
+              ...transaction,
+              put: (key, value) => transaction.put(key, value).pipe(Effect.andThen(Effect.die("connection lost")))
+            })
+          )
+      }
+      const result = await Effect.runPromiseExit(ExecutionObject.start(fault, intent, Effect.void))
+      return Response.json({
+        outcome: result._tag,
+        entries: [...await this.state.storage.list()],
+        alarm: await this.state.storage.getAlarm()
+      })
+    }
     if (new URL(request.url).pathname === "/arm") {
       await this.state.storage.setAlarm(Date.now())
       return new Response("armed")

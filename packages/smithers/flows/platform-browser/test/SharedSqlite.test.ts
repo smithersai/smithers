@@ -63,9 +63,8 @@ const tamper = (pool: Effect.Success<typeof MemorySqlite.pool>, sql: string) =>
  * request and waits for its answer, and `ready` waits for a leader to start
  * serving.
  */
-const rawTab = (name: string) =>
+const rawTab = (name: string, client = `raw-${crypto.randomUUID()}`) =>
   Effect.gen(function*() {
-    const client = `raw-${crypto.randomUUID()}`
     // Held while the tab lives, as a tab's is, so the leader leaves its transaction open.
     yield* Effect.flatMap(WebLock.WebLock, (locks) => locks.hold(SqlProtocol.clientLock(name, client)))
     const port = yield* Effect.flatMap(TabChannel.TabChannel, (channels) => channels.open(SqlProtocol.channel(name)))
@@ -218,6 +217,51 @@ describe("SharedSqlite", () => {
       expect(String((missing.reason.cause as { readonly message?: unknown }).message)).toContain("no such table")
       expect(yield* tab.execute("SELECT count(*) AS n FROM t")).toEqual([{ n: 1 }])
     }).pipe(Effect.scoped))
+
+  it.live("forgets a departed tab's request number and watches its lock again on reuse", () =>
+    Effect.gen(function*() {
+      const { name, tab } = yield* setup
+      const client = "returning-tab"
+      for (let id = 1; id <= 3; id++) {
+        yield* Effect.scoped(Effect.gen(function*() {
+          const raw = yield* rawTab(name, client)
+          expect(yield* raw.send({ id: 0, sql: `INSERT INTO t (id) VALUES (${id})`, transaction: null })).toMatchObject(
+            { _tag: "Executed" }
+          )
+        }))
+        while (
+          (yield* tab.execute(`SELECT client FROM ${SqlProtocol.commits} WHERE client = ?`, [client])).length > 0
+        ) yield* Effect.sleep("5 millis")
+      }
+      expect(yield* tab.execute("SELECT id FROM t ORDER BY id")).toEqual([{ id: 1 }, { id: 2 }, { id: 3 }])
+    }).pipe(Effect.scoped, Effect.timeout("5 seconds")))
+
+  it.live("bounds replay on repeated leader loss and refuses loss outside a transaction", () =>
+    Effect.gen(function*() {
+      const name = Engines.name()
+      const port = yield* (yield* TabChannel.TabChannel).open(SqlProtocol.channel(name))
+      const inbox = yield* port.subscribe
+      let begins = 0
+      yield* Queue.take(inbox).pipe(
+        Effect.flatMap((input) => {
+          const request = SqlProtocol.decode(input)
+          if (request?._tag !== "Execute") return Effect.void
+          const { client, id } = request
+          return port.post(SqlProtocol.encode(
+            request.sql === "BEGIN"
+              ? { _tag: "Executed", client, id, rows: [], open: true, leader: String(++begins) }
+              : { _tag: "Failed", client, id, error: "@smthrs/platform-browser/TransactionLost" }
+          ))
+        }),
+        Effect.forever,
+        Effect.forkScoped
+      )
+      const tab = yield* Engines.sharedTab(name)
+      expect((yield* Effect.flip(tab.execute("SELECT 1"))).reason._tag).toBe("ConnectionError")
+      yield* tab.execute("BEGIN")
+      expect((yield* Effect.flip(tab.execute("COMMIT"))).reason._tag).toBe("ConnectionError")
+      expect(begins).toBe(4)
+    }).pipe(Effect.scoped, Effect.provide(Engines.platform), Effect.timeout("5 seconds")))
 
   it.live("keeps a tab's transaction its own: another tab waits, and never reads what is not committed", () =>
     Effect.gen(function*() {
@@ -735,6 +779,17 @@ describe("SharedSqlite receipts across leaders", () => {
 })
 
 describe("SharedSqlite.open", () => {
+  it.live("releases the tab lock when health check setup defects", () =>
+    Effect.gen(function*() {
+      const name = Engines.name()
+      const failure = yield* Effect.promise(() =>
+        SharedSqlite.open({ name, within: "invalid" as never }).then(() => undefined, (error: unknown) => error)
+      )
+      expect(failure).toBeDefined()
+      const { held } = yield* Effect.promise(() => navigator.locks.query())
+      expect(held?.filter((lock) => lock.name?.startsWith(name))).toEqual([])
+    }))
+
   it.live("resolves once a leader answers, runs statements as Promises, and closes", () =>
     Effect.gen(function*() {
       const name = Engines.name()

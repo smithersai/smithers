@@ -5,7 +5,7 @@
  */
 
 import * as PlatformError from "effect/PlatformError"
-import type { ProviderError, ProviderErrorCode } from "../RemoteChildProcessSpawner/ProviderError.ts"
+import { ProviderError, type ProviderErrorCode } from "../RemoteChildProcessSpawner/ProviderError.ts"
 
 /**
  * The one mapping from a provider's closed code set onto the reasons
@@ -22,7 +22,7 @@ import type { ProviderError, ProviderErrorCode } from "../RemoteChildProcessSpaw
  * instruction — this session cannot run your command, try somewhere else —
  * which is the reason `SandboxSupervision.retired` reports a retired session
  * as `NotFound` too. A caller that needs the distinction reads
- * `PlatformError.cause`, which carries the `ProviderError` itself.
+ * `PlatformError.cause`, which carries a sanitized `ProviderError` with the original code.
  *
  * @category models
  * @since 0.1.0
@@ -44,7 +44,7 @@ export const platformReason: Record<ProviderErrorCode, PlatformError.SystemError
  * @category constructors
  * @since 0.1.0
  */
-export const platformFailure = (method: string, command: string) =>
+export const platformFailure = (method: string) =>
 (
   error: ProviderError
 ): PlatformError.PlatformError =>
@@ -52,8 +52,8 @@ export const platformFailure = (method: string, command: string) =>
     _tag: platformReason[error.code],
     module: "ChildProcess",
     method,
-    description: `\`${command}\`: ${error.message}`,
-    cause: error
+    description: `remote ${method} failed (${error.code})`,
+    cause: new ProviderError({ code: error.code, message: `remote ${method} failed` })
   })
 
 /**

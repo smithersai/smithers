@@ -76,6 +76,7 @@ import { annotateWaiting } from "./FlowRuntime/WaitingAnnotation.ts"
 import * as Graph from "./Graph.ts"
 import * as HumanTask from "./HumanTask.ts"
 import * as BoundedJson from "./internal/BoundedJson.ts"
+import { field, stringField } from "./internal/DefectField.ts"
 import { ExecutionMiddleware } from "./internal/ExecutionMiddleware.ts"
 import { InterpreterError } from "./internal/InterpreterError.ts"
 import { OutcomeValueTypeId } from "./internal/OutcomeMarker.ts"
@@ -114,7 +115,8 @@ export const refusalCode = (cause: Cause.Cause<unknown>): Option.Option<Interpre
     const error = Cause.isDieReason(reason) ? reason.defect : Cause.isFailReason(reason) ? reason.error : undefined
     if (Schema.is(InterpreterError)(error)) return Option.some(error.code)
     if (
-      error instanceof Error && error.name === "@smthrs/flow/InterpreterError" && error.message === legacyPlanChanged
+      error instanceof Error && stringField(error, "name") === "@smthrs/flow/InterpreterError" &&
+      stringField(error, "message") === legacyPlanChanged
     ) {
       return Option.some("plan_changed")
     }
@@ -174,20 +176,19 @@ const defectTag = /^[A-Za-z0-9_@$./:-]{1,200}$/
 
 /** The tag of one defect value. @private */
 const tagOfDefect = (defect: unknown): string => {
-  if (typeof defect === "object" && defect !== null) {
-    const record = defect as { readonly _tag?: unknown; readonly code?: unknown; readonly name?: unknown }
-    if (typeof record._tag === "string" && defectTag.test(record._tag)) return record._tag
-    if (typeof record.code === "string" && defectTag.test(record.code)) return record.code
-    if (typeof record.name === "string" && record.name !== "Error" && defectTag.test(record.name)) return record.name
-  }
+  const tag = stringField(defect, "_tag")
+  if (tag !== undefined && defectTag.test(tag)) return tag
+  const code = stringField(defect, "code")
+  if (code !== undefined && defectTag.test(code)) return code
+  const name = stringField(defect, "name")
+  if (name !== undefined && name !== "Error" && defectTag.test(name)) return name
   return "defect"
 }
 
 /** The `code` of a defect whose tag is its `_tag`, when it has one. @private */
 const codeOfDefect = (defect: unknown): string | undefined => {
-  if (typeof defect !== "object" || defect === null) return undefined
-  const { _tag, code } = defect as { readonly _tag?: unknown; readonly code?: unknown }
-  return typeof _tag === "string" && typeof code === "string" && defectTag.test(code) ? code : undefined
+  const code = stringField(defect, "code")
+  return stringField(defect, "_tag") !== undefined && code !== undefined && defectTag.test(code) ? code : undefined
 }
 
 /** How far down a defect's causes {@link chainOfDefect} looks. @private */
@@ -200,19 +201,21 @@ const chainOfDefect = (defect: unknown): ReadonlyArray<unknown> => {
   while (chain.length < maximumCauseDepth && current !== undefined && current !== null && !chain.includes(current)) {
     chain.push(current)
     if (typeof current !== "object") break
-    const { cause, reason } = current as { readonly cause?: unknown; readonly reason?: unknown }
-    current = typeof reason === "object" && reason !== null ? reason : cause
+    const reason = field(current, "reason")
+    current = typeof reason === "object" && reason !== null ? reason : field(current, "cause")
   }
   return chain
 }
 
 /** The distinct messages down a chain, cut. @private */
 const messageOfChain = (chain: ReadonlyArray<unknown>): string => {
-  const messages = chain.map((link) =>
-    typeof link === "string" ? link : typeof link === "object" ? (link as { message?: unknown }).message : undefined
-  ).filter((text): text is string => typeof text === "string" && text.length > 0)
+  const messages = chain.map((link) => typeof link === "string" ? link : stringField(link, "message")).filter((
+    text
+  ): text is string => typeof text === "string" && text.length > 0)
   const message = [...new Set(messages)].join(": ")
-  return message.length <= maximumDefectMessageLength ? message : `${message.slice(0, maximumDefectMessageLength)}…`
+  return message.length <= maximumDefectMessageLength
+    ? message
+    : `${BoundedJson.scalarPrefix(message, maximumDefectMessageLength)}…`
 }
 
 /** The distinct tags and codes below a chain's first link. @private */
@@ -222,8 +225,9 @@ const causesOfChain = (
   ...new Set(
     chain.slice(1).flatMap((link) => {
       if (typeof link !== "object" || link === null) return []
-      const { _tag, code } = link as { readonly _tag?: unknown; readonly code?: unknown }
-      return [_tag, code].filter((value): value is string => typeof value === "string" && defectTag.test(value))
+      return [stringField(link, "_tag"), stringField(link, "code")].filter((value): value is string =>
+        value !== undefined && defectTag.test(value)
+      )
     })
   )
 ]
@@ -1467,6 +1471,7 @@ const compute: (walk: Walk, node: Graph.GraphNode) => Effect.Effect<unknown, unk
     if (ast._tag === "Branch") return yield* settleBranch(walk, ast, children)
     if (ast._tag === "Catch") return yield* settleCatch(walk, ast, children)
     if (ast._tag === "Race") return yield* settleRace(walk, node, ast, children)
+    if (ast._tag === "All") return yield* combine(walk, node, ast, children)
     // Dependency order, from the key material: the same `Ref` and `Pending`
     // inputs the plan turns into edges, settled before the node that reads
     // them — and settled CONCURRENTLY, because independent dependencies are
@@ -1492,8 +1497,6 @@ const compute: (walk: Walk, node: Graph.GraphNode) => Effect.Effect<unknown, unk
         const transform = Node.mapper(ast)!
         return transform(yield* settleNode(walk, children[0]!))
       }
-      case "All":
-        return yield* combine(walk, ast, children)
       case "AndThen":
         return yield* settleNode(walk, children[1]!)
       case "FlowCall":
@@ -1606,24 +1609,50 @@ const runAction = (walk: Walk, node: Graph.GraphNode, ast: Extract<Node.Ast, { r
 /**
  * An `All`: a combination, so its members settle concurrently — the same
  * semantics `PlanScheduler` gives the same graph. Fail-fast matches
- * `Effect.forEach`'s default and the scheduler's halt rule — with the
- * ownership caveat: what a failure interrupts is each sibling's JOIN, not the
- * node execution itself, which the interpretation owns and interrupts when
- * the walk ends. A node whose execution was interrupted is evicted from the
- * memo and records nothing, so it reports as skipped rather than as a
- * phantom success.
+ * `Effect.forEach`'s default and the scheduler's halt rule. A member's failure
+ * or defect stops the members still running the way a decided `Race` stops
+ * its losers: their node executions are interrupted and the child executions
+ * they opened are cancelled, so a `Catch` around the `All` never takes its
+ * recovery path while a sibling's side effect is still dispatching. Shared
+ * work something outside the `All` also reads keeps running. A node whose
+ * execution was interrupted is evicted from the memo and records nothing, so
+ * it reports as skipped rather than as a phantom success. An `All` that is
+ * itself interrupted, because the walk parks, stops nothing.
  *
  * @private
  */
 const combine = Effect.fnUntraced(function*(
   walk: Walk,
+  node: Graph.GraphNode,
   ast: Extract<Node.Ast, { readonly _tag: "All" }>,
   children: ReadonlyArray<string>
 ) {
   const members = Object.keys(ast.nodes)
-  const values = yield* Effect.forEach(members, (_, index) => settleNode(walk, children[index]!), {
-    concurrency: "unbounded"
-  })
+  // The references and barriers the `All` also reads settle alongside its
+  // members, never before them: a member may be what releases one of them.
+  const memberIds = new Set(children)
+  const reads = KeyMaterial.dependencies(node.draft.material).filter((dependency) =>
+    !memberIds.has(dependency) && !walk.failed.has(dependency)
+  )
+  const settled = new Set<string>()
+  const values = yield* Effect.forEach(
+    [...children, ...reads],
+    (id) =>
+      settleNode(walk, id).pipe(
+        Effect.onExit((exit) =>
+          Effect.sync(() => {
+            if (Exit.isSuccess(exit) || !Cause.hasInterruptsOnly(exit.cause)) settled.add(id)
+          })
+        )
+      ),
+    { concurrency: "unbounded" }
+  ).pipe(
+    Effect.onError((cause) =>
+      Cause.hasInterruptsOnly(cause) ? Effect.void : Effect.uninterruptible(
+        stopLosers(walk, node.id, children.filter((id) => !settled.has(id)), [], undefined)
+      )
+    )
+  )
   return dataRecord(members.map((member, index) => [member, values[index]]))
 })
 

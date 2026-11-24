@@ -33,8 +33,8 @@
  * @slop
  */
 export * from "./Canonical.ts"
-export { CanonicalError, canonicalize } from "./Serializer.ts"
-export type { CanonicalErrorCode } from "./Serializer.ts"
+export { CanonicalError, canonicalize, nativeBrand } from "./Serializer.ts"
+export type { CanonicalErrorCode, NativeBrand } from "./Serializer.ts"
 
 /**
  * Copies a value with every `Set` and `Map` in sorted order, so equal

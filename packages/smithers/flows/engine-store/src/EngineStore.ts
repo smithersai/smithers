@@ -605,6 +605,9 @@ const openStore = Effect.fnUntraced(function*(options: Options) {
   const wakeBus = Option.getOrElse(providedWakeBus, WakeBus.makeUnsafe)
 
   const engine = yield* Deferred.make<FlowRuntime.FlowRuntime["Service"]>()
+  // The driver's sweep fires due clocks through the clock persistence, which
+  // is built from the driver; the sweep's first tick is a heartbeat away.
+  const clocks = yield* Deferred.make<DeferredPersistence.Service>()
   const driver = yield* RunDriver.make({
     owner,
     journalSource: options.journalSource,
@@ -612,6 +615,8 @@ const openStore = Effect.fnUntraced(function*(options: Options) {
     canExecute: options.canExecute,
     canActivate: options.canActivate,
     requestResume: options.requestResume,
+    fireDueClocks: (flowName, executionId) =>
+      Effect.flatMap(Deferred.await(clocks), (service) => service.fireDue(flowName, executionId)),
     engine: Deferred.await(engine),
     wakeBus,
     sweep: options.sweep,
@@ -628,6 +633,7 @@ const openStore = Effect.fnUntraced(function*(options: Options) {
       driver.scheduleResume(flowName, executionId, reason, sourceId),
     fireRetryPolicy: options.clockFireRetryPolicy
   })
+  yield* Deferred.succeed(clocks, deferred)
   return {
     options,
     host,

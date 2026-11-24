@@ -146,6 +146,17 @@ describe("index rows that are not review policies", () => {
 })
 
 describe("the proposed checks of a changed policy", () => {
+  it("reviews a changed VibeLang package declaration with the proposed-policy check", async () => {
+    const base = {
+      [indexPath]: index(row("//:security", "LlmLint", policy("trusted rubric"))),
+      "pkg/PACKAGE.vibe": "old"
+    }
+    const head = { ...base, "pkg/PACKAGE.vibe": "new" }
+    const prepared = await prepareSource(memorySource({ base, head }).source, selection)
+    expect(prepared.policyChanges).toEqual(["pkg/PACKAGE.vibe"])
+    expect(prepared.policies.map(({ label }) => label)).toContain("//:proposed-security-policy")
+  })
+
   it("review only usable trusted-scope paths the proposed globs select, on the trusted context window", async () => {
     const trustedPolicy = policy("trusted rubric", { contextTokens: 40_000 })
     const proposedPolicy = policy("narrow rubric", {

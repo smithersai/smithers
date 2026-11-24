@@ -29,8 +29,10 @@ import * as ChildProcess from "effect/process/ChildProcess"
 import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 import * as Schedule from "effect/Schedule"
 import * as Schema from "effect/Schema"
+import * as Semaphore from "effect/Semaphore"
+import * as Stream from "effect/Stream"
+import { writeJson } from "./internal/AtomicFile.ts"
 import type { Repository } from "./JjRepository.ts"
-import type { FixBrief } from "./Policy.ts"
 import type { Answer } from "./Services.ts"
 import { Fixer, Unavailable } from "./Services.ts"
 
@@ -68,6 +70,8 @@ export interface Options {
   readonly poll: Duration.Input
 }
 
+const decodeRevision = Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Struct({ rev: Schema.Natural })))
+
 const unavailable = (detail: string) => new Unavailable({ service: "fixer", detail })
 
 /**
@@ -84,7 +88,8 @@ export const layer = (options: Options): Layer.Layer<Fixer, never, ChildProcessS
       const fs = yield* FileSystem.FileSystem
       const scope = yield* Effect.scope
       const agents = new Map<string, { failures: string; readonly fiber: Fiber.Fiber<void> }>()
-      const registered = new Set<string>()
+      const reconcileLock = yield* Semaphore.make(1)
+      let registrations = new Map<string, boolean>()
 
       const name = (id: number, attempt: number): string => `${id}-${attempt}`
       const briefPath = (key: string): string => `${options.directory}/${key}.brief.json`
@@ -97,10 +102,14 @@ export const layer = (options: Options): Layer.Layer<Fixer, never, ChildProcessS
           yield* Effect.scoped(
             Effect.flatMap(
               spawner.spawn(ChildProcess.make(command, args, cwd === undefined ? {} : { cwd })),
-              (handle) => handle.exitCode
+              (handle) =>
+                Effect.all([handle.exitCode, Stream.runDrain(handle.stdout), Stream.runDrain(handle.stderr)], {
+                  concurrency: "unbounded",
+                  discard: true
+                })
             )
           )
-        }).pipe(Effect.ignore, Effect.ensuring(Effect.sync(() => agents.delete(key))))
+        }).pipe(Effect.ignore)
 
       /** The answer the agent wrote, if it wrote one that reads as an answer. */
       const written = (key: string) =>
@@ -116,10 +125,12 @@ export const layer = (options: Options): Layer.Layer<Fixer, never, ChildProcessS
           const key = name(id, attempt)
           const answer = yield* written(key)
           if (answer === undefined || answer._tag === "gaveUp") return answer
-          if (!registered.has(key)) {
-            const brief = JSON.parse(yield* fs.readFileString(briefPath(key))) as FixBrief
+          if (registrations.get(key) !== true) {
+            const brief = yield* decodeRevision(yield* fs.readFileString(briefPath(key))).pipe(
+              Effect.mapError((error) => unavailable(error.message))
+            )
             yield* options.repository.register({ id, rev: brief.rev + 1 }, answer.commit)
-            registered.add(key)
+            if (registrations.has(key)) registrations.set(key, true)
           }
           return { _tag: "fixed" } as const
         }).pipe(Effect.catchTag("PlatformError", (error) => Effect.fail(unavailable(error.message))))
@@ -127,8 +138,10 @@ export const layer = (options: Options): Layer.Layer<Fixer, never, ChildProcessS
       return Fixer.of({
         reconcile: (briefs) =>
           Effect.gen(function*() {
+            const wanted = new Set(briefs.map((brief) => name(brief.id, brief.attempt)))
+            registrations = new Map([...wanted].map((key) => [key, registrations.get(key) ?? false]))
             for (const [key, running] of agents) {
-              if (briefs.some((brief) => name(brief.id, brief.attempt) === key)) continue
+              if (wanted.has(key) && running.fiber.pollUnsafe() === undefined) continue
               agents.delete(key)
               yield* Fiber.interrupt(running.fiber)
             }
@@ -137,7 +150,7 @@ export const layer = (options: Options): Layer.Layer<Fixer, never, ChildProcessS
               const failures = brief.failures.join("+")
               const running = agents.get(key)
               if (running?.failures === failures) continue
-              yield* fs.writeFileString(briefPath(key), JSON.stringify(brief) + "\n")
+              yield* writeJson(fs, briefPath(key), brief)
               if (running !== undefined) {
                 running.failures = failures
                 continue
@@ -146,15 +159,20 @@ export const layer = (options: Options): Layer.Layer<Fixer, never, ChildProcessS
               if (answered !== undefined) continue
               agents.set(key, { failures, fiber: yield* Effect.forkIn(agent(key), scope) })
             }
-          }).pipe(Effect.catchTag("PlatformError", (error) => Effect.fail(unavailable(error.message)))),
-        answer: read,
+          }).pipe(
+            Semaphore.withPermit(reconcileLock),
+            Effect.catchTag("PlatformError", (error) => Effect.fail(unavailable(error.message)))
+          ),
+        answer: (id, attempt) => Semaphore.withPermit(reconcileLock, read(id, attempt)),
         wait: (pending) =>
-          Effect.forEach(pending, (entry) => written(name(entry.id, entry.attempt))).pipe(
-            Effect.map((found) => found.some((answer) => answer !== undefined)),
-            Effect.orElseSucceed(() => false),
-            Effect.repeat({ until: (news) => news, schedule: Schedule.spaced(options.poll) }),
-            Effect.asVoid
-          )
+          pending.length === 0 ?
+            Effect.void :
+            Effect.forEach(pending, (entry) => written(name(entry.id, entry.attempt))).pipe(
+              Effect.map((found) => found.some((answer) => answer !== undefined)),
+              Effect.orElseSucceed(() => false),
+              Effect.repeat({ until: (news) => news, schedule: Schedule.spaced(options.poll) }),
+              Effect.asVoid
+            )
       })
     })
   )

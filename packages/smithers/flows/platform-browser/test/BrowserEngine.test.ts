@@ -36,6 +36,7 @@ const setup = (run: Engines.Steps = Engines.steps()) =>
 describe("BrowserEngine", () => {
   it.live("reports synchronous worker construction failure through EngineUnavailable", () =>
     Effect.gen(function*() {
+      const posted: Array<unknown> = []
       const engine = yield* BrowserEngine.make({
         name: Engines.name(),
         worker: () => {
@@ -44,7 +45,14 @@ describe("BrowserEngine", () => {
       }).pipe(
         Effect.provide(
           Layer.mergeAll(
-            TabChannel.layer,
+            Layer.succeed(TabChannel.TabChannel)(TabChannel.make((name) =>
+              new class extends BroadcastChannel {
+                override postMessage(message: unknown) {
+                  posted.push(message)
+                  super.postMessage(message)
+                }
+              }(name)
+            )),
             Layer.succeed(StoragePersistence.StoragePersistence)(
               StoragePersistence.make({ persist: () => Promise.resolve(true) })
             )
@@ -53,6 +61,7 @@ describe("BrowserEngine", () => {
       )
       expect(yield* engine.unavailable).toMatchObject({ reason: "worker-failed", error: "TypeError" })
       expect(yield* Effect.flip(engine.cancel(Steps, "never"))).toMatchObject({ reason: "worker-failed" })
+      expect(posted).toEqual([])
     }).pipe(Effect.scoped))
 
   it.live("starts a run, returns once it is recorded, and waits for its result", () =>

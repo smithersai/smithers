@@ -42,7 +42,11 @@ describe("@smthrs/canonical deep fuzz invariants (sortCollections, BoundedJson, 
           Effect.sync(() => {
             const bigA = "A".repeat(longLen) + tags[0]!
             const bigB = "A".repeat(longLen) + tags[tags.length - 1]!
-            const shared = { shared: true, bytes: new Uint8Array([seedNum & 0xff, 1, 2]), view: new DataView(new ArrayBuffer(4)) }
+            const shared = {
+              shared: true,
+              bytes: new Uint8Array([seedNum & 0xff, 1, 2]),
+              view: new DataView(new ArrayBuffer(4))
+            }
             const cyclicA: Record<string, unknown> = { tag: "cyc", n: seedNum }
             const cyclicB: Record<string, unknown> = { tag: "cyc", n: seedNum + 1 }
             if (withCycle) {
@@ -65,7 +69,19 @@ describe("@smthrs/canonical deep fuzz invariants (sortCollections, BoundedJson, 
                 case 5:
                   return Symbol.for(`sym.${t}`)
                 case 6:
-                  return new Set<unknown>([bigB, bigA, shared, null, undefined, NaN, -0, Infinity, -Infinity, true, false])
+                  return new Set<unknown>([
+                    bigB,
+                    bigA,
+                    shared,
+                    null,
+                    undefined,
+                    NaN,
+                    -0,
+                    Infinity,
+                    -Infinity,
+                    true,
+                    false
+                  ])
                 case 7: {
                   const o = Object.create(null) as Record<string, unknown>
                   o["k"] = t
@@ -208,37 +224,42 @@ describe("@smthrs/canonical deep fuzz invariants (sortCollections, BoundedJson, 
               case "depth": {
                 const r = run({ a: { b: { c: { d: 1 } } } })
                 expect(r.ok).toBe(false)
-                if (!r.ok) if ("code" in r) expect(r.code).toBe("depth")
+                if (!r.ok) { if ("code" in r) expect(r.code).toBe("depth") }
                 break
               }
               case "nodes": {
                 const r = run([[1, 2, 3], [4, 5, 6], [7, 8, 9]])
                 expect(r.ok).toBe(false)
-                if (!r.ok) if ("code" in r) expect(["nodes", "members", "bytes"]).toContain(r.code)
+                if (!r.ok) { if ("code" in r) expect(["nodes", "members", "bytes"]).toContain(r.code) }
                 break
               }
               case "bytes": {
-                const r = run({ a: "12345678901234567890", b: "12345678901234567890", c: "12345678901234567890", d: "12345678901234567890" })
+                const r = run({
+                  a: "12345678901234567890",
+                  b: "12345678901234567890",
+                  c: "12345678901234567890",
+                  d: "12345678901234567890"
+                })
                 expect(r.ok).toBe(false)
-                if (!r.ok) if ("code" in r) expect(r.code).toBe("bytes")
+                if (!r.ok) { if ("code" in r) expect(r.code).toBe("bytes") }
                 break
               }
               case "members": {
                 const r = run({ a: 1, b: 2, c: 3, d: 4, e: 5 })
                 expect(r.ok).toBe(false)
-                if (!r.ok) if ("code" in r) expect(r.code).toBe("members")
+                if (!r.ok) { if ("code" in r) expect(r.code).toBe("members") }
                 break
               }
               case "totalMembers": {
                 const r = BoundedJson.admit({ a: [1, 2, 3], b: [4, 5, 6] }, { ...limits, maxTotalMembers: 4 })
                 expect(r.ok).toBe(false)
-                if (!r.ok) if ("code" in r) expect(r.code).toBe("members")
+                if (!r.ok) { if ("code" in r) expect(r.code).toBe("members") }
                 break
               }
               case "keyLong": {
                 const r = run({ ["k".repeat(32)]: 1 })
                 expect(r.ok).toBe(false)
-                if (!r.ok) if ("code" in r) expect(r.code).toBe("key")
+                if (!r.ok) { if ("code" in r) expect(r.code).toBe("key") }
                 break
               }
               case "keyReserved": {
@@ -246,7 +267,7 @@ describe("@smthrs/canonical deep fuzz invariants (sortCollections, BoundedJson, 
                 obj["__proto__"] = 1
                 const r = BoundedJson.admitStrict({ constructor: 1 }, limits, { boundedText, ordinaryRecords })
                 expect(r.ok).toBe(false)
-                if (!r.ok) if ("code" in r) expect(r.code).toBe("key")
+                if (!r.ok) { if ("code" in r) expect(r.code).toBe("key") }
                 const r2 = run(obj)
                 if (strict) expect(r2.ok).toBe(false)
                 break
@@ -254,25 +275,25 @@ describe("@smthrs/canonical deep fuzz invariants (sortCollections, BoundedJson, 
               case "keySurrogate": {
                 const r = run({ ["bad\uD800key"]: 1 })
                 expect(r.ok).toBe(false)
-                if (!r.ok) if ("code" in r) expect(r.code).toBe("key")
+                if (!r.ok) { if ("code" in r) expect(r.code).toBe("key") }
                 break
               }
               case "stringLong": {
                 const r = run({ s: "x".repeat(40) })
                 expect(r.ok).toBe(false)
-                if (!r.ok) if ("code" in r) expect(r.code).toBe("string")
+                if (!r.ok) { if ("code" in r) expect(r.code).toBe("string") }
                 break
               }
               case "stringSurrogate": {
                 const r = run({ s: "hi\uDC00there" })
                 expect(r.ok).toBe(false)
-                if (!r.ok) if ("code" in r) expect(r.code).toBe("string")
+                if (!r.ok) { if ("code" in r) expect(r.code).toBe("string") }
                 break
               }
               case "nonFinite": {
                 const r = run({ n: Number.NaN })
                 expect(r.ok).toBe(false)
-                if (!r.ok) if ("code" in r) expect(r.code).toBe("number")
+                if (!r.ok) { if ("code" in r) expect(r.code).toBe("number") }
                 break
               }
               case "arrayExtra": {
@@ -281,7 +302,7 @@ describe("@smthrs/canonical deep fuzz invariants (sortCollections, BoundedJson, 
                 const r = run(arr)
                 if (strict) {
                   expect(r.ok).toBe(false)
-                  if (!r.ok) if ("code" in r) expect(r.code).toBe("arrayExtra")
+                  if (!r.ok) { if ("code" in r) expect(r.code).toBe("arrayExtra") }
                 }
                 break
               }
@@ -290,7 +311,7 @@ describe("@smthrs/canonical deep fuzz invariants (sortCollections, BoundedJson, 
                 arr[1] = 1
                 const r = run(arr)
                 expect(r.ok).toBe(false)
-                if (!r.ok) if ("code" in r) expect(["arrayExtra", "arrayMember"]).toContain(r.code)
+                if (!r.ok) { if ("code" in r) expect(["arrayExtra", "arrayMember"]).toContain(r.code) }
                 break
               }
               case "arrayAccessor": {
@@ -298,14 +319,14 @@ describe("@smthrs/canonical deep fuzz invariants (sortCollections, BoundedJson, 
                 Object.defineProperty(arr, "0", { enumerable: true, get: () => 1 })
                 const r = run(arr)
                 expect(r.ok).toBe(false)
-                if (!r.ok) if ("code" in r) expect(r.code).toBe("arrayMember")
+                if (!r.ok) { if ("code" in r) expect(r.code).toBe("arrayMember") }
                 break
               }
               case "symbolKey": {
                 const obj: Record<PropertyKey, unknown> = { [Symbol("s")]: 1 }
                 const r = run(obj)
                 expect(r.ok).toBe(false)
-                if (!r.ok) if ("code" in r) expect(r.code).toBe("symbol")
+                if (!r.ok) { if ("code" in r) expect(r.code).toBe("symbol") }
                 break
               }
               case "accessorProp": {
@@ -313,7 +334,7 @@ describe("@smthrs/canonical deep fuzz invariants (sortCollections, BoundedJson, 
                 Object.defineProperty(obj, "a", { enumerable: true, get: () => 1 })
                 const r = run(obj)
                 expect(r.ok).toBe(false)
-                if (!r.ok) if ("code" in r) expect(r.code).toBe("accessor")
+                if (!r.ok) { if ("code" in r) expect(r.code).toBe("accessor") }
                 const nonEnum = {}
                 Object.defineProperty(nonEnum, "hidden", { enumerable: false, value: 1 })
                 const r2 = run(nonEnum)
@@ -324,7 +345,7 @@ describe("@smthrs/canonical deep fuzz invariants (sortCollections, BoundedJson, 
               case "nonPlain": {
                 const r = run(new Date())
                 expect(r.ok).toBe(false)
-                if (!r.ok) if ("code" in r) expect(r.code).toBe("object")
+                if (!r.ok) { if ("code" in r) expect(r.code).toBe("object") }
                 break
               }
               case "cycle": {
@@ -332,7 +353,7 @@ describe("@smthrs/canonical deep fuzz invariants (sortCollections, BoundedJson, 
                 cyc["self"] = cyc
                 const r = run(cyc)
                 expect(r.ok).toBe(false)
-                if (!r.ok) if ("code" in r) expect(r.code).toBe("cycle")
+                if (!r.ok) { if ("code" in r) expect(r.code).toBe("cycle") }
                 break
               }
               case "proxyThrow": {
@@ -346,7 +367,7 @@ describe("@smthrs/canonical deep fuzz invariants (sortCollections, BoundedJson, 
                 )
                 const r = run(p)
                 expect(r.ok).toBe(false)
-                if (!r.ok) if ("code" in r) expect(r.code).toBe("inspection")
+                if (!r.ok) { if ("code" in r) expect(r.code).toBe("inspection") }
                 break
               }
               case "utf8Escapes": {
@@ -371,7 +392,18 @@ describe("@smthrs/canonical deep fuzz invariants (sortCollections, BoundedJson, 
   it("canonicalize edge errors and IssuePath.firstPath formatting invariants", async () => {
     const arb = Arbitrary.schema(
       Schema.Struct({
-        kind: Schema.Literals(["cycle", "nan", "inf", "bigint", "symbol", "fn", "surrogate", "undefProp", "arrayUndef", "issuePath"]),
+        kind: Schema.Literals([
+          "cycle",
+          "nan",
+          "inf",
+          "bigint",
+          "symbol",
+          "fn",
+          "surrogate",
+          "undefProp",
+          "arrayUndef",
+          "issuePath"
+        ]),
         key: Schema.Literals(["alpha", "0", "a.b", "nested"])
       })
     )
@@ -417,24 +449,23 @@ describe("@smthrs/canonical deep fuzz invariants (sortCollections, BoundedJson, 
               return true
             }
 
-            const bad: unknown =
-              kind === "cycle"
-                ? (() => {
-                  const o: Record<string, unknown> = {}
-                  o["self"] = o
-                  return o
-                })()
-                : kind === "nan"
-                ? Number.NaN
-                : kind === "inf"
-                ? Number.POSITIVE_INFINITY
-                : kind === "bigint"
-                ? 1n
-                : kind === "symbol"
-                ? Symbol("x")
-                : kind === "fn"
-                ? () => 1
-                : "bad\uD800"
+            const bad: unknown = kind === "cycle"
+              ? (() => {
+                const o: Record<string, unknown> = {}
+                o["self"] = o
+                return o
+              })()
+              : kind === "nan"
+              ? Number.NaN
+              : kind === "inf"
+              ? Number.POSITIVE_INFINITY
+              : kind === "bigint"
+              ? 1n
+              : kind === "symbol"
+              ? Symbol("x")
+              : kind === "fn"
+              ? () => 1
+              : "bad\uD800"
             expect(() => canonicalize(bad)).toThrow(CanonicalError)
             return true
           }),

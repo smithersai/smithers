@@ -96,11 +96,29 @@ export type Intent = typeof Intent.Type
  * @since 1.0.0
  */
 export interface Storage<R = never> {
+  /** Runs a storage-only transition in the adapter's native transaction. */
+  readonly transaction?: <A>(body: (storage: Storage<R>) => Effect.Effect<A, never, R>) => Effect.Effect<A, unknown, R>
   readonly get: <A = unknown>(key: string) => Effect.Effect<A | undefined, never, R>
   readonly put: <A>(key: string, value: A) => Effect.Effect<void, never, R>
   readonly delete: (key: string) => Effect.Effect<boolean, never, R>
   readonly setAlarm: (scheduledTime: number) => Effect.Effect<void, never, R>
   readonly deleteAlarm: () => Effect.Effect<void, never, R>
+}
+
+// Older adapters expose only individual operations. Serialize their transitions and
+// order writes so an isolate loss cannot leave a published intent without a wake.
+const storageGates = new WeakMap<object, Semaphore.Semaphore>()
+const atomic = <A, R>(storage: Storage<R>, body: (storage: Storage<R>) => Effect.Effect<A, never, R>) => {
+  let gate = storageGates.get(storage)
+  if (gate === undefined) {
+    gate = Semaphore.makeUnsafe(1)
+    storageGates.set(storage, gate)
+  }
+  return gate.withPermit(
+    storage.transaction === undefined
+      ? Effect.uninterruptible(body(storage))
+      : storage.transaction(body).pipe(Effect.orDie)
+  )
 }
 
 /**
@@ -481,21 +499,34 @@ export const start = <A, E, R, RS>(
     const requestedAtMs = value.requestedAtMs ?? (yield* Clock.currentTimeMillis)
     yield* Effect.logInfo("cloudflare.execution.request").pipe(Effect.annotateLogs({ ...ids, requestedAtMs }))
     const next = stored(value)
-    const previous = yield* storage.get<string>(intentKey)
-    if (previous !== undefined && storedIdentity(previous) !== identity(value)) {
+    const admission = yield* atomic(storage, (storage) =>
+      Effect.gen(function*() {
+        const previous = yield* storage.get<string>(intentKey)
+        if (previous !== undefined && storedIdentity(previous) !== identity(value)) return "conflict" as const
+        yield* storage.setAlarm((yield* Clock.currentTimeMillis) + (previous === undefined ? startGraceMs : 0))
+        if (previous === undefined) {
+          yield* storage.delete(settledKey)
+          yield* storage.delete(reportedKey)
+          yield* storage.delete(failuresKey)
+          yield* storage.put(intentKey, next)
+        }
+        return previous === undefined ? "accepted" as const : "duplicate" as const
+      }))
+    if (admission === "conflict") {
       yield* Effect.annotateCurrentSpan({ "smithers.execution.start": "conflict" })
       yield* Metric.update(Metric.withAttributes(starts, { outcome: "conflict" }), 1)
-      yield* Effect.logWarning("cloudflare.execution.start").pipe(Effect.annotateLogs({ ...ids, outcome: "conflict" }))
+      yield* Effect.logWarning("cloudflare.execution.start").pipe(
+        Effect.annotateLogs({ ...ids, outcome: "conflict" })
+      )
       return yield* new IntentConflict({
         executionId: value.executionId,
         message: `Execution ${value.executionId} already holds a different intent`
       })
     }
-    if (previous === undefined) yield* storage.put(intentKey, next)
-    yield* storage.setAlarm((yield* Clock.currentTimeMillis) + (previous === undefined ? startGraceMs : 0))
+
     const exit = yield* Effect.exit(effect)
     if (Exit.isSuccess(exit)) yield* storage.setAlarm(yield* Clock.currentTimeMillis)
-    const outcome = Exit.isFailure(exit) ? "failed" : previous === undefined ? "accepted" : "duplicate"
+    const outcome = Exit.isFailure(exit) ? "failed" : admission
     yield* Effect.annotateCurrentSpan({ "smithers.execution.start": outcome })
     yield* Metric.update(Metric.withAttributes(starts, { outcome }), 1)
     yield* (Exit.isFailure(exit)
@@ -541,11 +572,14 @@ export const wake = <RS>(storage: Storage<RS>): Effect.Effect<boolean, never, RS
 
 /**
  * A flow this object was not given. The stored intent names it, so the alarm
- * retries with backoff until a deploy that registers it again.
+ * records a terminal admission failure.
  */
 class UnknownFlow extends Schema.TaggedError<UnknownFlow>()("@smthrs/platform-cloudflare/UnknownFlow", {
   flow: Schema.String
 }) {}
+
+/** Stored intent or unadmitted payload failed schema validation. */
+class InvalidIntent extends Schema.TaggedError<InvalidIntent>()("@smthrs/platform-cloudflare/InvalidIntent", {}) {}
 
 /**
  * The drive stopped with work still due now: the runtime would not claim the
@@ -558,6 +592,7 @@ class Undriven extends Schema.TaggedError<Undriven>()("@smthrs/platform-cloudfla
 /** The short admission/cancellation critical section of one object incarnation. */
 class AdmissionControl extends Context.Service<AdmissionControl, {
   readonly gate: Semaphore.Semaphore
+  readonly deactivate: Effect.Effect<void>
   readonly activate: (cancel: Effect.Effect<void, FlowRuntime.CancelRequestFailed>) => void
   readonly allowed: (value: Intent) => Effect.Effect<boolean>
 }>()("@smthrs/platform-cloudflare/AdmissionControl") {}
@@ -604,7 +639,7 @@ const drive = <RS>(storage: Storage<RS>, flow: Flow.Any, value: Intent, budgetMs
       if (!held) {
         const payload = yield* (Schema.decodeUnknownEffect(Schema.toCodecJson(flow.payloadSchema))(
           value.payload
-        ) as Effect.Effect<object, Schema.SchemaError>)
+        ) as Effect.Effect<object, Schema.SchemaError>).pipe(Effect.mapError(() => new InvalidIntent()))
         const admission = (yield* EngineStore.Driver).admit(flow, { executionId: value.executionId, payload })
         yield* value.origin === undefined ? admission : RunMetrics.withOrigin(admission, value.origin)
       }
@@ -812,7 +847,8 @@ const backoff = (attempt: number): number => Option.getOrThrow(RetryPolicy.nextD
  * The handler must be idempotent: an alarm that dies after it ran hands it
  * the settlement again.
  *
- * Any failure, a router call's included, re-arms the alarm with the backoff
+ * A malformed intent, invalid admission payload or unknown flow is retained as a terminal settlement.
+ * A transient failure, a router call's included, re-arms the alarm with the backoff
  * and returns `Retrying`, so the alarm never fails and Cloudflare's own retry
  * limit never drops an execution. The failure is logged by its tag, and a
  * failed schema migration by its cause as well (`Outcome`'s `detail`).
@@ -827,7 +863,7 @@ const backoff = (attempt: number): number => Option.getOrThrow(RetryPolicy.nextD
  * what the drive left (`route_ms`), each once the alarm got that far.
  *
  * `flows` lists the declarations this object may run; an intent naming
- * another flow is a failure like any other. Every object routes executions
+ * another flow fails admission permanently. Every object routes executions
  * to objects of the same class, so `flows` lists every flow an execution may
  * start as a child or hand off to.
  *
@@ -890,6 +926,15 @@ export const alarm = <E, R, RS, RE = never, RR = never, RT = never>(
     return outcome
   }).pipe(Effect.withSpan("cloudflare.execution.alarm"))
 
+const armWatchdog = <R>(storage: Storage<R>) =>
+  atomic(storage, (storage) =>
+    Effect.gen(function*() {
+      const attempt = ((yield* storage.get<number>(failuresKey)) ?? 0) + 1
+      yield* storage.setAlarm((yield* Clock.currentTimeMillis) + backoff(attempt))
+      yield* storage.put(failuresKey, attempt)
+      return attempt
+    }))
+
 /** What one {@link alarm} does with the stored intent `raw`, before it records the outcome. */
 const settleOrDrive = <E, R, RS, RE, RR, RT>(
   storage: Storage<RS>,
@@ -907,7 +952,10 @@ const settleOrDrive = <E, R, RS, RE, RR, RT>(
 ): Effect.Effect<Outcome, never, R | RS | RR | RT> =>
   Effect.gen(function*() {
     if (raw === undefined) {
-      yield* storage.deleteAlarm()
+      yield* atomic(storage, (storage) =>
+        Effect.gen(function*() {
+          if ((yield* storage.get(intentKey)) === undefined) yield* storage.deleteAlarm()
+        }))
       return { _tag: "Idle" } as const
     }
     const retain = options.settledRetentionMs ?? settledRetentionMs
@@ -916,16 +964,15 @@ const settleOrDrive = <E, R, RS, RE, RR, RT>(
       return yield* afterSettlement(storage, raw, settledAt + retain, retain, options.settled)
     }
     const routerContext = yield* Effect.context<RR>()
-    const attempt = ((yield* storage.get<number>(failuresKey)) ?? 0) + 1
-    yield* storage.put(failuresKey, attempt)
-    yield* storage.setAlarm((yield* Clock.currentTimeMillis) + backoff(attempt))
+    const attempt = yield* armWatchdog(storage)
     const [outcome, failedStatement] = yield* FailureDetail.withFailedStatement(Effect.gen(function*() {
-      const value = yield* decodeIntent(raw)
+      const value = yield* decodeIntent(raw).pipe(Effect.mapError(() => new InvalidIntent()))
       const flow = options.flows.find((candidate) => candidate._tag === value.flow)
       if (flow === undefined) return yield* new UnknownFlow({ flow: value.flow })
       // Building the runtime is the layer's acquisition, which `Effect.provide` runs before the body: the ready line
       // says how long it took, so a slow start shows whether the runtime or the drive held it.
       const buildingAtMs = yield* Clock.currentTimeMillis
+      const control = yield* Effect.serviceOption(AdmissionControl)
       return yield* Effect.gen(function*() {
         const readyAtMs = yield* Clock.currentTimeMillis
         timing.buildMs = readyAtMs - buildingAtMs
@@ -946,15 +993,21 @@ const settleOrDrive = <E, R, RS, RE, RR, RT>(
         timing.routeMs = (yield* Clock.currentTimeMillis) - routingAtMs
         // The next round this object keeps: it replaces the settled round's intent and runs at the next alarm.
         if (driven._tag === "Settled" && here !== undefined) {
-          yield* storage.put(intentKey, stored(here))
-          yield* storage.delete(settledKey)
-          yield* storage.setAlarm(yield* Clock.currentTimeMillis)
+          yield* atomic(storage, (storage) =>
+            Effect.gen(function*() {
+              yield* storage.setAlarm(yield* Clock.currentTimeMillis)
+              yield* storage.delete(settledKey)
+              yield* storage.put(intentKey, stored(here))
+            }))
           return { _tag: "Continued", executionId: here.executionId } as const
         }
         if (driven._tag === "Settled") {
           const now = yield* Clock.currentTimeMillis
-          yield* storage.put(settledKey, now)
-          yield* storage.setAlarm(now + retain)
+          yield* atomic(storage, (storage) =>
+            Effect.gen(function*() {
+              yield* storage.put(settledKey, now)
+              yield* storage.setAlarm(now + retain)
+            }))
           return { _tag: "Settled", forgetAtMs: now + retain } as const
         }
         // A yielded run has work due now: the next alarm goes on at once.
@@ -964,16 +1017,33 @@ const settleOrDrive = <E, R, RS, RE, RR, RT>(
         }
         return { _tag: "Parked", wakeAtMs: yield* arm(storage, value.executionId, driven.wakeAtMs ?? null) } as const
       }).pipe(
+        Effect.flatMap((result) =>
+          Effect.gen(function*() {
+            yield* storage.delete(failuresKey)
+            return result._tag === "Settled" && options.settled !== undefined
+              ? yield* afterSettlement(storage, raw, result.forgetAtMs, retain, options.settled)
+              : result
+          })
+        ),
+        Effect.ensuring(Option.isSome(control) ? control.value.deactivate : Effect.void),
         Effect.provide(options.runtime(value)),
         Effect.provideService(WakeBus.Admitted, admitted(options.router, routerContext))
       )
     }))
-    if (Exit.isSuccess(outcome)) {
-      yield* storage.delete(failuresKey)
-      // The run settled in this alarm: its handler takes the settlement now, not an alarm later.
-      return outcome.value._tag === "Settled" && options.settled !== undefined
-        ? yield* afterSettlement(storage, raw, outcome.value.forgetAtMs, retain, options.settled)
-        : outcome.value
+    if (Exit.isSuccess(outcome)) return outcome.value
+    const failure = RetryPolicy.failureType(outcome.cause)
+    if (
+      failure === "@smthrs/platform-cloudflare/UnknownFlow" || failure === "@smthrs/platform-cloudflare/InvalidIntent"
+    ) {
+      const now = yield* Clock.currentTimeMillis
+      yield* atomic(storage, (storage) =>
+        Effect.gen(function*() {
+          yield* storage.put(settledKey, now)
+          yield* storage.delete(failuresKey)
+          yield* storage.setAlarm(now + retain)
+        }))
+      yield* Effect.logError("cloudflare.execution.poisoned").pipe(Effect.annotateLogs({ "error.type": failure }))
+      return yield* afterSettlement(storage, raw, now + retain, retain, options.settled)
     }
     const retryAtMs = (yield* Clock.currentTimeMillis) + backoff(attempt)
     yield* storage.setAlarm(retryAtMs)
@@ -1018,14 +1088,21 @@ const afterSettlement = <RS, RT>(
       until = reportedAt + retain
     }
     if ((yield* Clock.currentTimeMillis) < until) {
-      yield* storage.setAlarm(until)
+      yield* atomic(storage, (storage) =>
+        Effect.gen(function*() {
+          if ((yield* storage.get(intentKey)) === raw) yield* storage.setAlarm(until)
+        }))
       return { _tag: "Settled", forgetAtMs: until } as const
     }
-    yield* storage.delete(intentKey)
-    yield* storage.delete(failuresKey)
-    yield* storage.delete(settledKey)
-    yield* storage.delete(reportedKey)
-    yield* storage.deleteAlarm()
+    yield* atomic(storage, (storage) =>
+      Effect.gen(function*() {
+        if ((yield* storage.get(intentKey)) !== raw) return
+        yield* storage.delete(intentKey)
+        yield* storage.delete(failuresKey)
+        yield* storage.delete(settledKey)
+        yield* storage.delete(reportedKey)
+        yield* storage.deleteAlarm()
+      }))
     return { _tag: "Forgotten" } as const
   })
 
@@ -1045,9 +1122,7 @@ const report = <RS, RT>(
   Effect.gen(function*() {
     const value = yield* Effect.option(decodeIntent(raw))
     if (Option.isSome(value)) {
-      const attempt = ((yield* storage.get<number>(failuresKey)) ?? 0) + 1
-      yield* storage.put(failuresKey, attempt)
-      yield* storage.setAlarm((yield* Clock.currentTimeMillis) + backoff(attempt))
+      const attempt = yield* armWatchdog(storage)
       const exit = yield* Effect.exit(settled(value.value.executionId))
       if (Exit.isFailure(exit)) {
         const retryAtMs = (yield* Clock.currentTimeMillis) + backoff(attempt)
@@ -1102,8 +1177,12 @@ export const make = <E, R, RS, RE = never, RR = never, RA = never, RT = never>(s
     wake: () => wake(storage),
     cancel: () =>
       gate.withPermit(Effect.gen(function*() {
-        yield* storage.put(cancelledKey, yield* Clock.currentTimeMillis)
-        yield* storage.setAlarm(yield* Clock.currentTimeMillis)
+        yield* atomic(storage, (storage) =>
+          Effect.gen(function*() {
+            const now = yield* Clock.currentTimeMillis
+            yield* storage.setAlarm(now)
+            yield* storage.put(cancelledKey, now)
+          }))
         // An alarm that parks while the request commits deletes the alarm above and may read the
         // store before the commit: arming again after the request keeps the wake `arm` relies on.
         if (active !== undefined) {
@@ -1134,6 +1213,9 @@ export const make = <E, R, RS, RE = never, RR = never, RA = never, RT = never>(s
           alarm(storage, options).pipe(
             Effect.provideService(AdmissionControl, {
               gate,
+              deactivate: gate.withPermit(Effect.sync(() => {
+                active = undefined
+              })),
               activate: (cancel) => {
                 active = cancel
               },
@@ -1141,10 +1223,7 @@ export const make = <E, R, RS, RE = never, RR = never, RA = never, RT = never>(s
                 options.canStart === undefined ?
                   Effect.succeed(true) :
                   options.canStart(value).pipe(Effect.provide(context))
-            }),
-            Effect.ensuring(Effect.sync(() => {
-              active = undefined
-            }))
+            })
           )).pipe(Effect.tap(() => options.afterAlarm ?? Effect.void))
       )
   }

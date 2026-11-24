@@ -473,11 +473,12 @@ describe("what a step sees of the machine", () => {
       const declared: Record<string, string> = Object.fromEntries(pairs)
       const place = { home: "/replay/home/normal", tmp: "/replay/tmp", guard: "/replay/guard" }
       const seen = stepEnvironment(declared, place)
-      const own = Object.keys(declared).filter((name) => name !== "PATH" && Object.hasOwn(seen, name))
+      // The replay's home and what it tells git are never the step's to set.
+      const own = Object.keys(declared).filter((name) => !["PATH", "HOME", "GIT_CONFIG_COUNT"].includes(name) && Object.hasOwn(seen, name))
       const found = seen["PATH"] ?? ""
       return (found === place.guard || found.startsWith(`${place.guard}:`)) &&
         (declared["PATH"] === undefined || declared["PATH"] === "" ? true : found === `${place.guard}:${declared["PATH"]}`) &&
-        seen["HOME"] === (declared["HOME"] ?? place.home) &&
+        seen["HOME"] === place.home && seen["GIT_CONFIG_COUNT"] === "2" &&
         seen["GIT_TERMINAL_PROMPT"] === "0" && seen["GIT_CONFIG_KEY_1"] === "credential.helper" && seen["GIT_CONFIG_VALUE_1"] === "" &&
         own.every((name) => seen[name] === declared[name])
     }, { runs: 200, seed: 21 }))

@@ -4,6 +4,7 @@ import { PermissionRequired } from "@smthrs/capability/Permission"
 import { DatabaseError, DurableWriter, layer as writerLayer } from "@smthrs/database/DurableWriter"
 import * as NodeDatabase from "@smthrs/database/node/NodeDatabase"
 import { Journal } from "@smthrs/journal/Journal"
+import { Input, type RunId, type SourceId } from "@smthrs/journal/JournalEvent"
 import * as Migrations from "@smthrs/journal/Migrations"
 import * as SqlJournal from "@smthrs/journal/SqlJournal"
 import { Context, Effect, Fiber, Layer } from "effect"
@@ -72,6 +73,17 @@ describe("JournalGrantStore real SQL integration", () => {
       yield* (
         Effect.scoped(
           Effect.gen(function*() {
+            const history = yield* Journal
+            for (const runId of [options.runId, options.policyRunId]) {
+              yield* history.emitDurableUnfenced(
+                new Input({
+                  runId: runId as RunId,
+                  sourceId: "worker" as SourceId,
+                  eventType: "work.finished",
+                  payload: {}
+                })
+              )
+            }
             const store = yield* JournalGrantStore.make(options)
             const waiter = yield* store.check(capability).pipe(
               Effect.forkChild({ startImmediately: true })
@@ -86,11 +98,26 @@ describe("JournalGrantStore real SQL integration", () => {
       yield* (
         Effect.scoped(
           Effect.gen(function*() {
-            const replayed = yield* JournalGrantStore.make({ ...options, attended: false })
-            yield* replayed.check(capability)
             const journal = yield* Journal
+            const reads: Array<readonly [string, ReadonlyArray<string>]> = []
+            const replayed = yield* JournalGrantStore.make({ ...options, attended: false }).pipe(
+              Effect.provideService(
+                Journal,
+                Journal.of({
+                  ...journal,
+                  entries: (query) =>
+                    journal.entries(query).pipe(Effect.tap((page) =>
+                      Effect.sync(() => {
+                        reads.push([query.runId, page.entries.map((entry) => entry.eventType)])
+                      })
+                    ))
+                })
+              )
+            )
+            yield* replayed.check(capability)
+            expect(reads).toEqual([[options.policyRunId, ["flows.kernel.grant.remembered.v1"]], [options.runId, []]])
             const page = yield* journal.entries({ runId: options.policyRunId as never, limit: 10 })
-            expect(page.entries).toHaveLength(1)
+            expect(page.entries).toHaveLength(2)
           }).pipe(Effect.provide(journalLayer(filename)))
         ).pipe(Effect.provide(Workspace.layer(workspace)))
       )

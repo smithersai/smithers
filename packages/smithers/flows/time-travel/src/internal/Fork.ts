@@ -19,7 +19,7 @@ import * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
 import * as FileSystem from "effect/FileSystem"
 import * as Option from "effect/Option"
-import type * as Scope from "effect/Scope"
+import * as Scope from "effect/Scope"
 import * as EffectBoundary from "../EffectBoundary.ts"
 import type { Frame } from "../Frame.ts"
 import { error, type TimeTravelError } from "../TimeTravelError.ts"
@@ -241,6 +241,55 @@ const forgetLane = (jj: Jj, workspaceName: string, when: string): Effect.Effect<
       )
     )
   )
+
+/**
+ * The most fork lanes one scope tracks for its close.
+ *
+ * @since 1.0.0
+ * @category constants
+ */
+export const maxTrackedLanes = 256
+
+/** The lanes each scope forgets when it closes, oldest first, with the Jj that added each. */
+const lanesByScope = new WeakMap<Scope.Scope, Map<string, Jj>>()
+
+/**
+ * Hands a committed fork's lane to the enclosing scope, to be forgotten when
+ * that scope closes.
+ *
+ * A scope holds ONE finalizer however many forks it makes. Each fork used to
+ * add its own to the long-lived service scope, so a service retained a
+ * closure per fork ever made and ran that many `jj workspace forget` calls on
+ * shutdown. The lanes are also bounded: past {@link maxTrackedLanes} the
+ * oldest is forgotten at once rather than at close, so both the memory a
+ * scope holds and the work its close does stay constant.
+ */
+const trackLane = (jj: Jj, workspaceName: string): Effect.Effect<void, never, Scope.Scope> =>
+  Effect.gen(function*() {
+    const scope = yield* Effect.scope
+    let lanes = lanesByScope.get(scope)
+    if (lanes === undefined) {
+      const tracked = new Map<string, Jj>()
+      lanes = tracked
+      lanesByScope.set(scope, tracked)
+      // Newest first, the order the per-fork finalizers ran in.
+      yield* Scope.addFinalizer(
+        scope,
+        Effect.suspend(() =>
+          Effect.forEach(
+            [...tracked].reverse(),
+            ([name, owner]) => forgetLane(owner, name, "when the service scope closed"),
+            { discard: true }
+          )
+        )
+      )
+    }
+    lanes.set(workspaceName, jj)
+    if (lanes.size <= maxTrackedLanes) return
+    const [oldest, owner] = lanes.entries().next().value!
+    lanes.delete(oldest)
+    yield* forgetLane(owner, oldest, "to bound the lanes its scope tracks")
+  })
 
 /**
  * Removes a refused fork's checkout through the host's injected filesystem.
@@ -489,7 +538,7 @@ export const fork = (
        * COMMIT can finish in an uninterruptible SQL finalizer, so the store
        * call and the forget-on-close registration share one mask: an interrupt
        * that lands while the commit finishes is observed only once the
-       * committed child's lane has its finalizer. Registering it after the
+       * committed child's lane is tracked by its scope's finalizer. Registering it after the
        * commit returned let that interrupt either strand the lane with no
        * finalizer and no reservation left to reclaim it, or send a committed
        * child's lane through the refused-commit forget. Only the hook stays
@@ -514,7 +563,7 @@ export const fork = (
           Effect.tap(() =>
             options.retainWorkspace === true
               ? Effect.void
-              : Effect.addFinalizer(() => forgetLane(jj, workspaceName, "when the service scope closed"))
+              : trackLane(jj, workspaceName)
           )
         )
       )

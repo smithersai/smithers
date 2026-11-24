@@ -22,6 +22,7 @@ import * as JournalEvent from "@smthrs/journal/JournalEvent"
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
 import { error, type TimeTravelError } from "../TimeTravelError.ts"
+import * as CompactedHistory from "./CompactedHistory.ts"
 
 const isJournalSeq = Schema.is(JournalEvent.Seq)
 
@@ -75,6 +76,10 @@ export interface PageOptions {
  * the cursor for the next page is the highest seq the page held, so a caller
  * that sorts or deduplicates within a page never disagrees with the cursor.
  *
+ * A read that starts below a compaction floor would be silently gapped, so it
+ * is refused `not_found` with the floor as `checkpointSeq` in its cause,
+ * never reported as an unclassified journal failure.
+ *
  * @since 0.1.0
  * @category constructors
  */
@@ -91,7 +96,13 @@ export const forEachPage = <E>(
         ...(after === undefined ? {} : { after: after as JournalEvent.Seq }),
         ...(options.eventTypes === undefined ? {} : { eventTypes: options.eventTypes }),
         limit: options.pageSize
-      }).pipe(Effect.mapError((cause) => error("unknown", options.readFailure, cause)))
+      }).pipe(
+        Effect.mapError((cause) =>
+          cause.code === "compacted" && cause.checkpointSeq !== undefined
+            ? CompactedHistory.refusal(options.runId, cause.checkpointSeq, cause)
+            : error("unknown", options.readFailure, cause)
+        )
+      )
       const previous = after ?? -1
       let next = previous
       for (const entry of page.entries) {

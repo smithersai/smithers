@@ -23,7 +23,7 @@
  * waiting 15 seconds for a connection: alarms failed with `Connection closed`
  * under load (2026-10-22). A wait therefore lasts at most `writerLockTimeout`;
  * then the write rolls back, letting its server connection go, and tries
- * again after a jittered backoff.
+ * again after a jittered backoff, up to `writerLockAttempts` waits in all.
  *
  * The socket driver is injected. `@effect/sql-pg` connects through `node:net`
  * and `node:tls`, which Node, Bun and Workers with `nodejs_compat` supply and
@@ -94,6 +94,15 @@ export interface PostgresDatabaseOptions {
    */
   readonly writerLockTimeout?: Duration.Input | undefined
   /**
+   * How many waits for the writer lock one write transaction makes before it
+   * fails with the lock timeout; 10 by default, the same as `DurableWriter`'s
+   * attempts. The failure is a `LockTimeoutError`, which `DurableWriter`
+   * classifies as `busy` and replays within its own `maxAttempts`, so a stuck
+   * lock holder surfaces as an error instead of a writer that waits forever.
+   * A value that is not a positive safe integer means 1.
+   */
+  readonly writerLockAttempts?: number | undefined
+  /**
    * How long a statement or transaction waits for a connection from the pool
    * before a `postgres.connection.waiting` warning says so; 10 seconds by
    * default. The wait goes on: it keeps the caller's interruptibility, so a
@@ -112,6 +121,15 @@ export interface PostgresDatabaseOptions {
  * @since 1.0.0
  */
 export const defaultWriterLockTimeout: Duration.Duration = Duration.seconds(2)
+
+/**
+ * How many waits for the writer lock one write transaction makes unless
+ * `writerLockAttempts` says otherwise.
+ *
+ * @category constants
+ * @since 1.0.0
+ */
+export const defaultWriterLockAttempts = 10
 
 /**
  * How long a wait for a pooled connection runs before it logs a warning,
@@ -234,6 +252,8 @@ export const layer = (options: PostgresDatabaseOptions): Layer.Layer<SqlClient.S
   // `lock_timeout` in milliseconds; `0` is PostgreSQL's "no limit".
   const lockTimeout = Duration.fromInputUnsafe(options.writerLockTimeout ?? defaultWriterLockTimeout)
   const lockTimeoutMs = Duration.isFinite(lockTimeout) ? Math.max(1, Math.ceil(Duration.toMillis(lockTimeout))) : 0
+  const requestedAttempts = options.writerLockAttempts ?? defaultWriterLockAttempts
+  const lockAttempts = Number.isSafeInteger(requestedAttempts) && requestedAttempts >= 1 ? requestedAttempts : 1
   // After the n-th wait that ran out: from half the timeout, doubling, at most
   // four times it, each delay drawn between half and all of its bound.
   const backoff = (attempt: number) =>
@@ -281,6 +301,8 @@ export const layer = (options: PostgresDatabaseOptions): Layer.Layer<SqlClient.S
         // `open` rolled the transaction back, so the server connection is free
         // for other clients while this one waits.
         yield* Metric.update(DatabaseMetrics.writerLockTimeouts, 1)
+        // The last wait surfaces the lock timeout: `DurableWriter` owns any further replay.
+        if (attempt >= lockAttempts) return yield* exit
         yield* Effect.interruptible(Effect.flatMap(backoff(attempt), Effect.sleep))
       }
     })

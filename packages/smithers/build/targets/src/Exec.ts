@@ -915,9 +915,13 @@ export const toolEnvironment = (
   env["NO_COLOR"] = "1"
   for (const [name, value] of Object.entries(declared)) env[name] = value
   const withheld = new Set(
-    ["SMITHERS_CACHE_URL", "SMITHERS_CACHE_TOKEN", ...sensitiveEnv].map((name) =>
-      ExecEnvironment.nameKey(name, process.platform)
-    )
+    [
+      "SMITHERS_CACHE_URL",
+      "SMITHERS_CACHE_TOKEN",
+      "SMITHERS_CACHE_READ_TOKEN",
+      "SMITHERS_CACHE_WRITE_TOKEN",
+      ...sensitiveEnv
+    ].map((name) => ExecEnvironment.nameKey(name, process.platform))
   )
   for (const name of Object.keys(env)) {
     const key = ExecEnvironment.nameKey(name, process.platform)

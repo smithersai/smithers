@@ -40,6 +40,41 @@ const fixture = (record: (label: string) => Effect.Effect<string>, pauseMs = 0) 
 }
 
 describe.skipIf(!Postgres.direct.available)("durable object cancellation on real Postgres", () => {
+  it.live("cancel during settlement finishes before the runtime scope closes", () =>
+    Effect.gen(function*() {
+      const f = fixture(Effect.succeed)
+      const reporting = yield* Deferred.make<void>()
+      const finish = yield* Deferred.make<void>()
+      let closed = false
+      const host = ExecutionObject.make(f.memory.storage, {
+        flows: [Answer],
+        router: Objects.unrouted,
+        runtime: (value) =>
+          Layer.effectContext(Effect.gen(function*() {
+            const context = yield* Layer.build(
+              runtime({ hostId: f.executionId, database: Postgres.database(f.schema), record: Effect.succeed })(value)
+            )
+            yield* Effect.addFinalizer(() =>
+              Effect.sync(() => {
+                closed = true
+              })
+            )
+            return context
+          })),
+        settled: () => Deferred.succeed(reporting, undefined).pipe(Effect.andThen(Deferred.await(finish)))
+      })
+      yield* Effect.gen(function*() {
+        yield* host.start(yield* f.intent)
+        const alarm = yield* Effect.forkChild(host.alarm())
+        yield* Deferred.await(reporting)
+        expect(closed).toBe(false)
+        yield* host.cancel()
+        yield* Deferred.succeed(finish, undefined)
+        expect(yield* Fiber.join(alarm)).toMatchObject({ _tag: "Settled" })
+        expect(closed).toBe(true)
+      }).pipe(Effect.ensuring(Effect.promise(() => Postgres.dropSchema(f.schema))))
+    }))
+
   it.live("a drop before a delayed start survives reincarnation and never creates a run", () => {
     const f = fixture(() => Effect.die("cancelled work ran"))
     return Effect.gen(function*() {

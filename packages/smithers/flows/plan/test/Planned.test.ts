@@ -33,6 +33,31 @@ describe("Planned", () => {
     expect(Planned.reference(value[marker])).toEqual({ node: "read-pr", path: ["Symbol(marker)"] })
   })
 
+  it("reads any field name through field, including the names property access answers as operations", () => {
+    const value = Planned.make<Record<string, unknown>>("read-pr")
+    for (const key of ["then", "toString", "valueOf", "toJSON", "__proto__", "constructor", "a"]) {
+      const read = Planned.field(value, key)
+      expect(Planned.reference(read)).toEqual({ node: "read-pr", path: [key] })
+      expect(Planned.reference(Planned.field(read, "then"))).toEqual({ node: "read-pr", path: [key, "then"] })
+    }
+  })
+
+  it("refuses to read a field from a value that is not planned", () => {
+    const error = refused(() => Planned.field({ then: 1 }, "then"))
+    expect(error).toBeInstanceOf(GraphBuildError)
+    expect(error).toMatchObject({ code: "planned_value_computed", node: "", path: ["then"] })
+  })
+
+  it("rebuilds a strict placeholder from a recorded reference without reading through the trap", () => {
+    const path = ["then", "toString", "valueOf", "toJSON"]
+    const rebuilt = Planned.fromReference<unknown>({ node: "read-pr", path })
+    expect(Planned.reference(rebuilt)).toEqual({ node: "read-pr", path })
+    expect(refused(() => String(rebuilt))).toBeInstanceOf(GraphBuildError)
+    // The rebuilt placeholder owns its path; a later edit to the source does not move it.
+    path.push("extra")
+    expect(Planned.reference(rebuilt)?.path).toEqual(["then", "toString", "valueOf", "toJSON"])
+  })
+
   it("is not a thenable", () => {
     const value = Planned.make<Result>("read-pr")
     expect((value as { readonly then?: unknown }).then).toBeUndefined()

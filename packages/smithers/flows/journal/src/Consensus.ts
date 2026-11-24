@@ -781,6 +781,9 @@ export const makeLocal: Effect.Effect<Service> = Effect.sync(() => {
  */
 export const layerLocal: Layer.Layer<Consensus> = Layer.effect(Consensus, makeLocal)
 
+/** The first wait of a contended permit's poll; it doubles up to one heartbeat. */
+const permitPollMinMs = 50
+
 /**
  * Shares the existing consensus lease lifecycle with named engine resources.
  * The reader is private to the strategy; resource leases never create runs.
@@ -794,6 +797,10 @@ export const layerLocal: Layer.Layer<Consensus> = Layer.effect(Consensus, makeLo
  * from the timestamp of the last renewal the strategy confirmed. Past that
  * budget the work is interrupted with `persistence_failed`, carrying the last
  * failure as its cause.
+ *
+ * A waiter polls the lease with exponential backoff capped at one heartbeat
+ * interval. A release that fails after the work settled is logged, never
+ * raised: the work's exit stands and the lease expires by staleness.
  * @since 1.0.0
  * @category constructors
  */
@@ -810,7 +817,22 @@ export const resourcePermit = <A, E, R>(
     // then each renewal. Misses are budgeted against it, never against a
     // completion time, so a slow write cannot extend the budget.
     let confirmedAtMs = 0
+    // Releasing is best effort. The work's own exit is the result the caller
+    // asked for, so a storage failure here is logged and the lease is left to
+    // go stale, where a peer's liveness check recovers it. Dying instead
+    // would replace a successful result with an untyped defect.
+    const release = strategy.release(key, owner).pipe(
+      Effect.catchCause((cause) =>
+        Effect.logWarning("resource permit release failed; the lease expires by staleness", cause).pipe(
+          Effect.annotateLogs({ resource: key })
+        )
+      )
+    )
     const acquire = Effect.gen(function*() {
+      // A waiter polls with capped exponential backoff: quick while the
+      // holder is likely to finish soon, then no more often than the holder
+      // heartbeats, which is the fastest the lease can change hands by expiry.
+      let waitMs = permitPollMinMs
       while (true) {
         const admitted = yield* Effect.uninterruptible(Effect.gen(function*() {
           const nowMs = yield* Clock.currentTimeMillis
@@ -846,7 +868,7 @@ export const resourcePermit = <A, E, R>(
           }
           if (grant._tag !== "Claimed") return false
           const activated = yield* strategy.activate(key, owner, grant.grantedAtMs, nowMs).pipe(
-            Effect.onError(() => strategy.release(key, owner).pipe(Effect.orDie))
+            Effect.onError(() => release)
           )
           if (activated._tag === "Activated") {
             confirmedAtMs = nowMs
@@ -856,7 +878,8 @@ export const resourcePermit = <A, E, R>(
           return false
         }))
         if (admitted) return
-        yield* restore(Effect.sleep("50 millis"))
+        yield* restore(Effect.sleep(waitMs))
+        waitMs = Math.min(waitMs * 2, Duration.toMillis(heartbeatInterval))
       }
     })
     const pulse = Effect.gen(function*() {
@@ -897,7 +920,7 @@ export const resourcePermit = <A, E, R>(
     return acquire.pipe(
       Effect.andThen(() =>
         restore(Effect.raceFirst(effect, pulse)).pipe(
-          Effect.ensuring(strategy.release(key, owner).pipe(Effect.orDie))
+          Effect.ensuring(release)
         )
       )
     )

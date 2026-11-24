@@ -1,7 +1,7 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import { FlowEngine } from "@smthrs/engine"
 import { Interpreter } from "@smthrs/flow"
-import { Effect, Layer } from "effect"
+import { ConfigProvider, Effect, Layer, Schema } from "effect"
 import * as FetchHttpClient from "effect/http/FetchHttpClient"
 import assert from "node:assert/strict"
 import { createServer } from "node:http"
@@ -23,8 +23,8 @@ const message = (id: number, chat: number, text: string) => ({
 })
 
 /** A Bot API that answers getUpdates from a fixed backlog, honoring the offset unless told to ignore it. */
-const botApi = async (options: { readonly ignoreOffset?: boolean } = {}) => {
-  const backlog = [
+const botApi = async (options: { readonly ignoreOffset?: boolean; readonly empty?: boolean } = {}) => {
+  const backlog = options.empty === true ? [] : [
     { update_id: 10, message: message(1, WILL, "first") },
     { update_id: 11, message: message(2, 999, "from a stranger") },
     { update_id: 12, edited_message: message(1, WILL, "first, edited") }
@@ -59,16 +59,22 @@ const twoRuns = (apiBaseUrl: string) => {
     allowedChatIds: [String(WILL)],
     thread: "telegram/inbox",
     maxTurns: 1,
-    pollTimeoutSeconds: 0,
-    apiBaseUrl
+    pollTimeoutSeconds: 0
   }
   return Effect.runPromise(
     Effect.gen(function*() {
       yield* Inbox.execute(data, { executionId: "inbox-run-1" })
       yield* Inbox.execute(data, { executionId: "inbox-run-2" })
       const store = yield* MemoryStore.MemoryStore
-      return yield* store.listMessages({ threadId: "telegram/inbox" })
-    }).pipe(Effect.provide(live), Effect.scoped)
+      return yield* store.listMessages({ namespace: "global:telegram", threadId: "telegram/inbox" })
+    }).pipe(
+      Effect.provide(live),
+      Effect.provideService(
+        ConfigProvider.ConfigProvider,
+        ConfigProvider.fromUnknown({ SMITHERS_TELEGRAM_API_ORIGIN: apiBaseUrl })
+      ),
+      Effect.scoped
+    )
   )
 }
 
@@ -134,4 +140,25 @@ test("an entry keeps the caption of a media message and nulls what the message l
     date: null,
     text: "a photo"
   })
+})
+
+test("polling uses the Bot API origin supplied by host configuration", async () => {
+  process.env["SMITHERS_TELEGRAM_BOT_TOKEN"] = TOKEN
+  const api = await botApi({ empty: true })
+  try {
+    assert.deepEqual(await twoRuns(api.origin), [])
+    assert.deepEqual(api.offsets, [undefined, undefined])
+  } finally {
+    await api.close()
+  }
+})
+
+test("poll payloads refuse caller-supplied origins and out-of-range timeouts", () => {
+  const decode = Schema.decodeUnknownSync(Request)
+  const data = { allowedChatIds: ["1001"], thread: "telegram/inbox" }
+  assert.throws(() => decode({ ...data, apiBaseUrl: "https://example.test" }), /apiBaseUrl/)
+  for (const timeout of [-1, 51, 1.5]) assert.throws(() => decode({ ...data, pollTimeoutSeconds: timeout }))
+  for (const timeout of [0, 50]) {
+    assert.equal(decode({ ...data, pollTimeoutSeconds: timeout }).pollTimeoutSeconds, timeout)
+  }
 })

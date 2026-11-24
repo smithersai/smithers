@@ -83,12 +83,9 @@ const telemetry = Otlp.layerFetch({
 ```
 
 Read the token from the environment or your secret store. A credential in the
-URL is refused: an endpoint carrying userinfo fails layer acquisition. A
-credential header (`authorization`, `x-api-key`, `x-honeycomb-team`, and
-similar names) over plaintext `http://` is refused too, unless the collector is
-on `localhost`, `127.0.0.0/8`, or `[::1]`. Non-credential headers such as a
-tenant id work on any endpoint. The check reads header names only, so use
-`https://` for every remote collector.
+URL is refused. Use HTTPS for remote collectors with custom headers. Loopback
+collectors on `localhost`, `127.0.0.0/8`, or `[::1]` can use HTTP. Declare any
+public header a remote HTTP collector requires in `plaintextHeaders`.
 
 Fetch redirects are refused, including same-origin redirects. Configure the
 collector's final URL. Other HTTP transports must refuse redirects themselves.

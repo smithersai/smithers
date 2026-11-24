@@ -160,6 +160,10 @@ export const changeOf = (before: string, after: string, caret?: number): Change 
   let start = 0
   while (start < shortest - end && before[start] === after[start]) start++
   // Never split a surrogate pair: a character stays whole on both sides of the change.
+  if (before === after) {
+    const at = start > 0 && isHigh(after.charCodeAt(start - 1)) && isLow(after.charCodeAt(start)) ? 0 : start
+    return { from: at, to: at, insert: "" }
+  }
   if (start > 0 && isHigh(after.charCodeAt(start - 1))) start--
   if (end > 0 && isLow(after.charCodeAt(after.length - end))) end--
   return { from: start, to: before.length - end, insert: after.slice(start, after.length - end) }

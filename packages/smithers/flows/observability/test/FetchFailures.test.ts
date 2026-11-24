@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from "@effect/vitest"
+import * as Context from "effect/Context"
 import * as Effect from "effect/Effect"
 import * as Fiber from "effect/Fiber"
 import * as FetchHttpClient from "effect/http/FetchHttpClient"
@@ -6,6 +7,7 @@ import * as HttpClient from "effect/http/HttpClient"
 import * as Logger from "effect/Logger"
 import * as Metric from "effect/Metric"
 import * as References from "effect/References"
+import * as Tracer from "effect/Tracer"
 import { createServer, type Server } from "node:http"
 import type { AddressInfo } from "node:net"
 import { FetchFailures } from "../src/index.ts"
@@ -224,6 +226,98 @@ describe("FetchFailures", () => {
     ).pipe(Effect.map(({ value, lines }) => {
       expect(value).toBe(3)
       expect(lines).toHaveLength(3)
+    })))
+
+  it.effect("bounds retention to one for invalid remember values", () =>
+    Effect.gen(function*() {
+      for (const remember of [NaN, Infinity, -1, 0, 1.5, Number.MAX_SAFE_INTEGER + 1]) {
+        const { lines } = yield* observing(
+          Effect.gen(function*() {
+            for (const key of ["a", "b", "a"]) yield* fetchWith(`${origin}/status/500?${key}`)
+          }),
+          { remember }
+        )
+        expect(lines.map(({ annotations }) => annotations.retried)).toEqual([false, false, false])
+      }
+    }))
+
+  it.effect("delegates unroutable input and a faulty route function to the host fetch", () =>
+    observing(
+      Effect.gen(function*() {
+        const fetch = yield* FetchHttpClient.Fetch
+        const invalid = "http://"
+        const settled = (send: typeof fetch) => send(invalid).then(() => "answered", (error: Error) => error.message)
+        expect(yield* Effect.promise(() => settled(fetch))).toBe(yield* Effect.promise(() => settled(globalThis.fetch)))
+        expect(yield* fetchWith(`${origin}/status/409`)).toBe(409)
+      }),
+      {
+        route: () => {
+          throw new Error("route unavailable")
+        }
+      }
+    ).pipe(Effect.map(({ lines }) => expect(lines).toEqual([]))))
+
+  it.effect("records concurrent HTTP failures and recoveries on their own requesting fibers and spans", () =>
+    Effect.gen(function*() {
+      const seen: Array<readonly [unknown, unknown, number, string | undefined]> = []
+      const logger = Logger.make(({ fiber, message }) => {
+        seen.push([
+          (message as unknown[])[0],
+          fiber.getRef(References.CurrentLogAnnotations).request,
+          fiber.id,
+          Context.getOrUndefined(fiber.context, Tracer.ParentSpan)?.spanId
+        ])
+        throw new Error("sink failed")
+      })
+      const request = (key: string) =>
+        Effect.gen(function*() {
+          const fiber = yield* Effect.fiberId
+          const span = yield* Effect.currentSpan
+          const url = `${origin}/next?key=correlate-${key}&then=504,200`
+          const first = yield* HttpClient.get(url)
+          const next = yield* HttpClient.get(url)
+          expect([first.status, next.status]).toEqual([504, 200])
+          return [key, fiber, span.spanId] as const
+        }).pipe(Effect.annotateLogs({ request: key }), Effect.withSpan(key))
+      const expected = yield* Effect.all([request("left"), request("right")], { concurrency: "unbounded" }).pipe(
+        Effect.provide(FetchFailures.layerHttpClient({ route })),
+        Effect.provide(Logger.layer([logger]))
+      )
+      expect(seen).toHaveLength(4)
+      for (const context of expected) {
+        expect(seen).toContainEqual(["http.request.failed", ...context])
+        expect(seen).toContainEqual(["http.request.recovered", ...context])
+      }
+    }))
+
+  it.effect("inherits the calling Effect's annotation at the raw fetch boundary", () =>
+    observing(
+      Effect.all(
+        ["left", "right"].map((key) =>
+          fetchWith(`${origin}/status/502?${key}`).pipe(Effect.annotateLogs({ request: key }))
+        ),
+        { concurrency: "unbounded" }
+      )
+    ).pipe(
+      Effect.map(({ lines }) =>
+        expect(lines.map(({ annotations }) => annotations.request).sort()).toEqual(["left", "right"])
+      )
+    ))
+
+  it.effect("uses the installed logger and registry for calls outside an Effect", () =>
+    observing(Effect.gen(function*() {
+      const raw = yield* FetchHttpClient.Fetch
+      const response = yield* Effect.promise(async () => {
+        await Promise.resolve()
+        return raw(`${origin}/status/503?raw`)
+      })
+      return [
+        response.status,
+        yield* count({ route: "/status/:id", method: "GET", statusClass: "5xx", retried: "false" })
+      ]
+    })).pipe(Effect.map(({ value, lines }) => {
+      expect(value).toEqual([503, 1])
+      expect(lines.map(({ message }) => message)).toEqual(["http.request.failed"])
     })))
 
   it.effect("is the fetch Effect's HttpClient sends through, and keeps the fetch's own properties", () =>

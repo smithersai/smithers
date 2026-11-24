@@ -35,6 +35,7 @@ import * as Schema from "effect/Schema"
 import * as SqlClient from "effect/sql/SqlClient"
 import * as EffectBoundary from "./EffectBoundary.ts"
 import { forkCreatedEventType, Frame, type LineageEdge, LineageEdgeKind } from "./Frame.ts"
+import * as CompactedHistory from "./internal/CompactedHistory.ts"
 import * as LineageTree from "./internal/LineageTree.ts"
 import * as Migrations from "./Migrations.ts"
 import { error, TimeTravelError } from "./TimeTravelError.ts"
@@ -455,6 +456,27 @@ export const make: Effect.Effect<
             }
             return [...refs.values()]
           })
+        )
+      )
+
+    /**
+     * Refuses a run whose journal was compacted, inside the caller's
+     * transaction.
+     *
+     * A truncation and a fork both derive what survives from the journal
+     * prefix at the frame: the run state, and the attempt rows that prefix
+     * explains. Compaction deleted the records under the floor, so the prefix
+     * explains nothing below it, and either operation would discard attempts
+     * the run really made. The journal's own readers resync from the
+     * checkpoint; time travel has no checkpoint to resync a prefix from.
+     */
+    const refuseCompacted = (runId: string) =>
+      sql<{ readonly seq: number | string | null }>`
+        SELECT MAX(seq) AS seq FROM flows_journal_checkpoints
+        WHERE run_id = ${runId} AND compacted_at_ms IS NOT NULL
+      `.pipe(
+        Effect.flatMap((rows) =>
+          rows[0]!.seq === null ? Effect.void : Effect.fail(CompactedHistory.refusal(runId, Number(rows[0]!.seq)))
         )
       )
 
@@ -887,6 +909,7 @@ export const make: Effect.Effect<
                       )
                     )
                   }
+                  yield* refuseCompacted(runId)
                   // The state and its surviving journal prefix commit together.
                   // Recovery may be delayed after COMMIT, but no reader should
                   // observe the truncated journal with the future's run state.
@@ -951,6 +974,15 @@ export const make: Effect.Effect<
                   ON CONFLICT (run_id) DO UPDATE SET generation = flows_journal_generations.generation + 1, after_seq = excluded.after_seq
                 `
                   yield* sql`DELETE FROM flows_time_travel_snapshots WHERE run_id = ${runId} AND seq > ${frame.seq}`
+                  /**
+                   * THE CHECKPOINTS FOLLOW THE JOURNAL THEY CAPTURE.
+                   *
+                   * A checkpoint above the frame holds state from the timeline
+                   * this truncation abandons. Left behind, a later
+                   * `Journal.compact` would take it as the floor, pin that
+                   * state, and delete the new timeline's entries below it.
+                   */
+                  yield* sql`DELETE FROM flows_journal_checkpoints WHERE run_id = ${runId} AND seq > ${frame.seq}`
                   yield* deleteProjectedWaits(runId, frame.seq, tables)
                   yield* sql`
             DELETE FROM flows_journal_events
@@ -1029,6 +1061,12 @@ export const make: Effect.Effect<
                     yield* sql`DELETE FROM flows_time_travel_snapshots WHERE run_id = ${childRunId}`
                     yield* deleteProjectedWaits(childRunId, -1, tables)
                     yield* sql`DELETE FROM flows_journal_events WHERE run_id = ${childRunId}`
+                    // An emptied journal has no floor and no compacted
+                    // identities. A surviving floor would fail every read of
+                    // the child `compacted`, and a surviving tombstone would
+                    // silently drop the re-run child's first writes.
+                    yield* sql`DELETE FROM flows_journal_checkpoints WHERE run_id = ${childRunId}`
+                    yield* sql`DELETE FROM flows_journal_dedup WHERE run_id = ${childRunId}`
                   }
                   for (const edge of descendants.attached) {
                     yield* sql`DELETE FROM flows_time_travel_edges WHERE child_run_id = ${edge.childRunId}`
@@ -1235,6 +1273,8 @@ export const make: Effect.Effect<
                   "fork frame crosses an unfinished irreversible action; choose a frame before its boundary or after completion"
                 ))
               }
+              // The copied prefix must be the parent's whole history to the frame.
+              yield* refuseCompacted(parentRunId)
               const runId = childRunId ?? (yield* mintForkId(parentRunId, frame))
               // A child id names a NEW run. One naming the parent or any run
               // with a row or a journal would land the copied prefix inside
@@ -1346,6 +1386,27 @@ export const make: Effect.Effect<
                */
               const copiedRunIds = [runId]
               const children = rebinding?.children ?? []
+              // A carried child's destination names a NEW run too. Each must
+              // be free, distinct from the fork's root and from the other
+              // destinations. The primary keys would roll the fork back, but
+              // as an unclassified storage failure; this is the same typed
+              // refusal the memory store gives.
+              const destinations = new Set([runId])
+              for (const child of children) {
+                const occupied = destinations.has(child.to) ? 1 : Number(
+                  (yield* sql<{ readonly count: number }>`
+                    SELECT
+                      (SELECT COUNT(*) FROM flows_runs WHERE run_id = ${child.to}) +
+                      (SELECT COUNT(*) FROM flows_journal_events WHERE run_id = ${child.to}) +
+                      (SELECT COUNT(*) FROM flows_time_travel_edges
+                        WHERE parent_run_id = ${child.to} OR child_run_id = ${child.to}) AS count
+                  `)[0]!.count
+                )
+                if (occupied > 0) {
+                  return yield* Effect.fail(error("invalid", TimeTravelStore.forkChildTakenMessage(child.to)))
+                }
+                destinations.add(child.to)
+              }
               if (children.length > 0) {
                 const edges = yield* edgesUnder(parentRunId)
                 // The control-plane database has no engine spawn-edge table;
@@ -1364,6 +1425,7 @@ export const make: Effect.Effect<
                     ))
                   }
                   if (Number(edge.parent_seq) > frame.seq) continue
+                  yield* refuseCompacted(child.from)
                   /**
                    * THE CHILD IS CUT BY ITS OWN SEQUENCE, NEVER BY A CLOCK.
                    *

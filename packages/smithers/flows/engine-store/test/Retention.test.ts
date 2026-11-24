@@ -959,6 +959,28 @@ describe("retention", () => {
     )
   }
 
+  // R1-Fable-D1-049: one stack frame per ancestor overflowed inside the
+  // retention transaction once a trampoline lineage was as long as the limit.
+  it("orders a 50,000-round lineage deepest first without recursing per ancestor", () => {
+    const length = 50_000
+    const ids = Array.from({ length }, (_, index) => `round-${index}`)
+    const parentOf = new Map<string, string | null>(ids.map((id, index) => [id, index === 0 ? null : ids[index - 1]!]))
+    // Deepest first in iteration order, the order that recursed furthest.
+    const doomed = new Set([...ids].reverse())
+
+    const groups = RetentionOps.generations(doomed, parentOf)
+
+    expect(groups.length).toBe(length)
+    expect(groups.map((group) => group.length).every((size) => size === 1)).toBe(true)
+    expect(groups[0]).toEqual([ids[length - 1]])
+    expect(groups[length - 1]).toEqual([ids[0]])
+    // A sibling tree shares a generation, and a run whose parent survives is a root.
+    expect(RetentionOps.generations(
+      new Set(["b", "c", "d", "e"]),
+      new Map([["a", null], ["b", "a"], ["c", "b"], ["d", "b"], ["e", null]])
+    )).toEqual([["c", "d"], ["b", "e"]])
+  })
+
   it.effect("fills the bound past parents pinned by a younger terminal descendant", () =>
     withCrypto(
       Effect.gen(function*() {

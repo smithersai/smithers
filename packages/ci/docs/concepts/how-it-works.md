@@ -603,6 +603,11 @@ such as `PATH`, then the step's own `env`, end of file on standard input, and
 a limit of six hours. It gets no other variable of yours: no token, no
 `SSH_AUTH_SOCK` and no `DOCKER_HOST`.
 
+A step's own `env` cannot move its home or change what `git` is told. The
+replay sets `HOME`, `XDG_CACHE_HOME`, `GIT_TERMINAL_PROMPT` and the
+`GIT_CONFIG_COUNT` settings that refuse a push after the step's `env`, and
+leaves out a `GIT_CONFIG_PARAMETERS` the step declares.
+
 Nor can it read one from the program. A step runs beside `smithers-ci` as you,
 and a process can read what another process of yours was started with. So
 `smithers-ci` starts again with only that short list before it does anything

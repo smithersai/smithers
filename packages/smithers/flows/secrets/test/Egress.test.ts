@@ -1,5 +1,15 @@
 import { Effect, Exit, Fiber, Layer, Stream } from "effect"
-import { HttpBody, HttpClient, HttpClientRequest, HttpServerRequest } from "effect/http"
+import {
+  HttpBody,
+  HttpClient,
+  HttpClientError,
+  HttpClientRequest,
+  HttpClientResponse,
+  HttpServerRequest
+} from "effect/http"
+import { createServer } from "node:http"
+import type { AddressInfo } from "node:net"
+import { gzipSync } from "node:zlib"
 import { describe, expect, test } from "vitest"
 import { Egress } from "../src/index.ts"
 import {
@@ -55,6 +65,17 @@ describe("Egress.decide", () => {
     ] as const
   )("%s %j %s is refused as %s", (url, headers, method, code, host) => {
     expect(decide(url, headers, method)).toMatchObject({ _tag: "Denied", host, code })
+  })
+
+  test("normalizes authorization and all Connection tokens before deciding", () => {
+    expect(decide("https://registry.npmjs.org/", { Authorization: `Basic ${b64("user:" + PLACEHOLDER)}` }))
+      .toMatchObject({ _tag: "Denied", code: "secret_not_allowed" })
+    expect(decide(`https://${API}/`, {
+      Connection: "X-One",
+      connection: "X-Two",
+      "X-One": STALE_PLACEHOLDER,
+      "x-two": STALE_PLACEHOLDER
+    })).toMatchObject({ _tag: "Allowed", used: [] })
   })
 
   test("a refusal names the known secrets the request carried, whatever refused it", () => {
@@ -317,7 +338,6 @@ describe("Egress.forward", () => {
           headers: {
             "set-cookie": `session=${VALUE}`,
             "x-echo": b64(`t:${VALUE}`),
-            "content-encoding": "gzip",
             "content-length": "999"
           }
         }
@@ -368,6 +388,15 @@ describe("Egress.forward", () => {
     expect(leaks(recorded.recorded(), [value])).toEqual([])
   })
 
+  test("invalid unused vault values stop the request before audit or transport", async () => {
+    const upstream = scripted()
+    const { response, body, entries } = await forwardThrough(new Request(`https://${API}/`), {
+      fetch: upstream.fetch,
+      values: { API_KEY: VALUE, GH_TOKEN: "a" }
+    })
+    expect([response.status, body, entries, upstream.seen]).toEqual([503, "value", [], []])
+  })
+
   test("a value the vault can't reveal fails closed: 503 and nothing sent", async () => {
     const upstream = scripted()
     const { response, body, recorded } = await forwardThrough(
@@ -403,6 +432,7 @@ describe("Egress.forward", () => {
     expect([response.status, body]).toEqual([502, "upstream"])
     expect(upstream.seen).toHaveLength(1)
     expect(recorded.count("unavailable_upstream")).toBe(1)
+    expect(recorded.logs.at(-1)?.annotations).toMatchObject({ reason: "TransportError", defect: false })
     expect(leaks(recorded.recorded())).toEqual([])
   })
 
@@ -506,6 +536,136 @@ describe("Egress.execute", () => {
         E
       >
     )
+
+  test("audit defects and vault defects settle with safe typed failures", async () => {
+    const fail = () => {
+      throw new Error(VALUE)
+    }
+    const upstream = scripted()
+    const brokenAudit = Layer.succeed(Egress.Audit, { record: fail })
+    const brokenVault = Layer.succeed(Egress.Vault, { reveal: fail })
+    for (
+      const [host, expected, layer] of [
+        [API, "audit", Layer.merge(brokenAudit, vault())],
+        [API, "secret", Layer.merge(audit().layer, brokenVault)],
+        ["denied.example", "host_not_allowed", Layer.merge(brokenAudit, vault())]
+      ] as const
+    ) {
+      const recorded = telemetry()
+      const error = await Effect.runPromise(recorded.provide(
+        Egress.execute(HttpClientRequest.get(`https://${host}/`), policy).pipe(
+          Effect.flip,
+          Effect.provide(Layer.merge(layer, httpClient(upstream.fetch)))
+        )
+      ))
+      expect(error.code).toBe(expected)
+      expect(recorded.logs.at(-1)?.annotations).toMatchObject({ reason: "Defect", defect: true })
+      expect(Object.fromEntries(recorded.spans[0]!.attributes)).toMatchObject({
+        "smithers.egress.reason": "Defect",
+        "smithers.egress.defect": true
+      })
+      expect(leaks(recorded.recorded())).toEqual([])
+    }
+    expect(upstream.seen).toEqual([])
+  })
+
+  test("audit interruption preserves cancellation even while recording a refusal", async () => {
+    const auditing = Layer.succeed(Egress.Audit, { record: () => Effect.interrupt })
+    const upstream = scripted()
+    for (const host of [API, "denied.example"]) {
+      const exit = await Effect.runPromiseExit(
+        Egress.execute(HttpClientRequest.get(`https://${host}/`), policy).pipe(
+          Effect.provide(Layer.mergeAll(auditing, vault(), httpClient(upstream.fetch)))
+        )
+      )
+      expect(Exit.hasInterrupts(exit)).toBe(true)
+    }
+    expect(upstream.seen).toEqual([])
+  })
+
+  test("an unrecognized transport reason contributes only its failure category", async () => {
+    const client = HttpClient.make(() =>
+      Effect.fail(new HttpClientError.HttpClientError({ reason: { _tag: VALUE } as never }))
+    )
+    const recorded = telemetry()
+    const error = await Effect.runPromise(recorded.provide(
+      Egress.execute(HttpClientRequest.get(`https://${API}/`), policy).pipe(
+        Effect.flip,
+        Effect.provide(Layer.mergeAll(Layer.succeed(HttpClient.HttpClient, client), vault(), audit().layer))
+      )
+    ))
+    expect(error).toEqual(new Egress.Unavailable({ code: "upstream" }))
+    expect(recorded.logs.at(-1)?.annotations).toMatchObject({ reason: "Failure", defect: false })
+    expect(leaks(recorded.recorded())).toEqual([])
+  })
+
+  test("a compressed response needs a decoding client before the guest can read any bytes", async () => {
+    let connection: AbortSignal | undefined
+    const raw = HttpClient.make((request, _url, signal) => {
+      connection = signal
+      return Effect.succeed(HttpClientResponse.fromWeb(
+        request,
+        new Response(gzipSync(VALUE), { headers: { "content-encoding": "gzip" } })
+      ))
+    })
+    const received: Array<Uint8Array> = []
+    const recorded = telemetry()
+    const exit = await Effect.runPromiseExit(recorded.provide(
+      Egress.execute(HttpClientRequest.get(`https://${API}/`), policy).pipe(
+        Effect.flatMap((answer) =>
+          Stream.runForEach(answer.body, (part) =>
+            Effect.sync(() => {
+              received.push(part)
+            }))
+        ),
+        Effect.provide(Layer.mergeAll(Layer.succeed(HttpClient.HttpClient, raw), vault(), audit().layer))
+      )
+    ))
+    expect(exit).toEqual(Exit.fail(new Egress.Broken()))
+    expect(received).toEqual([])
+    expect(connection?.aborted).toBe(true)
+    expect(recorded.count("broken")).toBe(1)
+  })
+
+  test("scrubs a real decoded HTTP response and drops hop-by-hop and secret-bearing header names", async () => {
+    const secret = "lowercase-credential"
+    const server = createServer((_request, response) =>
+      response.writeHead(200, {
+        "Content-Encoding": "gzip",
+        Connection: "X-Hop, X-Second",
+        "X-Hop": "first",
+        "X-Second": "second",
+        [`x-${secret}`]: "private",
+        "X-Ordinary": "kept"
+      }).end(gzipSync(secret))
+    )
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve))
+    try {
+      const local = `http://127.0.0.1:${(server.address() as AddressInfo).port}/`
+      const result = await run(
+        Egress.execute(HttpClientRequest.get(`https://${API}/`), policy).pipe(
+          Effect.flatMap((answer) =>
+            Effect.map(Stream.runCollect(Stream.decodeText(answer.body)), (parts) => ({
+              body: [...parts].join(""),
+              headers: answer.headers
+            }))
+          ),
+          Effect.provideService(Egress.DecodesContent, (encodings) => encodings.join(",") === "gzip")
+        ),
+        (_input, init) => fetch(local, init),
+        { API_KEY: VALUE, GH_TOKEN: secret }
+      )
+      expect(Exit.isSuccess(result)).toBe(true)
+      if (!Exit.isSuccess(result)) throw new Error("missing egress response")
+      expect(result.value.body).toBe(OTHER_PLACEHOLDER)
+      expect(result.value.headers["x-ordinary"]).toBe("kept")
+      for (const name of ["x-hop", "x-second", `x-${secret}`, "content-encoding"]) {
+        expect(result.value.headers).not.toHaveProperty(name)
+      }
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()))
+    }
+  })
 
   test("a flow step's request gets its value in the header and URL parameters kept as placeholders", async () => {
     const upstream = scripted(() => new Response(`you sent ${VALUE}`))

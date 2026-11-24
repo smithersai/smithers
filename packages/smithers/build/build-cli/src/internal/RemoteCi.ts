@@ -122,7 +122,7 @@ export const merge = (
     skipped: count("skipped"),
     ...(cancelled === 0 ? {} : { cancelled })
   }
-  return { verb: "ci", ...run, counts, ok: counts.failed === 0, results }
+  return { verb: "ci", ...run, counts, ok: counts.failed === 0 && cancelled === 0, results }
 }
 
 /**

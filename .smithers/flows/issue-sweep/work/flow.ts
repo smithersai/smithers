@@ -32,7 +32,7 @@ import {
   reserveAccount,
   restoreJobAccount
 } from "../accounts.ts"
-import { issue } from "../github.ts"
+import { issue, trustedAssociation } from "../github.ts"
 import {
   type HostFailed,
   output,
@@ -441,7 +441,9 @@ const agentFailed = (cause: { readonly message: string }) =>
   cause instanceof AgentFailed ? cause : new AgentFailed({ message: cause.message })
 
 /** Issue-read implementation, with a replaceable reader for engine regression tests. */
-export const fetchIssueWith = (read: typeof issue) =>
+export const fetchIssueWith = <A extends typeof IssueText.Type, E, R>(
+  read: (repo: string, number: number) => Effect.Effect<A, E, R>
+) =>
   FetchIssue.toLayer((input) =>
     read(input.repo, input.issue).pipe(
       Effect.map(({ title, body, comments }) => ({ title, body, comments })),
@@ -449,7 +451,15 @@ export const fetchIssueWith = (read: typeof issue) =>
     )
   )
 
-const fetchIssue = fetchIssueWith(issue)
+const fetchIssue = fetchIssueWith((repo, number) =>
+  issue(repo, number).pipe(
+    Effect.flatMap((found) =>
+      trustedAssociation(found.authorAssociation)
+        ? Effect.succeed(found)
+        : Effect.fail(issueReadFailed("The issue author is not a repository owner, member, or collaborator."))
+    )
+  )
+)
 
 // From the workspace root, so any path jj prints is repository-relative.
 const jj = (directory: string, args: ReadonlyArray<string>) =>

@@ -182,8 +182,14 @@ const countTopLevelKey = (text: string, key: string): number => {
     if (char === "\"") {
       let end = index + 1
       while (text[end] !== "\"") end += text[end] === "\\" ? 2 : 1
-      if (depth === 1 && JSON.parse(text.slice(index, end + 1)) === key && /^\s*:/.test(text.slice(end + 1))) {
-        count += 1
+      if (depth === 1) {
+        let next = end + 1
+        while (next < text.length && /\s/.test(text[next]!)) next++
+        // A validated JSON object's keys alone are followed by a colon.
+        // An escaped UTF-16 unit occupies at most six source characters.
+        if (text[next] === ":" && end - index - 1 <= key.length * 6 && JSON.parse(text.slice(index, end + 1)) === key) {
+          if (++count === 2) return count
+        }
       }
       index = end + 1
     } else {

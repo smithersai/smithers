@@ -51,8 +51,9 @@ written. The cause names the field and what was wrong with it. The common ones:
   sparse or accessor array member", "contains an enumerable symbol", "contains a
   non-finite number", "contains unbounded or ill-formed text", "exceeds the
   maximum JSON depth of 128", or "contains more than 100000 JSON values".
-- **A checkpoint over the byte ceiling**, "exceeds the JSON byte limit". Only
-  checkpoints have one.
+- **A value over its byte ceiling**, "exceeds the JSON byte limit". A
+  checkpoint takes the configured `maxCheckpointBytes`; metadata, an error, and
+  an outcome each take the fixed `AttemptStore.maximumValueBytes`.
 - **An invalid store policy**, reported by `AttemptStore.makeWith` and
   `layerWith`: `inProgressStates` must be a non-empty array of unique durable
   names, `maxCheckpointBytes` must be between 1 and

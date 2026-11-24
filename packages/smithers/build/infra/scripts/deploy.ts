@@ -4,6 +4,7 @@
  * @since 0.1.0
  */
 
+import { ambientEnvironment } from "@smthrs/build-cli/Environment"
 import { type ChildProcess, spawn } from "node:child_process"
 import { existsSync } from "node:fs"
 import * as Fs from "node:fs/promises"
@@ -153,7 +154,7 @@ export const resolveDeployOptions = (options: DeployOptions): ResolvedDeployOpti
  * @category constructors
  * @since 0.1.0
  */
-export const developmentStage = (environment: NodeJS.ProcessEnv = process.env): string =>
+export const developmentStage = (environment: NodeJS.ProcessEnv = ambientEnvironment()): string =>
   `dev_${environment["USER"] || environment["USERNAME"] || "unknown"}`
 
 /** What one wrapper invocation acts on, and the arguments Alchemy gets. */

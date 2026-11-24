@@ -131,19 +131,18 @@ export class FlowHandlerDefect extends Schema.TaggedError<FlowHandlerDefect>()(
  * @private
  */
 const guardDefects = (flowName: string) => <A, E, R>(effect: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> =>
-  Effect.catchDefect(effect, (defect) => {
-    const diagnostic = renderDiagnostic(defect)
-    return Effect.andThen(
-      Effect.logError("A flow proxy handler died", diagnostic),
-      Effect.die(
-        new FlowHandlerDefect({
-          flowName,
-          diagnostic,
-          message: `A ${flowName} proxy handler died: ${diagnostic}`
-        })
-      )
-    )
-  })
+  Effect.catchDefect(effect, (defect) =>
+    Effect.flatMap(renderDiagnostic(defect), (diagnostic) =>
+      Effect.andThen(
+        Effect.logError("A flow proxy handler died", diagnostic),
+        Effect.die(
+          new FlowHandlerDefect({
+            flowName,
+            diagnostic,
+            message: `A ${flowName} proxy handler died: ${diagnostic}`
+          })
+        )
+      )))
 
 /**
  * The decoded body of an execute or a discard request. `capabilityCeilings`

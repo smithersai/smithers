@@ -26,6 +26,24 @@ const execHandles = [
 ].join("\n")
 
 describe("hiddenHostAccess", () => {
+  it("keeps the module boundary across ordinary column-zero comments", () => {
+    const bundle = [
+      "// packages/foo/src/bar.ts",
+      "// TODO",
+      "// @ts-expect-error",
+      "// prettier-ignore",
+      "// https://example.test/doc.js",
+      "process.env.SECRET;",
+      "const type = 'node:fs';",
+      "// node_modules/third-party/index.js",
+      "process?.getBuiltinModule?.('node:fs');"
+    ].join("\n")
+    expect(findings(bundle, workspace)).toEqual([
+      "6 ambient-global packages/foo/src/bar.ts process",
+      "7 host-module packages/foo/src/bar.ts 'node:fs'"
+    ])
+  })
+
   it("reports the dynamic import that let @smthrs/sandbox carry Node-only jj past the browser gate", () => {
     // The shape esbuild emitted for `packages/smithers/flows/sandbox/src/SandboxMerge/HostAdapter.ts`.
     const bundle = [

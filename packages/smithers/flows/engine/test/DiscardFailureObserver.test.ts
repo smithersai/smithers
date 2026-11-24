@@ -4,8 +4,10 @@ import { Node } from "@smthrs/plan"
 import { Effect, Logger, References, Schema } from "effect"
 import type { Cause } from "effect"
 import { FlowEngine } from "../src/index.ts"
-import { renderDiagnostic } from "../src/internal/Diagnostic.ts"
+import { hostReflection, renderDiagnosticWith } from "../src/internal/Diagnostic.ts"
 import { effect } from "./Harness.ts"
+
+const renderDiagnostic = (value: unknown) => renderDiagnosticWith(hostReflection(process), value)
 
 const observeDiscard = (body: Effect.Effect<never, string>, error: typeof Schema.Never | typeof Schema.String) =>
   Effect.scoped(Effect.gen(function*() {

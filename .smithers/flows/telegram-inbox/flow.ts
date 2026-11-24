@@ -22,7 +22,7 @@
  */
 import { Action, Flow, Interpreter } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
-import { Effect, Layer, Schema } from "effect"
+import { Config, Effect, Layer, Schema } from "effect"
 import { createHash } from "node:crypto"
 import { Failure, fromIntegrationError } from "../../../packages/smithers/agent/integrations/src/core/ActionFailure.ts"
 import { layerSql } from "../../../packages/smithers/agent/integrations/src/core/CursorStore.ts"
@@ -45,11 +45,10 @@ export const Request = Schema.Struct({
   /** Poll turns per run. Defaults to 2, about 50 seconds with the default poll timeout. */
   maxTurns: Schema.optionalKey(Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 100 }))),
   /** How long Telegram holds each poll open, 0 to 50 seconds. Defaults to 25. */
-  pollTimeoutSeconds: Schema.optionalKey(Schema.Int),
+  pollTimeoutSeconds: Schema.optionalKey(Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 50 }))),
   /** The cursor key, so two bots keep separate offsets. Defaults to `telegram`. */
   sourceId: Schema.optionalKey(Schema.NonEmptyString),
-  /** Another Bot API origin, for a shadow run against a fixture server. */
-  apiBaseUrl: Schema.optionalKey(Schema.NonEmptyString)
+  apiBaseUrl: Schema.optionalKey(Schema.Never)
 })
 
 /**
@@ -126,10 +125,11 @@ export const Receive = Action.make("telegram-inbox/receive", {
 const record = Record.toLayer((delivery) =>
   Effect.gen(function*() {
     const store = yield* MemoryStore.MemoryStore
-    if ((yield* store.getThread({ threadId: delivery.thread })) === undefined) {
+    if ((yield* store.getThread({ namespace: delivery.namespace, threadId: delivery.thread })) === undefined) {
       yield* store.createThread({ id: delivery.thread, namespace: delivery.namespace, title: "Telegram inbox" })
     }
     yield* store.appendMessageOnce({
+      namespace: delivery.namespace,
       threadId: delivery.thread,
       id: delivery.event.dedupeKey,
       role: "user",
@@ -141,11 +141,17 @@ const record = Record.toLayer((delivery) =>
 const receive = Receive.toLayer((request) =>
   Effect.gen(function*() {
     const namespace = request.namespace ?? "global:telegram"
+    const apiBaseUrl = yield* Config.String("SMITHERS_TELEGRAM_API_ORIGIN").pipe(
+      Config.withDefault("https://api.telegram.org"),
+      Effect.mapError(() =>
+        new IntegrationError("invalid-config", "Telegram API origin configuration could not be read.")
+      )
+    )
     const source = yield* TelegramSource.make({
       allowedChatIds: request.allowedChatIds,
       sourceId: request.sourceId,
       pollTimeoutSeconds: request.pollTimeoutSeconds,
-      apiBaseUrl: request.apiBaseUrl
+      apiBaseUrl
     })
     yield* source.run(
       (events) =>
@@ -170,7 +176,7 @@ export const layer = receive.pipe(
 
 export default Flow.make("telegram-inbox", {
   description: "Poll a Telegram bot and record each message from an allowed chat in a memory thread, once.",
-  capabilities: ["net:post:**"],
+  capabilities: ["net:post:https://api.telegram.org/**"],
   effects: { reads: [], writes: [], mode: "expected", onConflict: "serialize", tier: "irreversible" },
   modelInvocable: false,
   payload: Request,

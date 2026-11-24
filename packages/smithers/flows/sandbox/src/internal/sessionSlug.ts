@@ -4,35 +4,26 @@
  * @since 0.1.0
  */
 
-/** How much of the sanitized key an operator gets to read in the name. */
-const prefixLength = 40
+import { digestSync } from "@smthrs/crypto"
 
 /**
- * A name fragment for a session key: the key's leading safe characters, for
- * the operator reading a process or container list, plus a 64-bit digest of
- * the WHOLE key, so `a/b` and `a-b` cannot share a machine and neither can two
- * keys that merely start alike.
- *
- * The digest is two independent multiplicative hashes concatenated, not one.
- * A single 32-bit djb2 is not enough here, and not for the birthday reason: its
- * tail is linear, so two keys sharing the truncated prefix collide as soon as
- * their remaining characters satisfy one modular sum (`"a".repeat(48) + "1r"`
- * and `"a".repeat(48) + "30"` both reduce to the same value, because
- * `33 * c1 + c2` is 1731 for each). FNV-1a mixes by XOR before a different
- * prime, so a collision has to satisfy both halves at once. That is a bound,
- * not a proof: this is a checksum, not a cryptographic digest, and the honest
- * claim is 64 bits over the whole key rather than "collision-proof".
- *
- * The slug is durable machine identity — every provider's container name, Pod
- * name, sandbox name, Durable Object id, ECS `startedBy` tag, and scratch
- * directory is derived from it — so changing this function orphans anything
- * currently running under the old names. `test/SessionSlug.test.ts` pins the
- * exact output for that reason.
+ * The SHA-256 prefix binds the complete key, including unpaired UTF-16 surrogates.
  *
  * @category constructors
- * @since 0.1.0
+ * @since 1.0.0-rc.18
  */
 export const sessionSlug = (session: string): string => {
+  const clean = session.replaceAll(/[^A-Za-z0-9._-]/g, "-").slice(0, 24)
+  return `${clean}-${digestSync(JSON.stringify(session)).slice(0, 32)}`
+}
+
+/**
+ * Used only to address an existing machine from its recorded handle.
+ *
+ * @category constructors
+ * @since 1.0.0-rc.18
+ */
+export const legacySessionSlug = (session: string): string => {
   let djb2 = 5381
   let fnv = 2166136261
   for (let index = 0; index < session.length; index++) {
@@ -41,6 +32,6 @@ export const sessionSlug = (session: string): string => {
     fnv = Math.imul(fnv ^ code, 16777619) >>> 0
   }
   const digest = `${djb2.toString(16).padStart(8, "0")}${fnv.toString(16).padStart(8, "0")}`
-  const clean = session.replaceAll(/[^A-Za-z0-9._-]/g, "-").slice(0, prefixLength)
+  const clean = session.replaceAll(/[^A-Za-z0-9._-]/g, "-").slice(0, 40)
   return `${clean}-${digest}`
 }

@@ -143,7 +143,7 @@ const make = (
         }),
       wait: (seen) =>
         Effect.sync(() =>
-          seen.some((entry) => {
+          seen.length === 0 || seen.some((entry) => {
             const record = runs.get(entry.run)?.record
             return record !== undefined && (record.lost || record.finished.length > entry.finished)
           })
@@ -173,11 +173,15 @@ export const layer = (options: Options): Layer.Layer<Ci, never, ChildProcessSpaw
         Effect.gen(function*() {
           const started = yield* Clock.currentTimeMillis
           const code = yield* Effect.scoped(
-            Effect.flatMap(spawn(spawner, options.command(id, commit)), (handle) => handle.exitCode)
+            Effect.flatMap(spawn(spawner, options.command(id, commit)), (handle) =>
+              Effect.all([handle.exitCode, Stream.runDrain(handle.stdout), Stream.runDrain(handle.stderr)], {
+                concurrency: "unbounded"
+              }).pipe(Effect.map(([code]) => code)))
           )
           const ended = yield* Clock.currentTimeMillis
           record.finished.push({ check: id, verdict: code === 0 ? "pass" : "fail", duration: seconds(started, ended) })
-        }).pipe(Effect.catchTag("PlatformError", () => lose(record)))
+        }).pipe(Effect.catchTag("PlatformError", () =>
+          lose(record)))
 
       return yield* make(
         options.repository,
@@ -206,13 +210,17 @@ export const streamed = (options: StreamedOptions): Layer.Layer<Ci, never, Child
         Effect.scoped(Effect.gen(function*() {
           const started = yield* Clock.currentTimeMillis
           const handle = yield* spawn(spawner, options.command(job.checks, commit))
-          yield* Stream.runForEach(Stream.splitLines(Stream.decodeText(handle.stdout)), (line) =>
+          const verdicts = Stream.runForEach(Stream.splitLines(Stream.decodeText(handle.stdout)), (line) =>
             Effect.gen(function*() {
               const match = Line.exec(line.trim())
               if (match === null) return
               const check = Number(match[1])
               // The first verdict for a check stands; a check the run does not need is not the queue's business.
-              if (!job.checks.includes(check) || record.finished.some((entry) => entry.check === check)) return
+              if (
+                !job.checks.includes(check) || record.finished.some((entry) =>
+                  entry.check === check
+                )
+              ) return
               const now = yield* Clock.currentTimeMillis
               record.finished.push({
                 check,
@@ -220,7 +228,10 @@ export const streamed = (options: StreamedOptions): Layer.Layer<Ci, never, Child
                 duration: match[3] === undefined ? seconds(started, now) : Number(match[3])
               })
             }))
-          yield* handle.exitCode
+          yield* Effect.all([verdicts, Stream.runDrain(handle.stderr), handle.exitCode], {
+            concurrency: "unbounded",
+            discard: true
+          })
           // A process that ended with checks unreported told the queue nothing about them: test the tree again.
           if (record.finished.length < job.checks.length) record.lost = true
         })).pipe(Effect.catchTag("PlatformError", () => lose(record))))

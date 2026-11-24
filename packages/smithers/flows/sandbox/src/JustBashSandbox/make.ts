@@ -7,10 +7,11 @@
 import * as Effect from "effect/Effect"
 import * as Fiber from "effect/Fiber"
 import type * as FileSystem from "effect/FileSystem"
+import * as Random from "effect/Random"
 import * as Semaphore from "effect/Semaphore"
 import * as Stream from "effect/Stream"
 import { checkEnvironmentNames } from "../internal/environmentNames.ts"
-import { providerFailure } from "../internal/localProcess.ts"
+import { commandFailure, providerFailure } from "../internal/localProcess.ts"
 import { rootedAt } from "../internal/rootedPath.ts"
 import { sessionSlug } from "../internal/sessionSlug.ts"
 import { ProviderError } from "../RemoteChildProcessSpawner/ProviderError.ts"
@@ -92,8 +93,8 @@ const latin1 = (bytes: Uint8Array): string => {
  * view. Cancelling a spawn stops waiting; an exec already started continues
  * holding the permit until it settles. A cancelled queued command never runs.
  * A hung interpreter keeps later commands queued, but their callers can still
- * cancel. Closing the session scope removes its workspace even if exec is
- * still running. A successful spawn completes before it returns, stdout and
+ * cancel. Closing the session retires its workspace after the active exec
+ * settles. Acquiring the same key creates a fresh workspace immediately. A successful spawn completes before it returns, stdout and
  * stderr each replay at most one UTF-8 encoded chunk, and `isRunning` is already
  * false by the time a caller can observe the adapted handle. There is no signal
  * delivery, separately spawned process pipeline, or incremental output. Consequently sessions omit `kill`,
@@ -116,12 +117,20 @@ export const make = (options: JustBashSandboxOptions): Provider => {
   return {
     acquire: (sessionKey) =>
       Effect.gen(function*() {
-        const workdir = `${root}/${sessionSlug(sessionKey)}`
+        const incarnation = `${yield* Random.nextIntBetween(0, 2 ** 31)}-${yield* Random.nextIntBetween(0, 2 ** 31)}`
+        const workdir = `${root}/${sessionSlug(sessionKey)}-${incarnation}`
+        let closed = false
+        let executing = false
+        const remove = Effect.ignore(options.fs.remove(workdir, { recursive: true, force: true }))
         yield* Effect.acquireRelease(
-          options.fs.makeDirectory(workdir, { recursive: true }).pipe(
+          options.fs.makeDirectory(root || "/", { recursive: true }).pipe(
+            Effect.andThen(options.fs.makeDirectory(workdir)),
             Effect.mapError(failure("unavailable", `the just-bash workspace ${workdir} could not be created`))
           ),
-          () => Effect.ignore(options.fs.remove(workdir, { recursive: true, force: true }))
+          () => {
+            closed = true
+            return executing ? Effect.void : remove
+          }
         )
         const resolve = rootedAt(workdir)
         const session: Session = {
@@ -154,9 +163,18 @@ export const make = (options: JustBashSandboxOptions): Provider => {
                 // the permit until exec settles, even after its caller leaves.
                 const execution = yield* gate.withPermit(
                   Effect.uninterruptible(
-                    Effect.tryPromise({
-                      try: () => options.bash.exec(command, execOptions),
-                      catch: failure("spawn_error", `\`${command}\` could not run through just-bash`)
+                    Effect.suspend(() => {
+                      if (closed) {
+                        return Effect.fail(new ProviderError({ code: "unavailable", message: "workspace closed" }))
+                      }
+                      executing = true
+                      return Effect.tryPromise({
+                        try: () => options.bash.exec(command, execOptions),
+                        catch: commandFailure("spawn_error", "command could not run through just-bash")
+                      }).pipe(Effect.ensuring(Effect.suspend(() => {
+                        executing = false
+                        return closed ? remove : Effect.void
+                      })))
                     })
                   )
                 ).pipe(Effect.forkDetach)

@@ -10,8 +10,10 @@ import * as TsBuild from "@smthrs/targets/TsBuild"
 import type * as Typecheck from "@smthrs/targets/Typecheck"
 import type * as Vitest from "@smthrs/targets/Vitest"
 import { Effect, FileSystem, Layer, Path } from "effect"
-import { globSync } from "node:fs"
-import { dirname, relative, resolve } from "node:path"
+import { spawnSync } from "node:child_process"
+import { cpSync, globSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { dirname, join, relative, resolve } from "node:path"
 import { describe, expect, expectTypeOf, it } from "vitest"
 import { Package as PluginPackage } from "../../smithers/agent/plugin/PACKAGE.ts"
 import { Package as RegistryPackage } from "../../smithers/agent/registry/PACKAGE.ts"
@@ -585,12 +587,45 @@ describe("BuildAndCheckTypeScriptPackage lint and fmt gates", () => {
     ])
   })
 
-  it("plans dprint in check mode over the sources and the test tree", () => {
+  it("declares every package file dprint may discover, including a newly added README", () => {
     const targets = BuildAndCheckTypeScriptPackage({ packageManager, cwd: "packages/example" })
     expect(plannedArgv(targets.fmt)).toEqual(["pnpm", "exec", "dprint", "check", "--config", "dprint.json"])
     const attrs = attrsOf<Dprint.Attrs>(targets.fmt)
     expect(attrs.fix).toBe(false)
-    expect(attrs.sources).toEqual([Input.glob("src/**/*.{ts,vibe}"), Input.glob("test/**/*.{ts,vibe}")])
+    expect(attrs.sources).toEqual([Input.glob("**/*", { allowEmpty: true })])
+  })
+
+  it("checks a formatting violation in a newly added README with the ordinary and projected files", async () => {
+    const root = mkdtempSync(join(tmpdir(), "package-format-projection-"))
+    try {
+      const cwd = "example"
+      const workspace = resolve(import.meta.dirname, "../../..")
+      const ordinary = join(root, "ordinary", cwd)
+      const projected = join(root, "projected", cwd)
+      mkdirSync(ordinary, { recursive: true })
+      mkdirSync(projected, { recursive: true })
+      cpSync(join(workspace, "packages/ci/dprint.json"), join(ordinary, "dprint.json"))
+      const dprint = join(workspace, ".smithers/flows/node_modules/dprint/bin.cjs")
+      const attrs = attrsOf<Dprint.Attrs>(BuildAndCheckTypeScriptPackage({ cwd }).fmt)
+      const source = attrs.sources[0]
+      if (source?._tag !== "Glob") throw new Error("Expected the formatter's package glob")
+      const expand = () => Input.expandGlob(dirname(ordinary), cwd, source)
+      expect(await expand()).not.toContain("example/README.md")
+      writeFileSync(join(ordinary, "README.md"), "# Heading\n\n-    badly spaced\n")
+      const inputs = await expand()
+      expect(inputs).toContain("example/README.md")
+      for (const path of inputs) cpSync(join(dirname(ordinary), path), join(dirname(projected), path))
+      for (const directory of [ordinary, projected]) {
+        const result = spawnSync(process.execPath, [dprint, "check", "--config", "dprint.json"], {
+          cwd: directory,
+          encoding: "utf8"
+        })
+        expect(result.status, result.stderr).toBe(20)
+        expect(result.stderr + result.stdout).toContain("README.md")
+      }
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
   })
 
   it("keeps both gates strict under caller-selected sources and configs", () => {
@@ -672,7 +707,7 @@ describe("BuildAndCheckTypeScriptPackage option propagation", () => {
     expect(Target.metadata(relocated.test).inputs).not.toContainEqual(Input.glob("test/**/*.{ts,vibe}"))
   })
 
-  it("moves the typechecked and formatted test tree with testSources", () => {
+  it("moves the typechecked test tree while preserving package-wide formatting", () => {
     const relocated = BuildAndCheckTypeScriptPackage({
       packageManager,
       cwd: "packages/example",
@@ -689,10 +724,7 @@ describe("BuildAndCheckTypeScriptPackage option propagation", () => {
       Input.file("//packages/repo-targets/test-utils/effect-property.d.mts"),
       Input.file("//packages/repo-targets/test-utils/vitest-root-temp.d.mts")
     ])
-    expect(attrsOf<Dprint.Attrs>(relocated.fmt).sources).toEqual([
-      Input.glob("src/**/*.{ts,vibe}"),
-      Input.glob("spec/**/*.ts")
-    ])
+    expect(attrsOf<Dprint.Attrs>(relocated.fmt).sources).toEqual(attrsOf<Dprint.Attrs>(standard.fmt).sources)
     expect(attrsOf<Vitest.Attrs>(relocated.test).tests).toEqual([Input.glob("spec/**/*.test.ts")])
   })
 
@@ -735,7 +767,7 @@ describe("BuildAndCheckTypeScriptPackage option propagation", () => {
       Input.file("//packages/repo-targets/test-utils/effect-property.d.mts")
     ])
     expect(attrsOf<EsLint.Attrs>(relocated.lint).sources).toEqual([moved])
-    expect(attrsOf<Dprint.Attrs>(relocated.fmt).sources).toEqual([moved, Input.glob("test/**/*.{ts,vibe}")])
+    expect(attrsOf<Dprint.Attrs>(relocated.fmt).sources).toEqual(attrsOf<Dprint.Attrs>(standard.fmt).sources)
     expect(attrsOf<NodeTest.Attrs>(relocated.circular).srcs).toEqual([
       moved,
       Input.file("tsconfig.json"),

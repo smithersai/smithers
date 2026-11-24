@@ -19,7 +19,7 @@ import { checkEnvironmentNames } from "../internal/environmentNames.ts"
 import { envPrefix } from "../internal/envPrefix.ts"
 import { parentOf } from "../internal/guestPath.ts"
 import { linuxFileSystem } from "../internal/linuxFileSystem.ts"
-import { gather, type GatheredRun, remoteProcessOf } from "../internal/localProcess.ts"
+import { commandFailure, gather, type GatheredRun, remoteProcessOf } from "../internal/localProcess.ts"
 import { rootedAt } from "../internal/rootedPath.ts"
 import { ProviderError } from "../RemoteChildProcessSpawner/ProviderError.ts"
 import type { Session } from "../Sandbox/Session.ts"
@@ -196,8 +196,8 @@ export const existing = (options: ExistingOptions): Session => {
         `${input.script}exec ${input.prefix}/bin/sh -c ${CommandLine.quote(command)}`,
         resolveCwd(spawnOptions.cwd ?? ""),
         input.stdin
-      )
-      return remoteProcessOf(handle, command)
+      ).pipe(Effect.mapError(commandFailure("unavailable", `the container ${container} could not be reached`)))
+      return remoteProcessOf(handle)
     }),
     readFile: (path) =>
       Effect.flatMap(read(path), (result) =>

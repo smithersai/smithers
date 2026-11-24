@@ -23,11 +23,13 @@ type Handler = Parameters<Encoded["register"]>[1]
 const failDeclared = (flow: Flow.Any, error: unknown) =>
   Effect.matchEffect(flow.errorSchema.makeEffect(error), {
     onFailure: () =>
-      Effect.logError("A flow body failed with an error outside its declared error schema").pipe(
-        Effect.annotateLogs({ flow: flow._tag, error: renderDiagnostic(error) }),
-        Effect.andThen(Effect.die(error))
-      ),
-    onSuccess: () => Effect.fail(error)
+      Effect.flatMap(renderDiagnostic(error), (diagnostic) =>
+        Effect.logError("A flow body failed with an error outside its declared error schema").pipe(
+          Effect.annotateLogs({ flow: flow._tag, error: diagnostic }),
+          Effect.andThen(Effect.die(error))
+        )),
+    onSuccess: () =>
+      Effect.fail(error)
   })
 
 /** Checks a round's success against the declared schema. A handoff round has none of its own. */

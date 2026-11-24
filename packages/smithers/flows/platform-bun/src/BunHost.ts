@@ -303,10 +303,9 @@ export const layerAt = (root: string): Layer.Layer<BunHost | (EffectDigest.Diges
 export const layerContained = (
   options?: ContainedOptions
 ): Layer.Layer<BunHost | (EffectDigest.Digest | SecureRandom.SecureRandom), never, ProcessLedger.ProcessLedger> => {
-  const spawner = Layer.provide(
-    ProcessReaper.layerSpawner({ graceMs: options?.graceMs }),
-    Layer.provide(BunChildProcessSpawner.layer, platform)
-  )
+  // `layerSpawner` spawns through `node:child_process` itself and needs only
+  // the ledger: Bun's own spawner has no part in a contained host.
+  const spawner = ProcessReaper.layerSpawner({ graceMs: options?.graceMs })
   return Layer.mergeAll(
     ProcessConfinement.layer(),
     platform,
@@ -333,10 +332,9 @@ export const layerContainedAt = (
   options?: ContainedOptions
 ): Layer.Layer<BunHost | (EffectDigest.Digest | SecureRandom.SecureRandom), never, ProcessLedger.ProcessLedger> => {
   const repositoryRoot = absoluteRoot("layerContainedAt", root)
-  const spawner = Layer.provide(
-    ProcessReaper.layerSpawner({ graceMs: options?.graceMs }),
-    Layer.provide(BunChildProcessSpawner.layer, platform)
-  )
+  // `layerSpawner` spawns through `node:child_process` itself and needs only
+  // the ledger: Bun's own spawner has no part in a contained host.
+  const spawner = ProcessReaper.layerSpawner({ graceMs: options?.graceMs })
   return Layer.mergeAll(
     ProcessConfinement.layer(),
     platform,

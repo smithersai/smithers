@@ -235,7 +235,9 @@ due are left alone, so a duplicate alarm wakes nobody.
 
 Every object routes to objects of its own class, so every object's `flows`
 lists every flow an execution may start as a child or hand off to. An object
-whose intent names a flow it was not given retries with `UnknownFlow`.
+whose intent names an unknown flow records `cloudflare.execution.poisoned`
+with `UnknownFlow` and enters settlement retention. A malformed intent or
+an invalid admission payload follows the same path with `InvalidIntent`.
 
 ## When an incarnation dies
 

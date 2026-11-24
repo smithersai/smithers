@@ -134,9 +134,30 @@ describe("@smthrs/build-cli Wave-6B: ObservedReads & Machine deep fuzz invariant
   it("ObservedReads.read, servedBy, withServed & socket/procfs/symlink/rename/unlink/continuation parsing", async () => {
     const arb = Arbitrary.schema(
       Schema.Struct({
-        netKind: Schema.Literals(["loopback_v4", "wildcard_v4", "loopback_v6", "v4_mapped_v6", "external_v4", "sendto_quoted"]),
-        procKind: Schema.Literals(["self_cwd", "thread_self_exe", "outside_pid", "proc_up", "supervised_outside", "fd_open"]),
-        fsOp: Schema.Literals(["symlink_rename", "unlink_mkdir", "linkat_statx", "dir_walk", "clone_chdir", "io_uring_refuse"]),
+        netKind: Schema.Literals([
+          "loopback_v4",
+          "wildcard_v4",
+          "loopback_v6",
+          "v4_mapped_v6",
+          "external_v4",
+          "sendto_quoted"
+        ]),
+        procKind: Schema.Literals([
+          "self_cwd",
+          "thread_self_exe",
+          "outside_pid",
+          "proc_up",
+          "supervised_outside",
+          "fd_open"
+        ]),
+        fsOp: Schema.Literals([
+          "symlink_rename",
+          "unlink_mkdir",
+          "linkat_statx",
+          "dir_walk",
+          "clone_chdir",
+          "io_uring_refuse"
+        ]),
         contError: Schema.Boolean,
         sealed: Schema.Boolean
       })
@@ -148,81 +169,85 @@ describe("@smthrs/build-cli Wave-6B: ObservedReads & Machine deep fuzz invariant
         ({ netKind, procKind, fsOp, contError, sealed }) =>
           Effect.sync(() => {
             const cwd = "/ws"
-            const netLine =
-              netKind === "loopback_v4"
-                ? '100 connect(4, {sa_family=AF_INET, sin_port=htons(8080), sin_addr=inet_addr("127.0.0.1")}, 16) = 0'
-                : netKind === "wildcard_v4"
-                  ? '100 bind(4, {sa_family=AF_INET, sin_port=htons(8080), sin_addr=inet_addr("0.0.0.0")}, 16) = 0'
-                  : netKind === "loopback_v6"
-                    ? '100 connect(4, {sa_family=AF_INET6, sin6_port=htons(9090), sin6_addr=inet_pton(AF_INET6, "::1")}, 28) = 0'
-                    : netKind === "v4_mapped_v6"
-                      ? '100 connect(4, {sa_family=AF_INET6, sin6_port=htons(8081), sin6_addr=inet_pton(AF_INET6, "::ffff:127.0.0.1")}, 28) = 0'
-                      : netKind === "external_v4"
-                        ? '100 connect(4, {sa_family=AF_INET, sin_port=htons(443), sin_addr=inet_addr("93.184.216.34")}, 16) = 0'
-                        : '100 sendto(4, "hello \\" {sa_family=fake}", 24, 0, {sa_family=AF_INET, sin_port=htons(53), sin_addr=inet_addr("1.1.1.1")}, 16) = 24'
+            const netLine = netKind === "loopback_v4"
+              ? "100 connect(4, {sa_family=AF_INET, sin_port=htons(8080), sin_addr=inet_addr(\"127.0.0.1\")}, 16) = 0"
+              : netKind === "wildcard_v4"
+              ? "100 bind(4, {sa_family=AF_INET, sin_port=htons(8080), sin_addr=inet_addr(\"0.0.0.0\")}, 16) = 0"
+              : netKind === "loopback_v6"
+              ? "100 connect(4, {sa_family=AF_INET6, sin6_port=htons(9090), sin6_addr=inet_pton(AF_INET6, \"::1\")}, 28) = 0"
+              : netKind === "v4_mapped_v6"
+              ? "100 connect(4, {sa_family=AF_INET6, sin6_port=htons(8081), sin6_addr=inet_pton(AF_INET6, \"::ffff:127.0.0.1\")}, 28) = 0"
+              : netKind === "external_v4"
+              ? "100 connect(4, {sa_family=AF_INET, sin_port=htons(443), sin_addr=inet_addr(\"93.184.216.34\")}, 16) = 0"
+              : "100 sendto(4, \"hello \\\" {sa_family=fake}\", 24, 0, {sa_family=AF_INET, sin_port=htons(53), sin_addr=inet_addr(\"1.1.1.1\")}, 16) = 24"
 
-            const procLines: Array<string> =
-              procKind === "self_cwd"
-                ? ['100 openat(AT_FDCWD, "/proc/self/cwd/a.txt", O_RDONLY) = 3']
-                : procKind === "thread_self_exe"
-                  ? ['100 readlinkat(AT_FDCWD, "/proc/thread-self/exe", "/usr/bin/node", 4096) = 13']
-                  : procKind === "outside_pid"
-                    ? ['100 openat(AT_FDCWD, "/proc/999999/fd/3", O_RDONLY) = 3']
-                    : procKind === "proc_up"
-                      ? ['100 openat(AT_FDCWD, "/proc/self/cwd/../a.txt", O_RDONLY) = 3']
-                      : procKind === "supervised_outside"
-                        ? ['smthrs-observe/1', '100 openat(AT_FDCWD, "/proc/888888/fd/1", O_RDONLY) = 3']
-                        : ['100 openat(AT_FDCWD, "/ws/sub", O_RDONLY|O_DIRECTORY) = 5', '100 openat(5, "inner.txt", O_RDONLY) = 6', '100 dup2(5, 7) = 7', '100 openat(7, "dup.txt", O_RDONLY) = 8', '100 close(5) = 0', '100 close(7) = 0']
+            const procLines: Array<string> = procKind === "self_cwd"
+              ? ["100 openat(AT_FDCWD, \"/proc/self/cwd/a.txt\", O_RDONLY) = 3"]
+              : procKind === "thread_self_exe"
+              ? ["100 readlinkat(AT_FDCWD, \"/proc/thread-self/exe\", \"/usr/bin/node\", 4096) = 13"]
+              : procKind === "outside_pid"
+              ? ["100 openat(AT_FDCWD, \"/proc/999999/fd/3\", O_RDONLY) = 3"]
+              : procKind === "proc_up"
+              ? ["100 openat(AT_FDCWD, \"/proc/self/cwd/../a.txt\", O_RDONLY) = 3"]
+              : procKind === "supervised_outside"
+              ? ["smthrs-observe/1", "100 openat(AT_FDCWD, \"/proc/888888/fd/1\", O_RDONLY) = 3"]
+              : [
+                "100 openat(AT_FDCWD, \"/ws/sub\", O_RDONLY|O_DIRECTORY) = 5",
+                "100 openat(5, \"inner.txt\", O_RDONLY) = 6",
+                "100 dup2(5, 7) = 7",
+                "100 openat(7, \"dup.txt\", O_RDONLY) = 8",
+                "100 close(5) = 0",
+                "100 close(7) = 0"
+              ]
 
-            const fsLines: Array<string> =
-              fsOp === "symlink_rename"
-                ? [
-                  '100 symlinkat("target.txt", AT_FDCWD, "/ws/link.txt") = 0',
-                  '100 renameat2(AT_FDCWD, "/ws/link.txt", AT_FDCWD, "/ws/moved.txt", 0) = 0',
-                  '100 openat(AT_FDCWD, "/ws/moved.txt", O_RDONLY) = 3'
-                ]
-                : fsOp === "unlink_mkdir"
-                  ? [
-                    '100 mkdirat(AT_FDCWD, "/ws/newdir", 0755) = 0',
-                    '100 openat(AT_FDCWD, "/ws/newdir/tmp.txt", O_WRONLY|O_CREAT|O_EXCL, 0644) = 3',
-                    '100 unlinkat(AT_FDCWD, "/ws/newdir/tmp.txt", 0) = 0'
-                  ]
-                  : fsOp === "linkat_statx"
-                    ? [
-                      '100 openat(AT_FDCWD, "/ws/src.txt", O_RDONLY) = 3',
-                      '100 linkat(AT_FDCWD, "/ws/src.txt", AT_FDCWD, "/ws/hard.txt", 0) = 0',
-                      '100 statx(AT_FDCWD, "/ws/hard.txt", AT_SYMLINK_NOFOLLOW, STATX_BASIC_STATS, {}) = 0',
-                      '100 newfstatat(AT_FDCWD, "/ws/missing.txt", {}, 0) = -1 ENOENT (No such file or directory)'
-                    ]
-                    : fsOp === "dir_walk"
-                      ? [
-                        '100 openat(AT_FDCWD, "/ws/dir", O_RDONLY|O_DIRECTORY) = 5',
-                        '100 getdents64(5</ws/dir>, /* 3 entries */, 32768) = 96',
-                        '100 close(5) = 0'
-                      ]
-                      : fsOp === "clone_chdir"
-                        ? [
-                          '100 clone(child_stack=NULL, flags=CLONE_VM|SIGCHLD) = 101',
-                          '101 chdir("/ws/child") = 0',
-                          '101 openat(AT_FDCWD, "file.txt", O_RDONLY) = 3',
-                          '101 execve("/usr/bin/env", ["env"], 0x0) = 0'
-                        ]
-                        : [
-                          '100 io_uring_setup(32, {}) = 9'
-                        ]
+            const fsLines: Array<string> = fsOp === "symlink_rename"
+              ? [
+                "100 symlinkat(\"target.txt\", AT_FDCWD, \"/ws/link.txt\") = 0",
+                "100 renameat2(AT_FDCWD, \"/ws/link.txt\", AT_FDCWD, \"/ws/moved.txt\", 0) = 0",
+                "100 openat(AT_FDCWD, \"/ws/moved.txt\", O_RDONLY) = 3"
+              ]
+              : fsOp === "unlink_mkdir"
+              ? [
+                "100 mkdirat(AT_FDCWD, \"/ws/newdir\", 0755) = 0",
+                "100 openat(AT_FDCWD, \"/ws/newdir/tmp.txt\", O_WRONLY|O_CREAT|O_EXCL, 0644) = 3",
+                "100 unlinkat(AT_FDCWD, \"/ws/newdir/tmp.txt\", 0) = 0"
+              ]
+              : fsOp === "linkat_statx"
+              ? [
+                "100 openat(AT_FDCWD, \"/ws/src.txt\", O_RDONLY) = 3",
+                "100 linkat(AT_FDCWD, \"/ws/src.txt\", AT_FDCWD, \"/ws/hard.txt\", 0) = 0",
+                "100 statx(AT_FDCWD, \"/ws/hard.txt\", AT_SYMLINK_NOFOLLOW, STATX_BASIC_STATS, {}) = 0",
+                "100 newfstatat(AT_FDCWD, \"/ws/missing.txt\", {}, 0) = -1 ENOENT (No such file or directory)"
+              ]
+              : fsOp === "dir_walk"
+              ? [
+                "100 openat(AT_FDCWD, \"/ws/dir\", O_RDONLY|O_DIRECTORY) = 5",
+                "100 getdents64(5</ws/dir>, /* 3 entries */, 32768) = 96",
+                "100 close(5) = 0"
+              ]
+              : fsOp === "clone_chdir"
+              ? [
+                "100 clone(child_stack=NULL, flags=CLONE_VM|SIGCHLD) = 101",
+                "101 chdir(\"/ws/child\") = 0",
+                "101 openat(AT_FDCWD, \"file.txt\", O_RDONLY) = 3",
+                "101 execve(\"/usr/bin/env\", [\"env\"], 0x0) = 0"
+              ]
+              : [
+                "100 io_uring_setup(32, {}) = 9"
+              ]
 
             const stepLines = [
-              '100 execve("/usr/bin/node", ["node", "app.js"], 0x0) = 0',
+              "100 execve(\"/usr/bin/node\", [\"node\", \"app.js\"], 0x0) = 0",
               ...procLines,
               ...fsLines,
               netLine,
-              ...(sealed ? ['# smthrs-observe-end 1'] : [])
+              ...(sealed ? ["# smthrs-observe-end 1"] : [])
             ]
             const afterLines = [
-              '100 openat(AT_FDCWD, "/ws/after-read.txt", O_RDONLY) = 3',
-              '100 openat(AT_FDCWD, "/ws/after-write.txt", O_WRONLY|O_CREAT|O_EXCL, 0644) = 4',
-              '100 unlinkat(AT_FDCWD, "/ws/after-gone.txt", 0) = 0',
-              '100 openat(AT_FDCWD, "/ws/after-miss.txt", O_RDONLY) = -1 ENOENT (No such file or directory)'
+              "100 openat(AT_FDCWD, \"/ws/after-read.txt\", O_RDONLY) = 3",
+              "100 openat(AT_FDCWD, \"/ws/after-write.txt\", O_WRONLY|O_CREAT|O_EXCL, 0644) = 4",
+              "100 unlinkat(AT_FDCWD, \"/ws/after-gone.txt\", 0) = 0",
+              "100 openat(AT_FDCWD, \"/ws/after-miss.txt\", O_RDONLY) = -1 ENOENT (No such file or directory)"
             ]
 
             const ownTrace = ObservedReads.read(() => stepLines, cwd)
@@ -230,7 +255,8 @@ describe("@smthrs/build-cli Wave-6B: ObservedReads & Machine deep fuzz invariant
               expect(ownTrace.refusals.some((r) => r.includes("io_uring"))).toBe(true)
             }
             if (procKind === "outside_pid" || procKind === "proc_up" || procKind === "supervised_outside") {
-              expect(ownTrace.refusals.length, JSON.stringify({ procKind, refusals: ownTrace.refusals })).toBeGreaterThan(0)
+              expect(ownTrace.refusals.length, JSON.stringify({ procKind, refusals: ownTrace.refusals }))
+                .toBeGreaterThan(0)
             }
             if (netKind === "external_v4" || netKind === "sendto_quoted") {
               expect((ownTrace.reached?.length ?? 0) + ownTrace.refusals.length).toBeGreaterThan(0)
@@ -245,9 +271,13 @@ describe("@smthrs/build-cli Wave-6B: ObservedReads & Machine deep fuzz invariant
               cwd
             )
             if (!contError) {
-              expect(served.found.has("/ws/after-read.txt"), "served.found=" + JSON.stringify([...served.found.keys()])).toBe(true)
+              expect(served.found.has("/ws/after-read.txt"), "served.found=" + JSON.stringify([...served.found.keys()]))
+                .toBe(true)
               expect(served.made.has("/ws/after-write.txt")).toBe(true)
-              expect(served.missing.has("/ws/after-miss.txt"), "served.missing=" + JSON.stringify([...served.missing.keys()])).toBe(true)
+              expect(
+                served.missing.has("/ws/after-miss.txt"),
+                "served.missing=" + JSON.stringify([...served.missing.keys()])
+              ).toBe(true)
             }
 
             const combined = ObservedReads.withServed(ownTrace, [served])
@@ -319,16 +349,16 @@ describe("@smthrs/build-cli Wave-6B: ObservedReads & Machine deep fuzz invariant
 
             const trace = ObservedReads.read(
               () => [
-                '100 execve("/usr/bin/script.sh", ["script.sh"], 0x0) = 0',
-                '100 openat(AT_FDCWD, "/ws/a.txt", O_RDONLY) = 3',
-                '100 openat(AT_FDCWD, "/ws/given.txt", O_RDONLY) = 3',
-                '100 openat(AT_FDCWD, "/ws/absent.txt", O_RDONLY) = -1 ENOENT (No such file or directory)',
-                '100 openat(AT_FDCWD, "/ws/dir", O_RDONLY|O_DIRECTORY) = 4',
-                '100 getdents64(4</ws/dir>, /* 2 entries */, 32768) = 64',
-                '100 close(4) = 0',
-                '100 openat(AT_FDCWD, "/ws/created.txt", O_WRONLY|O_CREAT|O_EXCL, 0644) = 5',
-                '100 openat(AT_FDCWD, "/ext/tool.cfg", O_RDONLY) = 6',
-                ...(withMount ? ['100 openat(AT_FDCWD, "/ws/mounted/m.txt", O_RDONLY) = 7'] : [])
+                "100 execve(\"/usr/bin/script.sh\", [\"script.sh\"], 0x0) = 0",
+                "100 openat(AT_FDCWD, \"/ws/a.txt\", O_RDONLY) = 3",
+                "100 openat(AT_FDCWD, \"/ws/given.txt\", O_RDONLY) = 3",
+                "100 openat(AT_FDCWD, \"/ws/absent.txt\", O_RDONLY) = -1 ENOENT (No such file or directory)",
+                "100 openat(AT_FDCWD, \"/ws/dir\", O_RDONLY|O_DIRECTORY) = 4",
+                "100 getdents64(4</ws/dir>, /* 2 entries */, 32768) = 64",
+                "100 close(4) = 0",
+                "100 openat(AT_FDCWD, \"/ws/created.txt\", O_WRONLY|O_CREAT|O_EXCL, 0644) = 5",
+                "100 openat(AT_FDCWD, \"/ext/tool.cfg\", O_RDONLY) = 6",
+                ...(withMount ? ["100 openat(AT_FDCWD, \"/ws/mounted/m.txt\", O_RDONLY) = 7"] : [])
               ],
               root
             )
@@ -349,7 +379,11 @@ describe("@smthrs/build-cli Wave-6B: ObservedReads & Machine deep fuzz invariant
             })
             if ("refusal" in obs) throw new Error("unexpected refusal: " + obs.refusal)
 
-            const rec = { ...obs.record, from: [["//:dep", "dep-id-1"]] as const, given: [["given.txt", ObservedReads.measure("/ws/given.txt", io), 0]] as const }
+            const rec = {
+              ...obs.record,
+              from: [["//:dep", "dep-id-1"]] as const,
+              given: [["given.txt", ObservedReads.measure("/ws/given.txt", io), 0]] as const
+            }
             if ((rec.id ?? "").length === 0) return false
 
             // Also exercise listing + dirLinks directly with mounts
@@ -431,7 +465,11 @@ describe("@smthrs/build-cli Wave-6B: ObservedReads & Machine deep fuzz invariant
             expect(finder("use $MY_SECRET_VAR here")).toContain("MY_SECRET_VAR")
             const stored = ObservedReads.store(rec, [rec])
             expect(stored?.records.length).toBeGreaterThan(0)
-            const withFrom = { ...rec, from: [["//:dep", "dep-id-1"]] as const, given: [["given.txt", ObservedReads.measure("/ws/given.txt", io), 0]] as const }
+            const withFrom = {
+              ...rec,
+              from: [["//:dep", "dep-id-1"]] as const,
+              given: [["given.txt", ObservedReads.measure("/ws/given.txt", io), 0]] as const
+            }
             expect(ObservedReads.anchored(withFrom, () => "dep-id-1")).toBeUndefined()
             const reanchored = ObservedReads.anchored(withFrom, () => "dep-id-new")
             expect(reanchored?.from?.[0]?.[1]).toBe("dep-id-new")
@@ -445,159 +483,169 @@ describe("@smthrs/build-cli Wave-6B: ObservedReads & Machine deep fuzz invariant
     assertPassed(report)
   })
 
-  it("Machine.unmade virtual FS, hold/unstale/socket locking, mounting/through/recorded, toKeep & remove invariants", async () => {
-    const arb = Arbitrary.schema(
-      Schema.Struct({
-        keepInput: Schema.Literals(["empty", "valid", "bad_json", "not_object", "relative_dir", "bad_name"]),
-        withTemplate: Schema.Boolean,
-        withHeld: Schema.Boolean,
-        staleLock: Schema.Boolean
-      })
-    )
+  it(
+    "Machine.unmade virtual FS, hold/unstale/socket locking, mounting/through/recorded, toKeep & remove invariants",
+    async () => {
+      const arb = Arbitrary.schema(
+        Schema.Struct({
+          keepInput: Schema.Literals(["empty", "valid", "bad_json", "not_object", "relative_dir", "bad_name"]),
+          withTemplate: Schema.Boolean,
+          withHeld: Schema.Boolean,
+          staleLock: Schema.Boolean
+        })
+      )
 
-    const report = await Effect.runPromise(
-      Fuzz.run(
-        arb,
-        ({ keepInput, withTemplate, withHeld, staleLock }) =>
-          Effect.promise(async () => {
-            await withTempDir("smthrs-w6b-mach-", async (base) => {
-              const root = NodePath.join(base, "ws")
-              const kept = NodePath.join(base, "kept")
-              const tpl = NodePath.join(base, "home-tpl")
-              const linkTarget = NodePath.join(base, "link-target")
-              const roDir = NodePath.join(base, "ro-tree")
-              await Fs.mkdir(NodePath.join(root, "src"), { recursive: true })
-              await Fs.mkdir(kept, { recursive: true })
-              await Fs.mkdir(NodePath.join(tpl, "cfg"), { recursive: true })
-              await Fs.mkdir(linkTarget, { recursive: true })
-              await Fs.mkdir(NodePath.join(roDir, "sub"), { recursive: true })
-              await Fs.writeFile(NodePath.join(root, "src", "a.ts"), "export const a = 1\n")
-              await Fs.writeFile(NodePath.join(root, "untracked.txt"), "skip\n")
-              await Fs.writeFile(NodePath.join(tpl, "cfg", "t.txt"), "tpl\n")
-              await Fs.writeFile(NodePath.join(linkTarget, "k.txt"), "linked\n")
-              await Fs.writeFile(NodePath.join(roDir, "sub", "locked.txt"), "ro\n")
-              await Fs.chmod(NodePath.join(roDir, "sub", "locked.txt"), 0o444)
-              await Fs.chmod(NodePath.join(roDir, "sub"), 0o555)
+      const report = await Effect.runPromise(
+        Fuzz.run(
+          arb,
+          ({ keepInput, withTemplate, withHeld, staleLock }) =>
+            Effect.promise(async () => {
+              await withTempDir("smthrs-w6b-mach-", async (base) => {
+                const root = NodePath.join(base, "ws")
+                const kept = NodePath.join(base, "kept")
+                const tpl = NodePath.join(base, "home-tpl")
+                const linkTarget = NodePath.join(base, "link-target")
+                const roDir = NodePath.join(base, "ro-tree")
+                await Fs.mkdir(NodePath.join(root, "src"), { recursive: true })
+                await Fs.mkdir(kept, { recursive: true })
+                await Fs.mkdir(NodePath.join(tpl, "cfg"), { recursive: true })
+                await Fs.mkdir(linkTarget, { recursive: true })
+                await Fs.mkdir(NodePath.join(roDir, "sub"), { recursive: true })
+                await Fs.writeFile(NodePath.join(root, "src", "a.ts"), "export const a = 1\n")
+                await Fs.writeFile(NodePath.join(root, "untracked.txt"), "skip\n")
+                await Fs.writeFile(NodePath.join(tpl, "cfg", "t.txt"), "tpl\n")
+                await Fs.writeFile(NodePath.join(linkTarget, "k.txt"), "linked\n")
+                await Fs.writeFile(NodePath.join(roDir, "sub", "locked.txt"), "ro\n")
+                await Fs.chmod(NodePath.join(roDir, "sub", "locked.txt"), 0o444)
+                await Fs.chmod(NodePath.join(roDir, "sub"), 0o555)
 
-              // 1. Machine.toKeep validation
-              const keepEnv: Record<string, string | undefined> =
-                keepInput === "empty"
+                // 1. Machine.toKeep validation
+                const keepEnv: Record<string, string | undefined> = keepInput === "empty"
                   ? {}
                   : keepInput === "valid"
-                    ? { [Machine.keepVariable]: JSON.stringify({ ci: NodePath.join(base, "keep-ci") }) }
-                    : keepInput === "bad_json"
-                      ? { [Machine.keepVariable]: "{broken" }
-                      : keepInput === "not_object"
-                        ? { [Machine.keepVariable]: "[]" }
-                        : keepInput === "relative_dir"
-                          ? { [Machine.keepVariable]: JSON.stringify({ ci: "rel/path" }) }
-                          : { [Machine.keepVariable]: JSON.stringify({ ci: 123 }) }
-              const parsedKeep = Machine.toKeep(keepEnv)
-              if (keepInput === "empty" || keepInput === "valid") {
-                expect("problem" in parsedKeep).toBe(false)
-              } else {
-                expect("problem" in parsedKeep).toBe(true)
-              }
+                  ? { [Machine.keepVariable]: JSON.stringify({ ci: NodePath.join(base, "keep-ci") }) }
+                  : keepInput === "bad_json"
+                  ? { [Machine.keepVariable]: "{broken" }
+                  : keepInput === "not_object"
+                  ? { [Machine.keepVariable]: "[]" }
+                  : keepInput === "relative_dir"
+                  ? { [Machine.keepVariable]: JSON.stringify({ ci: "rel/path" }) }
+                  : { [Machine.keepVariable]: JSON.stringify({ ci: 123 }) }
+                const parsedKeep = Machine.toKeep(keepEnv)
+                if (keepInput === "empty" || keepInput === "valid") {
+                  expect("problem" in parsedKeep).toBe(false)
+                } else {
+                  expect("problem" in parsedKeep).toBe(true)
+                }
 
-              // 2. Machine.unmade virtual filesystem
-              const start: Machine.Start = {
-                root,
-                kept,
-                cacheDirectory: ".flows",
-                held: withHeld ? { files: new Set(["src/a.ts"]), directories: new Set(["src"]) } : undefined,
-                homeTemplate: withTemplate ? tpl : undefined,
-                links: Machine.homeLinks([
-                  { path: "home/.config/tool", target: linkTarget }
-                ])
-              }
-              const view = Machine.unmade(
-                start,
-                (p) => ObservedReads.measure(p),
-                ObservedReads.defaultIo
-              )
-              const machDir = NodePath.join(kept, "ci")
-              expect([...view.io.readdir(machDir)].sort()).toEqual(["home", "tmp", "w"])
-              expect(view.measured(NodePath.join(machDir, "tmp"))).toBe("d")
-              expect(view.measured(NodePath.join(machDir, "tmp", "missing"))).toBe("-")
-              expect(view.io.readdir(NodePath.join(machDir, "w"))).toEqual([NodePath.basename(root)])
-              expect(view.io.lstat(NodePath.join(machDir, "home", ".config", "tool")).isSymbolicLink()).toBe(true)
-              expect(view.io.readdir(NodePath.join(machDir, "home", ".config", "tool"))).toContain("k.txt")
-              expect(view.measured(NodePath.join(machDir, "home", ".config", "tool", "k.txt"))).not.toBe("-")
-              expect(view.io.lstat(NodePath.join(machDir, "home")).isDirectory()).toBe(true)
-              expect(view.io.lstat(root).isDirectory()).toBe(true)
-              expect(view.io.readdir(root)).toContain("src")
-              if (withHeld) {
-                expect(view.io.readdir(root)).not.toContain("untracked.txt")
-              }
-              if (withTemplate) {
-                expect(view.measured(NodePath.join(machDir, "home", "cfg", "t.txt"))).not.toBe("-")
-              }
-              let missingThrew = false
-              try {
-                view.io.lstat(NodePath.join(machDir, "w", "nope"))
-              } catch {
-                missingThrew = true
-              }
-              expect(missingThrew).toBe(true)
+                // 2. Machine.unmade virtual filesystem
+                const start: Machine.Start = {
+                  root,
+                  kept,
+                  cacheDirectory: ".flows",
+                  held: withHeld ? { files: new Set(["src/a.ts"]), directories: new Set(["src"]) } : undefined,
+                  homeTemplate: withTemplate ? tpl : undefined,
+                  links: Machine.homeLinks([
+                    { path: "home/.config/tool", target: linkTarget }
+                  ])
+                }
+                const view = Machine.unmade(
+                  start,
+                  (p) => ObservedReads.measure(p),
+                  ObservedReads.defaultIo
+                )
+                const machDir = NodePath.join(kept, "ci")
+                expect([...view.io.readdir(machDir)].sort()).toEqual(["home", "tmp", "w"])
+                expect(view.measured(NodePath.join(machDir, "tmp"))).toBe("d")
+                expect(view.measured(NodePath.join(machDir, "tmp", "missing"))).toBe("-")
+                expect(view.io.readdir(NodePath.join(machDir, "w"))).toEqual([NodePath.basename(root)])
+                expect(view.io.lstat(NodePath.join(machDir, "home", ".config", "tool")).isSymbolicLink()).toBe(true)
+                expect(view.io.readdir(NodePath.join(machDir, "home", ".config", "tool"))).toContain("k.txt")
+                expect(view.measured(NodePath.join(machDir, "home", ".config", "tool", "k.txt"))).not.toBe("-")
+                expect(view.io.lstat(NodePath.join(machDir, "home")).isDirectory()).toBe(true)
+                expect(view.io.lstat(root).isDirectory()).toBe(true)
+                expect(view.io.readdir(root)).toContain("src")
+                if (withHeld) {
+                  expect(view.io.readdir(root)).not.toContain("untracked.txt")
+                }
+                if (withTemplate) {
+                  expect(view.measured(NodePath.join(machDir, "home", "cfg", "t.txt"))).not.toBe("-")
+                }
+                let missingThrew = false
+                try {
+                  view.io.lstat(NodePath.join(machDir, "w", "nope"))
+                } catch {
+                  missingThrew = true
+                }
+                expect(missingThrew).toBe(true)
 
-              // 3. Machine.hold + unstale + socket lock contention & release
-              const holdKept = NodePath.join(base, "hold-kept")
-              await Fs.mkdir(holdKept, { recursive: true })
-              const holdEnv = { [Machine.holdingVariable]: holdKept }
-              const actualKept = Machine.holding(root, holdEnv)
-              if (staleLock) {
-                const stalePath = Machine.holdPath(actualKept)
-                await Fs.mkdir(NodePath.dirname(stalePath), { recursive: true })
-                await Fs.writeFile(stalePath, "stale")
-                await Machine.unstale(stalePath)
-              }
-              let waited = false
-              const held1 = await Machine.hold(root, holdEnv, () => {})
-              let secondAcquired = false
-              const secondPromise = Machine.hold(root, holdEnv, () => { waited = true }).then((h2) => {
-                secondAcquired = true
-                return h2
+                // 3. Machine.hold + unstale + socket lock contention & release
+                const holdKept = NodePath.join(base, "hold-kept")
+                await Fs.mkdir(holdKept, { recursive: true })
+                const holdEnv = { [Machine.holdingVariable]: holdKept }
+                const actualKept = Machine.holding(root, holdEnv)
+                if (staleLock) {
+                  const stalePath = Machine.holdPath(actualKept)
+                  await Fs.mkdir(NodePath.dirname(stalePath), { recursive: true })
+                  await Fs.writeFile(stalePath, "stale")
+                  await Machine.unstale(stalePath)
+                }
+                let waited = false
+                const held1 = await Machine.hold(root, holdEnv, () => {})
+                let secondAcquired = false
+                const secondPromise = Machine.hold(root, holdEnv, () => {
+                  waited = true
+                }).then((h2) => {
+                  secondAcquired = true
+                  return h2
+                })
+                await new Promise((r) => setTimeout(r, 40))
+                expect(secondAcquired).toBe(false)
+                await held1.release()
+                const held2 = await secondPromise
+                expect(secondAcquired).toBe(true)
+                expect(waited).toBe(true)
+                await held2.release()
+
+                // 4. Machine.remove cleans read-only directories & ignores ENOENT
+                await Machine.remove(roDir)
+                expect(NodeFs.existsSync(roDir)).toBe(false)
+                await Machine.remove(NodePath.join(base, "does-not-exist"))
+
+                // 5. Machine.named / tmpBinds / inSight / neutral / actual / own / listening
+                const machine = Machine.named(kept, root, "ci")
+                const binds = Machine.tmpBinds(machine, ["/usr/bin"])
+                expect(binds.length).toBeGreaterThan(0)
+                const sight = Machine.inSight(["/tmp/tool/bin", "/usr/bin"])
+                expect(Array.isArray(sight)).toBe(true)
+                const neutral = Machine.neutral(machine)
+                const actual = Machine.actual(machine)
+                expect(actual(neutral(machine.home))).toBe(machine.home)
+                expect(Machine.own(`${Machine.anchor}/home/x`)).toBe(true)
+
+                const sockDir = NodePath.join(base, "sock")
+                await Fs.mkdir(sockDir, { recursive: true })
+                const srv = NodeNet.createServer()
+                await new Promise<void>((res) => srv.listen(NodePath.join(sockDir, "ready.sock"), res))
+                try {
+                  const ok = await Machine.listening(
+                    sockDir,
+                    "ready.sock",
+                    { exitCode: null, killed: false } as never,
+                    200
+                  )
+                  expect(ok).toBe(true)
+                } finally {
+                  await new Promise<void>((res) => srv.close(() => res()))
+                }
               })
-              await new Promise((r) => setTimeout(r, 40))
-              expect(secondAcquired).toBe(false)
-              await held1.release()
-              const held2 = await secondPromise
-              expect(secondAcquired).toBe(true)
-              expect(waited).toBe(true)
-              await held2.release()
-
-              // 4. Machine.remove cleans read-only directories & ignores ENOENT
-              await Machine.remove(roDir)
-              expect(NodeFs.existsSync(roDir)).toBe(false)
-              await Machine.remove(NodePath.join(base, "does-not-exist"))
-
-              // 5. Machine.named / tmpBinds / inSight / neutral / actual / own / listening
-              const machine = Machine.named(kept, root, "ci")
-              const binds = Machine.tmpBinds(machine, ["/usr/bin"])
-              expect(binds.length).toBeGreaterThan(0)
-              const sight = Machine.inSight(["/tmp/tool/bin", "/usr/bin"])
-              expect(Array.isArray(sight)).toBe(true)
-              const neutral = Machine.neutral(machine)
-              const actual = Machine.actual(machine)
-              expect(actual(neutral(machine.home))).toBe(machine.home)
-              expect(Machine.own(`${Machine.anchor}/home/x`)).toBe(true)
-
-              const sockDir = NodePath.join(base, "sock")
-              await Fs.mkdir(sockDir, { recursive: true })
-              const srv = NodeNet.createServer()
-              await new Promise<void>((res) => srv.listen(NodePath.join(sockDir, "ready.sock"), res))
-              try {
-                const ok = await Machine.listening(sockDir, "ready.sock", { exitCode: null, killed: false } as never, 200)
-                expect(ok).toBe(true)
-              } finally {
-                await new Promise<void>((res) => srv.close(() => res()))
-              }
-            })
-            return true
-          }),
-        { seed: 20261312, executions: fsExecs }
+              return true
+            }),
+          { seed: 20261312, executions: fsExecs }
+        )
       )
-    )
-    assertPassed(report)
-  }, 60_000)
+      assertPassed(report)
+    },
+    60_000
+  )
 })

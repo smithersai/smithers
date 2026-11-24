@@ -19,7 +19,7 @@ import { envPrefix } from "./envPrefix.ts"
 import { finalizeWithin } from "./finalizeWithin.ts"
 import { parentOf } from "./guestPath.ts"
 import { cancelGuard, killScript } from "./killScript.ts"
-import { gather, type GatheredRun, providerFailure, remoteProcessOf } from "./localProcess.ts"
+import { commandFailure, gather, type GatheredRun, providerFailure, remoteProcessOf } from "./localProcess.ts"
 import { pidDirectory } from "./pidDirectory.ts"
 import { rootedAt } from "./rootedPath.ts"
 
@@ -164,9 +164,9 @@ export const execSession = (options: ExecSessionOptions): Effect.Effect<Session,
           }),
           input.stdin
         ).pipe(
-          Effect.mapError(providerFailure("spawn_error", `\`${command}\` could not start in ${name}`))
+          Effect.mapError(commandFailure("spawn_error", "guest command could not start"))
         )
-        const raw = remoteProcessOf(handle, command)
+        const raw = remoteProcessOf(handle)
         let ended = false
         const process: RemoteProcess = {
           ...raw,

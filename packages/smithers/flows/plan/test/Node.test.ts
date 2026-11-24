@@ -707,7 +707,6 @@ describe("Node", () => {
         { outer: { inner: [1, { value: "leaf" }] } },
         { u: undefined },
         { f: () => 1 },
-        [() => 1],
         callable,
         { toJSON: 1 }
       ]
@@ -716,6 +715,13 @@ describe("Node", () => {
         const cloned = tagged(Node.succeed(input).ast, "Succeed").value
         expect(yield* withCrypto(contentKey(cloned))).toBe(yield* withCrypto(contentKey(input)))
       }
+
+      // JSON writes a function array element as null; a key refuses it rather
+      // than give `[() => 1]` the identity of `[null]` (#4530).
+      const functionElement = [() => 1]
+      expect(tagged(Node.succeed(functionElement).ast, "Succeed").value).toEqual([null])
+      const elementFailure = yield* Effect.flip(withCrypto(contentKey(functionElement)))
+      expect(elementFailure.message).toContain("function cannot be keyed")
 
       const keyed = { toJSON: (key: string) => ({ key }) }
       const keyedInputs: ReadonlyArray<unknown> = [

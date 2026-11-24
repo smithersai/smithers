@@ -11,7 +11,7 @@ import * as Schema from "effect/Schema"
 import * as Stream from "effect/Stream"
 import { encodeBase64 } from "../internal/base64.ts"
 import { pidDirectory } from "../internal/pidDirectory.ts"
-import { sessionSlug } from "../internal/sessionSlug.ts"
+import { legacySessionSlug, sessionSlug } from "../internal/sessionSlug.ts"
 import { ProviderError } from "../RemoteChildProcessSpawner/ProviderError.ts"
 import type { Provider } from "./Provider.ts"
 import type { Session } from "./Session.ts"
@@ -117,7 +117,7 @@ export const job = <Payload = unknown>(provider: Provider, options: JobOptions<P
     throw new TypeError("Sandbox.job jobDirectory must be outside the transient pid directory")
   }
   const validate = (handle: JobHandle, key: string) =>
-    handle.id === key && handle.directory === `${root}/${sessionSlug(key)}`
+    handle.id === key && [sessionSlug, legacySessionSlug].some((slug) => handle.directory === `${root}/${slug(key)}`)
       ? Effect.void :
       Effect.fail(fail("job key or directory differs from handle", "unknown"))
   const readText = (session: Session, path: string) =>

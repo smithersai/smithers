@@ -42,6 +42,7 @@ import {
   maxStateBytes,
   type Participant,
   reconnectDelay,
+  type ServerFrame,
   stateIntervalMs
 } from "./PresenceProtocol.ts"
 
@@ -86,7 +87,7 @@ export interface Connection {
 }
 
 type Event =
-  | { readonly _tag: "Message"; readonly data: unknown }
+  | { readonly _tag: "Message"; readonly frame: ServerFrame }
   | { readonly _tag: "Close"; readonly code: number }
 
 interface Outcome {
@@ -162,12 +163,20 @@ export const connect = (url: string): Effect.Effect<Connection, never, Scope.Sco
         Queue.offerUnsafe(events, { _tag: "Close", code: dropped })
         return () => {}
       }
+      let closed = false
       const onMessage = (event: Socket.WebSocketEvent) => {
-        Queue.offerUnsafe(events, { _tag: "Message", data: event.data })
+        if (closed || typeof event.data !== "string") return
+        const frame = decodeServerFrame(event.data)
+        if (frame === undefined) return
+        // Rosters are snapshots. Only the newest one precedes the close.
+        Queue.takeUnsafe(events)
+        Queue.offerUnsafe(events, { _tag: "Message", frame })
       }
       // A close event always follows an error event.
       const onError = () => {}
       const onClose = (event: Socket.WebSocketEvent) => {
+        if (closed) return
+        closed = true
         live.socket = undefined
         live.open = false
         Queue.offerUnsafe(events, { _tag: "Close", code: event.code ?? dropped })
@@ -190,14 +199,13 @@ export const connect = (url: string): Effect.Effect<Connection, never, Scope.Sco
 
     /** One connection, from dialing to its close. */
     const session: Effect.Effect<Outcome> = Effect.scoped(Effect.gen(function*() {
-      const events = yield* Queue.unbounded<Event>()
+      const events = yield* Queue.bounded<Event>(2)
       yield* Effect.acquireRelease(Effect.sync(() => dial(events)), (hangUp) => Effect.sync(hangUp))
       let opened = false
       while (true) {
         const event = yield* Queue.take(events)
         if (event._tag === "Close") return { code: event.code, opened }
-        const frame = typeof event.data === "string" ? decodeServerFrame(event.data) : undefined
-        if (frame === undefined) continue
+        const frame = event.frame
         yield* SubscriptionRef.set(roster, frame.participants)
         if (!opened) {
           opened = true

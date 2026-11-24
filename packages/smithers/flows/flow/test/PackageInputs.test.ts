@@ -21,7 +21,7 @@ const importsIn = (directory: string): ReadonlySet<string> => {
 
 const packageBindings = (source: string): ReadonlyMap<string, string> => {
   const bindings = new Map<string, string>()
-  for (const match of source.matchAll(/import \{ Package as (\w+) \} from "\.\.\/([a-z-]+)\/PACKAGE\.ts"/g)) {
+  for (const match of source.matchAll(/import \{ Package as (\w+) \} from "(?:\.\.\/)+([a-z-]+)\/PACKAGE\.ts"/g)) {
     bindings.set(match[1]!, match[2]!)
     const local = new RegExp(`const (\\w+) = ${match[1]}\\.lib`).exec(source)
     if (local !== null) bindings.set(local[1]!, match[2]!)

@@ -27,7 +27,7 @@ jobs:
       - name: "Validate GitHub Actions workflows"
         uses: "docker://rhysd/actionlint@sha256:6f03470d0152251d7f07f7c4dc019dbe7024c72cd952f839544c7798843efa8f"
         with:
-          "args": ".github/workflows/ci.yml .github/workflows/release.yml .github/workflows/release-auth.yml .github/workflows/npm-dist-tag.yml .github/workflows/distribution.yml .github/workflows/reliability.yml .github/workflows/native-windows.yml .github/workflows/drift.yml"
+          "args": ".github/workflows/ci.yml .github/workflows/release.yml .github/workflows/release-auth.yml .github/workflows/npm-dist-tag.yml .github/workflows/distribution.yml .github/workflows/reliability.yml .github/workflows/native-windows.yml .github/workflows/drift.yml .github/workflows/recorder.yml .github/workflows/windows-confinement.yml"
       - name: "Install Go"
         uses: "actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff"
         with:
@@ -1030,7 +1030,6 @@ jobs:
         run: |
           mkdir -p "$RUNNER_TEMP/apps-e2e-artifacts"
           for f in '/tmp/smithers-'*'.png'; do if [ -e "$f" ]; then cp -R -- "$f" "$RUNNER_TEMP/apps-e2e-artifacts"; fi; done
-          if [ -e 'apps/reports' ]; then cp -R -- 'apps/reports' "$RUNNER_TEMP/apps-e2e-artifacts/reports"; fi
           if [ -e 'apps/tui/test-results' ]; then cp -R -- 'apps/tui/test-results' "$RUNNER_TEMP/apps-e2e-artifacts/tui"; fi
       - name: "Upload apps-e2e-artifacts"
         if: always()

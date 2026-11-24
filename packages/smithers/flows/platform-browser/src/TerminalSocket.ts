@@ -32,6 +32,7 @@
 
 import { RetryPolicy } from "@smthrs/flow"
 import { TerminalProtocol } from "@smthrs/sandbox"
+import * as Deferred from "effect/Deferred"
 import * as Effect from "effect/Effect"
 import type * as Layer from "effect/Layer"
 import * as PubSub from "effect/PubSub"
@@ -115,7 +116,7 @@ export const reconnect: RetryPolicy.RetryPolicy = RetryPolicy.make({
 export const layerWebSocket: Layer.Layer<Socket.WebSocketConstructor> = Socket.layerWebSocketConstructorGlobal
 
 type Event =
-  | { readonly _tag: "Message"; readonly data: unknown }
+  | { readonly _tag: "Message"; readonly data: unknown; readonly size: number }
   | { readonly _tag: "Close"; readonly code: number }
 
 /** A close that is not final: the connection redials as its policy decides. */
@@ -144,9 +145,6 @@ const dimension = (value: number, max: number): number => Math.min(max, Math.max
 
 const bytesOf = (data: unknown): Effect.Effect<Uint8Array> => {
   if (data instanceof ArrayBuffer) return Effect.succeed(new Uint8Array(data))
-  if (ArrayBuffer.isView(data)) {
-    return Effect.succeed(new Uint8Array(data.buffer, data.byteOffset, data.byteLength).slice())
-  }
   return Effect.map(Effect.promise(() => (data as Blob).arrayBuffer()), (buffer) => new Uint8Array(buffer))
 }
 
@@ -184,7 +182,7 @@ export const connect = (
     }
 
     /** Opens one socket whose events land in `events`; returns its hang-up. */
-    const dial = (events: Queue.Queue<Event>): () => void => {
+    const dial = (events: Queue.Queue<Event>, receive: (data: unknown) => void): () => void => {
       let socket: Socket.WebSocketLike
       try {
         socket = construct(url)
@@ -194,7 +192,7 @@ export const connect = (
       }
       ;(socket as { binaryType?: string }).binaryType = "arraybuffer"
       const onMessage = (event: Socket.WebSocketEvent) => {
-        Queue.offerUnsafe(events, { _tag: "Message", data: event.data })
+        receive(event.data)
       }
       // A close event always follows an error event.
       const onError = () => {}
@@ -227,8 +225,39 @@ export const connect = (
       if ((yield* SubscriptionRef.get(status))._tag !== "Connecting") {
         yield* SubscriptionRef.set(status, { _tag: "Connecting" })
       }
-      const events = yield* Queue.unbounded<Event>()
-      yield* Effect.acquireRelease(Effect.sync(() => dial(events)), (hangUp) => Effect.sync(hangUp))
+      // Count frames until delivery, including frames already pulled into a stream chunk.
+      const capacity = 64
+      const events = yield* Queue.bounded<Event>(capacity + 1)
+      const rejected = yield* Deferred.make<number>()
+      let retained = 0
+      let frames = 0
+      const receive = (data: unknown) => {
+        if (Deferred.isDoneUnsafe(rejected)) return
+        if (
+          typeof data !== "string" && !(data instanceof Blob) && !(data instanceof ArrayBuffer) &&
+          !ArrayBuffer.isView(data)
+        ) {
+          Deferred.doneUnsafe(rejected, Effect.succeed(TerminalProtocol.CloseCode.unsupported))
+          return
+        }
+        const limit = TerminalProtocol.maxFrameBytes
+        const size = typeof data === "string"
+          ? (data.length > limit ? data.length : encoder.encode(data).length)
+          : data instanceof ArrayBuffer || ArrayBuffer.isView(data)
+          ? data.byteLength
+          : data.size
+        if (size > limit || frames >= capacity || retained + size > 16 * limit) {
+          Deferred.doneUnsafe(rejected, Effect.succeed(TerminalProtocol.CloseCode.tooBig))
+          return
+        }
+        frames++
+        retained += size
+        const frame = ArrayBuffer.isView(data)
+          ? new Uint8Array(data.buffer, data.byteOffset, data.byteLength).slice().buffer
+          : data
+        Queue.offerUnsafe(events, { _tag: "Message", data: frame, size })
+      }
+      yield* Effect.acquireRelease(Effect.sync(() => dial(events, receive)), (hangUp) => Effect.sync(hangUp))
       const step = (event: Event): Effect.Effect<Step, Dropped> => {
         if (event._tag === "Close") {
           return TerminalProtocol.isFinal(event.code)
@@ -254,7 +283,17 @@ export const connect = (
         return Effect.succeed("continue")
       }
       return Stream.fromQueue(events).pipe(
-        Stream.mapEffect(step),
+        Stream.mapEffect((event) =>
+          step(event).pipe(Effect.ensuring(Effect.sync(() => {
+            if (event._tag === "Message") {
+              frames--
+              retained -= event.size
+            }
+          })))
+        ),
+        Stream.interruptWhen(
+          Deferred.await(rejected).pipe(Effect.flatMap((code) => SubscriptionRef.set(status, { _tag: "Closed", code })))
+        ),
         Stream.takeWhile((step) => step !== "end"),
         Stream.filter((step): step is "ready" => step === "ready")
       )

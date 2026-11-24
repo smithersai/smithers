@@ -1676,7 +1676,8 @@ describe("MicrosandboxSandbox", () => {
       expect(Date.now() - began).toBeLessThan(30_000)
       expect(failure).toBeInstanceOf(ProviderError)
       expect(failure.code).toBe("unavailable")
-      expect(failure.message).toContain("ended before `sleep 30` reported its status")
+      expect(failure.message).toContain("ended before the command reported its status")
+      expect(JSON.stringify(failure)).not.toContain("sleep 30")
       expect(fake.recorded.destroys).toHaveLength(1)
     }), 30_000)
 
@@ -1694,7 +1695,8 @@ describe("MicrosandboxSandbox", () => {
             return yield* Effect.flip(running.exitCode)
           })))
         expect(failure.code).toBe("spawn_error")
-        expect(failure.message).toContain("the guest could not start `pwd`")
+        expect(failure.message).toContain("the guest could not start the command")
+        expect(JSON.stringify(failure)).not.toContain("pwd")
         expect(fake.recorded.signals).toEqual([])
         expect(fake.recorded.execs).toHaveLength(1)
       }),
@@ -1711,7 +1713,7 @@ describe("MicrosandboxSandbox", () => {
           const running = yield* session.spawn("sleep 1 # broken-stream", {})
           const failure = yield* Effect.flip(running.exitCode)
           expect(failure.code).toBe("unavailable")
-          expect(failure.cause).toBe(broken)
+          expect(failure.cause).toBeUndefined()
         })))
     }), 30_000)
 
@@ -1724,7 +1726,7 @@ describe("MicrosandboxSandbox", () => {
         Effect.gen(function*() {
           const failure = yield* Effect.flip(Effect.scoped(session.spawn("true # refused", {})))
           expect(failure.code).toBe("spawn_error")
-          expect(failure.cause).toBe(refused)
+          expect(failure.cause).toBeUndefined()
         }))
     }))
 

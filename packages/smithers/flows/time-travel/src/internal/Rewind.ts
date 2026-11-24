@@ -660,11 +660,17 @@ const assessChildren = (
     return { warnings, cancellable }
   })
 
+/**
+ * Claims one child for cancellation and hands the claim to `record` in the
+ * same uninterruptible region as its activation, so an interrupted rewind
+ * always knows every child it owns and gives each one back.
+ */
 const claimChild = (
   runs: RunStore.Service,
   options: Options,
-  plan: ChildPlan
-): Effect.Effect<ClaimedChild, TimeTravelFailure> =>
+  plan: ChildPlan,
+  record: (claimed: ClaimedChild) => void
+): Effect.Effect<void, TimeTravelFailure> =>
   Effect.gen(function*() {
     const nowMs = yield* Clock.currentTimeMillis
     const childOwner: OwnerId = {
@@ -693,7 +699,7 @@ const claimChild = (
         return evidence
       })
       : undefined
-    const claimedAtMs = yield* Lease.claimAndActivate(runs, {
+    yield* Lease.claimAndActivate(runs, {
       runId: childRunId,
       expected: RunRow.snapshotOf(plan.row),
       claimant: childOwner,
@@ -702,8 +708,7 @@ const claimChild = (
       operations: { claim: `claim child ${childRunId}`, activate: `activate child ${childRunId}` },
       refused: () => error("live_child", `could not claim child ${childRunId} for cancellation`),
       lost: error("live_child", `child ${childRunId} lost its cancellation claim`)
-    })
-    return { plan, owner: childOwner, claimedAtMs }
+    }, (claimedAtMs) => record({ plan, owner: childOwner, claimedAtMs }))
   })
 
 const cancelClaimedChild = (
@@ -1035,7 +1040,7 @@ const commit = (context: Context, progress: Progress, preflighted: Preflight) =>
     // owners are also the archive transaction's child fences; any newly live
     // or re-owned attached child refuses the whole mutation.
     for (const child of preflighted.plannedChildren) {
-      progress.claimedChildren.push(yield* claimChild(runs, options, child))
+      yield* claimChild(runs, options, child, (claimed) => progress.claimedChildren.push(claimed))
     }
 
     yield* StepHook.run("rewind", options.hooks?.beforeStep, "archive-and-truncate")
@@ -1423,7 +1428,12 @@ export const rewind = (
 
       return yield* Effect.uninterruptibleMask((restore) =>
         Effect.gen(function*() {
-          const claimExit = yield* Effect.exit(restore(claimRun(runs, options, nowMs)))
+          // The claim is not restored to interruptible. An interrupt landing
+          // as the activation returned would otherwise skip the failure
+          // handler below and leave the run owned by a rewind that is gone.
+          // It is observed by the guarded protocol instead, which gives the
+          // run back.
+          const claimExit = yield* Effect.exit(claimRun(runs, options, nowMs))
           if (Exit.isFailure(claimExit)) return yield* reraise(claimExit.cause)
           const context: Context = { options, runs, journal, store, nowMs, auditId, claimed: claimExit.value }
           const progress: Progress = {

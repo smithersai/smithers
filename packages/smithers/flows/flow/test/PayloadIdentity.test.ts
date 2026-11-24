@@ -4,6 +4,7 @@
  */
 import { describe, expect, it } from "@effect/vitest"
 import { Action, Flow, FlowRuntime, Interpreter } from "@smthrs/flow"
+import { Planned } from "@smthrs/plan"
 import { Context, Effect, Exit, Layer, Redacted, Schema, SchemaIssue, SchemaTransformation } from "effect"
 import { withCrypto } from "./Crypto.ts"
 import { layerWired, makeInstance } from "./MemoryFlowRuntime.ts"
@@ -35,6 +36,15 @@ const WithInjected = Schema.Struct({ tags: Schema.ReadonlySet(Injected) })
 const upper = Layer.succeed(Encoder)({ encode: (value) => Effect.succeed(value.toUpperCase()) })
 const faulty = Layer.succeed(Encoder)({
   encode: (value) => Effect.fail(new SchemaIssue.InvalidValue({ message: "encoder unavailable" }, value))
+})
+
+describe("Flow.payloadPreimage", () => {
+  it.effect("keeps a planned value as written instead of probing it for a secret", () =>
+    Effect.gen(function*() {
+      const value = { value: Planned.make<number>("round-0") }
+      const preimage = yield* Flow.payloadPreimage(Schema.Struct({ value: Schema.Number }), value)
+      expect(preimage).toBe(value)
+    }))
 })
 
 describe("Flow.payloadSnapshot", () => {

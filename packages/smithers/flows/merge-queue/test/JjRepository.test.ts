@@ -9,10 +9,10 @@ import * as ChildProcess from "effect/process/ChildProcess"
 import * as ChildProcessSpawnerModule from "effect/process/ChildProcessSpawner"
 import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 import { execFileSync } from "node:child_process"
-import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
+import { chmodSync, linkSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { afterAll, describe, expect, it } from "vitest"
+import { afterAll, describe, expect, it, vi } from "vitest"
 import type { Config, Tree } from "../src/index.ts"
 import type { Unavailable } from "../src/index.ts"
 import { Driver, empty, JjRepository, Target } from "../src/index.ts"
@@ -82,6 +82,27 @@ const repository = () => {
 }
 
 const tree = (...parts: ReadonlyArray<readonly [number, number]>): Tree => parts.map(([id, rev]) => ({ id, rev }))
+
+it("atomically replaces a persisted ledger when registering a revision", async () => {
+  const path = mkdtempSync(join(root, "ledger-"))
+  const ledger = join(path, "ledger.json")
+  const previous = {
+    genesis: "abc",
+    settled: 0,
+    sources: [],
+    pinned: [],
+    candidates: [],
+    refused: [],
+    interior: [],
+    foreign: 1000000
+  }
+  writeFileSync(ledger, JSON.stringify(previous))
+  linkSync(ledger, ledger + ".old")
+  const queue = await run(JjRepository.make({ path, ledger, bookmark: "main", poll: 5 }))
+  await run(queue.register({ id: 1, rev: 0 }, "def"))
+  expect(JSON.parse(readFileSync(ledger + ".old", "utf8"))).toEqual(previous)
+  expect(JSON.parse(readFileSync(ledger, "utf8")).sources).toEqual([{ id: 1, rev: 0, commit: "def" }])
+})
 
 // Real jj and real processes: a budget for a loaded host, still finite so a hang fails.
 describe.skipIf(!jjInstalled)("the target as a jj bookmark", { timeout: 120_000 }, () => {
@@ -260,6 +281,13 @@ describe.skipIf(!jjInstalled)("the target as a jj bookmark", { timeout: 120_000 
       await run(queue.register({ id: 2, rev: 0 }, two))
       return detail(queue.candidate(trees, 0))
     }
+    const visible = () =>
+      repo.jj("--ignore-working-copy", "log", "--no-graph", "-r", "all()", "-T", "commit_id ++ \"\\n\"").trim().split(
+        "\n"
+      ).sort()
+    const before = visible()
+    expect(await answering("echo 'heads(all())'")(tree([1, 0]))).toContain("not a clean line")
+    expect(visible()).toEqual(before)
     expect(await answering("echo nonsense")(tree([1, 0]))).toContain("not a clean line")
     expect(await answering("true")(tree([1, 0]))).toContain("gave no commit")
     expect(await answering("echo $2")(tree([1, 0]))).toContain("not a clean line")
@@ -389,6 +417,37 @@ describe.skipIf(!jjInstalled)("the target as a jj bookmark", { timeout: 120_000 
     expect(result.landed).toEqual(tree([1, 0], [2, 0]))
     expect(result.settled).toEqual(tree([2, 0]))
     expect(repo.files()).toEqual(["base.txt", "one.txt", "two.txt"])
+  })
+
+  it("quotes a bookmark containing a double quote in revsets", async () => {
+    const repo = repository()
+    const bookmark = "release\"one"
+    repo.jj("bookmark", "create", bookmark, "-r", "main")
+    const queue = await run(JjRepository.make({ ...repo.options, bookmark }))
+    expect(await run(queue.tip)).toEqual([])
+  })
+
+  it("keeps queued builders serialized after the first finish fails validation", async () => {
+    const repo = repository()
+    let calls = 0
+    const queue = await run(JjRepository.make({
+      ...repo.options,
+      parallel: 3,
+      finish: (head) => ({
+        command: "sh",
+        args: ["-c", "sleep 1; echo \"$1\"", "sh", ++calls === 1 ? "invalid" : head]
+      })
+    }))
+    await run(queue.register({ id: 1, rev: 0 }, repo.change("one.txt", "one\n")))
+    const candidate = () => queue.candidate(tree([1, 0]), 0)
+    const first = run(Effect.flip(candidate()))
+    await vi.waitFor(() => expect(calls).toBe(1), { timeout: 5000 })
+    const second = run(candidate())
+    expect(await first).toMatchObject({ service: "target" })
+    const third = run(candidate())
+    expect(await second).toEqual(await third)
+    expect(calls).toBe(2)
+    expect(JSON.parse(readFileSync(repo.options.ledger, "utf8")).candidates).toHaveLength(1)
   })
 
   it("a builder that waited for another's application reads its refusal instead of applying again", async () => {

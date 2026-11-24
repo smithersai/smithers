@@ -9,10 +9,12 @@
  * ALPN, with a certificate `openssl` makes for the run; without `openssl` the
  * cases skip and say so. Nothing leaves the loopback interface.
  */
-import { Effect, Exit, Scope } from "effect"
+import type { Agent } from "@effect/platform-node/Undici"
+import { Effect, Exit, Logger, References, Scope } from "effect"
 import { execFileSync } from "node:child_process"
 import { X509Certificate } from "node:crypto"
 import { mkdtempSync, readFileSync, rmSync } from "node:fs"
+import { createServer } from "node:http"
 import { createSecureServer, type Http2SecureServer, type ServerHttp2Stream } from "node:http2"
 import type { AddressInfo } from "node:net"
 import { tmpdir } from "node:os"
@@ -20,6 +22,7 @@ import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { describe, expect, it } from "vitest"
 import * as EgressHttpClient from "../src/EgressHttpClient.ts"
+import { AgentFactory } from "../src/internal/EgressAgent.ts"
 
 /** A self-signed certificate for `localhost` and `127.0.0.1`, or the reason there is none. */
 let certificateUnavailable: string | undefined
@@ -62,7 +65,8 @@ const listen = async (cert: { readonly key: Buffer; readonly cert: Buffer }, fai
   let requests = 0
   const server: Http2SecureServer = createSecureServer({ ...cert, allowHTTP1: true }, (request, response) => {
     if (++requests <= failures) {
-      request.socket.destroy()
+      request.on("end", () => request.socket.destroy())
+      request.resume()
       return
     }
     response.writeHead(200, { "content-type": "text/plain" })
@@ -92,6 +96,82 @@ it(
     expect(identity.checkIP("127.0.0.1")).toBe("127.0.0.1")
   }
 )
+
+it("releases the child scope when dispatcher acquisition fails", () =>
+  Effect.runPromise(Effect.scoped(Effect.gen(function*() {
+    const scope = yield* Scope.Scope
+    const exit = yield* Effect.exit(
+      EgressHttpClient.providerFetch(direct).pipe(
+        Effect.provideService(AgentFactory, () => {
+          throw new Error("dispatcher unavailable")
+        })
+      )
+    )
+    expect(Exit.isFailure(exit)).toBe(true)
+    expect(scope.state._tag).toBe("Empty")
+  }))))
+
+it("drains a response on the retired pool and replaces it once for simultaneous TLS failures", async () => {
+  let finishBody: (() => void) | undefined
+  const origin = createServer((request, response) => {
+    if (request.url === "/held") {
+      response.write("first ")
+      finishBody = () => response.end("last")
+    } else response.end("fresh")
+  })
+  await new Promise<void>((resolve) => origin.listen(0, "127.0.0.1", resolve))
+  const url = `http://127.0.0.1:${(origin.address() as AddressInfo).port}`
+  try {
+    const body = await Effect.runPromise(Effect.scoped(Effect.gen(function*() {
+      const pools: Array<Agent> = []
+      const faults: Array<() => void> = []
+      const fetch = yield* EgressHttpClient.providerFetch(direct).pipe(
+        Effect.provideService(AgentFactory, (undici) => {
+          const connect = undici.buildConnector({})
+          const pool = new undici.Agent({
+            connect(options, callback) {
+              if (options.hostname === "127.0.0.1") return connect(options, callback)
+              faults.push(() =>
+                callback(
+                  Object.assign(new Error("TLS connection lost"), {
+                    code: "ERR_SSL_BAD_RECORD_MAC_ALERT"
+                  }),
+                  null
+                )
+              )
+              if (faults.length === 2) { for (const fault of faults) fault() }
+            }
+          })
+          pools.push(pool)
+          return pool
+        })
+      )
+      return yield* Effect.promise(async () => {
+        const held = await fetch(`${url}/held`)
+        const failed = await Promise.allSettled([fetch("https://127.0.0.2"), fetch("https://127.0.0.3")])
+        for (const result of failed) {
+          expect(result).toMatchObject({
+            status: "rejected",
+            reason: { cause: { code: "ERR_SSL_BAD_RECORD_MAC_ALERT" } }
+          })
+        }
+        expect(faults).toHaveLength(2)
+        expect(pools).toHaveLength(2)
+        expect(await (await fetch(url)).text()).toBe("fresh")
+        expect(pools[0]!.closed).toBe(true)
+        expect(pools[0]!.destroyed).toBe(false)
+        const drained = pools[0]!.close()
+        finishBody!()
+        await drained
+        return held
+      })
+    })))
+    expect(await body.text()).toBe("first last")
+  } finally {
+    origin.closeAllConnections()
+    await new Promise<void>((resolve) => origin.close(() => resolve()))
+  }
+})
 
 const providerSuite = certificate === undefined
   ? "EgressHttpClient.providerFetch (skipped: " + certificateUnavailable + ")"
@@ -128,36 +208,43 @@ describe.skipIf(certificate === undefined)(providerSuite, () => {
       expect(text).toBe("2.0")
     }))))
   it.each([false, true])(
-    "repairs a closed connection once before headers (byte body: %s)",
+    "sends a POST only once when the origin closes after reading its body (byte body: %s)",
     (bytes) =>
       Effect.runPromise(Effect.scoped(Effect.gen(function*() {
-        const legacy = yield* Effect.acquireRelease(
-          Effect.promise(() => listen(certificate!, 1)),
-          (o) => Effect.promise(o.close)
-        )
-        const oldPool = yield* EgressHttpClient.dispatcher(direct, {
-          allowH2: false,
-          connect: { ca: certificate!.cert }
-        })
-        const undici = yield* Effect.promise(async () => (await import("undici/index.js")).default)
-        // The previous implementation delegated once, and lost this request.
-        yield* Effect.promise(async () => {
-          await expect(undici.fetch(legacy.url, { method: "POST", body: "replayable", dispatcher: oldPool as never }))
-            .rejects.toMatchObject({ cause: { code: "UND_ERR_SOCKET" } })
-        })
-        expect(legacy.requests()).toBe(1)
         const origin = yield* Effect.acquireRelease(
           Effect.promise(() => listen(certificate!, 1)),
           (o) => Effect.promise(o.close)
         )
         const fetch = yield* EgressHttpClient.providerFetch(direct, { connect: { ca: certificate!.cert } })
-        const answer = yield* Effect.promise(async () =>
-          (await fetch(origin.url, { method: "POST", body: bytes ? new Uint8Array([1, 2]) : "replayable" })).text()
-        )
-        expect(answer).toBe("1.1")
-        expect(origin.requests()).toBe(2)
+        yield* Effect.promise(async () => {
+          await expect(fetch(origin.url, { method: "POST", body: bytes ? new Uint8Array([1, 2]) : "text" }))
+            .rejects.toMatchObject({ cause: { code: "UND_ERR_SOCKET" } })
+          expect(origin.requests()).toBe(1)
+          expect(await (await fetch(origin.url)).text()).toBe("1.1")
+        })
       })))
   )
+
+  it("delivers the HTTP result when the request's debug logger fails", () =>
+    Effect.runPromise(Effect.scoped(Effect.gen(function*() {
+      const origin = yield* Effect.acquireRelease(
+        Effect.promise(() => listen(certificate!)),
+        (o) => Effect.promise(o.close)
+      )
+      const fetch = yield* EgressHttpClient.providerFetch(direct, { connect: { ca: certificate!.cert } })
+      let calls = 0
+      const failing = Logger.layer([Logger.make(() => {
+        calls++
+        throw new Error("sink unavailable")
+      })])
+      const status = yield* Effect.promise(() => fetch(origin.url)).pipe(
+        Effect.provide(failing),
+        Effect.provideService(References.MinimumLogLevel, "Debug"),
+        Effect.map((response) => response.status)
+      )
+      expect(status).toBe(200)
+      expect(calls).toBe(1)
+    }))))
 
   it("keeps warm connections to other origins across repeated socket failures", () =>
     Effect.runPromise(Effect.scoped(Effect.gen(function*() {
@@ -178,12 +265,12 @@ describe.skipIf(certificate === undefined)(providerSuite, () => {
           Effect.promise(() => listen(certificate!, 1)),
           (o) => Effect.promise(o.close)
         )
-        expect(yield* Effect.promise(async () => (await fetch(origin.url)).text())).toBe("1.1")
+        yield* Effect.promise(() => expect(fetch(origin.url)).rejects.toBeDefined())
       }
       expect(sockets.size).toBe(1)
     }))))
 
-  it("fails after the single repair instead of retrying a real outage", () =>
+  it("returns the original socket failure during an outage", () =>
     Effect.runPromise(Effect.scoped(Effect.gen(function*() {
       const origin = yield* Effect.acquireRelease(
         Effect.promise(() => listen(certificate!, 10)),
@@ -195,7 +282,7 @@ describe.skipIf(certificate === undefined)(providerSuite, () => {
           cause: { code: "UND_ERR_SOCKET" }
         })
       })
-      expect(origin.requests()).toBe(2)
+      expect(origin.requests()).toBe(1)
     }))))
 
   it("does not replay a Request", () =>
@@ -311,7 +398,7 @@ describe.skipIf(certificate === undefined)(providerSuite, () => {
       await new Promise<void>((resolve) => server.close(() => resolve()))
     }
   })
-  it("shares recovery across concurrent pre-header connection failures", async () => {
+  it("delivers each concurrent pre-header connection failure to its own caller", async () => {
     let requests = 0
     const server = createSecureServer({ ...certificate!, allowHTTP1: true }, (request, response) => {
       const n = ++requests
@@ -327,15 +414,15 @@ describe.skipIf(certificate === undefined)(providerSuite, () => {
       await Effect.runPromise(Effect.scoped(Effect.gen(function*() {
         const fetch = yield* EgressHttpClient.providerFetch(direct, { connect: { ca: certificate!.cert } })
         const responses = yield* Effect.promise(() =>
-          Promise.all(Array.from({ length: 10 }, async () => (await fetch(url)).text()))
+          Promise.allSettled(Array.from({ length: 10 }, async () => (await fetch(url)).text()))
         )
-        expect(responses).toEqual(Array(10).fill("recovered"))
+        expect(responses.map((result) => result.status)).toEqual(Array(10).fill("rejected"))
         yield* Effect.promise(async () => {
           await expect(fetch("invalid-url")).rejects.toBeDefined()
           await expect(fetch(url, { method: "GET", body: "invalid" })).rejects.toBeDefined()
         })
       })))
-      expect(requests).toBe(20)
+      expect(requests).toBe(10)
     } finally {
       await new Promise<void>((resolve) => server.close(() => resolve()))
     }
@@ -363,6 +450,7 @@ describe.skipIf(certificate === undefined)(providerSuite, () => {
         Scope.provide(scope)(EgressHttpClient.providerFetch(direct, { connect: { ca: certificate!.cert } }))
       )
       const held = await fetch(`${url}/held`)
+      await expect(fetch(url)).rejects.toMatchObject({ cause: { code: "UND_ERR_SOCKET" } })
       expect(await (await fetch(url)).text()).toBe("recovered")
       await Effect.runPromise(Scope.close(scope, Exit.void))
       await expect(held.text()).rejects.toBeDefined()
@@ -402,7 +490,7 @@ describe.skipIf(certificate === undefined)(providerSuite, () => {
         expect(native.codes[1]).toBe("ERR_SSL_DECRYPTION_FAILED_OR_BAD_RECORD_MAC")
         expect(native.codes.slice(2)).toEqual(Array(4).fill("ERR_HTTP2_INVALID_SESSION"))
       }
-      expect(run("provider").codes).toEqual(Array(6).fill("ok"))
+      expect(run("provider").codes).toEqual(["ok", expect.stringMatching(/^ERR_SSL_/), "ok", "ok", "ok", "ok"])
     }
   )
 })

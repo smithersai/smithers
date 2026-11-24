@@ -182,13 +182,14 @@ describe("ContainerSandbox.existing", () => {
       expect(yield* Effect.flip(garbled.readFile(`${workdir}/text.txt`))).toMatchObject({ code: "unknown" })
     }))
 
-  it.effect("names the container and the transport's reason when the container cannot be reached", () =>
+  it.effect("names the unreachable container without copying the transport's diagnostics", () =>
     Effect.gen(function*() {
       const workdir = directory("unreachable")
       const refused = yield* session(workdir, here(), "elsewhere")
       const spawn = yield* Effect.flip(Effect.scoped(refused.spawn("true", {})))
       expect(spawn).toMatchObject({ code: "unavailable" })
-      expect(spawn.message).toBe("the container elsewhere could not be reached: no container named elsewhere")
+      expect(spawn.message).toBe("the container elsewhere could not be reached")
+      expect(spawn.cause).toBeUndefined()
       expect(yield* Effect.flip(refused.readFile("/x"))).toMatchObject({ code: "unavailable" })
       expect((yield* Effect.flip(Sandbox.fileSystem(refused).readFile("x"))).reason._tag).toBe("Unknown")
       const silent: ContainerSandbox.Transport = { exec: () => Effect.fail("refused") }

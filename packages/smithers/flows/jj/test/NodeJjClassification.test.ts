@@ -54,6 +54,8 @@ case "$FLOWS_FAKE_JJ" in
   revert-not-json|revert-not-string)
     if [ "$1" = "revert" ]; then : > "$FLOWS_FAKE_JJ_MARKER"; exit 0; fi
     if [ "$FLOWS_FAKE_JJ" = "revert-not-json" ]; then echo "docs/a.md"; else echo 42; fi; exit 0 ;;
+  op-alias) if [ "$1" = "op" ]; then echo "@"; exit 0; fi
+    if [ "$1" = "log" ] || [ "$1" = "diff" ]; then : > "$FLOWS_FAKE_JJ_MARKER"; fi; exit 0 ;;
   *) exit 0 ;;
 esac
 `
@@ -217,6 +219,26 @@ describe.skipIf(process.platform === "win32")("NodeJj failure classification", (
       expect(addError).toMatchObject({ method: "workspaceAdd", command: "jj workspace add" })
       const revertError = yield* run(Effect.flip(Effect.flatMap(Jj, (jj) => jj.revert!(""))))
       expect(revertError).toMatchObject({ method: "revert", command: "jj revert" })
+    }))
+
+  // Template aliases can rewrite what `op log -T id` prints (R1-Fable-D1-041).
+  it.live("refuses an operation id that is not hex before pinning a read to it", () =>
+    Effect.gen(function*() {
+      process.env.FLOWS_FAKE_JJ = "op-alias"
+      process.env.FLOWS_FAKE_JJ_MARKER = join(directory, "op-alias-pinned")
+      for (
+        const [method, operation] of [
+          ["diff", Effect.flatMap(Jj, (jj) => jj.diff("@-", "@"))],
+          ["snapshot", Effect.flatMap(Jj, (jj) => jj.snapshot("aliased"))],
+          ["workspaceAdd", Effect.flatMap(Jj, (jj) => jj.workspaceAdd("lane", join(directory, "op-lane"), "@"))]
+        ] as const
+      ) {
+        const error = yield* run(Effect.flip(operation))
+        expect(error).toMatchObject({ code: "unknown", method, command: "jj op log" })
+        expect(error.message).toBe(`jj ${method}: "@" is not an operation id`)
+      }
+      // No read ran pinned to the refused value.
+      expect(existsSync(process.env.FLOWS_FAKE_JJ_MARKER)).toBe(false)
     }))
 
   it.live("falls back to stdout for the message when stderr is empty", () =>

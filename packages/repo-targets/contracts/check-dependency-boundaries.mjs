@@ -58,7 +58,7 @@ const evalSuites = [
 ]
 const isEvalSuite = (dir) => evalSuites.some((suite) => suite.endsWith("/") ? dir.startsWith(suite) : dir === suite)
 // VibeLang sources (`.vibe`) import like TypeScript ones and are read the same way.
-const sourceExtensions = new Set([".js", ".jsx", ".ts", ".tsx", ".mts", ".cts", ".mjs", ".cjs", ".vibe"])
+const sourceExtensions = new Set([".js", ".jsx", ".ts", ".tsx", ".mts", ".cts", ".mjs", ".cjs", ".vibe", ".vibex"])
 const ignoredDirs = new Set([
   ".alchemy",
   ".flows",
@@ -271,8 +271,10 @@ export function collectSourceFiles(dir, out, nestedPackageDirs, options = {}) {
     // Build-graph declarations belong to the root workspace, not the package
     // they sit in: the build CLI loads them from the repository root against
     // the root install. `collectGraphFiles` gives them to the root package.
-    if (entry === "legacy declaration" || entry === "PACKAGE.ts") continue
-    if (sourceExtensions.has(extname(entry))) out.push(child)
+    if (entry === "PACKAGE.ts") continue
+    if (!/(?:\.d\.vibex?\.ts|\.vibex?\.text\.d\.ts)$/.test(entry) && sourceExtensions.has(extname(entry))) {
+      out.push(child)
+    }
   }
 }
 
@@ -280,7 +282,7 @@ export function collectSourceFiles(dir, out, nestedPackageDirs, options = {}) {
  * Collects every build-graph declaration in the tree, so the root workspace
  * checks them against the root manifest.
  *
- * The build CLI loads every `legacy declaration` from the repository root against the
+ * The build CLI loads every `PACKAGE.ts` from the repository root against the
  * root install, which is why an app's declaration may import
  * `@smthrs/targets` without the app declaring it. Declarations inside a
  * scaffolding template describe the app the template generates, not this
@@ -313,7 +315,7 @@ export function collectGraphFiles(dir, memberDirs, out) {
       collectGraphFiles(child, memberDirs, out)
       continue
     }
-    if (entry === "legacy declaration" || entry === "PACKAGE.ts") out.push(child)
+    if (entry === "PACKAGE.ts") out.push(child)
   }
 }
 
@@ -537,8 +539,11 @@ function dependencyNames(manifest, section) {
 
 /** All paths in a conditional export map or a bin declaration. */
 const publicationPaths = (value) =>
-  typeof value === "string" ? [value] :
-  value !== null && typeof value === "object" ? Object.values(value).flatMap(publicationPaths) : []
+  typeof value === "string" ?
+    [value] :
+    value !== null && typeof value === "object"
+    ? Object.values(value).flatMap(publicationPaths)
+    : []
 
 /** A publication pattern can name a file, a directory, or a glob of either. */
 const publicationMatch = (file, raw) => {
@@ -555,9 +560,11 @@ function isPublishedFile(file, pkg) {
   const manifest = pkg.manifest
   // Node export targets use string substitution: "*" also spans directories.
   const exported = [...publicationPaths(manifest.exports), ...publicationPaths(manifest.publishConfig?.exports)]
-  if (exported.some((target) =>
-    new RegExp("^" + target.replace(/^\.\//, "").split("*").map(RegExp.escape).join(".*") + "$").test(path)
-  )) return true
+  if (
+    exported.some((target) =>
+      new RegExp("^" + target.replace(/^\.\//, "").split("*").map(RegExp.escape).join(".*") + "$").test(path)
+    )
+  ) return true
   const entries = [manifest.main, manifest.module, ...publicationPaths(manifest.bin)]
   if (entries.some((pattern) => typeof pattern === "string" && publicationMatch(path, pattern))) return true
   let included = false
@@ -580,9 +587,12 @@ function publicationClosure(pkg, files) {
       const target = relative(repoRoot, resolve(repoRoot, dirname(file), specifier))
       // Source imports can name their emitted JavaScript extension.
       const stem = target.replace(/\.[cm]?js$/, "")
-      for (const candidate of [target, ...[...sourceExtensions].flatMap((extension) =>
-        [stem + extension, join(target, "index" + extension)]
-      )]) {
+      for (
+        const candidate of [
+          target,
+          ...[...sourceExtensions].flatMap((extension) => [stem + extension, join(target, "index" + extension)])
+        ]
+      ) {
         if (candidates.has(candidate) && !shipped.has(candidate)) {
           shipped.add(candidate)
           pending.push(candidate)
@@ -598,7 +608,7 @@ function publicationClosure(pkg, files) {
  * package scripts, and build-graph declarations. Such a file may use
  * `devDependencies`; a shipped source file may not.
  *
- * `legacy declaration` is a declaration the build CLI loads with the root install, and
+ * `PACKAGE.ts` is a declaration the build CLI loads with the root install, and
  * no tarball contains one.
  *
  * @param {string} file
@@ -615,7 +625,7 @@ export function isDevOnlyFile(file, pkg, runtimeFiles = new Set()) {
     parts.includes("__tests__") ||
     parts.includes("__type-tests__") ||
     parts.includes("scripts") ||
-    base === "legacy declaration" ||
+    base === "PACKAGE.ts" ||
     base.includes(".test.") ||
     base.includes(".spec.") ||
     base.endsWith(".config.ts") ||

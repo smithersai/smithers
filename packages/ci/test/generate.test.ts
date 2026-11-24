@@ -31,6 +31,9 @@ import { forShell, forText } from "../src/generate/Expressions.vibe"
 import { files } from "../src/generate/index.vibe"
 import {
   actionRefs,
+  cacheAction,
+  cacheNamespace,
+  checkoutAction,
   compiledCode,
   contentStore,
   keptFiles,
@@ -221,7 +224,8 @@ describe("files", () => {
       NODE_COMPILE_CACHE: `${stateDirectory}/${compiledCode}`,
       SMTHRS_MACHINES: machinesDirectory,
       SMITHERS_CACHE_URL: "${{ vars.SMITHERS_CACHE_URL }}",
-      SMITHERS_CACHE_TOKEN: token
+      SMITHERS_CACHE_TOKEN: token,
+      SMITHERS_CACHE_NAMESPACE: cacheNamespace
     })
     const notice = stepsOf(plain).findIndex((entry) => entry["name"] === "Shared cache")
     expect(stepsOf(plain)[notice]).toEqual({
@@ -244,10 +248,61 @@ describe("files", () => {
       NODE_COMPILE_CACHE: `${stateDirectory}/${compiledCode}`,
       SMTHRS_MACHINES: machinesDirectory,
       SMITHERS_CACHE_URL: "${{ vars.SMITHERS_CACHE_URL || 'https://cache.example.com/it''s' }}",
-      SMITHERS_CACHE_TOKEN: token
+      SMITHERS_CACHE_TOKEN: token,
+      SMITHERS_CACHE_NAMESPACE: cacheNamespace
     })
     expect(stepsOf(cached).map((entry) => entry["name"])).not.toContain("Shared cache")
     for (const workflow of [plain, cached]) expect(workflow).not.toMatch(/TOKEN: (?!\$\{\{ |>-\n +\$\{\{ )/)
+  })
+
+  // R1-Neon-D3-006: the checkout and the runner's cache were written at a tag that can be moved, the checkout left
+  // the job's token in `.git/config`, and a run for a branch published into the keys the default branch reads.
+  it("pins the checkout and the cache to commits, keeps no credentials, and publishes a branch's results apart", () => {
+    const document = inventory([job("a", [step("a:1", "x")])])
+    const stepsOf = (workflow: string) =>
+      (parseYaml(workflow) as { jobs: { ci: { steps: ReadonlyArray<Record<string, unknown>> } } }).jobs.ci.steps
+    const workflow = content(generate(document), workflowPath)
+    const uses = stepsOf(workflow).flatMap((entry) => typeof entry["uses"] === "string" ? [entry["uses"]] : [])
+    expect(stepsOf(workflow)[0]).toEqual({ uses: checkoutAction, with: { "persist-credentials": false } })
+    expect(uses).toContain(cacheAction)
+    for (const action of [checkoutAction, cacheAction]) expect(action).toMatch(/^actions\/[a-z]+@[0-9a-f]{40}$/)
+    expect(uses.filter((action) => /^actions\/(checkout|cache)@/.test(action))).toEqual([checkoutAction, cacheAction])
+
+    // What GitHub makes of the namespace for each run: the trusted keys for the default branch alone.
+    const namespaceOf = (run: { event: string; ref: string; pr?: number; id?: number }): string => {
+      const values: Record<string, string | number> = {
+        "github.event_name": run.event,
+        "github.ref_name": run.ref,
+        "github.event.repository.default_branch": "main",
+        "github.event.pull_request.number": run.pr ?? "",
+        "github.run_id": run.id ?? 7
+      }
+      const targets = stepsOf(workflow).find((entry) => String(entry["run"]).includes("smthrs ci"))
+      const text = (targets as { env: Record<string, string> }).env["SMITHERS_CACHE_NAMESPACE"] as string
+      expect(text).toBe(cacheNamespace)
+      const term = (word: string): string => {
+        const made = /^format\('([a-z]+)-\{0\}', ([a-z_.]+)\)$/.exec(word)
+        if (made !== null) return `${made[1]}-${values[made[2] as string]}`
+        const compared = /^([a-z_.]+) (==|!=) (?:'([a-z_]+)'|([a-z_.]+))$/.exec(word)
+        if (compared !== null) {
+          const right = compared[3] ?? String(values[compared[4] as string])
+          return (String(values[compared[1] as string]) === right) === (compared[2] === "==") ? "true" : ""
+        }
+        return word === "''" ? "" : String(values[word])
+      }
+      for (const choice of text.slice("${{ ".length, -" }}".length).split(" || ")) {
+        const terms = choice.split(" && ").map(term)
+        if (terms.every((value) => value !== "")) return terms.at(-1) as string
+      }
+      return ""
+    }
+    expect(namespaceOf({ event: "push", ref: "main" })).toBe("")
+    expect(namespaceOf({ event: "schedule", ref: "main" })).toBe("")
+    expect(namespaceOf({ event: "pull_request", ref: "12/merge", pr: 12 })).toBe("pr-12")
+    expect(namespaceOf({ event: "push", ref: "feature/x", id: 91 })).toBe("run-91")
+    expect(namespaceOf({ event: "workflow_dispatch", ref: "feature/x", id: 92 })).toBe("run-92")
+    // Smithers build takes a namespace of letters, digits, dots, underscores and dashes: never a branch's `/`.
+    for (const made of ["pr-12", "run-91"]) expect(made).toMatch(/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/)
   })
 
   it("checks first that the generated files are what apply writes, with the cache apply was given", () => {
@@ -265,7 +320,7 @@ describe("files", () => {
     // After the checkout and the Node smithers-ci runs on, and before the repository's tools, the sandbox and the
     // cache: a pull request that changes the repository's shape fails here, before anything else runs.
     expect(stepsOf(content(generate(document), workflowPath)).slice(0, 4)).toEqual([
-      { uses: "actions/checkout@v4" },
+      { uses: checkoutAction, with: { "persist-credentials": false } },
       { uses: "actions/setup-node@v4", with: { "node-version": 24 } },
       { name: "Generated files are up to date", run: check },
       { uses: "pnpm/action-setup@v4", with: { version: "9.0.0" } }
@@ -1440,7 +1495,7 @@ describe("matrix and systems", () => {
       { os: "ubuntu-latest", leg: 2, tools: "runner ubuntu-latest" }
     ])
     const cached = (parseYaml(beside).jobs.ci.steps as ReadonlyArray<Record<string, unknown>>).find((entry) =>
-      entry["uses"] === "actions/cache@v4"
+      entry["uses"] === cacheAction
     ) as { readonly with: { readonly key: string } }
     expect(cached.with.key).toBe("smithers-ci-${{ join(matrix.os, '-') }}-${{ matrix.leg }}-${{ github.sha }}")
   })

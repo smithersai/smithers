@@ -486,6 +486,43 @@ describe("BrowserLanguageServer", () => {
       yield* Effect.yieldNow
     }).pipe(Effect.scoped))
 
+  it.effect("a read and queued requests retain their workspace across Open", () =>
+    Effect.gen(function*() {
+      const channel = new MessageChannel()
+      const { port2 } = channel
+      const messages: Array<string> = []
+      const replies: Array<{ id: number; files: number }> = []
+      yield* Effect.forkScoped(BrowserLanguageServer.program({ typescript: ts, lib, port: channel.port1 as never }))
+      yield* Effect.callback<void>((resume) => {
+        let opened = false
+        port2.onmessage = ({ data }) => {
+          messages.push(data._tag)
+          if (data._tag === "Read") {
+            if (!opened) {
+              opened = true
+              port2.postMessage({ _tag: "Request", id: 2, method: "workspaceSymbols", params: {} })
+              port2.postMessage({ _tag: "Open", paths: [] })
+            }
+            port2.postMessage({
+              _tag: "Files",
+              id: data.id,
+              files: data.paths.map((path: string) => [path, "export const x = 1"])
+            })
+          }
+          if (data._tag === "Refuse") resume(Effect.die(new Error(data.message)))
+          if (data._tag === "Reply") {
+            replies.push({ id: data.id, files: data.files })
+            if (replies.length === 2) resume(Effect.void)
+          }
+        }
+        port2.postMessage({ _tag: "Open", paths: ["a.ts"] })
+        port2.postMessage({ _tag: "Request", id: 1, method: "documentSymbols", params: { path: "/a.ts" } })
+      })
+      expect(replies).toEqual([{ id: 1, files: 1 }, { id: 2, files: 1 }])
+      expect(messages).not.toContain("CancelRead")
+      port2.close()
+    }).pipe(Effect.scoped))
+
   it.effect("the worker refuses a request before its workspace opens and ignores files nobody asked for", () =>
     Effect.gen(function*() {
       const channel = new MessageChannel()

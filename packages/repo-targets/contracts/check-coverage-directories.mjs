@@ -23,6 +23,7 @@
 import { readdirSync, readFileSync } from "node:fs"
 import { join, relative } from "node:path"
 import { fileURLToPath } from "node:url"
+import { isMain } from "../scripts/workspace-root.mjs"
 
 /** A coverage directory named by the pid: in a template string or joined with `+`. */
 const pidNamed = /-coverage-(?:\$\{\s*process\.pid\s*\}|["']\s*\+\s*process\.pid\b)/
@@ -69,4 +70,4 @@ const main = () => {
   return 1
 }
 
-if (process.argv[1] === fileURLToPath(import.meta.url)) process.exitCode = main()
+if (isMain(import.meta)) process.exitCode = main()

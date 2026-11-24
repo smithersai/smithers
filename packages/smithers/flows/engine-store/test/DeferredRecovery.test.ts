@@ -155,4 +155,27 @@ describe("a store that defers recovery, across a restart", () => {
       )
       expect(status).toBe("completed")
     })))
+
+  // R1-Fable-D1-001: a clock fired only from an in-memory timer, armed by the
+  // engine that scheduled it or by a registration's recovery. An engine whose
+  // recovery never armed the row (here, one that defers recovery and has not
+  // reported yet; equally one that registered before another engine parked
+  // the run and died) left the run asleep past its deadline.
+  it("fires a due clock from the heartbeat sweep when no recovery has armed it", () =>
+    run(Effect.gen(function*() {
+      yield* parkUnderFirstEngine("nap-3")
+      const observed = yield* Effect.scoped(
+        Effect.gen(function*() {
+          const parked = (yield* pendingClocks("nap-3")).length
+          yield* TestClock.adjust(Duration.minutes(10))
+          yield* TestDatabase.until(Effect.gen(function*() {
+            if ((yield* statusOf("nap-3")) === "completed") return true
+            yield* TestClock.adjust(Ownership.heartbeatInterval)
+            return false
+          }))
+          return { parked, pending: (yield* pendingClocks("nap-3")).length, status: yield* statusOf("nap-3") }
+        }).pipe(Effect.provide(sleeper(second, { deferRecovery: true })))
+      )
+      expect(observed).toEqual({ parked: 1, pending: 0, status: "completed" })
+    })))
 })

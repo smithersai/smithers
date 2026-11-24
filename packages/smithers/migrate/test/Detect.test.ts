@@ -322,6 +322,16 @@ describe("Detect.scan over jsx-single", () => {
     expect(Detect.resolvedEffectVersions(npmNested)).toEqual(["3.18.1", "3.19.0", "4.1.1"])
   })
 
+  it.effect("scans a workflow directory named build", () =>
+    Effect.gen(function*() {
+      const root = copyFixture("jsx-single")
+      const file = ".smithers/workflows/build/flow.tsx"
+      mkdirSync(join(root, ".smithers/workflows/build"), { recursive: true })
+      writeFileSync(join(root, file), "/** @jsxImportSource smthrs */\nexport const flow = <workflow />")
+      const detection = yield* detect(root)
+      expect(detection.files).toContain(file)
+    }))
+
   it.effect("reports every path it could not read or would not descend into, instead of dropping it", () =>
     Effect.gen(function*() {
       const root = copyFixture("jsx-single")

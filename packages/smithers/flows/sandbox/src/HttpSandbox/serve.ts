@@ -10,12 +10,12 @@ import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
 import type * as Scope from "effect/Scope"
 import * as Stream from "effect/Stream"
-import { concat } from "../internal/concat.ts"
 import type { RemoteOptions } from "../RemoteChildProcessSpawner/Provider.ts"
 import type { ProviderError } from "../RemoteChildProcessSpawner/ProviderError.ts"
 import type { Provider } from "../Sandbox/Provider.ts"
 import type { ResourceLimits } from "../Sandbox/ResourceLimits.ts"
 import type { Session } from "../Sandbox/Session.ts"
+import { byteBudget } from "./bytes.ts"
 import { Acquire, Command, CommandResult, Failure, LimitsQuery, SessionInfo, statusOf } from "./protocol.ts"
 
 /**
@@ -35,6 +35,10 @@ export interface ServeOptions {
   readonly provider: Provider | ((limits: ResourceLimits | undefined) => Provider)
   /** The bearer token every request must carry; compared in constant time. */
   readonly token: string
+  /** Maximum bytes accepted in a single request (default 24 MiB). */
+  readonly maxRequestBytes?: number | undefined
+  /** Maximum combined stdout and stderr bytes of one command (default 4 MiB). */
+  readonly maxOutputBytes?: number | undefined
 }
 
 /** A request this service answers with a status of its own. */
@@ -78,30 +82,38 @@ const retained = (provider: Provider): Retained => {
   return provider as Retained
 }
 
-/** Runs one command to completion, reading both streams and the exit together. */
-const runToEnd = (session: Session, command: string, options: RemoteOptions) =>
-  Effect.flatMap(session.spawn(command, options), (child) =>
-    Effect.all([
-      Stream.runCollect(child.stdout),
-      Stream.runCollect(child.stderr),
-      child.exitCode
-    ], { concurrency: "unbounded" }).pipe(
-      Effect.map(([stdout, stderr, exitCode]) => ({ exitCode, stdout: concat(stdout), stderr: concat(stderr) }))
-    ))
+const limit = (value: number, name: string) => {
+  if (!Number.isSafeInteger(value) || value < 1) throw new TypeError(`http-sandbox: invalid ${name}`)
+  return value
+}
+
+const tooLarge = () => new Refusal({ status: 413, code: "unknown", message: "byte limit exceeded" })
+
+/** Runs a command within a single byte budget shared by both output streams. */
+const runToEnd = (session: Session, command: string, options: RemoteOptions, maxBytes: number) =>
+  Effect.flatMap(session.spawn(command, options), (child) => {
+    const collect = byteBudget(maxBytes, tooLarge())
+    return Effect.all([collect(child.stdout), collect(child.stderr), child.exitCode], { concurrency: "unbounded" })
+      .pipe(Effect.map(([stdout, stderr, exitCode]) => ({ stdout, stderr, exitCode })))
+  })
 
 /**
- * Appends `part` to `path` when `path` holds exactly `offset` bytes, and
- * accepts a `path` that already holds `end`: the same chunk, sent again after
- * its answer was lost. Any other size, or no file, appends nothing.
+ * Every delivery writes the same byte range. A concurrent duplicate or a
+ * retry of a partial write cannot extend the file past the chunk's end.
+ * The seek and the copy share one open file description, so the copy can use
+ * normal block sizes even when the destination offset is unaligned.
  */
-const appendScript = (path: string, part: string, offset: number, end: number) =>
-  `f=${CommandLine.quote(path)}; p=${CommandLine.quote(part)}\n` +
-  // BSD `wc` pads its count with spaces, which the arithmetic expansion drops.
-  `s=$(wc -c <"$f" 2>/dev/null) && s=$((s)) || s=absent\n` +
-  `if [ "$s" = ${offset} ]; then cat "$p" >>"$f" || s=unwritable; fi\n` +
-  `rm -f "$p"\n` +
-  `if [ "$s" = ${offset} ] || [ "$s" = ${end} ]; then exit 0; fi\n` +
-  `echo "$s" >&2; exit 3`
+const appendScript = (path: string, offset: number, end: number) =>
+  `f=${CommandLine.quote(path)}
+` +
+  `s=$(wc -c <"$f") || exit 3; [ "$s" -ge ${offset} ] && [ "$s" -le ${end} ] || exit 3
+` +
+  `if [ "$s" -eq ${end} ]; then cat >/dev/null; exit $?; fi\n` +
+  `exec 3<>"$f" || exit 3
+` +
+  `dd bs=1 count=0 seek=${offset} conv=notrunc >&3 2>/dev/null && cat >&3 || exit 3
+` +
+  `s=$(wc -c <"$f") && [ "$s" -eq ${end} ]`
 
 /**
  * Turns a retained `Sandbox.Provider` into an HTTP handler on web-standard
@@ -147,13 +159,22 @@ export const serve = (options: ServeOptions): (request: Request) => Effect.Effec
       : ((fixed) => () => Effect.succeed(fixed))(retained(provider))
   const expected = `Bearer ${options.token}`
 
+  const maxRequestBytes = limit(options.maxRequestBytes ?? 24 * 1024 * 1024, "maxRequestBytes")
+  const maxOutputBytes = limit(options.maxOutputBytes ?? 4 * 1024 * 1024, "maxOutputBytes")
+  const bytesOf = (request: Request) =>
+    request.body === null ?
+      Effect.succeed(new Uint8Array()) :
+      byteBudget(maxRequestBytes, tooLarge())(Stream.fromReadableStream({
+        evaluate: () => request.body!,
+        onError: () => malformed("the request body could not be read")
+      }))
+
   const body = <A>(request: Request, decode: (text: string) => Effect.Effect<A, { readonly message: string }>) =>
-    Effect.tryPromise({ try: () => request.text(), catch: () => malformed("the request body could not be read") })
-      .pipe(
-        Effect.flatMap((text) =>
-          Effect.mapError(decode(text), (error) => malformed(`the request body is malformed: ${error.message}`))
-        )
-      )
+    Effect.flatMap(
+      bytesOf(request),
+      (bytes) =>
+        Effect.mapError(decode(new TextDecoder().decode(bytes)), () => malformed("the request body is malformed"))
+    )
 
   const query = (url: URL, name: string) => {
     const value = url.searchParams.get(name)
@@ -204,7 +225,11 @@ export const serve = (options: ServeOptions): (request: Request) => Effect.Effec
               ? undefined
               : Object.fromEntries(Object.entries(command.env).map(([name, value]) => [name, value ?? undefined])),
             stdin: command.stdin
-          }))
+          }, maxOutputBytes).pipe(Effect.mapError((error) =>
+            error._tag === "Refusal"
+              ? error
+              : new Refusal({ status: statusOf(error.code), code: error.code, message: "remote command failed" })
+          )))
         return json(200, encodeResult(result))
       }
       const id = yield* query(url, "id")
@@ -231,31 +256,21 @@ export const serve = (options: ServeOptions): (request: Request) => Effect.Effec
         })
       }
       const offset = url.searchParams.get("offset")
-      if (offset !== null && !/^\d+$/.test(offset)) {
-        return yield* Effect.fail(malformed(`the offset is not a byte count: ${offset}`))
+      const start = Number(offset)
+      if (offset !== null && (!/^\d+$/.test(offset) || !Number.isSafeInteger(start))) {
+        return yield* Effect.fail(malformed("the offset is not a byte count"))
       }
-      const bytes = new Uint8Array(
-        yield* Effect.tryPromise({
-          try: () =>
-            request.arrayBuffer(),
-          catch: () => malformed("the request body could not be read")
-        })
-      )
+      const bytes = yield* bytesOf(request)
+      const end = start + bytes.length
+      if (!Number.isSafeInteger(end)) {
+        return yield* Effect.fail(malformed("the ending offset is not a byte count"))
+      }
       yield* attached(remoteId, id, limits, (session) =>
         offset === null ? session.writeFile(path, bytes) : Effect.gen(function*() {
-          const start = Number(offset)
-          const part = `${path}.smthrs-part-${start}`
-          yield* session.writeFile(part, bytes)
-          const appended = yield* runToEnd(session, appendScript(path, part, start, start + bytes.length), {})
+          const appended = yield* runToEnd(session, appendScript(path, start, end), { stdin: bytes }, maxOutputBytes)
           if (appended.exitCode !== 0) {
             return yield* Effect.fail(
-              new Refusal({
-                status: 409,
-                code: "unknown",
-                message: `${path} does not end at byte ${start}: it holds ${
-                  new TextDecoder().decode(appended.stderr).trim()
-                }`
-              })
+              new Refusal({ status: 409, code: "unknown", message: `file does not end at byte ${start}` })
             )
           }
         }))

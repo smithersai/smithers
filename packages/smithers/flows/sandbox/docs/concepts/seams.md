@@ -32,14 +32,10 @@ to satisfy Effect's `ChildProcessSpawner`, which is what
 `RemoteChildProcessSpawner.layer` produces from it, and it is not enough to
 place work, because there is no filesystem.
 
-The command reaches the provider as the string `CommandLine.renderForExecution`
-produces, which reveals a `Redacted` argument.
-[`@smthrs/kernel`](/api/kernel) checks `proc:spawn` against
-`CommandLine.resource`, which starts from the `CommandLine.render` string,
-where that argument reads `<redacted>`, and adds a `sh -c`
-wrapper for a shell line holding control syntax, an `env <NAME>… --` prefix
-for overridden environment names, and a `cwd <path> --` prefix for a
-directory outside the workspace.
+The adapter checks every pipeline stage before sending `CommandLine.render(command)`,
+its working directory and its environment to the provider. It refuses protected arguments
+and environment values. A guest can use an opaque placeholder issued by its host egress proxy.
+Command failures report the operation and typed reason.
 
 ## Sandbox.Provider: a machine lifecycle
 

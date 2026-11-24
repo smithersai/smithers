@@ -1,6 +1,6 @@
 import { NodeChildProcessSpawner, NodeFileSystem } from "@effect/platform-node"
 import { afterAll, describe, expect, it } from "@effect/vitest"
-import { Deferred, Effect, Fiber, FileSystem, Layer, Path, Stream } from "effect"
+import { Deferred, Effect, Exit, Fiber, FileSystem, Layer, Path, Random, Scope, Stream } from "effect"
 import * as ChildProcess from "effect/process/ChildProcess"
 import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 import { TestClock } from "effect/testing"
@@ -236,6 +236,57 @@ describe("JustBashSandbox", () => {
       }))
     }))
 
+  it.effect("a retired interpreter finishes in its own workspace", () =>
+    Effect.gen(function*() {
+      const { fs } = yield* services
+      const entered = yield* Deferred.make<void>()
+      let resolve!: () => void
+      const promise = new Promise<void>((done) => {
+        resolve = done
+      })
+      const real = justBash().bash
+      const provider = JustBashSandbox.make({
+        fs,
+        root,
+        bash: {
+          exec: async (command, options) => {
+            if (command === "printf old > result") {
+              Deferred.doneUnsafe(entered, Effect.void)
+              await promise
+            }
+            return real.exec(command, options)
+          }
+        }
+      })
+      yield* Effect.scoped(
+        Effect.gen(function*() {
+          const scope = yield* Scope.make()
+          const old = yield* Scope.provide(provider.acquire("reused-key"), scope)
+          const running = yield* output(old, "printf old > result").pipe(Effect.forkChild)
+          yield* Deferred.await(entered)
+          yield* Fiber.interrupt(running)
+          yield* Scope.close(scope, Exit.void)
+          const fresh = yield* provider.acquire("reused-key")
+          yield* fresh.writeFile(`${fresh.workdir}/result`, encoder.encode("new"))
+          resolve()
+          expect((yield* output(fresh, "cat result")).stdout).toBe("new")
+          expect((yield* Effect.flip(output(old, "printf stale > result"))).code).toBe("unavailable")
+          expect(yield* fs.exists(old.workdir)).toBe(false)
+        }).pipe(Effect.ensuring(Effect.sync(resolve)))
+      )
+    }))
+
+  it.effect("refuses a colliding physical directory without removing the existing workspace", () =>
+    Effect.scoped(Effect.gen(function*() {
+      const { fs } = yield* services
+      const provider = JustBashSandbox.make({ bash: justBash().bash, fs, root })
+      const acquire = provider.acquire("collision").pipe(Random.withSeed("same-sequence"))
+      const session = yield* acquire
+      yield* session.writeFile(`${session.workdir}/proof`, encoder.encode("first"))
+      expect((yield* Effect.flip(acquire)).code).toBe("unavailable")
+      expect((yield* output(session, "cat proof")).stdout).toBe("first")
+    })))
+
   it.effect("documents string output as UTF-8 text and directs binary output to file transfer", () =>
     Effect.gen(function*() {
       const { fs } = yield* services
@@ -439,6 +490,19 @@ describe("JustBashSandbox", () => {
       expect((yield* Effect.flip(Effect.scoped(blocked.acquire("unavailable")))).code).toBe("unavailable")
 
       const provider = JustBashSandbox.make({ bash: fake.bash, fs, root: `${root}/failures` })
+      // A root of "/" still addresses the root of the injected filesystem.
+      const unavailableRoot = JustBashSandbox.make({
+        bash: fake.bash,
+        fs: FileSystem.makeNoop({
+          makeDirectory: (path) =>
+            Effect.suspend(() => {
+              expect(path).toBe("/")
+              return fs.makeDirectory(`${root}/plug/dir`)
+            })
+        }),
+        root: "/"
+      })
+      expect((yield* Effect.flip(Effect.scoped(unavailableRoot.acquire("root")))).code).toBe("unavailable")
       yield* Effect.scoped(
         Effect.gen(function*() {
           const session = yield* provider.acquire("failures")
@@ -455,16 +519,18 @@ describe("JustBashSandbox", () => {
 
       // A rejecting interpreter is a spawn error, not a defect.
       const broken: JustBashSandbox.JustBashLike = {
-        exec: () => Promise.reject(new Error("interpreter crashed"))
+        exec: () => Promise.reject(new Error("private-interpreter-marker"))
       }
       const crashed = JustBashSandbox.make({ bash: broken, fs, root: `${root}/broken` })
       const spawnFailure = yield* Effect.flip(
         Effect.scoped(
           Effect.flatMap(crashed.acquire("broken-bash"), (session) =>
-            Effect.scoped(Effect.asVoid(session.spawn("true", {}))))
+            Effect.scoped(Effect.asVoid(session.spawn("printf private-interpreter-marker", {}))))
         )
       )
       expect(spawnFailure.code).toBe("spawn_error")
+      expect(JSON.stringify(spawnFailure)).not.toContain("private-interpreter-marker")
+      expect(spawnFailure.cause).toBeUndefined()
 
       // The root option defaults to the virtual `/workspace`. Proving that
       // must not create `/workspace` on this real host, so the one acquire
@@ -483,7 +549,7 @@ describe("JustBashSandbox", () => {
         Effect.gen(function*() {
           const session = yield* JustBashSandbox.make({ bash: fake.bash, fs: recording }).acquire("defaults")
           expect(session.workdir.startsWith("/workspace/defaults-")).toBe(true)
-          expect(made).toEqual([session.workdir])
+          expect(made).toEqual(["/workspace", session.workdir])
         })
       )
     }), budget)

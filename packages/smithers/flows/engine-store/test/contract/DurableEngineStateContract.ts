@@ -373,6 +373,101 @@ export const describeContract = (harness: Harness): void => {
         expect(result.unfiltered.map((row) => row.runId)).toEqual(["calm-parked", "cancel-parked"])
       }))
 
+    // R1-Fable-D1-024 and R1-Astra-D1-005: sweeps read bounded keyset pages,
+    // and the settled-child repair reads only parked runs that have children.
+    it.effect("pages waitingRuns by run id and narrows it to parents", () =>
+      Effect.gen(function*() {
+        const result = yield* harness.run((context) =>
+          Effect.gen(function*() {
+            // Wake order and run-id order disagree, so a page proves its own order.
+            const parked = [
+              ["page-a", "event", 900],
+              ["page-b", "timer", 50],
+              ["page-c", "event", undefined],
+              ["page-d", "timer", 10],
+              ["page-e", "timer", 5_000]
+            ] as const
+            for (const [runId, reason, wakeAt] of parked) {
+              yield* context.seedRun(runId, owner)
+              yield* context.state.park(runId, wakeAt === undefined ? { reason } : { reason, wakeAt }, owner)
+            }
+            yield* context.seedRun("page-child", owner)
+            yield* context.state.recordRunParent("page-child", "page-c")
+            yield* context.state.recordRunParent("page-child", "page-e")
+            yield* context.setCancelRequested("page-d", 5)
+            yield* context.setCancelRequested("page-e", 5)
+            const ids = (rows: ReadonlyArray<DurableEngineState.WaitingRow>) => rows.map((row) => row.runId)
+            const page = (filter: DurableEngineState.WaitingRunsFilter) =>
+              Effect.map(context.state.waitingRuns(filter), ids)
+            return {
+              first: yield* page({ page: { limit: 2 } }),
+              second: yield* page({ page: { limit: 2, afterRunId: "page-b" } }),
+              last: yield* page({ page: { limit: 2, afterRunId: "page-d" } }),
+              past: yield* page({ page: { limit: 2, afterRunId: "page-e" } }),
+              timers: yield* page({ reason: "timer", page: { limit: 10 } }),
+              dueTimers: yield* page({ reason: "timer", dueBeforeMs: 100, page: { limit: 10 } }),
+              dueTimersAfter: yield* page({
+                reason: "timer",
+                dueBeforeMs: 100,
+                page: { limit: 10, afterRunId: "page-b" }
+              }),
+              cancelled: yield* page({ cancelRequested: true, page: { limit: 1 } }),
+              parents: yield* page({ hasChildren: true, page: { limit: 10 } }),
+              parentsAfter: yield* page({ hasChildren: true, page: { limit: 10, afterRunId: "page-c" } }),
+              // Unpaged, the narrowing keeps the wake order every other filter has.
+              parentsByWake: ids(yield* context.state.waitingRuns({ hasChildren: true })),
+              timerParents: ids(yield* context.state.waitingRuns({ reason: "timer", hasChildren: true })),
+              dueParents: ids(yield* context.state.waitingRuns({ dueBeforeMs: 10_000, hasChildren: true })),
+              dueTimerParents: ids(
+                yield* context.state.waitingRuns({ reason: "timer", dueBeforeMs: 10_000, hasChildren: true })
+              ),
+              unpaged: ids(yield* context.state.waitingRuns())
+            }
+          })
+        )
+
+        expect(result.first).toEqual(["page-a", "page-b"])
+        expect(result.second).toEqual(["page-c", "page-d"])
+        expect(result.last).toEqual(["page-e"])
+        expect(result.past).toEqual([])
+        expect(result.timers).toEqual(["page-b", "page-d", "page-e"])
+        expect(result.dueTimers).toEqual(["page-b", "page-d"])
+        expect(result.dueTimersAfter).toEqual(["page-d"])
+        expect(result.cancelled).toEqual(["page-d"])
+        expect(result.parents).toEqual(["page-c", "page-e"])
+        expect(result.parentsAfter).toEqual(["page-e"])
+        expect(result.parentsByWake).toEqual(["page-e", "page-c"])
+        expect(result.timerParents).toEqual(["page-e"])
+        expect(result.dueParents).toEqual(["page-e"])
+        expect(result.dueTimerParents).toEqual(["page-e"])
+        expect(result.unpaged).toEqual(["page-d", "page-b", "page-a", "page-e", "page-c"])
+      }))
+
+    // R1-Astra-D1-006: a sweep that continues after the last row it read
+    // cannot be held at the front by rows it cannot take.
+    it.effect("continues staleRunningRuns strictly after a cursor row", () =>
+      Effect.gen(function*() {
+        const result = yield* harness.run((context) =>
+          Effect.gen(function*() {
+            yield* context.seedRun("cursor-a", owner, "running", 0)
+            yield* context.seedRun("cursor-b", owner, "running", 0)
+            yield* context.seedRun("cursor-c", owner, "running", 5_000)
+            yield* context.seedRun("cursor-fresh", owner, "running", 90_000)
+            const first = yield* context.state.staleRunningRuns(10_000, 1)
+            const second = yield* context.state.staleRunningRuns(10_000, 1, first[0])
+            const third = yield* context.state.staleRunningRuns(10_000, 5, second[0])
+            const end = yield* context.state.staleRunningRuns(10_000, 5, third[0])
+            return { first, second, third, end }
+          })
+        )
+
+        expect(result.first).toEqual([{ runId: "cursor-a", heartbeatAtMs: 0 }])
+        // The same heartbeat continues by run id.
+        expect(result.second).toEqual([{ runId: "cursor-b", heartbeatAtMs: 0 }])
+        expect(result.third).toEqual([{ runId: "cursor-c", heartbeatAtMs: 5_000 }])
+        expect(result.end).toEqual([])
+      }))
+
     it.effect("lists only stale-running rows from staleRunningRuns (issue #53)", () =>
       Effect.gen(function*() {
         const result = yield* harness.run((context) =>

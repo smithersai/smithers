@@ -57,20 +57,21 @@ cannot be sent by Fetch; `surrounding_space` rejects spaces Fetch would strip.
 
 ## `Egress`
 
-| Export                                      | Signature                                                                                                      |
-| ------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
-| `Policy`                                    | `{ secrets: ReadonlyArray<Secret>, allow: ReadonlyArray<string> }`                                             |
-| `Secret`                                    | `{ name, placeholder, hosts, methods? }`                                                                       |
-| `decide`                                    | `({ method, url, headers }, policy) => Allowed \| Denied`: pure, before any value is revealed                  |
-| `execute`                                   | `(request: HttpClientRequest, policy) => Effect<Answer, Refused \| Unavailable, HttpClient \| Vault \| Audit>` |
-| `forward`                                   | `(request: HttpServerRequest, policy) => Effect<HttpServerResponse, never, HttpClient \| Vault \| Audit>`      |
-| `Answer`                                    | `{ status, headers, body: Stream<Uint8Array, Broken> }`                                                        |
-| `Vault`                                     | service: `{ reveal: (name) => Effect<Redacted<string>, SecretUnavailable> }`                                   |
-| `Audit`                                     | service: `{ record: (entry: Entry) => Effect<void, AuditUnavailable> }`                                        |
-| `Entry`                                     | `{ host, method, outcome: "forwarded" \| Refusal, secrets: ReadonlyArray<string> }`                            |
-| `refusals`, `Refusal`                       | each refusal code and its status                                                                               |
-| `Refused`                                   | `{ code: Refusal }`                                                                                            |
-| `Unavailable`                               | `{ code: "secret" \| "value" \| "audit" \| "upstream" }`                                                       |
-| `Broken`                                    | the answer's body broke off                                                                                    |
-| `maximumPlaceholders`, `maximumHeaderBytes` | `16`, `65536`                                                                                                  |
-| `requests`                                  | counter `secret_egress_requests` by `outcome`                                                                  |
+| Export                                      | Signature                                                                                                                                  |
+| ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `Policy`                                    | `{ secrets: ReadonlyArray<Secret>, allow: ReadonlyArray<string> }`                                                                         |
+| `Secret`                                    | `{ name, placeholder, hosts, methods? }`                                                                                                   |
+| `decide`                                    | `({ method, url, headers }, policy) => Allowed \| Denied`: pure, case-insensitive header names                                             |
+| `execute`                                   | `(request: HttpClientRequest, policy) => Effect<Answer, Refused \| Unavailable, HttpClient \| Vault \| Audit>`                             |
+| `forward`                                   | `(request: HttpServerRequest, policy) => Effect<HttpServerResponse, never, HttpClient \| Vault \| Audit>`                                  |
+| `Answer`                                    | `{ status, headers, body: Stream<Uint8Array, Broken> }`                                                                                    |
+| `DecodesContent`                            | Optional reference. A predicate over the complete ordered response codings that returns true only when the client has decoded every layer. |
+| `Vault`                                     | service: `{ reveal: (name) => Effect<Redacted<string>, SecretUnavailable> }`                                                               |
+| `Audit`                                     | service: `{ record: (entry: Entry) => Effect<void, AuditUnavailable> }`                                                                    |
+| `Entry`                                     | `{ host, method, outcome: "forwarded" \| Refusal, secrets: ReadonlyArray<string> }`                                                        |
+| `refusals`, `Refusal`                       | each refusal code and its status                                                                                                           |
+| `Refused`                                   | `{ code: Refusal }`                                                                                                                        |
+| `Unavailable`                               | `{ code: "secret" \| "value" \| "audit" \| "upstream" }`                                                                                   |
+| `Broken`                                    | the answer's body broke off or its encoding could not be scrubbed                                                                          |
+| `maximumPlaceholders`, `maximumHeaderBytes` | `16`, `65536`                                                                                                                              |
+| `requests`                                  | counter `secret_egress_requests` by `outcome`                                                                                              |

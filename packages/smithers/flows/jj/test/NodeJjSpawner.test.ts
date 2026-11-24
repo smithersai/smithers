@@ -42,6 +42,7 @@ case "$1" in
   restore) echo "Warning: Refused to snapshot some files:" 1>&2; exit 0 ;;
   status) echo "the working copy is clean"; exit 0 ;;
   root) pwd; exit 0 ;;
+  op) echo "0123abcd"; exit 0 ;;
   diff) echo "Error: Revision not found" 1>&2; exit 1 ;;
   *) exit 0 ;;
 esac

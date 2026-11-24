@@ -194,6 +194,48 @@ describe("Node.any", () => {
     }))
 })
 
+describe("Node.all", () => {
+  it.effect("stops a still-running member once a sibling fails, before a catch recovers", () =>
+    Effect.gen(function*() {
+      const { layer, trace } = tracing()
+      const seen: Array<ReadonlyArray<string>> = []
+      const Recover = Action.make("joins/recover", { payload: {}, success: Schema.Number })
+      const recovered = Layer.merge(
+        layer,
+        Recover.toLayer(() =>
+          Effect.forEach(Array.from({ length: 50 }), () => Effect.yieldNow).pipe(
+            Effect.andThen(Effect.sync(() => seen.push([...trace.interrupted]))),
+            Effect.as(5)
+          )
+        )
+      )
+      const result = yield* run(
+        Interpreter.interpret(
+          Node.all({ slow: Block.call({ name: "slow" }), fast: Refuse.call({ name: "fast" }) }).pipe(
+            Node.catch({ onFailure: () => Recover.call({}) })
+          )
+        ),
+        recovered
+      )
+      expect(result.value).toBe(5)
+      expect(trace.started).toEqual(["slow", "fast"])
+      expect(seen).toEqual([["slow"]])
+      expect(trace.interrupted).toEqual(["slow"])
+      expect(result.skipped.some((id) => id.endsWith(".slow"))).toBe(true)
+    }))
+
+  it.effect("stops nothing when every member settles", () =>
+    Effect.gen(function*() {
+      const { layer, trace } = tracing({ blockSucceeds: true })
+      const result = yield* run(
+        Interpreter.interpret(Node.all({ a: Value.call({ name: "a", value: 1 }), b: Block.call({ name: "b" }) })),
+        layer
+      )
+      expect(result.value).toEqual({ a: 1, b: 100 })
+      expect(trace.interrupted).toEqual([])
+    }))
+})
+
 describe("dispatch identity", () => {
   it.effect("replays two concurrent call sites of one action to their own results when they arrive reversed", () =>
     Effect.gen(function*() {

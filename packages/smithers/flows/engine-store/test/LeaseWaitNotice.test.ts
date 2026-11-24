@@ -158,6 +158,44 @@ describe("a held run is taken at once or waited on out loud (issue #3897)", () =
       ])
     }))
 
+  // R1-Fable-D1-025: the table of reported waits grew by one entry per run
+  // ever found held by another owner, for the life of the process.
+  it.effect("remembers a bounded number of reported waits, the most recent ones", () =>
+    run(Effect.gen(function*() {
+      const holder: Ownership.OwnerId = { hostId: "other-host", pid: 9, nonce: "holder" }
+      const logs: Array<string> = []
+      const capture = Logger.make(({ message }) => {
+        logs.push((Array.isArray(message) ? message : [message]).map(String).join(" "))
+      })
+      const runIdOf = (index: number) => `notice-bound-${String(index).padStart(5, "0")}`
+      const total = RunDriver.waitNoticeLimit + 1
+      yield* TestClock.setTime(1_000)
+      for (let index = 0; index < total; index++) yield* insertHeldRun(runIdOf(index), holder, 1_000)
+      const reported = (runId: string) => logs.filter((line) => line.includes(`run ${runId} is held by`)).length
+      yield* Effect.gen(function*() {
+        const driver = yield* RunDriver.make({
+          owner: self,
+          journalSource: "lease-wait-notice",
+          isAlive: () => Effect.succeed(true),
+          engine: Effect.succeed(fakeEngine)
+        })
+        yield* driver.register(TestFlow, () => Effect.succeed("never reached"))
+        const poll = (runId: string) => driver.execute(TestFlow, { executionId: runId, payload: {}, discard: false })
+        for (let index = 0; index < total; index++) yield* poll(runIdOf(index))
+        // One line per held run, and polling a remembered run again says nothing.
+        expect(logs.filter((line) => line.includes("is held by"))).toHaveLength(total)
+        yield* poll(runIdOf(total - 1))
+        yield* poll(runIdOf(1))
+        expect(reported(runIdOf(total - 1))).toBe(1)
+        expect(reported(runIdOf(1))).toBe(1)
+        // The table is full, so the oldest entry left when the last arrived:
+        // only that run is reported a second time.
+        yield* poll(runIdOf(0))
+        expect(reported(runIdOf(0))).toBe(2)
+        expect(logs.filter((line) => line.includes("is held by"))).toHaveLength(total + 1)
+      }).pipe(Effect.provide(Logger.layer([capture])))
+    })), 120_000)
+
   it.effect("never proves this process's own pid gone, whatever the probe answers", () =>
     Effect.gen(function*() {
       const earlier: Ownership.OwnerId = { hostId, pid: self.pid, nonce: "earlier-engine" }

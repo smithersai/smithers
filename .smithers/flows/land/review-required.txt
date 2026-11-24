@@ -71,6 +71,9 @@ apps/mvp/src/wipe.ts
 
 # The land tool, which enforces all of this
 .smithers/flows/land/**
+.smithers/flows/review/**
+.smithers/flows/automation/run-module.ts
+.smithers/flows/issue-sweep/land.ts
 
 # Tests and generated files change no access decision
 !**/*.test.*

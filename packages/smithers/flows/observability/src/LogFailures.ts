@@ -38,9 +38,7 @@ import * as Tracer from "effect/Tracer"
 export interface Options {
   /**
    * The record names a line keeps as its `record`: its message, when it is
-   * one of these. Any other line counts as `other`. Omitted, a message of up
-   * to 96 letters, digits, spaces and `_ . : ' / @ -` is kept, up to
-   * {@link maxRecords} distinct ones.
+   * one of these. With no declarations, every record counts as `other`.
    */
   readonly records?: Iterable<string> | undefined
   /**
@@ -116,8 +114,8 @@ export const defaultCodeFields: ReadonlyArray<string> = [
 ]
 
 /**
- * Distinct records kept when {@link Options.records} is omitted; past it a
- * new one reads `other`.
+ * Former default limit for inferred record names. Records now require an explicit declaration.
+ * @deprecated Declare stable names through {@link Options.records}.
  *
  * @category limits
  * @since 1.0.0-rc.17
@@ -140,7 +138,6 @@ export const maxCodes = 200
  */
 export const maxAreas = 50
 
-const recordPattern = /^[A-Za-z0-9_ .:'/@-]{1,96}$/
 const identifier = /^[A-Za-z0-9_.:/@-]{1,64}$/
 
 /** A value set that keeps at most `limit` distinct values; past it a new one reads `other`. */
@@ -196,11 +193,11 @@ const levels = { Warn: "warn", Error: "error", Fatal: "fatal" } as const
  */
 export const layer = (options?: Options): Layer.Layer<Recent> =>
   Layer.unwrap(Effect.sync(() => {
-    const allowed = options?.records === undefined ? undefined : new Set(options.records)
+    const allowed = new Set(options?.records)
     const codeFields = options?.codes ?? defaultCodeFields
     const areaField = options?.area ?? "feature"
-    const keep = Math.max(0, Math.floor(options?.keep ?? 50))
-    const record = bounded(maxRecords)
+    const configured = options?.keep ?? 50
+    const keep = Number.isSafeInteger(configured) && configured >= 0 ? configured : 50
     const code = bounded(maxCodes)
     const area = bounded(maxAreas)
     const entries: Array<Entry> = []
@@ -208,9 +205,7 @@ export const layer = (options?: Options): Layer.Layer<Recent> =>
     // Effect hands a logger the line's arguments, its causes taken out; the first names the record.
     const recordOf = (message: unknown): string => {
       const first = (message as ReadonlyArray<unknown>)[0]
-      if (typeof first !== "string") return "other"
-      if (allowed !== undefined) return allowed.has(first) ? first : "other"
-      return recordPattern.test(first) ? record(first) : "other"
+      return typeof first === "string" && allowed.has(first) ? first : "other"
     }
 
     const logger = Logger.make<unknown, void>(({ cause, date, fiber, logLevel, message }) => {

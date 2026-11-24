@@ -90,9 +90,9 @@ before a 20-minute test suite ends, so `spawn` holds none:
    `processDirectory` (default `/tmp/.smthrs-http`), outside the workdir.
 2. Polls, each a short request, read the bytes after those already read, at
    most `pollBytes` (1 MiB) of each stream. A poll that found no new output
-   waits `pollInterval` (250 ms) before the next.
-3. `exitCode` resolves once the exit status is there and both streams are read
-   to their end. The status and the output are in files, so output is byte
+   waits `pollInterval` (250 ms) before the next. Each reader pulls its own output page on demand.
+3. `exitCode` resolves once the exit status is recorded. Reading stdout, stderr and the status
+   can proceed independently. The status and the output are in files, so output is byte
    exact.
 
 Closing the spawn's scope before the command ends signals it and every process
@@ -100,6 +100,11 @@ it started with `SIGTERM`, the way the container providers do. Its files are
 removed either way, except after a start whose answer never came: then the
 directory stays, so the start finds it and starts nothing if it lands later. A
 runner killed before it recorded an exit fails the process with `unavailable`.
+
+The service accepts up to `maxRequestBytes` (24 MiB) per request and
+`maxOutputBytes` (4 MiB) across both command streams. A larger request or
+command result returns HTTP 413. The client limits each response, including
+file reads, to `maxResponseBytes` (64 MiB).
 
 ## Lost requests
 

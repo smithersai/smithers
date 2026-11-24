@@ -33,6 +33,17 @@ describe("qualify", () => {
       .toBe(`SELECT x FROM "s".flows_runs WHERE note = 'it''s flows_runs'`)
   })
 
+  it("refuses an escape string, whose backslash-escaped quote the scan can't see (R1-NEON-D1-018)", () => {
+    expect(qualify(`SELECT * FROM flows_runs WHERE x = E'a\\'flows_runs\\'b'`, "s")).toBeUndefined()
+    expect(qualify(`SELECT * FROM flows_runs WHERE x = e'plain'`, "s")).toBeUndefined()
+    expect(qualify(`SELECT * FROM flows_runs WHERE x =E'plain'`, "s")).toBeUndefined()
+    // An identifier ending in `e` before a literal is not an escape-string prefix.
+    expect(qualify(`SELECT x FROM flows_runs WHERE note = 'same'`, "s"))
+      .toBe(`SELECT x FROM "s".flows_runs WHERE note = 'same'`)
+    expect(qualify(`SELECT x FROM flows_runs WHERE note LIKE'e'`, "s"))
+      .toBe(`SELECT x FROM "s".flows_runs WHERE note LIKE'e'`)
+  })
+
   it.each([
     ["a write", `INSERT INTO flows_runs (a) VALUES ($1)`],
     ["an update", `UPDATE flows_runs SET a = 1`],

@@ -15,10 +15,8 @@
  *
  * Every resolution evaluates and builds the declaration with `nix build`, so
  * a file the flake or expression imports re-keys it like a declared input.
- * The expensive rest, `print-dev-env` and the closure listing, is memoized
- * under the workspace cache directory, keyed on the built store path, the
- * host system, and the `nix` version. A memoized entry is reused only while
- * its store path still exists on the host.
+ * Only concurrent requests share a resolution. Tool-selection data always
+ * comes from Nix, including when the workspace has a preexisting disk memo.
  *
  * @since 0.1.0
  */
@@ -30,7 +28,6 @@ import * as Nix from "@smthrs/targets/Nix"
 import * as Data from "effect/Data"
 import * as NodeChildProcess from "node:child_process"
 import { createHash } from "node:crypto"
-import * as Fs from "node:fs/promises"
 import * as NodePath from "node:path"
 import * as Environment from "./Environment.ts"
 import * as PackageTree from "./PackageTree.ts"
@@ -256,47 +253,6 @@ const flightKey = (
     )
     .digest("hex")
 
-/** The evaluation's own identity, which no imported file can change unnoticed. */
-const memoKey = (storePath: string, system: string, nixVersion: string): string =>
-  createHash("sha256").update(JSON.stringify({ storePath, system, nixVersion })).digest("hex")
-
-const memoPath = (root: string, cacheDirectory: string, key: string): string =>
-  NodePath.join(root, cacheDirectory, "nix", `${key}.json`)
-
-const readMemo = async (path: string): Promise<ResolvedEnvironment | undefined> => {
-  let text: string
-  try {
-    text = await Fs.readFile(path, "utf8")
-  } catch {
-    return undefined
-  }
-  let parsed: unknown
-  try {
-    parsed = JSON.parse(text)
-  } catch {
-    return undefined
-  }
-  if (typeof parsed !== "object" || parsed === null) return undefined
-  const value = parsed as Partial<ResolvedEnvironment>
-  if (
-    typeof value.storePath !== "string" || storeHash(value.storePath) !== value.hash ||
-    !Array.isArray(value.closure) || !Array.isArray(value.path) || typeof value.variables !== "object"
-  ) return undefined
-  try {
-    await Fs.access(value.storePath)
-  } catch {
-    return undefined
-  }
-  return value as ResolvedEnvironment
-}
-
-const writeMemo = async (path: string, resolved: ResolvedEnvironment): Promise<void> => {
-  await Fs.mkdir(NodePath.dirname(path), { recursive: true })
-  const temporary = `${path}.${process.pid}.tmp`
-  await Fs.writeFile(temporary, JSON.stringify(resolved), "utf8")
-  await Fs.rename(temporary, path)
-}
-
 const inFlight = new Map<string, Promise<ResolvedEnvironment>>()
 
 /**
@@ -308,7 +264,7 @@ const inFlight = new Map<string, Promise<ResolvedEnvironment>>()
 export const resolveEnvironment = async (options: {
   readonly root: string
   readonly declaration: Nix.Environment
-  /** The workspace-relative cache directory the memo lives under; omit to skip the memo. */
+  /** Workspace-relative cache directory accepted for compatibility with existing callers. */
   readonly cacheDirectory?: string | undefined
   /** The host environment `nix` is looked up in and spawned with. */
   readonly environment?: Readonly<Record<string, string | undefined>> | undefined
@@ -336,7 +292,7 @@ export const resolveEnvironment = async (options: {
     throw new NixEnvironmentError("nix_evaluation_failed", `nix --version failed: ${tail(version.stderr)}`)
   }
   const nixVersion = lastLine(version.stdout)
-  const key = flightKey(inputs, options.declaration, system, nixVersion)
+  const key = JSON.stringify([options.root, nix, flightKey(inputs, options.declaration, system, nixVersion)])
   const running = inFlight.get(key)
   if (running !== undefined) return running
   const work = (async (): Promise<ResolvedEnvironment> => {
@@ -360,13 +316,6 @@ export const resolveEnvironment = async (options: {
         "nix_evaluation_failed",
         `nix build printed no store path for the declared environment: ${JSON.stringify(storePath)}`
       )
-    }
-    const memo = options.cacheDirectory === undefined
-      ? undefined
-      : memoPath(options.root, options.cacheDirectory, memoKey(storePath, system, nixVersion))
-    if (memo !== undefined) {
-      const known = await readMemo(memo)
-      if (known !== undefined) return { ...known, inputs }
     }
     const printed = await execFile(
       nix,
@@ -427,13 +376,6 @@ export const resolveEnvironment = async (options: {
       nix: { executable: nix, version: nixVersion },
       system,
       inputs
-    }
-    if (memo !== undefined) {
-      try {
-        await writeMemo(memo, resolved)
-      } catch (cause) {
-        options.log?.(`nix environment: could not memoize the resolution: ${String(cause)}`)
-      }
     }
     return resolved
   })()

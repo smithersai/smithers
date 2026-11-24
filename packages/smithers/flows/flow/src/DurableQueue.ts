@@ -22,6 +22,7 @@ import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
 import * as Filter from "effect/Filter"
 import * as Layer from "effect/Layer"
+import * as Metric from "effect/Metric"
 import * as PersistedQueue from "effect/persistence/PersistedQueue"
 import * as Schedule from "effect/Schedule"
 import * as Schema from "effect/Schema"
@@ -31,6 +32,7 @@ import * as DurableDeferred from "./DurableDeferred.ts"
 import * as Fault from "./Fault.ts"
 import * as Flow from "./Flow/index.ts"
 import { annotateWaiting, FlowInstance, FlowRuntime } from "./FlowRuntime/index.ts"
+import { scalarPrefix } from "./internal/BoundedJson.ts"
 import * as SpanFailure from "./internal/SpanFailure.ts"
 import * as Interpreter from "./Interpreter.ts"
 import * as RetryPolicy from "./RetryPolicy.ts"
@@ -271,7 +273,11 @@ export const process: <
         spanId: span.spanId,
         sampled: span.sampled
       } as any, { id: key }).pipe(
-        Effect.tapCause(() => Effect.logWarning("Queue offer failed")),
+        Effect.tapCause((cause) =>
+          Effect.logWarning("Queue offer failed").pipe(
+            Effect.annotateLogs({ key, failureType: RetryPolicy.failureType(cause) })
+          )
+        ),
         Effect.catchTag("SchemaError", Effect.die),
         Effect.retry(options?.retrySchedule ?? defaultRetrySchedule),
         Effect.orDie,
@@ -293,7 +299,9 @@ const maxDeferredNameExcerptChars = 128
 const deferredNameExcerpt = (name: string): string =>
   name.length <= maxDeferredNameExcerptChars
     ? name
-    : `${name.slice(0, maxDeferredNameExcerptChars)} [${name.length - maxDeferredNameExcerptChars} characters dropped]`
+    : `${scalarPrefix(name, maxDeferredNameExcerptChars)} [${
+      name.length - maxDeferredNameExcerptChars
+    } characters dropped]`
 
 const traceIdPattern = /^(?!0{32}$)[0-9a-f]{32}$/
 const spanIdPattern = /^(?!0{16}$)[0-9a-f]{16}$/
@@ -337,8 +345,12 @@ Fault.register("@smthrs/flow/DurableQueue/CompletionUnavailable", "infra")
 
 /**
  * How an item's completion is retried: from half a second, growing by half,
- * to a minute between tries, without a limit. A store that comes back records
- * the result; until then the waiting flow stays parked on its own deferred.
+ * to a minute between tries, for at most a day. A store that comes back
+ * records the result; until then the waiting flow stays parked on its own
+ * deferred. Only a store that could not record the result is retried: a
+ * completion that dies with a programming error (`TypeError`, `RangeError`,
+ * `ReferenceError`, `SyntaxError`, `EvalError`, `URIError`) fails the item at
+ * once.
  *
  * @category constants
  * @since 1.0.0
@@ -346,8 +358,49 @@ Fault.register("@smthrs/flow/DurableQueue/CompletionUnavailable", "infra")
 export const completionRetryPolicy: RetryPolicy.RetryPolicy = RetryPolicy.make({
   initialMs: 500,
   factor: 1.5,
-  maxMs: 60_000
+  maxMs: 60_000,
+  expirationMs: 86_400_000
 })
+
+/** The tags of a defect that is a programming error: retrying it records nothing. */
+const programmingErrors: ReadonlySet<string> = new Set([
+  "TypeError",
+  "RangeError",
+  "ReferenceError",
+  "SyntaxError",
+  "EvalError",
+  "URIError"
+])
+
+/** Whether `defect` is a programming error, which no retry or redelivery can mend. */
+const isProgrammingError = (defect: unknown): boolean => {
+  const tag = RetryPolicy.errorTag(defect)
+  return tag !== undefined && programmingErrors.has(tag)
+}
+
+/** Whether `cause` died of a programming error. */
+const diedOfProgrammingError = (cause: Cause.Cause<unknown>): boolean =>
+  cause.reasons.some((reason) => Cause.isDieReason(reason) && isProgrammingError(reason.defect))
+
+/**
+ * Items a worker finished, by `queue` and `outcome`: `completed` (the item's
+ * execution ran to its end), `redelivered` (it stopped and the store delivers
+ * it again), or `failed` (it died of a programming error and is not delivered
+ * again).
+ */
+const itemOutcomes = Metric.counter("flows_durable_queue_items_total", {
+  description: "Items a DurableQueue worker finished, by queue and outcome",
+  incremental: true
+})
+
+/** Whether `cause` holds a failure of the persisted queue's store, which ends the worker. */
+const storeFailed = (cause: Cause.Cause<unknown>): boolean =>
+  cause.reasons.some((reason) =>
+    Cause.isFailReason(reason) && reason.error instanceof PersistedQueue.PersistedQueueError
+  )
+
+const countItem = (queue: string, outcome: "completed" | "redelivered" | "failed") =>
+  Metric.update(Metric.withAttributes(itemOutcomes, { queue, outcome }), 1)
 
 /**
  * Every item is redelivered until its execution has run: a take whose
@@ -485,9 +538,24 @@ const makeWorkerEffect = Effect.fnUntraced(
               Effect.provideService(FlowRuntime, engine),
               // The worker checked this token against the execution's name before it started it.
               Effect.orDie,
-              Effect.catchDefect(() =>
-                Effect.logWarning("DurableQueue could not record a handler result; the completion is retried")
-                  .pipe(Effect.andThen(Effect.fail(new CompletionUnavailable({ queue: self.name }))))
+              Effect.catchDefect((defect) =>
+                Effect.gen(function*() {
+                  const instance = yield* FlowInstance
+                  const annotations = {
+                    item: instance.executionId,
+                    failureType: RetryPolicy.errorTag(defect) ?? "unknown"
+                  }
+                  // A programming error fails the same way on every try: the item fails instead of retrying.
+                  if (isProgrammingError(defect)) {
+                    yield* Effect.logError("DurableQueue could not record a handler result; the item fails").pipe(
+                      Effect.annotateLogs(annotations)
+                    )
+                    return yield* Effect.die(defect)
+                  }
+                  yield* Effect.logWarning("DurableQueue could not record a handler result; the completion is retried")
+                    .pipe(Effect.annotateLogs(annotations))
+                  return yield* new CompletionUnavailable({ queue: self.name })
+                })
               )
             )
           )
@@ -526,11 +594,29 @@ const makeWorkerEffect = Effect.fnUntraced(
             executionId: expected,
             payload: { token: item.token, payload: item.payload }
           })
+          yield* countItem(self.name, "completed")
         }).pipe(
           Effect.catchTag("@smthrs/flow/DurableDeferred/TokenInvalid", (error) =>
             Effect.logError(
               `DurableQueue "${self.name}" could not complete an item because its token was invalid. ${error.message}`
-            ))
+            )),
+          // An execution that died of a programming error replays that death on every delivery: the item is
+          // acknowledged as failed rather than redelivered without end. The item's execution never fails with the
+          // store's own error, which only `take` raises, outside this effect.
+          Effect.catchCause((cause) => {
+            const annotations = { item: metadata.id, failureType: RetryPolicy.failureType(cause) }
+            if (diedOfProgrammingError(cause)) {
+              return Effect.logError("DurableQueue item failed; it is not delivered again").pipe(
+                Effect.annotateLogs(annotations),
+                Effect.andThen(countItem(self.name, "failed"))
+              )
+            }
+            return Effect.logWarning("DurableQueue item execution stopped; the store delivers it again").pipe(
+              Effect.annotateLogs({ ...annotations, interrupted: Cause.hasInterrupts(cause) }),
+              Effect.andThen(countItem(self.name, "redelivered")),
+              Effect.andThen(Effect.failCause(cause))
+            )
+          })
         ),
         `DurableQueue/${self.name}/worker`,
         {
@@ -542,17 +628,15 @@ const makeWorkerEffect = Effect.fnUntraced(
       // A store failure terminates this worker; its host owns recovery. Any other failure is the item's: the store
       // has already scheduled its redelivery, so the worker logs it and takes the next item. Interrupting the worker
       // itself still ends the loop, because an interrupted fiber does not run a recovery.
+      // The item's own failure was logged and counted where its id is known.
       Effect.catchCause((cause) =>
-        cause.reasons.some((reason) =>
-            Cause.isFailReason(reason) && reason.error instanceof PersistedQueue.PersistedQueueError
-          )
+        storeFailed(cause)
           ? Effect.logWarning("DurableQueue worker stopped after a store failure").pipe(
+            Effect.annotateLogs({ failureType: RetryPolicy.failureType(cause) }),
             Effect.andThen(Effect.failCause(cause)),
             Effect.orDie
           )
-          : Effect.logWarning("DurableQueue item execution stopped; the store delivers it again").pipe(
-            Effect.annotateLogs({ interrupted: Cause.hasInterrupts(cause) })
-          )
+          : Effect.void
       ),
       Effect.forever,
       Effect.annotateLogs({

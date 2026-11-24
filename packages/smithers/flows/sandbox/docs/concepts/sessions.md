@@ -22,22 +22,9 @@ Treat the key the way you would treat a lock file.
 
 ## The key becomes the machine's name
 
-Every bundled provider derives its machine's name from the key the same way:
-the key's leading name-safe characters, bounded at 40, for the operator reading
-a container or process list, plus a 64-bit digest of the whole key.
-
-The digest is what keeps `a/b` and `a-b` on separate machines, and what keeps
-two keys that merely start alike apart. It is two independent multiplicative
-hashes concatenated, not one, because a single 32-bit hash with a linear tail
-collides as soon as two keys sharing a truncated prefix satisfy one modular
-sum. That is a bound, not a proof: this is a checksum and not a cryptographic
-digest, and the honest claim is 64 bits over the whole key rather than
-collision proof.
-
-The slug is durable machine identity. It becomes every provider's container
-name, Pod name, sandbox name, Durable Object id, ECS `startedBy` tag, and
-scratch directory, so changing how it is computed orphans whatever is running
-under the old names.
+New machine names contain up to 24 name-safe characters from the key and 128 bits of
+SHA-256 over its JSON string encoding. Recorded retained handles continue to address
+their existing machines under the earlier 64-bit naming scheme.
 
 ## Reattachment is per provider, and it is not persistence
 

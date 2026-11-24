@@ -311,7 +311,7 @@ describe("an observed test", () => {
   tracedIt("trusts what an earlier build measured outside the workspace while it is the same file", async () => {
     const { base, reasons, root, run, write } = await fixture()
     expect(await run()).toEqual({ check: "ran" })
-    const file = Path.join(root, ".flows", "observed-digests.json")
+    const file = Path.join(root, ".flows", "plan", "observed-digests.json")
     const kept = JSON.parse(await Fs.readFile(file, "utf8")) as {
       readonly digests: Array<[string, string, string]>
     }

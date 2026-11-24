@@ -137,4 +137,74 @@ describe("the parked-run sweep fetches only actionable rows (issue #68)", () => 
       expect(result.neutralQuota).toBe(0)
       expect(result.neutralEvent).toBe(0)
     }))
+
+  // R1-Fable-D1-024: the sweep read every released row and ran one read and
+  // one wake per row on every tick, in every driver. A graceful shutdown that
+  // released N runs cost each survivor O(N) per second until they drained.
+  it.effect("visits a released fleet one bounded page per tick and reaches every run", () =>
+    Effect.gen(function*() {
+      const fleet = 200
+      const batch = 64
+      const result = yield* withCrypto(
+        Effect.scoped(
+          Effect.gen(function*() {
+            const ids = Array.from({ length: fleet }, (_, index) => `released-${String(index).padStart(4, "0")}`)
+            for (const runId of ids) yield* insertParkedRun(runId, "released", null)
+            const state = yield* DurableEngineState.DurableEngineState
+            const pages: Array<ReadonlyArray<string>> = []
+            const unbounded: Array<DurableEngineState.WaitingRunsFilter | undefined> = []
+            const observed: DurableEngineState.Service = {
+              ...state,
+              waitingRuns: (filter) =>
+                state.waitingRuns(filter).pipe(Effect.tap((rows) =>
+                  Effect.sync(() => {
+                    if (filter?.page === undefined) unbounded.push(filter)
+                    if (filter?.reason === "released") pages.push(rows.map((row) => row.runId))
+                  })
+                ))
+            }
+            // No flow is registered: every wake leaves its run parked, so the
+            // rows never leave the set and only the cursor can move the sweep on.
+            yield* RunDriver.make({
+              owner: { hostId: "sweep-filter-host", pid: 1, nonce: "owner-1" },
+              journalSource: "sweep-filtering",
+              isAlive: () => Effect.succeed(false),
+              engine: Effect.succeed(fakeEngine)
+            }).pipe(Effect.provideService(DurableEngineState.DurableEngineState, observed))
+
+            const ticks = Math.ceil(fleet / batch)
+            // One heartbeat per poll: on a server database a sweep's reads
+            // outlast the instant it started in, and its next sleep begins
+            // only when they finish.
+            yield* TestDatabase.until(Effect.gen(function*() {
+              if (pages.length > ticks) return true
+              yield* TestClock.adjust(Duration.toMillis(Ownership.heartbeatInterval))
+              return false
+            }))
+            const store = yield* RunStore.RunStore
+            return {
+              ids,
+              pages: pages.slice(0, ticks + 1),
+              unbounded,
+              statuses: new Set(
+                yield* Effect.forEach(ids, (runId) => Effect.map(store.get(runId), (row) => row.status))
+              )
+            }
+          })
+        ).pipe(
+          Effect.provide(services),
+          Effect.provide(TestClock.layer())
+        )
+      )
+
+      const ticks = Math.ceil(fleet / batch)
+      // Every sweep read is a bounded page.
+      expect(result.unbounded).toEqual([])
+      expect(result.pages.every((page) => page.length <= batch)).toBe(true)
+      // ⌈N/64⌉ ticks reach every released run exactly once…
+      expect(result.pages.slice(0, ticks).flat().sort()).toEqual(result.ids)
+      // …and the next tick starts the cycle over rather than stopping.
+      expect(result.pages[ticks]).toEqual(result.ids.slice(0, batch))
+      expect([...result.statuses]).toEqual(["suspended"])
+    }))
 })

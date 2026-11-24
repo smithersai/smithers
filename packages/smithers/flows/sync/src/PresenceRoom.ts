@@ -131,8 +131,7 @@ export const evictions = Metric.counter("smithers_presence_evictions", {
 })
 
 /**
- * Joined connections right now: up on a join, down when a connection leaves,
- * is closed, or is found gone.
+ * Joined connections in the room's latest published roster, including after hibernation.
  *
  * @category metrics
  * @since 1.0.0-rc.17
@@ -183,8 +182,6 @@ const connectionOf = <S extends RoomSocket<any>>(socket: S, attachment: Attachme
 /** Join order; two joins that read the room at once share a sequence, and their ids break the tie. */
 const byJoin = (left: Attachment, right: Attachment): number => left.seq - right.seq || left.id.localeCompare(right.id)
 
-const opened = (delta: number) => Metric.update(open, delta)
-
 /**
  * Runs a send or a close and reports whether it worked. A socket that has
  * already closed may fail or throw (workerd throws on a send after close);
@@ -230,6 +227,8 @@ const publish = <S extends RoomSocket<R>, R>(host: RoomHost<S, R>, gone: Set<str
   Effect.gen(function*() {
     while (true) {
       const live = (yield* connections(host)).filter((connection) => !gone.has(connection.participant.id))
+      const reported = yield* Metric.value(open)
+      yield* Metric.update(open, live.length - reported.count)
       const participants = JSON.stringify(live.map((connection) => participantOf(connection.participant)))
       const failed: Array<Connection<S>> = []
       for (const connection of live) {
@@ -240,7 +239,6 @@ const publish = <S extends RoomSocket<R>, R>(host: RoomHost<S, R>, gone: Set<str
       for (const connection of failed) {
         gone.add(connection.participant.id)
         forget(connection.socket)
-        yield* opened(-1)
         yield* Effect.logDebug("presence.gone").pipe(Effect.annotateLogs({ connection: connection.participant.id }))
       }
     }
@@ -261,7 +259,6 @@ const remove = <S extends RoomSocket<R>, R>(
     if (attachment !== undefined) forget(socket)
     yield* attempt(() => socket.close(code, ""))
     if (attachment === undefined) return undefined
-    yield* opened(-1)
     yield* publish(host, new Set([attachment.id]))
     return attachment.id
   })
@@ -327,7 +324,6 @@ export const join = <S extends RoomSocket<R>, R = never>(
       windowFrames: 0
     }
     socket.serializeAttachment(attachment)
-    yield* opened(1)
     yield* Effect.annotateCurrentSpan({
       "smithers.presence.outcome": "joined",
       "smithers.presence.connection": id,
@@ -395,7 +391,6 @@ export const leave = <S extends RoomSocket<R>, R = never>(
     const attachment = attachmentOf(socket)
     if (attachment === undefined) return
     forget(socket)
-    yield* opened(-1)
     yield* publish(host, new Set([attachment.id]))
   })
 
@@ -432,7 +427,6 @@ export const evict = <S extends RoomSocket<R>, R = never>(
     }
     yield* Effect.annotateCurrentSpan({ "smithers.presence.evicted": evicted.length })
     if (evicted.length === 0) return 0
-    yield* opened(-evicted.length)
     yield* Metric.update(evictions, evicted.length)
     yield* publish(host, new Set(evicted.map((connection) => connection.participant.id)))
     return evicted.length

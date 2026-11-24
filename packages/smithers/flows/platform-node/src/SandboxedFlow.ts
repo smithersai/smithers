@@ -258,7 +258,9 @@ export interface ExecuteOptions {
    * readback. Default ten minutes. It is measured on the platform timer, not
    * the ambient `Clock`, so it fires under a frozen test clock too. Infinite
    * durations disable the deadline; long finite durations use timer chunks.
-   * A negative duration dies with a `TypeError` before a machine is acquired.
+   * A negative duration or a NaN input dies with a `TypeError` before acquisition.
+   * Effect normalizes `Duration.millis(NaN)` to zero when constructing the duration,
+   * so that value takes the immediate deadline like any other zero duration.
    */
   readonly timeout?: Duration.Input | undefined
 }
@@ -502,7 +504,15 @@ const bundle = (entry: URL | string): Effect.Effect<Uint8Array, SandboxedFlowErr
  * "no deadline" below and switch the hang guard off.
  */
 const resolveBudget = (timeout: Duration.Input | undefined): number => {
-  const budget = Duration.toMillis(timeout ?? Duration.minutes(10))
+  const input = timeout ?? Duration.minutes(10)
+  // Numeric NaN becomes zero inside Effect Duration. Validate raw components before that normalization.
+  const budget = typeof input === "number" ? input : Duration.toMillis(input)
+  if (
+    Number.isNaN(budget) ||
+    (typeof input === "object" && !Duration.isDuration(input) && Object.values(input).some(Number.isNaN))
+  ) {
+    throw new TypeError("SandboxedFlow timeout must not be NaN")
+  }
   if (budget < 0) throw new TypeError(`SandboxedFlow timeout must not be negative, got ${budget} milliseconds`)
   return budget
 }

@@ -8,7 +8,6 @@
 
 import * as Flow from "@smthrs/flow/Flow"
 import * as Node from "@smthrs/plan/Node"
-import type * as Planned from "@smthrs/plan/Planned"
 import type * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
 import { PatternError } from "../PatternError.ts"
@@ -353,15 +352,27 @@ export const make = <R = never>(options: MakeOptions<R>): MergeQueueFlow<R> => {
         )
       })
     }
-    const fold = (carried: Readonly<Record<string, Planned.Planned<unknown>>>): Node.Node<unknown, unknown, R> =>
-      Node.map(Node.succeed(carried), Node.capture(captures, settled))
+    // Results are carried as planned values in a list and keyed by member id
+    // only at run time. Reading a member off a planned batch record by id is
+    // not a reference when the id is `then`, `toString`, `valueOf` or `toJSON`,
+    // and a record holding a planned value under `then` is a thenable.
+    const fold = (
+      carried: ReadonlyArray<unknown>,
+      keyed: (values: ReadonlyArray<unknown>) => Readonly<Record<string, unknown>>
+    ): Node.Node<unknown, unknown, R> =>
+      Node.map(
+        Node.succeed(carried),
+        Node.capture(captures, (values: ReadonlyArray<unknown>) => settled(keyed(values)))
+      )
     if (concurrency === 1) {
       const walk = (
         index: number,
-        carried: Readonly<Record<string, Planned.Planned<unknown>>>
+        carried: ReadonlyArray<unknown>
       ): Node.Node<unknown, unknown, R> => {
         const entry = queue[index]
-        if (entry === undefined) return fold(carried)
+        if (entry === undefined) {
+          return fold(carried, (values) => Object.fromEntries(queue.map((landed, at) => [landed.id, values[at]])))
+        }
         // `bindPlanned` alone would let the next landing start while this one
         // runs, since the next never reads this one's reference. Waiting on
         // the reference through `andThen` holds the rest of the queue until
@@ -371,11 +382,11 @@ export const make = <R = never>(options: MakeOptions<R>): MergeQueueFlow<R> => {
           landing(entry),
           Node.capture(
             { ...captures, landed: entry.id },
-            (value) => Node.andThen(Node.succeed(value), walk(index + 1, { ...carried, [entry.id]: value }))
+            (value) => Node.andThen(Node.succeed(value), walk(index + 1, [...carried, value]))
           )
         )
       }
-      return walk(0, {})
+      return walk(0, [])
     }
     const batchAt = (offset: number): Node.Node<unknown, unknown, R> => {
       const group = Object.fromEntries(
@@ -385,25 +396,20 @@ export const make = <R = never>(options: MakeOptions<R>): MergeQueueFlow<R> => {
     }
     const visit = (
       offset: number,
-      carried: Readonly<Record<string, Planned.Planned<unknown>>>
+      carried: ReadonlyArray<unknown>
     ): Node.Node<unknown, unknown, R> => {
-      if (offset >= queue.length) return fold(carried)
+      if (offset >= queue.length) return fold(carried, Compose.mergeRecords)
       const batched = queue.slice(offset, offset + concurrency).map((entry) => entry.id)
       return Node.bindPlanned(
         batchAt(offset),
         Node.capture({ ...captures, offset, batched }, (reference) =>
           Node.andThen(
             Node.succeed(reference),
-            visit(offset + concurrency, {
-              ...carried,
-              ...Object.fromEntries(
-                batched.map((id) => [id, (reference as Readonly<Record<string, Planned.Planned<unknown>>>)[id]!])
-              )
-            })
+            visit(offset + concurrency, [...carried, reference])
           ))
       )
     }
-    return visit(0, {})
+    return visit(0, [])
   }
   return Flow.make(name, {
     ...(description === undefined ? {} : { description }),

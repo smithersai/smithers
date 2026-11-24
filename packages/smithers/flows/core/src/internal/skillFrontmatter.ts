@@ -34,29 +34,38 @@ const summarizeIssue = (issue: {
 // could smuggle one into `extra` or a nested mapping.
 const reservedKeys: ReadonlySet<string> = new Set(["__proto__", "constructor", "prototype"])
 
-// Walks the converted value depth first. `ancestors` holds the objects on the
-// current path, so an alias that re-enters its own anchor (`b: &a { c: *a }`)
-// is reported as a cycle instead of recursing without bound; an alias reused
-// in two sibling places is not a cycle and is walked normally.
-const findRefusal = (value: unknown, ancestors: Set<object> = new Set()): string | undefined => {
-  if (typeof value !== "object" || value === null) {
+/**
+ * Checks each container once, tracking the active path separately to distinguish
+ * a recursive alias from multiple aliases to the same verified mapping.
+ *
+ * @since 1.0.0-rc.18
+ * @category parsing
+ */
+export const findRefusal = (root: unknown): string | undefined => {
+  const ancestors = new WeakSet<object>()
+  const verified = new WeakSet<object>()
+  const walk = (value: unknown): string | undefined => {
+    if (typeof value !== "object" || value === null || verified.has(value)) {
+      return undefined
+    }
+    if (ancestors.has(value)) {
+      return "Skill frontmatter must not contain a recursive alias"
+    }
+    ancestors.add(value)
+    for (const [key, entry] of Object.entries(value)) {
+      if (reservedKeys.has(key)) {
+        return `Skill frontmatter must not use the reserved key ${key}`
+      }
+      const nested = walk(entry)
+      if (nested !== undefined) {
+        return nested
+      }
+    }
+    ancestors.delete(value)
+    verified.add(value)
     return undefined
   }
-  if (ancestors.has(value)) {
-    return "Skill frontmatter must not contain a recursive alias"
-  }
-  ancestors.add(value)
-  for (const [key, entry] of Object.entries(value)) {
-    if (reservedKeys.has(key)) {
-      return `Skill frontmatter must not use the reserved key ${key}`
-    }
-    const nested = findRefusal(entry, ancestors)
-    if (nested !== undefined) {
-      return nested
-    }
-  }
-  ancestors.delete(value)
-  return undefined
+  return walk(root)
 }
 
 /**

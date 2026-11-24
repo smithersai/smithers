@@ -25,7 +25,7 @@
  */
 import { readFileSync, writeFileSync } from "node:fs"
 import { join, resolve } from "node:path"
-import { workspacePackages, isMain, repoRoot } from "../../../packages/repo-targets/scripts/workspace-packages.mjs"
+import { isMain, repoRoot, workspacePackages } from "../../../packages/repo-targets/scripts/workspace-packages.mjs"
 
 const dependencyFields = ["dependencies", "devDependencies", "peerDependencies", "optionalDependencies"]
 
@@ -52,21 +52,25 @@ export const versionedSources = [
   {
     path: "packages/smithers/flows/observability/src/Otlp.ts",
     declaration: "defaultServiceVersion",
+    declarationStamp: { constant: "defaultServiceVersion" },
     pattern: /(export const defaultServiceVersion = ")([^"]*)(")/
   },
   {
     path: "packages/smithers/migrate/src/flow/Cli.ts",
     declaration: "version",
+    declarationStamp: { constant: "version" },
     pattern: /(export const version = ")([^"]*)(")/
   },
   {
     path: "packages/smithers/migrate/src/internal/Versions.ts",
     declaration: "smithersVersion",
+    declarationStamp: { constant: "smithersVersion" },
     pattern: /(export const smithersVersion = ")([^"]*)(")/
   },
   {
     path: "packages/smithers/migrate/src/Report.ts",
     declaration: "tool.version",
+    declarationStamp: { constant: "tool", property: "version" },
     pattern: /(export const tool = \{ name: "@smthrs\/migrate", version: ")([^"]*)(" \} as const)/
   },
   {
@@ -77,6 +81,7 @@ export const versionedSources = [
   {
     path: "packages/smithers/flows/database/src/internal/ReleasePolicy.ts",
     declaration: "releaseVersion",
+    declarationStamp: { constant: "releaseVersion" },
     pattern: /(export const releaseVersion = ")([^"]*)(")/
   },
   // The storage package's docs quote the refusals and the notice that
@@ -346,7 +351,10 @@ export const retarget = (manifest, version, workspaceNames, { registryDependenci
         if (registryDependencies) return [name, version]
         if (range.startsWith("workspace:")) {
           const local = range.slice("workspace:".length)
-          return [name, ["*", "^", "~"].includes(local) ? range : `workspace:${/^[\^~]/.exec(local)?.[0] ?? ""}${version}`]
+          return [
+            name,
+            ["*", "^", "~"].includes(local) ? range : `workspace:${/^[\^~]/.exec(local)?.[0] ?? ""}${version}`
+          ]
         }
         if (manifest.private !== true || !range.includes(":")) return [name, version]
         return [name, range]

@@ -78,9 +78,11 @@ the fallback is observable, and keeps running.
 ## The two implementations
 
 `FlowEngine.layerMemory` keeps registrations, executions, action settlements,
-deferred results, and clocks in maps for the life of the layer scope. It is a
-deterministic runtime for tests and local development, not a bounded store:
-there is no eviction option, and nothing survives the process.
+deferred results, and clocks in maps. It is a deterministic runtime for tests
+and local development: nothing survives the process. Live and parked runs are
+always held, and it answers for the 1,024 top-level runs settled most
+recently; an older one is forgotten with its children and records, and its
+execution id is unknown again.
 
 It is still strict where strictness is the contract. It rebuilds a submitted
 payload through the flow's own payload schema constructor at admission and

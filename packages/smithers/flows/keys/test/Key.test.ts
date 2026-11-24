@@ -528,6 +528,57 @@ describe("key derivation", () => {
       }
     )
 
+    it("refuses a populated buffer with a hidden prototype instead of keying it as {} (R1-Astra-D1-010)", () => {
+      const empty = derive({})
+      expect(derive(Object.create(null))).toBe(empty)
+      for (const prototype of [null, Object.prototype]) {
+        const buffer = new ArrayBuffer(4)
+        new Uint8Array(buffer).set([1, 2, 3, 4])
+        for (const input of [Object.setPrototypeOf(buffer, prototype), { held: buffer }, [buffer]]) {
+          const failure = Effect.runSync(Effect.flip(provideCrypto(Keys.deriveKey(input))))
+          expect(failure).toMatchObject({
+            code: "canonicalization_failed",
+            message: "unsupported collection cannot be keyed"
+          })
+        }
+      }
+    })
+
+    it.each(
+      [
+        ["a Date", () => new Date(0)],
+        ["a RegExp", () => /a/],
+        ["a WeakMap", () => new WeakMap()],
+        ["a DataView", () => new DataView(new ArrayBuffer(1))],
+        ["a boxed Symbol", () => Object(Symbol("hidden")) as object],
+        ["a foreign ArrayBuffer", () => runInNewContext("new ArrayBuffer(2)") as object]
+      ] as const
+    )("refuses %s whose prototype was removed", (_name, make) => {
+      const failure = Effect.runSync(
+        Effect.flip(provideCrypto(Keys.deriveKey({ x: Object.setPrototypeOf(make(), null) })))
+      )
+      expect(failure).toMatchObject({
+        code: "canonicalization_failed",
+        message: "unsupported collection cannot be keyed"
+      })
+    })
+
+    it("unboxes wrappers by slot across realms and prototype changes (R1-NEON-D1-023)", () => {
+      const expected = derive([1, "x", false])
+      expect(derive(runInNewContext("[new Number(1), new String(\"x\"), new Boolean(false)]"))).toBe(expected)
+      expect(derive([
+        Object.setPrototypeOf(new Number(1), null),
+        Object.setPrototypeOf(new String("x"), Object.prototype),
+        Object.setPrototypeOf(new Boolean(false), null)
+      ])).toBe(expected)
+    })
+
+    it("refuses a forged wrapper prototype without a TypeError from unboxing", () => {
+      const failure = Effect.runSync(Effect.flip(provideCrypto(Keys.deriveKey(Object.create(Number.prototype)))))
+      expect(failure.code).toBe("canonicalization_failed")
+      expect(String(failure.cause)).toContain("canonical_unsupported_value: Number")
+    })
+
     it("retains Canonical's refusal of ordinary collections", () => {
       const failure = Effect.runSync(Effect.flip(provideCrypto(Keys.deriveKey(new Map([["member", 1]])))))
       expect(failure.code).toBe("canonicalization_failed")

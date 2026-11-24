@@ -37,12 +37,46 @@ const durableIdentifier = Schema.NonEmptyString.check(
  * Absolute ceiling for {@link Options.maxCheckpointBytes}.
  *
  * This bounds only the configured checkpoint policy; metadata, errors, and
- * outcomes have no byte ceiling.
+ * outcomes take the fixed {@link maximumValueBytes} ceiling instead.
  *
  * @category constants
  * @since 1.0.0-rc.0
  */
 export const maximumCheckpointBytes = 16 * 1024 * 1024
+
+/**
+ * Largest encoded `meta`, `error` or `outcome` one write stores: 32 MiB each.
+ *
+ * It is a fixed ceiling, not a policy: a value past it could not be read back
+ * into a constrained host such as a Worker isolate, so `put`, `finish` and
+ * `patch` refuse it with `invalid_attempt` before it is stored. Rows already
+ * stored are still read whatever their size.
+ *
+ * @category constants
+ * @since 1.0.0-rc.0
+ */
+export const maximumValueBytes = 32 * 1024 * 1024
+
+/**
+ * Most rows one {@link Service.listRun} query reads, and the largest
+ * `limit` a page may ask for.
+ *
+ * @category constants
+ * @since 1.0.0-rc.0
+ */
+export const maximumListRunPage = 256
+
+/**
+ * One page of {@link Service.listRun}: at most `limit` rows after the row
+ * `after` names, in the listing's order.
+ *
+ * @category models
+ * @since 1.0.0-rc.0
+ */
+export interface ListRunPage {
+  readonly limit: number
+  readonly after?: { readonly stepKeyDigest: string; readonly attempt: number } | undefined
+}
 
 /**
  * Maximum nesting admitted for durable attempt JSON.
@@ -324,10 +358,17 @@ export interface Service {
    * replay reads its recorded attempts here once rather than one `get` per
    * step it reaches.
    *
+   * With a `page` it answers at most `page.limit` rows after `page.after`,
+   * so a long run is read in bounded pieces: pass the last row of one page as
+   * the next page's `after`, until a page is shorter than its limit. Without
+   * one it reads every row, {@link maximumListRunPage} at a time.
+   *
    * Optional: a store that cannot read a run's rows at once omits it, and its
    * callers read each attempt with `get`.
    */
-  readonly listRun?: ((runId: string) => Effect.Effect<ReadonlyArray<Attempt>, AttemptStoreError>) | undefined
+  readonly listRun?:
+    | ((runId: string, page?: ListRunPage) => Effect.Effect<ReadonlyArray<Attempt>, AttemptStoreError>)
+    | undefined
   readonly heartbeat: (
     runId: string,
     stepKeyDigest: string,
@@ -424,7 +465,7 @@ const encode = (
 const encodeOptionalWith =
   (method: AttemptStoreMethod) =>
   (value: unknown | undefined, field: string): Effect.Effect<string | null, AttemptStoreError> =>
-    value === undefined ? Effect.succeed(null) : encode(method, value, field)
+    value === undefined ? Effect.succeed(null) : encode(method, value, field, maximumValueBytes)
 
 const defaultMaxCheckpointBytes = 1024 * 1024
 
@@ -582,9 +623,13 @@ const snapshotAttempt = (method: AttemptStoreMethod, input: Attempt): Effect.Eff
       const checkpoint = values.checkpoint === undefined
         ? undefined
         : snapshotJson(method, values.checkpoint, "checkpoint", maximumCheckpointBytes)
-      const attemptError = values.error === undefined ? undefined : snapshotJson(method, values.error, "error")
-      const outcome = values.outcome === undefined ? undefined : snapshotJson(method, values.outcome, "outcome")
-      const meta = snapshotJson(method, values.meta, "meta")
+      const attemptError = values.error === undefined
+        ? undefined
+        : snapshotJson(method, values.error, "error", maximumValueBytes)
+      const outcome = values.outcome === undefined
+        ? undefined
+        : snapshotJson(method, values.outcome, "outcome", maximumValueBytes)
+      const meta = snapshotJson(method, values.meta, "meta", maximumValueBytes)
       if (checkpoint !== undefined && !checkpoint.ok) return Effect.fail(checkpoint.error)
       if (attemptError !== undefined && !attemptError.ok) return Effect.fail(attemptError.error)
       if (outcome !== undefined && !outcome.ok) return Effect.fail(outcome.error)
@@ -622,9 +667,13 @@ const snapshotFinish = (
         ["error", "outcome", "meta"],
         "finished attempt"
       )
-      const attemptError = values.error === undefined ? undefined : snapshotJson(method, values.error, "error")
-      const outcome = values.outcome === undefined ? undefined : snapshotJson(method, values.outcome, "outcome")
-      const meta = values.meta === undefined ? undefined : snapshotJson(method, values.meta, "meta")
+      const attemptError = values.error === undefined
+        ? undefined
+        : snapshotJson(method, values.error, "error", maximumValueBytes)
+      const outcome = values.outcome === undefined
+        ? undefined
+        : snapshotJson(method, values.outcome, "outcome", maximumValueBytes)
+      const meta = values.meta === undefined ? undefined : snapshotJson(method, values.meta, "meta", maximumValueBytes)
       if (attemptError !== undefined && !attemptError.ok) return Effect.fail(attemptError.error)
       if (outcome !== undefined && !outcome.ok) return Effect.fail(outcome.error)
       if (meta !== undefined && !meta.ok) return Effect.fail(meta.error)
@@ -653,9 +702,13 @@ const snapshotPatch = (
       const checkpoint = values.checkpoint === undefined
         ? undefined
         : snapshotJson(method, values.checkpoint, "checkpoint", maximumCheckpointBytes)
-      const attemptError = values.error === undefined ? undefined : snapshotJson(method, values.error, "error")
-      const outcome = values.outcome === undefined ? undefined : snapshotJson(method, values.outcome, "outcome")
-      const meta = values.meta === undefined ? undefined : snapshotJson(method, values.meta, "meta")
+      const attemptError = values.error === undefined
+        ? undefined
+        : snapshotJson(method, values.error, "error", maximumValueBytes)
+      const outcome = values.outcome === undefined
+        ? undefined
+        : snapshotJson(method, values.outcome, "outcome", maximumValueBytes)
+      const meta = values.meta === undefined ? undefined : snapshotJson(method, values.meta, "meta", maximumValueBytes)
       if (checkpoint !== undefined && !checkpoint.ok) return Effect.fail(checkpoint.error)
       if (attemptError !== undefined && !attemptError.ok) return Effect.fail(attemptError.error)
       if (outcome !== undefined && !outcome.ok) return Effect.fail(outcome.error)
@@ -853,7 +906,7 @@ export const makeWith = (
         const checkpoint = yield* putEncodeCheckpoint(attempt.checkpoint)
         const attemptError = yield* putEncodeOptional(attempt.error, "error")
         const outcome = yield* putEncodeOptional(attempt.outcome, "outcome")
-        const meta = yield* encode("put", attempt.meta, "meta")
+        const meta = yield* encode("put", attempt.meta, "meta", maximumValueBytes)
         return yield* writeRun(
           attempt.runId,
           Effect.gen(function*() {
@@ -962,22 +1015,64 @@ export const makeWith = (
       }).pipe(observeExit)
     )
 
-    const listRun: NonNullable<Service["listRun"]> = Effect.fn("AttemptStore.listRun")((runId) =>
+    const listRun: NonNullable<Service["listRun"]> = Effect.fn("AttemptStore.listRun")((runId, page) =>
       Effect.gen(function*() {
         if (!Boundary.isDurableText(runId)) {
           return yield* Effect.fail(
             error("listRun", "invalid_attempt", "run id violates the durable identifier contract")
           )
         }
+        const after = page?.after
+        if (
+          page !== undefined && (
+            !Number.isSafeInteger(page.limit) || page.limit < 1 || page.limit > maximumListRunPage ||
+            (after !== undefined &&
+              (!Boundary.isDurableText(after.stepKeyDigest) || !Number.isSafeInteger(after.attempt)))
+          )
+        ) {
+          return yield* Effect.fail(
+            error(
+              "listRun",
+              "invalid_attempt",
+              `page must name a limit between 1 and ${maximumListRunPage} and a durable cursor`
+            )
+          )
+        }
         yield* Effect.annotateCurrentSpan({ runId })
-        const rows = yield* sql<Record<string, unknown>>`
+        // Keyset pages: one query never holds more than `limit` rows' payloads.
+        const read = (limit: number, cursor: ListRunPage["after"]) =>
+          (cursor === undefined
+            ? sql<Record<string, unknown>>`
         SELECT run_id, step_key_digest, attempt, state, started_at_ms, finished_at_ms,
           heartbeat_at_ms, checkpoint_json, error_json, outcome_json, meta_json
         FROM flows_attempts
         WHERE run_id = ${runId}
         ORDER BY step_key_digest, attempt
-      `.pipe(Effect.mapError(mapPersistenceError("listRun")))
-        return yield* Effect.forEach(rows, (row) => decodeRow("listRun", row))
+        LIMIT ${limit}
+      `
+            : sql<Record<string, unknown>>`
+        SELECT run_id, step_key_digest, attempt, state, started_at_ms, finished_at_ms,
+          heartbeat_at_ms, checkpoint_json, error_json, outcome_json, meta_json
+        FROM flows_attempts
+        WHERE run_id = ${runId}
+          AND (step_key_digest > ${cursor.stepKeyDigest}
+            OR (step_key_digest = ${cursor.stepKeyDigest} AND attempt > ${cursor.attempt}))
+        ORDER BY step_key_digest, attempt
+        LIMIT ${limit}
+      `).pipe(
+              Effect.mapError(mapPersistenceError("listRun")),
+              Effect.flatMap(Effect.forEach((row) => decodeRow("listRun", row)))
+            )
+        if (page !== undefined) return yield* read(page.limit, after)
+        const listed: Array<Attempt> = []
+        let cursor: ListRunPage["after"] = undefined
+        while (true) {
+          const rows: ReadonlyArray<Attempt> = yield* read(maximumListRunPage, cursor)
+          listed.push(...rows)
+          const last = rows.at(-1)
+          if (rows.length < maximumListRunPage || last === undefined) return listed
+          cursor = { stepKeyDigest: last.stepKeyDigest, attempt: last.attempt }
+        }
       }).pipe(observeExit)
     )
 

@@ -120,6 +120,145 @@ describe("AttemptStore.listRun", () => {
       expect(statements).toBe(1)
     }))
 
+  it.effect("reads a long run in keyset pages of bounded size, in the listing's order", () =>
+    Effect.gen(function*() {
+      const count = { statements: 0 }
+      const total = AttemptStoreLive.maximumListRunPage + 44
+      yield* Effect.gen(function*() {
+        yield* createRun("run-1")
+        yield* createRun("run-2")
+        const sql = yield* Effect.service(SqlClient.SqlClient)
+        // Two attempts per step key, so a page boundary can fall inside one key.
+        for (let index = 0; index < total; index++) {
+          const digest = `digest-${String(Math.floor(index / 2)).padStart(4, "0")}`
+          yield* sql`
+            INSERT INTO flows_attempts (run_id, step_key_digest, attempt, state, started_at_ms, meta_json)
+            VALUES (${"run-1"}, ${digest}, ${(index % 2) + 1}, 'running', 1, '{}')
+          `
+        }
+        yield* put("run-2", "digest-0000", 1)
+        const store = yield* AttemptStore
+        const identity = (row: AttemptStoreLive.Attempt) => `${row.stepKeyDigest}#${row.attempt}`
+
+        // Unpaged, the whole run is still answered, read one bounded page at a time.
+        count.statements = 0
+        const all = yield* store.listRun!("run-1")
+        expect(all).toHaveLength(total)
+        expect(count.statements).toBe(2)
+        expect(all.map(identity)).toEqual([...all.map(identity)].sort())
+        expect(new Set(all.map((row) => row.runId))).toEqual(new Set(["run-1"]))
+
+        // Paged, each read holds at most `limit` rows and resumes after the last one.
+        const paged: Array<AttemptStoreLive.Attempt> = []
+        let after: AttemptStoreLive.ListRunPage["after"] = undefined
+        let reads = 0
+        while (true) {
+          count.statements = 0
+          const page: ReadonlyArray<AttemptStoreLive.Attempt> = yield* store.listRun!("run-1", { limit: 7, after })
+          expect(count.statements).toBe(1)
+          expect(page.length).toBeLessThanOrEqual(7)
+          reads++
+          paged.push(...page)
+          const last = page.at(-1)
+          if (page.length < 7 || last === undefined) break
+          after = { stepKeyDigest: last.stepKeyDigest, attempt: last.attempt }
+        }
+        expect(reads).toBe(Math.ceil((total + 1) / 7))
+        expect(paged).toEqual(all)
+        // A cursor at the last row answers an empty page, and one page can hold the maximum.
+        const end = all.at(-1)!
+        expect(yield* store.listRun!("run-1", { limit: 1, after: end })).toEqual([])
+        expect(yield* store.listRun!("run-1", { limit: AttemptStoreLive.maximumListRunPage })).toEqual(
+          all.slice(0, AttemptStoreLive.maximumListRunPage)
+        )
+      }).pipe(
+        Effect.provide(AttemptStoreLive.layer),
+        Effect.provide(Layer.provideMerge(counted(count), Layer.provideMerge(Migrations.layer, TestDatabase.layer)))
+      )
+    }))
+
+  it.effect("stops an unpaged read when the last page is exactly full", () =>
+    Effect.gen(function*() {
+      const count = { statements: 0 }
+      yield* Effect.gen(function*() {
+        yield* createRun("run-1")
+        const sql = yield* Effect.service(SqlClient.SqlClient)
+        for (let index = 0; index < AttemptStoreLive.maximumListRunPage; index++) {
+          yield* sql`
+            INSERT INTO flows_attempts (run_id, step_key_digest, attempt, state, started_at_ms, meta_json)
+            VALUES (${"run-1"}, ${`digest-${String(index).padStart(4, "0")}`}, 1, 'running', 1, '{}')
+          `
+        }
+        const store = yield* AttemptStore
+        count.statements = 0
+        expect(yield* store.listRun!("run-1")).toHaveLength(AttemptStoreLive.maximumListRunPage)
+        // A full page cannot say it was the last, so one more read finds the end.
+        expect(count.statements).toBe(2)
+      }).pipe(
+        Effect.provide(AttemptStoreLive.layer),
+        Effect.provide(Layer.provideMerge(counted(count), Layer.provideMerge(Migrations.layer, TestDatabase.layer)))
+      )
+    }))
+
+  it.effect("refuses a page whose limit or cursor is out of contract", () =>
+    migrated(Effect.gen(function*() {
+      const store = yield* AttemptStore
+      const pages: ReadonlyArray<AttemptStoreLive.ListRunPage> = [
+        { limit: 0 },
+        { limit: -1 },
+        { limit: 1.5 },
+        { limit: AttemptStoreLive.maximumListRunPage + 1 },
+        { limit: 1, after: { stepKeyDigest: "", attempt: 1 } },
+        { limit: 1, after: { stepKeyDigest: "digest-a", attempt: 1.5 } }
+      ]
+      for (const page of pages) {
+        const failure = yield* Effect.flip(store.listRun!("run-1", page))
+        expect([failure.code, failure.method]).toEqual(["invalid_attempt", "listRun"])
+      }
+    })))
+
+  it.effect(
+    "refuses meta, error and outcome over the value ceiling at put, finish and patch",
+    () =>
+      migrated(Effect.gen(function*() {
+        yield* createRun("run-1")
+        const store = yield* AttemptStore
+        // Thirty-three 1 MiB strings: no one string is over the ceiling, their sum is.
+        const mebibyte = "x".repeat(1024 * 1024)
+        const large = {
+          parts: Array.from({ length: AttemptStoreLive.maximumValueBytes / mebibyte.length + 1 }, () => mebibyte)
+        }
+        const id = { runId: "run-1", stepKeyDigest: "digest-a", attempt: 1 }
+        const attempt = { ...id, state: "running", startedAtMs: 1, meta: {} }
+        const refused = <A>(effect: Effect.Effect<A, AttemptStoreLive.AttemptStoreError>, method: string) =>
+          Effect.map(Effect.flip(effect), (failure) => {
+            expect([failure.code, failure.method]).toEqual(["invalid_attempt", method])
+            expect(failure.message).toContain("exceeds the JSON byte limit")
+          })
+
+        yield* refused(store.put({ ...attempt, meta: large }, owner), "put")
+        yield* refused(store.put({ ...attempt, error: large }, owner), "put")
+        yield* refused(store.put({ ...attempt, outcome: large }, owner), "put")
+        expect(Option.isNone(yield* store.get(id))).toBe(true)
+
+        expect(yield* store.put(attempt, owner)).toEqual({ _tag: "Inserted" })
+        for (const field of ["meta", "error", "outcome"] as const) {
+          yield* refused(store.patch(id, { [field]: large }, owner), "patch")
+          yield* refused(
+            store.finish({ ...id, state: "failed", finishedAtMs: 2, [field]: large }, owner),
+            "finish"
+          )
+        }
+        // Nothing oversized was stored: the row is as it was put, and still finishes.
+        expect(Option.getOrThrow(yield* store.get(id))).toMatchObject({ state: "running", meta: {} })
+        const fits = { note: "x".repeat(1024) }
+        expect(yield* store.finish({ ...id, state: "failed", finishedAtMs: 2, error: fits, outcome: fits }, owner))
+          .toEqual({ _tag: "Finished" })
+        expect(Option.getOrThrow(yield* store.get(id))).toMatchObject({ state: "failed", error: fits, outcome: fits })
+      })),
+    { timeout: 120_000 }
+  )
+
   it.effect("refuses a run id outside the durable identifier contract", () =>
     migrated(Effect.gen(function*() {
       const store = yield* AttemptStore

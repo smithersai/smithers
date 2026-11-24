@@ -216,14 +216,23 @@ export const sourceExtensions: ReadonlyArray<string> = [
   ".jsx",
   ".mjs",
   ".cjs",
-  ".vibe"
+  ".vibe",
+  ".vibex"
 ]
 
 /**
  * Directories never read: dependencies, build and test output, and every
  * dot-directory (tool state such as `.alchemy` or `.wrangler`).
  */
-const skippedDirectories = new Set(["node_modules", "dist", "coverage", "target", "tmp", "test-results", "playwright-report"])
+const skippedDirectories = new Set([
+  "node_modules",
+  "dist",
+  "coverage",
+  "target",
+  "tmp",
+  "test-results",
+  "playwright-report"
+])
 
 const kinds = ["forbid", "forbidNames", "rootImportsOnly", "forbidCalls", "forbidHostModules"] as const
 
@@ -324,7 +333,10 @@ export const listSources = (packageDirectory: string): ReadonlyArray<string> => 
         const nested = lstatSync(join(packageDirectory, path, "package.json"), { throwIfNoEntry: false })
         if (nested?.isFile() === true) continue
         walk(path)
-      } else if (entry.isFile() && !entry.name.endsWith(".d.vibe.ts") && sourceExtensions.some((extension) => entry.name.endsWith(extension))) {
+      } else if (
+        entry.isFile() && !/(?:\.d\.vibex?\.ts|\.vibex?\.text\.d\.ts)$/.test(entry.name) &&
+        sourceExtensions.some((extension) => entry.name.endsWith(extension))
+      ) {
         found.push(path)
       }
     }
@@ -347,9 +359,15 @@ const matchesAny = (value: string, globs: ReadonlyArray<string>): boolean =>
   globs.some((glob) => matchesGlob(value, glob))
 
 /** Match the written module and, for relative references, its canonical path without parent segments. */
-const matchesModule = (specifier: string, globs: ReadonlyArray<string>, sourcePath: string, normalizeRelative: boolean): boolean =>
+const matchesModule = (
+  specifier: string,
+  globs: ReadonlyArray<string>,
+  sourcePath: string,
+  normalizeRelative: boolean
+): boolean =>
   matchesAny(specifier, globs) ||
-  (normalizeRelative && /^\.\.?\//.test(specifier) && matchesAny(posix.resolve("/", posix.dirname(sourcePath), specifier), globs))
+  (normalizeRelative && /^\.\.?\//.test(specifier) &&
+    matchesAny(posix.resolve("/", posix.dirname(sourcePath), specifier), globs))
 
 /**
  * Whether a `forbidCalls` entry names a callee: `*.<member>` names every callee
@@ -368,8 +386,10 @@ const breaches = (
 ): ReadonlyArray<{ readonly line: number; readonly usage: string }> => {
   if (rule.kind === "forbidCalls") {
     return analysis.calls
-      .filter((call) => (rule.includeReferences === true || !call.reference) &&
-        rule.callees.some((entry) => namesCallee(entry, call.callee)))
+      .filter((call) =>
+        (rule.includeReferences === true || !call.reference) &&
+        rule.callees.some((entry) => namesCallee(entry, call.callee))
+      )
       .map((call) => ({ line: call.line, usage: `${call.reference ? "references" : "calls"} ${call.callee}` }))
   }
   const allowTypeOnly = rule.allowTypeOnly === true
@@ -401,13 +421,17 @@ const breaches = (
     }
     if (allowTypeOnly && reference.typeOnly) continue
     if (rule.kind === "forbidHostModules") {
-      if (specifier.startsWith("node:") || specifier.startsWith("bun:") || specifier === "bun" || isBuiltin(specifier)) {
+      if (
+        specifier.startsWith("node:") || specifier.startsWith("bun:") || specifier === "bun" || isBuiltin(specifier)
+      ) {
         found.push({ line: reference.line, usage: `${verb(reference)} "${specifier}"` })
       }
       continue
     }
     if (rule.kind === "forbid") {
-      if (matchesModule(specifier, rule.modules, sourcePath, rule.normalizeRelative === true)) found.push({ line: reference.line, usage: `${verb(reference)} "${specifier}"` })
+      if (matchesModule(specifier, rule.modules, sourcePath, rule.normalizeRelative === true)) {
+        found.push({ line: reference.line, usage: `${verb(reference)} "${specifier}"` })
+      }
       continue
     }
     const name = packageName(specifier)
@@ -437,7 +461,9 @@ export const check = (rules: ReadonlyArray<ImportRule>, sources: ReadonlyArray<S
     sources: rule.files === undefined ? sources : sources.filter((source) => matchesAny(source.path, rule.files!))
   }))
   const empty = scopes.filter((scope) => scope.sources.length === 0).map(({ rule, index }) =>
-    `ImportRules rule ${index} (${rule.kind}) matches no source files; files: ${JSON.stringify(rule.files ?? ["**/*"])}. ${rule.because}`
+    `ImportRules rule ${index} (${rule.kind}) matches no source files; files: ${
+      JSON.stringify(rule.files ?? ["**/*"])
+    }. ${rule.because}`
   )
   if (empty.length > 0) throw new Error(empty.join("\n"))
   const references = rules.some((rule) => rule.kind === "forbidCalls" && rule.includeReferences === true)
@@ -455,9 +481,7 @@ export const check = (rules: ReadonlyArray<ImportRule>, sources: ReadonlyArray<S
       }
     }
   })
-  return violations.sort((a, b) =>
-    a.file < b.file ? -1 : a.file > b.file ? 1 : a.line - b.line || a.rule - b.rule
-  )
+  return violations.sort((a, b) => a.file < b.file ? -1 : a.file > b.file ? 1 : a.line - b.line || a.rule - b.rule)
 }
 
 /**
@@ -505,7 +529,9 @@ export const run = (options: {
   const scope = `${rules.length} rule${rules.length === 1 ? "" : "s"} over ${paths.length} source file${
     paths.length === 1 ? "" : "s"
   }`
-  if (violations.length === 0) return { exitCode: 0, output: `ImportRules passed in ${options.packageDirectory}: ${scope}.` }
+  if (violations.length === 0) {
+    return { exitCode: 0, output: `ImportRules passed in ${options.packageDirectory}: ${scope}.` }
+  }
   return {
     exitCode: 1,
     output: [

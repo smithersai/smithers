@@ -113,6 +113,17 @@ const job = (run: number, parts: Tree, checks: ReadonlyArray<number> = [1, 2]): 
 
 // Real jj and real processes: a budget for a loaded host, still finite so a hang fails.
 describe.skipIf(!jjInstalled)("CI as commands on candidate commits", { timeout: 120_000 }, () => {
+  it("collects verdicts when commands fill both pipes", async () => {
+    const noise = "dd if=/dev/zero bs=65536 count=32 2>/dev/null"
+    for (const streamed of [true, false]) {
+      const command = () => ({ command: "sh", args: ["-c", noise + "; echo; (" + noise + ") >&2; echo '1 pass'"] })
+      const world = await setup(command, streamed ? command : undefined)
+      await world.ci((ci) => ci.wait([]))
+      await world.ci((ci) => ci.reconcile([job(1, [], [1])]))
+      expect(await world.settled(1, 1)).toMatchObject({ _tag: "running", finished: [{ check: 1, verdict: "pass" }] })
+    }
+  })
+
   it("a check passes when its command exits 0 and fails otherwise, for the candidate commit", async () => {
     const world = await setup()
     await world.register(1, 0, world.change({ "one.txt": "one\n" }))

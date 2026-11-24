@@ -45,6 +45,7 @@ import * as Semaphore from "effect/Semaphore"
 import * as Stream from "effect/Stream"
 import type { Part, Tree } from "./Basic.ts"
 import { samePart, sameTree } from "./Basic.ts"
+import { writeJson } from "./internal/AtomicFile.ts"
 import { Target, Unavailable } from "./Services.ts"
 import { strip } from "./Step.ts"
 
@@ -250,7 +251,14 @@ export const make = (
     const lines = (text: string): ReadonlyArray<string> => text.split("\n").filter((line) => line !== "")
 
     const tipCommit = Effect.map(
-      answer(["log", "--no-graph", "-r", `bookmarks(exact:"${options.bookmark}")`, "-T", "commit_id ++ \"\\n\""]),
+      answer([
+        "log",
+        "--no-graph",
+        "-r",
+        `bookmarks(exact:${JSON.stringify(options.bookmark)})`,
+        "-T",
+        "commit_id ++ \"\\n\""
+      ]),
       (text) => lines(text)[0]
     )
 
@@ -270,7 +278,7 @@ export const make = (
         interior: [],
         foreign: firstForeign
       }
-      yield* fs.writeFileString(options.ledger, JSON.stringify(created) + "\n")
+      yield* writeJson(fs, options.ledger, created)
       return created
     }).pipe(
       Effect.catchTag("PlatformError", (error) => Effect.fail(unavailable(error.message))),
@@ -281,7 +289,7 @@ export const make = (
     )
 
     const save = (ledger: typeof Ledger.Type): Effect.Effect<void, Unavailable> =>
-      fs.writeFileString(options.ledger, JSON.stringify(ledger) + "\n").pipe(
+      writeJson(fs, options.ledger, ledger).pipe(
         Effect.catchTag("PlatformError", (error) => Effect.fail(unavailable(error.message)))
       )
 
@@ -293,7 +301,7 @@ export const make = (
      */
     const read = Effect.gen(function*() {
       const ledger = yield* load
-      const bookmark = `bookmarks(exact:"${options.bookmark}")`
+      const bookmark = `bookmarks(exact:${JSON.stringify(options.bookmark)})`
       const behindTip = lines(
         yield* answer([
           "log",
@@ -354,18 +362,23 @@ export const make = (
         if (options.finish === undefined) {
           if (conflicted) return yield* refuse
         } else {
-          const finished = yield* run(options.finish(commit, onto, conflicted))
-          if (finished.code !== 0) return yield* refuse
-          commit = lines(finished.stdout).at(-1)?.trim() ?? ""
-          // The finished change must still be a clean line of commits on `onto`.
-          const wrong = unavailable(`the finish command gave ${commit || "no commit"}, not a clean line on ${onto}`)
-          const line = yield* Effect.orElseSucceed(ids(`${onto}..(${commit})`), () => [])
-          if (line.length === 0) return yield* wrong
-          const flaws = yield* ids(
-            `((${onto}..${commit}) & (conflicts() | merges())) | (roots(${onto}..${commit})- ~ ${onto})`
-          )
-          if (flaws.length > 0) return yield* wrong
-          commit = line[0]!
+          const finish = options.finish
+          const validated = yield* Effect.gen(function*() {
+            const finished = yield* run(finish(commit, onto, conflicted))
+            if (finished.code !== 0) return undefined
+            const proposed = lines(finished.stdout).at(-1)?.trim() ?? ""
+            const wrong = unavailable(`the finish command gave ${proposed || "no commit"}, not a clean line on ${onto}`)
+            if (!/^[0-9a-f]{4,64}$/.test(proposed)) return yield* wrong
+            const line = yield* Effect.orElseSucceed(ids(`${onto}..(${proposed})`), () => [])
+            if (line.length === 0) return yield* wrong
+            const flaws = yield* ids(
+              `((${onto}..${proposed}) & (conflicts() | merges())) | (roots(${onto}..${proposed})- ~ ${onto})`
+            )
+            if (flaws.length > 0) return yield* wrong
+            return line[0]!
+          }).pipe(Effect.tapError(() => refuse))
+          if (validated === undefined) return yield* refuse
+          commit = validated
         }
         const below = yield* ids(`(${onto}..${commit}) ~ ${commit}`)
         return { commit, interior: below }
@@ -452,22 +465,30 @@ export const make = (
     // at most `parallel` at a time, and once per commit and change: a second
     // builder that needs the same one waits for the first and reads its answer.
     const applies = yield* Semaphore.make(Math.max(1, options.parallel ?? 1))
-    const applying = new Map<string, Semaphore.Semaphore>()
+    const applying = new Map<string, { semaphore: Semaphore.Semaphore; users: number }>()
     const applyOnce = (onto: string, part: Part, source: string): Effect.Effect<void, Unavailable> => {
       const key = `${onto} ${part.id}.${part.rev}`
-      let mine = applying.get(key)
-      if (mine === undefined) {
-        mine = Semaphore.makeUnsafe(1)
-        applying.set(key, mine)
-      }
-      return Semaphore.withPermit(
-        mine,
-        Effect.gen(function*() {
-          if (yield* one(decided(onto, part))) return
-          const applied = yield* Semaphore.withPermit(applies, apply(source, onto))
-          yield* one(recordApplied(onto, part, applied))
-        })
-      ).pipe(Effect.ensuring(Effect.sync(() => void applying.delete(key))))
+      return Effect.acquireUseRelease(
+        Effect.sync(() => {
+          const entry = applying.get(key) ?? { semaphore: Semaphore.makeUnsafe(1), users: 0 }
+          if (entry.users === 0) applying.set(key, entry)
+          entry.users++
+          return entry
+        }),
+        (entry) =>
+          Semaphore.withPermit(
+            entry.semaphore,
+            Effect.gen(function*() {
+              if (yield* one(decided(onto, part))) return
+              const applied = yield* Semaphore.withPermit(applies, apply(source, onto))
+              yield* one(recordApplied(onto, part, applied))
+            })
+          ),
+        (entry) =>
+          Effect.sync(() => {
+            if (--entry.users === 0) applying.delete(key)
+          })
+      )
     }
 
     // The ledger's lock is taken for one look at a time, so a short candidate is
@@ -507,7 +528,7 @@ export const make = (
         // the bookmark after it, and the candidates built on those. A
         // candidate built on a tip the bookmark has left does not.
         const heads = [
-          `bookmarks(exact:"${options.bookmark}")`,
+          `bookmarks(exact:${JSON.stringify(options.bookmark)})`,
           ...ledger.candidates.map((entry) => `present(${entry.commit})`)
         ]
         const alive = new Set(yield* ids(`(${genesis}::(${heads.join(" | ")})) ~ ${genesis}`))

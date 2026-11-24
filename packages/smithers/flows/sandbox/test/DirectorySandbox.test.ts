@@ -888,6 +888,25 @@ describe("DirectorySandbox", () => {
       expect((undelivered as ProviderError).message).toContain("SIGTERM")
     }), budget)
 
+  it.effect("reattaches and destroys an older recorded directory while fresh acquisitions use the new identity", () =>
+    Effect.gen(function*() {
+      const { fs, spawner } = yield* services
+      const directory = DirectorySandbox.make({ fs, spawner, root, persistence: "sticky" })
+      const recorded = { id: "a", remoteId: join(root, "a-0002b606e40c292c") }
+      yield* fs.makeDirectory(recorded.remoteId, { recursive: true })
+      yield* fs.writeFileString(join(recorded.remoteId, "proof"), "saved")
+      yield* Effect.scoped(Effect.gen(function*() {
+        const resumed = yield* directory.attach!(recorded)
+        expect(new TextDecoder().decode(yield* resumed.readFile(join(resumed.workdir, "proof")))).toBe("saved")
+        const fresh = yield* directory.acquire("a")
+        expect(fresh.remoteId).not.toBe(resumed.remoteId)
+        yield* directory.destroy!(recorded)
+        expect(yield* fs.exists(recorded.remoteId)).toBe(false)
+        expect(yield* fs.exists(fresh.remoteId)).toBe(true)
+        yield* directory.destroy!(fresh)
+      }))
+    }))
+
   it.effect("refuses a spawn against a command that cannot start", () =>
     Effect.gen(function*() {
       const { fs } = yield* services
@@ -897,7 +916,7 @@ describe("DirectorySandbox", () => {
             PlatformError.badArgument({
               module: "ChildProcess",
               method: "spawn",
-              description: "broken transport"
+              description: "private-command-marker"
             })
           )
         ),
@@ -907,10 +926,12 @@ describe("DirectorySandbox", () => {
       const failure = yield* Effect.scoped(
         Effect.gen(function*() {
           const session = yield* directory.acquire("broken-spawner")
-          return yield* Effect.flip(Effect.scoped(Effect.asVoid(session.spawn("true", {}))))
+          return yield* Effect.flip(Effect.scoped(Effect.asVoid(session.spawn("printf private-command-marker", {}))))
         })
       )
       expect(failure).toBeInstanceOf(ProviderError)
+      expect(JSON.stringify(failure)).not.toContain("private-command-marker")
+      expect(failure.cause).toBeUndefined()
       expect((failure as ProviderError).code).toBe("spawn_error")
     }), budget)
 

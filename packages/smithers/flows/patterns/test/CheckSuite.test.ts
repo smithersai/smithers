@@ -754,6 +754,11 @@ describe("CheckSuite discovered checks", () => {
     const named = CheckSuite.makeDiscovered({ ...settings, check: member, name: "ci", description: "Run each gate." })
 
     expect(suite._tag).toBe(
+      "checkSuiteDiscovered(strategy=all-pass, concurrency=2, onEmpty=pass, continueOnFail=true)[discovered-check]"
+    )
+    // A fail-fast suite joins differently, so it is another flow; it keeps
+    // the tag it had before `continueOnFail` entered the label.
+    expect(CheckSuite.makeDiscovered({ ...settings, continueOnFail: false, check: member })._tag).toBe(
       "checkSuiteDiscovered(strategy=all-pass, concurrency=2, onEmpty=pass)[discovered-check]"
     )
     expect(suite.description).toBeUndefined()

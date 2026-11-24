@@ -42,6 +42,7 @@ import * as Equal from "effect/Equal"
 import * as Exit from "effect/Exit"
 import * as Fiber from "effect/Fiber"
 import * as Layer from "effect/Layer"
+import * as ManagedRuntime from "effect/ManagedRuntime"
 import * as Option from "effect/Option"
 import * as Scope from "effect/Scope"
 import * as Semaphore from "effect/Semaphore"
@@ -275,6 +276,9 @@ const connect = (options: Options): Effect.Effect<Client, never, TabChannel | We
     // Runs one request. When the leader holding this tab's transaction ended before answering it, the transaction
     // runs again on the leader now serving, then the request.
     const run = (request: Request): Effect.Effect<Answer, SqlError> =>
+      Effect.suspend(() => attempt(request, { remaining: 3 }))
+
+    const attempt = (request: Request, budget: { remaining: number }): Effect.Effect<Answer, SqlError> =>
       Effect.gen(function*() {
         const { answer, id } = yield* send(request)
         if (answer._tag === "Executed") {
@@ -291,23 +295,26 @@ const connect = (options: Options): Effect.Effect<Client, never, TabChannel | We
           return yield* refused(answer)
         }
         // Only a statement sent in a transaction is lost.
-        const { ran, replayable } = transaction!
+        if (transaction === null) return yield* refused(answer)
+        const { ran, replayable } = transaction
         transaction = null
-        return replayable && (yield* replay(ran)) ? yield* run(request) : yield* refused(answer)
+        return replayable && budget.remaining-- > 0 && (yield* replay(ran, budget))
+          ? yield* attempt(request, budget)
+          : yield* refused(answer)
       })
 
     // Runs a lost transaction's requests again, in order. The transaction stands only if each returns the rows it
     // returned before, so everything the caller decided on them still holds; otherwise it is rolled back.
-    const replay = (ran: ReadonlyArray<Ran>) =>
+    const replay = (ran: ReadonlyArray<Ran>, budget: { remaining: number }) =>
       Effect.gen(function*() {
         for (const { answer, request } of ran) {
-          const again = yield* Effect.option(run(request))
+          const again = yield* Effect.option(attempt(request, budget))
           if (
             Option.isNone(again) || transaction === null || !Equal.equals(again.value.rows, answer.rows) ||
             !Equal.equals(again.value.results, answer.results)
           ) {
             // Outside a transaction SQLite refuses it, which is as good.
-            yield* Effect.ignore(run({ sql: "ROLLBACK", params: [] }))
+            yield* Effect.ignore(attempt({ sql: "ROLLBACK", params: [] }, { remaining: 0 }))
             return false
           }
         }
@@ -414,6 +421,8 @@ export interface OpenOptions extends Options {
   readonly within?: Duration.Input
 }
 
+const SqliteClient = Context.Service<Client>("@smthrs/platform-browser/SqliteClient")
+
 /**
  * Opens the shared database for a `Promise` API such as TanStack DB's
  * persistence, and resolves once a leader answers, so a caller can fall back
@@ -429,37 +438,42 @@ export interface OpenOptions extends Options {
  * @category constructors
  * @since 1.0.0
  */
-export const open = (options: OpenOptions): Promise<Database> =>
-  Effect.runPromise(Effect.gen(function*() {
-    const scope = yield* Scope.make()
-    const close = Scope.close(scope, Exit.void)
-    const service = yield* connect(options).pipe(
-      Scope.provide(scope),
-      Effect.provide(Layer.mergeAll(TabChannelLayer.layer, WebLockLayer.layer))
+export const open = async (options: OpenOptions): Promise<Database> => {
+  const runtime = ManagedRuntime.make(
+    Layer.effect(SqliteClient, connect(options)).pipe(
+      Layer.provide(Layer.mergeAll(TabChannelLayer.layer, WebLockLayer.layer))
     )
-    yield* service.execute("SELECT 1").pipe(
-      Effect.timeoutOrElse({
-        duration: Duration.fromInputUnsafe(options.within ?? "30 seconds"),
-        orElse: () =>
-          Effect.fail(
-            new SqlError({
-              reason: new ConnectionError({
-                cause: "no leader",
-                message: "No engine leader answered",
-                operation: "connect"
+  )
+  try {
+    const service = await runtime.runPromise(SqliteClient)
+    await runtime.runPromise(
+      service.execute("SELECT 1").pipe(
+        Effect.timeoutOrElse({
+          duration: Duration.fromInputUnsafe(options.within ?? "30 seconds"),
+          orElse: () =>
+            Effect.fail(
+              new SqlError({
+                reason: new ConnectionError({
+                  cause: "no leader",
+                  message: "No engine leader answered",
+                  operation: "connect"
+                })
               })
-            })
-          )
-      }),
-      Effect.tapError(() => close)
+            )
+        })
+      )
     )
     return {
       execute: <Row>(sql: string, params?: ReadonlyArray<unknown>) =>
-        Effect.runPromise(
+        runtime.runPromise(
           service.execute(sql, params).pipe(Effect.mapError((error) => new SqliteError(error)))
         ) as Promise<ReadonlyArray<Row>>,
       executeBatch: (statements: ReadonlyArray<Statement>) =>
-        Effect.runPromise(service.executeBatch(statements).pipe(Effect.mapError((error) => new SqliteError(error)))),
-      close: () => Effect.runPromise(close)
+        runtime.runPromise(service.executeBatch(statements).pipe(Effect.mapError((error) => new SqliteError(error)))),
+      close: runtime.dispose
     }
-  }))
+  } catch (error) {
+    await runtime.dispose()
+    throw error
+  }
+}

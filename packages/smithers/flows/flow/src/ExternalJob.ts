@@ -101,8 +101,9 @@ const waitMillis = (value: Duration.Input): number => {
  * How long `run` waited on a job's work inside the step that asked, in
  * milliseconds, by `job` (its tag) and `outcome`: `collected` (the work ended
  * and was collected there), `handed_off` (it was still running when the wait
- * ended, or was lost or refused, and went to the job's execution), or
- * `interrupted` (the step was). The step holds its run's drive while it
+ * ended, or was lost, and went to the job's execution), `failed_inline` (a
+ * provider call failed, which is logged with the job, key and error tag, and
+ * the work went to the job's execution), or `interrupted` (the step was). The step holds its run's drive while it
  * waits: on a host that bills by wall time, such as a Durable Object's alarm,
  * this is that time.
  *
@@ -617,12 +618,18 @@ export const make = <
       const caller = yield* Effect.serviceOption(FlowInstance)
       const until = Math.floor(yield* Clock.currentTimeMillis) + waitMs
       let handle: Option.Option<H["Type"]> = Option.none()
+      const report: { failed: boolean; operation: "start" | "status" | "collect" } = {
+        failed: false,
+        operation: "start"
+      }
       const attempt = Effect.gen(function*() {
         const started = yield* operations.start(payload, key)
         handle = Option.some(started)
         for (let probe = 1;; probe++) {
           const begunAt = Math.floor(yield* Clock.currentTimeMillis)
+          report.operation = "status"
           const status = yield* operations.status(started, key, { waitMs: Math.max(0, until - begunAt) })
+          report.operation = "collect"
           if (status._tag === "Exited") return Option.some(yield* operations.collect(started, key, status))
           if (status._tag === "Lost") return Option.none<A["Type"]>()
           const now = Math.floor(yield* Clock.currentTimeMillis)
@@ -638,8 +645,23 @@ export const make = <
           : operations.abandon === undefined
           ? Effect.void
           : operations.abandon(payload, key)
-      return yield* attempt.pipe(
-        Effect.catch(() => Effect.succeedNone),
+      const done = yield* attempt.pipe(
+        // A provider failure is the job's to decide too, but a provider that refuses every inline attempt
+        // must not look like healthy slow work: it is logged and recorded as `failed_inline`.
+        Effect.catch((error) =>
+          Effect.logWarning("ExternalJob inline run failed; the job's execution decides").pipe(
+            Effect.annotateLogs({
+              job: tag,
+              operation: report.operation,
+              key,
+              error: RetryPolicy.errorTag(error) ?? typeof error
+            }),
+            Effect.andThen(Effect.sync(() => {
+              report.failed = true
+            })),
+            Effect.as(Option.none<A["Type"]>())
+          )
+        ),
         // No provider call holds the step past the wait: a `start`, `status` or `collect` still going then is the
         // job's, which asks for the same key, and `start` creates or gets it.
         (bounded) => Effect.raceFirst(bounded, Effect.as(Effect.sleep(waitMs), Option.none<A["Type"]>())),
@@ -655,6 +677,7 @@ export const make = <
             : Effect.void
         )
       )
+      return { done, failed: report.failed }
     })
   /**
    * Runs the job from inside a step (an action's body) as execution
@@ -702,15 +725,15 @@ export const make = <
         : Math.min(waitMs, deadline - Math.floor(yield* Clock.currentTimeMillis))
       if (left <= 0) return yield* execute
       const begunAt = yield* Clock.currentTimeMillis
-      const waited = (outcome: "collected" | "handed_off" | "interrupted") =>
+      const waited = (outcome: "collected" | "handed_off" | "failed_inline" | "interrupted") =>
         Effect.flatMap(
           Clock.currentTimeMillis,
           (now) => Metric.update(Metric.withAttributes(stepWaits, { job: tag, outcome }), now - begunAt)
         )
-      const done = yield* inline(options.operations, payload, options.executionId, left).pipe(
+      const { done, failed } = yield* inline(options.operations, payload, options.executionId, left).pipe(
         Effect.onInterrupt(() => waited("interrupted"))
       )
-      yield* waited(Option.isSome(done) ? "collected" : "handed_off")
+      yield* waited(Option.isSome(done) ? "collected" : failed ? "failed_inline" : "handed_off")
       return Option.isSome(done) ? done.value : yield* execute
     })
   }

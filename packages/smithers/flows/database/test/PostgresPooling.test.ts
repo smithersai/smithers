@@ -44,6 +44,7 @@ for (const endpoint of endpoints) {
         readonly applicationName?: string
         readonly maxConnections?: number
         readonly writerLockTimeout?: Duration.Input
+        readonly writerLockAttempts?: number
         readonly acquireWarning?: Duration.Input
       }
     ) =>
@@ -55,6 +56,7 @@ for (const endpoint of endpoints) {
             schema: name,
             readOnly: options?.readOnly,
             writerLockTimeout: options?.writerLockTimeout,
+            writerLockAttempts: options?.writerLockAttempts,
             acquireWarning: options?.acquireWarning,
             postgres: { applicationName: options?.applicationName, maxConnections: options?.maxConnections }
           })),
@@ -263,6 +265,42 @@ for (const endpoint of endpoints) {
           expect(after.max).toBeGreaterThanOrEqual(150)
         }).pipe(Effect.provideService(Metric.MetricRegistry, new Map())))
     }
+
+    // A stuck lock holder made every writer wait without limit and no busy
+    // error ever surfaced (R1-Fable-D1-015).
+    it.live("fails a write busy once its waits for a held writer lock run out", () =>
+      Effect.gen(function*() {
+        const name = schema()
+        const holder = yield* client(name)
+        const waiter = yield* client(name, { writerLockTimeout: "50 millis", writerLockAttempts: 2 })
+        const defaulted = yield* client(name, { writerLockTimeout: "20 millis", writerLockAttempts: Number.NaN })
+        const timeouts = Metric.value(DatabaseMetrics.writerLockTimeouts)
+        const release = yield* Deferred.make<void>()
+        const held = yield* Deferred.make<void>()
+        const holding = yield* holder.withTransaction(
+          Effect.andThen(Deferred.succeed(held, undefined), Deferred.await(release))
+        ).pipe(Effect.forkScoped)
+        yield* Deferred.await(held)
+        // A bare transaction makes its two waits, then fails with the lock timeout.
+        const before = (yield* timeouts).count
+        const bare = yield* Effect.exit(waiter.withTransaction(waiter`SELECT 1`))
+        expect(Exit.isFailure(bare)).toBe(true)
+        expect(JSON.stringify(bare)).toContain("LockTimeoutError")
+        expect((yield* timeouts).count - before).toBe(2)
+        // `DurableWriter` replays it within its own attempts and reports busy.
+        const replayed = (yield* timeouts).count
+        const written = yield* Effect.flip(DurableWriter.make(waiter, { maxAttempts: 2 }).write(waiter`SELECT 1`))
+        expect(written.code).toBe("busy")
+        expect((yield* timeouts).count - replayed).toBe(4)
+        // An invalid count makes one wait.
+        const single = (yield* timeouts).count
+        expect(Exit.isFailure(yield* Effect.exit(defaulted.withTransaction(defaulted`SELECT 1`)))).toBe(true)
+        expect((yield* timeouts).count - single).toBe(1)
+        yield* Deferred.succeed(release, undefined)
+        yield* Fiber.join(holding)
+        // Once the holder commits, the same client writes.
+        expect(yield* waiter.withTransaction(waiter<{ readonly one: number }>`SELECT 1 AS one`)).toEqual([{ one: 1 }])
+      }).pipe(Effect.provideService(Metric.MetricRegistry, new Map())))
 
     // A step that waited on a pool logged nothing for 26 seconds on a loaded
     // stack (2026-10-22).

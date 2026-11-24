@@ -103,10 +103,14 @@ const isCommand = (text: string) => (request: Request) =>
 const isRoute = (method: string, suffix: string) => (request: Request) =>
   Effect.succeed(request.method === method && new URL(request.url).pathname.endsWith(suffix))
 
-const fabricated = (exitCode: number, stderr: string) =>
+const fabricated = (exitCode: number, stderr: string, stdout = "") =>
   Effect.succeed(
     new Response(
-      JSON.stringify({ exitCode, stdout: "", stderr: Buffer.from(stderr).toString("base64") }),
+      JSON.stringify({
+        exitCode,
+        stdout: Buffer.from(stdout).toString("base64"),
+        stderr: Buffer.from(stderr).toString("base64")
+      }),
       { status: 200, headers: { "content-type": "application/json" } }
     )
   )
@@ -264,6 +268,81 @@ describe("HttpSandbox", () => {
       expect((yield* session.readFile(empty)).length).toBe(0)
     }).pipe(Effect.scoped), 120_000)
 
+  it.live("bounds requests and combined command output and rejects unsafe offsets", () =>
+    Effect.gen(function*() {
+      const handler = HttpSandbox.serve({ provider: machines(), token, maxRequestBytes: 128, maxOutputBytes: 5 })
+      const acquired = yield* raw(handler, "POST", "/v1/sessions", { body: JSON.stringify({ key: "bounds" }) })
+      const info = JSON.parse(acquired.body) as { readonly id: string; readonly remoteId: string }
+      const session = `/v1/sessions/${encodeURIComponent(info.remoteId)}`
+      const file = `${session}/files?id=bounds&path=${encodeURIComponent(info.remoteId + "/f")}`
+      expect((yield* raw(handler, "PUT", file)).status).toBe(204)
+      expect((yield* raw(handler, "GET", file)).body).toBe("")
+      for (const offset of ["99999999999999999999999", String(Number.MAX_SAFE_INTEGER)]) {
+        expect((yield* raw(handler, "PUT", file + "&offset=" + offset, { body: "x" })).status).toBe(400)
+      }
+      expect((yield* raw(handler, "PUT", file, { body: "x".repeat(129) })).status).toBe(413)
+      expect((yield* raw(handler, "POST", "/v1/sessions", { body: "x".repeat(129) })).status).toBe(413)
+      for (const [payload, status] of [["abc", 413], ["ab", 200]] as const) {
+        expect(
+          (yield* raw(handler, "POST", session + "/commands", {
+            body: JSON.stringify({ id: info.id, command: `printf abc; printf ${payload} >&2` })
+          })).status
+        ).toBe(status)
+      }
+    }), 60_000)
+
+  it.live("checks file responses as bytes arrive", () =>
+    Effect.scoped(Effect.gen(function*() {
+      const session = yield* client(HttpSandbox.serve({ provider: machines(), token }), { maxResponseBytes: 1024 })
+        .acquire("bounded-read")
+      const path = `${session.workdir}/file`
+      yield* session.writeFile(path, new Uint8Array(1024))
+      expect((yield* session.readFile(path)).length).toBe(1024)
+      yield* session.writeFile(path, new Uint8Array(1025))
+      expect((yield* failureOf(session.readFile(path))).message).toContain("response byte limit exceeded")
+    })), 60_000)
+
+  it.live("concurrent final chunks through independent handlers write one byte range", () =>
+    Effect.gen(function*() {
+      const provider = machines()
+      const handlers = Array.from({ length: 4 }, () => HttpSandbox.serve({ provider, token }))
+      const acquired = yield* raw(handlers[0]!, "POST", "/v1/sessions", { body: JSON.stringify({ key: "repeat" }) })
+      const info = JSON.parse(acquired.body) as { readonly remoteId: string }
+      const file = `/v1/sessions/${encodeURIComponent(info.remoteId)}/files?id=repeat&path=${
+        encodeURIComponent(info.remoteId + "/f")
+      }`
+      yield* raw(handlers[0]!, "PUT", file, { body: "first" })
+      const chunk = "last".repeat(1024)
+      const answers = yield* Effect.forEach(handlers, (handler) =>
+        raw(handler, "PUT", file + "&offset=5", { body: chunk }), { concurrency: "unbounded" })
+      expect(answers.map(({ status }) =>
+        status
+      )).toEqual([204, 204, 204, 204])
+      expect((yield* raw(handlers[0]!, "GET", file)).body).toBe("first" + chunk)
+    }), 60_000)
+
+  it.live(
+    "stops polling when the consumer falls behind, then drains the command in order",
+    () =>
+      Effect.gen(function*() {
+        const polls = counted(isCommand("tail -c"), pass, Infinity)
+        const session = yield* client(HttpSandbox.serve({ provider: machines(), token }), {
+          pollBytes: 1,
+          fault: polls.fault
+        })
+          .acquire("backpressure")
+        const child = yield* session.spawn("printf abcdefgh; printf ijklmnop >&2; exit 7", {})
+        expect(yield* child.exitCode).toBe(7)
+        expect(polls.state.seen).toBe(0)
+        expect(text(yield* Stream.runCollect(child.stdout))).toBe("abcdefgh")
+        expect(text(yield* Stream.runCollect(child.stderr))).toBe("ijklmnop")
+        const reads = polls.state.seen
+        expect(yield* Stream.runCollect(child.stdout)).toEqual([])
+        expect(polls.state.seen).toBe(reads)
+      }).pipe(Effect.scoped),
+    60_000
+  )
+
   it.live("keeps not_found across the wire", () =>
     Effect.gen(function*() {
       const session = yield* client(HttpSandbox.serve({ provider: machines(), token })).acquire("absent")
@@ -343,6 +422,24 @@ describe("HttpSandbox", () => {
       expect(yield* gone("sleep 301[8]")).toBe(true)
     }).pipe(Effect.scoped), 120_000)
 
+  it.live(
+    "refuses malformed or oversized output pages without echoing their contents",
+    () =>
+      Effect.scoped(Effect.gen(function*() {
+        const handler = HttpSandbox.serve({ provider: machines(), token })
+        for (const payload of ["incomplete", "unrecognized\n", "x 0\noversized"]) {
+          const fault = counted(isCommand("tail -c"), () => fabricated(0, "", payload))
+          const session = yield* client(handler, { pollBytes: 1, fault: fault.fault }).acquire("malformed-page")
+          const child = yield* session.spawn("printf x", {})
+          const error = yield* failureOf(Stream.runCollect(child.stdout))
+          expect(error.code).toBe("unknown")
+          expect(error.message).toContain("invalid command poll")
+          expect(error.message).not.toContain(payload.trim())
+        }
+      })),
+    60_000
+  )
+
   it.live("fails the streams and the exit of a command that cannot be observed", () =>
     Effect.gen(function*() {
       const failing = counted(isCommand("tail -c"), () => fabricated(2, "poll broke"), Infinity)
@@ -351,7 +448,9 @@ describe("HttpSandbox", () => {
       }).acquire("unobservable")
       const error = yield* failureOf(runIn(session, "exec sleep 3019"))
       expect(error.code).toBe("unknown")
-      expect(error.message).toContain("poll broke")
+      expect(error.message).toContain("could not be observed")
+      expect(error.message).not.toContain("poll broke")
+      expect(error.message).not.toContain("3019")
       expect(yield* gone("sleep 301[9]")).toBe(true)
     }).pipe(Effect.scoped), 120_000)
 
@@ -372,7 +471,7 @@ describe("HttpSandbox", () => {
           const child = yield* session.spawn("echo up; exec sleep 3020", {})
           yield* Stream.runHead(child.stdout)
           const error = yield* failureOf(session.kill!(child, "SIGTERM"))
-          expect(error.message).toContain("no such process")
+          expect(error.message).toContain("signal SIGTERM could not be delivered")
         }))
         expect(yield* gone("sleep 302[0]")).toBe(true)
         expect((yield* failureOf(session.ping!)).code).toBe("unavailable")
@@ -423,6 +522,8 @@ describe("HttpSandbox", () => {
       "retained provider with attach and destroy"
     )
     expect(() => HttpSandbox.serve({ provider: machines(), token: "" })).toThrow("token")
+    expect(() => HttpSandbox.serve({ provider: machines(), token, maxRequestBytes: 0 })).toThrow("maxRequestBytes")
+    expect(() => HttpSandbox.serve({ provider: machines(), token, maxOutputBytes: 0.5 })).toThrow("maxOutputBytes")
   })
 
   it.live("hands the session's limits to the provider choice on every request", () =>
@@ -544,6 +645,7 @@ describe("HttpSandbox", () => {
       { token: "" },
       { chunkBytes: 0 },
       { pollBytes: 1.5 },
+      { maxResponseBytes: Infinity },
       { retries: -1 },
       { processDirectory: "relative" },
       { processDirectory: "/a/../b" },

@@ -7,11 +7,12 @@
 # pnpm, Bun, Go, git, jj, tar and base64. Every download is pinned by version
 # and SHA-256, and the last step fails the build if any tool answers with
 # another version.
-FROM docker.io/cloudflare/sandbox:0.12.14
+FROM docker.io/cloudflare/sandbox:0.12.14@sha256:b8175e89ae5efd83987ffd5056f57c28c390fd5706d42ef70fb669e275248e7b
 
 ARG NODE_VERSION=26.10.0
 ARG NODE_SHA256=ca70e9e349de048b9522abb3adc05b3bd6f43c5ffd3ec57916c7da292f59f022
 ARG PNPM_VERSION=11.25.0
+ARG PNPM_SHA256=33dd0748f27e7916c4f1c8b6943461983e3453b06bbda6312a6280130b4881e5
 ARG BUN_VERSION=1.4.4
 ARG BUN_SHA256=bf8ccbfb2b0b80159e0f9a6d15c55317add8077534dbc6130a3edb52fccb395c
 ARG GO_VERSION=1.26.8
@@ -30,7 +31,10 @@ RUN curl -fsSLo /tmp/node.tar.xz "https://nodejs.org/dist/v${NODE_VERSION}/node-
   && rm -rf /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack /usr/local/include/node \
   && tar -xJf /tmp/node.tar.xz -C /usr/local --strip-components=1 --no-same-owner \
   && rm /tmp/node.tar.xz \
-  && npm install -g "pnpm@${PNPM_VERSION}"
+  && curl -fsSLo /tmp/pnpm.tgz "https://registry.npmjs.org/pnpm/-/pnpm-${PNPM_VERSION}.tgz" \
+  && echo "${PNPM_SHA256}  /tmp/pnpm.tgz" | sha256sum -c - \
+  && npm install --offline --ignore-scripts -g /tmp/pnpm.tgz \
+  && rm /tmp/pnpm.tgz
 
 RUN curl -fsSLo /tmp/bun.zip "https://github.com/oven-sh/bun/releases/download/bun-v${BUN_VERSION}/bun-linux-x64.zip" \
   && echo "${BUN_SHA256}  /tmp/bun.zip" | sha256sum -c - \

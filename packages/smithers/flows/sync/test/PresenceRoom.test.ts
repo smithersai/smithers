@@ -406,6 +406,16 @@ describe("PresenceRoom", () => {
       expect(other.raw.closed).toBeUndefined()
     }))
 
+  it.effect("reconstructs the open count from surviving attachments after hibernation", () =>
+    Effect.gen(function*() {
+      const room = makeHost()
+      const [ada] = yield* isolated(joinAll(room, ["ada", "bob"]))
+      yield* isolated(Effect.gen(function*() {
+        yield* PresenceRoom.leave(room.host, ada!)
+        expect((yield* Metric.value(PresenceRoom.open)).count).toBe(1)
+      }))
+    }))
+
   it.effect("counts open connections up on a join and down on every way out", () =>
     isolated(Effect.gen(function*() {
       const room = makeHost()

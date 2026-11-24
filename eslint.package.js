@@ -17,7 +17,7 @@ import { createRequire } from "node:module"
 import { resolve } from "node:path"
 import { pathToFileURL } from "node:url"
 import { ambientAuthority, invariants, swallowedCause, uninstalledSafety } from "./eslint.invariants.js"
-import { jsdocConvention } from "./eslint.jsdoc.js"
+import { jsdocConvention, vibeDeclarations } from "./eslint.jsdoc.js"
 
 export const packageConfig = async ({ tsconfigRootDir, bun = false }) => {
   const packageRequire = createRequire(resolve(tsconfigRootDir, "package.json"))
@@ -27,7 +27,7 @@ export const packageConfig = async ({ tsconfigRootDir, bun = false }) => {
   )
   return tseslint.config(
     {
-      ignores: ["**/dist", "**/build", "**/coverage"]
+      ignores: ["**/dist", "**/build", "**/coverage", ...vibeDeclarations(tsconfigRootDir)]
     },
     js.configs.recommended,
     importPlugin.flatConfigs.recommended,

@@ -4,7 +4,9 @@
  */
 import { expect, it } from "@effect/vitest"
 import { inspect } from "node:util"
-import { renderDiagnostic } from "../src/internal/Diagnostic.ts"
+import { hostReflection, renderDiagnosticWith } from "../src/internal/Diagnostic.ts"
+
+const renderDiagnostic = (value: unknown) => renderDiagnosticWith(hostReflection(process), value)
 
 it("redacts a bare value that starts with a backslash", () => {
   expect(renderDiagnostic("token=\\x41secret rest")).toBe("token=[REDACTED]")

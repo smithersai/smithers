@@ -154,6 +154,16 @@ export interface Dependencies {
   readonly canExecute?: ((row: RunStore.RunRow) => Effect.Effect<boolean>) | undefined
   readonly canActivate?: ((row: RunStore.RunRow) => Effect.Effect<boolean>) | undefined
   /**
+   * Fires the durable clocks of one parked execution that are already due.
+   *
+   * A clock fires from an in-memory timer, armed by the process that
+   * scheduled it and by a registration's recovery. A process that registered
+   * before another parked a run on a sleep and died holds no timer for it, so
+   * the heartbeat sweep asks for the fire through here. Optional: a driver
+   * built without clock persistence has no clocks to fire.
+   */
+  readonly fireDueClocks?: ((flowName: string, executionId: string) => Effect.Effect<void>) | undefined
+  /**
    * Records, for a host that keeps one, that this driver has asked a
    * SUSPENDED execution to resume.
    *
@@ -378,6 +388,18 @@ const cancelRequested = { _tag: "CancelRequested" } as const
 const staleRunningSweepBatch = 64
 
 /**
+ * How many contended runs a driver remembers having reported a wait for.
+ *
+ * The table exists so a caller polling a held run reads one line per owner
+ * rather than one per poll. It grew by one entry per run ever found held by
+ * another owner, for the life of the process.
+ *
+ * @since 1.0.0
+ * @category constants
+ */
+export const waitNoticeLimit = 1024
+
+/**
  * How long a run waits before its live owner is probed again, and how far
  * that wait doubles.
  *
@@ -436,6 +458,18 @@ interface PendingCycle {
   readonly eligibleBeforeMs: number
   after?: DurableEngineState.PendingRunCursor
 }
+
+/**
+ * Where the stale-running sweep is in the stale set: the last row it read,
+ * and the refused runs it has read since the cycle began.
+ */
+interface StaleCycle {
+  after: DurableEngineState.StaleRunningRow | undefined
+  readonly seen: Set<string>
+}
+
+/** The parked-run sweeps that page through `waitingRuns` with their own cursor. */
+type ParkedLane = "released" | "cancel-requested" | "timer" | "settled-child"
 
 /** Where the pending-cancellation sweep is in its backlog, as for {@link PendingCycle}. */
 interface CancellationCycle {
@@ -496,9 +530,10 @@ interface Driver {
   readonly isAlive: Ownership.LivenessCheck
   readonly registrations: Map<string, Array<Registration>>
   /**
-   * Runs already warned about waking without a registered flow (issue
+   * Flows already warned about waking without a registration here (issue
    * #62): the sweep retries every heartbeat, so the warning is emitted
-   * once per run, not once per tick. Cleared on every registration — a
+   * once per flow, not once per tick or per run, and the set is bounded by
+   * the flow names the store holds. Cleared on every registration — a
    * newly registered flow makes previously dropped runs drivable again.
    */
   readonly warnedUnregistered: Set<string>
@@ -506,17 +541,22 @@ interface Driver {
    * Runs whose owner answered a probe (or held a fresh lease) and are
    * therefore not worth re-arbitrating yet. See {@link StealRefusal}.
    *
-   * Bounded by the stale set the sweep can see: every tick drops the entries
-   * whose rows are no longer in the window it read, so a run that is stolen,
-   * released, or settled takes its entry with it.
+   * Bounded by the stale set: each completed cycle of the stale-running
+   * sweep drops the entries whose rows it did not read, so a run that is
+   * stolen, released, or settled takes its entry with it.
    */
   readonly stealRefusals: Map<string, StealRefusal>
   /**
    * The owner and reason each waiting run was last reported with, so a
    * caller that polls a held run reads one line per owner, not one per
-   * poll. An entry leaves when this driver takes the run.
+   * poll. An entry leaves when this driver takes the run, and the oldest
+   * leaves when the table holds {@link waitNoticeLimit}.
    */
   readonly waitNotices: Map<string, string>
+  /** The stale-running sweep's place in the stale set, between ticks. */
+  staleCycle: StaleCycle
+  /** Each paged parked-run sweep's place in its set, between ticks. */
+  readonly parkedCursors: Map<ParkedLane, string>
   readonly liveInstances: Map<string, FlowRuntime.FlowInstance["Service"]>
   /**
    * Runs whose drive {@link Service.yieldDrive} is ending, so the release
@@ -706,7 +746,15 @@ const noticeWait = (
   const key = `${holder}:${owner.nonce}:${alive}`
   // A run this driver already owns is not another owner's to wait on.
   if (sameOwner(owner, driver.dependencies.owner) || driver.waitNotices.get(runId) === key) return Effect.void
+  // Newest last, and the oldest entry leaves when the table is full. A run
+  // held under a fresh lease is in no sweep's window, so nothing else says
+  // when its entry stopped mattering; the cost of forgetting one early is
+  // one repeated line.
+  driver.waitNotices.delete(runId)
   driver.waitNotices.set(runId, key)
+  if (driver.waitNotices.size > waitNoticeLimit) {
+    driver.waitNotices.delete(driver.waitNotices.keys().next().value!)
+  }
   const waitMs = heartbeatAtMs + Duration.toMillis(Ownership.heartbeatStaleAfter) - nowMs
   const message = alive
     ? sameHost
@@ -2872,11 +2920,11 @@ const driveUnregistered = (
     // restart the sweep re-drives released rows before (or without)
     // the flow ever registering here. Dropping the wake silently made
     // the #39 reclaim guarantee invisibly conditional on registration
-    // (issue #62): warn (once per run, the sweep retries every
+    // (issue #62): warn (once per flow, the sweep retries every
     // heartbeat) and leave the durable waiting row untouched so any
     // process that does register the flow still reclaims the run.
-    if (driver.warnedUnregistered.has(executionId)) return
-    driver.warnedUnregistered.add(executionId)
+    if (driver.warnedUnregistered.has(state.flowName)) return
+    driver.warnedUnregistered.add(state.flowName)
     yield* Effect.logWarning(
       `engine-store: run ${executionId} woke for flow ${state.flowName}, which is not registered in this process; leaving it parked for a worker that registers the flow`,
       { runId: executionId, flowName: state.flowName }
@@ -3497,21 +3545,16 @@ const endDrive = (driver: Driver, attempt: Drive): Effect.Effect<void> =>
  * the ordinary claim/activate path, which also delivers any pending
  * cancel via the activation guard.
  */
-const sweepCancelRequested = (driver: Driver): Effect.Effect<void> =>
-  Effect.gen(function*() {
-    // Fetch only actionable rows (issue #68): the sweep acts solely on
-    // released rows and rows whose cancellation was durably requested, so
-    // a large quota/event-parked fleet must cost it nothing per tick. The
-    // per-row `store.get` below is a status guard over the (small)
-    // actionable set, not a probe over every parked run — the in-memory
-    // implementation without a `runs` view stays permissive on the cancel
-    // predicate and relies on exactly this guard.
-    const released = yield* driver.engineState.waitingRuns({ reason: "released" })
-    const cancelRequestedRows = yield* driver.engineState.waitingRuns({ cancelRequested: true })
-    const candidates = new Map<string, DurableEngineState.WaitingRow>()
-    for (const waiting of released) candidates.set(waiting.runId, waiting)
-    for (const waiting of cancelRequestedRows) candidates.set(waiting.runId, waiting)
-    for (const waiting of candidates.values()) {
+const sweepCancelRequested = (driver: Driver): Effect.Effect<void> => {
+  // Fetch only actionable rows (issue #68): the sweep acts solely on
+  // released rows and rows whose cancellation was durably requested, so
+  // a large quota/event-parked fleet must cost it nothing per tick. The
+  // per-row `store.get` below is a status guard over the actionable page,
+  // not a probe over every parked run — the in-memory implementation
+  // without a `runs` view stays permissive on the cancel predicate and
+  // relies on exactly this guard.
+  const wakeParked = (waiting: DurableEngineState.WaitingRow): Effect.Effect<void> =>
+    Effect.gen(function*() {
       const row = yield* driver.store.get(waiting.runId).pipe(
         Effect.catch(() => Effect.succeed(undefined))
       )
@@ -3523,36 +3566,75 @@ const sweepCancelRequested = (driver: Driver): Effect.Effect<void> =>
         // A released run is resumed in the lane; a cancellation is delivered at once.
         yield* driver.coordinator.wake(row.runId, { resumed: row.cancelRequestedAtMs === null })
       }
-    }
+    })
+  return sweepParked(driver, "released", { reason: "released" }, wakeParked).pipe(
+    Effect.andThen(sweepParked(driver, "cancel-requested", { cancelRequested: true }, wakeParked))
+  )
+}
+
+/**
+ * Visits one bounded page of the parked runs matching `filter`, continuing
+ * where the lane's previous tick stopped.
+ *
+ * A graceful shutdown can release thousands of runs at once, and every
+ * surviving driver ran one read and one wake per row on every tick until the
+ * resume lane drained. Each lane now costs one page per tick, and its cursor
+ * moves past the rows it visited whether or not they could be acted on, so
+ * a run no worker here can take does not hold the front of the next read.
+ * The cursor moves only after the page was visited: a failed tick reads the
+ * same page again.
+ */
+const sweepParked = (
+  driver: Driver,
+  lane: ParkedLane,
+  filter: DurableEngineState.WaitingRunsFilter,
+  visit: (waiting: DurableEngineState.WaitingRow) => Effect.Effect<void>
+): Effect.Effect<void> =>
+  Effect.gen(function*() {
+    const afterRunId = driver.parkedCursors.get(lane)
+    const page = yield* driver.engineState.waitingRuns({
+      ...filter,
+      page: { limit: staleRunningSweepBatch, afterRunId }
+    })
+    for (const waiting of page) yield* visit(waiting)
+    const last = page.at(-1)
+    // Exactly one full page leaves more to read. A short page ends the
+    // cycle, and so does a longer one: an adapter that does not page has
+    // already answered with the whole set.
+    if (last !== undefined && page.length === staleRunningSweepBatch) driver.parkedCursors.set(lane, last.runId)
+    else driver.parkedCursors.delete(lane)
   })
 
 /**
  * A timer can fire while a dead control owner is still inside its stale
  * cutoff. The clock completion is durable, but that first coordinator
- * wake cannot claim yet (#3408). Revisit only due timer waits with an
+ * wake cannot claim yet (#3408). Revisit due timer waits with an
  * unconsumed completion; the normal drive still checks admission and CAS.
+ *
+ * A due timer wait with no completion has a clock nobody fired: the timer
+ * that fires it lives in the memory of the process that scheduled it, or of
+ * one that registered the flow afterwards. When that process is gone, this
+ * sweep fires the due clocks itself; the completion and the wake follow from
+ * the fire, which is idempotent across drivers.
  * Released actions, future timers and ordinary event waits are excluded.
  */
 const sweepReadyTimers = (driver: Driver): Effect.Effect<void> =>
   Effect.gen(function*() {
     const nowMs = yield* Clock.currentTimeMillis
-    const due = yield* driver.engineState.waitingRuns({ reason: "timer", dueBeforeMs: nowMs })
-    const completions = new Map<string, ReadonlySet<string>>()
-    for (const waiting of due) {
-      const row = yield* driver.store.get(waiting.runId).pipe(Effect.catch(() => Effect.succeed(undefined)))
-      if (row === undefined || row.status !== "suspended") continue
-      const state = yield* decodeState(row.stateJson)
-      if (!driver.registrations.has(state.flowName)) continue
-      let ready = completions.get(state.flowName)
-      if (ready === undefined) {
-        ready = new Set(
-          (yield* driver.engineState.completedDeferreds(state.flowName)).map((address) => address.executionId)
-        )
-        completions.set(state.flowName, ready)
-      }
-      if (!ready.has(row.runId)) continue
-      yield* driver.coordinator.schedule(row.runId, { resumed: true })
-    }
+    yield* sweepParked(driver, "timer", { reason: "timer", dueBeforeMs: nowMs }, (waiting) =>
+      Effect.gen(function*() {
+        const row = yield* driver.store.get(waiting.runId).pipe(Effect.catch(() => Effect.succeed(undefined)))
+        if (row === undefined || row.status !== "suspended") return
+        const state = yield* decodeState(row.stateJson)
+        if (!driver.registrations.has(state.flowName)) return
+        // One indexed read per candidate: a flow's whole completion set is
+        // unbounded, and a page of candidates is not.
+        const ready = yield* driver.engineState.completedDeferreds(state.flowName, row.runId)
+        if (ready.length > 0) return yield* driver.coordinator.schedule(row.runId, { resumed: true })
+        if (driver.dependencies.fireDueClocks !== undefined) {
+          yield* driver.dependencies.fireDueClocks(state.flowName, row.runId)
+        }
+      }))
   })
 
 /**
@@ -3719,9 +3801,8 @@ const sweepPendingFlow = (
   })
 
 /**
- * Records the wakes that settled children owe their parked parents: every
- * parked run's, or only the runs in `retry`. Answers the runs it could not
- * repair, or `all` when it could not list the parked runs.
+ * Records the wakes that settled children owe their parked parents. One
+ * parent's failure is logged and leaves the others to be repaired.
  *
  * A settling run commits its terminal transition and then records each
  * waiting parent's `parent-settled` wake in a separate transaction
@@ -3733,38 +3814,25 @@ const sweepPendingFlow = (
  * already settled has no such wake either, so it is woken once for nothing:
  * its round replays and parks again.
  *
- * The heartbeat sweep lists every parked run once, after its first tick, and
- * on later ticks retries only what failed: the gap opens only when a process
- * dies, and a scan of every parked run on every tick is the cost issue #68
- * removed from the sweeps. A process that dies after a surviving driver's
- * pass leaves its parents parked until a driver next starts on the store.
+ * The heartbeat sweep pages through the parked runs that have children, one
+ * bounded page per tick, and starts over when it reaches the end. A worker
+ * that keeps running therefore repairs a gap another process opens by dying
+ * at any later time, without a restart. A recorded wake is never recorded
+ * again, so a cycle over repaired parents only reads. Runs parked with no
+ * child are filtered in storage: a scan of every parked run on every tick is
+ * the cost issue #68 removed from the sweeps.
  */
-const sweepUnannouncedSettlements = (
-  driver: Driver,
-  retry: Unrepaired
-): Effect.Effect<Unrepaired> =>
-  Effect.gen(function*() {
-    const parked = retry === "all"
-      ? (yield* driver.engineState.waitingRuns()).map((row) => row.runId)
-      : retry
-    const failed = new Set<string>()
-    for (const parentId of parked) {
-      const repaired = yield* Effect.gen(function*() {
-        for (const edge of yield* driver.engineState.runChildren(parentId)) {
-          const latest = yield* driver.store.latestRound(edge.childId).pipe(Effect.orDie)
-          if (!isSettled(latest.status) || !(yield* recordParentResume(driver, parentId, latest.runId))) continue
-          yield* driver.coordinator.wake(parentId)
-          yield* driver.wakeBus.wake(parentId)
-        }
-        return true
-      }).pipe(survived(`wakes owed to parked run ${parentId}`, false))
-      if (!repaired) failed.add(parentId)
-    }
-    return failed
-  }).pipe(survived<Unrepaired>("unannounced settlement", "all"))
-
-/** The parked runs {@link sweepUnannouncedSettlements} has yet to repair: `all` of them, or these. */
-type Unrepaired = "all" | ReadonlySet<string>
+const sweepUnannouncedSettlements = (driver: Driver): Effect.Effect<void> =>
+  sweepParked(driver, "settled-child", { hasChildren: true }, (waiting) =>
+    Effect.gen(function*() {
+      const parentId = waiting.runId
+      for (const edge of yield* driver.engineState.runChildren(parentId)) {
+        const latest = yield* driver.store.latestRound(edge.childId).pipe(Effect.orDie)
+        if (!isSettled(latest.status) || !(yield* recordParentResume(driver, parentId, latest.runId))) continue
+        yield* driver.coordinator.wake(parentId)
+        yield* driver.wakeBus.wake(parentId)
+      }
+    }).pipe(resilientSweep(`wakes owed to parked run ${waiting.runId}`)))
 
 /**
  * Reclaims hard-killed runs (issue #53). An owner that dies without
@@ -3780,54 +3848,52 @@ type Unrepaired = "all" | ReadonlySet<string>
 const sweepStaleRunning = (driver: Driver): Effect.Effect<void> =>
   Effect.gen(function*() {
     const nowMs = yield* Clock.currentTimeMillis.pipe(Effect.map(Math.floor))
-    // Rows this driver has already arbitrated and been refused. They are the
-    // oldest heartbeats in the window, so they sort first and would fill the
-    // batch every tick; the read asks for enough extra rows to see past
-    // exactly the ones it is going to skip.
-    const deferred = Array.from(driver.stealRefusals.values()).filter((entry) => entry.nextProbeAtMs > nowMs).length
+    const cycle = driver.staleCycle
     // Capped per tick (issue #79): oldest heartbeats come back first, so a
-    // mass owner death drains across successive ticks — batch after batch
-    // as each stolen run's heartbeat leaves the stale window — instead of
-    // every surviving driver waking every stale run every second and
-    // contending N-drivers × M-runs on the claim/steal CAS.
+    // mass owner death drains across successive ticks instead of every
+    // surviving driver waking every stale run every second and contending
+    // N-drivers × M-runs on the claim/steal CAS.
+    //
+    // The read continues after the last row the previous tick read. Reading
+    // the head of the window every tick let the rows nothing here can take —
+    // a live owner's, a flow this process has not registered — fill the
+    // batch forever and hide every recoverable run behind them.
     const stale = yield* driver.engineState.staleRunningRuns(
       nowMs - Duration.toMillis(Ownership.heartbeatStaleAfter),
-      staleRunningSweepBatch + deferred
+      staleRunningSweepBatch,
+      cycle.after
     )
-    // A refusal is remembered only while its row is still in the window this
-    // read covers. A run that was stolen, released, or settled leaves the
-    // stale set, and its entry leaves with it, so the map cannot outgrow the
-    // backlog it describes.
-    const visible = new Set(stale.map((row) => row.runId))
-    for (const runId of driver.stealRefusals.keys()) {
-      if (!visible.has(runId)) driver.stealRefusals.delete(runId)
-    }
-    let woken = 0
     for (const { heartbeatAtMs, runId } of stale) {
-      if (woken >= staleRunningSweepBatch) break
       // A refusal defers only the lease it was refused against. An owner
-      // that pulsed and stalled again between two ticks never left this
-      // read's window, so the lease is what says the stall is a new one.
+      // that pulsed and stalled again between two ticks is a new stall, and
+      // the lease is what says so.
       const refusal = driver.stealRefusals.get(runId)
-      if (refusal !== undefined && refusal.heartbeatAtMs === heartbeatAtMs && refusal.nextProbeAtMs > nowMs) continue
-      woken = woken + 1
-      yield* driver.coordinator.wake(runId, { resumed: true })
+      if (refusal === undefined || refusal.heartbeatAtMs !== heartbeatAtMs || refusal.nextProbeAtMs <= nowMs) {
+        yield* driver.coordinator.wake(runId, { resumed: true })
+      }
+      // Read after the wake: the drive it starts may record its refusal
+      // before this tick ends, and that entry describes a row this cycle read.
+      if (driver.stealRefusals.has(runId)) cycle.seen.add(runId)
     }
+    const last = stale.at(-1)
+    if (last !== undefined && stale.length === staleRunningSweepBatch) {
+      cycle.after = last
+      return
+    }
+    // The cycle has read the whole stale set. A refusal remembered for a run
+    // it did not read describes a run that was stolen, released, or settled,
+    // and leaves with it, so the map cannot outgrow the backlog it describes.
+    for (const runId of driver.stealRefusals.keys()) {
+      if (!cycle.seen.has(runId)) driver.stealRefusals.delete(runId)
+    }
+    cycle.after = undefined
+    cycle.seen.clear()
   })
 
-const resilientSweep = (sweep: Effect.Effect<void>, name: string) =>
+const resilientSweep = (name: string) => (sweep: Effect.Effect<void>): Effect.Effect<void> =>
   sweep.pipe(
     Effect.sandbox,
     Effect.catchCause((cause) => Effect.logWarning(`engine-store: ${name} sweep failed; retrying next tick`, cause))
-  )
-
-/** {@link resilientSweep} for a step with an answer: a failure is logged and answers `failed`. */
-const survived = <A>(name: string, failed: A) => (step: Effect.Effect<A>): Effect.Effect<A> =>
-  step.pipe(
-    Effect.sandbox,
-    Effect.catchCause((cause) =>
-      Effect.as(Effect.logWarning(`engine-store: ${name} sweep failed; retrying next tick`, cause), failed)
-    )
   )
 
 /** One execution a caller asks to admit. */
@@ -4997,26 +5063,18 @@ const releaseRetainedScopes = (retainedScopes: Map<string, Scope.Closeable>): Ef
  * process lifetime (issue #44) — that would silently revert to pre-#27
  * behavior where cancel of parked runs is never delivered. Mirror
  * `armClock`'s hardening: expose the full cause, log it, and keep ticking.
- * After its sweeps, a tick runs {@link sweepUnannouncedSettlements} until
- * it has repaired every parked run.
+ * The last sweep of a tick is {@link sweepUnannouncedSettlements}.
  */
 const sweepForever = (driver: Driver): Effect.Effect<never, never, never> => {
-  const sweeps = resilientSweep(sweepCancelRequested(driver), "parked-run cancel").pipe(
-    Effect.andThen(resilientSweep(sweepStaleRunning(driver), "stale-running")),
-    Effect.andThen(resilientSweep(sweepReadyTimers(driver), "ready timer")),
-    Effect.andThen(resilientSweep(sweepPendingCancellation(driver), "pending cancellation")),
-    Effect.andThen(resilientSweep(sweepPending(driver), "pending admission"))
+  const sweeps = sweepCancelRequested(driver).pipe(
+    resilientSweep("parked-run cancel"),
+    Effect.andThen(sweepStaleRunning(driver).pipe(resilientSweep("stale-running"))),
+    Effect.andThen(sweepReadyTimers(driver).pipe(resilientSweep("ready timer"))),
+    Effect.andThen(sweepPendingCancellation(driver).pipe(resilientSweep("pending cancellation"))),
+    Effect.andThen(sweepPending(driver).pipe(resilientSweep("pending admission"))),
+    Effect.andThen(sweepUnannouncedSettlements(driver).pipe(resilientSweep("unannounced settlement")))
   )
-  return Effect.gen(function*() {
-    let unrepaired: Unrepaired = "all"
-    while (true) {
-      yield* Effect.sleep(Ownership.heartbeatInterval)
-      yield* sweeps
-      if (unrepaired === "all" || unrepaired.size > 0) {
-        unrepaired = yield* sweepUnannouncedSettlements(driver, unrepaired)
-      }
-    }
-  })
+  return Effect.forever(Effect.andThen(Effect.sleep(Ownership.heartbeatInterval), sweeps))
 }
 
 /**
@@ -5078,6 +5136,8 @@ export const make = (
       warnedUnregistered: new Set(),
       stealRefusals: new Map(),
       waitNotices: new Map(),
+      staleCycle: { after: undefined, seen: new Set() },
+      parkedCursors: new Map(),
       liveInstances: new Map(),
       yielding: new Set(),
       retainedScopes,

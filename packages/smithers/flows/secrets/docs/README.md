@@ -34,7 +34,9 @@ use a credential against the hosts it was meant for, and can't read it.
   another was sent: the value, its percent, JSON and base64 encodings at
   every byte alignment, as the body streams, across chunk boundaries. When
   the policy holds a secret, the egress asks for an uncompressed answer and
-  drops `Range` and `If-Range`.
+  drops `Range` and `If-Range`. An encoded response body fails with `Broken`
+  unless the host provides `Egress.DecodesContent` for its client and the
+  complete list of response codings.
 - **Bounded.** At most 16 placeholders per request and 64 KiB of headers after
   substitution. A value is 8 bytes to 16 KiB of printable ASCII with no
   leading or trailing spaces, so a header preserves its bytes. Values are
@@ -75,11 +77,12 @@ scope gets new placeholders, and the old ones are refused as
 
 ## The host's part
 
-| Service        | What it does                                                                                                                                                                      |
-| -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `HttpClient`   | Sends the request. With Effect's Fetch client the egress sets `redirect: "manual"`; any other client must not follow redirects, and must decode a compressed answer as Fetch does |
-| `Egress.Vault` | Reveals a value by name for one request, for example by opening a sealed row                                                                                                      |
-| `Egress.Audit` | Records each decision                                                                                                                                                             |
+| Service                 | What it does                                                                                                |
+| ----------------------- | ----------------------------------------------------------------------------------------------------------- |
+| `HttpClient`            | Sends each request with redirects disabled. The egress sets `redirect: "manual"` for Effect's Fetch client. |
+| `Egress.DecodesContent` | Declares which response encodings the client fully decodes. Defaults to none.                               |
+| `Egress.Vault`          | Reveals a value by name for one request, for example by opening a sealed row                                |
+| `Egress.Audit`          | Records each decision                                                                                       |
 
 ## Refusals
 

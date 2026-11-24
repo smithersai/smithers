@@ -64,6 +64,7 @@ import { runTarget } from "../TargetExecution.ts"
 import * as Workspace from "../Workspace.ts"
 import * as ApprovalBridge from "./ApprovalBridge.ts"
 import * as CacheEvidence from "./CacheEvidence.ts"
+import * as DigestIndexFile from "./DigestIndexFile.ts"
 import * as FullDisk from "./FullDisk.ts"
 import * as GoCache from "./GoCache.ts"
 import * as HeldOutput from "./HeldOutput.ts"
@@ -388,6 +389,8 @@ const destinationsOf = (node: PackageNode): ReadonlyArray<string> | undefined =>
     ? (Target.metadata(node.declaration).attrs as { readonly destinations?: ReadonlyArray<string> }).destinations
     : undefined
 
+const sealedDirectories = ["cache", DigestIndexFile.directory, "evidence", "nix", "cas"] as const
+
 /**
  * The confinement one package node runs under.
  *
@@ -399,8 +402,8 @@ const destinationsOf = (node: PackageNode): ReadonlyArray<string> | undefined =>
  * above the working directory, and the cache
  * directory's scratch and fetch store. The write set is the node's declared
  * outputs, its declared `changes`, its clean targets, a cargo crate's
- * `target` directory, and the cache directory with the result cache itself
- * re-closed. The policy is the node's own `sandbox` attr, the mechanism the
+ * `target` directory, and the scratch, store and Go build cache directories.
+ * Planner and result caches stay sealed even beneath a writable output parent. The policy is the node's own `sandbox` attr, the mechanism the
  * workspace's `Sandboxes({ default })` declaration or the platform's own.
  *
  * @category internal
@@ -501,7 +504,11 @@ export const sandboxRequest = (
   // output files whose parent directory the confinement opens. A directory
   // that does not exist yet keeps its own name here, so a declared
   // `.cargo-home` or `dist.new` never widens the bind to its parent.
-  const writes = new Set<string>([cacheDirectory, ...node.outDirs, ...node.cleanOutDirs])
+  const writes = new Set<string>([
+    ...["tmp", "store", GoCache.directoryName].map((name) => `${cacheDirectory}/${name}`),
+    ...node.outDirs,
+    ...node.cleanOutDirs
+  ])
   const writeFiles = new Set<string>([...node.outFiles, ...node.cleanPaths])
   if (node.declaredOutputs !== undefined) {
     for (const path of node.declaredOutputs.paths) {
@@ -526,6 +533,9 @@ export const sandboxRequest = (
     writes.add(node.packagePath === "" ? "target" : `${node.packagePath}/target`)
     for (const path of node.lane.outFiles) writeFiles.add(path)
   }
+  const readOnly = sealedDirectories.map((name) => `${cacheDirectory}/${name}`)
+  const permitted = (path: string): boolean =>
+    !readOnly.some((directory) => within(NodePath.posix.normalize(path), directory))
   return {
     policy: node.sandbox,
     ...(destinationsOf(node) === undefined ? {} : { destinations: destinationsOf(node) }),
@@ -535,9 +545,9 @@ export const sandboxRequest = (
     ...(scratchRoot === undefined ? {} : { scratch: true }),
     reads: [...reads],
     ...(links.size === 0 ? {} : { links: [...links].map(([path, target]) => ({ path, target })) }),
-    writes: [...writes],
-    writeFiles: [...writeFiles],
-    readOnly: [`${cacheDirectory}/cache`],
+    writes: [...writes].filter(permitted),
+    writeFiles: [...writeFiles].filter(permitted),
+    readOnly,
     externalReads: [...externalReads],
     ...(node.hostTools === undefined
       ? {}
@@ -1355,6 +1365,18 @@ const executeWith = (
         return (path: string) => [...first, path, last].filter((entry) => entry !== "").join(NodePath.delimiter)
       })
 
+    const prepareSeals = (sandbox: ExecSandbox.Request, workspaceRoot: string) => {
+      // A file output opens its parent. A read-only bind under a wider
+      // writable mount needs an existing directory on the host.
+      const writable = [...sandbox.writes, ...(sandbox.writeFiles ?? []).map((path) => NodePath.posix.dirname(path))]
+      const sealed = (sandbox.readOnly ?? []).filter((path) =>
+        writable.some((ancestor) => ancestor === "." || within(path, ancestor))
+      )
+      return joined(() =>
+        Promise.all(sealed.map((path) => Fs.mkdir(NodePath.join(workspaceRoot, path), { recursive: true })))
+      )
+    }
+
     /** Prepares the cache seal and explicit dependency read grants for any tool-running rule. */
     const sandboxFor = (
       node: PackageNode,
@@ -1362,9 +1384,6 @@ const executeWith = (
       candidateReads: ReadonlyArray<string> = []
     ): Effect.Effect<ExecSandbox.Request, unknown> =>
       Effect.gen(function*() {
-        // A scratch tree deliberately omits the result cache. Create its empty
-        // mount before asking bubblewrap to seal it beneath the writable cache root.
-        yield* joined(() => Fs.mkdir(NodePath.join(workspaceRoot, cacheDirectory, "cache"), { recursive: true }))
         const sandbox = sandboxRequest(node, planned.nodes, index.workspace, cacheDirectory, candidateReads)
         // Dependency grants are bound by the planner. Resolving a new link here
         // would let post-plan filesystem changes create new host authority.
@@ -1376,8 +1395,12 @@ const executeWith = (
         // A target that declares `sandbox: "none"` asked for the host as it
         // is, and the protection is a namespace of its own: it gets neither.
         const selected = ExecSandbox.select(sandbox, services.sandboxHost())
-        const entries = workspaceRoot !== root || node.sandbox === "none" ||
-            ExecSandbox.isUnenforceable(selected) || selected._tag !== "none"
+        if (ExecSandbox.isUnenforceable(selected)) return sandbox
+        if (selected._tag !== "none") {
+          yield* prepareSeals(sandbox, workspaceRoot)
+          return sandbox
+        }
+        const entries = workspaceRoot !== root || node.sandbox === "none"
           ? []
           : protectedEntries(root, node.installedTrees ?? [])
         return entries.length > 0 && protects() ? { ...sandbox, writeProtected: entries } : sandbox
@@ -1451,7 +1474,7 @@ const executeWith = (
         // confined run in a scratch copy still writes inside its own binds.
         // A confined tool can write nowhere else, so the directory the host
         // shares between workspaces is for unconfined tools only.
-        const cacheEnvironment = ExecSandbox.enforceable(sandbox, ExecSandbox.host()) ? {} : ambient
+        const cacheEnvironment = ExecSandbox.enforceable(sandbox, services.sandboxHost()) ? {} : ambient
         // A workspace that leaves `go` its own cache starts no tool with the owned one: the tool finds the cache
         // its environment names, in its machine's home when it runs on one, and no test result outlives that.
         const ownsGoBuild = index.workspace.cache.goBuild !== false
@@ -1771,7 +1794,7 @@ const executeWith = (
         (evidenced ||
           ExecSandbox.enforceable(
             sandboxRequest(node, planned.nodes, index.workspace, cacheDirectory),
-            ExecSandbox.host()
+            services.sandboxHost()
           ))
       ) return true
       if (options.remoteCache !== undefined && options.remoteCache.enabled !== false && !unconfinedWarned) {
@@ -2089,6 +2112,7 @@ const executeWith = (
           unstoredReasons.set(node.label, "this host cannot confine a run to its declared inputs")
           return yield* unproven
         }
+        yield* prepareSeals(scratch, root)
         if (node.evidence.mode === "declared") {
           const exit = yield* run(scratch, live)
           return { exit, evidenced: Exit.isSuccess(exit) }
@@ -2870,7 +2894,7 @@ const executeWith = (
      */
     const spawnAdmitted = (node: PackageNode): ReadonlyArray<string> | undefined => {
       const request = sandboxRequest(node, planned.nodes, index.workspace, cacheDirectory)
-      const host = ExecSandbox.host()
+      const host = services.sandboxHost()
       if (!ExecSandbox.enforceable(request, host)) return undefined
       let workspaceRoot: string
       try {
@@ -3110,7 +3134,9 @@ const executeWith = (
     })()
     const digests: ObservedReads.Digests = startRoot === undefined ? new Map() : yield* Effect.acquireRelease(
       Effect.sync(() =>
-        ObservedReads.loadDigests(NodePath.join(startRoot, ...cacheDirectory.split("/"), "observed-digests.json"))
+        ObservedReads.loadDigests(
+          NodePath.join(startRoot, ...cacheDirectory.split("/"), DigestIndexFile.directory, "observed-digests.json")
+        )
       ),
       (memory) =>
         Effect.try(() => {
@@ -3119,7 +3145,7 @@ const executeWith = (
             path !== real && !path.startsWith(`${real}/`) &&
             (machinesKept === undefined || !path.startsWith(`${machinesKept}/`))
           ObservedReads.saveDigests(
-            NodePath.join(real, ...cacheDirectory.split("/"), "observed-digests.json"),
+            NodePath.join(real, ...cacheDirectory.split("/"), DigestIndexFile.directory, "observed-digests.json"),
             memory,
             kept
           )

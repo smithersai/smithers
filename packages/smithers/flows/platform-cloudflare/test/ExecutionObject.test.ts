@@ -128,6 +128,20 @@ for (const target of Postgres.targets) {
       }).pipe(Effect.ensuring(Effect.promise(() => Postgres.dropSchema(o.schema))))
     })
 
+    it.live("an invalid admission payload settles without creating a run or retrying", () => {
+      const o = object(target)
+      return Effect.gen(function*() {
+        const value = yield* o.intent({ question: "private", pauseMs: 0 })
+        yield* ExecutionObject.start(o.memory.storage, { ...value, payload: {} }, Effect.void)
+        expect(yield* o.alarm()).toEqual(settled)
+        expect(yield* o.status).toBeUndefined()
+        expect(o.memory.alarm()).toBe(
+          o.memory.values.get(ExecutionObject.settledKey) as number + ExecutionObject.settledRetentionMs
+        )
+        expect(o.steps).toEqual([])
+      }).pipe(Effect.ensuring(Effect.promise(() => Postgres.dropSchema(o.schema))))
+    })
+
     it.live("a settlement its handler refused retries the handler, not the drive, and the window starts once it took it", () => {
       const o = object(target)
       let down = true
@@ -486,6 +500,61 @@ for (const target of Postgres.targets) {
 }
 
 describe("ExecutionObject without a database", () => {
+  it.effect("a retiring incarnation cannot erase a newer intent's alarm", () =>
+    Effect.gen(function*() {
+      const memory = MemoryStorage.make()
+      const retired = yield* Deferred.make<void>()
+      const release = yield* Deferred.make<void>()
+      const storage: ExecutionObject.Storage = {
+        ...memory.storage,
+        delete: (key) =>
+          memory.storage.delete(key).pipe(Effect.tap(() =>
+            key === ExecutionObject.intentKey
+              ? Deferred.succeed(retired, undefined).pipe(Effect.andThen(Deferred.await(release))) :
+              Effect.void
+          ))
+      }
+      const first = yield* ExecutionObject.intent(Answer, {
+        executionId: "first",
+        payload: { question: "", pauseMs: 0 }
+      })
+      yield* ExecutionObject.start(storage, first, Effect.void)
+      yield* storage.put(ExecutionObject.settledKey, 0)
+      const retiring = yield* Effect.forkChild(ExecutionObject.alarm(storage, {
+        flows: [],
+        runtime: unbuildable,
+        router: Objects.unrouted,
+        settledRetentionMs: 0
+      }))
+      yield* Deferred.await(retired)
+      const next = { ...first, executionId: "next" }
+      const starting = yield* Effect.forkChild(ExecutionObject.start(storage, next, Effect.void))
+      yield* Effect.yieldNow
+      yield* Deferred.succeed(release, undefined)
+      expect(yield* Fiber.join(retiring)).toEqual({ _tag: "Forgotten" })
+      yield* Fiber.join(starting)
+      expect(JSON.parse((yield* storage.get<string>(ExecutionObject.intentKey)) ?? "null")).toMatchObject(next)
+      expect(memory.alarm()).toBe(0)
+      expect(memory.values.has(ExecutionObject.settledKey)).toBe(false)
+    }))
+
+  it.effect("publishing an intent always leaves its recovery alarm armed", () =>
+    Effect.gen(function*() {
+      const memory = MemoryStorage.make()
+      const cut = new Error("isolate lost after persistence")
+      const storage: ExecutionObject.Storage = {
+        ...memory.storage,
+        put: (key, value) => memory.storage.put(key, value).pipe(Effect.andThen(Effect.die(cut)))
+      }
+      const intent = yield* ExecutionObject.intent(Answer, {
+        executionId: "crash",
+        payload: { question: "", pauseMs: 0 }
+      })
+      expect(Exit.isFailure(yield* Effect.exit(ExecutionObject.start(storage, intent, Effect.void)))).toBe(true)
+      expect(memory.values.has(ExecutionObject.intentKey)).toBe(true)
+      expect(memory.alarm()).toBe(ExecutionObject.startGraceMs)
+    }))
+
   it.effect("an alarm with no intent stored is idle and deletes the alarm", () =>
     Effect.gen(function*() {
       const memory = MemoryStorage.make()
@@ -662,7 +731,7 @@ describe("ExecutionObject without a database", () => {
       })
     }))
 
-  it.effect("an intent naming a flow this object was not given retries rather than settling", () =>
+  it.effect("an unknown flow settles and retires without rebuilding its runtime", () =>
     Effect.gen(function*() {
       const memory = MemoryStorage.make()
       const value = yield* ExecutionObject.intent(Answer, {
@@ -670,16 +739,11 @@ describe("ExecutionObject without a database", () => {
         payload: { question: "hi", pauseMs: 0 }
       })
       yield* ExecutionObject.start(memory.storage, value, Effect.void)
-      const outcome = yield* ExecutionObject.alarm(memory.storage, {
-        flows: [],
-        runtime: unbuildable,
-        router: Objects.unrouted
-      })
-      expect(outcome).toMatchObject({
-        _tag: "Retrying",
-        attempt: 1,
-        failure: "@smthrs/platform-cloudflare/UnknownFlow"
-      })
+      const options = { flows: [], runtime: unbuildable, router: Objects.unrouted, settledRetentionMs: 20 }
+      expect(yield* ExecutionObject.alarm(memory.storage, options)).toEqual({ _tag: "Settled", forgetAtMs: 20 })
+      yield* TestClock.setTime(20)
+      expect(yield* ExecutionObject.alarm(memory.storage, options)).toEqual({ _tag: "Forgotten" })
+      expect(memory.alarm()).toBeNull()
     }))
 
   it.effect("wake moves the alarm to now when an intent is stored, and leaves an empty object idle", () =>
@@ -712,11 +776,11 @@ describe("ExecutionObject without a database", () => {
       expect(memory.values.get(ExecutionObject.intentKey)).toBe("not an intent")
     }))
 
-  it.effect("an alarm over a stored intent that isn't one retries it, its span and log carrying no execution ids", () =>
+  it.effect("an alarm over a stored intent that isn't one settles without driving it", () =>
     Effect.gen(function*() {
       const o = object()
       yield* o.memory.storage.put(ExecutionObject.intentKey, "not an intent")
-      expect(yield* o.alarm()).toMatchObject({ _tag: "Retrying", attempt: 1 })
+      expect(yield* o.alarm()).toMatchObject({ _tag: "Settled" })
       expect(o.steps).toEqual([])
     }))
 

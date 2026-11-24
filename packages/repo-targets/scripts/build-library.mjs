@@ -1,8 +1,19 @@
 /** Shared package assembly. Resolve tools from the package being built. */
 import { spawnSync } from "node:child_process"
-import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmdirSync, rmSync, writeFileSync } from "node:fs"
+import {
+  cpSync,
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  realpathSync,
+  rmdirSync,
+  rmSync,
+  writeFileSync
+} from "node:fs"
 import { createRequire } from "node:module"
 import { dirname, join, relative, resolve, sep } from "node:path"
+import ts from "typescript"
 import { buildPrivateEffectAdapters } from "./private-effect-adapters.mjs"
 
 /** Module metadata for CommonJS code running on a native Node-compatible host. */
@@ -48,14 +59,20 @@ const commonJsImports = (target, types = false) => {
   if (typeof target === "string") {
     if (!target.startsWith("./")) return target
     const prefix = ["./src/", "./dist/cjs/"].find((prefix) => target.startsWith(prefix))
-    if (prefix === undefined) throw new Error(`CommonJS import target ${JSON.stringify(target)} must name a compiled ./src/ or ./dist/cjs/ file`)
+    if (prefix === undefined) {
+      throw new Error(
+        `CommonJS import target ${JSON.stringify(target)} must name a compiled ./src/ or ./dist/cjs/ file`
+      )
+    }
     return `./${target.slice(prefix.length)}`.replace(/(?<!\.d)\.(?:ts|vibe)$/, types ? ".d.ts" : ".js")
   }
   if (target === null) return null
   if (Array.isArray(target)) return target.map((entry) => commonJsImports(entry, types))
-  return Object.fromEntries(Object.entries(target).map(([condition, entry]) =>
-    [condition, commonJsImports(entry, types || condition === "types")]
-  ))
+  return Object.fromEntries(
+    Object.entries(target).map((
+      [condition, entry]
+    ) => [condition, commonJsImports(entry, types || condition === "types")])
+  )
 }
 
 /** Each runtime branch needs declarations, module kind and its package imports. */
@@ -79,7 +96,7 @@ export const hasVibeSources = (directory) =>
   existsSync(directory) && readdirSync(directory, { withFileTypes: true }).some((entry) =>
     entry.isDirectory()
       ? entry.name !== "node_modules" && entry.name !== "dist" && hasVibeSources(join(directory, entry.name))
-      : entry.name.endsWith(".vibe")
+      : /\.vibex?$/.test(entry.name)
   )
 
 // The directory Node would load `name` from for a module in `from`, as a real path.
@@ -140,7 +157,9 @@ export const packageCompiler = (packageRoot) => {
   } catch (cause) {
     throw new Error(
       name === "vibelang"
-        ? `${packageRoot} compiles VibeLang sources (${sources.map((source) => source.name).join(", ")}), and vibelang is not installed for it: add vibelang to its devDependencies`
+        ? `${packageRoot} compiles VibeLang sources (${
+          sources.map((source) => source.name).join(", ")
+        }), and vibelang is not installed for it: add vibelang to its devDependencies`
         : `${packageRoot} has no typescript installed`,
       { cause }
     )
@@ -168,7 +187,7 @@ export const portableEffectDeclarations = (text, file = "declaration") => {
   return rewritten
 }
 
-const portableDeclarationFiles = (directory) => {
+export const portableDeclarationFiles = (directory) => {
   if (!existsSync(directory)) return
   for (const file of files(directory).filter((file) => /\.d\.[cm]?ts$/.test(file))) {
     const text = readFileSync(file, "utf8")
@@ -185,7 +204,9 @@ const portableDeclarationFiles = (directory) => {
 export const compilePackage = (packageRoot, { timeoutMs = 90_000 } = {}) => {
   const compiler = packageCompiler(packageRoot)
   if (compiler.name === "vibelang") {
-    console.log(`compiling with vibelang: VibeLang sources in ${compiler.sources.map((source) => source.name).join(", ")}`)
+    console.log(
+      `compiling with vibelang: VibeLang sources in ${compiler.sources.map((source) => source.name).join(", ")}`
+    )
   }
   const result = spawnSync(process.execPath, [compiler.path, "-p", "tsconfig.json"], {
     cwd: packageRoot,
@@ -197,6 +218,38 @@ export const compilePackage = (packageRoot, { timeoutMs = 90_000 } = {}) => {
   if (result.status !== 0) throw new Error(`package compiler exited ${result.status ?? result.signal}`)
   portableDeclarationFiles(join(packageRoot, "dist"))
   return compiler
+}
+
+/**
+ * Lower literal local imports to the CommonJS branch so that lazy imports
+ * receive the same named exports as ESM. Leave package and computed imports
+ * alone. Use syntax ranges to preserve strings, templates, and comments.
+ */
+export const rewriteCommonJsCalls = (text) => {
+  const source = ts.createSourceFile("commonjs.js", text, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS)
+  const edits = []
+  const visit = (node) => {
+    if (ts.isCallExpression(node) && node.arguments.length === 1) {
+      const { expression } = node
+      const argument = node.arguments[0]
+      const dynamic = expression.kind === ts.SyntaxKind.ImportKeyword
+      const requireCall = ts.isIdentifier(expression) && expression.text === "require"
+      if ((dynamic || requireCall) && ts.isStringLiteralLike(argument) && /^\.\.?\//.test(argument.text)) {
+        const specifier = argument.text.replace(/\.(?:[cm]?ts|[cm]js|vibex?)$/, ".js")
+        if (dynamic) {
+          edits.push([expression.getStart(source), expression.end, "Promise.resolve().then(() => require"])
+          edits.push([node.end, node.end, ")"])
+        }
+        if (specifier !== argument.text) {
+          edits.push([argument.getStart(source), argument.end, JSON.stringify(specifier)])
+        }
+      }
+    }
+    ts.forEachChild(node, visit)
+  }
+  visit(source)
+  return edits.sort((a, b) => b[0] - a[0])
+    .reduce((output, [start, end, replacement]) => output.slice(0, start) + replacement + output.slice(end), text)
 }
 
 /**
@@ -219,7 +272,10 @@ export const emptyDirectory = (directory) => {
   }
 }
 
-export const buildLibrary = async (packageRoot, { esmOnly = [], declarationTimeoutMs = 90_000, commonJsPlatform = "neutral" } = {}) => {
+export const buildLibrary = async (
+  packageRoot,
+  { esmOnly = [], declarationTimeoutMs = 90_000, commonJsPlatform = "neutral" } = {}
+) => {
   const require = createRequire(join(packageRoot, "package.json"))
   const { build } = require("esbuild")
   const src = join(packageRoot, "src")
@@ -233,11 +289,20 @@ export const buildLibrary = async (packageRoot, { esmOnly = [], declarationTimeo
   const cjs = join(packageRoot, "dist/cjs")
   copyInputDeclarations(src, esm)
   const input = vibe ? esm : src
-  const excluded = new Set(esmOnly.map((path) => resolve(input, vibe ? path.replace(/\.(?:ts|vibe)$/, ".js") : path)))
+  const excluded = new Set(
+    esmOnly.map((path) =>
+      resolve(
+        input,
+        vibe
+          ? path.replace(/\.(?:[cm]?ts|vibex?)$/, (ext) => ext === ".mts" ? ".mjs" : ext === ".cts" ? ".cjs" : ".js")
+          : path
+      )
+    )
+  )
   await build({
     entryPoints: vibe
-      ? files(esm).filter((file) => file.endsWith(".js") && !excluded.has(file))
-      : files(src).filter((file) => file.endsWith(".ts") && !file.endsWith(".d.ts") && !excluded.has(file)),
+      ? files(esm).filter((file) => /\.[cm]?js$/.test(file) && !excluded.has(file))
+      : files(src).filter((file) => /\.[cm]?ts$/.test(file) && !/\.d\.[cm]?ts$/.test(file) && !excluded.has(file)),
     outbase: input,
     outdir: cjs,
     format: "cjs",
@@ -249,14 +314,8 @@ export const buildLibrary = async (packageRoot, { esmOnly = [], declarationTimeo
   })
   for (const file of files(cjs).filter((file) => file.endsWith(".js"))) {
     const text = readFileSync(file, "utf8")
-      // A lazy `import("./x.ts")` kept as-is names a .ts file the branch does
-      // not ship, and Node's import() of an esbuild CommonJS module exposes
-      // only `default`. Lowered to require(), it gets the .js rewrite below and
-      // the named exports the ESM branch has. Computed and package specifiers
-      // stay import(): require() cannot load a file URL or an ESM-only module.
-      .replace(/(?<![\w$.])import\((["'])(\.\.?\/[^"'\n]+)\1\)/g, "Promise.resolve().then(() => require($1$2$1))")
-      .replace(/(require\(["'](?:\.\.?\/)[^"']+)\.ts(["']\))/g, "$1.js$2")
-    writeFileSync(file, text)
+    const rewritten = rewriteCommonJsCalls(text)
+    if (rewritten !== text) writeFileSync(file, rewritten)
   }
   copyCommonJsDeclarations(packageRoot)
   await buildPrivateEffectAdapters(packageRoot)

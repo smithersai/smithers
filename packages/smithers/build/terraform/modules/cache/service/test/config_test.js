@@ -19,6 +19,11 @@ const valid = {
 }
 
 describe("readConfig", () => {
+  test("preserves TLS verification for managed databases", () => {
+    const url = "postgres://cache@db.example.test/cache?sslmode=verify-full"
+    expect(readConfig({ ...valid, DATABASE_URL: url }).config.databaseUrl).toBe(url)
+  })
+
   test("passes a validated read namespace prefix to the server", () => {
     expect(readConfig({ ...valid, SMITHERS_CACHE_READ_NAMESPACE_PREFIX: "pr-1/" }).config.readNamespacePrefix).toBe(
       "pr-1/"

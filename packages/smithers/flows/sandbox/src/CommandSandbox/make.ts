@@ -17,7 +17,7 @@ import { elapsed } from "../internal/deadline.ts"
 import { execSession } from "../internal/execSession.ts"
 import { finalizeWithin } from "../internal/finalizeWithin.ts"
 import { linuxFileSystem } from "../internal/linuxFileSystem.ts"
-import { gather, type GatheredRun } from "../internal/localProcess.ts"
+import { gather, type GatheredRun, ProcessStatus } from "../internal/localProcess.ts"
 import { userPidDirectory } from "../internal/pidDirectory.ts"
 import { sessionSlug } from "../internal/sessionSlug.ts"
 import { ProviderError } from "../RemoteChildProcessSpawner/ProviderError.ts"
@@ -149,8 +149,14 @@ export const make = (options: CommandSandboxOptions): Provider => {
         if (owned.code !== 0) {
           return yield* Effect.fail(unreachable(`${name}'s pidfile directory ${base} is not private to user ${uid}`))
         }
-        const silent = unreachable(`${name} stopped answering; the command may still be running there`)
-        const restarted = unreachable(`${name} restarted; the command it was running is gone`)
+        const silent = new ProcessStatus({
+          code: "unavailable",
+          message: `${name} stopped answering; the command may still be running there`
+        })
+        const restarted = new ProcessStatus({
+          code: "unavailable",
+          message: `${name} restarted; the command it was running is gone`
+        })
         /** The pidfile of each spawned command's argv, whose boot id sits beside it. */
         const pidfiles = new WeakMap<ReadonlyArray<string>, string>()
         // Every beat prints the machine's boot id, which later commands adopt.

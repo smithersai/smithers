@@ -602,12 +602,22 @@ export const attach = <E, R>(
     const argv = access === "write"
       ? ["tmux", "attach-session", "-t", target(options.name)]
       : ["tmux", "attach-session", "-f", "read-only,ignore-size", "-t", target(options.name)]
-    const spawned = yield* Effect.exit(container.exec(argv, {
-      user: options.user,
-      env: envOf(options.env),
-      pty: { cols: options.cols, rows: options.rows },
-      ...(access === "write" ? { stdin: "pipe" as const } : {})
-    }))
+    const spawned = yield* Effect.raceFirst(
+      Effect.exit(container.exec(argv, {
+        user: options.user,
+        env: envOf(options.env),
+        pty: { cols: options.cols, rows: options.rows },
+        ...(access === "write" ? { stdin: "pipe" as const } : {})
+      })),
+      Deferred.await(stop).pipe(Effect.as(undefined))
+    )
+    if (spawned === undefined) {
+      if (overflow) {
+        yield* close(TerminalProtocol.CloseCode.failed, "Terminal input buffer full")
+        return { outcome: "failed", closeCode: TerminalProtocol.CloseCode.failed, bytes: counted } as const
+      }
+      return { outcome: "closed", closeCode: null, bytes: counted } as const
+    }
     if (Exit.isFailure(spawned)) {
       yield* Effect.annotateCurrentSpan({ "error.type": RetryPolicy.failureType(spawned.cause) })
       yield* close(TerminalProtocol.CloseCode.failed)

@@ -341,28 +341,15 @@ const isLoopback = (endpoint: string): boolean => {
   return hostname === "localhost" || hostname === "[::1]" || loopbackIpv4.test(hostname)
 }
 
-/**
- * Refuses a credential header bound for a plaintext collector off this
- * machine. Anyone on the network path could read the token from every export
- * request, and the exporter would never report it. Loopback `http://` stays
- * allowed for a local collector or sidecar; non-credential headers such as a
- * tenant id stay allowed on any endpoint.
- */
-/**
- * Vendor credential headers whose names `Redaction.isSensitiveKey` does not
- * recognize. Honeycomb sends its ingest key as `x-honeycomb-team`.
- */
-const vendorCredentialHeaders: ReadonlySet<string> = new Set(["x-honeycomb-team"])
-
-const isCredentialHeader = (name: string): boolean =>
-  Redaction.isSensitiveKey(name) || vendorCredentialHeaders.has(name.toLowerCase())
-
+/** Remote plaintext collectors accept only explicitly public header names. */
 const refusePlaintextCredentials = (
   baseUrl: string,
-  headers: Headers.Input | undefined
+  headers: Headers.Headers,
+  plaintextHeaders: ReadonlyArray<string> | undefined
 ): Effect.Effect<void, Endpoint.InvalidExporterEndpoint> => {
   if (!baseUrl.toLowerCase().startsWith("http:") || isLoopback(baseUrl)) return Effect.void
-  const credential = Object.keys(Headers.fromInput(headers)).some(isCredentialHeader)
+  const allowed = new Set(plaintextHeaders?.map((name) => name.toLowerCase()))
+  const credential = Object.keys(headers).some((name) => Redaction.isSensitiveKey(name) || !allowed.has(name))
   return credential
     ? Effect.fail(
       new Endpoint.InvalidExporterEndpoint({
@@ -455,14 +442,12 @@ export interface Options {
    */
   readonly attributes?: Record<string, unknown> | undefined
   /**
-   * Headers sent with every export request, for example vendor auth. A header
-   * whose name names a credential (`authorization`, `x-api-key`, anything
-   * `Redaction.isSensitiveKey` recognizes, plus `x-honeycomb-team`) requires
-   * an `https://` baseUrl unless the host is loopback; otherwise acquisition
-   * fails with
-   * {@link Endpoint.InvalidExporterEndpoint}.
+   * Headers sent with every export request. Remote collectors require HTTPS
+   * for caller-supplied headers unless explicitly declared in {@link plaintextHeaders}.
    */
   readonly headers?: Headers.Input | undefined
+  /** Non-sensitive headers a remote HTTP collector may receive, matched case-insensitively. */
+  readonly plaintextHeaders?: ReadonlyArray<string> | undefined
   /** Export cadence for all three signals; each signal's Effect default applies when omitted. */
   readonly exportInterval?: Duration.Input | undefined
   /** Upper bound on the shutdown flush when the layer's scope closes. */
@@ -554,10 +539,15 @@ export const layer = (
           ...(options.attributes === undefined ? {} : { attributes: options.attributes })
         }),
         Endpoint.decode(options.baseUrl, "baseUrl").pipe(
-          Effect.tap((baseUrl) => refusePlaintextCredentials(baseUrl, options.headers))
+          Effect.flatMap((baseUrl) => {
+            const headers = Headers.fromInput(options.headers)
+            return refusePlaintextCredentials(baseUrl, headers, options.plaintextHeaders).pipe(
+              Effect.as({ baseUrl, headers })
+            )
+          })
         )
       ]),
-      ([decoded, baseUrl]) => {
+      ([decoded, { baseUrl, headers }]) => {
         const resource = Resource.toOpenTelemetryConfiguration(decoded)
         return (
           Otlp.layerJson({
@@ -568,7 +558,7 @@ export const layer = (
               serviceVersion: resource.serviceVersion!,
               ...(resource.attributes === undefined ? {} : { attributes: resource.attributes })
             },
-            headers: options.headers,
+            headers,
             maxBatchSize,
             loggerExportInterval: options.exportInterval,
             metricsExportInterval: options.exportInterval,

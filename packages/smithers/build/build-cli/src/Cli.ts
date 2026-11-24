@@ -1889,7 +1889,7 @@ const makeCommands = (config: RuntimeConfig) =>
       }),
       async run(context) {
         try {
-          shardOf(context.options)
+          const shard = shardOf(context.options)
           const index = await openPackageIndex(context.options, config)
           const files = await Affected.changedPaths(index.root, {
             ...context.options,
@@ -1979,8 +1979,11 @@ const makeCommands = (config: RuntimeConfig) =>
                 if (result.status !== "skipped") notRun.delete(result.label)
               }
               // Every selected gate the planner was left to plan must have run or been recorded.
-              requireRecorded(labels, outcome)
-              const judged = Affected.unskipped(labels, outcome)
+              const owned = shard === undefined
+                ? labels
+                : labels.filter((label) => Shards.shardOf(label, shard.count) === shard.index)
+              requireRecorded(owned, outcome)
+              const judged = Affected.unskipped(owned, outcome)
               executions.set(judged, executions.get(outcome)!)
               return judged
             })

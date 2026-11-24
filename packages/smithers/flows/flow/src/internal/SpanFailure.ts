@@ -23,6 +23,7 @@ import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
 import * as Stream from "effect/Stream"
 import * as Tracer from "effect/Tracer"
+import { stringField } from "./DefectField.ts"
 
 /** The stand-in a span ends with in place of one failure. */
 class Withheld extends Error {}
@@ -36,11 +37,6 @@ const defectTag = /^[A-Za-z0-9_@$./:-]{1,200}$/
 /** A code such as `rate_limited`: a schema literal, never free text. */
 const token = /^[a-z][a-z0-9_]{0,63}$/
 
-const fieldOf = (value: unknown, field: "_tag" | "code"): string | undefined => {
-  const found = typeof value === "object" && value !== null ? (value as Record<string, unknown>)[field] : undefined
-  return typeof found === "string" ? found : undefined
-}
-
 /**
  * The stand-in for one failure: its tag, else its class name, as the name;
  * a tagged failure's token code, else `redacted`, as the message; and a stack
@@ -48,10 +44,11 @@ const fieldOf = (value: unknown, field: "_tag" | "code"): string | undefined => 
  */
 const standIn = (value: unknown): Error => {
   if (value instanceof Withheld) return value
-  const rawTag = fieldOf(value, "_tag")
+  const rawTag = stringField(value, "_tag")
   const tag = rawTag !== undefined && defectTag.test(rawTag) ? rawTag : undefined
-  const name = tag ?? (value instanceof Error && className.test(value.name) ? value.name : "Error")
-  const code = tag === undefined ? undefined : fieldOf(value, "code")
+  const errorName = value instanceof Error ? stringField(value, "name") : undefined
+  const name = tag ?? (errorName !== undefined && className.test(errorName) ? errorName : "Error")
+  const code = tag === undefined ? undefined : stringField(value, "code")
   const message = code !== undefined && token.test(code) ? code : "redacted"
   const error = new Withheld(message)
   Object.defineProperty(error, "name", { value: name, configurable: true, writable: true })

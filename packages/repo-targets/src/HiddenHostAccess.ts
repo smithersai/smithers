@@ -153,7 +153,11 @@ export const hiddenHostAccess = (
   governed: (module: string) => boolean
 ): ReadonlyArray<HiddenAccess> => {
   const source = ts.createSourceFile("bundle.js", code, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS)
-  const markers = [...code.matchAll(/^\/\/ (\S+)$/gm)].map((match) => [match.index, match[1]] as const)
+  const markers = [
+    ...code.matchAll(
+      /^\/\/ ((?![a-z][a-z0-9+.-]*:\/\/)(?:[^\s]+[/\\][^\s]+|[\w.-]+\.(?:[cm]?[jt]sx?|vibex?|json|css)|[\w-]+:[^\s]+))\r?$/gim
+    )
+  ].map((match) => [match.index, match[1]] as const)
   const moduleAt = (position: number): string => {
     let current = ""
     for (const [index, path] of markers) {

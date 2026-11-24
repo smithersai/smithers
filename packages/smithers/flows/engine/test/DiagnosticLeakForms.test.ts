@@ -8,7 +8,9 @@
 import { describe, expect, it } from "@effect/vitest"
 import * as FastCheck from "fast-check"
 import { inspect } from "node:util"
-import { renderDiagnostic } from "../src/internal/Diagnostic.ts"
+import { hostReflection, renderDiagnosticWith } from "../src/internal/Diagnostic.ts"
+
+const renderDiagnostic = (value: unknown) => renderDiagnosticWith(hostReflection(process), value)
 
 const secret = "ZqSynthetic7Secret4Value9"
 const hex = (text: string) => [...Buffer.from(text)].map((byte) => byte.toString(16).padStart(2, "0")).join(" ")

@@ -33,6 +33,17 @@ variable "bun_image" {
   }
 }
 
+variable "postgres_sslmode" {
+  description = "Use disable for the bundled private Docker network. Managed databases require require or verify-full."
+  type        = string
+  default     = "disable"
+
+  validation {
+    condition     = contains(["disable", "require", "verify-full"], var.postgres_sslmode)
+    error_message = "postgres_sslmode must be disable, require, or verify-full."
+  }
+}
+
 variable "postgres_user" {
   description = "Postgres role that owns the cache schema."
   type        = string

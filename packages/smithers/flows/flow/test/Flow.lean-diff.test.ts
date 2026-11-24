@@ -8,8 +8,9 @@
  * line. A text crosses as its UTF-16 code units and a double as the decimal text of its 64 bits, so a lone surrogate,
  * an infinity and a negative zero all arrive as they left.
  *
- * A machine with neither the built oracle nor `lake` skips the file; a machine with `lake` builds the oracle first,
- * and builds it again when a source of the specification is newer than it.
+ * A machine with neither the built oracle nor `lake` skips the file, and so does a machine without `lake` whose
+ * built oracle is older than a source of the specification; a machine with `lake` builds the oracle first, and builds
+ * it again when a source of the specification is newer than it.
  */
 import { Capability } from "@smthrs/capability"
 import { Sha256 } from "@smthrs/crypto"
@@ -38,8 +39,6 @@ const lake = [...(process.env["PATH"] ?? "").split(delimiter).filter((directory)
   .find((path) => existsSync(path))
 /** The specification's sources are here and `lake` can build them. A confined run may be shown neither. */
 const buildable = lake !== undefined && existsSync(join(specDir, "lakefile.toml"))
-const oracleReady = existsSync(binary) || buildable
-const differential = it.skipIf(!oracleReady)
 
 /** True when a source of the specification is newer than the built oracle, or there is no built oracle. */
 const stale = (): boolean => {
@@ -50,10 +49,26 @@ const stale = (): boolean => {
     "FlowSpec.lean",
     "lakefile.toml",
     "lean-toolchain",
-    ...readdirSync(join(specDir, "FlowSpec")).map((name) => join("FlowSpec", name))
+    ...(existsSync(join(specDir, "FlowSpec"))
+      ? readdirSync(join(specDir, "FlowSpec")).map((name) => join("FlowSpec", name))
+      : [])
   ]
-  return sources.some((source) => statSync(join(specDir, source)).mtimeMs > built)
+  return sources.some((source) => existsSync(join(specDir, source)) && statSync(join(specDir, source)).mtimeMs > built)
 }
+
+/**
+ * Why the differential cases cannot run, or `undefined` when they can: an oracle older than the specification it
+ * answers for is not evidence, so without `lake` to rebuild it the file skips rather than passes against it.
+ */
+const unavailable = buildable
+  ? undefined
+  : !existsSync(binary)
+  ? "neither a built oracle nor lake is available"
+  : stale()
+  ? "the built oracle is older than the specification and lake is unavailable to rebuild it"
+  : undefined
+const oracleReady = unavailable === undefined
+const differential = it.skipIf(!oracleReady)
 
 interface Oracle {
   readonly ask: (op: string, request: Readonly<Record<string, unknown>>) => Promise<unknown>

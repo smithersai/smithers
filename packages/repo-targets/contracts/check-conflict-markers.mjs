@@ -22,9 +22,11 @@
  */
 import { spawnSync } from "node:child_process"
 import { fileURLToPath } from "node:url"
+import { isMain } from "../scripts/workspace-root.mjs"
 
 /** The extended regular expression for one marker line, shared with git grep. */
-export const markerPattern = "^(<<<<<<<|>>>>>>>|\\|\\|\\|\\|\\|\\|\\||%%%%%%%|\\\\\\\\\\\\\\\\\\\\\\\\\\\\|\\+\\+\\+\\+\\+\\+\\+|-------)( |$)"
+export const markerPattern =
+  "^(<<<<<<<|>>>>>>>|\\|\\|\\|\\|\\|\\|\\||%%%%%%%|\\\\\\\\\\\\\\\\\\\\\\\\\\\\|\\+\\+\\+\\+\\+\\+\\+|-------)( |$)"
 
 const markerLine = new RegExp(markerPattern)
 
@@ -37,7 +39,9 @@ export const isMarkerLine = (line) => markerLine.test(line)
  */
 export const findConflictMarkers = (root) => {
   const repository = spawnSync("git", ["rev-parse", "--is-inside-work-tree"], { cwd: root, encoding: "utf8" })
-  const scope = repository.status === 0 && repository.stdout.trim() === "true" ? [] : ["--no-index", "--exclude-standard"]
+  const scope = repository.status === 0 && repository.stdout.trim() === "true"
+    ? []
+    : ["--no-index", "--exclude-standard"]
   const result = spawnSync("git", ["grep", ...scope, "-z", "-n", "-I", "-E", "-e", markerPattern, "--"], {
     cwd: root,
     encoding: "utf8",
@@ -78,4 +82,4 @@ const main = () => {
   return 1
 }
 
-if (process.argv[1] === fileURLToPath(import.meta.url)) process.exitCode = main()
+if (isMain(import.meta)) process.exitCode = main()

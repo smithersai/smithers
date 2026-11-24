@@ -1535,7 +1535,11 @@ export const make = (
         const floor = yield* compactionFloor(options.runId).pipe(
           Effect.mapError((cause) => error("read_failed", "durable journal read failed", cause))
         )
-        if (floor !== undefined && after < floor - 1) {
+        // A newest-first page that filled is made only of rows above the
+        // floor, which compaction never deletes, so it is complete whatever
+        // the cursor. Only a page that ran out of rows reached the floor.
+        const reachedFloor = options.order !== "desc" || rows.length <= options.limit
+        if (floor !== undefined && after < floor - 1 && reachedFloor) {
           return yield* Effect.fail(
             new JournalError({
               code: "compacted",

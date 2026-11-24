@@ -109,7 +109,7 @@ you run the conformance suite, which will name each one you missed.
 
 **Name the machine from the session key.** A key must land on the same machine
 when a crashed run acquires it again. Every bundled provider derives its name
-from the key's leading name-safe characters plus a 64-bit digest of the whole
+from the key's leading name-safe characters plus a 128-bit SHA-256 digest prefix of the whole
 key, and adopts an existing machine of that name rather than failing on the
 conflict.
 

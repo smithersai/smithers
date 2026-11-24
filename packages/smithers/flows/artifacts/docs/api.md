@@ -536,7 +536,7 @@ interface Service {
 
 | Member | Behavior                                                                                                                                                                                                                                  |
 | ------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `get`  | The entry at `key`, or `None` on a miss. Every hit returns a new array.                                                                                                                                                                   |
+| `get`  | The entry at `key`, or `None` on a miss. Every hit returns a new array. A stored entry over `maxEntryBytes` or `maxMetadataBytes` fails `corrupt`; its body is read up to the bound, then cancelled.                                      |
 | `put`  | Stores a copy of `entry` and answers `stored`. An entry with more than `maxEntryBytes` of bytes, or more than `maxMetadataBytes` (1,024) of UTF-8 JSON metadata, stores nothing and answers `too_large`. Storing a key again replaces it. |
 
 `ImmutableCache` is the service tag, with identity
@@ -559,12 +559,12 @@ Answers from the cache, else runs `compute`, stores its entry and answers it.
 
 ### Layers and constructors
 
-| Export                                             | Use                                                                                                                                                                                                                      |
-| -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `layerMemory(options?)`                            | Memory, labelled `memory`, for Node and tests. `maxTotalBytes` (default 64 MiB) bounds everything held; past it the least recently used entries go. `maxEntryBytes` defaults to 8 MiB and never exceeds `maxTotalBytes`. |
-| `layerWebCache({ backend, open, maxEntryBytes? })` | Over the `WebCache` that `open` answers. `undefined`, a rejection or a throw fails the layer with `unavailable`. Host packages build their layers on it.                                                                 |
-| `make(cache, { backend, maxEntryBytes? })`         | The service over a `WebCache`, without a layer.                                                                                                                                                                          |
-| `makeMemoryWebCache(maxTotalBytes?)`               | A `WebCache` in memory, least recently used first.                                                                                                                                                                       |
+| Export                                             | Use                                                                                                                                                                                                                                                          |
+| -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `layerMemory(options?)`                            | Memory, labelled `memory`, for Node and tests. `maxTotalBytes` (default 64 MiB) and `maxEntries` (default 4,096) bound everything held; past either the least recently used entries go. `maxEntryBytes` defaults to 8 MiB and never exceeds `maxTotalBytes`. |
+| `layerWebCache({ backend, open, maxEntryBytes? })` | Over the `WebCache` that `open` answers. `undefined`, a rejection or a throw fails the layer with `unavailable`. Host packages build their layers on it.                                                                                                     |
+| `make(cache, { backend, maxEntryBytes? })`         | The service over a `WebCache`, without a layer.                                                                                                                                                                                                              |
+| `makeMemoryWebCache(maxTotalBytes?, maxEntries?)`  | A `WebCache` in memory, least recently used first. An entry costs its body, URL and header sizes plus `memoryEntryOverheadBytes`, so an empty body is never free.                                                                                            |
 
 ```ts
 interface WebCache {
@@ -582,22 +582,24 @@ immutable`, which the Workers cache needs before it stores anything.
 
 ### `ImmutableCacheError`
 
-| Field       | Meaning                                                                                                                                                                           |
-| ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `backend`   | The layer's label: `memory`, `cloudflare`, `browser` or your own.                                                                                                                 |
-| `operation` | `open` (building the layer), `get` or `put`.                                                                                                                                      |
-| `reason`    | `unavailable` (no cache, or it refused to open), `failed` (the backend refused the call, for example over its quota) or `corrupt` (a stored entry whose metadata it cannot read). |
-| `errorName` | The backend's error name, such as `QuotaExceededError`, when it threw one. Never its message.                                                                                     |
+| Field       | Meaning                                                                                                                                                                                                            |
+| ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `backend`   | The layer's label: `memory`, `cloudflare`, `browser` or your own.                                                                                                                                                  |
+| `operation` | `open` (building the layer), `get` or `put`.                                                                                                                                                                       |
+| `reason`    | `unavailable` (no cache, or it refused to open), `failed` (the backend refused the call, for example over its quota) or `corrupt` (a stored entry whose metadata it cannot read, or one over the reader's bounds). |
+| `errorName` | The backend's error name, such as `QuotaExceededError`, when it threw one. Never its message.                                                                                                                      |
 
 ### Constants and metrics
 
-| Export                 | Value                                                                                                                                                     |
-| ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `defaultMaxEntryBytes` | 8 MiB                                                                                                                                                     |
-| `maxMetadataBytes`     | 1,024                                                                                                                                                     |
-| `defaultMaxTotalBytes` | 64 MiB                                                                                                                                                    |
-| `requests`             | Counter `immutable_cache_requests`, by `backend`, `namespace`, `operation` and `outcome`: `hit`, `miss`, `stored`, `too_large`, `failed` or `interrupted` |
-| `bytes`                | Counter `immutable_cache_bytes`, by `backend`, `namespace` and `operation`: a hit's bytes on `get`, the stored bytes on `put`                             |
+| Export                     | Value                                                                                                                                                     |
+| -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `defaultMaxEntryBytes`     | 8 MiB                                                                                                                                                     |
+| `maxMetadataBytes`         | 1,024                                                                                                                                                     |
+| `defaultMaxTotalBytes`     | 64 MiB                                                                                                                                                    |
+| `defaultMaxEntries`        | 4,096                                                                                                                                                     |
+| `memoryEntryOverheadBytes` | 64                                                                                                                                                        |
+| `requests`                 | Counter `immutable_cache_requests`, by `backend`, `namespace`, `operation` and `outcome`: `hit`, `miss`, `stored`, `too_large`, `failed` or `interrupted` |
+| `bytes`                    | Counter `immutable_cache_bytes`, by `backend`, `namespace` and `operation`: a hit's bytes on `get`, the stored bytes on `put`                             |
 
 Each call is one span, `ImmutableCache.get` or `ImmutableCache.put`, with the
 attributes `immutable_cache.backend`, `immutable_cache.namespace`,

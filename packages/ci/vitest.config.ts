@@ -23,14 +23,11 @@ export const held = {
  */
 export const partWorkers = { cli: 4, replay: 3, native: 3, rest: 2 } as const
 
-/** What a part holds less what an earlier part of `held` holds already. */
-export const heldBy = (part: keyof typeof held): { coverage: Array<string>; coverageExclude: Array<string> } => {
-  const parts = Object.keys(held) as Array<keyof typeof held>
-  const earlier = parts.slice(0, parts.indexOf(part)).flatMap((other) =>
-    held[other].filter((path) => !path.endsWith("/**"))
-  )
-  return { coverage: [...held[part]], coverageExclude: earlier }
-}
+/**
+ * What a part holds. No source is named by two parts (test/coverageParts.test.ts), so a part leaves nothing out for
+ * another: `testRest` alone excludes, and it excludes everything named here.
+ */
+export const heldBy = (part: keyof typeof held): { coverage: Array<string> } => ({ coverage: [...held[part]] })
 
 /**
  * The suite, or one part of it: the cases under `include` (less `exclude`), with 100% coverage held over `coverage`.

@@ -10,7 +10,17 @@
 
 import assert from "node:assert/strict"
 import { spawnSync } from "node:child_process"
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs"
+import {
+  cpSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync
+} from "node:fs"
 import { tmpdir } from "node:os"
 import { dirname, join, matchesGlob, relative } from "node:path"
 import { after, describe, it } from "node:test"
@@ -29,8 +39,8 @@ import * as Capability from "@smthrs/capability/Capability"
 import { FlowEngine } from "@smthrs/engine"
 import { Action } from "@smthrs/flow"
 import * as Detect from "@smthrs/migrate/Detect"
-import * as Discovery from "@smthrs/registry/Discovery"
 import * as Descriptor from "@smthrs/registry/Descriptor"
+import * as Discovery from "@smthrs/registry/Discovery"
 import * as Executable from "@smthrs/registry/Executable"
 import * as MarkdownFlow from "@smthrs/registry/MarkdownFlow"
 
@@ -77,7 +87,7 @@ const EXPECTED_FLOWS = [
   "pr-triage",
   "release-notes",
   "review/change",
-  "security-audit",
+  "security-audit"
 ]
 
 const FIXTURE = "migrate-smithers-v1/test/fixtures/smithers-0x-hello"
@@ -114,7 +124,7 @@ describe("the staged prompt bodies", () => {
   it("are the authoring bodies and the repository flows", () => {
     assert.deepEqual(
       files.map((file) => relative(flowsRoot, dirname(file)).split("\\").join("/")).sort(),
-      EXPECTED_FLOWS,
+      EXPECTED_FLOWS
     )
   })
 
@@ -130,12 +140,12 @@ describe("the staged prompt bodies", () => {
         naming: "path",
         name: Option.some(name),
         dirBasename: name.split("/").pop(),
-        provenance: { source: "project", root: flowsRoot },
+        provenance: { source: "project", root: flowsRoot }
       })
 
       assert.deepEqual(
         result.warnings.map((warning) => `${warning.code}: ${warning.message}`),
-        [],
+        []
       )
       assert.ok(Option.isSome(result.descriptor), `${name} produced no descriptor`)
       // A delegating body's declaration is the ceiling of its delegate grant,
@@ -149,7 +159,7 @@ describe("the staged prompt bodies", () => {
       assert.ok(descriptor.description.length > 0)
       assert.ok(
         [...descriptor.description].length <= 1024,
-        "a description over 1024 characters is refused by the Agent Skills limit",
+        "a description over 1024 characters is refused by the Agent Skills limit"
       )
       assert.equal(descriptor.input._tag, "MarkdownArgs")
       assert.equal(descriptor.output._tag, "MarkdownOutput")
@@ -172,17 +182,19 @@ describe("the staged prompt bodies", () => {
 
     it(`${name} states the 1.0 authoring model, never the 0.x one`, () => {
       const text = readFileSync(file, "utf8")
-      for (const removed of [
-        "createSmithers",
-        "<Task",
-        "jsxImportSource",
-        "gateway-react",
-        "gateway-ui",
-        "bunx smthrs",
-        "ask-human",
-        "smithers ui ",
-        "props.schema",
-      ]) {
+      for (
+        const removed of [
+          "createSmithers",
+          "<Task",
+          "jsxImportSource",
+          "gateway-react",
+          "gateway-ui",
+          "bunx smthrs",
+          "ask-human",
+          "smithers ui ",
+          "props.schema"
+        ]
+      ) {
         assert.ok(!text.includes(removed), `${name} still mentions "${removed}"`)
       }
     })
@@ -210,15 +222,15 @@ describe("the capabilities the staged prompt bodies declare", () => {
 
     it(`${name} declares capabilities the permission kernel can parse`, () => {
       const text = readFileSync(file, "utf8")
-      const declared = (MarkdownFlow.fromMarkdown({
+      const declared = MarkdownFlow.fromMarkdown({
         text,
         path: relative(repoRoot, file).split("\\").join("/"),
         baseDirectory: dirname(file),
         naming: "path",
         name: Option.some(name),
         dirBasename: name.split("/").pop(),
-        provenance: { source: "project", root: flowsRoot },
-      }).descriptor.value).capabilities
+        provenance: { source: "project", root: flowsRoot }
+      }).descriptor.value.capabilities
 
       for (const literal of declared) {
         // The registry stores whatever string the frontmatter carries, so a
@@ -230,22 +242,22 @@ describe("the capabilities the staged prompt bodies declare", () => {
         assert.equal(
           parsed.value.resource,
           parsed.value.resource.trim(),
-          `${literal} has whitespace around its resource, which no request can match`,
+          `${literal} has whitespace around its resource, which no request can match`
         )
       }
     })
 
     it(`${name} grants a real command line where it asks to spawn one`, () => {
       const text = readFileSync(file, "utf8")
-      const declared = (MarkdownFlow.fromMarkdown({
+      const declared = MarkdownFlow.fromMarkdown({
         text,
         path: relative(repoRoot, file).split("\\").join("/"),
         baseDirectory: dirname(file),
         naming: "path",
         name: Option.some(name),
         dirBasename: name.split("/").pop(),
-        provenance: { source: "project", root: flowsRoot },
-      }).descriptor.value).capabilities
+        provenance: { source: "project", root: flowsRoot }
+      }).descriptor.value.capabilities
 
       const spawns = declared.filter((literal) => literal.startsWith("proc:spawn"))
       if (spawns.length === 0) return
@@ -256,9 +268,9 @@ describe("the capabilities the staged prompt bodies declare", () => {
           Capability.matches(
             new Capability.CapabilityPattern({
               action: parsed.value.action,
-              resource: parsed.value.resource,
+              resource: parsed.value.resource
             }),
-            Capability.make("proc:spawn", command),
+            Capability.make("proc:spawn", command)
           )
       }
 
@@ -278,10 +290,33 @@ describe("the capabilities the staged prompt bodies declare", () => {
         const program = resource.replace(/\s*\*+$/, "")
         assert.ok(
           permits(literal, `${program} --version`),
-          `${name} declares ${literal}, which permits only the bare \`${program}\`; write \`proc:spawn:${program} *\``,
+          `${name} declares ${literal}, which permits only the bare \`${program}\`; write \`proc:spawn:${program} *\``
         )
       }
     })
+  }
+})
+
+it("untrusted intake flows grant no subprocess capability", () => {
+  for (const name of ["issue-triage", "pr-triage", "issue/repro", "issue/poc"]) {
+    const file = join(flowsRoot, name, "flow.mdx")
+    const { capabilities } = MarkdownFlow.fromMarkdown({
+      text: readFileSync(file, "utf8"),
+      path: file,
+      baseDirectory: dirname(file),
+      naming: "path",
+      name: Option.some(name),
+      dirBasename: name.split("/").pop(),
+      provenance: { source: "project", root: flowsRoot }
+    }).descriptor.value
+    for (const literal of capabilities) {
+      const parsed = Capability.parse(literal)
+      assert.ok(Option.isSome(parsed))
+      const pattern = new Capability.CapabilityPattern(parsed.value)
+      assert.equal(Capability.matches(pattern, Capability.make("proc:spawn", "rg")), false)
+      assert.equal(Capability.matches(pattern, Capability.make("proc:spawn", "git diff")), false)
+      assert.equal(literal.startsWith("proc:"), false)
+    }
   }
 })
 
@@ -297,10 +332,16 @@ describe("the binary this lane's suites spawn", () => {
         return nextLoad(url, context);
       } });`
     const result = spawnSync(process.execPath, [
-      "--import", `data:text/javascript,${encodeURIComponent(observer)}`, cli, "--version",
+      "--import",
+      `data:text/javascript,${encodeURIComponent(observer)}`,
+      cli,
+      "--version"
     ], { cwd: repoRoot, encoding: "utf8", timeout: 180_000 })
     assert.equal(result.status, 0, result.stderr)
-    assert.ok(result.stderr.includes("CLI_ENTRY=" + new URL("../../packages/smithers/src/bin.ts", import.meta.url).href), result.stderr)
+    assert.ok(
+      result.stderr.includes("CLI_ENTRY=" + new URL("../../packages/smithers/src/bin.ts", import.meta.url).href),
+      result.stderr
+    )
     assert.ok(!result.stderr.includes("/dist/esm/bin.js"), result.stderr)
   })
 })
@@ -325,8 +366,8 @@ describe("the CLI the staged prompt bodies teach", () => {
         spawnSync(process.execPath, [cli, ...path.split(" "), "--help"], {
           cwd: repoRoot,
           encoding: "utf8",
-          timeout: 180_000,
-        }),
+          timeout: 180_000
+        })
       )
     }
     return listings.get(path)
@@ -366,14 +407,14 @@ describe("the CLI the staged prompt bodies teach", () => {
       const usage = /(?:^Usage:|^USAGE)\s+([^\n]+)/m.exec(listing.stdout)?.[1]
       assert.ok(
         usage === `smthrs ${path}` || usage?.startsWith(`smthrs ${path} `),
-        `\`smthrs ${path}\` is not a command: ${listing.stdout}`,
+        `\`smthrs ${path}\` is not a command: ${listing.stdout}`
       )
       paths.add(path)
       for (const flag of longFlags(argv)) {
         assert.ok(
           listing.stdout.includes(flag),
           `\`smthrs ${path}\` does not declare ${flag}, which ${name} tells the operator to run; ` +
-            "effect/cli exits 2 on an undeclared flag",
+            "effect/cli exits 2 on an undeclared flag"
         )
       }
     }
@@ -386,7 +427,7 @@ describe("the CLI the staged prompt bodies teach", () => {
       const declaring = [...paths].find((path) => help(path).stdout.includes(flag))
       assert.ok(
         declaring !== undefined,
-        `${name} names ${flag}, and no command it names declares it: ${[...paths].join(", ")}`,
+        `${name} names ${flag}, and no command it names declares it: ${[...paths].join(", ")}`
       )
     }
   }
@@ -397,7 +438,7 @@ describe("the CLI the staged prompt bodies teach", () => {
       "```sh",
       "  smthrs logs <run-id> --follow",
       "  smithers plan <flow>",
-      "```",
+      "```"
     ].join("\n")
     assert.deepEqual(invocations(prompt), ["ls", "doctor", "logs <run-id> --follow", "plan <flow>"])
   })
@@ -406,7 +447,7 @@ describe("the CLI the staged prompt bodies teach", () => {
     for (const argv of ["definitely-invalid-verb", "definitely-invalid-verb --definitely-invalid-flag"]) {
       assert.throws(
         () => validatePrompt(`Run \`smthrs ${argv}\`.`, "invalid verb fixture"),
-        /smthrs definitely-invalid-verb.*is not a command/,
+        /smthrs definitely-invalid-verb.*is not a command/
       )
     }
   })
@@ -414,14 +455,14 @@ describe("the CLI the staged prompt bodies teach", () => {
   it("rejects a fixture prompt teaching an invalid flag on a valid smthrs command", () => {
     assert.throws(
       () => validatePrompt("```sh\nsmthrs ls --definitely-invalid-flag\n```", "invalid flag fixture"),
-      /smthrs ls.*does not declare --definitely-invalid-flag/,
+      /smthrs ls.*does not declare --definitely-invalid-flag/
     )
   })
 
   it("rejects a command-teaching prompt with no extracted invocations", () => {
     assert.throws(
       () => validatePrompt("Run smthrs ls to list flows.", "unformatted command fixture"),
-      /teaches CLI commands but none reached validation/,
+      /teaches CLI commands but none reached validation/
     )
   })
 
@@ -450,14 +491,14 @@ describe("the flow catalog", () => {
 
   it("names exactly the flows discovery finds here", async () => {
     const scan = await run(
-      Effect.gen(function* () {
+      Effect.gen(function*() {
         const discovery = Discovery.make(yield* FileSystem.FileSystem, yield* Path.Path)
         return yield* discovery.scan({ source: "project", root: flowsRoot, naming: "path" })
-      }),
+      })
     )
     assert.deepEqual(
       catalog.flows.map((row) => row.id).sort(),
-      [...scan.entries].map((entry) => entry.name).sort(),
+      [...scan.entries].map((entry) => entry.name).sort()
     )
     for (const row of catalog.flows) {
       const entry = scan.entries.find((candidate) => candidate.name === row.id)
@@ -470,7 +511,7 @@ describe("the flow catalog", () => {
     const featured = catalog.flows.filter((row) => row.featured)
     assert.deepEqual(
       featured.map((row) => row.id),
-      ["review", "lint", "pr-triage", "issue-triage", "release-notes", "issue-sweep"],
+      ["review", "lint", "pr-triage", "issue-triage", "release-notes", "issue-sweep"]
     )
     assert.deepEqual(catalog.flows.slice(0, featured.length), featured, "featured rows lead the catalog")
     for (const row of featured) {
@@ -496,15 +537,17 @@ describe("the dispatcher table", () => {
   it("retires community nominations while retaining native factory dispatch", () => {
     assert.equal(projection.on.some((rule) => rule.event === "nomination"), false)
     const rules = new Map(projection.on.map((rule) => [rule.event, rule.flow]))
-    for (const [event, flow] of [
-      ["issue.labeled:todo", "todo"],
-      ["change.opened", "review/change"],
-      ["change.updated", "review/change"],
-      ["github.push:main", "coding/wiki"],
-      ["schedule:0 9 * * 1-5", "review"],
-      ["schedule:0 2 * * *", "security-audit"],
-      ["schedule:0 10 * * 1", "improve.suggest"],
-    ]) {
+    for (
+      const [event, flow] of [
+        ["issue.labeled:todo", "todo"],
+        ["change.opened", "review/change"],
+        ["change.updated", "review/change"],
+        ["github.push:main", "coding/wiki"],
+        ["schedule:0 9 * * 1-5", "review"],
+        ["schedule:0 2 * * *", "security-audit"],
+        ["schedule:0 10 * * 1", "improve.suggest"]
+      ]
+    ) {
       assert.equal(rules.get(event), flow, `${event} retains its factory flow`)
     }
     assert.equal(rules.has("box.session.ended"), false)
@@ -594,7 +637,15 @@ describe("the repository homepage", () => {
   })
 
   it("opens with the question and the composer, then the links, Fixed by agents and the four apps", () => {
-    assert.deepEqual(home.blocks.map((block) => block.type), ["prompt", "links", "markdown", "app", "app", "app", "app"])
+    assert.deepEqual(home.blocks.map((block) => block.type), [
+      "prompt",
+      "links",
+      "markdown",
+      "app",
+      "app",
+      "app",
+      "app"
+    ])
     assert.equal(home.blocks[0].title, "Ask about Smithers")
     assert.equal(home.blocks[0].placeholder, "Ask Smithers…")
     assert.deepEqual([home.blocks[2].title, home.blocks[2].path], ["Fixed by agents", "docs/fixed-by-agents.md"])
@@ -617,16 +668,68 @@ describe("discovery over the project flows directory", () => {
 
   it("finds the prompt bodies and conservatively projects the release delegates", async () => {
     const scan = await run(
-      Effect.gen(function* () {
+      Effect.gen(function*() {
         const discovery = Discovery.make(yield* FileSystem.FileSystem, yield* Path.Path)
         return yield* discovery.scan({ source: "project", root: flowsRoot, naming: "path" })
-      }),
+      })
     )
 
     // Every module declaration under flows/. Each one but `checks/wiki` IS its
     // own `@smthrs/flow` flow: one file, no `flows:` list, and no delegate name
     // registered on a host to join a second declaration to it.
-    const modules = ["gate", "issues/file-tree", "test/coverage-campaign", "land", "land/lane-gates", "bench/gate", "bench/jj-abi-campaign", "bench/mutations", "bench/rebase-cache", "bench/signal-campaign", "bench/soak-campaign", "cerebras-load", "coding", "coding/dispatch", "coding/flow-load", "coding/implementation", "coding/prototype", "coding/rebase-conflict", "coding/verify", "coding/wiki", "issue-sweep", "issue-sweep/work", "merge-queue", "learning", "memory/calibrate", "memory/mine", "notification-policy", "quality", "release", "release-content", "review", "rollout", "todo", "wiki", "wrapped", "docs-sync", "issue-claim", "triage-publish", "release/api-baseline", "release/build-packages", "release/changelog", "release/cut", "release/gates", "release/installer", "release/npm-dedupe", "release/pack", "release/publish", "release/rehearsal", "release/restore", "release/smoke", "release/version"]
+    const modules = [
+      "gate",
+      "issues/file-tree",
+      "test/coverage-campaign",
+      "land",
+      "land/lane-gates",
+      "bench/gate",
+      "bench/jj-abi-campaign",
+      "bench/mutations",
+      "bench/rebase-cache",
+      "bench/signal-campaign",
+      "bench/soak-campaign",
+      "cerebras-load",
+      "coding",
+      "coding/dispatch",
+      "coding/flow-load",
+      "coding/implementation",
+      "coding/prototype",
+      "coding/rebase-conflict",
+      "coding/verify",
+      "coding/wiki",
+      "issue-sweep",
+      "issue-sweep/work",
+      "merge-queue",
+      "learning",
+      "memory/calibrate",
+      "memory/mine",
+      "notification-policy",
+      "quality",
+      "release",
+      "release-content",
+      "review",
+      "rollout",
+      "todo",
+      "wiki",
+      "wrapped",
+      "docs-sync",
+      "issue-claim",
+      "triage-publish",
+      "release/api-baseline",
+      "release/build-packages",
+      "release/changelog",
+      "release/cut",
+      "release/gates",
+      "release/installer",
+      "release/npm-dedupe",
+      "release/pack",
+      "release/publish",
+      "release/rehearsal",
+      "release/restore",
+      "release/smoke",
+      "release/version"
+    ]
     // `checks/wiki` still delegates, and its own file says why: the host binds
     // its reviewer policy to a descriptor by the `flows:` list, and the capture
     // action requires that descriptor's delegate to be the flow this host
@@ -639,24 +742,104 @@ describe("discovery over the project flows directory", () => {
     const hostBound = {
       "learning": "missing_service learning/Binding",
       "memory/mine": "missing_service memory/mine/Binding",
-      "review": "missing_service @smthrs/agent/AgentAction/Host",
+      "review": "missing_service @smthrs/agent/AgentAction/Host"
     }
     // The runners, schedules and registration steps are the host's to start,
     // never a model's tool.
-    const hiddenModules = ["gate", "issues/file-tree", "test/coverage-campaign", "land", "land/lane-gates", "bench/gate", "bench/jj-abi-campaign", "bench/mutations", "bench/rebase-cache", "bench/signal-campaign", "bench/soak-campaign", "cerebras-load", "coding/rebase-conflict", "coding/verify", "review/change", "coding/flow-load", "issue-sweep", "issue-sweep/work", "merge-queue", "learning", "memory/mine", "notification-policy", "quality", "rollout", "todo", "docs-sync", "issue-claim", "triage-publish", "release/api-baseline", "release/build-packages", "release/changelog", "release/cut", "release/gates", "release/installer", "release/npm-dedupe", "release/pack", "release/publish", "release/rehearsal", "release/restore", "release/smoke", "release/version"]
+    const hiddenModules = [
+      "gate",
+      "issues/file-tree",
+      "test/coverage-campaign",
+      "land",
+      "land/lane-gates",
+      "bench/gate",
+      "bench/jj-abi-campaign",
+      "bench/mutations",
+      "bench/rebase-cache",
+      "bench/signal-campaign",
+      "bench/soak-campaign",
+      "cerebras-load",
+      "coding/rebase-conflict",
+      "coding/verify",
+      "review/change",
+      "coding/flow-load",
+      "issue-sweep",
+      "issue-sweep/work",
+      "merge-queue",
+      "learning",
+      "memory/mine",
+      "notification-policy",
+      "quality",
+      "rollout",
+      "todo",
+      "docs-sync",
+      "issue-claim",
+      "triage-publish",
+      "release/api-baseline",
+      "release/build-packages",
+      "release/changelog",
+      "release/cut",
+      "release/gates",
+      "release/installer",
+      "release/npm-dedupe",
+      "release/pack",
+      "release/publish",
+      "release/rehearsal",
+      "release/restore",
+      "release/smoke",
+      "release/version"
+    ]
     // These named payloads cannot be safely reduced to a static document.
     // Keep this inventory independent of discovery's emitted warning list.
     const unavailablePayloads = [
-      "issues/file-tree", "test/coverage-campaign",
-      "land", "land/lane-gates",
-      "bench/gate", "bench/jj-abi-campaign", "bench/mutations", "bench/rebase-cache", "bench/signal-campaign", "bench/soak-campaign",
-      "coding", "coding/dispatch", "coding/flow-load", "coding/implementation", "coding/prototype",
-      "coding/rebase-conflict", "coding/verify", "coding/wiki",
-      "issue-sweep", "issue-sweep/work", "merge-queue", "learning", "memory/calibrate", "memory/mine", "notification-policy",
+      "issues/file-tree",
+      "test/coverage-campaign",
+      "land",
+      "land/lane-gates",
+      "bench/gate",
+      "bench/jj-abi-campaign",
+      "bench/mutations",
+      "bench/rebase-cache",
+      "bench/signal-campaign",
+      "bench/soak-campaign",
+      "coding",
+      "coding/dispatch",
+      "coding/flow-load",
+      "coding/implementation",
+      "coding/prototype",
+      "coding/rebase-conflict",
+      "coding/verify",
+      "coding/wiki",
+      "issue-sweep",
+      "issue-sweep/work",
+      "merge-queue",
+      "learning",
+      "memory/calibrate",
+      "memory/mine",
+      "notification-policy",
       "quality", // Named Request schema retains its module decoder.
       "release-content",
-      "release", "review", "todo", "wiki", "wrapped",
-      "docs-sync", "issue-claim", "triage-publish", "release/api-baseline", "release/build-packages", "release/changelog", "release/cut", "release/gates", "release/installer", "release/npm-dedupe", "release/pack", "release/publish", "release/rehearsal", "release/restore", "release/smoke", "release/version",
+      "release",
+      "review",
+      "todo",
+      "wiki",
+      "wrapped",
+      "docs-sync",
+      "issue-claim",
+      "triage-publish",
+      "release/api-baseline",
+      "release/build-packages",
+      "release/changelog",
+      "release/cut",
+      "release/gates",
+      "release/installer",
+      "release/npm-dedupe",
+      "release/pack",
+      "release/publish",
+      "release/rehearsal",
+      "release/restore",
+      "release/smoke",
+      "release/version"
     ]
     for (const name of unavailablePayloads) {
       const descriptor = scan.entries.find((entry) => entry.name === name)
@@ -673,41 +856,64 @@ describe("discovery over the project flows directory", () => {
       "proc:spawn:gh api *",
       "proc:spawn:node /*/flows/issue-claim/github-proxy.mjs --ensure",
       "proc:spawn:node /*/flows/issue-claim/issue-claim.mjs *",
-      "proc:spawn:jj -R *", "proc:spawn:lockf *", "proc:spawn:pnpm *",
-      "proc:spawn:codex *", "proc:spawn:codex-rr *", "proc:spawn:claude-rr *",
-      "proc:spawn:claude-as *", "model:call:typesafe-ai/jev",
+      "proc:spawn:jj -R *",
+      "proc:spawn:lockf *",
+      "proc:spawn:pnpm *",
+      "proc:spawn:codex *",
+      "proc:spawn:codex-rr *",
+      "proc:spawn:claude-rr *",
+      "proc:spawn:claude-as *",
+      "model:call:typesafe-ai/jev"
     ])
     assert.deepEqual(scan.entries.find((entry) => entry.name === "issue-sweep/work").capabilities, [
-      "proc:spawn:gh api *", "proc:spawn:node /*/flows/issue-claim/github-proxy.mjs --ensure",
-      "proc:spawn:jj -R *", "proc:spawn:git --git-dir *", "proc:spawn:pnpm *",
-      "proc:spawn:codex *", "proc:spawn:claude-as *", "proc:spawn:codex-rr status",
-      "proc:spawn:claude-rr status", "proc:spawn:codex-rr cool *", "proc:spawn:claude-rr cool *",
+      "proc:spawn:gh api *",
+      "proc:spawn:node /*/flows/issue-claim/github-proxy.mjs --ensure",
+      "proc:spawn:jj -R *",
+      "proc:spawn:git --git-dir *",
+      "proc:spawn:pnpm *",
+      "proc:spawn:codex *",
+      "proc:spawn:claude-as *",
+      "proc:spawn:codex-rr status",
+      "proc:spawn:claude-rr status",
+      "proc:spawn:codex-rr cool *",
+      "proc:spawn:claude-rr cool *"
     ])
     assert.deepEqual(
-      scan.warnings.map((warning) => `${warning.code} at ${relative(flowsRoot, warning.path).split("\\").join("/")}: ${warning.message}`).sort(),
+      scan.warnings.map((warning) =>
+        `${warning.code} at ${relative(flowsRoot, warning.path).split("\\").join("/")}: ${warning.message}`
+      ).sort(),
       [
         "unsupported_module_metadata at checks/wiki/flow.ts: Effect tier sealed under-classifies declared authority; using irreversible",
-        ...unavailablePayloads.map((name) => `unsupported_module_metadata at ${name}/flow.ts: Payload schema cannot be projected statically; retaining its module locator`),
+        ...unavailablePayloads.map((name) =>
+          `unsupported_module_metadata at ${name}/flow.ts: Payload schema cannot be projected statically; retaining its module locator`
+        ),
         "unsupported_module_metadata at issue-sweep/flow.ts: Effect tier compensable under-classifies declared authority; using irreversible",
         "unsupported_module_metadata at issue-sweep/work/flow.ts: Effect tier compensable under-classifies declared authority; using irreversible",
         "unsupported_module_metadata at review/flow.ts: Effect tier sealed under-classifies declared authority; using irreversible",
         // `wiki` declares its own paths rather than inheriting the delegating
         // wildcard, so its sealed tier is raised only as far as those allow.
-        "unsupported_module_metadata at wiki/flow.ts: Effect tier sealed under-classifies declared authority; using compensable",
-      ].sort(),
+        "unsupported_module_metadata at wiki/flow.ts: Effect tier sealed under-classifies declared authority; using compensable"
+      ].sort()
     )
-    assert.deepEqual([...scan.entries].map((entry) => entry.name).sort(), [...EXPECTED_FLOWS, ...modules, ...delegatingModules].sort())
+    assert.deepEqual(
+      [...scan.entries].map((entry) => entry.name).sort(),
+      [...EXPECTED_FLOWS, ...modules, ...delegatingModules].sort()
+    )
     // The authoring entry carries its stage instructions itself; those stages
     // stay directly runnable without appearing as nested model calls.
     const hiddenFlows = [
-      "create-flow/clarify", "create-flow/design", "create-flow/document",
-      "create-flow/fix", "create-flow/provision", "create-flow/scaffold",
-      ...hiddenModules,
+      "create-flow/clarify",
+      "create-flow/design",
+      "create-flow/document",
+      "create-flow/fix",
+      "create-flow/provision",
+      "create-flow/scaffold",
+      ...hiddenModules
     ].sort()
     // Visibility survives discovery for both prompt and module declarations.
     assert.deepEqual(
       [...scan.entries].filter((entry) => !entry.modelInvocable).map((entry) => entry.name).sort(),
-      hiddenFlows,
+      hiddenFlows
     )
     // A collapsed module flow names no delegate, so it loads and plans on a
     // host that registers none, building its exported layer from what an
@@ -715,21 +921,32 @@ describe("discovery over the project flows directory", () => {
     // memory/agent service; `checks/wiki` still asks for a delegate by name.
     const loaded = await run(
       Effect.forEach(
-        [...scan.entries].filter((entry) => entry.body._tag === "Module").sort((left, right) => left.name < right.name ? -1 : 1),
+        [...scan.entries].filter((entry) => entry.body._tag === "Module").sort((left, right) =>
+          left.name < right.name ? -1 : 1
+        ),
         (descriptor) =>
           Executable.fromDescriptor(descriptor, { delegates: [] }).pipe(
             Effect.map((executable) => `${descriptor.name}: ${executable.delegate ?? "self"}`),
-            Effect.catch((error) => Effect.succeed(`${descriptor.name}: ${error.code} ${error.delegate ?? error.service ?? ""}`.trim())),
-          ),
+            Effect.catch((error) =>
+              Effect.succeed(`${descriptor.name}: ${error.code} ${error.delegate ?? error.service ?? ""}`.trim())
+            )
+          )
       ).pipe(
         Effect.scoped,
-        Effect.provide(Layer.mergeAll(NodeServices.layer, FlowEngine.layerMemory, Action.layerImplementations)),
-      ),
+        Effect.provide(Layer.mergeAll(NodeServices.layer, FlowEngine.layerMemory, Action.layerImplementations))
+      )
     )
-    const outcomes = { ...Object.fromEntries(modules.map((name) => [name, "self"])), "checks/wiki": "missing_delegate coding/WikiCheck", ...hostBound }
-    assert.deepEqual(loaded, Object.entries(outcomes)
-      .sort(([left], [right]) => left < right ? -1 : 1)
-      .map(([name, outcome]) => `${name}: ${outcome}`))
+    const outcomes = {
+      ...Object.fromEntries(modules.map((name) => [name, "self"])),
+      "checks/wiki": "missing_delegate coding/WikiCheck",
+      ...hostBound
+    }
+    assert.deepEqual(
+      loaded,
+      Object.entries(outcomes)
+        .sort(([left], [right]) => left < right ? -1 : 1)
+        .map(([name, outcome]) => `${name}: ${outcome}`)
+    )
   })
 
   it("reads model visibility off a @smthrs/flow declaration, in the vocabulary the other two entry kinds speak", async () => {
@@ -755,32 +972,32 @@ describe("discovery over the project flows directory", () => {
     write(
       "markdown-hidden",
       "flow.mdx",
-      `---\ndescription: Answers what it was asked.\ndisable-model-invocation: true\n---\nAnswer the question.\n`,
+      `---\ndescription: Answers what it was asked.\ndisable-model-invocation: true\n---\nAnswer the question.\n`
     )
 
     const scan = await run(
-      Effect.gen(function* () {
+      Effect.gen(function*() {
         const discovery = Discovery.make(yield* FileSystem.FileSystem, yield* Path.Path)
         return yield* discovery.scan({ source: "project", root, naming: "path" })
-      }),
+      })
     )
 
     assert.deepEqual(
       Object.fromEntries([...scan.entries].map((entry) => [entry.name, entry.modelInvocable])),
-      { "flow-hidden": false, "flow-shown": true, "markdown-hidden": false },
+      { "flow-hidden": false, "flow-shown": true, "markdown-hidden": false }
     )
   })
 
   it("finds no flow inside the 0.x fixture, which is data and not a flow", async () => {
     const scan = await run(
-      Effect.gen(function* () {
+      Effect.gen(function*() {
         const discovery = Discovery.make(yield* FileSystem.FileSystem, yield* Path.Path)
         return yield* discovery.scan({
           source: "project",
           root: join(flowsRoot, "migrate-smithers-v1"),
-          naming: "path",
+          naming: "path"
         })
-      }),
+      })
     )
 
     assert.deepEqual([...scan.entries].map((entry) => entry.name), [])
@@ -791,19 +1008,21 @@ describe("the smithers-0x-hello fixture", () => {
   const root = join(flowsRoot, FIXTURE)
 
   it("is a complete 0.x project on disk", () => {
-    for (const file of [
-      "package.json",
-      "tsconfig.json",
-      "FIXTURE.md",
-      "simple-workflow.jsx",
-      "_example-kit.js",
-      ".smithers/workflows/hello.tsx",
-      ".smithers/agents/index.ts",
-      ".smithers/prompts/hello.mdx",
-      ".smithers/ui/hello.tsx",
-      "prompts/simple-workflow/research.mdx",
-      "prompts/simple-workflow/write.mdx",
-    ]) {
+    for (
+      const file of [
+        "package.json",
+        "tsconfig.json",
+        "FIXTURE.md",
+        "simple-workflow.jsx",
+        "_example-kit.js",
+        ".smithers/workflows/hello.tsx",
+        ".smithers/agents/index.ts",
+        ".smithers/prompts/hello.mdx",
+        ".smithers/ui/hello.tsx",
+        "prompts/simple-workflow/research.mdx",
+        "prompts/simple-workflow/write.mdx"
+      ]
+    ) {
       assert.ok(statSync(join(root, file)).isFile(), `${file} is missing from the fixture`)
     }
   })
@@ -827,21 +1046,23 @@ describe("the smithers-0x-hello fixture", () => {
     } else {
       const tracked = spawnSync("jj", ["file", "list", "-r", "@-", "--", `.smithers/flows/${FIXTURE}`], {
         cwd: repoRoot,
-        encoding: "utf8",
+        encoding: "utf8"
       })
       assert.equal(tracked.status, 0, tracked.stderr)
       files = tracked.stdout.split("\n")
     }
     files = files.filter((file) => file.startsWith(`.smithers/flows/${FIXTURE}/`))
-    for (const file of [
-      ".smithers/workflows/hello.tsx",
-      ".smithers/agents/index.ts",
-      ".smithers/prompts/hello.mdx",
-      ".smithers/ui/hello.tsx",
-    ]) {
+    for (
+      const file of [
+        ".smithers/workflows/hello.tsx",
+        ".smithers/agents/index.ts",
+        ".smithers/prompts/hello.mdx",
+        ".smithers/ui/hello.tsx"
+      ]
+    ) {
       assert.ok(
         files.includes(`.smithers/flows/${FIXTURE}/${file}`),
-        `${file} is on disk but not tracked; check the fixtures .gitignore`,
+        `${file} is on disk but not tracked; check the fixtures .gitignore`
       )
     }
     assert.equal(files.length, 15, "every fixture file is tracked")
@@ -861,7 +1082,7 @@ describe("the smithers-0x-hello fixture", () => {
 
     assert.deepEqual(
       detection.manifests.flatMap((manifest) => manifest.oldPackages),
-      [{ name: "smthrs", version: "0.35.0", field: "dependencies", reason: "old-name" }],
+      [{ name: "smthrs", version: "0.35.0", field: "dependencies", reason: "old-name" }]
     )
 
     const tsconfig = detection.tsconfigs.find((entry) => entry.path === "tsconfig.json")
@@ -870,20 +1091,20 @@ describe("the smithers-0x-hello fixture", () => {
 
     assert.deepEqual(
       detection.workflowFiles.map((entry) => `${entry.path}:${entry.api}:${entry.kind}`).sort(),
-      [".smithers/workflows/hello.tsx:smthrs:tsx", "simple-workflow.jsx:smthrs:jsx"],
+      [".smithers/workflows/hello.tsx:smthrs:tsx", "simple-workflow.jsx:smthrs:jsx"]
     )
 
     assert.deepEqual(detection.prompts.map((entry) => entry.path).sort(), [
       ".smithers/prompts/hello.mdx",
       "prompts/simple-workflow/research.mdx",
-      "prompts/simple-workflow/write.mdx",
+      "prompts/simple-workflow/write.mdx"
     ])
 
     assert.deepEqual(detection.uis.map((entry) => entry.path), [".smithers/ui/hello.tsx"])
     assert.equal(detection.effectPin, "4.0.0-beta.105")
     assert.ok(
       detection.warnings.some((warning) => warning.code === "effect-pin-conflict"),
-      "the fixture's Effect pin must be reported against the version the 1.0 tree requires",
+      "the fixture's Effect pin must be reported against the version the 1.0 tree requires"
     )
   })
 
@@ -891,7 +1112,7 @@ describe("the smithers-0x-hello fixture", () => {
     const detection = await run(Detect.scan(join(flowsRoot, FIXTURE)))
     assert.deepEqual(
       detection.scripts.map((hit) => hit.text).sort(),
-      ["smithers up", "smithers workflow"],
+      ["smithers up", "smithers workflow"]
     )
   })
 
@@ -929,7 +1150,7 @@ describe("the fixture under the real CLI", () => {
       cwd: project,
       encoding: "utf8",
       timeout: 300_000,
-      env: { ...process.env, NODE_NO_WARNINGS: "1" },
+      env: { ...process.env, NODE_NO_WARNINGS: "1" }
     })
 
   // The CLI reports a failure such as a missing smithers-jj-export helper on
@@ -948,7 +1169,7 @@ describe("the fixture under the real CLI", () => {
     const { version } = JSON.parse(readFileSync(join(repoRoot, "packages/smithers/package.json"), "utf8"))
     assert.ok(
       first.stderr.includes(`Smithers ${version} does not load, resume, or migrate 0.x run databases.`),
-      first.stderr,
+      first.stderr
     )
     assert.match(first.stderr, /then run "smthrs migrate" to convert the project source\./)
     assert.match(first.stderr, /https:\/\/smithers\.sh\/migration\/1\.0#run-data/)
@@ -985,7 +1206,7 @@ describe("the fixture under the real CLI", () => {
     assert.equal(report.runState.verdict, "clean")
     assert.ok(
       !`${result.stdout}${result.stderr}`.includes("non-terminal"),
-      "the 0.x run gate refused a fixture that holds no run state",
+      "the 0.x run gate refused a fixture that holds no run state"
     )
   })
 

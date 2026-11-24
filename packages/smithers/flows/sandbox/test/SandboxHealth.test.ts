@@ -1,6 +1,7 @@
 import { describe, expect, it } from "@effect/vitest"
 import { Cause, Effect, Fiber, Logger, References, Tracer } from "effect"
 import { TestClock } from "effect/testing"
+import { boundedMessage, messageBound } from "../src/internal/boundedMessage.ts"
 import { ProviderError } from "../src/RemoteChildProcessSpawner/index.ts"
 import * as SandboxHealth from "../src/SandboxHealth/index.ts"
 
@@ -20,6 +21,12 @@ const refusingProvider: SandboxHealth.PingProvider = {
 }
 
 describe("SandboxHealth.probe", () => {
+  it("keeps complete Unicode code points when bounding a provider message", () => {
+    const prefix = "x".repeat(messageBound - 1)
+    expect(boundedMessage(prefix + "🌍!")).toBe(prefix + "...")
+    expect(boundedMessage(prefix.slice(1) + "🌍!")).toBe(prefix.slice(1) + "🌍...")
+  })
+
   it.effect("reports Healthy when the provider ping answers within the deadline", () =>
     Effect.gen(function*() {
       const state = yield* (

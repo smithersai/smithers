@@ -61,6 +61,7 @@ interface Options {
   readonly serviceVersion?: string | undefined
   readonly attributes?: Record<string, unknown> | undefined
   readonly headers?: Headers.Input | undefined
+  readonly plaintextHeaders?: ReadonlyArray<string> | undefined
   readonly exportInterval?: Duration.Input | undefined
   readonly shutdownTimeout?: Duration.Input | undefined
   readonly spans?: ReadonlyArray<string> | undefined
@@ -79,14 +80,11 @@ interface Options {
   `defaultServiceVersion`.
 - `attributes`: additional resource attributes attached to every exported
   signal, decoded by `Resource.Attributes`.
-- `headers`: sent with every export request, which is where vendor
-  authentication goes. A header whose name names a credential
-  (`authorization`, `x-api-key`, `x-honeycomb-team`, any name
-  `Redaction.isSensitiveKey` recognizes) requires an `https://` `baseUrl` unless the host is `localhost`,
-  `127.0.0.0/8`, or `[::1]`; otherwise acquisition fails with
-  `Endpoint.InvalidExporterEndpoint` on path `baseUrl`. The check reads
-  header names only: a credential under any other name is sent as given, so
-  use `https://` for every remote collector.
+- `headers` are sent with every export request. For a remote collector, use HTTPS.
+  With HTTP, custom headers require a loopback address (`localhost`, `127.0.0.0/8`,
+  or `[::1]`) or an entry in `plaintextHeaders`.
+- `plaintextHeaders` declares public header names that a remote HTTP collector may receive.
+  Matching is case-insensitive. Names identified as sensitive by `Redaction.isSensitiveKey` always require HTTPS off loopback.
 - `exportInterval`: the export cadence applied to all three signals. Omitted,
   each signal keeps Effect's own default.
 - `shutdownTimeout`: upper bound on the flush performed when the layer's scope
@@ -652,9 +650,7 @@ interface Options {
 ```
 
 - `records`: the record names a line keeps as its `record`, its message when
-  it is one of these; any other line is `other`. Omitted, a message of up to
-  96 letters, digits, spaces and `_ . : ' / @ -` is kept, up to `maxRecords`
-  (200) distinct ones.
+  it is one of these. Every undeclared name becomes `other`, including when the list is omitted.
 - `codes`: the annotations read for a line's code, first present first.
   Defaults to `defaultCodeFields`: `errorCode`, `code`, `outcome`,
   `error.type`, `status`. Each value read becomes a metric attribute, so name
@@ -667,7 +663,7 @@ interface Options {
 - `area`: the annotation naming a line's area, `feature` by default; absent or
   not an identifier, `none`.
 - `keep`: how many of the latest lines `Recent` keeps, 50 by default; 0 keeps
-  none and still counts.
+  none and still counts. Invalid sizes use the default.
 
 Codes and areas are capped at `maxCodes` (200) and `maxAreas` (50) distinct
 values; past a cap a new value reads `other`. A message is never a code, so a
@@ -725,11 +721,14 @@ const observed = FetchFailures.layer({
 const layer: (options: Options) => Layer.Layer<never>
 ```
 
-Replaces `FetchHttpClient.Fetch` with a `fetch` that records the failures of
-the requests `route` names, through the loggers and metrics the layer is built
-with, and keeps the wrapped `fetch`'s own properties. Provide it above the
-exporter's layer, so the exporter keeps the `fetch` below and its own requests
-are never recorded through themselves.
+Replaces `FetchHttpClient.Fetch` with a fetch that records failures for the requests
+`route` names. Calls from an Effect inherit that caller's context. Other JavaScript
+callers use the loggers and metrics supplied to the layer. Recording settles before
+the fetch promise. The wrapper preserves the host fetch's own properties.
+
+For the fetch-backed Effect HTTP client, use `FetchFailures.layerHttpClient(options)`.
+It returns a `Layer.Layer<HttpClient.HttpClient>` and records in the fiber executing
+the request. Both layers belong above the exporter so it uses the underlying transport.
 
 - A response with status 400 or above failed, and so did a request that got no
   answer (`network`): rejected, or answered with status 0 that isn't an opaque
@@ -763,7 +762,7 @@ interface Options {
   one. The template is a record's only name for the request, so it holds no
   id, name or query value.
 - `remember`: how many failing requests it remembers; past it the oldest is
-  forgotten and its next failure starts a new run. 256 by default.
+  forgotten and its next failure starts a new run. Defaults to 256. Invalid sizes retain one.
 
 ### FetchFailures.failures and FetchFailures.statusClass
 

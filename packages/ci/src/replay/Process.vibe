@@ -68,7 +68,10 @@ export interface StepRun extends StepOutput {
 /** The exit code of a step stopped at its time limit, as `timeout` reports it. */
 const timedOut = 124
 
-/** The signal that ended a process, from the cause its exit code is refused with. Empty for any other cause. */
+/**
+ * The signal that ended a process, from the cause its exit code is refused with. Empty for any other cause. Effect
+ * names the signal in the cause's words alone (`NodeChildProcessSpawner`), so the words are what is read.
+ */
 const signalOf = (error: PlatformError.PlatformError): string =>
   /receipt of signal: '(\w+)'/.exec(String((error.reason as { readonly cause?: unknown }).cause))?.[1] ?? ""
 
@@ -268,7 +271,13 @@ export effect function runStep(
     // as for any other step: the words its exit is refused with hold its whole command.
     // A step its job's keeper started is watched through the keeper's tree, where its processes are.
     const watched = { exitCode: handle.exitCode, pid: tree === undefined ? handle.pid : ProcessId(tree) }
-    const waited = timeoutOption(exitOrStall(watched, watch), limit) catch (cause) => Option.some(signalExit(signalOf(cause)))
+    // Any other failure of the wait is no signal: it fails as it is, and the step with it, where it once read as a
+    // signal with no number (exit 128).
+    const waited = timeoutOption(exitOrStall(watched, watch), limit) catch effect (cause) => {
+      const signal = signalOf(cause)
+      if (signal === "") throw cause
+      return Option.some(signalExit(signal))
+    }
     // Leaving the scope stops a step that is still running.
     if (Option.isNone(waited)) {
       return { timedOut: true, stalled: false, exitCode: timedOut, stderr: stderr.text(), stdout: stdout.text() } satisfies StepRun

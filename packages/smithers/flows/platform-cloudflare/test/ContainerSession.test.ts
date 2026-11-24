@@ -136,6 +136,11 @@ describe("ContainerSession", () => {
         message: "container session: exec failed"
       })
       expect(yield* Effect.flip(failing.ping!)).toMatchObject({ code: "unavailable" })
+      const truncated = yield* over({ truncatedStdin: true, exitCode: 0 })
+      expect(yield* Effect.flip(truncated.writeFile("prefix", new Uint8Array([1, 2])))).toMatchObject({
+        code: "unavailable",
+        message: "container session: stdin failed"
+      })
       const silent = yield* over({ noStdout: true })
       expect(yield* Effect.flip(Effect.scoped(silent.spawn("true", {})))).toMatchObject({ code: "unavailable" })
       const deaf = yield* over({ noStdin: true })

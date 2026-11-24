@@ -948,6 +948,35 @@ describe("followers across compaction", () => {
       expect(atFloor.entries).toEqual([])
     }).pipe(Effect.provide(journal()), Effect.scoped))
 
+  effect("a newest-first read above the floor succeeds on a compacted run", () =>
+    Effect.gen(function*() {
+      const service = yield* Journal
+      yield* claim(owner)
+      yield* emitMany(service, 0, 10)
+      yield* service.checkpoint({ runId: run, seq: seqOf(5), state: null }, owner)
+      yield* service.compact({ runId: run }, owner)
+
+      // The newest rows are never deleted, so a full page of them is complete.
+      const newest = yield* service.entries({ runId: run, order: "desc", limit: 1 })
+      expect(newest.entries.map((entry) => entry.seq)).toEqual([9])
+      expect(newest.hasMore).toBe(true)
+      const aboveFloor = yield* service.entries({ runId: run, order: "desc", limit: 4 })
+      expect(aboveFloor.entries.map((entry) => entry.seq)).toEqual([9, 8, 7, 6])
+      const typed = yield* service.entries({ runId: run, order: "desc", limit: 2, eventTypes: ["event"] })
+      expect(typed.entries.map((entry) => entry.seq)).toEqual([9, 8])
+
+      // A page that runs out of rows reached the floor: the missing tail was
+      // compacted away, so it still fails with the resync point.
+      const exhausted = yield* Effect.flip(service.entries({ runId: run, order: "desc", limit: 5 }))
+      expect(exhausted.code).toBe("compacted")
+      expect(exhausted.checkpointSeq).toBe(5)
+      const past = yield* Effect.flip(service.entries({ runId: run, order: "desc", limit: 10 }))
+      expect(past.code).toBe("compacted")
+      // From the floor's own cursor the newest-first history is complete.
+      const fromFloor = yield* service.entries({ runId: run, order: "desc", after: seqOf(4), limit: 10 })
+      expect(fromFloor.entries.map((entry) => entry.seq)).toEqual([9, 8, 7, 6, 5])
+    }).pipe(Effect.provide(journal()), Effect.scoped))
+
   effect("a stream subscribed below the floor fails with compacted instead of gapping", () =>
     Effect.gen(function*() {
       const service = yield* Journal

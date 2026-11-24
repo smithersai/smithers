@@ -20,6 +20,7 @@ import { elapsed } from "./deadline.ts"
 import { finalizeWithin } from "./finalizeWithin.ts"
 import { hostKillScript } from "./killScript.ts"
 import { linuxSignalNumber } from "./linuxSignals.ts"
+import { commandFailure } from "./localProcess.ts"
 import { warnTeardown } from "./teardownWarning.ts"
 
 type VendorSandbox = Awaited<ReturnType<ReturnType<Sdk["Sandbox"]["builder"]>["create"]>>
@@ -269,7 +270,7 @@ const terminate = (command: GuestCommand, machine: string): Effect.Effect<void> 
 export const spawnGuest = (
   sandbox: VendorSandbox,
   request: GuestRequest,
-  names: { readonly machine: string; readonly command: string },
+  machine: string,
   beforeStart: Effect.Effect<void>
 ): Effect.Effect<
   { readonly process: RemoteProcess; readonly command: GuestCommand },
@@ -282,7 +283,7 @@ export const spawnGuest = (
         start(
           sandbox,
           request,
-          microsandboxFailure("spawn_error", `\`${names.command}\` could not run in ${names.machine}`),
+          microsandboxFailure("spawn_error", "command could not run in the microVM"),
           beforeStart
         )
       )
@@ -296,13 +297,13 @@ export const spawnGuest = (
         pid: undefined,
         ended: false
       }
-      const lost = microsandboxFailure(
+      const lost = commandFailure(
         "unavailable",
-        `the microVM ${names.machine} ended before \`${names.command}\` reported its status`
+        "the microVM ended before the command reported its status"
       )
-      const unstarted = microsandboxFailure(
+      const unstarted = commandFailure(
         "spawn_error",
-        `the guest could not start \`${names.command}\` in ${names.machine}`
+        "the guest could not start the command"
       )
       const drain = Effect.gen(function*() {
         for (;;) {
@@ -344,7 +345,7 @@ export const spawnGuest = (
       yield* Effect.addFinalizer(() =>
         command.ended
           ? Effect.void
-          : finalizeWithin(terminate(command, names.machine), `microsandbox ${names.machine} command`)
+          : finalizeWithin(terminate(command, machine), `microsandbox ${machine} command`)
       )
       const process: RemoteProcess = {
         stdout: Stream.fromQueue(stdout),

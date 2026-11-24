@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest"
-import { Deferred, Effect, Exit, Fiber, PlatformError, Redacted, Ref, Sink, Stream } from "effect"
+import { Cause, Deferred, Effect, Exit, Fiber, PlatformError, Redacted, Ref, Sink, Stream } from "effect"
 import { ChildProcess } from "effect/process"
 import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 import * as Scope from "effect/Scope"
@@ -51,7 +51,7 @@ describe("RemoteChildProcessSpawner", () => {
         TMPDIR: "/guest/tmp",
         LANG: host.LANG ?? "C",
         FEATURE: "on",
-        SECRET: Redacted.make("guest-secret"),
+        SECRET: `smthrs-secret-${"a".repeat(64)}`,
         DROPPED: undefined
       }
       yield* Effect.flatMap(
@@ -63,7 +63,7 @@ describe("RemoteChildProcessSpawner", () => {
       for (const name of ["PATH", "HOME", "LANG"]) {
         expect(Object.hasOwn(received, name), name).toBe(host[name] === undefined)
       }
-      expect(received).toMatchObject({ TMPDIR: "/guest/tmp", FEATURE: "on", SECRET: "guest-secret" })
+      expect(received).toMatchObject({ TMPDIR: "/guest/tmp", FEATURE: "on", SECRET: env.SECRET })
       expect(Object.hasOwn(received, "DROPPED") && received.DROPPED === undefined).toBe(true)
       yield* Effect.flatMap(ChildProcessSpawner, (spawner) => spawner.string(ChildProcess.make("probe"))).pipe(
         Effect.provide(RemoteChildProcessSpawner.layer(provider))
@@ -141,10 +141,10 @@ describe("RemoteChildProcessSpawner", () => {
         scripts: { "left | middle | right": { stdout: "ok" } }
       })
       const command = ChildProcess.pipeTo(
-        ChildProcess.make("left", [], { cwd: "/work", env: { TZ: "UTC", SECRET: Redacted.make("same") } }),
+        ChildProcess.make("left", [], { cwd: "/work", env: { TZ: "UTC", SECRET: "opaque-reference" } }),
         ChildProcess.pipeTo(
           ChildProcess.make("middle"),
-          ChildProcess.make("right", [], { cwd: "/work", env: { SECRET: Redacted.make("same"), TZ: "UTC" } })
+          ChildProcess.make("right", [], { cwd: "/work", env: { SECRET: "opaque-reference", TZ: "UTC" } })
         )
       )
       const result = yield* Effect.flatMap(ChildProcessSpawner, (spawner) => spawner.string(command)).pipe(
@@ -153,28 +153,25 @@ describe("RemoteChildProcessSpawner", () => {
       expect(result).toBe("ok")
     }))
 
-  it.effect("runs a Redacted argument revealed and keeps it out of the error text", () =>
+  it.effect("refuses protected arguments and environment values in every pipeline position before dispatch", () =>
     Effect.gen(function*() {
-      const secret = "Authorization: Bearer guest-token"
-      const provider = RemoteChildProcessSpawner.TestRemote.make({
-        scripts: {
-          [`curl -H '${secret}'`]: { stdout: "ok" },
-          [`curl -H '${secret}' -f`]: {
-            failure: new RemoteChildProcessSpawner.ProviderError({ code: "spawn_error", message: "refused" })
-          }
+      const secret = Redacted.make("private-admission-marker")
+      const provider = RemoteChildProcessSpawner.TestRemote.make({})
+      const plain = ChildProcess.make("cat")
+      for (
+        const stage of [ChildProcess.make("printf", [secret]), ChildProcess.make("env", [], { env: { TOKEN: secret } })]
+      ) {
+        for (const command of [stage, ChildProcess.pipeTo(stage, plain), ChildProcess.pipeTo(plain, stage)]) {
+          const error = yield* Effect.flip(
+            Effect.flatMap(ChildProcessSpawner, (spawner) => spawner.exitCode(command)).pipe(
+              Effect.provide(RemoteChildProcessSpawner.layer(provider))
+            )
+          )
+          expect(reason(error)).toBe("BadArgument")
+          expect(error.message).not.toContain("private-admission-marker")
         }
-      })
-      const run = (extra: ReadonlyArray<string>) =>
-        Effect.flatMap(
-          ChildProcessSpawner,
-          (spawner) => spawner.string(ChildProcess.make("curl", ["-H", Redacted.make(secret), ...extra]))
-        ).pipe(Effect.provide(RemoteChildProcessSpawner.layer(provider)))
-
-      expect(yield* run([])).toBe("ok")
-      const failed = yield* Effect.flip(run(["-f"]))
-      expect(provider.state.commands).toEqual([`curl -H '${secret}'`, `curl -H '${secret}' -f`])
-      expect(failed.message).toContain("curl -H '<redacted>' -f")
-      expect(failed.message).not.toContain("guest-token")
+      }
+      expect(provider.state.commands).toEqual([])
     }))
 
   it.effect("renders shell commands under the exact unquoted line the provider executes", () =>
@@ -305,6 +302,32 @@ describe("RemoteChildProcessSpawner", () => {
     1_000
   )
 
+  it.effect("keeps a failing transport's command and nested diagnostics out of the formatted failure", () =>
+    Effect.gen(function*() {
+      const marker = "private-transport-marker"
+      const provider: RemoteChildProcessSpawner.Provider = {
+        ...RemoteChildProcessSpawner.TestRemote.make({}),
+        spawn: (command) =>
+          Effect.fail(
+            new RemoteChildProcessSpawner.ProviderError({
+              code: "spawn_error",
+              message: command,
+              cause: new Error(command)
+            })
+          )
+      }
+      const result = yield* Effect.exit(
+        Effect.flatMap(ChildProcessSpawner, (spawner) => spawner.exitCode(ChildProcess.make("printf", [marker]))).pipe(
+          Effect.provide(RemoteChildProcessSpawner.layer(provider))
+        )
+      )
+      expect(Exit.isFailure(result)).toBe(true)
+      if (Exit.isFailure(result)) {
+        expect(Cause.pretty(result.cause)).not.toContain(marker)
+        expect(JSON.stringify(result.cause)).not.toContain(marker)
+      }
+    }))
+
   it.effect("maps typed provider failures onto normalized PlatformError reasons", () =>
     Effect.gen(function*() {
       const provider = RemoteChildProcessSpawner.TestRemote.make({
@@ -332,7 +355,7 @@ describe("RemoteChildProcessSpawner", () => {
       )
 
       expect(errors.map(reason)).toEqual(["Unknown", "TimedOut"])
-      expect(errors[0]?.message).toContain("`fail`: provider rejected command")
+      expect(errors[0]?.message).toContain("remote spawn failed (spawn_error)")
     }))
 
   it.effect.each(["unavailable", "not_found"] as const)(
@@ -351,8 +374,9 @@ describe("RemoteChildProcessSpawner", () => {
         ).pipe(Effect.provide(RemoteChildProcessSpawner.layer(provider)))
 
         expect(reason(error)).toBe("NotFound")
-        expect(error.message).toContain(`${code} provider failure`)
-        expect(error.reason.cause).toBe(failure)
+        expect(error.message).toContain(code)
+        expect(error.reason.cause).toMatchObject({ code })
+        expect(JSON.stringify(error)).not.toContain("provider failure")
       })
   )
 
@@ -482,7 +506,7 @@ describe("RemoteChildProcessSpawner", () => {
       )
 
       expect(errors.map(reason)).toEqual(["NotFound", "NotFound"])
-      expect(errors[0]?.message).toContain("`never-opened`: provider session is unavailable")
+      expect(errors[0]?.message).toContain("remote open failed (unavailable)")
     }))
 
   it.effect("answers an unconfigured extra file descriptor the way a local spawner does", () =>

@@ -2,8 +2,9 @@
 
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
+import { runInNewContext } from "node:vm"
 import { describe, expect, it } from "vitest"
-import { Canonical, canonicalize } from "../src/index.ts"
+import { Canonical, CanonicalError, canonicalize, nativeBrand } from "../src/index.ts"
 
 const serialize = (value: unknown): Canonical => Effect.runSync(Schema.decodeUnknownEffect(Canonical)(value))
 
@@ -650,5 +651,83 @@ describe("Canonical repeated-reference validation", () => {
     }
     expect(serialize({ a: shared, b: shared })).toBe("{\"a\":{\"text\":\"visit 1\"},\"b\":{\"text\":\"visit 2\"}}")
     expect(reads).toBe(2)
+  })
+})
+
+describe("native values are recognized by their slots, not their prototype (R1-Astra-D1-010)", () => {
+  const refusal = (value: unknown): CanonicalError => {
+    try {
+      canonicalize(value)
+    } catch (error) {
+      expect(error).toBeInstanceOf(CanonicalError)
+      return error as CanonicalError
+    }
+    throw new Error("Expected canonicalization to fail")
+  }
+
+  it("refuses a populated buffer with a null prototype instead of serializing it as {}", () => {
+    const buffer = new ArrayBuffer(4)
+    new Uint8Array(buffer).set([1, 2, 3, 4])
+    for (const prototype of [null, Object.prototype]) {
+      const masked = Object.setPrototypeOf(new ArrayBuffer(4), prototype) as object
+      expect(refusal({ x: masked })).toMatchObject({ code: "canonical_unsupported_value", path: "$.x" })
+      expect(refusal(masked).message).toBe("canonical_unsupported_value: ArrayBuffer at $")
+    }
+    expect(canonicalize(Object.create(null))).toBe("{}")
+    expect(canonicalize({})).toBe("{}")
+  })
+
+  it.each(
+    [
+      ["Date", () => new Date(0)],
+      ["RegExp", () => /a/g],
+      ["WeakMap", () => new WeakMap()],
+      ["WeakSet", () => new WeakSet()],
+      ["SharedArrayBuffer", () => new SharedArrayBuffer(2)],
+      ["DataView", () => new DataView(new ArrayBuffer(2))],
+      ["Symbol", () => Object(Symbol("s")) as object],
+      ["Error", () => new Error("hidden")]
+    ] as const
+  )("refuses a %s whose prototype was removed", (_name, make) => {
+    const value = Object.setPrototypeOf(make(), null) as object
+    expect(refusal({ x: value }).code).toBe("canonical_unsupported_value")
+  })
+
+  it("refuses a boxed BigInt with a null prototype", () => {
+    expect(refusal(Object.setPrototypeOf(Object(1n), null)).code).toBe("canonical_bigint")
+  })
+
+  it("unboxes wrappers with a removed prototype or from another realm", () => {
+    expect(canonicalize([
+      Object.setPrototypeOf(new Number(7), null),
+      Object.setPrototypeOf(new String("s"), null),
+      Object.setPrototypeOf(new Boolean(true), null)
+    ])).toBe("[7,\"s\",true]")
+    const foreign = runInNewContext("[new Number(1), new String(\"x\"), new Boolean(false)]") as ReadonlyArray<unknown>
+    expect(canonicalize(foreign)).toBe("[1,\"x\",false]")
+    expect(refusal(runInNewContext("({ m: new Map([[1, 2]]) })")).code).toBe("canonical_unsupported_value")
+    expect(refusal(runInNewContext("new ArrayBuffer(1)")).message).toBe(
+      "canonical_unsupported_value: ArrayBuffer at $"
+    )
+  })
+
+  it("treats a forged wrapper prototype as a non-plain object, not a wrapper", () => {
+    expect(refusal(Object.create(Number.prototype)).message).toBe("canonical_unsupported_value: Number at $")
+  })
+
+  it("accepts a plain record that only claims a built-in string tag", () => {
+    expect(canonicalize({ a: 1, [Symbol.toStringTag]: "BigInt" })).toBe("{\"a\":1}")
+  })
+
+  it("exposes the shared brand decision", () => {
+    expect(nativeBrand(Object.setPrototypeOf(new ArrayBuffer(4), null))).toBe("ArrayBuffer")
+    expect(nativeBrand(runInNewContext("new Number(1)"))).toBe("Number")
+    expect(nativeBrand(new Uint8Array(1))).toBe("ArrayBufferView")
+    expect(nativeBrand(Object.create(Number.prototype))).toBeUndefined()
+    expect(nativeBrand(RegExp.prototype)).toBeUndefined()
+    expect(nativeBrand(new Proxy(new Map(), {}))).toBeUndefined()
+    const plain = {}
+    expect(nativeBrand(plain)).toBeUndefined()
+    expect(nativeBrand(plain)).toBeUndefined()
   })
 })

@@ -463,6 +463,68 @@ describe("fork carrying a spawned child, across forks and rewinds", () => {
     })))
 })
 
+/** The three destinations a carried child may never be copied to. */
+const occupiedDestinations = (child: string) =>
+  [
+    ["an existing run", [{ from: child, to: "parent" }], "parent"],
+    ["a repeated destination", [{ from: child, to: "copy" }, { from: child, to: "copy" }], "copy"],
+    ["the fork's new root", [{ from: child, to: "f" }], "f"]
+  ] as const
+
+describe("fork refusing an occupied carried destination", () => {
+  it.effect("the SQL store refuses each and leaves the journal, runs and edges as they were", () =>
+    provided(Effect.gen(function*() {
+      yield* execute("parent", [])
+      const { child, frame } = yield* recorded("parent")
+      const sql = yield* SqlClient.SqlClient
+      const store = yield* TimeTravelStore.TimeTravelStore
+      const image = Effect.all({
+        journal: sql`SELECT run_id, seq, event_id FROM flows_journal_events ORDER BY run_id, seq`,
+        runs: sql`SELECT run_id, parent_run_id, status FROM flows_runs ORDER BY run_id`,
+        edges: sql`SELECT * FROM flows_time_travel_edges ORDER BY parent_run_id, child_run_id`,
+        attempts: sql`SELECT run_id, step_key_digest, attempt FROM flows_attempts ORDER BY run_id, step_key_digest`
+      })
+      const before = yield* image
+      for (const [, children, taken] of occupiedDestinations(child)) {
+        const failure = yield* Effect.flip(store.createFork("parent", frame, "f", undefined, { children }))
+        expect(failure).toMatchObject({ code: "invalid", message: TimeTravelStore.forkChildTakenMessage(taken) })
+        expect(yield* image).toEqual(before)
+      }
+      // The same request with a free destination is accepted.
+      const fork = yield* store.createFork("parent", frame, "f", undefined, { children: [{ from: child, to: "copy" }] })
+      expect(fork.runId).toBe("f")
+    })))
+
+  it.effect("the memory store refuses each and leaves its records and edges as they were", () =>
+    Effect.gen(function*() {
+      const store = Memory.make({
+        records: [
+          { runId: "parent", seq: 0, eventId: "p0", lineageId: "parent", payload: null },
+          { runId: "parent", seq: 1, eventId: "p1", lineageId: "parent", payload: null },
+          { runId: "c", seq: 0, eventId: "c0", lineageId: "c", payload: null },
+          { runId: "c", seq: 1, eventId: "c1", lineageId: "c", payload: null }
+        ],
+        edges: [{ parentRunId: "parent", parentSeq: 0, childRunId: "c", kind: "child", attached: false }]
+      })
+      const before = store.state()
+      const frame = { lineageId: "parent", seq: 1 }
+      for (const [, children, taken] of occupiedDestinations("c")) {
+        const failure = yield* Effect.flip(store.createFork("parent", frame, "f", undefined, { children }))
+        expect(failure).toMatchObject({ code: "invalid", message: TimeTravelStore.forkChildTakenMessage(taken) })
+        expect(store.state()).toEqual(before)
+      }
+      // A run known only through an edge, a status or an owner is occupied too.
+      const edged = yield* Effect.flip(
+        store.createFork("parent", frame, "f", undefined, { children: [{ from: "c", to: "c" }] })
+      )
+      expect(edged.message).toBe(TimeTravelStore.forkChildTakenMessage("c"))
+      const fork = yield* store.createFork("parent", frame, "f", undefined, { children: [{ from: "c", to: "copy" }] })
+      expect(fork.runId).toBe("f")
+      expect(store.state().records.filter((record) => record.runId === "copy").map((record) => record.seq))
+        .toEqual([0, 1])
+    }))
+})
+
 describe("the memory store carrying a spawned child", () => {
   const cancelRequest = (seq: number) => ({
     runId: "c",

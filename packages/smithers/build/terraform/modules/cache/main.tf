@@ -11,7 +11,9 @@
  * Replacing the Docker Postgres with a managed instance: delete
  * docker_container.postgres, docker_volume.postgres_data, and the initdb
  * mount; run the migration against the managed database with any SQL client;
- * and point local.database_url at the RDS or Cloud SQL endpoint. The service
+ * and point local.database_url at the RDS or Cloud SQL endpoint. Set
+ * postgres_sslmode to require or verify-full with its CA certificate. The
+ * disable default applies to the private Docker network only. The service
  * container is unchanged, because its only coupling to Postgres is
  * DATABASE_URL.
  */
@@ -22,11 +24,12 @@ locals {
   service_tag   = "${var.name_prefix}/cache-service:0.1.0"
 
   database_url = format(
-    "postgres://%s:%s@%s:5432/%s?sslmode=disable",
+    "postgres://%s:%s@%s:5432/%s?sslmode=%s",
     var.postgres_user,
     replace(urlencode(var.postgres_password), "+", "%20"),
     local.postgres_host,
-    var.postgres_database
+    var.postgres_database,
+    var.postgres_sslmode
   )
 }
 

@@ -33,8 +33,8 @@ already executing continues inside the interpreter and holds the permit until
 its promise settles; a command cancelled while queued never starts. If the
 interpreter never settles, subsequent spawns remain queued but their callers
 can still cancel or time out. Cancellation does not deliver a signal or roll
-back command effects. Keep the session scope open until execution finishes if
-the command needs its workspace; closing the scope removes that workspace.
+back command effects. Closing the session retires its workspace when the active command
+finishes. A new acquisition of the key receives a different workspace immediately.
 
 Derived `Sandbox.fileSystem.writeFile` and `writeFileString` support only
 replacement: an omitted `flag` or `flag: "w"`, with no `mode`. All other flags

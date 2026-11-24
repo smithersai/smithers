@@ -408,7 +408,7 @@ describe("restores read verified blobs into the local content store", () => {
   it("retries a busy blob until it is admitted", async () => {
     const blob = Buffer.from("busy blob")
     remoteEntry(buildResult("busy", [digestOf(blob)]), [blob])
-    // A Retry-After that is not a positive number of seconds is ignored.
+    // Neither a malformed Retry-After nor a zero-second delay postpones the scheduled retry.
     const answers: Array<Reply> = [
       { status: 429, headers: { "retry-after": "soon" } },
       { status: 429, headers: { "retry-after": "0" } }
@@ -420,17 +420,38 @@ describe("restores read verified blobs into the local content store", () => {
     expect(warnings).toEqual([])
   })
 
-  it("gives up at once when Retry-After outlasts the retry budget", async () => {
+  it("waits for the server's Retry-After before requesting a busy blob again", async () => {
     const blob = Buffer.from("busy blob")
     remoteEntry(buildResult("busy", [digestOf(blob)]), [blob])
-    remoteEntry({ ...buildResult("plain", []), output: null })
-    intercept = ({ method, path }) => method === "GET" && path.startsWith("/cas/") ? busyForever : undefined
-    const { cache, warnings } = await open(await workspace())
-    expect(await cache.get("busy")).toBeNull()
-    expect(count("GET", `/cas/${digestOf(blob)}`)).toBe(1)
-    expect(warnings).toEqual([busyWarning])
-    expect(await cache.get("plain")).toMatchObject({ key: "plain" })
+    const attempts: Array<number> = []
+    intercept = ({ method, path }) => {
+      if (method !== "GET" || path !== `/cas/${digestOf(blob)}`) return undefined
+      attempts.push(Date.now())
+      return attempts.length === 1 ? { status: 429, headers: { "retry-after": "1" } } : undefined
+    }
+    const { cache } = await open(await workspace())
+    expect(await cache.get("busy")).toMatchObject({ key: "busy" })
+    expect(attempts).toHaveLength(2)
+    expect(attempts[1]! - attempts[0]!).toBeGreaterThanOrEqual(1000)
   })
+
+  it.each(["60", "Thu, 31 Dec 2099 23:59:59 GMT"])(
+    "gives up at once when Retry-After %s outlasts the retry budget",
+    async (retryAfter) => {
+      const blob = Buffer.from("busy blob")
+      remoteEntry(buildResult("busy", [digestOf(blob)]), [blob])
+      remoteEntry({ ...buildResult("plain", []), output: null })
+      intercept = ({ method, path }) =>
+        method === "GET" && path.startsWith("/cas/")
+          ? { status: 429, headers: { "retry-after": retryAfter } }
+          : undefined
+      const { cache, warnings } = await open(await workspace())
+      expect(await cache.get("busy")).toBeNull()
+      expect(count("GET", `/cas/${digestOf(blob)}`)).toBe(1)
+      expect(warnings).toEqual([busyWarning])
+      expect(await cache.get("plain")).toMatchObject({ key: "plain" })
+    }
+  )
 
   it("disables the remote on a blob server error", async () => {
     const blob = Buffer.from("blob")

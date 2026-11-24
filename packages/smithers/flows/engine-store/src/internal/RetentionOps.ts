@@ -686,19 +686,38 @@ const pinAncestors = (
  * doomed descendants. Deleting a parent while its child row still exists
  * violates the foreign key, and SQLite evaluates it per row rather than at
  * commit, so the delete runs deepest generation first.
+ *
+ * @category constructors
+ * @since 1.0.0
  */
-const generations = (
+export const generations = (
   doomed: ReadonlySet<string>,
   parentOf: ReadonlyMap<string, string | null>
 ): ReadonlyArray<ReadonlyArray<string>> => {
   const depths = new Map<string, number>()
+  // Iterative: a trampoline lineage is one `parent_run_id` chain as long as
+  // the pass's limit, and one stack frame per ancestor overflows the stack
+  // inside the retention transaction, the same way on every retry.
   const depthOf = (runId: string): number => {
-    const known = depths.get(runId)
-    if (known !== undefined) return known
-    const parent = parentOf.get(runId) ?? undefined
-    const depth = parent !== undefined && doomed.has(parent) ? depthOf(parent) + 1 : 0
-    depths.set(runId, depth)
-    return depth
+    const pending: Array<string> = []
+    let current = runId
+    let base = depths.get(current)
+    while (base === undefined) {
+      const parent = parentOf.get(current) ?? undefined
+      if (parent === undefined || !doomed.has(parent)) {
+        base = 0
+        depths.set(current, base)
+        break
+      }
+      pending.push(current)
+      current = parent
+      base = depths.get(current)
+    }
+    for (let index = pending.length - 1; index >= 0; index--) {
+      base += 1
+      depths.set(pending[index]!, base)
+    }
+    return base
   }
   const byDepth = new Map<number, Array<string>>()
   for (const runId of doomed) {

@@ -4,6 +4,8 @@
  * @since 0.1.0
  */
 
+import { textPrefix } from "./textPrefix.ts"
+
 /**
  * The longest message a health verdict or its log record carries.
  *
@@ -38,5 +40,5 @@ export const boundedMessage = (message: string): string => {
     else if (!flat.endsWith(" ")) flat += " "
   }
   const trimmed = flat.trim()
-  return trimmed.length > messageBound ? `${trimmed.slice(0, messageBound)}...` : trimmed
+  return trimmed.length > messageBound ? `${textPrefix(trimmed, messageBound)}...` : trimmed
 }

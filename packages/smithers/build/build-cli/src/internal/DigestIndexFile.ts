@@ -14,7 +14,8 @@
  * leaves no untracked file in a checkout that does not ignore the cache
  * directory. The file is a cache, never an authority: one that is missing, unreadable,
  * malformed, of another format or whose checksum disagrees is ignored and
- * every file is read again. Writes go to a temporary file renamed into place,
+ * every file is read again. Its checksum detects damaged bytes. Tool
+ * confinement seals the plan directory against writes. Writes go to a temporary file renamed into place,
  * so a reader sees a whole index or the previous one; when two invocations
  * save at once the last rename wins and the other's new rows are read again
  * next time.
@@ -45,13 +46,21 @@ const maximumBytes = 512 * 1024 * 1024
 const digestPattern = /^[0-9a-f]{64}$/
 
 /**
+ * Cache subtree sealed against writes from every confined tool.
+ *
+ * @category paths
+ * @since 1.0.0
+ */
+export const directory = "plan"
+
+/**
  * Where a workspace's index lives: `<cache directory>/plan/file-digests.json`.
  *
  * @category paths
  * @since 1.0.0
  */
 export const path = (root: string, cacheDirectory: string): string =>
-  NodePath.join(root, ...cacheDirectory.split("/"), "plan", "file-digests.json")
+  NodePath.join(root, ...cacheDirectory.split("/"), directory, "file-digests.json")
 
 /**
  * The rows of an index loaded from disk, noting whether a plan remembered or

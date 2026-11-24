@@ -81,7 +81,8 @@ yield * timeTravel.fork(position, { workspaceRoot: ".worktrees/forks" })
 
 By default, the lane is forgotten when the time-travel service's scope is released,
 not when the call returns. Set `retainWorkspace: true` to keep the lane registered
-for a later process; the caller then owns its cleanup. `forkWorkspaceName(childRunId)`
+for a later process; the caller then owns its cleanup. A service tracks at most
+256 lanes for its release; a fork past that forgets the oldest tracked lane at once. `forkWorkspaceName(childRunId)`
 from `@smthrs/time-travel/TimeTravel` returns the derived workspace name.
 If the store refuses the commit after provisioning, the fork forgets its workspace
 and removes its directory through the host's injected `FileSystem` service.

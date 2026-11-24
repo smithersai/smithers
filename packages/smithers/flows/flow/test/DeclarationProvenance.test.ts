@@ -196,6 +196,41 @@ describe("declaration provenance parsing", () => {
     })
   })
 
+  it("forgets an evaluated file once its load releases it, and keeps a bounded number", () => {
+    const baseline = DeclarationSite.sourceCount()
+    const scratch = "/repo/flows/review/.smithers-release.ts"
+    const release = Graph.evaluatedFrom(scratch, "/repo/flows/review/flow.ts")
+    expect(DeclarationSite.sourceCount()).toBe(baseline + 1)
+    expect(DeclarationSite.parseFrame(`    at declare (${scratch}:2:1)`)).toEqual({
+      path: "/repo/flows/review/flow.ts",
+      line: 2
+    })
+    release()
+    release()
+    expect(DeclarationSite.sourceCount()).toBe(baseline)
+    expect(DeclarationSite.parseFrame(`    at declare (${scratch}:2:1)`)).toEqual({ path: scratch, line: 2 })
+
+    // A stale release does not forget a later statement for the same path.
+    const stale = Graph.evaluatedFrom(scratch, "/repo/flows/a/flow.ts")
+    const current = Graph.evaluatedFrom(scratch, "/repo/flows/b/flow.ts")
+    stale()
+    expect(DeclarationSite.parseFrame(`    at declare (${scratch}:1:1)`)?.path).toBe("/repo/flows/b/flow.ts")
+    current()
+
+    // A loader that never releases cannot grow the map past its bound.
+    const releases = Array.from(
+      { length: DeclarationSite.maximumSources + 10 },
+      (_, index) => Graph.evaluatedFrom(`/scratch/${index}.ts`, "/repo/flows/entry/flow.ts")
+    )
+    expect(DeclarationSite.sourceCount()).toBe(DeclarationSite.maximumSources)
+    expect(DeclarationSite.parseFrame("    at declare (/scratch/0.ts:1:1)")?.path).toBe("/scratch/0.ts")
+    expect(
+      DeclarationSite.parseFrame(`    at declare (/scratch/${DeclarationSite.maximumSources + 9}.ts:1:1)`)?.path
+    ).toBe("/repo/flows/entry/flow.ts")
+    for (const each of releases) each()
+    expect(DeclarationSite.sourceCount()).toBeLessThanOrEqual(baseline)
+  })
+
   it("reports nothing rather than guessing at a frame it cannot read", () => {
     expect(DeclarationSite.parseFrame("Error: boom")).toBeUndefined()
     expect(DeclarationSite.parseFrame("    at native")).toBeUndefined()

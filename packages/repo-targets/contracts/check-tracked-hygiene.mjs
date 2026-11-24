@@ -31,9 +31,10 @@
  * Exits 0 when clean, 1 on a finding, 2 when the check itself failed.
  */
 import { spawnSync } from "node:child_process"
-import { existsSync, lstatSync, readFileSync, readdirSync, readlinkSync, statSync } from "node:fs"
+import { existsSync, lstatSync, readdirSync, readFileSync, readlinkSync, statSync } from "node:fs"
 import { basename, dirname, isAbsolute, join, posix } from "node:path"
 import { fileURLToPath } from "node:url"
+import { isMain } from "../scripts/workspace-root.mjs"
 
 // ---------------------------------------------------------------- gitignore
 
@@ -149,15 +150,29 @@ export const listFiles = (root, { includeUntracked = false, projectedTree = fals
     args = ["ls-files", "--cached", ...(includeUntracked ? ["--others", "--exclude-standard"] : []), "-z"]
   } else if (existsSync(join(root, ".jj"))) {
     command = "jj"
-    args = ["--config", "snapshot.auto-update-stale=false", ...(includeUntracked ? [] : ["--ignore-working-copy"]), "file", "list", "-T", 'path ++ "\\0"']
+    args = [
+      "--config",
+      "snapshot.auto-update-stale=false",
+      ...(includeUntracked ? [] : ["--ignore-working-copy"]),
+      "file",
+      "list",
+      "-T",
+      "path ++ \"\\0\""
+    ]
   } else return walkFiles(root, readIgnore(root), { projectedTree })
   const options = { cwd: root, encoding: "utf8", maxBuffer: 256 * 1024 * 1024 }
-  const failed = result => result.error !== undefined || result.status !== 0
-  const diagnostic = result => result.error?.message ?? result.stderr.trim()
+  const failed = (result) => result.error !== undefined || result.status !== 0
+  const diagnostic = (result) => result.error?.message ?? result.stderr.trim()
   const result = spawnSync(command, args, options)
-  if (command === "jj" && failed(result) &&
-      /seems to be a sibling of the working copy's operation|working copy is stale/i.test(diagnostic(result))) {
-    const error = new Error(`jj file listing failed: ${diagnostic(result)}\nWorkspace ${root}: commit or back up your files and recover deliberately.`)
+  if (
+    command === "jj" && failed(result) &&
+    /seems to be a sibling of the working copy's operation|working copy is stale/i.test(diagnostic(result))
+  ) {
+    const error = new Error(
+      `jj file listing failed: ${
+        diagnostic(result)
+      }\nWorkspace ${root}: commit or back up your files and recover deliberately.`
+    )
     error.code = "stale_workspace"
     throw error
   }
@@ -191,7 +206,11 @@ const globRegex = (glob) => {
       const end = glob.indexOf("}", i)
       if (end === -1) source += "\\{"
       else {
-        source += `(?:${glob.slice(i + 1, end).split(",").map((alt) => alt.replace(/[.+^${}()|[\]\\]/g, "\\$&").replace(/\*/g, "[^/]*")).join("|")})`
+        source += `(?:${
+          glob.slice(i + 1, end).split(",").map((alt) =>
+            alt.replace(/[.+^${}()|[\]\\]/g, "\\$&").replace(/\*/g, "[^/]*")
+          ).join("|")
+        })`
         i = end
       }
     } else source += ch.replace(/[.+^${}()|[\]\\]/g, "\\$&")
@@ -210,7 +229,8 @@ const resolves = (fileSet, files, path) => {
   return files.some((file) => file.startsWith(`${clean}/`))
 }
 
-const strings = (source) => [...source.matchAll(/"((?:[^"\\\n]|\\.)*)"|'((?:[^'\\\n]|\\.)*)'/g)].map((m) => m[1] ?? m[2])
+const strings = (source) =>
+  [...source.matchAll(/"((?:[^"\\\n]|\\.)*)"|'((?:[^'\\\n]|\\.)*)'/g)].map((m) => m[1] ?? m[2])
 
 const lineOf = (text, index) => text.slice(0, index).split("\n").length
 
@@ -240,7 +260,9 @@ export const actionlintArguments = (text) => {
       const args = /^\s*"?args"?\s*:\s*(.*)$/.exec(next)
       if (args === null) continue
       for (const token of args[1].replace(/^["']|["']\s*$/g, "").split(/\s+/)) {
-        if (/\.ya?ml$/.test(token)) found.push({ path: token, line: index + 1 + lines.slice(index + 1).indexOf(next) + 1 })
+        if (/\.ya?ml$/.test(token)) {
+          found.push({ path: token, line: index + 1 + lines.slice(index + 1).indexOf(next) + 1 })
+        }
       }
       break
     }
@@ -263,12 +285,22 @@ export const danglingFindings = (files, read) => {
       for (const { path, line, field, rootOnly } of packageReferences(text)) {
         const local = packageDir === "." ? path : posix.join(packageDir, path)
         if (resolves(fileSet, files, path) || (!rootOnly && resolves(fileSet, files, local))) continue
-        found.push({ path: file, line, rule: "dangling", message: `${field} names "${path}", which no tracked file matches` })
+        found.push({
+          path: file,
+          line,
+          rule: "dangling",
+          message: `${field} names "${path}", which no tracked file matches`
+        })
       }
     } else if (/^\.github\/workflows\/[^/]+\.ya?ml$/.test(file)) {
       for (const { path, line } of actionlintArguments(read(file))) {
         if (!resolves(fileSet, files, path)) {
-          found.push({ path: file, line, rule: "dangling", message: `actionlint is passed "${path}", which no tracked file matches` })
+          found.push({
+            path: file,
+            line,
+            rule: "dangling",
+            message: `actionlint is passed "${path}", which no tracked file matches`
+          })
         }
       }
     }
@@ -287,11 +319,26 @@ export const forbiddenFindings = (files, rules) => {
   for (const file of files) {
     const parts = file.split("/")
     if (parts.includes("node_modules")) {
-      found.push({ path: file, line: 0, rule: "forbidden", message: "tracked path has a node_modules segment (file or symlink); delete it" })
+      found.push({
+        path: file,
+        line: 0,
+        rule: "forbidden",
+        message: "tracked path has a node_modules segment (file or symlink); delete it"
+      })
     } else if (tempFile.test(parts[parts.length - 1])) {
-      found.push({ path: file, line: 0, rule: "forbidden", message: "tracked bundler temp file (.smithers-<hex>-*.ts); delete it" })
+      found.push({
+        path: file,
+        line: 0,
+        rule: "forbidden",
+        message: "tracked bundler temp file (.smithers-<hex>-*.ts); delete it"
+      })
     } else if (isIgnored(rules, file)) {
-      found.push({ path: file, line: 0, rule: "forbidden", message: "tracked file that .gitignore excludes (build output or local state); untrack it" })
+      found.push({
+        path: file,
+        line: 0,
+        rule: "forbidden",
+        message: "tracked file that .gitignore excludes (build output or local state); untrack it"
+      })
     }
   }
   return found
@@ -302,14 +349,21 @@ export const scaffoldPatterns = [
   // `smithers-mvp-web` (the deployed worker) and `smithers-mvp-quarantine.*`
   // (browser storage keys) are product identities, so only a local filesystem
   // path through a lane directory counts.
-  { regex: /(?:~|\$HOME|\$\{HOME\}|\/Users\/[^/\s"']+|\/home\/[^/\s"']+|\/private\/tmp|\/tmp)\/(?:[^\s"']*\/)?smithers-mvp-/, what: "smithers-mvp- (lane worktree path)" },
+  {
+    regex:
+      /(?:~|\$HOME|\$\{HOME\}|\/Users\/[^/\s"']+|\/home\/[^/\s"']+|\/private\/tmp|\/tmp)\/(?:[^\s"']*\/)?smithers-mvp-/,
+    what: "smithers-mvp- (lane worktree path)"
+  },
   { regex: /go-build-[A-Za-z0-9_]+/, what: "go-build-<word> (lane-private Go cache)" },
   { regex: /\/private\/tmp\/claude-/, what: "/private/tmp/claude- (agent session path)" },
   { regex: /scratchpad\/lanes/, what: "scratchpad/lanes (agent scratch path)" }
 ]
 
 // The check's own files name the strings on purpose.
-const selfFiles = new Set(["packages/repo-targets/contracts/check-tracked-hygiene.mjs", "packages/repo-targets/contracts/check-tracked-hygiene.test.mjs"])
+const selfFiles = new Set([
+  "packages/repo-targets/contracts/check-tracked-hygiene.mjs",
+  "packages/repo-targets/contracts/check-tracked-hygiene.test.mjs"
+])
 
 /** Whether a tracked path is exempt from the scaffold rule: .specs/, docs, and the check itself. */
 export const scaffoldExempt = (file) =>
@@ -332,7 +386,12 @@ export const scaffoldFindings = (files, read) => {
     text.split("\n").forEach((line, index) => {
       for (const { regex, what } of scaffoldPatterns) {
         if (regex.test(line) && !allowed.includes(what)) {
-          found.push({ path: file, line: index + 1, rule: "scaffold", message: `lane scaffolding ${what}: ${line.trim().slice(0, 120)}` })
+          found.push({
+            path: file,
+            line: index + 1,
+            rule: "scaffold",
+            message: `lane scaffolding ${what}: ${line.trim().slice(0, 120)}`
+          })
         }
       }
     })
@@ -356,7 +415,8 @@ export const findings = (files, root) => {
   ]
 }
 
-export const formatFinding = ({ path, line, rule, message }) => `${path}${line > 0 ? `:${line}` : ""}: ${rule}: ${message}`
+export const formatFinding = ({ path, line, rule, message }) =>
+  `${path}${line > 0 ? `:${line}` : ""}: ${rule}: ${message}`
 
 const readStdin = () => readFileSync(0).toString("utf8").split("\0").filter((p) => p !== "")
 
@@ -382,4 +442,4 @@ const main = () => {
   return 1
 }
 
-if (process.argv[1] === fileURLToPath(import.meta.url)) process.exitCode = main()
+if (isMain(import.meta)) process.exitCode = main()

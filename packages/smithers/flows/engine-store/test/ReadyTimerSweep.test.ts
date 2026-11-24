@@ -8,6 +8,7 @@ import { Clock, Effect, Layer, Option, Schema } from "effect"
 import { SqlClient } from "effect/sql/SqlClient"
 import { TestClock } from "effect/testing"
 import * as DurableEngineState from "../src/DurableEngineState.ts"
+import * as DeferredPersistence from "../src/internal/DeferredPersistence.ts"
 import * as RunDriver from "../src/internal/RunDriver.ts"
 import * as TestStores from "../src/test/TestStores.ts"
 import { opaqueHandlerBody } from "./fixtures/OpaqueHandlerBody.ts"
@@ -42,7 +43,7 @@ const seed = (id: string, completion: "ready" | "absent" | "consumed", flowName:
     }
   })
 
-it.effect("recovers two ready timers with one completion query per flow and leaves unready timers parked", () =>
+it.effect("recovers two ready timers with one completion read per candidate and leaves unready timers parked", () =>
   withCrypto(
     Effect.gen(function*() {
       const runs = yield* RunStore.RunStore
@@ -51,14 +52,18 @@ it.effect("recovers two ready timers with one completion query per flow and leav
       for (const id of ["a-ready", "b-ready"]) yield* seed(id, "ready")
       yield* seed("c-absent", "absent")
       yield* seed("d-consumed", "consumed")
-      const queries: Array<{ readonly at: number; readonly ids: ReadonlyArray<string> }> = []
+      const queries: Array<{
+        readonly at: number
+        readonly executionId: string | undefined
+        readonly ids: ReadonlyArray<string>
+      }> = []
       const observed: DurableEngineState.Service = {
         ...state,
         completedDeferreds: (flowName, executionId) =>
           Effect.gen(function*() {
             const at = yield* Clock.currentTimeMillis
             const rows = yield* state.completedDeferreds(flowName, executionId)
-            if (executionId === undefined) queries.push({ at, ids: rows.map((row) => row.executionId) })
+            queries.push({ at, executionId, ids: rows.map((row) => row.executionId) })
             return rows
           })
       }
@@ -83,8 +88,13 @@ it.effect("recovers two ready timers with one completion query per flow and leav
         return (yield* runs.get("a-ready")).status === "completed" &&
           (yield* runs.get("b-ready")).status === "completed"
       }))
-      expect(queries).toHaveLength(1)
-      expect([...(queries[0]?.ids ?? [])].sort()).toEqual(["a-ready", "b-ready"])
+      // R1-Fable-D1-024: one indexed read per candidate on the page, never
+      // the flow's whole completion set.
+      expect(queries.every((query) => query.executionId !== undefined)).toBe(true)
+      const firstAt = queries[0]!.at
+      // The drive of a woken run reads its own completions as well.
+      expect([...new Set(queries.filter((query) => query.at === firstAt).flatMap((query) => query.ids))].sort())
+        .toEqual(["a-ready", "b-ready"])
       for (const id of ["a-ready", "b-ready"]) {
         expect(yield* runs.get(id)).toMatchObject({ status: "completed", owner: null, claim: null })
         expect(Option.getOrThrow(yield* driver.poll(flow, id))).toMatchObject({
@@ -94,12 +104,13 @@ it.effect("recovers two ready timers with one completion query per flow and leav
       }
       // Wait for a subsequent real adapter sweep, advancing only the test clock.
       yield* TestDatabase.until(Effect.gen(function*() {
-        if (queries.length >= 2) return true
+        if (queries.some((query) => query.at > firstAt)) return true
         yield* TestClock.adjust("1 second")
         return false
       }))
-      expect(new Set(queries.map((query) => query.at)).size).toBe(queries.length)
-      expect(queries.slice(1).every((query) => query.ids.length === 0)).toBe(true)
+      const later = queries.filter((query) => query.at > firstAt)
+      expect(later.every((query) => query.ids.length === 0)).toBe(true)
+      expect([...new Set(later.map((query) => query.executionId))].sort()).toEqual(["c-absent", "d-consumed"])
       expect([...executions.entries()].sort()).toEqual([["a-ready", 1], ["b-ready", 1]])
       for (const id of ["c-absent", "d-consumed"]) {
         expect(yield* runs.get(id)).toMatchObject({ status: "suspended", owner: null, claim: null })
@@ -137,7 +148,7 @@ it.effect("skips deleted, settled and unregistered timer cursors while recoverin
         completedDeferreds: (flowName, executionId) =>
           state.completedDeferreds(flowName, executionId).pipe(Effect.tap(() =>
             Effect.sync(() => {
-              if (executionId === undefined) completionQueries.push(flowName ?? "(every flow)")
+              completionQueries.push(executionId ?? `(every execution of ${flowName ?? "every flow"})`)
             })
           )),
         waitingRuns: (filter) =>
@@ -180,7 +191,8 @@ it.effect("skips deleted, settled and unregistered timer cursors while recoverin
       }))
       expect([...selected].sort()).toEqual(["a-deleted", "b-settled", "c-unregistered", "d-eligible", "e-eligible"])
       expect([...executed].sort()).toEqual(["d-eligible", "e-eligible"])
-      expect(completionQueries).toEqual([flow._tag])
+      // Per candidate, and never for a row the sweep skipped. A woken run's drive reads its own again.
+      expect([...new Set(completionQueries)].sort()).toEqual(["d-eligible", "e-eligible"])
       const missing = yield* runs.get("a-deleted").pipe(Effect.match({
         onFailure: (error) => error.code,
         onSuccess: () => "unexpected-row"
@@ -205,6 +217,84 @@ it.effect("skips deleted, settled and unregistered timer cursors while recoverin
           (entry.payload as { status?: string }).status === "completed"
         )).toHaveLength(1)
       }
+    }).pipe(Effect.scoped, Effect.provide(stores))
+  ))
+
+// R1-Fable-D1-001: a clock fired only from an in-memory timer, armed by the
+// process that scheduled it or by a registration's recovery. A worker that
+// registered before another parked a run on a sleep and died held no timer
+// for it, and the sweep skipped every due timer wait without a completion.
+it.effect("fires a due clock no live process holds a timer for, without a new registration", () =>
+  withCrypto(
+    Effect.gen(function*() {
+      const runs = yield* RunStore.RunStore
+      const state = yield* DurableEngineState.DurableEngineState
+      const journal = yield* Journal.Journal
+      const survivorOwner = { hostId: "timer-survivor", pid: 2, nonce: "survivor" }
+      let clocks: DeferredPersistence.Service | undefined
+      const driver = yield* RunDriver.make({
+        owner: survivorOwner,
+        journalSource: "ready-timer-fire",
+        isAlive: () => Effect.succeed(false),
+        fireDueClocks: (flowName, executionId) => Effect.suspend(() => clocks!.fireDue(flowName, executionId)),
+        engine: Effect.succeed({} as FlowRuntime.FlowRuntime["Service"])
+      })
+      clocks = yield* DeferredPersistence.make({
+        owner: survivorOwner,
+        journalSource: "ready-timer-fire",
+        scheduleResume: (flowName, executionId, reason, sourceId) =>
+          driver.scheduleResume(flowName, executionId, reason, sourceId)
+      })
+      const executed: Array<string> = []
+      // The survivor registers first: its recovery finds nothing to arm.
+      yield* driver.register(flow, (_, executionId) =>
+        Effect.sync(() => {
+          executed.push(executionId)
+          return "done"
+        }))
+      yield* clocks.sweepDue(flow._tag)
+
+      // Another worker then parks two runs on sleeps and dies with its timers.
+      const dead = { hostId: "timer-dead", pid: 9, nonce: "dead" }
+      const sleep = (id: string, dueAtMs: number) =>
+        Effect.gen(function*() {
+          const json = JSON.stringify({
+            version: 1,
+            flowName: flow._tag,
+            payload: {},
+            capabilityCeilings: [[]],
+            result: { _tag: "Suspended", cause: null }
+          })
+          yield* runs.create(id, json)
+          expect(yield* runs.claimAndOwn(id, yield* runs.get(id), dead, 0)).toMatchObject({ _tag: "Activated" })
+          expect(
+            yield* state.scheduleClock({
+              flowName: flow._tag,
+              executionId: id,
+              clockName: `sleep-${id}`,
+              deferredName: `sleep-${id}`,
+              dueAtMs,
+              completedAtMs: null
+            }, dead)
+          ).toMatchObject({ row: { dueAtMs } })
+          expect(yield* state.park(id, { reason: "timer", wakeAt: dueAtMs }, dead)).toMatchObject({ _tag: "Parked" })
+          expect(yield* runs.transitionOwned(id, dead, "suspended", json)).toMatchObject({ _tag: "Transitioned" })
+        })
+      yield* sleep("due-sleep", 500)
+      yield* sleep("future-sleep", 3_600_000)
+
+      yield* TestClock.adjust("1 second")
+      yield* TestDatabase.until(Effect.map(runs.get("due-sleep"), (row) => row.status === "completed"))
+      expect(yield* state.pendingClocks({ executionId: "due-sleep" })).toEqual([])
+      expect(executed).toEqual(["due-sleep"])
+      // The sleep that is not due keeps its clock and its park.
+      yield* TestClock.adjust("2 seconds")
+      expect(yield* runs.get("future-sleep")).toMatchObject({ status: "suspended", owner: null })
+      expect(yield* state.pendingClocks({ executionId: "future-sleep" })).toHaveLength(1)
+      expect(executed).toEqual(["due-sleep"])
+      yield* journal.flush
+      const page = yield* journal.entries({ runId: "due-sleep" as never, limit: 100 })
+      expect(page.entries.filter((entry) => entry.eventType === "flows.engine.clock-completed")).toHaveLength(1)
     }).pipe(Effect.scoped, Effect.provide(stores))
   ))
 

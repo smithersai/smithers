@@ -72,7 +72,7 @@ export const acquireStateOwnership = async (directory: string): Promise<StateOwn
   } catch (cause) {
     database.close()
     const file = NodePath.join(directory, lockName)
-    const holder = holderOf(await Fs.readFile(file, "utf8").catch(() => ""))
+    const holder = await Fs.readFile(file, "utf8").then(holderOf, () => undefined)
     throw new Error(
       `Alchemy state is owned by another deployment${holder === undefined ? "" : ` (pid ${holder})`}; ` +
         `remove ${file} only once that process is gone`,

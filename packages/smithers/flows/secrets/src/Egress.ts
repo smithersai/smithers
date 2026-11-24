@@ -33,9 +33,9 @@
  *    the policy ({@link Scrub}), whichever host it comes from, since a host
  *    may read what another host was sent. To keep echoes findable it asks for
  *    an uncompressed answer and drops the guest's `Range` and `If-Range`, so
- *    a host can't return a value in slices too short to match. A Fetch client
- *    decodes a compressed answer anyway, so the egress drops
- *    `Content-Encoding` and `Content-Length`.
+ *    a host can't return a value in slices too short to match. An encoded
+ *    answer can be scrubbed only when the host declares that its client
+ *    decodes those codings through {@link DecodesContent}.
  *
  * Telemetry carries the host, the method, the outcome, the status and the
  * number of secrets; failures carry a code and nothing of the request. Each
@@ -56,6 +56,7 @@ import { constTrue } from "effect/Function"
 import * as FetchHttpClient from "effect/http/FetchHttpClient"
 import * as HttpBody from "effect/http/HttpBody"
 import * as HttpClient from "effect/http/HttpClient"
+import * as HttpClientError from "effect/http/HttpClientError"
 import * as HttpClientRequest from "effect/http/HttpClientRequest"
 import type * as HttpServerRequest from "effect/http/HttpServerRequest"
 import * as HttpServerResponse from "effect/http/HttpServerResponse"
@@ -285,16 +286,25 @@ const dropped: ReadonlySet<string> = new Set([
   "content-length"
 ])
 
-/** Never answered: hop-by-hop headers, and the encoding and length the client's decoding and scrubbing changed. */
-const droppedAnswer: ReadonlySet<string> = new Set([...dropped, "content-encoding"])
+/** The content codings (in wire order) the host guarantees its client already decoded.
+ * An encoded body that requires scrubbing fails closed unless its client guarantees decoding.
+ *
+ * @category services
+ * @since 0.1.0
+ */
+export const DecodesContent = Context.Reference<(encodings: ReadonlyArray<string>) => boolean>(
+  "@smthrs/secrets/Egress/DecodesContent",
+  { defaultValue: () => () => false }
+)
 
-const forwardable = (headers: Readonly<Record<string, string>>): Record<string, string> => {
-  const named = new Set((headers["connection"] ?? "").toLowerCase().split(",").map((name) => name.trim()))
-  const kept: Record<string, string> = {}
-  for (const [name, value] of Object.entries(headers)) {
-    if (!dropped.has(name) && !named.has(name)) kept[name] = value
-  }
-  return kept
+const forwardable = (headers: Readonly<Record<string, string>>) => {
+  const entries = Object.entries(headers).map(([name, value]) => [name.toLowerCase(), value] as const)
+  const named = new Set(
+    entries.flatMap(([name, value]) =>
+      name === "connection" ? value.toLowerCase().split(",").map((token) => token.trim()) : []
+    )
+  )
+  return entries.filter(([name]) => !dropped.has(name) && !named.has(name))
 }
 
 const basic = /^basic\s+/i
@@ -348,7 +358,7 @@ export interface Denied {
 
 /**
  * Whether `policy` lets a request with this method, URL and headers go out,
- * before any value is revealed. Header names are lowercase.
+ * before any value is revealed. Header names are case-insensitive.
  *
  * @category decisions
  * @since 0.1.0
@@ -359,7 +369,7 @@ export const decide = (
 ): Allowed | Denied => {
   // Placeholders first, so every refusal names the secrets the request carried.
   const found = new Set<string>()
-  for (const [name, value] of Object.entries(forwardable(request.headers))) {
+  for (const [name, value] of forwardable(request.headers)) {
     for (const placeholder of Placeholder.find(readable(name, value))) found.add(placeholder)
   }
   const known = new Map(policy.secrets.map((secret) => [secret.placeholder, secret]))
@@ -426,14 +436,20 @@ export const execute = (
       headers: request.headers
     }, policy)
     const audit = yield* Audit
-    const settle = (outcome: string, status: number, secrets: number) =>
+    const settle = (outcome: string, status: number, secrets: number, failure?: { reason: string; defect: boolean }) =>
       Effect.gen(function*() {
         const durationMs = (yield* Clock.currentTimeMillis) - startedAt
+        if (failure) {
+          yield* Effect.annotateCurrentSpan({
+            "smithers.egress.reason": failure.reason,
+            "smithers.egress.defect": failure.defect
+          })
+        }
         yield* Metric.update(Metric.withAttributes(requests, { outcome }), 1)
         yield* Effect.logWithLevel(outcome === "forwarded" || outcome === "cancelled" ? "Info" : "Warn")(
           "secrets.egress"
         ).pipe(
-          Effect.annotateLogs({ outcome, host: decision.host, method, status, secrets, durationMs })
+          Effect.annotateLogs({ outcome, host: decision.host, method, status, secrets, durationMs, ...failure })
         )
       })
     yield* Effect.annotateCurrentSpan({ "server.address": decision.host, "http.request.method": method })
@@ -444,14 +460,22 @@ export const execute = (
       Effect.gen(function*() {
         yield* mark(code, refusals[code])
         // A refusal stands whether or not it is recorded: nothing is sent either way.
-        yield* audit.record({ host: decision.host, method, outcome: code, secrets }).pipe(Effect.ignore)
-        yield* settle(code, refusals[code], secrets.length)
+        const failure = yield* Effect.suspend(() =>
+          audit.record({ host: decision.host, method, outcome: code, secrets })
+        ).pipe(
+          Effect.as(undefined),
+          Effect.catchCause((cause) =>
+            Cause.hasInterruptsOnly(cause) ? Effect.interrupt : Effect.succeed(reasonOf(cause))
+          )
+        )
+        yield* settle(code, refusals[code], secrets.length, failure)
         return yield* new Refused({ code })
       })
-    const unavailable = (code: Unavailable["code"], secrets: number) => {
+    const unavailable = (code: Unavailable["code"], secrets: number, cause?: Cause.Cause<unknown>) => {
+      if (cause && Cause.hasInterruptsOnly(cause)) return Effect.interrupt
       const status = code === "upstream" ? 502 : 503
       return mark(`unavailable_${code}`, status).pipe(
-        Effect.andThen(settle(`unavailable_${code}`, status, secrets)),
+        Effect.andThen(settle(`unavailable_${code}`, status, secrets, cause && reasonOf(cause))),
         Effect.andThen(Effect.fail(new Unavailable({ code })))
       )
     }
@@ -464,19 +488,18 @@ export const execute = (
       (secret) => Effect.map(vault.reveal(secret.name), (value) => ({ secret, value }))
     ).pipe(
       // Any other failure, a defect included, is the vault's and fails closed.
-      Effect.catchCause((cause) => Cause.hasInterruptsOnly(cause) ? Effect.interrupt : Effect.succeed(undefined))
+      Effect.catchCause((cause) => unavailable("secret", used.length, cause))
     )
-    if (revealed === undefined) return yield* unavailable("secret", used.length)
     const values = new Map<string, string>()
     for (const { secret, value } of revealed) {
-      if (!used.includes(secret)) continue
-      if (valueProblem(Redacted.value(value)) !== undefined) return yield* unavailable("value", used.length)
-      values.set(secret.placeholder, Redacted.value(value))
+      const plain = Redacted.value(value)
+      if (valueProblem(plain) !== undefined) return yield* unavailable("value", used.length)
+      if (used.includes(secret)) values.set(secret.placeholder, plain)
     }
     const scrubber = Scrub.make(revealed.map(({ secret, value }) => ({ value, replacement: secret.placeholder })))
 
-    const headers: Record<string, string> = {}
-    for (const [name, value] of Object.entries(forwardable(request.headers))) {
+    const headers: Record<string, string> = Object.create(null)
+    for (const [name, value] of forwardable(request.headers)) {
       headers[name] = substituted(name, value, values)
     }
     if (scrubber.active) {
@@ -488,35 +511,43 @@ export const execute = (
       return yield* refuse("headers_too_large", used.map((secret) => secret.name))
     }
 
-    const recorded = yield* audit.record({
-      host: decision.host,
-      method,
-      outcome: "forwarded",
-      secrets: used.map((secret) => secret.name)
-    }).pipe(Effect.option)
-    if (Option.isNone(recorded)) return yield* unavailable("audit", used.length)
+    yield* Effect.suspend(() =>
+      audit.record({
+        host: decision.host,
+        method,
+        outcome: "forwarded",
+        secrets: used.map((secret) => secret.name)
+      })
+    ).pipe(Effect.catchCause((cause) => unavailable("audit", used.length, cause)))
 
     const client = yield* HttpClient.HttpClient
     const init = yield* Effect.serviceOption(FetchHttpClient.RequestInit)
     const outgoing = requestWithMethod(method, Result.getOrThrow(url), headers, request.body)
-    const sent = yield* client.execute(outgoing).pipe(
+    const sent = yield* Effect.suspend(() => client.execute(outgoing)).pipe(
       Effect.provideService(FetchHttpClient.RequestInit, { ...Option.getOrUndefined(init), redirect: "manual" }),
       Effect.provideService(HttpClient.TracerDisabledWhen, constTrue),
       // The client's error holds the substituted request: dropped here, whole, so no value reaches a failure.
-      Effect.catchCause((cause) => Cause.hasInterruptsOnly(cause) ? Effect.interrupt : Effect.succeed(undefined))
+      Effect.catchCause((cause) => unavailable("upstream", used.length, cause))
     )
-    if (sent === undefined) return yield* unavailable("upstream", used.length)
-    yield* mark("forwarded", sent.status)
 
-    const answered: Record<string, string> = {}
-    for (const [name, value] of Object.entries(sent.headers)) {
-      if (!droppedAnswer.has(name)) answered[name] = scrubber.text(value)
+    const answered: Record<string, string> = Object.create(null)
+    for (const [name, value] of forwardable(sent.headers)) {
+      if (name !== "content-encoding" && scrubber.text(name) === name) answered[name] = scrubber.text(value)
     }
     if (method === "HEAD" || bodiless.has(sent.status)) {
+      yield* mark("forwarded", sent.status)
       yield* settle("forwarded", sent.status, used.length)
       return { status: sent.status, headers: answered, body: Stream.empty }
     }
-    const body = scrubber.stream(
+    // Check the wire header even when Connection nominates it for removal.
+    const encodings = sent.headers["content-encoding"]?.toLowerCase().split(",").map((name) => name.trim()) ?? []
+    const encoded = encodings.some((name) => name !== "identity")
+    const decodes = yield* DecodesContent
+    const unreadable = scrubber.active && encoded && !decodes(encodings)
+    // Open and immediately release the response stream's scope without pulling any bytes.
+    if (unreadable) yield* Effect.scoped(Stream.toPull(sent.stream))
+    yield* mark(unreadable ? "broken" : "forwarded", sent.status)
+    const body = (unreadable ? Stream.fail(new Broken()) : scrubber.stream(
       sent.stream.pipe(
         // The client's error holds the request: dropped here. Fetch answers a bodiless response, such as a
         // redirect's, with no body at all, which reaches the guest as an empty one.
@@ -524,7 +555,7 @@ export const execute = (
           error.reason._tag === "EmptyBodyError" ? Stream.empty : Stream.fail(new Broken())
         )
       )
-    ).pipe(
+    )).pipe(
       Stream.onExit((exit) =>
         settle(
           Exit.isSuccess(exit) ? "forwarded" : Cause.hasInterruptsOnly(exit.cause) ? "cancelled" : "broken",
@@ -537,6 +568,27 @@ export const execute = (
     )
     return { status: sent.status, headers: answered, body }
   }).pipe(Effect.withSpan("Egress.execute", { kind: "client" }))
+
+// Keep the transport's declared reason, but never an injected error's free-form tag or message.
+const httpReasons: ReadonlySet<string> = new Set([
+  "EncodeError",
+  "DecodeError",
+  "TransportError",
+  "InvalidUrlError",
+  "StatusCodeError",
+  "EmptyBodyError"
+])
+
+const reasonOf = (cause: Cause.Cause<unknown>) => {
+  const defect = Cause.hasDies(cause)
+  const error = cause.reasons.find(Cause.isFailReason)?.error
+  if (HttpClientError.isHttpClientError(error) && httpReasons.has(error.reason?._tag)) {
+    return { reason: error.reason._tag, defect }
+  }
+  if (error instanceof SecretUnavailable) return { reason: "@smthrs/secrets/Egress/SecretUnavailable", defect }
+  if (error instanceof AuditUnavailable) return { reason: "@smthrs/secrets/Egress/AuditUnavailable", defect }
+  return { reason: defect ? "Defect" : "Failure", defect }
+}
 
 /** Statuses whose answer has no body (RFC 9110 §6.4.1). */
 const bodiless: ReadonlySet<number> = new Set([204, 205, 304])

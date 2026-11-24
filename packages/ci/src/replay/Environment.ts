@@ -282,13 +282,27 @@ export const daemonEnvironment = (
   )
 
 /**
+ * The variable through which `git -c` settings reach a `git` a step starts.
+ * Git reads it after {@link pushRefusal}, so a step's `env` that set it would
+ * name another hooks directory or a credential helper. A step is never given
+ * it.
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const gitParameters = "GIT_CONFIG_PARAMETERS"
+
+/**
  * The whole environment of a baseline step: what Smithers build gives a
  * target (a short list of host variables such as `PATH`, and fixed locale and
- * color settings), the replay's own home, the push refusal, then the step's
- * own `env`. A step is a past commit's command, so
+ * color settings), then the step's own `env`, then the replay's own home and
+ * the push refusal. A step is a past commit's command, so
  * it gets no other variable of the person running the replay, and the
- * baseline and the target see the same environment. A `PATH` of the step's
- * own still starts with the stand-ins.
+ * baseline and the target see the same environment. A workflow's `env` is the
+ * repository's text and decides neither where the home is nor what `git` is
+ * told: a `HOME`, an `XDG_CACHE_HOME` or a `GIT_CONFIG_COUNT` of the step's
+ * own is replaced by the replay's, and its {@link gitParameters} is left out.
+ * A `PATH` of the step's own still starts with the stand-ins.
  *
  * @category environment
  * @throws {never}
@@ -297,15 +311,18 @@ export const daemonEnvironment = (
 export const stepEnvironment = (
   declared: Readonly<Record<string, string>>,
   place: Place
-): Readonly<Record<string, string | undefined>> => ({
-  ...toolEnvironment({
-    ...placeEnvironment(place),
-    ...pushRefusal,
-    ...declared,
-    GIT_CONFIG_VALUE_0: place.hooks ?? join(dirname(place.guard), hooksDirectory),
-    ...(declared["PATH"] === undefined ? {} : { PATH: guardedPath(place.guard, declared["PATH"]) })
-  }, [])
-})
+): Readonly<Record<string, string | undefined>> => {
+  const own = Object.fromEntries(Object.entries(declared).filter(([name]) => name !== gitParameters))
+  return {
+    ...toolEnvironment({
+      ...own,
+      ...placeEnvironment(place),
+      ...pushRefusal,
+      GIT_CONFIG_VALUE_0: place.hooks ?? join(dirname(place.guard), hooksDirectory),
+      PATH: guardedPath(place.guard, declared["PATH"] ?? process.env["PATH"])
+    }, [])
+  }
+}
 
 /**
  * What a step that runs as on a GitHub runner is told of the software this

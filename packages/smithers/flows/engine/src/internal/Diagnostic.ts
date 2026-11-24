@@ -9,6 +9,8 @@
  */
 
 import * as Redaction from "@smthrs/journal/Redaction"
+import * as Context from "effect/Context"
+import * as Effect from "effect/Effect"
 
 /**
  * A body failure rendered for one log line, bounded so an oversized payload
@@ -31,17 +33,70 @@ const diagnosticTextLimit = 512
 const redactionWindow = 64 * 1024
 
 /**
- * Whether a value is a proxy, where the runtime can say without asking the
- * proxy: `util.types.isProxy` on Node and Bun. Reading even a descriptor off a
- * proxy runs its trap, which is caller code. A runtime without the check
- * falls back to descriptor reads, whose traps can at most throw into the
- * constant fallback.
+ * What a host can say about a value without running the value's own code.
+ *
+ * `isProxy` must answer from an internal slot, as `util.types.isProxy` does
+ * on Node and Bun. No portable operation can: reading even a descriptor off a
+ * proxy runs its trap, which is caller code.
+ *
+ * @private
+ * @since 1.0.0
  */
-const isProxy: (value: object) => boolean = (() => {
-  const util = (globalThis as { process?: { getBuiltinModule?: (id: string) => unknown } }).process
-    ?.getBuiltinModule?.("node:util") as { types?: { isProxy?: (value: unknown) => boolean } } | undefined
-  return util?.types?.isProxy ?? (() => false)
-})()
+export interface Reflection {
+  readonly isProxy: (value: object) => boolean
+}
+
+/**
+ * The part of a host {@link hostReflection} reads: `process.getBuiltinModule`,
+ * typed structurally so this module carries no Node binding.
+ *
+ * @private
+ * @since 1.0.0
+ */
+export interface BuiltinSource {
+  readonly getBuiltinModule?: ((id: string) => unknown) | undefined
+}
+
+/**
+ * The reflection one host offers, or `undefined` when it offers none.
+ *
+ * A host with no accessor, one that rejects the id, and one whose module
+ * lacks the predicate all answer `undefined`: the renderer then inspects no
+ * object at all, so a compatibility shim can neither fail the engine's import
+ * nor expose a diagnostic to a proxy trap.
+ *
+ * @private
+ * @since 1.0.0
+ */
+export const hostReflection = (source: BuiltinSource | undefined): Reflection | undefined => {
+  try {
+    const util = source?.getBuiltinModule?.("node:util") as
+      | { readonly types?: { readonly isProxy?: unknown } }
+      | undefined
+    const isProxy = util?.types?.isProxy
+    return typeof isProxy === "function" ? { isProxy: isProxy as Reflection["isProxy"] } : undefined
+  } catch {
+    return undefined
+  }
+}
+
+/**
+ * The reflection diagnostics are rendered with.
+ *
+ * The default is what this process offers, read on first use rather than when
+ * the module loads. A host layer provides its own, and providing `undefined`
+ * makes every object opaque.
+ *
+ * @private
+ * @since 1.0.0
+ */
+export const CurrentReflection = Context.Reference<Reflection | undefined>(
+  "@smthrs/engine/internal/Diagnostic/CurrentReflection",
+  { defaultValue: () => hostReflection((globalThis as { readonly process?: BuiltinSource }).process) }
+)
+
+/** What an object renders as when the host cannot inspect it safely. */
+const uninspected = "[uninspected]"
 
 const primitiveDiagnostic = (value: unknown): unknown => {
   switch (typeof value) {
@@ -89,6 +144,7 @@ const projectDiagnostic = (
   value: unknown,
   depth: number,
   seen: WeakSet<object>,
+  reflection: Reflection | undefined,
   field?: string
 ): unknown => {
   if (field !== undefined && Redaction.isSensitiveKey(field)) return Redaction.placeholder
@@ -98,7 +154,10 @@ const projectDiagnostic = (
   }
   if (depth === 0) return "[object]"
   const object = value as object
-  if (isProxy(object)) return "[proxy]"
+  // Without a slot-based proxy test every reflective read may run caller code,
+  // so nothing is read: the object stays opaque.
+  if (reflection === undefined) return uninspected
+  if (reflection.isProxy(object)) return "[proxy]"
   if (seen.has(object)) return "[circular]"
   seen.add(object)
   if (Array.isArray(object)) {
@@ -111,7 +170,7 @@ const projectDiagnostic = (
       const descriptor = Object.getOwnPropertyDescriptor(object, String(index))
       output.push(
         descriptor !== undefined && "value" in descriptor
-          ? projectDiagnostic(descriptor.value, depth - 1, seen)
+          ? projectDiagnostic(descriptor.value, depth - 1, seen, reflection)
           : "[missing]"
       )
     }
@@ -122,7 +181,7 @@ const projectDiagnostic = (
   for (const key of diagnosticKeys) {
     const descriptor = Object.getOwnPropertyDescriptor(object, key)
     if (descriptor === undefined || !("value" in descriptor)) continue
-    output[key] = projectDiagnostic(descriptor.value, depth - 1, seen, key)
+    output[key] = projectDiagnostic(descriptor.value, depth - 1, seen, reflection, key)
   }
   return Object.keys(output).length === 0 ? "[object]" : output
 }
@@ -140,19 +199,31 @@ const boundDiagnostic = (value: unknown): unknown =>
 /**
  * Renders only a fixed diagnostic vocabulary from inert own data properties.
  * It never enumerates an arbitrary object, invokes an accessor, calls a user
- * coercion hook, or retains an unbounded value. A hostile proxy can at most
- * make the renderer return the constant fallback.
+ * coercion hook, or retains an unbounded value. With no `reflection` it reads
+ * nothing off an object and renders it as `[uninspected]`; primitives render
+ * as they always do.
  *
  * @private
  * @since 1.0.0
  */
-export const renderDiagnostic = (value: unknown): string => {
+export const renderDiagnosticWith = (reflection: Reflection | undefined, value: unknown): string => {
   try {
     // The projection is plain data this module built, so redacting it runs no
     // caller code. It is redacted whole, then bounded, never the other way.
-    const redacted = boundDiagnostic(Redaction.redactDiagnostic(projectDiagnostic(value, 5, new WeakSet())))
+    const redacted = boundDiagnostic(
+      Redaction.redactDiagnostic(projectDiagnostic(value, 5, new WeakSet(), reflection))
+    )
     return (typeof redacted === "string" ? redacted : JSON.stringify(redacted)).slice(0, 4096)
   } catch {
     return "[unrenderable]"
   }
 }
+
+/**
+ * {@link renderDiagnosticWith} under the {@link CurrentReflection} in context.
+ *
+ * @private
+ * @since 1.0.0
+ */
+export const renderDiagnostic = (value: unknown): Effect.Effect<string> =>
+  Effect.map(CurrentReflection, (reflection) => renderDiagnosticWith(reflection, value))

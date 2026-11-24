@@ -147,11 +147,10 @@ const issueSweep = Smithers.NodeTest({
     Smithers.file("//.smithers/flows/issue-sweep/test/host.test.ts"),
     Smithers.file("//.smithers/flows/issue-sweep/test/verdict.test.ts"),
     Smithers.file("//.smithers/flows/issue-sweep/test/land-queue.test.ts"),
-    Smithers.file("//.smithers/flows/issue-sweep/test/land-baselines.test.ts"),
     Smithers.file("//.smithers/flows/issue-sweep/test/triage.test.ts"),
     Smithers.file("//.smithers/flows/issue-sweep/test/judge.test.ts")
   ]),
-  srcs: [sources],
+  srcs: [sources, Smithers.glob("//.smithers/flows/land/**/*")],
   deps: [],
   cwd
 })
@@ -827,10 +826,34 @@ const land = Smithers.NodeTest({
     Smithers.file("//.smithers/flows/land/review.test.mjs"),
     Smithers.file("//.smithers/flows/land/typecheck.test.mjs"),
     Smithers.file("//.smithers/flows/land/affected.test.mjs"),
-    Smithers.file("//.smithers/flows/land/affected-policy.test.mjs")
+    Smithers.file("//.smithers/flows/land/affected-policy.test.mjs"),
+    Smithers.file("//.smithers/flows/land/lock.test.mjs"),
+    Smithers.file("//.smithers/flows/land/lock-recovery.test.mjs"),
+    Smithers.file("//.smithers/flows/land/stranded.test.mjs"),
+    Smithers.file("//.smithers/flows/land/workspace.test.mjs"),
+    Smithers.file("//.smithers/flows/land/numbering.test.mjs"),
+    Smithers.file("//.smithers/flows/land/process.test.mjs"),
+    Smithers.file("//.smithers/flows/land/projection.test.mjs"),
+    Smithers.file("//.smithers/flows/land/generated.test.mjs"),
+    Smithers.file("//.smithers/flows/land/conversion.test.mjs"),
+    Smithers.file("//.smithers/flows/land/files.test.mjs"),
+    Smithers.file("//.smithers/flows/land/affected-receipt.test.mjs")
   ]),
   srcs: [sources, ...landSources],
   deps: [repoTargetsPackage.repositoryInputs],
+  cwd
+})
+
+// Farm contracts need the host's ShellCheck and Python. The mini proof
+// additionally opts in through the farm suite's live-host configuration.
+const landFarm = Smithers.NodeTest({
+  runner: Smithers.testRunner([
+    Smithers.file("//.smithers/flows/land/farm/farm.test.mjs"),
+    Smithers.file("//.smithers/flows/land/farm/mini-live.test.mjs")
+  ]),
+  srcs: [Smithers.glob("//.smithers/flows/land/farm/**/*"), Smithers.file("//.smithers/flows/land/process.mjs")],
+  deps: [],
+  exclusive: true,
   cwd
 })
 
@@ -839,7 +862,11 @@ const land = Smithers.NodeTest({
 // default that timed the target out in the Release gates lane (#3765).
 const landCommit = Smithers.NodeTest({
   runner: Smithers.testRunner([Smithers.file("//.smithers/flows/land/commit.test.mjs")]),
-  srcs: landSources,
+  srcs: [
+    ...landSources,
+    Smithers.file("//packages/repo-targets/contracts/check-tracked-hygiene.mjs"),
+    Smithers.file("//packages/repo-targets/scripts/workspace-root.mjs")
+  ],
   deps: [],
   timeout: "30m",
   cwd
@@ -988,11 +1015,12 @@ const apiBaseline = Smithers.NodeBinary({
     Smithers.file("//packages/repo-targets/package.json"),
     Smithers.file("//packages/smithers/scripts/compile-commonjs.mjs"),
     ...privateAdapterManifests,
+    Smithers.file("//tsconfig.base.json"),
     Smithers.file("//package.json"),
     Smithers.file("//pnpm-lock.yaml"),
     Smithers.file("//pnpm-workspace.yaml")
   ],
-  deps: []
+  deps: [Smithers.Target.subtree("//packages/...", "lib")]
 })
 
 /**
@@ -1678,6 +1706,7 @@ export const Package = Smithers.Package({
     releaseTools,
     releaseSteps,
     land,
+    landFarm,
     landCommit,
     mutationGate,
     benchmarkGate,

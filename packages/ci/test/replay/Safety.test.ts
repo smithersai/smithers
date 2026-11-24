@@ -4,7 +4,7 @@ import { toolEnvironment } from "@smthrs/targets/Exec"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import { execFileSync, spawnSync } from "node:child_process"
-import { readFileSync, rmSync, writeFileSync } from "node:fs"
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { homedir } from "node:os"
 import { join } from "node:path"
 import { afterAll, describe, expect, it } from "vitest"
@@ -16,7 +16,9 @@ import {
   guardScript,
   noPushUrl,
   placeEnvironment,
+  prePush,
   pushRefusal,
+  pushRefused,
   stepEnvironment
 } from "../../src/replay/Environment.ts"
 import { run } from "../../src/replay/index.vibe"
@@ -171,8 +173,74 @@ describe("stepEnvironment", () => {
     }
   })
 
-  it("lets a step's own value win", () => {
-    expect(stepEnvironment({ HOME: "/somewhere/else" }, place)["HOME"]).toBe("/somewhere/else")
-    expect(stepEnvironment({ GIT_TERMINAL_PROMPT: "1" }, place)["GIT_TERMINAL_PROMPT"]).toBe("1")
+  it("lets a step's own value win where the replay sets none", () => {
+    expect(stepEnvironment({ MINE: "from the step", LANG: "en_US.UTF-8" }, place)).toMatchObject({
+      MINE: "from the step",
+      LANG: "en_US.UTF-8"
+    })
+  })
+
+  // R1-Neon-D3-001: a workflow's `env` is the repository's text. Applied after the replay's own values it took the
+  // person's home back and switched the push refusal off.
+  it("keeps the replay's home and the push refusal over a step's own env", () => {
+    const hooks = "/replay/hooks"
+    const hostile = {
+      HOME: homedir(),
+      XDG_CACHE_HOME: `${homedir()}/.cache`,
+      GIT_CONFIG_COUNT: "0",
+      GIT_CONFIG_KEY_0: "core.editor",
+      GIT_CONFIG_VALUE_0: "/tmp",
+      GIT_CONFIG_KEY_1: "credential.helper",
+      GIT_CONFIG_VALUE_1: "store",
+      GIT_TERMINAL_PROMPT: "1",
+      GIT_CONFIG_PARAMETERS: "'core.hooksPath=/dev/null' 'credential.helper=store'"
+    }
+    for (const at of [place, { ...place, hooks }]) {
+      const environment = stepEnvironment(hostile, at)
+      expect(environment).toMatchObject(pushRefusal)
+      expect(environment["GIT_CONFIG_VALUE_0"]).toBe(at === place ? "/replay/hooks" : hooks)
+      expect(environment).toMatchObject({ HOME: "/replay/home", XDG_CACHE_HOME: "/replay/home/.cache" })
+      expect(Object.hasOwn(environment, "GIT_CONFIG_PARAMETERS")).toBe(false)
+      expect(Object.values(environment)).not.toContain(homedir())
+    }
+  })
+
+  it("refuses a push from a step whose env tries to switch the refusal off", () => {
+    const directory = track(makeEmptyDirectory())
+    const hooks = join(directory, "hooks")
+    const remote = join(directory, "remote.git")
+    const copy = join(directory, "copy")
+    mkdirSync(hooks)
+    writeFileSync(join(hooks, "pre-push"), prePush, { mode: 0o755 })
+    const at = { home: join(directory, "home"), tmp: join(directory, "tmp"), guard: join(directory, "guard"), hooks }
+    mkdirSync(at.home)
+    const environment = stepEnvironment({
+      GIT_CONFIG_COUNT: "0",
+      GIT_CONFIG_PARAMETERS: "'core.hooksPath=/dev/null'",
+      HOME: directory
+    }, at)
+    const asStep = (cwd: string, ...args: Array<string>) =>
+      spawnSync("git", args, { cwd, env: environment, encoding: "utf8" })
+    expect(asStep(directory, "init", "--bare", "--quiet", remote).status).toBe(0)
+    expect(asStep(directory, "init", "--quiet", copy).status).toBe(0)
+    expect(
+      asStep(
+        copy,
+        "-c",
+        "user.name=a",
+        "-c",
+        "user.email=a@example.com",
+        "commit",
+        "--allow-empty",
+        "--quiet",
+        "-m",
+        "one"
+      )
+        .status
+    ).toBe(0)
+    const pushed = asStep(copy, "push", remote, "HEAD:refs/heads/main")
+    expect(pushed.status).not.toBe(0)
+    expect(pushed.stderr).toContain(pushRefused)
+    expect(asStep(remote, "rev-parse", "--verify", "--quiet", "refs/heads/main").status).not.toBe(0)
   })
 })

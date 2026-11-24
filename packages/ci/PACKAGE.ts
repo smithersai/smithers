@@ -32,17 +32,46 @@ const toolCacheEnv = {
 // 200 s under load, before it does anything else; the programs the suite starts as processes (smithers-ci and smthrs)
 // compile their sources once; dprint fetches the plugins this package's configuration pins, which test/tools formats
 // with and a confined run cannot download. Then each answers in under a second.
+//
+// Zig is optional and its probe ends in an error by design: it has no build.zig, and fills the cache before it looks
+// for one. The other three are required. Each failure fails this target with what the command printed, so a plugin
+// that could not be fetched is reported here and the suite that needs it does not start (R1-Astra-D3-005).
+export const toolCachesShell = [
+  "set -eu",
+  "required() { log=\"$(mktemp)\"; if \"$@\" > \"$log\" 2>&1; then rm -f \"$log\"; else status=$?; echo \"toolCaches: $* failed ($status)\" >&2; cat \"$log\" >&2; rm -f \"$log\"; exit \"$status\"; fi; }",
+  "if command -v zig > /dev/null; then (probe=\"$(mktemp -d)\" && trap 'rm -rf \"$probe\"' EXIT && cd \"$probe\" && zig build --print-configuration > /dev/null 2>&1) || true; fi",
+  "required node packages/ci/bin/smithers-ci.mjs --help",
+  "required node_modules/.bin/smthrs --help",
+  "(cd packages/ci && required node_modules/.bin/dprint output-file-paths)"
+].join("\n")
+
 const toolCaches = Smithers.Shell.Build({
-  shell: [
-    "if command -v zig > /dev/null; then (probe=\"$(mktemp -d)\" && trap 'rm -rf \"$probe\"' EXIT && cd \"$probe\" && zig build --print-configuration > /dev/null 2>&1); fi",
-    "node packages/ci/bin/smithers-ci.mjs --help > /dev/null 2>&1",
-    "node_modules/.bin/smthrs --help > /dev/null 2>&1",
-    "(cd packages/ci && node_modules/.bin/dprint output-file-paths > /dev/null 2>&1)",
-    "true"
-  ].join("; "),
+  shell: toolCachesShell,
   env: toolCacheEnv,
   cache: false,
   sandbox: "none"
+})
+
+// test/workflows.test.ts holds this repository's own workflows to what the generated one holds: every checkout keeps
+// no credentials, every Node is the pinned one, and a release builds nothing that is not on main. Each file is named:
+// a glob here would reach into the root package.
+const repositoryWorkflows = Smithers.Filegroup({
+  srcs: [
+    ...[
+      "ci",
+      "distribution",
+      "drift",
+      "native-windows",
+      "npm-dist-tag",
+      "recorder",
+      "release-auth",
+      "release",
+      "reliability",
+      "windows-confinement"
+    ].map((name) => Smithers.file(`//.github/workflows/${name}.yml`)),
+    Smithers.file("//.node-version")
+  ],
+  cwd
 })
 
 const { bench, check, circular, docs, docsFiles, fmt, lib, lint, test, testParts } = BuildAndCheckTypeScriptPackage({
@@ -64,10 +93,13 @@ const { bench, check, circular, docs, docsFiles, fmt, lib, lint, test, testParts
     "dprint.json",
     // docs/README.md links this package's README, and test/docs.test.ts checks that it exists.
     "README.md",
-    // Each part's configuration builds on the whole suite's.
+    // Each part's configuration builds on the whole suite's, and test/coverageParts.test.ts reads all four.
     "vitest.config.ts",
+    "vitest.part-*.config.ts",
     // What a part says of a source it falls short on.
-    "vitest.shortfall.ts"
+    "vitest.shortfall.ts",
+    // test/toolCaches.test.ts runs the preparation this file declares.
+    "PACKAGE.ts"
   ],
   // Together the cases run past a CI job's hour on a GitHub runner (over 48 minutes on ubuntu and macOS, run
   // 44901780543), so the suite runs as four parts, each in a job of its own. `test` names all four.
@@ -90,7 +122,7 @@ const { bench, check, circular, docs, docsFiles, fmt, lib, lint, test, testParts
   // smithers-ci runs on Linux and macOS (docs/getting-started/quickstart.md), so its suite does too: on Windows the
   // package suites leave it out, as a person on Windows cannot run the program it tests.
   testHosts: ["linux", "darwin"],
-  testDeps: [toolCaches, linkedDocs],
+  testDeps: [toolCaches, linkedDocs, repositoryWorkflows],
   cwd
 })
 
@@ -136,6 +168,7 @@ export const Package = Smithers.Package({
     test,
     ...testParts,
     linkedDocs,
+    repositoryWorkflows,
     toolCaches,
     ...sources
   }

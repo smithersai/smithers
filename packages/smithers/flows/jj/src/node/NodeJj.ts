@@ -932,6 +932,28 @@ const operations = (spawn: Run, repositoryRoot?: string) => {
     Effect.suspend(() => withRepositoryMutation(method, repositoryRoot ?? process.cwd(), effect))
 
   /**
+   * The repository's current operation id, to pin later reads with
+   * `--at-op`. Template aliases can rewrite what `-T id` prints, so a value
+   * that is not a hex id is refused before it is used as one.
+   */
+  const currentOperation = (method: string) =>
+    Effect.flatMap(
+      inRepository(method, ["op", "log", "-n1", "--no-graph", "-T", "id"]),
+      (output) => {
+        const operationId = output.trim()
+        return /^[0-9a-f]+$/.test(operationId) ? Effect.succeed(operationId) : Effect.fail(
+          new JjError({
+            code: "unknown",
+            module: MODULE,
+            method,
+            command: "jj op log",
+            message: `jj ${method}: ${JSON.stringify(operationId.slice(0, 200))} is not an operation id`
+          })
+        )
+      }
+    )
+
+  /**
    * Capture the working copy without closing a change.
    *
    * `jj op log` snapshots the working copy and names the operation that holds
@@ -947,7 +969,7 @@ const operations = (spawn: Run, repositoryRoot?: string) => {
     repositoryCritical(
       "snapshot",
       Effect.gen(function*() {
-        const operationId = (yield* inRepository("snapshot", ["op", "log", "-n1", "--no-graph", "-T", "id"])).trim()
+        const operationId = yield* currentOperation("snapshot")
         const output = yield* inRepository("snapshot", [
           "log",
           `--at-op=${operationId}`,
@@ -960,18 +982,14 @@ const operations = (spawn: Run, repositoryRoot?: string) => {
         const [commitId = "", changeId = "", extra] = output.trimEnd().split("\n", 3).map((line) => line.trim())
         // Template aliases can rewrite what these templates print. A value that
         // is not an id is refused here instead of being journaled as one.
-        if (
-          extra !== undefined || !/^[0-9a-f]+$/.test(commitId) || !/^[k-z]+$/.test(changeId) ||
-          !/^[0-9a-f]+$/.test(operationId)
-        ) {
+        if (extra !== undefined || !/^[0-9a-f]+$/.test(commitId) || !/^[k-z]+$/.test(changeId)) {
           return yield* Effect.fail(
             new JjError({
               code: "unknown",
               module: MODULE,
               method: "snapshot",
               command: "jj log",
-              message: `jj snapshot: ${JSON.stringify(output.slice(0, 200))} and operation `
-                + `${JSON.stringify(operationId.slice(0, 200))} are not a commit id, change id, and operation id`
+              message: `jj snapshot: ${JSON.stringify(output.slice(0, 200))} is not a commit id and change id`
             })
           )
         }
@@ -997,7 +1015,7 @@ const operations = (spawn: Run, repositoryRoot?: string) => {
             // Pin both reads before resolving moving refs such as @. Neither
             // a later file write nor an external jj operation may change the
             // paths between rendering the patch and reading its metadata.
-            const operationId = (yield* inRepository("diff", ["op", "log", "-n1", "--no-graph", "-T", "id"])).trim()
+            const operationId = yield* currentOperation("diff")
             const args = ["diff", "--from", fromRevision, "--to", toRevision, `--at-op=${operationId}`]
             const patch = yield* inRepository("diff", [...args, "--git"])
             const paths = yield* inRepository("diff", [
@@ -1049,7 +1067,7 @@ const operations = (spawn: Run, repositoryRoot?: string) => {
    */
   const resolveCommit = (revset: string) =>
     Effect.gen(function*() {
-      const operationId = (yield* inRepository("workspaceAdd", ["op", "log", "-n1", "--no-graph", "-T", "id"])).trim()
+      const operationId = yield* currentOperation("workspaceAdd")
       const output = yield* inRepository("workspaceAdd", [
         "log",
         `--at-op=${operationId}`,

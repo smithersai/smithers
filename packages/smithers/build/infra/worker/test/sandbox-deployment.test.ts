@@ -1,6 +1,7 @@
 import * as ConfigProvider from "effect/ConfigProvider"
 import * as Effect from "effect/Effect"
 import * as Redacted from "effect/Redacted"
+import { ESLint } from "eslint"
 import { randomBytes } from "node:crypto"
 import * as Fs from "node:fs/promises"
 import * as NodePath from "node:path"
@@ -46,6 +47,14 @@ const cloudflareSizes: Record<string, { readonly cpus: number; readonly memoryMi
 }
 
 describe("sandbox service deployment", () => {
+  it("applies the shared invariants to shipped worker and deployment sources", async () => {
+    const eslint = new ESLint({ cwd: infraRoot })
+    for (const filePath of ["worker/SandboxService.ts", "scripts/deploy.ts", "deployment.ts"]) {
+      const [result] = await eslint.lintText("const run = (env = process.env) => env", { filePath })
+      expect(result?.messages.map((message) => message.ruleId)).toContain("no-restricted-syntax")
+    }
+  })
+
   it("declares instance types whose sizes are Cloudflare's, the 4-vCPU box first", () => {
     for (const instance of sandboxInstanceTypes) {
       expect(cloudflareSizes[instance.instanceType]).toEqual({ cpus: instance.cpus, memoryMib: instance.memoryMib })
@@ -59,6 +68,7 @@ describe("sandbox service deployment", () => {
   it("binds one container application per instance type and the token secret", () => {
     const containers: Array<{ readonly id: string; readonly props: unknown }> = []
     const options = sandboxWorkerOptions({
+      metrics: "sandbox-metrics",
       container: (id, props) => {
         containers.push({ id, props })
         return `container:${id}`
@@ -69,6 +79,7 @@ describe("sandbox service deployment", () => {
       main: sandboxWorkerEntry,
       compatibility: { date: workerCompatibilityDate, flags: ["nodejs_compat"] },
       env: {
+        SANDBOX_REQUEST_METRICS: "sandbox-metrics",
         SANDBOX_TOKEN: sandboxToken,
         SANDBOX_STANDARD_4: "container:SandboxStandard4",
         SANDBOX_STANDARD_3: "container:SandboxStandard3"
@@ -106,18 +117,33 @@ describe("sandbox service deployment", () => {
     const argument = (name: string) => new RegExp(`^ARG ${name}=(\\S+)$`, "m").exec(dockerfile)?.[1]
 
     // The SDK checks that its control server matches its own version.
-    expect(dockerfile).toContain(`FROM docker.io/cloudflare/sandbox:${manifest.dependencies["@cloudflare/sandbox"]}\n`)
+    expect(dockerfile).toContain(
+      `FROM docker.io/cloudflare/sandbox:${manifest.dependencies["@cloudflare/sandbox"]}@sha256:`
+    )
+    expect(dockerfile).toMatch(/^FROM .*@sha256:[a-f0-9]{64}$/m)
+    expect(dockerfile).toContain("npm install --offline --ignore-scripts -g /tmp/pnpm.tgz")
     expect(dockerfile).not.toMatch(/^ENTRYPOINT/m)
     expect(argument("NODE_VERSION")).toMatch(/^26\.\d+\.\d+$/)
     expect(argument("PNPM_VERSION")).toBe("11.25.0")
     expect(argument("BUN_VERSION")).toBe("1.4.4")
     expect(argument("GO_VERSION")).toMatch(/^\d+\.\d+\.\d+$/)
     expect(argument("JJ_VERSION")).toMatch(/^\d+\.\d+\.\d+$/)
-    for (const download of ["NODE", "BUN", "GO", "JJ"]) {
+    for (const download of ["NODE", "PNPM", "BUN", "GO", "JJ"]) {
       expect(argument(`${download}_SHA256`)).toMatch(/^[0-9a-f]{64}$/)
       expect(dockerfile).toContain(`echo "\${${download}_SHA256}`)
     }
-    for (const tool of ["node --version", "pnpm --version", "bun --version", "go version", "jj --version", "git --version", "tar --version", "base64 --version"]) {
+    for (
+      const tool of [
+        "node --version",
+        "pnpm --version",
+        "bun --version",
+        "go version",
+        "jj --version",
+        "git --version",
+        "tar --version",
+        "base64 --version"
+      ]
+    ) {
       expect(dockerfile).toContain(tool)
     }
   })

@@ -97,6 +97,25 @@ const leading: ReadonlySet<string> = new Set([
 
 const shells: ReadonlySet<string> = new Set(["sh", "bash", "dash", "zsh", "ksh"])
 
+/**
+ * The command string a shell argv passes with -c, if present.
+ *
+ * @category parsing
+ * @since 1.0.0
+ */
+export const commandText = (argv: ReadonlyArray<string>): string | undefined => {
+  const program = argv[0]?.split(/[/\\]/).at(-1)?.replace(/\.exe$/i, "")
+  if (program === undefined || !shells.has(program)) return undefined
+  for (let index = 1; index < argv.length; index++) {
+    const flag = argv[index]!
+    if (/^--[A-Za-z0-9-]+$/.test(flag)) continue
+    if (!/^-[A-Za-z]+$/.test(flag)) return undefined
+    if (flag.includes("c")) return argv[index + 1]
+    if (flag.endsWith("o")) index++
+  }
+  return undefined
+}
+
 const programs = (text: string, depth: number): ReadonlyArray<string> => {
   const found: Array<string> = []
   for (const words of simpleCommands(text)) {
@@ -114,17 +133,9 @@ const programs = (text: string, depth: number): ReadonlyArray<string> => {
     // A program's name holds a letter: the `1` of `2>&1` is no program.
     if (program === undefined || program.dynamic || !/^(?=.*[A-Za-z])[A-Za-z0-9_./+-]+$/.test(program.text)) continue
     found.push(program.text)
-    if (!shells.has(program.text.slice(program.text.lastIndexOf("/") + 1)) || depth === 4) continue
-    // `bash -e -c 'text'` and `sh -ec 'text'` run text; `bash script.sh` does not.
-    for (let next = index + 1; next < words.length && /^-[A-Za-z]+$/.test(words[next]!.text); next++) {
-      const flags = words[next]!.text
-      if (flags.includes("c")) {
-        found.push(...programs(words[next + 1]?.text ?? "", depth + 1))
-        break
-      }
-      // `-o pipefail` takes the option's name.
-      if (flags.endsWith("o")) next++
-    }
+    if (depth === 4) continue
+    const nested = commandText(words.slice(index).map((word) => word.text))
+    if (nested !== undefined) found.push(...programs(nested, depth + 1))
   }
   return found
 }

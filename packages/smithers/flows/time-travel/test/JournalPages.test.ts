@@ -126,4 +126,28 @@ describe("JournalPages.forEachPage", () => {
 
       expect(failure).toMatchObject({ code: "unknown", message: "could not read run" })
     }))
+
+  it.effect("refuses a compacted read with the floor, and a floorless one as an unknown read failure", () =>
+    Effect.gen(function*() {
+      const compacted = (checkpointSeq?: number) =>
+        Journal.makeNoop({
+          entries: () =>
+            Effect.fail(
+              new Journal.JournalError({
+                code: "compacted",
+                message: "compacted",
+                ...(checkpointSeq === undefined ? {} : { checkpointSeq: checkpointSeq as JournalEvent.Seq })
+              })
+            )
+        })
+      const floored = yield* Effect.flip(JournalPages.forEachPage(compacted(7), options, () => Effect.void))
+      expect(floored).toMatchObject({
+        code: "not_found",
+        message: "run run is compacted through sequence 7; history below that checkpoint no longer exists",
+        cause: { checkpointSeq: 7, cause: { code: "compacted" } }
+      })
+      // A floor is what makes the refusal actionable; without one it is only a failed read.
+      const floorless = yield* Effect.flip(JournalPages.forEachPage(compacted(), options, () => Effect.void))
+      expect(floorless).toMatchObject({ code: "unknown", message: "could not read run" })
+    }))
 })

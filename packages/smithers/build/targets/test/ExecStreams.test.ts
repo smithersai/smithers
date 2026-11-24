@@ -146,15 +146,18 @@ describe("a resolved tool environment", () => {
     expect(exit.value.stdout).toBe("/declared/ca.pem")
   })
 
-  it("still withholds a sensitive name the closure exports", async () => {
-    const closure = { path: "/closure/bin", variables: { SMITHERS_CACHE_TOKEN: "leaked" } }
-    const exit = await Effect.runPromiseExit(Exec.run(
-      { workspaceRoot: root, environment: closure },
-      payload(readEnv("SMITHERS_CACHE_TOKEN"))
-    ))
-    if (!Exit.isSuccess(exit)) throw new Error(`expected a success: ${JSON.stringify(exit.cause)}`)
-    expect(exit.value.stdout).toBe("<unset>")
-  })
+  it.each(["SMITHERS_CACHE_TOKEN", "SMITHERS_CACHE_READ_TOKEN", "SMITHERS_CACHE_WRITE_TOKEN"])(
+    "withholds %s from the closure",
+    async (name) => {
+      const closure = { path: "/closure/bin", variables: { [name]: "leaked" } }
+      const exit = await Effect.runPromiseExit(Exec.run(
+        { workspaceRoot: root, environment: closure },
+        payload(readEnv(name))
+      ))
+      if (!Exit.isSuccess(exit)) throw new Error(`expected a success: ${JSON.stringify(exit.cause)}`)
+      expect(exit.value.stdout).toBe("<unset>")
+    }
+  )
 })
 
 describe("stream decoding", () => {

@@ -32,6 +32,7 @@ export interface Faults {
   readonly exec?: boolean
   readonly noStdout?: boolean
   readonly noStdin?: boolean
+  readonly truncatedStdin?: boolean
   readonly exitCode?: number
   /** The command's output stream breaks off with the container's failure. */
   readonly brokenStdout?: boolean
@@ -72,7 +73,9 @@ export const make = (faults: Faults = {}) => {
                 stdinError !== undefined ? Effect.fail(stdinError) : Effect.tryPromise({
                   try: () =>
                     new Promise<void>((resolve, reject) =>
-                      child.stdin!.write(chunk, (error) => error ? reject(error) : resolve())
+                      faults.truncatedStdin
+                        ? child.stdin!.end(chunk.subarray(0, 1), () => reject(new Error("short write")))
+                        : child.stdin!.write(chunk, (error) => error ? reject(error) : resolve())
                     ),
                   catch: (cause) => new ProcessFailure({ message: String(cause) })
                 })

@@ -5,19 +5,17 @@
  */
 
 import * as CommandLine from "@smthrs/kernel/CommandLine"
-import type * as Cause from "effect/Cause"
 import * as Data from "effect/Data"
-import * as Deferred from "effect/Deferred"
 import type * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
-import * as Fiber from "effect/Fiber"
 import type * as HttpClient from "effect/http/HttpClient"
 import * as HttpClientRequest from "effect/http/HttpClientRequest"
 import type * as HttpClientResponse from "effect/http/HttpClientResponse"
-import * as Queue from "effect/Queue"
+import * as Option from "effect/Option"
 import * as Random from "effect/Random"
 import * as Schedule from "effect/Schedule"
 import * as Schema from "effect/Schema"
+import * as Semaphore from "effect/Semaphore"
 import * as Stream from "effect/Stream"
 import { finalizeWithin } from "../internal/finalizeWithin.ts"
 import { cancelGuard, killScript } from "../internal/killScript.ts"
@@ -26,6 +24,7 @@ import { ProviderError } from "../RemoteChildProcessSpawner/ProviderError.ts"
 import type { Provider } from "../Sandbox/Provider.ts"
 import { type ResourceLimits, validateResourceLimits } from "../Sandbox/ResourceLimits.ts"
 import type { Session } from "../Sandbox/Session.ts"
+import { byteBudget } from "./bytes.ts"
 import { Acquire, Command, CommandResult, Failure, LimitsQuery, SessionInfo } from "./protocol.ts"
 
 /**
@@ -49,6 +48,8 @@ export interface HttpSandboxOptions {
   readonly pollInterval?: Duration.Input | undefined
   /** The most bytes of each stream one poll answers. Default {@link defaults}. */
   readonly pollBytes?: number | undefined
+  /** Maximum bytes read from one HTTP response, including file reads (default 64 MiB). */
+  readonly maxResponseBytes?: number | undefined
   /** How long one request may take before it counts as lost. Default {@link defaults}. */
   readonly requestTimeout?: Duration.Input | undefined
   /** How many times a request lost on the way is sent again. Default {@link defaults}. */
@@ -130,22 +131,15 @@ const startScript = (root: string, d: string, command: string, input: boolean) =
   `i=0; while [ ! -f ${q(`${d}/runner`)} ]; do i=$((i+1)); [ "$i" -lt 500 ] || exit 125; ` +
   `sleep 0.01 2>/dev/null || sleep 1; done`
 
-/**
- * One poll of the command under `d`: a status line (`x <code>` once it
- * exited, `r` while its runner lives, `l` when neither holds), then up to
- * `max` bytes of its stdout from byte `out`; up to `max` bytes of its stderr
- * from byte `err` go to stderr. The exit is read before the output, so an
- * exited command's output is complete when it is read.
- */
-const pollScript = (d: string, out: number, err: number, max: number) =>
+/** A status line followed by the requested page of one stream. */
+const pollScript = (d: string, channel?: "out" | "err", offset = 0, max = 0) =>
   `d=${q(d)}\n` +
   `if [ -f "$d/exit" ]; then read -r x <"$d/exit"; s="x $x"\n` +
   `elif read -r p 2>/dev/null <"$d/runner" && kill -0 "$p" 2>/dev/null; then s=r\n` +
   `elif [ -f "$d/exit" ]; then read -r x <"$d/exit"; s="x $x"\n` +
   `else s=l; fi\n` +
   `printf '%s\\n' "$s"\n` +
-  `tail -c +${out + 1} "$d/out" 2>/dev/null | head -c ${max}\n` +
-  `tail -c +${err + 1} "$d/err" 2>/dev/null | head -c ${max} >&2\n` +
+  (channel === undefined ? "" : `tail -c +${offset + 1} "$d/${channel}" 2>/dev/null | head -c ${max}\n`) +
   `exit 0`
 
 /**
@@ -174,7 +168,7 @@ const wholeNumber = (name: string, value: number, least: number) => {
  * starts the command detached in the machine, with its output and exit status
  * in files under `processDirectory`; the streams are fed by polls that ask
  * for the bytes after those already read, and `exitCode` resolves once the
- * exit status is there and the output read to its end. Closing the spawn's
+ * exit status is recorded, independently of output consumption. Closing the spawn's
  * scope before then signals the command and every process it started
  * (`SIGTERM`), and the files are removed either way, except after a start
  * whose answer never came: its directory stays as the fence that keeps a
@@ -199,6 +193,8 @@ export const make = (options: HttpSandboxOptions): Provider => {
   if (options.token === "") throw new TypeError("http-sandbox: token must not be empty")
   const chunkBytes = options.chunkBytes ?? defaults.chunkBytes
   const pollBytes = options.pollBytes ?? defaults.pollBytes
+  const maxResponseBytes = options.maxResponseBytes ?? 64 * 1024 * 1024
+  wholeNumber("maxResponseBytes", maxResponseBytes, 1)
   const retries = options.retries ?? defaults.retries
   const root = options.processDirectory ?? defaults.processDirectory
   wholeNumber("chunkBytes", chunkBytes, 1)
@@ -212,6 +208,16 @@ export const make = (options: HttpSandboxOptions): Provider => {
   const pollInterval = options.pollInterval ?? defaults.pollInterval
   const timeout = options.requestTimeout ?? defaults.requestTimeout
   const retry = Schedule.exponential(options.retryDelay ?? defaults.retryDelay)
+
+  const responseBytes = (response: HttpClientResponse.HttpClientResponse) =>
+    byteBudget(
+      maxResponseBytes,
+      new ProviderError({ code: "unknown", message: "http-sandbox: response byte limit exceeded" })
+    )(
+      response.stream.pipe(Stream.mapError(() => new Lost({ reason: "response could not be read" })))
+    )
+  const bodyOf = (response: HttpClientResponse.HttpClientResponse) =>
+    Effect.map(responseBytes(response), (bytes) => decoder.decode(bytes))
 
   /** Sends `request` until it is answered, reading the answer with `read`. */
   const send = <A>(
@@ -229,7 +235,7 @@ export const make = (options: HttpSandboxOptions): Provider => {
           )
           : response.status >= 400
           ? Effect.flatMap(
-            Effect.mapError(response.text, (error) => new Lost({ reason: error.message })),
+            bodyOf(response),
             (text) => {
               const failure = decodeFailure(text)
               return Effect.fail(
@@ -258,9 +264,6 @@ export const make = (options: HttpSandboxOptions): Provider => {
           })
         ))
     )
-
-  const bodyOf = (response: HttpClientResponse.HttpClientResponse) =>
-    Effect.mapError(response.text, (error) => new Lost({ reason: error.message }))
 
   const malformed = (what: string) => (error: { readonly message: string }) =>
     new ProviderError({ code: "unknown", message: `http-sandbox: ${what} answered malformed JSON: ${error.message}` })
@@ -297,12 +300,14 @@ export const make = (options: HttpSandboxOptions): Provider => {
             bodyOf(response),
             (text) => Effect.mapError(decodeResult(text), malformed(`a command in ${info.remoteId}`))
           )
-      )
+      ).pipe(Effect.mapError((error) =>
+        new ProviderError({ code: error.code, message: "http-sandbox: remote command request failed" })
+      ))
 
     const failed = (code: ProviderError["code"], message: string, result: typeof CommandResult.Type) =>
       new ProviderError({
         code,
-        message: `http-sandbox: ${message} (exit ${result.exitCode}): ${decoder.decode(result.stderr).trim()}`
+        message: `http-sandbox: ${message} (exit ${result.exitCode})`
       })
 
     let next = 0
@@ -318,30 +323,25 @@ export const make = (options: HttpSandboxOptions): Provider => {
         `(${killScript(`${d}/pid`, "TERM")}); ` +
         `if [ -n "$g" ]; then kill -TERM -"$g" 2>/dev/null; kill -CONT -"$g" 2>/dev/null; fi`
       let state: "starting" | "running" | "ended" = "starting"
-      let poller: Fiber.Fiber<unknown> | undefined = undefined
       // The scope is the process's lifetime, registered before the start so
       // an interrupted start is covered too. A command seen to end leaves
       // only its files to remove. A running one is ended first. A start whose
       // answer never came may still land, so its directory is claimed and
       // kept: the start then finds it and starts nothing, and a runner that
-      // did start is ended. The poller stops after the command does, so a
-      // poll in flight does not delay the signal.
+      // did start is ended.
       yield* Effect.addFinalizer(() =>
-        Effect.andThen(
-          finalizeWithin(
-            Effect.ignore(
-              exec(
-                state === "ended"
-                  ? `rm -rf ${q(d)}`
-                  : state === "running"
-                  ? `${end}; rm -rf ${q(d)}`
-                  : `mkdir -p ${q(d)} && { ${end}; }`
-              ),
-              { log: "Warn" }
+        finalizeWithin(
+          Effect.ignore(
+            exec(
+              state === "ended"
+                ? `rm -rf ${q(d)}`
+                : state === "running"
+                ? `${end}; rm -rf ${q(d)}`
+                : `mkdir -p ${q(d)} && { ${end}; }`
             ),
-            `http sandbox ${info.remoteId} process ${d}`
+            { log: "Warn" }
           ),
-          poller === undefined ? Effect.void : Fiber.interrupt(poller)
+          `http sandbox ${info.remoteId} process ${d}`
         )
       )
       const started = yield* exec(startScript(root, d, command, spawnOptions.stdin !== undefined), {
@@ -352,54 +352,70 @@ export const make = (options: HttpSandboxOptions): Provider => {
         stdin: spawnOptions.stdin
       })
       if (started.exitCode !== 0) {
-        return yield* Effect.fail(failed("spawn_error", `\`${command}\` could not start in ${info.remoteId}`, started))
+        return yield* Effect.fail(failed("spawn_error", "command could not start", started))
       }
       state = "running"
-      const stdout = yield* Queue.unbounded<Uint8Array, ProviderError | Cause.Done>()
-      const stderr = yield* Queue.unbounded<Uint8Array, ProviderError | Cause.Done>()
-      const exit = yield* Deferred.make<number, ProviderError>()
-      const poll = (out: number, err: number): Effect.Effect<void, ProviderError> =>
+      let exit: number | undefined
+      const page = (channel?: "out" | "err", offset = 0) =>
         Effect.gen(function*() {
-          const result = yield* exec(pollScript(d, out, err, pollBytes))
+          const result = yield* exec(pollScript(d, channel, offset, pollBytes))
           if (result.exitCode !== 0) {
-            return yield* Effect.fail(failed("unknown", `\`${command}\` could not be observed`, result))
+            return yield* Effect.fail(failed("unknown", "command could not be observed", result))
           }
           const line = result.stdout.indexOf(10)
           const status = decoder.decode(result.stdout.subarray(0, line))
-          const chunk = result.stdout.subarray(line + 1)
-          if (chunk.length > 0) yield* Queue.offer(stdout, chunk)
-          if (result.stderr.length > 0) yield* Queue.offer(stderr, result.stderr)
+          const bytes = result.stdout.subarray(line + 1)
+          if (
+            line < 0 || bytes.length > (channel === undefined ? 0 : pollBytes) || !/^(r|l|x [0-9]{1,3})$/.test(status)
+          ) {
+            return yield* Effect.fail(
+              new ProviderError({ code: "unknown", message: "http-sandbox: invalid command poll" })
+            )
+          }
           if (status === "l") {
             return yield* Effect.fail(
               new ProviderError({
                 code: "unavailable",
-                message: `http-sandbox: \`${command}\` in ${info.remoteId} ended without recording its exit`
+                message: "http-sandbox: command ended without recording its exit"
               })
             )
           }
-          const drained = chunk.length < pollBytes && result.stderr.length < pollBytes
-          if (drained && status.startsWith("x ")) {
+          const ended = status.startsWith("x ")
+          if (ended) {
+            exit = Number(status.slice(2))
             state = "ended"
-            yield* Queue.end(stdout)
-            yield* Queue.end(stderr)
-            return yield* Deferred.succeed(exit, Number(status.slice(2)))
           }
-          if (drained) yield* Effect.sleep(pollInterval)
-          return yield* poll(out + chunk.length, err + result.stderr.length)
+          return { bytes, ended }
         })
-      const observe = poll(0, 0).pipe(
-        Effect.catch((error) =>
-          Effect.andThen(
-            Effect.all([Queue.fail(stdout, error), Queue.fail(stderr, error)]),
-            Deferred.fail(exit, error)
-          )
-        )
+
+      const output = (channel: "out" | "err") => {
+        let offset = 0
+        let drained = false
+        const gate = Semaphore.makeUnsafe(1)
+        return Stream.paginate(undefined, () =>
+          gate.withPermit(Effect.gen(function*() {
+            if (drained) return [[], Option.none<undefined>()] as const
+            const { bytes, ended } = yield* page(channel, offset)
+            offset += bytes.length
+            drained = ended && bytes.length < pollBytes
+            if (bytes.length === 0 && !drained) yield* Effect.sleep(pollInterval)
+            return [
+              bytes.length === 0 ? [] : [bytes],
+              drained ? Option.none<undefined>() : Option.some(undefined)
+            ] as const
+          })))
+      }
+
+      const observeExit: Effect.Effect<number, ProviderError> = Effect.suspend(() =>
+        exit !== undefined ?
+          Effect.succeed(exit) :
+          Effect.flatMap(page(), () =>
+            exit !== undefined ? Effect.succeed(exit) : Effect.andThen(Effect.sleep(pollInterval), observeExit))
       )
-      poller = yield* Effect.forkDetach(observe)
       const process: RemoteProcess = {
-        stdout: Stream.fromQueue(stdout),
-        stderr: Stream.fromQueue(stderr),
-        exitCode: Deferred.await(exit)
+        stdout: output("out"),
+        stderr: output("err"),
+        exitCode: yield* Effect.cached(observeExit)
       }
       directories.set(process, d)
       return process
@@ -428,11 +444,7 @@ export const make = (options: HttpSandboxOptions): Provider => {
         send(
           `reading ${path}`,
           HttpClientRequest.get(`${sessionUrl(info.remoteId)}/files`).pipe(files(path)),
-          (response) =>
-            Effect.map(
-              Effect.mapError(response.arrayBuffer, (error) => new Lost({ reason: error.message })),
-              (buffer) => new Uint8Array(buffer)
-            )
+          responseBytes
         ),
       writeFile: (path, content) =>
         Effect.gen(function*() {

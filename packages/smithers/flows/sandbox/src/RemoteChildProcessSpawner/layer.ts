@@ -82,23 +82,23 @@ const guestEnvironment = (
     const upper = name.toUpperCase()
     const hostAmbient = (ambient.has(upper) || upper.startsWith("LC_"))
       && value !== undefined && host[name] === value
-    if (!hostAmbient) guest[name] = Redacted.isRedacted(value) ? Redacted.value(value) : value
+    if (!hostAmbient && !Redacted.isRedacted(value)) guest[name] = value
   }
   return guest
 }
 
-const noStdin = (command: string): PlatformError.PlatformError =>
+const noStdin = (): PlatformError.PlatformError =>
   PlatformError.badArgument({
     module: MODULE,
     method: "spawn",
-    description: `remote sessions do not pipe stdin to \`${command}\``
+    description: "remote sessions do not pipe stdin to a running command"
   })
 
-const noKill = (command: string): PlatformError.PlatformError =>
+const noKill = (): PlatformError.PlatformError =>
   PlatformError.badArgument({
     module: MODULE,
     method: "kill",
-    description: `remote sessions end \`${command}\` by closing its scope, not by signal`
+    description: "remote sessions end a command by closing its scope"
   })
 
 /** The signal a kill delivers when neither the caller nor the command named one. */
@@ -151,27 +151,25 @@ const maxStdinBytes = 16 * 1024 * 1024
  * input this seam already holds whole cost nothing next to that.
  */
 const collectStdin = (
-  command: string,
   stream: Stream.Stream<Uint8Array, unknown>
 ): Effect.Effect<Uint8Array, PlatformError.PlatformError> =>
   Effect.suspend(() => {
     const chunks: Array<Uint8Array> = []
     let length = 0
     return Stream.runForEach(
-      Stream.mapError(stream, (cause) =>
+      Stream.mapError(stream, () =>
         PlatformError.systemError({
           _tag: "Unknown",
           module: MODULE,
           method: "spawn",
-          description: `the standard input for \`${command}\` could not be read`,
-          cause
+          description: "the standard input could not be read"
         })),
       (part) =>
         Effect.suspend(() => {
           if (length + part.length > maxStdinBytes) {
             return Effect.fail(
               rejected(
-                `the standard input for \`${command}\` exceeds ${maxStdinBytes} bytes; have the command read a file instead`
+                `the standard input exceeds ${maxStdinBytes} bytes; have the command read a file instead`
               )
             )
           }
@@ -214,6 +212,9 @@ const validateCommand = (
       validateCommand(command.left, acceptsStdin, leftmost, first),
       validateCommand(command.right, acceptsStdin, false, first)
     )
+  }
+  if (command.args.some(Redacted.isRedacted) || Object.values(command.options.env ?? {}).some(Redacted.isRedacted)) {
+    return Effect.fail(rejected("remote command arguments and environment require opaque references for secrets"))
   }
   if (!leftmost) {
     if (command.options.cwd !== undefined && command.options.cwd !== first.cwd) {
@@ -291,7 +292,6 @@ const pidAllocator = (): () => ProcessId => {
 }
 
 const handleOf = (
-  command: string,
   child: ChildProcess.Command,
   process: RemoteProcess,
   allocatePid: () => ProcessId,
@@ -299,8 +299,8 @@ const handleOf = (
 ): Effect.Effect<ChildProcessHandle, never, Scope.Scope> =>
   Effect.gen(function*() {
     let running = true
-    const rawStdout = Stream.mapError(process.stdout, platformError("stdout", command))
-    const rawStderr = Stream.mapError(process.stderr, platformError("stderr", command))
+    const rawStdout = Stream.mapError(process.stdout, platformError("stdout"))
+    const rawStderr = Stream.mapError(process.stderr, platformError("stderr"))
     const options = rightmostOptions(child)
     const stdout = outputStream(rawStdout, options.stdout)
     const stderr = outputStream(rawStderr, options.stderr)
@@ -312,7 +312,7 @@ const handleOf = (
     const observeExit = process.exitCode.pipe(
       Effect.mapError((error) => {
         running = false
-        return platformError("exitCode", command)(error)
+        return platformError("exitCode")(error)
       }),
       Effect.map((code) => {
         running = false
@@ -326,8 +326,8 @@ const handleOf = (
     const kill = provider.kill
     const signalled: (signal: ChildProcess.Signal) => Effect.Effect<void, PlatformError.PlatformError> =
       kill === undefined
-        ? () => Effect.fail(noKill(command))
-        : (signal) => Effect.mapError(kill(process, signal), platformError("kill", command))
+        ? () => Effect.fail(noKill())
+        : (signal) => Effect.mapError(kill(process, signal), platformError("kill"))
     if (kill !== undefined) {
       // Closing a process scope asks the provider to stop THAT command before
       // the provider's own release finalizer tears down whatever it owns. A
@@ -361,7 +361,7 @@ const handleOf = (
       exitCode: Deferred.await(completed),
       isRunning: Effect.sync(() => running),
       kill: (options) => signalled(options?.killSignal ?? rightmostOptions(child).killSignal ?? defaultSignal),
-      stdin: Sink.fail(noStdin(command)),
+      stdin: Sink.fail(noStdin()),
       stdout,
       stderr,
       all: Stream.merge(stdout, stderr),
@@ -394,14 +394,16 @@ export const makeOpened = (
       Effect.fnUntraced(function*(command: ChildProcess.Command) {
         yield* validateCommand(command, provider.stdin === true)
         const rendered = CommandLine.render(command)
+        const cwd = CommandLine.cwd(command)
+        const env = guestEnvironment(CommandLine.env(command))
         const input = stdinStream(leftmostOptions(command))
-        const stdin = input === undefined ? undefined : yield* collectStdin(rendered, input)
-        const started = yield* provider.spawn(CommandLine.renderForExecution(command), {
-          cwd: CommandLine.cwd(command),
-          env: guestEnvironment(CommandLine.env(command)),
+        const stdin = input === undefined ? undefined : yield* collectStdin(input)
+        const started = yield* provider.spawn(rendered, {
+          cwd,
+          env,
           ...stdin === undefined ? {} : { stdin }
-        }).pipe(Effect.mapError(platformError("spawn", rendered)))
-        return yield* handleOf(rendered, command, started, allocatePid, provider)
+        }).pipe(Effect.mapError(platformError("spawn")))
+        return yield* handleOf(command, started, allocatePid, provider)
       })
     )
   })
@@ -425,9 +427,7 @@ export const make = (
     makeOpened(provider),
     (error) =>
       Effect.succeed(
-        makeSpawner((command: ChildProcess.Command) =>
-          Effect.fail(platformError("open", CommandLine.render(command))(error))
-        )
+        makeSpawner(() => Effect.fail(platformError("open")(error)))
       )
   )
 
@@ -438,9 +438,8 @@ export const make = (
  * or stream consumer closes that scope and therefore runs the finalizer
  * installed by `Provider.open`.
  *
- * The provider runs `@smthrs/kernel/CommandLine.renderForExecution(command)`,
- * which reveals a `Redacted` argument; every error names the command by
- * `@smthrs/kernel/CommandLine.render(command)`, which shows it as `<redacted>`.
+ * Every pipeline stage rejects protected inputs before the provider receives
+ * the rendered command. Guests can carry opaque references for a host egress proxy.
  * The kernel's `proc:spawn` grant resource is
  * `@smthrs/kernel/CommandLine.resource`, which starts from the `render` line
  * and adds a `sh -c` wrapper for a shell line holding control syntax, an

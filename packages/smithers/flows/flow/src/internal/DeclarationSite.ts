@@ -108,15 +108,40 @@ const sources = globals[sourcesKey] ??= new Map<string, string>()
  *
  * The loader states this BEFORE the import, because a declaration's site is
  * captured while the module is evaluated and is never rewritten afterwards.
- * One entry is kept per load: a scratch path is unique and gone, so no later
- * file can take a stale entry's name.
+ * It returns a release the loader calls once the load is over; releasing
+ * twice, or after a later statement for the same path, changes nothing. The
+ * process keeps at most {@link maximumSources} entries, dropping the oldest,
+ * so a loader that never releases cannot grow it without bound.
  *
  * @since 1.0.0
  * @category constructors
  */
-export const evaluatedFrom = (evaluated: string, entry: string): void => {
-  sources.set(normalize(evaluated), normalize(entry))
+export const evaluatedFrom = (evaluated: string, entry: string): () => void => {
+  const key = normalize(evaluated)
+  const value = normalize(entry)
+  sources.delete(key)
+  sources.set(key, value)
+  while (sources.size > maximumSources) sources.delete(sources.keys().next().value!)
+  return () => {
+    if (sources.get(key) === value) sources.delete(key)
+  }
 }
+
+/**
+ * The most evaluated-file entries the process keeps at once.
+ *
+ * @since 1.0.0
+ * @category constants
+ */
+export const maximumSources = 1024
+
+/**
+ * How many evaluated-file entries the process holds now.
+ *
+ * @since 1.0.0
+ * @category getters
+ */
+export const sourceCount = (): number => sources.size
 
 /**
  * The position one stack frame names, in the V8 and JavaScriptCore spellings.

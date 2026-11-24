@@ -1,6 +1,7 @@
 import { Fuzz, FuzzSimulation } from "@smthrs/fuzz"
 import { Arbitrary, Effect, Exit, FileSystem, Schema, Stream } from "effect"
 import * as HttpClient from "effect/http/HttpClient"
+import * as HttpClientRequest from "effect/http/HttpClientRequest"
 import * as HttpClientResponse from "effect/http/HttpClientResponse"
 import * as ChildProcess from "effect/process/ChildProcess"
 import {
@@ -413,17 +414,12 @@ describe("@smthrs/sandbox fuzz invariants", () => {
                     const handler = HttpSandbox.serve({ provider: dirProvider, token })
                     const client = HttpClient.make((req) =>
                       Effect.gen(function*() {
-                        const bodyBuf = req.body._tag === "Uint8Array" ? req.body.body : undefined
-                        const webReq = new Request(req.url, {
-                          method: req.method,
-                          headers: req.headers,
-                          ...(bodyBuf !== undefined ? { body: new Uint8Array(bodyBuf) } : {})
-                        })
+                        const webReq = yield* Effect.orDie(HttpClientRequest.toWeb(req))
                         const webRes = yield* handler(webReq)
                         return HttpClientResponse.fromWeb(req, webRes)
                       })
                     )
-                    return HttpSandbox.make({ url: "http://sandbox.local", token, client })
+                    return HttpSandbox.make({ url: "http://sandbox.local", token, client, pollInterval: "10 millis" })
                   })()
                   : dirProvider
 

@@ -245,12 +245,12 @@ describe.skipIf(!jjInstalled)("NodeJj against a repository its occupant controls
       const jj = yield* Effect.provide(Jj, layer())
       // @ is signed and unchanged, so the aliased template verifies it.
       const verified = yield* Effect.flip(jj.snapshot("signed @"))
-      expect(isJjError(verified) && verified.message).toContain("are not a commit id, change id, and operation id")
+      expect(isJjError(verified) && verified.message).toContain("is not a commit id and change id")
       expect(existsSync(marker())).toBe(false)
       // Rewriting a signed @ would re-sign it under `signing.behavior=keep`.
       yield* Effect.promise(() => writeFile(join(repository, "signed.txt"), "two\n"))
       const rewritten = yield* Effect.flip(jj.snapshot("rewritten @"))
-      expect(isJjError(rewritten) && rewritten.message).toContain("are not a commit id, change id, and operation id")
+      expect(isJjError(rewritten) && rewritten.message).toContain("is not a commit id and change id")
       // A pinned lane resolves its revision with the same template first.
       const aliasedLane = join(directory, "aliased-lane")
       const aliased = yield* Effect.flip(jj.workspaceAdd("aliased-lane", aliasedLane, "@"))

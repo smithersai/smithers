@@ -8,6 +8,8 @@
  * the expansion. Check and test also depend on the engine's source-only
  * file group: their suites and examples execute it, while depending on the
  * engine library would create a cycle through this package's library.
+ * Check and test also depend on `@smthrs/fuzz`, which the fuzz and Lean
+ * differential suites import.
  */
 import {
   CircularImports,
@@ -19,6 +21,7 @@ import {
 } from "@smthrs/repo-targets"
 import { Smithers } from "@smthrs/targets"
 import { docsWriter, referenceStyle, rootInvariantsConfig, rootJSDocConfig } from "../../../../PACKAGE.ts"
+import { Package as fuzzPackage } from "../../../fuzz/PACKAGE.ts"
 import { Package as canonicalPackage } from "../canonical/PACKAGE.ts"
 import { Package as capabilityPackage } from "../capability/PACKAGE.ts"
 import { Package as cryptoPackage } from "../crypto/PACKAGE.ts"
@@ -31,6 +34,7 @@ const plan = planPackage.lib
 const crypto = cryptoPackage.lib
 const keys = keysPackage.lib
 const canonical = canonicalPackage.lib
+const fuzz = fuzzPackage.lib
 
 const cwd = "packages/smithers/flows/flow"
 const workspaceSources = WorkspaceSources({ cwd })
@@ -62,7 +66,7 @@ const lib = Smithers.TsBuild({
 
 const check = Smithers.Typecheck({
   srcs: [sources, examples, Smithers.glob("test/**/*.{ts,vibe}")],
-  deps: [lib, plan, crypto, keys, canonical, capability, engineSourceInputs],
+  deps: [lib, plan, crypto, keys, canonical, capability, fuzz, engineSourceInputs],
   tsconfig: Smithers.file("tsconfig.test.json"),
   buildMode: false,
   incremental: false,
@@ -79,7 +83,7 @@ const test = Smithers.Vitest({
     Smithers.file("docs/testing.md"),
     Smithers.file("//packages/smithers/flows/engine/SourceInputs.ts")
   ],
-  deps: [lib, plan, crypto, keys, canonical, capability, engineSourceInputs],
+  deps: [lib, plan, crypto, keys, canonical, capability, fuzz, engineSourceInputs],
   config: Smithers.file("vitest.config.ts"),
   environment: "node",
   passWithNoTests: false,

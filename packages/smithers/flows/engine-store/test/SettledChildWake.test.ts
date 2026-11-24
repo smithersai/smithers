@@ -263,7 +263,13 @@ describe("a settled child wakes its parked parent (#4774)", () => {
         })),
         Journal.Journal
       )
-      const home = yield* test.makeDriver("home", undefined, journal)
+      // The heartbeat repair would record the same wake while the commit's
+      // maintenance is held open. It reads nothing here, so the wake asserted
+      // below can only be the interrupted settlement's own.
+      const home = yield* test.makeDriver("home", (state) => ({
+        ...state,
+        waitingRuns: (filter) => filter?.hasChildren === true ? Effect.succeed([]) : state.waitingRuns(filter)
+      }), journal)
       yield* test.parked(home.driver, home.drained)
 
       armed = true
@@ -297,7 +303,7 @@ describe("a settled child wakes its parked parent (#4774)", () => {
       const restarted = yield* test.makeDriver("restarted", (state) => ({
         ...state,
         waitingRuns: (filter) =>
-          filter === undefined && busyListings-- > 0
+          filter?.hasChildren === true && busyListings-- > 0
             ? Effect.die(new Error("SQLITE_BUSY: database is locked"))
             : state.waitingRuns(filter),
         runChildren: (parentId) =>
@@ -311,5 +317,44 @@ describe("a settled child wakes its parked parent (#4774)", () => {
       assert.isAtMost(busyChildReads, -1)
       yield* restarted.drained
       yield* restarted.close
+    })))
+
+  // R1-Astra-D1-005: the repair ran once per driver start, so a worker that
+  // kept running never saw a gap another process opened by dying afterwards.
+  it.live("a worker that was already running repairs a wake lost after its first pass", () =>
+    onDisk(Effect.gen(function*() {
+      const test = yield* fixture
+      let passes = 0
+      const survivor = yield* test.makeDriver("survivor", (state) => ({
+        ...state,
+        waitingRuns: (filter) =>
+          state.waitingRuns(filter).pipe(Effect.tap(() =>
+            Effect.sync(() => {
+              if (filter?.hasChildren === true) passes++
+            })
+          ))
+      }))
+      const dying = yield* test.makeDriver(
+        "dying",
+        recordingWakes(() => Effect.die(new Error("process died before the parent wake")))
+      )
+      yield* test.parked(dying.driver, dying.drained)
+      // The survivor has read the parked parent while its child was unsettled.
+      const before = passes
+      for (let turn = 0; turn < 2000 && passes < before + 2; turn++) yield* Effect.sleep("5 millis")
+      assert.isAtLeast(passes, before + 2)
+      assert.strictEqual(yield* test.status("parent"), "suspended")
+
+      yield* Effect.exit(dying.driver.resume(Child, "child"))
+      yield* dying.close
+      assert.strictEqual(yield* test.status("child"), "completed")
+      assert.isFalse(yield* test.parentWakeDue)
+
+      // No driver starts: the survivor's next pass records the wake and
+      // drives the parent through its second child.
+      test.released.add("second")
+      yield* test.until("parent", "completed")
+      yield* survivor.drained
+      yield* survivor.close
     })))
 })

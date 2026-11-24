@@ -30,6 +30,47 @@ it("retains named errors and primitive causes without inventing diagnostics", ()
   })
 })
 
+it("reads a hostile defect's fields without running its traps or accessors", () => {
+  const trap = new Proxy({}, {
+    get() {
+      throw new Error("trap")
+    },
+    getOwnPropertyDescriptor() {
+      throw new Error("trap")
+    }
+  })
+  expect(Interpreter.defectOf(Cause.die(trap))).toEqual({ tag: "defect", message: "" })
+  const accessors = Object.defineProperties({}, {
+    _tag: {
+      get() {
+        throw new Error("tag accessor")
+      }
+    },
+    message: {
+      get() {
+        throw new Error("message accessor")
+      }
+    },
+    code: { value: "ECONNRESET" }
+  })
+  expect(Interpreter.defectOf(Cause.die(accessors))).toEqual({ tag: "ECONNRESET", message: "" })
+  const error = new RangeError("bounded")
+  Object.defineProperty(error, "cause", {
+    get() {
+      throw new Error("cause accessor")
+    }
+  })
+  expect(Interpreter.defectOf(Cause.die(error))).toEqual({ tag: "RangeError", message: "bounded" })
+})
+
+it("cuts a long defect message on a code point, never inside a surrogate pair", () => {
+  const defect = Interpreter.defectOf(
+    Cause.die(new Error(`${"x".repeat(Interpreter.maximumDefectMessageLength - 1)}😀 and more`))
+  )!
+  expect(defect.message).toBe(`${"x".repeat(Interpreter.maximumDefectMessageLength - 1)}…`)
+  expect(defect.message).not.toMatch(/\p{Surrogate}/u)
+})
+
 for (const recording of ["defect", "interrupt"] as const) {
   it.effect(`preserves the node failure when its diagnostic record ends with ${recording}`, () =>
     Effect.gen(function*() {

@@ -4,12 +4,13 @@ import * as Effect from "effect/Effect"
 import * as Fiber from "effect/Fiber"
 import * as Ref from "effect/Ref"
 import { execFileSync } from "node:child_process"
-import { chmodSync, linkSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
+import { chmodSync, linkSync, mkdirSync, mkdtempSync, readdirSync, realpathSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterAll, describe, expect, it } from "vitest"
 import { DiskSpace, type DiskWatch, diskWatch, floorOf, stoppedLine, waitingLine } from "../../src/replay/Disk.vibe"
 import { gigabyte, heldUnder, sizeOf, spaceOf } from "../../src/replay/DiskSpace.ts"
+import { openPinnedPath } from "../../src/replay/PinnedFile.ts"
 import { setDisk } from "./SmallDisk.vibe"
 
 const created: Array<string> = []
@@ -87,6 +88,26 @@ describe("the disk as the machine says it is", () => {
     } finally {
       // Node's recursive removal also takes full pathnames.
       execFileSync("rm", ["-rf", join(root, "d".repeat(100))])
+    }
+  })
+
+  // R1-Fable-D3-012: a directory was once named `/dev/fd/<n>` and its entries read under that name, which macOS
+  // refuses. The error was swallowed, so the disk guard read 0 bytes for every folder there.
+  it("counts what nested folders hold on this machine, and names no folder by a descriptor outside Linux", async () => {
+    const root = scratch()
+    mkdirSync(join(root, "a", "b", "c"), { recursive: true })
+    writeFileSync(join(root, "top"), "x".repeat(50_000))
+    writeFileSync(join(root, "a", "b", "c", "deep"), "x".repeat(150_000))
+    expect(await heldUnder(root)).toBeGreaterThanOrEqual(200_000)
+    expect(await heldUnder(join(root, "a"))).toBeGreaterThanOrEqual(150_000)
+    for (const platform of ["darwin", "freebsd", process.platform] as const) {
+      const pinned = await openPinnedPath(join(root, "a"), true, platform)
+      try {
+        if (platform !== "linux") expect(pinned.path).toBe(realpathSync(join(root, "a")))
+        if (platform === process.platform) expect(readdirSync(join(pinned.path, "b"))).toEqual(["c"])
+      } finally {
+        await pinned.close()
+      }
     }
   })
 

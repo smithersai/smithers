@@ -6,7 +6,7 @@
  * @since 0.1.0
  */
 
-import { Canonical } from "@smthrs/canonical"
+import { Canonical, type NativeBrand, nativeBrand } from "@smthrs/canonical"
 import { digest as sha256 } from "@smthrs/crypto"
 import type * as EffectDigest from "effect/crypto/Digest"
 import * as Effect from "effect/Effect"
@@ -23,32 +23,12 @@ const derivationFailure = (
 
 type Position = "root" | "member" | "element"
 
-const dateTime = (value: object): number | undefined => {
-  try {
-    return Date.prototype.getTime.call(value)
-  } catch {
-    return undefined // No Date internal slot.
-  }
-}
-
-// A changed prototype does not remove a collection's internal slots.
-const collectionSlotReaders = [Map.prototype.has, Set.prototype.has]
-const hasCollectionSlot = (value: object): boolean => {
-  for (const read of collectionSlotReaders) {
-    try {
-      Reflect.apply(read, value, [value])
-      return true
-    } catch {
-      // This intrinsic requires a Map or Set receiver.
-    }
-  }
-  return false
-}
-
-const unbox = (value: object): unknown => {
-  if (value instanceof Number) return Number.prototype.valueOf.call(value)
-  if (value instanceof String) return String.prototype.valueOf.call(value)
-  if (value instanceof Boolean) return Boolean.prototype.valueOf.call(value)
+// Unboxes a wrapper from its internal slot. `instanceof` would miss a
+// cross-realm wrapper and accept a slotless `Object.create(Number.prototype)`.
+const unbox = (value: object, brand: NativeBrand | undefined): unknown => {
+  if (brand === "Number") return Number.prototype.valueOf.call(value)
+  if (brand === "String") return String.prototype.valueOf.call(value)
+  if (brand === "Boolean") return Boolean.prototype.valueOf.call(value)
   return value
 }
 
@@ -69,9 +49,13 @@ const checkedMaterial = (input: unknown, refuse: (reason: string) => never): unk
     if (typeof value === "function" && position === "element") refuse("function cannot be keyed")
     if (value === null || (typeof value !== "object" && typeof value !== "function")) return value
     const array = Array.isArray(value)
+    // The view below has no internal slots, so decide the brand on the
+    // original before Canonical can only see a plain record.
+    const brand = array ? undefined : nativeBrand(value)
     const prototype = Reflect.getPrototypeOf(value)
-    const native = typeof value === "function" || (!array && prototype !== Object.prototype && prototype !== null)
-    if (native && Number.isNaN(dateTime(value))) refuse("invalid date")
+    const plainPrototype = prototype === Object.prototype || prototype === null
+    const native = typeof value === "function" || (!array && (brand !== undefined || !plainPrototype))
+    if (brand === "Date" && Number.isNaN(Date.prototype.getTime.call(value))) refuse("invalid date")
     const serializer: unknown = native ? Reflect.get(value, "toJSON") : undefined
     if (native && typeof serializer !== "function") {
       if (typeof value === "function") {
@@ -80,8 +64,11 @@ const checkedMaterial = (input: unknown, refuse: (reason: string) => never): unk
       }
       // Canonical unboxes these before visiting members. The view has no
       // native slots, so forward the primitive after the one toJSON lookup.
-      const primitive = unbox(value)
+      const primitive = unbox(value, brand)
       if (primitive !== value) return check(primitive, position)
+      // Canonical names a built-in through the view's prototype. One whose
+      // prototype was replaced would otherwise read as a plain record.
+      if (brand !== undefined && plainPrototype) refuse("unsupported collection cannot be keyed")
     }
 
     const existing = views.get(value)
@@ -104,12 +91,7 @@ const checkedMaterial = (input: unknown, refuse: (reason: string) => never): unk
         },
         getPrototypeOf: () => prototype,
         ...(array ? {} : {
-          ownKeys: () => {
-            // Canonical's own slot checks see the shadow. Check the source
-            // before allowing it to be serialized as a plain record.
-            if (ArrayBuffer.isView(value) || hasCollectionSlot(value)) refuse("unsupported collection cannot be keyed")
-            return Object.keys(value)
-          },
+          ownKeys: () => Object.keys(value),
           getOwnPropertyDescriptor: () => ({ enumerable: true, configurable: true })
         })
       })

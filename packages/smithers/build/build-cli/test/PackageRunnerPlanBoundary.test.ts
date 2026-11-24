@@ -44,6 +44,7 @@ const packageJson = S.file("//package.json")
 export const Workspace = S.Workspace("runner-plan", {
   repository: "git+https://example.invalid/runner-plan.git",
   cache: S.Cache({ directory: ".flows" }),
+  host: S.Host({ bins: ["sh"] }),
   runtime: S.Runtime.Node({ version: "26" }),
   packageManager: S.PackageManager.Yarn({ manifest: packageJson, lockfile: S.file("//yarn.lock") }),
   nodeModules: S.Npm.NodeModules({ packageJson })
@@ -64,6 +65,79 @@ export const Package = S.Package({ targets: { command: S.Shell.Run({ shell: "tou
   const plan = await PackageExec.plan(options)
   return { root, options, plan, node: plan.workList[0]! }
 }
+
+describe("planned execution identity", () => {
+  it("declines caching a shell target whose command cannot be identified", async () => {
+    const { node } = await fixture(`import { Smithers as S } from "@smthrs/targets"
+export const Package = S.Package({ targets: { command: S.Shell.Test({ shell: "missing-smthrs-planner-binary" }) } })`)
+    expect(node.cacheable).toBe(false)
+    expect(node.uncachedBecause).toContain("missing-smthrs-planner-binary")
+  })
+
+  it.skipIf(process.platform === "win32")("seals planner state beneath a root-level output grant", async () => {
+    const { root, options, plan } = await fixture(
+      `import { Smithers as S } from "@smthrs/targets"
+export const Package = S.Package({ targets: { command: S.Shell.Build({ shell: "if printf overwrite > .flows/plan/canary; then exit 9; fi; printf ok > output", outFiles: ["output"] }) } })`,
+      undefined,
+      { ".flows/plan/canary": "sealed" }
+    )
+    const result = await PackageExec.execute(plan, options)
+    expect(result.ok, JSON.stringify(result.results)).toBe(true)
+    expect(await Fs.readFile(Path.join(root, "output"), "utf8")).toBe("ok")
+    expect(await Fs.readFile(Path.join(root, ".flows/plan/canary"), "utf8")).toBe("sealed")
+  })
+
+  it("keys a selected SDK and helper on their contents at an unchanged path", async () => {
+    const { root, options } = await fixture()
+    const sdk = Path.join(root, "sdk")
+    const helper = Path.join(root, "helper")
+    await write(root, "sdk/include/fixture.h", "one")
+    await write(root, "helper", "#!/bin/sh\necho first")
+    await Fs.chmod(helper, 0o755)
+    const originalSdk = process.env["SDKROOT"]
+    const originalHelper = process.env["SMITHERS_WORKSPACE_JJ_EXPORT_BINARY"]
+    try {
+      process.env["SDKROOT"] = sdk
+      process.env["SMITHERS_WORKSPACE_JJ_EXPORT_BINARY"] = helper
+      const key = async () => (await PackageExec.plan(options)).workList[0]!.keyPreview
+      const first = await key()
+      await write(root, "sdk/include/fixture.h", "two")
+      const second = await key()
+      expect(second).not.toBe(first)
+      await write(root, "helper", "#!/bin/sh\necho second")
+      expect(await key()).not.toBe(second)
+    } finally {
+      if (originalSdk === undefined) delete process.env["SDKROOT"]
+      else process.env["SDKROOT"] = originalSdk
+      if (originalHelper === undefined) delete process.env["SMITHERS_WORKSPACE_JJ_EXPORT_BINARY"]
+      else process.env["SMITHERS_WORKSPACE_JJ_EXPORT_BINARY"] = originalHelper
+    }
+  })
+
+  it("fingerprints a bin-form shell's inner tool and the CI mode it inherits", async () => {
+    const originalCi = process.env["CI"]
+    try {
+      process.env["CI"] = "1"
+      const { root, options } = await fixture(
+        `import { Smithers as S } from "@smthrs/targets"
+export const Package = S.Package({ targets: { command: S.Shell.Test({ bin: S.Host.bin("sh"), args: ["-e", "-c", "./inner-tool"] }) } })`,
+        undefined,
+        { "inner-tool": "#!/bin/sh\necho first" }
+      )
+      await Fs.chmod(Path.join(root, "inner-tool"), 0o755)
+      const key = async () => (await PackageExec.plan(options)).workList[0]!.keyPreview
+      const before = await key()
+      await write(root, "inner-tool", "#!/bin/sh\necho second")
+      const changed = await key()
+      expect(changed).not.toBe(before)
+      process.env["CI"] = "false"
+      expect(await key()).not.toBe(changed)
+    } finally {
+      if (originalCi === undefined) delete process.env["CI"]
+      else process.env["CI"] = originalCi
+    }
+  })
+})
 
 /** The public execute boundary must reject incomplete plans before any process starts. */
 const refusals = [
@@ -869,9 +943,11 @@ describe("planned sandbox authority", () => {
     // undeclared file in it to a confined tool.
     expect(request.reads).not.toContain("pkg")
     expect(request.reads?.filter((path) => path === "Cargo.lock")).toHaveLength(1)
-    expect(new Set(request.writes)).toEqual(new Set([".flows", "dist", "nested/bin", "pkg"]))
+    expect(new Set(request.writes)).toEqual(
+      new Set([".flows/tmp", ".flows/store", ".flows/go-build", "dist", "nested/bin", "pkg"])
+    )
     expect(new Set(request.writeFiles)).toEqual(new Set(["bundle.js", "out.txt", "plain.txt"]))
-    expect(request.readOnly).toEqual([".flows/cache"])
+    expect(request.readOnly).toEqual([".flows/cache", ".flows/plan", ".flows/evidence", ".flows/nix", ".flows/cas"])
   })
 
   it.each(["", "crate"])("keeps a Cargo fetch's writes under its own package: %j", async (packagePath) => {
@@ -1197,85 +1273,96 @@ describe("materialization cache outage", () => {
 })
 
 describe("unconfined bundler publication", () => {
-  it("keeps bundler results local even when the node's sandbox request is enforceable (#5104)", async () => {
-    const { root, options, plan, node } = await fixture()
-    const confined = {
-      ...node,
-      label: "//:files",
-      rule: "Filegroup",
-      sandbox: undefined,
-      cacheable: true
-    } as PackageExec.PackageNode
-    const graph = {
-      ...node,
-      label: "//:graph",
-      rule: "Bundler.Rspack.resolve",
-      sandbox: undefined,
-      keyPreview: "b".repeat(64),
-      cacheable: true,
-      lane: { kind: "bundler-resolve", payload: { configPath: "rsbuild.config.ts", entries: [], mode: "development" } }
-    } as PackageExec.PackageNode
-    const build = {
-      ...node,
-      label: "//:bundle",
-      rule: "Bundler.Rspack.build",
-      sandbox: undefined,
-      cacheable: true,
-      keyTemplate: node.keyMaterial,
-      dependencies: [graph.label],
-      lane: {
-        kind: "bundler-build",
-        graphLabel: graph.label,
-        payload: { configPath: "rsbuild.config.ts", environment: "web", mode: "production", env: {}, outDirs: [] }
+  it.each([true, false])(
+    "keeps bundler results local and publishes according to the injected host (%s)",
+    async (enforceable) => {
+      const { root, options, plan, node } = await fixture()
+      const confined = {
+        ...node,
+        label: "//:files",
+        rule: "Filegroup",
+        sandbox: undefined,
+        cacheable: true
+      } as PackageExec.PackageNode
+      const graph = {
+        ...node,
+        label: "//:graph",
+        rule: "Bundler.Rspack.resolve",
+        sandbox: undefined,
+        keyPreview: "b".repeat(64),
+        cacheable: true,
+        lane: {
+          kind: "bundler-resolve",
+          payload: { configPath: "rsbuild.config.ts", entries: [], mode: "development" }
+        }
+      } as PackageExec.PackageNode
+      const build = {
+        ...node,
+        label: "//:bundle",
+        rule: "Bundler.Rspack.build",
+        sandbox: undefined,
+        cacheable: true,
+        keyTemplate: node.keyMaterial,
+        dependencies: [graph.label],
+        lane: {
+          kind: "bundler-build",
+          graphLabel: graph.label,
+          payload: { configPath: "rsbuild.config.ts", environment: "web", mode: "production", env: {}, outDirs: [] }
+        }
+      } as PackageExec.PackageNode
+      const nodes = new Map([[confined.label, confined], [graph.label, graph], [build.label, build]])
+      // Without an enforceable request every result stays local and this proves nothing.
+      for (const each of nodes.values()) {
+        expect(
+          ExecSandbox.enforceable(sandboxRequest(each, nodes, options.index.workspace, ".flows"), ExecSandbox.host())
+        )
+          .toBe(true)
       }
-    } as PackageExec.PackageNode
-    const nodes = new Map([[confined.label, confined], [graph.label, graph], [build.label, build]])
-    // Without an enforceable request every result stays local and this proves nothing.
-    for (const each of nodes.values()) {
-      expect(
-        ExecSandbox.enforceable(sandboxRequest(each, nodes, options.index.workspace, ".flows"), ExecSandbox.host())
+      const shares = new Map<string, boolean | undefined>()
+      const notes: Array<string> = []
+      const result = await Effect.runPromise(
+        executeEffect({ ...plan, nodes, workList: [...nodes.values()] }, {
+          ...options,
+          log: (line) => notes.push(line),
+          // Present so the publisher reports what it withholds; the store below never reaches it.
+          remoteCache: {
+            endpoint: "http://127.0.0.1:9/cache",
+            credentials: { _tag: "shared", tokenEnv: "FIXTURE_CACHE_TOKEN" },
+            readToken: () => undefined,
+            writeToken: () => undefined,
+            publishNamespace: undefined
+          } satisfies Workspace.RemoteCacheAccess
+        }).pipe(Effect.provideService(ExecutionServices, {
+          ...executionServicesLive,
+          sandboxHost: enforceable
+            ? executionServicesLive.sandboxHost
+            : () => ({ ...ExecSandbox.host(), executable: () => undefined }),
+          cache: (settings) =>
+            executionServicesLive.cache({ ...settings, endpoint: undefined }).pipe(Effect.map((store) => ({
+              ...store,
+              put: (key, value, putOptions) => {
+                shares.set(value.label, putOptions?.shared)
+                return store.put(key, value, putOptions)
+              }
+            }))),
+          resolveGraph: () =>
+            Effect.succeed({
+              files: [],
+              packages: [],
+              moduleCount: 0,
+              graphDigest: BundlerTarget.graphDigest({ files: [], packages: [] })
+            }),
+          build: () => Effect.succeed({ exitCode: 0, stdout: "", stderr: "" })
+        }))
       )
-        .toBe(true)
+      expect(result.ok, JSON.stringify(result.results)).toBe(true)
+      expect(Object.fromEntries(shares)).toEqual({ "//:files": enforceable, "//:graph": false, "//:bundle": false })
+      expect(notes.join("\n")).toContain(
+        `smthrs: remote cache publication skipped: //:${enforceable ? "graph" : "files"} ran unconfined`
+      )
+      await expect(Fs.stat(Path.join(root, "launched"))).rejects.toMatchObject({ code: "ENOENT" })
     }
-    const shares = new Map<string, boolean | undefined>()
-    const notes: Array<string> = []
-    const result = await Effect.runPromise(
-      executeEffect({ ...plan, nodes, workList: [...nodes.values()] }, {
-        ...options,
-        log: (line) => notes.push(line),
-        // Present so the publisher reports what it withholds; the store below never reaches it.
-        remoteCache: {
-          endpoint: "http://127.0.0.1:9/cache",
-          credentials: { _tag: "shared", tokenEnv: "FIXTURE_CACHE_TOKEN" },
-          readToken: () => undefined,
-          writeToken: () => undefined,
-          publishNamespace: undefined
-        } satisfies Workspace.RemoteCacheAccess
-      }).pipe(Effect.provideService(ExecutionServices, {
-        ...executionServicesLive,
-        cache: (settings) =>
-          executionServicesLive.cache({ ...settings, endpoint: undefined }).pipe(Effect.map((store) => ({
-            ...store,
-            put: (key, value, putOptions) => {
-              shares.set(value.label, putOptions?.shared)
-              return store.put(key, value, putOptions)
-            }
-          }))),
-        resolveGraph: () =>
-          Effect.succeed({
-            files: [],
-            packages: [],
-            moduleCount: 0,
-            graphDigest: BundlerTarget.graphDigest({ files: [], packages: [] })
-          }),
-        build: () => Effect.succeed({ exitCode: 0, stdout: "", stderr: "" })
-      }))
-    )
-    expect(result.ok, JSON.stringify(result.results)).toBe(true)
-    expect(Object.fromEntries(shares)).toEqual({ "//:files": true, "//:graph": false, "//:bundle": false })
-    expect(notes.join("\n")).toContain("smthrs: remote cache publication skipped: //:graph ran unconfined")
-    await expect(Fs.stat(Path.join(root, "launched"))).rejects.toMatchObject({ code: "ENOENT" })
-  })
+  )
 })
 
 describe("invalid cached bundler graph", () => {

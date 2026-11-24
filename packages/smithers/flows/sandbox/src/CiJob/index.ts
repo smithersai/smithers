@@ -45,6 +45,7 @@ import * as Context from "effect/Context"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as Schema from "effect/Schema"
+import { textPrefix } from "../internal/textPrefix.ts"
 
 /**
  * Bounds on a job's declaration.
@@ -399,14 +400,14 @@ export const CiJob = Flow.make("ci/job", {
 // Reserve room for all 32 outcome rows inside RunInspection's 16 KiB value.
 // Bound encoded JSON bytes, including escapes, instead of raw string length.
 const outputText = (text: string) => {
-  const bytes = (length: number) => new TextEncoder().encode(JSON.stringify(text.slice(0, length))).length
-  let low = 0, high = text.length
+  const bytes = (length: number) => new TextEncoder().encode(JSON.stringify(textPrefix(text, length))).length
+  let low = 0, high = Math.min(text.length, 4096)
   while (low < high) {
     const mid = Math.ceil((low + high) / 2)
     if (bytes(mid) <= 4096) low = mid
     else high = mid - 1
   }
-  return text.slice(0, low)
+  return textPrefix(text, low)
 }
 
 const refOf = ({ machine, name }: Job): JobRef => machine === undefined ? { name } : { name, machine }

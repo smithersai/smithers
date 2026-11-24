@@ -4,7 +4,7 @@ import { expect, it } from "vitest"
 import { bound, record, site, withinState } from "../src/internal/FailureDiagnostic.ts"
 import * as HostReflection from "../src/internal/HostReflection.ts"
 
-it("contains throwing proxy metadata on portable hosts without native proxy detection", () => {
+it("never runs a proxy trap on portable hosts without native proxy detection", () => {
   let reads = 0
   const value = new Proxy({ executionId: "run", attempts: 1 }, {
     getOwnPropertyDescriptor() {
@@ -13,8 +13,21 @@ it("contains throwing proxy metadata on portable hosts without native proxy dete
     }
   })
   expect(site(value, HostReflection.make(undefined))).toBeUndefined()
-  expect(reads).toBe(1)
+  expect(reads).toBe(0)
   expect(site(value)).toBeUndefined()
+  expect(reads).toBe(0)
+})
+
+it("answers nothing when a host that vouched for a value turns out to be wrong", () => {
+  let reads = 0
+  const value = new Proxy({ executionId: "run", attempts: 1 }, {
+    getOwnPropertyDescriptor() {
+      reads++
+      throw new Error("untrusted metadata")
+    }
+  })
+  // A supplied reflection that calls a proxy plain: the read is contained.
+  expect(site(value, { ...HostReflection.host, isProxy: () => false })).toBeUndefined()
   expect(reads).toBe(1)
 })
 

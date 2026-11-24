@@ -5,7 +5,9 @@
  * reading `NaN` as negative infinity chases the wrong arithmetic.
  */
 import { describe, expect, it } from "@effect/vitest"
-import { renderDiagnostic } from "../src/internal/Diagnostic.ts"
+import { hostReflection, renderDiagnosticWith } from "../src/internal/Diagnostic.ts"
+
+const renderDiagnostic = (value: unknown) => renderDiagnosticWith(hostReflection(process), value)
 
 describe("renderDiagnostic primitives", () => {
   it("tells NaN apart from either infinity", () => {

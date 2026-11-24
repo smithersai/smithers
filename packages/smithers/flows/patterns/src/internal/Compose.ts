@@ -362,7 +362,31 @@ export interface Label {
   readonly description: string | undefined
 }
 
-const labelValue = (value: unknown): string => Array.isArray(value) ? value.map(String).join(",") : String(value)
+// A label value that could imitate the label's own separators is JSON-quoted,
+// as a member name is, so `["a,b", "c"]` and `["a", "b,c"]` are two labels.
+// A plain value keeps its unquoted form, so a label that never needed quoting
+// is unchanged.
+const labelText = (value: unknown): string => {
+  const text = String(value)
+  return typeof value === "string" && !/^[^\s,=()"[\]]+$/.test(text) ? JSON.stringify(text) : text
+}
+
+const labelValue = (value: unknown): string => Array.isArray(value) ? value.map(labelText).join(",") : labelText(value)
+
+/**
+ * Merges the records batches settled with into one record, in batch order.
+ * `Object.fromEntries` defines every key, `__proto__` included, as an own data
+ * property. A batched pattern carries each batch's planned record whole and
+ * merges here at run time, because reading a member off a planned record by
+ * name is not a reference when the name is `then`, `toString`, `valueOf` or
+ * `toJSON`.
+ *
+ * @since 1.0.0
+ * @private
+ */
+export const mergeRecords = (records: ReadonlyArray<unknown>): Readonly<Record<string, unknown>> =>
+  // Every record is a batch's settled `Node.all` record, never a primitive.
+  Object.fromEntries(records.flatMap((record) => Object.entries(record as object)))
 
 /**
  * The identity a pattern member carries: a flow names itself with `_tag` and

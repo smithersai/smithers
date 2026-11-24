@@ -422,9 +422,11 @@ export const protect = (
   argv: ReadonlyArray<string>,
   hostFacts: ProcessSandbox.Host
 ): ReadonlyArray<string> => {
+  const root = NodePath.resolve(workspaceRoot)
+  const prefix = root.endsWith(NodePath.sep) ? root : root + NodePath.sep
   const paths = (request.writeProtected ?? [])
-    .map((path) => NodePath.resolve(workspaceRoot, ...path.split("/")))
-    .filter((path) => path.startsWith(workspaceRoot + NodePath.sep))
+    .map((path) => NodePath.resolve(root, ...path.split("/")))
+    .filter((path) => path !== root && path.startsWith(prefix))
   if (paths.length === 0) return argv
   return ProcessSandbox.writeProtected(paths, argv, hostFacts) ?? argv
 }

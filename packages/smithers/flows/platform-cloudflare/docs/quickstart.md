@@ -63,12 +63,18 @@ interface Env {
   readonly GREETINGS: DurableObjectNamespace
 }
 
-const storageOf = (raw: DurableObjectStorage): ExecutionObject.Storage => ({
+const storageOps = (raw: DurableObjectTransaction | DurableObjectStorage): ExecutionObject.Storage => ({
   get: <A>(key: string) => Effect.promise(() => raw.get<A>(key)),
   put: (key, value) => Effect.promise(() => raw.put(key, value)),
   delete: (key) => Effect.promise(() => raw.delete(key)),
   setAlarm: (scheduledTime) => Effect.promise(() => raw.setAlarm(scheduledTime)),
   deleteAlarm: () => Effect.promise(() => raw.deleteAlarm())
+})
+
+const storageOf = (raw: DurableObjectStorage): ExecutionObject.Storage => ({
+  ...storageOps(raw),
+  transaction: (body) =>
+    Effect.promise((signal) => raw.transaction((txn) => Effect.runPromise(body(storageOps(txn)), { signal })))
 })
 
 export class Greeting {

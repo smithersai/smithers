@@ -210,6 +210,14 @@ describe("SharedText", () => {
       expect(SharedText.changeOf("same", "same", 2)).toEqual({ from: 2, to: 2, insert: "" })
     })
 
+    it.effect("preserves the Yjs document when an unchanged caret splits a surrogate pair", () =>
+      Effect.gen(function*() {
+        const doc = yield* SharedText.make
+        yield* doc.replace("x😀y")
+        expect(SharedText.changeOf("x😀y", "x😀y", 2)).toEqual({ from: 0, to: 0, insert: "" })
+        expect(yield* doc.replace("x😀y", { caret: 2 })).toBeUndefined()
+      }).pipe(Effect.scoped))
+
     it("clamps a caret outside the text", () => {
       expect(SharedText.changeOf("ab", "abc", 99)).toEqual({ from: 2, to: 2, insert: "c" })
       expect(SharedText.changeOf("ab", "abc", -5)).toEqual({ from: 2, to: 2, insert: "c" })

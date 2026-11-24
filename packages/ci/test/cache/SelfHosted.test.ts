@@ -171,7 +171,8 @@ const run = (root: string, settings: Settings) => {
     "NODE_COMPILE_CACHE",
     "SMTHRS_MACHINES",
     "SMITHERS_CACHE_URL",
-    "SMITHERS_CACHE_TOKEN"
+    "SMITHERS_CACHE_TOKEN",
+    "SMITHERS_CACHE_NAMESPACE"
   ])
   const given = Object.fromEntries(
     ["SMITHERS_CACHE_URL", "SMITHERS_CACHE_TOKEN"].map((name) => [name, evaluate(step.env?.[name] as string, settings)])

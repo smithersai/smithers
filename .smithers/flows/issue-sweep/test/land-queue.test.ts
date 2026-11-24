@@ -323,3 +323,20 @@ test("a change to either default pnpmfile is refused before any install runs", {
   }
   assert.equal(originMain(), before)
 })
+
+test("sweep refuses protected content without a review receipt and refuses a change without test targets", {
+  timeout: 60_000
+}, async (t) => {
+  const { change, originMain } = fixture(t)
+  const before = originMain()
+  const protectedChange = change("protected", "apps/mvp/worker/secrets/Fixture.ts")
+  const untested = change("untested", "somewhere/file.txt")
+  const { checks } = fakeChecks(() => Effect.succeed(green))
+  const protect = makeLander({
+    checks: { ...checks, index: () => Effect.succeed([{ label: "//apps/mvp:test", kinds: ["test"] }]) }
+  })
+  await assert.rejects(run(protect(protectedChange.workspace, protectedChange.id)), /no review receipt/)
+  const land = makeLander({ checks })
+  await assert.rejects(run(land(untested.workspace, untested.id)), /no test targets selected/)
+  assert.equal(originMain(), before)
+})

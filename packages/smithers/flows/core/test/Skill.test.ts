@@ -1,6 +1,7 @@
 import * as Result from "effect/Result"
 import { setImmediate } from "node:timers/promises"
 import { describe, expect, it } from "vitest"
+import { findRefusal } from "../src/internal/skillFrontmatter.ts"
 import * as Markdown from "../src/Markdown.ts"
 
 const parse = (text: string): Markdown.SkillDocument => Result.getOrThrow(Markdown.parseSkill(text))
@@ -370,6 +371,21 @@ describe("Skill", () => {
     expect(refused.code).toBe("skill_invalid_frontmatter")
     expect(refused.message).toBe("Skill frontmatter must not contain a recursive alias")
     expect(Result.isFailure(Markdown.lowerSkill(text))).toBe(true)
+  })
+
+  it("validates the contents of a shared mapping once per document", () => {
+    let visits = 0
+    const shared = {
+      get value() {
+        visits++
+        return "ok"
+      }
+    }
+    const chapter = { first: shared, summary: shared }
+    expect(findRefusal({ introduction: chapter, index: chapter })).toBeUndefined()
+    expect(visits).toBe(1)
+    expect(findRefusal({ chapter, invalid: { constructor: "reserved" } })).toContain("reserved key")
+    expect(visits).toBe(2)
   })
 
   it("accepts one anchored mapping reused by sibling aliases", () => {

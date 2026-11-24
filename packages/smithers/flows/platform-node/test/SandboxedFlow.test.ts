@@ -654,6 +654,22 @@ describe("sandbox limit boundaries", () => {
       }), 60_000)
   }
 
+  it.live("rejects NaN timeouts before acquiring a machine", () =>
+    Effect.gen(function*() {
+      const timeouts: ReadonlyArray<Duration.Input> = [Number.NaN, [0, Number.NaN], { milliseconds: Number.NaN }]
+      for (const timeout of timeouts) {
+        const exit = yield* SandboxedFlow.execute(pureEntry.Constant, { value: "ok" }, {
+          provider: { acquire: () => Effect.die("unexpected acquisition") },
+          session: "nan-timeout",
+          entry: pure,
+          timeout
+        }).pipe(Effect.exit)
+        expect(Exit.isFailure(exit) && Cause.pretty(exit.cause)).toContain(
+          "TypeError: SandboxedFlow timeout must not be NaN"
+        )
+      }
+    }))
+
   // A negative budget is a programmer error, and a negative infinite one is
   // not finite, so it would have switched the hang guard off.
   for (const timeout of [Duration.millis(-5), Duration.millis(Number.NEGATIVE_INFINITY)]) {

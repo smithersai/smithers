@@ -229,6 +229,27 @@ describe("Graph.build topology", () => {
 })
 
 describe("Graph.build planned values", () => {
+  it.each(["then", "toString", "valueOf", "toJSON", "__proto__", "constructor"])(
+    "splices a planned field named %s into a called flow's body as a reference",
+    (field) => {
+      const flow = Flow.make(`refs/reserved/${field}`, {
+        payload: { path: Schema.String },
+        success: Schema.Unknown,
+        body: ({ path }) =>
+          Read.call({ path }).pipe(
+            Node.bindPlanned((result) => Child.call({ path, seed: Planned.field(result, field) as never }))
+          )
+      })
+      const graph = Graph.build(flow, { path: "counter.txt" })
+
+      expect(Graph.diagnostics(graph)).toEqual([])
+      const refs = Graph.nodes(graph).flatMap((candidate) =>
+        candidate.draft.material.inputs.filter((input) => input._tag === "Ref")
+      )
+      expect(refs).toContainEqual({ _tag: "Ref", from: "root.flow.andThen", path: [field] })
+    }
+  )
+
   it("threads reference paths from a payload into Ref inputs, in placeholder occurrence order", () => {
     const flow = Flow.make("refs/thread", {
       payload: { path: Schema.String },
@@ -882,6 +903,10 @@ describe("Graph.build placement identity", () => {
     const large = message({ host: "x".repeat(400) }, { host: "vm" })
     expect(large).toContain("characters dropped]")
     expect(large).not.toContain("x".repeat(400))
+    // The cut falls on a code point, never between the halves of a surrogate pair.
+    const astral = message({ host: "😀".repeat(200) }, { host: "vm" })
+    expect(astral).toContain("characters dropped]")
+    expect(astral).not.toMatch(/\p{Surrogate}/u)
   })
 
   it("renders array members inertly and under a member bound", () => {

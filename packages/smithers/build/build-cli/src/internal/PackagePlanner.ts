@@ -323,6 +323,8 @@ interface PlanContext {
   readonly remoteCache: Workspace.RemoteCacheAccess | undefined
   /** File digests already read, by this plan, an earlier plan of the invocation, or the last invocation. */
   readonly digests: SafeFs.DigestIndex
+  /** SDK trees measured by this plan. A null digest marks a tree that could not be keyed. */
+  readonly sdkDigests: Map<string, string | null>
   /** Installed dependency trees measured by this plan, by canonical directory; a failure is kept as its text. */
   readonly installedTrees: Map<string, InstalledTree.Identity | string>
   /** Installed-tree unit digests the last invocation read, answered while each unit's status is unchanged. */
@@ -888,6 +890,47 @@ const fetchCargoHome = (context: PlanContext, target: Target.AnyTarget): string 
  * @since 0.1.0
  */
 export const workspaceRootToken = "{smthrs:root}"
+
+const selectedEnvironment = new Set(["CI", "SDKROOT", "DEVELOPER_DIR", "SMITHERS_WORKSPACE_JJ_EXPORT_BINARY"])
+
+// Built-ins and shell keywords such as the closing `fi` in an if-statement
+// are supplied by the shell whose executable is already keyed.
+const suppliedByShell = new Set([
+  "case",
+  "done",
+  "esac",
+  "fi",
+  "for",
+  "in",
+  "alias",
+  "bg",
+  "break",
+  "cd",
+  "command",
+  "continue",
+  "eval",
+  "exec",
+  "exit",
+  "export",
+  "fc",
+  "fg",
+  "getopts",
+  "hash",
+  "jobs",
+  "read",
+  "readonly",
+  "return",
+  "set",
+  "shift",
+  "times",
+  "trap",
+  "type",
+  "ulimit",
+  "umask",
+  "unalias",
+  "unset",
+  "wait"
+])
 
 /**
  * The executable one target used as a tool edge produces, workspace relative,
@@ -3525,47 +3568,64 @@ const visit = async (
       variables: context.nixEnvironment.variables
     }
   )
-  // Host directories vary across machines. Only declarations carry value
-  // identity; PATH-selected executables are fingerprinted separately below.
   const declaredEnvironment = { ...context.nixEnvironment?.variables, ...env }
   const environmentDigest = sha256Hex(JSON.stringify(
     Object.keys(spawnEnvironment).sort()
       .filter((name) => name in declaredEnvironment || !["HOME", "TMPDIR", "TEMP", "TMP"].includes(name))
       .filter((name) => !unkeyedEnvironment.includes(name))
-      .map((name) => [name, name in declaredEnvironment ? spawnEnvironment[name] : true])
+      .map((
+        name
+      ) => [name, name in declaredEnvironment || selectedEnvironment.has(name) ? spawnEnvironment[name] : true])
   ))
-  const executableCommands = argv === undefined ? [] : [argv[0]!, ...spawnedTools]
-  // A command-form target spawns a shell, but its leading literal program
-  // can change independently of that shell. Dynamic commands still need
-  // declared bin/using tools to identify their executable dependencies.
-  // The text names more programs than its first: `bash -e -c 'npm test'`
-  // starts `npm`. Each one `PATH` resolves is keyed by its bytes.
-  const namedCommands: Array<string> = []
-  if (
-    ((rule.startsWith("Shell.") && (attrs as Shell.ExecAttrs).shell !== undefined) || argv?.[0] === "/bin/sh") &&
-    argv?.[1] === "-c"
-  ) {
-    const [program, ...named] = argv.slice(2, 3).flatMap((text) => ShellWords.commands(text))
-    if (program !== undefined) executableCommands.push(program)
-    namedCommands.push(...named)
-  }
   const executable: Array<unknown> = []
-  for (const command of executableCommands) {
-    if (command.includes(workspaceRootToken)) continue
-    const path = NodePath.isAbsolute(command)
-      ? command
-      : onPath(context, command, spawnEnvironment)
-    if (path !== undefined && NodeFs.existsSync(path)) {
-      executable.push(await binaryIdentity({ ...context, environment: spawnEnvironment }, path))
+  let identityProblem: string | undefined
+  const executableCommands = argv === undefined ? [] : [argv[0]!, ...spawnedTools]
+  if (argv !== undefined || catalogToolBody) {
+    const helper = spawnEnvironment["SMITHERS_WORKSPACE_JJ_EXPORT_BINARY"]
+    if (helper) executableCommands.push(helper)
+    for (const name of ["SDKROOT", "DEVELOPER_DIR"]) {
+      const path = spawnEnvironment[name]
+      if (!path) continue
+      const absolute = NodePath.resolve(context.root, cwd, path)
+      let digest = context.sdkDigests.get(absolute)
+      if (digest === undefined) {
+        try {
+          const root = NodeFs.realpathSync(absolute)
+          if (Path.contains(root, context.root)) throw new Error("SDK includes the workspace")
+          digest = InstalledTree.measure(root, {
+            ...InstalledTree.defaultIo,
+            readlink: (link) => {
+              if (!Path.contains(root, NodeFs.realpathSync(link))) throw new Error("SDK link leaves its tree")
+              return NodeFs.readlinkSync(link)
+            }
+          })
+        } catch {
+          digest = null
+        }
+        context.sdkDigests.set(absolute, digest)
+      }
+      if (digest === null) identityProblem ??= `cannot identify ${name}`
+      else executable.push({ name, path, digest })
     }
   }
-  for (const command of namedCommands) {
-    const path = onPath(context, command, spawnEnvironment)
-    if (path === undefined) continue
-    // A word of the text may be no program at all, so one that cannot be
-    // identified is left to the run.
-    const identity = await binaryIdentity({ ...context, environment: spawnEnvironment }, path).catch(() => undefined)
-    if (identity !== undefined) executable.push(identity)
+  const text = argv === undefined ? undefined : ShellWords.commandText(argv)
+  const named = text === undefined ? [] : ShellWords.commands(text)
+  for (const command of new Set([...executableCommands, ...named])) {
+    // A producer's executable is hashed after its dependency settles.
+    if (targetExecutablePaths.some((path) => command === `${workspaceRootToken}/${path}`)) continue
+    const selected = pathTools.find((tool) => tool.name === command)?.path ?? command
+    const expanded = selected.replaceAll(workspaceRootToken, context.root)
+    const path = NodePath.isAbsolute(expanded) ?
+      expanded :
+      /[/\\]/.test(expanded) ?
+      NodePath.resolve(context.root, cwd, expanded) :
+      onPath(context, expanded, spawnEnvironment)
+    if (path === undefined && !executableCommands.includes(command) && suppliedByShell.has(command)) continue
+    const identity = path === undefined || !Exec.isExecutableFile(path) ?
+      undefined :
+      await binaryIdentity({ ...context, environment: spawnEnvironment }, path).catch(() => undefined)
+    if (identity === undefined) identityProblem ??= `cannot identify executable ${JSON.stringify(command)}`
+    else executable.push(identity)
   }
   // A shell command finds its tools by name, so it is shown what `PATH`
   // gives the host, and keyed by each file that chooses a shim's version.
@@ -3586,6 +3646,7 @@ const visit = async (
   if (toolLinks.length > 0) {
     hostTools = { links: hostTools?.links ?? [], privateLinks: [...(hostTools?.privateLinks ?? []), ...toolLinks] }
   }
+  const cacheReason = identityProblem ?? uncachedBecause
   const suiteLinks: Array<{ readonly path: string; readonly target: string }> = []
   // Native tools can live under the host's /tmp, which bubblewrap hides.
   // Admit both the launcher and its real installation, including shebang
@@ -3808,7 +3869,7 @@ const visit = async (
     dependencies: executionDeps,
     declaredInputs,
     declaredOutputs: view.outputs,
-    cacheable,
+    cacheable: cacheable && identityProblem === undefined,
     cacheLookup: "not-wired",
     wouldRun: true,
     keyMaterial: previewMaterial,
@@ -3849,7 +3910,7 @@ const visit = async (
     ...(evidence === undefined ? {} : { evidence }),
     ...(observed === undefined ? {} : { observed }),
     ...(machine === undefined ? {} : { machine }),
-    ...(uncachedBecause === undefined ? {} : { uncachedBecause }),
+    ...(cacheReason === undefined ? {} : { uncachedBecause: cacheReason }),
     outDirs,
     outFiles,
     ...(emptyOutDirs.length === 0 ? {} : { emptyOutDirs }),
@@ -4428,6 +4489,7 @@ const planContext = async (
     planningKinds: plan.planningKinds,
     tools: new Map(),
     toolBytes: new Map(),
+    sdkDigests: new Map(),
     executableIdentities: new Map(),
     pathLookups: new Map(),
     hostTools: new Map(),

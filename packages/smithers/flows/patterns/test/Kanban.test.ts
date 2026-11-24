@@ -210,10 +210,10 @@ describe("Kanban", () => {
     expect(callsTo(graph, "complete")).toHaveLength(1)
     expect(Graph.nodes(graph).filter((node) => node.kind === "All")).toHaveLength(4)
     // Six maps wrap successful card values in unambiguous quarantine-protocol
-    // envelopes, one unwraps predecessors, and one builds the completion board
-    // from every column. The two batch merges are gone: a batch's rows are
-    // carried on as planned references and assembled once.
-    expect(Graph.nodes(graph).filter((node) => node.kind === "Map")).toHaveLength(8)
+    // envelopes, one unwraps predecessors, one per column merges that column's
+    // batch records, and one builds the completion board from every column. A
+    // batch's record is carried whole, never read by card id at plan time.
+    expect(Graph.nodes(graph).filter((node) => node.kind === "Map")).toHaveLength(10)
   })
 
   it("declares one recovery arm per card so a rejected card leaves its column alone", () => {

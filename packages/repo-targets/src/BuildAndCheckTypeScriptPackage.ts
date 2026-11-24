@@ -63,7 +63,7 @@ export interface Options {
   readonly cwd: string
   /**
    * The package's TypeScript and VibeLang sources. It feeds every target that
-   * reads them: `lib`, `check`, `test`, `lint`, `fmt`, and `circular`. It does
+   * reads them: `lib`, `check`, `test`, `lint`, and `circular`. It does
    * not name the published entry point, which is `entry`, so a package that
    * relocates its sources overrides both.
    *
@@ -91,7 +91,7 @@ export interface Options {
   readonly tests?: Input.Glob | undefined
   /**
    * Every TypeScript and VibeLang file in the package's test tree, including
-   * helpers and fixtures no suite collects. It feeds `check` and `fmt`, and it
+   * helpers and fixtures no suite collects. It feeds `check`, and it
    * keys `test`, so an edit to a helper a case imports re-runs the suite. A
    * package that keeps its tests outside `test/` overrides it beside `tests`.
    *
@@ -277,7 +277,8 @@ const defaultReads = (cwd: string): ReadonlyArray<Target.AnyTarget> => Object.va
  * `sources` and `entry` are separate options, as are `tests` and
  * `testSources`, because the published entry point is one file inside the
  * sources and because narrowing the suite one package runs must not narrow
- * what it typechecks or formats. The call returns declarations and runs no
+ * what it typechecks. Formatting declares the whole package for dprint config discovery.
+ * The call returns declarations and runs no
  * tool; see "Failure contracts" in the package README for declaration and
  * execution failures.
  *
@@ -474,7 +475,9 @@ export const BuildAndCheckTypeScriptPackage = (options: Options): PackageTargets
   })
   const fmt = Dprint({
     ...(options.packageManager === undefined ? {} : { packageManager: options.packageManager }),
-    sources: [sources, testSources],
+    // The config chooses what dprint checks, including package docs and tooling
+    // outside src/ and test/. Declare the whole package as its discovery input.
+    sources: [Input.glob("**/*", { allowEmpty: true })],
     deps: [],
     config: dprintConfig,
     fix: false,

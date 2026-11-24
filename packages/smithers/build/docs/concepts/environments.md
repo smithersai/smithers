@@ -97,12 +97,10 @@ The planner resolves each declaration once per run:
    `LOCALE_ARCHIVE`, `TZDIR`, `NIX_LD`, `NIX_LD_LIBRARY_PATH`.
 5. `nix path-info --recursive` lists the transitive closure.
 
-Every resolution runs `nix build`, including when the declaration's files
-are unchanged: an imported file can change the environment too. The remaining
-results are memoized under `<cacheDirectory>/nix/`, keyed on the evaluated
-store path, the host system, and the `nix` version, and reused while the store
-path still exists. A second resolution of the same store path skips
-`print-dev-env` and `path-info`.
+Each resolution evaluates the declaration again so a change in an imported
+file reaches the build. Nix supplies the executable search path, exported
+variables and closure membership directly. Concurrent requests for the same
+workspace and environment share the running evaluation.
 
 ## What changes for a target
 

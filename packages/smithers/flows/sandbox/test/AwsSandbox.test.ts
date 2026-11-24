@@ -21,6 +21,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import * as AwsSandbox from "../src/AwsSandbox/index.ts"
 import { elapsed } from "../src/internal/deadline.ts"
+import { sessionSlug } from "../src/internal/sessionSlug.ts"
 import { ProviderError } from "../src/RemoteChildProcessSpawner/ProviderError.ts"
 import type { Session } from "../src/Sandbox/Session.ts"
 import * as SandboxConformance from "../src/SandboxConformance/index.ts"
@@ -669,10 +670,9 @@ describe("AwsSandbox", () => {
       const second = yield* provider.acquire(`${prefix}lane-2`)
       expect(first.remoteId).not.toBe(second.remoteId)
       expect(fake.runInputs).toHaveLength(2)
-      expect(fake.runInputs.map((input) => input.startedBy)).toEqual([
-        "flow-0f3c2b1a-7d6e--5869781b6e6d1d39",
-        "flow-0f3c2b1a-7d6e--5869781c6b6d1880"
-      ])
+      const identities = fake.runInputs.map((input) => input.startedBy)
+      expect(new Set(identities).size).toBe(2)
+      for (const identity of identities) expect(identity).toMatch(/^flo-[0-9a-f]{32}$/)
     })))
 
   it.effect("reclaims crash-left image definitions when no live task remains", () =>
@@ -1007,7 +1007,7 @@ describe("AwsSandbox", () => {
         count: 1,
         enableExecuteCommand: true,
         launchType: "FARGATE",
-        startedBy: "------this-is-a-ver-65f8abebacfab7cd",
+        startedBy: expect.stringMatching(/^----[0-9a-f]{32}$/),
         platformVersion: "1.4.0",
         networkConfiguration: {
           awsvpcConfiguration: {
@@ -1189,7 +1189,8 @@ describe("AwsSandbox", () => {
             Effect.flatMap(session.spawn("printf 'x'", {}), (process) => Effect.flip(process.exitCode))
           )
           expect(failed).toMatchObject({ code: "unavailable" })
-          expect(failed.message).toContain("connection reset")
+          expect(failed.message).toContain("AWS command transport exited 254")
+          expect(JSON.stringify(failed)).not.toContain("connection reset")
           broken = false
         }))
 
@@ -1413,9 +1414,10 @@ describe("AwsSandbox", () => {
 
       const noTask = fakeEcs()
       noTask.runWithoutTask = true
-      expect(yield* Effect.flip(acquired(taskDefinitionProvider(noTask), () => Effect.void))).toMatchObject({
+      expect(yield* Effect.flip(acquired(taskDefinitionProvider(noTask), () => Effect.void, "x"))).toMatchObject({
         code: "unavailable"
       })
+      expect(noTask.runInputs[0]?.startedBy).toBe(sessionSlug("x"))
       expect(noTask.stopInputs).toHaveLength(0)
 
       const noArn = fakeEcs()

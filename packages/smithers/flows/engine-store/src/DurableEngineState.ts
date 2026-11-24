@@ -323,6 +323,32 @@ export interface WaitingRunsFilter {
    * permissive and the sweeper's own per-row guard decides.
    */
   readonly cancelRequested?: boolean
+  /**
+   * When `true`, only parked runs that are a parent of at least one run in
+   * the edge table: what the settled-child repair sweep reads, so a fleet
+   * parked on events with no children costs it nothing.
+   */
+  readonly hasChildren?: boolean
+  /**
+   * Reads one bounded page in run-id order instead of the whole set in wake
+   * order. A sweep that keeps `afterRunId` between ticks visits every parked
+   * run in bounded reads, and a row it cannot act on does not hold the front
+   * of the next read.
+   */
+  readonly page?: WaitingRunsPage
+}
+
+/**
+ * One keyset page of `waitingRuns`: at most `limit` rows, strictly after
+ * `afterRunId` when it is given.
+ *
+ * @since 1.0.0
+ * @category models
+ */
+export interface WaitingRunsPage {
+  /** A positive safe integer. */
+  readonly limit: number
+  readonly afterRunId?: string | undefined
 }
 
 /**
@@ -641,10 +667,15 @@ export interface Service {
    * `limit` caps one enumeration (issue #79): the rows come back oldest
    * heartbeat first, so a capped sweep drains a mass owner death across
    * ticks instead of waking every stale run in every driver every tick.
+   *
+   * `after` continues strictly past one row in that order, so a sweep that
+   * keeps the last row it read between ticks reaches every stale run, however
+   * many rows ahead of it no worker can take.
    */
   readonly staleRunningRuns: (
     staleBeforeMs: number,
-    limit?: number | undefined
+    limit?: number | undefined,
+    after?: StaleRunningRow | undefined
   ) => Effect.Effect<ReadonlyArray<StaleRunningRow>>
   /**
    * Copies the step attempts `attempts` of execution `from` into execution
@@ -1712,12 +1743,58 @@ const waitingTree = (db: Database): Service["waitingTree"] =>
     )
   )
 
+/**
+ * The keyset page of {@link waitingRuns}: the same predicates, in run-id
+ * order, bounded.
+ */
+const waitingRunsPage = (
+  db: Database,
+  filter: WaitingRunsFilter,
+  page: WaitingRunsPage
+): Effect.Effect<ReadonlyArray<WaitingDatabaseRow>, SqlError.SqlError> =>
+  db.sql<WaitingDatabaseRow>`
+    SELECT
+      run_id AS "runId",
+      waiting_reason AS "waitingReason",
+      waiting_wake_at_ms AS "waitingWakeAtMs",
+      waiting_token AS "waitingToken",
+      waiting_request AS "waitingRequest"
+    FROM flows_runs
+    WHERE ${
+    filter.reason === undefined ? db.sql`waiting_reason IS NOT NULL` : db.sql`waiting_reason = ${filter.reason}`
+  }
+      AND ${
+    filter.dueBeforeMs === undefined
+      ? db.sql`1 = 1`
+      : db.sql`waiting_wake_at_ms IS NOT NULL AND waiting_wake_at_ms <= ${filter.dueBeforeMs}`
+  }
+      AND ${filter.cancelRequested === true ? db.sql`cancel_requested_at_ms IS NOT NULL` : db.sql`1 = 1`}
+      AND ${
+    filter.hasChildren === true
+      ? db.sql`EXISTS (SELECT 1 FROM flows_run_parents WHERE flows_run_parents.parent_id = flows_runs.run_id)`
+      : db.sql`1 = 1`
+  }
+      AND ${page.afterRunId === undefined ? db.sql`1 = 1` : db.sql`run_id > ${page.afterRunId}`}
+      AND status NOT IN ('completed', 'failed', 'cancelled')
+    ORDER BY run_id
+    LIMIT ${page.limit}
+  `
+
 const waitingRuns = (db: Database): Service["waitingRuns"] =>
   Effect.fn("DurableEngineState.waitingRuns")((filter) => {
+    if (filter?.page !== undefined) {
+      return waitingRunsPage(db, filter, filter.page).pipe(
+        Effect.orDie,
+        Effect.flatMap((rows) => decodeSweep(rows, "waiting run", waitingRowKey, decodeWaitingRowResult))
+      )
+    }
     // `1 = 0` short-circuits the cancel predicate away when the caller did
     // not ask for it, so the reason/wake filters (and the 0004 index) stay
     // the leading predicates (issue #68).
     const cancelRequestedOnly = filter?.cancelRequested === true ? 1 : 0
+    const parentsOnly = filter?.hasChildren === true
+      ? db.sql`EXISTS (SELECT 1 FROM flows_run_parents WHERE flows_run_parents.parent_id = flows_runs.run_id)`
+      : db.sql`1 = 1`
     return (filter?.reason !== undefined && filter.dueBeforeMs !== undefined
       ? db.sql<WaitingDatabaseRow>`
         SELECT
@@ -1731,6 +1808,7 @@ const waitingRuns = (db: Database): Service["waitingRuns"] =>
           AND waiting_wake_at_ms IS NOT NULL
           AND waiting_wake_at_ms <= ${filter.dueBeforeMs}
           AND (${cancelRequestedOnly} = 0 OR cancel_requested_at_ms IS NOT NULL)
+          AND ${parentsOnly}
           AND status NOT IN ('completed', 'failed', 'cancelled')
         ORDER BY waiting_wake_at_ms, run_id
       `
@@ -1745,6 +1823,7 @@ const waitingRuns = (db: Database): Service["waitingRuns"] =>
         FROM flows_runs
         WHERE waiting_reason = ${filter.reason}
           AND (${cancelRequestedOnly} = 0 OR cancel_requested_at_ms IS NOT NULL)
+          AND ${parentsOnly}
           AND status NOT IN ('completed', 'failed', 'cancelled')
         ORDER BY waiting_wake_at_ms IS NULL, waiting_wake_at_ms, run_id
       `
@@ -1761,6 +1840,7 @@ const waitingRuns = (db: Database): Service["waitingRuns"] =>
           AND waiting_wake_at_ms IS NOT NULL
           AND waiting_wake_at_ms <= ${filter.dueBeforeMs}
           AND (${cancelRequestedOnly} = 0 OR cancel_requested_at_ms IS NOT NULL)
+          AND ${parentsOnly}
           AND status NOT IN ('completed', 'failed', 'cancelled')
         ORDER BY waiting_wake_at_ms, run_id
       `
@@ -1774,6 +1854,7 @@ const waitingRuns = (db: Database): Service["waitingRuns"] =>
         FROM flows_runs
         WHERE waiting_reason IS NOT NULL
           AND (${cancelRequestedOnly} = 0 OR cancel_requested_at_ms IS NOT NULL)
+          AND ${parentsOnly}
           AND status NOT IN ('completed', 'failed', 'cancelled')
         ORDER BY waiting_wake_at_ms IS NULL, waiting_wake_at_ms, run_id
       `).pipe(
@@ -1847,7 +1928,7 @@ const pendingCancellationTail = (db: Database): Service["pendingCancellationTail
 const staleRunningRuns = (db: Database): Service["staleRunningRuns"] =>
   Effect.fn(
     "DurableEngineState.staleRunningRuns"
-  )((staleBeforeMs, limit) =>
+  )((staleBeforeMs, limit, after) =>
     // `LIMIT -1` is SQLite's explicit "no limit"; the partial index created
     // in `make` serves the predicate, so the per-tick sweep is an index
     // range read instead of a full table scan (issue #79).
@@ -1857,6 +1938,12 @@ const staleRunningRuns = (db: Database): Service["staleRunningRuns"] =>
       WHERE status = 'running'
         AND heartbeat_at_ms IS NOT NULL
         AND heartbeat_at_ms < ${staleBeforeMs}
+        AND ${
+      after === undefined
+        ? db.sql`1 = 1`
+        : db.sql`(heartbeat_at_ms > ${after.heartbeatAtMs}
+            OR (heartbeat_at_ms = ${after.heartbeatAtMs} AND run_id > ${after.runId}))`
+    }
       ORDER BY heartbeat_at_ms, run_id
       LIMIT ${limit ?? (Dialect.isPostgres(db.sql) ? null : -1)}
     `.pipe(
@@ -2741,14 +2828,30 @@ const memoryWaitingRuns = (memory: Memory): Service["waitingRuns"] =>
           const view = memory.options.runs(row.runId)
           return Option.isSome(view) && view.value.cancelRequestedAtMs != null
         })
+        .filter((row) => filter?.hasChildren !== true || memoryHasChildren(memory, row.runId))
         .sort((left, right) =>
           Number(left.wakeAt === null) - Number(right.wakeAt === null) ||
           (left.wakeAt ?? 0) - (right.wakeAt ?? 0) ||
           compareText(left.runId, right.runId)
         )
         .map(snapshotWaiting)
-    )
+    ).pipe(Effect.map((rows) => filter?.page === undefined ? rows : memoryWaitingPage(rows, filter.page)))
   )
+
+/** Whether any run names `parentId` as a parent, mirroring the SQL `EXISTS` over the edge table. */
+const memoryHasChildren = (memory: Memory, parentId: string): boolean => {
+  for (const parents of memory.parentEdges.values()) {
+    if (parents.has(parentId)) return true
+  }
+  return false
+}
+
+/** Mirrors the SQL keyset page: run-id order, strictly after the cursor, bounded. */
+const memoryWaitingPage = (rows: ReadonlyArray<WaitingRow>, page: WaitingRunsPage): ReadonlyArray<WaitingRow> =>
+  rows
+    .filter((row) => page.afterRunId === undefined || compareText(row.runId, page.afterRunId) > 0)
+    .sort((left, right) => compareText(left.runId, right.runId))
+    .slice(0, page.limit)
 
 const memoryPendingRuns = (memory: Memory): Service["pendingRuns"] =>
   Effect.fn("DurableEngineState.pendingRuns")((
@@ -2797,7 +2900,8 @@ const memoryPendingCancellationTail = (memory: Memory): Service["pendingCancella
 const memoryStaleRunningRuns = (memory: Memory): Service["staleRunningRuns"] =>
   Effect.fn("DurableEngineState.staleRunningRuns")((
     staleBeforeMs,
-    limit
+    limit,
+    after
   ) =>
     Effect.sync(() => {
       // Mirrors the SQL scan of `flows_runs`: without an enumerator there
@@ -2809,7 +2913,11 @@ const memoryStaleRunningRuns = (memory: Memory): Service["staleRunningRuns"] =>
         if (
           view.status === "running" &&
           typeof heartbeatAtMs === "number" &&
-          heartbeatAtMs < staleBeforeMs
+          heartbeatAtMs < staleBeforeMs &&
+          // Mirrors the SQL keyset: strictly after the cursor row.
+          (after === undefined ||
+            heartbeatAtMs > after.heartbeatAtMs ||
+            (heartbeatAtMs === after.heartbeatAtMs && compareText(runId, after.runId) > 0))
         ) {
           stale.push({ runId, heartbeatAtMs })
         }
@@ -3061,7 +3169,8 @@ export const makeMemory = (options: MemoryOptions = {}): Service => {
     pendingCancellationRuns: (limit, after, through) =>
       guard(memory, unguarded.pendingCancellationRuns(limit, after, through)),
     pendingCancellationTail: () => guard(memory, unguarded.pendingCancellationTail()),
-    staleRunningRuns: (staleBeforeMs, limit) => guard(memory, unguarded.staleRunningRuns(staleBeforeMs, limit)),
+    staleRunningRuns: (staleBeforeMs, limit, after) =>
+      guard(memory, unguarded.staleRunningRuns(staleBeforeMs, limit, after)),
     attemptSurvivors: undefined,
     recordRunParent: (childId, parentId) => guard(memory, unguarded.recordRunParent(childId, parentId)),
     removeRunParentsForRun: (runId) => guard(memory, unguarded.removeRunParentsForRun(runId)),

@@ -1650,7 +1650,10 @@ describe("measuring", () => {
     // Used again, `tool` is the last used, so it is the one kept when one is.
     expect(measured(tool)).toBe(states[0])
     expect(reads).toBe(3)
+    await Fs.mkdir(Path.dirname(kept), { recursive: true })
+    await Fs.symlink(other, `${kept}.${process.pid}`)
     ObservedReads.saveDigests(kept, first, (path) => path !== other)
+    expect(await Fs.readFile(other, "utf8")).toBe("other")
     // The next build reads neither file it measured, and does not hold one it was not given.
     const next = ObservedReads.loadDigests(kept)
     expect([...next.keys()].sort()).toEqual([gone, tool])

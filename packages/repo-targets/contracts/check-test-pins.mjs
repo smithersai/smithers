@@ -28,11 +28,11 @@
  * covers every group: an unexplained pin in a package a user installs is the
  * case this guard exists for.
  */
-import { existsSync, readFileSync, readdirSync, statSync } from "node:fs"
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs"
 import { join, relative, sep } from "node:path"
 import { fileURLToPath } from "node:url"
 
-import { libraryPackages, isMain, repoRoot } from "../scripts/workspace-packages.mjs"
+import { isMain, libraryPackages, repoRoot } from "../scripts/workspace-packages.mjs"
 
 /** The package groups whose pins this register covers. */
 export const guardedGroups = new Set(["engine", "agent", "tooling"])
@@ -60,8 +60,7 @@ const optionsPinPattern =
   /\b(?:it|test|describe)(?:\.[a-zA-Z]+)*\s*\(\s*(["'`])((?:\\.|(?!\1)[^\\])*)\1\s*,\s*\{[^{}]*?\b(fails|skip|todo)\s*:\s*(?:true|(["'`])(?:\\.|(?!\4)[^\\])*\4)\s*[,}]/g
 
 /** Matches the beginning of a conditional suite's condition. */
-const conditionalStartPattern =
-  /\b(?:it|test|describe)(?:\.[a-zA-Z]+)*\.(skipIf|runIf)\s*\(/g
+const conditionalStartPattern = /\b(?:it|test|describe)(?:\.[a-zA-Z]+)*\.(skipIf|runIf)\s*\(/g
 
 /** Matches a skip made inside a test body, on the test context: `ctx.skip(`, `context.skip(`, `t.skip(`. */
 const contextSkipPattern = /\b(ctx|context|t)\.skip\s*\(/g
@@ -90,7 +89,7 @@ const readParenthesized = (source, openIndex) => {
       else if (character === quote) quote = undefined
       continue
     }
-    if (character === '"' || character === "'" || character === "`") {
+    if (character === "\"" || character === "'" || character === "`") {
       quote = character
       continue
     }
@@ -119,7 +118,7 @@ const firstArgument = (text) => {
       else if (character === quote) quote = undefined
       continue
     }
-    if (character === '"' || character === "'" || character === "`") quote = character
+    if (character === "\"" || character === "'" || character === "`") quote = character
     else if ("([{".includes(character)) depth++
     else if (")]}".includes(character)) depth--
     else if (character === "," && depth === 0) return text.slice(0, index).trim()
@@ -166,10 +165,12 @@ const nextCall = (source, index) => {
  * capability gate. That is a deliberate floor, not a claim of completeness.
  */
 const envReads = (text) =>
-  Array.from(text.matchAll(/process\.env(?:\.([A-Za-z_]\w*)|\[["']([A-Za-z_]\w*)["']\])/g), (read) => read[1] ?? read[2])
+  Array.from(
+    text.matchAll(/process\.env(?:\.([A-Za-z_]\w*)|\[["']([A-Za-z_]\w*)["']\])/g),
+    (read) => read[1] ?? read[2]
+  )
 
-const readsOptInEnv = (text, supplied) =>
-  envReads(text).some((name) => name !== "CI" && !supplied.has(name))
+const readsOptInEnv = (text, supplied) => envReads(text).some((name) => name !== "CI" && !supplied.has(name))
 
 /**
  * Resolves identifiers transitively against same-file const initializers.
@@ -228,7 +229,7 @@ const readBracketed = (source, openIndex) => {
   let depth = 0
   for (let index = openIndex; index < source.length; index++) {
     const character = source[index]
-    if (character === '"' || character === "'" || character === "`") {
+    if (character === "\"" || character === "'" || character === "`") {
       for (index++; index < source.length && source[index] !== character; index++) {
         if (source[index] === "\\") index++
       }
@@ -364,7 +365,9 @@ export const findPins = (source, supplied = new Set()) => {
     const before = source.slice(0, match.index)
     const opened = [...before.matchAll(testTitlePattern)].at(-1)
     const helper = [...before.matchAll(helperPattern)].at(-1)
-    const title = helper !== undefined && (opened === undefined || helper.index > opened.index) ? helper[1] ?? helper[2] : opened?.[2]
+    const title = helper !== undefined && (opened === undefined || helper.index > opened.index)
+      ? helper[1] ?? helper[2]
+      : opened?.[2]
     if (title === undefined) continue
     pins.push({ form: `${match[1]}.skip under if (${guard})`, title, line: lineOf(match.index) })
   }
@@ -423,7 +426,7 @@ export const undocumentedPins = (notes = readFileSync(notesPath, "utf8"), packag
   const unexplained = []
   const documented = survivingPins(notes)
   for (const packageDirectory of packages) {
-    const packageName = relative(join(repoRoot, "packages"), packageDirectory)
+    const packageName = relative(join(repoRoot, "packages"), packageDirectory).replaceAll("\\", "/")
     const supplied = suppliedEnv(packageDirectory)
     for (const file of testFilesUnder(packageDirectory)) {
       if (fixtureSuites.has(file)) continue

@@ -43,10 +43,14 @@ by another process.
 
 ## The bounds are on shape, not on size
 
-Run state, metadata, errors, and outcomes have no byte ceiling, on purpose.
-These rows are what a resume re-enters, so a multi-megabyte state a flow
-legitimately produced has to persist or the run cannot continue. What is
-bounded is shape, and the limits are public constants:
+Run state has no byte ceiling, on purpose, and attempt metadata, errors, and
+outcomes have no configurable one. These rows are what a resume re-enters, so
+a multi-megabyte state a flow legitimately produced has to persist or the run
+cannot continue. Attempt metadata, errors, and outcomes stop at a fixed
+`AttemptStore.maximumValueBytes`, 32 MiB each: past it a value could not be
+read back into a constrained host, so the write is refused with
+`invalid_attempt`. What is otherwise bounded is shape, and the limits are
+public constants:
 
 | Constant                        | Value   | Applies to            |
 | ------------------------------- | ------- | --------------------- |
@@ -59,7 +63,7 @@ Depth bounds the recursion the boundary itself performs. Node and member counts
 bound the work one admission can cost. A value past either is refused with
 `invalid_run` or `invalid_attempt` and a complaint naming the limit it broke.
 
-## The one byte ceiling is the checkpoint
+## The one configurable byte ceiling is the checkpoint
 
 A checkpoint is the exception, because it is a convenience rather than a
 requirement: a step that cannot checkpoint still runs, it just restarts from

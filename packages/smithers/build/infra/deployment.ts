@@ -615,7 +615,8 @@ export const sandboxContainerOptions = (instance: SandboxInstanceType) => ({
  * @category models
  * @since 0.1.0
  */
-export interface SandboxWorkerResources<Container> {
+export interface SandboxWorkerResources<Container, Metrics = never> {
+  readonly metrics?: Metrics
   readonly container: (id: string, props: ReturnType<typeof sandboxContainerOptions>) => Container
 }
 
@@ -631,10 +632,13 @@ export interface SandboxWorkerResources<Container> {
  * @category constructors
  * @since 0.1.0
  */
-export const sandboxWorkerOptions = <Container>(resources: SandboxWorkerResources<Container>) => ({
+export const sandboxWorkerOptions = <Container, Metrics = never>(
+  resources: SandboxWorkerResources<Container, Metrics>
+) => ({
   main: sandboxWorkerEntry,
   compatibility: { date: workerCompatibilityDate, flags: ["nodejs_compat"] },
   env: {
+    ...(resources.metrics === undefined ? {} : { SANDBOX_REQUEST_METRICS: resources.metrics }),
     SANDBOX_TOKEN: sandboxToken,
     ...Object.fromEntries(
       sandboxInstanceTypes.map((instance) => [

@@ -29,6 +29,7 @@ import { dual } from "effect/Function"
 import * as Layer from "effect/Layer"
 import * as Metric from "effect/Metric"
 import * as Option from "effect/Option"
+import { stringField } from "./internal/DefectField.ts"
 import * as Interpreter from "./Interpreter.ts"
 
 /**
@@ -355,12 +356,12 @@ const identifier = /^[A-Za-z_@][A-Za-z0-9_./:@-]{0,95}$/
 
 /** A failure's code: its `code` when that is a closed code, else its `_tag`, else its error name. */
 const codeOf = (error: unknown, fallback: string): string => {
-  if (error !== null && typeof error === "object") {
-    const record = error as { readonly code?: unknown; readonly _tag?: unknown; readonly name?: unknown }
-    if (typeof record.code === "string" && identifier.test(record.code)) return record.code
-    if (typeof record._tag === "string" && identifier.test(record._tag)) return record._tag
-    if (typeof record.name === "string" && record.name !== "Error" && identifier.test(record.name)) return record.name
-  }
+  const code = stringField(error, "code")
+  if (code !== undefined && identifier.test(code)) return code
+  const tag = stringField(error, "_tag")
+  if (tag !== undefined && identifier.test(tag)) return tag
+  const name = stringField(error, "name")
+  if (name !== undefined && name !== "Error" && identifier.test(name)) return name
   return fallback
 }
 

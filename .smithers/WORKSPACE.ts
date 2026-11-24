@@ -46,7 +46,6 @@ export const Workspace = S.Workspace("smithers", {
     // copying a tree its removal cannot unlink.
     hostDirectories: [
       ".artifacts/delegated-login-go-modcache",
-      ".backend-go-modcache",
       ".native-ffi",
       ".native-ffi-check"
     ],
@@ -80,10 +79,10 @@ export const Workspace = S.Workspace("smithers", {
     "fixture-target-body": S.LocalRepository("packages/smithers/build/build-cli/test/fixtures/target-body"),
     "fixture-viem-node-spec": S.LocalRepository("packages/smithers/build/build-cli/test/fixtures/viem-node-spec")
   },
-  // Gitignored caches with no CACHEDIR.TAG: run evidence, the Go module
-  // cache, the pnpm store, and scratch. Discovery is ignore-blind, so each one
-  // costs its full size on every `smthrs` verb until it is named here.
-  discovery: { prune: [".artifacts", ".backend-go-modcache", ".pnpm-store", "tmp"] },
+  // Gitignored caches with no CACHEDIR.TAG: run evidence, the pnpm store, and
+  // scratch. Discovery is ignore-blind, so each one costs its full size on
+  // every `smthrs` verb until it is named here.
+  discovery: { prune: [".artifacts", ".pnpm-store", "tmp"] },
   // Dependency documentation a wiki refresh imports for agent memory, pinned
   // by the installed version.
   docs: { effect: S.Docs.Package("effect", { files: ["README.md"] }) }

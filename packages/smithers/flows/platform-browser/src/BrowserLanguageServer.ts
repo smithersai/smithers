@@ -358,7 +358,9 @@ export const program = (
 ): Effect.Effect<never, never, Scope.Scope> =>
   Effect.gen(function*() {
     const inbox = yield* Queue.unbounded<unknown>()
-    const requests = yield* Queue.unbounded<Protocol.RequestMessage>()
+    const requests = yield* Queue.unbounded<
+      { message: Protocol.RequestMessage; workspace: TypeScriptWorkspace.Workspace | undefined }
+    >()
     const listener = (event: MessageEvent) => Queue.offerUnsafe(inbox, event.data)
     yield* Effect.acquireRelease(
       Effect.sync(() => {
@@ -377,12 +379,11 @@ export const program = (
           const id = nextRead++
           const answer = yield* Deferred.make<TypeScriptWorkspace.Read>()
           reads.set(id, answer)
-          yield* post({ _tag: "Read", id, paths })
-          return yield* Deferred.await(answer).pipe(Effect.ensuring(
-            Effect.sync(() => reads.delete(id)).pipe(
-              Effect.andThen(post({ _tag: "CancelRead", id }))
-            )
-          ))
+          return yield* post({ _tag: "Read", id, paths }).pipe(
+            Effect.andThen(Deferred.await(answer)),
+            Effect.onInterrupt(() => post({ _tag: "CancelRead", id })),
+            Effect.ensuring(Effect.sync(() => reads.delete(id)))
+          )
         }),
       lib: (fileName) => Effect.tryPromise(() => options.lib(fileName)).pipe(Effect.orElseSucceed(() => undefined))
     }
@@ -413,11 +414,14 @@ export const program = (
         }
         case "Request":
           cancelled.set(message.id, yield* Deferred.make<void>())
-          yield* Queue.offer(requests, message)
+          yield* Queue.offer(requests, { message, workspace })
       }
     })))
 
-    const handle = (message: Protocol.RequestMessage): Effect.Effect<unknown, TypeScriptWorkspace.Refusal> => {
+    const handle = (
+      message: Protocol.RequestMessage,
+      workspace: TypeScriptWorkspace.Workspace | undefined
+    ): Effect.Effect<unknown, TypeScriptWorkspace.Refusal> => {
       if (workspace === undefined) {
         return Effect.fail(new TypeScriptWorkspace.Refusal({ code: "invalid_input", message: "No workspace is open" }))
       }
@@ -446,15 +450,15 @@ export const program = (
     }
 
     return yield* Effect.forever(Effect.gen(function*() {
-      const message = yield* Queue.take(requests)
+      const { message, workspace: current } = yield* Queue.take(requests)
       const signal = cancelled.get(message.id)!
       const exit = yield* Effect.raceFirst(
         Deferred.await(signal).pipe(Effect.as(null)),
-        Effect.exit(handle(message))
+        Effect.exit(handle(message, current))
       ).pipe(Effect.ensuring(Effect.sync(() => cancelled.delete(message.id))))
       if (exit === null) return
       if (exit._tag === "Success") {
-        return yield* post({ _tag: "Reply", id: message.id, result: exit.value, ...workspace!.loaded() })
+        return yield* post({ _tag: "Reply", id: message.id, result: exit.value, ...current!.loaded() })
       }
       const reason = exit.cause.reasons[0]
       const refusal = reason?._tag === "Fail" ? reason.error : undefined

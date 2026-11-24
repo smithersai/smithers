@@ -14,8 +14,7 @@ on:
       - .github/workflows/recorder.yml
       - "packages/smithers/build/build-cli/native/**"
       - "packages/smithers/build/build-cli/scripts/build-observe.mjs"
-      - "packages/smithers/build/build-cli/src/internal/ObservedReads.ts"
-      - "packages/smithers/build/build-cli/src/internal/RecordedCalls.ts"
+      - "packages/smithers/build/build-cli/src/**"
       - "packages/smithers/build/build-cli/test/RecordedCalls.test.ts"
       - "packages/smithers/build/build-cli/test/helpers/KernelProbe.ts"
       - "packages/smithers/build/build-cli/test/ObserveSupervisor.test.ts"
@@ -29,8 +28,7 @@ on:
       - .github/workflows/recorder.yml
       - "packages/smithers/build/build-cli/native/**"
       - "packages/smithers/build/build-cli/scripts/build-observe.mjs"
-      - "packages/smithers/build/build-cli/src/internal/ObservedReads.ts"
-      - "packages/smithers/build/build-cli/src/internal/RecordedCalls.ts"
+      - "packages/smithers/build/build-cli/src/**"
       - "packages/smithers/build/build-cli/test/RecordedCalls.test.ts"
       - "packages/smithers/build/build-cli/test/helpers/KernelProbe.ts"
       - "packages/smithers/build/build-cli/test/ObserveSupervisor.test.ts"

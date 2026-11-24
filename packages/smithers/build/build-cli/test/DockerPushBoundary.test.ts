@@ -1,5 +1,6 @@
 import * as Stamp from "@smthrs/targets/Stamp"
 import { spawnSync } from "node:child_process"
+import { createHash } from "node:crypto"
 import * as Fs from "node:fs/promises"
 import * as Os from "node:os"
 import * as Path from "node:path"
@@ -10,6 +11,8 @@ import * as PackageTree from "../src/PackageTree.ts"
 import { writeExecutable } from "./helpers/Executable.ts"
 import { imageArchive, tar } from "./helpers/OciArchive.ts"
 import { serve } from "./helpers/ServeCli.ts"
+
+const digestOf = (body: string) => `sha256:${createHash("sha256").update(body).digest("hex")}`
 
 const directories: Array<string> = []
 const installedDocker = PackageTree.findOnPath("docker")
@@ -208,6 +211,11 @@ describe("Docker push image archive", () => {
     const good = imageArchive()
     const image = good.images[0]!
     const hex = (digest: string) => digest.slice("sha256:".length)
+    const manifestBody = JSON.stringify({
+      config: { digest: image.config },
+      layers: image.layers.map((digest) => ({ digest }))
+    })
+    const manifestDigest = digestOf(manifestBody)
     const entries = tar([
       { name: "blobs/", body: "", type: "5" },
       { name: "./oci-layout", body: "{}" },
@@ -215,23 +223,23 @@ describe("Docker push image archive", () => {
         name: "index.json",
         body: JSON.stringify({
           manifests: [
-            { mediaType: "application/vnd.oci.image.manifest.v1+json", digest: image.manifest },
-            { mediaType: "application/vnd.oci.image.manifest.v1+json", digest: image.manifest },
-            { digest: image.manifest }
+            { mediaType: "application/vnd.oci.image.manifest.v1+json", digest: manifestDigest },
+            { mediaType: "application/vnd.oci.image.manifest.v1+json", digest: manifestDigest },
+            { digest: manifestDigest }
           ]
         }),
         type: "\0"
       },
       {
-        name: hex(image.manifest),
+        name: hex(manifestDigest),
         prefix: "blobs/sha256",
-        body: JSON.stringify({ config: { digest: image.config }, layers: image.layers.map((digest) => ({ digest })) })
+        body: manifestBody
       },
       { name: `./blobs/sha256/${hex(image.config)}`, body: "{}", paxSize: true },
       { name: `blobs/sha256/${hex(image.layers[0]!)}`, body: "layer", pax: true, paxSize: true }
     ])
     expect(await DockerExec.readImageArchive(await archivePath(entries))).toMatchObject({
-      manifest: image.manifest,
+      manifest: manifestDigest,
       config: image.config,
       layers: image.layers,
       loadable: false,
@@ -251,6 +259,13 @@ describe("Docker push image archive", () => {
       mediaType: "application/vnd.oci.image.manifest.v1+json",
       digest: good.images[0]!.manifest
     }
+    const withManifest = (body: string) => {
+      const digest = digestOf(body)
+      return tar([
+        { name: "index.json", body: index([{ ...manifest, digest }]) },
+        { name: `blobs/sha256/${digest.slice(7)}`, body }
+      ])
+    }
     const cases: ReadonlyArray<readonly [Buffer, string]> = [
       [tar([]), "no index.json"],
       [tar([{ name: "index.json", body: index([]) }]), "holds no image"],
@@ -267,20 +282,18 @@ describe("Docker push image archive", () => {
       [tar([{ name: "index.json", body: index([{ ...manifest, digest: "sha256:short" }]) }]), "malformed digest"],
       [tar([{ name: "index.json", body: index([manifest]) }]), `no blobs/sha256/${manifest.digest.slice(7)}`],
       [
-        tar([
-          { name: "index.json", body: index([manifest]) },
-          { name: `blobs/sha256/${manifest.digest.slice(7)}`, body: "{\"config\":{\"digest\":\"sha256:0\"}}" }
-        ]),
+        withManifest(JSON.stringify({ config: { digest: "sha256:0" } })),
         "image manifest has a malformed digest"
       ],
       [
         tar([
           { name: "index.json", body: index([manifest]) },
-          {
-            name: `blobs/sha256/${manifest.digest.slice(7)}`,
-            body: JSON.stringify({ config: { digest: good.images[0]!.config }, layers: [] })
-          }
+          { name: `blobs/sha256/${manifest.digest.slice(7)}`, body: "{}" }
         ]),
+        "does not match"
+      ],
+      [
+        withManifest(JSON.stringify({ config: { digest: good.images[0]!.config }, layers: [] })),
         `no blob ${good.images[0]!.config}`
       ],
       [good.bytes.subarray(0, good.bytes.length - 1024 - 512), "not a complete tar archive"],
@@ -290,6 +303,22 @@ describe("Docker push image archive", () => {
       const image = await DockerExec.readImageArchive(await archivePath(bytes))
       expect.soft(image, message).toEqual({ error: expect.stringContaining(message) })
     }
+  })
+  it("requires a nonnegative PAX size even for an empty file", async () => {
+    const archive = tar([
+      { name: "PaxHeader", type: "x", body: "11 size=-1\n" },
+      { name: "empty", body: "" }
+    ])
+    expect(await DockerExec.readImageArchive(await archivePath(archive))).toEqual({
+      error: "the image archive is not a complete tar archive"
+    })
+  })
+  it("limits metadata reads independently of the size of a layer", async () => {
+    const padded = " ".repeat(4 * 1024 * 1024)
+    const archive = tar([{ name: "index.json", body: "{}" + padded }])
+    expect(await DockerExec.readImageArchive(await archivePath(archive))).toEqual({
+      error: "image archive metadata exceeds 4 MiB"
+    })
   })
   it("appends the manifest.json docker load reads, keeping every OCI entry", async () => {
     const archive = imageArchive({ attestation: true, pax: true })

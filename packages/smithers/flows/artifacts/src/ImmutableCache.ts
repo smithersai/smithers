@@ -12,7 +12,9 @@
  *   A failure is never stored, and a cache that fails never fails the read.
  * - Entries are bounded: `bytes` up to `maxEntryBytes` (default 8 MiB) and
  *   string `metadata` up to 1,024 bytes of JSON. A larger `put` stores nothing
- *   and answers `too_large`.
+ *   and answers `too_large`. A `get` holds a stored entry to the same bounds
+ *   while it reads: one over them, written under a larger bound, fails
+ *   `corrupt` without being read whole.
  * - The backend is any object with the Web Cache API's `match` and `put`, so
  *   one implementation serves every host. {@link layerMemory} keeps entries in
  *   memory with a total bound, for Node and tests. `@smthrs/platform-cloudflare`
@@ -99,7 +101,7 @@ export type PutOutcome = "stored" | "too_large"
  * - `operation`: `open` (building the layer), `get` or `put`.
  * - `reason`: `unavailable` (the host has no cache, or refused to open it),
  *   `failed` (the backend refused the call, for example over its quota) or
- *   `corrupt` (a stored entry this cache cannot read).
+ *   `corrupt` (a stored entry this cache cannot read, or one over its bounds).
  * - `errorName`: the backend's error name, such as `QuotaExceededError`,
  *   when it threw one. Never its message.
  *
@@ -257,7 +259,7 @@ export const make = (cache: WebCache, options: Options): Service => {
   const backend = options.backend
   const maxEntryBytes = options.maxEntryBytes ?? defaultMaxEntryBytes
 
-  const attempt = <A>(operation: "get" | "put", run: () => Promise<A>) =>
+  const attempt = <A>(operation: "get" | "put", run: (signal: AbortSignal) => Promise<A>) =>
     Effect.tryPromise({
       try: run,
       catch: (cause) => new ImmutableCacheError({ backend, operation, reason: "failed", ...nameOf(cause) })
@@ -304,11 +306,15 @@ export const make = (cache: WebCache, options: Options): Service => {
           Effect.gen(function*() {
             const response = yield* attempt("get", () => cache.match(url))
             if (response === undefined) return Option.none<Entry>()
-            const body = new Uint8Array(yield* attempt("get", () => response.arrayBuffer()))
-            const metadata = decodeMetadata(decodeURIComponentOrNull(response.headers.get(metadataHeader)))
-            if (Option.isNone(metadata)) {
-              return yield* new ImmutableCacheError({ backend, operation: "get", reason: "corrupt" })
-            }
+            const corrupt = Effect.andThen(
+              // The entry is refused unread: release whatever the backend still holds for it.
+              Effect.ignore(attempt("get", async () => response.body?.cancel())),
+              Effect.fail(new ImmutableCacheError({ backend, operation: "get", reason: "corrupt" }))
+            )
+            const metadata = decodeMetadata(boundedMetadata(response.headers.get(metadataHeader)))
+            if (Option.isNone(metadata) || declaredLength(response) > maxEntryBytes) return yield* corrupt
+            const body = yield* attempt("get", (signal) => readBounded(response, maxEntryBytes, signal))
+            if (body === undefined) return yield* corrupt
             return Option.some<Entry>({ bytes: body, metadata: metadata.value })
           })
         )),
@@ -339,13 +345,64 @@ export const make = (cache: WebCache, options: Options): Service => {
   })
 }
 
-/** A percent-encoded header's text, or `null` when it is absent or malformed. */
-const decodeURIComponentOrNull = (value: string | null): string | null => {
-  if (value === null) return null
+/**
+ * A stored metadata header's JSON text, or `null` when it is absent,
+ * malformed or over {@link maxMetadataBytes}. The raw header is bounded before
+ * it is percent-decoded (one UTF-8 byte is at most three characters), and the
+ * decoded text is bounded before it is parsed.
+ */
+const boundedMetadata = (value: string | null): string | null => {
+  if (value === null || value.length > maxMetadataBytes * 3) return null
   try {
-    return decodeURIComponent(value)
+    const decoded = decodeURIComponent(value)
+    return encoder.encode(decoded).byteLength > maxMetadataBytes ? null : decoded
   } catch {
     return null
+  }
+}
+
+/** The body length a response declares, or 0 when it declares none it can be held to. */
+const declaredLength = (response: Response): number => {
+  const header = response.headers.get("content-length")
+  return header !== null && /^\d+$/.test(header) ? Number(header) : 0
+}
+
+/**
+ * Reads a response's body, holding at most `limit` bytes. Over the limit it
+ * cancels the stream and answers `undefined`, so an entry written under a
+ * larger bound never costs this reader more than its own.
+ */
+const readBounded = async (
+  response: Response,
+  limit: number,
+  signal: AbortSignal
+): Promise<Uint8Array | undefined> => {
+  if (response.body === null) return new Uint8Array(0)
+  const reader = response.body.getReader()
+  const abandon = () => void reader.cancel().catch(() => undefined)
+  signal.addEventListener("abort", abandon, { once: true })
+  try {
+    const chunks: Array<Uint8Array> = []
+    let total = 0
+    while (true) {
+      const next = await reader.read()
+      if (next.done) break
+      total += next.value.byteLength
+      if (total > limit) {
+        await reader.cancel().catch(() => undefined)
+        return undefined
+      }
+      chunks.push(next.value)
+    }
+    const body = new Uint8Array(total)
+    let offset = 0
+    for (const chunk of chunks) {
+      body.set(chunk, offset)
+      offset += chunk.byteLength
+    }
+    return body
+  } finally {
+    signal.removeEventListener("abort", abandon)
   }
 }
 
@@ -376,21 +433,50 @@ export const layerWebCache = (
   )
 
 /**
- * A {@link WebCache} in memory, holding at most `maxTotalBytes` of bodies.
- * Over that bound it evicts the least recently used entries. It keeps a copy
- * of each body and answers each `match` with a new response.
+ * The default bound on how many entries {@link layerMemory} holds: 4,096.
+ *
+ * @category constants
+ * @since 1.0.0
+ */
+export const defaultMaxEntries = 4096
+
+/**
+ * What {@link makeMemoryWebCache} charges an entry beyond its body, URL and
+ * headers: 64 bytes, so an empty entry is never free.
+ *
+ * @category constants
+ * @since 1.0.0
+ */
+export const memoryEntryOverheadBytes = 64
+
+/**
+ * A {@link WebCache} in memory, holding at most `maxTotalBytes` and at most
+ * `maxEntries` entries. An entry costs its body's bytes, its URL's and
+ * headers' characters, and {@link memoryEntryOverheadBytes}, so empty bodies
+ * and metadata count against the bound. Over either bound it evicts the least
+ * recently used entries; an entry that alone is over `maxTotalBytes` is not
+ * stored. It keeps a copy of each body and answers each `match` with a new
+ * response.
  *
  * @category constructors
  * @since 1.0.0
  */
-export const makeMemoryWebCache = (maxTotalBytes: number = defaultMaxTotalBytes): WebCache => {
-  const stored = new Map<string, { readonly body: Uint8Array; readonly headers: Array<[string, string]> }>()
+export const makeMemoryWebCache = (
+  maxTotalBytes: number = defaultMaxTotalBytes,
+  maxEntries: number = defaultMaxEntries
+): WebCache => {
+  interface Stored {
+    readonly body: Uint8Array
+    readonly headers: Array<[string, string]>
+    readonly cost: number
+  }
+  const stored = new Map<string, Stored>()
   let total = 0
   const remove = (url: string) => {
     const found = stored.get(url)
     if (found === undefined) return undefined
     stored.delete(url)
-    total -= found.body.byteLength
+    total -= found.cost
     return found
   }
   return {
@@ -399,17 +485,22 @@ export const makeMemoryWebCache = (maxTotalBytes: number = defaultMaxTotalBytes)
       if (found === undefined) return undefined
       // Taken out and put back: the most recently used entry is the last one.
       stored.set(url, found)
-      total += found.body.byteLength
+      total += found.cost
       return new Response(found.body.slice(), { headers: found.headers })
     },
     put: async (url, response) => {
       const body = new Uint8Array(await response.arrayBuffer())
+      const headers = [...response.headers]
+      const cost = headers.reduce(
+        (sum, [name, value]) => sum + name.length + value.length,
+        body.byteLength + url.length + memoryEntryOverheadBytes
+      )
       remove(url)
-      if (body.byteLength > maxTotalBytes) return
-      stored.set(url, { body, headers: [...response.headers] })
-      total += body.byteLength
+      if (cost > maxTotalBytes || maxEntries < 1) return
+      stored.set(url, { body, headers, cost })
+      total += cost
       for (const oldest of stored.keys()) {
-        if (total <= maxTotalBytes) break
+        if (total <= maxTotalBytes && stored.size <= maxEntries) break
         remove(oldest)
       }
     }
@@ -418,8 +509,9 @@ export const makeMemoryWebCache = (maxTotalBytes: number = defaultMaxTotalBytes)
 
 /**
  * Bounds for {@link layerMemory}: `maxEntryBytes` (default
- * {@link defaultMaxEntryBytes}, and never more than the total) and
- * `maxTotalBytes` (default {@link defaultMaxTotalBytes}).
+ * {@link defaultMaxEntryBytes}, and never more than the total),
+ * `maxTotalBytes` (default {@link defaultMaxTotalBytes}) and `maxEntries`
+ * (default {@link defaultMaxEntries}).
  *
  * @category models
  * @since 1.0.0
@@ -427,6 +519,7 @@ export const makeMemoryWebCache = (maxTotalBytes: number = defaultMaxTotalBytes)
 export interface MemoryOptions {
   readonly maxEntryBytes?: number | undefined
   readonly maxTotalBytes?: number | undefined
+  readonly maxEntries?: number | undefined
 }
 
 /**
@@ -438,7 +531,7 @@ export interface MemoryOptions {
 export const layerMemory = (options: MemoryOptions = {}): Layer.Layer<ImmutableCache> =>
   Layer.sync(ImmutableCache, () => {
     const maxTotalBytes = options.maxTotalBytes ?? defaultMaxTotalBytes
-    return make(makeMemoryWebCache(maxTotalBytes), {
+    return make(makeMemoryWebCache(maxTotalBytes, options.maxEntries ?? defaultMaxEntries), {
       backend: "memory",
       maxEntryBytes: Math.min(options.maxEntryBytes ?? defaultMaxEntryBytes, maxTotalBytes)
     })

@@ -151,6 +151,7 @@ export default Flow.make("issue-sweep", {
     "proc:spawn:gh api *",
     "proc:spawn:node /*/flows/issue-claim/github-proxy.mjs --ensure",
     "proc:spawn:node /*/flows/issue-claim/issue-claim.mjs *",
+    "proc:spawn:node /*/flows/land/review.mjs --require *",
     "proc:spawn:jj -R *",
     "proc:spawn:lockf *",
     "proc:spawn:pnpm *",
@@ -261,6 +262,7 @@ export const makeIssueDiscovery = <E, R>(options: {
       readonly title: string
       readonly labels: ReadonlyArray<string>
       readonly updatedAt?: string | undefined
+      readonly eligible?: boolean
     }>,
     E,
     R
@@ -272,7 +274,7 @@ export const makeIssueDiscovery = <E, R>(options: {
     Effect.tap((rows) => github(options.reap(new Set(rows.map((row) => row.number))))),
     Effect.map((rows) =>
       rows
-        .filter((row) => input.issue === undefined || row.number === input.issue)
+        .filter((row) => row.eligible !== false && (input.issue === undefined || row.number === input.issue))
         .map((row) => ({ id: String(row.number), ...row }))
         .toSorted(byPriority)
     )

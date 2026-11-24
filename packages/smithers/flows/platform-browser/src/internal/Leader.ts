@@ -410,28 +410,28 @@ const serveStatements = (
       : []
     // A tab can send a request again only while it lives, holding its lock, so once its lock comes free its receipt
     // and reply go: every tab that holds one, and every tab this leader serves.
+    const taken = new Map<string, number>()
     const forgotten = new Set<string>()
     const forget = (client: string) =>
       Effect.suspend(() => {
-        if (Option.isNone(database) || forgotten.has(client)) return Effect.void
+        if (forgotten.has(client)) return Effect.void
         forgotten.add(client)
-        const connection = database.value
+        const cleanup = Option.isNone(database) ? Effect.void : Effect.all([
+          database.value.run(leader, `DELETE FROM main.${SqlProtocol.commits} WHERE client = ?`, [client], false),
+          database.value.run(leader, `DELETE FROM main.${SqlProtocol.replies} WHERE client = ?`, [client], false)
+        ])
         return Effect.scoped(locks.hold(SqlProtocol.clientLock(name, client))).pipe(
-          Effect.andThen(
-            connection.run(leader, `DELETE FROM main.${SqlProtocol.commits} WHERE client = ?`, [client], false)
-          ),
-          Effect.andThen(
-            connection.run(leader, `DELETE FROM main.${SqlProtocol.replies} WHERE client = ?`, [client], false)
-          ),
+          Effect.andThen(cleanup),
           // A receipt left behind costs a row, and the next leader tries again.
           Effect.ignore,
+          Effect.andThen(Effect.sync(() => {
+            forgotten.delete(client)
+            taken.delete(client)
+          })),
           Effect.forkScoped
         )
       })
     yield* Effect.forEach(receipted, forget, { discard: true })
-    // The newest request number taken from each tab: a tab sends one at a
-    // time, so a number already taken is a request sent again.
-    const taken = new Map<string, number>()
     // A watch on each tab with an open transaction: it ends when the tab does.
     const watched = new Map<string, Fiber.Fiber<void>>()
 

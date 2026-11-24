@@ -37,6 +37,8 @@ const segments = (sql: string): ReadonlyArray<{ readonly code: boolean; readonly
       return undefined
     }
     if (char !== "'" && char !== "\"") continue
+    // `E'…'` is an escape string: a backslash escapes its quote, which the doubled-quote scan can't see.
+    if (char === "'" && /(?:^|[^\w$])e$/i.test(sql.slice(0, at))) return undefined
     parts.push({ code: true, text: sql.slice(start, at) })
     let end = at + 1
     for (;;) {

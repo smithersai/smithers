@@ -133,16 +133,16 @@ describe("canonicalize errors", () => {
     )
   })
 
-  it("wraps an exception raised while coercing an object tag", () => {
-    const cause = new Error("tag exploded")
+  it("reads built-in brands from slots without consulting an object's string tag", () => {
+    let reads = 0
     const value = {
       get [Symbol.toStringTag](): never {
-        throw cause
+        reads++
+        throw new Error("tag exploded")
       }
     }
-    expect(() => canonicalize(value)).toThrow(
-      expect.objectContaining({ code: "canonical_getter_threw", path: "$", cause })
-    )
+    expect(canonicalize(value)).toBe("{}")
+    expect(reads).toBe(0)
   })
 })
 

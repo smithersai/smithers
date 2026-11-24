@@ -40,7 +40,8 @@ describe("LogFailures", () => {
           fatal: yield* count({ level: "fatal", record: "engine gone", code: "none", area: "none" }),
           info: yield* count({ level: "info", record: "chat ready", code: "none", area: "none" })
         }
-      })
+      }),
+      { records: ["outbox write sealed", "page error", "engine gone"] }
     ).pipe(Effect.map(({ value, ambient }) => {
       expect(value).toEqual({ sealed: 1, page: 2, fatal: 1, info: 0 })
       expect(ambient).toHaveLength(5)
@@ -113,13 +114,39 @@ describe("LogFailures", () => {
       expect(recent.map(({ record }) => record)).toEqual(["question not sent", "other", "other"])
     })))
 
-  it.effect("without records, keeps a short plain message and caps the distinct ones", () =>
-    counting(Effect.gen(function*() {
-      yield* Effect.logWarning("chat couldn't restore")
-      yield* Effect.logWarning("line\nwith a newline")
-      for (let index = 0; index < LogFailures.maxRecords + 1; index++) yield* Effect.logWarning(`record ${index}`)
-      return yield* count({ level: "warn", record: "other", code: "none", area: "none" })
-    })).pipe(Effect.map(({ value }) => expect(value).toBe(1 + 2))))
+  it.effect("keeps private messages out of Recent and the metric registry with and without declarations", () =>
+    Effect.gen(function*() {
+      for (const records of [undefined, ["write.failed"]]) {
+        const { value, recent } = yield* counting(
+          Effect.gen(function*() {
+            yield* Effect.logWarning("person@example.invalid")
+            yield* Effect.logWarning("write.failed")
+            return yield* Metric.snapshot
+          }),
+          { records }
+        )
+        const expected = records === undefined ? ["other", "other"] : ["other", "write.failed"]
+        expect(recent.map(({ record }) => record)).toEqual(expected)
+        expect(
+          value.filter(({ id }) => id === "flows_observability_log_failures").map(({ attributes }) =>
+            attributes?.record
+          ).sort()
+        ).toEqual([...new Set(expected)].sort())
+      }
+    }))
+
+  it.effect("uses the default recent limit for invalid sizes", () =>
+    Effect.gen(function*() {
+      for (const keep of [NaN, Infinity, -1, 0.5, Number.MAX_SAFE_INTEGER + 1]) {
+        const { recent } = yield* counting(
+          Effect.gen(function*() {
+            for (let index = 0; index < 51; index++) yield* Effect.logError("failure")
+          }),
+          { keep }
+        )
+        expect(recent).toHaveLength(50)
+      }
+    }))
 
   it.effect("caps distinct codes and areas, and keeps only identifiers", () =>
     counting(
@@ -146,7 +173,7 @@ describe("LogFailures", () => {
         yield* Effect.logError("two").pipe(Effect.withSpan("work"))
         yield* Effect.logError("three")
       }),
-      { keep: 2 }
+      { keep: 2, records: ["one", "two", "three"] }
     ).pipe(Effect.map(({ recent }) => {
       expect(recent.map(({ record, level }) => [record, level])).toEqual([["two", "error"], ["three", "error"]])
       expect(recent[0]?.traceId).toMatch(/^[0-9a-f]{32}$/)
@@ -161,7 +188,7 @@ describe("LogFailures", () => {
         yield* Effect.logError("gone")
         return yield* count({ level: "error", record: "gone", code: "none", area: "none" })
       }),
-      { keep: 0 }
+      { keep: 0, records: ["gone"] }
     ).pipe(Effect.map(({ value, recent }) => {
       expect(value).toBe(1)
       expect(recent).toEqual([])

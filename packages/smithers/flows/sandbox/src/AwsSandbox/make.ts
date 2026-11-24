@@ -21,7 +21,7 @@ import { envPrefix } from "../internal/envPrefix.ts"
 import { finalizeWithin } from "../internal/finalizeWithin.ts"
 import { parentOf } from "../internal/guestPath.ts"
 import { cancelledStatus, cancelMarker, killScript } from "../internal/killScript.ts"
-import { gather, type GatheredRun, providerFailure } from "../internal/localProcess.ts"
+import { commandFailure, gather, type GatheredRun } from "../internal/localProcess.ts"
 import { pidDirectory } from "../internal/pidDirectory.ts"
 import { rootedAt } from "../internal/rootedPath.ts"
 import { sessionSlug } from "../internal/sessionSlug.ts"
@@ -747,7 +747,7 @@ export const make = (input: AwsSandboxOptions): Provider => {
           Effect.gen(function*() {
             const spawner = stdin === undefined ? transport.spawner : yield* requireStreaming
             return yield* spawner.spawn(cli(remote, stdin)).pipe(
-              Effect.mapError(providerFailure("spawn_error", `\`${program} ecs execute-command\` could not start`))
+              Effect.mapError(commandFailure("spawn_error", "AWS command transport could not start"))
             )
           })
         const transportFailure = (run: GatheredRun): ProviderError =>
@@ -847,7 +847,9 @@ export const make = (input: AwsSandboxOptions): Provider => {
               Effect.flatMap(
                 gather(handle, `${program} ecs execute-command`),
                 (result) =>
-                  result.code === 0 ? Effect.succeed(unframe(result, nonce)) : Effect.fail(transportFailure(result))
+                  result.code === 0
+                    ? Effect.succeed(unframe(result, nonce))
+                    : Effect.fail(failure("unavailable", `AWS command transport exited ${result.code}`))
               )
             )
             // Closing the process scope ends the local client, which the guest
@@ -879,7 +881,7 @@ export const make = (input: AwsSandboxOptions): Provider => {
               stderr: Stream.empty,
               exitCode: Effect.flatMap(observed, (result) =>
                 result.code === undefined
-                  ? Effect.fail(failure("aborted", `\`${command}\` ended without reporting its status`))
+                  ? Effect.fail(failure("aborted", "command ended without reporting its status"))
                   : Effect.succeed(result.code))
             }
             pidfiles.set(process, pidfile)

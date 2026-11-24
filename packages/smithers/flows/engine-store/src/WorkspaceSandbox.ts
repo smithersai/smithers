@@ -762,10 +762,19 @@ const transaction = (base: ReadonlyMap<string, Uint8Array>, trace: Trace, root: 
     produced.add(key)
     files.set(key, content.slice())
   })
-  const removePath = Effect.fn("WorkspaceSandbox.remove")(function*(path: string) {
+  const removePath = Effect.fn("WorkspaceSandbox.remove")(function*(path: string, recursive = false) {
     const key = yield* resolvePath(path)
     produced.add(key)
     files.delete(key)
+    if (!recursive) return
+    // A directory is the set of keys under its prefix, so removing one
+    // recursively removes each of them, and each removal is a produced change.
+    const prefix = `${key}/`
+    for (const candidate of [...files.keys()]) {
+      if (!candidate.startsWith(prefix)) continue
+      produced.add(candidate)
+      files.delete(candidate)
+    }
   })
   const workspace = Workspace.of({
     readFile: (path) => readBytes(path),
@@ -819,11 +828,15 @@ const transaction = (base: ReadonlyMap<string, Uint8Array>, trace: Trace, root: 
     writeFile: (path, data) => writeBytes(path, data).pipe(Effect.mapError(refuse("writeFile", path))),
     writeFileString: (path, data) =>
       writeBytes(path, encoder.encode(data)).pipe(Effect.mapError(refuse("writeFileString", path))),
-    remove: (path) => removePath(path).pipe(Effect.mapError(refuse("remove", path))),
-    // Directories are implicit in a path-keyed map: creating one is a
-    // successful no-op so a body that mirrors ordinary filesystem discipline
-    // works unchanged, and listing one is a prefix scan.
-    makeDirectory: () => Effect.void,
+    remove: (path, options) =>
+      removePath(path, options?.recursive === true).pipe(Effect.mapError(refuse("remove", path))),
+    // Directories are implicit in a path-keyed map: creating one inside the
+    // workspace is a successful no-op so a body that mirrors ordinary
+    // filesystem discipline works unchanged, and listing one is a prefix
+    // scan. A path the transaction cannot name is refused like every other
+    // operation on it.
+    makeDirectory: (path) =>
+      resolvePath(path, true).pipe(Effect.asVoid, Effect.mapError(refuse("makeDirectory", path))),
     readDirectory: (path) =>
       resolvePath(path, true).pipe(
         Effect.map((key) => {

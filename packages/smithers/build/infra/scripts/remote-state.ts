@@ -24,6 +24,7 @@
  * @since 0.1.0
  */
 
+import { ambientEnvironment } from "@smthrs/build-cli/Environment"
 import { errorCode } from "@smthrs/targets/SafeFs"
 import { AwsClient } from "aws4fetch"
 import * as Cause from "effect/Cause"
@@ -429,7 +430,7 @@ export const r2CredentialsFromApiToken = async (
  * @since 0.1.0
  */
 export const stateBucketFromEnvironment = async (
-  env: NodeJS.ProcessEnv = process.env,
+  env: NodeJS.ProcessEnv = ambientEnvironment(),
   fetch: typeof globalThis.fetch = globalThis.fetch,
   options: RemoteStateRequestOptions = {}
 ): Promise<StateBucket> => {

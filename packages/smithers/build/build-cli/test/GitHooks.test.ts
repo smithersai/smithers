@@ -67,7 +67,7 @@ const expectRunnableHook = (root: string, name: string): void => {
     env: { ...process.env, PATH: NodePath.dirname(shell!) },
     encoding: "utf8"
   })
-  expect(result.status, result.stderr).toBe(0)
+  expect(result.status, result.stderr).toBe(1)
   expect(result.stderr).toContain("smthrs: CLI not found on PATH")
 }
 
@@ -147,17 +147,16 @@ describe("render goldens", () => {
 })
 
 describe("script behavior", () => {
-  it("fails open with a warning when both public and legacy CLIs are absent", async () => {
+  it.each(["preCommit", "prePush"] as const)("refuses %s when both CLIs are absent", async (name) => {
     const root = await temporaryRoot()
-    const [hook] = GitHooks.render({ preCommit: "//:preCommit" })
+    const [hook] = GitHooks.render({ [name]: "//:gate" })
     const script = NodePath.join(root, hook!.file)
     await Fs.writeFile(script, hook!.content, { encoding: "utf8", mode: 0o755 })
     const empty = NodePath.join(root, "empty-path")
     await Fs.mkdir(empty)
     const result = await runScript(script, empty)
-    expect(result.exitCode).toBe(0)
+    expect(result.exitCode).toBe(1)
     expect(result.stderr).toContain("smthrs: CLI not found on PATH")
-    expect(result.stderr).toContain("fail-open")
   })
 
   it("prefers the public bare-label command and propagates its failure", async () => {
@@ -363,7 +362,7 @@ describe("check and install", () => {
   it("allows a hooks directory linked within the repository", async () => {
     const root = await temporaryRoot()
     NodeChildProcess.execFileSync("git", ["init", "-q", root])
-    const hooksDirectory = NodePath.join(root, "internal-hooks")
+    const hooksDirectory = NodePath.join(root, "..internal-hooks")
     await Fs.mkdir(hooksDirectory)
     await Fs.symlink(hooksDirectory, NodePath.join(root, "linked-hooks"), "dir")
     NodeChildProcess.execFileSync("git", ["-C", root, "config", "core.hooksPath", "linked-hooks"])
@@ -398,13 +397,17 @@ describe("check and install", () => {
     await GitHooks.install(root, rendered)
     expect(await Fs.readFile(`${hook}.bak`, "utf8")).toBe("#!/bin/sh\necho mine\n")
     expect(await Fs.readFile(hook, "utf8")).toBe(rendered[0]!.content)
+    await Fs.writeFile(hook, "second hook")
+    await GitHooks.install(root, rendered)
+    expect(await Fs.readFile(`${hook}.bak.1`, "utf8")).toBe("second hook")
+    expect(await Fs.readFile(`${hook}.bak`, "utf8")).toBe("#!/bin/sh\necho mine\n")
     await Fs.rm(`${hook}.bak`)
     await GitHooks.install(root, rendered)
     await expect(Fs.stat(`${hook}.bak`)).rejects.toMatchObject({ code: "ENOENT" })
   })
 
   it.each(["symlink", "dangling symlink", "hardlink"] as const)(
-    "replaces a preexisting %s backup without changing its external target",
+    "reserves a second backup alongside a preexisting %s",
     async (kind) => {
       const root = await temporaryRoot()
       const repository = NodePath.join(root, "repository")
@@ -422,15 +425,14 @@ describe("check and install", () => {
 
       const rendered = GitHooks.render({ preCommit: "//:preCommit" })
       expect((await GitHooks.install(repository, rendered)).wrote).toEqual(["pre-commit"])
-      expect((await Fs.lstat(backup)).isFile()).toBe(true)
-      expect(await Fs.readFile(backup)).toEqual(handwritten)
+      expect(await Fs.readFile(`${backup}.1`)).toEqual(handwritten)
       expect(await Fs.readFile(hook, "utf8")).toBe(rendered[0]!.content)
       if (kind === "dangling symlink") {
         await expect(Fs.lstat(external)).rejects.toMatchObject({ code: "ENOENT" })
       } else {
         expect(await Fs.readFile(external)).toEqual(externalBytes)
         if (kind === "hardlink") {
-          expect((await Fs.stat(backup)).ino).not.toBe((await Fs.stat(external)).ino)
+          expect((await Fs.stat(backup)).ino).toBe((await Fs.stat(external)).ino)
         }
       }
       expect(
@@ -468,10 +470,22 @@ describe("check and install", () => {
     vi.stubEnv("PATH", emptyPath)
     try {
       expect((await GitHooks.check(root, rendered)).clean).toBe(false)
+      const hook = NodePath.join(root, ".git", "hooks", "pre-commit")
+      await Fs.mkdir(NodePath.dirname(hook), { recursive: true })
+      await Fs.writeFile(hook, "first handwritten hook")
       await GitHooks.install(root, rendered)
+      await Fs.writeFile(hook, "second handwritten hook")
+      await GitHooks.install(root, rendered)
+      expect(await Fs.readFile(`${hook}.bak`, "utf8")).toBe("first handwritten hook")
+      expect(await Fs.readFile(`${hook}.bak.1`, "utf8")).toBe("second handwritten hook")
       expect(await Fs.readFile(NodePath.join(root, ".git", "hooks", "pre-commit"), "utf8"))
         .toBe(rendered[0]!.content)
       expect((await GitHooks.check(root, rendered)).clean).toBe(true)
+      await Fs.rename(hook, `${hook}.original`)
+      await Fs.symlink(`${hook}.original`, hook)
+      await expect(GitHooks.install(root, rendered)).rejects.toMatchObject({ code: "write_failed" })
+      expect((await Fs.lstat(hook)).isSymbolicLink()).toBe(true)
+      await expect(Fs.stat(`${hook}.bak.2`)).rejects.toMatchObject({ code: "ENOENT" })
       await expect(GitHooks.install(emptyPath, rendered)).rejects.toMatchObject({
         _tag: "smithers-build/GitHooksError",
         code: "not_a_git_repository"

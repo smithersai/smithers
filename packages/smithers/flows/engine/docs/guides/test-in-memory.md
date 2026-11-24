@@ -102,9 +102,14 @@ Its limits are the honest boundary of what an in-memory test can prove:
 
 - Nothing survives the layer scope. State is dropped when the scope closes, so
   a test cannot restart a process with it.
-- There is no eviction. Completed executions, action settlements, deferred
-  results, and clocks are retained for the life of the layer, which is fine for
-  a test and wrong for a long-lived process.
+- Settled runs are kept only up to a bound. The engine answers for the
+  `FlowEngine.settledLineageRetention` (1,024) top-level runs settled most
+  recently; past that it forgets the one settled
+  longest ago with the children only it owned, its action settlements, its
+  deferred results, and its clocks. A forgotten execution id is unknown again:
+  `poll` fails `FlowExecutionNotFound` and `execute` runs it anew. Live and
+  parked runs are never forgotten. A completion sent before its run is admitted
+  is held for at most 1,024 such execution ids.
 - The retry hooks are absent: `actionRetryOrigin` and
   `actionLatestAttempt`. There is no durable retry origin and no persisted
   attempt counter, so the schedule-to-close budget and the attempt number are

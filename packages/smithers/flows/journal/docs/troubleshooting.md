@@ -168,7 +168,9 @@ the read-side `compacted` guard rather than by this refusal.
 ## compacted
 
 **What happened.** A read started below the run's compaction floor.
-`checkpointSeq` carries the floor.
+`checkpointSeq` carries the floor. A newest-first read (`order: "desc"`) fails
+only when its page runs out of rows before it fills, because the newest rows
+are never compacted.
 
 **What to change.** Resync from the checkpoint: read `latestCheckpoint(runId)`,
 apply its `state`, and continue from

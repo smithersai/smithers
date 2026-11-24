@@ -5,10 +5,15 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { it } from "node:test"
 import ts from "typescript"
-import { copyInputDeclarations, packageCompiler } from "../../../packages/repo-targets/scripts/build-library.mjs"
+import {
+  compilePackage,
+  copyInputDeclarations,
+  packageCompiler,
+  portableDeclarationFiles
+} from "../../../packages/repo-targets/scripts/build-library.mjs"
 import { buildPrivateEffectAdapters } from "../../../packages/repo-targets/scripts/private-effect-adapters.mjs"
-import { apiSurface, assertApiBaseline, canonicalDeclaration, withDeclarationBuild } from "./check-api-baseline.mjs"
 import { repoRoot } from "../../../packages/repo-targets/scripts/workspace-packages.mjs"
+import { apiSurface, assertApiBaseline, canonicalDeclaration, withDeclarationBuild } from "./check-api-baseline.mjs"
 
 it("detects signature changes through private declarations even when export paths stay fixed", () => {
   const root = mkdtempSync(join(tmpdir(), "smithers-api-baseline-"))
@@ -35,34 +40,78 @@ it("detects signature changes through private declarations even when export path
   }
 })
 
-// set-release-version stamps the package's own version into literal-typed
-// constants (`export declare const version = "1.0.0-rc.3"`). A release cut is
-// not an API change, so it must not redden the drift gate on every cut.
-it("treats the package's own release version stamp as one value across cuts, but keeps other literals", () => {
+it("normalizes the actual migration version stamp while retaining independent literals", () => {
   const root = mkdtempSync(join(tmpdir(), "smithers-api-baseline-version-"))
-  const write = (name, text) => {
-    mkdirSync(join(root, name, ".."), { recursive: true })
-    writeFileSync(join(root, name), text)
-  }
-  const release = (version, other = "2") => {
-    write(
-      "packages/example/package.json",
-      JSON.stringify({ name: "@smthrs/example", version, publishConfig: { exports: { ".": "./dist/esm/index.js" } } })
+  const dir = "packages/smithers/migrate"
+  const release = (version, protocol = "1.0.0") => {
+    writeFileSync(
+      join(root, dir, "package.json"),
+      JSON.stringify({
+        name: "@smthrs/migrate",
+        version,
+        publishConfig: { exports: { ".": "./dist/esm/flow/Cli.js" } }
+      })
     )
-    write(
-      "packages/example/dist/esm/index.d.ts",
-      `export declare const version = "${version}";\nexport declare const tool: { readonly version: "${version}" };\nexport declare const other = "${other}";\n`
+    writeFileSync(
+      join(root, dir, "dist/esm/flow/Cli.d.ts"),
+      `export declare const version = "${version}";\nexport declare const protocol: "${protocol}";\n`
+    )
+    writeFileSync(
+      join(root, dir, "dist/esm/Report.d.ts"),
+      `export declare const tool: { readonly name: "@smthrs/migrate"; readonly version: "${version}" };\n`
     )
     return apiSurface(root)
   }
   try {
-    write("pnpm-workspace.yaml", "packages:\n  - \"packages/*\"\n")
-    const baseline = release("1.0.0-rc.2")
-    assert.doesNotThrow(() => assertApiBaseline(baseline, release("1.0.0-rc.3")))
-    assert.throws(() => assertApiBaseline(baseline, release("1.0.0-rc.3", "3")), /@smthrs\/example/)
+    writeFileSync(join(root, "pnpm-workspace.yaml"), `packages:\n  - "${dir}"\n`)
+    mkdirSync(join(root, dir, "dist/esm/flow"), { recursive: true })
+    const baseline = release("1.0.0")
+    assert.doesNotThrow(() => assertApiBaseline(baseline, release("1.1.0")))
+    assert.throws(() => assertApiBaseline(baseline, release("1.1.0", "1.1.0")), /@smthrs\/migrate/)
   } finally {
     rmSync(root, { recursive: true, force: true })
   }
+})
+
+it("hashes the same portable Schema.Json declaration as the release compiler", async (t) => {
+  const root = mkdtempSync(join(tmpdir(), "smithers-api-json-"))
+  t.after(() => rmSync(root, { recursive: true, force: true }))
+  const member = join(root, "packages/example")
+  mkdirSync(join(member, "src"), { recursive: true })
+  writeFileSync(join(root, "pnpm-workspace.yaml"), "packages:\n  - \"packages/*\"\n")
+  writeFileSync(
+    join(member, "package.json"),
+    JSON.stringify({
+      name: "@smthrs/example",
+      type: "module",
+      publishConfig: { exports: { ".": "./dist/esm/index.js" } }
+    })
+  )
+  writeFileSync(
+    join(member, "tsconfig.json"),
+    JSON.stringify({
+      compilerOptions: {
+        target: "ES2022",
+        module: "NodeNext",
+        skipLibCheck: true,
+        declaration: true,
+        rootDir: "src",
+        outDir: "dist/esm"
+      },
+      include: ["src"]
+    })
+  )
+  symlinkSync(join(repoRoot, "node_modules"), join(member, "node_modules"), "dir")
+  writeFileSync(join(member, "src/index.ts"), "import { Schema } from \"effect\"; export const schema = Schema.Json;")
+  compilePackage(member)
+  const file = "packages/example/dist/esm/index.d.ts"
+  const shipped = readFileSync(join(root, file), "utf8")
+  assert.match(shipped, /typeof .*\.Json\)/)
+  assert.doesNotMatch(shipped, /JsonValueSchema/)
+  await withDeclarationBuild(root, (output) => {
+    assert.equal(readFileSync(join(output, file), "utf8"), shipped)
+    assert.deepEqual(apiSurface(root, output), apiSurface(root))
+  })
 })
 
 it("emits the build-cli release declaration surface with its package compiler and copied declarations", async () => {
@@ -90,6 +139,7 @@ it("emits the build-cli release declaration surface with its package compiler an
     assert.equal(result.status, 0, `build-cli release compiler failed:\n${result.stdout}${result.stderr}`)
 
     copyInputDeclarations(join(packageRoot, "src"), releaseDir)
+    portableDeclarationFiles(releaseDir)
     await buildPrivateEffectAdapters(packageRoot, { distRoot: join(releaseRoot, memberDir, "dist") })
 
     const releaseSurface = apiSurface(root, releaseRoot)

@@ -87,19 +87,20 @@ describe("the argv of a protected run", () => {
   })
 
   it("binds each protected workspace path read-only over the host as it is", () => {
-    expect(ExecSandbox.protect(unconfined(["node_modules/tool"]), root, argv, linux("/usr/bin/bwrap"))).toEqual([
-      "/usr/bin/bwrap",
-      "--dev-bind",
-      "/",
-      "/",
-      "--ro-bind",
-      NodePath.join(root, "node_modules", "tool"),
-      NodePath.join(root, "node_modules", "tool"),
-      ...(process.getuid?.() === 0 ? ["--cap-add", "ALL"] : []),
-      "--die-with-parent",
-      "--",
-      ...argv
-    ])
+    expect(ExecSandbox.protect(unconfined(["node_modules/tool"]), root + NodePath.sep, argv, linux("/usr/bin/bwrap")))
+      .toEqual([
+        "/usr/bin/bwrap",
+        "--dev-bind",
+        "/",
+        "/",
+        "--ro-bind",
+        NodePath.join(root, "node_modules", "tool"),
+        NodePath.join(root, "node_modules", "tool"),
+        ...(process.getuid?.() === 0 ? ["--cap-add", "ALL"] : []),
+        "--die-with-parent",
+        "--",
+        ...argv
+      ])
   })
 })
 

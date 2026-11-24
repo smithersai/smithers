@@ -211,7 +211,7 @@ describe("@smthrs/platform-node fuzz invariants", () => {
     const report = await Effect.runPromise(
       Effect.scoped(
         Effect.gen(function*() {
-          yield* DestinationProxy.open(sockPath, ["127.0.0.1"], token)
+          yield* DestinationProxy.open(sockPath, [`127.0.0.1:${originPort}`], token)
           return yield* Fuzz.run(
             arb,
             (input) =>
@@ -768,7 +768,7 @@ describe("@smthrs/platform-node fuzz invariants", () => {
     const report = await Effect.runPromise(
       Effect.scoped(
         Effect.gen(function*() {
-          yield* DestinationProxy.open(sockPath, ["127.0.0.1"], token)
+          yield* DestinationProxy.open(sockPath, [`127.0.0.1:${originPort}`], token)
           return yield* Fuzz.run(
             arb,
             (input) =>

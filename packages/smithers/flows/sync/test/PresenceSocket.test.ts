@@ -129,6 +129,25 @@ describe("PresenceSocket", () => {
       ])
     }).pipe(Effect.scoped))
 
+  it.effect("delivers the latest pending roster before a close during a burst", () =>
+    Effect.gen(function*() {
+      const { dials, layer } = yield* fake
+      const connection = yield* PresenceSocket.connect(url).pipe(Effect.provide(layer))
+      const seen: Array<string | undefined> = []
+      yield* Effect.forkScoped(Stream.runForEach(connection.roster, (members) =>
+        Effect.sync(() => {
+          seen.push(members[0]?.state ?? undefined)
+        })))
+      const socket = yield* Queue.take(dials)
+      for (let i = 0; i < 128; i++) socket.roster("me", [participant("me", String(i))])
+      socket.drop(PresenceProtocol.CloseCode.left)
+      socket.roster("me", [])
+      socket.drop()
+      yield* reach(connection, "Closed")
+      yield* Effect.yieldNow
+      expect(seen.filter((state) => state !== undefined)).toEqual(["127"])
+    }).pipe(Effect.scoped))
+
   it.effect("sends each new state, and never one the room already holds", () =>
     Effect.gen(function*() {
       const { dials, layer } = yield* fake

@@ -64,7 +64,7 @@ import * as ChildProcess from "effect/process/ChildProcess"
 import * as Redacted from "effect/Redacted"
 import type * as Result from "effect/Result"
 import * as Stream from "effect/Stream"
-import { isAbsolute, resolve } from "node:path"
+import { isAbsolute, posix, resolve, sep, win32 } from "node:path"
 import { make, type MigrateError } from "../MigrateError.ts"
 import * as Scan from "../Scan.ts"
 import * as Units from "../Units.ts"
@@ -310,7 +310,10 @@ export const rules = (options: {
   /** The run's report directory, which holds the backups and the recovery record. Defaults to `.smithers-migrate`. */
   readonly reportDir?: string | undefined
 }): ReadonlyArray<Permission.Rule> => {
-  const root = options.root.replace(/\/+$/, "")
+  const windows = sep === "\\" || (win32.isAbsolute(options.root) && !posix.isAbsolute(options.root))
+  const path = windows ? win32 : posix
+  const root = windows ? path.normalize(options.root) : options.root.replace(/\/+$/, "")
+  const below = (...parts: ReadonlyArray<string>) => windows ? path.join(root, ...parts) : `${root}/${parts.join("/")}`
   const allow = (action: Capability.PatternAction, resource: string): Permission.Rule =>
     new Permission.Rule({ effect: "allow", pattern: new Capability.CapabilityPattern({ action, resource }) })
   const deny = (action: Capability.PatternAction, resource: string): Permission.Rule =>
@@ -322,7 +325,7 @@ export const rules = (options: {
     // cannot write `package.json`, which is the one file the dependencies and
     // project units exist to rewrite.
     allow("fs:*", root),
-    allow("fs:*", `${root}/**`),
+    allow("fs:*", below("**")),
     allow("net:*", "**"),
     allow("model:*", "**"),
     // The permanent SQLite lock inode and diagnostic state are host-owned,
@@ -331,7 +334,7 @@ export const rules = (options: {
     // pending-unit.json that restore trusts, so it is denied by its own path.
     ...[...new Set([Options.defaultReportDir, options.reportDir ?? Options.defaultReportDir])].flatMap((
       directory
-    ) => [deny("fs:*", `${root}/${directory}`), deny("fs:*", `${root}/${directory}/**`)]),
+    ) => [deny("fs:*", below(directory)), deny("fs:*", below(directory, "**"))]),
     // Version-control metadata runs as the operator later: a hook, a git
     // config alias, or a jj config the agent wrote would execute outside every
     // rule here. No unit rewrites it. Every ASCII case spelling is denied: the
@@ -339,8 +342,8 @@ export const rules = (options: {
     // on a case-insensitive volume (the macOS default) `.GIT/hooks/pre-commit`
     // is `.git/hooks/pre-commit`.
     ...[".git", ".jj"].flatMap(caseSpellings).flatMap((directory) => [
-      deny("fs:*", `${root}/${directory}`),
-      deny("fs:*", `${root}/${directory}/**`)
+      deny("fs:*", below(directory)),
+      deny("fs:*", below(directory, "**"))
     ]),
     // Dotenv files hold the operator's keys. The brief carries a redacted
     // inventory of them and the contract forbids reading them; this makes the
@@ -349,8 +352,8 @@ export const rules = (options: {
     // everything under a directory whose name starts with `.env` (`.envoy/`):
     // a deliberate fail-closed over-deny. Case spellings as above.
     ...caseSpellings(".env").flatMap((name) => [
-      deny("fs:*", `${root}/${name}*`),
-      deny("fs:*", `${root}/**/${name}*`)
+      deny("fs:*", below(`${name}*`)),
+      deny("fs:*", below("**", `${name}*`))
     ]),
     // Every filesystem action, not only writes. The contract forbids reading
     // run state too: a database, an execution log, or a subscription file
@@ -362,8 +365,10 @@ export const rules = (options: {
       // is denied by its own path: joined under the root the pattern would
       // match nothing, which is exactly the silent gap these rules exist to
       // close.
-      const target = isAbsolute(relative) ? relative.replace(/\/+$/, "") : `${root}/${relative}`
-      return [deny("fs:*", target), deny("fs:*", `${target}/**`)]
+      const target = path.isAbsolute(relative)
+        ? (windows ? path.normalize(relative) : relative.replace(/\/+$/, ""))
+        : below(relative)
+      return [deny("fs:*", target), deny("fs:*", windows ? path.join(target, "**") : `${target}/**`)]
     })
   ]
 }
@@ -629,11 +634,15 @@ const hostFor = (
  * an explicit evaluator. Those are
  * decisions, spelled out, not defaults.
  */
-const agentPolicy = Layer.mergeAll(QuotaPolicy.layerDefault(), Budget.layerUnbounded())
+const agentPolicy = Layer.mergeAll(
+  QuotaPolicy.layerDefault(),
+  // eslint-disable-next-line no-restricted-syntax -- Migration has no operator-approved spend envelope.
+  Budget.layerUnbounded()
+)
 
 /** The selected library seat also judges completions; no separate key exists. */
 const evaluatorFor = (
-  config: Pick<NodeConfig, "environment" | "evaluator" | "seat">
+  config: ValidatedConfig
 ): Layer.Layer<Evaluator.Evaluator> =>
   config.evaluator ?? Layer.succeed(Evaluator.Evaluator)({
     evaluate: (request) =>
@@ -649,15 +658,7 @@ const evaluatorFor = (
         return yield* Effect.flatMap(Evaluator.Evaluator, (judge) => judge.evaluate(request)).pipe(
           Effect.provide(Evaluator.layerFromSeat(seat))
         )
-      }).pipe(
-        Effect.provide(Layer.effect(
-          RequestExecutor.RequestExecutor,
-          Effect.flatMap(
-            EgressHttpClient.rebuildableTransport(EgressHttpClient.dispatcher(config.environment ?? {})),
-            RequestExecutor.makeWith
-          )
-        ))
-      )
+      }).pipe(Effect.provide(executorFor(config)))
   })
 
 // The credentialed half answers to the same store as the filesystem,
@@ -693,7 +694,6 @@ const catalogFor = (seats: Layer.Layer<SeatResolver.SeatResolver>): Layer.Layer<
  * @since 1.0.0-rc.0
  */
 export const layerNode = (config: NodeConfig) => {
-  const evaluator = isAbsolute(config.root) ? evaluatorFor(config) : undefined
   return Layer.unwrap(Effect.gen(function*() {
     // A relative root is refused, not thrown at. `MigrateError` is this
     // package's single failure type so an entry point maps a code onto an exit
@@ -721,7 +721,7 @@ export const layerNode = (config: NodeConfig) => {
       Layer.provideMerge(NodeCrypto.layer),
       Layer.provideMerge(NodeServices.layer),
       Layer.provideMerge(layerVerificationConfinement(config)),
-      Layer.provideMerge(evaluator!)
+      Layer.provideMerge(evaluatorFor(validated))
     )
   }))
 }
@@ -797,8 +797,6 @@ export const commandsFor = (
  * @since 1.0.0-rc.0
  */
 export const layerNodeScanned = (config: ScannedConfig) => {
-  // Scanning may start native processes. Select the judge before the scan.
-  const evaluator = isAbsolute(config.root) ? evaluatorFor(config) : undefined
   return Layer.unwrap(
     Effect.gen(function*() {
       // Before the scan, not after it: a relative root is refused without
@@ -813,7 +811,7 @@ export const layerNodeScanned = (config: ScannedConfig) => {
       })
       return layerNode({
         root: config.root,
-        evaluator,
+        evaluator: config.evaluator,
         ...(config.environment === undefined ? {} : { environment: config.environment }),
         ...(config.seat === undefined ? {} : { seat: config.seat }),
         ...(config.verifyRead === undefined ? {} : { verifyRead: config.verifyRead }),

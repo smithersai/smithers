@@ -105,11 +105,13 @@ shapes through the ordinary claim, steal, and activate path: parked runs whose
 cancellation was durably requested, runs parked with reason `released` by a
 shutdown, and stale `running` rows left by a hard-killed owner.
 
-The stale sweep reads a batch of 64 rows, oldest heartbeat first, and reads past
-exactly the rows it is going to skip. Each refusal defers that run for two
+The stale sweep reads a batch of 64 rows, oldest heartbeat first, and the next
+tick continues after the last row it read, starting over when it reaches the end
+of the stale set. Rows the worker cannot take, such as a live owner's or a run of
+a flow it has not registered, therefore never hide the runs behind them. Each refusal defers that run for two
 heartbeat ticks, doubling per consecutive refusal against the same lease, capped
-at the staleness cutoff. A deferral is forgotten as soon as the row leaves the
-stale window, so a fresh stall under a new lease is probed on the first tick
+at the staleness cutoff. A deferral is forgotten when a pass over the stale set
+no longer reads its row, so a fresh stall under a new lease is probed on the first tick
 that sees it.
 
 ## What a reclaimed run does with its unfinished step

@@ -31,26 +31,43 @@ const environment = { PATH: process.env["PATH"] }
 
 const onNode = <A, E>(work: Effect.Effect<A, E, never>): Promise<A> => Effect.runPromise(work)
 
-it.each(
-  [
-    ["exit information unavailable", 128],
-    ["receipt of signal: 'SIGTERM' while waiting", 143]
-  ] as const
-)("maps the process wait diagnostic %s to its exit status", async (cause, expected) => {
-  const result = Effect.gen(function*() {
+/** `runStep` of a process whose wait for its exit fails with `cause`. */
+const waitFailing = (cause: string) =>
+  Effect.gen(function*() {
     const real = yield* ChildProcessSpawner
     const failed = PlatformError.systemError({ _tag: "Unknown", module: "test", method: "exitCode", cause })
     const waiter = makeSpawner((cmd) =>
       Effect.map(real.spawn(cmd), (child) => ({ ...child, exitCode: Effect.fail(failed) }))
     )
     return yield* Effect.provideService(
-      runStep("/bin/true", [], tmpdir(), {}, "10 seconds"),
+      // Node, which every machine that runs this has: `/bin/true` is `/usr/bin/true` on macOS.
+      runStep(process.execPath, ["-e", ""], tmpdir(), {}, "10 seconds"),
       ChildProcessSpawner,
       waiter
     )
-  })
-  expect((await onNode(result.pipe(Effect.provide(NodeServices.layer)))).exitCode).toBe(expected)
+  }).pipe(Effect.provide(NodeServices.layer))
+
+it.each(
+  [
+    ["receipt of signal: 'SIGTERM' while waiting", 143],
+    ["Process interrupted due to receipt of signal: 'SIGKILL'", 137],
+    // A signal this machine has no number for is still a signal.
+    ["receipt of signal: 'SIGNONE'", 128]
+  ] as const
+)("maps the process wait diagnostic %s to its exit status", async (cause, expected) => {
+  expect((await onNode(waitFailing(cause))).exitCode).toBe(expected)
 })
+
+// R1-Fable-D3-056: every failure of the wait read as a signal with no number, so a step whose exit could not be read
+// was recorded as exit 128.
+it.each(["exit information unavailable", "write EPIPE", ""])(
+  "fails, with no exit code made up, when the wait fails for %j and no signal ended the process",
+  async (cause) => {
+    const failed = await onNode(Effect.flip(waitFailing(cause)))
+    expect(failed).toBeInstanceOf(PlatformError.PlatformError)
+    expect((failed as PlatformError.PlatformError).reason).toMatchObject({ method: "exitCode", cause })
+  }
+)
 
 describe("planner output", () => {
   const plan = (script: string, limit: Duration.Input = "30 seconds") =>
@@ -86,7 +103,7 @@ describe("planner output", () => {
     expect((await onNode(Effect.flip(stalled).pipe(Effect.provide(NodeServices.layer)))).message).toContain(
       "made no progress"
     )
-    const eof = planOutput("/bin/true", [], tmpdir(), {}, "20 seconds", { minutes: 0.005, table: idle })
+    const eof = planOutput(process.execPath, ["-e", ""], tmpdir(), {}, "20 seconds", { minutes: 0.005, table: idle })
     const held = Effect.gen(function*() {
       const real = yield* ChildProcessSpawner
       const open = makeSpawner((cmd) =>

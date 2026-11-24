@@ -352,13 +352,16 @@ prefer `SqlConsensus` wherever a database is present.
 `Service.withPermit(key, owner, isAlive, effect)` holds a named resource through
 claim, activation, supervised execution and release. SQL strategies share the
 permit across processes; local strategies share it within their instance.
-Waiters retry admission and then execute their effect. Heartbeats renew once
+Waiters retry admission with exponential backoff, from 50 ms up to one
+heartbeat interval, and then execute their effect. Heartbeats renew once
 per second, each renewal bounded by one second. A `Lost` renewal interrupts work
 with `ConsensusError` (`fence_lost`). A slow or failed renewal is retried: work
 is interrupted with `persistence_failed` only once the lease has gone
 unconfirmed for `heartbeatWriteTolerance`, measured from the last confirmed
 renewal.
-Failure and interruption release the permit. Stale claims and owners require a
+Failure and interruption release the permit. A release that fails is logged
+as a warning and never replaces the work's own exit; the lease then expires by
+staleness. Stale claims and owners require a
 negative `isAlive` observation before recovery. Resource keys share the lease
 namespace with run IDs; callers must reserve their prefix.
 
@@ -720,7 +723,8 @@ subscriber loses entries with no error and no gap signal. `stream` is the
 lossless follower. Entries published to `changes` are frozen, so one subscriber
 cannot mutate another's view.
 
-Reads below a run's compaction floor fail with `compacted`. See
+Reads below a run's compaction floor fail with `compacted`. A newest-first
+page that fills is complete and succeeds whatever its cursor. See
 [Checkpoints and compaction](./concepts/compaction.md) and the
 [`@smthrs/journal` error codes](/docs/reference/errors/#smthrsjournal).
 

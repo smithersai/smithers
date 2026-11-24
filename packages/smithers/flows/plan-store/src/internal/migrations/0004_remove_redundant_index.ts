@@ -19,7 +19,6 @@ import * as SqlClient from "effect/sql/SqlClient"
  *
  * @private
  * @since 0.1.0
- * @slop
  */
 export const removeRedundantIndex: Effect.Effect<void, unknown, SqlClient.SqlClient> = Effect.gen(function*() {
   const sql = yield* SqlClient.SqlClient

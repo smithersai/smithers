@@ -343,6 +343,7 @@ and payload.
 
 ```ts
 interface Storage<R = never> {
+  readonly transaction?: <A>(body: (storage: Storage<R>) => Effect.Effect<A, never, R>) => Effect.Effect<A, unknown, R>
   readonly get: <A = unknown>(key: string) => Effect.Effect<A | undefined, never, R>
   readonly put: <A>(key: string, value: A) => Effect.Effect<void, never, R>
   readonly delete: (key: string) => Effect.Effect<boolean, never, R>
@@ -353,7 +354,8 @@ interface Storage<R = never> {
 
 The slice of Durable Object storage the functions use. An Alchemy
 `DurableObjectState`'s `storage` satisfies it with `R = RuntimeContext`; a plain
-object wraps its Promise methods in `Effect.promise`.
+object wraps its Promise methods in `Effect.promise`. The native transaction
+commits intent and alarm changes together.
 
 ### `ExecutionObject.Outcome`
 

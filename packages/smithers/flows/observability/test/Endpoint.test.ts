@@ -165,11 +165,12 @@ describe("Endpoint", () => {
       { Authorization: "Bearer synthetic-test-token" },
       { "x-api-key": "synthetic-test-key" },
       { "X-Honeycomb-Team": "synthetic-test-key" },
+      { "uptrace-dsn": "synthetic-test-key" },
       [["Proxy-Authorization", "Basic c3ludGhldGlj"]] as const
     ]
     for (const baseUrl of ["http://collector.invalid:4318", "HTTP://10.0.0.7:4318", "http://127.evil.invalid"]) {
       for (const headers of credentialHeaders) {
-        const failure = await failureOf(Otlp.layerFetch({ baseUrl, headers }))
+        const failure = await failureOf(Otlp.layerFetch({ baseUrl, headers, plaintextHeaders: ["Authorization"] }))
         expect(failure.code).toBe("invalid_exporter_endpoint")
         expect(failure.path).toBe("baseUrl")
         expect(failure.message).toContain("https://")
@@ -178,13 +179,17 @@ describe("Endpoint", () => {
     }
   })
 
-  it("admits credential headers over https:// or loopback, and plain headers anywhere", async () => {
+  it("admits credential headers over https:// or loopback, and declared public headers on remote HTTP", async () => {
     const admitted: ReadonlyArray<Otlp.Options> = [
       { baseUrl: "https://collector.invalid:4318", headers: { authorization: "Bearer t" } },
       { baseUrl: "http://localhost:4318", headers: { authorization: "Bearer t" } },
       { baseUrl: "http://127.0.0.1:4318", headers: { authorization: "Bearer t" } },
       { baseUrl: "http://[::1]:4318", headers: { authorization: "Bearer t" } },
-      { baseUrl: "http://collector.invalid:4318", headers: { "x-scope-orgid": "tenant-9" } },
+      {
+        baseUrl: "http://collector.invalid:4318",
+        headers: { "x-scope-orgid": "tenant-9" },
+        plaintextHeaders: ["X-Scope-Orgid"]
+      },
       { baseUrl: "http://collector.invalid:4318" }
     ]
     for (const options of admitted) {

@@ -5,7 +5,7 @@ import * as ChildProcess from "effect/process/ChildProcess"
 import assert from "node:assert/strict"
 import test from "node:test"
 import { claimTool } from "../flow.ts"
-import { proxyTool } from "../github.ts"
+import { proxyTool, trustedAssociation } from "../github.ts"
 
 const proxyGrant = "proc:spawn:node /*/flows/issue-claim/github-proxy.mjs --ensure"
 
@@ -28,4 +28,13 @@ test("the claim grant admits the claim tool beside the flow with any arguments, 
   assert.equal(allows(grant, "node", [claimTool, "claim", "o/r#1", "--by", "issue-sweep"]), true)
   assert.equal(allows(grant, "node", ["-e", "process.exit(0)"]), false)
   assert.equal(allows(grant, "node", [proxyTool, "--ensure"]), false)
+})
+
+test("only repository owners, members, and collaborators can direct the sweep", () => {
+  for (const association of ["OWNER", "MEMBER", "COLLABORATOR"]) {
+    assert.equal(trustedAssociation(association), true)
+  }
+  for (const association of [undefined, "NONE", "CONTRIBUTOR", "FIRST_TIME_CONTRIBUTOR", "MEMBER "]) {
+    assert.equal(trustedAssociation(association), false)
+  }
 })

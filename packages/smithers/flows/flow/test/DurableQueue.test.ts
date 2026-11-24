@@ -277,7 +277,8 @@ describe("DurableQueue", () => {
           ["gate", "approve-deploy"],
           ["sibling", `${WorkerQueue.deferred.name}/other`],
           ["prefix", `${WorkerQueue.deferred.name}/prefix/extra`],
-          ["long", `approve-${"x".repeat(200)}`]
+          ["long", `approve-${"x".repeat(200)}`],
+          ["astral", `approve-${"y".repeat(119)}${"😀".repeat(40)}`]
         ] as const
       ) {
         yield* queue.offer({
@@ -299,12 +300,15 @@ describe("DurableQueue", () => {
 
       expect(handled).toEqual(["valid"])
       const refused = logs.filter((entry) => entry.level === "Error").map((entry) => entry.message)
-      expect(refused).toHaveLength(4)
+      expect(refused).toHaveLength(5)
       expect(refused[0]).toContain("approve-deploy")
       expect(refused[1]).toContain(`${WorkerQueue.deferred.name}/other`)
       expect(refused[2]).toContain(`${WorkerQueue.deferred.name}/prefix/extra`)
       expect(refused[3]).toContain(`approve-${"x".repeat(120)} [80 characters dropped]`)
       expect(refused[3]).not.toContain("x".repeat(121))
+      // The excerpt is cut on a code point: the pair the limit falls inside is dropped whole.
+      expect(refused[4]).toContain(`approve-${"y".repeat(119)} [79 characters dropped]`)
+      expect(refused[4]!).not.toMatch(/\p{Surrogate}/u)
     }).pipe(
       Effect.provide(Logger.layer([capture])),
       Effect.provide(layerMemory),
@@ -640,6 +644,65 @@ describe("DurableQueue", () => {
       Effect.provide(layer),
       Effect.provide(Logger.layer([capture])),
       Effect.provideService(Tracer.Tracer, tracer),
+      Effect.provideService(Metric.MetricRegistry, new Map())
+    )
+  })
+
+  effect("a completion that dies of a programming error fails the item instead of retrying it", () => {
+    let writes = 0
+    const logs: Array<Record<string, unknown>> = []
+    const capture = Logger.make((entry) => logs.push(JSON.parse(Logger.formatJson.log(entry))))
+    const runtime = Layer.effect(FlowRuntime.FlowRuntime)(Effect.gen(function*() {
+      const base = yield* FlowRuntime.FlowRuntime
+      return FlowRuntime.FlowRuntime.of({
+        ...base,
+        deferredDone: (deferred, options) =>
+          Effect.suspend(() => {
+            if (options.deferredName.startsWith(Queue.deferred.name)) {
+              writes++
+              return Effect.die(new TypeError("private-type-error"))
+            }
+            return base.deferredDone(deferred, options)
+          })
+      })
+    })).pipe(Layer.provide(layerMemory))
+    const layer = Layer.mergeAll(
+      Offer.toLayer((payload) => DurableQueue.process(Queue, payload)),
+      Interpreter.layer(Flow_),
+      DurableQueue.worker(Queue, () => Effect.succeed(1))
+    ).pipe(
+      Layer.provideMerge(Action.layerImplementations),
+      Layer.provideMerge(runtime),
+      Layer.provideMerge(PersistedQueueLayer)
+    )
+    const failed = Metric.withAttributes(
+      Metric.counter("flows_durable_queue_items_total", {
+        description: "Items a DurableQueue worker finished, by queue and outcome",
+        incremental: true
+      }),
+      {
+        queue: Queue.name,
+        outcome: "failed"
+      }
+    )
+    return Effect.gen(function*() {
+      yield* Flow_.execute({ id: "typed-bug", value: 1 }, { discard: true })
+      for (let turn = 0; turn < 500 && (yield* Metric.value(failed)).count === 0; turn++) yield* Effect.yieldNow
+      for (let turn = 0; turn < 200; turn++) yield* Effect.yieldNow
+      expect(writes).toBe(1)
+      expect((yield* Metric.value(failed)).count).toBe(1)
+      const completion = logs.find((entry) =>
+        String(entry["message"]).includes("could not record a handler result; the item fails")
+      )
+      expect(completion?.["annotations"]).toMatchObject({ failureType: "TypeError" })
+      expect(String((completion?.["annotations"] as Record<string, unknown>)["item"])).toMatch(/^DurableQueue\//)
+      const item = logs.find((entry) => String(entry["message"]).includes("item failed; it is not delivered again"))
+      expect(item?.["annotations"]).toMatchObject({ failureType: "TypeError" })
+      expect(logs.some((entry) => String(entry["message"]).includes("completion is retried"))).toBe(false)
+      expect(JSON.stringify(logs)).not.toContain("private-type-error")
+    }).pipe(
+      Effect.provide(layer),
+      Effect.provide(Logger.layer([capture])),
       Effect.provideService(Metric.MetricRegistry, new Map())
     )
   })

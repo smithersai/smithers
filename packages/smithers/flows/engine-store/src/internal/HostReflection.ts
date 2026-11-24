@@ -19,7 +19,10 @@
  * fallbacks when it does not. Node and Bun both take the first path, so on the
  * runtimes the durable engine supports the behavior is exactly what the static
  * import gave. A browser takes the second, where proxy detection does not
- * exist and this module says so rather than pretending.
+ * exist. There the fallback is inert: every object is treated as opaque, so a
+ * projection never reads a descriptor, a prototype or `Symbol.toStringTag` of
+ * a value it cannot prove is not a proxy. A host that can answer supplies its
+ * own {@link Reflection} through {@link Current}.
  *
  * The lookup grants no authority, which is why it is resolved here rather than
  * routed through a `HostServices` port. The whole surface of
@@ -65,27 +68,53 @@ export interface Reflection {
 }
 
 /**
+ * The intrinsics the portable fallback may consult.
+ *
+ * `Error.isError` (ES2026) answers from the error internal slot alone: it
+ * reads no property and returns `false` for a proxy without running a trap.
+ *
+ * @since 1.0.0
+ * @category models
+ */
+export interface PortableIntrinsics {
+  readonly Error?: { readonly isError?: ((value: unknown) => boolean) | undefined } | undefined
+}
+
+/**
  * The stance of a host that cannot detect a proxy.
  *
- * Answering no leaves the projection on its ordinary defenses: own-data reads
- * only, a `seen` set, a depth bound, and a `try` that turns any refusal into
- * `[unrepresentable]`. A trap can still run there, which is the state every
- * host was in before proxy detection existed. The alternative, answering yes
- * for every object, would erase every diagnostic projection in a browser to
- * buy protection against a case no browser has produced.
+ * Answering yes makes every object opaque to the projections: they return
+ * their `[unrepresentable]` or `null` form without reading a descriptor, so no
+ * trap and no accessor can run on the failure path. Portable code cannot tell
+ * a proxy from its target, and answering no would hand a caller's handler a
+ * turn while a terminal write is in flight. Primitives keep their text.
  */
-const undetectableProxy = (): boolean => false
+const opaqueObject = (): boolean => true
 
 /**
  * The portable native-error test.
  *
- * `Object.prototype.toString` reports `[object Error]` for a value carrying
- * the error internal slot, including one built in another realm, which is the
- * property this predicate is used for. It reads `Symbol.toStringTag`, so a
- * value that defines that symbol as a getter can run code; every caller runs
- * it inside the `try` that answers `[unrepresentable]`.
+ * Only the slot-based `Error.isError` is consulted. `Object.prototype.toString`
+ * reads `Symbol.toStringTag`, which a caller can define as a getter, so a host
+ * without the intrinsic answers no instead.
  */
-const taggedNativeError = (value: unknown): boolean => Object.prototype.toString.call(value) === "[object Error]"
+const slotNativeError = (intrinsics: PortableIntrinsics): (value: unknown) => boolean => {
+  let isError: unknown
+  try {
+    isError = intrinsics.Error?.isError
+  } catch {
+    isError = undefined
+  }
+  if (typeof isError !== "function") return () => false
+  const test = isError as (value: unknown) => boolean
+  return (value) => {
+    try {
+      return test(value) === true
+    } catch {
+      return false
+    }
+  }
+}
 
 /**
  * The predicate module a host offers, when it offers one.
@@ -107,18 +136,21 @@ const builtinTypes = (source: BuiltinSource | undefined): Partial<Reflection> | 
  * Builds the reflection one host can supply.
  *
  * Each predicate is taken only when the host names it as a function, so a host
- * that grows a partial `node:util/types` shim keeps the portable answer for
- * whatever it left out. Both are read as plain functions of their argument,
+ * that grows a partial `node:util/types` shim keeps the inert portable answer
+ * for whatever it left out. Both are read as plain functions of their argument,
  * which is what Node and Bun export.
  *
  * @since 1.0.0
  * @category constructors
  */
-export const make = (source: BuiltinSource | undefined): Reflection => {
+export const make = (
+  source: BuiltinSource | undefined,
+  intrinsics: PortableIntrinsics = globalThis as PortableIntrinsics
+): Reflection => {
   const types = builtinTypes(source)
   return {
-    isProxy: typeof types?.isProxy === "function" ? types.isProxy : undetectableProxy,
-    isNativeError: typeof types?.isNativeError === "function" ? types.isNativeError : taggedNativeError,
+    isProxy: typeof types?.isProxy === "function" ? types.isProxy : opaqueObject,
+    isNativeError: typeof types?.isNativeError === "function" ? types.isNativeError : slotNativeError(intrinsics),
     getOwnPropertyDescriptor: Object.getOwnPropertyDescriptor,
     getPrototypeOf: Object.getPrototypeOf,
     stringify: JSON.stringify
@@ -129,8 +161,8 @@ export const make = (source: BuiltinSource | undefined): Reflection => {
  * The reflection this process runs with.
  *
  * Read off `globalThis` rather than through a bare `process` reference, so a
- * browser bundle sees `undefined` here and falls through to the portable
- * predicates.
+ * browser bundle sees `undefined` here and falls through to the inert
+ * portable predicates.
  *
  * @since 1.0.0
  * @category constants
@@ -140,9 +172,10 @@ export const host: Reflection = make((globalThis as { readonly process?: Builtin
 /**
  * Reflection used while persisting an action failure.
  *
- * Hosts retain their native predicates by default. An Effect context can
- * provide a host whose reflection refuses inspection without changing
- * process-wide intrinsics.
+ * Hosts retain their native predicates by default. A host layer provides its
+ * own reflection here, either native predicates the default lookup cannot
+ * reach or one that refuses inspection, without changing process-wide
+ * intrinsics.
  *
  * @since 1.0.0
  * @category services

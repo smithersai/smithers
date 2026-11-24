@@ -154,7 +154,7 @@ describe("RemoteChildProcessSpawner kill", () => {
       }).pipe(Effect.scoped, Effect.provide(RemoteChildProcessSpawner.layer(provider)))
 
       expect(reason(error)).toBe("NotFound")
-      expect(error.message).toContain("session is gone")
+      expect(error.message).toContain("remote kill failed (unavailable)")
     }))
 
   it.effect("still runs the session finalizer for a provider that cannot kill", () =>

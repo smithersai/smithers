@@ -7,5 +7,5 @@ fi
 if command -v smithers-build >/dev/null 2>&1; then
   exec smithers-build '//:postMerge'
 fi
-echo "smthrs: CLI not found on PATH; skipping the post-merge hook (fail-open)" >&2
+echo "smthrs: CLI not found on PATH; post-merge hook could not run" >&2
 exit 0

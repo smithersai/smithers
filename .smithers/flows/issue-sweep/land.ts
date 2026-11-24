@@ -16,6 +16,7 @@ import type * as EffectDigest from "effect/crypto/Digest"
 import { existsSync, readFileSync, renameSync, writeFileSync } from "node:fs"
 import { homedir, tmpdir } from "node:os"
 import { matchesGlob } from "node:path"
+import { fileURLToPath } from "node:url"
 import { acquireLock, type LandLease } from "../land/lock.mjs"
 import { awaitHostDisk, workspaceBytes } from "./disk.ts"
 import { type Exited, type HostFailed, output, repository, ridingOutages, run, tail, workspaces } from "./host.ts"
@@ -593,6 +594,9 @@ export const liveChecks: Checks<RetryServices> = {
 
 // How many times one change is checked before main moving under it fails it.
 const checkAttempts = 6
+// Invoke the gate beside the installed sweep, with the candidate only as data.
+const reviewTool = fileURLToPath(new URL("../land/review.mjs", import.meta.url))
+
 // How many times the serial step tries to move main for one checked change.
 const pushAttempts = 3
 
@@ -650,8 +654,13 @@ export const makeLander = <R>(options: {
           }
           yield* Effect.try({ try: () => lease.check(), catch: (error) => fail(String(error)) })
           if (options.beforePush !== undefined) yield* options.beforePush(change)
+          const candidate = yield* one(workspace, change, "commit_id")
+          yield* output("node", [reviewTool, "--require", candidate, main], { cwd: workspace }).pipe(
+            Effect.mapError((error) => fail(error.message))
+          )
+          yield* Effect.try({ try: () => lease.check(), catch: (error) => fail(String(error)) })
           // Only a fast-forward may move main; a refusal means main moved again.
-          const moved = yield* Effect.result(write(workspace, ["bookmark", "set", "main", "-r", change]))
+          const moved = yield* Effect.result(write(workspace, ["bookmark", "set", "main", "-r", candidate]))
           if (Result.isFailure(moved)) continue
           const pushed = yield* Effect.result(Effect.tryPromise({
             try: () =>
@@ -723,16 +732,15 @@ export const makeLander = <R>(options: {
               yield* checks.prepare(workspace, change, files)
               const index = yield* checks.index(workspace)
               const labels = testTargets(files, index)
-              if (labels.length > 0) {
-                const checked = yield* checks.test(workspace, labels)
-                if (checked._tag === "Broken") {
-                  return yield* fail(`checks did not run for ${change}: ${checked.message}`)
-                }
-                if (checked._tag === "Red") {
-                  const red = checked.failures.map((failure) => failure.label)
-                  const blockers = blocking(checked.failures, yield* checks.redOnMain(red, main))
-                  if (blockers.length > 0) return yield* fail(`checks red for ${change}: ${blockers.join(" ")}`)
-                }
+              if (labels.length === 0) return yield* fail(`no test targets selected for change ${change}`)
+              const checked = yield* checks.test(workspace, labels)
+              if (checked._tag === "Broken") {
+                return yield* fail(`checks did not run for ${change}: ${checked.message}`)
+              }
+              if (checked._tag === "Red") {
+                const red = checked.failures.map((failure) => failure.label)
+                const blockers = blocking(checked.failures, yield* checks.redOnMain(red, main))
+                if (blockers.length > 0) return yield* fail(`checks red for ${change}: ${blockers.join(" ")}`)
               }
               return yield* push(lease, workspace, change, main, {
                 packages: [...new Set(labels.map(packageOf))],

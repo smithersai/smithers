@@ -2,12 +2,13 @@
  * Resolving a declared Nix environment and asserting its tool versions.
  *
  * Resolver cases drive a fixture `nix` on PATH without a Nix store, checking
- * typed refusals, memoization, and declared versions. Version probe cases
+ * typed refusals, fresh resolution, and declared versions. Version probe cases
  * run real executables to check failure recovery, caller cancellation, and
  * successful probe sharing.
  */
 import * as Input from "@smthrs/targets/Input"
 import * as Nix from "@smthrs/targets/Nix"
+import { createHash } from "node:crypto"
 import { getEventListeners } from "node:events"
 import * as Fs from "node:fs/promises"
 import * as Os from "node:os"
@@ -35,8 +36,7 @@ const script = (body: string): string => `#!/bin/sh\n${body}\n`
  *
  * `nix build` prints the closure's store path, `print-dev-env` exports its
  * `bin` on PATH and one carried variable, `path-info --recursive` lists two
- * paths. Every `build` appends to a counter so a test can prove each resolution
- * evaluates even when the environment is memoized.
+ * paths. Every `build` appends to a counter so the tests can observe each evaluation.
  */
 const installFakeNix = async (options: { readonly node?: string; readonly pnpm?: string } = {}): Promise<void> => {
   store = NodePath.join(root, "store")
@@ -143,7 +143,7 @@ describe.skipIf(process.platform === "win32")("NixExec.resolveEnvironment", () =
     })
   })
 
-  it("memoizes a resolution under the cache directory and reuses it while the store path exists", async () => {
+  it("evaluates the store path again on each resolution", async () => {
     await installFakeNix()
     vi.stubEnv("PATH", fakeBin)
     const first = await NixExec.resolveEnvironment({ root, declaration: declaration(), cacheDirectory: ".flows" })
@@ -151,13 +151,11 @@ describe.skipIf(process.platform === "win32")("NixExec.resolveEnvironment", () =
     const second = await NixExec.resolveEnvironment({ root, declaration: declaration(), cacheDirectory: ".flows" })
     expect(second).toEqual(first)
     expect(await buildCount()).toBe(2)
-    const memos = await Fs.readdir(NodePath.join(root, ".flows", "nix"))
-    expect(memos).toHaveLength(1)
     // Even a changed lock that builds the same closure is evaluated again.
     await write("flake.lock", "{ \"nodes\": {}, \"root\": \"root\", \"version\": 8 }\n")
     await NixExec.resolveEnvironment({ root, declaration: declaration(), cacheDirectory: ".flows" })
     expect(await buildCount()).toBe(3)
-    // A store path that vanished invalidates the memo rather than answering for it.
+    // Nix evaluates again after the output path is removed.
     await Fs.rm(first.storePath, { recursive: true, force: true })
     await write("flake.lock", "{ \"nodes\": {}, \"root\": \"root\", \"version\": 7 }\n")
     await expect(NixExec.resolveEnvironment({ root, declaration: declaration(), cacheDirectory: ".flows" }))
@@ -499,16 +497,23 @@ describe.skipIf(process.platform === "win32")("NixExec.resolveEnvironment refusa
     })
   })
 
-  it.each([
-    ["unparseable", "{"],
-    ["not an object", "null"],
-    ["missing its closure", JSON.stringify({ storePath: "", hash: undefined, path: [], variables: {} })]
-  ])("re-evaluates past a memo that is %s and rewrites it", async (_name, text) => {
+  it("gets tool-selection data from Nix even with a matching legacy memo", async () => {
     const first = await resolveWith({}, { cacheDirectory: ".flows" })
     const resolved = await first.result
-    const memos = NodePath.join(root, ".flows", "nix")
-    const [memo] = await Fs.readdir(memos)
-    await Fs.writeFile(NodePath.join(memos, memo!), text)
+    const key = createHash("sha256").update(JSON.stringify({
+      storePath: resolved.storePath,
+      system: resolved.system,
+      nixVersion: resolved.nix.version
+    })).digest("hex")
+    await write(
+      `.flows/nix/${key}.json`,
+      JSON.stringify({
+        ...resolved,
+        path: ["/tmp/untrusted"],
+        closure: ["/tmp/untrusted"],
+        variables: { TZDIR: "/tmp/untrusted" }
+      })
+    )
     const again = await resolveWith({}, { cacheDirectory: ".flows" })
     await expect(again.result).resolves.toEqual(resolved)
     expect(await calledSteps(first.fake.calls)).toEqual([
@@ -519,14 +524,6 @@ describe.skipIf(process.platform === "win32")("NixExec.resolveEnvironment refusa
       "print-dev-env",
       "path-info"
     ])
-    expect(JSON.parse(await Fs.readFile(NodePath.join(memos, memo!), "utf8"))).toEqual(resolved)
-  })
-
-  it("resolves and logs when the memo cannot be written", async () => {
-    await write(".flows/nix", "a file where the memo directory belongs")
-    const { lines, result } = await resolveWith({}, { cacheDirectory: ".flows" })
-    await expect(result).resolves.toMatchObject({ hash })
-    expect(lines.at(-1)).toMatch(/^nix environment: could not memoize the resolution: Error: EEXIST/)
   })
 
   it("shares one evaluation between concurrent resolutions of one declaration", async () => {

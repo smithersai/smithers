@@ -93,17 +93,26 @@ export interface ClaimRequest {
 }
 
 /**
- * Claims (or steals) a row, then activates it, abandoning the claim when the
- * activation loses. Returns the claim timestamp the activated lease carries.
+ * Claims (or steals) a row, then activates it, abandoning the claim whenever
+ * the activation does not take it: a lost activation, a store failure, or a
+ * defect. Returns the claim timestamp the activated lease carries.
+ *
+ * The claim is a committed row, so the two steps are one uninterruptible
+ * region. An interrupt between them would otherwise leave a claim no fiber
+ * remembers, and the run would answer `busy` until a peer recovered it with
+ * liveness evidence. `onActivated` runs inside the same region, so a caller
+ * that tracks its claims can never be interrupted between owning a row and
+ * recording that it does.
  *
  * @since 0.1.0
  * @category constructors
  */
 export const claimAndActivate = (
   runs: RunStore.Service,
-  request: ClaimRequest
+  request: ClaimRequest,
+  onActivated?: (claimedAtMs: number) => void
 ): Effect.Effect<number, TimeTravelError> =>
-  Effect.gen(function*() {
+  Effect.uninterruptible(Effect.gen(function*() {
     const { claimant, evidence, expected, nowMs, runId } = request
     const claimed = yield* (evidence === undefined
       ? runs.claim(runId, expected, claimant, nowMs)
@@ -111,12 +120,17 @@ export const claimAndActivate = (
         Effect.mapError((cause) => RunRow.failure(request.operations.claim, cause))
       )
     if (claimed._tag !== "Claimed") return yield* Effect.fail(request.refused(claimed))
-    const activated = yield* runs.activate(runId, claimant, claimed.claimedAtMs, expected).pipe(
-      Effect.mapError((cause) => RunRow.failure(request.operations.activate, cause))
+    const abandon = Effect.ignore(runs.abandonClaim(runId, claimant, claimed.claimedAtMs))
+    // Suspended so a store that throws while building the effect still
+    // reaches the handler below instead of escaping it as a defect.
+    const activated = yield* Effect.suspend(() => runs.activate(runId, claimant, claimed.claimedAtMs, expected)).pipe(
+      Effect.mapError((cause) => RunRow.failure(request.operations.activate, cause)),
+      Effect.onError(() => abandon)
     )
     if (activated._tag !== "Activated") {
-      yield* Effect.ignore(runs.abandonClaim(runId, claimant, claimed.claimedAtMs))
+      yield* abandon
       return yield* Effect.fail(request.lost)
     }
+    onActivated?.(claimed.claimedAtMs)
     return claimed.claimedAtMs
-  })
+  }))

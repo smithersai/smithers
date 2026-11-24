@@ -1,15 +1,15 @@
 #!/usr/bin/env node
 /** Commit the entire shared checkout to main, using jj when present. */
-import { engineeringGateEnvironment, requireEngineeringGateHome } from "./engineering-gate-environment.mjs"
-import { logLanding, requiredPathsFile, requireReviews, requireReviewsGit } from "./review.mjs"
-import { typecheckApp } from "./typecheck.mjs"
-import { acquireLock } from "./workspace.mjs"
-import { runAffectedGate, requireAffectedReceipt } from "./affected-receipt.mjs"
-import { boundedSpawnSync as spawnSync } from "./process.mjs"
 import { createHash } from "node:crypto"
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync } from "node:fs"
+import { copyFileSync, existsSync, mkdtempSync, realpathSync, rmSync } from "node:fs"
 import { homedir, tmpdir } from "node:os"
 import { dirname, join } from "node:path"
+import { requireAffectedReceipt, runAffectedGate } from "./affected-receipt.mjs"
+import { engineeringGateEnvironment, requireEngineeringGateHome } from "./engineering-gate-environment.mjs"
+import { acquireLock } from "./lock.mjs"
+import { boundedSpawnSync as spawnSync } from "./process.mjs"
+import { logLanding, requiredPathsFile, requireReviews, requireReviewsGit } from "./review.mjs"
+import { typecheckApp } from "./typecheck.mjs"
 
 const args = process.argv.slice(2)
 let message = "chore: checkpoint shared working tree"
@@ -19,13 +19,16 @@ let noTest
 let noReviewNeeded
 for (let i = 0; i < args.length; i++) {
   if (args[i] === "--help") {
-    console.log("Usage: pnpm commit [--message <message>] [--push] [--test <command> ... | --no-test <reason>] [--no-review-needed <reason>]\nCommits ALL nonignored edits, including other contributors' work, on main.\nUses jj when available in this checkout, otherwise Git. --push publishes main to origin.\nPush always requires all five landing drift targets; --no-test does not skip them.\nPush also requires a review.mjs receipt for commits touching review-required.txt paths; --no-review-needed records an exception.\nAfter validation and pushing, use pnpm deploy to publish production.")
+    console.log(
+      "Usage: pnpm commit [--message <message>] [--push] [--test <command> ... | --no-test <reason>] [--no-review-needed <reason>]\nCommits ALL nonignored edits, including other contributors' work, on main.\nUses jj when available in this checkout, otherwise Git. --push publishes main to origin.\nPush always requires all five landing drift targets; --no-test does not skip them.\nPush also requires a review.mjs receipt for commits touching review-required.txt paths; --no-review-needed records an exception.\nAfter validation and pushing, use pnpm deploy to publish production."
+    )
     process.exit(0)
   } else if (args[i] === "--push") push = true
   else if (args[i] === "--test" && args[i + 1]?.trim()) tests.push(args[++i])
   else if (args[i] === "--no-test" && args[i + 1]?.trim() && !/[\r\n]/.test(args[i + 1])) noTest = args[++i]
-  else if (args[i] === "--no-review-needed" && args[i + 1]?.trim() && !/[\r\n]/.test(args[i + 1])) noReviewNeeded = args[++i]
-  else if ((args[i] === "--message" || args[i] === "-m") && args[i + 1]?.trim()) message = args[++i]
+  else if (args[i] === "--no-review-needed" && args[i + 1]?.trim() && !/[\r\n]/.test(args[i + 1])) {
+    noReviewNeeded = args[++i]
+  } else if ((args[i] === "--message" || args[i] === "-m") && args[i + 1]?.trim()) message = args[++i]
   else throw new Error(`Unknown or incomplete argument: ${args[i]}`)
 }
 
@@ -43,25 +46,34 @@ while (!existsSync(join(root, ".jj")) && !existsSync(join(root, ".git"))) {
   root = parent
 }
 const run = (command, argv, capture = false, environment = process.env) => {
-  const result = spawnSync(command, argv, { cwd: root, encoding: "utf8", env: environment, stdio: capture ? ["ignore", "pipe", "pipe"] : "inherit" })
+  const result = spawnSync(command, argv, {
+    cwd: root,
+    encoding: "utf8",
+    env: environment,
+    stdio: capture ? ["ignore", "pipe", "pipe"] : "inherit"
+  })
   if (result.error) throw result.error
-  if (result.status !== 0) throw new Error(`${command} ${argv[0]} failed (${result.status})${capture ? `: ${result.stdout}${result.stderr}` : ""}`)
+  if (result.status !== 0) {
+    throw new Error(
+      `${command} ${argv[0]} failed (${result.status})${capture ? `: ${result.stdout}${result.stderr}` : ""}`
+    )
+  }
   return result.stdout?.trim() ?? ""
 }
 
 // Serializes users of this entry point without adding a file to the commit.
 // Editors can keep working; the VCS snapshots the edits present at commit time.
-const lock = join(tmpdir(), `smithers-commit-${createHash("sha256").update(root).digest("hex")}.lock`)
-try { mkdirSync(lock) } catch (error) {
-  if (error.code === "EEXIST") throw new Error(`Another commit is running. If it crashed, remove ${lock} after checking its process.`)
-  throw error
-}
+const lock = join(tmpdir(), `smithers-commit-${createHash("sha256").update(root).digest("hex")}.lease`)
+const releaseCommit = await acquireLock(lock)
 let releaseLanding
 // A push publishes everything origin's main lacks, each commit on its own.
 const jjReviews = (tip) => {
-  const published = 'remote_bookmarks(exact:"main", exact:"origin")'
+  const published = "remote_bookmarks(exact:\"main\", exact:\"origin\")"
   const base = run("jj", ["log", "--ignore-working-copy", "-r", published, "--no-graph", "-T", "commit_id"], true)
-  return requireReviews(root, base ? `(::${tip} ~ ::${published}) ~ empty()` : `::${tip} ~ empty()`, { base: base || null, override: noReviewNeeded })
+  return requireReviews(root, base ? `(::${tip} ~ ::${published}) ~ empty()` : `::${tip} ~ empty()`, {
+    base: base || null,
+    override: noReviewNeeded
+  })
 }
 const remoteMain = "refs/remotes/origin/main"
 const gitPaths = (withWorkingTree) => {
@@ -69,14 +81,18 @@ const gitPaths = (withWorkingTree) => {
   const names = (...argv) => run("git", ["-c", "core.quotepath=off", ...argv], true).split("\n").filter(Boolean)
   const onRemote = has(remoteMain), head = has("HEAD")
   return [
-    ...(head ? names("log", "-m", "--format=", "--name-only", "--no-renames", onRemote ? `${remoteMain}..HEAD` : "HEAD") : []),
+    ...(head
+      ? names("log", "-m", "--format=", "--name-only", "--no-renames", onRemote ? `${remoteMain}..HEAD` : "HEAD")
+      : []),
     ...(withWorkingTree && head ? names("diff", "--name-only", "--no-renames", "HEAD") : []),
     ...(withWorkingTree ? names("ls-files", "--others", "--exclude-standard") : [])
   ]
 }
 // Read the stored jj commit; the legacy adapter stages into a private index.
 const snapshot = () => {
-  if (existsSync(join(root, ".jj"))) return run("jj", ["log", "--ignore-working-copy", "-r", "@", "--no-graph", "-T", "commit_id"], true)
+  if (existsSync(join(root, ".jj"))) {
+    return run("jj", ["log", "--ignore-working-copy", "-r", "@", "--no-graph", "-T", "commit_id"], true)
+  }
   const directory = mkdtempSync(join(tmpdir(), "smithers-commit-tree-"))
   try {
     const index = join(directory, "index")
@@ -85,20 +101,28 @@ const snapshot = () => {
     const environment = { ...process.env, GIT_INDEX_FILE: index }
     run("git", ["add", "--all"], true, environment)
     return run("git", ["write-tree"], true, environment)
-  } finally { rmSync(directory, { recursive: true, force: true }) }
+  } finally {
+    rmSync(directory, { recursive: true, force: true })
+  }
 }
 // A push publishes only the tree its tests, gates and typecheck saw; an edit since then refuses it.
-const sameAsValidated = (validated, now) => existsSync(join(root, ".jj"))
-  ? !run("jj", ["diff", "--ignore-working-copy", "--from", validated, "--to", now, "--name-only"], true)
-  : validated === now
+const sameAsValidated = (validated, now) =>
+  existsSync(join(root, ".jj"))
+    ? !run("jj", ["diff", "--ignore-working-copy", "--from", validated, "--to", now, "--name-only"], true)
+    : validated === now
 const assertValidated = (validated, now) => {
-  if (validated !== undefined && !sameAsValidated(validated, now)) throw new Error("The checkout changed after its checks ran; nothing pushed. Rerun the push.")
+  if (validated !== undefined && !sameAsValidated(validated, now)) {
+    throw new Error("The checkout changed after its checks ran; nothing pushed. Rerun the push.")
+  }
 }
 let validated
 
 const gitReviews = (withWorkingTree) => {
   const onRemote = spawnSync("git", ["rev-parse", "--verify", "--quiet", remoteMain], { cwd: root }).status === 0
-  const list = onRemote && spawnSync("git", ["cat-file", "-e", `${remoteMain}:${requiredPathsFile}`], { cwd: root }).status === 0 ? run("git", ["show", `${remoteMain}:${requiredPathsFile}`], true) : undefined
+  const list =
+    onRemote && spawnSync("git", ["cat-file", "-e", `${remoteMain}:${requiredPathsFile}`], { cwd: root }).status === 0
+      ? run("git", ["show", `${remoteMain}:${requiredPathsFile}`], true)
+      : undefined
   return requireReviewsGit(gitPaths(withWorkingTree), list, noReviewNeeded)
 }
 
@@ -112,12 +136,16 @@ try {
       affectedReceipt = await runAffectedGate(root)
     } catch (error) {
       if (error?.status === "refused" && existsSync(join(root, ".jj"))) {
-        error.message = `${error.message} (checked the last snapshotted jj commit; if you saved a fix without running jj, run 'jj status' to snapshot it and rerun 'commit --push')`
+        error.message =
+          `${error.message} (checked the last snapshotted jj commit; if you saved a fix without running jj, run 'jj status' to snapshot it and rerun 'commit --push')`
       }
       throw error
     }
   }
-  releaseLanding = await acquireLock(process.env.SMITHERS_LAND_LOCK ?? join(homedir(), "smithers-builders/main-push.lock"))
+  releaseLanding = await acquireLock(
+    process.env.SMITHERS_LAND_LOCK ?? join(homedir(), "smithers-builders/main-push.lock")
+  )
+  releaseCommit.check()
   const gateEnvironment = engineeringGateEnvironment(process.env)
   // A home credential store cannot be hidden by changing HOME: absolute reads
   // remain possible. Refuse execution until the invoking checkout is isolated.
@@ -126,28 +154,72 @@ try {
     if (existsSync(join(root, ".jj"))) run("jj", ["status"], true)
     validated = snapshot()
     affectedGate = await requireAffectedReceipt(root, affectedReceipt, { head: validated })
-    if (existsSync(join(root, ".jj")) && run("jj", ["log", "--ignore-working-copy", "-r", 'remote_bookmarks(exact:"main", exact:"origin") ~ ::@', "--no-graph", "-T", "commit_id"], true)) throw new Error("Remote main is not an ancestor of the publication candidate; sync explicitly before publishing")
+    if (
+      existsSync(join(root, ".jj")) &&
+      run("jj", [
+        "log",
+        "--ignore-working-copy",
+        "-r",
+        "remote_bookmarks(exact:\"main\", exact:\"origin\") ~ ::@",
+        "--no-graph",
+        "-T",
+        "commit_id"
+      ], true)
+    ) throw new Error("Remote main is not an ancestor of the publication candidate; sync explicitly before publishing")
   }
   for (const command of tests) {
-    const result = spawnSync("bash", ["-o", "pipefail", "-c", command], { cwd: root, stdio: "inherit", env: gateEnvironment })
-    if (result.error || result.status !== 0) throw new Error(`Test command failed: ${command} (${result.error?.message ?? result.status})`)
+    const result = spawnSync("bash", ["-o", "pipefail", "-c", command], {
+      cwd: root,
+      stdio: "inherit",
+      env: gateEnvironment
+    })
+    if (result.error || result.status !== 0) {
+      throw new Error(`Test command failed: ${command} (${result.error?.message ?? result.status})`)
+    }
   }
-  run(process.execPath, ["packages/repo-targets/contracts/check-tracked-hygiene.mjs", "--include-untracked"], true, gateEnvironment)
+  run(
+    process.execPath,
+    ["packages/repo-targets/contracts/check-tracked-hygiene.mjs", "--include-untracked"],
+    true,
+    gateEnvironment
+  )
   if (push) {
-    const result = spawnSync("smthrs", ["lint", "//:driftCi", "//:targetIndex", "//:ci", "//packages/repo-targets:trackedHygiene", "//packages/repo-targets:conflictMarkers"], {
-      cwd: root, stdio: "inherit", env: gateEnvironment
+    const result = spawnSync("smthrs", [
+      "lint",
+      "//:driftCi",
+      "//:targetIndex",
+      "//:ci",
+      "//packages/repo-targets:trackedHygiene",
+      "//packages/repo-targets:conflictMarkers"
+    ], {
+      cwd: root,
+      stdio: "inherit",
+      env: gateEnvironment
     })
-    if (result.error || result.status !== 0) throw new Error(`Mandatory drift gates failed (${result.error?.message ?? result.status})`)
+    if (result.error || result.status !== 0) {
+      throw new Error(`Mandatory drift gates failed (${result.error?.message ?? result.status})`)
+    }
     // Validation runs under the same lease as publication.
-    const published = 'remote_bookmarks(exact:"main", exact:"origin")'
-    await typecheckApp(root, existsSync(join(root, ".jj")) ? {
-      touched: () => run("jj", ["log", "-r", `(::@ ~ ::${published}) & files("apps/mvp")`, "--no-graph", "-T", "commit_id"], true) !== "",
-      source: snapshot
-    } : {
-      touched: () => gitPaths(true).some((path) => path.startsWith("apps/mvp/")),
-      source: snapshot
-    })
+    const published = "remote_bookmarks(exact:\"main\", exact:\"origin\")"
+    await typecheckApp(
+      root,
+      existsSync(join(root, ".jj")) ?
+        {
+          touched: () =>
+            run(
+              "jj",
+              ["log", "-r", `(::@ ~ ::${published}) & files("apps/mvp")`, "--no-graph", "-T", "commit_id"],
+              true
+            ) !== "",
+          source: snapshot
+        } :
+        {
+          touched: () => gitPaths(true).some((path) => path.startsWith("apps/mvp/")),
+          source: snapshot
+        }
+    )
   }
+  releaseCommit.check()
   releaseLanding.check()
   if (existsSync(join(root, ".jj"))) {
     // Refuse before moving main; the check after the commit, on immutable main, is the one that counts.
@@ -157,7 +229,9 @@ try {
     }
     const eligible = run("jj", ["log", "-r", "main & (@ | @-)", "--no-graph", "-T", "commit_id"], true)
     if (!eligible) throw new Error("The shared checkout must be on main or its working-copy child.")
-    if (run("jj", ["log", "-r", "@ & conflicts()", "--no-graph", "-T", "commit_id"], true)) throw new Error("Resolve conflicts before committing.")
+    if (run("jj", ["log", "-r", "@ & conflicts()", "--no-graph", "-T", "commit_id"], true)) {
+      throw new Error("Resolve conflicts before committing.")
+    }
     if (run("jj", ["diff", "--summary"], true)) {
       run("jj", ["commit", "-m", message])
       run("jj", ["bookmark", "set", "main", "-r", "@-"])
@@ -167,15 +241,24 @@ try {
       assertValidated(validated, sha)
       // From this check to the push nothing snapshots, so a later edit cannot join what was checked.
       logLanding(root, sha, { ...jjReviews(sha), gate: affectedGate })
-      if (run("jj", ["log", "--ignore-working-copy", "-r", "main", "--no-graph", "-T", "commit_id"], true) !== sha) throw new Error("main moved after the review gate; nothing pushed")
-      await releaseLanding.push("jj", ["git", "push", "--remote", "origin", "-b", "main", "--ignore-working-copy"], { cwd: root, stream: true })
+      if (run("jj", ["log", "--ignore-working-copy", "-r", "main", "--no-graph", "-T", "commit_id"], true) !== sha) {
+        throw new Error("main moved after the review gate; nothing pushed")
+      }
+      await releaseLanding.push("jj", ["git", "push", "--remote", "origin", "-b", "main", "--ignore-working-copy"], {
+        cwd: root,
+        stream: true
+      })
       run("jj", ["git", "fetch", "--remote", "origin"])
-      if (!run("jj", ["log", "-r", `${sha} & ::main@origin`, "--no-graph", "-T", "commit_id"], true)) throw new Error("remote main moved; pushed commit is absent")
+      if (!run("jj", ["log", "-r", `${sha} & ::main@origin`, "--no-graph", "-T", "commit_id"], true)) {
+        throw new Error("remote main moved; pushed commit is absent")
+      }
       console.log(`LANDED ${sha}`)
     }
     console.log(`main: ${run("jj", ["log", "-r", "main", "--no-graph", "-T", "commit_id"], true)}`)
   } else {
-    if (run("git", ["branch", "--show-current"], true) !== "main") throw new Error("The shared checkout must be on main.")
+    if (run("git", ["branch", "--show-current"], true) !== "main") {
+      throw new Error("The shared checkout must be on main.")
+    }
     if (push) {
       assertValidated(validated, snapshot())
       gitReviews(true)
@@ -204,6 +287,9 @@ try {
   console.error(`${push ? "NOT LANDED: " : ""}${error.message}`)
   process.exitCode = 1
 } finally {
-  await releaseLanding?.()
-  rmSync(lock, { recursive: true, force: true })
+  try {
+    await releaseLanding?.()
+  } finally {
+    await releaseCommit()
+  }
 }

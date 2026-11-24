@@ -20,7 +20,7 @@ import { type GuestCommand, runGuest, signalGuest, spawnGuest } from "../interna
 import { MicrosandboxReattachRefusal } from "../internal/MicrosandboxReattachRefusal.ts"
 import { removeMachine } from "../internal/microsandboxRemove.ts"
 import { rootedAt } from "../internal/rootedPath.ts"
-import { sessionSlug } from "../internal/sessionSlug.ts"
+import { legacySessionSlug, sessionSlug } from "../internal/sessionSlug.ts"
 import { warnTeardown } from "../internal/teardownWarning.ts"
 import type { RemoteProcess } from "../RemoteChildProcessSpawner/Provider.ts"
 import type { ProviderErrorCode } from "../RemoteChildProcessSpawner/ProviderError.ts"
@@ -653,12 +653,15 @@ export const make = (input: MicrosandboxSandboxOptions): Provider => {
       })
     }
   }
+  const matches = (session: Pick<Session, "id" | "remoteId">) =>
+    [sessionSlug, legacySessionSlug].some((slug) => session.remoteId === `${namePrefix}${slug(session.id)}`)
   const acquire = (
     sessionKey: string,
-    attachOnly = false
+    attachedName?: string
   ): Effect.Effect<Session, ProviderError, Scope.Scope> =>
     Effect.gen(function*() {
-      const name = `${namePrefix}${sessionSlug(sessionKey)}`
+      const name = attachedName ?? `${namePrefix}${sessionSlug(sessionKey)}`
+      const attachOnly = attachedName !== undefined
       const sticky = options.persistence === "sticky"
       const workdir = options.workdir ?? defaultWorkdir
       const shell = options.shell ?? defaultShell
@@ -780,7 +783,7 @@ export const make = (input: MicrosandboxSandboxOptions): Provider => {
       const nix: PlantedEnvironment | undefined = options.environment === undefined
         ? undefined
         : {
-          directory: options.environment.directory ?? `/var/lib/smthrs/nix/${sessionSlug(sessionKey)}`,
+          directory: options.environment.directory ?? `/var/lib/smthrs/nix/${name.slice(namePrefix.length)}`,
           executable: options.environment.nix ?? defaultNixExecutable,
           environment: options.environment
         }
@@ -850,10 +853,14 @@ export const make = (input: MicrosandboxSandboxOptions): Provider => {
                   env: guest.env,
                   stdin: spawnOptions.stdin
                 },
-                { machine: name, command },
+                name,
                 counted
               )
-            )
+            ).pipe(Effect.mapError((error) =>
+              error.code === "spawn_error"
+                ? new ProviderError({ code: error.code, message: "command could not run in the microVM" })
+                : error
+            ))
             commands.set(spawned.process, spawned.command)
             return spawned.process
           }),
@@ -916,15 +923,15 @@ export const make = (input: MicrosandboxSandboxOptions): Provider => {
       {
         retained: options.detached === false ? undefined : true as const,
         attach: (session: Pick<Session, "id" | "remoteId">) =>
-          session.remoteId === `${namePrefix}${sessionSlug(session.id)}`
-            ? acquire(session.id, true)
+          matches(session)
+            ? acquire(session.id, session.remoteId)
             : Effect.fail(
               new ProviderError({ code: "spawn_error", message: "microVM identity differs from session key" })
             ),
         destroy: (session: Pick<Session, "id" | "remoteId">) =>
           attempt(
             async () => {
-              if (session.remoteId !== `${namePrefix}${sessionSlug(session.id)}`) {
+              if (!matches(session)) {
                 throw new ProviderError({
                   code: "spawn_error",
                   message: "microVM identity differs from session key"

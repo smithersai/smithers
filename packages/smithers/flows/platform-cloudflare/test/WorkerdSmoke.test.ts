@@ -169,6 +169,17 @@ describe.skipIf(process.env.FLOWS_WORKERD_SMOKE !== "1" || !Postgres.direct.avai
     /** Whether an object's last alarm settled its execution: its next alarm forgets it. */
     const quiet = (value: Report) => value.outcomes.at(-1)?._tag === "Settled"
 
+    it("rolls back a failed admission and its alarm in native object storage", async () => {
+      const intent = await Effect.runPromise(
+        ExecutionObject.intent(Answer, { executionId: "rollback", payload: { question: "", pauseMs: 0 } })
+      )
+      const response = await worker.dispatchFetch("http://smoke/probe/rollback/failed-start", {
+        method: "POST",
+        body: JSON.stringify(intent)
+      })
+      expect(await response.json()).toEqual({ outcome: "Failure", entries: [], alarm: null })
+    })
+
     it("runs a flow from a real alarm and finishes it after ctx.abort() inside a step", async () => {
       const executionId = `answer-${randomUUID()}`
       await start(

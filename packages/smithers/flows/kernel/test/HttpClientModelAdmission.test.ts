@@ -84,6 +84,14 @@ const scenario = <E>(name: string, body: Effect.Effect<void, E, Scope.Scope>) =>
   it.effect(name, () => Effect.scoped(body))
 
 describe("HttpClient model-call admission (#4655)", () => {
+  it("finds an escaped top-level key among long values, nested keys and whitespace", () => {
+    const key = String.raw`"mo\u0064el"`
+    const fields = `"input":${JSON.stringify("model ".repeat(8192))},"nested":[{"model":"inner"}]`
+    const body = (fields: string) => post(messages, text(`{${fields}}`))
+    expect(HttpClient.declaredModel(body(`${fields},${key} \r\n\t: "one"`))).toBe("one")
+    expect(HttpClient.declaredModel(body(`${key}:"one",${fields},"model":"two"`))).toBeUndefined()
+  })
+
   scenario(
     "admits the granted model when the request body asks for that model",
     Effect.gen(function*() {

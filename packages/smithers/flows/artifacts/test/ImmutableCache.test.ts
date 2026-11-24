@@ -177,6 +177,48 @@ describe("the memory cache", () => {
     expect(Option.isNone(result.metaGot)).toBe(true)
   })
 
+  it("charges an empty entry and its metadata against the total bound", async () => {
+    const keys = Array.from({ length: 64 }, (_, index) => ImmutableCache.key("t", `empty-${index}`))
+    const empty = { bytes: new Uint8Array(0), metadata: { note: "n".repeat(200) } }
+    const held = (layer: Layer.Layer<ImmutableCache.ImmutableCache>) =>
+      run(
+        Effect.gen(function*() {
+          for (const key of keys) yield* put(key, empty)
+          const hits: Array<number> = []
+          for (const [index, key] of keys.entries()) {
+            if (Option.isSome(yield* get(key))) hits.push(index)
+          }
+          return hits
+        }),
+        layer
+      )
+    // No budget holds nothing, however small each body is.
+    expect(await held(ImmutableCache.layerMemory({ maxTotalBytes: 0 }))).toEqual([])
+    // A small budget holds only the newest few: each entry costs at least its metadata.
+    const few = await held(ImmutableCache.layerMemory({ maxTotalBytes: 2048 }))
+    expect(few.length).toBeGreaterThan(0)
+    expect(few.length).toBeLessThan(2048 / 200)
+    expect(few).toEqual(keys.map((_, index) => index).slice(-few.length))
+    // An entry-count ceiling holds whatever the byte budget allows.
+    expect(await held(ImmutableCache.layerMemory({ maxEntries: 3 }))).toEqual([61, 62, 63])
+    expect(await held(ImmutableCache.layerMemory({ maxEntries: 0 }))).toEqual([])
+  })
+
+  it("reclaims a replaced entry's whole cost, metadata included", async () => {
+    const cache = ImmutableCache.makeMemoryWebCache(1200)
+    const response = (note: string) => new Response("", { headers: { "x-note": note } })
+    // Each replacement costs about 530 bytes: only reclaimed capacity lets the neighbor survive.
+    await cache.put("https://cache.test/kept", response("k".repeat(400)))
+    for (let round = 0; round < 8; round++) await cache.put("https://cache.test/a", response("a".repeat(400)))
+    expect((await cache.match("https://cache.test/kept"))?.headers.get("x-note")).toBe("k".repeat(400))
+    expect((await cache.match("https://cache.test/a"))?.headers.get("x-note")).toBe("a".repeat(400))
+    // A third such entry does not fit: the least recently used one goes.
+    await cache.put("https://cache.test/b", response("b".repeat(400)))
+    expect(await cache.match("https://cache.test/kept")).toBeUndefined()
+    expect(await cache.match("https://cache.test/a")).toBeDefined()
+    expect(await cache.match("https://cache.test/b")).toBeDefined()
+  })
+
   it("never lets one entry exceed the total bound, whatever maxEntryBytes says", async () => {
     const outcome = await run(
       put(blob, { bytes: utf8("12345"), metadata: {} }),
@@ -188,7 +230,7 @@ describe("the memory cache", () => {
   it("evicts the least recently used entries past its total bound", async () => {
     const result = await run(
       Effect.gen(function*() {
-        const four = utf8("1234")
+        const four = new Uint8Array(4096)
         yield* put(ImmutableCache.key("t", "a"), { bytes: four, metadata: {} })
         yield* put(ImmutableCache.key("t", "b"), { bytes: four, metadata: {} })
         // Reading `a` makes `b` the least recently used.
@@ -200,7 +242,8 @@ describe("the memory cache", () => {
           c: Option.isSome(yield* get(ImmutableCache.key("t", "c")))
         }
       }),
-      ImmutableCache.layerMemory({ maxTotalBytes: 10 })
+      // Two entries and their overhead fit; three do not.
+      ImmutableCache.layerMemory({ maxTotalBytes: 2 * 4096 + 2048 })
     )
     expect(result).toEqual({ a: true, b: false, c: true })
   })
@@ -251,14 +294,14 @@ describe("the memory WebCache", () => {
   })
 
   it("stores nothing larger than its total, and counts a replaced body once", async () => {
-    const cache = ImmutableCache.makeMemoryWebCache(10)
-    await cache.put("https://cache.test/big", response("12345678901"))
+    const cache = ImmutableCache.makeMemoryWebCache(10_000)
+    await cache.put("https://cache.test/big", response("1".repeat(10_001)))
     expect(await cache.match("https://cache.test/big")).toBeUndefined()
-    await cache.put("https://cache.test/a", response("1234"))
-    await cache.put("https://cache.test/a", response("1234"))
-    await cache.put("https://cache.test/b", response("123456"))
-    expect(await (await cache.match("https://cache.test/a"))?.text()).toBe("1234")
-    expect(await (await cache.match("https://cache.test/b"))?.text()).toBe("123456")
+    await cache.put("https://cache.test/a", response("1".repeat(4000)))
+    await cache.put("https://cache.test/a", response("1".repeat(4000)))
+    await cache.put("https://cache.test/b", response("2".repeat(5000)))
+    expect(await (await cache.match("https://cache.test/a"))?.text()).toBe("1".repeat(4000))
+    expect(await (await cache.match("https://cache.test/b"))?.text()).toBe("2".repeat(5000))
   })
 })
 
@@ -314,6 +357,124 @@ describe("a backend that refuses", () => {
         new ImmutableCache.ImmutableCacheError({ backend: "fault", operation: "get", reason: "corrupt" })
       )
     }
+  })
+})
+
+describe("a reader with smaller bounds than the writer", () => {
+  const metadataOf = (text: string) => ({ "x-immutable-cache-metadata": encodeURIComponent(text) })
+  const corrupt = new ImmutableCache.ImmutableCacheError({ backend: "fault", operation: "get", reason: "corrupt" })
+
+  it("refuses an entry one backend stored under a larger bound", async () => {
+    const backend = ImmutableCache.makeMemoryWebCache()
+    const entry = { bytes: new Uint8Array(32).fill(7), metadata: { kind: "wide" } }
+    expect(await run(put(blob, entry), over(backend, 64))).toBe("stored")
+    expect(failureOf(await exitOf(get(blob), over(backend, 1)))).toEqual(corrupt)
+    // The same reader still answers an entry at its bound, and the wide reader the wide entry.
+    const small = ImmutableCache.key("repo.blob", "small")
+    await run(put(small, { bytes: utf8("x"), metadata: {} }), over(backend, 64))
+    expect([...Option.getOrThrow(await run(get(small), over(backend, 1))).bytes]).toEqual([...utf8("x")])
+    expect([...Option.getOrThrow(await run(get(blob), over(backend, 64))).bytes]).toEqual([...entry.bytes])
+  })
+
+  it("stops reading a body with no Content-Length once it passes the bound, and cancels it", async () => {
+    let pulled = 0
+    let cancelled = 0
+    const endless = () =>
+      new Response(
+        new ReadableStream<Uint8Array>({
+          pull: (controller) => {
+            pulled += 1
+            controller.enqueue(new Uint8Array(4))
+          },
+          // A backend that refuses the cancel changes nothing: the entry is still corrupt.
+          cancel: () => {
+            cancelled += 1
+            throw new TypeError("cancel refused")
+          }
+        }, { highWaterMark: 0 }),
+        { headers: metadataOf("{}") }
+      )
+    expect(endless().headers.get("content-length")).toBeNull()
+    expect(failureOf(await exitOf(get(blob), over(answering(endless), 10)))).toEqual(corrupt)
+    // Three chunks pass ten bytes; nothing more is asked for.
+    expect(pulled).toBe(3)
+    expect(cancelled).toBe(1)
+  })
+
+  it("refuses a body that declares more than the bound without reading it", async () => {
+    let pulled = 0
+    let cancelled = 0
+    const declared = () =>
+      new Response(
+        new ReadableStream<Uint8Array>({
+          pull: () => {
+            pulled += 1
+          },
+          cancel: () => {
+            cancelled += 1
+          }
+        }, { highWaterMark: 0 }),
+        { headers: { ...metadataOf("{}"), "content-length": "11" } }
+      )
+    expect(failureOf(await exitOf(get(blob), over(answering(declared), 10)))).toEqual(corrupt)
+    expect([pulled, cancelled]).toEqual([0, 1])
+  })
+
+  it("refuses oversized metadata before decoding it or reading the body", async () => {
+    const atBound = JSON.stringify({ a: "x".repeat(ImmutableCache.maxMetadataBytes - 8) })
+    const over1 = JSON.stringify({ a: "x".repeat(ImmutableCache.maxMetadataBytes - 7) })
+    // Under the raw-header bound, over the decoded one: multi-byte text.
+    const wide = JSON.stringify({ a: "é".repeat(ImmutableCache.maxMetadataBytes / 2) })
+    // Over the raw-header bound, and not even valid percent-encoding past it.
+    const raw = "a".repeat(ImmutableCache.maxMetadataBytes * 3) + "%"
+    const accepted = await run(get(blob), over(answering(() => new Response("x", { headers: metadataOf(atBound) }))))
+    expect(Option.getOrThrow(accepted).metadata).toEqual(JSON.parse(atBound))
+    for (const header of [metadataOf(over1), metadataOf(wide), { "x-immutable-cache-metadata": raw }]) {
+      let cancelled = 0
+      const response = () =>
+        new Response(
+          new ReadableStream<Uint8Array>({
+            cancel: () => {
+              cancelled += 1
+            }
+          }, { highWaterMark: 0 }),
+          { headers: header }
+        )
+      expect(failureOf(await exitOf(get(blob), over(answering(response))))).toEqual(corrupt)
+      expect(cancelled).toBe(1)
+    }
+  })
+
+  it("answers an empty stored body and abandons a read that is interrupted", async () => {
+    const none = await run(get(blob), over(answering(() => new Response(null, { headers: metadataOf("{}") }))))
+    expect(Option.getOrThrow(none).bytes.byteLength).toBe(0)
+    let cancelled = 0
+    let started!: () => void
+    const waiting = new Promise<void>((resolve) => (started = resolve))
+    const stalled = () =>
+      new Response(
+        new ReadableStream<Uint8Array>({
+          pull: () => {
+            started()
+            return new Promise(() => undefined)
+          },
+          // A refused cancel must not surface as an unhandled rejection.
+          cancel: () => {
+            cancelled += 1
+            throw new TypeError("cancel refused")
+          }
+        }, { highWaterMark: 0 }),
+        { headers: metadataOf("{}") }
+      )
+    await Effect.runPromise(Effect.provide(
+      Effect.gen(function*() {
+        const fiber = yield* Effect.forkChild(get(blob))
+        yield* Effect.promise(() => waiting)
+        yield* Fiber.interrupt(fiber)
+      }),
+      over(answering(stalled))
+    ))
+    expect(cancelled).toBe(1)
   })
 })
 

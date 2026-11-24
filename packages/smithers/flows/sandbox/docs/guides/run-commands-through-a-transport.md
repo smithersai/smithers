@@ -57,15 +57,15 @@ is why `SandboxSupervision` is built on `makeOpened`.
 
 ## What the adapter does with the command
 
-The command reaches the provider as the string `CommandLine.renderForExecution`
-produces, with `cwd` and `env` alongside it. A `Redacted` argument arrives as
-its value; the command a `PlatformError` names shows it as `<redacted>`. A `PipedCommand` renders into one line, so
-the `|` reaches the remote shell.
+The adapter checks every pipeline stage before sending `CommandLine.render(command)`,
+its working directory and its environment to the provider. It refuses protected arguments
+and environment values. A guest can use an opaque placeholder issued by its host egress proxy.
+Command failures report the operation and typed reason.
 
 Failures are normalized: `timeout` becomes `TimedOut`, `unavailable` and
 `not_found` become `NotFound`, and everything else becomes `Unknown`, all under
-the `ChildProcess` module the sibling spawners name. The original
-`ProviderError` is on `PlatformError.cause` when you need the distinction back.
+the `ChildProcess` module the sibling spawners name. The sanitized
+`ProviderError` on `PlatformError.cause` preserves its code.
 
 ## Give the seat a name it will keep
 

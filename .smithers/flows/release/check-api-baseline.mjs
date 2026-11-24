@@ -5,12 +5,18 @@ import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "n
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import ts from "typescript"
-import { copyInputDeclarations, packageCompiler } from "../../../packages/repo-targets/scripts/build-library.mjs"
+import {
+  copyInputDeclarations,
+  packageCompiler,
+  portableDeclarationFiles
+} from "../../../packages/repo-targets/scripts/build-library.mjs"
 import {
   buildPrivateEffectAdapters,
   privateEffectAdapters
 } from "../../../packages/repo-targets/scripts/private-effect-adapters.mjs"
 import { isMain, libraryPackages, repoRoot } from "../../../packages/repo-targets/scripts/workspace-packages.mjs"
+
+import { versionedSources } from "./set-release-version.mjs"
 
 const declarations = (directory, prefix = "") =>
   readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
@@ -70,6 +76,34 @@ export const canonicalDeclaration = (text) => {
   return full(source)
 }
 
+/** Replace only the emitted type or initializer of an explicitly stamped source declaration. */
+const normalizeVersionStamp = (text, dir, file, version) => {
+  const stamp = versionedSources.find(({ path, declarationStamp }) =>
+    declarationStamp !== undefined && path === `${dir}/src/${file.replace(/\.d\.ts$/, ".ts")}`
+  )?.declarationStamp
+  if (!stamp || typeof version !== "string") return text
+  const source = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS)
+  for (const statement of source.statements) {
+    if (!ts.isVariableStatement(statement)) continue
+    for (const declaration of statement.declarationList.declarations) {
+      if (!ts.isIdentifier(declaration.name) || declaration.name.text !== stamp.constant) continue
+      let literal = declaration.initializer ?? (declaration.type && ts.isLiteralTypeNode(declaration.type)
+        ? declaration.type.literal
+        : undefined)
+      if (stamp.property !== undefined && declaration.type && ts.isTypeLiteralNode(declaration.type)) {
+        const property = declaration.type.members.find((member) =>
+          ts.isPropertySignature(member) && member.name.getText(source) === stamp.property
+        )
+        literal = property?.type && ts.isLiteralTypeNode(property.type) ? property.type.literal : undefined
+      }
+      if (literal && ts.isStringLiteral(literal) && literal.text === version) {
+        return text.slice(0, literal.getStart(source)) + "\"<release-version>\"" + text.slice(literal.end)
+      }
+    }
+  }
+  return text
+}
+
 /** Include private declarations too: public signatures can reference them. */
 export const apiSurface = (root = repoRoot, declarationRoot = root) =>
   Object.fromEntries(
@@ -84,13 +118,9 @@ export const apiSurface = (root = repoRoot, declarationRoot = root) =>
       return [name, {
         exports: manifest.publishConfig.exports,
         declarations: Object.fromEntries(names.map((file) => {
-          // set-release-version stamps the package's own version into literal
-          // types. A release cut is not an API change, so that one string reads
-          // as a placeholder; every other literal still counts.
-          const stamp = typeof manifest.version === "string" ? JSON.stringify(manifest.version) : undefined
           const text = readFileSync(join(directory, file), "utf8").replace(/\r\n/g, "\n")
             .replace(/^\/\/# sourceMappingURL=.*$/gm, "").trim()
-          const contents = canonicalDeclaration(stamp === undefined ? text : text.replaceAll(stamp, "\"<release-version>\""))
+          const contents = canonicalDeclaration(normalizeVersionStamp(text, dir, file, manifest.version))
           return [file, createHash("sha256").update(contents).digest("hex")]
         }))
       }]
@@ -143,10 +173,15 @@ export const withDeclarationBuild = async (root, check) => {
         encoding: "utf8"
       })
       if (result.error || result.status !== 0) {
-        throw new Error(`${name}: declaration emit with ${compiler.name} failed: ${result.error?.message ?? result.signal ?? result.status}
+        throw new Error(
+          `${name}: declaration emit with ${compiler.name} failed: ${
+            result.error?.message ?? result.signal ?? result.status
+          }
 ${result.stderr ?? ""}
-${result.stdout ?? ""}`)
+${result.stdout ?? ""}`
+        )
       }
+      portableDeclarationFiles(directory)
       copyInputDeclarations(join(packageRoot, "src"), directory)
       await buildPrivateEffectAdapters(packageRoot, { distRoot: join(output, dir, "dist") })
     }

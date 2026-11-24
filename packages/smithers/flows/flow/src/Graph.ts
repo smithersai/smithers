@@ -68,7 +68,9 @@ import * as Annotations from "./Flow/Annotations.ts"
 import { capabilityCeilings } from "./Flow/CapabilityCeiling.ts"
 import type * as Flow from "./Flow/Flow.ts"
 import { TypeId as FlowTypeId } from "./Flow/TypeId.ts"
+import { scalarPrefix } from "./internal/BoundedJson.ts"
 import * as DeclarationSite from "./internal/DeclarationSite.ts"
+import { stringField } from "./internal/DefectField.ts"
 import { OutcomeNodeTypeId, OutcomeValueTypeId } from "./internal/OutcomeMarker.ts"
 
 const { GraphBuildError, isFatalDiagnostic } = GraphErrors
@@ -370,10 +372,9 @@ const outcomeTagOf = (ast: Node.Ast): OutcomeTag | undefined => {
  * @private
  */
 const placeholder = (reference: PlannedRecord, node: string): unknown =>
-  reference.path.reduce<unknown>(
-    (value, key) => (value as Record<string, unknown>)[key],
-    Planned.make<unknown>(node)
-  )
+  // Not property access: a path segment such as `then` or `toString` is a
+  // field name, and the placeholder's trap answers those as operations.
+  Planned.fromReference<unknown>({ node, path: reference.path })
 
 /**
  * The nesting bound the build enforces on authored topology. The walk itself
@@ -899,7 +900,7 @@ const renderPlacement = (value: unknown): string => {
     const rendered = render(value, 0, [])
     return rendered.length <= maxPlacementChars
       ? rendered
-      : `${rendered.slice(0, maxPlacementChars)} [${rendered.length - maxPlacementChars} characters dropped]`
+      : `${scalarPrefix(rendered, maxPlacementChars)} [${rendered.length - maxPlacementChars} characters dropped]`
   } catch {
     return "<unrenderable>"
   }
@@ -1909,10 +1910,15 @@ export const edges = (graph: Graph): ReadonlyArray<Edge> => graph.edges
  * so a graph file resolving a second copy of `@smthrs/flow` is refused as not
  * a flow at all rather than registered with a site nothing corrected.
  *
+ * It returns a release for the loader to call once the load is over, which
+ * forgets the entry; the process keeps a bounded number of entries either
+ * way, dropping the oldest.
+ *
  * @since 0.1.0
  * @category constructors
  */
-export const evaluatedFrom = (evaluated: string, entry: string): void => DeclarationSite.evaluatedFrom(evaluated, entry)
+export const evaluatedFrom = (evaluated: string, entry: string): () => void =>
+  DeclarationSite.evaluatedFrom(evaluated, entry)
 
 /**
  * The drafts, in node order, ready for `Plan.compile` or `Plan.append`
@@ -2018,7 +2024,7 @@ export const inspect = (flow: Flow.Any): Inspection => {
         code: error instanceof GraphBuildError
           ? error.code === "planned_value_computed" ? "declaration_requires_input" : error.code
           : "declaration_inspection_failed",
-        message: error instanceof Error ? error.message : String(error)
+        message: error instanceof Error ? stringField(error, "message") ?? "" : String(error)
       }]
     })
   }

@@ -6,6 +6,7 @@
  */
 import * as Input from "@smthrs/targets/Input"
 import * as Nix from "@smthrs/targets/Nix"
+import { createHash } from "node:crypto"
 import * as Fs from "node:fs/promises"
 import * as Os from "node:os"
 import * as NodePath from "node:path"
@@ -27,7 +28,7 @@ describe.skipIf(process.env["SMITHERS_TEST_NIX_IMPORTS"] !== "1")(
     })
 
     it.each(["flake", "file"] as const)(
-      "refreshes a memoized %s environment after an imported file changes and refuses a missing import",
+      "resolves a %s environment from Nix despite a stale memo and tracks changes to imported files",
       async (form) => {
         const root = await Fs.realpath(await Fs.mkdtemp(NodePath.join(Os.tmpdir(), "smthrs-nix-import-")))
         directories.push(root)
@@ -68,6 +69,20 @@ describe.skipIf(process.env["SMITHERS_TEST_NIX_IMPORTS"] !== "1")(
         }
         const first = await NixExec.resolveEnvironment(options)
         expect(first.variables["SSL_CERT_FILE"]).toBe("before")
+        const memo = createHash("sha256").update(JSON.stringify({
+          storePath: first.storePath,
+          system: first.system,
+          nixVersion: first.nix.version
+        })).digest("hex")
+        await Fs.mkdir(NodePath.join(root, ".flows/nix"), { recursive: true })
+        await Fs.writeFile(
+          NodePath.join(root, ".flows/nix", `${memo}.json`),
+          JSON.stringify({
+            ...first,
+            path: ["/tmp/untrusted"],
+            variables: { SSL_CERT_FILE: "stale" }
+          })
+        )
         expect(await NixExec.resolveEnvironment(options)).toEqual(first)
         await Fs.writeFile(imported, "\"after\"\n")
         const second = await NixExec.resolveEnvironment(options)
@@ -75,7 +90,6 @@ describe.skipIf(process.env["SMITHERS_TEST_NIX_IMPORTS"] !== "1")(
         expect(second.storePath).not.toBe(first.storePath)
         expect(NixExec.layer(second)).not.toBe(NixExec.layer(first))
         expect(second.variables["SSL_CERT_FILE"]).toBe("after")
-        expect(await Fs.readdir(NodePath.join(root, ".flows/nix"))).toHaveLength(2)
         await Fs.rm(imported)
         await expect(NixExec.resolveEnvironment(options)).rejects.toMatchObject({ code: "nix_evaluation_failed" })
       }

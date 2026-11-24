@@ -7,7 +7,7 @@
 import { describe, expect, it } from "@effect/vitest"
 import { FlowEngine } from "@smthrs/engine"
 import { Action, ExternalJob, FlowRuntime } from "@smthrs/flow"
-import { Cause, Clock, type Duration, Effect, Exit, Fiber, Layer, Metric, Schema } from "effect"
+import { Cause, Clock, type Duration, Effect, Exit, Fiber, Layer, Logger, Metric, Schema } from "effect"
 import { TestClock } from "effect/testing"
 import { withCrypto } from "./Crypto.ts"
 
@@ -38,9 +38,12 @@ const provider = (options: {
   readonly slowStart?: number
   readonly abandon?: boolean
   readonly stopFails?: boolean
+  /** The status or collect read that refuses, once. */
+  readonly refuses?: "status" | "collect"
 }) => {
   const calls: Array<string> = []
   let startFailures = options.startFails ?? 0
+  let refuses = options.refuses
   let slowStart = options.slowStart ?? 0
   const answers = [...(options.answers ?? [])]
   const operations: ExternalJob.Operations<{ readonly value: string }, string, string, string, never> = {
@@ -57,6 +60,10 @@ const provider = (options: {
     status: (_handle, key, read) =>
       Effect.gen(function*() {
         calls.push(`status ${key} ${read?.waitMs}`)
+        if (refuses === "status") {
+          refuses = undefined
+          return yield* Effect.fail("status refused")
+        }
         if (options.exitAt !== undefined) {
           const left = options.exitAt - (yield* Clock.currentTimeMillis)
           if (left > 0) yield* Effect.sleep(Math.min(left, read?.waitMs ?? 0, options.waitCap ?? Infinity))
@@ -68,9 +75,13 @@ const provider = (options: {
         return answer === "hold" ? yield* Effect.never : answer
       }),
     collect: (handle, key) =>
-      Effect.sync(() => {
+      Effect.suspend(() => {
         calls.push(`collect ${key}`)
-        return `collected ${handle}`
+        if (refuses === "collect") {
+          refuses = undefined
+          return Effect.fail("collect refused")
+        }
+        return Effect.succeed(`collected ${handle}`)
       }),
     cancel: (_handle, key) =>
       Effect.suspend(() => {
@@ -349,6 +360,55 @@ describe("ExternalJob run", () => {
       expect(lost.calls).toEqual(["start g#g1", "status g#g1 400", "start g#g1", "status g#g1 100", "cancel g#g1"])
     })
   })
+
+  it.effect("logs and records a provider failure in the step before the job decides", () => {
+    const refused = provider({ startFails: 1, answers: [{ _tag: "Exited", exitCode: 0 }] })
+    const logs: Array<string> = []
+    const capture = Logger.make((entry) => logs.push(Logger.formatJson.log(entry)))
+    const count = (outcome: string) =>
+      Effect.map(
+        Metric.value(Metric.withAttributes(ExternalJob.stepWaits, { job: Job._tag, outcome })),
+        (state) => state.count
+      )
+    return Effect.gen(function*() {
+      const before = { failed: yield* count("failed_inline"), handed: yield* count("handed_off") }
+      const answered = yield* on(
+        refused,
+        Job.run({ value: "fl" }, { executionId: "fl", operations: refused.operations })
+      ).pipe(Effect.provide(Logger.layer([capture])))
+      expect(answered).toBe("collected handle:fl")
+      expect(yield* count("failed_inline")).toBe(before.failed + 1)
+      expect(yield* count("handed_off")).toBe(before.handed)
+      const warning = logs.map((line) => JSON.parse(line) as Record<string, unknown>).find((entry) =>
+        String(entry["message"]).includes("ExternalJob inline run failed")
+      )
+      expect(warning?.["annotations"]).toMatchObject({
+        job: Job._tag,
+        operation: "start",
+        key: "fl#g1",
+        error: "string"
+      })
+      expect(JSON.stringify(warning)).not.toContain("start refused")
+    })
+  })
+
+  it.effect("names the provider call that failed in the step: a status read or a collect", () =>
+    Effect.gen(function*() {
+      for (const refuses of ["status", "collect"] as const) {
+        const p = provider({ refuses, answers: [{ _tag: "Exited", exitCode: 0 }, { _tag: "Exited", exitCode: 0 }] })
+        const logs: Array<string> = []
+        const capture = Logger.make((entry) => logs.push(Logger.formatJson.log(entry)))
+        const answered = yield* on(
+          p,
+          Job.run({ value: refuses }, { executionId: `refuses-${refuses}`, operations: p.operations })
+        ).pipe(Effect.provide(Logger.layer([capture])))
+        expect(answered).toBe(`collected handle:${refuses}`)
+        const warning = logs.map((line) => JSON.parse(line) as Record<string, unknown>).find((entry) =>
+          String(entry["message"]).includes("ExternalJob inline run failed")
+        )
+        expect(warning?.["annotations"]).toMatchObject({ operation: refuses, key: `refuses-${refuses}#g1` })
+      }
+    }))
 
   describe("interrupted", () => {
     /** Interrupts `p`'s run once it is held, in a run whose instance `interrupted` says whether it was cancelled. */

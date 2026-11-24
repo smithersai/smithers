@@ -1,5 +1,5 @@
-import { Fuzz } from "@smthrs/fuzz"
 import { Action, DurableDeferred, Flow, FlowRuntime, Interpreter, RetryPolicy } from "@smthrs/flow"
+import { Fuzz } from "@smthrs/fuzz"
 import { Node } from "@smthrs/plan"
 import { Arbitrary, Effect, Exit, Layer, Option, Schema } from "effect"
 import { RpcTest } from "effect/rpc"
@@ -49,177 +49,191 @@ const WaitFlow = Flow.make("W6Proxy/Wait", {
 const proxyFlows = [EchoFlow, WaitFlow] as const
 
 describe("@smthrs/engine Wave 6 deep fuzz (FlowProxyServer RPC, Compensable/Retry Dispatch, Cancellation, Diagnostic & Utf16)", () => {
-  it("FlowProxyServer.layerRpcHandlers handles execute, idempotent deduplication, typed errors, discard, and resume across arbitrary payloads", async () => {
-    const arb = Arbitrary.schema(
-      Schema.Struct({
-        value: Schema.Int.check(Schema.isBetween({ minimum: -20, maximum: 20 })),
-        shouldFail: Schema.Boolean,
-        mode: Schema.Literals(["execute", "duplicate", "discard", "resume"]),
-        withCeiling: Schema.Boolean
-      })
-    )
+  it(
+    "FlowProxyServer.layerRpcHandlers handles execute, idempotent deduplication, typed errors, discard, and resume across arbitrary payloads",
+    async () => {
+      const arb = Arbitrary.schema(
+        Schema.Struct({
+          value: Schema.Int.check(Schema.isBetween({ minimum: -20, maximum: 20 })),
+          shouldFail: Schema.Boolean,
+          mode: Schema.Literals(["execute", "duplicate", "discard", "resume"]),
+          withCeiling: Schema.Boolean
+        })
+      )
 
-    const report = await Effect.runPromise(
-      Fuzz.run(
-        arb,
-        ({ value, shouldFail, mode, withCeiling }) =>
-          withCrypto(
-            Effect.scoped(
-              Effect.gen(function*() {
-                let calls = 0
-                const engineLayer = Layer.mergeAll(
-                  Layer.mergeAll(
-                    EchoAction.toLayer(({ value: v }) =>
-                      Effect.suspend(() => {
-                        calls++
-                        return shouldFail ? Effect.fail("invalid" as const) : Effect.succeed(v * 2)
-                      })
-                    ),
-                    Interpreter.layer(EchoFlow)
-                  ).pipe(Layer.provideMerge(Action.layerImplementations)),
-                  Layer.mergeAll(
-                    WaitAction.toLayer(() => DurableDeferred.await(Gate)),
-                    Interpreter.layer(WaitFlow)
-                  ).pipe(Layer.provideMerge(Action.layerImplementations))
-                ).pipe(Layer.provideMerge(FlowEngine.layerMemory))
+      const report = await Effect.runPromise(
+        Fuzz.run(
+          arb,
+          ({ value, shouldFail, mode, withCeiling }) =>
+            withCrypto(
+              Effect.scoped(
+                Effect.gen(function*() {
+                  let calls = 0
+                  const engineLayer = Layer.mergeAll(
+                    Layer.mergeAll(
+                      EchoAction.toLayer(({ value: v }) =>
+                        Effect.suspend(() => {
+                          calls++
+                          return shouldFail ? Effect.fail("invalid" as const) : Effect.succeed(v * 2)
+                        })
+                      ),
+                      Interpreter.layer(EchoFlow)
+                    ).pipe(Layer.provideMerge(Action.layerImplementations)),
+                    Layer.mergeAll(
+                      WaitAction.toLayer(() => DurableDeferred.await(Gate)),
+                      Interpreter.layer(WaitFlow)
+                    ).pipe(Layer.provideMerge(Action.layerImplementations))
+                  ).pipe(Layer.provideMerge(FlowEngine.layerMemory))
 
-                const rpcLayer = FlowProxyServer.layerRpcHandlers(proxyFlows).pipe(Layer.provideMerge(engineLayer))
+                  const rpcLayer = FlowProxyServer.layerRpcHandlers(proxyFlows).pipe(Layer.provideMerge(engineLayer))
 
-                return yield* Effect.gen(function*() {
-                  const client = yield* RpcTest.makeClient(FlowProxy.toRpcGroup(proxyFlows))
-                  const ceiling = withCeiling ? [[{ action: "fs:read", resource: "/**" }]] : undefined
+                  return yield* Effect.gen(function*() {
+                    const client = yield* RpcTest.makeClient(FlowProxy.toRpcGroup(proxyFlows))
+                    const ceiling = withCeiling ? [[{ action: "fs:read", resource: "/**" }]] : undefined
 
-                  if (mode === "execute" || mode === "duplicate") {
-                    const execId = `w6-exec-${value}`
-                    const first = yield* client["W6Proxy/Echo"]({
-                      payload: { value },
-                      executionId: execId,
-                      ...(ceiling !== undefined ? { capabilityCeilings: ceiling } : {})
-                    } as never).pipe(Effect.exit)
-                    if (shouldFail) {
-                      expect(Exit.isFailure(first)).toBe(true)
-                    } else {
-                      expect(first).toEqual(Exit.succeed(value * 2))
-                    }
-                    if (mode === "duplicate" && !shouldFail) {
-                      const second = yield* client["W6Proxy/Echo"]({
+                    if (mode === "execute" || mode === "duplicate") {
+                      const execId = `w6-exec-${value}`
+                      const first = yield* client["W6Proxy/Echo"]({
                         payload: { value },
-                        executionId: execId
+                        executionId: execId,
+                        ...(ceiling !== undefined ? { capabilityCeilings: ceiling } : {})
+                      } as never).pipe(Effect.exit)
+                      if (shouldFail) {
+                        expect(Exit.isFailure(first)).toBe(true)
+                      } else {
+                        expect(first).toEqual(Exit.succeed(value * 2))
+                      }
+                      if (mode === "duplicate" && !shouldFail) {
+                        const second = yield* client["W6Proxy/Echo"]({
+                          payload: { value },
+                          executionId: execId
+                        })
+                        expect(second).toBe(value * 2)
+                        expect(calls).toBe(1)
+                      }
+                    } else if (mode === "discard") {
+                      yield* client["W6Proxy/EchoDiscard"]({
+                        payload: { value },
+                        executionId: `w6-disc-${value}`
                       })
-                      expect(second).toBe(value * 2)
-                      expect(calls).toBe(1)
+                    } else {
+                      const waitId = `w6-wait-${value}`
+                      yield* client["W6Proxy/WaitDiscard"]({
+                        payload: { id: waitId },
+                        executionId: waitId
+                      })
+                      yield* client["W6Proxy/WaitResume"]({
+                        executionId: waitId
+                      } as never).pipe(Effect.exit)
                     }
-                  } else if (mode === "discard") {
-                    yield* client["W6Proxy/EchoDiscard"]({
-                      payload: { value },
-                      executionId: `w6-disc-${value}`
+                    return true
+                  }).pipe(Effect.provide(rpcLayer))
+                })
+              )
+            ),
+          { executions: Math.min(executions, 40), seed }
+        )
+      )
+      assertPassed(report)
+    },
+    60_000
+  )
+
+  it(
+    "Compensable actions with SnapshotBoundary, RetryPolicy, undeclared failures, and sealed/irreversible tiers obey retry & restore invariants",
+    async () => {
+      const arb = Arbitrary.schema(
+        Schema.Struct({
+          tier: Schema.Literals(["sealed", "compensable", "irreversible"]),
+          failCount: Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 3 })),
+          maxAttempts: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 4 })),
+          inputVal: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 50 }))
+        })
+      )
+
+      const report = await Effect.runPromise(
+        Fuzz.run(
+          arb,
+          ({ tier, failCount, maxAttempts, inputVal }) =>
+            withCrypto(
+              Effect.scoped(
+                Effect.gen(function*() {
+                  let attempts = 0
+                  const boundaryLog: Array<string> = []
+
+                  const innerAction = Action.make({
+                    name: "W6Comp/inner",
+                    success: Schema.Number,
+                    error: Schema.Literal("transient"),
+                    tier,
+                    retryPolicy: RetryPolicy.make({ initialMs: 1, factor: 1, maxMs: 2, maxAttempts }),
+                    execute: Effect.suspend(() => {
+                      attempts++
+                      if (attempts <= failCount) return Effect.fail("transient" as const)
+                      return Effect.succeed(inputVal + 10)
                     })
+                  })
+
+                  const stepAction = Action.make("W6Comp/step", {
+                    payload: { n: Schema.Number },
+                    success: Schema.Number,
+                    error: Schema.Literal("transient")
+                  })
+
+                  const compFlow = Flow.make("W6Comp/flow", {
+                    payload: { n: Schema.Number },
+                    success: Schema.Number,
+                    error: Schema.Literal("transient"),
+                    body: (p) => stepAction.call(p)
+                  })
+
+                  const boundary = FlowEngine.SnapshotBoundary.of({
+                    snapshot: (opts) =>
+                      Effect.sync(() => (boundaryLog.push(`snap:${opts.attempt}`), `s:${opts.attempt}`)),
+                    restore: (snap, opts) =>
+                      Effect.sync(() => void boundaryLog.push(`rest:${String(snap)}:${opts.attempt}`)),
+                    diff: (_snap, opts) => Effect.sync(() => (boundaryLog.push(`diff:${opts.attempt}`), Option.none()))
+                  })
+
+                  const layer = Layer.mergeAll(
+                    stepAction.toLayer(() => innerAction),
+                    Interpreter.layer(compFlow)
+                  ).pipe(
+                    Layer.provideMerge(Action.layerImplementations),
+                    Layer.provideMerge(FlowEngine.layerMemory),
+                    Layer.provideMerge(Layer.succeed(FlowEngine.SnapshotBoundary, boundary))
+                  )
+
+                  const ex = yield* Effect.flatMap(FlowRuntime.FlowRuntime, (rt) =>
+                    rt.execute(compFlow, { executionId: `comp-${tier}-${inputVal}`, payload: { n: inputVal } })).pipe(
+                      Effect.provide(layer),
+                      Effect.exit
+                    )
+
+                  // Irreversible actions cannot be retried past attempt 1; sealed/compensable retry up to maxAttempts
+                  const effectiveMax = tier === "irreversible" ? 1 : maxAttempts
+                  if (failCount < effectiveMax) {
+                    expect(ex).toEqual(Exit.succeed(inputVal + 10))
                   } else {
-                    const waitId = `w6-wait-${value}`
-                    yield* client["W6Proxy/WaitDiscard"]({
-                      payload: { id: waitId },
-                      executionId: waitId
-                    })
-                    yield* client["W6Proxy/WaitResume"]({
-                      executionId: waitId
-                    } as never).pipe(Effect.exit)
+                    expect(Exit.isFailure(ex)).toBe(true)
+                  }
+                  if (tier === "compensable" && attempts > 1) {
+                    expect(boundaryLog.some((e) =>
+                      e.startsWith("snap:")
+                    )).toBe(true)
+                    expect(boundaryLog.some((e) => e.startsWith("rest:"))).toBe(true)
                   }
                   return true
-                }).pipe(Effect.provide(rpcLayer))
-              })
-            )
-          ),
-        { executions: Math.min(executions, 40), seed }
+                })
+              )
+            ),
+          { executions: Math.min(executions, 50), seed: seed + 1 }
+        )
       )
-    )
-    assertPassed(report)
-  }, 60_000)
-
-  it("Compensable actions with SnapshotBoundary, RetryPolicy, undeclared failures, and sealed/irreversible tiers obey retry & restore invariants", async () => {
-    const arb = Arbitrary.schema(
-      Schema.Struct({
-        tier: Schema.Literals(["sealed", "compensable", "irreversible"]),
-        failCount: Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 3 })),
-        maxAttempts: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 4 })),
-        inputVal: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 50 }))
-      })
-    )
-
-    const report = await Effect.runPromise(
-      Fuzz.run(
-        arb,
-        ({ tier, failCount, maxAttempts, inputVal }) =>
-          withCrypto(
-            Effect.scoped(
-              Effect.gen(function*() {
-                let attempts = 0
-                const boundaryLog: Array<string> = []
-
-                const innerAction = Action.make({
-                  name: "W6Comp/inner",
-                  success: Schema.Number,
-                  error: Schema.Literal("transient"),
-                  tier,
-                  retryPolicy: RetryPolicy.make({ initialMs: 1, factor: 1, maxMs: 2, maxAttempts }),
-                  execute: Effect.suspend(() => {
-                    attempts++
-                    if (attempts <= failCount) return Effect.fail("transient" as const)
-                    return Effect.succeed(inputVal + 10)
-                  })
-                })
-
-                const stepAction = Action.make("W6Comp/step", {
-                  payload: { n: Schema.Number },
-                  success: Schema.Number,
-                  error: Schema.Literal("transient")
-                })
-
-                const compFlow = Flow.make("W6Comp/flow", {
-                  payload: { n: Schema.Number },
-                  success: Schema.Number,
-                  error: Schema.Literal("transient"),
-                  body: (p) => stepAction.call(p)
-                })
-
-                const boundary = FlowEngine.SnapshotBoundary.of({
-                  snapshot: (opts) => Effect.sync(() => (boundaryLog.push(`snap:${opts.attempt}`), `s:${opts.attempt}`)),
-                  restore: (snap, opts) => Effect.sync(() => void boundaryLog.push(`rest:${String(snap)}:${opts.attempt}`)),
-                  diff: (_snap, opts) => Effect.sync(() => (boundaryLog.push(`diff:${opts.attempt}`), Option.none()))
-                })
-
-                const layer = Layer.mergeAll(
-                  stepAction.toLayer(() => innerAction),
-                  Interpreter.layer(compFlow)
-                ).pipe(
-                  Layer.provideMerge(Action.layerImplementations),
-                  Layer.provideMerge(FlowEngine.layerMemory),
-                  Layer.provideMerge(Layer.succeed(FlowEngine.SnapshotBoundary, boundary))
-                )
-
-                const ex = yield* Effect.flatMap(FlowRuntime.FlowRuntime, (rt) =>
-                  rt.execute(compFlow, { executionId: `comp-${tier}-${inputVal}`, payload: { n: inputVal } })
-                ).pipe(Effect.provide(layer), Effect.exit)
-
-                // Irreversible actions cannot be retried past attempt 1; sealed/compensable retry up to maxAttempts
-                const effectiveMax = tier === "irreversible" ? 1 : maxAttempts
-                if (failCount < effectiveMax) {
-                  expect(ex).toEqual(Exit.succeed(inputVal + 10))
-                } else {
-                  expect(Exit.isFailure(ex)).toBe(true)
-                }
-                if (tier === "compensable" && attempts > 1) {
-                  expect(boundaryLog.some((e) => e.startsWith("snap:"))).toBe(true)
-                  expect(boundaryLog.some((e) => e.startsWith("rest:"))).toBe(true)
-                }
-                return true
-              })
-            )
-          ),
-        { executions: Math.min(executions, 50), seed: seed + 1 }
-      )
-    )
-    assertPassed(report)
-  }, 60_000)
+      assertPassed(report)
+    },
+    60_000
+  )
 
   it("Diagnostic redaction and Utf16 truncation helpers preserve valid UTF-16 boundaries and never leak credential payloads", async () => {
     const arb = Arbitrary.schema(

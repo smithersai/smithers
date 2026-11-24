@@ -22,6 +22,25 @@ export const providerFailure = (code: ProviderError["code"], message: string) =>
   cause instanceof ProviderError ? cause : new ProviderError({ code, message, cause })
 
 /**
+ * A host-authored process status that contains neither command text nor raw causes.
+ *
+ * @category constructors
+ * @since 1.0.0-rc.18
+ */
+export class ProcessStatus extends ProviderError {}
+
+/**
+ * Keeps transport diagnostics and guest command text out of public failures.
+ *
+ * @category constructors
+ * @since 1.0.0-rc.18
+ */
+export const commandFailure = (code: ProviderError["code"], message: string) => (cause: unknown): ProviderError =>
+  cause instanceof ProcessStatus
+    ? cause
+    : new ProviderError({ code: cause instanceof ProviderError ? cause.code : code, message })
+
+/**
  * Presents a locally spawned handle as a remote process. The in-repository
  * providers run their transport locally — a shell, a container CLI — so the
  * three pieces a remote process has are the local handle's, with failures
@@ -30,12 +49,12 @@ export const providerFailure = (code: ProviderError["code"], message: string) =>
  * @category constructors
  * @since 0.1.0
  */
-export const remoteProcessOf = (handle: ChildProcessHandle, command: string): RemoteProcess => ({
-  stdout: Stream.mapError(handle.stdout, providerFailure("unknown", `\`${command}\`: stdout failed`)),
-  stderr: Stream.mapError(handle.stderr, providerFailure("unknown", `\`${command}\`: stderr failed`)),
+export const remoteProcessOf = (handle: ChildProcessHandle): RemoteProcess => ({
+  stdout: Stream.mapError(handle.stdout, commandFailure("unknown", "command stdout failed")),
+  stderr: Stream.mapError(handle.stderr, commandFailure("unknown", "command stderr failed")),
   exitCode: Effect.mapError(
     handle.exitCode,
-    providerFailure("unknown", `\`${command}\`: exit could not be observed`)
+    commandFailure("unknown", "command exit could not be observed")
   )
 })
 
@@ -61,7 +80,7 @@ export interface GatheredRun {
  */
 export const gather = (
   handle: ChildProcessHandle,
-  command: string
+  _command: string
 ): Effect.Effect<GatheredRun, ProviderError> =>
   Effect.all(
     [
@@ -72,5 +91,5 @@ export const gather = (
     { concurrency: "unbounded" }
   ).pipe(
     Effect.map(([stdout, stderr, code]) => ({ stdout: concat(stdout), stderr, code })),
-    Effect.mapError(providerFailure("unknown", `\`${command}\` could not be observed to completion`))
+    Effect.mapError(commandFailure("unknown", "command could not be observed to completion"))
   )

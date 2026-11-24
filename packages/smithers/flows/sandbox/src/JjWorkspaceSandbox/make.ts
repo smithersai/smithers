@@ -21,9 +21,9 @@ import * as Semaphore from "effect/Semaphore"
 import * as Stream from "effect/Stream"
 import { credentialFiles } from "../internal/credentialFiles.ts"
 import { checkEnvironmentNames } from "../internal/environmentNames.ts"
-import { gather, providerFailure, remoteProcessOf } from "../internal/localProcess.ts"
+import { commandFailure, gather, providerFailure, remoteProcessOf } from "../internal/localProcess.ts"
 import { rootedAt } from "../internal/rootedPath.ts"
-import { sessionSlug } from "../internal/sessionSlug.ts"
+import { legacySessionSlug, sessionSlug } from "../internal/sessionSlug.ts"
 import type { RemoteProcess } from "../RemoteChildProcessSpawner/Provider.ts"
 import { ProviderError } from "../RemoteChildProcessSpawner/ProviderError.ts"
 import { type NetworkPolicy, refuseNetworkPolicy } from "../Sandbox/NetworkPolicy.ts"
@@ -68,7 +68,7 @@ const validatePrefix = (prefix: string): string => {
  * for `session`.
  *
  * The result is lowercase ASCII matching `[a-z0-9][a-z0-9_-]+`, bounded in
- * length, and ends with `sessionSlug`'s 64-bit digest over the raw UTF-16
+ * length, and ends with `sessionSlug`'s 128-bit digest over the raw UTF-16
  * `session` key so `"lane/one"`, `"lane-one"`, `"Lane"`, `"lane"`, and keys
  * diverging past 40 characters map to distinct workspaces across both
  * case-sensitive and case-insensitive filesystems.
@@ -601,10 +601,13 @@ export const make = (options: JjWorkspaceSandboxOptions): Provider => {
       )
     )
 
+  const matches = (session: Pick<Session, "id" | "remoteId">) =>
+    session.remoteId === workspaceNameOf(session.id, prefix) ||
+    session.remoteId === `${prefix}${legacySessionSlug(session.id).toLowerCase().replaceAll(/[^a-z0-9_-]/g, "-")}`
   const open = (
     sessionKey: string,
     parent?: ForkParent,
-    attachOnly = false
+    attachedName?: string
   ): Effect.Effect<Session, ProviderError, Scope> =>
     Effect.gen(function*() {
       if (!ContainedSpawner.isContained(options.spawner)) {
@@ -615,7 +618,8 @@ export const make = (options: JjWorkspaceSandboxOptions): Provider => {
           })
         )
       }
-      const workspaceName = workspaceNameOf(sessionKey, prefix)
+      const attachOnly = attachedName !== undefined
+      const workspaceName = attachedName ?? workspaceNameOf(sessionKey, prefix)
       const { root, workdir } = yield* confineWorkdir(options.path, options.workspacesRoot, workspaceName)
       const lane: Lane = { released: false, activeHandles: new Set() }
       let setupCompleted = false
@@ -757,7 +761,7 @@ export const make = (options: JjWorkspaceSandboxOptions): Provider => {
           const handle = yield* Effect.uninterruptibleMask((restore) =>
             Effect.gen(function*() {
               const child = yield* restore(options.spawner.spawn(ChildProcess.make(command, settings))).pipe(
-                Effect.mapError(providerFailure("spawn_error", `\`${command}\` could not start`))
+                Effect.mapError(commandFailure("spawn_error", "command could not start"))
               )
               lane.activeHandles.add(child)
               yield* Effect.addFinalizer(() =>
@@ -768,7 +772,7 @@ export const make = (options: JjWorkspaceSandboxOptions): Provider => {
               return child
             })
           )
-          const remote = remoteProcessOf(handle, command)
+          const remote = remoteProcessOf(handle)
           started.set(remote, handle)
           return remote
         }),
@@ -830,8 +834,8 @@ export const make = (options: JjWorkspaceSandboxOptions): Provider => {
     })
 
   const stickyDestroy = (session: Pick<Session, "id" | "remoteId">): Effect.Effect<void, ProviderError> => {
-    const workspaceName = workspaceNameOf(session.id, prefix)
-    if (session.remoteId !== workspaceName) {
+    const workspaceName = session.remoteId
+    if (!matches(session)) {
       return Effect.fail(
         new ProviderError({ code: "spawn_error", message: "jj workspace identity differs from key" })
       )
@@ -907,8 +911,8 @@ export const make = (options: JjWorkspaceSandboxOptions): Provider => {
       ? {
         retained: true as const,
         attach: (session: Pick<Session, "id" | "remoteId">) =>
-          session.remoteId === workspaceNameOf(session.id, prefix)
-            ? open(session.id, undefined, true)
+          matches(session)
+            ? open(session.id, undefined, session.remoteId)
             : Effect.fail(
               new ProviderError({ code: "spawn_error", message: "jj workspace identity differs from key" })
             ),

@@ -1,19 +1,13 @@
 /**
- * The name every provider derives a machine's identity from.
- *
- * `sessionSlug` is not an implementation detail. Its output is the container
- * name, the Pod name, the Vercel and Daytona sandbox names, the Cloudflare
- * Durable Object id, the ECS `startedBy` tag, and the `DirectorySandbox`
- * scratch directory, and every reattach path finds an existing machine by that
- * name. Changing the function orphans everything currently running under the
- * old names, so the exact values are pinned here rather than recomputed by
- * calling the function under test, which would pass for any implementation.
+ * Recorded handles retain their original machine name. Fresh acquisitions
+ * use a SHA-256 identity over the full key.
  */
+import { createHash } from "node:crypto"
 import { describe, expect, it } from "vitest"
-import { sessionSlug } from "../src/internal/sessionSlug.ts"
+import { legacySessionSlug, sessionSlug } from "../src/internal/sessionSlug.ts"
 
 describe("sessionSlug", () => {
-  it("pins the exact machine name each key resolves to", () => {
+  it("recognizes machine names stored in older handles", () => {
     const vectors: ReadonlyArray<readonly [string, string]> = [
       // An empty key is still a name: the digest carries all of it.
       ["", "-00001505811c9dc5"],
@@ -32,22 +26,22 @@ describe("sessionSlug", () => {
       ["a".repeat(40), "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-e6b47eadeb83bc4d"],
       ["a".repeat(41), "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-bd4454aeec613944"]
     ]
-    for (const [key, slug] of vectors) expect(sessionSlug(key)).toBe(slug)
+    for (const [key, slug] of vectors) expect(legacySessionSlug(key)).toBe(slug)
   })
 
-  it("keeps apart two keys a single 32-bit multiplicative hash collides", () => {
+  it("derives the full-key digest independently of the readable prefix", () => {
     // djb2's tail is linear, so two keys sharing the truncated prefix collide
     // as soon as `33 * c1 + c2` agrees: '1r' and '30' both reduce to 1731.
     // Under the old single-hash digest both keys named one machine, and the
     // first holder to close its scope tore it down under the other.
     const left = `${"a".repeat(48)}1r`
     const right = `${"a".repeat(48)}30`
-    expect(sessionSlug(left)).toBe("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-dcd17a38b6b1885a")
-    expect(sessionSlug(right)).toBe("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-dcd17a3860b57e26")
+    for (const key of [left, right, "a/b", "", "\ud800", "\udfff"]) {
+      const digest = createHash("sha256").update(JSON.stringify(key)).digest("hex").slice(0, 32)
+      expect(sessionSlug(key).endsWith(`-${digest}`)).toBe(true)
+    }
     expect(sessionSlug(left)).not.toBe(sessionSlug(right))
-    // The djb2 half still agrees. Only the second, differently mixed half
-    // separates them, which is the whole reason there are two.
-    expect(sessionSlug(left).slice(0, -8)).toBe(sessionSlug(right).slice(0, -8))
+    expect(sessionSlug("\ud800")).not.toBe(sessionSlug("\udfff"))
   })
 
   it("gives every generated key its own name", () => {
@@ -76,7 +70,7 @@ describe("sessionSlug", () => {
 
   it("emits only characters every vendor's name grammar accepts", () => {
     for (const key of ["", "a/b", "café ☕", "A B C!", "../../etc/passwd", "a".repeat(200)]) {
-      expect(sessionSlug(key)).toMatch(/^[A-Za-z0-9._-]*-[0-9a-f]{16}$/)
+      expect(sessionSlug(key)).toMatch(/^[A-Za-z0-9._-]*-[0-9a-f]{32}$/)
     }
   })
 })

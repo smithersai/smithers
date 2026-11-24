@@ -4,6 +4,7 @@ import * as Ownership from "@smthrs/run-store/Ownership"
 import type { LivenessEvidence, OwnerId } from "@smthrs/run-store/Ownership"
 import * as Deferred from "effect/Deferred"
 import * as Effect from "effect/Effect"
+import * as Exit from "effect/Exit"
 import * as Fiber from "effect/Fiber"
 import { TestClock } from "effect/testing"
 import * as Lease from "../src/internal/Lease.ts"
@@ -132,6 +133,76 @@ describe("Lease.claimAndActivate", () => {
       const runs = RunStore.makeNoop({ claim: () => Effect.succeed({ _tag: "HeartbeatFresh" as const }) })
       const failure = yield* Effect.flip(Lease.claimAndActivate(runs, request()))
       expect(failure).toMatchObject({ code: "busy", message: "refused HeartbeatFresh" })
+    }))
+
+  it.effect("abandons the exact claim when activation fails or dies", () =>
+    Effect.gen(function*() {
+      for (
+        const activate of [
+          () =>
+            Effect.fail(
+              new RunStore.RunStoreError({
+                code: "persistence_failed",
+                method: "activate",
+                message: "down",
+                cause: "activate"
+              })
+            ),
+          () => Effect.die("activate defect"),
+          () => {
+            throw new Error("activate threw")
+          }
+        ]
+      ) {
+        const abandoned: Array<unknown> = []
+        const runs = RunStore.makeNoop({
+          claim: () => Effect.succeed({ _tag: "Claimed" as const, claimedAtMs: 5 }),
+          activate,
+          abandonClaim: (runId, claimant, claimedAtMs) =>
+            Effect.sync(() => {
+              abandoned.push([runId, claimant, claimedAtMs])
+              return { _tag: "Abandoned" as const }
+            })
+        })
+        const exit = yield* Effect.exit(Lease.claimAndActivate(runs, request()))
+        expect(Exit.isFailure(exit)).toBe(true)
+        expect(abandoned).toEqual([["run", owner, 5]])
+      }
+    }))
+
+  it.effect("finishes the claim before an interrupt lands and records it first", () =>
+    Effect.gen(function*() {
+      const activating = yield* Deferred.make<void>()
+      const proceed = yield* Deferred.make<void>()
+      const recorded: Array<number> = []
+      const abandoned: Array<number> = []
+      const runs = RunStore.makeNoop({
+        claim: () => Effect.succeed({ _tag: "Claimed" as const, claimedAtMs: 5 }),
+        activate: () =>
+          Deferred.succeed(activating, undefined).pipe(
+            Effect.andThen(Deferred.await(proceed)),
+            Effect.as({ _tag: "Activated" as const })
+          ),
+        abandonClaim: (_runId, _claimant, claimedAtMs) =>
+          Effect.sync(() => {
+            abandoned.push(claimedAtMs)
+            return { _tag: "Abandoned" as const }
+          })
+      })
+      const fiber = yield* Effect.forkChild(
+        Lease.claimAndActivate(runs, request(), (claimedAtMs) => recorded.push(claimedAtMs)),
+        { startImmediately: true }
+      )
+      yield* Deferred.await(activating)
+      // The interrupt arrives between the committed claim and its activation.
+      const interrupting = yield* Effect.forkChild(Fiber.interrupt(fiber), { startImmediately: true })
+      yield* Effect.yieldNow
+      expect(fiber.pollUnsafe()).toBeUndefined()
+      yield* Deferred.succeed(proceed, undefined)
+      yield* Fiber.join(interrupting)
+      // The row is owned and its owner knows: nothing dangles, nothing was abandoned.
+      expect(recorded).toEqual([5])
+      expect(abandoned).toEqual([])
     }))
 
   it.effect("abandons the exact claim when activation loses it", () =>

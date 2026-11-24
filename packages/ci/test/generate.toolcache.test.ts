@@ -39,7 +39,8 @@ const generated = (jobs: ReadonlyArray<Job>, path: string): string => {
 
 /** The directories the workflow saves when a job ends and restores at the next. */
 const carried = (workflow: string): ReadonlyArray<string> => {
-  const paths = /uses: actions\/cache@v4\n {8}with:\n {10}path: \|\n((?: {12}.*\n)+)/.exec(workflow)?.[1] ?? ""
+  const paths = /uses: actions\/cache@[0-9a-f]{40}\n {8}with:\n {10}path: \|\n((?: {12}.*\n)+)/.exec(workflow)?.[1] ??
+    ""
   return paths.split("\n").filter((line) => line !== "").map((line) => line.trim())
 }
 

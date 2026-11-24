@@ -24,6 +24,20 @@ export const isUrl = (value: string): boolean => /^postgres(?:ql)?:\/\//.test(va
 const sqliteOwned = (filename: string): boolean =>
   filename === "" || filename === ":memory:" || filename.startsWith("file:")
 
+/** The settings a selection reads: `SMITHERS_BACKEND`, `SMITHERS_POSTGRES_URL`,
+ * `DATABASE_URL` and `SMITHERS_POSTGRES_SCHEMA`. Callers inject their own
+ * source; the native layers pass the process environment.
+ * @since 1.0.0
+ * @private
+ */
+export type Settings = Readonly<Record<string, string | undefined>>
+
+/** The process environment, read at call time so a layer built later sees it.
+ * @since 1.0.0
+ * @private
+ */
+const ambient = (): Settings => process.env
+
 /** Where a filename's store lives on PostgreSQL: the connection URL (without
  * its `schema` parameter) and the schema the store's tables are in, or
  * `undefined` for a store SQLite keeps.
@@ -33,12 +47,15 @@ const sqliteOwned = (filename: string): boolean =>
  * @since 1.0.0
  * @private
  */
-export const location = (filename: string): { readonly url: string; readonly schema: string } | undefined => {
+export const location = (
+  filename: string,
+  env: Settings = ambient()
+): { readonly url: string; readonly schema: string } | undefined => {
   const explicit = isUrl(filename)
-  const backend = process.env.SMITHERS_BACKEND
+  const backend = env.SMITHERS_BACKEND
   if (!explicit && (backend === "sqlite" || sqliteOwned(filename))) return undefined
-  const url = explicit ? filename : process.env.SMITHERS_POSTGRES_URL?.trim() ||
-    (backend === "postgres" ? process.env.DATABASE_URL?.trim() : undefined)
+  const url = explicit ? filename : env.SMITHERS_POSTGRES_URL?.trim() ||
+    (backend === "postgres" ? env.DATABASE_URL?.trim() : undefined)
   if (!url && backend === "postgres") {
     throw new UnsupportedDatabase({
       code: "postgres_url_missing",
@@ -60,8 +77,8 @@ export const location = (filename: string): { readonly url: string; readonly sch
   }
   const schema = explicit ?
     parsed.searchParams.get("schema") ?? "smithers_flows"
-    : process.env.SMITHERS_POSTGRES_SCHEMA
-    ? forStore(process.env.SMITHERS_POSTGRES_SCHEMA, basename(filename).replaceAll(/[^a-zA-Z0-9_]/g, "_"))
+    : env.SMITHERS_POSTGRES_SCHEMA
+    ? forStore(env.SMITHERS_POSTGRES_SCHEMA, basename(filename).replaceAll(/[^a-zA-Z0-9_]/g, "_"))
     : `smithers_${createHash("sha256").update(resolve(filename)).digest("hex").slice(0, 32)}`
   parsed.searchParams.delete("schema")
   return { url: parsed.toString(), schema }
@@ -73,10 +90,14 @@ export const location = (filename: string): { readonly url: string; readonly sch
  * @since 1.0.0
  * @private
  */
-export const layer = (filename: string, readOnly = false): Layer.Layer<SqlClient.SqlClient> | undefined => {
-  const selected = location(filename)
+export const layer = (
+  filename: string,
+  readOnly = false,
+  env: Settings = ambient()
+): Layer.Layer<SqlClient.SqlClient> | undefined => {
+  const selected = location(filename, env)
   if (selected === undefined) return undefined
-  const owner = !isUrl(filename) && process.env.SMITHERS_POSTGRES_SCHEMA ? basename(filename) : undefined
+  const owner = !isUrl(filename) && env.SMITHERS_POSTGRES_SCHEMA ? basename(filename) : undefined
   return Layer.unwrap(
     Effect.promise(() => import("@effect/sql-pg")).pipe(
       Effect.map((driver) => {
